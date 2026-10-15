@@ -394,6 +394,14 @@ pub fn ran_nothing(kind: CheckKind, ok: bool, cases_ran: usize) -> bool {
     ok && cases_ran == 0 && matches!(kind, CheckKind::CargoTest | CheckKind::Jest | CheckKind::Bats)
 }
 
+/// #4536 run 15 — does this unit report cases at all? A shell suite in the
+/// bats lane (`test-*.sh`, `*.test.sh`) prints its own "=== Results: N passed"
+/// and is judged by its exit, never by TAP lines: 8 of them passed in run 15
+/// and read as "ran nothing". A .bats file and the cargo/jest lanes do. Pure.
+pub fn reports_cases(kind: CheckKind, target: &str) -> bool {
+    !(kind == CheckKind::Bats && target.ends_with(".sh"))
+}
+
 /// #4536 — unmeasured entries read "<unit> — <reason>"; is this entry the unit's?
 pub fn unmeasured_is(entry: &str, unit: &str) -> bool {
     entry == unit || entry.starts_with(&format!("{} — ", unit))

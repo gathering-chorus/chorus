@@ -581,6 +581,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         let check_started = std::time::Instant::now();
         let cases_before = all_cases.len();
         let unmatched_before = unmatched_cargo;
+        let mut nothing_selected = false;
         // #4454 — the unit starts on the trace: a hung unit reads started, no end
         emit_spine("test.unit.started", &role, &card, &trace,
             &[("check", check.kind.label()), ("unit", target), ("message", &format!("{} {} started", check.kind.label(), target))]);
@@ -643,6 +644,8 @@ fn run(args: &[String]) -> Result<i32, String> {
                                 // never silent (#3443) — and the undeclared-gap
                                 // channel above names unregistered files.
                                 println!("   jest:{} — 0 registered unit tests cover the diff (selection empty)", p);
+                                // #4536 run 15 — nothing of the card's lives here: not a run that proved nothing
+                                nothing_selected = true;
                                 (true, Vec::new())
                             }
                         }
@@ -690,7 +693,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         // #4536 — a case lane that passed with 0 cases ran nothing: UNMEASURED, not green.
         let ran = all_cases.len() - cases_before + (unmatched_cargo - unmatched_before);
         let already = unmeasured.last().is_some_and(|u| werk_test::unmeasured_is(u, target));
-        if !already && werk_test::ran_nothing(check.kind, ok, ran) {
+        if !already && !nothing_selected && werk_test::reports_cases(check.kind, target) && werk_test::ran_nothing(check.kind, ok, ran) {
             unmeasured.push(format!("{} — ran nothing", target));
         }
         let secs = check_started.elapsed().as_secs_f64();

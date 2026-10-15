@@ -452,7 +452,7 @@ export function failingCasesQuery(run: RunRef): { query: string; start: number; 
 /** Loki query_range JSON → cases grouped by suite path, oldest first, one row
  *  per case. A line from another trace is dropped even if the query let it in. */
 export function parseFailingCases(body: string, trace?: string): CasesBySuite {
-  let values: [string, string][] = [];
+  let values: [string, string][];
   try {
     const j = JSON.parse(body) as { data?: { result?: { values?: [string, string][] }[] } };
     values = (j.data?.result ?? []).flatMap((r) => r.values ?? []);

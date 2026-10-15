@@ -101,3 +101,19 @@ fn an_unmeasured_entry_names_its_unit_and_reason() {
     assert!(unmeasured_is("platform/tests/x.bats — not built", "platform/tests/x.bats"));
     assert!(!unmeasured_is("platform/tests/x.bats — not built", "platform/tests/x"));
 }
+
+// #4536 run 15 — 8 shell suites printed "=== Results: N passed, 0 failed",
+// exited 0, and read as "ran nothing": they report no TAP cases by design.
+#[test]
+fn a_shell_suite_is_judged_by_its_exit_not_by_cases() {
+    assert!(!werk_test::reports_cases(CheckKind::Bats, "bats:platform/scripts/test-chorus-share.sh"));
+    assert!(!werk_test::reports_cases(CheckKind::Bats, "bats:platform/tests/4413-werk-test-state.test.sh"));
+}
+
+/// NEGATIVE PROOF: a .bats file, and every cargo or jest unit, still report cases.
+#[test]
+fn negative_proof_a_bats_file_with_zero_cases_still_ran_nothing() {
+    assert!(werk_test::reports_cases(CheckKind::Bats, "bats:platform/tests/4035-stopped-run-says-so.bats"));
+    assert!(werk_test::reports_cases(CheckKind::CargoTest, "cargo:platform/services/x.sh"));
+    assert!(werk_test::reports_cases(CheckKind::Jest, "jest:platform/tests"));
+}
