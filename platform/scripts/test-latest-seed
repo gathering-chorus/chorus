@@ -20,12 +20,15 @@ Exit: 0 done (or dry run), 2 could not read Loki or the registry, 3 refused.
 Seams for tests: TEST_SEED_LOKI_FILE (a query_range answer) and
 TEST_SEED_REGISTRY_FILE (a /tests answer) replace the live reads.
 """
+import concurrent.futures
 import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 LOKI = os.environ.get("LOKI_URL", "http://127.0.0.1:3102")
@@ -33,6 +36,7 @@ TESTS = os.environ.get("OWL_API_TESTS", "http://localhost:3360/tests?limit=10000
 WORD = {"test.case.passed": "pass", "test.case.failed": "fail", "test.case.skipped": "skip"}
 # the Test shape takes pass | fail | unmeasured (werk-domains.ttl 0.7.0)
 LATEST = {"pass": "pass", "fail": "fail", "skip": "unmeasured"}
+TOKEN_REFRESH_S = 480
 
 
 def die(code, msg):
@@ -149,25 +153,57 @@ def main(argv):
     run_ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     base = TESTS.split("?")[0].rstrip("/")
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-    token = subprocess.run([os.path.join(root, "platform/scripts/chorus-identity-token"),
-                            os.environ.get("TEST_SEED_ROLE", "nightly")], capture_output=True, text=True).stdout.strip()
-    if not token:
+    lock = threading.Lock()
+
+    # #4537 — a write token lives 600s; at ~3s a PATCH the 10-14 seed wrote 158
+    # rows and then 9,641 were refused. Mint again every 8 minutes and on a 401.
+    tok = {"value": "", "at": 0.0}
+
+    def token(force=False):
+        with lock:
+            if force or not tok["value"] or time.time() - tok["at"] > TOKEN_REFRESH_S:
+                tok["value"] = subprocess.run([os.path.join(root, "platform/scripts/chorus-identity-token"),
+                                               os.environ.get("TEST_SEED_ROLE", "nightly")],
+                                              capture_output=True, text=True).stdout.strip()
+                tok["at"] = time.time()
+            return tok["value"]
+
+    if not token():
         die(2, "no write token")
-    ok = failed = 0
-    for i, (entity, (res, reason)) in enumerate(flips, 1):
-        req = urllib.request.Request(base + "/" + urllib.parse.quote(entity), method="PATCH",
-                                     data=body(res, reason, run_ts).encode(),
-                                     headers={"Content-Type": "application/merge-patch+json",
-                                              "Authorization": "Bearer " + token})
-        try:
-            urllib.request.urlopen(req, timeout=30)
-            ok += 1
-        except Exception:
-            failed += 1
-        if i % 500 == 0:
-            print("  %d / %d written · %d refused" % (ok, len(flips), failed), flush=True)
-    print("written %d · refused %d" % (ok, failed))
-    return 0 if failed == 0 else 1
+    counts = {"ok": 0, "failed": 0}
+    reasons = {}
+
+    def patch(item):
+        entity, (res, reason) = item
+        for attempt in (0, 1):
+            req = urllib.request.Request(base + "/" + urllib.parse.quote(entity), method="PATCH",
+                                         data=body(res, reason, run_ts).encode(),
+                                         headers={"Content-Type": "application/merge-patch+json",
+                                                  "Authorization": "Bearer " + token(force=attempt == 1)})
+            try:
+                urllib.request.urlopen(req, timeout=30)
+                with lock:
+                    counts["ok"] += 1
+                return
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 0:
+                    continue
+                why = "HTTP %d" % e.code
+            except Exception as e:
+                why = type(e).__name__
+            with lock:
+                counts["failed"] += 1
+                reasons[why] = reasons.get(why, 0) + 1
+            return
+
+    workers = int(os.environ.get("TEST_SEED_WORKERS", "4"))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, _ in enumerate(pool.map(patch, flips), 1):
+            if i % 500 == 0:
+                print("  %d / %d written · %d refused" % (counts["ok"], len(flips), counts["failed"]), flush=True)
+    print("written %d · refused %d%s" % (counts["ok"], counts["failed"],
+          (" " + json.dumps(reasons, sort_keys=True)) if reasons else ""), flush=True)
+    return 0 if counts["failed"] == 0 else 1
 
 
 if __name__ == "__main__":

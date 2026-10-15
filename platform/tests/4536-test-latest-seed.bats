@@ -76,3 +76,50 @@ PY
   [ "$status" -eq 0 ]
   [[ "$output" == *"1 to write {\"unmeasured\": 1}"* ]] || { echo "$output"; return 1; }
 }
+
+# #4537 — the write token lives 600s; the 10-15 seed wrote 158 rows, then its
+# token expired and 9,641 were refused. A 401 mints a new token and retries.
+door_and_root() {
+  mkdir -p "$T/root/platform/scripts"
+  cp "$SEED" "$T/root/platform/scripts/test-latest-seed"
+  printf '#!/bin/sh\nn=$(cat "%s/n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "%s/n"; echo "tok-%s$n"\n' "$T" "$T" "$1" \
+    > "$T/root/platform/scripts/chorus-identity-token"
+  chmod +x "$T/root/platform/scripts/chorus-identity-token"
+  cat > "$T/door.py" <<'PY'
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_PATCH(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        ok = self.headers.get("Authorization", "") != "Bearer tok-1"
+        self.send_response(204 if ok else 401); self.end_headers()
+    def log_message(self, *a): pass
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_address[1])); s.serve_forever()
+PY
+  python3 "$T/door.py" "$T/port" & DOOR=$!
+  while [ ! -s "$T/port" ]; do sleep 0.1; done
+  export OWL_API_TESTS="http://127.0.0.1:$(cat "$T/port")/tests?limit=10000"
+}
+
+@test "an expired token is minted again and the write retried" {
+  door_and_root ""
+  run "$T/root/platform/scripts/test-latest-seed" nightly-1-2 --apply
+  kill "$DOOR"
+  [[ "$output" == *"written 4 · refused 0"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 0 ]
+}
+
+@test "NEGATIVE PROOF: a token that is never accepted is refused and named, never counted written" {
+  door_and_root "never-"
+  # every token this stub mints is tok-never-N; make the door refuse them all
+  sed -i '' 's/!= "Bearer tok-1"/== "never"/' "$T/door.py" 2>/dev/null || true
+  kill "$DOOR"; rm -f "$T/port"
+  python3 "$T/door.py" "$T/port" & DOOR=$!
+  while [ ! -s "$T/port" ]; do sleep 0.1; done
+  export OWL_API_TESTS="http://127.0.0.1:$(cat "$T/port")/tests?limit=10000"
+  run "$T/root/platform/scripts/test-latest-seed" nightly-1-2 --apply
+  kill "$DOOR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"written 0 · refused 4"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *'"HTTP 401": 4'* ]] || { echo "$output"; return 1; }
+}
