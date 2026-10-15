@@ -3521,10 +3521,7 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
     };
     // a test the card adds exercises what it imports before the crawler has
     // registered it
-    let mut candidates: Vec<TestRow> = rows.to_vec();
-    for f in changed.iter().filter(|f| werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f)) {
-        candidates.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() });
-    }
+    let candidates = werk_test::card_candidates(changed, rows);
     let mut exercisers: std::collections::HashMap<String, Vec<String>> = Default::default();
     let unrunnable_test = |f: &str| werk_test::is_test_file(f) && !werk_test::runnable_test(f, werk_test::ts_package_of(f).is_some());
     for f in changed.iter().filter(|f| unrunnable_test(f) || (!werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f))) {

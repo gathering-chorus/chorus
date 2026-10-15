@@ -1109,6 +1109,24 @@ pub fn is_feature_suite(path: &str) -> bool {
     path.starts_with("platform/tests/features/") && path.ends_with(".feature")
 }
 
+/// #4530 (Wren 10-15) — a file a card adds as a test, before the crawler has
+/// registered it: a test file, or a cucumber feature the bdd lane runs. The
+/// four new clearing-v2 features were not tests here, so the step file that
+/// only they use was refused as "no registered test exercises it".
+pub fn is_card_test(f: &str) -> bool {
+    is_test_file(f) || is_feature_suite(f)
+}
+
+/// #4530 — the tests a card's selection searches: the registry, plus every
+/// test the card adds that the registry does not hold yet. Pure.
+pub fn card_candidates(changed: &[String], rows: &[TestRow]) -> Vec<TestRow> {
+    let mut out: Vec<TestRow> = rows.to_vec();
+    for f in changed.iter().filter(|f| is_card_test(f) && !rows.iter().any(|r| &r.file_path == *f)) {
+        out.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() });
+    }
+    out
+}
+
 /// #4412 — a cucumber step-definition file of the bdd lane.
 pub fn is_step_definition(path: &str) -> bool {
     path.starts_with("platform/tests/features/step_definitions/") && (path.ends_with(".ts") || path.ends_with(".js"))
@@ -3336,7 +3354,7 @@ pub fn domain_selection(
     let covers = |t: &str| rows.iter().find(|r| r.file_path == t).map(|r| norm_domain(&r.covers)).filter(|d| !d.is_empty());
     for f in changed {
         // #4419 — a NEW test the registry has not crawled yet is still a test.
-        if rows.iter().any(|r| &r.file_path == f) || is_test_file(f) {
+        if rows.iter().any(|r| &r.file_path == f) || is_card_test(f) {
             sel.tests.insert(f.clone(), "changed".to_string());
             // a test with no runner of its own runs through the suite that runs it
             for t in exercisers.get(f).map(|v| v.as_slice()).unwrap_or(&[]) {
