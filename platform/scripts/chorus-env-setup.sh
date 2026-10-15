@@ -116,6 +116,11 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
   unset __chorus_env_werk_dir __chorus_env_werk_count
 fi
 
+# #4535 — files a role makes stay writable by the chorus group, so the next
+# role (Abby on her own Mac account) can edit them. Jeff ran the one-time
+# group share on 2026-10-15; this keeps new files from going back to 644.
+umask 002
+
 # #4535 — CHORUS_STATE_DIR: the team's shared ~/.chorus (spine, bin, run,
 # identity). It belongs to whoever owns the canonical checkout, not to the
 # caller: a role on its own Mac account (Abby, chorus-abby-normal) has its own
