@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-tiles-streams-3976), live surface
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3976
 // @owner: wren
 /**

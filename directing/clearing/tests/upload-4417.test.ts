@@ -1,4 +1,5 @@
 // @test-type: unit — POSTs images to the in-process Clearing; sips stubbed on PATH; uploads land in a temp dir.
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

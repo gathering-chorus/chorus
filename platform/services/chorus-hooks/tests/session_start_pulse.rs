@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1889 — Session start must regenerate Pulse before writing context
 //! Bug 1: roles boot with stale pulse-latest.json from previous session,
 //!         report dead index sources that were already fixed.

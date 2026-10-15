@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end (#3193 v2): temp repos + shimmed cards/chorus-log at the
 //! absolute home path. Proves the floor records its objective findings to the
 //! witness, the verdict recorder enforces the anti-ceremony rules against the

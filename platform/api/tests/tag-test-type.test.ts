@@ -1,4 +1,5 @@
 // @test-type: unit — pure tests of the tagger/gate/fitness logic; the security/api/fs tokens below are FIXTURE INPUTS, not real calls.
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #3442 — content-signal test-type tagger.
 // Supersedes discover-tests.ts:classifyTestType (path-only heuristic) which
 // mislabeled 7 *-unit.test.ts files that touch real fs as "unit". The tagger

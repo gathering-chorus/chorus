@@ -1,4 +1,5 @@
 // @test-type: unit — BoardClient with the api() HTTP layer fully stubbed; no
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // socket opened, no live Vikunja/network. Pure client-logic coverage.
 /**
  * #2652 AC11 — BoardClient coverage uplift (44% → ≥70%).

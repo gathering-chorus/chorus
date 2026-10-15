@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3125 — non-BMP escaping (the 🪶 → "aa" mangle observed 2026-05-29).
 //! AppleScript's `keystroke` interpreter cannot render codepoints ≥ U+10000;
 //! they arrive as garbage. escape_for_applescript must strip them so a

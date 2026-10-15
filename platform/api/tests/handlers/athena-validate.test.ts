@@ -1,4 +1,5 @@
 // @test-type: unit — every dependency is injected (sparql, now, timestamp, and
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 // since #4237 the check list itself). No service, no store, no clock.
 /**
  * athena-validate handler — unit tests (#2180).

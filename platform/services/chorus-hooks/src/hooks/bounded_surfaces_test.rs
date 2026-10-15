@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3424 red-first tests for the bounded-verb/skill guard (DEC-1674).
 //!
 //! The bound this enforces: a NEW werk verb crate or a NEW role skill may not

@@ -1,4 +1,5 @@
 // @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
+// @domain: analytics — placed by chorus-crawl's domain rules (#4538)
 /**
  * jeff-summary — unit tests (#2167).
  *

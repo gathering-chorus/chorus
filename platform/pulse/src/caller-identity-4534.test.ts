@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model async injectors; repeated fixture literals are per-case readability (as service.test.ts) */
 // @owner: wren
 // @test-type: integration — supertest drives POST /api/nudge with real ES256 tokens signed by a test key
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4534 — Abby runs as her own macOS user and cannot read the 0600 shared
  * secret, so every nudge she sent was refused. A sender may now prove itself

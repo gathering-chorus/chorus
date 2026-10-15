@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2644 AC2 regression — is_fix_card() must be deterministic for the gate
 //! smoke check, independent of live chorus-api board state.
 //!

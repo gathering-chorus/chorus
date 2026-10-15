@@ -1,3 +1,4 @@
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // #3513 — the ONE failure classifier, shared by every werk verb.
 //
 // BOUNDARY (Silas, #3513 review): `shared/` holds pure, dep-free, single-file

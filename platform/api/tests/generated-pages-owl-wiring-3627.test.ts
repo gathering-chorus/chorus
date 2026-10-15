@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 // #3627 — the committed generated pages must speak to the LIVE data surface.
 // #3603 retired /api/athena/<collection> on :3340; the committed shells predated
 // that and entity-renderer.js still fetched the dead route — the 404 was

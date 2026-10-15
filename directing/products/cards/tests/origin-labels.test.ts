@@ -1,4 +1,5 @@
 // @test-type: integration:api — reads the LIVE Vikunja label list; UNMEASURED without a board credential
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * Origin labels — reflective vs reactive classification for cards.
  * Verifies config, SDK, and Vikunja label integrity.

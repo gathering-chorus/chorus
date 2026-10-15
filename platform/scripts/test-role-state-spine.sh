@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: roles — placed by chorus-crawl's domain rules (#4538)
 # test-role-state-spine.sh — role-state under #4028: nothing declared, nothing stored.
 #
 # Was (#1945): every transition emits role.state.changed. Now: the only thing a

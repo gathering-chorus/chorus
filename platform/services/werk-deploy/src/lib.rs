@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! werk-deploy — `/werk/deploy` v2 logic (card #3062).
 //!
 //! Self-contained: std only; calls werk-build, chorus-bin-install, launchctl,

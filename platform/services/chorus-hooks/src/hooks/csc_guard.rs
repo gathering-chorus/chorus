@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! CSC (Canonical Storage Convention) enforcement hook.
 //! PreToolUse on Bash: blocks writes of pipeline artifacts to /tmp/,
 //! warns on domain data writes outside /Volumes/Gathering/.

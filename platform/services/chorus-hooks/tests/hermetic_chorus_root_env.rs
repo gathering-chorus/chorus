@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1308 — CHORUS_ROOT env var tests
 //! AC: CHORUS_ROOT env var defined — single source of truth for repo root path
 

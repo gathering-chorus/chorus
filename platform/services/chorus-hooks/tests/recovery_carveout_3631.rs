@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2790/#3631 — when the hook daemon is DOWN, the pre-tool-use shim fails
 //! closed (denies every tool call). That includes the command that RESTARTS the
 //! daemon → the team is locked out of its own recovery (2026-07-08, 14 hours).

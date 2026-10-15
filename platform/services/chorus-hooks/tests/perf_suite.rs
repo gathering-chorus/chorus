@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Chorus perf regression suite (#2287)
 //!
 //! Five timing tests, one per chorus service. Runs on every gate:code

@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4422 — the stores crawl, judged against the real map
 //! (platform/config/store-map.json) and a picture of Library and Bedroom as
 //! measured on 2026-10-11. Fixtures by repo path:

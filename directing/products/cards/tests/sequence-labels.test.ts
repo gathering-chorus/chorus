@@ -1,4 +1,5 @@
 // @test-type: integration:api — reads the LIVE Vikunja label list; gated by RUN_INTEGRATION (jest.config testPathIgnorePatterns)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2024 AC #1 — Sequence labels must have `sequence:` prefix in Vikunja.
  * Verifies that all label IDs in LABELS.sequence correspond to Vikunja labels

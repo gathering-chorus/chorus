@@ -1,4 +1,5 @@
 // @test-type: unit — in-memory sqlite + injected spine fetcher; no Loki, no live services.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-trace handler — unit tests (#2189).
  *

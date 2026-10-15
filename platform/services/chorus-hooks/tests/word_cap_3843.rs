@@ -1,3 +1,4 @@
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 //! #3843 — word-cap Stop-hook leg.
 //!
 //! Two suites. (1) The SHARED FIXTURE: config/word-cap-fixtures.json is the

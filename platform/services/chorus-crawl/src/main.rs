@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! chorus-crawl — the one herald (#4173).
 //!
 //! Walks the repo, keeps a row per tracked file in the graph through the
@@ -3647,6 +3648,22 @@ fn batch_bytes(batch: &[String]) -> usize {
     batch.iter().map(|b| b.len()).sum::<usize>() + batch.len().saturating_sub(1)
 }
 
+/// #4538 — the "test" script of the nearest package.json above `rel`, or None.
+fn package_test_script(root: &str, rel: &str) -> Option<String> {
+    let mut dir = std::path::Path::new(rel).parent();
+    while let Some(d) = dir {
+        let pj = std::path::Path::new(root).join(d).join("package.json");
+        if let Ok(text) = std::fs::read_to_string(&pj) {
+            // the crate has no JSON parser; the "test" key's string value is enough
+            let i = text.find("\"test\"")?;
+            let rest = text[i + 6..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+            return rest.find('"').map(|e| rest[..e].to_string());
+        }
+        dir = d.parent();
+    }
+    None
+}
+
 /// #4199 — the graph-vs-project verdicts, printed after a FULL read of tree and
 /// graph. Read-only: nothing here writes. Returns whether everything was clean.
 #[allow(clippy::too_many_arguments)]
@@ -3692,13 +3709,33 @@ fn print_graph_vs_project(
     // #4290 — the fold rows of the control record, filled by the loop below.
     let mut fold_rows: Vec<chorus_crawl::ValidateRow> = Vec::new();
     // #4334 — every bats suite declares the domain it guards
+    // #4538 — every test file does, and the domain it names is one the store lists
     {
         let read = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
-        let (n, missing) = domain::undeclared_bats(test_files, &read);
-        if missing.is_empty() {
-            println!("chorus-crawl: reconcile declared domains: clean — {n} bats suites, each with an @domain header");
-        } else {
-            println!("chorus-crawl: reconcile declared domains: DRIFT — {} of {n} bats suites carry no @domain header", missing.len());
+        let valid: Option<Vec<String>> = fetch_rows(api, token, "Domain").ok().map(|rows| {
+            rows.into_iter()
+                .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
+                .filter(|v| !v.is_empty())
+                .collect()
+        });
+        let (n, all_missing, unknown) = domain::undeclared_tests(test_files, &read, valid.as_deref().unwrap_or(&[]));
+        // #4538 — a test with no runner is not a missing header: it is named,
+        // one line per file, UNMEASURED until #4537 gives it a runner
+        let script = |f: &str| package_test_script(root, f);
+        let (no_runner, mut missing): (Vec<String>, Vec<String>) =
+            all_missing.into_iter().partition(|f| domain::has_no_runner(f, &script));
+        for f in &no_runner {
+            println!("chorus-crawl: reconcile declared domains: UNMEASURED — no runner for {f} (#4537)");
+        }
+        match &valid {
+            // no Domain list: the unknown-name half cannot be measured, so it is
+            // named UNMEASURED and the row says so, never clean
+            None => println!("chorus-crawl: reconcile declared domains: UNMEASURED — the store did not list its Domains; {} of {n} test files carry no @domain header", missing.len()),
+            Some(_) if missing.is_empty() && unknown.is_empty() => println!("chorus-crawl: reconcile declared domains: clean — {n} test files, each with an @domain header naming a listed domain"),
+            Some(_) => println!("chorus-crawl: reconcile declared domains: DRIFT — {} of {n} test files carry no @domain header, {} name a domain the store does not list", missing.len(), unknown.len()),
+        }
+        if valid.is_some() {
+            missing.extend(unknown);
         }
         fold_rows.push(chorus_crawl::ValidateRow {
             domain: "tests".to_string(),
@@ -3707,8 +3744,8 @@ fn print_graph_vs_project(
             graph: n - missing.len(),
             missing,
             stale: Vec::new(),
-            excluded: Vec::new(),
-            measured: true,
+            excluded: no_runner,
+            measured: valid.is_some(),
         });
     }
     // #4214 — the folds, both directions. The classes shipped without this, so

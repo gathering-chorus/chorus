@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! role-state — #4028: nothing declared, nothing stored.
 //!
 //! Until #4028 this subcommand wrote /tmp/claude-team-scan/{role}-declared.json

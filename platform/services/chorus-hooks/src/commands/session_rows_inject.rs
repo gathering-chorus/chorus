@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4360 — SessionStart reads the role's own rows: the open Session, the run
 //! that ended last (where we left off), and the /sup walk.
 //!

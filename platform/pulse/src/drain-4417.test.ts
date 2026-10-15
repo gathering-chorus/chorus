@@ -1,4 +1,5 @@
 // @test-type: unit — POST /drain over HTTP (supertest) against an in-memory store; secret from the test env
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

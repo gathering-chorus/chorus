@@ -1,4 +1,5 @@
 // @test-type: integration — spawns its own Clearing on a test port; pulse dead-ported, nudge mocked (own world).
+// @domain: roles — picked by its owner, Kade, from the crawler's candidates (#4538)
 // @card: #1827
 // @owner: wren
 /**

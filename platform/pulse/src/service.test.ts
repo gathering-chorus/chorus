@@ -2,6 +2,7 @@
 // @owner: wren
 /* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model async injectors (async documents the contract even without await); repeated fixture literals are intentional for per-case readability (#3429) */
 // @test-type: integration — supertest exercises createApp()'s HTTP routes end-to-end (signal:security is the auth-gate subject under test)
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 /**
  * service.test.ts — REST contract for pulse messaging service (#2237)
  *

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3949 — RETIRED as cargo tests, replaced by the runtime lane.
 //!
 //! These asserted a RELEASE binary exists at chorus-inject/target/release —

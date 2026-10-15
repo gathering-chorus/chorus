@@ -1,4 +1,5 @@
 // @test-type: unit — pure text normalization; brings its own world.
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // @card: #3887
 // @owner: wren
 /**

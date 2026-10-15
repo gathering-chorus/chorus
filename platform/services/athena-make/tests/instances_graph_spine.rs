@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #3570 — TDD-first (red before green). The domains.* data/noun spine:
 // athena-make derives a kind's instance HOME graph from the model.
 // #3640 (ADR-051): rule tightened — explicit chorus:instancesGraph wins; else

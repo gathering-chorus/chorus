@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end for the commit-only verb (#3056 split): actual `git` on temp
 //! repos. Proves werk-commit COMMITS LOCALLY and does NOT push — push is now the
 //! separate werk-push verb. RED against the old bundled code (which pushed); GREEN

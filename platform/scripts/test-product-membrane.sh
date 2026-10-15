@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: infrastructure — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-product-membrane.sh — #3611 UNTANGLE AC2: the factory↔product membrane test.
 #
 # Jeff's invariant #6: gathering is a product with ZERO runtime dependency on

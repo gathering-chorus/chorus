@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Test: all hooks that spawn `cards`, `npx`, or `python3` must include PATH.
 //!
 //! Bug (#1993): 6 hooks spawn tools needing node/npm/python in PATH,

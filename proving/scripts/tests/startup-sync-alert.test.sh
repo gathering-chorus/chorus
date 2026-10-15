@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # startup-sync-alert.test.sh — Verify startup-sync alert checks Fuseki health before firing
 # Card #1895
 

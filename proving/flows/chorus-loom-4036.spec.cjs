@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (chorus-loom-4036), live surface
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4036 — /loom rebuilt Chorus-native. The spec grades what the dig found broken:
  *

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4445 — Jeff, 2026-10-07 16:49: "u test in demo". The variant Clearing had
 //! no BUZZ_RELAY_URL, so its room never read the relay and could not show
 //! Abby's replies: the demo proved nothing. A variant now reads the live relay

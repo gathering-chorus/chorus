@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-crawler-trigger-detection.sh — #2817 unit tests for the file-watch-vs-polling
 # trigger heuristic in index-crawler-snapshots.sh.
 #

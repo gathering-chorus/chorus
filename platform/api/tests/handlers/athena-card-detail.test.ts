@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 import { fetchAthenaCardDetail, type AthenaCardDetailDeps } from '../../src/handlers/athena-card-detail';
 
 const deps = (over: Partial<AthenaCardDetailDeps> = {}): AthenaCardDetailDeps => ({

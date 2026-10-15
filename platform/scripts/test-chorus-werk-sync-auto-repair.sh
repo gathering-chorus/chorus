@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-werk-sync-auto-repair.sh — tests for the `repair` subcommand
 # (detached-HEAD recovery, #2779). #3033: rewritten off the retired #2846
 # `--auto-repair` flag / CHORUS_WERK_SYNC_AUTO_REPAIR env interface, which no

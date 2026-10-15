@@ -1,4 +1,5 @@
 // @test-type: integration:api — HTTP against its own Clearing (lib/own-clearing.cjs) with the identity server (CSS) stubbed; never the live CSS
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

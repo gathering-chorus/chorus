@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: time — placed by chorus-crawl's domain rules (#4538)
 import { isEDT, convertToLocal, bostonNow, boston } from '../src/time-utils';
 
 describe('isEDT', () => {

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2177 — accept_gate reads `demo:preflight-pass` card comment as demo evidence.
 //!
 //! Retires the brief-file check in `accept_gate::demo_brief_exists` that scanned

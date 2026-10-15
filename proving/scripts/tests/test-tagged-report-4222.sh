@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 #
 # #4222 — NEGATIVE PROOFS for platform/scripts/tagged-report.
 #

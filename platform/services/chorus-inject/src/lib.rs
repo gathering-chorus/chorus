@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! chorus-inject library — pure + testable logic for osascript injection.
 //!
 //! Script builders (pure):

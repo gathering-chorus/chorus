@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-share.sh — hermetic tests for the share guard (#3644).
 #
 # Brings its own world: a stub upstream on a random port, the guard on another,

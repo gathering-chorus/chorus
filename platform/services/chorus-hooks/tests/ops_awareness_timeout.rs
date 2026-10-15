@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1981 — ops_awareness hook should not fire "unreachable" on a healthy API
 //!
 //! The bug: the first HTTP request after idle hits a cold DNS/TCP path that

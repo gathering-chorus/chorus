@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions over column names; no board, no network
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4350 — every open card is visible. Jeff, 2026-09-26: "i want to see any
  * open card regardless of bucket/column". Eight hand-typed column lists had no

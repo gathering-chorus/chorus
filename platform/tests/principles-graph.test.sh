@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @domain: principles — placed by chorus-crawl's domain rules (#4538)
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 
 # Live-graph tests for #2447 + #2314: the principles graph holds Hemenway's 14 parents intact.

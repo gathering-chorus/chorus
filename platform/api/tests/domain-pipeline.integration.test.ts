@@ -1,5 +1,6 @@
 /**
  * @test-type: integration:api
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
  *
  * Domain pipeline view tests — #2069
  *

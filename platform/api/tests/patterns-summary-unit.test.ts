@@ -1,4 +1,5 @@
-// @test-type: api — #3442 backfill: starts the real app via startTestApp(); misnamed -unit, actually api.
+// @test-type: integration:api — #3442 backfill: starts the real app via startTestApp(); misnamed -unit, actually api (#4538: `api` alone is a concern, not a layer)
+// @domain: analytics — placed by chorus-crawl's domain rules (#4538)
 /**
  * patterns-summary — unit tests (#2167).
  *

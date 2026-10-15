@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3354 observability ility — red-first tests (DEC-1674).
 //!
 //! These fail until TelemetryLine / ReqStatus / telemetry_path land in lib.rs.

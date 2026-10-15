@@ -1,4 +1,5 @@
 // @test-type: unit — pure runner over the gate; file contents are FIXTURE INPUTS via an injected reader.
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #3442 — diff-scoped gate runner. Given a list of (already diff-filtered) test
 // file paths, run the declaration gate over each and report which are blocked.
 // The runner NEVER discovers files itself — it only sees the paths it's handed,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-werk-resume-measure-3972.sh — guard for #3972: the resume tree-hash is
 # measured race-free (read-tree HEAD, never a copy of the live index) and a
 # FAILED measurement is its own typed refusal — never a phantom 'tree changed'.

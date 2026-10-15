@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end (#3299): fixture home with logging shims (cards / chorus-werk /
 //! role-state / chorus-log at the absolute platform/scripts path) + a real git
 //! worktree as the card werk. Proves the TS-tool parity contract: refuse-if-dirty

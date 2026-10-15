@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2589 — git-spawn env-scrub helper regression test.
 //!
 //! Under per-role worktrees, parent processes (pre-commit hook) set GIT_DIR

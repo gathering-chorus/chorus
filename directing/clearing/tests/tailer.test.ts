@@ -1,4 +1,5 @@
 // @test-type: unit — in-memory router/tailer, no live services.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #2167
 // @owner: wren
 /**

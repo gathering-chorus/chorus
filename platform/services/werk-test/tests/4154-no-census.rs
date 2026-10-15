@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4154 — the runner reads the graph's registry and runs what is there. It no
 //! longer counts what it did not run: the census ("reconcile|tests-domain" row),
 //! the never-ran fold and the `--reconcile` verb were a second crawler living

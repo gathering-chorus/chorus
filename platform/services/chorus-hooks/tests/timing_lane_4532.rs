@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4532 — a card run never goes red on a wall-clock sample. Every
 //! `assert!(elapsed < N)` in the chorus-hooks timing tests sits inside
 //! `if timing_checks_on()`, which is true only when werk-test says the lane is

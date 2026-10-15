@@ -1,4 +1,5 @@
 // @test-type: unit — pure projection over fixture spine events; no fs, no live state.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // @card: #3882
 // @owner: wren
 /**

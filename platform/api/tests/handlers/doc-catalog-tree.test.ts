@@ -1,4 +1,5 @@
 // @test-type: unit — stubbed dependencies; no live service.
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 /**
  * doc-catalog-tree unit tests (#2521).
  */

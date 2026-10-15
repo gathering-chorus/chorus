@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2435 — nudge poll primitive.
 //!
 //! Receiver-side of the one-canonical-path design. Given chorus.log and a target

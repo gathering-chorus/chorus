@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Log-first gate (#1879)
 //! PreToolUse on Edit/Write: blocks code fixes without prior log inspection.
 //!

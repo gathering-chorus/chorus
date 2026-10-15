@@ -1,4 +1,5 @@
 // @test-type: integration:api
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // @card: #3959
 // @owner: wren
 //

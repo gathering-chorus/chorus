@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3752 / #4166 — the serve-gate on claim retirement. A claim under a live
 //! route must not retire, and an unanswerable athena-make must not read as
 //! "nothing is served".

@@ -1,4 +1,5 @@
 # @test-type: bdd — Gherkin scenarios for Clearing access, run by cucumber-js
+# @domain: messages — placed by chorus-crawl's domain rules (#4538)
 @clearing @live
 Feature: Clearing access paths
   Jeff accesses the Clearing from three environments.

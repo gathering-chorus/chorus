@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4025 — who killed chorus-hooks?
 //!
 //! Three SIGTERM deaths in 24h (exit -15 at 13:53, 21:03, 06:50 on 2026-08-27/28),

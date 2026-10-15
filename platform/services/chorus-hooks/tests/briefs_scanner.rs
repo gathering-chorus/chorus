@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for #2113 — brief pending scanner reads filesystem, not handoffs.log.
 //!
 //! AC:

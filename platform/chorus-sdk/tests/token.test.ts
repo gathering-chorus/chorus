@@ -1,4 +1,5 @@
 // @test-type: unit — identity mint via a fixture minter script; no live CSS,
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 // no real credentials (CHORUS_IDENTITY_TOKEN_BIN points into a tmp dir).
 /**
  * #3719 — ES256 identity mint for SDK callers (retires the #3619 HS256 mint).

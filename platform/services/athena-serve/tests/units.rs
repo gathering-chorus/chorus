@@ -1,4 +1,5 @@
 // @test-type: unit — hermetic: pure functions, no process, no network, no store
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4186 — the serve leg's decisions, pure. The bats drives the binary with a
 // stub launchctl and a stub curl for the integration proofs.
 use athena_serve::{healthy, parse_args, refusal};

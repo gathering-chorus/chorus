@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # #3714 — an alarm fires when its check FAILED, not when its output is unfamiliar.
 #
 # alert-runner.sh decided pass/fail with `[[ "$result" == "ok" ]]` — comparing the

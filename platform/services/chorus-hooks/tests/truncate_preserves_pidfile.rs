@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3632 (intent from Silas's retired #3633) — the flock singleton must NEVER
 //! zero an existing pidfile on open: truncating before the lock is held races a
 //! live holder's pid off disk. Pins `.truncate(false)` so a future

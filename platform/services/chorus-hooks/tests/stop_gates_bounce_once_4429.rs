@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #4429 — a stop gate bounces a reply at most once per turn. When Claude Code
 // sends stop_hook_active=true the role is already rewriting because a stop gate
 // bounced it; the handler must allow before any gate runs. 2026-10-04: one

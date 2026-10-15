@@ -1,4 +1,5 @@
 // @test-type: unit — pure request-shaping over the exported dedupe/limit logic; no live server.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3913
 // @owner: wren
 /**

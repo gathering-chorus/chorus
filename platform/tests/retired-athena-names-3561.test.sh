@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: fitness
+# @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 # retired-name-guard: exempt — this check must contain the retired names to search for them.
 # #3561 — the retired-name guard. FAILS on any live reference to a pre-rename
 # athena name. Written BEFORE the rename so it is proven red first (#3734).

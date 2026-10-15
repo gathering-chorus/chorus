@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over captured shapes; no store, no athena-make, brings its own world.
+// @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4053 AC4/AC5 — Jeff: the atlas is how he consumes the athena-* pipeline. Today it
 // reads urn:chorus:ontology only, so it shows what the PEN declared and cannot show
 // whether athena-make actually mounted it or with how many rows. A green verb stays

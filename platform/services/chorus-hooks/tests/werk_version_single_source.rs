@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2311 rescope AC#5 — Single source of truth for "Werk v" render.
 //!
 //! Jenga rule: every "Werk v<N>" rendered anywhere in the system resolves

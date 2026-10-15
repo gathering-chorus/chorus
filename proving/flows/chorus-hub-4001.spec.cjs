@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (chorus-hub-4001), live surface
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4001 — the /chorus front door, restructured to the canvas Jeff shaped on
  * 2026-08-23/24 and approved on 2026-08-25.

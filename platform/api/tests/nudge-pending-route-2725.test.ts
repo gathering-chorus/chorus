@@ -1,4 +1,5 @@
 // @test-type: unit — injected fake verifier + role lookup; fixture log; no live world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2725 AC1 — the /api/nudge/:role/pending handler: declared + ENFORCED,
  * role-lane scoped (Silas ruling 2026-08-23). Pure decision function tested

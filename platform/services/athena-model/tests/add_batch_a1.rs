@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! Phase A1 — entity-generic `add-batch` acceptance tests.
 //!
 //! These exercise the public library boundary with a hermetic Store and the

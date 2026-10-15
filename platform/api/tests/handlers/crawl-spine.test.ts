@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3088 — collectSpine now reads card.* events from Loki (async, the spine superset)
  * instead of a 4MB sync chorus.log tail + JSON.parse-per-line (the ~1s loop block).

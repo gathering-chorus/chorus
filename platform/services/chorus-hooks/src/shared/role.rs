@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3959 — THE role resolver. One place decides what a caller is called.
 //!
 //! Before this, 43 sites read the role and each invented its own default when it

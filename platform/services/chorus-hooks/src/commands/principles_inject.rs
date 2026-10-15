@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2450 — Live principles injection into SessionStart envelope.
 //!
 //! Boot fetches the canonical principle set (athena-make /v1/principles/principles, #4353), renders

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 // #3519 — THE WITNESS-GATED LAND verdict (integration test).
 //
 // demo() present-and-exits (ALWAYS exit 2, #3279/#3511) — it can never signal "proven"

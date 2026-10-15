@@ -1,4 +1,5 @@
 // @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+// @domain: products — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * #3361 — chorus UI pages moved home from gathering serve from chorus-api at
  * their ADR-041 value-stream homes (building/...). Hermetic: env points at a

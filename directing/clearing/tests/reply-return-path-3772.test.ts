@@ -1,4 +1,5 @@
 // @test-type: unit — router stub, fixture JSONL lines, env-tuned timers; no live sessions, brings its own world.
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // @card: #3772
 // @owner: wren
 /**

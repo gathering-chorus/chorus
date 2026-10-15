@@ -1,3 +1,5 @@
+# @test-type: bdd — inferred by chorus-crawl --classify (hermetic) (#4538)
+# @domain: memory — placed by chorus-crawl's domain rules (#4538)
 @seed @pipeline
 Feature: Seed pipeline
   Jeff sends a seed from his phone. It arrives, persists,

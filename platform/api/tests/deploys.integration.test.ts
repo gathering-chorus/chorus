@@ -1,4 +1,5 @@
 // @test-type: integration — hits the running API/store
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * Deploys domain graph tests — #1873
  *

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! athena-make CLI (#3350): generate | serve.
 //!
 //!   athena-make generate [--class Domain]            → prints routes.json (the artifact)

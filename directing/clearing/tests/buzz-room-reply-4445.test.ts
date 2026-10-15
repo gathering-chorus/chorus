@@ -1,4 +1,5 @@
 // @test-type: unit — notes are signed in-process with derived test keys; no relay, no tailer, no service.
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 // @card: #4445
 // @owner: wren
 /**

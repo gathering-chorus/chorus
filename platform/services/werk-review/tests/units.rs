@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Pure-helper unit tests (#3193 v2, RED first) — the CLI seam (three modes), the
 //! objective-floor checks (AC checkboxes, src-without-test, removed pub symbols),
 //! and the anti-ceremony verdict validation.

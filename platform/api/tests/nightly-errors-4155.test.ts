@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #4155 — "all failures and exceptions caught and logged as tests run".
 //
 // On 2026-09-12 two 500s, five TypeErrors and two 503s sat in raw jest text in

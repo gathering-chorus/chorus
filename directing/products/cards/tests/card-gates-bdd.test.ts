@@ -1,4 +1,5 @@
 // @test-type: integration — drives the real cards CLI and asserts the gate
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // refusals a human sees; gated behind RUN_INTEGRATION. Error paths only, so
 // no card is created.
 /**
@@ -12,6 +13,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const CLI = path.join(__dirname, '..', 'dist', 'cli.js');
+// #4538 — the CLI reads Vikunja settings before it validates arguments, so in a
+// werk (no .env) it died with "No .env file found" and these validation tests
+// went red for a machine reason. They get an obviously fake token and a dead
+// port, so the checks run without the box and can never reach the live board.
+const HERMETIC_ENV = {
+  ...process.env,
+  NODE_ENV: 'test',
+  VIKUNJA_TOKEN: ['fixture', 'cards', 'test', '4538'].join('-'),
+  VIKUNJA_URL: 'http://127.0.0.1:9',
+};
+
 const SDK_SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'sdk.ts'), 'utf-8');
 
 const cliExists = (() => {
@@ -24,7 +36,7 @@ function run(args: string): { stdout: string; stderr: string; exitCode: number }
     const stdout = execSync(`node ${CLI} ${args}`, {
       encoding: 'utf8',
       timeout: 15000,
-      env: { ...process.env, NODE_ENV: 'test' },
+      env: HERMETIC_ENV,
     });
     return { stdout, stderr: '', exitCode: 0 };
   } catch (e: any) {

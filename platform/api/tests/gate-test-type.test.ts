@@ -1,4 +1,5 @@
 // @test-type: unit — pure tests of the gate logic; the @test-type tokens below are FIXTURE INPUTS, not this file's declaration.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #3442 — test-type declaration gate.
 // A test DECLARES its type (// @test-type: X); the gate blocks a new/changed
 // test with NO declaration, or whose declaration CONTRADICTS its content

@@ -1,4 +1,5 @@
 // @test-type: unit:security — pure function over Origin strings; no server, no HTTP. The api/URL words are fixture-data (the origins under test), not an integration surface.
+// @domain: security — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2436 — the CORS allow-list must separate three states, not two.
  *

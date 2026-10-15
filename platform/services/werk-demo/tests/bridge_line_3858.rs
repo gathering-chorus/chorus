@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3858 — the room/phone announce is ONE LINE. Jeff decides go/no/more from a
 //! glance; the full cockpit stays the session reply. TDD red-first.
 

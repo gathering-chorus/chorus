@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — hermetic source guard
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # perf-baseline-chorus.test.sh — Verify Chorus perf baseline script
 # Card #1914 AC: covers 4 endpoints, thresholds, appends to nightly log

@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4517 — a create needs a Write row on the graph it lands in, checked before
 //! the body (Jeff 2026-10-13 07:55: "isnt that why we have permissions?").
 //! Measured on the live door 07:47: an invalid body from a refused caller got

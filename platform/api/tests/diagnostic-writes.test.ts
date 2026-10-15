@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 import { handleRcaCreate, handleTraceCreate } from '../src/diagnostic-writes';
 
 function fakeDbFactory() {

@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4001 — a page named after a product belongs to that product.
  *

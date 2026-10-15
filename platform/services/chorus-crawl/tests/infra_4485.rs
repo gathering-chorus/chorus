@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4485 — the infrastructure crawl: machines and their disks, measured on the
 //! machines themselves. The df fixtures are real output from Library and
 //! Bedroom (2026-10-11), so what is proven is what a pass reads.

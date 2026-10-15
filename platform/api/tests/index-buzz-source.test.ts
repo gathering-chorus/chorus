@@ -1,4 +1,5 @@
 // @test-type: unit — #3695 AC3: Buzz events (our self-hosted relay) enter the
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 // Chorus index with Principal attribution. Hermetic: fetchBuzz stubbed (the
 // graph-sources pattern) — no relay, no ssh, no live db. What Jeff sees:
 // a signed relay message is findable via chorus search, attributed to a

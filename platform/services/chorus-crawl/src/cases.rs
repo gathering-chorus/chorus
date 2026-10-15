@@ -1,3 +1,4 @@
+// @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! Test CASE rows (#4185) — the pure half.
 //!
 //! #4154 and #4173 said "test file" and the crawler was built to that word: it

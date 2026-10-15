@@ -1,4 +1,5 @@
 // @test-type: unit — pure function over fixture spine lines; no file, no service, brings its own world.
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4028 — role state is a function over the streams, nothing else.
  *

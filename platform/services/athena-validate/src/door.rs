@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! Does what the store holds survive the door?
 //!
 //! #4167. The check nothing has ever run, and the one that cost the most.

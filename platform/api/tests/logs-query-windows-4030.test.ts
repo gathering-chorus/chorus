@@ -1,4 +1,5 @@
 // @test-type: unit — injects fetch + clock; no Loki, brings its own world.
+// @domain: logs — placed by chorus-crawl's domain rules (#4538)
 // #4030 — every card/trace/branch log tool refuses a bad window before asking
 // Loki, with the same reason, so Jeff never sees an empty result for a typo.
 import { logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from '../src/handlers/logs-query';

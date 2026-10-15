@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (chorus-hub-4031), live surface
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4031 — one tile, one door. Every link that used to sit on a front-door tile
  * now lives on its product's page (or in The Model row, or in the Archive).

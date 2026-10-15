@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # test-demo.sh — BDD tests for /demo skill (#2875).
 #
 # Runs the cucumber feature file at platform/tests/features/skills/demo.feature

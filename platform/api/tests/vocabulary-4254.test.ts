@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over fixture SPARQL bindings; no service, no store, no network
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #4254 — the fold from SPARQL rows to the vocabulary page's view.
 //
 // The rows arrive one per OPTIONAL combination, so a concept with two

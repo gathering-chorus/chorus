@@ -1,3 +1,4 @@
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 //! Seam-auth SHARED PIECES: the error taxonomy, verified Claims, the zero-dep
 //! JWT parsing helpers, and the model-driven is_secured gate.
 //!

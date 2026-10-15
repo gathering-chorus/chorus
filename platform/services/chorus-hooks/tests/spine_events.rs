@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1846 + #1847 — Spine event tests for context cache failures and nudge acknowledgment
 //!
 //! #1846: session.context.error emitted when cache is empty/failed at boot

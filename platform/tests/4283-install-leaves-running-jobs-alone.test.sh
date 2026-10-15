@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: unit — the installer against a fake launchctl; no live agent is touched
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 # #4283 — chorus-bin-install must never boot out a job that is running or
 # running (and, since #4292, reloads an idle scheduled one). On 2026-09-23 14:07 it booted out com.chorus.nightly-suites
 # mid-run and the bootstrap back failed. Three fixtures, one fake launchctl

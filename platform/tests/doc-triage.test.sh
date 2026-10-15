@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: products — placed by chorus-crawl's domain rules (#4538)
 # Hermetic tests for doc-triage.sh (#2459).
 # Fixture: 10 unfiled docs exercising each rule branch + 1 override.
 set -uo pipefail

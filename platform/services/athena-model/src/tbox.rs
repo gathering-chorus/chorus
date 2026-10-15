@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3718 — the TBox half of the governed writer.
 //!
 //! `athena-model add` governs INSTANCES. Nothing governed the SCHEMA: classes,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 # #2481: hermetic shape test for .github/workflows/quality.yml.
 # Validates that the CI workflow exists, parses, and is wired to run the
 # lint-ratchet on PRs to main + pushes to main. The workflow's behavioral

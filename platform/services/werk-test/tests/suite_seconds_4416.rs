@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4416 — every nightly suite row carries how long the suite ran.
 //! Jeff, 2026-10-01: "we have run times for suites now?" — they did not.
 

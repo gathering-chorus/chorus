@@ -1,4 +1,5 @@
 // @test-type: unit — sendCardApprovalNudge with the pulse messaging API stubbed;
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // no live socket/session. Pure SDK-logic assertion on the delivered payload.
 /**
  * sendCardApprovalNudge — #2924 AC1.

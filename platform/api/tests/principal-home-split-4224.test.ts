@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4224 — Principals and Permissions do not share a home.
  *

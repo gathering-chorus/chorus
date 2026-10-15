@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #1805 — Wire missing spine events
  * Tests for: card.pulled emission, brief.handoff.acknowledged, schema completeness

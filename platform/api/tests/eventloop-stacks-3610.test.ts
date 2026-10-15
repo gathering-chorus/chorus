@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 // #3610 — blocked-at diagnostic mode: the AC needs the trace to NAME the exact
 // blocking call site, and timestamp correlation can't do that (today's three
 // windows were all confounded by machine-wide OOM thrash, and the scheduled-job

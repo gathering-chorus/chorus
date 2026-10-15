@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3670 — bounded tail reads for append-only logs.
 //!
 //! The 2026-07-23 jetsam: the daemon read the ENTIRE unrotated 1.7GB spine log

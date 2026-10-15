@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 // #4456 AC4 — the 2026-10-07 replay rows parse, one file per card, each with a
 // runnable check or a stated reason. Fixtures by repo path:
 //   platform/tests/fixtures/ac-1007/4446.tsv

@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 # C4 diagram HTML verification — #1991
 # Tests that Jeff can open the page and see all three C4 levels
 

@@ -1,3 +1,4 @@
+// @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 //! chorus-ops — Rust port of chorus-ops.sh (DEC-100)
 //!
 //! Subcommands:

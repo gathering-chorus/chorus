@@ -1,4 +1,5 @@
 // @test-type: unit — the router classifies in-process; no I/O, no fixtures on disk.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3823
 // @owner: wren
 /**

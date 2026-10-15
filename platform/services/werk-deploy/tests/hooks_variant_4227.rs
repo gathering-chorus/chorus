@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4227 — the demo's own chorus-hooks. Until this, a demo had never run one:
 //! every hook in a session talked to the single prod daemon, so a card that
 //! changed a guard, a gate or the write scrubber could not be shown working

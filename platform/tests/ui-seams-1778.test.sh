@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: integration:ui — needs-stack: asserts NAMED FOLDS of the Jeff-facing
+# @domain: board — picked by its owner, Kade, from the crawler's candidates (#4538)
 # pages' backing APIs render real values. Skip-if-absent when the stack is down.
 #
 # #1778 (pair kade+wren, 2026-08-20) — the assertion floor, as data:

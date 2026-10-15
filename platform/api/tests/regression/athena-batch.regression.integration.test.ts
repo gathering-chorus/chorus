@@ -1,5 +1,6 @@
 /**
  * @test-type: integration
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
  * #2208 — Data-driven regression for additional Athena GET handlers.
  *
  * Batches owners, blast-radius, machines, health through the same (steps retired #3702)

@@ -1,3 +1,4 @@
+// @domain: builds — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4491 — where the repo's Rust crates live, found by structure.
 //
 // A crate is a directory holding a Cargo.toml at one of three places:

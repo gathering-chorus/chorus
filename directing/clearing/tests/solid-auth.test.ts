@@ -1,4 +1,5 @@
 // @test-type: unit:security
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3669
 // @owner: wren
 // #4270 — was "security" alone, which is a CONCERN not a layer, so the gate read

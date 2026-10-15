@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: version-control — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-chorus-werk.sh — tests for chorus-werk ephemeral-worktree script (#2913).
 #
 # #2913 rewrite: chorus-werk moved from a persistent-per-role model

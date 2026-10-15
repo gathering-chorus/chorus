@@ -1,4 +1,5 @@
 // @test-type: unit — pure row mapping and a fake graph door; no Vikunja, no athena-make.
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 // @card: #3102
 // @owner: wren
 /**

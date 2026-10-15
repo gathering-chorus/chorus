@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — validates credential fixtures against the shipped CredentialShape with Jena shacl; no store, no network
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 #
 # #4344 — credentials are rows, never secrets. A row names where a credential is
 # held (the file), what kind it is and when it last changed. Each rule is shown

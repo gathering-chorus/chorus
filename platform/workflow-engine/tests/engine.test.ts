@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 import { WorkflowEngine } from '../src/engine';
 import { WorkflowEngineConfig } from '../src/types';
 import { rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';

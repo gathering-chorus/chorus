@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions over a fixture log string; no fs, no server
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //
 // #4009 — the page must distinguish a run that is WORKING from one that is
 // WEDGED. On 2026-08-25 both rendered as "PARTIAL", so a reader could not act:

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2059 — Post-build must detect Accessibility permission status.
 //!
 //! Bug: cargo build --release changes binary hash, macOS revokes

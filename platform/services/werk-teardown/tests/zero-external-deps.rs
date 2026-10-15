@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3431 guardrail (Silas, 2026-07-08): the werk-teardown path-dep must never
 //! become an external-dep backdoor. Every [dependencies] entry in this crate
 //! and in the sibling crates that take it as a path dep (werk-accept,

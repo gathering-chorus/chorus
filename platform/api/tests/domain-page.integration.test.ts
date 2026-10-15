@@ -1,4 +1,5 @@
 // @test-type: integration:api
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3420/#3351 — page-level smoke test for the GENERATED Athena domain page.
  * chorus-api serves the athena-make-emitted shell (public/domain.html) + its renderer

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4226 — the same check, against this machine's real launchd jobs.
 //!
 //! The fixtures beside this file were captured by hand and can drift from what

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #2560 — pre-commit invocations of cargo test inherit GIT_DIR/GIT_INDEX_FILE
 // from git's hook environment. file_has_git_history's spawned `git log`
 // then resolves against the wrong index and returns empty for files that

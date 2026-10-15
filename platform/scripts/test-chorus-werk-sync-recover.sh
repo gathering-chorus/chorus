@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-werk-sync-recover.sh — proving gate for #2909.
 #
 # Asserts chorus-werk-sync recover auto-stashes dirty files to

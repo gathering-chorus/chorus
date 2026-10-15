@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! The six checks carried over from the bash sweep.
 //!
 //! #4167 AC2. Ran both against the same live graph on 2026-09-19 17:49 and

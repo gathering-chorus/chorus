@@ -1,4 +1,5 @@
 // @test-type: unit — TilePoller with global fetch stubbed; no live board API
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #2261
 // @owner: wren
 /**

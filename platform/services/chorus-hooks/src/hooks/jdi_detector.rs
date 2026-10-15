@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! JDI/JFDI detector — instruments Jeff's bias-to-action signals.
 //!
 //! Detects "jdi", "jfdi", "just do it" in Jeff's prompt text and emits

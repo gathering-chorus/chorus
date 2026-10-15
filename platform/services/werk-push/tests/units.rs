@@ -1,3 +1,4 @@
+// @domain: cicd — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! Pure-helper unit tests (RED first) — the verb-contract helpers werk-push shares
 //! with the blueprint: branch/card handling + the jsonl witness line shape, plus the
 //! #3163 spine helpers (resolve_trace inheritance + the chorus-log args contract).

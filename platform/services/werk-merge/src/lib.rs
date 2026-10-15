@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! werk-merge — `/werk/merge` v2 logic (atomic PR open+merge verb, #3175).
 //!
 //! Self-contained: std only + a direct libc `flock` extern; calls `git` and `gh`

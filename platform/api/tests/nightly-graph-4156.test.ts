@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4156 — the nightly page and the morning readout render from the graph rows
 // the run wrote, not from the log. Jeff's spec line (2026-09-12): "summary
 // reporting provided from logs and/or graph".

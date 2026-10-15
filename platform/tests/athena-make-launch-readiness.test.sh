@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 # athena-make-launch-readiness.test.sh — #3446 AC1 (red-first, DEC-1674)
 #
 # The athena-make launcher must WAIT for Fuseki to be ready before exec'ing athena-make,

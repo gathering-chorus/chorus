@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 // #3051 — /search must never drop to a `content LIKE '%q%'` full scan over 1.26M
 // rows (synchronous, ~3.6s, freezes the spine). The cause was FTS5 MATCH throwing
 // on special chars, falling back to LIKE. toFtsMatchQuery quote-wraps each token

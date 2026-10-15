@@ -1,4 +1,5 @@
 // @test-type: unit — signal is fixture-data: pure counter, no io, no room
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3851
 // @owner: wren
 //

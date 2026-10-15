@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: integration — needs-stack lite: reads the spine + git only
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 #
 # #3939 AC4 — the month-old-binary DETECTOR: for every installed werk verb,
 # find its last binary.deployed commit and ask git whether that verb's SOURCE

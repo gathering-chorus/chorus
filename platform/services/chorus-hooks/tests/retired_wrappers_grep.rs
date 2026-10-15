@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2311 rescope AC#6/#7 — Wrapper retirement grep.
 //!
 //! The shell wrappers `session-start.sh` and `chorus-prompt.sh` are

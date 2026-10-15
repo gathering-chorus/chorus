@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # #2532 AC5 — verification: prove `jest --randomize` surfaces order-dependent
 # tests. Builds a hermetic 2-test fixture where test B depends on a module
 # global mutated by test A. Without randomization the file order (A then B)

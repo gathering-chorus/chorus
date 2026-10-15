@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4339 — only Jeff's keystrokes may speak as Jeff.
 //!
 //! A nudge used to be typed into a role's pane in full, told apart from Jeff

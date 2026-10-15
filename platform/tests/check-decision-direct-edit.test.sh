@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # Hermetic tests for check-decision-direct-edit.sh (#2485 Move 5).
 set -uo pipefail
 

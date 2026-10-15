@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #2876 + #3267: cards now emits spine events via the `chorus-log` subprocess
 // (not the removed chorus-sdk). The card_id-coercion behavior is tested against
 // the pure `spineArgs` builder (the chorus-log argv) instead of a mocked emit.

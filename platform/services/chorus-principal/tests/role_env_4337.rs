@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4337 — a role's process must carry its own role. Kade ran as Wren on
 //! 2026-09-26 because his session lived in a daemon spare started from her pane.
 use chorus_principal::rows::env_value;

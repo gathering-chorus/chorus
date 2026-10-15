@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 use crate::{contract::*, Result};
 use serde_json::{json, Value};
 use std::{

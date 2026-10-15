@@ -1,4 +1,5 @@
 // @test-type: unit — signal:integration is fixture-data (deriveTestType test inputs; fs/sparql are mocked).
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 import { createDiscoverTests, deriveTestType, inferDomain, loadAliasMap } from '../src/discover-tests';
 
 const FAKE_PATH = {

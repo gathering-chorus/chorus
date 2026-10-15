@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #3089 to #3096 unit tests — request-op middleware: ALS-bound op, async-resume-safe.
 // The op set by the middleware lives in an AsyncLocalStorage run-block, NOT in a
 // module-level slot. Two consequences these tests pin down:

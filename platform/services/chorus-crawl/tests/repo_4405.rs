@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4405 — the code herald pointed at more than one repository. Jeff,
 //! 2026-10-12: "imagine a use case where we pointed crawler at my other gh
 //! projects". Before this, a unit's row had no repository: crawling a second

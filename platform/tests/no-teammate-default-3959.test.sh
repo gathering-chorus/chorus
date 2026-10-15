@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: fitness
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # no-teammate-default-guard: exempt — this check must contain the names it hunts.
 #
 # #3959 — a role default may never be a TEAMMATE'S NAME.

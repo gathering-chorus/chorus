@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: principles — placed by chorus-crawl's domain rules (#4538)
 # #3749 — the three-state proof that /principles serves the RIGHT graph, not
 # just "serves" (pair design, Wren+Kade 2026-08-05). RUN_INTEGRATION=true to
 # run against the live store + athena-make (the vocab-claim-authority.bats pattern:

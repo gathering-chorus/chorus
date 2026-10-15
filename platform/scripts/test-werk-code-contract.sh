@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-werk-code-contract.sh — guard for #3677: the werk-code contract check
 # can actually distinguish the states it exists to separate (#3734). Each
 # violation class is PLANTED in a fixture inventory and shown RED; the real

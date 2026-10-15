@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3191 AC6/AC7/AC8 — context-inject RELEVANCE half.
 //!
 //! Bug: `extract_keywords` ranks survivors by WORD LENGTH and `search_query` ANDs the

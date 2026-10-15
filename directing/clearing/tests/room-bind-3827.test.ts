@@ -1,4 +1,5 @@
 // @test-type: unit — calls the pure bind decision directly; no server, no relay, no pod.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3827
 // @owner: wren
 /**

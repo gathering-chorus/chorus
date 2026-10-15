@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # alert-nudge.test.sh — Test that alert-runner nudges the owning role on fire
 # Card #2037 AC #1, #2
 # New file — no prior history.

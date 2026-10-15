@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # test-alert-checks.sh — #2861 verification, re-pointed by #4197.
 # @test-type: unit — hermetic: fixture logs through the CRAWL_LOG / CHORUS_ROOT
+# @domain: code — placed by chorus-crawl's domain rules (#4538)
 # seams; no store, no nudge.
 #
 # The alert-runner's EXACT extraction + execution contract, applied to the two

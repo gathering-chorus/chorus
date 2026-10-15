@@ -1,4 +1,5 @@
 // @test-type: integration — NEGATIVE PROOF (#3734) that a retired catch-all writer answers 410; starts the in-process app, writes nothing
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * #4187 — NEGATIVE PROOF that the two discovery writers are RETIRED.
  *

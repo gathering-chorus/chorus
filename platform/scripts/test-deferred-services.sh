@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: monitors — placed by chorus-crawl's domain rules (#4538)
 # Negative proofs for the deferred-services tier in deep-health.sh (#3820 / #3734).
 # bash-3.2 safe (no assoc arrays) — mirrors deep-health.sh's deferred_reason + classify.
 set -u

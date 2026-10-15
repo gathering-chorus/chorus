@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * trace-integration-callstack.test.ts — Integration call stack tracing
  * Card #2100 AC: nudges, board events, bridge carry correlation + hops

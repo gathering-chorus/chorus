@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4422 reopen — the machine walks the crawls run, judged at their boundary:
 //! the stores walk's shell line is RUN (sh, a temp HOME, no network, no store)
 //! and its output parsed; Bedroom's ssh walk is parsed from text shaped as

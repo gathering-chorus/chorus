@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4338 — a land fails when it takes away what was served before it. On
 //! 2026-10-02 15:51 the serve step checked /health only, so athena-make came back
 //! with 12 fewer Domains and their classes' routes, and the land read as served.

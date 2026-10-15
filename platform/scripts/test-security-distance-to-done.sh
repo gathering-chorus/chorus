@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: security — picked by its owner, Kade, from the crawler's candidates (#4538)
 # #3716 — the ledger must MEASURE, and a failed measurement must say unknown.
 #
 # Every number the ledger emits is either computed from the live system/code or

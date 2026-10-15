@@ -1,4 +1,5 @@
 // @test-type: integration:api — in-process TestApp harness
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * Hooks summary endpoint + static page — #2099
  *

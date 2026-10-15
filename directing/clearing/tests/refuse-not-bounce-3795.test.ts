@@ -1,4 +1,5 @@
 // @test-type: unit:security — drives the real gate over HTTP in-process and runs the real verifier; temp key, stub allow-set store, no live guard.
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // @card: #3795
 // @owner: wren
 /**

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #4184 — the decision core, unit-tested with fixtures. The bats suite drives the
 // built binary with stub claude/tmux/ps for the integration proofs.
 use chorus_principal::{transcript_is_poisoned, tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};

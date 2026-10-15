@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-hydration-schema-validator.sh — #2827 §A: validate-hydration-schema.sh
 # correctly accepts a clean schema and refuses violations with named reasons.
 #

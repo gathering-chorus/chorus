@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3863 — the effective-config chain is the node's OWN ancestry.
 //!
 //! Prior work: `decide_effective_value` (properties-resolver) already walks a

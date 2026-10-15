@@ -1,3 +1,4 @@
+// @domain: properties — placed by chorus-crawl's domain rules (#4538)
 //! #3437 — the bin is a thin self-check/smoke over the lib. Red-first (DEC-1674):
 //! the binary must run the cascade over a known fixture and report PASS, so a
 //! deployed copy is provably runnable (not a no-op ceremony binary).

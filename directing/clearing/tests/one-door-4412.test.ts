@@ -1,4 +1,5 @@
 // @test-type: unit:security — drives the real gate over HTTP in-process; temp guard key, stub allow-set store, no live guard or identity server.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4412
 // @owner: wren
 /**

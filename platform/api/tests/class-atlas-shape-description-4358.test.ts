@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over captured bindings; no store, brings its own world.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4358 — Jeff's atlas screenshot, 2026-10-08 08:52: Principle "4/7 defined";
 // label, comment and order read "no definition — rdfs:comment missing". Their
 // shape describes each one (sh:description), but the atlas only read the

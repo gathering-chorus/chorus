@@ -1,4 +1,5 @@
 // @test-type: unit — parses fixed cards-list text; no board, no network
+// @domain: board — placed by chorus-crawl's domain rules (#4538)
 import { parseCardsListOutput, createBoardCache, CachedCard } from '../src/board-cache';
 
 describe('parseCardsListOutput', () => {

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2301: Role settings.json files export DEPLOY_ROLE for each role session.
 //!
 //! Behavior: when Claude Code starts in roles/<role>/, it reads

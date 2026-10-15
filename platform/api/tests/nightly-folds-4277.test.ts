@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4277 — /nightly reads as the current run: one banner, suites folded by test
 // type in the order the run executed them, status folds inside, reds open with
 // their failing cases, history last. Hermetic: renderer + pure helpers; the

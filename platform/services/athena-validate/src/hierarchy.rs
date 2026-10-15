@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4481 — the model rule, swept over what is already in the store.
 //!
 //! Jeff, 2026-10-10, reviewed with Wren: each row stores ONE parent link

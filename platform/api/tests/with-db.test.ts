@@ -1,4 +1,5 @@
 // @test-type: unit — constructed fakeRes/fakeDb fixtures, no live services
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 import { createWithDb } from '../src/with-db';
 import { DbNotFoundError } from '../src/server-helpers';
 

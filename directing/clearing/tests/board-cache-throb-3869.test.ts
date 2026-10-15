@@ -1,4 +1,5 @@
 // @test-type: unit — pure merge over cache inputs, no io.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3869
 // @owner: wren
 /**

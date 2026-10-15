@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4152 — the three nightly reds of 2026-09-12, each with its negative proof.
 use std::process::Command;
 use std::time::{Duration, Instant};

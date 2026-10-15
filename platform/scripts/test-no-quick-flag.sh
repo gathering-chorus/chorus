@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-no-quick-flag.sh — regression guard for #3293.
 #
 # #3293 removed the `--quick`/`-q` escape hatch from `cards add`: every card now

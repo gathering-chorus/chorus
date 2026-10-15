@@ -1,5 +1,6 @@
 /**
  * @test-type: unit — signal:integration is the fs/tmpdir use, and the only I/O
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
  * here is a spine fixture this test writes into its own mkdtemp directory and
  * deletes again. No service, no live store, no port. It runs green on a box
  * with the whole stack down.

@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! #4465 — chorus-make's graph read, run with Jena's `sparql` against a fixture
 //! graph shaped like the store (steps in the pipelines graph, skills in the
 //! skills graph). Until the Skill shape lands, this is the only place the real

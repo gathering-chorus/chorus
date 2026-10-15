@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2311 rescope — SessionStart emits additionalContext JSON directly,
 //! no "please read /tmp/session-start-<role>.md" prose step. Context lands
 //! in model view via the existing Claude Code SessionStart primitive.

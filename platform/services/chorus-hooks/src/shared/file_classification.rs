@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Unified file classification for chorus-hooks (#2076).
 //! Replaces 4 separate is_code_file() definitions across hooks.
 

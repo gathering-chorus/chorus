@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4419 reopened — a changed file's domains come from the tests that exercise
 //! it, not from what its own text mentions; the card runs those tests. Jeff, 2026-10-06: "tagging the file
 //! is the wrong spot … we are tagging the suites or cases". The three cases

@@ -1,4 +1,5 @@
 // @test-type: unit — temp-dir fixtures + fake req/res; no live service, brings its own world.
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 // #4030 — the doc-catalog HTTP wrappers and the artifact classifier. Jeff's
 // experience under test: the catalog page groups a doc by what it IS (service
 // design, decision, ADR, ontology, manual, product, process…) from its title

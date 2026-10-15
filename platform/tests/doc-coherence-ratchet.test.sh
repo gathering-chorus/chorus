@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: deploys — placed by chorus-crawl's domain rules (#4538)
 # Ratchet test for doc coherence (#2461).
 # Runs doc-coherence.sh against the real inventory and fails if metrics
 # regress beyond baseline thresholds. Same pattern as #2462/#2464 lint ratchet:

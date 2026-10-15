@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: fitness
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 #
 # #3561 — a LaunchAgent's ProgramArguments must point at something a deploy path
 # actually writes.

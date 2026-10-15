@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: fitness — walks the Clearing and pulse test files; no live services
+# @domain: messages — placed by chorus-crawl's domain rules (#4538)
 # @card: #4417
 # @owner: wren
 #

@@ -1,4 +1,5 @@
 // @test-type: unit — the fs signal is the FileEpisodeGate's own tempdir state; no service, no network, no live surface
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #3742 — one freeze must read as ONE incident.
 //
 // Two detectors watch the same loop (#3082): an external probe and the

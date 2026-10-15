@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #3920 — /nightly: the rendered viewing surface for the nightly run.
 // Jeff's bar: he opens ONE page and sees whether the night was green — never
 // a list of CLI steps. Hermetic: the parser/renderer are pure; the fixture is

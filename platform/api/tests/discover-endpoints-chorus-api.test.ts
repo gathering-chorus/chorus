@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions on fixtures; no live services
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * #2485 Move 8 — chorus-api route scanner for discover-endpoints.
  */

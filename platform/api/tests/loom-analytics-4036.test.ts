@@ -1,4 +1,5 @@
 // @test-type: unit — hermetic: computeLoomAnalytics on fixture rows, no DB
+// @domain: analytics — placed by chorus-crawl's domain rules (#4538)
 // #4036 — the migrated #2116 instrument. The negative proofs matter: a done
 // card OUTSIDE the range must not count (range filter real), and an unowned
 // done card must not mint a role row (no phantom roles).

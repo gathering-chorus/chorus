@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Batch wire-back against a REAL HTTP door (hermetic stub): an expired token
 //! re-mints once and retries the same atomic chunk; a token the door still
 //! refuses fails every entity in that chunk loudly.

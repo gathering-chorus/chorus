@@ -1,4 +1,5 @@
 // @test-type: unit — signal:security is the subject under test (the auth gate), pure functions, no live server
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3485
 // @owner: wren
 // #3485 — AC4: POST /api/nudge accepts only the MCP server, authenticated by a

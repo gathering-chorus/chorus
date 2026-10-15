@@ -1,4 +1,5 @@
 // @test-type: unit — parses repo-committed markdown + tmp fixtures; no Fuseki (apply path untested by design).
+// @domain: integrations — placed by chorus-crawl's domain rules (#4538)
 import {
   parseDecisions,
   parseAdrFromString,

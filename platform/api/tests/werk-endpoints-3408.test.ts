@@ -1,4 +1,5 @@
 // @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3408 — re-live the moved /werk cockpit. Its client JS fetches /api/werk/schema
  * (+ /api/werk/activity, /api/loom-metrics) which 404'd on chorus-api after the

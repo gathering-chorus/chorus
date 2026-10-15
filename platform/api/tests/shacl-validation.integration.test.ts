@@ -1,5 +1,6 @@
 /**
  * @test-type: integration:api
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
  *
  * SHACL validation tests — #2014
  *

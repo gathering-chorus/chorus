@@ -1,4 +1,5 @@
 // @test-type: integration — supertest over createApp(); in-memory store, no live pulse (signal:security is the auth-gate subject)
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4004
 // @owner: wren
 //

@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: security — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3618 — the surface-table emitter (hermetic tier).
  *

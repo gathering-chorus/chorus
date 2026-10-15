@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! #4201 AC3 and AC4 — the two negative proofs, run against fixture FILES on
 //! disk rather than string literals, so what is proven is what a pass reads.
 //!

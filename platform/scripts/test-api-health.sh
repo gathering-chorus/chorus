@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: monitors — placed by chorus-crawl's domain rules (#4538)
 # test-api-health.sh — Tests for /api/chorus/health endpoints (#2011, #1978)
 # After #1978: /health is liveness (status, uptime, timestamp) — no expensive queries.
 # Deep fields (db, vectors, hooks) moved to /health/detail.

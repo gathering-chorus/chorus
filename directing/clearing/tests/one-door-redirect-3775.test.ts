@@ -1,4 +1,5 @@
 // @test-type: unit — drives the in-process Clearing over HTTP with a stub allow-set store and a temp guard key; brings its own world.
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // @card: #3775
 // @owner: wren
 /**

@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3086 — characterization test for the shared FTS query (lib/fts-query).
  * Locks today's FTS output + ordering so the worker_threads offload (which imports

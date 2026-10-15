@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! Running a check against the live store.
 //!
 //! #4167. curl is a subprocess, never a code dependency (ADR-032 §1), same as

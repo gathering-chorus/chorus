@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4453 — a long cargo unit shows its count while it runs. Jeff, 2026-10-10
 //! 20:20 (#4235 run 4): chorus-hooks ran 15 minutes with no count visible.
 use werk_test::CargoProgress;

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4423 — data staging. Write-Audit-Publish for the model graphs.
 //!
 //! Jeff, 2026-10-03: "a place ... where we can tear into our model aggressively and

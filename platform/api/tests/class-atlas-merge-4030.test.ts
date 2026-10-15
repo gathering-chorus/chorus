@@ -1,4 +1,5 @@
 // @test-type: unit — pure function over fixture bindings; brings its own world.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4030 — Class Atlas row merging (#3992). Jeff's experience under test: a
 // property that SPARQL returns on several OPTIONAL rows shows once; an inverse
 // path is shown and labelled rather than dropped; rows without a property still

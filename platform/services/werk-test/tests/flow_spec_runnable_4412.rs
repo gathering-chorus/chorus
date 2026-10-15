@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4412 run 13 — a changed browser flow spec under proving/flows/ was refused
 //! as "a test the pipeline has no runner for", though the UI lane runs that
 //! folder (ui_lane_fires counts proving/flows/, playwright.config testDir).

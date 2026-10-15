@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: board — placed by chorus-crawl's domain rules (#4538)
 /**
  * context-board-wip handler tests (#2234 Step 3).
  */

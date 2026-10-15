@@ -937,14 +937,37 @@ pub fn declared_domain(content: &str) -> Option<String> {
 
 /// #4334 — the bats suites with no `@domain:` header: the validate names them,
 /// so a new suite can never quietly land under `tests` again.
-pub fn undeclared_bats(files: &[String], read: &dyn Fn(&str) -> Option<String>) -> (usize, Vec<String>) {
-    let bats: Vec<&String> = files.iter().filter(|f| f.ends_with(".bats")).collect();
-    let missing = bats
-        .iter()
-        .filter(|f| read(f).map(|c| declared_domain(&c).is_none()).unwrap_or(true))
-        .map(|f| f.to_string())
-        .collect();
-    (bats.len(), missing)
+/// #4538 — every test file, not only bats (864 of 1,223 had none on 10-15),
+/// and a header must name a domain the store lists: `@domain: nowhere` is
+/// named as unknown, never counted as declared.
+/// Returns (test files, files with no header, files whose header names an unknown domain).
+/// #4538 — a JS/TS test whose package does not run jest (or that sits in no
+/// package) has no runner in the pipeline: werk-test refuses a change to it.
+/// Such a file is named "no runner", one entry per file, never counted as
+/// declared or as missing. `package_test_script` gives the "test" script of
+/// the nearest package.json above the file, or None when there is none.
+pub fn has_no_runner(f: &str, package_test_script: &dyn Fn(&str) -> Option<String>) -> bool {
+    let js = [".test.js", ".test.ts", ".test.tsx", ".test.cjs", ".spec.js", ".spec.ts", ".spec.cjs"];
+    if !js.iter().any(|e| f.ends_with(e)) {
+        return false;
+    }
+    !package_test_script(f).map(|s| s.contains("jest")).unwrap_or(false)
+}
+
+pub fn undeclared_tests(files: &[String], read: &dyn Fn(&str) -> Option<String>, valid: &[String]) -> (usize, Vec<String>, Vec<String>) {
+    let mut missing = Vec::new();
+    let mut unknown = Vec::new();
+    // fixture DATA (a test's input, under a fixtures/ dir) is not a test: a
+    // "no-headers" fixture must stay header-less or its test means nothing
+    let files: Vec<&String> = files.iter().filter(|f| !f.contains("/fixtures/")).collect();
+    for f in &files {
+        match read(f).as_deref().and_then(declared_domain) {
+            None => missing.push(f.to_string()),
+            Some(d) if !valid.iter().any(|v| v == &d) => unknown.push(format!("{f} ({d})")),
+            Some(_) => {}
+        }
+    }
+    (files.len(), missing, unknown)
 }
 
 pub fn place_in_file(
@@ -1154,16 +1177,47 @@ mod declared_domain_4334 {
     }
 
     #[test]
-    fn the_validate_names_every_bats_suite_without_a_header() {
-        let files: Vec<String> = ["a.bats", "b.bats", "c.sh"].iter().map(|s| s.to_string()).collect();
+    fn the_validate_names_every_test_file_without_a_header() {
+        // #4538 — every test file counts, not only .bats
+        let files: Vec<String> = ["a.bats", "b.bats", "c.test.ts", "d.rs"].iter().map(|s| s.to_string()).collect();
         let read = |f: &str| match f {
             "a.bats" => Some("# @domain: cicd\n".to_string()),
-            "b.bats" => Some("# nothing here\n".to_string()),
-            _ => Some(String::new()),
+            "d.rs" => Some("// @domain: cicd\n#[test] fn t() {}\n".to_string()),
+            _ => Some("# nothing here\n".to_string()),
         };
-        let (n, missing) = undeclared_bats(&files, &read);
-        assert_eq!(n, 2, "only .bats files count");
-        assert_eq!(missing, vec!["b.bats".to_string()]);
+        let (n, missing, unknown) = undeclared_tests(&files, &read, &["cicd".to_string()]);
+        assert_eq!(n, 4);
+        let with_fixture: Vec<String> = ["a.bats", "t/fixtures/no-headers.test.ts"].iter().map(|s| s.to_string()).collect();
+        let (n, missing_f, _) = undeclared_tests(&with_fixture, &read, &["cicd".to_string()]);
+        assert_eq!((n, missing_f.len()), (1, 0), "fixture data is not a test file");
+        assert_eq!(missing, vec!["b.bats".to_string(), "c.test.ts".to_string()]);
+        assert!(unknown.is_empty());
+    }
+
+    /// #4538 — node --test and package-less tests have no runner; jest ones do.
+    /// NEGATIVE PROOF: a jest package's test is NOT named no-runner.
+    #[test]
+    fn a_test_whose_package_runs_no_jest_has_no_runner() {
+        let script = |f: &str| match f {
+            f if f.starts_with("apps/player/") => Some("node --test test/".to_string()),
+            f if f.starts_with("cards/") => Some("jest".to_string()),
+            _ => None,
+        };
+        assert!(has_no_runner("apps/player/test/a.test.js", &script));
+        assert!(has_no_runner("roles/x/docs/b.test.ts", &script));
+        assert!(!has_no_runner("cards/tests/c.test.ts", &script), "a jest package's test has a runner");
+        assert!(!has_no_runner("platform/tests/d.bats", &script), "bats is not a js test");
+    }
+
+    /// NEGATIVE PROOF (#4538) — a header naming a domain the store does not
+    /// list is not a declaration: it is named, so the guard goes red.
+    #[test]
+    fn a_header_naming_an_unlisted_domain_is_named_not_counted() {
+        let files = vec!["x.bats".to_string()];
+        let read = |_: &str| Some("# @domain: nowhere\n".to_string());
+        let (_, missing, unknown) = undeclared_tests(&files, &read, &["cicd".to_string()]);
+        assert!(missing.is_empty());
+        assert_eq!(unknown, vec!["x.bats (nowhere)".to_string()]);
     }
 
     /// NEGATIVE PROOF — without the header, the same file is placed by the

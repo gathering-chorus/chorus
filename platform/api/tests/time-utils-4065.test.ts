@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: time — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4065 — the spine has ONE clock (#3880 / ADR-058): offset-ISO on the Boston
 // clock. bostonNow() is a naive display label; the spine-event route wrote it
 // to ~/.chorus/chorus.log and every seed.received line failed the

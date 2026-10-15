@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 # Test: SPARQL prefix lint — #1909 AC item 1
 # Verifies that sparql-prefix-lint.sh catches undeclared prefixes and passes clean files.
 set -euo pipefail

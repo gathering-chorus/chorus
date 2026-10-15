@@ -1,3 +1,4 @@
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #4499 reopen — `chorus-crawl code` as the land runs it, against a door that
 //! is not there (127.0.0.1:9 refuses at once), so nothing can be written
 //! anywhere. A dry run still reads the repo's build files and says what it

@@ -1,4 +1,5 @@
 // @test-type: unit — injects pulse + sparql stubs; no Fuseki, no live service, brings its own world.
+// @domain: board — placed by chorus-crawl's domain rules (#4538)
 // #4030 — GET /api/chorus/context/board/swat (#2261). Jeff's experience under
 // test: "what is in the SWAT lane right now" answers from the pulse snapshot,
 // per role when asked, smallest card first, and says so honestly when there is

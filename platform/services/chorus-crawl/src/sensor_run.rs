@@ -1,3 +1,4 @@
+// @domain: services — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #4405 reopen 4 — a sensor pass as a record (Jeff, 2026-10-12: "make sure
 //! our runner is properly aligned integrated and visible as a sensor"). Each
 //! pass already prints one tally line; this reads it back into the counts a

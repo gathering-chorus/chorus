@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #3580 — gate:quality dispatches checks by domain, consuming the generated
 // tests-domain API (:3360/tests, landed #2819). These tests cover the PURE
 // selection core: given a domain + a stubbed /tests response, the correct

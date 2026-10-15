@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! chorus-principal — create a USER everywhere, or nowhere.
 //!
 //! Jeff, 2026-08-11: "we need a user provisioning automation — we cant keep

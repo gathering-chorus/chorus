@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! athena-model CLI — the governed writer's command surface (#3257).
 //!
 //!   athena-model add --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]

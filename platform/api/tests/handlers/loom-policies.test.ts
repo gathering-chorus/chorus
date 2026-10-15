@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: policies — placed by chorus-crawl's domain rules (#4538)
 /**
  * loom-policies handler — unit tests (#2339).
  */

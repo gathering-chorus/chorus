@@ -1,4 +1,5 @@
 // @test-type: integration:api — in-process TestApp harness
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 /**
  * Session Replay endpoints + page — #2099
  *

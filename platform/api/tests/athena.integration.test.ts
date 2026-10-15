@@ -1,4 +1,5 @@
 // @test-type: integration:api — reads the live chorus-api door (RUN_INTEGRATION=true); no writes (#4142)
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 import { withServiceAuth } from './lib/service-token';
 // #3619 — secured surfaces are envelope-gated; this suite is a real consumer
 // and carries a scoped token. #4142 — the suite READS the live door only:

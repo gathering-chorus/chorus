@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #3048 — context_inject must push live search + Loki context every prompt,
 // and must NEVER drop it silently. This guards the three failure modes we hit:
 //   1. per-call request timeouts (search/athena/Loki) — fail-open to empty

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 # Hermetic tests for doc-coherence.sh (#2461).
 # Fixture: inventory TSV with 1 content-dup, 1 basename-dup, 1 clean — coherence reports both.
 set -uo pipefail

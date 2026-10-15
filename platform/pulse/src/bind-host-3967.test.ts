@@ -1,4 +1,5 @@
 // @test-type: unit — pure env resolution; no port opened, no io.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3967
 // @owner: wren
 /**

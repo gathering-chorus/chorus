@@ -1,4 +1,5 @@
 // @test-type: integration — in-process listener on an ephemeral port, tempdir fixtures,
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3606
 // @owner: wren
 // network-touching seams (CSS token exchange, allow-set) mocked. Brings its own world.

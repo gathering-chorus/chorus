@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3373: pages ride beside their generated APIs — every response carries
 //! CORS so a localhost-served page (chorus-api :3340) can read the
 //! localhost-BOUND generated API (:3360) cross-origin. The listener binds

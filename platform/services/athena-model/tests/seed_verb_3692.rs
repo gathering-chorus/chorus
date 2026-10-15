@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3692 — the `seed` verb: bulk TTL ingest, the 5th DAL verb. Red-first
 //! (DEC-1674) against Silas's design shape (2026-07-25):
 //!   - seed takes PRE-MINTED IRIs from the TTL and PRESERVES them (add mints;
