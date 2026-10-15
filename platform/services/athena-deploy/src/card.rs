@@ -183,13 +183,24 @@ pub fn served_check_live(api: &str, classes: &[String]) -> Result<Vec<String>, V
     served_check(&disco, classes, &|route: &str| get_answers(&format!("{api}{route}")))
 }
 
+/// #4531 — the local names of the classes in these triples that a route should
+/// serve: every declared class except shape classes (ToolInput), whose instances
+/// are SHACL shapes. Pure.
+pub fn served_classes(nt: &str) -> Vec<String> {
+    let shapes = card_scope::shape_classes(nt);
+    card_scope::declared_classes(nt)
+        .into_iter()
+        .filter(|c| !shapes.contains(c))
+        .map(|c| card_scope::local_name(&c))
+        .collect()
+}
+
 /// The local names of the classes the card's TTL files declare (through riot).
 pub fn card_classes(card: &Card) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
     for f in card.ttl() {
         let nt = card_scope::ntriples(&[card.abs(&f)]).map_err(|e| format!("card #{}: {f}: {e}", card.card))?;
-        for c in card_scope::declared_classes(&nt) {
-            let n = card_scope::local_name(&c);
+        for n in served_classes(&nt) {
             if !out.contains(&n) {
                 out.push(n);
             }

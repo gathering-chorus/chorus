@@ -16,7 +16,10 @@ fn a_worker_hands_off_its_post_and_moves_on() {
     for i in 0..3 {
         tx.send(PostJob { unit: format!("u{i}"), payload: i, expected: 2 }).unwrap();
     }
-    assert!(t.elapsed() < Duration::from_millis(50), "three hand-offs took {:?} — the worker waited on the post", t.elapsed());
+    // #4531 — a wall-clock limit measures the box, so it runs in the nightly only.
+    if werk_test::timing_checks_on() {
+        assert!(t.elapsed() < Duration::from_millis(50), "three hand-offs took {:?} — the worker waited on the post", t.elapsed());
+    }
     drop(tx);
     assert_eq!(poster.join().unwrap(), 6, "every queued post lands before the run counts");
 }

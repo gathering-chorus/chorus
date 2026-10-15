@@ -42,7 +42,7 @@ If args are ambiguous, surface the inferred values to Jeff in a one-line preview
 
 ## Step 1: File the card
 
-Invoke the dedicated MCP tool `clearing-card-jeff`. The tool spawns `cards add` with `DEPLOY_ROLE=jeff` hardcoded in env — bouncer's `requireJeffApprovalIfAgent` returns immediately (`isAgent` is false), card lands directly. No marker, no freshness window, no detector. (#3293 removed `--quick`: even a Jeff card must carry the Experience+AC floor — supply a `desc` with a `## Experience` line and an AC checklist, one line each for housekeeping cards. The six articulated sections remain agent-only.)
+Invoke the dedicated MCP tool `clearing-card-jeff`. The tool runs `cards add` as Jeff for any verified caller (runsAs owner-any-caller, owner jeff; #4531) — bouncer's `requireJeffApprovalIfAgent` returns immediately (`isAgent` is false), card lands directly. No marker, no freshness window, no detector. (#3293 removed `--quick`: even a Jeff card must carry the Experience+AC floor — supply a `desc` with a `## Experience` line and an AC checklist, one line each for housekeeping cards. The six articulated sections remain agent-only.)
 
 ```
 mcp__chorus-api__clearing-card-jeff({
@@ -52,8 +52,8 @@ mcp__chorus-api__clearing-card-jeff({
   domain: DOMAIN,
   type: TYPE,
   origin: ORIGIN,
+  desc: DESC,                // ## Experience line + an AC checklist (#3293)
   sequence: SEQUENCE,        // optional
-  subproduct: SUBPRODUCT,    // optional
 })
 ```
 

@@ -113,6 +113,10 @@ fn run(args: &[String]) -> Result<i32, String> {
         return Ok(scope_of(&args[1..]));
     }
     if args.iter().any(|a| a == "--nightly") {
+        // #4531 — every suite this run spawns learns its lane. Timing checks
+        // run in the nightly only (Jeff 2026-10-14: "we must not run perf tests
+        // in demo"); WERK_TEST_NIGHTLY cannot say that, it is set in both lanes.
+        std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
         // read-only modes first (--last-run / --load-gate / --lock-probe): they
         // must never fall through to a real run (a test's --lock-probe did, 19:30)
         if let Some(r) = nightly_all::run_mode(args) {
@@ -123,6 +127,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
         return run_nightly(args);
     }
+    std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(false));
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     let card = positional
         .first()

@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = Path(os.environ.get("EVENT_TYPES_REGISTRY", ROOT / "designing/schemas/spine-events.json"))
-URL = os.environ.get("EVENT_TYPES_URL", "http://localhost:3340/owl/v1/events/types?limit=5000")
+URL = os.environ.get("EVENT_TYPES_URL", "http://localhost:3340/owl/v1/events/types?limit=5000&count=true")  # #4531: the door counts only on request
 
 
 def many(v):

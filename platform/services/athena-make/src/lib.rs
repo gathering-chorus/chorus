@@ -5138,7 +5138,7 @@ pub fn collection_page_query_filtered(graph: &str, class: &str, filter: &str, li
 }
 
 /// Collection GET keys that page or shape the read rather than filter it.
-const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth"];
+const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 
 /// #4433 — `GET <collection>?<field>=<value>` narrows the collection to the rows
 /// whose field holds that value, so a caller asks the API instead of writing its
@@ -5504,22 +5504,33 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             "GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"\\u001F\", COALESCE(?clabel, ?rlabel, \"\"), \"\\u001F\", COALESCE(?status, \"\"){cat}) AS ?v) }}",
             g = table.instances_graph, c = table.class, ns = NS, opts = opts, cat = cat
         );
-        // The TOTAL is a COUNT over subjects only — no OPTIONALs, no CONCAT, so
-        // it stays cheap as the collection grows. `count` in the envelope keeps
-        // meaning "how many exist", not "how many this page holds".
-        let count_q = format!(
-            "SELECT (COUNT(DISTINCT ?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}>{f} }} }}",
-            g = table.instances_graph, c = table.class, f = filter
-        );
-        let total: i64 = match sparql_json(&count_q) {
-            Ok(body) => select_v(&body).first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
-            Err(_) => 0,
+        // #4531 — the TOTAL is counted only when the caller asks (`count=true`).
+        // On 1,028,337 TestResult rows the count alone took 8.3s and a land's
+        // one-row read took 33–44s, so every model land stopped at its served
+        // check. Two callers want the total (class-atlas, event-types-generate);
+        // they ask for it. Without it, `count` is absent, never a page length
+        // dressed up as a total, and links.next comes from one row of look-ahead.
+        // No DISTINCT: `?s a <C>` in one graph cannot repeat a subject.
+        let want_total = query_param(query, "count").as_deref() == Some("true");
+        let total: Option<i64> = if want_total {
+            let count_q = format!(
+                "SELECT (COUNT(?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}>{f} }} }}",
+                g = table.instances_graph, c = table.class, f = filter
+            );
+            Some(match sparql_json(&count_q) {
+                Ok(body) => select_v(&body).first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+                Err(_) => 0,
+            })
+        } else {
+            None
         };
-        let page_q = collection_page_query_filtered(&table.instances_graph, &table.class, &filter, limit, offset);
-        let subjects: Vec<String> = match sparql_json(&page_q) {
+        let page_q = collection_page_query_filtered(&table.instances_graph, &table.class, &filter, limit + 1, offset);
+        let mut subjects: Vec<String> = match sparql_json(&page_q) {
             Ok(body) => select_v(&body),
             Err(e) => return (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
         };
+        let more = subjects.len() > limit;
+        subjects.truncate(limit);
         let projected: R<String> = if subjects.is_empty() {
             Ok(String::new())
         } else {
@@ -5536,7 +5547,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                     // with the entity read; consumers learn ONE shape.
                     // #4010 — the store already sliced. `items` IS the page.
                     let page: &[String] = &items;
-                    let next: Option<usize> = if (offset + page.len()) < (total as usize) {
+                    let next: Option<usize> = if more {
                         Some(offset + page.len())
                     } else {
                         None
@@ -5553,7 +5564,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                         }
                         None => "{}".to_string(),
                     };
-                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, &table.instances_graph, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
+                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, &table.instances_graph, !table.secured.is_empty(), &data, &links, total, &table.model_version))
                 }
             }
             Err(e) => (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),

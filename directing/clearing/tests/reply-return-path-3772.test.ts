@@ -161,6 +161,12 @@ describe('#4417 the spine log in tests is a temp file', () => {
   test('athena-make and Fuseki are a closed port: a session write fails fast, never reaches live', async () => {
     expect(process.env.ATHENA_MAKE_URL).toBe('http://127.0.0.1:9');
     expect(process.env.CHORUS_FUSEKI_QUERY).toBe('http://127.0.0.1:9/query');
+    await expect(fetch(`${process.env.ATHENA_MAKE_URL}/v1/identity/sessions`, { method: 'PUT', body: '{}' })).rejects.toThrow();
+  });
+
+  // #4531 — "fails fast" as a wall-clock limit measures the box: nightly lane only.
+  test('the closed-port refusal comes within 2s (checked in the nightly lane only)', async () => {
+    if (process.env.WERK_TEST_LANE !== 'nightly') return;
     const t0 = Date.now();
     await expect(fetch(`${process.env.ATHENA_MAKE_URL}/v1/identity/sessions`, { method: 'PUT', body: '{}' })).rejects.toThrow();
     expect(Date.now() - t0).toBeLessThan(2000);
