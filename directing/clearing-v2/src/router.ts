@@ -40,10 +40,17 @@ export class MessageRouter {
   }
 
   /**
-   * Get recent visible messages.
+   * Get recent visible messages, optionally filtered by room.
    */
-  getRecent(limit = 50): ClearingMessage[] {
-    return this.messages.filter((m) => m.visible).slice(-limit);
+  getRecent(limit = 50, room?: string): ClearingMessage[] {
+    return this.messages
+      .filter((m) => {
+        if (!m.visible) return false;
+        if (!room) return true;
+        const msgRoom = m.room || 'team';
+        return msgRoom === room;
+      })
+      .slice(-limit);
   }
 
   /**
@@ -70,5 +77,16 @@ export class MessageRouter {
     }
 
     return nudges;
+  }
+
+  /**
+   * Get all distinct room names from ingested messages.
+   */
+  getKnownRooms(): string[] {
+    const rooms = new Set<string>();
+    for (const m of this.messages) {
+      if (m.room) rooms.add(m.room);
+    }
+    return Array.from(rooms);
   }
 }

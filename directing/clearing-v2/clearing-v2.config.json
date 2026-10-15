@@ -1,0 +1,8 @@
+{
+  "buzzRelayUrl": "ws://127.0.0.1:13000",
+  "pulseUrl": "http://127.0.0.1:3475",
+  "rolesUrl": "http://localhost:3360/v1/roles/roles",
+  "boardUrl": "http://localhost:3340/api/chorus/context/board",
+  "port": 3472,
+  "host": "127.0.0.1"
+}

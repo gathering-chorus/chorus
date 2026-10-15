@@ -5,7 +5,8 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/server.js --config clearing-v2.config.json",
+    "demo": "node dist/server.js --config clearing-v2.config.json",
     "test": "jest --runInBand",
     "test:coverage": "jest --coverage"
   },
