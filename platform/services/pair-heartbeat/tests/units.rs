@@ -1,3 +1,4 @@
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // Test-first (DEC-1674): references pair_heartbeat lib fns that don't exist yet — RED.
 //
 // The daemon tick's job: for each active pair, decide whether the navigator has gone

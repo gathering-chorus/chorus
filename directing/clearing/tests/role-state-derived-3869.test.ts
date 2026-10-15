@@ -1,4 +1,5 @@
 // @test-type: unit — pure function over tile inputs, no io.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3869
 // @owner: wren
 /**

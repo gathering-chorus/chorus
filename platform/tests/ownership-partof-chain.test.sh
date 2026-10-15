@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # ownership-partof-chain.test.sh — #3450 (red-first, DEC-1674)
 #
 # The single-parent ownership edge: chorus:partOf, ONE edge used identically at

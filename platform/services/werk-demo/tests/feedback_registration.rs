@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3479 — feedback registration: a peer's gather reply must WRITE
 //! demo.gather.replied (the missing wire). The read side (gathers_missing) is
 //! already tested in lib; this pins the WRITER produces a record with the fields

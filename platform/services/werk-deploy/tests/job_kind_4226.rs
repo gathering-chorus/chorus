@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 // #4226 — a scheduled job's success is a clean exit, not a live pid.
 // Fixtures are real `launchctl print` shapes so the two readings can be told
 // apart without a machine in a particular state.

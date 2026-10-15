@@ -1,4 +1,5 @@
 // @test-type: unit:security — POST /api/message to the in-process Clearing, the security graph answered by a stub; who a post is "from".
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Persistent role observation — ambient gemba via hooks service.
 //!
 //! Captures a rolling digest of what each role is doing, written to shared

@@ -1,4 +1,5 @@
 // @test-type: unit — tmp fixture dirs (scan/pulse/werk-runs), no live services; brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #2167
 // @owner: wren
 /**

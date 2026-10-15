@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for search_hierarchy gate: git-as-search via Bash must be gated.
 //!
 //! Bug: search_hierarchy only checks Grep/Glob, so roles bypass it by

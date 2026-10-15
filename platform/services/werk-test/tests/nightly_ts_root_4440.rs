@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4440 reopen — prod audit 2026-10-07: the 03:00 nightly planned 0 npm in
 //! every stage. launchd starts it at cwd `/` and nothing named the tree, so
 //! ts_packages() found no TS package and no TS test ran (the old MCP server included).

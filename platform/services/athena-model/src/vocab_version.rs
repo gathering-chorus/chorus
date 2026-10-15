@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! vocab_version (#3902) — semver for the model's vocabulary, bumped AT THE PEN.
 //!
 //! Jeff, 2026-08-15/16: "are our owl and athena-make domains semantically

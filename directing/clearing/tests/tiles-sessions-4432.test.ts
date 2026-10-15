@@ -1,4 +1,5 @@
 // @test-type: unit — injected role rows, mkdtemp scan dir, unreachable board API; brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4432
 // @owner: silas
 /**

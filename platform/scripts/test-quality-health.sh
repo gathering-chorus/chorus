@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-quality-health.sh — #2862 verification.
 #
 # Smoke test for the quality-health fitness function. Asserts:

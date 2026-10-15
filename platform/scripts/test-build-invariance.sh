@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: builds — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-build-invariance.sh — proving gate for the build-domain (#2775).
 #
 # Same source commit must produce the same artifact hash, every time.

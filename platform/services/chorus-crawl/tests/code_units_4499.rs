@@ -1,3 +1,4 @@
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #4499 — code units and their dependencies come from the build files, on
 //! every land. Jeff, 2026-10-11 10:00: "this feels like a volatile data set".
 use chorus_crawl::code::*;

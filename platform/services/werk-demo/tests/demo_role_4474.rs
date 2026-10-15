@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4474 — werk v2's dagu step demos a card's werk without asserting an
 //! identity: `werk-demo <card> <role>` names the builder role like every other
 //! werk verb. Jeff 2026-10-09: "isnt deploy role = identity".

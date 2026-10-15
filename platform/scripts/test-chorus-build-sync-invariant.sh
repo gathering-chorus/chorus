@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-build-sync-invariant.sh — proving gate for #2863.
 #
 # Asserts that /build's first step is `git fetch + ff` against origin/main

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3718 — THE ADR REFUSAL CORE for athena-model.
 //!
 //! Jeff, 2026-07-31: *"maybe an owl-model in rust that injects all our modeling

@@ -1,4 +1,5 @@
 // @test-type: unit — every dependency injected (cards, db, spine scan, nudges); no files, no services.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-card-story handler — unit tests (#2188).
  */

@@ -1,4 +1,5 @@
 // @test-type: unit — fake lance table + fake embedder; no process spawn, no live services.
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3382 — pure message logic for the off-process semantic-search worker.
  * Tests the handler in isolation (fake lance table + fake embedder), no real

@@ -1,4 +1,5 @@
 // @test-type: unit — fake sparql/loadQuery deps; no Fuseki, no live services.
+// @domain: decisions — placed by chorus-crawl's domain rules (#4538)
 //
 // #3606 — loom-decisions.ts was 0% covered (52 statements). DI'd by design;
 // these tests pin the fold (multi-domain aggregation), the ADR-first sort,

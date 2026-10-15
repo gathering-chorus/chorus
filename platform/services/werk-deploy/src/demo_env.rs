@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3092 — per-role demo environment lifecycle.
 //!
 //! Encapsulates env start / deploy / stop for the per-role variant services

@@ -1,4 +1,5 @@
 // @test-type: unit — moveCard to WIP must be hermetic: with blast-radius
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // mocked at the module seam (the suite's sanctioned network boundary), no
 // other code in the move flow may fetch. Pre-#3663 the permutation suite
 // skipped this mock, generateBlastRadius fetched live :3000/:3340

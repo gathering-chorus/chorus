@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end for the atomic MERGE verb (#3175): actual `git` on temp repos +
 //! a STATEFUL PATH-shimmed `gh` that records PRs and performs real squash-merges into
 //! the temp origin. Proves the #3175 fix: resolve the PR by HEAD oid (not branch

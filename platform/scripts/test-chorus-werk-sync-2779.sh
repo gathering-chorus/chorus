@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-werk-sync-2779.sh — tests for #2779 detached-HEAD recovery.
 #
 # Adds three test cases on top of the #2735 baseline:

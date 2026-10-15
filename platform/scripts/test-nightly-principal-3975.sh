@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 # test-nightly-principal-3975.sh — guard for #3975: the 03:00 runner has a
 # modeled machine principal with LEAST privilege (tests graph only), the seed
 # set provisions it, and the identity mint stays fail-closed when the

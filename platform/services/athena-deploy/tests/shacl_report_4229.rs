@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4229 — the SHACL report leg. Report-only by ruling (#3536 AC2), but its
 //! three states have to stay apart: a crashed validator reporting "0" is
 //! migration-complete-by-crash, and that is what this leg actually did on

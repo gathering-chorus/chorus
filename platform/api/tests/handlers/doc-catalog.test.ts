@@ -1,4 +1,5 @@
 // @test-type: unit — tmpdir fixture repos via GATHERING_REPO/CHORUS_REPO (#2517); no live repos, no live services.
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 //
 // #3606 — doc-catalog.ts sat at 6% covered (262 uncovered statements, the
 // single biggest handler gap behind the platform/api 72.95% < 80 floor red).

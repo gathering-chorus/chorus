@@ -1,4 +1,5 @@
 // @test-type: unit — injected fakes only; no Fuseki, no live session, brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3743
 // @owner: wren
 /**

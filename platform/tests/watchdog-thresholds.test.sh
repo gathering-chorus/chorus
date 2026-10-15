@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: monitors — placed by chorus-crawl's domain rules (#4538)
 # watchdog-thresholds.test.sh — #3446 AC2 (red-first, DEC-1674)
 #
 # watchdog.sh runs `set -u`. Any *_THRESHOLD variable it references but never

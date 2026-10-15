@@ -1,4 +1,5 @@
 // @test-type: unit — pure view-model functions, no DOM, no live services.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3747
 // @owner: wren
 /**

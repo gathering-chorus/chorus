@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: logs — placed by chorus-crawl's domain rules (#4538)
 /**
  * Unit tests for shared log-reader (#2126).
  *

@@ -1,4 +1,5 @@
 // @test-type: unit — writes only to its own mkdtemp dir via CARDS_CACHE_DIR; the fs signal is fixture data, no live service or shared state
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4010 — a cache key without identity cannot separate authorized from remembered.
  *

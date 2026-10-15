@@ -1,4 +1,5 @@
 // @test-type: unit — pure URL derivation; no socket, no relay.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3911
 // @owner: wren
 /**

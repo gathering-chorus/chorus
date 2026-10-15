@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3218 — nudge drain: the reliable receiver-side primitive.
 //!
 //! Reads pending nudges for a role from `messages.db` DIRECTLY (local rusqlite)

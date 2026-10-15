@@ -1,3 +1,4 @@
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 //! #3723 — RECONCILIATION: where does each class live, and does it serve?
 //!
 //! Jeff, 2026-08-02: *"i get very concerned about our ability to track our owl

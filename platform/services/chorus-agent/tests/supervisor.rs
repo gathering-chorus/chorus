@@ -1,3 +1,4 @@
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 use chorus_agent::{
     config::{self, Config},
     contract::*,

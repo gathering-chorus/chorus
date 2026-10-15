@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! process — Shared role-to-PID detection for L2 team awareness.
 //! Used by nudge.rs (delivery routing) and role_state.rs (liveness).
 

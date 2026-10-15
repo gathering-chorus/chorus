@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4256 — a subject that MOVED between files in the model set is not deleted.
 //!
 //! #4250 moved nine property declarations out of chorus.ttl and into the files

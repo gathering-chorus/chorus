@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! chorus-crawl — the one herald (#4173).
 //!
 //! Walks the repo once and keeps a row per tracked file in the graph, through

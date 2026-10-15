@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: search — placed by chorus-crawl's domain rules (#4538)
 # test-continuous-awareness.sh — Tests for continuous awareness gate (#2003)
 # AC: UserPromptSubmit does hybrid search and injects context.
 #

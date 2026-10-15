@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3364 remaining ilities — red-first tests (DEC-1674).
 //!
 //! AC1: generate() refuses ADR-040-violating input with a typed refusal.

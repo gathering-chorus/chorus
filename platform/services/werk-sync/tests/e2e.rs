@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end (#3300): actual `git` on temp repos. Proves Bash parity for
 //! both verbs — recover (stash M/A/D to the recovery dir + manifest, untracked
 //! untouched, tree clean, ff'd to origin/main, spine events) and repair

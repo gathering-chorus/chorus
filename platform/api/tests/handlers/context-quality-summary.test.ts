@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 /**
  * context-quality-summary handler tests (#2252 migration).
  */

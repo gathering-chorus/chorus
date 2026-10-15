@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! chorus-inject source gate: build-time lint, NOT behavior.
 //!
 //! **This is not a behavior test.** It reads `src/lib.rs` and asserts

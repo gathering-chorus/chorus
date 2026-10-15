@@ -1,4 +1,5 @@
 // @test-type: unit — hermetic
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 /**
  * pain rollup v1.1 (#3029) — unit tests for the raw-line rollup ported from the
  * proven :8899 sketch (logform.py). Locks the contract the v1 server-side count

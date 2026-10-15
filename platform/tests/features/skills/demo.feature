@@ -1,3 +1,5 @@
+# @test-type: bdd — inferred by chorus-crawl --classify (hermetic) (#4538)
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 @demo-skill
 Feature: /demo skill — proving gate behaviors
   /demo is the proving gate (DEC-048). It runs dozens of times a week and owns

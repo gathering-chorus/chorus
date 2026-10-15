@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * Demo Pipeline Flow Tests — #1241
  *

@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: version-control — placed by chorus-crawl's domain rules (#4538)
 /**
  * #1817 — Normalize log metadata
  * Tests for enriched spine event fields: product, stream, card, file, version,

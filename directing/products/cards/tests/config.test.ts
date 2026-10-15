@@ -1,4 +1,5 @@
 // @test-type: unit — pure config lookups; no board, no network.
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 import { GATHERING, SELF, resolveBucket, LABELS } from '../src/config';
 
 describe('Board configs', () => {

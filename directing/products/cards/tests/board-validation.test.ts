@@ -1,4 +1,5 @@
 // @test-type: integration — reads the live board (skip-if-absent); determinism is proven on one captured payload (#4135)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * Board state validation tests — #1820
  *

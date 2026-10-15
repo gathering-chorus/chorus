@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4432 — the agent socket: the OS says who is calling, the payload never
 //! does (Wren's conditions, 2026-10-06 09:04).
 use axum::{routing::post, Json, Router};

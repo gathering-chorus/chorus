@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Canonical write guard tests (#2735, #2913).
 //!
 //! Edit/Write to canonical (`$CHORUS_HOME/...`) is refused — work belongs in

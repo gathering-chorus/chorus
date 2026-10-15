@@ -1,4 +1,5 @@
 // @test-type: unit — injects readEvents/listWipCards/sparql stubs; no spine file, no live service, brings its own world.
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 /**
  * context-roles handler tests — #4028: /api/chorus/context/roles serves ONLY
  * the state derived from the streams. There is no declared file to read and

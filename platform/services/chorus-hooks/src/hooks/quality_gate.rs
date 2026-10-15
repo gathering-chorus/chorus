@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Quality gate (#1717) — ADVISORY ONLY (#3677 honest downgrade).
 //!
 //! This module DOCUMENTED itself as blocking ("Blocks demo if AC gaps found")

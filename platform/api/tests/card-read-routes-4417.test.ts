@@ -1,4 +1,5 @@
 // @test-type: unit — drives chorus-api's card read routes in-process (env points at a tempdir); the handlers' own behaviour is covered in tests/handlers
+// @domain: analytics — picked by its owner, Kade, from the crawler's candidates (#4538)
 // @card: #4417
 // @owner: wren
 /**

@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4494 — Jeff, 2026-10-11 09:06: hard WIP 3 on the board (two card runs, one
  * land). The cards CLI refuses a fourth card into WIP.

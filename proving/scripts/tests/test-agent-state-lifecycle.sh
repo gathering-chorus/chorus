@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: deploys — placed by chorus-crawl's domain rules (#4538)
 # test-agent-state-lifecycle.sh — coverage for agent-state.sh deploy/rollback verbs (#2605 AC6).
 #
 # Covers:

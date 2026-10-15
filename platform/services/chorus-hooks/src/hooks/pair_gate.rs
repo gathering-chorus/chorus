@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Pair gate (#1814 AC2) — ADVISORY ONLY (#3677 honest downgrade).
 //!
 //! Documented "blocks building without an active pair" while check()

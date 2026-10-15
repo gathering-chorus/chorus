@@ -1,4 +1,5 @@
 // @test-type: unit — imports the module and calls exported fns; the handle checks run in short-lived subprocesses. No ports, no network, no fixtures.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3831
 // @owner: wren
 /**

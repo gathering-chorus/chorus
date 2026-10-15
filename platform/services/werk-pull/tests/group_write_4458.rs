@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4458 — a werk is group-writable, so a role working as its own OS account
 //! (Abby, group chorus) can edit the werk the message service created for her.
 //! On 2026-10-08 her abby-normal-4456 werk came out 755/644 and she could not

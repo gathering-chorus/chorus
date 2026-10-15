@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 // #3054 AC1 — the crawl handler must NOT scan messages with `content LIKE '%q%'`
 // (unindexed full scan over 1.26M rows, ~2.8s sync, freezes the spine — the same
 // #3051 class). collectMentions uses FTS5 MATCH instead. Red before the swap.

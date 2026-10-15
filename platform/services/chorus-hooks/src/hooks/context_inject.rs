@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Context injection hook (#1838)
 //!
 //! UserPromptSubmit: when Jeff states a problem or asks a question,

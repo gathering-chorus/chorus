@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: monitors — placed by chorus-crawl's domain rules (#4538)
 /**
  * context-health handler tests (#2234 Step 3).
  */

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #4295 — sign in / sign out decisions. The bats suite (4295-role-login.bats)
 // drives the built binary; these hold the pure rules, each with its violation.
 use chorus_principal::lifecycle::*;

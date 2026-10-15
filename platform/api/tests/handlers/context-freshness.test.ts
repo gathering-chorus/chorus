@@ -1,4 +1,5 @@
 // @test-type: unit — compute and clock are injected; no service, no store.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * context-freshness handler tests (#2252 migration wave).
  *

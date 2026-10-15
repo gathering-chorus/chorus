@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: deploys — placed by chorus-crawl's domain rules (#4538)
 # daemon-env-3197.test.sh — #3197 single-source daemon env.
 # (Named *.test.sh so the TDD gate recognizes it; the repo's test-*.sh
 # convention is invisible to the gate — that gap is a separate follow-on.)

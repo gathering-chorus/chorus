@@ -1,4 +1,5 @@
 // @test-type: integration — drives the built werk-test --nightly against a loopback stub door
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4030 AC3 — results are stored PER UNIT, so a run killed mid-way keeps
 //! everything it finished. Negative proof (#3734): the violating state — the
 //! runner dies while a later suite is still running — is produced for real

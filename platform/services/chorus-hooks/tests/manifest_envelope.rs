@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for #2249 — manifest envelope (CONTEXT_PUSH_MODE=manifest)
 //!
 //! Verifiable behavior:

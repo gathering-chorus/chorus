@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 // #4511 — a werk whose package-lock.json differs from canonical's gets its own
 // npm ci instead of borrowing canonical's node_modules, and never writes
 // through the symlink into canonical's live tree.

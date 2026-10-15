@@ -1,3 +1,5 @@
+# @test-type: bdd — inferred by chorus-crawl --classify (hermetic) (#4538)
+# @domain: memory — placed by chorus-crawl's domain rules (#4538)
 @seed @media
 Feature: Seed media serving
   Jeff sends a photo via SMS. The Chorus API serves it via HTTP

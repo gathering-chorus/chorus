@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 # #2478 — resolution via the shared lib (parity-pinned with the TS resolver)

@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! athena-make — the OWL→API generator + server (#3350, the model-5 spike).
 //!
 //! GENERATE: read the Domain class + DomainShape from `urn:chorus:ontology`

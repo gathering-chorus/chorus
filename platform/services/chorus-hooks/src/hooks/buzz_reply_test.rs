@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3893 red-first tests for the Buzz reply publish leg (DEC-1674).
 //! Written BEFORE buzz_reply.rs exists — cargo test is RED (compile fail)
 //! until the module lands. Kept as the module's test half via `include!`

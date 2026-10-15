@@ -1,4 +1,5 @@
 // @test-type: unit — reads the shipped page sources; no server, no network
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #4093 — the service page composes its hosting domain's facets through ONE renderer
 // (facets.js). The defect this guards: a second copy of the facet table on a page,
 // which is how the domain page and the service page would drift apart.

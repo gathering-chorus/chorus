@@ -1,4 +1,5 @@
 // @test-type: unit — a throwaway SQLite file in the test's temp dir; no service, no real index.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #3060 — computeFreshness is the recompute the freshness worker runs: open the
 // index read-only, run fetchFreshness, close it.
 

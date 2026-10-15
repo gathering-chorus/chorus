@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # test-crawler-alerts-live.sh — each crawler alert detects its target condition.
 # @test-type: unit — hermetic: the checks read fixture logs handed through the
+# @domain: code — placed by chorus-crawl's domain rules (#4538)
 # CRAWL_LOG / CHORUS_ROOT seams; no store, no nudge (only the check: block runs).
 #
 # #2817 wrote this for the retired index-crawler loop; #4197 re-pointed both

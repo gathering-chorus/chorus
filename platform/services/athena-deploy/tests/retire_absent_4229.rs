@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3536 — the truncate-by-default root. A deploy whose staging lacked the 34
 //! live domains retired every one of them on 2026-06-26. Two rules came out of
 //! it: retire is opt-in, and even opted in, zero domains in staging refuses.

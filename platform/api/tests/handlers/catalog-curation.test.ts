@@ -1,4 +1,5 @@
 // @test-type: unit — fake sparqlQuery/sparqlUpdate/envelope deps; no Fuseki, no live services.
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 //
 // #3606 — catalog-curation.ts sat at 10.7% covered (191 uncovered statements,
 // #2 handler gap behind the platform/api coverage red). The module is fully

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Test quality gate (#2196)
 //!
 //! PreToolUse on Write of `*.test.ts` / `*.test.js` / `*.spec.ts`:

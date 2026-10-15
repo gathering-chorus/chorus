@@ -1,4 +1,5 @@
 // @test-type: unit — module-init catch branches under a mocked HOME tempdir; no live services.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3913
 // @owner: wren
 /**

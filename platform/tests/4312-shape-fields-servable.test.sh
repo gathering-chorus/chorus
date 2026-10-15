@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — applies athena-make's own field-name rule (ADR-040 L4) to the shipped session shapes; no store, no network
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 #
 # #4312 — #4302 landed SessionRun and Presence, and athena-make refused to serve
 # both: "adr040-violation: property 'http://purl.org/dc/terms/created' is not

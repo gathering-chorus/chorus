@@ -1,4 +1,5 @@
 // @test-type: unit — pure identity/attribution logic; injected publish, no relay, brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3823
 // @owner: wren
 /**

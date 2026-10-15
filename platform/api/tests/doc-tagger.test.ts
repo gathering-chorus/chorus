@@ -1,4 +1,5 @@
 // @test-type: unit — pure classifier, fixture inputs only; no fs, no services.
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 import { inferTags } from '../src/handlers/doc-tagger';
 
 // --- #3606 — cover the tagsFromPath cabinet branches + content fallback +

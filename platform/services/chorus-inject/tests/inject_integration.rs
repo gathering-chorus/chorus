@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! chorus-inject integration tests. Behavior-only — exercises the real
 //! chorus-inject binary under hermetic dry-run or pure-CLI paths.
 //!

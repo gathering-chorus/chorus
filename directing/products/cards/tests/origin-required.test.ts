@@ -1,4 +1,5 @@
 // @test-type: integration — shells out to the real cards CLI (execSync) and
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // asserts on its refusal messages; gated behind RUN_INTEGRATION. Creates no
 // cards: every case is an error path.
 /**
@@ -15,6 +16,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const CLI = path.join(__dirname, '..', 'dist', 'cli.js');
+// #4538 — the CLI reads Vikunja settings before it validates arguments, so in a
+// werk (no .env) it died with "No .env file found" and these validation tests
+// went red for a machine reason. They get an obviously fake token and a dead
+// port, so the checks run without the box and can never reach the live board.
+const HERMETIC_ENV = {
+  ...process.env,
+  NODE_ENV: 'test',
+  VIKUNJA_TOKEN: ['fixture', 'cards', 'test', '4538'].join('-'),
+  VIKUNJA_URL: 'http://127.0.0.1:9',
+};
+
 
 // Read SDK source to verify inference logic structurally
 const SDK_SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'sdk.ts'), 'utf-8');
@@ -24,7 +36,7 @@ describe('Origin required at card creation', () => {
     try {
       execSync(
         `node ${CLI} add "Clean up test artifacts" --owner silas --priority P2 --domain chorus --type chore 2>&1`,
-        { encoding: 'utf-8', timeout: 10000 }
+        { encoding: 'utf-8', timeout: 10000, env: HERMETIC_ENV }
       );
       throw new Error('Should have exited non-zero');
     } catch (err: any) {
@@ -63,7 +75,7 @@ describe('Origin required at card creation', () => {
 
   test('--help mentions --origin flag', () => {
     try {
-      execSync(`node ${CLI} add 2>&1`, { encoding: 'utf-8', timeout: 10000 });
+      execSync(`node ${CLI} add 2>&1`, { encoding: 'utf-8', timeout: 10000, env: HERMETIC_ENV });
     } catch (err: any) {
       const output = (err.stdout || '') + (err.stderr || '');
       // eslint-disable-next-line jest/no-conditional-expect -- exec expected to throw; assert error output

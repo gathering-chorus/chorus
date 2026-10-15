@@ -1,4 +1,5 @@
 //! @test-type: integration — reads /tmp/session-context-<role>.md, written at
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! session start by the LIVE hook (commands/session.rs, csc_guard.rs). Those
 //! files are runtime artifacts: nothing in the repo generates them (git
 //! ls-files: 0 matches), so on a CI runner they do not exist and every case

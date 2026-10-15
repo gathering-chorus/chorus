@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 # Test: chorus-reference-model.html v2 architecture asserts (5-layer + subproducts)
 # Per Jeff direction 2026-05-01: Engine layer decomposes into Werk/Borg/Athena/Convergence/Loom/Clearing as subproducts; layer count grows from 4 to 5 (Human/Role/Protocol/Subproduct/Engine).
 

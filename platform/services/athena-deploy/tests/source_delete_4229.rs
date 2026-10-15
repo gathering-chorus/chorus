@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4125 — a subject deleted from source is named, not silently kept. Nothing
 //! has ever left the ontology graph by absence; the additive merge only ever
 //! touches subjects that are IN staging. Deleting whatever is absent instead

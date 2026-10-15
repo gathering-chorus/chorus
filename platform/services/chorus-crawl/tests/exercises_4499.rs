@@ -1,3 +1,4 @@
+// @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #4499 reopen 3 — Jeff, 2026-10-13: "can we fix that gap here?" A script in
 //! no crate or package answered with the whole root package (452 tests). Each
 //! test file now names the files it exercises, by werk-test's own rule.

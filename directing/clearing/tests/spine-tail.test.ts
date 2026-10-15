@@ -1,4 +1,5 @@
 // @test-type: integration — #3607: builds real tmpdir fixture logs (incl. a 100MB+ one) to prove tail-read latency; not unit.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // @card: #3607
 // @owner: wren
 /**

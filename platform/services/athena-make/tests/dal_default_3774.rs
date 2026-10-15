@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3774 AC1 — athena-make's write delegation targets the LIVE DAL binary.
 //!
 //! #3718 retired `chorus-model` into a fail-loud stub (`athena-model` is the

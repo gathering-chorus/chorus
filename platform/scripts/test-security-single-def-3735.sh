@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: security — placed by chorus-crawl's domain rules (#4538)
 # test-security-single-def-3735.sh — #3735: chorus:security must be defined in
 # exactly ONE MODEL_SET file, and its resolved definesVocabulary must be the
 # current 6 classes with NO stale V1 TrustMetric. RED while domains-wren-silas.ttl

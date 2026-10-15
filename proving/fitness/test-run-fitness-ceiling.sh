@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # The row ceiling's own proofs (#3806 / #3734).
 #
 # The violation this exists to catch: a row that never returns starves the whole

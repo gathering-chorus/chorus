@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 import { BoardClient } from '../src/client';
 import { GATHERING, SELF } from '../src/config';
 import { VikunjaBucket } from '../src/types';

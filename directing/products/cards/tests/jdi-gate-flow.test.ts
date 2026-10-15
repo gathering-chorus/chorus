@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 /**
  * JDI Gate Hook Flow Tests — #1189
  *

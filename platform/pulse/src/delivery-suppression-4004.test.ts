@@ -2,6 +2,7 @@
 // @owner: wren
 /* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract */
 // @test-type: unit — injected store/inject/spine, temp db; no live pulse, no real inject
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 //
 // #4004 — delivery-worker sat at 73% function coverage with the SUPPRESSION
 // branch (announceOrSuppress, lines 177-188) untested. That branch decides

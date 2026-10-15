@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! E2E responder hook (#1936)
 //!
 //! UserPromptSubmit: detects [e2e-test] markers in nudges injected into

@@ -1,4 +1,5 @@
 // @test-type: unit — pure contract module (processJeffInput), injected fakes, no I/O.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3646
 // @owner: wren
 // #3646 — TDD: the ack contract that fixes the works-once bug.

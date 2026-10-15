@@ -1,5 +1,6 @@
 /**
  * @test-type: integration:api
+// @domain: search — picked by its owner, Kade, from the crawler's candidates (#4538)
  *
  * Ollama resilience tests — #1980
  *

@@ -1,4 +1,5 @@
 # @test-type: bdd — cucumber feature; runs against the live chorus-api and Loki
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 @memory @live
 Feature: Domain crawler
   A role asks "tell me about the seeds domain" and gets a connected

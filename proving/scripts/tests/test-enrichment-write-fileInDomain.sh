@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: code — placed by chorus-crawl's domain rules (#4538)
 # test-enrichment-write-fileInDomain.sh — #2844: enrichment writer adds
 # chorus:fileInDomain + chorus:fileHasOwner to existing chorus:File
 # instances based on path heuristics.

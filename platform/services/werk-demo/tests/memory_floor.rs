@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 // #3625 AC2 — memory floor before spawning headless claude gates/reviews.
 //
 // Jeff's experience under test: a demo never piles gate claudes onto a box

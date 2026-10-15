@@ -1,4 +1,5 @@
 // @test-type: unit — injects a fake fetch; no Fuseki, no live service, brings its own world.
+// @domain: integrations — placed by chorus-crawl's domain rules (#4538)
 import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv } from '../src/icd-sparql';
 
 function okRes(body: any): Response {

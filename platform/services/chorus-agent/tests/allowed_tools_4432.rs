@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4432 — Abby's Gemini allowed tools come from the Claude roles' allow
 //! rules (Jeff 2026-10-06: approving her tool calls "is a big blocker").
 use chorus_agent::allowed_tools::{gemini_allowed, gemini_args_with_policy, install_gemini_allowed};

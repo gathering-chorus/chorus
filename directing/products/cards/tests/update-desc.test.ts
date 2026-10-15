@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * Tests for `cards update <id> --desc` — card #1964
  *
@@ -11,6 +13,17 @@ import { execSync } from 'child_process';
 import path from 'path';
 
 const CLI = path.join(__dirname, '..', 'dist', 'cli.js');
+// #4538 — the CLI reads Vikunja settings before it validates arguments, so in a
+// werk (no .env) it died with "No .env file found" and these validation tests
+// went red for a machine reason. They get an obviously fake token and a dead
+// port, so the checks run without the box and can never reach the live board.
+const HERMETIC_ENV = {
+  ...process.env,
+  NODE_ENV: 'test',
+  VIKUNJA_TOKEN: ['fixture', 'cards', 'test', '4538'].join('-'),
+  VIKUNJA_URL: 'http://127.0.0.1:9',
+};
+
 const cliExists = (() => {
   try { require('fs').accessSync(CLI); return true; } catch { return false; }
 })();
@@ -20,7 +33,7 @@ function run(args: string): { stdout: string; stderr: string; exitCode: number }
     const stdout = execSync(`node ${CLI} ${args}`, {
       encoding: 'utf8',
       timeout: 15000,
-      env: { ...process.env, NODE_ENV: 'test' },
+      env: HERMETIC_ENV,
     });
     return { stdout, stderr: '', exitCode: 0 };
   } catch (e: any) {

@@ -1,4 +1,5 @@
 // @test-type: unit — signal is fixture-data: pure detector, no io, no timers
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // @card: #3879
 // @owner: wren
 /**

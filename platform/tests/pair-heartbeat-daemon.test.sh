@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: deploys — placed by chorus-crawl's domain rules (#4538)
 # Test: pair-heartbeat is DAEMON-side, and the agent-cron→skill fragility class is gone (#3253).
 # This is the anti-jenga guard: it fails if the cron-fires-skill path ever returns.
 

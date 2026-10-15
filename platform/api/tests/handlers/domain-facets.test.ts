@@ -1,4 +1,5 @@
 // @test-type: unit — signal:integration is fixture-data (handler tests with mocked fetch/sparql).
+// @domain: logs — placed by chorus-crawl's domain rules (#4538)
 /**
  * domain-facets handlers — unit tests (#2173 AC4).
  *

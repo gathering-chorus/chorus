@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * Timestamp consistency tests — #1826
  *

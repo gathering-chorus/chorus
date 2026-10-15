@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4028/#4077 — the pulse's role rows come from chorus-api's derived
 //! /api/chorus/context/roles, never from a declared file. Own world: a stub.
 

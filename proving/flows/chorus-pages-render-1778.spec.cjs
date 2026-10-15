@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright: the chorus pages RENDER their data in a browser
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 /**
  * #1778 — page BEHAVIOR, not API behavior. The API-seam suite proves the
  * backing fold serves values; this proves a browser turns them into pixels.

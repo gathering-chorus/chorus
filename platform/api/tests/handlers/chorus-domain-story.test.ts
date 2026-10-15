@@ -1,4 +1,5 @@
 // @test-type: unit — every dependency injected; no files, no services.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-domain-story handler — unit tests (#2188).
  */

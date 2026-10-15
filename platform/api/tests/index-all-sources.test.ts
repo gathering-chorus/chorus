@@ -1,4 +1,5 @@
 // @test-type: unit — fake db + fake fs; no live index.db, no filesystem, brings its own world.
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 import { createIndexAllSources } from '../src/index-all-sources';
 
 function fakeDbFactory() {

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! werk-demo — `/demo` proving gate v2 (card #3046).
 //!
 //! Folds the /demo skill into the werk binary. The ACT is build → deploy → verify,

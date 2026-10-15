@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — validates the stage gates from the shipped seed file against the shipped GateShape; no store, no network
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 #
 # #4316 — the seed stopped on "Gate requires 'ownerRole'" (DirectionGate): the
 # security GateShape required an owner role on every Gate, and the four stage

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! The test/prod membrane (#3615) — one enforced guard so test and build
 //! contexts cannot touch production state.
 //!

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4338 — a file merged into the domains graph must not name a Domain as a
 //! subject. That merge replaces every subject its files name, so on 2026-10-02
 //! 15:51 cmdb-layers-4293.ttl (two edges per domain) wiped 12 Domain rows down to

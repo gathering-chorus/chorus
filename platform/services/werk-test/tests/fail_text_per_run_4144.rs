@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4144 AC5 — a failed suite's text survives the next run. Before: one file per
 //! unit under ~/.chorus/nightly-failures, overwritten by the next run, so the
 //! 03:00 detail was gone after an 08:00 run.

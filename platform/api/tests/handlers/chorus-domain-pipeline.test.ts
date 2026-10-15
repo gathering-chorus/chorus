@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions on fixtures; no live services
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-domain-pipeline handler — unit tests (#2188).
  */

@@ -1,4 +1,5 @@
 // @test-type: unit — pure sweep logic (route parsing + gap classification) on
+// @domain: security — placed by chorus-crawl's domain rules (#4538)
 // string/array fixtures; no live chorus-api, no fuseki, no filesystem beyond
 // the fixtures declared here.
 /**

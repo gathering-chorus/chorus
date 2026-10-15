@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Session JSONL cache (#1861)
 //! Reads the session JSONL file once per prompt cycle, caches the lines.
 //! All hooks that need session history share this cache instead of independent reads.

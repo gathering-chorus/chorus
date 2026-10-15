@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 # Hermetic tests for doc-wrong-cabinet-move.sh (#2458).
 set -uo pipefail
 

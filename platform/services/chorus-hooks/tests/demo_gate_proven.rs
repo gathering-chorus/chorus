@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1916 — Demo gate --proven bypass tests
 //!
 //! Prior work: demo_gate.rs dispatches to done-gate.sh for evidence checks.

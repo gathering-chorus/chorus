@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! by-tty delivery (nudge, Wren-owned): the inject script must NOT gate on
 //! frontmost-app focus. #3128 originally `activate`d Terminal on a tty match;
 //! #3352 (Jeff 2026-06-11) superseded that with `do script` into the matched TAB

@@ -1,4 +1,5 @@
 // @test-type: unit — #3700 (Silas half): the typed delivery decision. Replaces
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3700
 // @owner: wren
 // the null→name-match fallthrough with four explicit outcomes. Jeff's 07-04

@@ -1,4 +1,5 @@
 // @test-type: unit:security — changePassword with a mocked identity server; no network
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3679
 // @owner: wren
 /**

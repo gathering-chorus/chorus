@@ -1,4 +1,5 @@
 // @test-type: unit — constructed res/db fixtures, no live services
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #3750 AC2 — one slow worker must cost one request, never the process.
 // 2026-08-04 10:47: an fts pool-timeout rejection escaped withDb → Express 4
 // async void → unhandledRejection → FATAL exit(1). NEGATIVE PROOF (#3734):

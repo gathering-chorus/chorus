@@ -1,4 +1,5 @@
 // @test-type: unit — walks a tmpdir tree it creates; no repo paths, no live service.
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3813 — the UI inventory.
  *

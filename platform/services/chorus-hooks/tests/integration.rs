@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Integration tests for chorus-hooks Axum routes.
 //!
 //! Tests the full request→dispatch→response cycle through the HTTP layer,

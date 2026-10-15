@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1848 — Session close must emit session.role.ended with duration
 //! #2071 — Stale nudge warning via alert rule
 

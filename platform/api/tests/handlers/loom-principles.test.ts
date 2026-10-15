@@ -1,4 +1,5 @@
 // @test-type: unit — injected fake fetch; no athena-make, no Fuseki, brings its own world.
+// @domain: principles — placed by chorus-crawl's domain rules (#4538)
 /**
  * fetchLoomPrinciples — #3749 rewrite. The handler now sources the generated
  * athena-make surface (list + entity reads) instead of the retired SPARQL path

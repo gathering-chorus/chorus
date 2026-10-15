@@ -1,4 +1,5 @@
 // @test-type: integration — drives the real cards CLI via execSync and asserts
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 // on its stderr warnings; gated behind RUN_INTEGRATION.
 /**
  * #2024 AC #7 — CLI completeness tests

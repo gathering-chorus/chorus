@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end: actual `git` on temp repos + PATH-shimmed `build-signed.sh`
 //! and `gh`. Proves build() against ADR-032: builds the WERK's crate (not
 //! canonical), emits the cdhash, refuses with no werk / wrong branch / no crate,

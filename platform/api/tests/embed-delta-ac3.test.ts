@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 // #3077 AC3: embed must not run a COUNT(*) full-scan (1.26M rows) on every call —
 // the COUNT existed only to decorate a log line. And the page query WHERE embedded=0
 // must be index-backed so the query stops scanning past mostly-embedded rows.

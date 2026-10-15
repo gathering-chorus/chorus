@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 // #3050 — the eventloop alert must report ONLY what it measured (duration + time),
 // and must NOT fabricate a causal story. This test is the honest-message contract:
 // the day's whole lesson — an alert that asserts the unobservable can't be trusted.

@@ -1,4 +1,5 @@
 // @test-type: unit — a stub socket and a temp cursor file; no relay, no service.
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 // @card: #4445
 // @owner: wren
 /**

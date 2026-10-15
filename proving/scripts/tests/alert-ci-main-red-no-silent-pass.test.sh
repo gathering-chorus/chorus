@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # #3519 — ci-main-red must NOT silently report "ok" when it cannot verify CI
 # (GH_TOKEN absent). A blind check that says "ok" is a false-negative: main
 # can be genuinely red and never surface. It must report the unverifiable state.

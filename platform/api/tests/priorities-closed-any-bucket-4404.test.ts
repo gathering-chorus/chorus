@@ -1,4 +1,5 @@
 // @test-type: unit — pure function over fixture bucket rows; no DB, no HTTP.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // @card: #4404
 // @owner: wren
 /**

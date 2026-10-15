@@ -1,4 +1,5 @@
 // @test-type: unit — brings its own world (tmpdir cursor file), no live relay.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3907
 // @owner: wren
 /**

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4250 — the deploy refuses a property declared more than once.
 //!
 //! The bug this guards never announced itself. Nine properties were declared

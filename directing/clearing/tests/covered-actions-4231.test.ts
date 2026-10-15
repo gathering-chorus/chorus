@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: spine — picked by its owner, Kade, from the crawler's candidates (#4538)
 // @card: #4231
 // @owner: wren
 // #4231 — one call is one record: a start and an end joined on call_id.

@@ -1,4 +1,5 @@
 // @test-type: unit — BoardClient.api fully stubbed; the localhost URL is an
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // unused constructor arg (no socket is opened). No live Vikunja/network.
 /**
  * #3432 — chunk passed at add-time was silently dropped.

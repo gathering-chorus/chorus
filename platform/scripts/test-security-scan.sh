@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: fitness:security
+# @domain: security — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-security-scan.sh (#3981) — OSS security scanning for Chorus. The
 # `test-*.sh` name + fitness:security concern make it SELF-REGISTERING: the
 # #3974 tagger discovers it and routes it into the security test lane (#3922)

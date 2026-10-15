@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Input Classifier (#1659)
 //!
 //! UserPromptSubmit hook that classifies Jeff's input as:

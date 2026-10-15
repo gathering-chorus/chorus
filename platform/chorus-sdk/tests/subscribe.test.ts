@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 /**
  * subscribe.test.ts — spine-event subscription contract (#2239)
  *

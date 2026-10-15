@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Unit-style tests for `chorus_inject::dispatch` + `inject` + `count_windows`.
 //!
 //! These exist because main.rs used to spawn `osascript` directly — the old

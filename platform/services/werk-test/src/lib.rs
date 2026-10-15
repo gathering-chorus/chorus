@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! werk-test — the test gate as a werk verb (#3190).
 //!
 //! Promotes #3397's inline `werk.yml` test step into a real verb (ADR-032 §1:

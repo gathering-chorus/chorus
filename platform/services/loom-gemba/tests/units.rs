@@ -1,3 +1,4 @@
+// @domain: roles — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #3319 unit tests — loom-gemba pure core.
 //!
 //! AC under test (what Jeff sees):

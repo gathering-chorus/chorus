@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions of the effective-config read: query shape, row parsing, coercion
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #3435 — effective-config read substrate (config-as-data).
 // propertyValueType coercion: a Property's string-encoded value is coerced ONCE
 // to its typed JSON form per propertyValueType (string | int | bool | json | list).

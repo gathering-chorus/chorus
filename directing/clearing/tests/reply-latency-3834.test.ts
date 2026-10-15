@@ -1,4 +1,5 @@
 // @test-type: unit — feeds transcript lines to the tailer with fake timers; no fs.watch, no sessions on disk, no network.
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // @card: #3834
 // @owner: wren
 /**

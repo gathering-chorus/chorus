@@ -1,4 +1,5 @@
 // @test-type: unit — handler tests with injected scanner/envelope fakes; no services.
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-tests handler — unit tests (#2189, rewired #3656).
  *

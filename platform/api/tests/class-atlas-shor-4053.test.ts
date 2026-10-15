@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over CAPTURED bindings; no store, brings its own world.
+// @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4053 AC7 — Jeff: "there is no dependency from products class to services class
 // at all." chorus:consumes was authored 79x and governed by no shape, so nothing
 // served it and the atlas could not draw it. Silas ruled consumes is ONE verb

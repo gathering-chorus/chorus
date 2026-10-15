@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # test-security-probes.sh (#3900) — nightly leg for the security probe suite.
 #
 # Auto-discovered by the nightly runner (werk-test --nightly, #4145) (test-*.sh). Deliberately a LIVE-SYSTEM

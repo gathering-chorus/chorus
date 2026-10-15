@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3278 Mechanism 2 — the TDD gate must not depend on the lagging transcript.
 //!
 //! Root cause (found 2026-06-07): tdd_gate scans the session transcript JSONL for a

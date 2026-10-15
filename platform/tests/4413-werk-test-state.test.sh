@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs chorus-werk-test-state against a saved /nightly page; no live services
+# @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 #
 # #4413 — /wts reads the nightly's suites and failed cases from the /nightly page.
 # The fixture self-test is the negative proof: removing a red suite from the page

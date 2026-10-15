@@ -1,4 +1,5 @@
 // @test-type: unit — loads the real base-path module in a DOM-ish harness; no live services, brings its own world.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3798 — Chorus surfaces serve under a configured base path.
  *

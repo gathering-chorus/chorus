@@ -1,4 +1,5 @@
 // @test-type: unit — pure formatBlockAlert rendering; no service, no clock, no fs
+// @domain: time — placed by chorus-crawl's domain rules (#4538)
 // #3753 AC5 — a probe reading AT the ceiling is a floor, not a duration.
 // "blocked 8000ms" institutionalized a misread (#3742: one ~20s freeze read as
 // two 8s blocks). The message must label ceiling readings as "≥8s (probe

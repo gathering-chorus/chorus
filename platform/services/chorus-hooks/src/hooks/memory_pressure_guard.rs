@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Memory-pressure guard (#3625 AC2)
 //!
 //! PreToolUse on Task/Agent: refuses to spawn a subagent while the box is

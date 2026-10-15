@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — reads the live store to compare each shape's declared
+# @domain: products — placed by chorus-crawl's domain rules (#4538)
 # chorus:instancesGraph against where its rows actually are. Reports UNMEASURED
 # (exit 2) when the store is unreachable; a box-dependent check that goes green on
 # an unreachable store says clean when it looked at nothing.

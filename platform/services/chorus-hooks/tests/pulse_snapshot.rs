@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2120 — pulse fires on every post-tool-use, so /tmp/pulse-latest.json is always hot.
 //! This test invokes the shim's `pulse` subcommand and verifies the snapshot file
 //! is rewritten with the expected top-level keys. It's the contract downstream

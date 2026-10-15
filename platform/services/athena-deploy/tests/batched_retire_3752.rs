@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #3752 reopen 1 — subject retirements are checked with one presence query per
 // graph instead of a count + dump per subject (26.4s of a 27.4s deploy).
 use athena_deploy::{subjects_from_answer, subjects_present_query};

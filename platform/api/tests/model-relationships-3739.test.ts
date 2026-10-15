@@ -1,4 +1,5 @@
 // @test-type: unit — injects a fake fetch; no Fuseki, no live service, brings its own world.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #3739 — the model's LINES, induced. Class-level edges (rdfs:domain × rdfs:range,
 // chorus-namespace ranges only) join through definesVocabulary to domain-level
 // edges. An isolated domain (vocabulary, zero edges) is a SERVED finding, and a

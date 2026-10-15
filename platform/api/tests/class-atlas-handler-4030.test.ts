@@ -1,4 +1,5 @@
 // @test-type: unit — stubs global fetch; no Fuseki, no live service, brings its own world.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4030 — the /api/chorus/class-atlas route (#3992). Jeff's experience under
 // test: the Class Atlas tile either shows the model's classes from the store,
 // or says plainly that the store could not be asked — an empty atlas must

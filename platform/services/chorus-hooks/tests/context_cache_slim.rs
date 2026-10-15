@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for #1781 — session-start redesign
 //! AC: session-start shows last session signal, not 795-line card dump.
 //!

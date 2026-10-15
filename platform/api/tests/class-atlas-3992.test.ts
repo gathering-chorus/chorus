@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #3992 — Class Atlas: buildClassAtlas turns one SPARQL result set into the
 // per-domain UML view (classes + attributes + multiplicities + object edges +
 // subclass edges, cross-domain flagged). The fixture rows are CAPTURED from a

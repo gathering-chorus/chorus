@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 // #4474 — werk v2 passes the go's accepter as ACCEPTER; v1 as DEPLOY_ROLE.
 use werk_accept::accepter_from;
 

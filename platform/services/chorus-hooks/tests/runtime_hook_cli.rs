@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Native entrypoint acceptance tests. Isolated HOME/UDS, no running services.
 use serde_json::{json, Value};
 use std::io::{Read, Write};

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-launchagent-boot-audit.sh — #4027 boot-herd guard.
 #
 # launchagent-boot-audit.sh must FAIL (exit 1, name the label) when an

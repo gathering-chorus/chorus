@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3125 — session registry (write side).
 //!
 //! At SessionStart, capture `{role, pid, tty, host}` and write

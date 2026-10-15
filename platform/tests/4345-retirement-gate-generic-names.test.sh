@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs retirement-gate.sh on a fixture tree; no git, no live repo
+# @domain: version-control — picked by its owner, Kade, from the crawler's candidates (#4538)
 #
 # #4345 — deleting chorus-awake/src/main.rs was blocked because 13 tests mention
 # SOME main.rs. A generic name is matched by its last three path parts; a script

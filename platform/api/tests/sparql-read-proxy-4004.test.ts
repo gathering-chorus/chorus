@@ -1,4 +1,5 @@
 // @test-type: unit — pure guards; no server boot, no Fuseki, no network
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //
 // #4004 — Jeff's phone photo: the ontology ER page renders its frame then
 // "Failed to load". The page hardcoded http://localhost:3030/pods/sparql, and on

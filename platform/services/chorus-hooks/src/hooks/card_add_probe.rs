@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Deploy probe check (#2925 AC3)
 //!
 //! PreToolUse on `mcp__chorus-api__clearing-card` — inspects the new card's

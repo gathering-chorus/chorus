@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4145 — `werk-test --nightly --run-all`: the whole 03:00 run, in the runner.
 //! The orchestration half (processes, files, clocks) of what `nightly-suites.sh`
 //! did in bash; the pure half is `werk_test::nightly_run`. The child that runs

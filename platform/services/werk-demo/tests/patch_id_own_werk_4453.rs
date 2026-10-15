@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4453 — the presented patch-id comes from the presenting role's werk.
 //! 2026-10-07 12:42 and 13:21: a leftover silas-4446 werk was hashed instead of
 //! kade-4446 (a fixed wren, silas, kade order), so for three rounds the

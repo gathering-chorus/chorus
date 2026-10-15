@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3686 — the `set` verb: field-level single-predicate update. Red-first
 //! (DEC-1674) against Silas's three correctness bars (blessed 2026-07-25):
 //!   1. single-predicate DELETE — sibling props survive (never `?p ?o` on the subject)

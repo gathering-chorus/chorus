@@ -1,3 +1,5 @@
+# @test-type: bdd — inferred by chorus-crawl --classify (hermetic) (#4538)
+# @domain: deploys — placed by chorus-crawl's domain rules (#4538)
 @build-deploy-skill
 Feature: /build + /deploy pipeline — substrate behaviors
   The building-pipeline runs on every /acp: release-trigger fires, chorus-build

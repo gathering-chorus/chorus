@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Chat behavioral test suite (#2283)
 //!
 //! Tests real chat.sh behavior: file creation, message append, tick marker,

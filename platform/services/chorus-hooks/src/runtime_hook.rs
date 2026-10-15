@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Adapter entrypoint. Native hook JSON is untrusted observation, never runtime
 //! enrollment or a capability grant. The supervisor supplies CHORUS_SESSION_ID.
 use crate::runtime_tools::normalize_tools;

@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: spine — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * trace-convergence-callstack.test.ts — Convergence call stack tracing
  * Card #2103 AC: TTL load, SHACL validation, completeness traces

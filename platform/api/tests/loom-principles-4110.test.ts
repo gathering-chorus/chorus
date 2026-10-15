@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: principles — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4110 — a principles read that loses every row must not read as "no principles".
  *

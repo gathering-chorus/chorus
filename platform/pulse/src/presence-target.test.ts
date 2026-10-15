@@ -1,4 +1,5 @@
 // @test-type: unit — pure resolution over fixture rows; no athena-make, no registry dir
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // @card: #4361
 // @owner: wren
 /**

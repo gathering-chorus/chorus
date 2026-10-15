@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # alert-runner-paths.test.sh — Verify alert-runner resolves paths to actual rule files
 # Card #1837 AC #2: alerting pipeline fires end-to-end
 

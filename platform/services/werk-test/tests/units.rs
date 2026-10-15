@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! werk-test unit tests (#3190) — the pure decision core, no subprocess, no fs.
 //! Each test maps to an AC: affected-unit detection on the diff, the bootstrap
 //! escape, and the advisory→blocking gate decision.

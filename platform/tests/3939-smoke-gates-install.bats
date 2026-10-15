@@ -22,7 +22,7 @@ mkbin() { printf '#!/bin/sh\nexit %s\n' "$1" > "$T/$2"; chmod +x "$T/$2"; }
 @test "a candidate that fails its smoke is REFUSED and the old binary survives" {
   # previous good binary in place
   mkdir -p "$HOME/.chorus/bin"; echo "OLD" > "$HOME/.chorus/bin/werk-frobnicate"
-  mkbin 9 candidate            # bare-invoke crashes (rc>2) → smoke fails
+  mkbin 101 candidate          # bare-invoke panics (rc 101) → smoke fails
   run bash "$INSTALL" "$T/candidate" werk-frobnicate
   [ "$status" -eq 8 ]
   [[ "$output" == *REFUSED* ]] || return 1
@@ -58,4 +58,18 @@ mkbin() { printf '#!/bin/sh\nexit %s\n' "$1" > "$T/$2"; chmod +x "$T/$2"; }
   CHORUS_BIN_SKIP_SMOKE=1 run bash "$INSTALL" "$T/candidate" werk-frobnicate
   [ "$status" -eq 0 ]
   [[ "$output" == *"SMOKE SKIPPED"* ]] || return 1
+}
+
+# #4536 — REFUSED exits 3 by design; only a panic (101) or a signal (128+) is a crash.
+@test "a verb that refuses with exit 3 passes its smoke" {
+  mkbin 3 candidate
+  run bash "$REPO/platform/scripts/verb-smoke" "$T/candidate"
+  [ "$status" -eq 0 ]
+}
+
+@test "NEGATIVE PROOF: a verb killed by a signal still reads as a crash" {
+  printf '#!/bin/sh\nkill -9 $$\n' > "$T/candidate"; chmod +x "$T/candidate"
+  run bash "$REPO/platform/scripts/verb-smoke" "$T/candidate"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *crash* ]] || return 1
 }

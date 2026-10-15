@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3361 AC5 — CI grep-gate: chorus pages served from chorus-api must not link
  * back to gathering's :3000 via href/src/action/fetch. RDF graph-URIs shown as

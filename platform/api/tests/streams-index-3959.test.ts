@@ -1,4 +1,5 @@
 // @test-type: integration
+// @domain: streams — placed by chorus-crawl's domain rules (#4538)
 //
 // #3959 — the spine index. Every test brings its own world: a temp spine file
 // and an in-memory-adjacent temp db, never ~/.chorus and never the live store.

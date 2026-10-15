@@ -1,4 +1,5 @@
 // @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+// @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 /**
  * Doc-catalog handler tests (#2445).
  *

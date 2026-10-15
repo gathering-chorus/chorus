@@ -1,4 +1,5 @@
 // @test-type: integration — a local stalling server on an ephemeral port; no live board.
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // @card: #3347
 // @owner: wren
 /**

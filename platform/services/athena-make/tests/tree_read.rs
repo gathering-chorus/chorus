@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3660 — the generated /tree read primitive. A shape declares its recursive
 //! edge(s) (chorus:treeEdge) + sibling rank (chorus:treeOrder); the generator
 //! emits `GET /<kind>/<id>/tree?depth=N` returning the nested, ordered JSON

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4412 run 14 — a changed cucumber step definition was refused as "no
 //! registered test exercises it": nothing imports a step file, the features
 //! that use its steps run it.

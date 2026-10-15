@@ -1,3 +1,4 @@
+// @domain: principles — placed by chorus-crawl's domain rules (#4538)
 //! #2450 — SessionStart injects live principles into additionalContext.
 //!
 //! Jeff's experience: every role boots with the current principle set

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! werk-test binary (#3190) — thin shell over the pure core in lib.rs.
 //!
 //! Promotes #3397's inline werk.yml test step to a verb, flips it BLOCKING, and

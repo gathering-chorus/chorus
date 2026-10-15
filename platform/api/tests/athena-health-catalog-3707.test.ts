@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: value-streams — placed by chorus-crawl's domain rules (#4538)
 // #3707 — the athena-health query catalog is a promise surface: every path it
 // advertises must be servable. #3702 retired /api/athena/steps (410 → athena-make
 // /valuestreams); a catalog that still lists it points readers at a dead door.

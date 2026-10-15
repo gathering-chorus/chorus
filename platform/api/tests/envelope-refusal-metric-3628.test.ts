@@ -1,4 +1,5 @@
 // @test-type: unit — signal:security is fixture-data (tests the metrics counter pure, no live envelope)
+// @domain: spine — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #3628 — the envelope refuses real callers silently: when /api/chorus/trace
 // refused 4354 calls/24h (a stale tokenless SDK dist), nothing measured it —
 // Silas found it by eyeballing Loki after Jeff asked. These tests pin the

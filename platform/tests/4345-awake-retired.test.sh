@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs the retired-name stub against a stub chorus-principal; no live services
+# @domain: roles — placed by chorus-crawl's domain rules (#4538)
 #
 # #4345 — chorus-awake is folded into chorus-principal. A leftover call to the old
 # name says the one command to use, every time, and (until strict) still reaches

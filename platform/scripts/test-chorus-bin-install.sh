@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-chorus-bin-install.sh — tests for chorus-bin-install (#2734).
 #
 # chorus-bin-install takes a freshly built+signed binary and installs it to

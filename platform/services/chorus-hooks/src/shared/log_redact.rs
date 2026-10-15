@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #3387 — credentials are redacted on the path INTO the logs.
 //
 // write_scrubber guards Write/Edit tool calls to shared FILES; it never sees

@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: rcas — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-rcas handler — unit tests (#2188).
  */

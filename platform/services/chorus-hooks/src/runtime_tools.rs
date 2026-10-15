@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Native tool payloads become the existing policy vocabulary at one boundary.
 //! This is parsing, not an authorization grant: runtime/session trust is owned by
 //! the supervisor. Unknown operations and incomplete writes are rejected.

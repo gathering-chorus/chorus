@@ -1,4 +1,5 @@
 // @test-type: integration — boots the real app on an ephemeral port; simulates
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3667
 // @owner: wren
 // the tunnel with a cf-ray header (isLocal classifies by header). Token comes

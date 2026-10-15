@@ -1,4 +1,5 @@
 // @test-type: unit — compute and clock are injected; no service, no store.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #3060 - /api/chorus/freshness recomputes a COUNT over the index. In May it was
 // ~1.4s on the main thread; by 2026-10-07 it was 11-15s and froze chorus-api.
 //

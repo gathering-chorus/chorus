@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4452 — a served snapshot taken while the land restarts the door waits for
 //! the door instead of failing the athena run (2026-10-12 #4081: "the discovery
 //! document lists no collection", so the model never reached the store and was

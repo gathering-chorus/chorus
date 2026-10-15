@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # #3513 — werk emit conformance: every event the werk pipeline EMITS must be
 # registered in designing/schemas/spine-events.json (the canonical vocabulary).
 # Fails loud on any phantom (emitted-but-unregistered) event so the spine can't

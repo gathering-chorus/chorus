@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: integration:ui — needs-stack: every link/asset a Jeff-facing page
+# @domain: domains — placed by chorus-crawl's domain rules (#4538)
 # serves must resolve. Skip-if-absent when the stack is down.
 #
 # #1778 round 2 (pair kade+wren) — Jeff: fold asserts passed while 13 links

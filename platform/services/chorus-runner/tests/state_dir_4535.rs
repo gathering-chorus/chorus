@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4535 — a role on its own Mac account runs the team's installed tools.
 //! Abby's HOME (/Users/chorus-abby-normal) has no .chorus/bin, so the runner's
 //! $HOME/.chorus/bin lookup found nothing for her. The shared state dir comes

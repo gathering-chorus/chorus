@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #4429 — the context-synthesis gate logs, it never refuses a write.
 // Measured 2026-10-04 across all three roles' transcripts since 09-16: the gate
 // refused a write 148 times and 17 of those were followed straight away by a

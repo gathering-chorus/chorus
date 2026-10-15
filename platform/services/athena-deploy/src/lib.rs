@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! athena-deploy core — the Athena value-stream DEPLOY verb (model → live graph).
 //!
 //! Atomic-verb contract (peer of werk-*, ADR-032/037):

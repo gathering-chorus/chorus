@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: integrations — placed by chorus-crawl's domain rules (#4538)
 import { escSparql, icdSlug } from '../src/sparql-helpers';
 
 describe('escSparql', () => {

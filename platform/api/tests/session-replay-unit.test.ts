@@ -1,4 +1,5 @@
 // @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 /**
  * session-replay — unit tests (#2167).
  *

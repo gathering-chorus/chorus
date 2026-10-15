@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // Test-first (DEC-1674): these reference pulse_gather lib functions that don't exist
 // yet — RED until src/lib.rs is implemented.
 //

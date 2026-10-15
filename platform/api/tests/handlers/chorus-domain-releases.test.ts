@@ -1,4 +1,5 @@
 // @test-type: unit — stubbed dependencies; no live service.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-domain-releases handler — unit tests (#2188).
  */

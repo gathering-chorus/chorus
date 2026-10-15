@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Pure-helper unit tests (RED first) — the verb-contract helpers werk-merge shares
 //! with the blueprint, plus the KEYSTONE of #3175: `pr_number_for_sha` resolves the
 //! PR by HEAD sha, NOT by branch name. That is the exact bug Wren + Kade hit on

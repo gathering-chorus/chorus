@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4033 — result names must be unique across the units of one run.
 //! Negative proof (#3734): the old scheme (every unit numbers from 0 under the
 //! run's shared ts) is built for real and shown to collide; the fix (each unit

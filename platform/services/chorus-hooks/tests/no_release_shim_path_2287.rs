@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2287 — a test runs the shim cargo built for it, never
 //! `<root>/platform/services/chorus-hooks/target/release/chorus-hook-shim`.
 //! A werk never builds release, so that path is NotFound there (perf_suite on

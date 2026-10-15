@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # #3709 — an alarm that fires MUST carry what it observed.
 #
 # The failure this pins: for months the fuseki-harvest and lancedb alarms woke

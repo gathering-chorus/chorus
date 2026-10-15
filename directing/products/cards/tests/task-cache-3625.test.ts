@@ -1,4 +1,5 @@
 // @test-type: unit — BoardClient with the api() HTTP layer fully stubbed and the
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // cache dir a per-test tmp dir (CARDS_CACHE_DIR); no live Vikunja, no $HOME writes.
 /**
  * #3625 AC3 — cards stops re-sweeping the whole board on every invocation.

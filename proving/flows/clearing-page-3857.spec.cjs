@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright drives the Clearing page in a browser against its own Clearing (lib/own-clearing.cjs)
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

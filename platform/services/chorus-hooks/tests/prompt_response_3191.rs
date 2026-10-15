@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3191 — per-prompt context-inject must INJECT into the model.
 //!
 //! For UserPromptSubmit the harness reads stdout `hookSpecificOutput.additionalContext`;

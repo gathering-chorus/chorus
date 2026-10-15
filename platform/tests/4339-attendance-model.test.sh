@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — validates two fixtures against the shipped Context / Conversation / Channel / Message shapes with Jena shacl; no store, no network
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 #
 # #4339 — who is in the room: Session attendedBy + lastAttendedAt, Presence focusedNow + checkedAt.
 # is shown RED on a row built to break it (#3734) and green on rows that keep it.

@@ -1,4 +1,5 @@
 // @test-type: unit — pure pulse logic on fixtures; no live services
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3335
 // @owner: wren
 // #3335 Pattern 7 — dedup window tests (jest/ts-jest, the pulse runner).

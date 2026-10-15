@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-daily-review.sh — AC tests for #1807 daily review instrumentation
 # Tests: spine events emitted, Bridge POST retry, ops.health.checked event, alert rule
 set -uo pipefail

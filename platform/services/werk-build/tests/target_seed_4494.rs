@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4494 — a new werk's crate starts from prod's build cache (APFS clone of
 //! canonical's target/), so a card compiles what it changed, not everything.
 //! #4465 run 2 (2026-10-11): a card that touched no Rust built for 16 minutes.
