@@ -679,7 +679,10 @@ fn run(args: &[String]) -> Result<i32, String> {
                     match outcome {
                         BatsOutcome::Pass => true,
                         BatsOutcome::Unmeasured => {
-                            unmeasured.push(format!("{} — suite reported unmeasured", target));
+                            // #4537 — a runner that could not start names itself below
+                            if !werk_test::lane_unmeasured_pending() {
+                                unmeasured.push(format!("{} — suite reported unmeasured", target));
+                            }
                             true
                         }
                         BatsOutcome::Fail => false,
@@ -691,6 +694,10 @@ fn run(args: &[String]) -> Result<i32, String> {
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
             _ => true, // unreachable given check_plan's construction
         };
+        // #4537 — a lane that could not measure: UNMEASURED with its reason
+        for why in werk_test::take_lane_unmeasured() {
+            unmeasured.push(format!("{} — {}", target, why));
+        }
         // #4536 — a case lane that passed with 0 cases ran nothing: UNMEASURED, not green.
         let ran = all_cases.len() - cases_before + (unmatched_cargo - unmatched_before);
         let already = unmeasured.last().is_some_and(|u| werk_test::unmeasured_is(u, target));
@@ -1328,6 +1335,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let times: std::collections::HashMap<String, u64> = werk_test::nextest_case_times(&text)
                 .into_iter().map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect();
             store_unit(item, &matched, &runs, &reasons, &times);
+            note_nightly_unmeasured(item);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
         });
     let npm_root = root.clone();
@@ -1344,6 +1352,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let jest_times = take_case_times(&cases);
             // #4030 AC3 — stored the moment the package finishes
             store_unit(item, &cases, &[], &reasons, &jest_times);
+            note_nightly_unmeasured(item);
             (ok, cases)
         });
     println!("-- #4022 one queue: {} jobs across {} stages · cargo {}, npm {}, files {}, stack-readers 2, isolated alone --",
@@ -1356,7 +1365,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             match tool {
                 "cargo" => QueueOut::Cargo(run_cargo(item)),
                 "npm" => QueueOut::Npm(run_pkg(item)),
-                _ => QueueOut::Files(werk_test::time_unit(item, || run_bats_stored(&root, item))),
+                _ => QueueOut::Files(werk_test::time_unit(item, || {
+                    let r = run_bats_stored(&root, item);
+                    note_nightly_unmeasured(item);
+                    r
+                })),
             }
         });
     let mut ran: std::collections::HashMap<String, QueueOut> = ran_list.into_iter().collect();
@@ -1384,6 +1397,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         for (item, (ok, cases, ns_len, moved)) in cargo_results {
             let (kind, unit) = werk_test::stage_item_label(stage, "cargo", &item);
             werk_test::print_unit_time(&kind, &unit, &item);
+            if let Some(why) = nightly_unmeasured(&item).filter(|_| ok) {
+                println!("{}", werk_test::nightly_lane_line_unmeasured(&kind, &unit, &why));
+                continue;
+            }
             if ok && cases.is_empty() && moved && ns_len == 0 {
                 println!("nightly-unit|{}|{}|skip|0 pass, 0 fail (no unit tests of its own — its typed test binaries ran in their own stages)", kind, unit);
                 continue;
@@ -1414,6 +1431,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let p = item.split('#').next().unwrap_or(&item).to_string();
             let (kind, unit) = werk_test::stage_item_label(stage, npm_kind_of(&p), &item);
             werk_test::print_unit_time(&kind, &unit, &item);
+            if let Some(why) = nightly_unmeasured(&item).filter(|_| ok) {
+                println!("{}", werk_test::nightly_lane_line_unmeasured(&kind, &unit, &why));
+                continue;
+            }
             let pkg_ns: Vec<String> = if stack_down.is_some() {
                 ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
             } else { Vec::new() };
@@ -1471,6 +1492,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let b = &b;
             let kind = bats_kind(b);
             werk_test::print_unit_time(kind, b, b);
+            if let Some(why) = nightly_unmeasured(b).filter(|_| ok) {
+                println!("{}", werk_test::nightly_lane_line_unmeasured(kind, b, &why));
+                continue;
+            }
             // #4065 — a suite that DECLINED to run (rc=3) is its own verdict
             if werk_test::is_self_refused(&cases) {
                 println!("{}", werk_test::nightly_lane_line_refused(kind, b));
@@ -1708,7 +1733,12 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
                     "\nSUITE TIMED OUT after {}s — killed by the runner (deadline is child-exit, not pipe-EOF)\n",
                     timeout_secs));
                 eprintln!("!! {} timed out after {}s — killed", suite, timeout_secs);
-                return (false, werk_test::parse_file_suite_cases(suite, &text), text);
+                // #4537 — killed at the cap: UNMEASURED unless a case already failed
+                let cases = werk_test::parse_file_suite_cases(suite, &text);
+                if cases.iter().any(|(_, r)| r == "fail") {
+                    return (false, cases, text);
+                }
+                return (werk_test::lane_unmeasured(format!("killed at {}s", timeout_secs)), cases, text);
             }
             // #4016 — rc=3 is a suite's SELF-REFUSAL ("I must not run here"),
             // not a failure. nightly-suites.sh learned this in #4004; this
@@ -1909,6 +1939,15 @@ fn run_bats(werk: &str, suite: &str) -> (BatsOutcome, Vec<CaseResult>) {
     );
     let text = std::fs::read_to_string(&out_path).unwrap_or_default();
     print!("{}", text);
+    // #4537 — a case the membrane stopped from writing prod measured nothing:
+    // UNMEASURED and named, unless another case failed for a real reason
+    let (refused, other_failed) = werk_test::membrane_refused_cases(&text);
+    let outcome = if outcome == BatsOutcome::Fail && !refused.is_empty() && other_failed == 0 {
+        werk_test::lane_unmeasured(format!("test tried to write prod: {}", refused.join(", ")));
+        BatsOutcome::Unmeasured
+    } else {
+        outcome
+    };
     let cases: Vec<CaseResult> = werk_test::parse_file_suite_cases(suite, &text).into_iter()
         .map(|(n, r)| CaseResult { file_path: suite.to_string(), test_name: n, result: r })
         .collect();
@@ -2155,7 +2194,8 @@ fn nextest_gate(werk: &str) -> &'static Result<(), String> {
                     String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
                 werk_test::classify_nextest_probe(o.status.success(), &text, pin)
             }
-            Err(e) => Err(format!("nextest-probe-spawn-failed: {}", e)),
+            // #4537 — no cargo at all: the build cannot start
+            Err(e) => Err(format!("build did not start: {}", werk_test::did_not_start("cargo", &e))),
         }
     })
 }
@@ -2175,7 +2215,8 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
 fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&str], only_bins: &[&str]) -> (bool, Vec<(String, String)>, String) {
     let dir = format!("{}/{}", werk, crate_dir(werk, name));
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
-        return (true, Vec::new(), String::new());
+        // #4537 — was a silent green
+        return (werk_test::lane_unmeasured(format!("no Cargo.toml in {}", crate_dir(werk, name))), Vec::new(), String::new());
     }
     // #4494 — start from prod's build cache when this werk has none
     let canonical = std::env::var("CHORUS_HOME")
@@ -2184,8 +2225,10 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
         println!("build-cache: {}", werk_test::seed_target(werk, &canonical, &crate_dir(werk, name)));
     }
     if let Err(reason) = nextest_gate(werk) {
-        eprintln!("REFUSED cargo lane for {}: {}", name, reason);
-        return (false, Vec::new(), format!("REFUSED cargo lane: {}", reason));
+        // #4537 — the toolchain, not the card: UNMEASURED, never a red with no failing case
+        eprintln!("UNMEASURED cargo lane for {}: {}", name, reason);
+        let why = if reason.starts_with("build did not start") { reason.clone() } else { format!("nextest {}", reason) };
+        return (werk_test::lane_unmeasured(why), Vec::new(), format!("UNMEASURED cargo lane: {}", reason));
     }
     // #4022 — each crate gets its share of the CPU budget (see lane_widths);
     // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
@@ -2232,7 +2275,10 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
                 .map(|(p, r)| (werk_test::nextest_bare_name(&p).to_string(), r)));
             (ok, cases, text)
         }
-        Err(e) => (false, Vec::new(), format!("cargo could not start: {}", e)),
+        Err(e) => {
+            let why = format!("build did not start: {}", werk_test::did_not_start("cargo", &e));
+            (werk_test::lane_unmeasured(why.clone()), Vec::new(), why)
+        }
     }
 }
 
@@ -2304,12 +2350,14 @@ fn quarantined_cases() -> Vec<Quarantined> {
 fn run_tsc(werk: &str, pkg: &str) -> bool {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
-        eprintln!("!! tsc:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
-        return false;
+        // #4537 — deps the runner could not provide: UNMEASURED, not a red
+        eprintln!("!! tsc:{} deps unavailable — UNMEASURED", pkg);
+        return werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg));
     }
     let tsc = format!("{}/node_modules/.bin/tsc", pkg_dir);
     if !Path::new(&tsc).exists() {
-        return true; // package has no local tsc → nothing to typecheck here
+        // #4537 — was a silent green
+        return werk_test::lane_unmeasured(format!("no tsc in {}", pkg));
     }
     status_ok(
         Command::new(&tsc)
@@ -2356,8 +2404,9 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
 fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: Option<&str>) -> (bool, Vec<CaseResult>, Vec<(String, String, String)>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
-        eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
-        return (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} deps unavailable", pkg))]);
+        eprintln!("!! jest:{} deps unavailable — UNMEASURED", pkg);
+        return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new(),
+            vec![(String::new(), String::new(), format!("jest:{} deps unavailable", pkg))]);
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
@@ -2420,7 +2469,9 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
                 (ok, jest_cases_via_jq(stdout.as_bytes(), werk), reasons)
             }
         }
-        None => (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} killed at its unit cap", pkg))]),
+        // #4537 — killed at the cap with no case failed: UNMEASURED
+        None => (werk_test::lane_unmeasured(format!("killed at {}s", werk_test::unit_timeout().as_secs())), Vec::new(),
+            vec![(String::new(), String::new(), format!("jest:{} killed at its unit cap", pkg))]),
     }
 }
 
@@ -2610,8 +2661,8 @@ fn npm_test_files(pkg_dir: &str) -> Vec<String> {
 fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
-        eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
-        return (false, Vec::new());
+        eprintln!("!! jest:{} deps unavailable — UNMEASURED", pkg);
+        return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new());
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     let rel: Vec<String> = files
@@ -2763,7 +2814,7 @@ fn jest_reasons_via_jq(json: &[u8], werk: &str) -> Vec<(String, String, String)>
 fn run_clippy_ratchet(werk: &str) -> bool {
     let script = format!("{}/platform/scripts/clippy-ratchet.sh", werk);
     if !Path::new(&script).is_file() {
-        return true;
+        return werk_test::lane_unmeasured("missing clippy-ratchet.sh"); // #4537 — was a silent green
     }
     // #3701 — pin CHORUS_ROOT to the werk: clippy-ratchet.py prefers $CHORUS_ROOT,
     // which the session env points at canonical, so the ratchet measured main
@@ -2776,7 +2827,7 @@ fn run_clippy_ratchet(werk: &str) -> bool {
 fn run_doc_coherence(werk: &str) -> bool {
     let script = format!("{}/platform/tests/doc-coherence-ratchet.test.sh", werk);
     if !Path::new(&script).is_file() {
-        return true;
+        return werk_test::lane_unmeasured("missing doc-coherence-ratchet.test.sh"); // #4537 — was a silent green
     }
     // #4396 — the live link probe measures production, not this card's tree:
     // a card lane skips it (the ratchet prints SKIPPED); the nightly runs it.
@@ -2815,12 +2866,34 @@ fn status_ok(cmd: &mut Command) -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
+/// #4537 — the nightly runs units on worker threads; a worker hands its lane
+/// notes to the stage that prints the unit's line.
+static NIGHTLY_UNMEASURED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+fn note_nightly_unmeasured(item: &str) {
+    let notes = werk_test::take_lane_unmeasured();
+    if !notes.is_empty() {
+        if let Ok(mut m) = NIGHTLY_UNMEASURED.lock() {
+            m.push((item.to_string(), notes.join("; ")));
+        }
+    }
+}
+
+fn nightly_unmeasured(item: &str) -> Option<String> {
+    NIGHTLY_UNMEASURED.lock().ok()?.iter().find(|(i, _)| i == item).map(|(_, r)| r.clone())
+}
+
 /// #4265 — read a bats suite's exit code as a three-way outcome. 0 pass,
-/// 2 unmeasured, anything else fail. A suite that cannot be launched at all
-/// is a FAIL, never unmeasured: a missing runner must not read as "nothing to
-/// measure".
+/// 2 unmeasured, anything else fail. #4537: a suite that cannot be launched
+/// is UNMEASURED "missing <runner>" — #4265's worry (a missing runner reading
+/// as "nothing to measure") is answered because UNMEASURED blocks a go.
 fn bats_outcome(cmd: &mut Command) -> BatsOutcome {
+    let runner = cmd.get_program().to_string_lossy().rsplit('/').next().unwrap_or("bats").to_string();
     match cmd.status() {
+        Err(e) => {
+            werk_test::lane_unmeasured(werk_test::did_not_start(&runner, &e));
+            BatsOutcome::Unmeasured
+        }
         Ok(s) if s.success() => BatsOutcome::Pass,
         Ok(s) if s.code() == Some(2) => BatsOutcome::Unmeasured,
         // #4515 — rc=3 is a suite's SELF-REFUSAL (#4016/#4256): it declined to
@@ -3352,7 +3425,8 @@ filters asked for: {}){}",
                 }
             }
         }
-        Err(e) => (Some(false), format!(" (spawn failed: {})", e)),
+        // #4537 — the harness could not launch: UNMEASURED, not a red
+        Err(e) => (None, format!(" (UNMEASURED — {})", werk_test::did_not_start("playwright", &e))),
     }
 }
 
@@ -3436,12 +3510,22 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         std::env::set_var("NIGHTLY_UNIT_TIMEOUT", "2");
         let (dir, s) = world("hung.sh", "echo started\nsleep 300\n");
         let t0 = std::time::Instant::now();
+        let _ = werk_test::take_lane_unmeasured();
         let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
-        std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
-        assert!(!ok);
+        // #4537 — killed at the cap with no case failed: UNMEASURED, not red
+        assert!(ok, "{}", text);
+        assert_eq!(werk_test::take_lane_unmeasured(), vec!["killed at 2s".to_string()]);
         assert!(t0.elapsed().as_secs() < 30);
         assert!(text.contains("SUITE TIMED OUT"));
+        // NEGATIVE PROOF: a case that already failed before the cap stays red
+        let (dir, s) = world("failed-then-hung.sh",
+            "echo 'not ok 1 the product broke'\nsleep 300\n");
+        let (ok, cases, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
+        assert!(cases.iter().any(|(_, r)| r == "fail"), "{:?} {}", cases, text);
+        assert!(!ok, "a failed case before the cap must stay red: {}", text);
+        assert!(werk_test::take_lane_unmeasured().is_empty());
     }
 }
 
@@ -3477,12 +3561,15 @@ mod bats_unmeasured_4265 {
         assert!(exiting(3) == BatsOutcome::Unmeasured);
 
         // NEGATIVE PROOF (#3734): the codes this must NOT swallow. A suite that
-        // fails, and a suite whose runner cannot even be launched, both stay
-        // FAIL — otherwise "unmeasured" becomes a way to make a red disappear,
-        // which is the exact thing the hold exists to avoid.
+        // fails stays FAIL — otherwise "unmeasured" becomes a way to make a red
+        // disappear, which is the exact thing the hold exists to avoid.
         assert!(exiting(1) == BatsOutcome::Fail);
         assert!(exiting(70) == BatsOutcome::Fail);
-        assert!(bats_outcome(&mut Command::new("/nonexistent/bats")) == BatsOutcome::Fail);
+        // #4537 — a runner that cannot even be launched is UNMEASURED and says
+        // which runner (it blocks a go; it is not the product breaking)
+        let _ = werk_test::take_lane_unmeasured();
+        assert!(bats_outcome(&mut Command::new("/nonexistent/bats")) == BatsOutcome::Unmeasured);
+        assert_eq!(werk_test::take_lane_unmeasured(), vec!["missing bats".to_string()]);
     }
 }
 
@@ -3766,5 +3853,50 @@ mod shell_suite_unit_4440 {
             Some(TestUnit::BatsSuite("platform/scripts/test-nightly-npm-runner.sh".into())));
         // NEGATIVE PROOF: an ordinary script is not a suite
         assert_eq!(unit_for_test("platform/scripts/chorus-werk-status"), None);
+    }
+}
+
+#[cfg(test)]
+mod silent_passes_4537 {
+    use super::*;
+
+    fn empty_werk(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("werk-test-4537-sp-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// #4537 — the 4 silent passes at main (Silas's map) each say UNMEASURED
+    /// with their reason instead of a green that ran nothing.
+    #[test]
+    fn each_silent_pass_is_unmeasured_with_its_reason() {
+        let w = empty_werk("missing");
+        let ws = w.to_str().unwrap();
+        let _ = werk_test::take_lane_unmeasured();
+        assert!(run_clippy_ratchet(ws));
+        assert!(run_doc_coherence(ws));
+        let (ok, cases, _) = run_cargo_sel(ws, "platform/services/gone", &[], &[], &[]);
+        assert!(ok && cases.is_empty());
+        let notes = werk_test::take_lane_unmeasured();
+        assert_eq!(notes[0], "missing clippy-ratchet.sh");
+        assert_eq!(notes[1], "missing doc-coherence-ratchet.test.sh");
+        assert!(notes[2].starts_with("no Cargo.toml in "), "{:?}", notes);
+    }
+
+    /// NEGATIVE PROOF: with the scripts present and passing, nothing is noted.
+    #[test]
+    fn negative_proof_present_scripts_note_nothing() {
+        let w = empty_werk("present");
+        for g in ["platform/scripts/clippy-ratchet.sh", "platform/tests/doc-coherence-ratchet.test.sh"] {
+            let p = w.join(g);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        }
+        let ws = w.to_str().unwrap();
+        let _ = werk_test::take_lane_unmeasured();
+        assert!(run_clippy_ratchet(ws));
+        assert!(run_doc_coherence(ws));
+        assert!(werk_test::take_lane_unmeasured().is_empty());
     }
 }

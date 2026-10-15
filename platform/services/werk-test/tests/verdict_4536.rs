@@ -117,3 +117,21 @@ fn negative_proof_a_bats_file_with_zero_cases_still_ran_nothing() {
     assert!(werk_test::reports_cases(CheckKind::CargoTest, "cargo:platform/services/x.sh"));
     assert!(werk_test::reports_cases(CheckKind::Jest, "jest:platform/tests"));
 }
+
+// #4537 — why a program could not run, and which bats cases the membrane stopped
+#[test]
+fn a_tool_not_installed_reads_missing_and_any_other_spawn_error_reads_did_not_start() {
+    let nf = std::io::Error::from(std::io::ErrorKind::NotFound);
+    assert_eq!(werk_test::did_not_start("bats", &nf), "missing bats");
+    let pd = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    assert!(werk_test::did_not_start("cargo", &pd).starts_with("cargo did not start: "));
+}
+
+#[test]
+fn a_membrane_refused_case_is_named_and_a_real_failure_is_counted_apart() {
+    let tap = "1..3\nok 1 fine in 3ms\nnot ok 2 writes the live spine in 9ms\n# MEMBRANE REFUSED (#3615): test context ...\nnot ok 3 product broke\n# expected 1 got 2\n";
+    let (refused, other) = werk_test::membrane_refused_cases(tap);
+    assert_eq!(refused, vec!["writes the live spine".to_string()]);
+    // NEGATIVE PROOF: the real failure is not swallowed into the refused list
+    assert_eq!(other, 1);
+}

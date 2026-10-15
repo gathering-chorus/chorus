@@ -93,6 +93,13 @@ fn run_fixture(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[S
     std::fs::create_dir_all(&werk).unwrap();
     git(&werk, &["init", "-q"]);
     std::fs::write(werk.join("README"), "fixture\n").unwrap();
+    // #4537 — the repo's own guard scripts, as every real werk has them; a
+    // missing one is UNMEASURED now (row 1 must stay CLEAN)
+    for g in ["platform/tests/doc-coherence-ratchet.test.sh", "platform/scripts/clippy-ratchet.sh"] {
+        let p = werk.join(g);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+    }
     git(&werk, &["add", "-A"]);
     git(&werk, &["commit", "-qm", "base"]);
     for (path, body) in files {
@@ -115,13 +122,68 @@ fn stub_path(base: &Path) -> String {
 }
 
 fn run_in(base: &Path, card: &str, registry_rows: &[String], patch_status: u16) -> Run {
+    run_in_path(base, card, registry_rows, patch_status, None)
+}
+
+/// #4537 — a PATH holding only the system tools, git, and the named tools
+/// (`bats`, `cargo`): a row leaves out the one it is about.
+fn tools_path(base: &Path, with: &[&str]) -> String {
+    let tools = base.join("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    let real = |name: &str| -> PathBuf {
+        let out = Command::new("sh").arg("-c").arg(format!("command -v {}", name)).output().unwrap();
+        PathBuf::from(String::from_utf8_lossy(&out.stdout).trim())
+    };
+    for name in ["git"].iter().chain(with.iter()) {
+        let src = real(name);
+        assert!(src.is_file(), "the fixture needs {} on this box", name);
+        let _ = std::os::unix::fs::symlink(&src, tools.join(name));
+    }
+    let stub = stub_path(base);
+    let stub_dir = stub.split(':').next().unwrap().to_string();
+    format!("{}:{}:/usr/bin:/bin:/usr/sbin:/sbin", stub_dir, tools.display())
+}
+
+/// #4537 — one fixture with its own PATH.
+fn run_fixture_path(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[String], with: &[&str]) -> Run {
+    let base = std::env::temp_dir().join(format!("werk-test-4537-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let path = tools_path(&base, with);
+    let werk = base.join(format!("fix-{}", card));
+    std::fs::create_dir_all(&werk).unwrap();
+    git(&werk, &["init", "-q"]);
+    std::fs::write(werk.join("README"), "fixture\n").unwrap();
+    for g in ["platform/tests/doc-coherence-ratchet.test.sh", "platform/scripts/clippy-ratchet.sh"] {
+        let p = werk.join(g);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+    }
+    // the repo's one nextest pin, as every werk carries it
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let pin = std::fs::read_to_string(Path::new(&dir).join("../../../.config/nextest.toml")).unwrap();
+    std::fs::create_dir_all(werk.join(".config")).unwrap();
+    std::fs::write(werk.join(".config/nextest.toml"), pin).unwrap();
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "base"]);
+    for (path, body) in files {
+        let p = werk.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "card"]);
+    run_in_path(&base, card, registry_rows, 200, Some(path))
+}
+
+fn run_in_path(base: &Path, card: &str, registry_rows: &[String], patch_status: u16, path: Option<String>) -> Run {
     std::fs::create_dir_all(base).unwrap();
     let registry = format!("{{\"data\":[{}]}}", registry_rows.join(","));
     let (port, patches) = stub(registry, patch_status);
     let door = format!("http://127.0.0.1:{}", port);
     let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
         .args([card, "fix"])
-        .env("PATH", stub_path(base))
+        .env("PATH", path.unwrap_or_else(|| stub_path(base)))
         .env("CHORUS_WERK_BASE", base)
         .env_remove("WERK_TEST_TREE")
         .env_remove("CHORUS_HOME")
@@ -248,4 +310,74 @@ fn a_werk_root_nightly_writes_nothing_even_pointed_at_a_door() {
         &[row("platform/tests/pass.bats", "p", "test-pass")], 200);
     assert!(r.patches.is_empty(), "a werk nightly wrote a Test row: {:?}\n{}", r.patches, r.out);
     assert!(r.out.contains("only the canonical nightly writes Test rows"), "{}", r.out);
+}
+
+// ── #4537 — the rows this card adds (plan rows 3, 4, 5, 11, 12) ──────────────
+
+const FX_TOML: &str = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n";
+const FX_LIB: &str = "pub fn one() -> u32 { 1 }\n";
+const FX_TEST: &str = "#[test]\nfn one_is_one() { assert_eq!(fx::one(), 1); }\n";
+
+fn crate_files(lib: &'static str) -> Vec<(&'static str, &'static str)> {
+    vec![("platform/services/fx/Cargo.toml", FX_TOML), ("platform/services/fx/src/lib.rs", lib),
+         ("platform/services/fx/tests/t.rs", FX_TEST)]
+}
+
+fn crate_row() -> String {
+    row("platform/services/fx/tests/t.rs", "one_is_one", "test-fx")
+}
+
+#[test]
+fn row_03_a_missing_tool_is_unmeasured_never_red() {
+    // bats is not on PATH
+    let r = run_fixture_path("r3", "91003", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &[]);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("missing bats"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: CLEAN") && !r.out.contains("werk-test: RED"), "{}", r.out);
+}
+
+#[test]
+fn row_04_a_build_that_cannot_start_is_unmeasured() {
+    // no cargo on PATH
+    let r = run_fixture_path("r4", "91004", &crate_files(FX_LIB), &[crate_row()], &[]);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("build did not start"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: CLEAN") && !r.out.contains("werk-test: RED"), "{}", r.out);
+}
+
+#[test]
+fn row_05_a_compile_error_in_the_cards_code_is_red() {
+    // cargo is there; the card's own code does not compile
+    let r = run_fixture_path("r5", "91005", &crate_files("pub fn one( {\n"), &[crate_row()], &["cargo"]);
+    assert_eq!(r.code, 1, "{}", r.out);
+    assert!(r.out.contains("werk-test: RED (exit 1)"), "{}", r.out);
+    assert!(r.out.contains("platform/services/fx"), "{}", r.out);
+}
+
+#[test]
+fn row_11_a_fail_and_a_missing_tool_together_is_red_and_still_lists_the_unmeasured() {
+    // bats runs and fails; the crate's build cannot start (no cargo)
+    let mut files = crate_files(FX_LIB);
+    files.push(("platform/tests/fail.bats", FAIL));
+    let r = run_fixture_path("r11", "91011", &files,
+        &[crate_row(), row("platform/tests/fail.bats", "f", "test-fail")], &["bats"]);
+    assert_eq!(r.code, 1, "{}", r.out);
+    assert!(r.out.contains("werk-test: RED (exit 1)"), "{}", r.out);
+    assert!(r.out.contains("build did not start"), "the unmeasured list must still print: {}", r.out);
+}
+
+#[test]
+fn row_12_a_case_that_tries_to_write_prod_is_unmeasured_and_named() {
+    // a real membrane-aware writer (chorus-log through the installed shim),
+    // asked to write the spine from inside a bats case with no test world
+    let home = std::env::var("HOME").unwrap();
+    let shim = format!("{}/.chorus/bin/chorus-hook-shim", home);
+    assert!(Path::new(&shim).is_file(), "row 12 needs the installed chorus-hook-shim at {}", shim);
+    let case = format!("#!/usr/bin/env bats\n@test \"writes the live spine\" {{\n  env -u CHORUS_LOG_FILE HOME=\"$BATS_TEST_TMPDIR/h\" {} chorus-log test.fixture kade x=1\n}}\n", shim);
+    let case: &'static str = Box::leak(case.into_boxed_str());
+    let r = run_fixture_path("r12", "91013", &[("platform/tests/prodwrite.bats", case)],
+        &[row("platform/tests/prodwrite.bats", "writes the live spine", "test-prodwrite")], &["bats"]);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("test tried to write prod: writes the live spine"), "{}", r.out);
 }

@@ -88,10 +88,12 @@ fn lint_ratchet_refuses_over_baseline_and_passes_at_baseline() {
     let deleted = root.join("deleted-werk");
     std::fs::create_dir_all(&deleted).unwrap();
     std::fs::write(deleted.join(".eslint-baseline.json"), baseline).unwrap();
-    assert!(
-        !werk_test::run_lint_ratchet(deleted.to_str().unwrap()),
-        "baseline present + script deleted must refuse, not vacuously pass"
-    );
+    // #4537 — it says so as UNMEASURED "missing lint-ratchet.js" (blocks a
+    // go), never a red with no failing case and never a silent pass
+    let _ = werk_test::take_lane_unmeasured();
+    assert!(werk_test::run_lint_ratchet(deleted.to_str().unwrap()));
+    assert_eq!(werk_test::take_lane_unmeasured(), vec!["missing lint-ratchet.js".to_string()],
+        "baseline present + script deleted must be UNMEASURED, not vacuously pass");
 
     std::env::remove_var("LINT_RATCHET_ESLINT_BIN");
     let _ = std::fs::remove_dir_all(&root);
