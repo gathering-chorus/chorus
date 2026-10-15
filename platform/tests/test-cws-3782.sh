@@ -234,7 +234,7 @@ echo '{"data":{"cards":[{"id":109,"owner":"Kade"},{"id":110,"owner":"Wren"}]}}' 
 board() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_API="file://$TD/api" "$CWS"; }
 out=$(board)
 t "a landing card reads where its land is" "#109 kade   land: deploy-prod" "$out"
-t "its run number is the card's own count" "· run 3" "$out"
+t "its run number is the card's own count" "· cicd run 3" "$out"
 t "a card with no run says so plainly" "#110 wren   no run yet" "$out"
 n=$(grep -c '^#109' <<<"$out")
 [ "$n" = 1 ] || { echo "FAIL #109 takes $n lines, wanted one"; fails=$((fails+1)); }
