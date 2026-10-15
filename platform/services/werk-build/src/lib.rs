@@ -334,6 +334,42 @@ fn run(cmd: &str, args: &[&str]) -> R<String> {
 
 /// Like `run`, with an explicit working dir + extra env (for BUILD_SKIP_INSTALL
 /// and so `gh`/`build-signed.sh` resolve the repo + crate from the werk).
+/// #4552 — the readable reason for a failed command: stderr, then the last
+/// lines of stdout (tsc reports there), trimmed.
+pub fn failure_text(stderr: &[u8], stdout: &[u8]) -> String {
+    let err = String::from_utf8_lossy(stderr).trim().to_string();
+    let out = String::from_utf8_lossy(stdout);
+    let tail: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
+    let tail = tail[tail.len().saturating_sub(20)..].join("\n");
+    match (err.is_empty(), tail.is_empty()) {
+        (_, true) => err,
+        (true, false) => tail,
+        (false, false) => format!("{err}\n{tail}"),
+    }
+}
+
+/// #4511/#4552 — install a werk package from its own lock: never through a
+/// symlink into canonical's tree, and a stamp of the lock makes a re-run a
+/// no-op. Ok(true) = installed now, Ok(false) = already installed from this lock.
+fn install_from_own_lock(werk_s: &str, rel: &Path, werk_nm: &Path) -> R<bool> {
+    let lock = fs::read(Path::new(werk_s).join(rel).join("package-lock.json")).ok();
+    let stamp = werk_nm.join(".chorus-installed-lock");
+    if !werk_nm.is_symlink() && lock.is_some() && fs::read(&stamp).ok() == lock {
+        return Ok(false);
+    }
+    if werk_nm.is_symlink() {
+        fs::remove_file(werk_nm).map_err(|e| format!("cannot unlink {}: {}", werk_nm.display(), e))?;
+    }
+    let npm = env::var("CHORUS_NPM").unwrap_or_else(|_| "npm".to_string());
+    let dir = Path::new(werk_s).join(rel);
+    run_in_env(&dir.to_string_lossy(), &[], &npm, &["ci", "--no-audit", "--no-fund"])
+        .map_err(|e| format!("the werk cannot borrow canonical's node_modules for {} and npm ci failed: {}", rel.display(), e))?;
+    if let Some(lock) = &lock {
+        let _ = fs::write(&stamp, lock);
+    }
+    Ok(true)
+}
+
 fn run_in_env(dir: &str, envs: &[(&str, &str)], cmd: &str, args: &[&str]) -> R<String> {
     let mut c = Command::new(cmd);
     c.args(args).current_dir(dir);
@@ -342,11 +378,13 @@ fn run_in_env(dir: &str, envs: &[(&str, &str)], cmd: &str, args: &[&str]) -> R<S
     }
     let out = c.output().map_err(|e| format!("{} failed to start: {}", cmd, e))?;
     if !out.status.success() {
+        // #4552 — tsc writes its errors to stdout; a failed `npm run build`
+        // showed only "npm run build:" and hid TS5107. Report both streams.
         return Err(format!(
             "{} {}: {}",
             cmd,
             args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
+            failure_text(&out.stderr, &out.stdout)
         ));
     }
     // build-signed.sh prints cdhash on stdout; callers may need stderr too.
@@ -905,12 +943,18 @@ pub fn ensure_node_modules(werk_s: &str, home: &Path) -> R<usize> {
     for rel_pj in tracked.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let Some(rel) = Path::new(rel_pj).parent() else { continue };
         let canon_nm = home.join(rel).join("node_modules");
-        if !canon_nm.is_dir() {
-            continue;
-        }
         let werk_nm = Path::new(werk_s).join(rel).join("node_modules");
         if !werk_nm.parent().map(|p| p.is_dir()).unwrap_or(false) {
             continue; // package not present in the werk
+        }
+        // #4552 — a package canonical never installed (Clearing v2 the day it
+        // landed) used to be skipped here, so the werk built it with no deps and
+        // every later card's run died on it. It installs from its own lock.
+        if !canon_nm.is_dir() {
+            if Path::new(werk_s).join(rel).join("package-lock.json").is_file() && install_from_own_lock(werk_s, rel, &werk_nm)? {
+                linked += 1;
+            }
+            continue;
         }
         // #4511 — a werk whose lockfile differs from canonical's (a dependency
         // bump, a new dependency) cannot borrow canonical's tree: it would build
@@ -927,20 +971,9 @@ pub fn ensure_node_modules(werk_s: &str, home: &Path) -> R<usize> {
         let npm = env::var("CHORUS_NPM").unwrap_or_else(|_| "npm".to_string());
         let canon_ok = || run_in_env(&home.join(rel).to_string_lossy(), &[], &npm, &["ls", "--depth=0"]).is_ok();
         if werk_lock.is_some() && (werk_lock != canon_lock || !canon_ok()) {
-            let stamp = werk_nm.join(".chorus-installed-lock");
-            if !werk_nm.is_symlink() && fs::read(&stamp).ok() == werk_lock {
-                continue; // already installed from this lock — idempotent
+            if install_from_own_lock(werk_s, rel, &werk_nm)? {
+                linked += 1;
             }
-            if werk_nm.is_symlink() {
-                fs::remove_file(&werk_nm).map_err(|e| format!("cannot unlink {}: {}", werk_nm.display(), e))?;
-            }
-            let dir = Path::new(werk_s).join(rel);
-            run_in_env(&dir.to_string_lossy(), &[], &npm, &["ci", "--no-audit", "--no-fund"])
-                .map_err(|e| format!("the werk cannot borrow canonical's node_modules for {} and npm ci failed: {}", rel.display(), e))?;
-            if let Some(lock) = &werk_lock {
-                let _ = fs::write(&stamp, lock);
-            }
-            linked += 1;
             continue;
         }
         if fs::read_link(&werk_nm).ok().as_deref() == Some(canon_nm.as_path()) {
