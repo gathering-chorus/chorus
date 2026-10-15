@@ -43,7 +43,8 @@ fn stub(roles: &'static str, cap: Option<u32>, pulse_status: u16) -> (String, Se
             let req = String::from_utf8_lossy(&raw).to_string();
             let line = req.lines().next().unwrap_or("").to_string();
             let body_in = req.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
-            log.lock().unwrap().push(format!("{line} {body_in}"));
+            let bearer = req.lines().find_map(|l| l.strip_prefix("Authorization: Bearer ").or_else(|| l.strip_prefix("authorization: Bearer "))).unwrap_or("-").to_string();
+            log.lock().unwrap().push(format!("{line} {body_in} bearer={bearer}"));
             let (status, body) = if line.contains("/v1/roles/roles") {
                 (200, roles.to_string())
             } else if line.contains("/properties/resolve") {
@@ -67,9 +68,20 @@ fn words(n: usize) -> String { vec!["word"; n].join(" ") }
 
 /// Runs one send; returns its result, the spine events written, and the requests the stub saw.
 fn run(base: &str, a: &[&str]) -> (Result<String, String>, Vec<String>) {
+    run_as(base, a, Some("s3"), None)
+}
+
+fn run_as(base: &str, a: &[&str], secret: Option<&str>, token: Option<&str>) -> (Result<String, String>, Vec<String>) {
     let spine: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let write = |e: &str, r: &str, p: &str| spine.lock().unwrap().push(format!("{e} {r} {p}"));
-    let deps = Deps { door: base.into(), api: base.into(), pulse_url: format!("{base}/api/nudge"), pulse_secret: Some("s3".into()), spine: &write };
+    let deps = Deps {
+        door: base.into(),
+        api: base.into(),
+        pulse_url: format!("{base}/api/nudge"),
+        pulse_secret: secret.map(String::from),
+        identity_token: token.map(String::from),
+        spine: &write,
+    };
     let out = send(&args(a), &deps);
     let events = spine.lock().unwrap().clone();
     (out, events)
@@ -91,6 +103,24 @@ fn a_nudge_to_a_listed_role_goes_through_pulse_and_says_where_it_went() {
     let calls = pulse_calls(&seen);
     assert_eq!(calls.len(), 1);
     assert!(calls[0].contains(r#""content":"AC3 draft is in the scratch file""#) && calls[0].contains(r#""expects":"reply""#) && calls[0].contains(r#""from":"sender-a""#), "{calls:?}");
+}
+
+/// #4534 — Abby's account cannot read the secret file; her runner's identity
+/// token rides the POST so pulse can check who she is.
+#[test]
+fn a_sender_without_the_secret_sends_its_identity_token() {
+    let (base, seen) = stub(ROLES, Some(50), 200);
+    let (out, _) = run_as(&base, &["sender-t", "wren", "hello"], None, Some("tok.en.sig"));
+    assert!(out.is_ok(), "{out:?}");
+    let calls = pulse_calls(&seen);
+    assert!(calls[0].ends_with("bearer=tok.en.sig"), "{calls:?}");
+}
+
+#[test]
+fn negative_proof_no_token_means_no_authorization_header() {
+    let (base, seen) = stub(ROLES, Some(50), 200);
+    let (_, _) = run_as(&base, &["sender-u", "wren", "hello"], Some("s3"), None);
+    assert!(pulse_calls(&seen)[0].ends_with("bearer=-"), "{:?}", pulse_calls(&seen));
 }
 
 #[test]

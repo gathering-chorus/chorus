@@ -29,6 +29,10 @@ pub struct Deps<'a> {
     /// pulse's nudge endpoint
     pub pulse_url: String,
     pub pulse_secret: Option<String>,
+    /// #4534 — the caller's identity token (the runner hands every tool run
+    /// CHORUS_IDENTITY_TOKEN). A role on its own macOS user cannot read the
+    /// 0600 secret file, so pulse accepts this instead when its WebID names `from`.
+    pub identity_token: Option<String>,
     /// writes one spine event: (event, role, payload)
     pub spine: &'a dyn Fn(&str, &str, &str),
 }
@@ -46,6 +50,7 @@ impl Deps<'_> {
             api: env("CHORUS_API_URL", "http://localhost:3340"),
             pulse_url: env("CHORUS_PULSE_URL", "http://localhost:3475/api/nudge"),
             pulse_secret: secret,
+            identity_token: std::env::var("CHORUS_IDENTITY_TOKEN").ok().filter(|t| !t.is_empty()),
             spine,
         }
     }
@@ -123,6 +128,9 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
         .set("X-Chorus-MCP-Caller", "1");
     if let Some(s) = &deps.pulse_secret {
         req = req.set("X-Chorus-Pulse-Secret", s);
+    }
+    if let Some(t) = &deps.identity_token {
+        req = req.set("Authorization", &format!("Bearer {t}"));
     }
     let body = json!({ "from": from, "to": to, "content": message, "traceId": trace, "expects": expects });
     let resolved = match req.send_json(body) {
