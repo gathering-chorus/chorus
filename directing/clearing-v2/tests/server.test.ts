@@ -5,10 +5,30 @@
 
 import http from 'http';
 import { WebSocketServer } from 'ws';
+import { schnorr } from '@noble/curves/secp256k1';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { createApp, loadConfig } from '../src/server';
 import { TileService } from '../src/tile-service';
+import { serializeEvent, buildEventId, verifyNostrEvent, resolveRoleByPubkey } from '../src/identity';
+import { NostrEvent } from '../src/types';
 
 describe('Clearing v2: Server App & Tile Service', () => {
+  const testPrivKeyBytes = new Uint8Array(32).fill(42);
+  const testPubKeyHex = bytesToHex(schnorr.getPublicKey(testPrivKeyBytes));
+
+  const unregisteredPrivKeyBytes = new Uint8Array(32).fill(99);
+  const unregisteredPubKeyHex = bytesToHex(schnorr.getPublicKey(unregisteredPrivKeyBytes));
+
+  function createSignedEvent(privKey: Uint8Array, content: string, room = 'team'): NostrEvent {
+    const pubkey = bytesToHex(schnorr.getPublicKey(privKey));
+    const createdAt = Math.floor(Date.now() / 1000);
+    const tags = [['t', room]];
+    const serialized = serializeEvent(pubkey, createdAt, 1, tags, content);
+    const id = buildEventId(serialized);
+    const sig = bytesToHex(schnorr.sign(hexToBytes(id), privKey));
+    return { id, pubkey, created_at: createdAt, kind: 1, tags, content, sig };
+  }
+
   test('createApp initializes app, router, relay and tileService', () => {
     const { app, router, tileService, relay } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
@@ -103,6 +123,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
     const { app } = createApp({
       relayUrl: `ws://127.0.0.1:${deadRelayPort}`,
       pulseUrl: 'http://127.0.0.1:3475',
+      knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
 
     const clearingServer = http.createServer(app);
@@ -110,12 +131,14 @@ describe('Clearing v2: Server App & Tile Service', () => {
     const clearingPort = (clearingServer.address() as any).port;
 
     try {
+      const validEvent = createSignedEvent(testPrivKeyBytes, 'Private trial note for v2');
       const res = await fetch(`http://127.0.0.1:${clearingPort}/api/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'jeff', text: 'Private trial note for v2' }),
+        body: JSON.stringify({ event: validEvent }),
       });
       expect(res.status).toBe(200);
+
 
       await new Promise((r) => setTimeout(r, 100));
 
@@ -155,4 +178,85 @@ describe('Clearing v2: Server App & Tile Service', () => {
     expect(roomsSource?.status).toBe('failed');
     expect(roomsSource?.reason).toBe('relay not configured');
   });
+
+  test('NEGATIVE PROOF: /api/send refuses unsigned posts with 401', async () => {
+    const { app } = createApp({
+      relayUrl: 'ws://127.0.0.1:3499',
+      pulseUrl: 'http://127.0.0.1:3475',
+    });
+    const server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as any).port;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'jeff', text: 'Unsigned spoof attempt' }),
+      });
+      expect(res.status).toBe(401);
+      const json = await res.json() as any;
+      expect(json.ok).toBe(false);
+      expect(json.error).toMatch(/unsigned|signed/i);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  test('NEGATIVE PROOF: /api/send refuses events signed by unregistered keys with 401', async () => {
+    const { app } = createApp({
+      relayUrl: 'ws://127.0.0.1:3499',
+      pulseUrl: 'http://127.0.0.1:3475',
+      knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
+    });
+    const server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as any).port;
+
+    try {
+      const unregisteredEvent = createSignedEvent(unregisteredPrivKeyBytes, 'Post from rogue agent');
+      const res = await fetch(`http://127.0.0.1:${port}/api/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: unregisteredEvent }),
+      });
+      expect(res.status).toBe(401);
+      const json = await res.json() as any;
+      expect(json.ok).toBe(false);
+      expect(json.error).toMatch(/unregistered/i);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  test('accepts event signed by registered key, taking sender strictly from the key', async () => {
+    const { app, router } = createApp({
+      relayUrl: 'ws://127.0.0.1:3499',
+      pulseUrl: 'http://127.0.0.1:3475',
+      knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
+    });
+    const server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as any).port;
+
+    try {
+      const validEvent = createSignedEvent(testPrivKeyBytes, 'Signed message from Abby Normal');
+      const res = await fetch(`http://127.0.0.1:${port}/api/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'jeff', event: validEvent }),
+      });
+      expect(res.status).toBe(200);
+      const json = await res.json() as any;
+      expect(json.ok).toBe(true);
+      expect(json.from).toBe('abby-normal');
+
+      const recent = router.getRecent(1);
+      expect(recent.length).toBe(1);
+      expect(recent[0].from).toBe('abby-normal');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
 });
+

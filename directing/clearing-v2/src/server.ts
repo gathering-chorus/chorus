@@ -69,10 +69,11 @@ interface RouteContext {
   pulseUrl: string;
   broadcastSSE: (type: string, data: unknown) => void;
   onInboundEvent: (event: NostrEvent) => void;
+  keys: Map<string, string>;
 }
 
 function registerRoutes(ctx: RouteContext): void {
-  const { app, router, tileService, dataService, relay, sseClients, relayUrl, pulseUrl, broadcastSSE, onInboundEvent } = ctx;
+  const { app, router, tileService, dataService, relay, sseClients, relayUrl, pulseUrl, broadcastSSE, onInboundEvent, keys } = ctx;
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({
@@ -166,44 +167,24 @@ function registerRoutes(ctx: RouteContext): void {
   });
 
   app.post('/api/send', (req: Request, res: Response) => {
-    const { from, text, event } = req.body;
+    const event: NostrEvent | undefined = req.body?.event || (req.body?.id && req.body?.sig ? req.body : undefined);
 
-    if (event && verifyNostrEvent(event)) {
-      relay.publish(event);
-      onInboundEvent(event);
-      res.json({ ok: true, id: event.id });
+    if (!event || !verifyNostrEvent(event)) {
+      res.status(401).json({ ok: false, error: 'unsigned post refused: valid signed event required' });
       return;
     }
 
-    if (!text || typeof text !== 'string') {
-      res.status(400).json({ ok: false, error: 'text is required' });
+    const role = resolveRoleByPubkey(event.pubkey, keys);
+    if (!role) {
+      res.status(401).json({ ok: false, error: 'unregistered key refused' });
       return;
     }
 
-    const msg: ClearingMessage = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      from: from || 'jeff',
-      text: text.trim(),
-      ts: new Date().toISOString(),
-      type: 'jeff-input',
-      visible: true,
-      room: req.body.room || 'team',
-    };
-
-    router.ingest(msg);
-    broadcastSSE('message', msg);
-
-    const nudges = router.extractNudges(msg);
-    for (const nudge of nudges) {
-      fetch(`${pulseUrl}/api/nudge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nudge),
-      }).catch(() => {});
-    }
-
-    res.json({ ok: true, id: msg.id });
+    relay.publish(event);
+    onInboundEvent(event);
+    res.json({ ok: true, id: event.id, from: role });
   });
+
 
   app.get('/api/events', (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -334,7 +315,9 @@ export function createApp(options?: {
     pulseUrl,
     broadcastSSE,
     onInboundEvent,
+    keys,
   });
+
 
   return { app, router, tileService, dataService, relay };
 }
