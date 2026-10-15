@@ -318,7 +318,9 @@ describe('Clearing v2: Server App & Tile Service', () => {
       expect(recent.length).toBe(1);
       expect(recent[0].from).toBe('jeff');
       expect(recent[0].type).toBe('jeff-input');
-      expect(recent[0].tick).toBe(true);
+      // no relay in this test, so the sent tick stays off: the tick means the relay
+      // accepted it (rooms.feature:19), not that the server received it
+      expect(recent[0].tick).toBe(false);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

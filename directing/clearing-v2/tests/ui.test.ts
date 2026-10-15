@@ -219,3 +219,64 @@ describe('Clearing v2 Frontend Helpers', () => {
   });
 });
 
+
+// ---- #4530 room key (public/room-key.js), merged here so the registered UI suite exercises it
+// #4530 part 1 — the browser's room key (public/room-key.js, v1 #3827 rule): one key
+// per WebID, kept across loads, never shared between people, and events it signs
+// verify. room-key.js is a browser module (absolute /vendor imports), so the test
+// loads its source with the same noble libraries the page is served.
+import * as fs from 'fs';
+import * as path from 'path';
+import { schnorr } from '@noble/curves/secp256k1';
+import { sha256 } from '@noble/hashes/sha256';
+import { verifyNostrEvent } from '../src/identity';
+
+type RoomKey = {
+  loadOrCreate: (webid: string, s?: Storage) => { sk: Uint8Array; pubkey: string; fresh: boolean };
+  signEvent: (sk: Uint8Array, kind: number, tags: string[][], content: string) => any;
+};
+
+function loadRoomKey(): RoomKey {
+  const src = fs.readFileSync(path.join(__dirname, '../public/room-key.js'), 'utf8')
+    .replace(/^import .*$/gm, '')
+    .replace(/^export (async )?function/gm, '$1function')
+    .replace(/^if \(typeof window[\s\S]*$/m, '');
+  // eslint-disable-next-line no-new-func
+  return new Function('schnorr', 'nobleSha256', `${src}\nreturn { loadOrCreate, signEvent };`)(schnorr, sha256);
+}
+
+function memStorage(): Storage {
+  const m = new Map<string, string>();
+  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v) } as Storage;
+}
+
+const JEFF = 'https://id.example.test/jeff/profile/card#me';
+const MARK = 'https://id.example.test/mark/profile/card#me';
+
+test('the same WebID gets the same key across loads', () => {
+  const rk = loadRoomKey();
+  const s = memStorage();
+  const a = rk.loadOrCreate(JEFF, s);
+  const b = rk.loadOrCreate(JEFF, s);
+  expect(a.fresh).toBe(true);
+  expect(b.fresh).toBe(false);
+  expect(b.pubkey).toBe(a.pubkey);
+});
+
+test('two people sharing a browser never share a key', () => {
+  const rk = loadRoomKey();
+  const s = memStorage();
+  expect(rk.loadOrCreate(MARK, s).pubkey).not.toBe(rk.loadOrCreate(JEFF, s).pubkey);
+});
+
+test('no WebID refuses by name instead of minting a key for nobody', () => {
+  expect(() => loadRoomKey().loadOrCreate('', memStorage())).toThrow(/not signed in/);
+});
+
+test('a signed event verifies, and a tampered one does not (negative proof)', () => {
+  const rk = loadRoomKey();
+  const { sk } = rk.loadOrCreate(JEFF, memStorage());
+  const ev = rk.signEvent(sk, 1, [['t', 'team']], 'morning');
+  expect(verifyNostrEvent(ev)).toBe(true);
+  expect(verifyNostrEvent({ ...ev, content: 'evening' })).toBe(false);
+});
