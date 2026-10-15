@@ -24,7 +24,8 @@ setup() {
 
 @test "NEGATIVE PROOF: scoped scan still fails on the planted HIGH CVE (lodash 4.17.15)" {
   run bash "$SCRIPT" sca-selftest "$FIX"
-  [ "$status" -ne 0 ]
+  # #4034 reopen 1 — exit 1 is a finding; 2 is unmeasured and must not pass here
+  [ "$status" -eq 1 ] || { echo "want 1 (finding), got $status: $output"; return 1; }
   [[ "$output" == *"lodash"* ]] || return 1
 }
 
@@ -35,4 +36,61 @@ setup() {
   local deep="$status"
   [ "$scoped" -eq 0 ]
   [ "$deep" -ne 0 ]
+}
+
+# #4034 reopen 1 — the runtime log dirs (ops/logs 1.3 GB, git-ignored) are
+# skipped scoped and still walked deep, the same proof as target/ above.
+@test "#4034 reopen 1: a lockfile under ops/logs is invisible scoped, visible deep" {
+  LOGS="$BATS_TEST_TMPDIR/logs-only"
+  mkdir -p "$LOGS/ops/logs"
+  cp "$FIX/package-lock.json" "$LOGS/ops/logs/package-lock.json"
+  run bash "$SCRIPT" sca-selftest "$LOGS"
+  local scoped="$status"
+  run bash "$SCRIPT" sca-selftest-deep "$LOGS"
+  [ "$scoped" -eq 0 ]
+  [ "$status" -eq 1 ]
+}
+
+# #4034 reopen 1 — 2026-10-15 05:19: trivy hit its own 4-minute limit and the
+# suite counted the timeout as a finding. NEGATIVE PROOF of the two states: a
+# trivy that dies FATAL reads UNMEASURED (exit 2, no "SCA FINDINGS"), and the
+# planted HIGH above still reads exit 1.
+@test "NEGATIVE PROOF #4034: a trivy that never finishes is UNMEASURED, not a finding" {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat > "$BATS_TEST_TMPDIR/bin/trivy" <<'EOS'
+#!/bin/bash
+echo "2026-10-15T05:24:39-04:00	FATAL	Fatal error	run error: fs scan error: semaphore acquire: context deadline exceeded" >&2
+exit 1
+EOS
+  chmod +x "$BATS_TEST_TMPDIR/bin/trivy"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run bash "$SCRIPT" sca-selftest "$FIX"
+  [ "$status" -eq 2 ] || { echo "want 2 (unmeasured), got $status: $output"; return 1; }
+  [[ "$output" == *"SCA UNMEASURED"* ]] || return 1
+  [[ "$output" == *"context deadline exceeded"* ]] || return 1
+  [[ "$output" != *"SCA FINDINGS"* ]] || return 1
+}
+
+# #4034 reopen 1 — in a git repo the scoped scan reads the COMMITTED tree (git
+# archive HEAD), not the working tree. NEGATIVE PROOF both ways: a vulnerable
+# lockfile that is committed is still caught; the same file left untracked is
+# not walked scoped and is still caught deep.
+@test "NEGATIVE PROOF #4034: in a repo, a committed HIGH is caught; an untracked one waits for the deep scan" {
+  REPO="$BATS_TEST_TMPDIR/repo"
+  mkdir -p "$REPO/app" "$REPO/stray"
+  git -C "$REPO" init -q
+  echo '{}' > "$REPO/README.json"
+  git -C "$REPO" add README.json
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -qm base
+  cp "$FIX/package-lock.json" "$REPO/stray/package-lock.json"
+  run bash "$SCRIPT" sca-selftest "$REPO"
+  [ "$status" -eq 0 ] || { echo "untracked lockfile must not be walked scoped, got $status: $output"; return 1; }
+  [[ "$output" == *"scanning the committed tree"* ]] || return 1
+  run bash "$SCRIPT" sca-selftest-deep "$REPO"
+  [ "$status" -eq 1 ] || { echo "deep must still catch it, got $status"; return 1; }
+  cp "$FIX/package-lock.json" "$REPO/app/package-lock.json"
+  git -C "$REPO" add app/package-lock.json
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -qm vuln
+  run bash "$SCRIPT" sca-selftest "$REPO"
+  [ "$status" -eq 1 ] || { echo "committed lockfile must be caught scoped, got $status: $output"; return 1; }
+  [[ "$output" == *"lodash"* ]] || return 1
 }

@@ -112,6 +112,18 @@ SCA_SCOPE=(--skip-dirs "**/target" --skip-dirs "**/node_modules" --skip-dirs ".g
 # not disappear.
 SCA_SCOPE+=(--skip-files "**/.env.*" --skip-files ".env.*")
 
+# #4034 reopen 1 — the runtime log dirs are git-ignored and never ship, and
+# ops/logs alone is 1.3 GB. On 2026-10-15 trivy spent its whole 4-minute limit
+# reading ops/logs/athena-make-20260916.jsonl and the nightly went red with no
+# finding. The weekly deep scan still walks them.
+SCA_SCOPE+=(--skip-dirs "ops/logs" --skip-dirs "platform/logs")
+# Measured the same morning: with ops/logs skipped the scan still ran out its 4
+# minutes in platform/backups/graph-retirements — 775,894 files, almost all
+# empty .nt retirement dumps athena-deploy drops on every deploy (.gitignore
+# calls them runtime artifacts, #3991). git cannot report that dir as ignored
+# because a few audit copies inside it are tracked, so it is named here.
+SCA_SCOPE+=(--skip-dirs "platform/backups/graph-retirements")
+
 # The secret-scan exemption ledger: every entry names why it is not a credential.
 SCA_IGNOREFILE="$ROOT/platform/security/trivy-ignore.yaml"
 
@@ -145,9 +157,26 @@ run_sca() {
     echo "SCA: trivy not installed — SKIPPED (brew install trivy, or use osv-scanner)"; return 0
   fi
   local target="${1:-$ROOT}" depth="${2:-scoped}"
-  local scope=()
+  local scope=() _sca_tree=""
   if [ "$depth" = "scoped" ]; then
     scope=("${SCA_SCOPE[@]}")
+    # #4034 reopen 1 — measured 10-15: with ops/logs and the retirement dumps
+    # skipped the scan still took 271 s, because the working tree carries what
+    # never ships: 17,504 untracked files (a leftover .werk-cov-target-4462/
+    # build tree alone is 17,126) and ~780k git-ignored ones. Naming dirs one
+    # red at a time is whack-a-mole. The nightly scans what ships: the
+    # committed tree (git archive HEAD), 6,606 files. Same trade as .env above:
+    # the weekly deep scan still walks the whole working tree.
+    if [ "$(git -C "$target" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$target" && pwd -P)" ]; then
+      _sca_tree="$(mktemp -d)"
+      if git -C "$target" archive HEAD | tar -x -C "$_sca_tree"; then
+        echo "  scanning the committed tree: $(git -C "$target" rev-parse --short HEAD), $(git -C "$target" ls-files | wc -l | tr -d ' ') files"
+        target="$_sca_tree"
+      else
+        rm -rf "$_sca_tree"; _sca_tree=""
+        echo "  SCA UNMEASURED — could not export the committed tree of $target"; return 2
+      fi
+    fi
     # the skip-files rule above only holds because nothing matching it is tracked
     assert_no_tracked_env || return 1
   fi
@@ -173,8 +202,17 @@ run_sca() {
     sca_out=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "$target" 2>&1)
   fi
   local sca_rc=$?
-  rm -rf "$_sca_dockercfg"
+  # #4034 reopen 1 — trivy exits 1 for a finding AND for a fatal error (its
+  # own timeout included), so the exit code alone cannot tell "found something"
+  # from "never finished". A scan that never finished is UNMEASURED with its
+  # reason: never red (nothing was found) and never green (nothing was checked).
+  if printf '%s' "$sca_out" | grep -q 'FATAL'; then
+    rm -rf "$_sca_dockercfg"; [ -z "$_sca_tree" ] || rm -rf "$_sca_tree"
+    echo "  SCA UNMEASURED — trivy did not finish: $(printf '%s' "$sca_out" | grep -m1 'FATAL' | sed 's/.*FATAL[[:space:]]*//' | cut -c1-240)"
+    return 2
+  fi
   if [ $sca_rc -eq 0 ]; then
+    rm -rf "$_sca_dockercfg"; [ -z "$_sca_tree" ] || rm -rf "$_sca_tree"
     echo "  SCA clean (no HIGH/CRITICAL)"; return 0
   else
     # #4107 — #4004 captured the output so a red could name its findings, but
@@ -189,10 +227,13 @@ run_sca() {
     else
       sca_json=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --severity HIGH,CRITICAL --quiet --format json $(sca_flags) "$target" 2>/dev/null)
     fi
+    # #4034 reopen 1 — the empty docker config lives until BOTH scans are done;
+    # it was removed before this second scan, which then ran without it.
+    rm -rf "$_sca_dockercfg"; [ -z "$_sca_tree" ] || rm -rf "$_sca_tree"
     printf '%s' "$sca_json" | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
-except Exception: print("    (could not parse trivy json — raw table follows)"); sys.exit(0)
+except Exception: print("    (could not parse trivy json — raw table follows)"); sys.exit(3)
 n=0
 for r in d.get("Results") or []:
     for v in r.get("Vulnerabilities") or []:
@@ -200,10 +241,26 @@ for r in d.get("Results") or []:
     for s in r.get("Secrets") or []:
         n+=1; print("    SECRET %s:%s  %s" % (r["Target"], s.get("StartLine"), s.get("RuleID")))
 print("    total: %d finding(s)" % n)
-'
+' || printf '%s\n' "$sca_out" | tail -40 | sed 's/^/    /'
     echo "  reproduce: trivy fs --scanners vuln,secret --severity HIGH,CRITICAL $target"
     return 1
   fi
+}
+
+# #4004 — emit the harness's parseable shape: without it the nightly
+# synthesized "0 pass, 0 fail" from an unparseable run and scored a suite that
+# found real things as if it produced nothing.
+# #4034 reopen 1 — one verdict for full and deep. A finding is red. A leg that
+# did not finish is UNMEASURED: "0 passed, 0 failed", which the nightly scores
+# unmeasured (remap_unmeasured), and exit 2 so no lane reads it as green.
+rc=0; um=0
+verdict() {
+  if [ "$rc" -ne 0 ]; then
+    echo "$1: findings — see above"; echo "=== Results: 0 passed, 1 failed ==="; exit 1
+  elif [ "$um" -ne 0 ]; then
+    echo "$1: UNMEASURED — a leg did not finish (reason above)"; echo "=== Results: 0 passed, 0 failed ==="; exit 2
+  fi
+  echo "$1: clean"; echo "=== Results: 2 passed, 0 failed ==="; exit 0
 }
 
 case "$MODE" in
@@ -216,27 +273,14 @@ case "$MODE" in
   sca)  run_sca;  exit $? ;;
   deep)
     run_sast || rc=1
-    run_sca "$ROOT" deep || rc=1
+    run_sca "$ROOT" deep; s=$?; [ $s -eq 2 ] && um=1; [ $s -eq 1 ] && rc=1
     echo "-----------------------------------------"
-    if [ "$rc" -eq 0 ]; then echo "SECURITY SCAN (deep): clean"; echo "=== Results: 2 passed, 0 failed ==="
-    else echo "SECURITY SCAN (deep): findings — see above"; echo "=== Results: 0 passed, 1 failed ==="; fi
-    exit $rc ;;
+    verdict "SECURITY SCAN (deep)" ;;
   sast) run_sast; exit $? ;;
   full)
     run_sast || rc=1
-    run_sca  || rc=1
+    run_sca; s=$?; [ $s -eq 2 ] && um=1; [ $s -eq 1 ] && rc=1
     echo "-----------------------------------------"
-    # #4004 — emit the harness's parseable shape. Without it the nightly
-    # synthesized "0 pass, 0 fail" from an unparseable run, and daily-review
-    # scored a suite that RAN and FOUND REAL THINGS as if it had produced
-    # nothing — findings invisible behind a formatting gap.
-    if [ "$rc" -eq 0 ]; then
-      echo "SECURITY SCAN: clean"
-      echo "=== Results: 2 passed, 0 failed ==="
-    else
-      echo "SECURITY SCAN: findings — see above"
-      echo "=== Results: 0 passed, 1 failed ==="
-    fi
-    exit $rc ;;
+    verdict "SECURITY SCAN" ;;
   *) echo "usage: security-scan.sh [full|deep|sast|sca|selftest DIR|sca-selftest DIR|sca-selftest-deep DIR]" >&2; exit 2 ;;
 esac
