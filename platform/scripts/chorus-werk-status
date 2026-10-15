@@ -712,6 +712,7 @@ def ordinal(n):
 
 # #4553 (Kade) — werk-commit's words when another run of the card is live
 LIVE_REFUSAL = re.compile(r"refused: \S+ run \d+ is live \(dagu [^)]+\)")
+NO_REASON = "no reason in dagu's record of the step"
 STEP_NOISE = re.compile(r"^(exit status \d+|recent stderr|chorus-runner call:|upstream failed)")
 STEP_WHY = re.compile(r"REFUSED|refus|error|FAIL|panicked|timed out|timeout|not found|missing", re.I)
 
@@ -726,7 +727,7 @@ def step_reason(node):
     lines = [l for l in lines if l and not STEP_NOISE.match(l) and "not blocking" not in l]
     pick = (next((l for l in lines if STEP_WHY.search(l)), None)
             or next((l for l in reversed(lines) if re.match(r"werk-[\w-]+: ", l)), None))
-    return pick[:90] if pick else "no reason in dagu's record of the step"
+    return pick[:90] if pick else NO_REASON
 
 
 def merged_on_main(card, since_ms):
@@ -871,7 +872,10 @@ def dagu_detail(card, runs):
         why = ""
         if status == "failed":
             node = next((x for x in nodes_of(r) if x["step"]["name"] == step), {})
-            why = "  — " + step_reason(node)
+            why = step_reason(node)
+            if why == NO_REASON and step == "skill-werk-test":
+                why = test_reds(r) or why
+            why = "  — " + why
         print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
     land = dagu_land_line(card, "v2")
     if land:
@@ -897,6 +901,20 @@ def wip_cards():
         return None
 
 
+def test_reds(run):
+    """#4553 (Wren) — a test step whose record names no reason: the suites the
+    run's own test events say went red. #4530 run 19 read "no reason in dagu's
+    record" with 5 suites red. None when Loki cannot be read or none are red."""
+    began = run_began(run)
+    ev = run_test_events(run.get("dagRunId", ""), began / 1000 if began else time.time() - 86400)
+    if not ev:
+        return None
+    red = [st["name"] for st in tests_state(ev)["suites"] if st["status"] == "failed"]
+    if not red:
+        return None
+    return f"{len(red)} suite{'s' if len(red) != 1 else ''} red: " + ", ".join(red[:3]) + (" …" if len(red) > 3 else "")
+
+
 def why_run(name, run_id):
     """#4553 (Kade) — `--why DAG_NAME RUN_ID`: the failure nudge's words for one
     run. A run refused because another is live says so ("refused: cicd run 13
@@ -914,6 +932,8 @@ def why_run(name, run_id):
     why = step_reason(node)
     live = LIVE_REFUSAL.search(why)
     word = node["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
+    if why == NO_REASON and word == "test":
+        why = test_reds(dict(d.get("dagRunDetails") or {}, dagRunId=run_id, nodes=nodes)) or why
     print(live.group(0) if live else f"{name} failed at {word}: {why}")
     return 0
 
