@@ -72,8 +72,8 @@ pub fn run(card_id: &str) -> i32 {
         // a class declared on main with the same triples is not this card's.
         // Touching a big shared file (chorus.ttl: 28 unshaped classes) must not
         // make the card answer for every gap already in it.
-        let main_nt = main_ntriples(&card.werk, &s);
-        let changed = changed_classes(&nt, &main_nt);
+        let main_nt = card_scope::main_ntriples(&card.werk, &s);
+        let changed = card_scope::changed_classes(&nt, &main_nt);
         let untouched = card_scope::declared_classes(&nt).len() - changed.len();
         if untouched > 0 {
             println!("card-shape|{s}|-|{untouched} class(es) unchanged from main — not this card's");
@@ -101,82 +101,4 @@ pub fn run(card_id: &str) -> i32 {
     }
     println!("card-summary|0|clean — {} file(s) parse, {classes} class(es) shaped", card.ttl().len());
     0
-}
-
-/// #4536 — main's version of a card file as N-Triples; empty when main has no
-/// such file (every class in it is then the card's).
-fn main_ntriples(werk: &str, rel: &str) -> String {
-    let out = std::process::Command::new("git")
-        .args(["-C", werk, "show", &format!("origin/main:{rel}")])
-        .output();
-    let Ok(out) = out else { return String::new() };
-    if !out.status.success() {
-        return String::new();
-    }
-    let tmp = std::env::temp_dir().join(format!("athena-validate-main-{}-{}.ttl", std::process::id(), rel.replace('/', "_")));
-    if std::fs::write(&tmp, &out.stdout).is_err() {
-        return String::new();
-    }
-    let nt = card_scope::ntriples(&[tmp.to_string_lossy().into_owned()]).unwrap_or_default();
-    let _ = std::fs::remove_file(&tmp);
-    nt
-}
-
-/// #4536 — classes declared in `werk_nt` that main does not declare with the
-/// same triples about them: added, or changed. Pure, so the proof needs no git.
-pub fn changed_classes(werk_nt: &str, main_nt: &str) -> Vec<String> {
-    let about = |nt: &str, subject: &str| -> Vec<String> {
-        // declared_classes returns the IRI with its angle brackets
-        let key = format!("{subject} ");
-        // blank-node labels differ per parse (`_:b0` vs `_:b7`), so they are
-        // normalised before comparing: an identical list is not a change
-        let bnode = |l: &str| l.split_whitespace().map(|t| if t.starts_with("_:") { "_:b" } else { t }).collect::<Vec<_>>().join(" ");
-        let mut v: Vec<String> = nt.lines().filter(|l| l.starts_with(&key)).map(bnode).collect();
-        v.sort();
-        v
-    };
-    card_scope::declared_classes(werk_nt)
-        .into_iter()
-        .filter(|c| about(werk_nt, c) != about(main_nt, c))
-        .collect()
-}
-
-#[cfg(test)]
-mod changed_classes_4536 {
-    use super::changed_classes;
-    const OWL: &str = "<http://www.w3.org/2002/07/owl#Class>";
-    const TYPE: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
-    const LABEL: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
-    fn class(n: &str, label: &str) -> String {
-        format!("<urn:x#{n}> {TYPE} {OWL} .\n<urn:x#{n}> {LABEL} \"{label}\" .\n")
-    }
-
-    #[test]
-    fn an_unchanged_class_from_main_is_not_the_cards() {
-        let main = class("Old", "old");
-        let werk = format!("{}{}", class("Old", "old"), class("New", "new"));
-        assert_eq!(changed_classes(&werk, &main), vec!["<urn:x#New>".to_string()]);
-    }
-
-    #[test]
-    fn a_class_whose_triples_changed_is_the_cards() {
-        assert_eq!(changed_classes(&class("Old", "renamed"), &class("Old", "old")), vec!["<urn:x#Old>".to_string()]);
-    }
-
-    /// A list object parses to a fresh blank node each time; the same list is
-    /// not a change (10-15: GateResult's mintKey list read as "changed").
-    #[test]
-    fn the_same_list_under_a_different_blank_node_is_not_a_change() {
-        let main = format!("<urn:x#G> {TYPE} {OWL} .\n<urn:x#G> <urn:x#mintKey> _:b0 .\n");
-        let werk = format!("<urn:x#G> {TYPE} {OWL} .\n<urn:x#G> <urn:x#mintKey> _:b7 .\n");
-        assert!(changed_classes(&werk, &main).is_empty());
-    }
-
-    /// NEGATIVE PROOF: with no main version every declared class is the card's,
-    /// so a new unshaped class can never hide behind the diff.
-    #[test]
-    fn negative_proof_a_new_file_answers_for_every_class() {
-        let werk = format!("{}{}", class("A", "a"), class("B", "b"));
-        assert_eq!(changed_classes(&werk, "").len(), 2);
-    }
 }
