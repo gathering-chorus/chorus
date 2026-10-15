@@ -535,14 +535,6 @@ fn changed_ts_services_detects_pulse_and_clearing() {
 }
 
 #[test]
-fn changed_ts_services_detects_clearing_v2_distinct_from_clearing() {
-    let diff = "directing/clearing-v2/src/server.ts\n";
-    let ts = werk_deploy::changed_ts_services(diff);
-    assert_eq!(ts, vec!["clearing-v2".to_string()]);
-    assert!(!ts.contains(&"clearing".to_string()), "must return clearing-v2 and never clearing");
-}
-
-#[test]
 fn changed_ts_services_dedupes_pulse() {
     let diff = "platform/pulse/src/a.ts\nplatform/pulse/src/b.ts\n";
     assert_eq!(werk_deploy::changed_ts_services(diff), vec!["pulse".to_string()]);

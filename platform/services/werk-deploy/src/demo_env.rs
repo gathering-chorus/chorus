@@ -173,21 +173,6 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: "/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
         },
-        // #4530 — Clearing v2 (Buzz + Pulse) in demo, so Jeff can use it before it
-        // reaches prod (Jeff 20:06: "i really want to test 4530 in demo before we go
-        // to prod"). Started only when the card changes it (OPTIONAL_TRIGGERS).
-        EnvService {
-            name: "clearing-v2".to_string(),
-            kind: EnvServiceKind::TsService,
-            base_port: 3486,
-            source_dir_rel: "directing/clearing-v2".to_string(),
-            program_args_template: ProgramArgsTemplate::Node {
-                entry: "dist/server.js".to_string(),
-            },
-            port_env: "PORT".to_string(),
-            smoke_path: "/health".to_string(),
-            smoke_kind: SmokeKind::HttpGet,
-        },
         // #4227 — the werk's own hooks daemon. Until this, a demo had never run
         // one: every hook in a session talked to the single prod daemon, so a
         // card that changed a guard, a gate or the write scrubber could not be
@@ -257,8 +242,7 @@ pub fn env_services() -> Vec<EnvService> {
 /// pulse: its nudge gate reads pulse's message store). A service not listed
 /// here is always started, which keeps today's demo for cards touching none.
 pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
-    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/", "directing/clearing-v2/"]),
-    ("clearing-v2", &["directing/clearing-v2/"]),
+    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/"]),
     // #4514 — a demo runner only for cards that change the runner
     ("chorus-runner", &["platform/services/chorus-runner/"]),
 ];
@@ -444,32 +428,6 @@ pub fn clearing_extra_env(
         s("CLEARING_ROOM_READONLY", "1".to_string()),
     ]))
     .collect())
-}
-
-/// #4530 — the variant Clearing v2's environment. Its nudges go to the DEMO pulse
-/// (whose delivery is a recording stub), never prod :3475. Its relay is a dead
-/// local address, so a demo post can never be published to the real Buzz relay;
-/// the room still shows what is posted in it.
-pub fn clearing_v2_extra_env(role: &str, path: &str) -> R<Vec<(String, String)>> {
-    Ok(vec![
-        ("HOST".into(), "127.0.0.1".into()),
-        ("PULSE_URL".into(), format!("http://127.0.0.1:{}", env_port_for("pulse", role)?)),
-        ("BUZZ_RELAY_URL".into(), "ws://127.0.0.1:9".into()),
-        ("PATH".into(), path.to_string()),
-    ])
-}
-
-/// #4530 — prod surfaces a variant Clearing v2 must never be handed.
-pub fn clearing_v2_env_prod_leak(env: &[(String, String)]) -> Option<String> {
-    for (k, v) in env {
-        if k == "PULSE_URL" && (v.ends_with(":3475") || v.contains(":3475/")) {
-            return Some(format!("PULSE_URL points at prod pulse ({})", v));
-        }
-        if k == "BUZZ_RELAY_URL" && v.contains("192.168.86.242") {
-            return Some(format!("BUZZ_RELAY_URL points at the prod relay ({})", v));
-        }
-    }
-    None
 }
 
 /// #4445 — the relay the prod Clearing reads, taken from its installed plist
@@ -967,12 +925,6 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             .ok().and_then(|t| relay_url_in_plist(&t));
         let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path, prod_relay.as_deref())?;
         let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path)?;
-        let clearing_v2_owned = clearing_v2_extra_env(role, &variant_path)?;
-        if svc.name == "clearing-v2" {
-            if let Some(leak) = clearing_v2_env_prod_leak(&clearing_v2_owned) {
-                return Err(format!("env_up: refusing to start the variant Clearing v2 — {}", leak));
-            }
-        }
         let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path)?;
         if svc.name == "pulse" {
             if let Some(leak) = pulse_env_prod_leak(&pulse_owned, &home_dir) {
@@ -1056,7 +1008,6 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
-            "clearing-v2" => clearing_v2_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "chorus-runner" => runner_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
@@ -1275,34 +1226,6 @@ mod tests {
     }
 
     use super::*;
-
-    #[test]
-    fn a_clearing_v2_change_starts_v2_and_the_demo_pulse_it_posts_to() {
-        let names: Vec<String> = services_for_diff(&["directing/clearing-v2/src/server.ts".to_string()])
-            .into_iter().map(|s| s.name).collect();
-        assert!(names.contains(&"clearing-v2".to_string()), "{names:?}");
-        assert!(names.contains(&"pulse".to_string()), "{names:?}");
-        let other: Vec<String> = services_for_diff(&["platform/api/src/x.ts".to_string()])
-            .into_iter().map(|s| s.name).collect();
-        assert!(!other.contains(&"clearing-v2".to_string()), "v2 starts only for its own changes: {other:?}");
-    }
-
-    #[test]
-    fn clearing_v2_in_demo_posts_to_the_demo_pulse_and_no_real_relay() {
-        let env = clearing_v2_extra_env("abby-normal", "/usr/bin").unwrap();
-        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap();
-        assert_eq!(get("PULSE_URL"), format!("http://127.0.0.1:{}", env_port_for("pulse", "abby-normal").unwrap()));
-        assert_eq!(clearing_v2_env_prod_leak(&env), None);
-    }
-
-    /// NEGATIVE PROOF (#3734): an env pointing v2 at prod pulse or the real relay is refused.
-    #[test]
-    fn negative_proof_clearing_v2_env_pointing_at_prod_is_refused() {
-        let prod_pulse = vec![("PULSE_URL".to_string(), "http://127.0.0.1:3475".to_string())];
-        assert!(clearing_v2_env_prod_leak(&prod_pulse).is_some());
-        let prod_relay = vec![("BUZZ_RELAY_URL".to_string(), "ws://192.168.86.242:3000".to_string())];
-        assert!(clearing_v2_env_prod_leak(&prod_relay).is_some());
-    }
 
     #[test]
     fn known_roles_lists_three_with_stable_order() {
