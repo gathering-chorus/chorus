@@ -824,6 +824,12 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
     let root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME")).unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into());
     // #4440 reopen — launchd starts this at cwd `/`: name the tree it tests
     werk_test::set_repo_root(std::path::Path::new(&root));
+    // #4536 — one trace for the whole run, minted HERE before any lane starts,
+    // so every lane's case events and this run's PipelineRun carry the same id
+    // (10-15: cases said nightly-1792049381065-39455, the PipelineRun said
+    // nightly-1792056711, so /nightly could not find its own cases in Loki).
+    let trace = werk_test::run_trace_id(std::env::var("CHORUS_TRACE_ID").ok().as_deref(), epoch() as u128 * 1000, std::process::id());
+    std::env::set_var("CHORUS_TRACE_ID", &trace);
     let home = env_or("CHORUS_HOME", &root);
     let home_dir = env_or("HOME", "/tmp");
     let mut ctx = Ctx {
@@ -842,7 +848,6 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
             enabled: werk_test::nightly_run::graph_rows_enabled(
                 &root,
                 std::env::var("NIGHTLY_GRAPH_ROWS").ok().as_deref(),
-                std::env::var("OWLAPI").ok().as_deref(),
             ),
             ..Default::default()
         },
@@ -1006,6 +1011,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         werk_test::nightly_run::run_test_counts(&lane.cases, lane.stored),
         &rec,
     );
+    mark_unseen_unmeasured(ctx);
     for r in &rows {
         let reason = if r.status == "fail" {
             let p = format!("{}/{}", ctx.fail_dir, fail_log_name(&r.kind, &r.path));
@@ -1045,6 +1051,23 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     }
     let _ = lane.rc;
     Ok(0)
+}
+
+/// #4536 (Silas 08:32–08:33) — a Test the nightly never ran is unmeasured
+/// "did not run in <trace>", not left showing an old pass. Only a COMPLETED
+/// run gets here (the stop path exits before), so a killed run can never blank
+/// good results; and a werk root never writes prod rows (graph rows off).
+/// The seed script reads every lane's case events for the run's one trace.
+fn mark_unseen_unmeasured(ctx: &Ctx) {
+    if !ctx.graph.enabled {
+        return;
+    }
+    let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    let seed = format!("{}/platform/scripts/test-latest-seed", ctx.root);
+    let ok = Command::new(&seed).args([trace.as_str(), "--unseen-only", "--apply"]).status()
+        .map(|s| s.success()).unwrap_or(false);
+    eprintln!("nightly: unseen Test rows marked unmeasured — {} (#4536)", if ok { "done" } else { "FAILED, rows keep their last result" });
+    ctx.spine("nightly.unseen.marked", &[("trace".into(), trace), ("ok".into(), ok.to_string())]);
 }
 
 fn emit_pipeline_run(

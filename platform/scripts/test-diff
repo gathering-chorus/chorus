@@ -16,26 +16,76 @@
 #   same test, same content, different verdict.
 #
 # Usage:
-#   test-diff                      the two most recent runs
-#   test-diff <runTs-a> <runTs-b>  two explicit runs (ISO, as stored)
-#   test-diff --runs [N]           list recent runs and their case counts
+#   test-diff                      the two most recent nightly runs
+#   test-diff <trace-a> <trace-b>  two explicit runs, by trace (#4536)
+#   test-diff --runs [N]           list recent runs: trace and start time
 #
 # Exit: 0 = no verdict changed · 1 = at least one changed · 2 = could not ask.
 # Exit 2 matters: a diff that cannot reach the store must not read as "nothing
 # changed" — that is the same defect this whole card exists to remove.
 set -uo pipefail
 
+# #4536 — runs are NIGHTLY RUNS named by their trace (the PipelineRun row's
+# traceId), and each run's verdicts come from its test.case.* events in Loki.
+# TestResult rows are no longer written. Runs from before #4536 carry a trace
+# no case event has, so they answer nothing (exit 2), never "no change".
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
-TESTS_GRAPH="${TESTS_GRAPH:-urn:chorus:domains:tests}"
+LOKI_URL="${LOKI_URL:-http://127.0.0.1:3102}"
 P='PREFIX c: <https://jeffbridwell.com/chorus#>'
 
-# Seam: tests stub this to drive the pure logic without a store.
+# Seam: tests stub this to drive the pure logic without a store. It takes a
+# SPARQL query, or `LOKI <trace>` for one run's verdicts, and answers CSV.
 ask() {
   if [ -n "${TEST_DIFF_STUB:-}" ]; then
     "$TEST_DIFF_STUB" "$1"
     return
   fi
-  curl -s -m "${TEST_DIFF_TIMEOUT:-180}" -G "$FUSEKI_QUERY" --data-urlencode "query=$1" -H 'Accept: text/csv' 2>/dev/null
+  case "$1" in
+    LOKI\ *) loki_verdicts "${1#LOKI }" ;;
+    *) curl -s -m "${TEST_DIFF_TIMEOUT:-180}" -G "$FUSEKI_QUERY" --data-urlencode "query=$1" -H 'Accept: text/csv' 2>/dev/null ;;
+  esac
+}
+
+# One run's verdicts as `?k,?res` CSV (file|case,result), paged forward 5,000
+# at a time (Loki's per-query cap). No answer → nothing printed → exit 2 above.
+loki_verdicts() {
+  python3 - "$LOKI_URL" "$1" <<'PY'
+import json, sys, time, urllib.parse, urllib.request
+loki, trace = sys.argv[1], sys.argv[2]
+# line filters only: a `| json` stage over a run's ~10,600 lines did not
+# answer in 100 s; the same read without it answers in 0.3 s (measured 10-15)
+q = ('{job="platform-chorus", appName="chorus-events"} |= ' + json.dumps('"trace":"%s"' % trace)
+     + ' |= ' + json.dumps('"event":"test.case.'))
+# a #4536 trace is nightly-<epoch ms>-<pid>: it names its own start, so the
+# read is that hour back to six after, not a 30-day scan for one string
+try:
+    minted = int(trace.split("-")[1])
+except (IndexError, ValueError):
+    sys.exit(0)
+start, end = (minted - 3600 * 1000) * 10**6, (minted + 6 * 3600 * 1000) * 10**6
+word = {"test.case.passed": "pass", "test.case.failed": "fail", "test.case.skipped": "skip"}
+seen = {}
+try:
+    while True:
+        u = loki + "/loki/api/v1/query_range?" + urllib.parse.urlencode(
+            {"query": q, "start": start, "end": end, "limit": 5000, "direction": "forward"})
+        vals = sorted(v for r in json.load(urllib.request.urlopen(u, timeout=60))["data"]["result"] for v in r["values"])
+        for ts, line in vals:
+            e = json.loads(line)
+            if e.get("event") not in word:
+                continue
+            seen["%s|%s" % (e.get("file", ""), e.get("case", ""))] = word[e["event"]]
+        if len(vals) < 5000:
+            break
+        start = int(vals[-1][0]) + 1
+except Exception:
+    sys.exit(0)
+if not seen:
+    sys.exit(0)
+print("?k,?res")
+for k in sorted(seen):
+    print('"%s",%s' % (k.replace('"', '""'), seen[k]))
+PY
 }
 
 # A CSV header is the proof the store answered. Absent header = it did not, and
@@ -51,30 +101,22 @@ answered() {
   case "$first" in [?a-zA-Z]*) return 0 ;; *) return 1 ;; esac
 }
 
+RUNS_Q="$P SELECT ?t ?ts WHERE { GRAPH <urn:chorus:domains:pipelines> {
+  ?r a c:PipelineRun ; c:runTs ?ts ; c:traceId ?t } } ORDER BY DESC(STR(?ts))"
+
 list_runs() {
   local n="${1:-10}"
-  local out; out=$(ask "$P SELECT ?t (COUNT(?r) AS ?n) WHERE {
-    GRAPH <$TESTS_GRAPH> { ?r a c:TestResult ; c:runTs ?t } }
-    GROUP BY ?t ORDER BY DESC(?t) LIMIT $n")
-  answered "$out" || { echo "test-diff: the tests domain did not answer — refusing to report a blind result" >&2; exit 2; }
+  local out; out=$(ask "$RUNS_Q LIMIT $n")
+  answered "$out" || { echo "test-diff: the pipelines domain did not answer — refusing to report a blind result" >&2; exit 2; }
   printf '%s' "$out" | tail -n +2 | sed 's/,/  /' | sed 's/^/  /'
 }
 
-# filePath|testName,result for one run.
-verdicts_for() {
-  ask "$P SELECT ?k ?res WHERE {
-    GRAPH <$TESTS_GRAPH> {
-      ?r a c:TestResult ; c:runTs \"$1\" ; c:result ?res ;
-         c:filePath ?f ; c:testName ?tn .
-      BIND(CONCAT(?f, \"|\", ?tn) AS ?k) } } ORDER BY ?k"
-}
+verdicts_for() { ask "LOKI $1"; }
 
 recent_two() {
-  local out; out=$(ask "$P SELECT DISTINCT ?t WHERE {
-    GRAPH <$TESTS_GRAPH> { ?r a c:TestResult ; c:runTs ?t } }
-    ORDER BY DESC(?t) LIMIT 2")
+  local out; out=$(ask "$RUNS_Q LIMIT 2")
   answered "$out" || return 1
-  printf '%s' "$out" | tail -n +2 | sed 's/^"//; s/"$//'
+  printf '%s' "$out" | tail -n +2 | cut -d, -f1 | sed 's/^"//; s/"$//'
 }
 
 case "${1:-}" in
@@ -94,19 +136,25 @@ fi
 
 VA=$(verdicts_for "$A"); VB=$(verdicts_for "$B")
 if ! answered "$VA" || ! answered "$VB"; then
-  echo "test-diff: the tests domain did not answer — refusing to report a blind 'no change'" >&2
+  echo "test-diff: no case events for one of the runs (Loki down, or a run from before #4536) — refusing to report a blind 'no change'" >&2
   exit 2
 fi
 
 # Pure comparison, so the interesting part is testable without a store.
-CHANGED=$(python3 - "$VA" "$VB" <<'PY'
+# #4536 — the verdicts go through files, not argv: a whole nightly (~10,600
+# cases) overflowed ARG_MAX, python never ran, and the empty output read as
+# "no verdict changed" (measured 10-15). A comparison that did not run is exit 2.
+FA=$(mktemp); FB=$(mktemp); trap 'rm -f "$FA" "$FB"' EXIT
+printf '%s' "$VA" > "$FA"; printf '%s' "$VB" > "$FB"
+CHANGED=$(python3 - "$FA" "$FB" <<'PY'
+
 import csv, io, sys
 def rows(s):
     r = csv.reader(io.StringIO(s))
     try: next(r)
     except StopIteration: return {}
     return {c[0]: c[1] for c in r if len(c) >= 2}
-a, b = rows(sys.argv[1]), rows(sys.argv[2])
+a, b = rows(open(sys.argv[1]).read()), rows(open(sys.argv[2]).read())
 for k in sorted(set(a) | set(b)):
     va, vb = a.get(k), b.get(k)
     if va == vb:
@@ -115,7 +163,7 @@ for k in sorted(set(a) | set(b)):
     elif vb is None: print(f"GONE     {k}  (was {va})")
     else:            print(f"CHANGED  {k}  {va} -> {vb}")
 PY
-)
+) || { echo "test-diff: the comparison did not run — refusing to report 'no change'" >&2; exit 2; }
 
 echo "test-diff  $A  ->  $B"
 if [ -z "$CHANGED" ]; then

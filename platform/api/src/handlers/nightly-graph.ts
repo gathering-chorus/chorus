@@ -57,7 +57,8 @@ export function inFlightFromCsv(csv: string, nowMs: number): InFlightUnit[] {
 
 /** The run records (the tail the run wrote when it ended or was stopped). */
 export function runRecordsQuery(oldest: string): string {
-  const opt = ['runOutcome', 'runCompletedAt', 'testsRegistered', 'testsRun', 'testsPassed', 'testsFailed',
+  // #4536 — traceId: the run's one trace, so /nightly reads its cases from Loki
+  const opt = ['runOutcome', 'runCompletedAt', 'traceId', 'testsRegistered', 'testsRun', 'testsPassed', 'testsFailed',
     'testsUnmeasured', 'testsNoResult', 'failedCaseCount', 'exceptionCount', 'httpErrorCount',
     'assertionFailureCount', 'otherErrorCount'];
   return `${P} SELECT ?runTs ${opt.map((f) => `?${f}`).join(' ')} WHERE { GRAPH ${PIPELINES} {`
@@ -138,6 +139,7 @@ export function runsFromGraph(suiteCsv: string, recordCsv: string, nowMs: number
       run.completed = true;
       run.completedAt = rec.runCompletedAt || undefined;
     }
+    if (rec?.traceId) run.trace = rec.traceId;
     if (rec) {
       const t = tallyOf(rec);
       if (t) run.tally = t;

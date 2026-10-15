@@ -63,8 +63,10 @@
     # (runTs, suiteOrder, suiteKind, filePath, suiteOwner, suiteSummary);
     # cardId is optional, because a nightly suite has no card.
     # 0.6.0 (#4416): TestSuiteRunShape gains suiteSeconds (optional).
+    # 0.7.0 (#4536): TestShape gains result, runTs, cardId, failureReason
+    # (optional): each Test row holds its latest result, updated in place.
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
-    owl:versionInfo "0.6.0" ;
+    owl:versionInfo "0.7.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -369,7 +371,9 @@ chorus:testType a owl:DatatypeProperty ;
 
 chorus:failureReason a owl:DatatypeProperty ;
     rdfs:label "failure reason" ;
-    rdfs:domain chorus:TestResult ; rdfs:range xsd:string ;
+    # #4536 — no rdfs:domain: a Test row now carries its latest failureReason
+    # too, and a domain of TestResult would make every Test read as one.
+    rdfs:range xsd:string ;
     rdfs:comment "Why a failed case failed, as the runner read it the moment it failed (#4155): the exception and its message, the HTTP status a service answered, or the assertion's expected and received. CDEvents names the same thing testCaseRun.finished reason. Present on failed results only; a pass carries none (absence is typed, never an empty string)." .
 
 chorus:pyramidLayer a owl:DatatypeProperty ;
@@ -579,7 +583,16 @@ chorus:TestShape a sh:NodeShape ;
     # only says what kind of thing it is.
     sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:testName ; sh:minCount 1 ]  .
+    sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
+    # #4536 — the Test row holds its LATEST result, updated in place; history
+    # lives in Loki (test.case.* events), not in a TestResult row per run
+    # (1,028,337 of them on 10-14). Optional: a Test that never ran has none.
+    # The runner PATCHes only cases whose result flipped (no batch update).
+    sh:property [ sh:path chorus:result ; sh:datatype xsd:string ; sh:in ( "pass" "fail" "unmeasured" ) ] ;
+    sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ] ;
+    # Present only while the latest result is a fail; fail→pass removes it.
+    sh:property [ sh:path chorus:failureReason ; sh:datatype xsd:string ]  .
 
 chorus:TestSuiteRunShape a sh:NodeShape ;
     sh:targetClass chorus:TestSuiteRun ;

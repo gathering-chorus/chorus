@@ -5788,6 +5788,36 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "test.latest.stored": {
+      "producer": "tests",
+      "about": "Test",
+      "category": "diagnostic",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "#4536 — the canonical nightly wrote each Test row's latest result, flip-only: how many flipped, were PATCHed, failed, or were unchanged. Storage never changes the test verdict.",
+      "fields": {
+        "flipped": "cases whose result differs from the row's prior result",
+        "patched": "flipped cases the door accepted",
+        "failed": "flipped cases the door refused",
+        "unchanged": "cases already holding this result",
+        "duration_ms": "time spent writing",
+        "first_fail_http": "the first refusal's HTTP status, when any"
+      }
+    },
+    "nightly.unseen.marked": {
+      "producer": "tests",
+      "about": "Test",
+      "category": "diagnostic",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "nightly-suites",
+      "description": "#4536 — a COMPLETED nightly marked the Test rows it never ran unmeasured \"did not run in <trace>\" (test-latest-seed --unseen-only). A stopped run never emits this.",
+      "fields": {
+        "trace": "the run's one trace",
+        "ok": "true when the seed finished"
+      }
+    },
     "testresult.writeback.completed": {
       "producer": "tests",
       "about": "TestResult",

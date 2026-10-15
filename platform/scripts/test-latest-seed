@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""test-latest-seed — fill each Test row's latest result once, from one
+canonical nightly's case events in Loki (#4536).
+
+From #4536 on, only the canonical nightly writes a Test row's latest result,
+and it writes only the cases whose result flipped. Rows that never had a result
+would all "flip" on the first nightly, so this seeds them once, separately.
+Jeff 2026-10-15 08:09: "its important to fix graph data where it makes sense".
+
+Usage:
+  test-latest-seed <trace>            dry run: what would be written, and how many
+  test-latest-seed <trace> --apply    write it (prod; Jeff's yes first, ~9,700 rows)
+  test-latest-seed <trace> --unseen-only --apply
+                                      only the Test rows this run never ran → unmeasured
+                                      "did not run in <trace>" (run-all calls this at the
+                                      end of a COMPLETED run; a stopped run never does)
+
+Refuses --apply from a werk: a werk never writes prod's Test rows (#4063, #4536).
+Exit: 0 done (or dry run), 2 could not read Loki or the registry, 3 refused.
+Seams for tests: TEST_SEED_LOKI_FILE (a query_range answer) and
+TEST_SEED_REGISTRY_FILE (a /tests answer) replace the live reads.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+LOKI = os.environ.get("LOKI_URL", "http://127.0.0.1:3102")
+TESTS = os.environ.get("OWL_API_TESTS", "http://localhost:3360/tests?limit=10000")
+WORD = {"test.case.passed": "pass", "test.case.failed": "fail", "test.case.skipped": "skip"}
+# the Test shape takes pass | fail | unmeasured (werk-domains.ttl 0.7.0)
+LATEST = {"pass": "pass", "fail": "fail", "skip": "unmeasured"}
+
+
+def die(code, msg):
+    print("test-latest-seed: " + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def loki_cases(trace):
+    """{(file, case): (result, reason)} for one run, newest event per case."""
+    if os.environ.get("TEST_SEED_LOKI_FILE"):
+        pages = [json.load(open(os.environ["TEST_SEED_LOKI_FILE"]))]
+    else:
+        try:
+            minted = int(trace.split("-")[1])
+        except (IndexError, ValueError):
+            die(2, "%s is not a #4536 trace (nightly-<ms>-<pid>)" % trace)
+        start, end = (minted - 3600 * 1000) * 10**6, (minted + 6 * 3600 * 1000) * 10**6
+        q = ('{job="platform-chorus", appName="chorus-events"} |= ' + json.dumps('"trace":"%s"' % trace)
+             + ' |= ' + json.dumps('"event":"test.case.'))
+        pages = []
+        while True:
+            u = LOKI + "/loki/api/v1/query_range?" + urllib.parse.urlencode(
+                {"query": q, "start": start, "end": end, "limit": 5000, "direction": "forward"})
+            try:
+                page = json.load(urllib.request.urlopen(u, timeout=60))
+            except Exception as e:
+                die(2, "Loki did not answer: %s" % e)
+            pages.append(page)
+            vals = [v for r in page["data"]["result"] for v in r["values"]]
+            if len(vals) < 5000:
+                break
+            start = max(int(v[0]) for v in vals) + 1
+    out = {}
+    for page in pages:
+        for ts, line in sorted(v for r in page["data"]["result"] for v in r["values"]):
+            e = json.loads(line)
+            if e.get("event") not in WORD or not e.get("file") or not e.get("case"):
+                continue
+            out[(e["file"], e["case"])] = (WORD[e["event"]], e.get("reason", ""))
+    return out
+
+
+def registry():
+    """[(file, testName, entity, current result)]"""
+    if os.environ.get("TEST_SEED_REGISTRY_FILE"):
+        rows = json.load(open(os.environ["TEST_SEED_REGISTRY_FILE"]))["data"]
+    else:
+        rows, url = [], TESTS
+        while url:
+            try:
+                page = json.load(urllib.request.urlopen(url, timeout=60))
+            except Exception as e:
+                die(2, "the tests registry did not answer: %s" % e)
+            rows += page.get("data", [])
+            nxt = (page.get("links") or {}).get("next")
+            url = urllib.parse.urljoin(url, nxt) if nxt else None
+    return [(r.get("filePath", ""), r.get("testName", ""), r.get("name", ""), r.get("result", "")) for r in rows]
+
+
+def join(cases, rows):
+    """The case each Test row answers for: exact name, else the longest UNIQUE
+    suffix within the same file (jest reports describe-prefixed names, #4015)."""
+    by_file = {}
+    for (f, c), v in cases.items():
+        by_file.setdefault(f, {})[c] = v
+    out = []
+    for f, name, entity, prior in rows:
+        got = by_file.get(f, {})
+        if name in got:
+            out.append((entity, prior, got[name]))
+            continue
+        hits = [c for c in got if c.endswith(" " + name)]
+        if len(hits) == 1:
+            out.append((entity, prior, got[hits[0]]))
+    return out
+
+
+def body(result, reason, run_ts):
+    b = {"result": LATEST[result], "runTs": run_ts}
+    # a reason travels with a fail, and with an unmeasured that names why
+    b["failureReason"] = reason if result in ("fail", "skip") and reason else None
+    return json.dumps(b)
+
+
+def main(argv):
+    if not argv or argv[0].startswith("-"):
+        die(2, "usage: test-latest-seed <trace> [--apply]")
+    trace, apply, unseen_only = argv[0], "--apply" in argv[1:], "--unseen-only" in argv[1:]
+    if apply and "/chorus-werk/" in os.path.realpath(__file__):
+        die(3, "refused: a werk never writes prod's Test rows — run it from canonical")
+    cases, rows = loki_cases(trace), registry()
+    if not cases:
+        die(2, "no case events for %s — nothing to seed from" % trace)
+    joined = join(cases, rows)
+    flips = [] if unseen_only else [(e, r) for e, prior, r in joined if e and prior != LATEST[r[0]]]
+    # Silas 08:32: a Test the run never ran is unmeasured, said out loud, not
+    # left showing an old result. Flip-only: a row already unmeasured is skipped.
+    seen = {e for e, _, _ in joined}
+    unseen = [(e, ("skip", "did not run in %s" % trace)) for f, n, e, prior in rows
+              if e and e not in seen and prior != "unmeasured"]
+    flips += unseen
+    counts = {}
+    for _, (res, _) in flips:
+        counts[LATEST[res]] = counts.get(LATEST[res], 0) + 1
+    print("trace %s: %d case events · %d Test rows · %d joined · %d to write %s"
+          % (trace, len(cases), len(rows), len(joined), len(flips), json.dumps(counts, sort_keys=True)))
+    # the two sides that do not meet, counted out loud (Silas 08:31)
+    print("  %d Test rows had no event this run — %d of them become unmeasured \"did not run in %s\", the rest already are"
+          % (len(rows) - len(joined), len(unseen), trace))
+    print("  %d case events have no Test row (unregistered) — not written" % (len(cases) - len(joined)))
+    if not apply:
+        print("dry run — nothing written (add --apply, on Jeff's yes)")
+        return 0
+    run_ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    base = TESTS.split("?")[0].rstrip("/")
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+    token = subprocess.run([os.path.join(root, "platform/scripts/chorus-identity-token"),
+                            os.environ.get("TEST_SEED_ROLE", "nightly")], capture_output=True, text=True).stdout.strip()
+    if not token:
+        die(2, "no write token")
+    ok = failed = 0
+    for i, (entity, (res, reason)) in enumerate(flips, 1):
+        req = urllib.request.Request(base + "/" + urllib.parse.quote(entity), method="PATCH",
+                                     data=body(res, reason, run_ts).encode(),
+                                     headers={"Content-Type": "application/merge-patch+json",
+                                              "Authorization": "Bearer " + token})
+        try:
+            urllib.request.urlopen(req, timeout=30)
+            ok += 1
+        except Exception:
+            failed += 1
+        if i % 500 == 0:
+            print("  %d / %d written · %d refused" % (ok, len(flips), failed), flush=True)
+    print("written %d · refused %d" % (ok, failed))
+    return 0 if failed == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -34,7 +34,7 @@ fn sparql(query: &str, accept: &str) -> Option<String> {
 }
 
 /// What the running system answers for one check. Read-only: GETs and ASKs.
-fn probe(c: &Check, base: &str) -> Seen {
+fn probe(c: &Check, base: &str, card: u32) -> Seen {
     match c.kind.as_str() {
         "http" => {
             let url = if c.target.starts_with("http") { c.target.clone() } else { format!("{base}{}", c.target) };
@@ -49,12 +49,18 @@ fn probe(c: &Check, base: &str) -> Seen {
         }
         "sparql" => sparql(&c.target, "application/sparql-results+json"),
         "test" => {
-            // the latest recorded result of the test, named by file or by test name
-            let t = c.target.replace(['"', '\\'], "");
-            let q = format!(
-                "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?result WHERE {{ GRAPH ?g {{ ?r a chorus:TestResult ; chorus:result ?result ; chorus:runTs ?t . {{ ?r chorus:filePath \"{t}\" }} UNION {{ ?r chorus:testName \"{t}\" }} }} }} ORDER BY DESC(?t) LIMIT 1"
-            );
-            sparql(&q, "text/tab-separated-values").and_then(|b| tsv_value(&b))
+            // #4536 — the latest result of the test, from its case events in
+            // Loki (card runs and the nightly both log there; TestResult rows
+            // are no longer written), from this card's own runs only. No event in
+            // 30 days → None → UNMEASURED.
+            let loki = env("LOKI_URL", "http://127.0.0.1:3102");
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+            let url = format!("{loki}/loki/api/v1/query_range");
+            let (start, end) = (format!("start={}000000000", now - 30 * 86400), format!("end={now}000000000"));
+            let q = format!("query={}", test_logql(&c.target, card));
+            let body = curl(&["-G", &url, "--data-urlencode", &q, "--data-urlencode", &start,
+                "--data-urlencode", &end, "--data-urlencode", "limit=1", "--data-urlencode", "direction=backward"])?;
+            latest_case_result(&body)
         }
         _ => None,
     }
@@ -77,7 +83,7 @@ fn checks(card: u32) -> Vec<Check> {
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     println!("#{card} against {base}");
     let cs = checks(card);
-    let results: Vec<(Check, Outcome)> = cs.into_iter().map(|c| { let o = judge(&c, &probe(&c, base)); (c, o) }).collect();
+    let results: Vec<(Check, Outcome)> = cs.into_iter().map(|c| { let o = judge(&c, &probe(&c, base, card)); (c, o) }).collect();
     for (c, o) in &results {
         println!("{:<12} {:<10} {}\n             {}", c.ac, o.word(), c.statement, o.evidence());
     }

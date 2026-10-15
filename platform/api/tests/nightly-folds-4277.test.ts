@@ -5,11 +5,12 @@
 // store read is a fetchFn seam; the declared-type read is a readFile seam.
 import {
   parseNightlyLog, renderNightlyPage, suiteType, groupByType, oneDecimal, typeCounts,
-  failingCasesQuery, parseFailingCases,
+  failingCasesQuery, parseFailingCases, hasRunTrace,
 } from '../src/handlers/nightly-report';
 
 const RUN_ONE_RED = [
   'RUN|start|2026-09-23T09:41:05',
+  'test.started | system trace=nightly-1790000000000-7 units=6',
   'SUITE|lint|/chorus|kade|pass|1 pass, 0 fail (lint:ratchet clean)',
   'SUITE|coverage|platform/services/chorus-hooks|silas|pass|1 pass, 0 fail (coverage 72.53210748305766% >= floor 45%)',
   'SUITE|cargo|platform/services/werk-test|silas|pass|135 pass, 0 fail',
@@ -126,20 +127,76 @@ describe('#4277 the page', () => {
 });
 
 describe('#4277 failing cases from the store', () => {
-  it('the query is bounded to the run window and excludes passes', () => {
+  // #4536 — the store is Loki now: the runner writes no TestResult rows
+  it('the read is bounded to the run window', () => {
     const q = failingCasesQuery({ startedAt: '2026-09-23T09:41:05', completedAt: '2026-09-23T10:48:18' });
-    expect(q).toContain('"2026-09-23T09:41:05"');
-    expect(q).toContain('"2026-09-23T10:48:18"');
-    expect(q).toContain('?res != "pass"');
+    expect(q.start).toBe(new Date('2026-09-23T09:41:05').getTime() * 1e6);
+    // a minute past completion: the last case lines land just after RUN|complete
+    expect(q.end).toBe((new Date('2026-09-23T10:48:18').getTime() + 60000) * 1e6);
+    expect(q.query).toContain('{job="platform-chorus", appName="chorus-events"}');
   });
-  it('a run still in progress is bounded above by the far future, not by nothing', () => {
-    expect(failingCasesQuery({ startedAt: '2026-09-23T14:34:00' })).toContain('"9999"');
+  it('a run still in progress is bounded above by now, not by nothing', () => {
+    const before = Date.now() * 1e6;
+    const q = failingCasesQuery({ startedAt: '2026-09-23T14:34:00' });
+    expect(q.end).toBeGreaterThanOrEqual(before);
   });
-  it('csv rows group by suite path, quoted names intact', () => {
-    const csv = 'fp,tn,res\r\na/b.sh,"name, with comma",fail\r\na/b.sh,second,skip\r\nc.bats,third,fail\r\n';
-    expect(parseFailingCases(csv)).toEqual({
+  it('events group by suite path, names intact, oldest first, one per case', () => {
+    const e = (file: string, name: string, event = 'test.case.failed') => JSON.stringify({ event, role: 'nightly', file, case: name });
+    const body = JSON.stringify({ data: { result: [{ stream: {}, values: [
+      ['4', e('c.bats', 'third')],
+      ['3', e('a/b.sh', 'second', 'test.case.skipped')],
+      ['2', e('a/b.sh', 'name, with comma')],
+      ['1', e('a/b.sh', 'name, with comma')],
+    ] }] } });
+    expect(parseFailingCases(body)).toEqual({
       'a/b.sh': [{ name: 'name, with comma', result: 'fail' }, { name: 'second', result: 'skip' }],
       'c.bats': [{ name: 'third', result: 'fail' }],
     });
+  });
+});
+
+describe('#4536 cases are read by the run\'s own trace', () => {
+  it('the run carries the trace its lines name', () => {
+    expect(parseNightlyLog(RUN_ONE_RED)!.trace).toBe('nightly-1790000000000-7');
+  });
+  it('the Loki read filters on that trace', () => {
+    const q = failingCasesQuery({ startedAt: '2026-09-23T09:41:05', trace: 'nightly-1790000000000-7' });
+    expect(q.query).toContain('|= "\\"trace\\":\\"nightly-1790000000000-7\\""');
+  });
+  // NEGATIVE PROOF: a werk nightly overlapping the canonical run logs role
+  // nightly too; its failure must not land on Jeff's page.
+  it('a case from another nightly trace stays off the page', () => {
+    const e = (trace: string, name: string) => JSON.stringify({ event: 'test.case.failed', role: 'nightly', trace, file: 'x.bats', case: name });
+    const body = JSON.stringify({ data: { result: [{ stream: {}, values: [
+      ['2', e('nightly-1790000000000-7', 'ours')],
+      ['1', e('nightly-1790000000999-9', 'a werk nightly')],
+    ] }] } });
+    expect(parseFailingCases(body, 'nightly-1790000000000-7')).toEqual({ 'x.bats': [{ name: 'ours', result: 'fail' }] });
+  });
+  it('a run from before #4536 says it has no trace, never borrows a time window', () => {
+    const old = RUN_ONE_RED.split('\n').filter((l) => !l.includes('trace=')).join('\n');
+    const page = renderNightlyPage(parseNightlyLog(old), { cases: {} });
+    expect(page).toContain('no trace (before #4536)');
+    expect(hasRunTrace({ trace: 'nightly-1792056711' })).toBe(false);
+    expect(hasRunTrace({ trace: 'nightly-1792049381065-39455' })).toBe(true);
+  });
+});
+
+describe('#4536 the page counts what the run counted', () => {
+  const e = (event: string, file: string, name: string) => JSON.stringify({ event, role: 'nightly', file, case: name });
+  const body = JSON.stringify({ data: { result: [{ stream: {}, values: [
+    ['1', e('test.case.failed', 'a.bats', 'broke')],
+    ['2', e('test.case.skipped', 'a.bats', 'held')],
+    ['3', e('test.case.passed', 'a.bats', 'mentions test.case.failed in its name')],
+    ['4', e('test.case.failed', 'b.bats', 'bats-gather-tests')],
+  ] }] } });
+  it('fail, skip and a suite that could not list its tests stay separate; a pass never shows', () => {
+    expect(parseFailingCases(body)).toEqual({
+      'a.bats': [{ name: 'broke', result: 'fail' }, { name: 'held', result: 'skip' }],
+      'b.bats': [{ name: 'bats-gather-tests', result: 'unmeasured' }],
+    });
+  });
+  it('the query matches the event exactly after the cheap line filters', () => {
+    expect(failingCasesQuery({ startedAt: '2026-10-15T03:00:01' }).query).toContain('| json | event=~"test.case.(failed|skipped)"');
   });
 });

@@ -61,6 +61,10 @@ export function parseTally(body: string): NightlyTally {
 
 export type NightlyRun = {
   startedAt: string;
+  /** #4536 — the run's trace (the first `trace=nightly-…` its spine lines
+   *  carry). Case results are read from Loki by it, so a werk nightly that
+   *  overlaps the canonical run never lands on this page. */
+  trace?: string;
   completedAt?: string;
   completed: boolean;
   /** #4035 — the run was STOPPED (a person or agent-state ended it). Distinct
@@ -168,6 +172,10 @@ export function parseNightlyLog(text: string): NightlyRun | null {
       if (row && secs !== '' && Number.isFinite(n)) row.seconds = n;
       continue;
     }
+    if (!run.trace) {
+      const m = /\btrace=(nightly-[\w-]+)/.exec(l);
+      if (m) run.trace = m[1];
+    }
     const row = parseSuiteLine(l);
     if (row) run.rows.push(row);
   }
@@ -238,6 +246,8 @@ export function tallyTests(rows: NightlyRow[]): {
  *  one click away. Typed structurally to keep this module free of a cycle
  *  with nightly-readout.ts, which imports the parser from here. */
 export type NightlyPageOpts = {
+  /** #4536 — set by the page from the run: its cases cannot be read by trace */
+  noTrace?: boolean;
   readout?: {
     runId: string;
     durationMin: number | null;
@@ -405,35 +415,67 @@ export function oneDecimal(summary: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// #4277 — failing cases, read from the TestResult rows the runner writes.
+// #4277 — failing cases. #4536: read from the runner's test.case.* events in
+// Loki (365-day retention), not TestResult rows, which the runner no longer
+// writes. Each Test row holds only its latest result, so a past run (?run=)
+// can only be answered from history.
 
-/** #4155 — `reason` is why a failed case failed, from its result row. */
+/** #4155 — `reason` is why a failed case failed, from its case event. */
 export type CaseRow = { name: string; result: string; reason?: string };
 export type CasesBySuite = Record<string, CaseRow[]>;
 
-/** One query per page, bounded to the run's own window (the #4015 lesson: an
- *  unbounded ?ts counted 190k historical rows). Passes are excluded server-side
- *  so the page parses only what it shows. */
-export function failingCasesQuery(run: { startedAt: string; completedAt?: string }): string {
-  const ended = run.completedAt ?? '9999';
-  return 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?fp ?tn ?res ?why WHERE { GRAPH <urn:chorus:domains:tests> {'
-    + ' ?r a c:TestResult ; c:runTs ?ts ; c:filePath ?fp ; c:testName ?tn ; c:result ?res'
-    + ' OPTIONAL { ?r c:failureReason ?why }'
-    + ` FILTER(STR(?ts) >= "${run.startedAt}" && STR(?ts) <= "${ended}") FILTER(?res != "pass") } } ORDER BY ?fp`;
+type RunRef = { startedAt: string; completedAt?: string; trace?: string };
+
+/** #4536 — a run's trace names its case events only from #4536 on, when the
+ *  run mints one trace for every lane (`nightly-<ms>-<pid>`). Before that the
+ *  PipelineRun carried a second id (`nightly-<secs>`) no case event has. */
+export function hasRunTrace(run: { trace?: string }): boolean {
+  return /^nightly-\d+-\d+$/.test(run.trace ?? '');
 }
 
-/** Fuseki CSV → cases grouped by suite path. Handles quoted fields (a case
- *  name may carry commas) and the \r Fuseki ends lines with. */
-export function parseFailingCases(csv: string): CasesBySuite {
+/** The run's own window and trace. Selective stream selector plus line
+ *  filters before any parse (Silas: without them a page load scans 500k+). */
+export function failingCasesQuery(run: RunRef): { query: string; start: number; end: number } {
+  const ns = (t: string): number => new Date(t).getTime() * 1e6;
+  const traceFilter = run.trace ? ` |= ${JSON.stringify(`"trace":"${run.trace}"`)}` : '';
+  return {
+    // line filters first (cheap), then an exact event match: a substring
+    // regex also caught a PASS whose text named a failed event (10-15: 59 vs 58)
+    query: '{job="platform-chorus", appName="chorus-events"} |~ "test.case.(failed|skipped)"'
+      + ` |= ${JSON.stringify('"role":"nightly"')}${traceFilter}`
+      + ' | json | event=~"test.case.(failed|skipped)"',
+    start: ns(run.startedAt),
+    end: run.completedAt ? ns(run.completedAt) + 60e9 : Date.now() * 1e6,
+  };
+}
+
+/** Loki query_range JSON → cases grouped by suite path, oldest first, one row
+ *  per case. A line from another trace is dropped even if the query let it in. */
+export function parseFailingCases(body: string, trace?: string): CasesBySuite {
+  let values: [string, string][] = [];
+  try {
+    const j = JSON.parse(body) as { data?: { result?: { values?: [string, string][] }[] } };
+    values = (j.data?.result ?? []).flatMap((r) => r.values ?? []);
+  } catch { return {}; }
+  values.sort((a, b) => (BigInt(a[0]) < BigInt(b[0]) ? -1 : 1));
   const out = new Map<string, CaseRow[]>();
-  const lines = csv.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l !== '');
-  for (const line of lines.slice(1)) {
-    const cells = csvCells(line);
-    if (cells.length < 3) continue;
-    const [fp, tn, res, why] = cells;
-    const list = out.get(fp) ?? [];
-    list.push(why ? { name: tn, result: res, reason: why } : { name: tn, result: res });
-    out.set(fp, list);
+  const seen = new Set<string>();
+  for (const [, line] of values) {
+    let e: { event?: string; file?: string; case?: string; reason?: string; trace?: string };
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e.file || !e.case) continue;
+    if (e.event !== 'test.case.failed' && e.event !== 'test.case.skipped') continue;
+    if (trace && e.trace && e.trace !== trace) continue;
+    const key = `${e.file}\u0000${e.case}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // #4536 — `bats-gather-tests` is the runner saying it could not list the
+    // suite (10-15: 3968, 4027, 4452, 4467). No test ran, so it is not a fail.
+    const result = e.event === 'test.case.skipped' ? 'skip'
+      : e.case === 'bats-gather-tests' ? 'unmeasured' : 'fail';
+    const list = out.get(e.file) ?? [];
+    list.push(e.reason ? { name: e.case, result, reason: e.reason } : { name: e.case, result });
+    out.set(e.file, list);
   }
   return Object.fromEntries(out);
 }
@@ -453,16 +495,18 @@ export function csvCells(line: string): string[] {
 
 export type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; text(): Promise<string> }>;
 
-/** The store read the route makes. A store that does not answer yields no
- *  cases (the page then says "no case rows recorded"), never a fabricated list. */
-export async function fetchFailingCases(
-  run: { startedAt: string; completedAt?: string }, fuseki: string, fetchFn: FetchLike,
-): Promise<CasesBySuite> {
+/** The Loki read the route makes. A run with no trace, or a Loki that does
+ *  not answer, yields no cases (the page then says "no case rows recorded"),
+ *  never a list mixed from another run. */
+export async function fetchFailingCases(run: RunRef, loki: string, fetchFn: FetchLike): Promise<CasesBySuite> {
+  if (!hasRunTrace(run)) return {};
+  const q = failingCasesQuery(run);
+  const url = `${loki}/loki/api/v1/query_range?query=${encodeURIComponent(q.query)}`
+    + `&start=${q.start}&end=${q.end}&limit=5000&direction=forward`;
   try {
-    const r = await fetchFn(`${fuseki}?query=${encodeURIComponent(failingCasesQuery(run))}`, {
-      headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
+    const r = await fetchFn(url, { signal: AbortSignal.timeout(20000) });
     if (!r.ok) return {};
-    return parseFailingCases(await r.text());
+    return parseFailingCases(await r.text(), run.trace);
   } catch { return {}; }
 }
 
@@ -503,7 +547,10 @@ function whyLine(c: CaseRow): string {
   return c.reason ? `<span class="why">${esc(c.reason)}</span>` : '';
 }
 
-function caseList(cases: CaseRow[] | undefined, r: NightlyRow): string {
+function caseList(cases: CaseRow[] | undefined, r: NightlyRow, noTrace = false): string {
+  if (noTrace) {
+    return `<li class="case none">no trace (before #4536) — this run's cases can't be read; the summary is all the run wrote: ${esc(oneDecimal(r.summary))}</li>`;
+  }
   if (!cases || cases.length === 0 || isSuiteOwnRow(cases, r)) {
     // a shell suite's own row still carries its reason — its last lines
     const own = cases && cases.length === 1 ? whyLine(cases[0]) : '';
@@ -518,7 +565,7 @@ function redFold(r: NightlyRow, o: NightlyPageOpts | undefined): string {
   const cases = casesFor(o?.cases, r.path) ?? casesFor(o?.cases, displayPath(r.path));
   return `<details class="red" open><summary><span class="pill red">fail</span><span class="kind">${esc(r.kind)}</span>${secsCell(r)}`
     + `<span class="path">${esc(displayPath(r.path))}</span><span class="label ${esc(label)}">${labelText(label)}</span>`
-    + `<span class="sum">${esc(r.owner)} · ${esc(oneDecimal(r.summary))}</span></summary><ul class="cases">${caseList(cases, r)}</ul></details>`;
+    + `<span class="sum">${esc(r.owner)} · ${esc(oneDecimal(r.summary))}</span></summary><ul class="cases">${caseList(cases, r, o?.noTrace)}</ul></details>`;
 }
 
 function statusFold(rows: NightlyRow[], status: string, hint: string): string {
@@ -599,6 +646,7 @@ function deltaLine(r: NonNullable<NightlyPageOpts['readout']>): string {
 
 /** Render the run as the one-look report page. */
 export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts): string {
+  if (run && !hasRunTrace(run)) opts = { ...opts, noTrace: true };
   if (!run) {
     // #4156 — the page reads the graph only. No rows is said, never filled in
     // from the log.

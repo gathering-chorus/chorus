@@ -19,6 +19,10 @@ setup() {
   # outlived the reap and held bats open: ~10 min per nightly for a 1.6 s suite.
   printf '#!/bin/bash\necho "nightly-plan|bats|x"\nexec -a "$0" sleep 20\n' > "$T/runner.sh"; chmod +x "$T/runner.sh"
   printf '#!/bin/bash\nexit 0\n' > "$T/nudge.sh"; chmod +x "$T/nudge.sh"
+  # #4536 — the unseen-rows seed, stubbed: it records that it was called
+  mkdir -p "$T/root/platform/scripts"
+  printf '#!/bin/bash\necho "$*" >> "%s/seed-calls"\n' "$T" > "$T/root/platform/scripts/test-latest-seed"
+  chmod +x "$T/root/platform/scripts/test-latest-seed"
 }
 
 start_run() {
@@ -40,6 +44,9 @@ start_run() {
   sleep 0.5
   ! kill -0 "$child" 2>/dev/null || return 1
   [ ! -d "$T/lock.d" ]
+  # #4536 NEGATIVE PROOF (Silas 08:33): a stopped run marks no Test row
+  # "did not run" — it would blank thousands of good results
+  [ ! -e "$T/seed-calls" ] || { cat "$T/seed-calls"; return 1; }
 }
 
 @test "INT exits 130 and still writes the stop line" {
@@ -57,4 +64,7 @@ start_run() {
   NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent run "$BIN" --nightly --run-all
   grep -q '^RUN|complete|' "$T/run.log"
   ! grep -q '^RUN|stopped|' "$T/run.log" || return 1
+  # #4536 — a COMPLETED run marks the rows it never ran, once, with its trace
+  [ "$(wc -l < "$T/seed-calls" | tr -d ' ')" -eq 1 ]
+  grep -qE '^nightly-[0-9]+-[0-9]+ --unseen-only --apply$' "$T/seed-calls" || { cat "$T/seed-calls"; return 1; }
 }

@@ -44,7 +44,7 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
         "http" | "sparql" | "test" => {
             let Some(body) = seen else {
                 return Outcome::Unmeasured(if c.kind == "test" {
-                    format!("test {}: no recorded result in the store", c.target)
+                    format!("test {}: no result yet (no case event in Loki in 30 days)", c.target)
                 } else {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
@@ -222,4 +222,54 @@ pub fn is_status(s: &str) -> bool {
 pub fn tsv_value(tsv: &str) -> Option<String> {
     let v = tsv.lines().nth(1)?.split('\t').next()?.trim();
     (!v.is_empty()).then(|| term(v))
+}
+
+/// #4536 — a `test` check's query: the test's case events, named by file or
+/// by case, from runs of THE CARD BEING PROVED only (Silas 08:11: the latest of
+/// any run read Abby's #4530 branch as 3706's result while main had it red).
+/// Matched on the exact event after cheap line filters; the target is escaped
+/// so it stays one string inside the LogQL.
+pub fn test_logql(target: &str, card: u32) -> String {
+    let t = target.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        // cheap line filters (card, target) before `| json`: a json stage over
+        // every case line in the window does not answer (test-diff, 10-15).
+        // card_id is a JSON number on card runs ("card_id":4530); the exact
+        // match is the label filter after json, so 45301 never answers for 4530.
+        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | card_id=\"{card}\" | file=\"{t}\" or case=\"{t}\""
+    )
+}
+
+/// #4536 — the newest result in a Loki query_range answer: "pass" or "fail".
+/// No events (or an unreadable answer) is None — never a pass.
+pub fn latest_case_result(body: &str) -> Option<String> {
+    let mut best: Option<(u128, &'static str)> = None;
+    let mut rest = body;
+    while let Some(i) = rest.find("[\"") {
+        rest = &rest[i + 2..];
+        let Some(end) = rest.find('"') else { break };
+        let Ok(ts) = rest[..end].parse::<u128>() else { continue };
+        rest = &rest[end + 1..];
+        let Some(open) = rest.find('"') else { break };
+        rest = &rest[open + 1..];
+        // the log line, JSON-escaped inside the answer
+        let mut line = String::new();
+        let mut close = rest.len();
+        let mut chars = rest.char_indices();
+        while let Some((k, c)) = chars.next() {
+            match c {
+                '\\' => { if let Some((_, n)) = chars.next() { line.push(n); } }
+                '"' => { close = k; break; }
+                _ => line.push(c),
+            }
+        }
+        rest = &rest[close..];
+        let result = if line.contains("\"event\":\"test.case.failed\"") { "fail" }
+            else if line.contains("\"event\":\"test.case.passed\"") { "pass" }
+            else { continue };
+        if best.map_or(true, |(t, _)| ts > t) {
+            best = Some((ts, result));
+        }
+    }
+    best.map(|(_, r)| r.to_string())
 }

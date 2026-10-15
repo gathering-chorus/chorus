@@ -15,7 +15,7 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
+    is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     discover_ts_packages, set_repo_root,
@@ -39,9 +39,12 @@ fn main() {
             record_demo_verdict(&args, code);
             std::process::exit(code)
         }
+        // #4536 — every Err from run() is raised before a lane starts (no werk,
+        // bad args, own build missing), so the run never started: REFUSED, not RED.
         Err(e) => {
-            eprintln!("werk-test: {}", e);
-            std::process::exit(1);
+            let v = werk_test::Verdict::Refused(e);
+            eprintln!("werk-test: {}", v.label());
+            std::process::exit(v.exit_code());
         }
     }
 }
@@ -57,6 +60,8 @@ fn demo_verdict_call(args: &[String], code: i32) -> Option<(String, String, &'st
 }
 
 /// #3983 — `<state>:<n>` from this card run, for the demo and accept.
+/// #4536 — (Test entity, current result) from the registry read, for flip-only writes.
+static PRIOR_RESULTS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
 static CARD_COVERAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 fn record_demo_verdict(args: &[String], code: i32) {
@@ -462,13 +467,6 @@ fn run(args: &[String]) -> Result<i32, String> {
 
     // #3621 — canonical run evidence: started at plan time, completed ALWAYS.
     let started_at = std::time::Instant::now();
-    // #3925 — runTs must be when the TEST RAN, not when the result was posted
-    // (Wren's catch: #3941's land posted 20min after the suite finished, so
-    // created-time already lies). Capture the wall clock ONCE at run start.
-    let run_epoch_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
     if plan_source == "fallback" {
         emit_spine("test.plan.degraded", &role, &card, &trace,
             &[("reason", "tests-domain-unreachable"), ("plan", "legacy-lanes")]);
@@ -582,6 +580,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let check_started = std::time::Instant::now();
         let cases_before = all_cases.len();
+        let unmatched_before = unmatched_cargo;
         // #4454 — the unit starts on the trace: a hung unit reads started, no end
         emit_spine("test.unit.started", &role, &card, &trace,
             &[("check", check.kind.label()), ("unit", target), ("message", &format!("{} {} started", check.kind.label(), target))]);
@@ -660,7 +659,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 // green on its account — and it must not read as a failure,
                 // because nothing was shown broken.
                 if unbuilt.contains_key(s) {
-                    unmeasured.push(target.to_string());
+                    unmeasured.push(format!("{} — not built", target));
                     true
                 } else if std::fs::read_to_string(format!("{}/{}", werk, s))
                     .is_ok_and(|t| werk_test::header_says_sends_live_alerts(&t)) {
@@ -668,7 +667,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                     // a card run (3968 and 4027 paged Silas and Jeff on #4335);
                     // the nightly or a deliberate hand run still runs it
                     println!("   bats:{} — sends live alerts: not run in a card run (UNMEASURED; the nightly runs it)", s);
-                    unmeasured.push(target.to_string());
+                    unmeasured.push(format!("{} — sends live alerts, the nightly runs it", target));
                     true
                 } else {
                     let (outcome, cases) = run_bats(&werk, s);
@@ -676,7 +675,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                     match outcome {
                         BatsOutcome::Pass => true,
                         BatsOutcome::Unmeasured => {
-                            unmeasured.push(target.to_string());
+                            unmeasured.push(format!("{} — suite reported unmeasured", target));
                             true
                         }
                         BatsOutcome::Fail => false,
@@ -688,13 +687,19 @@ fn run(args: &[String]) -> Result<i32, String> {
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
             _ => true, // unreachable given check_plan's construction
         };
+        // #4536 — a case lane that passed with 0 cases ran nothing: UNMEASURED, not green.
+        let ran = all_cases.len() - cases_before + (unmatched_cargo - unmatched_before);
+        let already = unmeasured.last().is_some_and(|u| werk_test::unmeasured_is(u, target));
+        if !already && werk_test::ran_nothing(check.kind, ok, ran) {
+            unmeasured.push(format!("{} — ran nothing", target));
+        }
         let secs = check_started.elapsed().as_secs_f64();
         // #4454 — this check's cases on the trace, as soon as it ends, and
         // whatever its fixtures said
         emit_case_events(target, &all_cases[cases_before..], &role, &card, &trace);
         forward_test_events(&werk);
         unit_costs.push((format!("{}:{}", check.kind.label(), target), secs));
-        let verdict = if unmeasured.last().map(|u| u == target).unwrap_or(false) {
+        let verdict = if unmeasured.last().is_some_and(|u| werk_test::unmeasured_is(u, target)) {
             "UNMEASURED"
         } else if ok { "ok" } else { "FAIL" };
         // #4436 — every unit's wall time on its own line, and with its result on
@@ -821,19 +826,9 @@ fn run(args: &[String]) -> Result<i32, String> {
             &[("count", &unregistered.to_string())]);
         println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
     }
-    // #4015 — same rule on the card path as on the nightly: a run whose evidence
-    // did not survive has not proven anything, so it must not exit clean.
-    let stored = post_test_results(&role, &card, &trace, &joined, run_epoch_ms, 0, &|_| String::new());
-    let lost = werk_test::results_lost(joined.len(), stored);
-    if lost > 0 {
-        println!(
-            "!! werk-test: {} of {} results were NOT stored — this run cannot report on itself",
-            lost, joined.len()
-        );
-        emit_spine("testresult.lost", &role, &card, &trace,
-            &[("lost", &lost.to_string()), ("expected", &joined.len().to_string()),
-              ("stored", &stored.to_string())]);
-    }
+    // #4536 — a card run writes no Test row: it tests unmerged code, so its
+    // result is not the Test's latest. Its cases are already in Loki
+    // (test.case.* per unit, above); only the canonical nightly writes rows.
     let writeback_duration_ms = writeback_started.elapsed().as_millis();
     let total_duration_ms = started_at.elapsed().as_millis();
     let mut completed = werk_test::completed_extras(
@@ -850,12 +845,9 @@ fn run(args: &[String]) -> Result<i32, String> {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
-    let exit = werk_test::run_exit_code(outcome.exit_code(), joined.len(), stored);
-    if lost > 0 {
-        println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, joined.len(), exit);
-        return Ok(exit);
-    }
-    println!("werk-test: {} (exit {})", outcome.label(), exit);
+    let v = werk_test::verdict(all_cases.len(), any_failed, &unmeasured);
+    let exit = v.exit_code();
+    println!("werk-test: {} (exit {})", v.label(), exit);
     Ok(exit)
 }
 
@@ -969,28 +961,25 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #4063 — a werk-rooted nightly never writes prod's ledger (see
     // nightly_writeback_withheld). Withheld cases are counted and named once,
     // never silently, and never as "lost": nothing was promised to the store.
-    let endpoint_overridden = ["OWL_API_TESTRESULTS", "OWL_API_TESTRESULTS_BATCH"]
-        .iter()
-        .any(|k| std::env::var(k).map(|v| !v.trim().is_empty()).unwrap_or(false));
-    let withheld = werk_test::nightly_writeback_withheld(&root, endpoint_overridden);
+    let withheld = werk_test::nightly_writeback_withheld(&root);
     let withheld_total = AtomicUsize::new(0);
     // #4139 — needs-stack cases that actually produced a result this run
     let executed_ns = AtomicUsize::new(0);
     if withheld {
-        println!("!! werk nightly: results will NOT be written to the prod test ledger — root {} is a werk; set OWL_API_TESTRESULTS to the werk's store to write (#4063)", root);
+        println!("!! werk nightly: results will NOT be written to the prod test ledger — root {} is a werk; only the canonical nightly writes Test rows (#4063, #4536)", root);
     }
     // #4144 AC3 — one poster for the run: a unit's results are stored, then
     // its census lines printed, off the worker's path. A killed run loses only
     // what is still queued; the run joins the poster before it counts.
     let (post_tx, poster) = {
         let (mint_role, card, trace) = (mint_role.clone(), card.clone(), trace.clone());
-        werk_test::spawn_poster(move |job: &werk_test::PostJob<(Vec<(CaseResult, String, String)>, Vec<String>, usize)>| {
-            let (joined, reasons, idx_base) = &job.payload;
+        werk_test::spawn_poster(move |job: &werk_test::PostJob<(Vec<(CaseResult, String, String)>, Vec<String>)>| {
+            let (joined, reasons) = &job.payload;
             let unit = job.unit.as_str();
             let reason_of = |c: &CaseResult| -> String {
                 joined.iter().position(|(j, _, _)| j == c).and_then(|i| reasons.get(i).cloned()).unwrap_or_default()
             };
-            let stored = post_test_results(&mint_role, &card, &trace, joined, run_epoch_ms, *idx_base, &reason_of);
+            let stored = store_latest_results(&mint_role, &card, &trace, joined, run_epoch_ms, &reason_of);
             // #4145 — the run's own record of what it posted, one line per case,
             // so the census is "registry minus these" and never a ledger walk.
             // #4247 — the result rides with the identity. Without it the log had a
@@ -1070,15 +1059,14 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             return;
         }
         let (joined, unregistered) = werk_test::join_cases(cases, &rows, &row_names, &row_entities);
-        // #4033 — claim this unit's slice of the run's index space first, so
-        // concurrent units never mint the same name (fetch_add is the claim).
-        let idx_base = werk_test::claim_index_base(&expected_total, joined.len());
+        // what this run expects the store to hold, for the storage line (#4536)
+        expected_total.fetch_add(joined.len(), Ordering::SeqCst);
         unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
         // #4144 AC3 — the post goes to the poster; this worker starts its next
         // unit now. Each failed case's reason travels with the job.
         let reasons_owned: Vec<String> = joined.iter().map(|(c, _, _)| reason_of(c)).collect();
         let expected = joined.len();
-        let _ = post_tx.send(werk_test::PostJob { unit: unit.to_string(), payload: (joined, reasons_owned, idx_base), expected });
+        let _ = post_tx.send(werk_test::PostJob { unit: unit.to_string(), payload: (joined, reasons_owned), expected });
     };
     // #3974 — npm lane: every registered TS/node package, full selection.
     // jest packages run jest; non-jest packages run their own `npm test`
@@ -1576,11 +1564,8 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let expected = expected_total.load(Ordering::SeqCst);
     let stored = stored_total.load(Ordering::SeqCst);
     let lost = werk_test::results_lost(expected, stored);
-    if lost > 0 {
-        println!(
-            "!! werk-test: {} of {} results were NOT stored — this run cannot report on itself",
-            lost, expected
-        );
+    if let Some(line) = werk_test::storage_line(expected, stored) {
+        println!("werk-test: {}", line);
         emit_spine("testresult.lost", &role, &card, &trace,
             &[("lost", &lost.to_string()), ("expected", &expected.to_string()),
               ("stored", &stored.to_string())]);
@@ -1620,12 +1605,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         emit_spine("test.nightly.over_bar", &role, &card, &trace,
             &[("elapsed_secs", &elapsed_secs.to_string()), ("bar_secs", &bar_secs.to_string())]);
     }
-    let exit = werk_test::run_exit_code(outcome.exit_code(), expected, stored);
-    if lost > 0 {
-        println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, expected, exit);
-        return Ok(exit);
-    }
-    println!("werk-test: {} (exit {})", outcome.label(), exit);
+    // #4536 — storage never changes the verdict; its line printed above.
+    let v = werk_test::verdict(expected, any_failed, &[]);
+    let exit = v.exit_code();
+    println!("werk-test: {} (exit {})", v.label(), exit);
     Ok(exit)
 }
 
@@ -2915,7 +2898,7 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // ui/perf/security), so the jq splits testType into them. A row the
     // crawler has not rewritten yet still carries the retired pair; it is
     // read as-is until the crawler's next pass migrates it.
-    let jq_filter = r#".data[] | .filePath as $f | (.testType // "") as $tt | (if ($tt | IN("ui","perf","security")) then "" elif $tt != "" then $tt else (.pyramidLayer // "") end) as $l | .testName as $n | .name as $e | .hermeticity as $h | (if ($tt | IN("ui","perf","security")) then $tt elif $tt != "" then "" else (.testConcern // "") end) as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // "")] | @tsv"#;
+    let jq_filter = r#".data[] | .filePath as $f | (.testType // "") as $tt | (if ($tt | IN("ui","perf","security")) then "" elif $tt != "" then $tt else (.pyramidLayer // "") end) as $l | .testName as $n | .name as $e | .hermeticity as $h | (if ($tt | IN("ui","perf","security")) then $tt elif $tt != "" then "" else (.testConcern // "") end) as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // ""),(.result // "")] | @tsv"#;
     // #4419 — read the registry a page at a time. One 10,000-row read took
     // 12.8 s (measured 10-02: 1,000 rows 1.5 s, linear) against this 10 s cap,
     // so a run sometimes got 0 rows and "0 tests" read as an answer. Pages of
@@ -2943,7 +2926,10 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
         Ok(o) if o.status.success() => o.stdout,
         _ => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
     };
-    let (rows, names, entities) = parse_rows_and_names(&String::from_utf8_lossy(&out));
+    let tsv = String::from_utf8_lossy(&out);
+    let (rows, names, entities) = parse_rows_and_names(&tsv);
+    // #4536 — each row's current result, so only flipped cases are written
+    let _ = PRIOR_RESULTS.set(entities.iter().cloned().zip(werk_test::parse_prior_results(&tsv)).collect());
     let label = plan_source_label(true, rows.len());
     (rows, names, entities, label)
 }
@@ -2957,144 +2943,62 @@ fn write_token(role: &str) -> Option<String> {
         .or_else(|| mint_token(role))
 }
 
-/// #3592 emit side — every executed case lands as a chorus:TestResult keyed to
-/// the registered identity (filePath+testName). Best-effort + WITNESSED: the
-/// gate verdict never depends on it; skip/truncation is a spine event, not a
-/// silence. Bounded at 2000 entities per run and packed into byte-bounded atomic
-/// requests (no silent caps — every dropped/failed entity is accounted).
-fn post_test_results(
+/// #4536 — each Test row holds its latest result, updated in place; no
+/// TestResult row is minted (1,028,337 of them on 10-14, ~6,500 per run).
+/// Only cases whose result flipped against the row's prior are PATCHed (351 of
+/// 9,705 on 10-15), as a JSON merge patch on the Test itself. Returns how many
+/// of `joined` the store now holds correctly: unchanged + patched ok. Storage
+/// is never the verdict (AC3); a refusal is counted and named on the spine.
+fn store_latest_results(
     role: &str,
     card: &str,
     trace: &str,
     joined: &[(CaseResult, String, String)],
     run_epoch_ms: u128,
-    idx_base: usize,
     reason_of: &dyn Fn(&CaseResult) -> String,
 ) -> usize {
-    let writeback_started = std::time::Instant::now();
-    let endpoint = std::env::var("OWL_API_TESTRESULTS_BATCH")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| {
-            // #4158 AC4 — this caller carries NO path shape. It ASKS the server
-            // which collection it serves for TestResult (the pattern
-            // chorus-crawl already uses) and posts there. A pre-#4158 server
-            // answers /v1/testresults, a post-#4158 one /v1/tests/results, and
-            // both are right. Hardcoding either literal is what lost 650 of 650
-            // results in run 77 (2026-09-13): the class-rooted form breaks once
-            // the rename lands, and the domain-rooted form 403s against a
-            // server that predates it. The configured default is the fallback
-            // when discovery is unreadable — degrade, never invent a route.
-            let collection = std::env::var("OWL_API_TESTRESULTS")
-                .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
-            let discovered = werk_test::origin_of(&collection).and_then(|origin| {
-                let out = Command::new("curl")
-                    .args(["-sf", "--max-time", "5", &origin])
-                    .output()
-                    .ok()?;
-                if !out.status.success() {
-                    return None;
+    let started = std::time::Instant::now();
+    let priors = PRIOR_RESULTS.get().cloned().unwrap_or_default();
+    let (entities, results): (Vec<String>, Vec<String>) = priors.into_iter().unzip();
+    let patches = werk_test::latest_patches(joined, &entities, &results, card, run_epoch_ms, reason_of);
+    let unchanged = joined.len() - patches.len();
+    let base = werk_test::test_collection_base(&std::env::var("OWL_API_TESTS")
+        .unwrap_or_else(|_| "http://localhost:3360/tests".to_string()));
+    let mut ok = 0usize;
+    let mut first_fail: Option<String> = None;
+    if !patches.is_empty() {
+        match write_token(role) {
+            Some(token) => {
+                for (entity, body) in &patches {
+                    let url = format!("{}/{}", base, entity);
+                    let code = Command::new("curl")
+                        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10",
+                               "-X", "PATCH", "-H", "Content-Type: application/merge-patch+json",
+                               "-H", &format!("Authorization: Bearer {}", token),
+                               "--data-binary", body, &url])
+                        .output()
+                        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                        .unwrap_or_else(|_| "000".into());
+                    if code.starts_with('2') {
+                        ok += 1;
+                    } else if first_fail.is_none() {
+                        first_fail = Some(code);
+                    }
                 }
-                let body = String::from_utf8_lossy(&out.stdout);
-                let path = werk_test::advertised_collection(&body, "TestResult")?;
-                Some(format!("{}{}", origin, path))
-            });
-            werk_test::testresult_batch_endpoint(discovered.as_deref().unwrap_or(&collection))
-        });
-    // #4022 — was 2000, set when a card-scoped run posted ~200 rows. The first
-    // full parallel nightly joined 6,712 cases and the cap silently outranked
-    // the storage promise: 4,712 computed verdicts dropped, caught only because
-    // #4015's results-lost gate now fails the run. 10k clears the current
-    // battery (~6.7k) with headroom; the chunker already byte-bounds requests,
-    // so a bigger cap costs more chunks, not bigger ones.
-    const MAX_POSTS: usize = 10_000;
-    // #3925 — the RUN's clock, threaded from run start; post time is not run time.
-    let ts = run_epoch_ms;
-    let payloads: Vec<String> = joined
-        .iter()
-        .take(MAX_POSTS)
-        .enumerate()
-        .map(|(i, (c, of_test, _registered))| {
-            // #4033 — names are testresult-<card>-<ts>-<idx>; with the per-unit
-            // store (#4030) every unit restarted i at 0 under the run's shared
-            // ts, so unit two's names were unit one's and the store answered
-            // 409 for the whole chunk. idx_base makes idx run-unique.
-            // #4155 — a failed case's result row carries why it failed
-            werk_test::with_failure_reason(
-                &test_result_payload(
-                    &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, idx_base + i),
-                &reason_of(c))
-        })
-        .collect();
-    let packed = werk_test::chunk_json_payloads(&payloads, werk_test::TESTRESULT_BATCH_MAX_BYTES);
-    let mut stats = if packed.chunks.is_empty() {
-        werk_test::PostStats::default()
-    } else if let Some(token) = write_token(role) {
-        // The first 401 re-mints ONCE and retries the same atomic chunk. A 401
-        // that survives the re-mint is a real refusal; no per-entity fallback.
-        werk_test::post_results_loop(&endpoint, &token, &packed.chunks, &|| mint_token(role))
-    } else {
-        emit_spine("testresult.post.skipped", role, card, trace,
-            &[("reason", "no-write-token"), ("count", &payloads.len().to_string())]);
-        werk_test::PostStats {
-            failed: packed.chunks.iter().map(|c| c.entities).sum(),
-            chunks_failed: packed.chunks.len(),
-            first_fail_code: Some("no-write-token".into()),
-            ..Default::default()
-        }
-    };
-    let truncated_dropped = joined.len().saturating_sub(MAX_POSTS);
-    werk_test::account_unsent_results(&mut stats, packed.oversized, truncated_dropped);
-    // #3725 AC4 — say it out loud. A run that posts ZERO results must never
-    // look identical to one that posted all of them.
-    if stats.failed > 0 {
-        println!(
-            "!! testresult wire-back: {} of {} case(s) FAILED to POST to the model{}              — the tests domain did not receive this run's results",
-            stats.failed,
-            stats.posted + stats.failed,
-            match &stats.first_fail_code {
-                Some(c) => format!(" (first failure HTTP {})", c),
-                None => String::new(),
             }
-        );
+            None => first_fail = Some("no-write-token".into()),
+        }
     }
-    let posted = stats.posted.to_string();
-    let failed = stats.failed.to_string();
-    let chunks_attempted = stats.chunks_attempted.to_string();
-    let chunks_succeeded = stats.chunks_succeeded.to_string();
-    let chunks_failed = stats.chunks_failed.to_string();
-    let remint_attempts = stats.remint_attempts.to_string();
-    let mut extras: Vec<(String, String)> = vec![
-        ("count".into(), posted.clone()),
-        ("failed_posts".into(), failed.clone()),
-        ("chunks_attempted".into(), chunks_attempted.clone()),
-        ("chunks_succeeded".into(), chunks_succeeded.clone()),
-        ("chunks_failed".into(), chunks_failed.clone()),
-        // #3808 AC3 — expiry frequency is observable from the spine.
-        ("remint_attempts".into(), remint_attempts.clone()),
-    ];
-    if let Some(c) = &stats.first_fail_code {
-        extras.push(("first_fail_http".into(), c.clone()));
+    let failed = patches.len() - ok;
+    let (n_patch, n_ok, n_fail, n_same, ms) = (patches.len().to_string(), ok.to_string(),
+        failed.to_string(), unchanged.to_string(), started.elapsed().as_millis().to_string());
+    let mut extras: Vec<(&str, &str)> = vec![("flipped", &n_patch), ("patched", &n_ok),
+        ("failed", &n_fail), ("unchanged", &n_same), ("duration_ms", &ms)];
+    if let Some(c) = &first_fail {
+        extras.push(("first_fail_http", c));
     }
-    if joined.len() > MAX_POSTS {
-        extras.push(("truncated_dropped".into(), truncated_dropped.to_string()));
-    }
-    let refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    emit_spine("testresult.posted", role, card, trace, &refs);
-    let duration_ms = writeback_started.elapsed().as_millis().to_string();
-    let truncated = truncated_dropped.to_string();
-    let completed = [
-        ("duration_ms", duration_ms.as_str()),
-        ("chunks_attempted", chunks_attempted.as_str()),
-        ("chunks_succeeded", chunks_succeeded.as_str()),
-        ("chunks_failed", chunks_failed.as_str()),
-        ("entities_posted", posted.as_str()),
-        ("entities_failed", failed.as_str()),
-        ("truncated_dropped", truncated.as_str()),
-        ("remint_attempts", remint_attempts.as_str()),
-    ];
-    emit_spine("testresult.writeback.completed", role, card, trace, &completed);
-    stats.posted
+    emit_spine("test.latest.stored", role, card, trace, &extras);
+    unchanged + ok
 }
 
 // #4154 — `werk-test --reconcile` (registered minus executed) retired with the

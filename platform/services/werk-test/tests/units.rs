@@ -1,3 +1,4 @@
+// @test-type: unit
 //! werk-test unit tests (#3190) — the pure decision core, no subprocess, no fs.
 //! Each test maps to an AC: affected-unit detection on the diff, the bootstrap
 //! escape, and the advisory→blocking gate decision.
@@ -877,7 +878,7 @@ fn historical_collection_override_derives_a_batch_write_route_without_breaking_g
 }
 
 #[test]
-fn terminal_telemetry_orders_execution_then_writeback_then_test_completed() {
+fn terminal_telemetry_orders_execution_then_test_completed_and_cards_write_nothing() {
     let source = include_str!("../src/main.rs");
     let run_flow = source
         .split("fn unit_name")
@@ -886,23 +887,23 @@ fn terminal_telemetry_orders_execution_then_writeback_then_test_completed() {
     let execution = run_flow
         .find("emit_spine(\"test.execution.completed\"")
         .expect("execution completion event");
-    let writeback_call = run_flow
-        .find("post_test_results(&role, &card, &trace, &joined")
-        .expect("TestResult write-back call");
     let terminal = run_flow
         .find("emit_spine(\"test.completed\"")
         .expect("terminal test event");
-    assert!(execution < writeback_call && writeback_call < terminal);
+    assert!(execution < terminal);
+    // #4536 — a card run writes no Test row (Loki only); only the nightly does.
+    let card_flow = run_flow.split("fn run_nightly").next().unwrap();
+    assert!(!card_flow.contains("store_latest_results("), "the card path must not write Test rows");
 
     let writeback_fn = source
-        .split("fn post_test_results(")
+        .split("fn store_latest_results(")
         .nth(1)
-        .expect("post_test_results implementation");
+        .expect("store_latest_results implementation");
     let post_loop = writeback_fn
-        .find("post_results_loop")
-        .expect("bounded chunk loop");
+        .find("\"PATCH\"")
+        .expect("flip-only PATCH loop");
     let writeback_completed = writeback_fn
-        .find("emit_spine(\"testresult.writeback.completed\"")
+        .find("emit_spine(\"test.latest.stored\"")
         .expect("write-back completion event");
     assert!(post_loop < writeback_completed);
 }
