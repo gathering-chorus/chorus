@@ -20,6 +20,8 @@ export interface ClearingMessage {
   type: 'jeff-input' | 'role-response' | 'system' | 'gap';
   visible: boolean;
   pubkey?: string;
+  room?: string;
+  tick?: boolean;
 }
 
 export interface RoleTile {

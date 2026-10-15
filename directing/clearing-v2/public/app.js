@@ -12,7 +12,13 @@ function formatAuthor(role) {
 
 function formatMessageTime(ts) {
   try {
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(ts).toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      hourCycle: 'h23',
+    });
   } catch {
     return ts;
   }
@@ -41,6 +47,13 @@ function appendMessage(msg) {
 
   header.appendChild(author);
   header.appendChild(time);
+
+  if (msg.tick) {
+    const tick = document.createElement('span');
+    tick.className = 'tick delivery-tick';
+    tick.textContent = '✓ relay';
+    header.appendChild(tick);
+  }
 
   const text = document.createElement('div');
   text.className = 'message-text';
