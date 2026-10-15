@@ -52,8 +52,17 @@ pub fn chorus_log_file() -> String {
 }
 
 fn chorus_log_file_prod() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    format!("{}/.chorus/chorus.log", home)
+    format!("{}/chorus.log", chorus_state_dir())
+}
+
+/// #4535 — the team's shared ~/.chorus. chorus-env-setup exports
+/// CHORUS_STATE_DIR as the canonical checkout owner's; a role on its own Mac
+/// account (Abby) has its own HOME, and her spine events went to a private
+/// /Users/chorus-abby-normal/.chorus/chorus.log that Loki never reads.
+pub fn chorus_state_dir() -> String {
+    std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        format!("{}/.chorus", std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()))
+    })
 }
 
 /// #3615 — WRITE resolution for the spine, membrane-guarded. Every spine
