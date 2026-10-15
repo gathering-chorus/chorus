@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4007 — Jeff opens one page and sees which suite is running and how long it
 // has been running, and a hung suite reads WEDGED without anyone running ps.
 // Hermetic: the store is a stub CsvQuery answering the queries the page sends.

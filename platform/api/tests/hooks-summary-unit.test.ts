@@ -1,4 +1,5 @@
 // @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
+// @domain: analytics — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * hooks-summary — unit tests (#2167).
  *

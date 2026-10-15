@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over CAPTURED bindings; no store, brings its own world.
+// @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4053 — Jeff, looking at the products render: "any status". The class's most
 // constrained field drew as its least typed one, because ProductShape declares
 // `sh:in ("exploring" "building" "operating" "retiring")` with no sh:datatype

@@ -1,3 +1,4 @@
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #4405 reopen — repositories nest and depend like products and domains
 //! (Jeff, 2026-10-12: "like domain and product", "chorus repo depends on
 //! shared-security and shared-observability and gathering"), the Repository

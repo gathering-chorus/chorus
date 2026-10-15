@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-hardcoded-bin-paths.sh — regression guard for #2734.
 #
 # After ~/.chorus/bin/ becomes the canonical deploy location, operational

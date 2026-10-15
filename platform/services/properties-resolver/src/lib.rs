@@ -1,3 +1,4 @@
+// @domain: value-streams — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! properties-resolver — the PURE cascade precedence core (#3437, Properties C).
 //!
 //! Config-as-data resolution: given a TOTALLY-ORDERED scope chain and a key,

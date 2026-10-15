@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: security — daytime permission-row integrity
+# @domain: identity — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-write-principals-resolve-role-4026.sh — was #4026's "every write-scoped
 # principal must also hold a role". #4183 retired that coupling: a permission is
 # a row (acl:Authorization), a role is a hat, and the door no longer asks a

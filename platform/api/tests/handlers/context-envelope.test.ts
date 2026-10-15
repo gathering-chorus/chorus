@@ -1,4 +1,5 @@
 // @test-type: unit — stubbed dependencies; no live service.
+// @domain: board — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * context-envelope unit tests (#2234 Step 3).
  *

@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over CAPTURED bindings; no store, brings its own world.
+// @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4053 — Jeff: "i dont see field or cross class constraints", and then: not via
 // sh:message. The rules must draw STRUCTURALLY, not as a sentence someone wrote.
 //

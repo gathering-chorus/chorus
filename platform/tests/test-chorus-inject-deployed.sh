@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: messages — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-chorus-inject-deployed.sh — regression guard for #2769.
 #
 # CLAUDE.md and #2734 both say chorus-inject deploys to ~/.chorus/bin/

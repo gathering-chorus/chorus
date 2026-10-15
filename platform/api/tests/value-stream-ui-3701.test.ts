@@ -1,4 +1,5 @@
 // @test-type: integration:api — reads the live chorus-api /owl proxy; skips when the API is absent
+// @domain: value-streams — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * @test-type: api
  *

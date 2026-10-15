@@ -1,4 +1,5 @@
 // @test-type: integration
+// @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * #3644 — same-origin /owl proxy: the Athena page family reaches athena-make
  * through chorus-api instead of hardcoding hostname:3360 (which broke every

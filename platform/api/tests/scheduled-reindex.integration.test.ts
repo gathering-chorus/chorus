@@ -1,4 +1,5 @@
 // @test-type: integration — hits the live chorus-api at :3340; carries a scoped service token on writes (#3619).
+// @domain: search — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * Scheduled reindex tests — #1960
  *

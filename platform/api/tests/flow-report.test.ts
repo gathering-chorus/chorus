@@ -1,4 +1,5 @@
 // @test-type: unit — pure parser/formatter fixtures; no Loki, no live services.
+// @domain: analytics — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * flow-report core — unit tests (#3269).
  *

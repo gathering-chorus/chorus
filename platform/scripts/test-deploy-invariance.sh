@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-deploy-invariance.sh — proving gate for the deploy-domain (#2775).
 #
 # Same artifact must reach the same running state, every time.

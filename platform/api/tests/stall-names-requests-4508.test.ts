@@ -1,4 +1,5 @@
 // @test-type: integration — drives real requests through the express app
+// @domain: monitors — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * #4508 — a chorus-api stall alert names what was running. 117 stall alerts on
  * 2026-10-12, 86 naming no cause: the outside probe announced while the loop was

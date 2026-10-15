@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: roles — picked by its owner, Kade, from the crawler's candidates (#4538)
 # Test: gemba is the pulse-gather poll, not the retired snapshot-diff scaffolding (#3205).
 # Red until /gemba points at the pulse-gather verb and the start/tick scripts are gone.
 

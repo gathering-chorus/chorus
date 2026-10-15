@@ -1,5 +1,6 @@
 /**
  * @test-type: unit
+// @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
  * Athena handler unit tests — #2278.
  *
  * Direct handler invocation with injected deps (no HTTP, no Fuseki).

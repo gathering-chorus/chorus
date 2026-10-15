@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-build-deploy.sh — BDD tests for /build + /deploy substrate (#2880).
 #
 # Runs the cucumber feature at platform/tests/features/skills/build-deploy.feature

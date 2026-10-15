@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: domains — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-ontology-wipe-guard.sh — guard for #3601: no test may reach the LIVE
 # ontology graph. athena-deploy defaults ONTOLOGY_GRAPH to urn:chorus:ontology
 # (lib.rs:70), so one future test invoking a deploy surface without a test-graph

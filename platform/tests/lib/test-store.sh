@@ -1,3 +1,4 @@
+# @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 # #4332 — the store a bats suite writes to. Never /pods.
 #
 # Reading all 267 bats suites on 2026-09-26 found suites that wrote to the

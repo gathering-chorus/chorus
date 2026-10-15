@@ -1,3 +1,4 @@
+// @domain: tests — picked by its owner, Kade, from the crawler's candidates (#4538)
 // scope_units.rs — the ONE diff→units scoping core (#3783 build, #3821 tests).
 // Source-included by werk-build AND werk-test (same pattern as failure_class.rs:
 // not a crate, not a verb — one file both compile) so the two legs can never

@@ -1,3 +1,4 @@
+// @domain: code — picked by its owner, Kade, from the crawler's candidates (#4538)
 //! #4499 reopen — the code crawl's decisions as data. The 10-12 nightly had
 //! chorus-crawl coverage at 66.6% (floor 68%) because these lived untested in
 //! main.rs; they are tested here instead of lowering the floor.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: messages — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-chorus-inject-spawn-sites.sh — #2820 grep-gate (replacement for
 # `tests/nudge_single_drain.rs` retired in #2814).
 #

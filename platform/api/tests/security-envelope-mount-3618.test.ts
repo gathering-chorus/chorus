@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: security — picked by its owner, Kade, from the crawler's candidates (#4538)
 /**
  * #3618 — the Express adapter mount (hermetic tier).
  *

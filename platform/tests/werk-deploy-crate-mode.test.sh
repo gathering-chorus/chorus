@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: deploys — picked by its owner, Kade, from the crawler's candidates (#4538)
 # test-in-demo: exercise the DEMO SLOT's werk-deploy executable (#3317 crate mode)
 # end-to-end against a sandboxed fixture — real binary, stubbed system surface.
 set -u
