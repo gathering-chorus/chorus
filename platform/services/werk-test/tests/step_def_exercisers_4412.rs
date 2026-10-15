@@ -62,6 +62,8 @@ fn a_new_step_file_is_exercised_by_the_new_features_in_the_same_card() {
     let got = werk_test::exercisers_of("platform/tests/features/step_definitions/clearing_steps.ts", &cands, &text, &|_| None, None);
     assert_eq!(got, vec!["platform/tests/features/clearing/clearing-access.feature".to_string()]);
     assert!(werk_test::is_card_test("platform/tests/features/clearing-v2/rooms.feature"));
+    // and the bdd lane runs it, so it is not dropped as unrunnable
+    assert!(werk_test::runnable_test("platform/tests/features/clearing-v2/rooms.feature", false));
 }
 
 /// NEGATIVE PROOF: a step file whose features are neither registered nor in the card is still refused.
@@ -72,4 +74,6 @@ fn negative_proof_a_step_file_with_no_feature_anywhere_stays_unexercised() {
     let got = werk_test::exercisers_of("platform/tests/features/step_definitions/clearing_steps.ts", &cands, &text, &|_| None, None);
     assert!(got.is_empty(), "{got:?}");
     assert!(!werk_test::is_card_test("platform/tests/cucumber-clearing-v2.js"));
+    // a .feature outside the bdd lane's features dir has no runner
+    assert!(!werk_test::runnable_test("docs/specs/rooms.feature", false));
 }

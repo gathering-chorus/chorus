@@ -7253,6 +7253,9 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
         // #4440 reopened (unit_for_test); refusing a changed one as unrunnable
         // contradicted the lane, which had run the same file one run earlier
         || is_shell_suite(f)
+        // #4530 — a cucumber feature runs alone in the bdd lane (#4292); its
+        // step file's exercisers were dropped here as "not runnable"
+        || is_feature_suite(f)
 }
 
 /// Source a card can break: code by extension, or an extension-less script.
