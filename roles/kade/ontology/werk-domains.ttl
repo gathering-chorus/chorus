@@ -306,7 +306,18 @@ chorus:werk-product
         "TestSuiteRun write-back token provisioning (#3619) pending" ,
         "review advisory not yet promoted to gate (deliberate flip pattern)" .
 
+chorus:GateResult a owl:Class ;
+    chorus:mintKey ("cardId" "gate" "ts") ;
+    chorus:writeOrigin "derived-sweep" ;
+    rdfs:label "Gate Result" ;
+    rdfs:comment "One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284)." ;
+    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.gate.result {gate, result, findings}" ;
+    chorus:ingestionStatus "ingestible" .
+
 chorus:pipelines
+    # #4536 (Silas 11:46) — cicd records gate outcomes, so it claims GateResult;
+    # the class had no product domain, which athena-gen refused.
+    chorus:definesVocabulary chorus:GateResult ;
     chorus:status "operating" ;
     chorus:hasDesignDoc "designing/docs/ci-pipeline-service-design.html" ;
     chorus:gaps "per-PR CI disconnected (cost stop); nightly not yet trusted" ;
@@ -360,6 +371,20 @@ chorus:hasRecordClass a owl:AnnotationProperty ;
 chorus:PipelineRunShape a sh:NodeShape ;
     sh:targetClass chorus:PipelineRun ;
     sh:property [ sh:path chorus:traceId ; sh:minCount 1 ]  .
+
+chorus:GateResultShape a sh:NodeShape ;
+    sh:targetClass chorus:GateResult ;
+    # #4201 — the owner is a Principal, not a word. athena-make's
+    # verified_owner_projection writes a typed edge when the shape declares the
+    # class and a bare literal of the caller's role name when it does not
+    # (athena-make/src/lib.rs:2139). Undeclared here, every row this graph took
+    # today landed with ownedBy "kade" as a string, which the door can never
+    # write again. minCount stays off: the server stamps the value, the shape
+    # only says what kind of thing it is.
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
 
 chorus:TestShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;

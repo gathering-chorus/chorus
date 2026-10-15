@@ -126,7 +126,10 @@ pub fn changed_classes(werk_nt: &str, main_nt: &str) -> Vec<String> {
     let about = |nt: &str, subject: &str| -> Vec<String> {
         // declared_classes returns the IRI with its angle brackets
         let key = format!("{subject} ");
-        let mut v: Vec<String> = nt.lines().filter(|l| l.starts_with(&key)).map(|l| l.trim().to_string()).collect();
+        // blank-node labels differ per parse (`_:b0` vs `_:b7`), so they are
+        // normalised before comparing: an identical list is not a change
+        let bnode = |l: &str| l.split_whitespace().map(|t| if t.starts_with("_:") { "_:b" } else { t }).collect::<Vec<_>>().join(" ");
+        let mut v: Vec<String> = nt.lines().filter(|l| l.starts_with(&key)).map(bnode).collect();
         v.sort();
         v
     };
@@ -156,6 +159,15 @@ mod changed_classes_4536 {
     #[test]
     fn a_class_whose_triples_changed_is_the_cards() {
         assert_eq!(changed_classes(&class("Old", "renamed"), &class("Old", "old")), vec!["<urn:x#Old>".to_string()]);
+    }
+
+    /// A list object parses to a fresh blank node each time; the same list is
+    /// not a change (10-15: GateResult's mintKey list read as "changed").
+    #[test]
+    fn the_same_list_under_a_different_blank_node_is_not_a_change() {
+        let main = format!("<urn:x#G> {TYPE} {OWL} .\n<urn:x#G> <urn:x#mintKey> _:b0 .\n");
+        let werk = format!("<urn:x#G> {TYPE} {OWL} .\n<urn:x#G> <urn:x#mintKey> _:b7 .\n");
+        assert!(changed_classes(&werk, &main).is_empty());
     }
 
     /// NEGATIVE PROOF: with no main version every declared class is the card's,
