@@ -87,4 +87,3 @@ describe('isUnder (the proxy allow-list)', () => {
     assert.equal(isUnder('', discoverVideoDirs(root)), false);
   });
 });
-// probe
