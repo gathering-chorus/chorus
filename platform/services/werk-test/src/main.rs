@@ -278,7 +278,8 @@ fn pin_or_handoff(dir: &werk_test::run_dir::RunDir, step: Option<&str>, all_args
         Some(_) => {
             let already = std::env::var(werk_test::run_dir::PINNED_ENV).as_deref() == Ok("1");
             if already {
-                eprintln!("werk-test: running the run's pinned build {}", current.display());
+                // #4562 — informational, so stdout: /cws reads stderr's tail as the reason a step stopped
+                println!("werk-test: running the run's pinned build {}", current.display());
             }
             match werk_test::run_dir::pinned_to_exec(dir, &current, already) {
                 Some(pinned) => {
