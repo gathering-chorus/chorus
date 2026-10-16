@@ -130,7 +130,8 @@ export class DataService {
       principals: [],
       error: errorMessage(err) || 'roles unreadable',
     }));
-    if (rolesData.error) return { roles: [], error: rolesData.error };
+    if (rolesData.error) return { roles: [], error: `roles unreadable (${rolesData.error})` };
+    if (rolesData.unmeasured) return { roles: [], error: rolesData.unmeasured };
     const roles = rolesData.principals
       .filter((p) => p.roleKind === 'agent' && (p.state === 'working' || p.state === 'idle'))
       .map((p) => ({

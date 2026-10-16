@@ -141,5 +141,9 @@ export async function fetchRolesData(urls: RolesSourceUrls): Promise<RolesData> 
       lastHeard: '–', // Unmodeled telemetry gap per 11:01 navigator review
     });
   }
-  return { principals };
+  const unread = [
+    ...(counts ? [] : ['activity unreadable (Loki)']),
+    ...(sessions.ok ? [] : ['sessions unreadable']),
+  ];
+  return unread.length > 0 ? { principals, unmeasured: unread.join(', ') } : { principals };
 }
