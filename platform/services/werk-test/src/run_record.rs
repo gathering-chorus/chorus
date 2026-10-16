@@ -559,6 +559,19 @@ pub fn notify_messages(rows: &[SuiteRow], security_owner: &str, crawl: &str) -> 
     } else {
         format!(" — {} stale (deleted file, still registered: {})", stale.len(), stale.join(", "))
     };
+    // #4562 — green needs suites that ran and measured. Measured 10-16 10:13:
+    // a run stopped before any suite reported sent "all hermetic suites green ✅".
+    if rows.is_empty() {
+        out.push(("kade".to_string(), "nightly: NO RESULT — no suite reported (the run stopped or ran nothing); not green".to_string()));
+        return out;
+    }
+    let unmeasured: Vec<&str> = rows.iter().filter(|r| r.status == "unmeasured").map(|r| r.suite_name()).collect();
+    if reds.is_empty() && !unmeasured.is_empty() {
+        out.push(("kade".to_string(), format!(
+            "nightly: no red, {} unmeasured — not clean: {}{}{}",
+            unmeasured.len(), unmeasured.iter().take(5).cloned().collect::<Vec<_>>().join(", "), skipmsg, stalemsg)));
+        return out;
+    }
     if reds.is_empty() {
         out.push(("kade".to_string(), format!("nightly: all hermetic suites green ✅{}{}", skipmsg, stalemsg)));
         return out;
@@ -1649,6 +1662,21 @@ mod nightly_run_4145 {
         assert!(m[0].1.starts_with("nightly: all hermetic suites green"));
     }
 
+
+    /// #4562 NEGATIVE PROOF: a run with no suites, or with an unmeasured one,
+    /// is never "green" (10-16 10:13 a stopped run with 0 suites read green).
+    #[test]
+    fn negative_proof_no_suites_or_unmeasured_is_never_green() {
+        let none = notify_messages(&[], "silas", "");
+        assert_eq!(none.len(), 1);
+        assert!(none[0].1.contains("NO RESULT") && !none[0].1.contains("green ✅"), "{}", none[0].1);
+        let rows = vec![
+            SuiteRow::new("bats", "platform/tests/c.bats", "kade", "pass", "1 pass, 0 fail"),
+            SuiteRow::new("leg", "crawler-validate", "kade", "unmeasured", "0 pass, 0 fail (UNMEASURED — timed out)"),
+        ];
+        let m = notify_messages(&rows, "silas", "");
+        assert!(m[0].1.contains("1 unmeasured") && !m[0].1.contains("green ✅"), "{}", m[0].1);
+    }
 
     #[test]
     fn suite_result_fields_repair_a_contradiction_and_carry_the_reason() {
