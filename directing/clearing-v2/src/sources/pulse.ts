@@ -16,7 +16,7 @@ import {
   TrustStripSource,
 } from './models';
 import { fetchJson, failureReason } from './http';
-import { formatBostonTime } from './format';
+import { formatBostonTime, formatBostonWhen } from './format';
 
 const PULSE_TIMEOUT_MS = 3000;
 
@@ -80,7 +80,7 @@ export function toActorRow(a: PulseActor): ActorRow {
     activity: a.activity,
     pair: a.pairRole && a.pairedWith ? `${a.pairRole} with ${shortPrincipal(a.pairedWith)}` : undefined,
     card,
-    waiting: w ? [w.what, w.on ? `on ${shortPrincipal(w.on)}` : '', w.since ? `since ${w.since}` : ''].filter(Boolean).join(' ') : undefined,
+    waiting: w ? [w.what, w.on ? `on ${shortPrincipal(w.on)}` : '', w.since ? `since ${formatBostonWhen(w.since)}` : ''].filter(Boolean).join(' ') : undefined,
     // display filter: live sessions listed, the rest counted (pulse decides live)
     sessions: liveSessionLines(a.sessions || []),
     unmeasured: unmeasuredText(a.unmeasuredSource),

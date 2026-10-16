@@ -46,6 +46,7 @@ export interface OwedNudgeFact {
   to: string;
   expects: 'reply' | 'decision' | 'action';
   sentAt: string;
+  repliedAt?: string;
   content?: string;
 }
 
@@ -233,8 +234,40 @@ function evaluateReviewing(role: string, reviewCards: ReviewCardFact[]): Derived
   };
 }
 
-function evaluateWaiting(role: string, owedNudges: OwedNudgeFact[]): DerivedStateOutcome | undefined {
-  const match = owedNudges.find((n) => principalToRole(n.from) === role);
+function parseTimestampMs(raw?: string): number {
+  if (!raw) return 0;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
+    ? raw.replace(' ', 'T') + 'Z'
+    : raw;
+  const ms = Date.parse(normalized);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+function isNudgeCleared(nudge: OwedNudgeFact, allOwed: OwedNudgeFact[]): boolean {
+  const fromRole = principalToRole(nudge.from);
+  const toRole = principalToRole(nudge.to);
+  const sentMs = parseTimestampMs(nudge.sentAt);
+  const repliedMs = parseTimestampMs(nudge.repliedAt);
+  if (repliedMs > 0 && repliedMs >= sentMs) return true;
+
+  const reverseNudge = allOwed.find(
+    (other) => principalToRole(other.from) === toRole && principalToRole(other.to) === fromRole
+  );
+  if (!reverseNudge) return false;
+
+  const reverseMs = parseTimestampMs(reverseNudge.sentAt);
+  return reverseMs > 0 && sentMs > 0 && reverseMs >= sentMs;
+}
+
+function evaluateWaiting(
+  role: string,
+  hasLiveSession: boolean,
+  owedNudges: OwedNudgeFact[]
+): DerivedStateOutcome | undefined {
+  if (!hasLiveSession) return undefined;
+  const match = owedNudges.find(
+    (n) => principalToRole(n.from) === role && !isNudgeCleared(n, owedNudges)
+  );
   if (!match) return undefined;
   return {
     stateValue: 'waiting',
@@ -265,6 +298,7 @@ interface StateEvaluationFacts {
   isHuman: boolean;
   activity: ActivityValue;
   hasLiveSession: boolean;
+  hasRecentAction30m: boolean;
   activePairs: ActivePairFact[];
   reviewCards: ReviewCardFact[];
   owedNudges: OwedNudgeFact[];
@@ -278,11 +312,17 @@ function evaluateState(facts: StateEvaluationFacts): DerivedStateOutcome {
   const reviewing = evaluateReviewing(facts.role, facts.reviewCards);
   if (reviewing) return reviewing;
 
-  const waiting = evaluateWaiting(facts.role, facts.owedNudges);
-  if (waiting) return waiting;
+  const isActingOrLive = facts.isHuman
+    ? facts.hasLiveSession || facts.activity === 'acting' || facts.hasRecentAction30m
+    : facts.hasLiveSession;
 
-  const isActingOrLive = facts.activity === 'acting' || facts.hasLiveSession;
+  const waiting = evaluateWaiting(facts.role, facts.hasLiveSession, facts.owedNudges);
   const building = evaluateBuilding(facts.role, facts.wipCards, isActingOrLive);
+
+  if (building && facts.activity === 'acting') {
+    return { ...building, waitingOn: waiting?.waitingOn };
+  }
+  if (waiting) return waiting;
   if (building) return building;
 
   if (isActingOrLive) {
@@ -396,11 +436,13 @@ function deriveOneActor(
     actionFact?.lastActionAt
   );
 
+  const hasRecentAction30m = lastActionMs > 0 && nowMs - lastActionMs <= THIRTY_MINUTES_MS;
   const stateOutcome = evaluateState({
     role,
     isHuman,
     activity,
     hasLiveSession,
+    hasRecentAction30m,
     activePairs: input.activePairs ?? [],
     reviewCards: input.reviewCards ?? [],
     owedNudges: input.owedNudges ?? [],
@@ -695,12 +737,18 @@ interface LokiQueryResult {
   };
 }
 
+function normalizeLokiRole(rawRole?: string): string {
+  const r = rawRole ? String(rawRole).toLowerCase() : '';
+  return r === 'bridge' ? 'jeff' : r;
+}
+
 function populateLoki5m(targetMap: Map<string, ActionFact>, json5m: LokiQueryResult): void {
   for (const item of json5m.data?.result || []) {
-    const role = item.metric?.role ? String(item.metric.role).toLowerCase() : '';
+    const role = normalizeLokiRole(item.metric?.role);
     if (!role) continue;
     const existing = targetMap.get(role) || {};
-    existing.recent5mCount = parseInt(item.value?.[1] || '0', 10);
+    const count = parseInt(item.value?.[1] || '0', 10);
+    existing.recent5mCount = (existing.recent5mCount ?? 0) + count;
     targetMap.set(role, existing);
   }
 }
@@ -711,7 +759,7 @@ function populateLoki30m(
   nowIso: string
 ): void {
   for (const item of json30m.data?.result || []) {
-    const role = item.metric?.role ? String(item.metric.role).toLowerCase() : '';
+    const role = normalizeLokiRole(item.metric?.role);
     if (!role) continue;
     const existing = targetMap.get(role) || {};
     const count30m = parseInt(item.value?.[1] || '0', 10);
@@ -728,8 +776,12 @@ async function fetchLokiActionFacts(
   nowIso: string
 ): Promise<Map<string, ActionFact>> {
   const result = new Map<string, ActionFact>();
-  const q5m = encodeURIComponent('sum by (role) (count_over_time({job="platform-chorus"}[5m] |= "agent.action"))');
-  const q30m = encodeURIComponent('sum by (role) (count_over_time({job="platform-chorus"}[30m] |= "agent.action"))');
+  const q5m = encodeURIComponent(
+    'sum by (role) (count_over_time({job="platform-chorus"}[5m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))'
+  );
+  const q30m = encodeURIComponent(
+    'sum by (role) (count_over_time({job="platform-chorus"}[30m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))'
+  );
 
   try {
     const [res5m, res30m] = await Promise.all([
@@ -752,11 +804,20 @@ async function fetchLokiActionFacts(
   return result;
 }
 
+function resolveSpineEventRole(ev: { role?: string; event?: string }): string {
+  if (ev.event === 'jeff.input.delivered' || ev.event === 'jeff.input.surfaced') {
+    return 'jeff';
+  }
+  const role = ev.role ? String(ev.role).toLowerCase() : '';
+  if (!role || role === 'system' || role === 'pulse' || role === 'bridge') return '';
+  return role;
+}
+
 function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>): void {
   try {
-    const ev = JSON.parse(line) as { role?: string; timestamp?: string };
-    const role = ev.role ? String(ev.role).toLowerCase() : '';
-    if (!role || role === 'system' || role === 'pulse') return;
+    const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string };
+    const role = resolveSpineEventRole(ev);
+    if (!role) return;
     const tsMs = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
     if (tsMs <= 0 || !ev.timestamp) return;
 
@@ -764,8 +825,11 @@ function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>):
     const cur = existing.lastActionAt ? new Date(existing.lastActionAt).getTime() : 0;
     if (tsMs > cur) {
       existing.lastActionAt = ev.timestamp;
-      targetMap.set(role, existing);
     }
+    if (ev.event === 'jeff.input.delivered' && Date.now() - tsMs <= FIVE_MINUTES_MS) {
+      existing.recent5mCount = (existing.recent5mCount ?? 0) + 1;
+    }
+    targetMap.set(role, existing);
   } catch (jsonErr: unknown) {
     void jsonErr;
   }
@@ -787,7 +851,10 @@ async function appendSpineTailActions(
 }
 
 export function buildLiveActorFactFetcher(options: {
-  store: { getOwedNudges: () => Array<{ from: string; to: string; expects: 'reply' | 'decision' | 'action'; sentAt: string }> };
+  store: {
+    getOwedNudges: () => Array<{ from: string; to: string; expects: 'reply' | 'decision' | 'action'; sentAt: string }>;
+    queryMessages?: (opts: { type?: string; limit?: number }) => Array<{ from: string; to: string; createdAt?: string; created_at?: string }>;
+  };
   readTail: () => Promise<string>;
   athenaBaseUrl?: string;
   chorusApiBaseUrl?: string;
@@ -814,7 +881,26 @@ export function buildLiveActorFactFetcher(options: {
     await appendSpineTailActions(actionMap, options.readTail);
 
     const actionsRecord: Record<string, ActionFact> = Object.fromEntries(actionMap.entries());
-    const owedNudges = options.store.getOwedNudges();
+    const rawOwed = options.store.getOwedNudges();
+    const recentNudges = typeof options.store.queryMessages === 'function'
+      ? options.store.queryMessages({ type: 'nudge', limit: 200 })
+      : [];
+    const owedNudges: OwedNudgeFact[] = rawOwed.map((n) => {
+      const sentMs = parseTimestampMs(n.sentAt);
+      const reply = recentNudges.find((m) => {
+        const mCreated = (m as { createdAt?: string; created_at?: string }).createdAt
+          || (m as { created_at?: string }).created_at;
+        return (
+          principalToRole(m.from) === principalToRole(n.to) &&
+          principalToRole(m.to) === principalToRole(n.from) &&
+          parseTimestampMs(mCreated) >= sentMs
+        );
+      });
+      const replyCreated = reply
+        ? ((reply as { createdAt?: string; created_at?: string }).createdAt || (reply as { created_at?: string }).created_at)
+        : undefined;
+      return replyCreated ? { ...n, repliedAt: replyCreated } : n;
+    });
 
     return {
       now,
