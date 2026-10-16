@@ -1589,10 +1589,6 @@ pub fn step_all(
             };
             let legs = std::env::var("WERK_TEST_LEGS_NOOP").is_err();
             if !perf && legs {
-                // #4290 — first: is the graph what git is, on every crawler domain?
-                // A red here is a suite row; the tests still run (Silas 10-16).
-                let t = Instant::now();
-                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
                 // #4160 — Jeff's order: coverage, then lint, then smoke; the queue runs the rest
                 for r in leg_coverage(&ctx) {
                     push(&ctx, r, &mut rows);
@@ -1614,6 +1610,14 @@ pub fn step_all(
                 std::process::exit(if STOP_SIGNAL.load(Ordering::SeqCst) == 2 { 130 } else { 143 });
             }
             rows.extend(lane.rows.iter().cloned());
+            if !perf && legs {
+                // #4290 — is the graph what git is, on every crawler domain?
+                // #4562 (Jeff 10-16 "20 minutes is still way too long") — after
+                // the tests, not before: no suite needs the crawl, and the tests
+                // waited up to its whole 1200s cap behind it.
+                let t = Instant::now();
+                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
+            }
             if perf && legs {
                 // #4278 — did an agent die under the run; did the run keep its budget
                 let start: std::collections::BTreeMap<String, Option<u32>> = d.get("daemons").unwrap_or_default().iter()
