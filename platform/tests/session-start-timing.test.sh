@@ -1,6 +1,7 @@
 #!/bin/bash
 # @test-type: perf — session-start wall clock, shown in seconds; over budget is SLOW, never red (#4136)
 # @domain: identity — placed by chorus-crawl's domain rules (#4538)
+# @needs: nightly — session-start wall clock (#4539: card runs leave it to the nightly)
 #
 # #4138 — this was "session-start completes in under 10s typical" inside
 # session-start-orchestration-e2e.bats, a coin flip on a loaded box that read

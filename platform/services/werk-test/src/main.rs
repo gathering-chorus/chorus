@@ -13,7 +13,7 @@ use std::process::Command;
 use werk_test::{
     affected_units, check_plan, gap_report, gate_outcome, is_self_modifying,
     model_units, parse_case_tsv, parse_quarantine_rows,
-    jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
+    jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
     is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload,
@@ -294,6 +294,8 @@ fn run(args: &[String]) -> Result<i32, String> {
     // Jeff, 2026-10-02: the card's domain tests run HERE, in werk-test and the
     // demo, before the land — never after it.
     let dsel = domain_select(&werk, &changed, &rows);
+    // #4539 AC4 — changed paths no test claims; UNMEASURED once the run's list exists
+    let mut uncovered: Vec<String> = Vec::new();
     match &dsel {
         None => println!("domain-select: UNMEASURED — no registered tests to read; import-graph selection only"),
         Some(d) => {
@@ -313,8 +315,12 @@ fn run(args: &[String]) -> Result<i32, String> {
             // package (#4438: 13 of 14 files → whole packages). #4169 and Jeff
             // 2026-09-13: never widen; fail and fix the data. Refuse, naming each.
             let refused = werk_test::untagged_in_a_unit(&d.untagged, &|f: &str| werk_test::ts_package_of(f).or_else(|| crate_of(f)));
-            for f in d.untagged.iter().filter(|f| !refused.iter().any(|(r, _)| r == *f)) {
+            // #4539 AC4 — a changed path that no test claims is UNMEASURED, said
+            // with its path, never a silent pass. Prose and role state (the
+            // scope_irrelevant list) change no build or test output.
+            for f in werk_test::uncovered_changes(&d.untagged, &refused) {
                 println!("domain-select: {} — no registered test exercises it, and it is in no package", f);
+                uncovered.push(format!("no test covers {}", f));
             }
             // #4419 reopened — what would otherwise pass with nothing run
             let runnable = |f: &str| werk_test::runnable_test(f, werk_test::ts_package_of(f).is_some());
@@ -464,11 +470,17 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    // Quarantined cases (flaky holds) the gate must SKIP — fetched from the tests
-    // domain (#2530). A skip is always VISIBLE, never silent (#3443).
-    let quarantined = quarantined_cases();
+    // Quarantined cases (flaky holds), fetched from the tests domain (#2530).
+    // #4539 — only holds whose `until` is today or later apply; an expired one
+    // runs, and both are named on this line. One rule for cargo, playwright,
+    // jest and bats; a held case does not run (the card calls quarantine the bad
+    // test's off switch) and its unit names it UNMEASURED "quarantined until <date>".
+    let today = today_iso();
+    let all_holds = quarantined_cases();
+    let quarantined = werk_test::active_holds(&all_holds, &today);
+    let _ = HOLDS.set(quarantined.clone());
     let q_names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
-    println!("{}", quarantine_report(&quarantined));
+    println!("{}", werk_test::quarantine_report_on(&all_holds, &today));
 
     println!(
         "-- werk-test #{} ({}) — {} unit(s), {} check(s){} --",
@@ -550,6 +562,28 @@ fn run(args: &[String]) -> Result<i32, String> {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
     let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() };
+    // #4539 — a test whose header says needs: machine or nightly proves the box
+    // or the clock, not the card: a card run does not select it and says so in
+    // one line outside the verdict; the nightly runs it. Its files leave the
+    // run the same way stack-down needs-stack files do.
+    let nightly_candidates: Vec<String> = {
+        let mut c: Vec<String> = rows.iter()
+            .map(|r| r.file_path.clone())
+            .chain(changed.iter().filter(|f| werk_test::is_card_test(f)).cloned())
+            .filter(|f| in_units(f) && (!narrows(f) || chosen.contains(f.as_str())))
+            .collect();
+        c.extend(units.iter().filter_map(|u| match u { TestUnit::BatsSuite(s) => Some(s.clone()), _ => None }));
+        c.sort();
+        c.dedup();
+        c
+    };
+    let nightly_only = werk_test::nightly_only_files(&nightly_candidates, &rows, &|f: &str| {
+        std::fs::read_to_string(format!("{}/{}", werk, f)).ok()
+    });
+    println!("{}", werk_test::nightly_only_report(&nightly_only));
+    let ns_excluded: Vec<String> = ns_excluded.into_iter()
+        .chain(nightly_only.iter().map(|(f, _)| f.clone()))
+        .collect();
     if let werk_test::StackState::Unmeasurable(u) = &stack {
         println!("{}", werk_test::integration_report_unmeasurable(selected_ns_tests, u));
         emit_spine("test.integration.unmeasurable", &role, &card, &trace,
@@ -582,7 +616,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     let mut any_failed = false;
     // #4265 — suites that scored nothing, named in the summary so an
     // UNMEASURED run can never be read as a clean one.
-    let mut unmeasured: Vec<String> = Vec::new();
+    let mut unmeasured: Vec<String> = std::mem::take(&mut uncovered);
     let mut failed_count: usize = 0;
     // #3592 — every executed case, keyed to the registered identity, plus the
     // loud counter for cargo cases that can't be joined unambiguously.
@@ -596,6 +630,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         let cases_before = all_cases.len();
         let unmatched_before = unmatched_cargo;
         let mut nothing_selected = false;
+        // #4539 — the cargo binaries this check ran (empty = all) and left out
+        let mut cargo_bins: (Vec<String>, Vec<String>) = Default::default();
         // #4454 — the unit starts on the trace: a hung unit reads started, no end
         emit_spine("test.unit.started", &role, &card, &trace,
             &[("check", check.kind.label()), ("unit", target), ("message", &format!("{} {} started", check.kind.label(), target))]);
@@ -613,9 +649,18 @@ fn run(args: &[String]) -> Result<i32, String> {
                 let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
                 // #4440 reopen — only test files changed: run just those binaries
                 let only = werk_test::cargo_only_bins(c, &changed);
-                let (ok, cases) = if only.is_empty() {
+                // #4539 — the only-bins path must honour the same exclusions: a
+                // card that edits a nightly-only test binary does not run it
+                let kept = werk_test::only_bins_kept(&only, &ns_bins);
+                cargo_bins = (kept.clone(), ns_bins.clone());
+                let (ok, cases) = if !only.is_empty() && kept.is_empty() {
+                    println!("cargo-select: {} → {} changed test binar(y/ies), all nightly only or stack-down: not run", c, only.len());
+                    nothing_selected = true;
+                    (true, Vec::new())
+                } else if only.is_empty() {
                     run_cargo(&werk, c, &q_names, &ns_refs)
                 } else {
+                    let only = kept;
                     println!("cargo-select: {} → only {} (no src change; the tests that changed run)", c, only.join(", "));
                     let only_refs: Vec<&str> = only.iter().map(|s| s.as_str()).collect();
                     let (ok, cases, _) = run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs);
@@ -646,7 +691,12 @@ fn run(args: &[String]) -> Result<i32, String> {
                                     .filter(|f| !ns_excluded.contains(f))
                                     .cloned().collect();
                                 if files.is_empty() {
-                                    println!("   jest:{} — selection all needs-stack, skipped typed (stack down)", p);
+                                    println!("   jest:{} — selection all needs-stack (stack down) or nightly only, not run", p);
+                                    // #4539 — a selection that is all nightly-only was never
+                                    // selected for a card run: not "ran nothing"
+                                    if werk_test::left_to_nightly(&sel.test_files, &nightly_only) {
+                                        nothing_selected = true;
+                                    }
                                     (true, Vec::new())
                                 } else {
                                     run_jest_selected(&werk, p, &files)
@@ -677,6 +727,12 @@ fn run(args: &[String]) -> Result<i32, String> {
                 // because nothing was shown broken.
                 if unbuilt.contains_key(s) {
                     unmeasured.push(format!("{} — not built", target));
+                    true
+                } else if nightly_only.iter().any(|(f, _)| f == s) {
+                    // #4539 — named in the "run nightly only" line; not a result,
+                    // and not "ran nothing" either: it was never selected
+                    println!("   bats:{} — runs nightly only, not in a card run", s);
+                    nothing_selected = true;
                     true
                 } else if std::fs::read_to_string(format!("{}/{}", werk, s))
                     .is_ok_and(|t| werk_test::header_says_sends_live_alerts(&t)) {
@@ -710,6 +766,17 @@ fn run(args: &[String]) -> Result<i32, String> {
         // #4537 — a lane that could not measure: UNMEASURED with its reason
         for why in werk_test::take_lane_unmeasured() {
             unmeasured.push(format!("{} — {}", target, why));
+        }
+        // #4539 — each held cargo case in this crate did not run (nextest's
+        // filterset): UNMEASURED, named. jest and bats note their own holds.
+        if let (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) = (&check.kind, &check.unit) {
+            let dir = crate_dir(&werk, c);
+            let held = werk_test::holds_in(&quarantined, &dir);
+            let ran = werk_test::holds_in_ran_bins(&held, &dir, &cargo_bins.0, &cargo_bins.1);
+            let text_of = |f: &str| std::fs::read_to_string(format!("{}/{}", werk, f)).ok();
+            for line in werk_test::hold_lines(target, &werk_test::holds_still_present(&ran, &text_of)) {
+                unmeasured.push(line);
+            }
         }
         // #4536 — a case lane that passed with 0 cases ran nothing: UNMEASURED, not green.
         let ran = all_cases.len() - cases_before + (unmatched_cargo - unmatched_before);
@@ -757,6 +824,12 @@ fn run(args: &[String]) -> Result<i32, String> {
                 &[("count", &ui_set.len().to_string()), ("stack_down", down), ("lane", "ui")]);
         } else {
             let (ok, summary) = run_ui_flows(&werk, &ui_set, &quarantined);
+            // #4539 — a held spec is excluded before the run; it is UNMEASURED too
+            for h in &quarantined {
+                if ui_set.iter().any(|f| f.rsplit('/').next() == Some(h.case.as_str())) {
+                    unmeasured.push(format!("{} — quarantined until {}: {} ({})", kind.label(), h.until, h.case, h.reason));
+                }
+            }
             let word = match ok { Some(true) => "ok", Some(false) => "FAIL", None => "UNMEASURED" };
             println!("   {}:workspace … {}{}", kind.label(), word, summary);
             match ok {
@@ -932,9 +1005,14 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    let quarantined = quarantined_cases();
+    // #4539 — one rule with the card run: an expired hold runs, a held case
+    // does not run in any lane and reads UNMEASURED "quarantined until <date>"
+    let today = today_iso();
+    let all_holds = quarantined_cases();
+    let quarantined = werk_test::active_holds(&all_holds, &today);
+    let _ = HOLDS.set(quarantined.clone());
     let q_names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
-    println!("{}", quarantine_report(&quarantined));
+    println!("{}", werk_test::quarantine_report_on(&all_holds, &today));
 
     // #3919 — the same typed integration tier as the gate: probe once, and a
     // down stack turns registered needs-stack tests into a counted SKIPPED
@@ -1348,6 +1426,8 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let times: std::collections::HashMap<String, u64> = werk_test::nextest_case_times(&text)
                 .into_iter().map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect();
             store_unit(item, &matched, &runs, &reasons, &times);
+            // #4539 — nextest's filterset kept this crate's held cases out
+            note_holds(&holds_here(&crate_dir));
             note_nightly_unmeasured(item);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
         });
@@ -1705,6 +1785,21 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
         // #4454 — each case's time on its TAP line
         if runner == "bats" {
             c.arg("-T");
+            // #4539 — the card run's rule: a held case does not run
+            let held = holds_here(suite);
+            let names = std::fs::read_to_string(format!("{}/{}", werk, suite))
+                .map(|t| werk_test::bats_case_names(&t)).unwrap_or_default();
+            match werk_test::bats_keep(&names, &held) {
+                werk_test::BatsKeep::All => {}
+                werk_test::BatsKeep::Only(pat) => {
+                    c.arg("--filter").arg(pat);
+                    note_holds(&held);
+                }
+                werk_test::BatsKeep::Nothing => {
+                    note_holds(&held);
+                    return (true, Vec::new(), format!("every case in {} quarantined: not run", suite));
+                }
+            }
         }
         c.arg(suite);
         (c, werk.to_string())
@@ -1924,6 +2019,22 @@ fn run_bats(werk: &str, suite: &str) -> (BatsOutcome, Vec<CaseResult>) {
         if assert_only_in_card(werk, suite) {
             println!("   bats:{} — assert-only edit: hermetic cases only (--filter-tags '!needs-stack')", suite);
             cmd.args(["--filter-tags", "!needs-stack"]);
+        }
+        // #4539 — bats has no exclude: the filter names the cases that run
+        let held = holds_here(suite);
+        let names = std::fs::read_to_string(format!("{}/{}", werk, suite))
+            .map(|t| werk_test::bats_case_names(&t)).unwrap_or_default();
+        match werk_test::bats_keep(&names, &held) {
+            werk_test::BatsKeep::All => {}
+            werk_test::BatsKeep::Only(pat) => {
+                cmd.arg("--filter").arg(pat);
+                note_holds(&held);
+            }
+            werk_test::BatsKeep::Nothing => {
+                println!("   bats:{} — every case quarantined: not run", suite);
+                note_holds(&held);
+                return (BatsOutcome::Pass, Vec::new());
+            }
         }
     }
     // #4454 — output to a FILE (a leaked server cannot hold it open, #4022),
@@ -2385,8 +2496,35 @@ fn output_with_progress(cmd: &mut Command, unit: &str) -> std::io::Result<std::p
 /// curl|jq subprocess so the verb stays zero-dep/std-only (ADR-032 §6, same pattern
 /// as `emit_spine`). Best-effort: any failure (endpoint down, jq absent) yields an
 /// EMPTY set — quarantine never blocks the gate from running, it only relaxes it.
-/// Each row is `testName\treason\tuntil`. (Server-side `?quarantined=true` filtering
+/// Each row is `testName\treason\tuntil\tfilePath` (#4539 added the file). (Server-side `?quarantined=true` filtering
 /// is a follow-on; today we pull and filter client-side.)
+/// #4539 — today's date in Boston, `YYYY-MM-DD`, the form quarantineUntil uses.
+/// Empty when `date` fails; then every hold reads expired and runs (loud, never
+/// a silent skip).
+fn today_iso() -> String {
+    Command::new("date").env("TZ", "America/New_York").arg("+%Y-%m-%d").output().ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+/// #4539 — the run's active holds, set once in the card run so every lane
+/// runner reads the same set without threading it through each signature.
+static HOLDS: std::sync::OnceLock<Vec<Quarantined>> = std::sync::OnceLock::new();
+
+/// #4539 — the active holds in one unit dir or file (empty outside a card run).
+fn holds_here(unit_path: &str) -> Vec<&'static Quarantined> {
+    HOLDS.get().map(|h| werk_test::holds_in(h, unit_path)).unwrap_or_default()
+}
+
+/// #4539 — each held case that did not run is a lane note: the card run and
+/// the nightly both read it as UNMEASURED "quarantined until <date>".
+fn note_holds(held: &[&Quarantined]) {
+    for h in held {
+        werk_test::lane_unmeasured(format!("quarantined until {}: {} ({})", h.until, h.case, h.reason));
+    }
+}
+
 fn quarantined_cases() -> Vec<Quarantined> {
     let endpoint = std::env::var("OWL_API_TESTS")
         .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
@@ -2394,7 +2532,7 @@ fn quarantined_cases() -> Vec<Quarantined> {
     // so a boolean-only compare NEVER matched: the quarantine gate was vacuous from
     // the day it shipped ("quarantined: none" = type mismatch, not an empty set).
     // Found live 2026-08-06 by writing a quarantine row and running this exact jq.
-    let jq = r#".data[] | select(.quarantined==true or .quarantined=="true") | [.testName,.quarantineReason,.quarantineUntil] | @tsv"#;
+    let jq = r#".data[] | select(.quarantined==true or .quarantined=="true") | [.testName,.quarantineReason,.quarantineUntil,.filePath] | @tsv"#;
     let pipe = format!("curl -s '{}' | jq -r '{}'", endpoint, jq);
     let out = match Command::new("bash").args(["-c", &pipe]).output() {
         Ok(o) if o.status.success() => o.stdout,
@@ -2480,6 +2618,12 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
     cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
         .current_dir(&pkg_dir);
+    // #4539 — a held case does not run
+    let held = holds_here(pkg);
+    if let Some(pat) = werk_test::jest_hold_pattern(&held) {
+        cmd.arg("--testNamePattern").arg(pat);
+        note_holds(&held);
+    }
     // #4111 — run the HERMETIC project only. platform/api's jest config declares
     // two projects, `hermetic` and `integration`; bare jest runs both. Inside act
     // there is no live stack, so every *.integration.test.ts fails on a service
@@ -2745,6 +2889,12 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json", "--runTestsByPath"])
         .args(&rel)
         .current_dir(&pkg_dir);
+    // #4539 — a held case does not run
+    let held: Vec<&Quarantined> = holds_here(pkg).into_iter().filter(|h| files.contains(&h.file)).collect();
+    if let Some(pat) = werk_test::jest_hold_pattern(&held) {
+        cmd.arg("--testNamePattern").arg(pat);
+        note_holds(&held);
+    }
     apply_suite_world(&mut cmd, werk);
     // #4030 — a per-unit wall cap. `cmd.output()` had no deadline: on
     // 2026-08-30 03:00 platform/api's jest sat two hours (a test waiting on a
@@ -3034,7 +3184,7 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // ui/perf/security), so the jq splits testType into them. A row the
     // crawler has not rewritten yet still carries the retired pair; it is
     // read as-is until the crawler's next pass migrates it.
-    let jq_filter = r#".data[] | .filePath as $f | (.testType // "") as $tt | (if ($tt | IN("ui","perf","security")) then "" elif $tt != "" then $tt else (.pyramidLayer // "") end) as $l | .testName as $n | .name as $e | .hermeticity as $h | (if ($tt | IN("ui","perf","security")) then $tt elif $tt != "" then "" else (.testConcern // "") end) as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // ""),(.result // "")] | @tsv"#;
+    let jq_filter = r#".data[] | .filePath as $f | (.testType // "") as $tt | (if ($tt | IN("ui","perf","security")) then "" elif $tt != "" then $tt else (.pyramidLayer // "") end) as $l | .testName as $n | .name as $e | .hermeticity as $h | (if ($tt | IN("ui","perf","security")) then $tt elif $tt != "" then "" else (.testConcern // "") end) as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // ""),(.result // ""),(.testNeeds // "")] | @tsv"#;
     // #4419 — read the registry a page at a time. One 10,000-row read took
     // 12.8 s (measured 10-02: 1,000 rows 1.5 s, linear) against this 10 s cap,
     // so a run sometimes got 0 rows and "0 tests" read as an answer. Pages of

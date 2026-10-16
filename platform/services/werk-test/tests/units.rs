@@ -231,6 +231,7 @@ fn quarantine_report_lists_case_reason_and_expiry() {
             case: "flaky_net_timeout".into(),
             reason: "intermittent net".into(),
             until: "2026-07-01".into(),
+            file: String::new(),
         },
     ];
     let line = quarantine_report(&q);
@@ -257,6 +258,7 @@ fn parse_quarantine_rows_reads_case_reason_until() {
             case: "flaky_net_timeout".into(),
             reason: "intermittent net".into(),
             until: "2026-07-01".into(),
+            file: String::new(),
         }]
     );
 }
@@ -275,8 +277,8 @@ fn parse_quarantine_rows_skips_lines_with_no_case() {
 #[test]
 fn expired_cases_flags_past_expiry_only() {
     let q = vec![
-        Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-01".into() }, // past
-        Quarantined { case: "b".into(), reason: "r".into(), until: "2026-12-31".into() }, // future
+        Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-01".into(), ..Default::default() }, // past
+        Quarantined { case: "b".into(), reason: "r".into(), until: "2026-12-31".into(), ..Default::default() }, // future
     ];
     let expired = expired_cases(&q, "2026-06-23");
     assert_eq!(expired.len(), 1);
@@ -286,14 +288,14 @@ fn expired_cases_flags_past_expiry_only() {
 #[test]
 fn expired_cases_today_is_not_yet_expired() {
     // until == today: the hold runs through end of day, not expired yet.
-    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-23".into() }];
+    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-23".into(), ..Default::default() }];
     assert!(expired_cases(&q, "2026-06-23").is_empty());
 }
 
 #[test]
 fn expired_cases_blank_until_is_never_expired() {
     // a malformed/blank expiry must not silently auto-file — be conservative.
-    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "".into() }];
+    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "".into(), ..Default::default() }];
     assert!(expired_cases(&q, "2026-06-23").is_empty());
 }
 
@@ -514,6 +516,7 @@ fn row(path: &str, covers: &str, layer: &str) -> werk_test::TestRow {
         pyramid_layer: layer.to_string(),
         hermeticity: String::new(),
         test_concern: String::new(),
+        needs: String::new(),
     }
 }
 
@@ -1507,4 +1510,72 @@ fn the_real_tree_claims_the_new_adapters_package() {
     assert!(found.contains(&"platform/agent-adapters".to_string()), "{found:?}");
     assert!(found.contains(&"platform/api".to_string()), "{found:?}");
     assert!(!found.iter().any(|p| p.contains("spikes/mcp-registry")), "{found:?}");
+}
+
+// --- #4539: holds read from the row, for every harness ---
+
+fn hold(case: &str, until: &str, file: &str) -> Quarantined {
+    Quarantined { case: case.into(), reason: "flaky".into(), until: until.into(), file: file.into() }
+}
+
+#[test]
+fn parse_quarantine_rows_reads_the_file_column() {
+    let got = parse_quarantine_rows("t\twhy\t2026-11-01\tplatform/tests/a.bats\n");
+    assert_eq!(got[0].file, "platform/tests/a.bats");
+    assert_eq!(got[0].until, "2026-11-01");
+}
+
+#[test]
+fn an_expired_hold_runs_and_a_current_one_holds() {
+    // negative proof: yesterday's hold is not active, so the test runs
+    let q = vec![hold("old", "2026-10-15", ""), hold("now", "2026-10-16", ""), hold("none", "", "")];
+    let active = werk_test::active_holds(&q, "2026-10-16");
+    let names: Vec<&str> = active.iter().map(|h| h.case.as_str()).collect();
+    assert_eq!(names, vec!["now"], "until == today holds; expired and blank run");
+    let line = werk_test::quarantine_report_on(&q, "2026-10-16");
+    assert!(line.contains("quarantined (1 held): now"), "{line}");
+    assert!(line.contains("quarantine expired, runs (2)"), "{line}");
+    assert!(line.contains("old (flaky, until 2026-10-15)"), "{line}");
+    assert!(line.contains("none (flaky, no expiry)"), "{line}");
+}
+
+#[test]
+fn no_clock_means_no_hold_applies() {
+    let q = vec![hold("now", "2026-10-16", "")];
+    assert!(werk_test::active_holds(&q, "").is_empty());
+}
+
+#[test]
+fn a_hold_lives_in_its_own_unit_only() {
+    let q = vec![hold("t", "2026-11-01", "platform/tests/a.bats"),
+                 hold("u", "2026-11-01", "platform/services/x/tests/y.rs"),
+                 hold("v", "2026-11-01", "")];
+    let names = |p: &str| werk_test::holds_in(&q, p).iter().map(|h| h.case.clone()).collect::<Vec<_>>();
+    assert_eq!(names("platform/tests/a.bats"), vec!["t"]);
+    assert_eq!(names("platform/services/x"), vec!["u"]);
+    assert!(names("platform/services/xy").is_empty(), "a dir prefix is not a parent");
+    assert!(names("platform/tests/b.bats").is_empty());
+    let held = werk_test::holds_in(&q, "platform/services/x");
+    assert_eq!(werk_test::hold_lines("x", &held), vec!["x — quarantined until 2026-11-01: u (flaky)".to_string()]);
+}
+
+#[test]
+fn jest_runs_every_case_but_the_held_ones() {
+    assert_eq!(werk_test::jest_hold_pattern(&[]), None, "nothing held: no flag");
+    let h = hold("posts a (card)", "2026-11-01", "");
+    let pat = werk_test::jest_hold_pattern(&[&h]).unwrap();
+    assert_eq!(pat, "^(?!.*(?:posts a \\(card\\))$)");
+}
+
+#[test]
+fn bats_runs_only_the_unheld_cases() {
+    let src = "#!/usr/bin/env bats\n@test \"one\" {\n}\n  @test 'two (x)' {\n}\n@test \"three\" {\n}\n";
+    let names = werk_test::bats_case_names(src);
+    assert_eq!(names, vec!["one", "two (x)", "three"]);
+    assert_eq!(werk_test::bats_keep(&names, &[]), werk_test::BatsKeep::All);
+    let h = hold("two (x)", "2026-11-01", "");
+    assert_eq!(werk_test::bats_keep(&names, &[&h]), werk_test::BatsKeep::Only("^(one|three)$".into()));
+    let all: Vec<Quarantined> = names.iter().map(|n| hold(n, "2026-11-01", "")).collect();
+    let refs: Vec<&Quarantined> = all.iter().collect();
+    assert_eq!(werk_test::bats_keep(&names, &refs), werk_test::BatsKeep::Nothing);
 }

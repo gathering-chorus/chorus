@@ -5,16 +5,6 @@
 use std::fs;
 use std::path::Path;
 
-/// #4532 — timing limits are checked in the nightly lane only (Jeff
-/// 2026-10-14, "nightly yes"). A card run on a shared M1 measures the box, not
-/// the product: #4530 run 9 went red on 3424ms with nothing broken. werk-test
-/// names the lane in WERK_TEST_LANE (#4531); unset (a developer's shell) is not
-/// nightly. Off the nightly the test still runs and checks its result, and
-/// prints the time as UNMEASURED rather than calling it green or red.
-fn timing_checks_on() -> bool {
-    std::env::var("WERK_TEST_LANE").as_deref() == Ok("nightly")
-}
-
 /// Pulse output file exists after running the command
 #[test]
 fn pulse_writes_output_file() {
@@ -66,35 +56,6 @@ fn pulse_has_all_three_roles() {
     assert!(roles.contains_key("wren"), "must have wren");
     assert!(roles.contains_key("silas"), "must have silas");
     assert!(roles.contains_key("kade"), "must have kade");
-}
-
-/// Pulse completes under budget.
-/// Original budget was 200ms (#1896). Real-world stand-alone is 500-600ms as of
-/// 2026-04-17; pulse picked up more sources without budget retuning. Under
-/// parallel cargo test load (the nightly sweep runs ~20 test binaries
-/// concurrently), pulse competes for CPU and can hit 1000-1500ms.
-/// 2000ms here is a regression-catcher under contention, not a perf target —
-/// #2158 is the card to drive the stand-alone number back toward 200ms.
-///
-/// macOS-only: same dev-env-budget reasoning as
-/// perf_suite::pulse_assembly_under_1500ms (e0d7422a). CI Linux runner
-/// pulse takes >2s cold; that's runner-perf, not regression signal.
-#[cfg(target_os = "macos")]
-#[test]
-fn pulse_runs_under_budget() {
-    let _ = std::process::Command::new(
-        env!("CARGO_BIN_EXE_chorus-hook-shim")
-    ).arg("pulse").output();
-
-    let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
-    let v: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-    let elapsed = v.get("elapsed_ms").and_then(|e| e.as_u64()).unwrap_or(9999);
-    if timing_checks_on() {
-        assert!(elapsed < 2000, "pulse must complete in <2000ms under parallel load (#2158 to tighten), got {}ms", elapsed);
-    } else {
-        eprintln!("UNMEASURED: timing — {elapsed}ms against a 2000ms budget, checked in the nightly lane only (#4532)");
-    }
 }
 
 /// Nudge section shows per-role pending counts

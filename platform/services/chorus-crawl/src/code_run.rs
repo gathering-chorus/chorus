@@ -229,7 +229,7 @@ pub fn exercise_edges(
 ) -> Vec<(String, Vec<String>)> {
     let rows: Vec<werk_test::TestRow> = tests
         .iter()
-        .map(|t| werk_test::TestRow { file_path: t.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() })
+        .map(|t| werk_test::TestRow { file_path: t.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() })
         .collect();
     let mut out: std::collections::BTreeMap<String, Vec<String>> = tests.iter().map(|t| (t.clone(), Vec::new())).collect();
     let texts: std::collections::HashMap<&str, String> = tests.iter().filter_map(|t| text_of(t).map(|x| (t.as_str(), x))).collect();

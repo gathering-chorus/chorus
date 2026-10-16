@@ -7,7 +7,8 @@
 //!
 //! Rows land with the card that builds their route (plan 10-15): this card owns
 //! 1 pass, 2 fail, 6 ran nothing, 9 store refused, 10 no werk. #4537 adds 3, 4,
-//! 5, 11; #4539 adds 7, 8; 12 lands with the membrane row.
+//! 5, 11; #4539 adds 7 (quarantined) and 8 (needs: machine); 12 lands with the
+//! membrane row.
 //!
 //! Hermetic: registry, quarantine, stack probe and the result store are one
 //! TcpListener stub; `werk-demo` on PATH is a stub, so no badge is written;
@@ -264,7 +265,10 @@ fn a_card_run_writes_no_test_row() {
 
 /// The nightly against a temp root holding `files`, with the door stubbed.
 fn run_nightly(root_name: &str, files: &[(&str, &str)], registry_rows: &[String], patch_status: u16) -> Run {
-    let base = std::env::temp_dir().join(format!("werk-test-4536-n-{}-{}", root_name.replace('/', "_"), std::process::id()));
+    // #4539 — rows run in parallel and several use the root "chorus": one base each
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let base = std::env::temp_dir().join(format!("werk-test-4536-n-{}-{}-{}", root_name.replace('/', "_"), std::process::id(), n));
     let _ = std::fs::remove_dir_all(&base);
     let root = base.join(root_name);
     std::fs::create_dir_all(root.join("platform/scripts")).unwrap();
@@ -460,4 +464,122 @@ fn negative_proof_a_slot_copy_newer_than_the_installed_one_runs_itself() {
         &[("HOME", home.display().to_string())], Some(copy), |_| {});
     assert!(!r.out.contains("INSTALLED-WERK-TEST-RAN"), "{}", r.out);
     assert!(r.out.contains("werk-test: CLEAN (exit 0)"), "{}", r.out);
+}
+
+// ── #4539 — rows 7 and 8 ──
+
+/// A registry row whose case is held until `until`.
+fn held_row(file: &str, test: &str, entity: &str, until: &str) -> String {
+    format!("{{\"filePath\":\"{file}\",\"covers\":\"werk\",\"testType\":\"unit\",\
+             \"testName\":\"{test}\",\"name\":\"{entity}\",\"hermeticity\":\"hermetic\",\
+             \"quarantined\":\"true\",\"quarantineReason\":\"flaky\",\"quarantineUntil\":\"{until}\"}}")
+}
+
+const HELD: &str = "#!/usr/bin/env bats\n@test \"p\" {\n  true\n}\n@test \"f\" {\n  false\n}\n";
+
+#[test]
+fn row_07_a_quarantined_case_does_not_run_and_is_unmeasured_until_its_date() {
+    let r = run_fixture("r7", "91007", &[("platform/tests/held.bats", HELD)],
+        &[row("platform/tests/held.bats", "p", "test-held-p"),
+          held_row("platform/tests/held.bats", "f", "test-held-f", "2099-12-31")], 200);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("quarantined until 2099-12-31: f (flaky)"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: RED"), "the held failing case never ran: {}", r.out);
+}
+
+/// NEGATIVE PROOF: the same hold, expired, runs the case — and it fails.
+#[test]
+fn negative_proof_an_expired_quarantine_runs_the_test() {
+    let r = run_fixture("r7x", "91017", &[("platform/tests/held.bats", HELD)],
+        &[row("platform/tests/held.bats", "p", "test-held-p"),
+          held_row("platform/tests/held.bats", "f", "test-held-f", "2000-01-01")], 200);
+    assert_eq!(r.code, 1, "{}", r.out);
+    assert!(r.out.contains("quarantine expired, runs (1)"), "{}", r.out);
+}
+
+const BOX: &str = "#!/usr/bin/env bats\n# @needs: machine\n@test \"b\" {\n  false\n}\n";
+
+#[test]
+fn row_08_a_needs_machine_suite_is_not_selected_and_is_listed_nightly_only() {
+    let r = run_fixture("r8", "91008", &[("platform/tests/pass.bats", PASS), ("platform/tests/box.bats", BOX)],
+        &[row("platform/tests/pass.bats", "p", "test-pass"), row("platform/tests/box.bats", "b", "test-box")], 200);
+    assert_eq!(r.code, 0, "{}", r.out);
+    assert!(r.out.contains("1 tests run nightly only: platform/tests/box.bats (needs: machine)"), "{}", r.out);
+    assert!(r.out.contains("werk-test: CLEAN (exit 0)"), "{}", r.out);
+}
+
+/// NEGATIVE PROOF: remove the header and the card run selects the suite —
+/// its failing case runs and the card is red.
+#[test]
+fn negative_proof_without_the_needs_header_the_card_run_selects_the_suite() {
+    let bare = BOX.replace("# @needs: machine\n", "");
+    let r = run_fixture("r8x", "91018", &[("platform/tests/pass.bats", PASS), ("platform/tests/box.bats", &bare)],
+        &[row("platform/tests/pass.bats", "p", "test-pass"), row("platform/tests/box.bats", "b", "test-box")], 200);
+    assert_eq!(r.code, 1, "{}", r.out);
+    assert!(r.out.contains("0 tests run nightly only"), "{}", r.out);
+}
+
+// ── #4539 — the nightly takes the same rules (stub door, no CHORUS_HOME) ──
+
+#[test]
+fn the_nightly_does_not_run_a_held_case_and_names_it_unmeasured() {
+    let r = run_nightly("chorus", &[("platform/tests/held.bats", HELD)],
+        &[row("platform/tests/held.bats", "p", "test-held-p"),
+          held_row("platform/tests/held.bats", "f", "test-held-f", "2099-12-31")], 200);
+    assert!(r.out.contains("quarantined until 2099-12-31: f (flaky)"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: RED"), "the held failing case never ran: {}", r.out);
+}
+
+/// NEGATIVE PROOF: expired, the nightly runs the case and it is red.
+#[test]
+fn negative_proof_the_nightly_runs_an_expired_hold() {
+    let r = run_nightly("chorus", &[("platform/tests/held.bats", HELD)],
+        &[row("platform/tests/held.bats", "p", "test-held-p"),
+          held_row("platform/tests/held.bats", "f", "test-held-f", "2000-01-01")], 200);
+    assert!(r.out.contains("quarantine expired, runs (1)"), "{}", r.out);
+    assert!(r.out.contains("werk-test: RED"), "{}", r.out);
+}
+
+/// The nightly selects what card runs leave to it: a needs: machine suite runs.
+#[test]
+fn the_nightly_runs_a_needs_machine_suite() {
+    let r = run_nightly("chorus", &[("platform/tests/box.bats", BOX)],
+        &[row("platform/tests/box.bats", "b", "test-box")], 200);
+    assert!(r.out.contains("werk-test: RED"), "the nightly ran the box suite's failing case: {}", r.out);
+}
+
+// ── #4539 — a card that edits only a nightly-only cargo test binary (Silas 04:30) ──
+
+const FX_BOX: &str = "// @needs: machine\n#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n";
+
+/// The crate is on the base; the card's last commit edits only tests/box.rs,
+/// so the cargo lane takes its only-bins path.
+fn box_only_edit(tag: &str, card: &str, body: &'static str) -> Run {
+    let mut files = crate_files(FX_LIB);
+    files.push(("platform/services/fx/tests/box.rs", body));
+    run_fixture_full(tag, card, &files,
+        &[crate_row(), row("platform/services/fx/tests/box.rs", "reads_the_box", "test-fx-box")],
+        &["cargo"], &[], None, |w| {
+            let p = w.join("platform/services/fx/tests/box.rs");
+            std::fs::write(&p, format!("{}// edited\n", std::fs::read_to_string(&p).unwrap())).unwrap();
+            git(w, &["commit", "-qam", "edit box"]);
+        })
+}
+
+#[test]
+fn editing_only_a_needs_machine_test_binary_does_not_run_it() {
+    let r = box_only_edit("r8c", "91028", FX_BOX);
+    assert!(r.out.contains("all nightly only or stack-down: not run"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: RED"), "the box binary ran: {}", r.out);
+    // the lane is not "ran nothing"; the card as a whole proved nothing, and
+    // card-coverage says so — a diff only the nightly can prove is not clean
+    assert!(!r.out.contains("cargo-test:fx — ran nothing"), "never selected is not a lane that ran nothing: {}", r.out);
+    assert!(r.out.contains("card-coverage: zero-coverage"), "{}", r.out);
+}
+
+/// NEGATIVE PROOF: the same edit without the header runs the binary — red.
+#[test]
+fn negative_proof_without_the_header_the_edited_binary_runs() {
+    let r = box_only_edit("r8d", "91038", "#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n");
+    assert!(r.out.contains("werk-test: RED"), "{}", r.out);
 }

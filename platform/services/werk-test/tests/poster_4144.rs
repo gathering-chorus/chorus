@@ -4,7 +4,7 @@
 //! holding its pool worker ~1.07 s before the next unit could start (≈5 min of
 //! wall at the run's 1.54 average concurrency). The worker now hands the post
 //! to one poster and moves on; the run waits for the poster before it counts.
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use werk_test::{spawn_poster, PostJob};
 
 #[test]
@@ -13,14 +13,10 @@ fn a_worker_hands_off_its_post_and_moves_on() {
         std::thread::sleep(Duration::from_millis(100));
         job.expected
     });
-    let t = Instant::now();
     for i in 0..3 {
         tx.send(PostJob { unit: format!("u{i}"), payload: i, expected: 2 }).unwrap();
     }
-    // #4531 — a wall-clock limit measures the box, so it runs in the nightly only.
-    if werk_test::timing_checks_on() {
-        assert!(t.elapsed() < Duration::from_millis(50), "three hand-offs took {:?} — the worker waited on the post", t.elapsed());
-    }
+    // #4539 — how fast the hand-off is, is a wall-clock limit: poster_timing_4144.rs, nightly only
     drop(tx);
     assert_eq!(poster.join().unwrap(), 6, "every queued post lands before the run counts");
 }

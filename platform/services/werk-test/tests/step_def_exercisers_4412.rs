@@ -6,7 +6,7 @@
 use werk_test::TestRow;
 
 fn row(p: &str) -> TestRow {
-    TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+    TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
 }
 
 const STEPS: &str = "When('Jeff loads the LAN URL without auth', function () {});\n\

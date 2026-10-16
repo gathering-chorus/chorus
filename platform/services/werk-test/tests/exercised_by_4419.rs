@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use werk_test::{domain_selection, exercisers_of, mention_key, mentions, TestRow, HUB_EXERCISERS};
 
 fn row(f: &str, covers: &str) -> TestRow {
-    TestRow { file_path: f.into(), covers: covers.into(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+    TestRow { file_path: f.into(), covers: covers.into(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
 }
 
 fn crate_of(p: &str) -> Option<String> {

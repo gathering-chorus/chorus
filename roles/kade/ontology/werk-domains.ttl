@@ -65,8 +65,9 @@
     # 0.6.0 (#4416): TestSuiteRunShape gains suiteSeconds (optional).
     # 0.7.0 (#4536): TestShape gains result, runTs, cardId, failureReason
     # (optional): each Test row holds its latest result, updated in place.
+    # 0.8.0 (#4539): TestShape gains testNeeds (machine | nightly, optional).
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
-    owl:versionInfo "0.7.0" ;
+    owl:versionInfo "0.8.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -399,6 +400,10 @@ chorus:hermeticity a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "hermetic (no live deps) | needs-stack (live Fuseki/app/db) — makes the hermetic-by-default / integration-gated-explicitly principle queryable instead of filename-inferred. The finer second axis to pyramidLayer; absent from any external test ontology (OSLC QM / EARL model results + cases, not isolation) — uniquely ours. (#3540 carried from #2818.)" .
 
+chorus:testNeeds a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "Where a test can prove anything (#4539). machine = it reads this box (installed plists, live variants, ports); nightly = it reads the clock (budgets, wall time). Either one: a card run does not select it and lists it as runs nightly only; the nightly selects it. Absent = a card run may select it. Copied from the test file's `@needs:` header by the tagger. Separate from hermeticity, which says whether the test stands up the live stack." .
+
 chorus:testConcern a owl:DatatypeProperty ;
     owl:deprecated true ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
@@ -415,7 +420,7 @@ chorus:testConcern a owl:DatatypeProperty ;
 # at the gate (can't block a land); nightly RUNS them, reports separately.
 chorus:quarantined a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:boolean ;
-    rdfs:comment "true → this test is a tracked flaky hold: the blocking gate skips it, the nightly runs-but-does-not-gate on it. Requires quarantineReason + quarantineUntil when true (SHACL). Default absent = not quarantined." .
+    rdfs:comment "true → this test is a tracked hold, the off switch for a bad test: until quarantineUntil, no run selects it (card run or nightly, every harness) and it reads UNMEASURED \"quarantined until <date>\", never green or red (#4539). On the day after quarantineUntil the hold has expired and the test runs again. Requires quarantineReason + quarantineUntil when true (SHACL). Default absent = not quarantined." .
 chorus:quarantineReason a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "Why this test is quarantined (e.g. 'intermittent network timeout'). Required when quarantined=true — no silent skips." .
@@ -659,6 +664,8 @@ chorus:TestEdgesShape a sh:NodeShape ;
     # before the tagging pass classifies; a freshly-crawled Test is legitimately untagged).
     sh:property [ sh:path chorus:validityClass ; sh:in ( "valid" "asserts-retired-behavior" "passes-by-definition" "integration-not-gated" ) ] ;
     sh:property [ sh:path chorus:hermeticity ; sh:in ( "hermetic" "needs-stack" ) ] ;
+    # #4539 — where it can prove anything; enum-if-present, absent = card-selectable.
+    sh:property [ sh:path chorus:testNeeds ; sh:in ( "machine" "nightly" ) ] ;
     # quarantine (#2530): the three props served + carried; optional (most tests aren't held).
     # Conditional requirement (reason+until iff quarantined) lives in QuarantineShape below.
     sh:property [ sh:path chorus:quarantined ; sh:datatype xsd:boolean ] ;

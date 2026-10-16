@@ -129,6 +129,33 @@ pub fn cargo_only_bins(krate: &str, changed: &[String]) -> Vec<String> {
     if mine.is_empty() || stems.len() != mine.len() { Vec::new() } else { stems }
 }
 
+/// #4539 — the changed test binaries a card run still runs: `only` minus the
+/// ones excluded (nightly only, or needs-stack with the stack down). Empty when
+/// every changed binary is excluded — the caller must then run nothing, not
+/// fall back to the whole crate. Pure.
+pub fn only_bins_kept(only: &[String], excluded: &[String]) -> Vec<String> {
+    only.iter().filter(|b| !excluded.contains(b)).cloned().collect()
+}
+
+#[cfg(test)]
+mod only_bins_kept_4539 {
+    use super::only_bins_kept;
+    fn v(xs: &[&str]) -> Vec<String> { xs.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn an_edited_nightly_binary_leaves_the_only_list() {
+        assert_eq!(only_bins_kept(&v(&["perf_suite", "units"]), &v(&["perf_suite"])), v(&["units"]));
+    }
+
+    /// NEGATIVE PROOF: editing only the nightly binary leaves nothing to run —
+    /// an empty list, which the caller reads as "run nothing", never "whole crate".
+    #[test]
+    fn negative_proof_only_a_nightly_binary_edited_runs_nothing() {
+        assert!(only_bins_kept(&v(&["perf_suite"]), &v(&["perf_suite"])).is_empty());
+        assert_eq!(only_bins_kept(&v(&["units"]), &[]), v(&["units"]), "control: nothing excluded");
+    }
+}
+
 #[cfg(test)]
 mod cargo_only_bins_4440 {
     use super::cargo_only_bins;
@@ -514,11 +541,14 @@ pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
 /// This is a value in the `validityClass` family on `chorus:Test` (the field is
 /// already on TestShape, empty today), written via the DAL authored lane with audit
 /// stamps. `case` matches the test's `testName` — the handle cargo/jest recognize.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Quarantined {
     pub case: String,
     pub reason: String,
     pub until: String,
+    /// #4539 — the row's filePath, so one name in two files is not held twice.
+    /// Empty on a row that names no file: that hold matches by name alone.
+    pub file: String,
 }
 
 /// #3929 — nextest run args for a crate. ALL targets, not `--lib --bins`
@@ -711,7 +741,8 @@ pub fn parse_quarantine_rows(tsv: &str) -> Vec<Quarantined> {
             Some(Quarantined {
                 case: case.to_string(),
                 reason: f.next().unwrap_or("").to_string(),
-                until: f.next().unwrap_or("").to_string(),
+                until: f.next().unwrap_or("").trim().to_string(),
+                file: f.next().unwrap_or("").trim().to_string(),
             })
         })
         .collect()
@@ -756,14 +787,188 @@ pub fn playwright_grep_invert(quarantined: &[Quarantined]) -> Option<String> {
 /// quarantined — a skip must be VISIBLE, never a silent absence (#3443 "I don't see
 /// it" bar). Empty set → an explicit `quarantined: none`, not blank.
 pub fn quarantine_report(q: &[Quarantined]) -> String {
+    quarantine_report_on(q, "0000-00-00")
+}
+
+/// #4539 — the same line, split on `today`: the holds that apply, then the
+/// ones that expired or carry no expiry, which RUN. The split is `active_holds`'s.
+pub fn quarantine_report_on(q: &[Quarantined], today: &str) -> String {
     if q.is_empty() {
         return "quarantined: none".to_string();
     }
-    let items: Vec<String> = q
-        .iter()
-        .map(|x| format!("{} ({}, until {})", x.case, x.reason, x.until))
-        .collect();
-    format!("quarantined ({} skipped): {}", q.len(), items.join("; "))
+    let active = active_holds(q, today);
+    let held: Vec<&Quarantined> = q.iter().filter(|x| active.contains(x)).collect();
+    let runs: Vec<&Quarantined> = q.iter().filter(|x| !held.contains(x)).collect();
+    let fmt = |x: &&Quarantined| {
+        let until = if x.until.is_empty() { "no expiry".to_string() } else { format!("until {}", x.until) };
+        format!("{} ({}, {})", x.case, x.reason, until)
+    };
+    let mut line = if held.is_empty() {
+        "quarantined: none".to_string()
+    } else {
+        format!("quarantined ({} held): {}", held.len(),
+            held.iter().map(fmt).collect::<Vec<_>>().join("; "))
+    };
+    if !runs.is_empty() {
+        line.push_str(&format!(" | quarantine expired, runs ({}): {}", runs.len(),
+            runs.iter().map(fmt).collect::<Vec<_>>().join("; ")));
+    }
+    line
+}
+
+/// #4539 — the holds a run honours: `until` is today or later. An expired hold
+/// RUNS, and so does a hold with no `until` (SHACL refuses one, so it is bad
+/// data, never a silent skip). Both kinds are named by `quarantine_report`.
+pub fn active_holds(q: &[Quarantined], today: &str) -> Vec<Quarantined> {
+    if today.is_empty() {
+        return Vec::new(); // no clock: nothing can be shown to be in date, so all run
+    }
+    q.iter()
+        .filter(|x| !x.until.is_empty() && x.until.as_str() >= today)
+        .cloned()
+        .collect()
+}
+
+/// #4539 — the holds that live in one unit: a crate dir, a jest package dir or
+/// one suite file (repo-relative). A hold that names no file is in no unit; the
+/// report line names it, and cargo still skips it by name.
+pub fn holds_in<'a>(holds: &'a [Quarantined], unit_path: &str) -> Vec<&'a Quarantined> {
+    let dir = format!("{}/", unit_path.trim_end_matches('/'));
+    holds.iter()
+        .filter(|h| !h.file.is_empty() && (h.file == unit_path || h.file.starts_with(&dir)))
+        .collect()
+}
+
+/// #4539 — of a crate's holds, the ones in a test binary this run would have
+/// run: not in a binary it left out (`excluded`: nightly only, stack down),
+/// and, when it ran only some binaries (`only`), in one of those. A hold in a
+/// binary the run never selected did not stop anything, so it is not named.
+/// A hold in the crate's src (no tests/ binary) stays. Pure.
+pub fn holds_in_ran_bins<'a>(holds: &[&'a Quarantined], crate_dir: &str, only: &[String], excluded: &[String]) -> Vec<&'a Quarantined> {
+    let prefix = format!("{}/tests/", crate_dir.trim_end_matches('/'));
+    holds.iter().copied().filter(|h| {
+        match h.file.strip_prefix(&prefix).and_then(|r| r.strip_suffix(".rs")).filter(|s| !s.contains('/')) {
+            Some(stem) => !excluded.iter().any(|e| e == stem) && (only.is_empty() || only.iter().any(|o| o == stem)),
+            None => true,
+        }
+    }).collect()
+}
+
+/// #4539 — the holds whose case the werk still has: its file still names the
+/// case. A hold on a case the card moved or deleted stopped nothing in this
+/// run (#4539 run 1: pulse_runs_under_budget moved to perf_suite.rs, its row
+/// still said pulse_service.rs). A file the run cannot read keeps the hold. Pure.
+pub fn holds_still_present<'a>(holds: &[&'a Quarantined], text_of: &dyn Fn(&str) -> Option<String>) -> Vec<&'a Quarantined> {
+    holds.iter().copied().filter(|h| text_of(&h.file).is_none_or(|t| t.contains(h.case.as_str()))).collect()
+}
+
+#[cfg(test)]
+mod holds_in_ran_bins_4539 {
+    use super::*;
+    fn h(file: &str) -> Quarantined {
+        Quarantined { case: "c".into(), reason: "r".into(), until: "2099-01-01".into(), file: file.into() }
+    }
+
+    /// #4539 run 1: the card ran only pulse_service; the hold was on a case
+    /// that moved out of it. Not named.
+    #[test]
+    fn a_hold_in_a_binary_the_run_did_not_select_is_not_named() {
+        let a = h("platform/services/chorus-hooks/tests/pulse_service.rs");
+        let b = h("platform/services/chorus-hooks/tests/perf_suite.rs");
+        let held = vec![&a, &b];
+        let got = holds_in_ran_bins(&held, "platform/services/chorus-hooks", &["units".into()], &[]);
+        assert!(got.is_empty());
+        let got = holds_in_ran_bins(&held, "platform/services/chorus-hooks", &[], &["perf_suite".into()]);
+        assert_eq!(got.len(), 1, "a whole-crate run names the pulse_service hold, not the nightly binary's");
+    }
+
+    #[test]
+    fn a_hold_on_a_case_the_card_moved_away_is_not_named() {
+        let a = h("platform/services/chorus-hooks/tests/pulse_service.rs");
+        let mut moved = a.clone();
+        moved.case = "pulse_runs_under_budget".into();
+        let held = vec![&moved];
+        let gone = |_: &str| Some("fn pulse_nudges_per_role() {}".to_string());
+        assert!(holds_still_present(&held, &gone).is_empty());
+        // NEGATIVE PROOF: the case is still in its file, or the file is unreadable — named
+        let there = |_: &str| Some("fn pulse_runs_under_budget() {}".to_string());
+        assert_eq!(holds_still_present(&held, &there).len(), 1);
+        let unread = |_: &str| -> Option<String> { None };
+        assert_eq!(holds_still_present(&held, &unread).len(), 1);
+    }
+
+    /// NEGATIVE PROOF: a hold in a binary the run did run is still named.
+    #[test]
+    fn negative_proof_a_hold_in_a_ran_binary_is_named() {
+        let a = h("platform/services/chorus-hooks/tests/pulse_service.rs");
+        let s = h("platform/services/chorus-hooks/src/lib.rs");
+        let held = vec![&a, &s];
+        assert_eq!(holds_in_ran_bins(&held, "platform/services/chorus-hooks", &["pulse_service".into()], &[]).len(), 2);
+        assert_eq!(holds_in_ran_bins(&held, "platform/services/chorus-hooks", &[], &[]).len(), 2);
+    }
+}
+
+/// #4539 — the line each held case gets: UNMEASURED, never green or red.
+pub fn hold_lines(unit: &str, holds: &[&Quarantined]) -> Vec<String> {
+    holds.iter()
+        .map(|h| format!("{} — quarantined until {}: {} ({})", unit, h.until, h.case, h.reason))
+        .collect()
+}
+
+fn regex_escape(c: &str) -> String {
+    c.chars().map(|ch| {
+        if "\\.^$|?*+()[]{}/".contains(ch) { format!("\\{}", ch) } else { ch.to_string() }
+    }).collect()
+}
+
+/// #4539 — jest's `--testNamePattern` that runs every case except the held
+/// ones. jest matches a case's full name ("describe … title"), so a held name
+/// matches as the END of the full name. None = nothing held, no flag.
+pub fn jest_hold_pattern(holds: &[&Quarantined]) -> Option<String> {
+    let mut terms: Vec<String> = holds.iter().map(|h| h.case.trim()).filter(|c| !c.is_empty())
+        .map(regex_escape).collect();
+    if terms.is_empty() {
+        return None;
+    }
+    terms.sort();
+    terms.dedup();
+    Some(format!("^(?!.*(?:{})$)", terms.join("|")))
+}
+
+/// #4539 — the `@test` names in a bats file, in order.
+pub fn bats_case_names(content: &str) -> Vec<String> {
+    content.lines().filter_map(|l| {
+        let rest = l.trim_start().strip_prefix("@test")?.trim_start();
+        let q = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+        let body = &rest[1..];
+        body.find(q).map(|end| body[..end].to_string())
+    }).collect()
+}
+
+/// #4539 — what a bats suite runs once its holds are out.
+#[derive(Debug, PartialEq, Eq)]
+pub enum BatsKeep {
+    /// nothing held here: no flag
+    All,
+    /// `--filter` with this pattern: only the unheld cases run
+    Only(String),
+    /// every case is held: the suite does not run
+    Nothing,
+}
+
+/// #4539 — bats has no exclude, so the filter names the cases that DO run,
+/// each anchored and escaped (bats matches it as an extended regex).
+pub fn bats_keep(names: &[String], holds: &[&Quarantined]) -> BatsKeep {
+    let held = |n: &String| holds.iter().any(|h| h.case == *n);
+    if !names.iter().any(held) {
+        return BatsKeep::All;
+    }
+    let keep: Vec<String> = names.iter().filter(|n| !held(n)).map(|n| regex_escape(n)).collect();
+    if keep.is_empty() {
+        BatsKeep::Nothing
+    } else {
+        BatsKeep::Only(format!("^({})$", keep.join("|")))
+    }
 }
 
 /// Pure arg-builder for a chorus-log spine emit (mirrors werk-build #3166). The
@@ -921,6 +1126,9 @@ pub struct TestRow {
     /// #3920 — the model's testConcern ("ui"/"security"/…). Empty on legacy rows;
     /// "ui" routes the file into the browser lane.
     pub test_concern: String,
+    /// #4539 — the model's testNeeds ("machine" / "nightly"), or empty. A card
+    /// run never selects a row that has one; the nightly selects every row.
+    pub needs: String,
 }
 
 /// Parse `filePath\tcovers[\tpyramidLayer]` TSV rows; incomplete rows are
@@ -937,6 +1145,7 @@ pub fn parse_test_rows(tsv: &str) -> Vec<TestRow> {
                         pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
                         hermeticity: String::new(),
                         test_concern: String::new(),
+                        needs: String::new(),
                     })
                 }
                 _ => None,
@@ -1131,7 +1340,7 @@ pub fn is_card_test(f: &str) -> bool {
 pub fn card_candidates(changed: &[String], rows: &[TestRow]) -> Vec<TestRow> {
     let mut out: Vec<TestRow> = rows.to_vec();
     for f in changed.iter().filter(|f| is_card_test(f) && !rows.iter().any(|r| &r.file_path == *f)) {
-        out.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() });
+        out.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() });
     }
     out
 }
@@ -2033,6 +2242,7 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
                     pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
                     hermeticity: String::new(),
                     test_concern: String::new(),
+                    needs: String::new(),
                 });
                 // #4139 — the registry read goes through jq @tsv like the runner
                 // read does (#4135); both sides of the join undo the same escapes.
@@ -2046,6 +2256,12 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
                 if let Some(tc) = it.next() {
                     if let Some(r) = rows.last_mut() {
                         r.test_concern = tc.trim().to_string();
+                    }
+                }
+                // #4539 — column 8 is the row's result (parse_prior_results), 9 its testNeeds
+                if let Some(nd) = it.nth(1) {
+                    if let Some(r) = rows.last_mut() {
+                        r.needs = nd.trim().to_string();
                     }
                 }
             }
@@ -2492,6 +2708,50 @@ fn post_once(endpoint: &str, token: &str, payload: &str) -> String {
 
 // #3821 — the ONE shared diff→units scoping core (also compiled by werk-build).
 include!("../../shared/scope_units.rs");
+
+// #4539 — the `@needs:` header reader, the same copy the tagger uses.
+include!("../../shared/test_needs.rs");
+
+/// #4539 — the tests a card run leaves to the nightly: each candidate file
+/// whose own header (read from the werk, so a card that adds or removes the
+/// header is judged by what it ships) or, failing a readable file, whose Test
+/// row says needs: machine or nightly. Returns `(file, needs)`, sorted. Pure.
+pub fn nightly_only_files(
+    candidates: &[String],
+    rows: &[TestRow],
+    header: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for f in candidates {
+        let needs = match header(f) {
+            Some(text) => declared_needs(&text).map(|n| n.to_string()),
+            None => rows.iter().find(|r| &r.file_path == f && !r.needs.is_empty()).map(|r| r.needs.clone()),
+        };
+        if let Some(n) = needs {
+            out.push((f.clone(), n));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// #4539 — is every file of a selection one the card run left to the nightly?
+/// Then the lane was never selected and is not "ran nothing". An empty
+/// selection is not "left to the nightly". Pure.
+pub fn left_to_nightly(selected: &[String], nightly_only: &[(String, String)]) -> bool {
+    !selected.is_empty() && selected.iter().all(|f| nightly_only.iter().any(|(n, _)| n == f))
+}
+
+/// #4539 — the one line a card run prints for what it left to the nightly,
+/// outside the verdict: never a failure, never UNMEASURED, never silence.
+pub fn nightly_only_report(files: &[(String, String)]) -> String {
+    if files.is_empty() {
+        return "0 tests run nightly only".to_string();
+    }
+    let names: Vec<String> = files.iter().map(|(f, n)| format!("{f} (needs: {n})")).collect();
+    format!("{} tests run nightly only: {}", files.len(), names.join(", "))
+}
 include!("../../shared/crate_dirs.rs");
 include!("suite_header.rs");
 include!("../../shared/target_seed.rs");
@@ -3111,7 +3371,7 @@ mod jest_selection_3912 {
     use super::*;
 
     fn row(f: &str, layer: &str) -> TestRow {
-        TestRow { file_path: f.into(), covers: "messages".into(), pyramid_layer: layer.into(), hermeticity: String::new(), test_concern: String::new() }
+        TestRow { file_path: f.into(), covers: "messages".into(), pyramid_layer: layer.into(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
     }
 
     #[test]
@@ -3819,7 +4079,7 @@ mod stages_4160 {
 
     fn row(fp: &str, layer: &str, concern: &str) -> TestRow {
         TestRow { file_path: fp.into(), covers: "tests".into(), pyramid_layer: layer.into(),
-            hermeticity: String::new(), test_concern: concern.into() }
+            hermeticity: String::new(), test_concern: concern.into(), needs: String::new() }
     }
 
     /// NEGATIVE PROOF (AC5): rows registered out of type order still plan in
@@ -4922,6 +5182,7 @@ mod nightly_via_runner_3920 {
             pyramid_layer: String::new(),
             hermeticity: String::new(),
             test_concern: String::new(),
+            needs: String::new(),
         }
     }
 
@@ -5074,7 +5335,7 @@ mod nightly_all_lanes_3974 {
 
     fn row(path: &str) -> TestRow {
         TestRow { file_path: path.to_string(), covers: String::new(),
-            pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+            pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
     }
 
     #[test]
@@ -5171,7 +5432,7 @@ mod security_lane_3922 {
     fn row(path: &str, concern: &str) -> TestRow {
         TestRow { file_path: path.to_string(), covers: String::new(),
             pyramid_layer: String::new(), hermeticity: String::new(),
-            test_concern: concern.to_string() }
+            test_concern: concern.to_string(), needs: String::new() }
     }
     #[test]
     fn selects_only_declared_security_rows() {
@@ -5315,7 +5576,7 @@ mod describe_prefix_join_4015 {
 
     fn row(fp: &str) -> TestRow {
         TestRow { file_path: fp.into(), covers: "chorus".into(), pyramid_layer: "unit".into(),
-                  hermeticity: String::new(), test_concern: String::new() }
+                  hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
     }
     fn world() -> (Vec<TestRow>, Vec<String>, Vec<String>) {
         (vec![row("a.test.ts"), row("a.test.ts")],
@@ -5489,7 +5750,7 @@ mod parallel_plan_tests {
     fn row(fp: &str, herm: &str) -> TestRow {
         TestRow { file_path: fp.into(), covers: String::new(),
             pyramid_layer: String::new(), hermeticity: herm.into(),
-            test_concern: String::new() }
+            test_concern: String::new(), needs: String::new() }
     }
 
     #[test]
@@ -6014,8 +6275,8 @@ mod serialized_split_tests {
     #[test]
     fn playwright_grep_invert_excludes_only_quarantined_files() {
         let q = vec![
-            super::Quarantined { case: "clearing-ui.spec.cjs".into(), reason: "known red".into(), until: "2026-09-09".into() },
-            super::Quarantined { case: "chorus-loom-4036.spec.cjs".into(), reason: "count defect".into(), until: "2026-09-09".into() },
+            super::Quarantined { case: "clearing-ui.spec.cjs".into(), reason: "known red".into(), until: "2026-09-09".into(), ..Default::default() },
+            super::Quarantined { case: "chorus-loom-4036.spec.cjs".into(), reason: "count defect".into(), until: "2026-09-09".into(), ..Default::default() },
         ];
         let pat = super::playwright_grep_invert(&q).expect("two quarantined → a pattern");
         let re = regex_lite(&pat);
@@ -6052,6 +6313,7 @@ mod never_ran_causes_4063 {
             pyramid_layer: String::new(),
             hermeticity: String::new(),
             test_concern: String::new(),
+            needs: String::new(),
         }
     }
 
@@ -6325,7 +6587,7 @@ mod athena_join_4136 {
     use super::{join_cases, CaseResult, TestRow};
 
     fn row(f: &str) -> TestRow {
-        TestRow { file_path: f.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+        TestRow { file_path: f.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
     }
 
     /// #4271 — a dynamic case keeps its OWN identity. `describe.each` /
@@ -6756,6 +7018,7 @@ mod selected_needs_stack_4236 {
             pyramid_layer: "integration".to_string(),
             hermeticity: "needs-stack".to_string(),
             test_concern: String::new(),
+            needs: String::new(),
         }
     }
 
@@ -6845,6 +7108,7 @@ mod needs_stack_in_selection_4238 {
             pyramid_layer: "integration".to_string(),
             hermeticity: "needs-stack".to_string(),
             test_concern: String::new(),
+            needs: String::new(),
         }
     }
 
@@ -7362,6 +7626,18 @@ app.post(\"/api/cards/:id\", handler);\n";
     }
 }
 
+/// #4539 AC4 — the changed files no test claims and no unit refuses: each is
+/// UNMEASURED "no test covers <path>". Prose and role state (scope_irrelevant)
+/// are no build or test input and are left out. Pure.
+pub fn uncovered_changes(untagged: &[String], refused: &[(String, String)]) -> Vec<String> {
+    untagged
+        .iter()
+        .filter(|f| !refused.iter().any(|(r, _)| r == *f))
+        .filter(|f| !scope_irrelevant(f))
+        .cloned()
+        .collect()
+}
+
 /// #4419 — the untagged changed files that sit in a package or crate: each one
 /// used to run its whole unit. Returned (file, unit) so the run can refuse and
 /// name them. A file in no unit has nothing to run and is not refused.
@@ -7510,7 +7786,7 @@ mod own_build_4442 {
 mod extension_4499 {
     use super::*;
     fn row(p: &str) -> TestRow {
-        TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+        TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
     }
 
     #[test]
@@ -7547,4 +7823,77 @@ pub fn lane_name(nightly: bool) -> &'static str {
 /// True only under the nightly lane; unset (a developer's shell) is not nightly.
 pub fn timing_checks_on() -> bool {
     std::env::var(LANE_ENV).as_deref() == Ok("nightly")
+}
+
+#[cfg(test)]
+mod nightly_only_4539 {
+    use super::*;
+
+    fn row(f: &str, needs: &str) -> TestRow {
+        TestRow { file_path: f.into(), covers: "tests".into(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: needs.into() }
+    }
+
+    /// The werk's own header decides; a header-less file falls to its row.
+    #[test]
+    fn a_needs_header_leaves_the_test_to_the_nightly() {
+        let files = vec!["platform/tests/4446-wiring.bats".to_string(), "platform/tests/plain.bats".to_string()];
+        let text = |f: &str| -> Option<String> {
+            Some(if f.contains("4446") { "#!/usr/bin/env bats\n# @test-type: integration\n# @needs: machine\n".into() } else { "# @test-type: unit\n".into() })
+        };
+        let got = nightly_only_files(&files, &[], &text);
+        assert_eq!(got, vec![("platform/tests/4446-wiring.bats".to_string(), "machine".to_string())]);
+        assert_eq!(nightly_only_report(&got), "1 tests run nightly only: platform/tests/4446-wiring.bats (needs: machine)");
+        // an unreadable file (deleted in the werk) answers from its row
+        let gone = |_: &str| -> Option<String> { None };
+        assert_eq!(nightly_only_files(&files[..1], &[row(&files[0], "nightly")], &gone),
+            vec![(files[0].clone(), "nightly".to_string())]);
+    }
+
+    #[test]
+    fn a_selection_all_left_to_the_nightly_is_not_ran_nothing() {
+        let n = vec![("a.test.ts".to_string(), "nightly".to_string())];
+        assert!(left_to_nightly(&["a.test.ts".to_string()], &n));
+        // NEGATIVE PROOF: one file the card run should have run, or an empty
+        // selection, is still a lane that ran nothing
+        assert!(!left_to_nightly(&["a.test.ts".to_string(), "b.test.ts".to_string()], &n));
+        assert!(!left_to_nightly(&[], &n));
+    }
+
+    /// NEGATIVE PROOF (#4539 AC5): remove the header and the card run selects
+    /// the test again — even while its row still says machine, because the card
+    /// ships the file without the header.
+    #[test]
+    fn negative_proof_removing_the_header_puts_the_test_back_in_the_card_run() {
+        let f = vec!["platform/tests/4446-wiring.bats".to_string()];
+        let stale_row = [row(&f[0], "machine")];
+        let without = |_: &str| -> Option<String> { Some("# @test-type: integration\n".into()) };
+        assert!(nightly_only_files(&f, &stale_row, &without).is_empty());
+        assert_eq!(nightly_only_report(&[]), "0 tests run nightly only");
+    }
+}
+
+#[cfg(test)]
+mod uncovered_4539 {
+    use super::*;
+
+    #[test]
+    fn a_changed_path_no_test_claims_is_named() {
+        let untagged = vec!["platform/config/x.yaml".to_string(), "README.md".to_string(), "platform/api/src/a.ts".to_string()];
+        let refused = vec![("platform/api/src/a.ts".to_string(), "platform/api".to_string())];
+        // the refused one is named by the refusal; prose is no test input
+        assert_eq!(uncovered_changes(&untagged, &refused), vec!["platform/config/x.yaml".to_string()]);
+    }
+
+    /// NEGATIVE PROOF: a path some test claims is never in the untagged list,
+    /// so it is never reported; an empty list reports nothing.
+    #[test]
+    fn negative_proof_a_claimed_path_is_not_uncovered() {
+        let ex: std::collections::HashMap<String, Vec<String>> =
+            [("platform/config/x.yaml".to_string(), vec!["platform/tests/x.bats".to_string()])].into_iter().collect();
+        let sel = domain_selection(&["platform/config/x.yaml".to_string()], &ex, &[]);
+        assert!(uncovered_changes(&sel.untagged, &[]).is_empty());
+        let none: std::collections::HashMap<String, Vec<String>> = Default::default();
+        let sel = domain_selection(&["platform/config/x.yaml".to_string()], &none, &[]);
+        assert_eq!(uncovered_changes(&sel.untagged, &[]), vec!["platform/config/x.yaml".to_string()]);
+    }
 }
