@@ -216,9 +216,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    let runs_base = std::env::var("WERK_TEST_RUNS").map(std::path::PathBuf::from).unwrap_or_else(|_| {
-        Path::new(&std::env::var("HOME").unwrap_or_default()).join(".chorus/werk-test-runs")
-    });
+    let runs_base = werk_test::run_dir::runs_base();
     let key = werk_test::run_dir::run_key(&trace, step.as_deref(), &card, std::process::id())?;
     let dir = werk_test::run_dir::RunDir::create(werk_test::run_dir::folder_for(&runs_base, &key)?)?;
     if let Some(code) = pin_or_handoff(&dir, step.as_deref(), all_args)? {

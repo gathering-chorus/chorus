@@ -123,7 +123,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     } finally {
       await h.close();
     }
-  }, 20000); // #4530 — booting the harness on a ~570 MB index copy took over jest's 5 s default in 1 of 2 local runs
+  }, 20000); // slow-by-design (#4530): booting the harness on a ~570 MB index copy took over jest's 5 s default in 1 of 2 local runs
 
   test('negative proof: pointed at the live file, the harness refuses to start', async () => {
     if (!haveLive) return;

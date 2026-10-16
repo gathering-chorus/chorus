@@ -8,7 +8,7 @@
 //! is read exactly once. On the next prompt cycle, it re-reads.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{debug, info};
@@ -139,6 +139,43 @@ fn canonical_history(root: &std::path::Path, session_id: &str) -> Option<Vec<Str
     Some(project_runtime_history(&lines, session_id))
 }
 
+/// #4562 — the most lines any hook asks for is a 500-line tail. The cache read
+/// the WHOLE transcript every second and kept a full copy per session, with no
+/// eviction: a 465 MB transcript, and chorus-hooks at 2.2 GB a minute after
+/// start (10-16). Only the tail is read and kept now.
+pub const TAIL_LINES: usize = 1000;
+/// How far back from the end the tail read starts (a line can be a large tool result).
+const TAIL_BYTES: u64 = 8 * 1024 * 1024;
+/// A session not read for this long is dropped from the cache.
+const IDLE_EVICT_SECS: u64 = 300;
+
+/// The last `max` complete lines of a file, reading at most `TAIL_BYTES`
+/// from its end. A line cut by the read window is dropped, never half-kept.
+pub fn tail_lines(f: &mut std::fs::File, max: usize) -> Vec<String> {
+    tail_lines_within(f, max, TAIL_BYTES)
+}
+
+/// `tail_lines` with the read window given — the window is the seam the
+/// cut-line proof uses.
+pub fn tail_lines_within(f: &mut std::fs::File, max: usize, window: u64) -> Vec<String> {
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let from = len.saturating_sub(window);
+    if f.seek(SeekFrom::Start(from)).is_err() {
+        return Vec::new();
+    }
+    let mut buf = Vec::new();
+    if f.read_to_end(&mut buf).is_err() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines: Vec<&str> = text.lines().collect();
+    if from > 0 && !lines.is_empty() {
+        lines.remove(0);
+    }
+    let start = lines.len().saturating_sub(max);
+    lines[start..].iter().map(|l| l.to_string()).collect()
+}
+
 /// Cached session JSONL lines
 struct CacheEntry {
     lines: Vec<String>,
@@ -196,6 +233,7 @@ impl SessionCache {
         // Store in cache
         {
             let mut cache = self.inner.lock().unwrap();
+            cache.retain(|_, e| e.read_at.elapsed().as_secs() < IDLE_EVICT_SECS);
             cache.insert(
                 session_id.to_string(),
                 CacheEntry {
@@ -244,9 +282,8 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
         "{}/.claude/projects/-{}/{}.jsonl",
         home, project_key, session_id
     );
-    if let Ok(f) = std::fs::File::open(&primary_path) {
-        let reader = BufReader::new(f);
-        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+    if let Ok(mut f) = std::fs::File::open(&primary_path) {
+        let lines = tail_lines(&mut f, TAIL_LINES);
         if !lines.is_empty() {
             return lines;
         }
@@ -268,9 +305,8 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
                 continue;
             }
             let candidate = entry.path().join(format!("{}.jsonl", session_id));
-            if let Ok(f) = std::fs::File::open(&candidate) {
-                let reader = BufReader::new(f);
-                let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+            if let Ok(mut f) = std::fs::File::open(&candidate) {
+                let lines = tail_lines(&mut f, TAIL_LINES);
                 if !lines.is_empty() {
                     debug!(
                         module = "session_cache",
@@ -433,6 +469,43 @@ mod tests {
         let project_key = project_key.strip_prefix('-').unwrap_or(&project_key);
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
         let _ = std::fs::remove_file(format!("{}/.claude/projects/-{}/{}.jsonl", home, project_key, session_id));
+    }
+
+    /// #4562 — a long transcript is read as its tail only.
+    #[test]
+    fn a_long_transcript_keeps_only_its_last_lines() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        let body: String = (0..5000).map(|i| format!("{{\"line\":{i}}}\n")).collect();
+        std::fs::write(&p, body).unwrap();
+        let lines = super::tail_lines(&mut std::fs::File::open(&p).unwrap(), super::TAIL_LINES);
+        assert_eq!(lines.len(), super::TAIL_LINES);
+        assert_eq!(lines.first().unwrap(), "{\"line\":4000}");
+        assert_eq!(lines.last().unwrap(), "{\"line\":4999}");
+    }
+
+    /// #4562 (Silas) — a read window that starts mid-line drops that cut line:
+    /// every line returned is a whole JSON line.
+    #[test]
+    fn a_window_that_starts_mid_line_drops_the_cut_line() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        std::fs::write(&p, "{\"first\":\"aaaaaaaaaa\"}\n{\"second\":2}\n{\"third\":3}\n").unwrap();
+        // 30 bytes from the end lands inside the first line
+        let lines = super::tail_lines_within(&mut std::fs::File::open(&p).unwrap(), 1000, 30);
+        assert_eq!(lines, vec!["{\"second\":2}".to_string(), "{\"third\":3}".to_string()]);
+        assert!(lines.iter().all(|l| serde_json::from_str::<serde_json::Value>(l).is_ok()));
+    }
+
+    /// NEGATIVE PROOF: a short transcript is returned whole — nothing a hook
+    /// reads goes missing, and no line is cut in half.
+    #[test]
+    fn negative_proof_a_short_transcript_is_whole() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        std::fs::write(&p, "{\"a\":1}\n{\"b\":2}\n").unwrap();
+        let lines = super::tail_lines(&mut std::fs::File::open(&p).unwrap(), super::TAIL_LINES);
+        assert_eq!(lines, vec!["{\"a\":1}".to_string(), "{\"b\":2}".to_string()]);
     }
 
     #[test]

@@ -1112,7 +1112,7 @@ fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     // #4562 (Silas) — a crawl stopped at its cap is named as cut short, never
     // read as clean or as a crawler that printed nothing for its own reasons
     if rows.is_empty() && rc == 124 {
-        return ("unmeasured", "0 pass, 0 fail (UNMEASURED — the crawl was cut short at its 1200s cap before it validated)".to_string());
+        return ("unmeasured", "0 pass, 0 fail (UNMEASURED — the crawl was cut short at its 1200s cap before it validated; tonight's test plan used the test list as of the last finished crawl)".to_string());
     }
     if rows.is_empty() {
         return (
@@ -1466,8 +1466,7 @@ mod leg_times_4253 {
 
 fn runs_folder() -> Result<werk_test::run_dir::RunDir, String> {
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
-    let base = std::env::var("WERK_TEST_RUNS").map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| Path::new(&env_or("HOME", "/tmp")).join(".chorus/werk-test-runs"));
+    let base = werk_test::run_dir::runs_base();
     werk_test::run_dir::RunDir::create(werk_test::run_dir::folder_for(&base, &trace)?)
 }
 
@@ -1589,6 +1588,13 @@ pub fn step_all(
             };
             let legs = std::env::var("WERK_TEST_LEGS_NOOP").is_err();
             if !perf && legs {
+                // #4290 — first: is the graph what git is, on every crawler domain?
+                // #4562 (Jeff 10-16 "doing crawl after seems off") — first, because
+                // the crawl registers today's new tests and the plan reads that
+                // registry; after the tests, a new test waits a night to run.
+                // Crawl-on-land (#4568) takes it out of the nightly's path.
+                let t = Instant::now();
+                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
                 // #4160 — Jeff's order: coverage, then lint, then smoke; the queue runs the rest
                 for r in leg_coverage(&ctx) {
                     push(&ctx, r, &mut rows);
@@ -1610,14 +1616,6 @@ pub fn step_all(
                 std::process::exit(if STOP_SIGNAL.load(Ordering::SeqCst) == 2 { 130 } else { 143 });
             }
             rows.extend(lane.rows.iter().cloned());
-            if !perf && legs {
-                // #4290 — is the graph what git is, on every crawler domain?
-                // #4562 (Jeff 10-16 "20 minutes is still way too long") — after
-                // the tests, not before: no suite needs the crawl, and the tests
-                // waited up to its whole 1200s cap behind it.
-                let t = Instant::now();
-                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
-            }
             if perf && legs {
                 // #4278 — did an agent die under the run; did the run keep its budget
                 let start: std::collections::BTreeMap<String, Option<u32>> = d.get("daemons").unwrap_or_default().iter()
