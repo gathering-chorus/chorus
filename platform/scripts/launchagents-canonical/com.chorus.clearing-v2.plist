@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- #4570 Clearing v2, always on at :3472 beside the current Clearing (:3483).
+     Runs canonical directing/clearing-v2/dist with its own config; no credential here.
+     node is the nvm v20.8.0 build because that is the one the macOS firewall allows
+     incoming connections for (measured 2026-10-16: v20.20.2 is not on the list, so
+     phones on wifi could not connect). service-run makes start, stop and failure
+     spine events (#4446). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.clearing-v2</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.clearing-v2</string>
+    <string>daemon</string>
+    <string>/Users/jeffbridwell/.nvm/versions/node/v20.8.0/bin/node</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing-v2/dist/server.js</string>
+    <string>--config</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing-v2/clearing-v2.config.json</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing-v2</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_HOME</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/clearing-v2.log</string>
+  <key>StandardErrorPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/clearing-v2.log</string>
+</dict>
+</plist>

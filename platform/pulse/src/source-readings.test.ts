@@ -1,6 +1,7 @@
 // @test-type: unit — tests for Pulse source readings derivation, service cache, and endpoint
 // @card: #4563
 // @domain: awareness
+// @owner: wren
 
 import request from 'supertest';
 import { MessageStore } from './store';

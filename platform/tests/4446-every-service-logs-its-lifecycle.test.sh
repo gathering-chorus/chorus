@@ -84,6 +84,7 @@ com.chorus.heartbeat-probe	WRAP: script lives only in ~/.chorus/scripts
 com.chorus.buzz-tunnel	WRAP: ssh, not our code
 com.chorus.dagu	WRAP: dagu (Homebrew), not our code
 com.chorus.pulse-api	WRAP: the generated pulse-api binary runs under service-run, which logs its start, stop and failure (#4490)
+com.chorus.clearing-v2	WRAP: Clearing v2 (node dist/server.js) runs under service-run, which logs its start, stop and failure (#4570)
 com.chorus.alert-notifier	WRAP: shared-observability repo
 com.chorus.harvest-exporter	WRAP: shared-observability repo
 com.chorus.launchagent-metrics	WRAP: shared-observability repo

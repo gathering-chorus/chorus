@@ -1,9 +1,26 @@
 // @test-type: bdd — cucumber step definitions for Clearing v2 (Card #4530)
-import { Given, When, Then } from '@cucumber/cucumber';
+import { Before, Given, When, Then } from '@cucumber/cucumber';
 import * as assert from 'assert';
 import * as http from 'http';
 
 const BASE_URL = process.env.CLEARING_V2_URL || 'http://127.0.0.1:3472';
+// #4570 — these scenarios read a running Clearing v2. When nothing answers at
+// BASE_URL the result is UNMEASURED (every step skipped), never a red: a red must
+// mean v2 is broken, not that no v2 was started on this box.
+Before(async function ({ pickle }) {
+  if (!pickle.uri.includes('clearing-v2')) return undefined;
+  const up = await new Promise<boolean>((resolve) => {
+    const req = http.get(BASE_URL, (res) => { res.resume(); resolve(true); });
+    req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+  });
+  if (!up) {
+    console.log(`UNMEASURED: nothing answers at ${BASE_URL} (Clearing v2 not running)`);
+    return 'skipped';
+  }
+  return undefined;
+});
+
 let lastPageContent = '';
 let lastHttpStatus = 0;
 let currentLagSource: string | undefined = undefined;

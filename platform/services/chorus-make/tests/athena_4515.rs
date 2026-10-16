@@ -115,7 +115,8 @@ fn negative_proof_every_other_land_keeps_werk_land_and_the_model_hook() {
 fn a_skill_two_steps_call_is_named_by_skill_and_step_and_a_unique_one_is_not() {
     let r = rows("athena-rows.tsv");
     let names: Vec<String> = r.iter().map(|x| dagu_name(&r, x)).collect();
-    assert_eq!(names, vec!["skill-athena-validate-shape", "skill-athena-gen", "skill-athena-deploy", "skill-athena-validate-validate"]);
+    assert_eq!(names, vec!["skill-athena-validate-shape", "skill-athena-gen", "skill-athena-deploy-athena-baseline-copy",
+        "skill-athena-validate-athena-baseline", "skill-athena-deploy-seed", "skill-athena-validate-validate"]);
     assert!(check(&r).is_empty(), "{:?}", check(&r));
     let c = rows("cicd-rows.tsv");
     assert!(c.iter().all(|x| dagu_name(&c, x) == chorus_make::step_name(x)), "cicd names unchanged");

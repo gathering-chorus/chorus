@@ -21,20 +21,23 @@ SELF="$(basename "$BATS_TEST_FILENAME")"
 # /cws shortens werk-deploy-prod to deploy-prod on its board line (Jeff's view).
 OLD='chorus[_-](nudge[_-]message|cards[_-](add|set|view|move|done|tag)|card[_-]add[_-]jeff|wip|sup|logs[_-](for[_-](card|trace|branch)|recent[_-]errors)|flow[_-]report|blast[_-]radius|pain[_-](rollup|card)|service[_-](status|start|stop|restart|deploy|rollback)|decisions[_-](list|get)|principles[_-](list|get|create)|priorities[_-]readout|commit[_-]status|unpull[_-]card|design[_-]refresh|register[_-]feedback)|chorus_(werk|athena)|herald[_-]run|prove-(intake|verify|stage|verdict|in-prod|record)|(skill-|call |mcp__chorus-api__)deploy-(demo|prod)'
 
-# Prints file:match for every old name under $1, bare or behind an MCP server
-# prefix (mcp__chorus-api__<name>). Exit 0 always; the caller reads the output.
+# Prints file:match for every old name in the files git tracks under $1, bare or
+# behind an MCP server prefix (mcp__chorus-api__<name>). Tracked files only (Silas,
+# 2026-10-16): an untracked deploy copy (platform/mcp-server/dist.prev, the 10-16
+# nightly red) or build output is out by construction, not by an exclude list.
+# Exit 0 always; the caller reads the output.
 old_tool_names() {
-  local root="$1"
-  grep -rIE \
-    --exclude='*.html' --exclude='*.jsonl' --exclude='activity.md' --exclude='*.consumed' \
-    --exclude="$SELF" \
-    --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
-    --exclude-dir=briefs --exclude-dir=journal \
-    --exclude-dir=journals --exclude-dir=adr --exclude-dir=notes \
-    --exclude-dir=backups --exclude-dir=logs \
-    -n "(^|[^a-z0-9_-]|__|\\\\[tnr])(${OLD})([^a-z0-9_-]|\$)" "$root" 2>/dev/null \
-    | code_comments_dropped || true
+  local root="$1" x='(exclude,glob)'
+  git -C "$root" grep -nIE "(^|[^a-z0-9_-]|__|\\\\[tnr])(${OLD})([^a-z0-9_-]|\$)" -- . \
+    ":$x**/*.html" ":$x**/*.jsonl" ":$x**/activity.md" ":$x**/*.consumed" ":$x**/$SELF" \
+    ":$x**/node_modules/**" ":$x**/target/**" ":$x**/briefs/**" ":$x**/journal/**" \
+    ":$x**/journals/**" ":$x**/adr/**" ":$x**/notes/**" ":$x**/backups/**" ":$x**/logs/**" \
+    2>/dev/null | code_comments_dropped || true
 }
+
+# A scan dir for the negative proofs: a git repo whose files are tracked, because
+# the check reads tracked files only.
+track() { git -C "$1" init -q 2>/dev/null; git -C "$1" add -A; }
 
 # A name inside a code comment calls nothing (#4515 run 2: two old test files
 # kept a comment naming the old nudge tool; changing them only to reword the
@@ -62,7 +65,7 @@ code_comments_dropped() {
   mkdir -p "$scan/skills/x"
   # built from parts so this file never names the old tool itself
   printf 'call mcp__chorus-api__%s({ role: "wren" })\n' "chorus""_wip" > "$scan/skills/x/SKILL.md"
-  hits="$(old_tool_names "$scan")"
+  track "$scan"; hits="$(old_tool_names "$scan")"
   echo "caught: $hits"
   [[ "$hits" == *"chorus""_wip"* ]] || { echo "check missed a planted old name"; false; }
 }
@@ -74,7 +77,7 @@ code_comments_dropped() {
   printf 'chorus-runner call %s card=1\n' "deploy""-prod" >> "$scan/platform/scripts/job.sh"
   printf 'mcp__chorus-api__%s({ to: "kade" })\n' "chorus-nudge""-message" > "$scan/skills/y/SKILL.md"
   printf 'const ROWS: &str = "intake\\t1\\t%s\\tdeterministic";\n' "prove""-intake" > "$scan/platform/scripts/rows.rs"
-  hits="$(old_tool_names "$scan")"
+  track "$scan"; hits="$(old_tool_names "$scan")"
   echo "caught: $hits"
   [[ "$hits" == *"herald""-run"* ]] || { echo "missed a bare old hyphen name"; false; }
   [[ "$hits" == *"deploy""-prod"* ]] || { echo "missed an old deploy row name"; false; }
@@ -88,7 +91,7 @@ code_comments_dropped() {
   printf 'mcp__chorus-api__clearing-nudge, mcp__chorus-api__chorus-werk, borg-tend-herald\n' > "$scan/skills/x/SKILL.md"
   printf 'werk-deploy-demo werk-deploy-prod borg-verify-in-prod clearing-wip ~/CascadeProjects/chorus-werk/wren-1\n' >> "$scan/skills/x/SKILL.md"
   printf 'mcp__chorus-api__%s\n' "chorus""_wip" > "$scan/roles/wren/briefs/old.md"
-  hits="$(old_tool_names "$scan")"
+  track "$scan"; hits="$(old_tool_names "$scan")"
   [[ -z "$hits" ]] || { echo "false fire: $hits"; false; }
 }
 
@@ -98,13 +101,25 @@ code_comments_dropped() {
   n="chorus""_nudge_message"
   printf '// delivered via the %s tool\n' "$n" > "$scan/platform/tests/steps.ts"
   printf '# via the %s MCP tool\n' "$n" > "$scan/platform/tests/inject.sh"
-  hits="$(old_tool_names "$scan")"
+  track "$scan"; hits="$(old_tool_names "$scan")"
   [[ -z "$hits" ]] || { echo "a comment fired: $hits"; false; }
   printf 'await call("%s", {});\n' "$n" >> "$scan/platform/tests/steps.ts"
   printf 'the %s tool\n' "$n" > "$scan/skills/z/SKILL.md"
-  hits="$(old_tool_names "$scan")"
+  track "$scan"; hits="$(old_tool_names "$scan")"
   echo "caught: $hits"
   [[ "$hits" == *"steps.ts:2:"* ]] || { echo "missed a call in code"; false; }
   [[ "$hits" == *"SKILL.md"* ]] || { echo "missed prose an agent reads"; false; }
   [[ "$hits" != *"inject.sh"* ]] || { echo "comment in a script fired"; false; }
+}
+
+@test "NEGATIVE PROOF: an untracked copy is out, the same file tracked is caught" {
+  scan="$BATS_TEST_TMPDIR/untracked"
+  mkdir -p "$scan/platform/mcp-server/dist.prev"
+  git -C "$scan" init -q
+  printf "name: '%s',\n" "chorus""_principles_list" > "$scan/platform/mcp-server/dist.prev/server.js"
+  hits="$(old_tool_names "$scan")"
+  [[ -z "$hits" ]] || { echo "an untracked deploy copy fired: $hits"; false; }
+  git -C "$scan" add -A
+  hits="$(old_tool_names "$scan")"
+  [[ "$hits" == *"dist.prev/server.js"* ]] || { echo "missed the name once tracked"; false; }
 }

@@ -1,6 +1,7 @@
 // @domain: awareness
 // @test-type: unit — deriveActorState over fact fixtures, the endpoint over an in-memory app; no live services
 // @card: #4560
+// @owner: wren
 import request from 'supertest';
 import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, lokiActionQuery, type ActorFactInput } from './actor-state';
 import { createApp } from './service';

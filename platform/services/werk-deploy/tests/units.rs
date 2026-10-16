@@ -534,6 +534,15 @@ fn changed_ts_services_detects_pulse_and_clearing() {
     assert_eq!(ts, vec!["pulse".to_string(), "clearing".to_string(), "chorus-api".to_string()]); // diff-line order
 }
 
+// #4570 — Clearing v2 deploys on its own name; a v2 change is not a v1 clearing deploy.
+#[test]
+fn changed_ts_services_detects_clearing_v2_apart_from_clearing() {
+    let ts = werk_deploy::changed_ts_services("directing/clearing-v2/src/server.ts\n");
+    assert_eq!(ts, vec!["clearing-v2".to_string()]);
+    let both = werk_deploy::changed_ts_services("directing/clearing/src/a.ts\ndirecting/clearing-v2/public/app.js\n");
+    assert_eq!(both, vec!["clearing".to_string(), "clearing-v2".to_string()]);
+}
+
 #[test]
 fn changed_ts_services_dedupes_pulse() {
     let diff = "platform/pulse/src/a.ts\nplatform/pulse/src/b.ts\n";
