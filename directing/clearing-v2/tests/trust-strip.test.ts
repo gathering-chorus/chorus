@@ -19,6 +19,25 @@ describe('Trust Strip: pulse readings as sent, and the relay chip', () => {
   beforeAll(async () => {
     await new Promise<void>((resolve) => {
       stubServer = http.createServer((req, res) => {
+        if (req.url?.startsWith('/dup/api/readings')) {
+          // live shape 10-16 12:13: pulse lists an unreadable source as a reading AND in unmeasured,
+          // and reads 'rooms' itself; the page showed rooms three times and decisions twice
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            derivedAt: '2026-10-16T16:12:50Z',
+            readings: [
+              { source: 'board', observedAt: '2026-10-16T16:12:50Z', status: 'ok', asOf: 'as of 12:13' },
+              { source: 'rooms', observedAt: '2026-10-16T16:12:50Z', status: 'unmeasured', reason: 'relay not configured' },
+              { source: 'decisions', observedAt: '2026-10-16T16:12:50Z', status: 'unmeasured', reason: 'no source, part 2' },
+            ],
+            unmeasured: [
+              { source: 'rooms', reason: 'relay not configured' },
+              { source: 'decisions', reason: 'no source, part 2' },
+              { source: 'loki', reason: 'timeout' },
+            ],
+          }));
+          return;
+        }
         if (req.url?.startsWith('/pulse/api/readings')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
@@ -123,5 +142,16 @@ describe('Trust Strip: pulse readings as sent, and the relay chip', () => {
 
     const html = renderPageShell('Test', 'rooms', '<div>Content</div>', sources);
     expect(html).toContain('<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">rooms</span> failed (relay disconnected)</span>');
+  });
+  test('one chip per source: no source shows twice, and an unmeasured entry with no reading still shows', async () => {
+    const ds = new DataService({ pulseUrl: `http://127.0.0.1:${stubPort}/dup`, relay, router });
+    const sources = await ds.getTrustStripSources();
+    const names = sources.map((s) => s.source);
+    expect(names.filter((n) => n === 'rooms')).toHaveLength(1);
+    expect(names.filter((n) => n === 'decisions')).toHaveLength(1);
+    // loki has no reading, only an unmeasured entry: it must still be named
+    expect(names).toContain('loki');
+    // rooms is v2's own relay chip (v2 is connected in this test), not pulse's view of it
+    expect(sources.find((s) => s.source === 'rooms')?.status).toBe('ok');
   });
 });

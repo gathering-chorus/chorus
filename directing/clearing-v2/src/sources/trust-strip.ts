@@ -26,9 +26,10 @@ export async function buildTrustStripSources(ctx: TrustStripContext, options?: T
   const rooms = roomsChip(ctx);
   const read = await fetchReadings(options?.pulseUrl || ctx.pulseUrl);
   if (!read.ok) return [rooms, { source: 'readings', status: 'unmeasured', reason: read.reason }];
-  return [
-    rooms,
-    ...(read.value.readings || []).map(toTrustChip),
-    ...(read.value.unmeasured || []).map(unmeasuredChip),
-  ];
+  // one chip per source (display de-duplication, no fact computed): rooms is v2's own relay,
+  // then pulse's readings, then unmeasured entries for sources pulse sent no reading for
+  const readings = (read.value.readings || []).filter((r) => r.source !== 'rooms');
+  const seen = new Set<string>(['rooms', ...readings.map((r) => r.source)]);
+  const unread = (read.value.unmeasured || []).filter((u) => !seen.has(u.source));
+  return [rooms, ...readings.map(toTrustChip), ...unread.map(unmeasuredChip)];
 }
