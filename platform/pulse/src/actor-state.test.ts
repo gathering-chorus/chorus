@@ -603,5 +603,32 @@ describe('Actor State - Available', () => {
   });
 });
 
+describe('Actor State - Name and Card Title', () => {
+  test('actor carries display name and currentCardTitle from board/roles', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [
+        { principal: P_KADE, name: 'Kade', roleKind: ROLE_AGENT },
+        { principal: P_ABBY, roleKind: ROLE_AGENT },
+      ],
+      wipCards: [{ cardId: 4560, title: 'Clearing v2 only presents', owner: 'kade' }],
+      sessions: [
+        { id: 's-kade', principal: P_KADE, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+      ],
+      actions: {
+        kade: { lastActionAt: SEEN_1219, recent5mCount: 4 },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const kade = states.find((s) => s.aboutPrincipal === P_KADE);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+
+    expect(kade?.name).toBe('Kade');
+    expect(kade?.currentCardTitle).toBe('Clearing v2 only presents');
+    expect(abby?.name).toBe('Abby Normal');
+  });
+});
+
 
 

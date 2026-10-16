@@ -21,8 +21,6 @@ export interface ClearingV2Config {
   boardUrl?: string;
   cardsUrl?: string;
   alertsUrl?: string;
-  sessionsUrl?: string;
-  lokiUrl?: string;
   port?: number;
   host?: string;
 }
@@ -52,11 +50,8 @@ const HOST = process.env.HOST || activeConfig.host || '127.0.0.1';
 const BUZZ_RELAY_URL = process.env.BUZZ_RELAY_URL || activeConfig.buzzRelayUrl || '';
 const PULSE_URL = process.env.PULSE_URL || activeConfig.pulseUrl || 'http://127.0.0.1:3475';
 const ROLES_URL = process.env.ROLES_URL || activeConfig.rolesUrl || 'http://localhost:3360/v1/roles/roles';
-const BOARD_URL = process.env.BOARD_URL || activeConfig.boardUrl || 'http://localhost:3340/api/chorus/context/board';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
-const SESSIONS_URL = process.env.SESSIONS_URL || activeConfig.sessionsUrl || 'http://localhost:3360/v1/identity/sessions';
-const LOKI_URL = process.env.LOKI_URL || activeConfig.lokiUrl || 'http://localhost:3102';
 
 // Known pubkeys map for role attribution
 const KNOWN_KEYS = new Map<string, string>([
@@ -101,15 +96,10 @@ function getTestOverrides(req: Request) {
   const isTest = process.env.NODE_ENV === 'test' || Boolean(req.headers['x-clearing-test']);
   if (!isTest) return {};
   return {
-    fixture: req.headers['x-fixture'] as string | undefined,
-    failSource: req.headers['x-fail-source'] as string | undefined,
-    lagSource: req.headers['x-lag-source'] as string | undefined,
+    pulseUrl: req.headers['x-pulse-url'] as string | undefined,
     rolesUrl: req.headers['x-roles-url'] as string | undefined,
-    boardUrl: req.headers['x-board-url'] as string | undefined,
     cardsUrl: req.headers['x-cards-url'] as string | undefined,
     alertsUrl: req.headers['x-alerts-url'] as string | undefined,
-    lokiUrl: req.headers['x-loki-url'] as string | undefined,
-    sessionsUrl: req.headers['x-sessions-url'] as string | undefined,
   };
 }
 
@@ -117,32 +107,36 @@ function registerPageRoutes(ctx: RouteContext): void {
   const { app, dataService } = ctx;
 
   app.get('/', async (req: Request, res: Response) => {
-    const { fixture, failSource, lagSource, rolesUrl } = getTestOverrides(req);
+    const { pulseUrl, rolesUrl } = getTestOverrides(req);
     const roomsData = await dataService.getRoomsData('team', { rolesUrl });
-    const sources = await dataService.getTrustStripSources({ fixture, failSource, lagSource, rolesUrl });
+    const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage('team', roomsData, sources));
   });
 
   app.get('/today', async (req: Request, res: Response) => {
-    const { fixture, failSource, lagSource, rolesUrl, boardUrl, cardsUrl, alertsUrl, sessionsUrl, lokiUrl } = getTestOverrides(req);
-    const todayData = await dataService.getTodayData({ fixture, rolesUrl, boardUrl, cardsUrl, alertsUrl, sessionsUrl, lokiUrl });
-    const sources = await dataService.getTrustStripSources({ fixture, failSource, lagSource, rolesUrl, boardUrl, lokiUrl });
+    const { pulseUrl, alertsUrl } = getTestOverrides(req);
+    const [todayData, sources] = await Promise.all([
+      dataService.getTodayData({ pulseUrl, alertsUrl }),
+      dataService.getTrustStripSources({ pulseUrl }),
+    ]);
     res.type('html').send(renderTodayPage(todayData, sources));
   });
 
   app.get('/roles', async (req: Request, res: Response) => {
-    const { fixture, failSource, lagSource, rolesUrl, boardUrl, lokiUrl, sessionsUrl } = getTestOverrides(req);
-    const rolesData = await dataService.getRolesData({ rolesUrl, boardUrl, lokiUrl, sessionsUrl, fixture });
-    const sources = await dataService.getTrustStripSources({ rolesUrl, boardUrl, failSource, lagSource, fixture });
+    const { pulseUrl } = getTestOverrides(req);
+    const [rolesData, sources] = await Promise.all([
+      dataService.getRolesData({ pulseUrl }),
+      dataService.getTrustStripSources({ pulseUrl }),
+    ]);
     res.type('html').send(renderRolesPage(rolesData, sources));
   });
 
   app.get('/rooms/:room', async (req: Request, res: Response) => {
     const rawRoom = req.params.room;
     const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
-    const { fixture, failSource, lagSource, rolesUrl } = getTestOverrides(req);
+    const { pulseUrl, rolesUrl } = getTestOverrides(req);
     const roomsData = await dataService.getRoomsData(room, { rolesUrl });
-    const sources = await dataService.getTrustStripSources({ failSource, lagSource, fixture, rolesUrl });
+    const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage(room, roomsData, sources));
   });
 }
@@ -163,8 +157,8 @@ function registerReadApiRoutes(ctx: RouteContext): void {
   });
 
   app.get('/api/trust-strip', async (req: Request, res: Response) => {
-    const { fixture, failSource, lagSource, rolesUrl, boardUrl } = getTestOverrides(req);
-    const sources = await dataService.getTrustStripSources({ rolesUrl, boardUrl, failSource, lagSource, fixture });
+    const { pulseUrl } = getTestOverrides(req);
+    const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.json(sources);
   });
 
@@ -185,8 +179,8 @@ function registerReadApiRoutes(ctx: RouteContext): void {
       res.status(400).json({ ok: false, error: 'invalid card id' });
       return;
     }
-    const { boardUrl, cardsUrl } = getTestOverrides(req);
-    const card = await dataService.getCard(cardId, { boardUrl, cardsUrl });
+    const { cardsUrl } = getTestOverrides(req);
+    const card = await dataService.getCard(cardId, { cardsUrl });
     if (!card) {
       res.status(404).json({ ok: false, error: `card #${cardId} not found` });
       return;
@@ -255,11 +249,10 @@ export interface CreateAppOptions {
   relayUrl?: string;
   pulseUrl?: string;
   rolesUrl?: string;
+  /** Accepted for older callers; unread since #4563 (roles, today and the strip read pulse). */
   boardUrl?: string;
   cardsUrl?: string;
   alertsUrl?: string;
-  sessionsUrl?: string;
-  lokiUrl?: string;
   knownKeys?: Map<string, string>;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
@@ -269,11 +262,8 @@ interface ResolvedUrls {
   pulseUrl: string;
   relayUrl: string;
   rolesUrl: string;
-  boardUrl: string;
   cardsUrl: string;
   alertsUrl: string;
-  sessionsUrl: string;
-  lokiUrl: string;
 }
 
 function resolveUrls(options: CreateAppOptions = {}): ResolvedUrls {
@@ -281,11 +271,8 @@ function resolveUrls(options: CreateAppOptions = {}): ResolvedUrls {
     pulseUrl: options.pulseUrl || PULSE_URL,
     relayUrl: options.relayUrl ?? BUZZ_RELAY_URL,
     rolesUrl: options.rolesUrl || ROLES_URL,
-    boardUrl: options.boardUrl || BOARD_URL,
     cardsUrl: options.cardsUrl || CARDS_URL,
     alertsUrl: options.alertsUrl || ALERTS_URL,
-    sessionsUrl: options.sessionsUrl || SESSIONS_URL,
-    lokiUrl: options.lokiUrl || LOKI_URL,
   };
 }
 
@@ -396,11 +383,8 @@ export function createApp(options?: CreateAppOptions) {
 
   const dataService = new DataService({
     rolesUrl: urls.rolesUrl,
-    boardUrl: urls.boardUrl,
     cardsUrl: urls.cardsUrl,
     alertsUrl: urls.alertsUrl,
-    sessionsUrl: urls.sessionsUrl,
-    lokiUrl: urls.lokiUrl,
     pulseUrl: urls.pulseUrl,
     relay,
     router,

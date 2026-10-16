@@ -1,4 +1,4 @@
-// @test-type: unit — verifies trust strip freshness, measured elapsed lag, and failure isolation
+// @test-type: unit — verifies the trust strip presents pulse /api/readings as sent (as-of, lag, unmeasured) plus v2's own relay chip (#4563)
 // @card: #4530
 // @owner: abby-normal
 // @domain: messages
@@ -9,7 +9,7 @@ import { BuzzRelayClient } from '../src/relay-client';
 import { MessageRouter } from '../src/router';
 import { renderPageShell } from '../src/views';
 
-describe('Trust Strip: Freshness, Measured Elapsed Lag, and Failure Isolation', () => {
+describe('Trust Strip: pulse readings as sent, and the relay chip', () => {
   let stubServer: http.Server;
   let stubPort: number;
   let relay: BuzzRelayClient;
@@ -19,14 +19,17 @@ describe('Trust Strip: Freshness, Measured Elapsed Lag, and Failure Isolation', 
   beforeAll(async () => {
     await new Promise<void>((resolve) => {
       stubServer = http.createServer((req, res) => {
-        if (req.url?.startsWith('/board/wip')) {
+        if (req.url?.startsWith('/pulse/api/readings')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ timestamp: new Date().toISOString(), data: { cards: [] } }));
-          return;
-        }
-        if (req.url?.startsWith('/roles')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ data: [] }));
+          res.end(JSON.stringify({
+            derivedAt: '2026-10-16T14:00:00Z',
+            readings: [
+              { source: 'board', observedAt: '2026-10-16T14:00:00Z', status: 'ok', asOf: 'as of 09:59' },
+              { source: 'roles', observedAt: '2026-10-16T14:00:00Z', status: 'ok', asOf: 'as of 09:26', lagMinutes: 34 },
+              { source: 'decisions', observedAt: '2026-10-16T14:00:00Z', status: 'unmeasured', reason: 'no source, part 2' },
+            ],
+            unmeasured: [],
+          }));
           return;
         }
         res.writeHead(200).end();
@@ -47,67 +50,52 @@ describe('Trust Strip: Freshness, Measured Elapsed Lag, and Failure Isolation', 
     (relay as any).connected = true;
     router = new MessageRouter();
     dataService = new DataService({
-      rolesUrl: `http://127.0.0.1:${stubPort}/roles`,
-      boardUrl: `http://127.0.0.1:${stubPort}/board`,
+      pulseUrl: `http://127.0.0.1:${stubPort}/pulse`,
       relay,
       router,
     });
   });
 
-  test('1. Every page renders trust strip with chips for all core sources', async () => {
+  test('1. Every page renders a chip per pulse reading, with the as-of pulse sent', async () => {
     const sources = await dataService.getTrustStripSources();
+    expect(sources.map(s => s.source)).toEqual(['rooms', 'board', 'roles', 'decisions']);
     const html = renderPageShell('Test', 'rooms', '<div>Content</div>', sources);
     expect(html).toContain('class="strip trust-strip"');
-    expect(html).toContain('board');
-    expect(html).toContain('rooms');
-    expect(html).toContain('decisions');
-    expect(html).toContain('roles');
+    expect(html).toContain('board · as of 09:59');
   });
 
-  test('2. NEGATIVE PROOF: decisions has no source in Part 1 and displays red by name ("no source, part 2"), never a literal time', async () => {
+  test('2. NEGATIVE PROOF: an unmeasured reading shows red by name with its reason, never a time', async () => {
     const sources = await dataService.getTrustStripSources();
-    const decisionsSource = sources.find(s => s.source === 'decisions');
-    expect(decisionsSource).toBeDefined();
-    expect(decisionsSource?.status).toBe('failed');
-    expect(decisionsSource?.reason).toBe('no source, part 2');
-    expect(decisionsSource?.asOf).not.toContain('10:04');
-
+    const decisions = sources.find(s => s.source === 'decisions');
+    expect(decisions?.status).toBe('unmeasured');
+    expect(decisions?.reason).toBe('no source, part 2');
+    expect(decisions?.asOf).toBeUndefined();
     const html = renderPageShell('Test', 'rooms', '<div>Content</div>', sources);
-    expect(html).toContain('<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">decisions</span> failed (no source, part 2)</span>');
-    expect(html).not.toContain('10:04');
+    expect(html).toContain('<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">decisions</span> unmeasured (no source, part 2)</span>');
+    expect(html).not.toContain('<span class="fail-source-name">board</span>');
+    expect(html).not.toContain('<span class="fail-source-name">roles</span>');
   });
 
-  test('3. NEGATIVE PROOF: when a named source fails, ONLY that source is highlighted red', async () => {
-    const sources = await dataService.getTrustStripSources({ failSource: 'decisions' });
+  test('3. NEGATIVE PROOF: pulse lag shows with the neutral grey chip, never red', async () => {
+    const sources = await dataService.getTrustStripSources();
+    expect(sources.find(s => s.source === 'roles')?.lagMinutes).toBe(34);
     const html = renderPageShell('Test', 'rooms', '<div>Content</div>', sources);
-
-    // Failing source is red and named
-    expect(html).toContain('<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">decisions</span> failed');
-    // Other sources remain non-failing
-    expect(html).not.toContain('<span class="fail-source-name">board</span> failed');
-    expect(html).not.toContain('<span class="fail-source-name">rooms</span> failed');
-    expect(html).not.toContain('<span class="fail-source-name">roles</span> failed');
-  });
-
-  test('4. NEGATIVE PROOF: lag is displayed with neutral grey indicator, NEVER red failure', async () => {
-    const sources = await dataService.getTrustStripSources({ lagSource: 'roles' });
-    const rolesSource = sources.find(s => s.source === 'roles');
-    expect(rolesSource).toBeDefined();
-    expect(rolesSource?.lagMinutes).toBe(34);
-
-    const html = renderPageShell('Test', 'rooms', '<div>Content</div>', sources);
-    // Must have neutral lag chip
     expect(html).toContain('strip-lag-neutral');
-    expect(html).toContain('34m');
-    // Must NOT have failure chip for roles
-    expect(html).not.toContain('<span class="fail-source-name">roles</span> failed');
+    expect(html).toContain('roles · as of 09:26 (34m)');
+    expect(html).not.toContain('<span class="fail-source-name">roles</span>');
+  });
+
+  test('4. NEGATIVE PROOF: pulse unreachable reads one unmeasured chip with the reason, never an empty strip', async () => {
+    const sources = await dataService.getTrustStripSources({ pulseUrl: 'http://127.0.0.1:1' });
+    const readings = sources.find(s => s.source === 'readings');
+    expect(readings?.status).toBe('unmeasured');
+    expect(readings?.reason).toMatch(/\/api\/readings unreadable/);
   });
 
   test('5. NEGATIVE PROOF: without configured relay URL, trust strip shows rooms red by name ("relay not configured")', async () => {
     const unconfiguredRelay = new BuzzRelayClient({ relayUrl: '' });
     const ds = new DataService({
-      rolesUrl: `http://127.0.0.1:${stubPort}/roles`,
-      boardUrl: `http://127.0.0.1:${stubPort}/board`,
+      pulseUrl: `http://127.0.0.1:${stubPort}/pulse`,
       relay: unconfiguredRelay,
       router,
       relayConfigured: false,

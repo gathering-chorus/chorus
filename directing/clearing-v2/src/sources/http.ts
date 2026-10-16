@@ -31,17 +31,6 @@ export function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   return withTimeout(ms, (signal) => fetch(url, { signal }));
 }
 
-/** GET `url`; ok only on a 2xx. The body is not read. */
-export async function probeUrl(url: string, ms: number): Promise<Fetched<number>> {
-  try {
-    const res = await fetchWithTimeout(url, ms);
-    if (!res.ok) return { ok: false, status: res.status, message: '' };
-    return { ok: true, value: res.status };
-  } catch (err) {
-    return { ok: false, message: errorMessage(err) };
-  }
-}
-
 /** Reads a JSON body from a Response; a parse failure is a FetchFailure with the parser's message. */
 export async function readJson<T>(res: Response): Promise<Fetched<T>> {
   if (!res.ok) return { ok: false, status: res.status, message: '' };

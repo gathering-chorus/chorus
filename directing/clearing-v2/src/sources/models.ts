@@ -1,38 +1,43 @@
 // @domain: messages
-// Page-facing data shapes (re-exported from data-service.ts) and the JSON shapes read from doors, board, Loki.
+// Page-facing data shapes (re-exported from data-service.ts) and the JSON shapes read from pulse and the doors.
 
 export interface TrustStripSource {
   source: string;
-  lastWrite: string;
-  asOf: string;
-  status: 'ok' | 'failed';
+  /** 'ok' / 'unmeasured' as pulse's readings say; 'failed' only for v2's own relay connection. */
+  status: 'ok' | 'unmeasured' | 'failed';
+  asOf?: string;
   lagMinutes?: number;
   reason?: string;
 }
 
-export interface RolePrincipal {
+/** One actor as pulse's /api/actor-state reports it, formatted for display only. */
+export interface ActorRow {
   id: string;
   name: string;
-  roleKind: 'human' | 'agent';
-  loggedIn: string;
-  state: 'working' | 'waiting on you' | 'blocked' | 'stale' | 'off' | 'idle' | 'unmeasured';
+  /** pulse's stateValue, verbatim. */
+  state: string;
+  activity?: string;
+  /** "driver with wren" when pulse names a pair role and partner. */
+  pair?: string;
   card?: { id: number; title: string } | null;
-  pane: string;
-  lastHeard: string;
-  waitingReason?: string;
+  /** "reply on kade since …" when pulse names what the actor waits on. */
+  waiting?: string;
+  sessions: string[];
+  /** pulse's unmeasuredSource for this actor, as "source: reason". */
+  unmeasured?: string;
 }
 
 export interface RolesData {
-  principals: RolePrincipal[];
-  error?: string;
-  /** Set when a source behind the derived state (activity, sessions) could not be read. */
+  actors: ActorRow[];
+  /** Set when actor-state could not be read, or pulse listed unmeasured sources: shown by name, never as a zero. */
   unmeasured?: string;
 }
 
 export interface TodayCardItem {
   id: number;
   title: string;
-  status: 'landed' | 'blocked' | 'moved' | 'wip';
+  /** pulse's status, verbatim. */
+  status: string;
   owner: string;
   time: string;
 }
@@ -43,14 +48,6 @@ export interface TodayAlert {
   title: string;
   resolvingCard: number;
   meta: string;
-}
-
-export interface TodayWorkingRole {
-  role: string;
-  name: string;
-  state: string;
-  cardId: number;
-  cardTitle: string;
 }
 
 export interface TodayDecision {
@@ -65,12 +62,14 @@ export interface TodayData {
   decisions: TodayDecision[];
   decisionsCount: number;
   changedCards: TodayCardItem[];
-  /** Set when the moves source could not be read: the panel names it instead of showing nothing. */
+  /** Set when changes-overnight could not be read or pulse listed unmeasured sources. */
   changedUnmeasured?: string;
+  /** pulse's watermark, formatted; absent when pulse sent none. */
+  watermark?: string;
   foldedCount: number;
   alerts: TodayAlert[];
-  workingRoles: TodayWorkingRole[];
-  /** Set when the roles door or a source behind it could not be read: the panel names it instead of a zero. */
+  workingRoles: ActorRow[];
+  /** Set when actor-state could not be read or pulse listed unmeasured sources: named, never a zero. */
   workingUnmeasured?: string;
 }
 
@@ -102,41 +101,6 @@ export interface DoorRole {
 
 export interface DoorRolesResponse {
   data?: DoorRole[];
-}
-
-export interface BoardWipCard {
-  id: number;
-  owner?: string;
-  title: string;
-}
-
-/** Board context /wip response. */
-export interface BoardWipResponse {
-  timestamp?: string;
-  data?: { cards?: BoardWipCard[] };
-}
-
-/** Loki instant-vector query response. */
-export interface LokiQueryResponse {
-  data?: {
-    result?: Array<{
-      metric?: { role?: string };
-      value?: [number | string, string];
-    }>;
-  };
-}
-
-/** A row from the identity sessions door. */
-export interface DoorSession {
-  actsAs?: string;
-  name?: string;
-  ownedBy?: string;
-  sessionState?: string;
-  endedAt?: string;
-}
-
-export interface DoorSessionsResponse {
-  data?: DoorSession[];
 }
 
 export interface AlertItem {
@@ -173,17 +137,6 @@ export interface CardLinks {
   ownedBy?: string | number;
 }
 
-/** A row from the cards collection door. */
-export interface CardRow extends CardData {
-  name?: string;
-  data?: CardData;
-  links?: CardLinks;
-}
-
-export interface CardsResponse {
-  data?: CardRow[];
-}
-
 /** A single card from the cards door (/v1/cards/cards/:id). */
 export interface CardDoorResponse {
   kind?: string;
@@ -191,4 +144,67 @@ export interface CardDoorResponse {
   links?: CardLinks;
   owner?: string | number;
   servedFrom?: string;
+}
+
+// ---- pulse envelopes (#4563): pulse derives these facts; v2 presents them ----
+
+export interface PulseUnmeasured {
+  source: string;
+  reason: string;
+}
+
+/** pulse's actor states; v2 shows the word it gets, known or not. */
+export type ActorStateValue =
+  | 'building' | 'pairing' | 'waiting' | 'in-ceremony' | 'reviewing' | 'available' | 'away' | 'off' | 'unmeasured';
+
+export interface PulseActor {
+  aboutPrincipal: string;
+  name?: string;
+  stateValue: ActorStateValue | string;
+  stateSource?: string;
+  activity?: 'acting' | 'idle' | 'unmeasured' | string;
+  pairRole?: 'driver' | 'navigator' | string;
+  pairedWith?: string;
+  currentCard?: number | null;
+  currentCardTitle?: string;
+  waitingOn?: { on?: string; what?: string; since?: string };
+  sessions?: Array<{ id?: string; channel?: string; live?: boolean; lastActionAt?: string }>;
+  unmeasuredSource?: PulseUnmeasured[];
+}
+
+export interface ActorStateEnvelope {
+  derivedAt?: string;
+  actors?: PulseActor[];
+  unmeasured?: PulseUnmeasured[];
+}
+
+export interface PulseChangedCard {
+  id: number;
+  title?: string;
+  status?: string;
+  owner?: string;
+  movedAt?: string;
+}
+
+export interface ChangesOvernightEnvelope {
+  derivedAt?: string;
+  watermark?: string | null;
+  cards?: PulseChangedCard[];
+  unmeasured?: PulseUnmeasured[];
+}
+
+export interface PulseReading {
+  source: string;
+  observedAt?: string;
+  status: 'ok' | 'unmeasured' | string;
+  reason?: string;
+  lastWrite?: string;
+  asOf?: string;
+  lagMinutes?: number;
+}
+
+export interface ReadingsEnvelope {
+  derivedAt?: string;
+  readings?: PulseReading[];
+  unmeasured?: PulseUnmeasured[];
 }
