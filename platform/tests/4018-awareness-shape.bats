@@ -23,6 +23,8 @@ setup() {
 chorus:principal-wren a chorus:Principal .
 chorus:principal-kade a chorus:Principal .
 chorus:card-4474 a chorus:Card .
+chorus:card-4560 a chorus:Card .
+chorus:principal-abby-normal a chorus:Principal .
 chorus:session-kade-1 a chorus:Session .
 EOF
   cat > "$T/good.ttl" <<'EOF'
@@ -30,8 +32,13 @@ EOF
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 chorus:rolestate-kade a chorus:RoleState ;
     chorus:aboutPrincipal chorus:principal-kade ; chorus:stateValue "building" ;
-    chorus:stateSource "observed" ; chorus:currentCard chorus:card-4474 ;
+    chorus:stateSource "observed" ; chorus:currentCard chorus:card-4474 ; chorus:activity "acting" ;
     chorus:observedAt "2026-10-10T12:31:21Z"^^xsd:dateTime ; chorus:ownedBy chorus:principal-wren .
+chorus:rolestate-abby a chorus:RoleState ;
+    chorus:aboutPrincipal chorus:principal-abby-normal ; chorus:stateValue "pairing" ;
+    chorus:pairRole "driver" ; chorus:pairedWith chorus:principal-wren ; chorus:currentCard chorus:card-4560 ;
+    chorus:stateSource "observed" ; chorus:activity "acting" ;
+    chorus:observedAt "2026-10-16T09:30:00Z"^^xsd:dateTime ; chorus:ownedBy chorus:principal-wren .
 chorus:heartbeat-kade-1 a chorus:Heartbeat ;
     chorus:aboutPrincipal chorus:principal-kade ; chorus:inSession chorus:session-kade-1 ;
     chorus:phase "tool" ; chorus:currentTool "Bash" ;

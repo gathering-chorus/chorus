@@ -28,7 +28,7 @@
 chorus:RoleState a owl:Class ;
     rdfs:label "Role state" ;
     rdfs:subClassOf chorus:ShortTermMemory ;
-    rdfs:comment "What one principal is doing right now — idle, building, waiting, blocked, observing — and whether that was declared by the role or observed from what it did." .
+    rdfs:comment "What one principal is doing right now — building, pairing, waiting, in a ceremony, reviewing, away, off — derived by pulse from what it did, never declared. Every surface presents it; none derives it (Jeff 2026-10-16: \"we use the data from our apis and donnt manufacture or do data processing in our ui\"). #4560." .
 
 chorus:Heartbeat a owl:Class ;
     rdfs:label "Heartbeat" ;
@@ -54,6 +54,22 @@ chorus:aboutPrincipal a owl:ObjectProperty ;
 chorus:stateValue a owl:DatatypeProperty ;
     rdfs:label "state" ; rdfs:range xsd:string ;
     rdfs:comment "The state word: idle, building, waiting, blocked, observing, unmeasured." .
+
+chorus:activity a owl:DatatypeProperty ;
+    rdfs:label "activity" ; rdfs:range xsd:string ;
+    rdfs:comment "How active the principal is inside its state: acting (an action in the last 5 minutes), idle (in the last 30), unmeasured (activity could not be read). #4560." .
+
+chorus:pairRole a owl:DatatypeProperty ;
+    rdfs:label "pair role" ; rdfs:range xsd:string ;
+    rdfs:comment "In a pairing state: driver or navigator. #4560." .
+
+chorus:pairedWith a owl:ObjectProperty ;
+    rdfs:label "paired with" ; rdfs:range chorus:Principal ;
+    rdfs:comment "In a pairing state: the partner. Jeff 2026-10-16: \"if u are in a pair - that is a state\". #4560." .
+
+chorus:unmeasuredSource a owl:DatatypeProperty ;
+    rdfs:label "unmeasured source" ; rdfs:range xsd:string ;
+    rdfs:comment "A source pulse could not read for this derivation, with its reason. Named, never turned into a zero or a default. #4560." .
 
 chorus:stateSource a owl:DatatypeProperty ;
     rdfs:label "source" ; rdfs:range xsd:string ;
@@ -107,11 +123,20 @@ chorus:RoleStateShape a sh:NodeShape ;
     sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "principal" ; sh:description "Required. Whose state this is." ] ;
     sh:property [ sh:path chorus:stateValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:in ( "idle" "building" "waiting" "blocked" "observing" "unmeasured" ) ;
-                  sh:name "state" ; sh:description "Required. One of idle, building, waiting, blocked, observing, unmeasured." ] ;
+                  sh:in ( "building" "pairing" "waiting" "in-ceremony" "reviewing" "away" "off" "unmeasured" ) ;
+                  sh:name "state" ; sh:description "Required. One of building, pairing, waiting, in-ceremony, reviewing, away, off, unmeasured. When several apply: in-ceremony, pairing, reviewing, waiting, building, away, off." ] ;
     sh:property [ sh:path chorus:stateSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:in ( "declared" "observed" ) ;
-                  sh:name "source" ; sh:description "Required. declared or observed; nothing else." ] ;
+                  sh:in ( "observed" ) ;
+                  sh:name "source" ; sh:description "Required. observed: state is derived, never declared (#4560)." ] ;
+    sh:property [ sh:path chorus:activity ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:in ( "acting" "idle" "unmeasured" ) ;
+                  sh:name "activity" ; sh:description "Required. acting, idle or unmeasured." ] ;
+    sh:property [ sh:path chorus:pairRole ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "driver" "navigator" ) ;
+                  sh:name "pair role" ; sh:description "In pairing: driver or navigator." ] ;
+    sh:property [ sh:path chorus:pairedWith ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "paired with" ; sh:description "In pairing: the partner." ] ;
+    sh:property [ sh:path chorus:unmeasuredSource ; sh:datatype xsd:string ;
+                  sh:name "unmeasured sources" ; sh:description "Each source that could not be read, with its reason." ] ;
     sh:property [ sh:path chorus:currentCard ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Card ;
                   sh:name "current card" ; sh:description "Optional. The card it is on." ] ;
     sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
