@@ -152,8 +152,14 @@ const IDLE_EVICT_SECS: u64 = 300;
 /// The last `max` complete lines of a file, reading at most `TAIL_BYTES`
 /// from its end. A line cut by the read window is dropped, never half-kept.
 pub fn tail_lines(f: &mut std::fs::File, max: usize) -> Vec<String> {
+    tail_lines_within(f, max, TAIL_BYTES)
+}
+
+/// `tail_lines` with the read window given — the window is the seam the
+/// cut-line proof uses.
+pub fn tail_lines_within(f: &mut std::fs::File, max: usize, window: u64) -> Vec<String> {
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
-    let from = len.saturating_sub(TAIL_BYTES);
+    let from = len.saturating_sub(window);
     if f.seek(SeekFrom::Start(from)).is_err() {
         return Vec::new();
     }
@@ -476,6 +482,19 @@ mod tests {
         assert_eq!(lines.len(), super::TAIL_LINES);
         assert_eq!(lines.first().unwrap(), "{\"line\":4000}");
         assert_eq!(lines.last().unwrap(), "{\"line\":4999}");
+    }
+
+    /// #4562 (Silas) — a read window that starts mid-line drops that cut line:
+    /// every line returned is a whole JSON line.
+    #[test]
+    fn a_window_that_starts_mid_line_drops_the_cut_line() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        std::fs::write(&p, "{\"first\":\"aaaaaaaaaa\"}\n{\"second\":2}\n{\"third\":3}\n").unwrap();
+        // 30 bytes from the end lands inside the first line
+        let lines = super::tail_lines_within(&mut std::fs::File::open(&p).unwrap(), 1000, 30);
+        assert_eq!(lines, vec!["{\"second\":2}".to_string(), "{\"third\":3}".to_string()]);
+        assert!(lines.iter().all(|l| serde_json::from_str::<serde_json::Value>(l).is_ok()));
     }
 
     /// NEGATIVE PROOF: a short transcript is returned whole — nothing a hook
