@@ -3979,6 +3979,30 @@ pub fn crate_binary_types(krate: &str, rows: &[TestRow]) -> Vec<(String, String)
 /// #4160 — one stage's work: cargo items are `crate` (its unit run) or
 /// `crate#stem` (one typed test binary); npm items are `pkg` or
 /// `pkg#integration` (a jest package's integration project run apart).
+/// #4540 — which stages a queue run takes: `perf` (perf only) or `queue`
+/// (every stage but perf). Unset: every stage.
+pub const STAGES_ENV: &str = "WERK_TEST_STAGES";
+
+pub fn stage_picked(pick: &str, stage: &str) -> bool {
+    match pick {
+        "perf" => stage == "perf",
+        "queue" => stage != "perf",
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod stage_picked_4540 {
+    use super::stage_picked;
+    #[test]
+    fn the_queue_takes_every_stage_but_perf_and_perf_takes_only_perf() {
+        assert!(stage_picked("queue", "unit") && stage_picked("queue", "ui") && !stage_picked("queue", "perf"));
+        assert!(stage_picked("perf", "perf") && !stage_picked("perf", "unit"));
+        // NEGATIVE PROOF: an unknown pick drops nothing, never everything
+        assert!(stage_picked("", "unit") && stage_picked("bogus", "perf"));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StagePlan {
     pub stage: &'static str,

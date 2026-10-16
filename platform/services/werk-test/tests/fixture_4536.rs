@@ -669,6 +669,7 @@ fn a_red_case_goes_green_in_its_type_step_and_red_at_the_verdict() {
     let v = runs.last().unwrap();
     assert_eq!(v.code, 1, "{}", v.out);
     assert!(v.out.contains("RED in: bats:platform/tests/fail.bats"), "{}", v.out);
+    assert!(v.out.contains("verdict: RED — 1 type failed: unit"), "the line /cws reads: {}", v.out);
 }
 
 /// NEGATIVE PROOF: a planned type whose step never ran is not clean — the
@@ -705,4 +706,96 @@ fn a_retried_type_step_does_not_count_twice() {
     assert_eq!(v.code, 0, "{}", v.out);
     let report = &runs[runs.len() - 2];
     assert!(report.out.contains("card-coverage: covered (1 registered case(s)"), "{}", report.out);
+}
+
+// ── #4540 — the nightly as steps (scope = all), each its own process ──
+
+fn run_nightly_steps(tag: &str, files: &[(&str, &str)], registry_rows: &[String], steps: &[&[&str]]) -> Vec<Run> {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-n-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("chorus");
+    std::fs::create_dir_all(root.join("platform/scripts")).unwrap();
+    for (path, body) in files {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+    let registry = format!("{{\"data\":[{}]}}", registry_rows.join(","));
+    let (port, patches) = stub(registry, 200);
+    let door = format!("http://127.0.0.1:{}", port);
+    let mut runs = Vec::new();
+    for step in steps {
+        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+            .args(*step)
+            .env("PATH", stub_path(&base))
+            .env("CHORUS_ROOT", &root)
+            .env_remove("CHORUS_HOME")
+            .env("CHORUS_TRACE_ID", format!("fixture-4540-n-{}", tag))
+            .env("WERK_TEST_RUNS", base.join("runs"))
+            .env("WERK_TEST_LEGS_NOOP", "1")
+            .env("NIGHTLY_LEGS_NOOP", "1")
+            .env("NIGHTLY_LOG_PATH", base.join("nightly.log"))
+            .env("NIGHTLY_FAIL_DIR", base.join("fail"))
+            .env("NIGHTLY_NO_NUDGE", "1")
+            .env("NIGHTLY_LOAD_STUB", "0.1")
+            .env("CHORUS_WRITE_TOKEN", "fixture")
+            .env("OWLAPI", &door)
+            .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
+            .env("WERK_STACK_PROBES", format!("door={door}/"))
+            .env("NIGHTLY_SUITE_WORKERS", "1")
+            .env("NIGHTLY_LOAD_CAP", "100000")
+            .output()
+            .expect("spawn werk-test nightly step");
+        runs.push(Run {
+            code: out.status.code().unwrap_or(-1),
+            out: format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+            patches: patches.lock().unwrap().clone(),
+        });
+    }
+    // the run log, read from the FILE (Silas 06:08: under dagu stdout is the step log)
+    let log = std::fs::read_to_string(base.join("nightly.log")).unwrap_or_default();
+    runs.push(Run { code: 0, out: log, patches: Vec::new() });
+    let _ = std::fs::remove_dir_all(&base);
+    runs
+}
+
+const NIGHTLY_STEPS: &[&[&str]] = &[
+    &["scope", "--scope=all"], &["prepare", "--scope=all"], &["run", "--scope=all"],
+    &["run", "--scope=all", "--test-type=perf"], &["report", "--scope=all"], &["verdict", "--scope=all"],
+];
+
+#[test]
+fn the_nightly_steps_run_the_registry_and_write_one_log() {
+    let runs = run_nightly_steps("n1", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], NIGHTLY_STEPS);
+    let all = runs.iter().map(|r| r.out.as_str()).collect::<Vec<_>>().join("\n----\n");
+    let verdict = &runs[5];
+    assert_eq!(verdict.code, 0, "{all}");
+    assert!(verdict.out.contains("verdict: CLEAN"), "{all}");
+    let log = &runs[6].out;
+    assert!(log.contains("RUN|start|") && log.contains("RUN|complete|"), "{log}");
+    assert!(log.contains("SUITE|") && log.contains("platform/tests/pass.bats"), "{log}");
+    assert!(log.contains("nightly-plan|"), "the lane's pass-through lines reach the log file: {log}");
+}
+
+#[test]
+fn a_red_suite_makes_the_nightly_verdict_red() {
+    let runs = run_nightly_steps("n2", &[("platform/tests/fail.bats", FAIL)],
+        &[row("platform/tests/fail.bats", "f", "test-fail")], NIGHTLY_STEPS);
+    let all = runs.iter().map(|r| r.out.as_str()).collect::<Vec<_>>().join("\n----\n");
+    assert_eq!(runs[2].code, 0, "the run step writes its rows and lets report run: {all}");
+    assert_eq!(runs[5].code, 1, "{all}");
+    assert!(runs[5].out.contains("1 red"), "{all}");
+}
+
+/// NEGATIVE PROOF: a stopped run is recorded stopped, and never completes.
+#[test]
+fn negative_proof_a_stopped_nightly_says_stopped_never_complete() {
+    let runs = run_nightly_steps("n3", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")],
+        &[&["scope", "--scope=all"], &["report", "--scope=all", "--stopped"]]);
+    let log = &runs[2].out;
+    assert!(log.contains("RUN|stopped|"), "{log}");
+    assert!(!log.contains("RUN|complete|"), "{log}");
 }

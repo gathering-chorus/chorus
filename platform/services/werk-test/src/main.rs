@@ -118,6 +118,14 @@ fn run(args: &[String]) -> Result<i32, String> {
     if args.first().map(String::as_str) == Some("--scope-of") {
         return Ok(scope_of(&args[1..]));
     }
+    // #4540 — the nightly is the same steps with scope = all, plus notify
+    if let Some(step) = args.first().map(String::as_str) {
+        let all = args.iter().any(|a| a == "--scope=all");
+        if step == "notify" || (all && werk_test::run_dir::STEPS.contains(&step)) {
+            std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
+            return nightly_all::step_all(step, &args[1..]);
+        }
+    }
     if args.iter().any(|a| a == "--nightly") {
         // #4531 — every suite this run spawns learns its lane. Timing checks
         // run in the nightly only (Jeff 2026-10-14: "we must not run perf tests
@@ -1094,6 +1102,11 @@ fn step_verdict(ctx: &Ctx) -> Result<i32, String> {
     }
     if !all.failed.is_empty() {
         println!("   RED in: {}", all.failed.join(", "));
+        // #4540 — the line /cws reads off the verdict step: which types went red
+        let red: Vec<&str> = werk_test::run_dir::TEST_TYPES.iter().copied()
+            .filter(|t| d.get(&format!("ran-{}", t)).is_some_and(|l| !werk_test::run_dir::TypeResult::of(&l).failed.is_empty()))
+            .collect();
+        println!("verdict: RED — {} type{} failed: {}", red.len(), if red.len() == 1 { "" } else { "s" }, red.join(", "));
     }
     let exit = v.exit_code();
     println!("werk-test: {} (exit {})", v.label(), exit);
@@ -1382,6 +1395,12 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let security_pkgs: std::collections::BTreeSet<String> = ts_pkgs.iter()
         .filter(|p| sec_units.contains(*p)).cloned().collect();
     let stages = werk_test::plan_stages(&crates, &ts_pkgs, &bats_suites, &rows, &split_pkgs, &security_pkgs, integration_on);
+    // #4540 (Jeff 10-16 B) — the queue runs every type but perf; perf runs
+    // alone after it as its own step. The step names which side it is.
+    let stages: Vec<werk_test::StagePlan> = match std::env::var(werk_test::STAGES_ENV).ok().as_deref() {
+        Some(pick) => stages.into_iter().filter(|sp| werk_test::stage_picked(pick, sp.stage)).collect(),
+        None => stages,
+    };
     let legs_noop = std::env::var("NIGHTLY_LEGS_NOOP").is_ok();
     let npm_kind_of = |p: &str| -> &'static str { if security_pkgs.contains(p) { "security" } else { "npm" } };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that

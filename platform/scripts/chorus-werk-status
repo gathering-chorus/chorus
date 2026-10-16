@@ -730,6 +730,55 @@ def step_reason(node):
     return pick[:90] if pick else NO_REASON
 
 
+# #4540 — a child pipeline's runs, read through the parent (dagu 2.18 keeps a
+# sub-run under its parent: `/dag-runs/<dag>/<id>/sub-dag-runs/<subId>`; the
+# child's own name answers 404, measured 2026-10-16). The fixture fills it.
+SUB_RUNS = {}
+
+
+def sub_nodes(name, run_id, sub_id):
+    key = (name, run_id, sub_id)
+    if key not in SUB_RUNS:
+        try:
+            d = dagu_get(f"/api/v1/dag-runs/{name}/{run_id}/sub-dag-runs/{sub_id}")
+            SUB_RUNS[key] = (d.get("dagRunDetails") or {}).get("nodes") or []
+        except Exception:
+            SUB_RUNS[key] = []
+    return SUB_RUNS[key]
+
+
+def test_unmeasured(run):
+    """#4540 — a test step that stopped on UNMEASURED has no red suite: name
+    the unmeasured ones (#4539 run 1 read "no reason in dagu's record")."""
+    began = run_began(run)
+    ev = run_test_events(run.get("dagRunId", ""), began / 1000 if began else time.time() - 86400)
+    if not ev:
+        return None
+    um = [st["name"] for st in tests_state(ev)["suites"] if st["status"] == "unmeasured"]
+    if not um:
+        return None
+    return f"{len(um)} suite{'s' if len(um) != 1 else ''} unmeasured: " + ", ".join(um[:3]) + (" …" if len(um) > 3 else "")
+
+
+def failed_reason(run, node):
+    """#4540 — why a failed step stopped. A step that called a child pipeline
+    (cicd's test step calls cicd-test) carries only "exit status N"; the
+    child's own stopped step and its words are the answer ("verdict: RED —
+    unit, lint"). Else the step's record, then the run's red suites, then its
+    unmeasured suites."""
+    for child in node.get("children") or []:
+        cn = sub_nodes(run.get("name", DAGU_DAG), run.get("dagRunId", ""), child.get("dagRunId", ""))
+        stop = next((n for n in cn if n.get("statusLabel") == "failed"), None)
+        if stop is not None:
+            word = stop["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
+            why = step_reason(stop)
+            return why if why.startswith(f"{word}:") else f"{word}: {why}"
+    why = step_reason(node)
+    if why == NO_REASON and node.get("step", {}).get("name") == "skill-werk-test":
+        why = test_reds(run) or test_unmeasured(run) or why
+    return why
+
+
 def merged_on_main(card, since_ms):
     """#4553 — the card's commit on main, made after `since_ms`, or None. #4547's
     land read "failed at merge" (13:05) after werk-merge timed out at 60s with
@@ -836,7 +885,7 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         tests = "" if tests == " · " else tests
     why = ""
     if status == "failed" and not tests and not (land and "landed on main" in where):
-        why = step_reason(node)
+        why = failed_reason(run, node)
         live = LIVE_REFUSAL.search(why)
         if live:
             # #4553 (Kade) — a run refused because another is live is not a
@@ -872,10 +921,7 @@ def dagu_detail(card, runs):
         why = ""
         if status == "failed":
             node = next((x for x in nodes_of(r) if x["step"]["name"] == step), {})
-            why = step_reason(node)
-            if why == NO_REASON and step == "skill-werk-test":
-                why = test_reds(r) or why
-            why = "  — " + why
+            why = "  — " + failed_reason(r, node)
         print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
     land = dagu_land_line(card, "v2")
     if land:
@@ -884,11 +930,14 @@ def dagu_detail(card, runs):
     st = run_began(runs[0])
     ev = run_test_events(runs[0].get("dagRunId", ""), st / 1000 if st else time.time() - 86400)
     print()
+    # #4540 — the newest run's own pipeline count ("cicd run 2"), not every
+    # pipeline's runs added up (#4539 read "run 3" for cicd run 2)
+    label = f"{runs[0].get('name', DAGU_DAG)} run {count.get(runs[0].get('name', DAGU_DAG), n)}"
     if ev is None:
-        print(f"  tests (run {n}): unreadable — Loki did not answer at {LOKI}")
+        print(f"  tests ({label}): unreadable — Loki did not answer at {LOKI}")
     else:
         live = runs[0].get("statusLabel") in ("running", "queued", "waiting")
-        print("\n".join(tests_detail(tests_state(ev), f"run {n}", live)))
+        print("\n".join(tests_detail(tests_state(ev), label, live)))
 
 
 def wip_cards():
@@ -929,11 +978,9 @@ def why_run(name, run_id):
     node = next((n for n in nodes if n.get("statusLabel") == "failed"), None)
     if node is None:
         return 2
-    why = step_reason(node)
+    why = failed_reason(dict(d.get("dagRunDetails") or {}, name=name, dagRunId=run_id, nodes=nodes), node)
     live = LIVE_REFUSAL.search(why)
     word = node["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
-    if why == NO_REASON and word == "test":
-        why = test_reds(dict(d.get("dagRunDetails") or {}, dagRunId=run_id, nodes=nodes)) or why
     print(live.group(0) if live else f"{name} failed at {word}: {why}")
     return 0
 
@@ -997,6 +1044,11 @@ def fixture_4553():
                   run("a2", "athena", "failed", 10, [node("failed", "skill-athena-gen", "athena-gen: refused")]),
                   run("a1", "athena", "failed", 0, [node("failed", "skill-athena-gen", "athena-gen: refused")])]
         line = lambda card, runs, lands, wip=False: card_line(card, "wren", runs, lands, {}, wip=wip)
+        child_stop = run("p", "cicd", "failed", 0, [dict(node("failed", "skill-werk-test", "exit status 1"),
+                                                         children=[{"dagRunId": "kid", "dagName": "cicd-test"}])], 158)
+        SUB_RUNS[("cicd", "p", "kid")] = [node("succeeded", "skill-werk-run"),
+                                          node("failed", "skill-werk-verdict", "exit status 1\nverdict: RED — 2 types failed: unit, lint")]
+        SUB_RUNS[("cicd", "p2", "none")] = []
         cases = [
             ("a reopened WIP card never reads landed",
              "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
@@ -1016,6 +1068,13 @@ def fixture_4553():
              "2 runs live" in line(153, two, []) and "runs live" not in line(153, one, [])),
             ("run N names its pipeline",
              "cicd run 1 · athena 2 runs" in line(155, halves, []) and "cicd run 3" not in line(155, halves, [])),
+            # #4540 — the parent test step says only "exit status 1"; the
+            # child's verdict step holds the words. Negative proof: the same
+            # parent with no child record reads the old no-reason line.
+            ("a stop inside the child test pipeline names the child's step",
+             "· verdict: RED — 2 types failed: unit, lint" in line(158, [child_stop], [])
+             and NO_REASON in line(159, [run("p2", "cicd", "failed", 0, [dict(node("failed", "skill-werk-test", "exit status 1"),
+                                                                            children=[{"dagRunId": "none", "dagName": "cicd-test"}])], 159)], [])),
         ]
         DAGU, GIT_DIR, MAIN_REF, LOKI = keep
     for name, ok in cases:
