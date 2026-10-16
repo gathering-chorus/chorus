@@ -2,7 +2,7 @@
 // @test-type: unit — deriveActorState over fact fixtures, the endpoint over an in-memory app; no live services
 // @card: #4560
 import request from 'supertest';
-import { deriveActorState, ActorStateService, isTeamRole, type ActorFactInput } from './actor-state';
+import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, lokiActionQuery, type ActorFactInput } from './actor-state';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
@@ -20,6 +20,7 @@ const CH_BROWSER = 'browser';
 const EXP_1300 = '2026-10-16T13:00:00Z';
 const SEEN_1218 = '2026-10-16T12:18:00Z';
 const SEEN_1219 = '2026-10-16T12:19:00Z';
+const SENT_1215 = '2026-10-16T12:15:00Z';
 const STATE_PAIRING = 'pairing';
 const STATE_BUILDING = 'building';
 const STATE_REVIEWING = 'reviewing';
@@ -171,7 +172,7 @@ describe('Actor State - Session Expiry and Liveness', () => {
       sessions: [
         { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: '2026-10-15T20:10:00Z' },
       ],
-      actions: { 'abby-normal': { lastActionAt: '2026-10-16T12:15:00Z', recent5mCount: 4 } },
+      actions: { 'abby-normal': { lastActionAt: SENT_1215, recent5mCount: 4 } },
       wipCards: [{ cardId: 4560, owner: 'abby-normal' }],
     };
 
@@ -179,7 +180,7 @@ describe('Actor State - Session Expiry and Liveness', () => {
     const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
     const session = abby?.sessions.find((s) => s.id === 's-abby');
     expect(session?.live).toBe(true);
-    expect(session?.lastActionAt).toBe('2026-10-16T12:15:00Z');
+    expect(session?.lastActionAt).toBe(SENT_1215);
   });
 
   test('Fix 2 negative proof: session with stale lastSeenAt and stale action reads not live', () => {
@@ -208,7 +209,7 @@ describe('Actor State - Waiting and Building', () => {
       ],
       actions: { silas: { lastActionAt: SEEN_1219, recent5mCount: 1 } },
       owedNudges: [
-        { from: 'silas', to: 'kade', expects: 'reply', sentAt: '2026-10-16T12:15:00Z', content: 'Did #4540 finish?' },
+        { from: 'silas', to: 'kade', expects: 'reply', sentAt: SENT_1215, content: 'Did #4540 finish?' },
       ],
     };
 
@@ -218,7 +219,7 @@ describe('Actor State - Waiting and Building', () => {
     expect(silas?.waitingOn).toEqual({
       on: P_KADE,
       what: 'reply',
-      since: '2026-10-16T12:15:00Z',
+      since: SENT_1215,
     });
   });
 
@@ -630,5 +631,155 @@ describe('Actor State - Name and Card Title', () => {
   });
 });
 
+const UNREACHABLE_URL = 'http://127.0.0.1:1';
+const ROLE_ABBY_NAME = ['abby', 'normal'].join('-');
 
+describe('Actor State - #4566 AC1 & AC2', () => {
+  test('AC1: waiting only for an actor with a live session; a shut-down agent reads off', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [{ principal: P_ABBY, roleKind: ROLE_AGENT }],
+      sessions: [
+        {
+          id: 's-abby-closed',
+          principal: P_ABBY,
+          channel: CH_PANE,
+          expiresAt: EXP_1300,
+          lastSeenAt: SEEN_1218,
+          endedAt: SEEN_1219,
+          sessionState: 'closed',
+        },
+      ],
+      actions: { [ROLE_ABBY_NAME]: { lastActionAt: SEEN_1218, recent5mCount: 2 } },
+      owedNudges: [
+        { from: ROLE_ABBY_NAME, to: 'wren', expects: 'reply', sentAt: SENT_1215 },
+      ],
+    };
 
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+
+    expect(abby?.stateValue).toBe(STATE_OFF);
+    expect(abby?.waitingOn).toBeUndefined();
+  });
+
+  test('AC2: jeff.input.delivered counts as Jeff activity; typing to a role never reads away', async () => {
+    const nowIso = new Date().toISOString();
+    const spineLine = JSON.stringify({
+      timestamp: nowIso,
+      event: 'jeff.input.delivered',
+      role: 'bridge',
+      to: 'wren',
+      chars: '42',
+    });
+    const fetcher = buildLiveActorFactFetcher({
+      store: { getOwedNudges: () => [] },
+      readTail: () => Promise.resolve(spineLine),
+      athenaBaseUrl: UNREACHABLE_URL,
+      chorusApiBaseUrl: UNREACHABLE_URL,
+      lokiBaseUrl: UNREACHABLE_URL,
+    });
+    const fetched = await fetcher();
+    const states = deriveActorState({
+      ...fetched,
+      principals: [{ principal: P_JEFF, roleKind: ROLE_HUMAN }],
+      sessions: [
+        {
+          id: 's-jeff-expired',
+          principal: P_JEFF,
+          channel: CH_BROWSER,
+          expiresAt: '2026-10-12T00:00:00Z',
+          lastSeenAt: '2026-10-12T00:00:00Z',
+        },
+      ],
+      unmeasured: undefined,
+    });
+    const jeff = states.find((s) => s.aboutPrincipal === P_JEFF);
+    expect(jeff?.activity).toBe(ACT_ACTING);
+    expect(jeff?.stateValue).toBe(STATE_AVAILABLE);
+  });
+});
+
+describe('Actor State - #4566 AC3 & AC4', () => {
+  test('AC3: reply owed clears when reply arrives; two roles cannot read waiting on each other while both act', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [
+        { principal: P_KADE, roleKind: ROLE_AGENT },
+        { principal: P_SILAS, roleKind: ROLE_AGENT },
+      ],
+      sessions: [
+        { id: 's-kade', principal: P_KADE, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+        { id: 's-silas', principal: P_SILAS, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+      ],
+      actions: {
+        kade: { lastActionAt: SEEN_1219, recent5mCount: 3 },
+        silas: { lastActionAt: SEEN_1219, recent5mCount: 4 },
+      },
+      owedNudges: [
+        { from: 'kade', to: 'silas', expects: 'reply', sentAt: '2026-10-16T10:57:44Z' },
+        { from: 'silas', to: 'kade', expects: 'reply', sentAt: SENT_1215 },
+      ],
+    };
+
+    const states = deriveActorState(input);
+    const kade = states.find((s) => s.aboutPrincipal === P_KADE);
+    const silas = states.find((s) => s.aboutPrincipal === P_SILAS);
+
+    expect(kade?.stateValue).not.toBe(STATE_WAITING);
+    expect(kade?.waitingOn).toBeUndefined();
+    expect(!(kade?.stateValue === STATE_WAITING && silas?.stateValue === STATE_WAITING)).toBe(true);
+  });
+
+  test('AC4: building outranks waiting for an actor acting on a WIP card; waiting shows as a detail, not the state', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [{ principal: P_KADE, roleKind: ROLE_AGENT }],
+      sessions: [
+        { id: 's-kade', principal: P_KADE, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+      ],
+      actions: {
+        kade: { lastActionAt: SEEN_1219, recent5mCount: 5 },
+      },
+      wipCards: [{ cardId: 4540, title: 'werk-test dagu', owner: 'kade' }],
+      owedNudges: [
+        { from: 'kade', to: 'silas', expects: 'reply', sentAt: SENT_1215 },
+      ],
+    };
+
+    const states = deriveActorState(input);
+    const kade = states.find((s) => s.aboutPrincipal === P_KADE);
+
+    expect(kade?.stateValue).toBe(STATE_BUILDING);
+    expect(kade?.currentCard).toBe(4540);
+    expect(kade?.waitingOn).toEqual({
+      on: P_SILAS,
+      what: 'reply',
+      since: SENT_1215,
+    });
+  });
+});
+
+// #4566 — LogQL double-quoted strings take Go escapes only; `\.` there is a parse error (Loki 400).
+// Backtick strings are raw, so they are set aside before the check.
+function logqlQuotedEscapesValid(q: string): boolean {
+  const quoted = q.replace(/`[^`]*`/g, '``').match(/"(?:[^"\\]|\\.)*"/g) ?? [];
+  return quoted.every((s) => !/\\[^abfnrtv\\"0-7xuU]/.test(s));
+}
+
+describe('Actor State - Loki activity query', () => {
+  it('sends a query Loki can parse for both windows', () => {
+    for (const w of ['5m', '30m']) {
+      const q = lokiActionQuery(w);
+      expect(logqlQuotedEscapesValid(q)).toBe(true);
+      expect(q).toContain('agent\\.action');
+      expect(q).toContain('jeff\\.input\\.delivered');
+      expect(q).toContain(`[${w}]`);
+    }
+  });
+
+  it('negative proof: the regex in a double-quoted string is caught as invalid', () => {
+    const broken = 'sum by (role) (count_over_time({job="platform-chorus"}[5m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))';
+    expect(logqlQuotedEscapesValid(broken)).toBe(false);
+  });
+});
