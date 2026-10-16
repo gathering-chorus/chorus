@@ -2,7 +2,7 @@
 // @test-type: unit — deriveActorState over fact fixtures, the endpoint over an in-memory app; no live services
 // @card: #4560
 import request from 'supertest';
-import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, type ActorFactInput } from './actor-state';
+import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, lokiActionQuery, type ActorFactInput } from './actor-state';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
@@ -757,5 +757,29 @@ describe('Actor State - #4566 AC3 & AC4', () => {
       what: 'reply',
       since: SENT_1215,
     });
+  });
+});
+
+// #4566 — LogQL double-quoted strings take Go escapes only; `\.` there is a parse error (Loki 400).
+// Backtick strings are raw, so they are set aside before the check.
+function logqlQuotedEscapesValid(q: string): boolean {
+  const quoted = q.replace(/`[^`]*`/g, '``').match(/"(?:[^"\\]|\\.)*"/g) ?? [];
+  return quoted.every((s) => !/\\[^abfnrtv\\"0-7xuU]/.test(s));
+}
+
+describe('Actor State - Loki activity query', () => {
+  it('sends a query Loki can parse for both windows', () => {
+    for (const w of ['5m', '30m']) {
+      const q = lokiActionQuery(w);
+      expect(logqlQuotedEscapesValid(q)).toBe(true);
+      expect(q).toContain('agent\\.action');
+      expect(q).toContain('jeff\\.input\\.delivered');
+      expect(q).toContain(`[${w}]`);
+    }
+  });
+
+  it('negative proof: the regex in a double-quoted string is caught as invalid', () => {
+    const broken = 'sum by (role) (count_over_time({job="platform-chorus"}[5m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))';
+    expect(logqlQuotedEscapesValid(broken)).toBe(false);
   });
 });

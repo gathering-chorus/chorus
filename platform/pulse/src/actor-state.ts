@@ -770,18 +770,20 @@ function populateLoki30m(
   }
 }
 
+// #4566 — the regex rides a backtick LogQL string: inside a double-quoted LogQL string
+// `\.` is an invalid escape and Loki answers 400, which read every actor's activity as unmeasured.
+export function lokiActionQuery(window: string): string {
+  return `sum by (role) (count_over_time({job="platform-chorus"}[${window}] |~ \`agent\\.action|"event":"jeff\\.input\\.delivered"\`))`;
+}
+
 async function fetchLokiActionFacts(
   lokiBase: string,
   unmeasured: Array<{ source: string; reason: string }>,
   nowIso: string
 ): Promise<Map<string, ActionFact>> {
   const result = new Map<string, ActionFact>();
-  const q5m = encodeURIComponent(
-    'sum by (role) (count_over_time({job="platform-chorus"}[5m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))'
-  );
-  const q30m = encodeURIComponent(
-    'sum by (role) (count_over_time({job="platform-chorus"}[30m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))'
-  );
+  const q5m = encodeURIComponent(lokiActionQuery('5m'));
+  const q30m = encodeURIComponent(lokiActionQuery('30m'));
 
   try {
     const [res5m, res30m] = await Promise.all([
