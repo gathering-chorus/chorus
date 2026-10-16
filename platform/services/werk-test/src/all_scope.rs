@@ -1466,8 +1466,7 @@ mod leg_times_4253 {
 
 fn runs_folder() -> Result<werk_test::run_dir::RunDir, String> {
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
-    let base = std::env::var("WERK_TEST_RUNS").map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| Path::new(&env_or("HOME", "/tmp")).join(".chorus/werk-test-runs"));
+    let base = werk_test::run_dir::runs_base();
     werk_test::run_dir::RunDir::create(werk_test::run_dir::folder_for(&base, &trace)?)
 }
 

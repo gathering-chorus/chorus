@@ -45,6 +45,18 @@ pub fn check_type(kind: CheckKind) -> &'static str {
     }
 }
 
+/// #4562 — where run folders live: WERK_TEST_RUNS, else the team's state dir
+/// (CHORUS_STATE_DIR, so a role on its own account shares it, #4535), else
+/// ~/.chorus. One place, so the #4535 ratchet counts one HOME read, not two.
+pub fn runs_base() -> PathBuf {
+    if let Ok(r) = std::env::var("WERK_TEST_RUNS") {
+        return PathBuf::from(r);
+    }
+    let state = std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("{}/.chorus", std::env::var("HOME").unwrap_or_default()));
+    PathBuf::from(state).join("werk-test-runs")
+}
+
 /// The folder for a run: `<base>/<trace>`. An empty trace is refused — a
 /// folder named for nothing would be shared by every run without one.
 pub fn folder_for(base: &Path, trace: &str) -> Result<PathBuf, String> {
