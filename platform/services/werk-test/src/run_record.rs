@@ -9,7 +9,7 @@
 //! nudged, recorded and read out. These are the PURE halves of that work —
 //! every fold, classification, message and census is a function of its inputs
 //! and proven here; the orchestration (processes, files, clocks) lives in the
-//! binary's `nightly_all` module.
+//! binary's `all_scope` module.
 //!
 //! The output contract is unchanged on purpose: the page, the daily readers
 //! and the readout API parse `RUN|start|<ts>|pid=N`, `RUN|complete|<ts>|suites=N`,

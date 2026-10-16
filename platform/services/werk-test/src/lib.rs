@@ -16,7 +16,7 @@
 //! The pure decision core (`affected_units` / `is_self_modifying` / `gate_outcome`)
 //! is unit-tested with no subprocess; the git-diff + runners wire on top.
 
-pub mod nightly_run;
+pub mod run_record;
 pub mod why;
 pub mod run_dir;
 pub type R<T> = Result<T, String>;
@@ -4071,7 +4071,7 @@ pub fn nightly_stage_absent_line(stage: &str) -> String {
     )
 }
 
-/// #4160 — the ui lane's verdict from playwright's output (was nightly_all's
+/// #4160 — the ui lane's verdict from playwright's output (was all_scope's
 /// leg_ui; the ui lane now runs inside the runner, in its type's stage).
 /// No summary is UNMEASURED, never pass.
 pub fn ui_lane_verdict(rc: i32, out: &str) -> (&'static str, String) {
@@ -4174,7 +4174,7 @@ mod stages_4160 {
         assert_eq!(file_suite_stage("platform/tests/y.bats", &[]), "unclassified");
     }
 
-    /// (moved with the ui lane from nightly_all's lanes_4278 test)
+    /// (moved with the ui lane from all_scope's lanes_4278 test)
     #[test]
     fn ui_verdict_fails_on_a_failure_and_never_passes_on_silence() {
         let out = "  \u{2718}  1 [chromium] \u{203a} login-journey.spec.cjs:9:3 \u{203a} signs in\n  1 failed\n  94 passed (1.2m)\n";

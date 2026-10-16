@@ -2,7 +2,7 @@
 //! #4144 AC5 — a failed suite's text survives the next run. Before: one file per
 //! unit under ~/.chorus/nightly-failures, overwritten by the next run, so the
 //! 03:00 detail was gone after an 08:00 run.
-use werk_test::nightly_run::{keep_fail_text, prune_run_dirs, run_fail_dir};
+use werk_test::run_record::{keep_fail_text, prune_run_dirs, run_fail_dir};
 
 fn world(tag: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("wt-4144-{}-{}-{}", tag, std::process::id(),

@@ -166,7 +166,7 @@ pub fn scope_unit_names(
             }
         }
         // #4270 — coverage-floors.yml is a repo-root DATA file that werk-test
-        // reads at nightly time (nightly_all.rs WERK_TEST_COVERAGE_FLOORS) to
+        // reads at nightly time (all_scope.rs WERK_TEST_COVERAGE_FLOORS) to
         // decide the coverage and denominator rows. It is not prose and not a
         // schedule: change it and a test verdict changes, so it must RUN
         // something rather than be waved through as irrelevant. It scopes to

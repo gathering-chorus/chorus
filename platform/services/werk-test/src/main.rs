@@ -23,7 +23,7 @@ use werk_test::{
     is_node_test_file, node_test_plan, package_test_script,
 };
 
-mod nightly_all;
+mod all_scope;
 
 // #4446 — a scheduled job logs its own failure.
 #[allow(dead_code)] // each crate uses part of the shared helper
@@ -121,13 +121,13 @@ fn run(args: &[String]) -> Result<i32, String> {
         let all = args.iter().any(|a| a == "--scope=all");
         if step == "notify" || (all && werk_test::run_dir::STEPS.contains(&step)) {
             std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
-            return nightly_all::step_all(step, &args[1..], args, &pin_or_handoff);
+            return all_scope::step_all(step, &args[1..], args, &pin_or_handoff);
         }
     }
     // #4540 — the nightly's read-only answers, by name: `last-run`
     // (daily-review), `load-gate` (load-reclassify), `classify` (the row fold).
     // The 03:00 run itself is the dagu nightly calling the steps above.
-    if let Some(r) = nightly_all::read_mode(args) {
+    if let Some(r) = all_scope::read_mode(args) {
         return r;
     }
     // `lane` — the one queue the run step drives as its child (every type in
@@ -1291,7 +1291,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                     c.file_path,
                     c.test_name,
                     c.result,
-                    werk_test::nightly_run::registered_suffix_len(&c.test_name, registered)
+                    werk_test::run_record::registered_suffix_len(&c.test_name, registered)
                 );
             }
             println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
@@ -2858,7 +2858,7 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
             }
             {
                 // #4145 — keep the WHY of every failed case in the lane output
-                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                for l in werk_test::run_record::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
                     println!("{}", l);
                 }
                 let mut reasons = jest_reasons_via_jq(stdout.as_bytes(), werk);
@@ -3105,7 +3105,7 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
             }
             {
                 // #4145 — keep the WHY of every failed case in the lane output
-                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                for l in werk_test::run_record::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
                     println!("{}", l);
                 }
                 {
