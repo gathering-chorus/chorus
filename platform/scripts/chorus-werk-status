@@ -53,6 +53,9 @@ PRESENTED_TTL_MS = 24 * 3600 * 1000
 DAGU = os.environ.get("CWS_DAGU", "http://127.0.0.1:8526")
 DAGU_DAG = os.environ.get("CWS_DAGU_DAG", "cicd")
 ATHENA_DAG = os.environ.get("CWS_ATHENA_DAG", "athena")
+# #4553 — main is the fact a land reached: the card's commit there after the land began
+GIT_DIR = os.environ.get("CWS_GIT_DIR", os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")))
+MAIN_REF = os.environ.get("CWS_MAIN_REF", "origin/main")
 DAGU_CONFIG = os.environ.get("CWS_DAGU_CONFIG", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/config/dagu.yaml"))
 
 # act stage markers, in pipeline order — last one seen in the log wins
@@ -267,7 +270,8 @@ def card_detail(card, pin_status):
         # shows, even when it also has old v1 runs: #4004 read "[?] landed · 18
         # runs" from its v1 pin while its v2 land was still running.
         head = card_line(card, (re.search(r"ROLE=(\S+)", v2[0].get("params") or "") or [None, "?"])[1],
-                         v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions())
+                         v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions(),
+                         wip=str(card) in {str(c) for c, _ in (wip_cards() or [])})
     elif pin_status:
         head = render(pin_status, pid_start_times(), time.time() * 1000)
         # #4453 — #4444: the header said "running · deploy-canonical" while the
@@ -398,7 +402,8 @@ def fixture_mode():
         print(f"fixture: cws reads {ours[0]} + flagged round: {we_catch}")
         for r in rendered:
             print("  " + r)
-        if naive_wrong and we_catch:
+        rows_ok = fixture_4553()
+        if naive_wrong and we_catch and rows_ok:
             print("NEGATIVE PROOF OK — cws distinguishes the states verbatim-trust cannot.")
             return 0
         print("NEGATIVE PROOF FAILED — this tool must not be trusted for status.")
@@ -705,15 +710,81 @@ def ordinal(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-def card_line(card, role, runs, lands, places, now=None):
+# #4553 (Kade) — werk-commit's words when another run of the card is live
+LIVE_REFUSAL = re.compile(r"refused: \S+ run \d+ is live \(dagu [^)]+\)")
+NO_REASON = "no reason in dagu's record of the step"
+STEP_NOISE = re.compile(r"^(exit status \d+|recent stderr|chorus-runner call:|upstream failed)")
+STEP_WHY = re.compile(r"REFUSED|refus|error|FAIL|panicked|timed out|timeout|not found|missing", re.I)
+
+
+def step_reason(node):
+    """#4553 — a failed step's own words, from dagu's record of it (the tail of
+    its stderr). #4538 run 10 read "failed at test" with nothing after it; the
+    step's record held "domain-select: REFUSED — gate-test-type.sh: no test …"."""
+    lines = [l.strip() for l in (node.get("error") or "").splitlines()]
+    # "LOUD, not blocking" lines did not stop the step (#4538 runs 11-13 named
+    # budget-over, while a jest failure was the stop)
+    lines = [l for l in lines if l and not STEP_NOISE.match(l) and "not blocking" not in l]
+    pick = (next((l for l in lines if STEP_WHY.search(l)), None)
+            or next((l for l in reversed(lines) if re.match(r"werk-[\w-]+: ", l)), None))
+    return pick[:90] if pick else NO_REASON
+
+
+def merged_on_main(card, since_ms):
+    """#4553 — the card's commit on main, made after `since_ms`, or None. #4547's
+    land read "failed at merge" (13:05) after werk-merge timed out at 60s with
+    the merge already on main (389917d79). Main is the fact; the step is a claim."""
+    try:
+        since = datetime.fromtimestamp(since_ms / 1000, timezone.utc).isoformat()
+        out = subprocess.run(["git", "-C", GIT_DIR, "log", MAIN_REF, f"--since={since}", "--format=%h%x09%s"],
+                             capture_output=True, text=True, timeout=15).stdout
+    except Exception:
+        return None
+    mine = re.compile(r"^(?:[\w-]+: )?#%s\b" % re.escape(str(card)))
+    return next((sha for sha, _, subj in (l.partition("\t") for l in out.splitlines()) if mine.match(subj)), None)
+
+
+def live_runs(runs):
+    """#4553 — runs of the card dagu still has going. An older run waiting at the
+    go is superseded, never live; an older run building is (#4536 15:35: a second
+    enqueue started and died on the first run's build lock)."""
+    return [r for i, r in enumerate(runs)
+            if r.get("statusLabel") in ("running", "queued") or (i == 0 and r.get("statusLabel") == "waiting")]
+
+
+def run_count(runs):
+    """#4553 — "run N" names its pipeline. #4536 "run 13" was its first cicd
+    run: twelve athena runs came first. The newest run's pipeline leads."""
+    name = runs[0].get("name", DAGU_DAG)
+    mine = sum(1 for r in runs if r.get("name", DAGU_DAG) == name)
+    other = {}
+    for r in runs:
+        n = r.get("name", DAGU_DAG)
+        if n != name:
+            other[n] = other.get(n, 0) + 1
+    return f"{name} run {mine}" + "".join(f" · {n} {c} run{'s' if c != 1 else ''}" for n, c in sorted(other.items()))
+
+
+def card_line(card, role, runs, lands, places, now=None, wip=False):
     """#4494 — one line per card: where it is now, for how long, which run.
     Jeff, 2026-10-10: "the cws output is confusing" — a dead v1 line, the build
-    and its land on separate lines, and two different run counts for one card."""
+    and its land on separate lines, and two different run counts for one card.
+    #4553 — `wip`: the card is on the board's WIP list. A WIP card whose newest
+    thing is a finished land was reopened (#4530 read "landed (10:09)" from
+    10:15 to 15:40 while it was worked)."""
     now = now or time.time()
     newest = runs[0]
     started = parse_ts(newest.get("startedAt") or newest.get("queuedAt")) or 0
     # a land belongs to the newest run only if it was queued after that run began
     land = next((l for l in lands or [] if (parse_ts(l.get("queuedAt") or l.get("startedAt")) or 0) >= started), None)
+    if land is None and lands:
+        # #4553 — #4536 landed at 18:04 and read "aborted (18:00)": a second run
+        # enqueued after the go was aborted. A run that was aborted does not
+        # take the card's line from the land before it.
+        q = parse_ts(lands[0].get("queuedAt") or lands[0].get("startedAt")) or 0
+        after = [r for r in runs if (parse_ts(r.get("startedAt") or r.get("queuedAt")) or 0) > q]
+        if after and all(r.get("statusLabel") in ("aborted", "cancelled") for r in after):
+            land = lands[0]
     run = land or newest
     status, step = dagu_summary(run)
     if land is None and status == "waiting" and len(runs) > 0:
@@ -741,8 +812,15 @@ def card_line(card, role, runs, lands, places, now=None):
         # #4186 reopen — the model half rides the card's own line
         if land and athena_result(land) == "failed":
             where = "landed · athena failed"
+        if land and wip:
+            where = "reopened · no run since its land"
     else:
         where = f"{pre}{status} at {word}" if word else f"{pre}{status}"
+        sha = merged_on_main(card, parse_ts(land.get("startedAt") or land.get("queuedAt")) or now * 1000) if land else None
+        if sha:
+            where = f"landed on main {sha} · land {status} at {word}"
+            if wip:
+                where = f"reopened · landed on main {sha}, no run since"
     live = status in ("queued", "running", "waiting")
     if live and since:
         when = fmt_dur(now - since / 1000)
@@ -756,7 +834,18 @@ def card_line(card, role, runs, lands, places, now=None):
         ev = run_test_events(newest["dagRunId"], began / 1000 if began else now - 86400)
         tests = (" · " + tests_summary(tests_state(ev))) if ev else ""
         tests = "" if tests == " · " else tests
-    return f"#{card} {role:<6} {where:<34} {when:>7} · run {len(runs)}{tests}"
+    why = ""
+    if status == "failed" and not tests and not (land and "landed on main" in where):
+        why = step_reason(node)
+        live = LIVE_REFUSAL.search(why)
+        if live:
+            # #4553 (Kade) — a run refused because another is live is not a
+            # broken commit: the line is the refusal
+            where, why = live.group(0), ""
+        why = f" · {why}" if why else ""
+    many = len(live_runs(runs))
+    many = f" · {many} runs live" if many > 1 else ""
+    return f"#{card} {role:<6} {where:<34} {when:>7} · {run_count(runs)}{many}{tests}{why}"
 
 
 def dagu_detail(card, runs):
@@ -766,14 +855,28 @@ def dagu_detail(card, runs):
     if not runs:
         return
     print("\n  " + dagu_line(card, "v2", runs).split("] ", 1)[1])
-    print("  run  start        finish  result      step")
+    live = live_runs(runs)
+    if len(live) > 1:
+        # #4553 — two live runs of one card is a fault; say it before the table
+        print(f"  {len(live)} runs live: " + ", ".join(f"{r.get('name', DAGU_DAG)} {r.get('dagRunId')}" for r in live))
+    print("  pipeline  run  start        finish  result      step")
     n = len(runs)
+    count = {}
     for i, r in enumerate(reversed(runs), 1):
         status, step = dagu_state(runs, n - i)
+        name = r.get("name", DAGU_DAG)
+        count[name] = count.get(name, 0) + 1
         st, fin = parse_ts(r.get("startedAt")), parse_ts(r.get("finishedAt"))
         start = hm(st / 1000) if st else "     ?     "
         end = datetime.fromtimestamp(fin / 1000).strftime("%H:%M") if fin and status not in ("running", "waiting") else "  -  "
-        print(f"  {i:>3}  {start}  {end}   {status:<10}  {step}")
+        why = ""
+        if status == "failed":
+            node = next((x for x in nodes_of(r) if x["step"]["name"] == step), {})
+            why = step_reason(node)
+            if why == NO_REASON and step == "skill-werk-test":
+                why = test_reds(r) or why
+            why = "  — " + why
+        print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
     land = dagu_land_line(card, "v2")
     if land:
         print("  " + land.split("] ", 1)[1])
@@ -798,10 +901,138 @@ def wip_cards():
         return None
 
 
+def test_reds(run):
+    """#4553 (Wren) — a test step whose record names no reason: the suites the
+    run's own test events say went red. #4530 run 19 read "no reason in dagu's
+    record" with 5 suites red. None when Loki cannot be read or none are red."""
+    began = run_began(run)
+    ev = run_test_events(run.get("dagRunId", ""), began / 1000 if began else time.time() - 86400)
+    if not ev:
+        return None
+    red = [st["name"] for st in tests_state(ev)["suites"] if st["status"] == "failed"]
+    if not red:
+        return None
+    return f"{len(red)} suite{'s' if len(red) != 1 else ''} red: " + ", ".join(red[:3]) + (" …" if len(red) > 3 else "")
+
+
+def why_run(name, run_id):
+    """#4553 (Kade) — `--why DAG_NAME RUN_ID`: the failure nudge's words for one
+    run. A run refused because another is live says so ("refused: cicd run 13
+    is live (dagu …)"), never "failed at werk-commit"; any other failure names
+    its step and its reason. Exit 2 when dagu cannot be read (the handler then
+    falls back to its plain words)."""
+    try:
+        d = dagu_get(f"/api/v1/dag-runs/{name}/{run_id}")
+    except Exception:
+        return 2
+    nodes = (d.get("dagRunDetails") or {}).get("nodes") or []
+    node = next((n for n in nodes if n.get("statusLabel") == "failed"), None)
+    if node is None:
+        return 2
+    why = step_reason(node)
+    live = LIVE_REFUSAL.search(why)
+    word = node["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
+    if why == NO_REASON and word == "test":
+        why = test_reds(dict(d.get("dagRunDetails") or {}, dagRunId=run_id, nodes=nodes)) or why
+    print(live.group(0) if live else f"{name} failed at {word}: {why}")
+    return 0
+
+
+def live_other(card, me):
+    """#4553 — `--live-other CARD RUN_ID`: is another run of this card live?
+    The first step of a card run asks before it starts (#4536 15:35: a second
+    enqueue started and died on the first run's build lock 3 minutes in).
+    Exit 3 + the refusal line when one is; 0 when none; 2 when dagu is unreadable."""
+    runs = dagu_runs(card)
+    if runs is None:
+        print(f"dagu unreadable at {DAGU}: cannot tell whether another run of #{card} is live")
+        return 2
+    count, n = {}, {}
+    for r in reversed(runs):
+        name = r.get("name", DAGU_DAG)
+        count[name] = count.get(name, 0) + 1
+        n[r.get("dagRunId")] = count[name]
+    other = [r for r in live_runs(runs) if r.get("dagRunId") != me
+             and r.get("statusLabel") in ("running", "queued")]
+    if not other:
+        return 0
+    r = other[0]
+    print(f"refused: {r.get('name', DAGU_DAG)} run {n[r.get('dagRunId')]} is live (dagu {r.get('dagRunId')})")
+    return 3
+
+
+def fixture_4553():
+    """#4553 — one row per wrong line /cws printed on 2026-10-15, each run
+    against its violation: the row passes only if the true state and the state
+    that misled tell apart. Builds its own runs and its own main; reads no
+    live dagu, board or git."""
+    global DAGU, GIT_DIR, MAIN_REF, LOKI
+    keep = (DAGU, GIT_DIR, MAIN_REF, LOKI)
+    LOKI = "http://127.0.0.1:9"  # no test events: the step's record is the only reason
+    with tempfile.TemporaryDirectory() as td:
+        git = ["git", "-C", td, "-c", "user.name=fx", "-c", "user.email=fx@fx", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", td], check=True)
+        for subj in ("#1520 (kade) (#8)", "wren: #153 — follows #152 (#9)", "#152 (wren) (#10)"):
+            subprocess.run(git + ["commit", "-q", "--allow-empty", "-m", subj], check=True)
+        GIT_DIR, MAIN_REF = td, "HEAD"
+        DAGU = "file:///nonexistent"  # nodes ride the fixture runs; nothing is read
+        t0 = datetime.now(timezone.utc).timestamp() - 3600
+        at = lambda m: datetime.fromtimestamp(t0 + m * 60, timezone.utc).isoformat()
+        node = lambda st, name, err="": {"statusLabel": st, "step": {"name": name}, "error": err}
+        run = lambda rid, name, st, m, nodes, card=1: {"name": name, "dagRunId": rid, "params": f"CARD={card} ROLE=wren",
+                                                     "statusLabel": st, "startedAt": at(m), "queuedAt": at(m),
+                                                     "finishedAt": at(m + 5), "nodes": nodes, "onSuccess": {}}
+        go = run("g", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-go")])
+        landed = run("L", "cicd-land", "succeeded", 6, [node("succeeded", "skill-werk-accept")])
+        merge_fail = lambda card: [[run("g", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-go")], card)],
+                                   [run("L", "cicd-land", "failed", 6, [node("failed", "skill-werk-merge", "werk-merge: timed out after 60s")], card)]]
+        refused = run("t", "cicd", "failed", 0, [node("failed", "skill-werk-test",
+                      "exit status 2\nrecent stderr (tail):\nchorus-runner call: werk-test\ndomain-select: REFUSED — x.sh: no test")])
+        noise = run("t", "cicd", "failed", 0, [node("failed", "skill-werk-test", "exit status 1\nrecent stderr (tail):\n")])
+        two = [run("b2", "cicd", "running", 10, [node("running", "skill-werk-commit")]),
+               run("b1", "cicd", "running", 0, [node("running", "skill-werk-build")])]
+        one = [run("b2", "cicd", "running", 10, [node("running", "skill-werk-commit")]),
+               run("b1", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")])]
+        halves = [run("c1", "cicd", "failed", 20, [node("failed", "skill-werk-build", "werk-build: error")]),
+                  run("a2", "athena", "failed", 10, [node("failed", "skill-athena-gen", "athena-gen: refused")]),
+                  run("a1", "athena", "failed", 0, [node("failed", "skill-athena-gen", "athena-gen: refused")])]
+        line = lambda card, runs, lands, wip=False: card_line(card, "wren", runs, lands, {}, wip=wip)
+        cases = [
+            ("a reopened WIP card never reads landed",
+             "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
+            ("a failed step names its reason",
+             "REFUSED" in line(151, [refused], []) and "no reason in dagu's record" in line(151, [noise], [])),
+            ("a land whose merge is on main reads landed",
+             "landed on main" in line(152, *merge_fail(152)) and "landed on main" not in line(15, *merge_fail(15))),  # #15 is not #152 or #1520
+            ("an aborted run after the go does not hide the land",
+             "landed" in line(156, [run("x", "cicd", "aborted", 8, [])] + [go], [landed])
+             and "landed" not in line(156, [run("x", "cicd", "failed", 8, [node("failed", "skill-werk-build", "werk-build: error")])] + [go], [landed])),
+            ("a run refused because another is live reads refused, not failed at commit",
+             line(157, [run("r", "cicd", "failed", 0, [node("failed", "skill-werk-commit",
+                  "exit status 1\nwerk-commit: refused: cicd run 13 is live (dagu abc)")])], []).split()[2] == "refused:"
+             and "failed at commit" in line(157, [run("r", "cicd", "failed", 0, [node("failed", "skill-werk-commit",
+                  "exit status 1\nwerk-commit: commit failed (pre-commit gate?)")])], [])),
+            ("two live runs say so",
+             "2 runs live" in line(153, two, []) and "runs live" not in line(153, one, [])),
+            ("run N names its pipeline",
+             "cicd run 1 · athena 2 runs" in line(155, halves, []) and "cicd run 3" not in line(155, halves, [])),
+        ]
+        DAGU, GIT_DIR, MAIN_REF, LOKI = keep
+    for name, ok in cases:
+        print(f"fixture #4553: {'ok  ' if ok else 'FAIL'} {name}")
+    return all(ok for _, ok in cases)
+
+
 def main():
     args = sys.argv[1:]
     if "--fixture" in args:
         sys.exit(fixture_mode())
+    if "--why" in args:
+        i = args.index("--why")
+        sys.exit(why_run(args[i + 1], args[i + 2]))
+    if "--live-other" in args:
+        i = args.index("--live-other")
+        sys.exit(live_other(args[i + 1], args[i + 2]))
     role = None
     card = None
     if "--role" in args:
@@ -837,7 +1068,7 @@ def main():
         logs = run_logs(cid)
         if v2:
             # #4494 — one line per card, from dagu, the one source of a v2 run
-            print(card_line(cid, who, v2, dagu_runs(cid, f"{DAGU_DAG}-land"), places))
+            print(card_line(cid, who, v2, dagu_runs(cid, f"{DAGU_DAG}-land"), places, wip=True))
         elif pin:
             last = run_summary(logs[-1]) if logs else None
             tail = f" · {len(logs)} run{'s' if len(logs) != 1 else ''}"

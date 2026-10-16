@@ -50,7 +50,10 @@ fn a_404_inside_a_header_value_is_not_a_404() {
 
 #[test]
 fn live_serve_loop_contract() {
-    let port = 3897u16;
+    // #4553 — a port the OS hands out, not a fixed one. Two runs (#4553 run 2,
+    // #4530 run 20) both started a server on :3897 at 20:18 and both read "did
+    // not come up"; and a fixed port could answer ready from ANOTHER run's server.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).expect("a free port").port();
     let base = format!("http://127.0.0.1:{}", port);
     let bin = env!("CARGO_BIN_EXE_athena-make");
     // OWL_API_MODEL_COMMIT set so the ETag activates (else it's suppressed as "unknown").
@@ -61,21 +64,29 @@ fn live_serve_loop_contract() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn athena-make serve");
-    let _killer = Killer(child); // kills on scope exit, even on panic
+    let mut killer = Killer(child); // kills on scope exit, even on panic
 
     // wait for ready
     let mut ready = false;
     // #4292 — startup now generates ~56 APIs from the live model; measured
     // ready after 6-10s on 2026-09-25, so the old 6s budget failed every time.
-    for _ in 0..300 {
-        std::thread::sleep(Duration::from_millis(100));
+    // #4553 — measured 61s on 2026-10-15 20:45 (load 25-29 on 8 cores), past
+    // the 30s budget. The wait now tells a dead server from a slow one: a
+    // server that exits fails at once with its exit status; one still alive
+    // gets up to 120s and then says it was alive but not ready.
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(120) {
+        std::thread::sleep(Duration::from_millis(200));
+        if let Ok(Some(status)) = killer.0.try_wait() {
+            panic!("athena-make serve exited before it was ready: {}", status);
+        }
         let (_, b) = curl(&format!("{}/health", base), &[]);
         if b.contains("\"ok\": true") {
             ready = true;
             break;
         }
     }
-    assert!(ready, "athena-make did not come up on :{}", port);
+    assert!(ready, "athena-make alive but not ready on :{} after {:?}", port, start.elapsed());
 
     // 1) discovery root
     let (_, disc) = curl(&format!("{}/", base), &[]);

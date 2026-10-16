@@ -107,6 +107,12 @@ pub fn durable_pulse_path() -> std::path::PathBuf {
 /// as readers move to the durable path.
 fn write_pulse(out: &str) {
     write_atomic(&durable_pulse_path(), out);
+    // #4553 — a pulse sent elsewhere (CHORUS_PULSE_PATH, a test's own file)
+    // leaves the team's shared cache alone: session_start_pulse poisoned
+    // /tmp/pulse-latest.json with a 2020 stamp while its sibling test read it.
+    if std::env::var_os("CHORUS_PULSE_PATH").is_some() {
+        return;
+    }
     // derived cache (back-compat); the durable file above is the source of truth.
     write_atomic(std::path::Path::new("/tmp/pulse-latest.json"), out);
 }

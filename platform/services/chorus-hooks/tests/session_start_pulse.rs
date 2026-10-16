@@ -19,24 +19,36 @@ fn test_sessions_dir() -> String {
     dir.to_string_lossy().into_owned()
 }
 
+/// #4553 — each test's own pulse file. All three tests read and wrote the one
+/// shared /tmp/pulse-latest.json, in parallel: one poisoned it with a 2020
+/// stamp while another read it (#4553 run 2, 20:25), and every role's prompt
+/// read the poison too. CHORUS_PULSE_PATH sends the shim's pulse here instead.
+fn pulse_file(test: &str) -> String {
+    let p = std::env::temp_dir().join(format!("session_start_pulse_{}_{}.json", std::process::id(), test));
+    let _ = fs::remove_file(&p);
+    p.to_string_lossy().into_owned()
+}
+
 /// Session-start regenerates pulse-latest.json with fresh data
 #[test]
 fn session_start_regenerates_pulse() {
     // Write a poison pulse file with known stale content
     let stale_pulse = r#"{"timestamp":"2020-01-01T00:00:00","stale_marker":true,"index_freshness":{"dead":99}}"#;
-    fs::write("/tmp/pulse-latest.json", stale_pulse).expect("should write stale pulse");
+    let pulse = pulse_file("regenerates");
+    fs::write(&pulse, stale_pulse).expect("should write stale pulse");
 
     // Run session-start
     let output = std::process::Command::new(SHIM)
         .args(["session-start", "silas"])
         .env("CHORUS_SESSIONS_DIR", test_sessions_dir())
+        .env("CHORUS_PULSE_PATH", &pulse)
         .output()
         .expect("session-start should execute");
 
     assert!(output.status.success(), "session-start should succeed");
 
     // Pulse file should have been regenerated — stale_marker gone
-    let content = fs::read_to_string("/tmp/pulse-latest.json")
+    let content = fs::read_to_string(&pulse)
         .expect("pulse-latest.json should exist after session-start");
     assert!(
         !content.contains("stale_marker"),
@@ -49,12 +61,14 @@ fn session_start_regenerates_pulse() {
 #[test]
 fn session_start_pulse_has_fresh_freshness() {
     // Run session-start
+    let pulse = pulse_file("fresh");
     let _ = std::process::Command::new(SHIM)
         .args(["session-start", "silas"])
         .env("CHORUS_SESSIONS_DIR", test_sessions_dir())
+        .env("CHORUS_PULSE_PATH", &pulse)
         .output();
 
-    let content = fs::read_to_string("/tmp/pulse-latest.json")
+    let content = fs::read_to_string(&pulse)
         .expect("pulse-latest.json should exist");
     let v: serde_json::Value = serde_json::from_str(&content)
         .expect("pulse should be valid JSON");
@@ -80,12 +94,14 @@ fn session_start_pulse_has_fresh_freshness() {
 #[test]
 fn pulse_no_stale_freshness_alerts_when_index_fresh() {
     // Run pulse to get current state
+    let pulse = pulse_file("alerts");
     let _ = std::process::Command::new(SHIM)
         .arg("pulse")
         .env("CHORUS_SESSIONS_DIR", test_sessions_dir())
+        .env("CHORUS_PULSE_PATH", &pulse)
         .output();
 
-    let content = fs::read_to_string("/tmp/pulse-latest.json")
+    let content = fs::read_to_string(&pulse)
         .expect("pulse-latest.json should exist");
     let v: serde_json::Value = serde_json::from_str(&content)
         .expect("pulse should be valid JSON");

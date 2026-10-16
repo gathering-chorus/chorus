@@ -508,11 +508,44 @@ pub fn run_commit() -> R<String> {
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
+    // #4553 — a pipeline run's commit step (dagu sets DAG_RUN_ID) refuses while
+    // another run of the card is live, before anything is touched.
+    if let (Mode::Atomic, Ok(run_id)) = (&p.mode, env::var("DAG_RUN_ID")) {
+        live_run_refusal(&home, p.card, &run_id)?;
+    }
     match p.mode {
         Mode::Flow => commit(p.card, &role, &p.summary, &home, &werk_base),
         Mode::Atomic => commit_atomic(p.card, &role, &p.summary, &home, &werk_base),
         Mode::Continue => commit_continue(p.card, &role, &home, &werk_base),
         Mode::Abort => commit_abort(p.card, &role, &home, &werk_base),
+    }
+}
+
+/// #4553 (Kade) — refuse a card run while another run of the same card is live.
+/// #4536 run 14 started beside a live run and died 3 minutes in on the build
+/// lock, reading as a broken build. /cws owns the reading of dagu (both
+/// pipelines, paging, the card match), so this asks it:
+/// `chorus-werk-status --live-other <card> <run id>` exits 3 with
+/// "refused: <pipeline> run N is live (dagu <id>)". Dagu unreadable (exit 2) or
+/// any other answer lets the run go on: the build lock still guards, and the
+/// step says it could not check.
+pub fn live_run_refusal(home: &Path, card: u64, run_id: &str) -> R<()> {
+    let cws = home.join("platform/scripts/chorus-werk-status");
+    let out = match Command::new("python3").arg(&cws).args(["--live-other", &card.to_string(), run_id]).output() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("werk-commit: could not ask {} whether another run is live: {}", cws.display(), e);
+            return Ok(());
+        }
+    };
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(3) => Err(said),
+        _ => {
+            eprintln!("werk-commit: could not check for another live run of #{}: {}", card, said);
+            Ok(())
+        }
     }
 }
 
