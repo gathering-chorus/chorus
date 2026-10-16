@@ -55,6 +55,20 @@ pub fn folder_for(base: &Path, trace: &str) -> Result<PathBuf, String> {
     Ok(base.join(t))
 }
 
+/// #4540 run 2 — which folder a run uses. A step shares its pipeline's
+/// folder, keyed on the trace. A whole run in one process (no step: fixtures,
+/// hand runs, a bats test spawning werk-test inside a card run) gets its own
+/// folder and removes it after, so it must never take the trace's: measured
+/// 10-16 09:07, a no-step run inherited the card run's trace and removed the
+/// folder before `verdict` read it ("uncovered is missing").
+pub fn run_key(trace: &str, step: Option<&str>, card: &str, pid: u32) -> Result<String, String> {
+    match step {
+        Some(s) if trace.trim().is_empty() => Err(format!("`werk-test {}` needs CHORUS_TRACE_ID: the run folder is keyed on it", s)),
+        Some(_) => Ok(trace.to_string()),
+        None => Ok(format!("local-{}-{}", card, pid)),
+    }
+}
+
 pub struct RunDir {
     pub path: PathBuf,
 }
@@ -366,5 +380,25 @@ mod tests {
                   CheckKind::LintRatchet, CheckKind::DocCoherence, CheckKind::Bats, CheckKind::UiFlows] {
             assert!(TEST_TYPES.contains(&check_type(k)), "{:?}", k);
         }
+    }
+}
+
+#[cfg(test)]
+mod run_key_4540 {
+    use super::run_key;
+
+    #[test]
+    fn a_step_shares_the_trace_folder() {
+        assert_eq!(run_key("034gv56", Some("verdict"), "4540", 7).unwrap(), "034gv56");
+        assert!(run_key("", Some("scope"), "4540", 7).is_err());
+    }
+
+    /// NEGATIVE PROOF: a whole run in one process never takes the trace's
+    /// folder, even with CHORUS_TRACE_ID set — it removes its folder after.
+    #[test]
+    fn a_whole_run_never_takes_the_trace_folder() {
+        let k = run_key("034gv56", None, "4540", 7).unwrap();
+        assert_ne!(k, "034gv56");
+        assert_eq!(k, "local-4540-7");
     }
 }

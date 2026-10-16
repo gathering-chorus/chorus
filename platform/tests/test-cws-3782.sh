@@ -307,7 +307,7 @@ cat > "$TD/loki/r9.jsonl" <<'EOF5'
 EOF5
 cws2() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d2" CWS_LOKI="file://$TD/loki" "$CWS" "$@"; }
 out=$(cws2 111)
-t "the run's tests: done of planned, ok, failed, running" "tests (run 1): 1 ok · 1 failed · running (2 of 4)" "$out"
+t "the run's tests: done of planned, ok, failed, running" "tests (cicd run 1): 1 ok · 1 failed · running (2 of 4)" "$out"
 t "a failed suite names itself" "✗ jest:platform/api" "$out"
 t "its failed case sits under it, with the reason" "tree.test.ts — the tree answers from the graph — expected 10 got 0" "$out"
 t "a long unit shows its count while it runs" "… cargo-test:chorus-hooks running — 120 passed · 0 failed of 476" "$out"
