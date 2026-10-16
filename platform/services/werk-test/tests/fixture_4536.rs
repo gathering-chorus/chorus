@@ -204,6 +204,7 @@ fn run_in_path(base: &Path, card: &str, registry_rows: &[String], patch_status: 
         .env_remove("CHORUS_HOME")
         .env("CHORUS_WRITE_TOKEN", "fixture")
         .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
         .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
         .env("WERK_STACK_PROBES", format!("door={door}/"))
         .output()
@@ -287,6 +288,7 @@ fn run_nightly(root_name: &str, files: &[(&str, &str)], registry_rows: &[String]
         .env_remove("CHORUS_HOME")
         .env("CHORUS_WRITE_TOKEN", "fixture")
         .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
         .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
         .env("WERK_STACK_PROBES", format!("door={door}/"))
         .env("WERK_TEST_SUITE_WORKERS", "1")
@@ -627,6 +629,7 @@ fn run_steps(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[Str
             .env_remove("CHORUS_HOME")
             .env("CHORUS_WRITE_TOKEN", "fixture")
             .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
             .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
             .env("WERK_STACK_PROBES", format!("door={door}/"))
             .output()
@@ -753,6 +756,7 @@ fn run_nightly_steps(tag: &str, files: &[(&str, &str)], registry_rows: &[String]
             .env("CHORUS_WRITE_TOKEN", "fixture")
             .env("OWLAPI", &door)
             .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
             .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
             .env("WERK_STACK_PROBES", format!("door={door}/"))
             .env("WERK_TEST_SUITE_WORKERS", "1")
@@ -841,4 +845,59 @@ fn a_later_step_runs_the_copy_scope_pinned_not_the_installed_one() {
     let out = step("pin-b", &["verdict", "--scope=all"]);
     assert!(!out.contains("pinned build"), "{out}");
     let _ = std::fs::remove_dir_all(&base);
+}
+
+// ── #4540 — the queue runs types in the model's order ──
+
+fn typed_row(file: &str, test: &str, entity: &str, ttype: &str) -> String {
+    format!("{{\"filePath\":\"{file}\",\"covers\":\"werk\",\"testType\":\"{ttype}\",\
+             \"testName\":\"{test}\",\"name\":\"{entity}\",\"hermeticity\":\"hermetic\"}}")
+}
+
+fn plan_order(order: Option<&str>) -> Vec<String> {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-order-{}-{}", order.is_some(), std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("chorus");
+    for f in ["platform/tests/u.bats", "platform/tests/i.bats"] {
+        let p = root.join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, PASS).unwrap();
+    }
+    let registry = format!("{{\"data\":[{},{}]}}",
+        typed_row("platform/tests/u.bats", "p", "test-u", "unit"), typed_row("platform/tests/i.bats", "p", "test-i", "integration"));
+    let (port, _) = stub(registry, 200);
+    let door = format!("http://127.0.0.1:{}", port);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_werk-test"));
+    cmd.arg("lane").env("PATH", stub_path(&base)).env("CHORUS_ROOT", &root).env_remove("CHORUS_HOME")
+        .env("CHORUS_WRITE_TOKEN", "fixture").env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+        .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns")).env("WERK_STACK_PROBES", format!("door={door}/"))
+        .env("WERK_TEST_SUITE_WORKERS", "1").env("WERK_TEST_LOAD_CAP", "100000").env_remove("WERK_TEST_TYPE_ORDER");
+    if let Some(o) = order {
+        cmd.env("WERK_TEST_TYPE_ORDER", o);
+    }
+    let out = cmd.output().unwrap();
+    let _ = std::fs::remove_dir_all(&base);
+    String::from_utf8_lossy(&out.stdout).lines()
+        .filter_map(|l| l.strip_prefix("nightly-plan|")).map(String::from).collect()
+}
+
+#[test]
+fn the_queue_starts_types_in_the_built_in_order_by_default() {
+    let plan = plan_order(None);
+    let u = plan.iter().position(|l| l.contains("u.bats")).expect("unit planned");
+    let i = plan.iter().position(|l| l.contains("i.bats")).expect("integration planned");
+    assert!(u < i, "{plan:?}");
+}
+
+/// AC7 NEGATIVE PROOF (Wren 10-16): swap unit and integration in the model and
+/// the queue starts integration first.
+#[test]
+fn negative_proof_a_swapped_model_order_swaps_the_queue() {
+    let mut order: Vec<&str> = werk_test::STAGE_ORDER.to_vec();
+    let (u, i) = (order.iter().position(|s| *s == "unit").unwrap(), order.iter().position(|s| *s == "integration").unwrap());
+    order.swap(u, i);
+    let plan = plan_order(Some(&order.join(",")));
+    let u = plan.iter().position(|l| l.contains("u.bats")).expect("unit planned");
+    let i = plan.iter().position(|l| l.contains("i.bats")).expect("integration planned");
+    assert!(i < u, "{plan:?}");
 }

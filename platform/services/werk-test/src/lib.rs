@@ -3919,6 +3919,76 @@ pub const STAGE_ORDER: [&str; 13] = [
     "fitness", "bdd", "e2e", "ui", "perf", "unclassified",
 ];
 
+/// #4540 — the type order as the model holds it (TestType rows, typeOrder),
+/// handed to the lane in this env as `a,b,c`. Wren 10-16: "the queue order
+/// still comes from the model (a swap in the model changes the run order)".
+pub const TYPE_ORDER_ENV: &str = "WERK_TEST_TYPE_ORDER";
+
+/// The model's order when it names every stage exactly once; `None` when it
+/// names an unknown type, misses one, or names one twice, so the caller says
+/// so out loud and runs the built-in order.
+pub fn order_from_model(names: &[String]) -> Option<Vec<&'static str>> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for n in names {
+        let s = STAGE_ORDER.iter().copied().find(|s| s == n)?;
+        if out.contains(&s) {
+            return None;
+        }
+        out.push(s);
+    }
+    (out.len() == STAGE_ORDER.len()).then_some(out)
+}
+
+/// The type names in order from the store's `?label ?order` TSV (labels may
+/// be typed literals); rows that do not parse are dropped, never guessed.
+pub fn type_order_of_tsv(tsv: &str) -> Vec<String> {
+    let mut rows: Vec<(u32, String)> = tsv.lines().skip(1).filter_map(|l| {
+        let (a, b) = l.split_once('\t')?;
+        let label = a.trim().trim_matches('"').split("\"^^").next()?.trim_matches('"').to_string();
+        let order: u32 = b.trim().trim_matches('"').split("\"^^").next()?.trim_matches('"').parse().ok()?;
+        Some((order, label))
+    }).collect();
+    rows.sort();
+    rows.into_iter().map(|(_, l)| l).collect()
+}
+
+/// The order this run uses: the model's from the env, else the built-in.
+pub fn stage_order() -> Vec<&'static str> {
+    std::env::var(TYPE_ORDER_ENV).ok()
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect::<Vec<_>>())
+        .and_then(|n| order_from_model(&n))
+        .unwrap_or_else(|| STAGE_ORDER.to_vec())
+}
+
+#[cfg(test)]
+mod type_order_4540 {
+    use super::*;
+    fn v(xs: &[&str]) -> Vec<String> { xs.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn the_models_order_is_the_run_order() {
+        let mut swapped: Vec<String> = v(&STAGE_ORDER);
+        swapped.swap(4, 6); // unit <-> integration
+        let got = order_from_model(&swapped).unwrap();
+        assert_eq!(got[4], "integration");
+        assert_eq!(got[6], "unit");
+    }
+
+    /// NEGATIVE PROOF: an unknown, missing or doubled type is not an order.
+    #[test]
+    fn negative_proof_a_partial_or_bad_model_order_is_refused() {
+        let mut short = v(&STAGE_ORDER);
+        short.pop();
+        assert!(order_from_model(&short).is_none(), "a missing type");
+        let mut bad = v(&STAGE_ORDER);
+        bad[0] = "coverag".into();
+        assert!(order_from_model(&bad).is_none(), "an unknown type");
+        let mut twice = v(&STAGE_ORDER);
+        twice[1] = "coverage".into();
+        assert!(order_from_model(&twice).is_none(), "a doubled type");
+    }
+}
+
 /// #4160 — stages the outer legs already cover (coverage, lint, eslint, smoke
 /// run before the runner; daemons + duration are perf lines after it). An
 /// empty runner stage for one of these is not "absent".
@@ -4030,7 +4100,8 @@ pub fn plan_stages(
     security_pkgs: &std::collections::BTreeSet<String>,
     integration_on: bool,
 ) -> Vec<StagePlan> {
-    let mut plans: Vec<StagePlan> = STAGE_ORDER
+    // #4540 — the model's type order (TestType rows) when the run was handed one
+    let mut plans: Vec<StagePlan> = stage_order()
         .iter()
         .map(|s| StagePlan { stage: s, cargo: Vec::new(), npm: Vec::new(), files: Vec::new() })
         .collect();

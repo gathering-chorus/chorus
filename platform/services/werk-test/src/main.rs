@@ -243,7 +243,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         Some("run") => match flag_value(args, "--test-type") {
             Some(t) => step_run(&ctx, &t),
             None => {
-                for t in werk_test::run_dir::QUEUE_TYPES {
+                use_type_order(&ctx.dir);
+                for t in werk_test::run_dir::queue_types_in(&werk_test::stage_order()) {
                     step_run(&ctx, t)?;
                 }
                 Ok(0)
@@ -258,9 +259,11 @@ fn run(args: &[String]) -> Result<i32, String> {
                     return Ok(code);
                 }
                 step_prepare(&ctx)?;
-                for t in werk_test::run_dir::TEST_TYPES {
+                use_type_order(&ctx.dir);
+                for t in werk_test::run_dir::queue_types_in(&werk_test::stage_order()) {
                     step_run(&ctx, t)?;
                 }
+                step_run(&ctx, "perf")?;
                 step_report(&ctx, false)?;
                 step_verdict(&ctx)
             })();
@@ -647,6 +650,7 @@ fn step_scope(ctx: &Ctx) -> Result<Option<i32>, String> {
     d.put("nightly", &werk_test::run_dir::pair_lines(nightly_only.iter().map(|(a, b)| (a, b))))?;
     d.put("uncovered", &uncovered)?;
     d.put("types", &types)?;
+    note_type_order(d)?;
     let _ = self_mod;
     Ok(None)
 }
@@ -3374,6 +3378,43 @@ fn emit_spine(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str,
 /// curl|jq (the quarantine pattern; zero-dep per ADR-032 §6). Returns the rows
 /// plus the plan-source label: "model" on success, "fallback" on any failure —
 /// the caller witnesses the degradation, the gate still runs on legacy lanes.
+/// #4540 — the test types in the model's order (TestType rows, typeOrder),
+/// read from the store at scope. Empty when the store does not answer or holds
+/// no rows; the run then says so and keeps the built-in order.
+pub(crate) fn fetch_type_order() -> Vec<String> {
+    let endpoint = std::env::var("FUSEKI_QUERY").unwrap_or_else(|_| "http://localhost:3030/pods/query".into());
+    let q = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \
+             SELECT ?label ?order WHERE { GRAPH ?g { ?t a chorus:TestType ; rdfs:label ?label ; chorus:typeOrder ?order } } ORDER BY ?order";
+    let out = Command::new("curl")
+        .args(["-sfS", "--max-time", "15", "-H", "Accept: text/tab-separated-values", "--data-urlencode"])
+        .arg(format!("query={q}"))
+        .arg(&endpoint)
+        .output();
+    let Ok(out) = out else { return Vec::new() };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    werk_test::type_order_of_tsv(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// #4540 — what scope says about the order, and the file it hands the steps.
+pub(crate) fn note_type_order(dir: &werk_test::run_dir::RunDir) -> Result<(), String> {
+    let names = fetch_type_order();
+    match werk_test::order_from_model(&names) {
+        Some(o) => println!("type order (from the model): {}", o.join(", ")),
+        None => println!("type order: built-in — the model {} (TestType rows, typeOrder)",
+            if names.is_empty() { "holds no rows" } else { "holds a partial or bad order" }),
+    }
+    dir.put("type-order", &names)
+}
+
+/// #4540 — the run step hands the scope's order to the queue it starts.
+pub(crate) fn use_type_order(dir: &werk_test::run_dir::RunDir) {
+    if let Some(names) = dir.get("type-order") {
+        std::env::set_var(werk_test::TYPE_ORDER_ENV, names.join(","));
+    }
+}
+
 /// #4540 — the registry read as jq TSV; None when the door or jq failed.
 fn fetch_rows_tsv() -> Option<String> {
     let endpoint = std::env::var("OWL_API_TESTS")

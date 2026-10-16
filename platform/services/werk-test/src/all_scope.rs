@@ -1557,6 +1557,7 @@ pub fn step_all(
             let daemons = sample_daemons();
             d.put("daemons", &daemons.iter().map(|(k, v)| format!("{}\t{}", k, v.map(|p| p.to_string()).unwrap_or_default())).collect::<Vec<_>>())?;
             d.put("clock", &[epoch().to_string()])?;
+            crate::note_type_order(&d)?;
             keep_order(&ctx, &d)?;
             Ok(0)
         }
@@ -1611,6 +1612,8 @@ pub fn step_all(
                     }
                 }
             }
+            // #4540 — the queue starts types in the model's order
+            crate::use_type_order(&d);
             // a dagu stop (TERM) reaps the lane child; the abort handler writes RUN|stopped
             install_stop_handler();
             let (over, _) = load_gate();

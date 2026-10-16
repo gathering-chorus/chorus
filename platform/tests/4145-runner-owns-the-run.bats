@@ -98,7 +98,7 @@ run_all() {
     CHORUS_ROOT="${ROOT_DIR:-$T/root}" CHORUS_HOME="${ROOT_DIR:-$T/root}" WERK_TEST_LOG_PATH="${LOG_PATH-$T/nightly.log}" WERK_TEST_FAIL_DIR="$T/fail" \
     CHORUS_TRACE_ID="${TRACE-034gpBats4145Fixture01}" WERK_TEST_RUNS="$T/runs" \
     OWLAPI="http://127.0.0.1:$PORT" WERK_TEST_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
-    WERK_TEST_RUNNER_CMD="${RUNNER:-$T/runner.sh}" WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
+    WERK_TEST_RUNNER_CMD="${RUNNER:-$T/runner.sh}" WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent FUSEKI_QUERY=http://127.0.0.1:9/query \
     "$BIN" $step "$@" || { [ "${step%% *}" = verdict ] || st=$?; }
   done
   return $st

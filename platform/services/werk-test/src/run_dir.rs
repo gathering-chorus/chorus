@@ -22,6 +22,18 @@ pub const TEST_TYPES: [&str; 7] = ["coverage", "lint", "security", "unit", "inte
 /// perf runs after it as its own step, so its timing sees a quiet box.
 pub const QUEUE_TYPES: [&str; 6] = ["coverage", "lint", "security", "unit", "integration", "ui"];
 
+/// The queue's types in `order` (the model's, else the built-in): the card
+/// run's types are a subset of the nightly's stages.
+pub fn queue_types_in(order: &[&str]) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = order.iter().filter_map(|o| QUEUE_TYPES.iter().copied().find(|q| q == o)).collect();
+    for q in QUEUE_TYPES {
+        if !out.contains(&q) {
+            out.push(q);
+        }
+    }
+    out
+}
+
 /// The test type a check proves. A lint ratchet, tsc and the doc floor are
 /// lint; a crate, package or suite run is unit (its integration cases run in
 /// the same binary today); the browser lane is ui.

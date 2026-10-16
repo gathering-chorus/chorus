@@ -30,7 +30,7 @@ setup() {
   export WERK_TEST_LOAD_STUB=999
   # #4540 — the nightly is dagu steps now: prepare holds, run and report see the hold
   run bash -c 'for s in scope prepare run report; do
-    CHORUS_ROOT="$0" CHORUS_HOME="$0" CHORUS_TRACE_ID=bats-3753 WERK_TEST_RUNS="$0/runs" WERK_TEST_LOAD_DEFER_SECS=0 \
+    CHORUS_ROOT="$0" CHORUS_HOME="$0" CHORUS_TRACE_ID=bats-3753 WERK_TEST_RUNS="$0/runs" WERK_TEST_LOAD_DEFER_SECS=0 FUSEKI_QUERY=http://127.0.0.1:9/query \
     WERK_TEST_RUNNER_CMD=/nonexistent WERK_TEST_LEGS_NOOP=1 OWLAPI=http://127.0.0.1:9 WERK_TEST_API=http://127.0.0.1:9 \
     "$1" "$s" --scope=all 2>&1 || exit $?; done' "$BATS_TEST_TMPDIR" "$BIN"
   [ "$status" -eq 0 ]
