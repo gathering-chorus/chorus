@@ -64,23 +64,10 @@ fn env_or(k: &str, d: &str) -> String {
     std::env::var(k).ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| d.to_string())
 }
 
-/// #4251 — launchd's own words for why the job last exited, when it has any.
-/// Best-effort: a missing or unreadable answer is None, never a guess.
+/// #4251 — launchd's words for why the job last exited. #4562: the nightly is
+/// a dagu run now, with no LaunchAgent to ask, so there is no such answer.
 fn launchd_exit_reason() -> Option<String> {
-    let uid = Command::new("id").arg("-u").output().ok()?;
-    let uid = String::from_utf8_lossy(&uid.stdout).trim().to_string();
-    let out = Command::new("launchctl")
-        .arg("print")
-        .arg(format!("gui/{uid}/com.chorus.nightly-suites"))
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let line = text.lines().find(|l| l.contains("last exit reason"))?;
-    let reason = line.split('=').nth(1)?.trim();
-    if reason.is_empty() || reason == "0" {
-        return None;
-    }
-    Some(format!("launchd {reason}"))
+    None
 }
 
 fn mint_token(root: &str, role: &str) -> Option<String> {
@@ -752,13 +739,9 @@ pub fn read_mode(args: &[String]) -> Option<Result<i32, String>> {
         // mtime against 26h: on 2026-09-21 a 21:11 hand run had written the
         // file, so the mtime was fresh, the 03:00 job had never launched, and
         // the readout showed the night before's four reds as that morning's.
-        let plist = format!(
-            "{}/Library/LaunchAgents/com.chorus.nightly-suites.plist",
-            std::env::var("HOME").unwrap_or_default()
-        );
-        let slots = werk_test::run_record::slots_from_plist(
-            &std::fs::read_to_string(&plist).unwrap_or_default(),
-        );
+        // #4562 — the slot is the dagu nightly's schedule (the plist is retired)
+        let sched = format!("{}/platform/pipelines/nightly.yaml", env_or("CHORUS_HOME", &env_or("CHORUS_ROOT", ".")));
+        let slots = werk_test::run_record::slots_from_schedule(&std::fs::read_to_string(&sched).unwrap_or_default());
         let rows = last_run_rows(&body);
         if !slots.is_empty() {
             let reds = rows.iter().filter(|l| l.contains("|fail|")).count();

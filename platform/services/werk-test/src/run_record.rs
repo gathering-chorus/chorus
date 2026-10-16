@@ -2296,6 +2296,43 @@ mod unmeasured_since_slot_4251 {
 /// Handles both shapes launchd accepts: a single `StartCalendarInterval` dict,
 /// and an array of them. A plist with no Hour key yields no slots, and the
 /// caller then makes no claim about staleness.
+/// #4562 — the nightly's slots from its dagu pipeline's `schedule:` line
+/// (`"M H * * *"`, one per comma in H or M). The LaunchAgent plist it used to
+/// read was retired 10-16; reading a missing plist gave no slots, and no slots
+/// silently skipped the "it never ran" check.
+pub fn slots_from_schedule(yaml: &str) -> Vec<(u32, u32)> {
+    let Some(line) = yaml.lines().find_map(|l| l.trim().strip_prefix("schedule:")) else { return Vec::new() };
+    let cron = line.trim().trim_matches('"').trim_matches('\'');
+    let f: Vec<&str> = cron.split_whitespace().collect();
+    if f.len() != 5 || f[2..].iter().any(|x| *x != "*") {
+        return Vec::new();
+    }
+    let nums = |x: &str| x.split(',').map(|n| n.parse::<u32>()).collect::<Result<Vec<_>, _>>().unwrap_or_default();
+    let (mins, hours) = (nums(f[0]), nums(f[1]));
+    let mut out: Vec<(u32, u32)> = hours.iter().flat_map(|h| mins.iter().map(move |m| (*h, *m))).collect();
+    out.sort();
+    out
+}
+
+#[cfg(test)]
+mod schedule_slots_4562 {
+    use super::slots_from_schedule;
+
+    #[test]
+    fn the_nightly_schedule_line_gives_its_slot() {
+        assert_eq!(slots_from_schedule("queue: nightly\nschedule: \"0 3 * * *\"\n"), vec![(3, 0)]);
+        assert_eq!(slots_from_schedule("schedule: \"30 6,13 * * *\""), vec![(6, 30), (13, 30)]);
+    }
+
+    /// NEGATIVE PROOF: no schedule, or one this cannot read, is no slots —
+    /// never a made-up 03:00.
+    #[test]
+    fn negative_proof_no_or_unreadable_schedule_is_no_slots() {
+        assert!(slots_from_schedule("queue: nightly\n").is_empty());
+        assert!(slots_from_schedule("schedule: \"0 3 * * 1-5\"").is_empty());
+    }
+}
+
 pub fn slots_from_plist(xml: &str) -> Vec<(u32, u32)> {
     // Tag scan, not line parsing: launchd plists are written both one-key-per
     // -line and all on one line, and the first version of this read only the
