@@ -131,7 +131,9 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
         </div>
         <div class="sec-t working-now" style="margin-top:14px">Working now</div>
         <div class="list">
-          ${data.workingRoles.length === 0 ? `
+          ${data.workingUnmeasured ? `
+            <div class="meta fail working-unmeasured">unmeasured: roles unreadable (${data.workingUnmeasured})</div>
+          ` : data.workingRoles.length === 0 ? `
             <div class="empty-state meta" style="padding:6px 0;color:var(--faint)">0 roles working now</div>
           ` : data.workingRoles.map(w => `
             <div class="li">

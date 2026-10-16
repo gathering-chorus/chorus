@@ -437,4 +437,27 @@ describe('Today AC: Who is working, Alerts with card, Changes since Jeff session
       await new Promise<void>((r) => s.close(() => r()));
     }
   });
+  test('5. NEGATIVE PROOF: an unreadable roles door names itself in Working now, never "0 roles working now"', async () => {
+    // Measured 2026-10-16 05:16: the first Today load under a busy box said
+    // "0 roles working now" while the Roles page showed Kade and Wren working.
+    // A read that failed must not render as a measured zero.
+    const appInstance = createApp({
+      relayUrl: 'ws://127.0.0.1:3499',
+      rolesUrl: `http://127.0.0.1:${stubPort}/no-such-roles-door`,
+      sessionsUrl: `http://127.0.0.1:${stubPort}/fact-sessions`,
+      lokiUrl: `http://127.0.0.1:${stubPort}/fact-loki`,
+      boardUrl: `http://127.0.0.1:${stubPort}/fact-board`,
+    });
+    const s = http.createServer(appInstance.app);
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
+    const p = (s.address() as any).port;
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${p}/today`)).text();
+      const working = html.slice(html.indexOf('working-now'));
+      expect(working).toContain('unmeasured: roles unreadable');
+      expect(working).not.toContain('0 roles working now');
+    } finally {
+      await new Promise<void>((r) => s.close(() => r()));
+    }
+  });
 });

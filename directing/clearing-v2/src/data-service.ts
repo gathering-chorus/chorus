@@ -125,12 +125,13 @@ export class DataService {
   }
 
   /** Who is working: agents whose derived state is working or idle (reuses getRolesData). */
-  private async getWorkingRoles(options: RolesOptions): Promise<TodayWorkingRole[]> {
+  private async getWorkingRoles(options: RolesOptions): Promise<{ roles: TodayWorkingRole[]; error?: string }> {
     const rolesData = await this.getRolesData(options).catch((err: unknown): RolesData => ({
       principals: [],
       error: errorMessage(err) || 'roles unreadable',
     }));
-    return rolesData.principals
+    if (rolesData.error) return { roles: [], error: rolesData.error };
+    const roles = rolesData.principals
       .filter((p) => p.roleKind === 'agent' && (p.state === 'working' || p.state === 'idle'))
       .map((p) => ({
         role: p.id,
@@ -139,6 +140,7 @@ export class DataService {
         cardId: p.card?.id || 0,
         cardTitle: p.card?.title || '',
       }));
+    return { roles };
   }
 
   /**
@@ -153,7 +155,7 @@ export class DataService {
     if (opts.fixture === 'fail') return emptyToday();
 
     const sessionsUrl = opts.sessionsUrl || this.defaultSessionsUrl;
-    const workingRoles = await this.getWorkingRoles({
+    const working = await this.getWorkingRoles({
       rolesUrl: opts.rolesUrl || this.defaultRolesUrl,
       boardUrl: opts.boardUrl || this.defaultBoardUrl,
       lokiUrl: opts.lokiUrl || this.defaultLokiUrl,
@@ -178,7 +180,8 @@ export class DataService {
       changedUnmeasured: changed.unmeasured,
       foldedCount: Math.max(0, changedCards.length - 4),
       alerts,
-      workingRoles,
+      workingRoles: working.roles,
+      workingUnmeasured: working.error,
     };
   }
 

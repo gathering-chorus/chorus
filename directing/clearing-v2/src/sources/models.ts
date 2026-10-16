@@ -68,6 +68,8 @@ export interface TodayData {
   foldedCount: number;
   alerts: TodayAlert[];
   workingRoles: TodayWorkingRole[];
+  /** Set when the roles door could not be read: the panel names it instead of a zero. */
+  workingUnmeasured?: string;
 }
 
 export interface RoomsData {
