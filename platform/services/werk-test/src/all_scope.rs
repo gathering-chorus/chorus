@@ -1112,7 +1112,7 @@ fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     // #4562 (Silas) — a crawl stopped at its cap is named as cut short, never
     // read as clean or as a crawler that printed nothing for its own reasons
     if rows.is_empty() && rc == 124 {
-        return ("unmeasured", "0 pass, 0 fail (UNMEASURED — the crawl was cut short at its 1200s cap before it validated)".to_string());
+        return ("unmeasured", "0 pass, 0 fail (UNMEASURED — the crawl was cut short at its 1200s cap before it validated; tonight's test plan used the test list as of the last finished crawl)".to_string());
     }
     if rows.is_empty() {
         return (
