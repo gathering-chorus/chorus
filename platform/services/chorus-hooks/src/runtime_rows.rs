@@ -74,6 +74,24 @@ pub fn prompt(row: &Value, raw: &Value) -> Option<String> {
     Some(inner.unwrap_or(content))
 }
 
+/// #4548 — with no reply field: the reply is the last line of the row's reply
+/// type after the latest prompt line. None when the turn has no reply yet, so a
+/// quiet turn never resends the previous one.
+pub fn transcript_reply(row: &Value, raw: &Value) -> Option<String> {
+    let reply_kind = s(row, "transcriptReplyType")?;
+    let prompt_kind = s(row, "transcriptPromptType")?;
+    let path = at(raw, s(row, "fieldTranscript")?)?.as_str()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    let lines: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).collect();
+    let kind = |v: &Value| v.get("type").and_then(Value::as_str).map(str::to_string);
+    let turn_start = lines.iter().rposition(|v| kind(v).as_deref() == Some(prompt_kind)).map_or(0, |i| i + 1);
+    lines[turn_start..].iter().rev()
+        .find(|v| kind(v).as_deref() == Some(reply_kind))
+        .and_then(|v| v.get("content")?.as_str())
+        .filter(|t| !t.trim().is_empty())
+        .map(String::from)
+}
+
 /// The native input in the guard's vocabulary: session_id, prompt, tool_name,
 /// tool_input, cwd, transcript_path. A tool the row does not map is None: the
 /// guard does not know it, and the person is asked instead.
@@ -83,6 +101,7 @@ pub fn canonical(row: &Value, m: Moment, raw: &Value) -> Result<Value, Option<St
         "transcript_path": s(row, "fieldTranscript").and_then(|f| at(raw, f)).cloned().unwrap_or(Value::Null),
     });
     if m == Moment::BeforePrompt { out["prompt"] = json!(prompt(row, raw)); }
+    if m == Moment::OnStop { out["prompt_response"] = json!(transcript_reply(row, raw)); }
     if matches!(m, Moment::BeforeTool | Moment::AfterTool) {
         let native = s(row, "fieldToolName").and_then(|f| at(raw, f)).and_then(Value::as_str).unwrap_or("");
         let Some((_, ours)) = pairs(row, "runtimeToolMap").into_iter().find(|(n, _)| n == native) else {

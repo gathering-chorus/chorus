@@ -43,7 +43,8 @@
         "write_to_file=Write"
       ],
       "transcriptPromptTag": "USER_REQUEST",
-      "transcriptPromptType": "USER_INPUT"
+      "transcriptPromptType": "USER_INPUT",
+      "transcriptReplyType": "PLANNER_RESPONSE"
     },
     "claude-code": {
       "eventBeforePrompt": "UserPromptSubmit",
