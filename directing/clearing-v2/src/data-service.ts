@@ -5,7 +5,7 @@ import { MessageRouter } from './router';
 import { ClearingMessage } from './types';
 import { RolesData, TodayData, RoomsData, DoorRolesResponse, TrustStripSource, TodayCardItem } from './sources/models';
 import { fetchJson } from './sources/http';
-import { formatBostonTime, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
+import { formatBostonTime, formatBostonWhen, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
 import { buildTrustStripSources, TrustStripOptions } from './sources/trust-strip';
 import { fetchAlerts } from './sources/today';
 import { fetchActorState, fetchChangesOvernight, toActorRow, toChangedCard, unmeasuredText } from './sources/pulse';
@@ -105,7 +105,7 @@ export class DataService {
     // Unreadable alerts door -> no alerts row (unchanged by #4563).
     const alerts = alertsRead.ok ? alertsRead.value : [];
     const changedCards: TodayCardItem[] = changes.ok ? (changes.value.cards || []).map(toChangedCard) : [];
-    const watermark = changes.ok && changes.value.watermark ? formatBostonTime(changes.value.watermark) : undefined;
+    const watermark = changes.ok && changes.value.watermark ? formatBostonWhen(changes.value.watermark) : undefined;
 
     return {
       timeStr: formatTodayHeader(new Date()),
