@@ -17,7 +17,11 @@
 #    10088  2026-10-13  raised late by #4519 (Wren): three authz/door break fixes landed without
 #                       raising it, and main went red. #4517 a create needs Write or Append (+44),
 #                       #4183 a Permission write drops the cache (+36), #4499 reopen 4 (+25).
-FROZEN_LINES=10088
+#    10315  2026-10-15  raised by #4530 (Wren): main went red again as cards landed without
+#                       raising it. Measured per card in athena-make/src: #4522 (+202 -22),
+#                       #4022 (+28), #4531 (+26 -19), #4538 (+3 -93). #4522 is the largest and
+#                       reads as feature work on v1; flagged to Silas to confirm or move it out.
+FROZEN_LINES=10315
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

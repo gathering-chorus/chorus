@@ -20,7 +20,7 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
   test('subscribes to team topic upon connection', () => {
     const mockWs = new MockWebSocket();
     const client = new BuzzRelayClient({
-      relayUrl: 'ws://192.168.86.242:3000',
+      relayUrl: 'ws://127.0.0.1:3499',
       topic: 'team',
       wsFactory: () => mockWs,
     });
@@ -33,7 +33,7 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
     expect(mockWs.sentMessages.length).toBe(1);
     const subFrame = JSON.parse(mockWs.sentMessages[0]);
     expect(subFrame[0]).toBe('REQ');
-    expect(subFrame[2]).toMatchObject({ kinds: [1], '#t': ['team'] });
+    expect(subFrame[2]).toMatchObject({ kinds: [1], '#t': ['team', 'reply'], limit: 200 });
   });
 
   test('parses inbound EVENT frames and passes to onEvent handler', () => {
@@ -41,7 +41,7 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
     const received: NostrEvent[] = [];
 
     const client = new BuzzRelayClient({
-      relayUrl: 'ws://192.168.86.242:3000',
+      relayUrl: 'ws://127.0.0.1:3499',
       topic: 'team',
       wsFactory: () => mockWs,
       onEvent: (ev: NostrEvent) => received.push(ev),
@@ -61,7 +61,7 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
   test('NEGATIVE PROOF: offline publish queues messages and flushes upon reconnect', () => {
     const mockWs = new MockWebSocket();
     const client = new BuzzRelayClient({
-      relayUrl: 'ws://192.168.86.242:3000',
+      relayUrl: 'ws://127.0.0.1:3499',
       topic: 'team',
       wsFactory: () => mockWs,
     });
