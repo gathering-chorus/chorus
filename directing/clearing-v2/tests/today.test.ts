@@ -460,4 +460,34 @@ describe('Today AC: Who is working, Alerts with card, Changes since Jeff session
       await new Promise<void>((r) => s.close(() => r()));
     }
   });
+  test.each([
+    ['activity (Loki)', { lokiUrl: '/no-such-loki' }, 'activity unreadable'],
+    ['open sessions', { sessionsUrl: '/no-such-sessions' }, 'sessions unreadable'],
+  ])('6. NEGATIVE PROOF: unreadable %s names itself in Working now, never "0 roles working now"', async (_name, broken, expected) => {
+    // Measured 2026-10-16 06:41 on the landed build: a cold Today load said
+    // "0 roles working now" with the roles door live; every role had read
+    // unmeasured or off because a source behind it timed out.
+    const urls: Record<string, string> = {
+      rolesUrl: '/fact-roles', sessionsUrl: '/fact-sessions', lokiUrl: '/fact-loki', boardUrl: '/fact-board', ...broken,
+    };
+    const base = `http://127.0.0.1:${stubPort}`;
+    const appInstance = createApp({
+      relayUrl: 'ws://127.0.0.1:3499',
+      rolesUrl: base + urls.rolesUrl,
+      sessionsUrl: base + urls.sessionsUrl,
+      lokiUrl: base + urls.lokiUrl,
+      boardUrl: base + urls.boardUrl,
+    });
+    const s = http.createServer(appInstance.app);
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
+    const p = (s.address() as any).port;
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${p}/today`)).text();
+      const working = html.slice(html.indexOf('working-now'));
+      expect(working).toContain(expected);
+      expect(working).not.toContain('0 roles working now');
+    } finally {
+      await new Promise<void>((r) => s.close(() => r()));
+    }
+  });
 });
