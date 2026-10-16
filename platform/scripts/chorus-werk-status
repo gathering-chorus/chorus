@@ -377,6 +377,19 @@ def load_pins(card=None, role=None):
     return pins
 
 
+def athena_only_reads(listing, line):
+    """#4540 fixture: dagu_runs over a stubbed run list holding one athena run."""
+    global dagu_list
+    keep = dagu_list
+    dagu_list = lambda name, since: [r for r in listing() if r["name"] == name]
+    try:
+        both, cicd_only = dagu_runs(4536), dagu_runs(4536, DAGU_DAG)
+    finally:
+        dagu_list = keep
+    shown = line(4536, both, []) if both else "no run yet"
+    return "validate" in shown and "athena run 1" in shown and "no run yet" not in shown and cicd_only == []
+
+
 def fixture_mode():
     with tempfile.TemporaryDirectory() as td:
         global RUNS_DIR
@@ -1104,6 +1117,12 @@ def fixture_4553():
              "· verdict: RED — 2 types failed: unit, lint" in line(158, [child_stop], [])
              and NO_REASON in line(159, [run("p2", "cicd", "failed", 0, [dict(node("failed", "skill-werk-test", "exit status 1"),
                                                                             children=[{"dagRunId": "none", "dagName": "cicd-test"}])], 159)], [])),
+            # #4540 AC (Jeff 10-15 10:31 "include athena in scope of cws"): an
+            # athena-only card, its run live on validate, gets a card line.
+            # Negative proof: read cicd alone (the pre-#4536 read) and the
+            # same card has no run, the "no run yet" Jeff saw for #4536.
+            ("an athena-only card with a live run never reads no run yet",
+             athena_only_reads(lambda: [run("v3", "athena", "running", 0, [node("running", "skill-athena-validate")], 4536)], line)),
         ]
         DAGU, GIT_DIR, MAIN_REF, LOKI = keep
     for name, ok in cases:
