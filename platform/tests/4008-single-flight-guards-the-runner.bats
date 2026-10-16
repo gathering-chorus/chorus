@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic: NIGHTLY_LOCKDIR under BATS_TEST_TMPDIR, the process table stubbed through NIGHTLY_PS; no live runner, no launchd, no network
+# @test-type: unit — hermetic: WERK_TEST_LOCKDIR under BATS_TEST_TMPDIR, the process table stubbed through WERK_TEST_PS; no live runner, no launchd, no network
 # @domain: tests — the product domain this suite guards (#4334)
 # #4008 — the single-flight lock guards the RUNNER, not just the wrapper. On 2026-08-25
 # a killed wrapper left `werk-test --nightly` alive for 1h52m; its pid was dead, so the
@@ -10,18 +10,18 @@
 setup() {
   BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
   [ -x "$BIN" ] || skip "werk-test not built at $BIN"
-  export NIGHTLY_LOCKDIR="$BATS_TEST_TMPDIR/lock.d"
+  export WERK_TEST_LOCKDIR="$BATS_TEST_TMPDIR/lock.d"
   export OPS_NUDGE="$BATS_TEST_TMPDIR/ops-nudge"   # capture, never page anyone
   printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> "%s/nudges"\n' "$BATS_TEST_TMPDIR" > "$OPS_NUDGE"; chmod +x "$OPS_NUDGE"
   # a stub process table; the proof writes the lines it wants seen
-  export NIGHTLY_PS="cat $BATS_TEST_TMPDIR/ps.txt"
+  export WERK_TEST_PS="cat $BATS_TEST_TMPDIR/ps.txt"
   printf '  PID  PPID     ELAPSED COMMAND\n' > "$BATS_TEST_TMPDIR/ps.txt"
   # a holder pid that is certainly dead
   DEAD_PID=4194000
   while kill -0 "$DEAD_PID" 2>/dev/null; do DEAD_PID=$((DEAD_PID - 7)); done
 }
 
-stale_lock() { mkdir -p "$NIGHTLY_LOCKDIR"; echo "$DEAD_PID" > "$NIGHTLY_LOCKDIR/pid"; }
+stale_lock() { mkdir -p "$WERK_TEST_LOCKDIR"; echo "$DEAD_PID" > "$WERK_TEST_LOCKDIR/pid"; }
 
 @test "no lock at all: the probe ACQUIRES" {
   run "$BIN" --nightly --lock-probe
@@ -43,11 +43,11 @@ stale_lock() { mkdir -p "$NIGHTLY_LOCKDIR"; echo "$DEAD_PID" > "$NIGHTLY_LOCKDIR
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "^REFUSED holder pid $DEAD_PID is dead but runner pid 4242 is alive (age 01:52:03)" || { echo "$output"; false; }
   # the lock was NOT stolen
-  [ "$(cat "$NIGHTLY_LOCKDIR/pid")" = "$DEAD_PID" ]
+  [ "$(cat "$WERK_TEST_LOCKDIR/pid")" = "$DEAD_PID" ]
 }
 
 @test "a live holder is still a refusal, and says so" {
-  mkdir -p "$NIGHTLY_LOCKDIR"; echo "$$" > "$NIGHTLY_LOCKDIR/pid"
+  mkdir -p "$WERK_TEST_LOCKDIR"; echo "$$" > "$WERK_TEST_LOCKDIR/pid"
   run "$BIN" --nightly --lock-probe
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "^REFUSED holder pid $$ is alive" || { echo "$output"; false; }
@@ -64,10 +64,10 @@ stale_lock() { mkdir -p "$NIGHTLY_LOCKDIR"; echo "$DEAD_PID" > "$NIGHTLY_LOCKDIR
 @test "--run-all under a live runner refuses LOUDLY: typed line on stderr, ops-nudge fired, exit 0, nothing run" {
   stale_lock
   printf '4242 1 00:41:00 /Users/x/.chorus/bin/werk-test --nightly\n' >> "$BATS_TEST_TMPDIR/ps.txt"
-  export NIGHTLY_LOG_PATH="$BATS_TEST_TMPDIR/nightly.log"
-  NIGHTLY_RUNNER_CMD=/nonexistent NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_ROOT="$BATS_TEST_TMPDIR" OWLAPI=http://127.0.0.1:9 NIGHTLY_API=http://127.0.0.1:9 CHORUS_LOG_BIN=/nonexistent run "$BIN" --nightly --run-all
+  export WERK_TEST_LOG_PATH="$BATS_TEST_TMPDIR/nightly.log"
+  WERK_TEST_RUNNER_CMD=/nonexistent WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_ROOT="$BATS_TEST_TMPDIR" OWLAPI=http://127.0.0.1:9 WERK_TEST_API=http://127.0.0.1:9 CHORUS_LOG_BIN=/nonexistent run "$BIN" --nightly --run-all
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "REFUSED — holder pid $DEAD_PID is dead but runner pid 4242 is alive (age 00:41:00)" || { echo "$output"; false; }
   grep -q "runner pid 4242 is alive" "$BATS_TEST_TMPDIR/nudges"
-  ! [ -f "$NIGHTLY_LOG_PATH" ] || ! grep -q "^RUN|start" "$NIGHTLY_LOG_PATH"
+  ! [ -f "$WERK_TEST_LOG_PATH" ] || ! grep -q "^RUN|start" "$WERK_TEST_LOG_PATH"
 }

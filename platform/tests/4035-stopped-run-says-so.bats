@@ -12,7 +12,7 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   # #3528 — bring your own process table: a real nightly on the box must not refuse these runs
   printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
-  export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
+  export WERK_TEST_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/tests"
   # #4416 — the stub IS its sleep (exec, argv0 kept so pgrep finds it): when werk-test
   # reaps the runner the sleep dies with it. It was `sleep 300` in a bash child that
@@ -26,9 +26,9 @@ setup() {
 }
 
 start_run() {
-  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" NIGHTLY_LOG_PATH="$T/run.log" NIGHTLY_FAIL_DIR="$T/fail" NIGHTLY_LOCKDIR="$T/lock.d" \
-  OWLAPI=http://127.0.0.1:9 NIGHTLY_API=http://127.0.0.1:9 OPS_NUDGE="$T/nudge.sh" NIGHTLY_RUNNER_CMD="$T/runner.sh" \
-  NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent "$BIN" --nightly --run-all >/dev/null 2>&1 &
+  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" WERK_TEST_LOG_PATH="$T/run.log" WERK_TEST_FAIL_DIR="$T/fail" WERK_TEST_LOCKDIR="$T/lock.d" \
+  OWLAPI=http://127.0.0.1:9 WERK_TEST_API=http://127.0.0.1:9 OPS_NUDGE="$T/nudge.sh" WERK_TEST_RUNNER_CMD="$T/runner.sh" \
+  WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent "$BIN" --nightly --run-all >/dev/null 2>&1 &
   RUN_PID=$!
   for _ in $(seq 1 100); do grep -q '^RUN|start|' "$T/run.log" 2>/dev/null && pgrep -f "$T/runner.sh" >/dev/null && break; sleep 0.1; done
 }
@@ -59,9 +59,9 @@ start_run() {
 
 @test "control: a run that finishes writes RUN|complete and no RUN|stopped" {
   printf '#!/bin/bash\necho "nightly-unit|bats|platform/tests/x.bats|pass|1 pass, 0 fail"\n' > "$T/runner.sh"
-  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" NIGHTLY_LOG_PATH="$T/run.log" NIGHTLY_FAIL_DIR="$T/fail" NIGHTLY_LOCKDIR="$T/lock.d" \
-  OWLAPI=http://127.0.0.1:9 NIGHTLY_API=http://127.0.0.1:9 OPS_NUDGE="$T/nudge.sh" NIGHTLY_RUNNER_CMD="$T/runner.sh" \
-  NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent CHORUS_TRACE_ID= run "$BIN" --nightly --run-all
+  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" WERK_TEST_LOG_PATH="$T/run.log" WERK_TEST_FAIL_DIR="$T/fail" WERK_TEST_LOCKDIR="$T/lock.d" \
+  OWLAPI=http://127.0.0.1:9 WERK_TEST_API=http://127.0.0.1:9 OPS_NUDGE="$T/nudge.sh" WERK_TEST_RUNNER_CMD="$T/runner.sh" \
+  WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent CHORUS_TRACE_ID= run "$BIN" --nightly --run-all
   grep -q '^RUN|complete|' "$T/run.log"
   ! grep -q '^RUN|stopped|' "$T/run.log" || return 1
   # #4536 — a COMPLETED run marks the rows it never ran, once, with its trace

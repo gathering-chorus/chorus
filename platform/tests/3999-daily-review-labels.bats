@@ -19,7 +19,7 @@ setup() {
 }
 
 run_review() {
-  NIGHTLY_LAST_RUN_BIN="$STUB/last-run" NIGHTLY_LOG_PATH="$F" CHORUS_ROOT="$BATS_TEST_DIRNAME/../.." bash "$STUB/daily-review-quality.sh" 2>/dev/null
+  WERK_TEST_LAST_RUN_BIN="$STUB/last-run" WERK_TEST_LOG_PATH="$F" CHORUS_ROOT="$BATS_TEST_DIRNAME/../.." bash "$STUB/daily-review-quality.sh" 2>/dev/null
 }
 
 @test "captured cargo line '652 pass, 2 fail' labels as counts, never BUILD BROKE" {

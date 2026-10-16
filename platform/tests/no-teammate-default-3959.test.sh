@@ -65,8 +65,8 @@ fi
 # widening that can quietly disarm a guard, so prove both directions every run.
 st=$(mktemp -d); trap 'rm -rf "$st"' EXIT
 mkdir -p "$st/platform" "$st/directing"
-printf '%s\n' '# ROLE="${NIGHTLY_ROLE:-kade}" was the old default' > "$st/platform/prose.sh"
-printf '%s\n' 'ROLE="${NIGHTLY_ROLE:-kade}"' > "$st/platform/live.sh"
+printf '%s\n' '# ROLE="${WERK_TEST_ROLE:-kade}" was the old default' > "$st/platform/prose.sh"
+printf '%s\n' 'ROLE="${WERK_TEST_ROLE:-kade}"' > "$st/platform/live.sh"
 printf '%s\n' '# the old default was :-silas}' 'OWNER="${SEC_OWNER:-silas}"' > "$st/platform/mixed.sh"
 
 selftest_fail=0
@@ -82,7 +82,7 @@ if [ -z "${NO_TEAMMATE_SELFTEST:-}" ]; then
   export NO_TEAMMATE_SELFTEST=1
   rm -f "$st/platform/live.sh" "$st/platform/mixed.sh"
   probe "a comment quoting the old default is NOT a violation" 0
-  printf '%s\n' 'ROLE="${NIGHTLY_ROLE:-kade}"' > "$st/platform/live.sh"
+  printf '%s\n' 'ROLE="${WERK_TEST_ROLE:-kade}"' > "$st/platform/live.sh"
   probe "NEGATIVE PROOF: a real default still fails the guard" 1
   rm -f "$st/platform/live.sh"
   printf '%s\n' '# the old default was :-silas}' 'OWNER="${SEC_OWNER:-silas}"' > "$st/platform/mixed.sh"
@@ -99,7 +99,7 @@ if [ -z "${NO_TEAMMATE_SELFTEST:-}" ]; then
   # about its own case, and together a hole.
   #
   # And it was already dead. The only site it existed for was
-  # `NIGHTLY_SECURITY_OWNER:-silas` in nightly-suites.sh, and #4111 replaced that
+  # `WERK_TEST_SECURITY_OWNER:-silas` in nightly-suites.sh, and #4111 replaced that
   # literal with `domain_owner security` — derived from the model, no teammate
   # name in the source at all. With the exemption removed the guard passes over
   # the whole tree, which is the measurement that says nothing needed it.

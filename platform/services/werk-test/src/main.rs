@@ -1253,7 +1253,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #3975 — the graph writes authenticate as the NIGHTLY machine principal
     // (least-privilege scope: the tests graph only). Spine events keep role
     // "system" — who acted vs which credential wrote are different facts.
-    let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
+    let mint_role = std::env::var("WERK_TEST_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
     // #4063 — a werk-rooted nightly never writes prod's ledger (see
     // nightly_writeback_withheld). Withheld cases are counted and named once,
     // never silently, and never as "lost": nothing was promised to the store.
@@ -1385,13 +1385,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #4131 — a suite that can only ever self-refuse unattended (it boots out
     // every com.chorus.* agent and needs an explicit restore grant, #4004) has
     // no place in an unattended plan: it read "skipped" every night. The
-    // wrapper's NIGHTLY_DESTRUCTIVE_SUITES names them; same list, same seam.
+    // wrapper's WERK_TEST_DESTRUCTIVE_SUITES names them; same list, same seam.
     // #4135 — test-product-membrane.sh was excluded here as destructive (it
     // boots every com.chorus.* agent). Since #4131 it is a freshness VERDICT
     // under the nightly and refuses attended runs without an explicit grant,
     // so it is safe to plan; excluding it left a registered row no lane could
     // ever emit (LANE SILENT on the reconcile every night). Default: none.
-    let destructive: Vec<String> = std::env::var("NIGHTLY_DESTRUCTIVE_SUITES")
+    let destructive: Vec<String> = std::env::var("WERK_TEST_DESTRUCTIVE_SUITES")
         .unwrap_or_default()
         .split_whitespace().map(|s| s.to_string()).collect();
     let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
@@ -1428,7 +1428,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         Some(pick) => stages.into_iter().filter(|sp| werk_test::stage_picked(pick, sp.stage)).collect(),
         None => stages,
     };
-    let legs_noop = std::env::var("NIGHTLY_LEGS_NOOP").is_ok();
+    let legs_noop = std::env::var("WERK_TEST_LEGS_NOOP").is_ok();
     let npm_kind_of = |p: &str| -> &'static str { if security_pkgs.contains(p) { "security" } else { "npm" } };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
     // never produces its `nightly-unit|` line is folded by nightly-suites.sh
@@ -1456,17 +1456,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // jest are internally parallel, so their pools stay narrower than bats.
     let budget = werk_test::cpu_budget();
     let (cw_default, nextest_threads, nw_default, jest_workers, bats_default) = werk_test::lane_widths(budget);
-    let cap: f64 = std::env::var("NIGHTLY_LOAD_CAP").ok().and_then(|v| v.parse().ok())
+    let cap: f64 = std::env::var("WERK_TEST_LOAD_CAP").ok().and_then(|v| v.parse().ok())
         .unwrap_or_else(|| werk_test::load_cap(budget));
     let gate_wait = std::time::Duration::from_secs(
-        std::env::var("NIGHTLY_GATE_MAX_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180));
+        std::env::var("WERK_TEST_GATE_MAX_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180));
     let gate_tick = std::time::Duration::from_secs(5);
     println!("-- #4022 load-aware: budget {} cores, cap load {:.0}, cargo {}×{} threads, npm {}×{} jest workers, bats {} --",
         budget, cap, cw_default, nextest_threads, nw_default, jest_workers, bats_default);
-    let cargo_workers: usize = std::env::var("NIGHTLY_CARGO_WORKERS").ok()
+    let cargo_workers: usize = std::env::var("WERK_TEST_CARGO_WORKERS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(cw_default);
-    if std::env::var("NIGHTLY_NEXTEST_THREADS").is_err() {
-        std::env::set_var("NIGHTLY_NEXTEST_THREADS", nextest_threads.to_string());
+    if std::env::var("WERK_TEST_NEXTEST_THREADS").is_err() {
+        std::env::set_var("WERK_TEST_NEXTEST_THREADS", nextest_threads.to_string());
     }
     let ns_bins_for = |c: &str| -> Vec<String> {
         if stack_down.is_some() {
@@ -1488,7 +1488,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if integration_on {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
-    let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
+    let npm_workers: usize = std::env::var("WERK_TEST_NPM_WORKERS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
     // (#4152: one isolation list for the npm and file lanes)
     let iso_conf = std::fs::read_to_string(
@@ -1498,7 +1498,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
-    let bats_workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
+    let bats_workers: usize = std::env::var("WERK_TEST_SUITE_WORKERS").ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(bats_default);
 
@@ -1820,7 +1820,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
 
         // ── ui: the playwright flows (was an outer leg, #4278) ──
         if ui_here {
-            let cmd = std::env::var("NIGHTLY_PLAYWRIGHT_CMD")
+            let cmd = std::env::var("WERK_TEST_PLAYWRIGHT_CMD")
                 .unwrap_or_else(|_| format!("npx --no-install playwright test --reporter=line,{}", werk_test::PLAYWRIGHT_CASE_REPORTER));
             let mut c = Command::new("bash");
             c.arg("-c").arg(&cmd).current_dir(&root)
@@ -1916,7 +1916,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
     // #4022 AC3/AC4 — elapsed against Jeff's bar (default 15m), on the spine so
     // drift is visible, and a breach is loud in the run's own output.
-    let bar_secs: u64 = std::env::var("NIGHTLY_ELAPSED_BAR_SECS").ok()
+    let bar_secs: u64 = std::env::var("WERK_TEST_ELAPSED_BAR_SECS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(900);
     let elapsed_secs = (total_duration_ms / 1000) as u64;
     emit_spine("test.nightly.elapsed", &role, &card, &trace,
@@ -2014,7 +2014,7 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     // its budget is killed and scored failed, loudly.
     let out_path = tmp.join(format!("suite-{}.out", suite_slug));
     // #4035 — the UNIT cap, never the wrapper's LANE vocabulary. nightly-suites.sh
-    // env-prefixes NIGHTLY_SUITE_TIMEOUT=<lane cap, 7200s> onto the werk-test
+    // env-prefixes WERK_TEST_SUITE_TIMEOUT=<lane cap, 7200s> onto the werk-test
     // invocation for its own _run_capped, and the export reaches this process:
     // reading it here gave EVERY suite a 2-hour deadline. 2026-08-30: trivy hung,
     // burned hours inside the 2-wide pool, and three daytime runs went ~2h.
@@ -2396,7 +2396,7 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // #4126 taught test-restore-drill.sh to refuse there: a ~47min restore
     // (#4043 measured 2849s) cannot finish inside a 1200s per-unit cap, so it
     // is killed, scored fail, records no PASS, and looks overdue again the next
-    // night. That refusal reads $NIGHTLY_UNIT_TIMEOUT / $WERK_TEST_NIGHTLY, and
+    // night. That refusal reads $WERK_TEST_UNIT_TIMEOUT / $WERK_TEST_NIGHTLY, and
     // the runner exported NEITHER — unit_timeout() reads the variable in the
     // RUNNER's process; no child ever saw it. So the refusal could not fire and
     // the 2026-09-08 17:41 run still spent 1200.0s there. A gate that cannot
@@ -2409,7 +2409,7 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // isolation, but the runner telling the suite the truth about where it is,
     // and not overridable from outside the run.
     cmd.env("WERK_TEST_NIGHTLY", "1");
-    cmd.env("NIGHTLY_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
+    cmd.env("WERK_TEST_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
     // #4474 run 19 — every suite is rooted in the tree under test. v1 pinned
     // this from outside (`CHORUS_ROOT="$WERK" werk-test`, #3701); under werk v2
     // the scheduler's CHORUS_ROOT is canonical, so a jest suite read main's
@@ -2561,8 +2561,8 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
         return (werk_test::lane_unmeasured(why.clone()), Vec::new(), why);
     }
     // #4022 — each crate gets its share of the CPU budget (see lane_widths);
-    // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
-    let threads = std::env::var("NIGHTLY_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
+    // WERK_TEST_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
+    let threads = std::env::var("WERK_TEST_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
     let mut args: Vec<String> = if only_bins.is_empty() {
         werk_test::nextest_run_args_threads(quarantined, exclude_bins, threads)
     } else {
@@ -2914,7 +2914,7 @@ fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, Stri
     let _ = std::fs::remove_file(&out_path);
     let _ = std::fs::remove_file(&err_path);
     if fin.timed_out {
-        let note = format!("!! {} killed after {}s — per-unit wall cap (NIGHTLY_UNIT_TIMEOUT, #4030)",
+        let note = format!("!! {} killed after {}s — per-unit wall cap (WERK_TEST_UNIT_TIMEOUT, #4030)",
             label, timeout.as_secs());
         eprintln!("{}", note);
         stderr.push('\n');
@@ -3277,19 +3277,19 @@ fn status_ok(cmd: &mut Command) -> bool {
 
 /// #4537 — the nightly runs units on worker threads; a worker hands its lane
 /// notes to the stage that prints the unit's line.
-static NIGHTLY_UNMEASURED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+static WERK_TEST_UNMEASURED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
 
 fn note_nightly_unmeasured(item: &str) {
     let notes = werk_test::take_lane_unmeasured();
     if !notes.is_empty() {
-        if let Ok(mut m) = NIGHTLY_UNMEASURED.lock() {
+        if let Ok(mut m) = WERK_TEST_UNMEASURED.lock() {
             m.push((item.to_string(), notes.join("; ")));
         }
     }
 }
 
 fn nightly_unmeasured(item: &str) -> Option<String> {
-    NIGHTLY_UNMEASURED.lock().ok()?.iter().find(|(i, _)| i == item).map(|(_, r)| r.clone())
+    WERK_TEST_UNMEASURED.lock().ok()?.iter().find(|(i, _)| i == item).map(|(_, r)| r.clone())
 }
 
 /// #4265 — read a bats suite's exit code as a three-way outcome. 0 pass,
@@ -3918,15 +3918,15 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         // #4035 two-caps-separate proof (#3734), one fixture, two legs.
         // Leg 1 — the LEAKED lane cap alone (1s) must NOT kill a 3s suite:
         // under the pre-#4035 read this leg dies at 1s and the test goes red.
-        std::env::set_var("NIGHTLY_SUITE_TIMEOUT", "1");
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        std::env::set_var("WERK_TEST_SUITE_TIMEOUT", "1");
+        std::env::remove_var("WERK_TEST_UNIT_TIMEOUT");
         let (dir, s) = world("slowish.sh",
             "sleep 3\necho '=== Results: 1 passed, 0 failed ==='\n");
         let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
         assert!(ok, "a suite inside the UNIT cap must survive a lane-cap leak: {}", text);
         // Leg 2 — the UNIT cap (2s) kills a hung suite, loud (#4022 AC4's half):
         // a suite that never exits breaches its budget, dies, reads as a fail.
-        std::env::set_var("NIGHTLY_UNIT_TIMEOUT", "2");
+        std::env::set_var("WERK_TEST_UNIT_TIMEOUT", "2");
         let (dir, s) = world("hung.sh", "echo started\nsleep 300\n");
         let t0 = std::time::Instant::now();
         let _ = werk_test::take_lane_unmeasured();
@@ -3940,8 +3940,8 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         let (dir, s) = world("failed-then-hung.sh",
             "echo 'not ok 1 the product broke'\nsleep 300\n");
         let (ok, cases, text) = run_bats_cases(dir.to_str().unwrap(), &s);
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
-        std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
+        std::env::remove_var("WERK_TEST_UNIT_TIMEOUT");
+        std::env::remove_var("WERK_TEST_SUITE_TIMEOUT");
         assert!(cases.iter().any(|(_, r)| r == "fail"), "{:?} {}", cases, text);
         assert!(!ok, "a failed case before the cap must stay red: {}", text);
         assert!(werk_test::take_lane_unmeasured().is_empty());

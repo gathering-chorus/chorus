@@ -17,7 +17,7 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   # #3528 — bring your own process table: a real nightly on the box must not refuse these runs
   printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
-  export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
+  export WERK_TEST_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/scripts" "$T/root/platform/tests" "$T/fail"
   # #4168/#4271 (kade) — every unit the fixture's runner reports must EXIST in
   # the fixture root. #4168 added the stale-registry probe over
@@ -88,9 +88,9 @@ teardown() {
 }
 
 run_all() {
-  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" NIGHTLY_LOG_PATH="$T/nightly.log" NIGHTLY_FAIL_DIR="$T/fail" \
-  NIGHTLY_LOCKDIR="$T/lock" OWLAPI="http://127.0.0.1:$PORT" NIGHTLY_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
-  NIGHTLY_RUNNER_CMD="${RUNNER:-$T/runner.sh}" NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
+  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" WERK_TEST_LOG_PATH="$T/nightly.log" WERK_TEST_FAIL_DIR="$T/fail" \
+  WERK_TEST_LOCKDIR="$T/lock" OWLAPI="http://127.0.0.1:$PORT" WERK_TEST_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
+  WERK_TEST_RUNNER_CMD="${RUNNER:-$T/runner.sh}" WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
   "$BIN" --nightly --run-all "$@"
 }
 
@@ -176,9 +176,9 @@ EOS
 
 @test "a werk-rooted run writes its own log and nudges nobody (#3722)" {
   mkdir -p "$T/chorus-werk/kade-9/platform/tests"
-  CHORUS_ROOT="$T/chorus-werk/kade-9" CHORUS_HOME="$T/chorus-werk/kade-9" NIGHTLY_LOG_PATH="" NIGHTLY_FAIL_DIR="$T/fail" \
-  NIGHTLY_LOCKDIR="$T/lock2" OWLAPI="http://127.0.0.1:$PORT" NIGHTLY_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
-  NIGHTLY_RUNNER_CMD="$T/runner.sh" NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
+  CHORUS_ROOT="$T/chorus-werk/kade-9" CHORUS_HOME="$T/chorus-werk/kade-9" WERK_TEST_LOG_PATH="" WERK_TEST_FAIL_DIR="$T/fail" \
+  WERK_TEST_LOCKDIR="$T/lock2" OWLAPI="http://127.0.0.1:$PORT" WERK_TEST_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
+  WERK_TEST_RUNNER_CMD="$T/runner.sh" WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
   run "$BIN" --nightly --run-all
   [ "$status" -eq 0 ]
   [ -s /tmp/nightly-kade-9.log ]

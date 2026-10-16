@@ -289,8 +289,8 @@ fn run_nightly(root_name: &str, files: &[(&str, &str)], registry_rows: &[String]
         .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
         .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
         .env("WERK_STACK_PROBES", format!("door={door}/"))
-        .env("NIGHTLY_SUITE_WORKERS", "1")
-        .env("NIGHTLY_LOAD_CAP", "100000")
+        .env("WERK_TEST_SUITE_WORKERS", "1")
+        .env("WERK_TEST_LOAD_CAP", "100000")
         .output()
         .expect("spawn werk-test --nightly");
     let _ = std::fs::remove_dir_all(&base);
@@ -733,18 +733,18 @@ fn run_nightly_steps(tag: &str, files: &[(&str, &str)], registry_rows: &[String]
             .env("CHORUS_TRACE_ID", format!("fixture-4540-n-{}", tag))
             .env("WERK_TEST_RUNS", base.join("runs"))
             .env("WERK_TEST_LEGS_NOOP", "1")
-            .env("NIGHTLY_LEGS_NOOP", "1")
-            .env("NIGHTLY_LOG_PATH", base.join("nightly.log"))
-            .env("NIGHTLY_FAIL_DIR", base.join("fail"))
-            .env("NIGHTLY_NO_NUDGE", "1")
-            .env("NIGHTLY_LOAD_STUB", "0.1")
+            .env("WERK_TEST_LEGS_NOOP", "1")
+            .env("WERK_TEST_LOG_PATH", base.join("nightly.log"))
+            .env("WERK_TEST_FAIL_DIR", base.join("fail"))
+            .env("WERK_TEST_NO_NUDGE", "1")
+            .env("WERK_TEST_LOAD_STUB", "0.1")
             .env("CHORUS_WRITE_TOKEN", "fixture")
             .env("OWLAPI", &door)
             .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
             .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
             .env("WERK_STACK_PROBES", format!("door={door}/"))
-            .env("NIGHTLY_SUITE_WORKERS", "1")
-            .env("NIGHTLY_LOAD_CAP", "100000")
+            .env("WERK_TEST_SUITE_WORKERS", "1")
+            .env("WERK_TEST_LOAD_CAP", "100000")
             .output()
             .expect("spawn werk-test nightly step");
         runs.push(Run {
@@ -760,7 +760,7 @@ fn run_nightly_steps(tag: &str, files: &[(&str, &str)], registry_rows: &[String]
     runs
 }
 
-const NIGHTLY_STEPS: &[&[&str]] = &[
+const WERK_TEST_STEPS: &[&[&str]] = &[
     &["scope", "--scope=all"], &["prepare", "--scope=all"], &["run", "--scope=all"],
     &["run", "--scope=all", "--test-type=perf"], &["report", "--scope=all"], &["verdict", "--scope=all"],
 ];
@@ -768,7 +768,7 @@ const NIGHTLY_STEPS: &[&[&str]] = &[
 #[test]
 fn the_nightly_steps_run_the_registry_and_write_one_log() {
     let runs = run_nightly_steps("n1", &[("platform/tests/pass.bats", PASS)],
-        &[row("platform/tests/pass.bats", "p", "test-pass")], NIGHTLY_STEPS);
+        &[row("platform/tests/pass.bats", "p", "test-pass")], WERK_TEST_STEPS);
     let all = runs.iter().map(|r| r.out.as_str()).collect::<Vec<_>>().join("\n----\n");
     let verdict = &runs[5];
     assert_eq!(verdict.code, 0, "{all}");
@@ -782,7 +782,7 @@ fn the_nightly_steps_run_the_registry_and_write_one_log() {
 #[test]
 fn a_red_suite_makes_the_nightly_verdict_red() {
     let runs = run_nightly_steps("n2", &[("platform/tests/fail.bats", FAIL)],
-        &[row("platform/tests/fail.bats", "f", "test-fail")], NIGHTLY_STEPS);
+        &[row("platform/tests/fail.bats", "f", "test-fail")], WERK_TEST_STEPS);
     let all = runs.iter().map(|r| r.out.as_str()).collect::<Vec<_>>().join("\n----\n");
     assert_eq!(runs[2].code, 0, "the run step writes its rows and lets report run: {all}");
     assert_eq!(runs[5].code, 1, "{all}");
@@ -814,8 +814,8 @@ fn a_later_step_runs_the_copy_scope_pinned_not_the_installed_one() {
         let o = Command::new(&installed).args(args)
             .env("CHORUS_TRACE_ID", trace).env("WERK_TEST_RUNS", base.join("runs"))
             .env("CHORUS_ROOT", &base).env_remove("CHORUS_HOME").env_remove("WERK_TEST_PINNED")
-            .env("NIGHTLY_LOG_PATH", base.join("log")).env("NIGHTLY_NO_NUDGE", "1")
-            .env("NIGHTLY_GRAPH_ROWS", "0").env("OWL_API_TESTS", "http://127.0.0.1:9/tests")
+            .env("WERK_TEST_LOG_PATH", base.join("log")).env("WERK_TEST_NO_NUDGE", "1")
+            .env("WERK_TEST_GRAPH_ROWS", "0").env("OWL_API_TESTS", "http://127.0.0.1:9/tests")
             .output().unwrap();
         format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
     };

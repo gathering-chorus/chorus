@@ -453,7 +453,7 @@ app.get('/clearing', (req: Request, res: Response) =>
 // cannot be reached they are reported as unknown rather than guessed, because a
 // cross-foot against a fabricated denominator is worse than no cross-foot.
 async function buildLatestTestRun() {
-  const logPath = process.env.NIGHTLY_LOG_PATH
+  const logPath = process.env.WERK_TEST_LOG_PATH
     || path.join(process.env.HOME || '', 'Library/Logs/Chorus/nightly-suites.log');
   // No pre-seeded '' — the catch returns, so the initial value is never read and
   // the ratchet is right to call it dead.
@@ -567,7 +567,7 @@ app.get('/test-run', async (_req: Request, res: Response) => {
 // #4156 — the runs come from the graph rows the run wrote (TestSuiteRun per
 // SUITE row, PipelineRun for the tail). Nothing here reads nightly-suites.log:
 // a store that does not answer is a 503, never a quiet fallback to the file.
-const NIGHTLY_UNREAD = 'the nightly run record could not be read from the graph (the store did not answer); '
+const WERK_TEST_UNREAD = 'the nightly run record could not be read from the graph (the store did not answer); '
   + 'refusing to report numbers from anywhere else';
 const nightlyFuseki = (): string => process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
 const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromGraph(fusekiCsv(nightlyFuseki()));
@@ -580,7 +580,7 @@ function readoutFor(runs: NightlyRunRecord[], runId: string) {
 
 app.get('/api/chorus/nightly/runs', async (_req: Request, res: Response) => {
   const runs = await nightlyRuns();
-  if (!runs) { res.status(503).json({ error: NIGHTLY_UNREAD }); return; }
+  if (!runs) { res.status(503).json({ error: WERK_TEST_UNREAD }); return; }
   res.json({
     source: 'graph',
     runs: [...runs].reverse().map((r) => ({
@@ -592,7 +592,7 @@ app.get('/api/chorus/nightly/runs', async (_req: Request, res: Response) => {
 
 app.get('/api/chorus/nightly/runs/:id', async (req: Request, res: Response) => {
   const runs = await nightlyRuns();
-  if (!runs) { res.status(503).json({ error: NIGHTLY_UNREAD }); return; }
+  if (!runs) { res.status(503).json({ error: WERK_TEST_UNREAD }); return; }
   const found = readoutFor(runs, String(req.params.id));
   if (!found) { res.status(404).json({ error: `no nightly run ${req.params.id} in the graph` }); return; }
   if (req.query.format === 'text') {
@@ -613,7 +613,7 @@ const nightlySuiteType = (r: { kind: string; path: string }): string =>
   });
 app.get('/nightly', async (req: Request, res: Response) => {
   const runs = await nightlyRuns();
-  if (!runs) { res.status(503).type('text').send(NIGHTLY_UNREAD + '\n'); return; }
+  if (!runs) { res.status(503).type('text').send(WERK_TEST_UNREAD + '\n'); return; }
   const wanted = typeof req.query.run === 'string' && req.query.run ? req.query.run : 'latest';
   const found = readoutFor(runs, wanted);
   if (!found) {

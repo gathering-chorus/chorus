@@ -105,9 +105,9 @@ fn a_run_killed_mid_way_has_already_stored_the_suites_it_finished() {
         .env("CHORUS_WRITE_TOKEN", "fresh")
         .env("OWL_API_TESTS", format!("{base}/tests?limit=10000"))
         .env("OWL_API_TESTSUITERUNS", format!("{base}/testsuiteruns"))
-        .env("NIGHTLY_SUITE_WORKERS", "1")    // fast, then slow — one at a time
-        .env("NIGHTLY_LOAD_CAP", "100000")    // the load gate is not under test
-        .env("NIGHTLY_SUITE_TIMEOUT", "600")  // the slow suite outlives this test on purpose
+        .env("WERK_TEST_SUITE_WORKERS", "1")    // fast, then slow — one at a time
+        .env("WERK_TEST_LOAD_CAP", "100000")    // the load gate is not under test
+        .env("WERK_TEST_SUITE_TIMEOUT", "600")  // the slow suite outlives this test on purpose
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()

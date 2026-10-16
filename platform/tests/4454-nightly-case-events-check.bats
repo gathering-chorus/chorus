@@ -16,7 +16,7 @@ CHECK="${BATS_TEST_DIRNAME}/../scripts/nightly-case-events-check"
 }
 
 @test "an unreachable page is its own state, never a match" {
-  CHORUS_NIGHTLY_URL=http://127.0.0.1:9/nightly run "$CHECK"
+  CHORUS_WERK_TEST_URL=http://127.0.0.1:9/nightly run "$CHECK"
   [ "$status" -eq 2 ]
   [[ "$output" == "cannot read:"* ]] || return 1
 }

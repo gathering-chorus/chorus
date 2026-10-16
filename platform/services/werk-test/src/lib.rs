@@ -4844,10 +4844,10 @@ pub fn kill_group(pid: u32) {
 }
 
 /// #4030 — the per-unit wall cap for jest / npm-test units:
-/// `NIGHTLY_UNIT_TIMEOUT` seconds, default 20 minutes. Jeff, 2026-08-29:
+/// `WERK_TEST_UNIT_TIMEOUT` seconds, default 20 minutes. Jeff, 2026-08-29:
 /// "20 min beats a reboot" — a unit that needs longer is a defect, not a wait.
 pub fn unit_timeout() -> std::time::Duration {
-    let secs: u64 = std::env::var("NIGHTLY_UNIT_TIMEOUT").ok()
+    let secs: u64 = std::env::var("WERK_TEST_UNIT_TIMEOUT").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(1200);
     std::time::Duration::from_secs(secs)
 }
@@ -4946,7 +4946,7 @@ mod deadline_4030 {
 
     #[test]
     fn unit_timeout_defaults_to_twenty_minutes() {
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        std::env::remove_var("WERK_TEST_UNIT_TIMEOUT");
         assert_eq!(unit_timeout(), std::time::Duration::from_secs(1200));
     }
 
@@ -5898,7 +5898,7 @@ where
         Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
     std::thread::scope(|s| {
         // #4022 — heartbeat. The nightly's wedge guard kills a lane that prints
-        // nothing for NIGHTLY_QUIET_CAP (600s). A narrow pool prints only when a
+        // nothing for WERK_TEST_QUIET_CAP (600s). A narrow pool prints only when a
         // unit finishes, and one long bats suite is silent for longer than that:
         // 2026-08-29 11:45 the whole bats lane died that way at load 5. Progress
         // is not a wedge; say so once a minute while anything is in flight.

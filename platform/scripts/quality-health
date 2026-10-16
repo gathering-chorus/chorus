@@ -25,7 +25,7 @@ set -uo pipefail
 
 CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
 LOKI_URL="${LOKI_URL:-http://localhost:3102}"
-NIGHTLY_LOG="${NIGHTLY_LOG:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+WERK_TEST_LOG="${WERK_TEST_LOG:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
 WINDOW_DAYS="${WINDOW_DAYS:-30}"
 VERBOSE=0
 JSON_OUT=0
@@ -39,10 +39,10 @@ done
 
 [ -d "$CHORUS_HOME" ] || { echo "FAIL: chorus root not found at $CHORUS_HOME" >&2; exit 2; }
 
-python3 - "$CHORUS_HOME" "$LOKI_URL" "$NIGHTLY_LOG" "$WINDOW_DAYS" "$VERBOSE" "$JSON_OUT" << 'PYEOF'
+python3 - "$CHORUS_HOME" "$LOKI_URL" "$WERK_TEST_LOG" "$WINDOW_DAYS" "$VERBOSE" "$JSON_OUT" << 'PYEOF'
 import json, subprocess, sys, os, re, datetime, glob
 
-CHORUS_HOME, LOKI_URL, NIGHTLY_LOG, WINDOW_DAYS, VERBOSE, JSON_OUT = sys.argv[1:7]
+CHORUS_HOME, LOKI_URL, WERK_TEST_LOG, WINDOW_DAYS, VERBOSE, JSON_OUT = sys.argv[1:7]
 WINDOW_DAYS = int(WINDOW_DAYS)
 VERBOSE = int(VERBOSE)
 JSON_OUT = int(JSON_OUT)
@@ -54,8 +54,8 @@ window_start_epoch = now - WINDOW_DAYS * day
 # --- 1. Nightly suite results ---
 suite_pass = suite_fail = suite_skip = suite_dnr = 0
 runtime_outliers = []
-if os.path.exists(NIGHTLY_LOG):
-    with open(NIGHTLY_LOG, errors='ignore') as f:
+if os.path.exists(WERK_TEST_LOG):
+    with open(WERK_TEST_LOG, errors='ignore') as f:
         # Look for the most recent batch of "=== Results: ===" lines and slow-suite durations
         for line in f.readlines()[-5000:]:
             m = re.search(r"=== Results: (\d+) passed, (\d+) failed ===", line)

@@ -23,10 +23,10 @@ cleanup() { rm -rf "$TMP"; }
 # nightly holds the tests graph, the index writes (its scheduled job), and the
 # read-only nudge surface. Nothing else. The block lists one scope per line
 # (the first on the subject's own line, the rest continued), so count lines.
-NIGHTLY_RULED_SCOPES='urn:chorus:domains:tests|urn:chorus:index|urn:chorus:nudge-read'
+WERK_TEST_RULED_SCOPES='urn:chorus:domains:tests|urn:chorus:index|urn:chorus:nudge-read'
 nightly_block()          { sed -n '/^chorus:principal-nightly$/,/\./p' "$1"; }
 nightly_scopes()         { nightly_block "$1" | grep -cE '"urn:chorus:[^"]+"'; }
-nightly_nontest_scopes() { nightly_block "$1" | grep -oE '"urn:chorus:[^"]+"' | grep -vcE "\"($NIGHTLY_RULED_SCOPES)\""; }
+nightly_nontest_scopes() { nightly_block "$1" | grep -oE '"urn:chorus:[^"]+"' | grep -vcE "\"($WERK_TEST_RULED_SCOPES)\""; }
 
 # 1. The principal is modeled: service kind, no sign-in.
 grep -q 'chorus:principal-nightly a chorus:Principal' "$PRINCIPALS" && ok || bad "principal-nightly missing from identity TTL"
@@ -35,7 +35,7 @@ sed -n '/^chorus:principal-nightly a chorus:Principal/,/ \.$/p' "$PRINCIPALS" | 
 
 # 2. LEAST privilege: exactly the three ruled scopes, and nothing beyond them.
 [ "$(nightly_scopes "$SCOPES")" -eq 3 ] && ok || bad "nightly must hold exactly the 3 ruled scopes (tests, index, nudge-read), has $(nightly_scopes "$SCOPES")"
-[ "$(nightly_nontest_scopes "$SCOPES")" -eq 0 ] && ok || bad "nightly holds a scope beyond the ruled set: $(nightly_block "$SCOPES" | grep -oE '"urn:chorus:[^"]+"' | grep -vE "\"($NIGHTLY_RULED_SCOPES)\"" | paste -sd' ' -)"
+[ "$(nightly_nontest_scopes "$SCOPES")" -eq 0 ] && ok || bad "nightly holds a scope beyond the ruled set: $(nightly_block "$SCOPES" | grep -oE '"urn:chorus:[^"]+"' | grep -vE "\"($WERK_TEST_RULED_SCOPES)\"" | paste -sd' ' -)"
 
 # 3. NEGATIVE PROOF (#3734): a widened grant makes checks 2 FAIL. Fixture
 #    assembled from fragments so this file never matches the guard itself.
@@ -53,7 +53,7 @@ out=$(CHORUS_IDENTITY_DIR="$TMP/empty-identity" "$SCRIPT_DIR/chorus-identity-tok
 [ -z "$out" ] && ok || bad "mint with no credential must print NOTHING on stdout"
 
 # 6. The runner mints as the nightly principal (env-overridable, default nightly).
-grep -q 'WERK_NIGHTLY_MINT_ROLE' "$ROOT/platform/services/werk-test/src/main.rs" && ok || bad "run_nightly lacks the nightly mint role"
+grep -q 'WERK_TEST_MINT_ROLE' "$ROOT/platform/services/werk-test/src/main.rs" && ok || bad "run_nightly lacks the nightly mint role"
 
 cleanup
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

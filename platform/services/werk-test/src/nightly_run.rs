@@ -855,7 +855,7 @@ pub fn suite_row_payload_timed(run_ts: &str, order: usize, row: &SuiteRow, ts_ms
 }
 
 /// #4156 — does this run write its record to the graph? A werk-rooted run
-/// never writes the team's store (#3722); NIGHTLY_GRAPH_ROWS=0 turns it off
+/// never writes the team's store (#3722); WERK_TEST_GRAPH_ROWS=0 turns it off
 /// anywhere. #4536 (Silas 08:04): no OWLAPI override — prod answers on :3360,
 /// the :3340 proxy and LAN names, so "names a store" could name prod, and a
 /// werk's PipelineRun/TestSuiteRun rows would land on Jeff's /nightly page.
@@ -1231,7 +1231,7 @@ pub fn last_run_rows(log: &str) -> Vec<String> {
 }
 
 /// The load gate's verdict line and pass/fail, from cores × per-core cap
-/// against the 1-minute load (`NIGHTLY_LOAD_STUB` is the test seam).
+/// against the 1-minute load (`WERK_TEST_LOAD_STUB` is the test seam).
 pub fn load_verdict(load: f64, cores: f64, per_core: f64) -> (bool, String) {
     let max = cores * per_core;
     (load <= max, format!("load={} max={:.1}", load, max))

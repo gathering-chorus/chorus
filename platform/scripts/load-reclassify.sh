@@ -7,7 +7,7 @@
 # loaded right now (nightly-suites.sh --load-gate, one shared predicate +
 # nightly-load.conf thresholds). Response-code failures and quiet-box
 # timeouts pass through as FAIL. Consumers: deep-health.sh; probe scripts
-# use the same gate directly. Hermetic tests stub load via NIGHTLY_LOAD_STUB.
+# use the same gate directly. Hermetic tests stub load via WERK_TEST_LOAD_STUB.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

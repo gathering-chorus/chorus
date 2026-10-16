@@ -38,7 +38,7 @@ gate_reason() { prod_gate_reason "$ROOT" "$RUNNER" "$API"; }
 
 setup_file() {
   export RUN_ID
-  RUN_ID="${NIGHTLY_RUN_ID:-${QUARTET_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}}"
+  RUN_ID="${WERK_TEST_RUN_ID:-${QUARTET_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}}"
   # #4282 — lowercase too: the DAL slugs what it writes; a capital in the run id
   # (date -u's T and Z) made every read-back 404 and left 126 rows behind.
   RUN_ID="$(printf '%s' "$RUN_ID" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')"

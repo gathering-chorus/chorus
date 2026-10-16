@@ -4,7 +4,7 @@
 // source. #4156 — that source is the graph rows the run wrote. Hermetic: the
 // in-process harness on an ephemeral port, and a stand-in store answering the
 // page's queries with the rows this log fixture's runs would have written.
-// NIGHTLY_LOG_PATH points at a file that does not exist: the routes must not
+// WERK_TEST_LOG_PATH points at a file that does not exist: the routes must not
 // need it.
 import fs from 'fs';
 import os from 'os';
@@ -29,7 +29,7 @@ beforeAll(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightly-4060-'));
   // #4156 NEGATIVE PROOF — the log is renamed away; every route below still
   // answers, from the graph
-  process.env.NIGHTLY_LOG_PATH = path.join(dir, 'nightly-suites.log.renamed-away');
+  process.env.WERK_TEST_LOG_PATH = path.join(dir, 'nightly-suites.log.renamed-away');
   store = await fakeStore(graphFromLog(LOG));
   process.env.FUSEKI_QUERY = store.url;
   const { startTestApp } = await import('./lib/test-app');
