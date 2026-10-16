@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""#4540 — the store writes the land needs, DRY RUN ONLY (Silas, for Kade).
+# @domain: pipelines
+
+Reads the live rows through the door, compares them with what #4540 needs
+(the chorus-make fixtures in platform/services/chorus-make/tests/fixtures),
+and prints each write as ADD / CHANGE / SAME. It writes nothing: every
+store write at the land is a prod write and waits for Jeff's yes. Exit 0 =
+plan printed; 2 = the door could not be read (no plan is guessed).
+
+Every row goes through the door (Kade 07:00): the card changes only the
+TBox (pipelines-4040.ttl, werk-domains.ttl, already in MODEL_SET), and no
+instance file. The rows below are the ones the files would hold, embedded as
+text, diffed against origin/main so only this card's subjects are written.
+Order at the land: the athena run (TBox) first, so the door serves the new
+fields and /testtypes; then Skills, Pipelines, PipelineSteps, TestTypes,
+StepSkills, with the cicd-test-1 CHANGE last, so cicd never calls a child
+that is not there yet. Applying is a separate, Jeff-approved step.
+"""
+import json, os, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+TEST_TYPE_STEPS = [  # (step, order, mode, continue_on)
+    ("scope", 1, "scope ${CARD} ${ROLE} --scope=${SCOPE}", False),
+    ("prepare", 2, "prepare ${CARD} ${ROLE} --scope=${SCOPE}", False),
+    ("run", 3, "run ${CARD} ${ROLE} --scope=${SCOPE}", True),
+    ("perf", 4, "run ${CARD} ${ROLE} --scope=${SCOPE} --test-type=perf", True),
+    ("report", 5, "report ${CARD} ${ROLE} --scope=${SCOPE}", True),
+    ("verdict", 6, "verdict ${CARD} ${ROLE} --scope=${SCOPE}", False),
+]
+OWNER = "principal-kade"
+
+
+WERK = os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus"))  # the base is read from git here
+BASE = os.environ.get("BASE", "origin/main")
+FILES = {  # (file, class, door collection, mint prefix the door strips)
+    "Pipeline": ("roles/kade/ontology/pipeline-instances.ttl", "pipelines", "pipeline-"),
+    "PipelineStep": ("roles/kade/ontology/pipeline-step-instances.ttl", "pipelinesteps", "pipeline-step-"),
+    "TestType": ("roles/kade/ontology/test-type-instances.ttl", "testtypes", "test-type-"),
+}
+NS = "https://jeffbridwell.com/chorus#"
+RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
+RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+
+# #4540 (Kade 07:00) — the rows as the files would hold them, embedded as text.
+# Not .ttl files: athena-deploy --card loads every .ttl a card changes, and
+# these rows belong in the store through the door, not in the ontology graph.
+ROW_TEXT = {'roles/kade/ontology/pipeline-instances.ttl': '@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .\n\n# =============================================================================\n# #4040 — the pipeline INSTANCES. Exactly the two REAL pipelines with their\n# steps (cicd, athena); clearing + borg as planned instances with NO invented\n# steps (Jeff 16:03: cicd is ONE instance of the pipelines domain, never the\n# archetype). Pure ABox; the rows live in the store (#4432: no deploy seed).\n# Every step declares its executor blend: human | agent | deterministic\n# (Jeff 16:05 — cicd\'s demo GO is the designed human step).\n# =============================================================================\n\n# ── cicd — implemented by werk: commit→build→test→demo→land ─────────────────\nchorus:pipeline-cicd a chorus:Pipeline ;\n    rdfs:label "cicd" ;\n    chorus:pipelineStatus "operating" ;\n    chorus:automates chorus:value-stream-werk ;\n    chorus:hasStep chorus:pipeline-step-cicd-commit , chorus:pipeline-step-cicd-build ,\n                   chorus:pipeline-step-cicd-test , chorus:pipeline-step-cicd-demo ,\n                   chorus:pipeline-step-cicd-land .\n\n# ── athena — shape→forge→seed→validate ──────────────────────────────────────\nchorus:pipeline-athena a chorus:Pipeline ;\n    rdfs:label "athena" ;\n    chorus:pipelineStatus "operating" ;\n    chorus:automates chorus:value-stream-athena ;\n    chorus:hasStep chorus:pipeline-step-athena-shape , chorus:pipeline-step-athena-forge ,\n                   chorus:pipeline-step-athena-validate .\n\n# ── under construction — instances only, no invented steps ──────────────────\nchorus:pipeline-clearing a chorus:Pipeline ;\n    rdfs:label "clearing" ; chorus:pipelineStatus "planned" .\nchorus:pipeline-borg a chorus:Pipeline ;\n    rdfs:label "borg" ; chorus:pipelineStatus "planned" .\n\n\n# ── #4540 — cicd-test: werk-test as steps; cicd\'s test step calls it ────────\n# Jeff 10-16 (B): one queue in his type order, perf alone after it. A child:\n# it takes its parent\'s trace, and its parent owns failure.\nchorus:pipeline-cicd-test a chorus:Pipeline ;\n    rdfs:label "cicd-test" ;\n    chorus:pipelineStatus "operating" ;\n    chorus:automates chorus:value-stream-werk ;\n    chorus:runQueue "werk" ;\n    chorus:runParams "CARD ROLE SCOPE TRACE" ;\n    chorus:traceParam "TRACE" ;\n    chorus:hasStep chorus:pipeline-step-cicd-test-scope , chorus:pipeline-step-cicd-test-prepare ,\n                   chorus:pipeline-step-cicd-test-run , chorus:pipeline-step-cicd-test-perf ,\n                   chorus:pipeline-step-cicd-test-report , chorus:pipeline-step-cicd-test-verdict .\n\n# ── #4540 — the 03:00 nightly: cicd-test with SCOPE=all ─────────────────────\n# Retires com.chorus.nightly-suites (the plist) in the same land.\nchorus:pipeline-nightly a chorus:Pipeline ;\n    rdfs:label "nightly" ;\n    chorus:pipelineStatus "operating" ;\n    chorus:automates chorus:value-stream-werk ;\n    chorus:runQueue "nightly" ;\n    chorus:runSchedule "0 3 * * *" ;\n    chorus:runParams "CARD ROLE" ;\n    chorus:onAbortRun "werk-test report --scope=all --stopped" ;\n    chorus:onExitRun "werk-test notify" ;\n    chorus:hasStep chorus:pipeline-step-nightly-test .\n', 'roles/kade/ontology/pipeline-step-instances.ttl': '@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .\n\n# =============================================================================\n# #4040 — PipelineStep instances, split from pipeline-instances.ttl: the seeder\n# refuses a subject claimed by two kinds in one batch (proven live at the #4040\n# land, 19:23 — pipeline-cicd hit both the \'pipeline\' and \'pipeline-step\'\n# groups). Two kinds, two files — the value-stream / value-stream-step pattern.\n# =============================================================================\n\nchorus:pipeline-step-cicd-commit a chorus:PipelineStep ;\n    rdfs:label "commit" ; chorus:stepOrder 1 ;\n    chorus:executor "agent" ;\n    chorus:coversStep chorus:value-stream-step-commit , chorus:value-stream-step-push .\nchorus:pipeline-step-cicd-build a chorus:PipelineStep ;\n    rdfs:label "build" ; chorus:stepOrder 2 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-build .\nchorus:pipeline-step-cicd-test a chorus:PipelineStep ;\n    rdfs:label "test" ; chorus:stepOrder 3 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-cicd-demo a chorus:PipelineStep ;\n    rdfs:label "demo" ; chorus:stepOrder 4 ;\n    chorus:executor "human" ;\n    chorus:coversStep chorus:value-stream-step-demo .\nchorus:pipeline-step-cicd-land a chorus:PipelineStep ;\n    rdfs:label "land" ; chorus:stepOrder 5 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-merge , chorus:value-stream-step-deploy , chorus:value-stream-step-accept .\n\nchorus:pipeline-step-athena-shape a chorus:PipelineStep ;\n    rdfs:label "shape" ; chorus:stepOrder 1 ;\n    chorus:executor "agent" ;\n    chorus:coversStep chorus:value-stream-step-athena-model .\nchorus:pipeline-step-athena-forge a chorus:PipelineStep ;\n    rdfs:label "forge" ; chorus:stepOrder 2 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-athena-make .\nchorus:pipeline-step-athena-validate a chorus:PipelineStep ;\n    rdfs:label "validate" ; chorus:stepOrder 4 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-athena-validate .\n\n# ── #4540 — cicd-test\'s steps (werk-test as steps) and the nightly\'s one ───\nchorus:pipeline-step-cicd-test-scope a chorus:PipelineStep ;\n    rdfs:label "scope" ; chorus:stepOrder 1 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-cicd-test-prepare a chorus:PipelineStep ;\n    rdfs:label "prepare" ; chorus:stepOrder 2 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-cicd-test-run a chorus:PipelineStep ;\n    rdfs:label "run" ; chorus:stepOrder 3 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-cicd-test-perf a chorus:PipelineStep ;\n    rdfs:label "perf" ; chorus:stepOrder 4 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-cicd-test-report a chorus:PipelineStep ;\n    rdfs:label "report" ; chorus:stepOrder 5 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-cicd-test-verdict a chorus:PipelineStep ;\n    rdfs:label "verdict" ; chorus:stepOrder 6 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\nchorus:pipeline-step-nightly-test a chorus:PipelineStep ;\n    rdfs:label "test" ; chorus:stepOrder 1 ;\n    chorus:executor "deterministic" ;\n    chorus:coversStep chorus:value-stream-step-test .\n', 'roles/kade/ontology/test-type-instances.ttl': '@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .\n\n# =============================================================================\n# #4540 — the test types, in the order the one queue starts them. werk-test\n# reads these rows at scope; a swap here changes the run order (Wren 10-16).\n# Jeff placed seven (2026-09-12): coverage, lint, security, unit, integration,\n# ui, perf. The places of smoke, contract, fitness, bdd, e2e and unclassified\n# are ours (Kade + Silas, #4160), not his: listed for him at present.\n# =============================================================================\n\nchorus:test-type-coverage a chorus:TestType ; rdfs:label "coverage" ; chorus:typeOrder 1 .   # Jeff\'s order\nchorus:test-type-lint a chorus:TestType ; rdfs:label "lint" ; chorus:typeOrder 2 .   # Jeff\'s order\nchorus:test-type-smoke a chorus:TestType ; rdfs:label "smoke" ; chorus:typeOrder 3 .   # our placement, not Jeff\'s\nchorus:test-type-security a chorus:TestType ; rdfs:label "security" ; chorus:typeOrder 4 .   # Jeff\'s order\nchorus:test-type-unit a chorus:TestType ; rdfs:label "unit" ; chorus:typeOrder 5 .   # Jeff\'s order\nchorus:test-type-contract a chorus:TestType ; rdfs:label "contract" ; chorus:typeOrder 6 .   # our placement, not Jeff\'s\nchorus:test-type-integration a chorus:TestType ; rdfs:label "integration" ; chorus:typeOrder 7 .   # Jeff\'s order\nchorus:test-type-fitness a chorus:TestType ; rdfs:label "fitness" ; chorus:typeOrder 8 .   # our placement, not Jeff\'s\nchorus:test-type-bdd a chorus:TestType ; rdfs:label "bdd" ; chorus:typeOrder 9 .   # our placement, not Jeff\'s\nchorus:test-type-e2e a chorus:TestType ; rdfs:label "e2e" ; chorus:typeOrder 10 .   # our placement, not Jeff\'s\nchorus:test-type-ui a chorus:TestType ; rdfs:label "ui" ; chorus:typeOrder 11 .   # Jeff\'s order\nchorus:test-type-perf a chorus:TestType ; rdfs:label "perf" ; chorus:typeOrder 12 .   # Jeff\'s order\nchorus:test-type-unclassified a chorus:TestType ; rdfs:label "unclassified" ; chorus:typeOrder 13 .   # our placement, not Jeff\'s\n'}
+
+
+def file_rows(cls):
+    """#4540 (Kade 06:58) — rows that live in a file are read FROM the file, so
+    the file and the store cannot differ. riot turns the TTL into N-Triples."""
+    import subprocess, re
+    path, coll, prefix = FILES[cls]
+    def ntriples(text):
+        r = subprocess.run(["riot", "--syntax=ttl", "--output=ntriples"], input=text,
+                           capture_output=True, text=True, check=True)
+        return r.stdout
+    nt = ntriples(ROW_TEXT[path])
+    # only the subjects this card changed: a row the card did not touch is not
+    # rewritten (the file's label "test" and the door's "pipeline-step-cicd-test"
+    # already differ on main; that is not this card's write)
+    base = subprocess.run(["git", "-C", WERK, "show", f"{BASE}:{path}"], capture_output=True, text=True)
+    base_nt = set(ntriples(base.stdout).splitlines()) if base.returncode == 0 else set()
+    changed = {l.split(" ", 1)[0] for l in nt.splitlines() if l and l not in base_nt}
+    trip = re.compile(r'^<([^>]+)> <([^>]+)> (?:<([^>]+)>|"((?:[^"\\]|\\.)*)"(?:\^\^<[^>]+>|@\w+)?) \.$')
+    subs = {}
+    for line in nt.splitlines():
+        m = trip.match(line)
+        if not m:
+            continue
+        s_, p_, o_iri, o_lit = m.groups()
+        subs.setdefault(s_, []).append((p_, o_iri if o_iri else o_lit))
+    out = []
+    for s_, po in subs.items():
+        if (RDF_TYPE, NS + cls) not in po or not s_.startswith(NS) or f"<{s_}>" not in changed:
+            continue
+        local = s_[len(NS):]
+        row = {"name": local[len(prefix):] if local.startswith(prefix) else local}
+        for p_, o in po:
+            if p_ == RDF_TYPE:
+                continue
+            key = "label" if p_ == RDFS_LABEL else p_.rsplit("#", 1)[-1]
+            val = o[len(NS):] if isinstance(o, str) and o.startswith(NS) else o
+            row[key] = val if key not in row else f"{row[key]} {val}"
+        out.append(row)
+    return coll, sorted(out, key=lambda r: r["name"])
+
+
+def get(path):
+    with urllib.request.urlopen(f"{DOOR}{path}", timeout=15) as r:
+        return json.load(r).get("data") or []
+
+
+def want():
+    skills, steps, stepskills = [], [], []
+    for step, order, mode, cont in TEST_TYPE_STEPS:
+        skills.append({"name": f"werk-test-{step}", "label": f"werk-test {step}", "executor": "deterministic",
+                       "implementedBy": "werk-test", "arguments": mode, "hasDomain": "tests",
+                       "ownedBy": OWNER, "runsAs": "caller"})
+        steps.append({"name": f"cicd-test-{step}", "label": f"pipeline-step-cicd-test-{step}", "executor": "deterministic",
+                      "stepOrder": str(order), "coversStep": "value-stream-step-test", "_pipeline": "cicd-test"})
+        stepskills.append({"name": f"cicd-test-{step}-1", "label": f"cicd-test {step} 1: werk-test {step}",
+                           "callsSkill": f"skill-werk-test-{step}", "forStep": f"pipeline-step-cicd-test-{step}",
+                           "skillOrder": "1", "withArguments": "continue_on=failure" if cont else "", "ownedBy": OWNER})
+    skills += [
+        {"name": "werk-test-pipeline", "label": "the tests: cicd-test, scope diff", "executor": "pipeline",
+         "implementedBy": "cicd-test", "hasDomain": "tests", "ownedBy": OWNER, "runsAs": "caller"},
+        {"name": "nightly-test", "label": "the tests, scope all", "executor": "pipeline",
+         "implementedBy": "cicd-test", "hasDomain": "tests", "ownedBy": OWNER, "runsAs": "caller"},
+    ]
+    steps.append({"name": "nightly-test", "label": "pipeline-step-nightly-test", "executor": "pipeline",
+                  "stepOrder": "1", "coversStep": "value-stream-step-test", "_pipeline": "nightly"})
+    stepskills.append({"name": "nightly-test-1", "label": "nightly test 1: cicd-test scope all",
+                       "callsSkill": "skill-nightly-test", "forStep": "pipeline-step-nightly-test",
+                       "skillOrder": "1", "withArguments": "SCOPE=all", "ownedBy": OWNER})
+    # the one CHANGE: cicd's test step calls the child, not werk-test (cicd-test-2, werk-review, stays)
+    stepskills.append({"name": "cicd-test-1", "label": "cicd test 1: the tests, cicd-test scope diff",
+                       "callsSkill": "skill-werk-test-pipeline", "forStep": "pipeline-step-cicd-test",
+                       "skillOrder": "1", "withArguments": "SCOPE=diff", "ownedBy": OWNER})
+    pipelines = [
+        {"name": "cicd-test", "label": "pipeline-cicd-test", "automates": "value-stream-werk", "pipelineStatus": "operating",
+         "runQueue": "werk", "runParams": "CARD ROLE SCOPE TRACE", "traceParam": "TRACE"},
+        {"name": "nightly", "label": "pipeline-nightly", "automates": "value-stream-werk", "pipelineStatus": "operating",
+         "runQueue": "nightly", "runSchedule": "0 3 * * *", "runParams": "CARD ROLE",
+         "onAbortRun": "werk-test report --scope=all --stopped", "onExitRun": "werk-test notify"},
+    ]
+    from_files = [file_rows(c) for c in ("Pipeline", "PipelineStep", "TestType")]
+    return [("skills/skills", skills)] + from_files + [("stepskills", stepskills)]
+
+
+def main():
+    try:
+        live = {}
+        for c, _ in want():
+            try:
+                live[c] = {r["name"]: r for r in get(f"/{c}?limit=1000")}
+            except Exception as e:
+                if c != "testtypes":
+                    raise
+                live[c] = {}  # not served until TestType is claimed and the model deploys
+                print(f"TBox  /{c} not served yet ({e}) — every TestType row reads ADD")
+    except Exception as e:
+        print(f"door unreadable at {DOOR}: {e} — no plan")
+        return 2
+    new_fields = ["runQueue", "runSchedule", "runParams", "traceParam", "onAbortRun", "onExitRun"]
+    served = set().union(*(set(r) for r in live["pipelines"].values())) if live["pipelines"] else set()
+    missing = [f for f in new_fields if f not in served]
+    print(f"TBox  Pipeline fields served by the door: {'all' if not missing else 'NOT SERVED: ' + ', '.join(missing)}"
+          + ("" if not missing else "  (deploy the model first; the door refuses these fields until then)"))
+    counts = {"ADD": 0, "CHANGE": 0, "SAME": 0}
+    for coll, rows in want():
+        for w in rows:
+            body = {k: v for k, v in w.items() if not k.startswith("_")}
+            have = live[coll].get(w["name"])
+            if have is None:
+                kind, detail = "ADD", json.dumps(body, sort_keys=True)
+            else:
+                diff = {k: (have.get(k, ""), v) for k, v in body.items() if str(have.get(k, "")) != str(v)}
+                kind, detail = ("SAME", "") if not diff else ("CHANGE", json.dumps({k: f"{a!r} -> {b!r}" for k, (a, b) in diff.items()}))
+            counts[kind] += 1
+            print(f"{kind:<6} {coll}/{w['name']}  {detail}")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — nothing written (dry run)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
