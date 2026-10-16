@@ -16,6 +16,7 @@ export type StateValue =
   | 'waiting'
   | 'in-ceremony'
   | 'reviewing'
+  | 'available'
   | 'away'
   | 'off'
   | 'unmeasured';
@@ -111,6 +112,11 @@ function roleToPrincipal(role: string): string {
   return role.startsWith('principal-') ? role : `principal-${role}`;
 }
 
+export function isTeamRole(r: { name?: string; roleKind?: string }): boolean {
+  const kind = r.roleKind?.toLowerCase();
+  return kind === 'agent' || kind === 'human' || kind === 'person';
+}
+
 function deriveActivity(
   actionFact: ActionFact | undefined,
   nowMs: number,
@@ -180,10 +186,17 @@ interface DerivedStateOutcome {
   pairedWith?: string;
   currentCard?: number | null;
   waitingOn?: { on: string; what: string; since: string };
+  unmeasuredSource?: Array<{ source: string; reason: string }>;
 }
 
-function evaluatePairing(role: string, activePairs: ActivePairFact[]): DerivedStateOutcome | undefined {
+function evaluatePairing(
+  role: string,
+  activePairs: ActivePairFact[],
+  wipCards: WipCardFact[]
+): DerivedStateOutcome | undefined {
   const match = activePairs.find((p) => {
+    const isWip = wipCards.some((w) => w.cardId === p.card);
+    if (!isWip) return false;
     const nav = principalToRole(p.navigator);
     const drv = p.driver ? principalToRole(p.driver) : undefined;
     return nav === role || drv === role;
@@ -191,11 +204,17 @@ function evaluatePairing(role: string, activePairs: ActivePairFact[]): DerivedSt
   if (!match) return undefined;
 
   const isNav = principalToRole(match.navigator) === role;
+  const rawPartner = isNav ? match.driver : match.navigator;
+  const hasPartner = Boolean(rawPartner && rawPartner !== 'unknown' && rawPartner !== 'principal-unknown');
+
   return {
     stateValue: 'pairing',
     pairRole: isNav ? 'navigator' : 'driver',
-    pairedWith: roleToPrincipal(isNav ? (match.driver || 'unknown') : match.navigator),
+    pairedWith: hasPartner && rawPartner ? roleToPrincipal(rawPartner) : undefined,
     currentCard: match.card,
+    unmeasuredSource: hasPartner
+      ? undefined
+      : [{ source: 'pair-registry', reason: `no partner recorded on #${match.card}` }],
   };
 }
 
@@ -247,7 +266,7 @@ interface StateEvaluationFacts {
 }
 
 function evaluateState(facts: StateEvaluationFacts): DerivedStateOutcome {
-  const pairing = evaluatePairing(facts.role, facts.activePairs);
+  const pairing = evaluatePairing(facts.role, facts.activePairs, facts.wipCards);
   if (pairing) return pairing;
 
   const reviewing = evaluateReviewing(facts.role, facts.reviewCards);
@@ -256,8 +275,15 @@ function evaluateState(facts: StateEvaluationFacts): DerivedStateOutcome {
   const waiting = evaluateWaiting(facts.role, facts.owedNudges);
   if (waiting) return waiting;
 
-  const building = evaluateBuilding(facts.role, facts.wipCards, facts.activity === 'acting' || facts.hasLiveSession);
+  const isActingOrLive = facts.activity === 'acting' || facts.hasLiveSession;
+  const building = evaluateBuilding(facts.role, facts.wipCards, isActingOrLive);
   if (building) return building;
+
+  if (isActingOrLive) {
+    return {
+      stateValue: 'available',
+    };
+  }
 
   return {
     stateValue: facts.isHuman ? 'away' : 'off',
@@ -286,6 +312,31 @@ function applyDoorFailures(
   return stateOutcome.stateValue;
 }
 
+function resolvePrincipalInfo(p: string | PrincipalInfo): { principal: string; role: string; isHuman: boolean } {
+  if (typeof p === 'string') {
+    return { principal: p, role: principalToRole(p), isHuman: false };
+  }
+  const isHuman = p.roleKind === 'human' || p.roleKind === 'person';
+  return { principal: p.principal, role: principalToRole(p.principal), isHuman };
+}
+
+function extractActionFact(actionMap: Map<string, ActionFact>, role: string, principal: string): {
+  actionFact: ActionFact | undefined;
+  lastActionMs: number;
+} {
+  const fact = actionMap.get(role) ?? actionMap.get(principal);
+  const lastActionMs = fact?.lastActionAt ? new Date(fact.lastActionAt).getTime() : 0;
+  return { actionFact: fact, lastActionMs };
+}
+
+function combineUnmeasured(
+  a?: Array<{ source: string; reason: string }>,
+  b?: Array<{ source: string; reason: string }>
+): Array<{ source: string; reason: string }> | undefined {
+  const merged = [...(a ?? []), ...(b ?? [])];
+  return merged.length > 0 ? merged : undefined;
+}
+
 function deriveOneActor(
   p: string | PrincipalInfo,
   input: ActorFactInput,
@@ -295,15 +346,10 @@ function deriveOneActor(
   unmeasured: Array<{ source: string; reason: string }> | undefined,
   observedAt: string
 ): RoleStateResult {
-  const principal = typeof p === 'string' ? p : p.principal;
-  const role = principalToRole(principal);
-  const roleKind = typeof p === 'object' && p.roleKind ? p.roleKind : undefined;
-  const isHuman = roleKind === 'human' || roleKind === 'person';
-
+  const { principal, role, isHuman } = resolvePrincipalInfo(p);
   const allSessions = input.sessions ?? [];
   const mySessions = allSessions.filter((s) => s.principal === principal);
-  const actionFact = actionMap.get(role) || actionMap.get(principal);
-  const lastActionMs = actionFact?.lastActionAt ? new Date(actionFact.lastActionAt).getTime() : 0;
+  const { actionFact, lastActionMs } = extractActionFact(actionMap, role, principal);
 
   const activity = deriveActivity(
     actionFact,
@@ -348,7 +394,7 @@ function deriveOneActor(
     observedAt,
     waitingOn: stateOutcome.waitingOn,
     sessions: sessionResults,
-    unmeasuredSource: unmeasured,
+    unmeasuredSource: combineUnmeasured(unmeasured, stateOutcome.unmeasuredSource),
   };
 }
 
@@ -533,7 +579,7 @@ async function fetchRolesFact(
       return [];
     }
     const json = (await res.json()) as { data?: Array<{ name: string; roleKind?: string }> };
-    return (json.data || []).map((r) => ({
+    return (json.data || []).filter(isTeamRole).map((r) => ({
       principal: roleToPrincipal(r.name),
       roleKind: r.roleKind || 'agent',
     }));

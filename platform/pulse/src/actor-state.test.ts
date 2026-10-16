@@ -2,7 +2,7 @@
 // @test-type: unit — deriveActorState over fact fixtures, the endpoint over an in-memory app; no live services
 // @card: #4560
 import request from 'supertest';
-import { deriveActorState, ActorStateService, type ActorFactInput } from './actor-state';
+import { deriveActorState, ActorStateService, isTeamRole, type ActorFactInput } from './actor-state';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
@@ -11,6 +11,10 @@ const P_ABBY = 'principal-abby-normal';
 const P_SILAS = 'principal-silas';
 const P_JEFF = 'principal-jeff';
 const P_KADE = 'principal-kade';
+const ROLE_AGENT = 'agent';
+const ROLE_AUTOMATION = 'automation';
+const ROLE_HUMAN = 'human';
+const ROLE_NAVIGATOR = 'navigator';
 const CH_PANE = 'pane';
 const CH_BROWSER = 'browser';
 const EXP_1300 = '2026-10-16T13:00:00Z';
@@ -20,6 +24,7 @@ const STATE_PAIRING = 'pairing';
 const STATE_BUILDING = 'building';
 const STATE_REVIEWING = 'reviewing';
 const STATE_WAITING = 'waiting';
+const STATE_AVAILABLE = 'available';
 const STATE_AWAY = 'away';
 const STATE_OFF = 'off';
 const STATE_UNMEASURED = 'unmeasured';
@@ -37,6 +42,7 @@ describe('Actor State - Pairing and In-Ceremony', () => {
       now: baseNow,
       principals: [P_WREN, P_ABBY],
       activePairs: [{ card: 4560, navigator: 'wren', driver: 'abby-normal' }],
+      wipCards: [{ cardId: 4560, owner: 'wren' }],
       sessions: [
         { id: 's-wren', principal: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
         { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
@@ -506,3 +512,96 @@ describe('Actor State - Roles Door Down', () => {
     expect(res.body.unmeasured[0].source).toBe(SRC_ATHENA_ROLES);
   });
 });
+
+describe('Actor State - Stale Pairs and Missing Partner', () => {
+  test('stale pair: card not in WIP is ignored so actors do not read pairing', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_WREN, P_KADE],
+      activePairs: [{ card: 1778, navigator: 'wren', driver: 'kade' }],
+      sessions: [
+        { id: 's-wren', principal: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+        { id: 's-kade', principal: P_KADE, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+      ],
+      actions: {
+        wren: { lastActionAt: SEEN_1219, recent5mCount: 1 },
+        kade: { lastActionAt: SEEN_1219, recent5mCount: 1 },
+      },
+      wipCards: [],
+    };
+
+    const states = deriveActorState(input);
+    const wren = states.find((s) => s.aboutPrincipal === P_WREN);
+    const kade = states.find((s) => s.aboutPrincipal === P_KADE);
+
+    expect(wren?.stateValue).not.toBe(STATE_PAIRING);
+    expect(kade?.stateValue).not.toBe(STATE_PAIRING);
+  });
+
+  test('pairing partner missing or unknown leaves pairedWith empty and records unmeasuredSource', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_WREN],
+      activePairs: [{ card: 4560, navigator: 'wren', driver: '' }],
+      sessions: [
+        { id: 's-wren', principal: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+      ],
+      actions: { wren: { lastActionAt: SEEN_1219, recent5mCount: 2 } },
+      wipCards: [{ cardId: 4560, owner: 'wren' }],
+    };
+
+    const states = deriveActorState(input);
+    const wren = states.find((s) => s.aboutPrincipal === P_WREN);
+
+    expect(wren?.stateValue).toBe(STATE_PAIRING);
+    expect(wren?.pairRole).toBe(ROLE_NAVIGATOR);
+    expect(wren?.pairedWith).toBeUndefined();
+    expect(wren?.unmeasuredSource).toEqual([
+      { source: 'pair-registry', reason: 'no partner recorded on #4560' },
+    ]);
+  });
+});
+
+describe('Actor State - Team Roles Filtering', () => {
+  test('isTeamRole returns true only for agent and human team roles based on roleKind', () => {
+    expect(isTeamRole({ name: 'kade', roleKind: ROLE_AGENT })).toBe(true);
+    expect(isTeamRole({ name: 'jeff', roleKind: ROLE_HUMAN })).toBe(true);
+    expect(isTeamRole({ name: 'crawler', roleKind: ROLE_AUTOMATION })).toBe(false);
+    expect(isTeamRole({ name: 'nightly', roleKind: ROLE_AUTOMATION })).toBe(false);
+    expect(isTeamRole({ name: 'zz-probe-20260923', roleKind: 'zz-probe-kind' })).toBe(false);
+  });
+});
+
+describe('Actor State - Available', () => {
+  test('alive with live session and no card derives available for agents and humans', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [
+        { principal: P_SILAS, roleKind: ROLE_AGENT },
+        { principal: P_JEFF, roleKind: ROLE_HUMAN },
+      ],
+      sessions: [
+        { id: 's-silas', principal: P_SILAS, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+        { id: 's-jeff', principal: P_JEFF, channel: CH_BROWSER, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
+      ],
+      actions: {
+        silas: { lastActionAt: SEEN_1219, recent5mCount: 2 },
+        jeff: { lastActionAt: SEEN_1219, recent5mCount: 0 },
+      },
+      wipCards: [],
+      activePairs: [],
+      reviewCards: [],
+      owedNudges: [],
+    };
+
+    const states = deriveActorState(input);
+    const silas = states.find((s) => s.aboutPrincipal === P_SILAS);
+    const jeff = states.find((s) => s.aboutPrincipal === P_JEFF);
+
+    expect(silas?.stateValue).toBe(STATE_AVAILABLE);
+    expect(jeff?.stateValue).toBe(STATE_AVAILABLE);
+  });
+});
+
+
+
