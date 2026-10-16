@@ -13,6 +13,12 @@
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <!-- Go keeps memory it took for big queries (5.1 GB reserved, measured 10-16) -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>GOMEMLIMIT</key>
+        <string>1GiB</string>
+    </dict>
     <key>StandardOutPath</key>
     <string>/tmp/loki.log</string>
     <key>StandardErrorPath</key>

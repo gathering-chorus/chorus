@@ -99,13 +99,14 @@ fn writes_go_bare_units_first_then_whole_units_then_deletes_then_builtfrom() {
     assert_eq!(shape[0], ("POST", "units/batch"));
     assert!(w[0].rows.iter().flatten().all(|(k, _)| k != "dependsOn"), "the batch carries no edges");
     assert_eq!(w[0].rows.len(), 2);
-    assert_eq!(shape.iter().filter(|(m, _)| *m == "PUT").count(), 2);
-    assert!(w.iter().filter(|x| x.method == "PUT").any(|x| x.rows[0].iter().any(|(k, _)| k == "dependsOn")), "the whole unit carries its edge");
-    assert_eq!(shape[3], ("DELETE", "units/gone"));
-    assert!(w[3].rows.is_empty());
-    assert_eq!(shape[4], ("PATCH", "services/werk"));
-    assert_eq!(w[4].rows[0], vec![s("builtFrom", "platform-services-werk-accept")]);
-    assert_eq!(w.len(), 5);
+    // #4562 — only the created unit that carries an edge is written again
+    assert_eq!(shape.iter().filter(|(m, _)| *m == "PUT").count(), 1);
+    assert!(w.iter().filter(|x| x.method == "PUT").all(|x| x.rows[0].iter().any(|(k, _)| k == "dependsOn")), "the second write is only for edges");
+    assert_eq!(shape[2], ("POST", "units/delete-batch"));
+    assert_eq!(w[2].rows, vec![vec![s("name", "gone")]]);
+    assert_eq!(shape[3], ("PATCH", "services/werk"));
+    assert_eq!(w[3].rows[0], vec![s("builtFrom", "platform-services-werk-accept")]);
+    assert_eq!(w.len(), 4);
 }
 
 #[test]

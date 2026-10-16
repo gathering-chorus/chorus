@@ -64,23 +64,10 @@ fn env_or(k: &str, d: &str) -> String {
     std::env::var(k).ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| d.to_string())
 }
 
-/// #4251 — launchd's own words for why the job last exited, when it has any.
-/// Best-effort: a missing or unreadable answer is None, never a guess.
+/// #4251 — launchd's words for why the job last exited. #4562: the nightly is
+/// a dagu run now, with no LaunchAgent to ask, so there is no such answer.
 fn launchd_exit_reason() -> Option<String> {
-    let uid = Command::new("id").arg("-u").output().ok()?;
-    let uid = String::from_utf8_lossy(&uid.stdout).trim().to_string();
-    let out = Command::new("launchctl")
-        .arg("print")
-        .arg(format!("gui/{uid}/com.chorus.nightly-suites"))
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let line = text.lines().find(|l| l.contains("last exit reason"))?;
-    let reason = line.split('=').nth(1)?.trim();
-    if reason.is_empty() || reason == "0" {
-        return None;
-    }
-    Some(format!("launchd {reason}"))
+    None
 }
 
 fn mint_token(root: &str, role: &str) -> Option<String> {
@@ -752,13 +739,9 @@ pub fn read_mode(args: &[String]) -> Option<Result<i32, String>> {
         // mtime against 26h: on 2026-09-21 a 21:11 hand run had written the
         // file, so the mtime was fresh, the 03:00 job had never launched, and
         // the readout showed the night before's four reds as that morning's.
-        let plist = format!(
-            "{}/Library/LaunchAgents/com.chorus.nightly-suites.plist",
-            std::env::var("HOME").unwrap_or_default()
-        );
-        let slots = werk_test::run_record::slots_from_plist(
-            &std::fs::read_to_string(&plist).unwrap_or_default(),
-        );
+        // #4562 — the slot is the dagu nightly's schedule (the plist is retired)
+        let sched = format!("{}/platform/pipelines/nightly.yaml", env_or("CHORUS_HOME", &env_or("CHORUS_ROOT", ".")));
+        let slots = werk_test::run_record::slots_from_schedule(&std::fs::read_to_string(&sched).unwrap_or_default());
         let rows = last_run_rows(&body);
         if !slots.is_empty() {
             let reds = rows.iter().filter(|l| l.contains("|fail|")).count();
@@ -1126,6 +1109,11 @@ fn parse_validate_lines(out: &str) -> Vec<ValidateLine> {
 /// all (a clean verdict over nothing read is the hollow gate, #3734).
 fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     let rows = parse_validate_lines(out);
+    // #4562 (Silas) — a crawl stopped at its cap is named as cut short, never
+    // read as clean or as a crawler that printed nothing for its own reasons
+    if rows.is_empty() && rc == 124 {
+        return ("unmeasured", "0 pass, 0 fail (UNMEASURED — the crawl was cut short at its 1200s cap before it validated)".to_string());
+    }
     if rows.is_empty() {
         return (
             "unmeasured",
@@ -1342,6 +1330,10 @@ mod lanes_4278 {
         let (v, s) = crawler_validate_verdict(0, out);
         assert_eq!(v, "unmeasured");
         assert!(s.contains("logs (LogSource)"), "{s}");
+        // #4562 NEGATIVE PROOF: a crawl cut short at the cap is unmeasured and says so
+        let (cv, cs) = crawler_validate_verdict(124, "SUITE TIMEOUT rc=124 after 1200s\n");
+        assert_eq!(cv, "unmeasured");
+        assert!(cs.contains("cut short"), "{cs}");
         let (v, s) = crawler_validate_verdict(0, "chorus-crawl: reconcile: clean — the graph matches the tree\n");
         assert_eq!(v, "unmeasured");
         assert!(s.contains("no VALIDATE rows"), "{s}");
@@ -1597,10 +1589,6 @@ pub fn step_all(
             };
             let legs = std::env::var("WERK_TEST_LEGS_NOOP").is_err();
             if !perf && legs {
-                // #4290 — first: is the graph what git is, on every crawler domain?
-                // A red here is a suite row; the tests still run (Silas 10-16).
-                let t = Instant::now();
-                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
                 // #4160 — Jeff's order: coverage, then lint, then smoke; the queue runs the rest
                 for r in leg_coverage(&ctx) {
                     push(&ctx, r, &mut rows);
@@ -1622,6 +1610,14 @@ pub fn step_all(
                 std::process::exit(if STOP_SIGNAL.load(Ordering::SeqCst) == 2 { 130 } else { 143 });
             }
             rows.extend(lane.rows.iter().cloned());
+            if !perf && legs {
+                // #4290 — is the graph what git is, on every crawler domain?
+                // #4562 (Jeff 10-16 "20 minutes is still way too long") — after
+                // the tests, not before: no suite needs the crawl, and the tests
+                // waited up to its whole 1200s cap behind it.
+                let t = Instant::now();
+                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
+            }
             if perf && legs {
                 // #4278 — did an agent die under the run; did the run keep its budget
                 let start: std::collections::BTreeMap<String, Option<u32>> = d.get("daemons").unwrap_or_default().iter()

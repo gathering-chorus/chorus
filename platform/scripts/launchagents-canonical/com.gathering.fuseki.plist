@@ -24,7 +24,7 @@
         <key>FUSEKI_BASE</key>
         <string>/Users/jeffbridwell/.gathering/data</string>
         <key>JVM_ARGS</key>
-        <string>-Xmx2g</string>
+        <string>-Xmx3g</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

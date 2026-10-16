@@ -109,6 +109,15 @@ fn pulse_snapshot_stale() -> bool {
         .unwrap_or(true)
 }
 
+/// #4562 — drop expired entries before adding one. The caches had a TTL on
+/// read but nothing ever removed an entry, and the semantic leg keys on the
+/// whole prompt, so every prompt from every role stayed in the daemon for its
+/// life (chorus-hooks held 1.8 GB of small allocations after 4h, 10-16).
+fn insert_fresh<V>(cache: &mut HashMap<String, (Instant, V)>, key: String, value: V, ttl: Duration) {
+    cache.retain(|_, (stamp, _)| stamp.elapsed() < ttl);
+    cache.insert(key, (Instant::now(), value));
+}
+
 /// Cached wrapper around `query_chorus_hybrid`. Keyed by role + sorted
 /// keywords so two prompts with the same meaningful tokens share results
 /// within HYBRID_CACHE_TTL.
@@ -134,7 +143,7 @@ fn cached_query_chorus_hybrid(
 
     let results = query_chorus_hybrid(query, domain_tag);
     if let Ok(mut cache) = HYBRID_CACHE.lock() {
-        cache.insert(key, (Instant::now(), results.clone()));
+        insert_fresh(&mut cache, key, results.clone(), HYBRID_CACHE_TTL);
     }
     results
 }
@@ -159,7 +168,7 @@ fn cached_query_chorus_semantic(
 
     let results = query_chorus_semantic(prompt, domain_tag);
     if let Ok(mut cache) = HYBRID_CACHE.lock() {
-        cache.insert(key, (Instant::now(), results.clone()));
+        insert_fresh(&mut cache, key, results.clone(), HYBRID_CACHE_TTL);
     }
     results
 }
@@ -176,7 +185,7 @@ fn cached_query_athena_domain(role: &str) -> Option<String> {
     }
     let value = query_athena_domain(role);
     if let Ok(mut cache) = ATHENA_CACHE.lock() {
-        cache.insert(role.to_string(), (Instant::now(), value.clone()));
+        insert_fresh(&mut cache, role.to_string(), value.clone(), ATHENA_CACHE_TTL);
     }
     value
 }
@@ -1518,5 +1527,33 @@ mod tests {
             "context_inject returned EMPTY for a real prompt — the 0-byte bug (#3048). \
              check() must always push at least the manifest, never nothing."
         );
+    }
+}
+
+#[cfg(test)]
+mod cache_eviction_4562 {
+    use super::insert_fresh;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn an_insert_drops_every_expired_entry() {
+        let mut c: HashMap<String, (Instant, u32)> = HashMap::new();
+        let old = Instant::now() - Duration::from_secs(120);
+        for i in 0..1000 {
+            c.insert(format!("prompt {i}"), (old, i));
+        }
+        insert_fresh(&mut c, "new".into(), 1, Duration::from_secs(30));
+        assert_eq!(c.len(), 1, "1000 expired prompts must not stay in the daemon");
+    }
+
+    /// NEGATIVE PROOF: entries still inside the TTL are kept — the cache still caches.
+    #[test]
+    fn negative_proof_fresh_entries_are_kept() {
+        let mut c: HashMap<String, (Instant, u32)> = HashMap::new();
+        c.insert("recent".into(), (Instant::now(), 7));
+        insert_fresh(&mut c, "new".into(), 1, Duration::from_secs(30));
+        assert_eq!(c.len(), 2);
+        assert_eq!(c["recent"].1, 7);
     }
 }
