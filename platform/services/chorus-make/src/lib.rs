@@ -568,9 +568,12 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
         "  - PATH: ${{CHORUS_WERK_BASE}}/${{ROLE}}-bin:${{PATH}}\n",
     ), trace));
     out.push_str("handler_on:\n");
-    // a pipeline with an exit handler tells people there (the nightly's notify
-    // names every red to its owner); else a failure nudges the card's builder
-    if pipe.on_exit.is_empty() {
+    // Who hears a failure: a child (it takes its trace from a parent) says
+    // nothing — the parent owns failure, so the card is nudged once (Silas
+    // measured the double nudge, 10-16). A pipeline with an exit handler tells
+    // people there (the nightly's notify names every red to its owner). Else a
+    // failure nudges the card's builder.
+    if pipe.trace_param.is_empty() && pipe.on_exit.is_empty() {
         out.push_str(&format!(
             "  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {pipeline} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));

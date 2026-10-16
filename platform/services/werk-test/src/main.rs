@@ -231,6 +231,11 @@ fn run(args: &[String]) -> Result<i32, String> {
     let _ = PROGRESS_CTX.set((role.clone(), card.clone(), trace.clone()));
     let ctx = Ctx { args: args.to_vec(), card, role, werk, trace, changed, dir };
     match step.as_deref() {
+        // #4540 (Wren 10-16) — a step run names its scope; no default, so a
+        // child pipeline called without SCOPE refuses here, never runs "diff" by luck
+        Some("scope") if flag_value(args, "--scope").as_deref() != Some("diff") => {
+            Err("`werk-test scope <card> <role>` needs --scope=diff (or --scope=all for the nightly): a step has no default scope".into())
+        }
         Some("scope") => Ok(step_scope(&ctx)?.unwrap_or(0)),
         Some("prepare") => step_prepare(&ctx),
         // #4540 (Jeff 10-16 B) — `run` is the one queue in his type order;

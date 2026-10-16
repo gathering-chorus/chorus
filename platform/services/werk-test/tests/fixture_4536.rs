@@ -643,8 +643,20 @@ fn run_steps(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[Str
 
 /// #4540 — Jeff 10-16 B: the queue, then perf alone, then report and verdict.
 const ALL_STEPS: &[&[&str]] = &[
-    &["scope"], &["prepare"], &["run"], &["run", "--test-type=perf"], &["report"], &["verdict"],
+    &["scope", "--scope=diff"], &["prepare"], &["run"], &["run", "--test-type=perf"], &["report"], &["verdict"],
 ];
+
+/// Wren 10-16 NEGATIVE PROOF: a step run with no scope refuses at scope — the
+/// child pipeline called without SCOPE never runs a default by luck.
+#[test]
+fn negative_proof_a_scope_step_with_no_scope_refuses() {
+    let runs = run_steps("s6", "92006", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &[&["scope"], &["scope", "--scope="]]);
+    for r in &runs {
+        assert_eq!(r.code, 3, "{}", r.out);
+        assert!(r.out.contains("needs --scope=diff"), "{}", r.out);
+    }
+}
 
 #[test]
 fn the_steps_run_apart_reach_the_same_clean_verdict() {

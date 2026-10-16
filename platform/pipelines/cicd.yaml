@@ -29,13 +29,16 @@ steps:
     description: "werk-build"
     depends: [skill-werk-push]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-build card=${CARD} target=werk"
-  - name: skill-werk-test
-    description: "werk-test"
+  - name: skill-werk-test-pipeline
+    description: "the tests: cicd-test, scope diff"
     depends: [skill-werk-build]
-    command: "${HOME}/.chorus/bin/chorus-runner call werk-test card=${CARD}"
+    action: dag.run
+    with:
+      dag: cicd-test
+      params: "CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff"
   - name: skill-werk-review
     description: "werk-review"
-    depends: [skill-werk-test]
+    depends: [skill-werk-test-pipeline]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-review card=${CARD}"
   - name: skill-werk-deploy-demo
     description: "werk-deploy-demo"

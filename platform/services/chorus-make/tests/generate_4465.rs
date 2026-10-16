@@ -65,8 +65,10 @@ fn cards_and_lands_run_on_their_own_queues() {
     assert!(land.contains("\nqueue: werk-land\n"), "{land}");
     let enq = card.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).expect("the card enqueues its land");
     assert!(enq.contains("    action: dag.enqueue\n    with:\n      dag: cicd-land\n"), "{enq}");
-    // NEGATIVE PROOF: never a call (dag.run) and never a file path, which dagu refuses
-    assert!(!card.contains("dag.run") && !enq.contains(".yaml"), "{enq}");
+    // NEGATIVE PROOF: the land is never a call (dag.run would ignore its queue)
+    // and never a file path, which dagu refuses. #4540: the card's test step
+    // IS a dag.run (the cicd-test child); the land step still is not.
+    assert!(!enq.contains("dag.run") && !enq.contains(".yaml"), "{enq}");
 }
 
 #[test]
@@ -90,7 +92,7 @@ fn every_land_step_runs_after_the_go_and_none_before_it() {
 fn negative_proof_a_hand_edited_step_goes_red_in_the_drift_check() {
     let expected = generate("cicd", &cicd()).unwrap();
     assert!(drift(&expected, &expected).is_ok(), "an untouched file matches");
-    let edited = expected.replace("chorus-runner call werk-test card=${CARD}", "chorus-runner call werk-test card=${CARD} type=unit");
+    let edited = expected.replace("chorus-runner call werk-review card=${CARD}", "chorus-runner call werk-review card=${CARD} type=unit");
     assert_ne!(edited, expected, "the edit must change the file, or this proves nothing");
     let err = drift(&expected, &edited).expect_err("a hand edit must be caught");
     assert!(err.contains("type=unit"), "the failure names what changed: {err}");
@@ -229,8 +231,9 @@ fn a_failed_run_nudges_the_builder() {
 #[test]
 fn negative_proof_one_skill_called_twice_is_refused() {
     let mut rows = cicd();
-    rows[4].skill = rows[3].skill.clone(); // review now calls skill-werk-test again
-    assert!(check(&rows).iter().any(|e| e.contains("skill-werk-test: called twice")), "{:?}", check(&rows));
+    rows[4].skill = rows[3].skill.clone(); // review now calls the test step's skill again
+    let twice = format!("{}: called twice", rows[3].skill);
+    assert!(check(&rows).iter().any(|e| e.contains(&twice)), "{:?}", check(&rows));
 }
 
 #[test]

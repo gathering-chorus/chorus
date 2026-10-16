@@ -90,3 +90,15 @@ fn negative_proof_a_pipeline_row_with_no_queue_or_a_stray_field_is_refused() {
     assert!(parse_pipe("queue\tq\nqeueu\tx\n").unwrap_err().iter().any(|e| e.contains("unknown Pipeline field 'qeueu'")));
     assert!(parse_pipe("queue\tq\nparams\tCARD\ntraceParam\tTRACE\n").is_err(), "a trace param it does not take");
 }
+
+/// Silas 10-16, measured on a scratch dagu: the child's own failure handler
+/// doubled the card's nudge. NEGATIVE PROOF both ways: the child has none; a
+/// top-level straight pipeline with no exit handler still has one.
+#[test]
+fn a_child_pipeline_has_no_failure_handler_and_a_top_level_one_keeps_it() {
+    let child = generate_straight("cicd-test", &parse_pipe(&fixture("cicd-test-pipe.tsv")).unwrap(), &rows("cicd-test-rows.tsv"), &known()).unwrap();
+    assert!(!child.contains("  failure:\n"), "{child}");
+    let top = parse_pipe("queue\twerk\nparams\tCARD ROLE\n").unwrap();
+    let out = generate_straight("x", &top, &rows("cicd-test-rows.tsv"), &known()).unwrap();
+    assert!(out.contains("  failure:\n"), "{out}");
+}

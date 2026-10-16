@@ -11,6 +11,13 @@ fn fixture(name: &str) -> String {
     std::fs::read_to_string(format!("{dir}/tests/{name}")).expect("fixture")
 }
 
+/// #4540 — a cicd run calls its test child too: its verbs are both files' rows.
+fn cicd_and_child() -> Vec<chorus_make::Row> {
+    let mut rows = parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap();
+    rows.extend(parse_rows(&fixture("fixtures/cicd-test-rows.tsv")).unwrap());
+    rows
+}
+
 #[test]
 fn mcp_verbs_are_the_werk_tools_not_the_pipeline_trigger() {
     let v = mcp_verbs(&fixture("fixtures/tool-names-20261009.txt"));
@@ -21,7 +28,7 @@ fn mcp_verbs_are_the_werk_tools_not_the_pipeline_trigger() {
 
 #[test]
 fn skill_verbs_are_the_binaries_of_deterministic_rows() {
-    let rows = parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap();
+    let rows = cicd_and_child();
     let v = skill_verbs(&rows);
     // werk-deploy runs three skills (werk, env-up, canonical) but is one verb
     assert!(v.contains("werk-deploy") && v.contains("werk-sync"));
@@ -34,7 +41,7 @@ fn skill_verbs_are_the_binaries_of_deterministic_rows() {
 // must go red on this and name all five.
 #[test]
 fn todays_lists_differ_and_the_check_names_every_gap() {
-    let rows = parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap();
+    let rows = cicd_and_child();
     let err = verb_parity(&skill_verbs(&rows), &mcp_verbs(&fixture("fixtures/tool-names-20261009.txt")))
         .expect_err("today's lists differ");
     for v in ["werk-pull", "werk-unpull", "werk-test", "werk-demo", "werk-sync"] {
