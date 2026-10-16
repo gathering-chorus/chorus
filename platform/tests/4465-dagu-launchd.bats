@@ -59,7 +59,8 @@ ok_bind() {
 passthrough_unset() {
   local wf="$ROOT/platform/pipelines/cicd.yaml" missing="" v
   for v in $(sed -n '/^env:/,/^steps:/p' "$wf" | grep -oE '\$\{[A-Z_]+\}' | tr -d '${}' | sort -u); do
-    [ "$v" = DAG_RUN_ID ] && continue  # dagu sets its own run id
+    # dagu sets its own run id and name (#4553: DAG_NAME, measured 10-15 on a scratch run)
+    case "$v" in DAG_RUN_ID|DAG_NAME) continue ;; esac
     # the run's own params come from the run, not the LaunchAgent
     sed -n '/^params:/,/^env:/p' "$wf" | grep -q -- "- $v:" && continue
     plutil -extract "EnvironmentVariables.$v" raw "$1" >/dev/null 2>&1 || missing="$missing $v"
