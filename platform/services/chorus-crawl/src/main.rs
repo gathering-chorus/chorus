@@ -2091,7 +2091,19 @@ fn run_code(args: &[String]) -> i32 {
             _ => Some(format!("[{}]", w.rows.iter().map(|r| fields_json(r)).collect::<Vec<_>>().join(","))),
         };
         if let Err(e) = write(&ident, &api, w.method, &w.path, body.as_deref()) {
-            failed.push(format!("{}: {e}", w.what));
+            // #4562 (Silas) — one name already gone refuses the whole
+            // delete-batch (athena-make lib.rs:2863): fall back to one at a time,
+            // so each failure is named and the rest still go
+            if w.path.ends_with("/delete-batch") {
+                let base = w.path.trim_end_matches("/delete-batch");
+                for n in w.rows.iter().filter_map(|r| r.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone())) {
+                    if let Err(e) = write(&ident, &api, "DELETE", &format!("{base}/{n}"), None) {
+                        failed.push(format!("delete {n}: {e}"));
+                    }
+                }
+            } else {
+                failed.push(format!("{}: {e}", w.what));
+            }
         }
     }
     // #4499 reopen 3 — written last, after the units they name exist
