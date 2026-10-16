@@ -325,3 +325,11 @@ describe('Clearing v2: Server App & Tile Service', () => {
   });
 });
 
+describe('Clearing v2: #4570 Service Run & WiFi Binding', () => {
+  test('loadConfig without explicit path loads clearing-v2.config.json and binds 0.0.0.0 on :3472 for wifi', () => {
+    const cfg = loadConfig();
+    expect(cfg.port).toBe(3472);
+    expect(cfg.host).toBe('0.0.0.0');
+    expect(cfg.pulseUrl).toBe('http://127.0.0.1:3475');
+  });
+});

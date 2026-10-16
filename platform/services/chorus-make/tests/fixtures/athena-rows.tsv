@@ -6,5 +6,7 @@
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 shape	1	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--card args=${CARD}
 forge	2	1	skill-athena-gen	athena-gen	deterministic	athena-gen	{args}		AthenaVerbInput	args=generate args=--card args=${CARD}
-seed	3	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=--card args=${CARD}
-validate	4	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--staging
+athena-baseline-copy	3	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=copy
+athena-baseline	4	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--staging args=--write-baseline
+seed	5	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=--card args=${CARD}
+validate	6	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--staging

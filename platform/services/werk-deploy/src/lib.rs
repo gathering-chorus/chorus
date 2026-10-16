@@ -1395,6 +1395,13 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String)> {
             "com.chorus.clearing",
             env::var("CHORUS_CLEARING_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3470/health".to_string()),
         )),
+        // #4570 — Clearing v2, always on at :3472 beside the current Clearing; a
+        // land that touches it builds dist in canonical (dist is gitignored) and kickstarts.
+        "clearing-v2" => Some((
+            "directing/clearing-v2",
+            "com.chorus.clearing-v2",
+            env::var("CHORUS_CLEARING_V2_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3472/health".to_string()),
+        )),
         _ => None,
     }
 }
@@ -1471,7 +1478,7 @@ fn restart_when_idle(args: &[String]) -> R<String> {
         let body = Command::new("curl").args(["-s", "-m", "5", &url]).output()
             .ok().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
         if running_runs(&body) == Some(0) {
-            run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)])
+            kickstart_prod(&label)
                 .map_err(|e| format!("restart of {} failed: {}", label, e))?;
             jsonl(&home, &role, card, &trace, "deploy.restarted",
                 &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"code-changed-restarted-when-idle\"", label));
@@ -1553,7 +1560,7 @@ fn deploy_ts_daemon_canonical(
     if !Path::new(&dir).is_dir() {
         return Err(died(home, role, card, trace, "dir-not-found", format!("{} dir not found at {}", name, dir)));
     }
-    let kickstart = || run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+    let kickstart = || kickstart_prod(&svc);
     let smoke = || wait_for_api_healthy(&smoke_url);
 
     if rollback_mode {
@@ -1594,8 +1601,13 @@ fn deploy_ts_daemon_canonical(
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-build-fail"), ("failureClass", failure_class("npm-build-fail"))]);
         return Err(died(home, role, card, trace, "npm-build-fail", format!("npm run build failed for {}: {}", name, e)));
     }
-    let _ = kickstart(); // bash parity: warn-only — the smoke is the gate
+    // bash parity: kickstart is warn-only — the smoke is the gate
+    let (installed, _) = kickstart_prod_reporting(&svc);
     if let Err(e) = smoke() {
+        if matches!(installed, Ok(AgentInstall::Installed)) {
+            let bootout = |l: &str| run_env(None, &[], "launchctl", &["bootout", &format!("gui/{}/{}", uid(), l)]);
+            let _ = uninstall_agent(&svc, &launch_agents_dir(), &bootout);
+        }
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "smoke-timeout"), ("failureClass", failure_class("smoke-timeout"))]);
         return Err(died(home, role, card, trace, "smoke-timeout", format!("{} smoke failed after deploy: {}", name, e)));
     }
@@ -1712,7 +1724,7 @@ fn run_crate_mode(args: &[String]) -> R<String> {
         }
         if let Ok(TargetClass::RustService { svc, .. }) = target_class_in(&name, Path::new(&root)) {
             emit_rollback_stop(&home, &role, card, &trace, &svc, "crate rollback");
-            run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
+            kickstart_prod(&svc)
                 .map_err(|e| format!("kickstart {} after rollback failed: {}", svc, e))?;
             wait_for_service_up(&svc)?;
         }
@@ -2024,6 +2036,8 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
             add("pulse");
         } else if l.starts_with("directing/clearing/") {
             add("clearing");
+        } else if l.starts_with("directing/clearing-v2/") {
+            add("clearing-v2");
         }
     }
     out
@@ -2318,7 +2332,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         labels.push(format!("restart-when-idle:{}", label));
     }
     for label in &restarts {
-        run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)])
+        kickstart_prod(&label)
             .map_err(|e| died(home, role, card, trace, "restart-fail",
                 format!("restart of {} (its code changed in this land) failed: {}", label, e)))?;
         jsonl(home, role, card, trace, "deploy.restarted",
@@ -2505,7 +2519,7 @@ fn deploy_rust_service(
             run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), svc)]).ok().as_deref(),
         );
         if is_daemon {
-            if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
+            if let Err(e) = kickstart_prod(&svc) {
                 rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
                 return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
             }
@@ -2541,7 +2555,7 @@ fn deploy_rust_service(
                     }
                     RunVerdict::Stale => {
                         // started before the install (old inode) → force-reload ONCE, re-decide. No loop.
-                        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+                        let _ = kickstart_prod(&svc);
                         let _ = wait_for_service_up(svc);
                         match running_verdict(is_daemon, b, i, resolve_restarted(svc, install_epoch)) {
                             RunVerdict::Ok => {
@@ -2704,13 +2718,13 @@ fn deploy_ts_service(
     jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"dist_sha\":\"{}\",\"phase\":\"pre-kickstart\"", svc_name, installed_sha));
 
     // Kickstart the LaunchAgent. v1 uses `launchctl kickstart -k gui/<uid>/<svc>`.
-    if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
+    if let Err(e) = kickstart_prod(&svc) {
         // Rollback: restore prev dist + re-kickstart so the prior version stays up.
         let _ = fs::remove_dir_all(&canonical_dist);
         if Path::new(&canonical_dist_prev).is_dir() {
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
-        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+        let _ = kickstart_prod(&svc);
         jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"ts-kickstart-fail\"");
         return Err(format!("kickstart {} failed; restored prev dist: {}", svc, e));
     }
@@ -2733,7 +2747,7 @@ fn deploy_ts_service(
         if Path::new(&canonical_dist_prev).is_dir() {
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
-        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+        let _ = kickstart_prod(&svc);
         jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"ts-verify-fail\"");
         return Err(format!("post-restart verify for {} failed; restored prev dist: {}", svc_name, e));
     }
@@ -3420,6 +3434,58 @@ pub fn rebuild_took(built: Option<std::time::SystemTime>, newest_source: Option<
     }
 }
 
+/// #4570 — what `ensure_agent_installed` did for a label.
+#[derive(Debug, PartialEq)]
+pub enum AgentInstall { Loaded, Installed, Missing(PathBuf) }
+
+/// #4570 — Silas: the 4th land (athena-make 08-22, pulse-api 10-10, runner 10-13,
+/// clearing-v2 10-16) that failed because prod deploy only kickstarts, and a
+/// kickstart cannot start a LaunchAgent nobody loaded. Only demo_env bootstrapped.
+/// Now: a label that is not loaded, whose plist is in launchagents-canonical, is
+/// copied to the LaunchAgents dir and bootstrapped. No canonical plist → Missing,
+/// and the kickstart after it fails loud exactly as before (nothing is invented).
+pub fn ensure_agent_installed(
+    label: &str, canonical_root: &str, agents_dir: &Path,
+    is_loaded: &dyn Fn(&str) -> bool, bootstrap: &dyn Fn(&Path) -> R<String>,
+) -> R<AgentInstall> {
+    if is_loaded(label) { return Ok(AgentInstall::Loaded); }
+    let src = Path::new(canonical_root).join("platform/scripts/launchagents-canonical").join(format!("{}.plist", label));
+    if !src.is_file() { return Ok(AgentInstall::Missing(src)); }
+    let dst = agents_dir.join(format!("{}.plist", label));
+    fs::copy(&src, &dst).map_err(|e| format!("install {} → {}: {}", src.display(), dst.display(), e))?;
+    bootstrap(&dst)?;
+    Ok(AgentInstall::Installed)
+}
+
+/// #4570 — Silas's review: a deploy that bootstrapped an agent and then fails its
+/// smoke must not leave a crash loop: boot it out and remove the copied plist.
+pub fn uninstall_agent(label: &str, agents_dir: &Path, bootout: &dyn Fn(&str) -> R<String>) -> R<()> {
+    let _ = bootout(label);
+    let dst = agents_dir.join(format!("{}.plist", label));
+    if dst.exists() { fs::remove_file(&dst).map_err(|e| format!("remove {}: {}", dst.display(), e))?; }
+    Ok(())
+}
+
+fn launch_agents_dir() -> PathBuf { PathBuf::from(env::var("HOME").unwrap_or_default()).join("Library/LaunchAgents") }
+
+/// #4570 — install-if-unloaded, then kickstart; says whether it installed.
+fn kickstart_prod_reporting(label: &str) -> (R<AgentInstall>, R<String>) {
+    let home = env::var("HOME").unwrap_or_default();
+    let root = env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", home));
+    let loaded = |l: &str| run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), l)]).is_ok();
+    let boot = |p: &Path| run_env(None, &[], "launchctl", &["bootstrap", &format!("gui/{}", uid()), &p.to_string_lossy()]);
+    let installed = ensure_agent_installed(label, &root, &launch_agents_dir(), &loaded, &boot);
+    let kicked = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)]);
+    (installed, kicked)
+}
+
+/// #4570 — every prod kickstart goes through here: install-if-unloaded, then kickstart.
+fn kickstart_prod(label: &str) -> R<String> {
+    let (installed, kicked) = kickstart_prod_reporting(label);
+    installed?;
+    kicked
+}
+
 fn uid() -> u32 {
     // best-effort: $UID or 501 default (the install host).
     env::var("UID").ok().and_then(|s| s.parse().ok()).unwrap_or(501)
@@ -3493,7 +3559,7 @@ fn rollback(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, targe
     if target == "canonical" {
         let svc = service_for_crate(bin);
         emit_rollback_stop(home, role, card, trace, &svc, reason);
-        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+        let _ = kickstart_prod(&svc);
     }
 }
 
