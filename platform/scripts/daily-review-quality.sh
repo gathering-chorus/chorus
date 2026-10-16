@@ -133,9 +133,10 @@ classify_suite() {
 # #3606/#3272 — READ the 03:00 nightly's results; never re-run. The 6 AM
 # launchd env has no cargo on PATH, so a re-run manufactured a 30-suite
 # false-red wall (2026-07-04) and clobbered the per-suite failure logs.
-# --last-run fails loud (parseable SUITE|meta fail) on a missing/stale log.
-# #4145 — the runner owns the nightly; --last-run is its read mode. WERK_TEST_LAST_RUN_BIN is the test seam.
-SUITES_OUT=$("${WERK_TEST_LAST_RUN_BIN:-$HOME/.chorus/bin/werk-test-bin}" --nightly --last-run 2>&1 || true)
+# last-run fails loud (parseable SUITE|meta fail) on a missing/stale log.
+# #4145 — the runner owns the nightly; `last-run` is its read mode (#4540: a
+# subcommand, no longer `--nightly --last-run`). WERK_TEST_LAST_RUN_BIN is the test seam.
+SUITES_OUT=$("${WERK_TEST_LAST_RUN_BIN:-$HOME/.chorus/bin/werk-test-bin}" last-run 2>&1 || true)
 TEST_SUMMARY=""
 KADE_FAILS=""
 SILAS_FAILS=""

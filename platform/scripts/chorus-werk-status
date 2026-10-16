@@ -475,6 +475,13 @@ def nodes_of(run):
 def dagu_summary(run):
     """(result, step) in dagu's own words: the step that failed, waits or runs."""
     status = run.get("statusLabel", "?")
+    # #4540 — a child-step retry flips the run to succeeded while the steps
+    # after its call step stay aborted (measured on dagu 2.18.2, 2026-10-16):
+    # a run that skipped work is not done, whatever its label says
+    if status == "succeeded":
+        never = next((n["step"]["name"] for n in nodes_of(run) if n.get("statusLabel") in ("aborted", "not_started")), None)
+        if never:
+            return "not done", never
     for want in ("failed", "waiting", "running"):
         step = next((n["step"]["name"] for n in nodes_of(run) if n.get("statusLabel") == want), None)
         if step:
@@ -922,6 +929,11 @@ def dagu_detail(card, runs):
         if status == "failed":
             node = next((x for x in nodes_of(r) if x["step"]["name"] == step), {})
             why = "  — " + failed_reason(r, node)
+            if node.get("children"):
+                # #4540 — the only retry: the parent's own step and what follows.
+                # A child-only retry leaves review onward aborted (a false green).
+                why += (f"\n                                          retry: dagu --config {DAGU_CONFIG} retry"
+                        f" --run-id={r.get('dagRunId')} --step={step} --downstream {name}")
         print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
     land = dagu_land_line(card, "v2")
     if land:
@@ -1049,6 +1061,8 @@ def fixture_4553():
         SUB_RUNS[("cicd", "p", "kid")] = [node("succeeded", "skill-werk-run"),
                                           node("failed", "skill-werk-verdict", "exit status 1\nverdict: RED — 2 types failed: unit, lint")]
         SUB_RUNS[("cicd", "p2", "none")] = []
+        never_ran = run("n", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("aborted", "skill-werk-review")], 160)
+        all_ran = run("n2", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("succeeded", "skill-werk-review")], 161)
         cases = [
             ("a reopened WIP card never reads landed",
              "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
@@ -1071,6 +1085,10 @@ def fixture_4553():
             # #4540 — the parent test step says only "exit status 1"; the
             # child's verdict step holds the words. Negative proof: the same
             # parent with no child record reads the old no-reason line.
+            # #4540 — retrying one child step flips the run to succeeded with
+            # review onward aborted. Negative proof: every step ran reads succeeded.
+            ("a succeeded run with a step that never ran reads not done",
+             "not done" in line(160, [never_ran], []) and "not done" not in line(161, [all_ran], [])),
             ("a stop inside the child test pipeline names the child's step",
              "· verdict: RED — 2 types failed: unit, lint" in line(158, [child_stop], [])
              and NO_REASON in line(159, [run("p2", "cicd", "failed", 0, [dict(node("failed", "skill-werk-test", "exit status 1"),

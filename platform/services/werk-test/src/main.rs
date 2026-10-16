@@ -97,7 +97,7 @@ mod demo_verdict_4474 {
     /// NEGATIVE PROOF — the nightly and flag modes must never write a card's badge
     #[test]
     fn other_modes_record_nothing() {
-        assert_eq!(demo_verdict_call(&a(&["--nightly", "--run-all"]), 0), None);
+        assert_eq!(demo_verdict_call(&a(&["run", "--scope=all"]), 0), None);
         assert_eq!(demo_verdict_call(&a(&["4474", "--json"]), 0), None);
         assert_eq!(demo_verdict_call(&a(&[]), 0), None);
     }
@@ -106,11 +106,9 @@ mod demo_verdict_4474 {
 /// Parse `card` and `role`, find the card's werk, detect affected units on the
 /// diff, run the planned checks, emit typed failures to the spine, and gate.
 fn run(args: &[String]) -> Result<i32, String> {
-    // #3920 fold — `werk-test --nightly`: the 03:00 cargo lane runs through THIS
-    // verb, so nextest (#3929), the needs-stack typed skips (#3919), and the
-    // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
-    // #4145 — `--nightly --run-all`: the whole run (pre-checks, lanes, census,
-    // record, nudges, readout) in the runner; launchd's 03:00 job.
+    // #3920 fold — the nightly's lane runs through THIS verb, so nextest
+    // (#3929), the needs-stack typed skips (#3919), and the per-case result
+    // writes (#3592) apply at 03:00 identically to the gate.
     // #4198 — `werk-test --scope-of [--root <dir>] <path>...`: what each path,
     // changed on its own, would run on a card — read-only, nothing runs. The
     // answer to "is this file claimed by a unit, or refused?" without making a
@@ -126,20 +124,19 @@ fn run(args: &[String]) -> Result<i32, String> {
             return nightly_all::step_all(step, &args[1..], args, &pin_or_handoff);
         }
     }
-    if args.iter().any(|a| a == "--nightly") {
-        // #4531 — every suite this run spawns learns its lane. Timing checks
-        // run in the nightly only (Jeff 2026-10-14: "we must not run perf tests
-        // in demo"); WERK_TEST_NIGHTLY cannot say that, it is set in both lanes.
+    // #4540 — the nightly's read-only answers, by name: `last-run`
+    // (daily-review), `load-gate` (load-reclassify), `classify` (the row fold).
+    // The 03:00 run itself is the dagu nightly calling the steps above.
+    if let Some(r) = nightly_all::read_mode(args) {
+        return r;
+    }
+    // `lane` — the one queue the run step drives as its child (every type in
+    // Jeff's order, the stage pick in WERK_TEST_STAGES). Internal to `run`.
+    if args.first().map(String::as_str) == Some("lane") {
+        // #4531 — every suite this run spawns learns its lane: timing checks
+        // run in the nightly only (Jeff 2026-10-14)
         std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
-        // read-only modes first (--last-run / --load-gate / --lock-probe): they
-        // must never fall through to a real run (a test's --lock-probe did, 19:30)
-        if let Some(r) = nightly_all::run_mode(args) {
-            return r;
-        }
-        if args.iter().any(|a| a == "--run-all") {
-            return nightly_all::run_all(args);
-        }
-        return run_nightly(args);
+        return run_nightly(&args[1..]);
     }
     std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(false));
     // #4540 — `werk-test <step> <card> <role>` runs one step; without a step

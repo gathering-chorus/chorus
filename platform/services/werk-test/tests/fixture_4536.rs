@@ -281,7 +281,7 @@ fn run_nightly(root_name: &str, files: &[(&str, &str)], registry_rows: &[String]
     let (port, patches) = stub(registry, patch_status);
     let door = format!("http://127.0.0.1:{}", port);
     let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
-        .arg("--nightly")
+        .arg("lane")
         .env("PATH", stub_path(&base))
         .env("CHORUS_ROOT", &root)
         .env_remove("CHORUS_HOME")
@@ -292,7 +292,7 @@ fn run_nightly(root_name: &str, files: &[(&str, &str)], registry_rows: &[String]
         .env("WERK_TEST_SUITE_WORKERS", "1")
         .env("WERK_TEST_LOAD_CAP", "100000")
         .output()
-        .expect("spawn werk-test --nightly");
+        .expect("spawn werk-test lane");
     let _ = std::fs::remove_dir_all(&base);
     let written = patches.lock().unwrap().clone();
     Run {
