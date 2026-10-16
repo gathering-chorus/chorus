@@ -2,6 +2,35 @@
 
 import { TrustStripSource, RolesData, TodayData, RoomsData } from './data-service';
 
+function renderTrustChip(s: TrustStripSource): string {
+  if (s.status === 'failed') {
+    return `<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">${s.source}</span> failed (${s.reason || 'unrecovered'})</span>`;
+  }
+  if (s.lagMinutes && s.lagMinutes >= 30) {
+    return `<span class="chip strip-lag-neutral"><i class="lag"></i>${s.source} · ${s.asOf}</span>`;
+  }
+  return `<span class="chip"><i></i>${s.source} · ${s.asOf}</span>`;
+}
+
+function countBadge(n: number | undefined): string {
+  return n && n > 0 ? `<span class="n">${n}</span>` : '';
+}
+
+function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: number }): string {
+  const on = (nav: string): string => (activeNav === nav ? 'on' : '');
+  return `<nav class="top">
+    <span class="brand">Clearing</span>
+    <a href="/today" class="${on('today')}">Today</a>
+    <a href="/decisions" class="${on('decisions')}">Decisions${countBadge(counts?.decisions)}</a>
+    <a href="/rooms/team" class="${on('rooms')}">Rooms</a>
+    <a href="/board" class="${on('board')}">Board</a>
+    <a href="/roles" class="${on('roles')}">Roles</a>
+    <a href="/calendar" class="${on('calendar')}">Calendar</a>
+    <a href="/plans" class="${on('plans')}">Plans</a>
+    <a href="/alerts" class="${on('alerts')}">Alerts${countBadge(counts?.alerts)}</a>
+  </nav>`;
+}
+
 export function renderPageShell(
   title: string,
   activeNav: string,
@@ -9,18 +38,7 @@ export function renderPageShell(
   sources: TrustStripSource[] = [],
   counts?: { decisions?: number; alerts?: number }
 ): string {
-  const chipsHtml = sources.map(s => {
-    if (s.status === 'failed') {
-      return `<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">${s.source}</span> failed (${s.reason || 'unrecovered'})</span>`;
-    }
-    if (s.lagMinutes && s.lagMinutes >= 30) {
-      return `<span class="chip strip-lag-neutral"><i class="lag"></i>${s.source} · ${s.asOf}</span>`;
-    }
-    return `<span class="chip"><i></i>${s.source} · ${s.asOf}</span>`;
-  }).join('');
-
-  const decisionsBadge = counts?.decisions && counts.decisions > 0 ? `<span class="n">${counts.decisions}</span>` : '';
-  const alertsBadge = counts?.alerts && counts.alerts > 0 ? `<span class="n">${counts.alerts}</span>` : '';
+  const chipsHtml = sources.map(renderTrustChip).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -50,17 +68,7 @@ export function renderPageShell(
       <span class="relay-status" id="relay-indicator">Connecting...</span>
     </div>
   </header>
-  <nav class="top">
-    <span class="brand">Clearing</span>
-    <a href="/today" class="${activeNav === 'today' ? 'on' : ''}">Today</a>
-    <a href="/decisions" class="${activeNav === 'decisions' ? 'on' : ''}">Decisions${decisionsBadge}</a>
-    <a href="/rooms/team" class="${activeNav === 'rooms' ? 'on' : ''}">Rooms</a>
-    <a href="/board" class="${activeNav === 'board' ? 'on' : ''}">Board</a>
-    <a href="/roles" class="${activeNav === 'roles' ? 'on' : ''}">Roles</a>
-    <a href="/calendar" class="${activeNav === 'calendar' ? 'on' : ''}">Calendar</a>
-    <a href="/plans" class="${activeNav === 'plans' ? 'on' : ''}">Plans</a>
-    <a href="/alerts" class="${activeNav === 'alerts' ? 'on' : ''}">Alerts${alertsBadge}</a>
-  </nav>
+  ${renderNav(activeNav, counts)}
   <div class="strip trust-strip">
     ${chipsHtml}
   </div>
@@ -95,7 +103,8 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
 
       <!-- Changed overnight -->
       <div class="card changed-overnight">
-        <div class="sec-t">Changed overnight</div>
+        <div class="sec-t">Changed overnight${data.changedUnmeasured ? ' · unmeasured' : ''}</div>
+        ${data.changedUnmeasured ? `<div class="meta fail changed-unmeasured">${data.changedUnmeasured}</div>` : ''}
         <div class="list">
           ${data.changedCards.slice(0, 4).map(c => `
             <div class="li">
@@ -177,36 +186,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
   return renderPageShell('Roles', 'roles', content, sources);
 }
 
-export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
-  const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
-  const isDirect = Boolean(directRoleMatch);
-  const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
-
-  const content = `
-  <div class="rooms">
-    <aside class="rside rooms-sidebar">
-      <div class="lab">Rooms</div>
-      ${data.channels.map(c => `
-        <div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>
-      `).join('')}
-      <div class="lab">Direct</div>
-      ${data.directRoles.map(dr => {
-        const slug = dr.toLowerCase().replace(/\s+/g, '-');
-        const isActive = room === slug;
-        return `<div class="r ${isActive ? 'on' : ''}"><a href="/rooms/${slug}" style="text-decoration:none;color:inherit">${dr}</a></div>`;
-      }).join('')}
-    </aside>
-    <main class="chat chat-container">
-      <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)">
-        <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
-        <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
-      </div>
-      <div class="messages" id="messages-stream">
-        ${data.messages.length === 0 ? `
-          <div class="empty-feed" style="padding:24px;color:var(--meta);text-align:center">
-            No messages in ${headerTitle} yet
-          </div>
-        ` : data.messages.map(m => {
+function renderRoomMessage(m: RoomsData['messages'][number]): string {
           const linkifiedText = m.text.replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
           return `
             <div class="msg" id="${m.id}">
@@ -224,17 +204,9 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
               </div>
             </div>
           `;
-        }).join('')}
-      </div>
-      <footer class="composer-bar">
-        <form id="composer-form">
-          <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-          <button type="submit" id="composer-send">Send</button>
-        </form>
-        <div id="send-error" class="send-error" role="alert"></div>
-      </footer>
-    </main>
-    <aside class="card-drawer" id="card-drawer" style="display:none;width:320px;border-left:1px solid var(--border-color);padding:14px;background:var(--bg-secondary)">
+}
+
+const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style="display:none;width:320px;border-left:1px solid var(--border-color);padding:14px;background:var(--bg-secondary)">
       <div class="row" style="justify-content:space-between">
         <a class="cid" id="drawer-card-link" href="#" target="_blank"></a>
         <button class="btn ghost" onclick="closeCardDrawer()">✕</button>
@@ -242,9 +214,9 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
       <h3 id="drawer-card-title" style="margin-top:10px">Loading card...</h3>
       <div class="meta" id="drawer-card-meta" style="margin-top:6px"></div>
       <div class="meta" id="drawer-card-desc" style="margin-top:10px"></div>
-    </aside>
-  </div>
-  <script>
+    </aside>`;
+
+const ROOM_DRAWER_SCRIPT = `  <script>
     async function openCardDrawer(id) {
       const d = document.getElementById('card-drawer');
       const l = document.getElementById('drawer-card-link');
@@ -277,6 +249,49 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
       if (d) d.style.display = 'none';
     }
   </script>`;
+
+export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
+  const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
+  const isDirect = Boolean(directRoleMatch);
+  const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
+
+  const content = `
+  <div class="rooms">
+    <aside class="rside rooms-sidebar">
+      <div class="lab">Rooms</div>
+      ${data.channels.map(c => `
+        <div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>
+      `).join('')}
+      <div class="lab">Direct</div>
+      ${data.directRoles.map(dr => {
+        const slug = dr.toLowerCase().replace(/\s+/g, '-');
+        const isActive = room === slug;
+        return `<div class="r ${isActive ? 'on' : ''}"><a href="/rooms/${slug}" style="text-decoration:none;color:inherit">${dr}</a></div>`;
+      }).join('')}
+    </aside>
+    <main class="chat chat-container">
+      <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)">
+        <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
+        <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
+      </div>
+      <div class="messages" id="messages-stream">
+        ${data.messages.length === 0 ? `
+          <div class="empty-feed" style="padding:24px;color:var(--meta);text-align:center">
+            No messages in ${headerTitle} yet
+          </div>
+        ` : data.messages.map(renderRoomMessage).join('')}
+      </div>
+      <footer class="composer-bar">
+        <form id="composer-form">
+          <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
+          <button type="submit" id="composer-send">Send</button>
+        </form>
+        <div id="send-error" class="send-error" role="alert"></div>
+      </footer>
+    </main>
+${ROOM_CARD_DRAWER}
+  </div>
+${ROOM_DRAWER_SCRIPT}`;
 
   return renderPageShell(`Room #${room}`, 'rooms', content, sources);
 }

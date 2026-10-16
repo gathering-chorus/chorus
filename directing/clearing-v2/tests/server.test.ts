@@ -113,7 +113,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
           if (frame[0] === 'EVENT' && frame[1]?.tags?.some((t: string[]) => t[0] === 't' && t[1] === 'team')) {
             teamReceivedCount++;
           }
-        } catch {}
+        } catch { /* a non-JSON relay frame is not a #team message; count only parsed ones */ }
       });
     });
 

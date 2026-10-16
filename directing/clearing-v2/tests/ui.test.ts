@@ -241,7 +241,6 @@ function loadRoomKey(): RoomKey {
     .replace(/^import .*$/gm, '')
     .replace(/^export (async )?function/gm, '$1function')
     .replace(/^if \(typeof window[\s\S]*$/m, '');
-  // eslint-disable-next-line no-new-func
   return new Function('schnorr', 'nobleSha256', `${src}\nreturn { loadOrCreate, signEvent };`)(schnorr, sha256);
 }
 

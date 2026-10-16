@@ -36,6 +36,7 @@ export function _resetKeyWarn(): void { keyWarned = false; }
 
 export function readCookieKey(stateFile: string = STATE_FILE): Buffer | null {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- stateFile is STATE_FILE (SHARE_STATE_FILE / ~/.chorus) or a test override, never request input
     const raw = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
     if (typeof raw.cookie_key !== 'string' || !raw.cookie_key) {
       if (!keyWarned) {

@@ -64,7 +64,7 @@ async function ensureBrowserPage(viewport = { width: 390, height: 844 }) {
 
 async function closeBrowser() {
   if (browserInstance) {
-    try { await browserInstance.close(); } catch {}
+    try { await browserInstance.close(); } catch { /* already closed: teardown has nothing left to release */ }
     browserInstance = null;
     browserContext = null;
     browserPage = null;
