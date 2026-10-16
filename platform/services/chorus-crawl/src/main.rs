@@ -2084,6 +2084,9 @@ fn run_code(args: &[String]) -> i32 {
     for w in chorus_crawl::code_run::code_writes(&coll, svc_coll.as_deref(), &p, &built) {
         let body = match w.rows.len() {
             0 => None,
+            // #4562 — the door's delete-batch takes a list of names
+            _ if w.path.ends_with("/delete-batch") => Some(chorus_crawl::cases::delete_batch_body(
+                &w.rows.iter().filter_map(|r| r.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone())).collect::<Vec<_>>())),
             1 if w.method != "POST" => Some(fields_json(&w.rows[0])),
             _ => Some(format!("[{}]", w.rows.iter().map(|r| fields_json(r)).collect::<Vec<_>>().join(","))),
         };

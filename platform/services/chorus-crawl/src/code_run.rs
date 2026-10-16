@@ -192,11 +192,21 @@ pub fn code_writes(coll: &str, svc_coll: Option<&str>, plan: &UnitPlan, built: &
     if !bare.is_empty() {
         w.push(Write { method: "POST", path: format!("{coll}/batch"), what: format!("create batch of {}", bare.len()), rows: bare });
     }
-    for (n, f) in plan.create.iter().chain(plan.update.iter()) {
+    // #4562 — a created unit with no edges is already whole after the batch;
+    // only one that carries dependsOn is written again (measured 10-16: every
+    // create was written twice, one row per request, ~15 writes a minute).
+    let has_edges = |f: &[(String, String)]| f.iter().any(|(k, _)| k == "dependsOn");
+    for (n, f) in plan.create.iter().filter(|(_, f)| has_edges(f)).chain(plan.update.iter()) {
         w.push(Write { method: "PUT", path: format!("{coll}/{n}"), rows: vec![row(n, f)], what: format!("write {n}") });
     }
-    for n in &plan.delete {
-        w.push(Write { method: "DELETE", path: format!("{coll}/{n}"), rows: Vec::new(), what: format!("delete {n}") });
+    // #4562 — deletes in batches, as the case pass does (#4185)
+    for chunk in plan.delete.chunks(crate::cases::DELETE_BATCH_ROWS) {
+        w.push(Write {
+            method: "POST",
+            path: format!("{coll}/delete-batch"),
+            rows: chunk.iter().map(|n| vec![("name".to_string(), n.clone())]).collect(),
+            what: format!("delete batch of {}: {}", chunk.len(), chunk.join(", ")),
+        });
     }
     if let Some(sc) = svc_coll {
         for (svc, us) in built {
