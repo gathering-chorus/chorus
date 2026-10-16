@@ -2457,9 +2457,9 @@ const startTime = Date.now();
 
 // Health cache moved to src/health-cache.ts (#2205 wave 13).
 import { createHealthCache } from './health-cache';
+import { countMessagesInWorker } from './message-counts';
 const _healthCache = createHealthCache({
-  dbPath: DB_PATH,
-  DatabaseCtor: Database,
+  countMessages: () => countMessagesInWorker(DB_PATH),
   // #3382 moved the lance handle off-process; the stub here made /health/detail
   // report vectors:0 forever (test-api-health red + lancedb-stale false alert
   // while 13GB of vectors sat on disk). #3606: a facade whose countRows rides
