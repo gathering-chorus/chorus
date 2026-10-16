@@ -4,6 +4,7 @@
 // @domain: messages
 
 import http from 'http';
+import path from 'path';
 import { WebSocketServer } from 'ws';
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
@@ -326,8 +327,8 @@ describe('Clearing v2: Server App & Tile Service', () => {
 });
 
 describe('Clearing v2: #4570 Service Run & WiFi Binding', () => {
-  test('loadConfig without explicit path loads clearing-v2.config.json and binds 0.0.0.0 on :3472 for wifi', () => {
-    const cfg = loadConfig();
+  test('the config the LaunchAgent passes (--config clearing-v2.config.json) binds 0.0.0.0 on :3472 for wifi', () => {
+    const cfg = loadConfig(path.join(__dirname, '..', 'clearing-v2.config.json'));
     expect(cfg.port).toBe(3472);
     expect(cfg.host).toBe('0.0.0.0');
     expect(cfg.pulseUrl).toBe('http://127.0.0.1:3475');
