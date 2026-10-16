@@ -99,6 +99,10 @@ chorus:section a owl:DatatypeProperty ;
     rdfs:label "section" ; rdfs:range xsd:string ;
     rdfs:comment "Which part of the pulse a reading is." .
 
+chorus:readingStatus a owl:DatatypeProperty ;
+    rdfs:label "reading status" ; rdfs:range xsd:string ;
+    rdfs:comment "ok when the source answered, unmeasured when it did not (the reason goes in unmeasuredSource). #4563." .
+
 chorus:readFrom a owl:DatatypeProperty ;
     rdfs:label "read from" ; rdfs:range xsd:string ;
     rdfs:comment "The producer a reading was read from, e.g. pulse-worker. A string, not the EventType producedBy edge." .
@@ -123,8 +127,8 @@ chorus:RoleStateShape a sh:NodeShape ;
     sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "principal" ; sh:description "Required. Whose state this is." ] ;
     sh:property [ sh:path chorus:stateValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:in ( "building" "pairing" "waiting" "in-ceremony" "reviewing" "away" "off" "unmeasured" ) ;
-                  sh:name "state" ; sh:description "Required. One of building, pairing, waiting, in-ceremony, reviewing, away, off, unmeasured. When several apply: in-ceremony, pairing, reviewing, waiting, building, away, off." ] ;
+                  sh:in ( "building" "pairing" "waiting" "in-ceremony" "reviewing" "available" "away" "off" "unmeasured" ) ;
+                  sh:name "state" ; sh:description "Required. One of building, pairing, waiting, in-ceremony, reviewing, available, away, off, unmeasured. available = alive with no card, not pairing, not waiting (Jeff 2026-10-16). When several apply: in-ceremony, pairing, reviewing, waiting, building, available, away, off." ] ;
     sh:property [ sh:path chorus:stateSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "observed" ) ;
                   sh:name "source" ; sh:description "Required. observed: state is derived, never declared (#4560)." ] ;
@@ -168,8 +172,12 @@ chorus:ReadingShape a sh:NodeShape ;
     sh:targetClass chorus:Reading ;
     rdfs:comment "One section of the pulse and when it was read." ;
     sh:property [ sh:path chorus:section ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:in ( "roles" "board" "health" "alerts" "events" "index_freshness" "nudges" ) ;
-                  sh:name "section" ; sh:description "Required. One of the sections pulse carries today." ] ;
+                  sh:in ( "roles" "board" "health" "alerts" "events" "index_freshness" "nudges" "rooms" "decisions" "loki" ) ;
+                  sh:name "section" ; sh:description "Required. One of the sections pulse carries. rooms, decisions and loki are the Clearing trust strip's sources, read by pulse so the page only presents them (#4563)." ] ;
+    sh:property [ sh:path chorus:readingStatus ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "ok" "unmeasured" ) ;
+                  sh:name "status" ; sh:description "ok or unmeasured; unmeasured carries its reason in unmeasuredSource." ] ;
+    sh:property [ sh:path chorus:unmeasuredSource ; sh:datatype xsd:string ;
+                  sh:name "unmeasured reason" ; sh:description "Why the source could not be read." ] ;
     sh:property [ sh:path chorus:readFrom ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:name "read from" ; sh:description "Required. The producer it was read from, e.g. pulse-worker." ] ;
     sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;

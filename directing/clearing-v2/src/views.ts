@@ -1,13 +1,13 @@
 // @domain: messages
 
-import { TrustStripSource, RolesData, TodayData, RoomsData } from './data-service';
+import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
 
 function renderTrustChip(s: TrustStripSource): string {
-  if (s.status === 'failed') {
-    return `<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">${s.source}</span> failed (${s.reason || 'unrecovered'})</span>`;
+  if (s.status === 'failed' || s.status === 'unmeasured') {
+    return `<span class="chip strip-source-fail"><i class="fail"></i><span class="fail-source-name">${s.source}</span> ${s.status} (${s.reason || 'no reason sent'})</span>`;
   }
   if (s.lagMinutes && s.lagMinutes >= 30) {
-    return `<span class="chip strip-lag-neutral"><i class="lag"></i>${s.source} · ${s.asOf}</span>`;
+    return `<span class="chip strip-lag-neutral"><i class="lag"></i>${s.source} · ${s.asOf} (${s.lagMinutes}m)</span>`;
   }
   return `<span class="chip"><i></i>${s.source} · ${s.asOf}</span>`;
 }
@@ -78,6 +78,88 @@ export function renderPageShell(
 </html>`;
 }
 
+
+/** Dot colour for pulse's state word (presentation only; the word itself is shown verbatim). */
+function stateDot(state: string): string {
+  switch (state) {
+    case 'building':
+    case 'pairing':
+    case 'reviewing':
+    case 'in-ceremony':
+      return 'dot d-ok';
+    case 'waiting':
+      return 'dot d-warn';
+    case 'available':
+      return 'dot d-info';
+    case 'away':
+    case 'off':
+      return 'dot d-mut state-faint';
+    case 'unmeasured':
+      return 'dot d-bad';
+    default:
+      return 'dot d-mut';
+  }
+}
+
+function renderStateBadge(a: ActorRow): string {
+  const faint = a.state === 'away' || a.state === 'off' ? ' style="background:transparent;border:1.5px solid var(--faint)"' : '';
+  return `<span class="st role-state-badge state-${a.state}"><span class="${stateDot(a.state)}"${faint}></span><span class="state-word">${a.state}</span></span>`;
+}
+
+function renderActorDetail(a: ActorRow): string {
+  return [
+    a.pair ? `<div class="meta pair">${a.pair}</div>` : '',
+    a.waiting ? `<div class="meta waiting-reason">${a.waiting}</div>` : '',
+    a.unmeasured ? `<div class="meta fail actor-unmeasured">unmeasured: ${a.unmeasured}</div>` : '',
+  ].join('');
+}
+
+function renderCardRef(card: ActorRow['card']): string {
+  if (!card) return '<span class="meta">–</span>';
+  return `<a class="cid" href="/board?card=${card.id}">#${card.id}</a>${card.title ? ` <span class="meta">${card.title}</span>` : ''}`;
+}
+
+function renderUnmeasured(cls: string, text: string | undefined): string {
+  return text ? `<div class="meta fail ${cls}">unmeasured: ${text}</div>` : '';
+}
+
+/** Tag colour for pulse's card status (presentation only; the status is shown verbatim). */
+function statusTag(status: string): string {
+  const s = status.toLowerCase();
+  if (s === 'done') return 't-ok';
+  if (s === 'blocked') return 't-bad';
+  return 't-mut';
+}
+
+function renderWorkingNow(data: TodayData): string {
+  const rows = data.workingRoles.map(w => `
+            <div class="li">
+              <span class="av a-${w.id}">${w.name.charAt(0)}</span>
+              <div class="grow">${w.name} · ${renderStateBadge(w)}
+                <div class="meta">${w.card ? renderCardRef(w.card) : 'no current card'}</div>
+                ${renderActorDetail(w)}
+              </div>
+            </div>
+          `).join('');
+  const empty = !data.workingUnmeasured && data.workingRoles.length === 0
+    ? '<div class="empty-state meta" style="padding:6px 0;color:var(--faint)">pulse actor-state listed no actors</div>'
+    : '';
+  return `${renderUnmeasured('working-unmeasured', data.workingUnmeasured)}${rows}${empty}`;
+}
+
+function renderChangedOvernight(data: TodayData): string {
+  const rows = data.changedCards.slice(0, 4).map(c => `
+            <div class="li">
+              <span class="tag ${statusTag(c.status)}">${c.status}</span>
+              <div class="grow"><a class="cid" href="/board?card=${c.id}">#${c.id}</a> ${c.title}<div class="meta">${c.owner}${c.time ? ` · ${c.time}` : ''}</div></div>
+            </div>
+          `).join('');
+  const empty = !data.changedUnmeasured && data.changedCards.length === 0
+    ? '<div class="empty-state meta" style="padding:4px 0;color:var(--faint)">pulse changes-overnight listed no cards</div>'
+    : '';
+  return `${renderUnmeasured('changed-unmeasured', data.changedUnmeasured)}<div class="list">${rows}${empty}</div>`;
+}
+
 export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): string {
   const content = `
   <div class="page today-page">
@@ -101,18 +183,10 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
         `}
       </div>
 
-      <!-- Changed overnight -->
+      <!-- Changed overnight: the cards pulse /api/changes-overnight returns -->
       <div class="card changed-overnight">
-        <div class="sec-t">Changed overnight${data.changedUnmeasured ? ' · unmeasured' : ''}</div>
-        ${data.changedUnmeasured ? `<div class="meta fail changed-unmeasured">${data.changedUnmeasured}</div>` : ''}
-        <div class="list">
-          ${data.changedCards.slice(0, 4).map(c => `
-            <div class="li">
-              <span class="tag ${c.status === 'landed' ? 't-ok' : c.status === 'blocked' ? 't-bad' : 't-mut'}">${c.status}</span>
-              <div class="grow"><a class="cid" href="/board?card=${c.id}">#${c.id}</a> ${c.title}<div class="meta">${c.owner} · ${c.time}</div></div>
-            </div>
-          `).join('')}
-        </div>
+        <div class="sec-t">Changed overnight${data.watermark ? ` · since ${data.watermark}` : ''}${data.changedUnmeasured ? ' · unmeasured' : ''}</div>
+        ${renderChangedOvernight(data)}
         ${data.foldedCount > 0 ? `<div class="meta moves-folded" style="margin-top:6px">+ ${data.foldedCount} more moves · <a class="cid">show</a></div>` : ''}
       </div>
 
@@ -131,18 +205,7 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
         </div>
         <div class="sec-t working-now" style="margin-top:14px">Working now</div>
         <div class="list">
-          ${data.workingUnmeasured ? `
-            <div class="meta fail working-unmeasured">unmeasured: ${data.workingUnmeasured}</div>
-          ` : data.workingRoles.length === 0 ? `
-            <div class="empty-state meta" style="padding:6px 0;color:var(--faint)">0 roles working now</div>
-          ` : data.workingRoles.map(w => `
-            <div class="li">
-              <span class="av a-${w.role}">${w.name.charAt(0)}</span>
-              <div class="grow">${w.name} · <span class="st"><span class="dot ${w.state === 'working' ? 'd-ok' : (w.state === 'idle' ? 'd-info' : 'd-warn')}"></span>${w.state}</span>
-                <div class="meta">${w.cardId && w.cardId > 0 ? `<a class="cid" href="/board?card=${w.cardId}">#${w.cardId}</a> ${w.cardTitle}` : 'no active card'}</div>
-              </div>
-            </div>
-          `).join('')}
+          ${renderWorkingNow(data)}
         </div>
       </div>
     </div>
@@ -152,36 +215,33 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
 }
 
 export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): string {
-  const content = `
-  <div class="page roles-page">
-    <div class="ph"><h2>${data.principals.length} principals</h2><span class="ex">live roles door</span></div>
-    <div class="tw">
-      ${data.principals.length === 0 ? `
-        <div class="empty-state roles-failed" style="padding:20px;color:var(--faint)">0 principals found (roles source unreadable or empty)</div>
-      ` : `
+  const table = data.actors.length === 0 ? '' : `
         <table class="roles-table">
           <thead>
-            <tr><th>Principal</th><th>Logged in</th><th>Session</th><th>Card</th><th>Pane</th><th>Last heard</th></tr>
+            <tr><th>Actor</th><th>State</th><th>Activity</th><th>Card</th><th>Sessions</th></tr>
           </thead>
           <tbody>
-            ${data.principals.map(p => `
-              <tr class="${p.id === 'jeff' ? 'you' : ''}">
-                <td><span class="row"><span class="av a-${p.id}">${p.name.charAt(0)}</span><b>${p.name}</b></span></td>
-                <td>${p.loggedIn}</td>
-                <td>
-                  <span class="st role-state-badge ${p.state === 'stale' ? 'state-stale' : ''} ${p.state === 'off' ? 'state-off' : ''}">
-                    <span class="dot ${p.state === 'working' ? 'd-ok' : p.state === 'waiting on you' ? 'd-warn' : 'd-mut'}" ${p.state === 'off' ? 'style="background:transparent;border:1.5px solid var(--faint)"' : ''}></span>${p.state === 'stale' ? 'stale (no action in 30m)' : p.state}
-                  </span>
-                  ${p.waitingReason ? `<div class="meta waiting-reason">${p.waitingReason}</div>` : ''}
-                </td>
-                <td>${p.card ? `<a class="cid" href="/board?card=${p.card.id}">#${p.card.id}</a> <span class="meta">${p.card.title}</span>` : '<span class="meta">–</span>'}</td>
-                <td><span class="role-pane">${p.pane}</span></td>
-                <td class="mono meta role-last-heard">${p.lastHeard}</td>
+            ${data.actors.map(a => `
+              <tr class="${a.id === 'jeff' ? 'you' : ''}">
+                <td><span class="row"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
+                <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
+                <td class="meta">${a.activity || '–'}</td>
+                <td>${renderCardRef(a.card)}</td>
+                <td class="mono meta role-sessions">${a.sessions.length > 0 ? a.sessions.join('<br>') : '–'}</td>
               </tr>
             `).join('')}
           </tbody>
-        </table>
-      `}
+        </table>`;
+  const empty = !data.unmeasured && data.actors.length === 0
+    ? '<div class="empty-state roles-empty" style="padding:20px;color:var(--faint)">pulse actor-state listed no actors</div>'
+    : '';
+  const content = `
+  <div class="page roles-page">
+    <div class="ph"><h2>Roles</h2><span class="ex">pulse actor-state</span></div>
+    <div class="tw">
+      ${renderUnmeasured('roles-unmeasured', data.unmeasured)}
+      ${empty}
+      ${table}
     </div>
   </div>`;
 
