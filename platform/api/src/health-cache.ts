@@ -1,4 +1,4 @@
-import { MIN_EMBED_LENGTH } from './embed-floor';
+import type { MessageCounts } from './message-counts';
 
 // Deep-health cache (extracted from server.ts for #2205 wave 13).
 //
@@ -17,11 +17,9 @@ export interface HealthSnapshot {
 }
 
 export interface HealthCacheDeps {
-  dbPath: string;
-  DatabaseCtor: new (path: string, opts?: { readonly?: boolean }) => {
-    prepare: (sql: string) => { get: () => unknown };
-    close?: () => void;
-  };
+  /** #4556 — the two message counts, answered off the event loop (server.ts runs them
+   *  in a worker thread). A sync sqlite read here held the loop 3.97 s on 2026-10-16. */
+  countMessages: () => Promise<MessageCounts>;
   getLanceTable: () => { countRows: () => Promise<number> } | null;
   fs: {
     existsSync: (p: string) => boolean;
@@ -51,21 +49,10 @@ export function createHealthCache(deps: HealthCacheDeps): HealthCache {
     snapshot: () => state,
     async refresh() {
       try {
-        const db = new deps.DatabaseCtor(deps.dbPath, { readonly: true });
-        const row = db.prepare('SELECT COUNT(*) as cnt FROM messages').get() as { cnt: number };
-        state.dbRows = row.cnt;
+        const counts = await deps.countMessages();
+        state.dbRows = counts.dbRows;
+        if (counts.unembedded !== null) state.unembedded = counts.unembedded;
         state.dbStatus = 'ok';
-        try {
-          const uStmt = db.prepare(
-            // #2754 — floor lives in embed-floor.ts; SQL parameter keeps the two in sync.
-            'SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= ?',
-          ) as unknown as { get: (n: number) => { cnt: number } };
-          const uRow = uStmt.get(MIN_EMBED_LENGTH);
-          state.unembedded = uRow.cnt;
-        } catch {
-          /* column may not exist yet */
-        }
-        db.close?.();
       } catch {
         state.dbStatus = 'error';
       }
