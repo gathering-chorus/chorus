@@ -67,6 +67,8 @@ chorus:fieldTurnStart a owl:DatatypeProperty ; rdfs:label "turn start field" ; r
     rdfs:comment "When the before-prompt event fires more than once a turn (agy: once per model call), the input field that is 0 on the first one. Chorus acts only then." .
 chorus:transcriptPromptType a owl:DatatypeProperty ; rdfs:label "prompt step type" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "With no prompt field: the transcript line type that holds the prompt (agy: USER_INPUT)." .
+chorus:transcriptReplyType a owl:DatatypeProperty ; rdfs:label "reply step type" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "With no reply field: the transcript line type that holds the role's reply (agy: PLANNER_RESPONSE). The stop leg publishes the last one after the latest prompt line (#4548)." .
 chorus:transcriptPromptTag a owl:DatatypeProperty ; rdfs:label "prompt tag" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "The tag the prompt text sits inside on that line, when it does (agy: USER_REQUEST)." .
 chorus:fieldToolName a owl:DatatypeProperty ; rdfs:label "tool name field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
@@ -114,6 +116,7 @@ chorus:AgentRuntimeShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fieldTranscript ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:fieldTurnStart ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:transcriptPromptType ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:transcriptReplyType ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:transcriptPromptTag ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:fieldToolName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:fieldToolArgs ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
@@ -155,6 +158,7 @@ chorus:runtime-agy a chorus:AgentRuntime ;
     chorus:fieldTurnStart "invocationNum" ;
     chorus:transcriptPromptType "USER_INPUT" ;
     chorus:transcriptPromptTag "USER_REQUEST" ;
+    chorus:transcriptReplyType "PLANNER_RESPONSE" ;
     chorus:fieldToolName "toolCall.name" ;
     chorus:fieldToolArgs "toolCall.args" ;
     # measured 08:32–08:42, 48 PreToolUse calls: run_command 41, view_file 4,
