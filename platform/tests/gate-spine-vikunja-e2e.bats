@@ -223,21 +223,13 @@ print('emit-path-ok')
 "
 }
 
-# --- folded from #2288 gemba: discover-pages ontology-write smoke ---
+# --- discover-pages was retired by #4187: the route answers 410 Gone ---
+# (it skipped on 401 for weeks; once auth let it through, the old 200/400/422 smoke went red)
 
-@test "discover-pages endpoint exists and responds to POST without crashing" {
-  CODE=$(curl -s -o /tmp/discover-pages-resp.$$ -w '%{http_code}' \
-    -X POST -H 'Content-Type: application/json' -d '{}' \
+@test "discover-pages is retired: POST answers 410" {
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
     "http://localhost:3340/api/athena/discover-pages" 2>/dev/null)
-  rm -f /tmp/discover-pages-resp.$$
-  # #3915 — auth now runs BEFORE routing, so a missing route answers 401 exactly
-  # like a real one (proven by the NEGATIVE test below, which is why 401 is NOT
-  # accepted here). While that is true this smoke cannot separate the two states
-  # it exists to separate, so it is UNMEASURABLE, not green. Owner: #3901.
-  if [[ "$CODE" == "401" || "$CODE" == "403" ]]; then
-    skip "UNMEASURABLE: auth precedes routing — 401 cannot be distinguished from a missing route (#3901)"
-  fi
-  [[ "$CODE" == "200" || "$CODE" == "400" || "$CODE" == "422" ]]
+  [[ "$CODE" == "410" ]] || { echo "discover-pages answered $CODE, want 410 (retired by #4187)"; false; }
 }
 
 # --- #3734 negative proof: the log assertion can still go RED ---
@@ -258,9 +250,9 @@ print('emit-path-ok')
   [ "$status" -ne 0 ]
 }
 
-@test "NEGATIVE: a route that does not exist fails the discover-pages smoke" {
+@test "NEGATIVE: a route that never existed is not 410, so the retirement check can go red" {
   CODE=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -d '{}' \
     "http://localhost:3340/api/athena/discover-pages-does-not-exist" 2>/dev/null)
-  [[ "$CODE" != "200" && "$CODE" != "400" && "$CODE" != "422" ]]
+  [[ "$CODE" != "410" ]] || return 1
 }

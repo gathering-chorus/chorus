@@ -59,10 +59,11 @@ handler() { awk -v h="  $1:" '$0==h {f=1; next} f && (/^  [a-z]+:$/ || /^steps:/
 @test "negative proof: the handler check catches a werk start moved to failure" {
   # the check above must be able to go red: a workflow whose failure handler
   # starts werk is caught by the same lines
-  # #4562 — the failure line now carries the /cws why, so match its stable prefix
+  # (#4553 reworded the failure nudge; the plant must fail loud if it stops matching)
   sed 's#ops-nudge ${ROLE} "werk v2 \#${CARD} #werk-v2 ${CARD} ${ROLE}; ops-nudge ${ROLE} "x #' \
     "$ROOT/platform/pipelines/athena.yaml" > "$BATS_TEST_TMPDIR/bad.yaml"
-  ! cmp -s "$ROOT/platform/pipelines/athena.yaml" "$BATS_TEST_TMPDIR/bad.yaml" || return 1
+  ! cmp -s "$ROOT/platform/pipelines/athena.yaml" "$BATS_TEST_TMPDIR/bad.yaml" \
+    || { echo "plant did not apply: the failure handler text changed"; return 1; }
   run handler failure "$BATS_TEST_TMPDIR/bad.yaml"
   [[ "$output" == *"werk-v2"* ]] || return 1
 }

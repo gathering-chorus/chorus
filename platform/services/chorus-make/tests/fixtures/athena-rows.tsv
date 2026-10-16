@@ -3,7 +3,6 @@
 # Go-less (Jeff 2026-10-14): Model → Make → Deploy (staging) → Validate; on success it enqueues the
 # card's werk run. The prod Land is its own pipeline, athena-land (athena-land-rows.tsv).
 # withArgs is the AthenaVerbInput list: each args= pair is one item, in order (chorus-runner args_from_pairs).
-# #4562 — refreshed from the store 10-16: #4536 added the baseline copy + baseline validate steps before seed.
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 shape	1	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--card args=${CARD}
 forge	2	1	skill-athena-gen	athena-gen	deterministic	athena-gen	{args}		AthenaVerbInput	args=generate args=--card args=${CARD}
