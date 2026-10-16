@@ -18,7 +18,7 @@ setup() {
 
 @test "negative proof: a step depending on a step that does not exist is refused" {
   sed 's/depends: \[skill-werk-test-scope\]/depends: [skill-no-such-step]/' "$WF" > "$BATS_TEST_TMPDIR/broken.yaml"
-  ! cmp -s "$WF" "$BATS_TEST_TMPDIR/broken.yaml"
+  ! cmp -s "$WF" "$BATS_TEST_TMPDIR/broken.yaml" || return 1
   run dagu validate "$BATS_TEST_TMPDIR/broken.yaml"
   [ "$status" -ne 0 ]
 }
