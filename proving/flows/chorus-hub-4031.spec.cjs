@@ -33,8 +33,9 @@ const path = require('path');
 // structure for the whole life of the card that changes it (#2725).
 const PUBLIC_DIR = path.resolve(__dirname, '..', '..', 'platform', 'api', 'public');
 const DATA_ORIGIN = process.env.CHORUS_API || 'http://localhost:3340';
-const OWN_PORT = Number(process.env.HUB_SPEC_PORT || 3492);
-const BASE = process.env.FLOW_BASE || `http://127.0.0.1:${OWN_PORT}`;
+// A free port by default: a fixed 3492 collided with demo envs that bind it (#4530 run 21).
+const OWN_PORT = Number(process.env.HUB_SPEC_PORT || 0);
+let BASE = process.env.FLOW_BASE || '';
 const BRINGS_OWN = !process.env.FLOW_BASE;
 const CLEARING = process.env.CLEARING_ORIGIN || 'http://localhost:3470';
 
@@ -79,6 +80,7 @@ test.beforeAll(async () => {
     server.once('error', reject);
     server.listen(OWN_PORT, '127.0.0.1', resolve);
   });
+  BASE = `http://127.0.0.1:${server.address().port}`;
 });
 
 test.afterAll(async () => {

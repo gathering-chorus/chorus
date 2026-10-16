@@ -26,8 +26,9 @@ const path = require('path');
 const PUBLIC_DIR = path.resolve(__dirname, '..', '..', 'platform', 'api', 'public');
 const API_DIR = path.resolve(__dirname, '..', '..', 'platform', 'api');
 const DATA_ORIGIN = process.env.CHORUS_API || 'http://localhost:3340';
-const OWN_PORT = Number(process.env.LOOM_SPEC_PORT || 3493);
-const BASE = process.env.FLOW_BASE || `http://127.0.0.1:${OWN_PORT}`;
+// A free port by default: a fixed 3493 collided with demo envs that bind it (#4530 run 21).
+const OWN_PORT = Number(process.env.LOOM_SPEC_PORT || 0);
+let BASE = process.env.FLOW_BASE || '';
 const BRINGS_OWN = !process.env.FLOW_BASE;
 
 // The renders this spec grades are BUILT FROM SOURCE FIRST — that is the
@@ -73,6 +74,7 @@ test.beforeAll(async () => {
     server.once('error', reject);
     server.listen(OWN_PORT, '127.0.0.1', resolve);
   });
+  BASE = `http://127.0.0.1:${server.address().port}`;
 });
 
 test.afterAll(async () => {

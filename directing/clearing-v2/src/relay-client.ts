@@ -1,6 +1,24 @@
 // @domain: messages
 
 import { NostrEvent } from './types';
+import { buildEventId } from './identity';
+
+/** The room's reader key (Silas 2026-10-15 13:41: the bridge signer v1 registered,
+ *  reads only, not a member). Key material stays outside the room: the caller
+ *  injects a signer, never a key. */
+export interface RelaySigner {
+  pubkey: string;
+  /** Schnorr signature (hex) over the 32-byte event id (hex). */
+  sign(idHex: string): string;
+}
+
+/** NIP-42: answer the relay's challenge with a signed kind 22242 event. Same frame as
+ *  v1's buzz-relay.ts authFrame. */
+export function authFrame(challenge: string, relayUrl: string, signer: RelaySigner, nowSec: number): string {
+  const tags = [['relay', relayUrl], ['challenge', challenge]];
+  const id = buildEventId(JSON.stringify([0, signer.pubkey, nowSec, 22242, tags, '']));
+  return JSON.stringify(['AUTH', { id, pubkey: signer.pubkey, created_at: nowSec, kind: 22242, tags, content: '', sig: signer.sign(id) }]);
+}
 
 export interface WebSocketLike {
   send(data: string): void;
@@ -54,6 +72,11 @@ export interface BuzzRelayClientOptions {
   onEvent?: (event: NostrEvent) => void;
   subId?: string;
   autoReconnect?: boolean;
+  /** NIP-42 reader key; without it a challenging relay never lets the room read. */
+  signer?: RelaySigner;
+  /** The relay is host-scoped (v1: "connect via the LAN IP, never localhost"). */
+  hostHeader?: string;
+  nowSec?: () => number;
 }
 
 export class BuzzRelayClient {
@@ -65,6 +88,10 @@ export class BuzzRelayClient {
   private ws: WebSocketLike | null = null;
   private connected = false;
   private buffer: NostrEvent[] = [];
+  private signer?: RelaySigner;
+  private hostHeader?: string;
+  private nowSec: () => number;
+  private authState: 'none' | 'challenged' | 'sent' | 'no-signer' = 'none';
 
   constructor(options: BuzzRelayClientOptions) {
     this.relayUrl = options.relayUrl;
@@ -72,15 +99,35 @@ export class BuzzRelayClient {
     this.wsFactory = options.wsFactory;
     this.onEventCallback = options.onEvent;
     this.subId = options.subId || 'team-sub';
+    this.signer = options.signer;
+    this.hostHeader = options.hostHeader;
+    this.nowSec = options.nowSec || (() => Math.floor(Date.now() / 1000));
+  }
+
+  /** 'no-signer' = the relay asked for AUTH and the room has no reader key: name it. */
+  getAuthState(): string {
+    return this.authState;
+  }
+
+  getRelayUrl(): string {
+    return this.relayUrl;
+  }
+
+  getTopic(): string {
+    return this.topic;
   }
 
   connect(): void {
+    if (!this.relayUrl) {
+      this.connected = false;
+      return;
+    }
     if (this.wsFactory) {
       this.ws = this.wsFactory();
     } else {
       // Lazy load 'ws' when running in Node.js
       const WebSocket = require('ws');
-      this.ws = new WebSocket(this.relayUrl);
+      this.ws = this.hostHeader ? new WebSocket(this.relayUrl, { headers: { Host: this.hostHeader } }) : new WebSocket(this.relayUrl);
     }
 
     const ws = this.ws;
@@ -127,7 +174,8 @@ export class BuzzRelayClient {
     if (!this.ws) return;
     const filter = {
       kinds: [1],
-      '#t': [this.topic],
+      '#t': [this.topic, 'reply'],
+      limit: 200,
     };
     this.ws.send(JSON.stringify(['REQ', this.subId, filter]));
   }
@@ -145,6 +193,18 @@ export class BuzzRelayClient {
   private handleMessage(raw: string): void {
     try {
       const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed[0] === 'AUTH' && typeof parsed[1] === 'string') {
+        this.authState = 'challenged';
+        if (!this.signer || !this.ws) {
+          this.authState = 'no-signer';
+          return;
+        }
+        this.ws.send(authFrame(parsed[1], this.relayUrl, this.signer, this.nowSec()));
+        this.authState = 'sent';
+        // the REQ sent on open was refused before AUTH; ask again, in order after it
+        this.subscribe();
+        return;
+      }
       if (Array.isArray(parsed) && parsed[0] === 'EVENT' && parsed[2]) {
         const event = parsed[2] as NostrEvent;
         if (this.onEventCallback) {

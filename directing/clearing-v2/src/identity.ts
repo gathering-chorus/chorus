@@ -70,3 +70,38 @@ export function resolveRoleByPubkey(
   if (!pubkey) return null;
   return knownKeys.get(pubkey.toLowerCase()) || null;
 }
+
+/**
+ * #3743 — who is speaking, from the cryptographic signature that already happened.
+ *
+ * In v1 (#3743), the old resolver read a client-supplied field or defaulted to 'jeff'.
+ * An authenticated Mark rendered as Jeff and had Jeff's authority.
+ * In v2, the sender comes strictly from the verified cryptographic event (Schnorr signature),
+ * never from a client-supplied body field and never from a 'jeff' default.
+ */
+export interface SenderIdentity {
+  name: string;
+  role: string;
+  pubkey: string;
+  authenticated: boolean;
+}
+
+export function resolveSenderIdentity(
+  event: NostrEvent | undefined,
+  knownKeys: Map<string, string>,
+): SenderIdentity | null {
+  if (!event || !verifyNostrEvent(event)) {
+    return null;
+  }
+  const role = resolveRoleByPubkey(event.pubkey, knownKeys);
+  if (!role) {
+    return null;
+  }
+  return {
+    name: role,
+    role,
+    pubkey: event.pubkey,
+    authenticated: true,
+  };
+}
+
