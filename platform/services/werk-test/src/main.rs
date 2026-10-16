@@ -630,6 +630,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         let cases_before = all_cases.len();
         let unmatched_before = unmatched_cargo;
         let mut nothing_selected = false;
+        // #4539 — the cargo binaries this check ran (empty = all) and left out
+        let mut cargo_bins: (Vec<String>, Vec<String>) = Default::default();
         // #4454 — the unit starts on the trace: a hung unit reads started, no end
         emit_spine("test.unit.started", &role, &card, &trace,
             &[("check", check.kind.label()), ("unit", target), ("message", &format!("{} {} started", check.kind.label(), target))]);
@@ -650,6 +652,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 // #4539 — the only-bins path must honour the same exclusions: a
                 // card that edits a nightly-only test binary does not run it
                 let kept = werk_test::only_bins_kept(&only, &ns_bins);
+                cargo_bins = (kept.clone(), ns_bins.clone());
                 let (ok, cases) = if !only.is_empty() && kept.is_empty() {
                     println!("cargo-select: {} → {} changed test binar(y/ies), all nightly only or stack-down: not run", c, only.len());
                     nothing_selected = true;
@@ -767,7 +770,11 @@ fn run(args: &[String]) -> Result<i32, String> {
         // #4539 — each held cargo case in this crate did not run (nextest's
         // filterset): UNMEASURED, named. jest and bats note their own holds.
         if let (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) = (&check.kind, &check.unit) {
-            for line in werk_test::hold_lines(target, &werk_test::holds_in(&quarantined, &crate_dir(&werk, c))) {
+            let dir = crate_dir(&werk, c);
+            let held = werk_test::holds_in(&quarantined, &dir);
+            let ran = werk_test::holds_in_ran_bins(&held, &dir, &cargo_bins.0, &cargo_bins.1);
+            let text_of = |f: &str| std::fs::read_to_string(format!("{}/{}", werk, f)).ok();
+            for line in werk_test::hold_lines(target, &werk_test::holds_still_present(&ran, &text_of)) {
                 unmeasured.push(line);
             }
         }

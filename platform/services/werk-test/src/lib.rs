@@ -839,6 +839,75 @@ pub fn holds_in<'a>(holds: &'a [Quarantined], unit_path: &str) -> Vec<&'a Quaran
         .collect()
 }
 
+/// #4539 — of a crate's holds, the ones in a test binary this run would have
+/// run: not in a binary it left out (`excluded`: nightly only, stack down),
+/// and, when it ran only some binaries (`only`), in one of those. A hold in a
+/// binary the run never selected did not stop anything, so it is not named.
+/// A hold in the crate's src (no tests/ binary) stays. Pure.
+pub fn holds_in_ran_bins<'a>(holds: &[&'a Quarantined], crate_dir: &str, only: &[String], excluded: &[String]) -> Vec<&'a Quarantined> {
+    let prefix = format!("{}/tests/", crate_dir.trim_end_matches('/'));
+    holds.iter().copied().filter(|h| {
+        match h.file.strip_prefix(&prefix).and_then(|r| r.strip_suffix(".rs")).filter(|s| !s.contains('/')) {
+            Some(stem) => !excluded.iter().any(|e| e == stem) && (only.is_empty() || only.iter().any(|o| o == stem)),
+            None => true,
+        }
+    }).collect()
+}
+
+/// #4539 — the holds whose case the werk still has: its file still names the
+/// case. A hold on a case the card moved or deleted stopped nothing in this
+/// run (#4539 run 1: pulse_runs_under_budget moved to perf_suite.rs, its row
+/// still said pulse_service.rs). A file the run cannot read keeps the hold. Pure.
+pub fn holds_still_present<'a>(holds: &[&'a Quarantined], text_of: &dyn Fn(&str) -> Option<String>) -> Vec<&'a Quarantined> {
+    holds.iter().copied().filter(|h| text_of(&h.file).is_none_or(|t| t.contains(h.case.as_str()))).collect()
+}
+
+#[cfg(test)]
+mod holds_in_ran_bins_4539 {
+    use super::*;
+    fn h(file: &str) -> Quarantined {
+        Quarantined { case: "c".into(), reason: "r".into(), until: "2099-01-01".into(), file: file.into() }
+    }
+
+    /// #4539 run 1: the card ran only pulse_service; the hold was on a case
+    /// that moved out of it. Not named.
+    #[test]
+    fn a_hold_in_a_binary_the_run_did_not_select_is_not_named() {
+        let a = h("platform/services/chorus-hooks/tests/pulse_service.rs");
+        let b = h("platform/services/chorus-hooks/tests/perf_suite.rs");
+        let held = vec![&a, &b];
+        let got = holds_in_ran_bins(&held, "platform/services/chorus-hooks", &["units".into()], &[]);
+        assert!(got.is_empty());
+        let got = holds_in_ran_bins(&held, "platform/services/chorus-hooks", &[], &["perf_suite".into()]);
+        assert_eq!(got.len(), 1, "a whole-crate run names the pulse_service hold, not the nightly binary's");
+    }
+
+    #[test]
+    fn a_hold_on_a_case_the_card_moved_away_is_not_named() {
+        let a = h("platform/services/chorus-hooks/tests/pulse_service.rs");
+        let mut moved = a.clone();
+        moved.case = "pulse_runs_under_budget".into();
+        let held = vec![&moved];
+        let gone = |_: &str| Some("fn pulse_nudges_per_role() {}".to_string());
+        assert!(holds_still_present(&held, &gone).is_empty());
+        // NEGATIVE PROOF: the case is still in its file, or the file is unreadable — named
+        let there = |_: &str| Some("fn pulse_runs_under_budget() {}".to_string());
+        assert_eq!(holds_still_present(&held, &there).len(), 1);
+        let unread = |_: &str| -> Option<String> { None };
+        assert_eq!(holds_still_present(&held, &unread).len(), 1);
+    }
+
+    /// NEGATIVE PROOF: a hold in a binary the run did run is still named.
+    #[test]
+    fn negative_proof_a_hold_in_a_ran_binary_is_named() {
+        let a = h("platform/services/chorus-hooks/tests/pulse_service.rs");
+        let s = h("platform/services/chorus-hooks/src/lib.rs");
+        let held = vec![&a, &s];
+        assert_eq!(holds_in_ran_bins(&held, "platform/services/chorus-hooks", &["pulse_service".into()], &[]).len(), 2);
+        assert_eq!(holds_in_ran_bins(&held, "platform/services/chorus-hooks", &[], &[]).len(), 2);
+    }
+}
+
 /// #4539 — the line each held case gets: UNMEASURED, never green or red.
 pub fn hold_lines(unit: &str, holds: &[&Quarantined]) -> Vec<String> {
     holds.iter()
