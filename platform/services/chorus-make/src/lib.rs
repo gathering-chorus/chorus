@@ -564,8 +564,11 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
         "  - CHORUS_BIN: ${{CHORUS_BIN}}\n",
         "  - CHORUS_ROOT: ${{CHORUS_HOME}}\n",
         "  - CHORUS_TRACE_ID: {}\n",
-        // the role's slot first, as cicd does (#4474 run 12): a card's own build
-        "  - PATH: ${{CHORUS_WERK_BASE}}/${{ROLE}}-bin:${{PATH}}\n",
+        // the card's own werk-test build, then the role's slot as cicd does
+        // (#4474 run 12). #4540 — werk-build never fills the slot (#3062) and
+        // main's werk-test knows no steps, so a card that adds a step could not
+        // test itself; with no card (the nightly) the first dir does not exist.
+        "  - PATH: ${{CHORUS_WERK_BASE}}/${{ROLE}}-${{CARD}}/platform/services/werk-test/target/release:${{CHORUS_WERK_BASE}}/${{ROLE}}-bin:${{PATH}}\n",
     ), trace));
     out.push_str("handler_on:\n");
     // Who hears a failure: a child (it takes its trace from a parent) says

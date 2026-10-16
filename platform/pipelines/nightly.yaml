@@ -11,7 +11,7 @@ env:
   - CHORUS_BIN: ${CHORUS_BIN}
   - CHORUS_ROOT: ${CHORUS_HOME}
   - CHORUS_TRACE_ID: ${DAG_RUN_ID}
-  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
+  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/services/werk-test/target/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   abort:
     command: "werk-test report --scope=all --stopped"
