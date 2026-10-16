@@ -1126,6 +1126,11 @@ fn parse_validate_lines(out: &str) -> Vec<ValidateLine> {
 /// all (a clean verdict over nothing read is the hollow gate, #3734).
 fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     let rows = parse_validate_lines(out);
+    // #4562 (Silas) — a crawl stopped at its cap is named as cut short, never
+    // read as clean or as a crawler that printed nothing for its own reasons
+    if rows.is_empty() && rc == 124 {
+        return ("unmeasured", "0 pass, 0 fail (UNMEASURED — the crawl was cut short at its 1200s cap before it validated)".to_string());
+    }
     if rows.is_empty() {
         return (
             "unmeasured",
@@ -1342,6 +1347,10 @@ mod lanes_4278 {
         let (v, s) = crawler_validate_verdict(0, out);
         assert_eq!(v, "unmeasured");
         assert!(s.contains("logs (LogSource)"), "{s}");
+        // #4562 NEGATIVE PROOF: a crawl cut short at the cap is unmeasured and says so
+        let (cv, cs) = crawler_validate_verdict(124, "SUITE TIMEOUT rc=124 after 1200s\n");
+        assert_eq!(cv, "unmeasured");
+        assert!(cs.contains("cut short"), "{cs}");
         let (v, s) = crawler_validate_verdict(0, "chorus-crawl: reconcile: clean — the graph matches the tree\n");
         assert_eq!(v, "unmeasured");
         assert!(s.contains("no VALIDATE rows"), "{s}");
