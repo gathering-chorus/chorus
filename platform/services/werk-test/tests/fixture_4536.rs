@@ -583,3 +583,127 @@ fn negative_proof_without_the_header_the_edited_binary_runs() {
     let r = box_only_edit("r8d", "91038", "#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n");
     assert!(r.out.contains("werk-test: RED"), "{}", r.out);
 }
+
+// ── #4540 — the five steps, each its own process, through one run folder ──
+
+/// A werk like `run_fixture`'s, then `steps` run one by one (each a separate
+/// werk-test process) on one trace and one runs folder. Returns every step's run.
+fn run_steps(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[String], steps: &[&[&str]]) -> Vec<Run> {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let werk = base.join(format!("fix-{}", card));
+    std::fs::create_dir_all(&werk).unwrap();
+    git(&werk, &["init", "-q"]);
+    std::fs::write(werk.join("README"), "fixture\n").unwrap();
+    for g in ["platform/tests/doc-coherence-ratchet.test.sh", "platform/scripts/clippy-ratchet.sh"] {
+        let p = werk.join(g);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+    }
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "base"]);
+    for (path, body) in files {
+        let p = werk.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "card"]);
+    let registry = format!("{{\"data\":[{}]}}", registry_rows.join(","));
+    let (port, patches) = stub(registry, 200);
+    let door = format!("http://127.0.0.1:{}", port);
+    let path = stub_path(&base);
+    let mut runs = Vec::new();
+    for step in steps {
+        let mut argv: Vec<&str> = step.to_vec();
+        argv.splice(1..1, [card, "fix"]);
+        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+            .args(&argv)
+            .env("PATH", &path)
+            .env("CHORUS_WERK_BASE", &base)
+            .env("WERK_TEST_RUNS", base.join("runs"))
+            .env("CHORUS_TRACE_ID", format!("fixture-4540-{}", tag))
+            .env_remove("WERK_TEST_TREE")
+            .env_remove("CHORUS_HOME")
+            .env("CHORUS_WRITE_TOKEN", "fixture")
+            .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
+            .env("WERK_STACK_PROBES", format!("door={door}/"))
+            .output()
+            .expect("spawn werk-test step");
+        runs.push(Run {
+            code: out.status.code().unwrap_or(-1),
+            out: format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+            patches: patches.lock().unwrap().clone(),
+        });
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    runs
+}
+
+const ALL_STEPS: &[&[&str]] = &[
+    &["scope"], &["prepare"],
+    &["run", "--test-type=coverage"], &["run", "--test-type=lint"], &["run", "--test-type=security"],
+    &["run", "--test-type=unit"], &["run", "--test-type=integration"], &["run", "--test-type=ui"],
+    &["run", "--test-type=perf"], &["report"], &["verdict"],
+];
+
+#[test]
+fn the_steps_run_apart_reach_the_same_clean_verdict() {
+    let runs = run_steps("s1", "92001", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], ALL_STEPS);
+    for (r, s) in runs.iter().zip(ALL_STEPS) {
+        if s[0] != "verdict" {
+            assert_eq!(r.code, 0, "{:?}: {}", s, r.out);
+        }
+    }
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 0, "{}", v.out);
+    assert!(v.out.contains("werk-test: CLEAN (exit 0)"), "{}", v.out);
+}
+
+#[test]
+fn a_red_case_goes_green_in_its_type_step_and_red_at_the_verdict() {
+    let runs = run_steps("s2", "92002", &[("platform/tests/fail.bats", FAIL)],
+        &[row("platform/tests/fail.bats", "f", "test-fail")], ALL_STEPS);
+    let unit = &runs[5];
+    assert_eq!(unit.code, 0, "the type step writes its result and lets the next run: {}", unit.out);
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 1, "{}", v.out);
+    assert!(v.out.contains("RED in: bats:platform/tests/fail.bats"), "{}", v.out);
+}
+
+/// NEGATIVE PROOF: a planned type whose step never ran is not clean — the
+/// verdict names it UNMEASURED, never reads the missing file as nothing.
+#[test]
+fn negative_proof_a_type_step_that_never_ran_is_unmeasured_at_the_verdict() {
+    let skip_unit: Vec<&[&str]> = ALL_STEPS.iter().copied().filter(|s| *s != ["run", "--test-type=unit"]).collect();
+    let runs = run_steps("s3", "92003", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &skip_unit);
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 2, "{}", v.out);
+    assert!(v.out.contains("unit — did not report"), "{}", v.out);
+}
+
+/// NEGATIVE PROOF: a step whose input was never written refuses, naming the
+/// step that writes it (dagu stops there, by name).
+#[test]
+fn negative_proof_a_step_before_its_inputs_refuses_and_names_them() {
+    let runs = run_steps("s4", "92004", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &[&["prepare"]]);
+    assert_eq!(runs[0].code, 3, "{}", runs[0].out);
+    assert!(runs[0].out.contains("run `werk-test scope` first"), "{}", runs[0].out);
+}
+
+/// A retried type step overwrites its own result: the case is counted once.
+#[test]
+fn a_retried_type_step_does_not_count_twice() {
+    let mut steps: Vec<&[&str]> = ALL_STEPS.to_vec();
+    steps.insert(6, &["run", "--test-type=unit"]);
+    let runs = run_steps("s5", "92005", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &steps);
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 0, "{}", v.out);
+    let report = &runs[runs.len() - 2];
+    assert!(report.out.contains("card-coverage: covered (1 registered case(s)"), "{}", report.out);
+}

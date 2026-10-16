@@ -18,6 +18,7 @@
 
 pub mod nightly_run;
 pub mod why;
+pub mod run_dir;
 pub type R<T> = Result<T, String>;
 
 /// Known TS packages with their own jest config + node_modules (matches #3397's
