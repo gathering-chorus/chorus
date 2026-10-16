@@ -275,10 +275,15 @@ pub fn exercise_patches(
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (test, files) in want {
+        // #4562 — compared as sets, the way the store holds them: the door
+        // lists an empty set as one "" (45 rows re-patched every crawl,
+        // measured 10-16), and two files with one row name are one member.
         let mut names: Vec<String> = files.iter().map(|f| name_of(f)).collect();
         names.sort();
-        let mut held = stored(test);
+        names.dedup();
+        let mut held: Vec<String> = stored(test).into_iter().filter(|h| !h.is_empty()).collect();
         held.sort();
+        held.dedup();
         if names == held {
             continue;
         }
@@ -307,5 +312,35 @@ pub fn row_in_pass(stored: &Fields, repo: &str, home_pass: bool) -> bool {
     match repo_of_row(stored) {
         Some(r) => r == repo,
         None => home_pass,
+    }
+}
+
+#[cfg(test)]
+mod exercise_patches_4562 {
+    use super::exercise_patches;
+
+    fn plan(want: Vec<(&str, Vec<&str>)>, held: Vec<&'static str>) -> Vec<(String, String)> {
+        let want: Vec<(String, Vec<String>)> = want.into_iter()
+            .map(|(t, f)| (t.to_string(), f.into_iter().map(String::from).collect())).collect();
+        exercise_patches(&want, &move |_| held.iter().map(|s| s.to_string()).collect(), &|f| f.replace('/', "-"))
+    }
+
+    #[test]
+    fn an_empty_set_the_door_lists_as_one_blank_is_unchanged() {
+        assert!(plan(vec![("t.sh", vec![])], vec![""]).is_empty());
+    }
+
+    #[test]
+    fn two_files_with_one_row_name_match_the_one_stored_member() {
+        assert!(plan(vec![("t.sh", vec!["a/b", "a/b"])], vec!["a-b"]).is_empty());
+    }
+
+    /// NEGATIVE PROOF: a set that really changed is still patched.
+    #[test]
+    fn negative_proof_a_changed_set_is_still_patched() {
+        let p = plan(vec![("t.sh", vec!["a/b", "c/d"])], vec!["a-b"]);
+        assert_eq!(p.len(), 1);
+        assert!(p[0].1.contains("c-d"), "{}", p[0].1);
+        assert_eq!(plan(vec![("t.sh", vec![])], vec!["a-b"]).len(), 1, "a set emptied is patched to null");
     }
 }
