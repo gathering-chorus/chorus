@@ -18,6 +18,10 @@ pub const STEPS: [&str; 5] = ["scope", "prepare", "run", "report", "verdict"];
 /// Jeff's run order for test types (2026-09-12 note, #4540 AC7).
 pub const TEST_TYPES: [&str; 7] = ["coverage", "lint", "security", "unit", "integration", "ui", "perf"];
 
+/// Jeff 10-16 (option B): one queue runs every type but perf, in his order;
+/// perf runs after it as its own step, so its timing sees a quiet box.
+pub const QUEUE_TYPES: [&str; 6] = ["coverage", "lint", "security", "unit", "integration", "ui"];
+
 /// The test type a check proves. A lint ratchet, tsc and the doc floor are
 /// lint; a crate, package or suite run is unit (its integration cases run in
 /// the same binary today); the browser lane is ui.

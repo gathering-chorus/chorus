@@ -225,10 +225,17 @@ fn run(args: &[String]) -> Result<i32, String> {
     match step.as_deref() {
         Some("scope") => Ok(step_scope(&ctx)?.unwrap_or(0)),
         Some("prepare") => step_prepare(&ctx),
-        Some("run") => {
-            let t = flag_value(args, "--test-type").ok_or("`werk-test run` needs --test-type=<type>")?;
-            step_run(&ctx, &t)
-        }
+        // #4540 (Jeff 10-16 B) — `run` is the one queue in his type order;
+        // `run --test-type=perf` runs perf alone after it, on a quiet box
+        Some("run") => match flag_value(args, "--test-type") {
+            Some(t) => step_run(&ctx, &t),
+            None => {
+                for t in werk_test::run_dir::QUEUE_TYPES {
+                    step_run(&ctx, t)?;
+                }
+                Ok(0)
+            }
+        },
         Some("report") => step_report(&ctx, true),
         Some("verdict") => step_verdict(&ctx),
         _ => {

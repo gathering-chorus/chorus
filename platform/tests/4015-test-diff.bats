@@ -119,3 +119,33 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"CHANGED  suite.bats|case number 000007 with a long enough name  pass -> fail"* ]] || return 1
 }
+
+# #4540 — under dagu a nightly's trace is its run id, which names no time, so
+# its verdicts are read from its PipelineRun's runTs. A nightly-<ms>-<pid>
+# trace names its own start and needs no lookup.
+mkstub_logging() {
+  cat > "$TMP/ask" <<'EOF2'
+#!/bin/bash
+echo "$1" >> "$TMP_LOG"
+case "$1" in
+  *c:traceId*034gpYTGEnSPcL7jOsEBMT*) printf '%s\n' '?ts' '"2026-10-16T03:00:01"' ;;
+  LOKI*) printf '%s\n' '?k,?res' 'a.bats|one,pass' ;;
+esac
+EOF2
+  chmod +x "$TMP/ask"
+  export TMP_LOG="$TMP/asked"
+}
+
+@test "#4540 a dagu run id is read with its run's start" {
+  mkstub_logging
+  run "$DIFF" 034gpYTGEnSPcL7jOsEBMT nightly-1792049381065-39455
+  grep -q '^LOKI 034gpYTGEnSPcL7jOsEBMT 2026-10-16T03:00:01$' "$TMP/asked"
+}
+
+@test "#4540 negative proof: a nightly-<ms>-<pid> trace asks no start" {
+  mkstub_logging
+  run "$DIFF" nightly-1792049381065-39455 nightly-1792049381066-39456
+  run grep -c 'c:traceId' "$TMP/asked"
+  [ "$output" = "0" ]
+  grep -q '^LOKI nightly-1792049381065-39455 *$' "$TMP/asked"
+}

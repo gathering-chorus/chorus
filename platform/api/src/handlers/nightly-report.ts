@@ -173,7 +173,8 @@ export function parseNightlyLog(text: string): NightlyRun | null {
       continue;
     }
     if (!run.trace) {
-      const m = /\btrace=(nightly-[\w-]+)/.exec(l);
+      // #4540 — or the dagu run id the dag passes as CHORUS_TRACE_ID
+      const m = /\btrace=(nightly-[\w-]+|[0-9A-Za-z]{22}\b)/.exec(l);
       if (m) run.trace = m[1];
     }
     const row = parseSuiteLine(l);
@@ -429,8 +430,11 @@ type RunRef = { startedAt: string; completedAt?: string; trace?: string };
 /** #4536 — a run's trace names its case events only from #4536 on, when the
  *  run mints one trace for every lane (`nightly-<ms>-<pid>`). Before that the
  *  PipelineRun carried a second id (`nightly-<secs>`) no case event has. */
+/** #4540 — under dagu the nightly's trace is its dag run id (22 characters,
+ *  CHORUS_TRACE_ID=${DAG_RUN_ID}); both forms name the run's case events. */
 export function hasRunTrace(run: { trace?: string }): boolean {
-  return /^nightly-\d+-\d+$/.test(run.trace ?? '');
+  const t = run.trace ?? '';
+  return /^nightly-\d+-\d+$/.test(t) || /^[0-9A-Za-z]{22}$/.test(t);
 }
 
 /** The run's own window and trace. Selective stream selector plus line

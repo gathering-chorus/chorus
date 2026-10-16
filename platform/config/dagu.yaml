@@ -40,3 +40,10 @@ queues:
     # behind the very land that is waiting for it.
     - name: athena-land
       max_concurrency: 1
+    # #4540 — the nightly dag (made by chorus-make, scheduled 03:00), one at a
+    # time: it replaces werk-test's single-flight lock. The queue sits on the
+    # nightly dag itself, because a sub-run ignores its queue (#4494).
+    # Measured 2026-10-16 on a scratch dagu 2.18.2: `max_active_runs: 1` did
+    # not stop a second `dagu start`, so the scheduler enqueues here.
+    - name: nightly
+      max_concurrency: 1

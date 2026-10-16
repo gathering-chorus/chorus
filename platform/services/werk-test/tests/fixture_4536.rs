@@ -641,11 +641,9 @@ fn run_steps(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[Str
     runs
 }
 
+/// #4540 — Jeff 10-16 B: the queue, then perf alone, then report and verdict.
 const ALL_STEPS: &[&[&str]] = &[
-    &["scope"], &["prepare"],
-    &["run", "--test-type=coverage"], &["run", "--test-type=lint"], &["run", "--test-type=security"],
-    &["run", "--test-type=unit"], &["run", "--test-type=integration"], &["run", "--test-type=ui"],
-    &["run", "--test-type=perf"], &["report"], &["verdict"],
+    &["scope"], &["prepare"], &["run"], &["run", "--test-type=perf"], &["report"], &["verdict"],
 ];
 
 #[test]
@@ -666,8 +664,8 @@ fn the_steps_run_apart_reach_the_same_clean_verdict() {
 fn a_red_case_goes_green_in_its_type_step_and_red_at_the_verdict() {
     let runs = run_steps("s2", "92002", &[("platform/tests/fail.bats", FAIL)],
         &[row("platform/tests/fail.bats", "f", "test-fail")], ALL_STEPS);
-    let unit = &runs[5];
-    assert_eq!(unit.code, 0, "the type step writes its result and lets the next run: {}", unit.out);
+    let queue = &runs[2];
+    assert_eq!(queue.code, 0, "the run step writes its result and lets the next run: {}", queue.out);
     let v = runs.last().unwrap();
     assert_eq!(v.code, 1, "{}", v.out);
     assert!(v.out.contains("RED in: bats:platform/tests/fail.bats"), "{}", v.out);
@@ -677,7 +675,8 @@ fn a_red_case_goes_green_in_its_type_step_and_red_at_the_verdict() {
 /// verdict names it UNMEASURED, never reads the missing file as nothing.
 #[test]
 fn negative_proof_a_type_step_that_never_ran_is_unmeasured_at_the_verdict() {
-    let skip_unit: Vec<&[&str]> = ALL_STEPS.iter().copied().filter(|s| *s != ["run", "--test-type=unit"]).collect();
+    // the queue step never ran: every type it carries, unit among them, is missing
+    let skip_unit: Vec<&[&str]> = ALL_STEPS.iter().copied().filter(|s| *s != ["run"]).collect();
     let runs = run_steps("s3", "92003", &[("platform/tests/pass.bats", PASS)],
         &[row("platform/tests/pass.bats", "p", "test-pass")], &skip_unit);
     let v = runs.last().unwrap();
@@ -699,7 +698,7 @@ fn negative_proof_a_step_before_its_inputs_refuses_and_names_them() {
 #[test]
 fn a_retried_type_step_does_not_count_twice() {
     let mut steps: Vec<&[&str]> = ALL_STEPS.to_vec();
-    steps.insert(6, &["run", "--test-type=unit"]);
+    steps.insert(3, &["run"]);
     let runs = run_steps("s5", "92005", &[("platform/tests/pass.bats", PASS)],
         &[row("platform/tests/pass.bats", "p", "test-pass")], &steps);
     let v = runs.last().unwrap();
