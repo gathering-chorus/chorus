@@ -33,7 +33,7 @@ setup() {
   export HEALTH_BOOT_AUDIT="$W/bin/noop"
   # #4141 — the load reclassify step (#3753) turns refused probes into warnings
   # when the box is busy; a test brings its own load, or it reads the box.
-  export NIGHTLY_LOAD_STUB=0.1
+  export WERK_TEST_LOAD_STUB=0.1
   # three probes, all refused: nothing listens on these loopback ports
   # the Gathering app and Caddy checks refuse too (#4138 reopen): no test reads the live :3002/:3000
   export HEALTH_GATHERING_URL=http://127.0.0.1:39494/ HEALTH_CADDY_URL=http://127.0.0.1:39495/

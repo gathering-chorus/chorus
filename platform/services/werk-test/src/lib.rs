@@ -16,8 +16,9 @@
 //! The pure decision core (`affected_units` / `is_self_modifying` / `gate_outcome`)
 //! is unit-tested with no subprocess; the git-diff + runners wire on top.
 
-pub mod nightly_run;
+pub mod run_record;
 pub mod why;
+pub mod run_dir;
 pub type R<T> = Result<T, String>;
 
 /// Known TS packages with their own jest config + node_modules (matches #3397's
@@ -3918,6 +3919,76 @@ pub const STAGE_ORDER: [&str; 13] = [
     "fitness", "bdd", "e2e", "ui", "perf", "unclassified",
 ];
 
+/// #4540 — the type order as the model holds it (TestType rows, typeOrder),
+/// handed to the lane in this env as `a,b,c`. Wren 10-16: "the queue order
+/// still comes from the model (a swap in the model changes the run order)".
+pub const TYPE_ORDER_ENV: &str = "WERK_TEST_TYPE_ORDER";
+
+/// The model's order when it names every stage exactly once; `None` when it
+/// names an unknown type, misses one, or names one twice, so the caller says
+/// so out loud and runs the built-in order.
+pub fn order_from_model(names: &[String]) -> Option<Vec<&'static str>> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for n in names {
+        let s = STAGE_ORDER.iter().copied().find(|s| s == n)?;
+        if out.contains(&s) {
+            return None;
+        }
+        out.push(s);
+    }
+    (out.len() == STAGE_ORDER.len()).then_some(out)
+}
+
+/// The type names in order from the store's `?label ?order` TSV (labels may
+/// be typed literals); rows that do not parse are dropped, never guessed.
+pub fn type_order_of_tsv(tsv: &str) -> Vec<String> {
+    let mut rows: Vec<(u32, String)> = tsv.lines().skip(1).filter_map(|l| {
+        let (a, b) = l.split_once('\t')?;
+        let label = a.trim().trim_matches('"').split("\"^^").next()?.trim_matches('"').to_string();
+        let order: u32 = b.trim().trim_matches('"').split("\"^^").next()?.trim_matches('"').parse().ok()?;
+        Some((order, label))
+    }).collect();
+    rows.sort();
+    rows.into_iter().map(|(_, l)| l).collect()
+}
+
+/// The order this run uses: the model's from the env, else the built-in.
+pub fn stage_order() -> Vec<&'static str> {
+    std::env::var(TYPE_ORDER_ENV).ok()
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect::<Vec<_>>())
+        .and_then(|n| order_from_model(&n))
+        .unwrap_or_else(|| STAGE_ORDER.to_vec())
+}
+
+#[cfg(test)]
+mod type_order_4540 {
+    use super::*;
+    fn v(xs: &[&str]) -> Vec<String> { xs.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn the_models_order_is_the_run_order() {
+        let mut swapped: Vec<String> = v(&STAGE_ORDER);
+        swapped.swap(4, 6); // unit <-> integration
+        let got = order_from_model(&swapped).unwrap();
+        assert_eq!(got[4], "integration");
+        assert_eq!(got[6], "unit");
+    }
+
+    /// NEGATIVE PROOF: an unknown, missing or doubled type is not an order.
+    #[test]
+    fn negative_proof_a_partial_or_bad_model_order_is_refused() {
+        let mut short = v(&STAGE_ORDER);
+        short.pop();
+        assert!(order_from_model(&short).is_none(), "a missing type");
+        let mut bad = v(&STAGE_ORDER);
+        bad[0] = "coverag".into();
+        assert!(order_from_model(&bad).is_none(), "an unknown type");
+        let mut twice = v(&STAGE_ORDER);
+        twice[1] = "coverage".into();
+        assert!(order_from_model(&twice).is_none(), "a doubled type");
+    }
+}
+
 /// #4160 — stages the outer legs already cover (coverage, lint, eslint, smoke
 /// run before the runner; daemons + duration are perf lines after it). An
 /// empty runner stage for one of these is not "absent".
@@ -3978,6 +4049,30 @@ pub fn crate_binary_types(krate: &str, rows: &[TestRow]) -> Vec<(String, String)
 /// #4160 — one stage's work: cargo items are `crate` (its unit run) or
 /// `crate#stem` (one typed test binary); npm items are `pkg` or
 /// `pkg#integration` (a jest package's integration project run apart).
+/// #4540 — which stages a queue run takes: `perf` (perf only) or `queue`
+/// (every stage but perf). Unset: every stage.
+pub const STAGES_ENV: &str = "WERK_TEST_STAGES";
+
+pub fn stage_picked(pick: &str, stage: &str) -> bool {
+    match pick {
+        "perf" => stage == "perf",
+        "queue" => stage != "perf",
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod stage_picked_4540 {
+    use super::stage_picked;
+    #[test]
+    fn the_queue_takes_every_stage_but_perf_and_perf_takes_only_perf() {
+        assert!(stage_picked("queue", "unit") && stage_picked("queue", "ui") && !stage_picked("queue", "perf"));
+        assert!(stage_picked("perf", "perf") && !stage_picked("perf", "unit"));
+        // NEGATIVE PROOF: an unknown pick drops nothing, never everything
+        assert!(stage_picked("", "unit") && stage_picked("bogus", "perf"));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StagePlan {
     pub stage: &'static str,
@@ -4005,7 +4100,8 @@ pub fn plan_stages(
     security_pkgs: &std::collections::BTreeSet<String>,
     integration_on: bool,
 ) -> Vec<StagePlan> {
-    let mut plans: Vec<StagePlan> = STAGE_ORDER
+    // #4540 — the model's type order (TestType rows) when the run was handed one
+    let mut plans: Vec<StagePlan> = stage_order()
         .iter()
         .map(|s| StagePlan { stage: s, cargo: Vec::new(), npm: Vec::new(), files: Vec::new() })
         .collect();
@@ -4046,7 +4142,7 @@ pub fn nightly_stage_absent_line(stage: &str) -> String {
     )
 }
 
-/// #4160 — the ui lane's verdict from playwright's output (was nightly_all's
+/// #4160 — the ui lane's verdict from playwright's output (was all_scope's
 /// leg_ui; the ui lane now runs inside the runner, in its type's stage).
 /// No summary is UNMEASURED, never pass.
 pub fn ui_lane_verdict(rc: i32, out: &str) -> (&'static str, String) {
@@ -4149,7 +4245,7 @@ mod stages_4160 {
         assert_eq!(file_suite_stage("platform/tests/y.bats", &[]), "unclassified");
     }
 
-    /// (moved with the ui lane from nightly_all's lanes_4278 test)
+    /// (moved with the ui lane from all_scope's lanes_4278 test)
     #[test]
     fn ui_verdict_fails_on_a_failure_and_never_passes_on_silence() {
         let out = "  \u{2718}  1 [chromium] \u{203a} login-journey.spec.cjs:9:3 \u{203a} signs in\n  1 failed\n  94 passed (1.2m)\n";
@@ -4819,10 +4915,10 @@ pub fn kill_group(pid: u32) {
 }
 
 /// #4030 — the per-unit wall cap for jest / npm-test units:
-/// `NIGHTLY_UNIT_TIMEOUT` seconds, default 20 minutes. Jeff, 2026-08-29:
+/// `WERK_TEST_UNIT_TIMEOUT` seconds, default 20 minutes. Jeff, 2026-08-29:
 /// "20 min beats a reboot" — a unit that needs longer is a defect, not a wait.
 pub fn unit_timeout() -> std::time::Duration {
-    let secs: u64 = std::env::var("NIGHTLY_UNIT_TIMEOUT").ok()
+    let secs: u64 = std::env::var("WERK_TEST_UNIT_TIMEOUT").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(1200);
     std::time::Duration::from_secs(secs)
 }
@@ -4921,7 +5017,7 @@ mod deadline_4030 {
 
     #[test]
     fn unit_timeout_defaults_to_twenty_minutes() {
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        std::env::remove_var("WERK_TEST_UNIT_TIMEOUT");
         assert_eq!(unit_timeout(), std::time::Duration::from_secs(1200));
     }
 
@@ -5873,7 +5969,7 @@ where
         Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
     std::thread::scope(|s| {
         // #4022 — heartbeat. The nightly's wedge guard kills a lane that prints
-        // nothing for NIGHTLY_QUIET_CAP (600s). A narrow pool prints only when a
+        // nothing for WERK_TEST_QUIET_CAP (600s). A narrow pool prints only when a
         // unit finishes, and one long bats suite is silent for longer than that:
         // 2026-08-29 11:45 the whole bats lane died that way at load 5. Progress
         // is not a wedge; say so once a minute while anything is in flight.

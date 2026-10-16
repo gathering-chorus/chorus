@@ -1,4 +1,4 @@
-// @test-type: integration — drives the built werk-test --nightly against a loopback stub door
+// @test-type: integration — drives the built werk-test lane against a loopback stub door
 // @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4030 AC3 — results are stored PER UNIT, so a run killed mid-way keeps
 //! everything it finished. Negative proof (#3734): the violating state — the
@@ -99,19 +99,19 @@ fn a_run_killed_mid_way_has_already_stored_the_suites_it_finished() {
     let base = format!("http://127.0.0.1:{}", port);
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_werk-test"))
-        .arg("--nightly")
+        .arg("lane")
         .env("CHORUS_ROOT", &root)
         .env_remove("CHORUS_HOME")            // no spine, no token mint: the door takes the env token
         .env("CHORUS_WRITE_TOKEN", "fresh")
         .env("OWL_API_TESTS", format!("{base}/tests?limit=10000"))
         .env("OWL_API_TESTSUITERUNS", format!("{base}/testsuiteruns"))
-        .env("NIGHTLY_SUITE_WORKERS", "1")    // fast, then slow — one at a time
-        .env("NIGHTLY_LOAD_CAP", "100000")    // the load gate is not under test
-        .env("NIGHTLY_SUITE_TIMEOUT", "600")  // the slow suite outlives this test on purpose
+        .env("WERK_TEST_SUITE_WORKERS", "1")    // fast, then slow — one at a time
+        .env("WERK_TEST_LOAD_CAP", "100000")    // the load gate is not under test
+        .env("WERK_TEST_SUITE_TIMEOUT", "600")  // the slow suite outlives this test on purpose
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .expect("spawn werk-test --nightly");
+        .expect("spawn werk-test lane");
 
     // wait for the fast suite's results to land — under per-unit storage that
     // happens while the slow suite is still sleeping

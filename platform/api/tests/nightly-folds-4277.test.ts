@@ -181,6 +181,17 @@ describe('#4536 cases are read by the run\'s own trace', () => {
     expect(hasRunTrace({ trace: 'nightly-1792056711' })).toBe(false);
     expect(hasRunTrace({ trace: 'nightly-1792049381065-39455' })).toBe(true);
   });
+  // #4540 — a dagu-run nightly's trace is its 22-character dag run id
+  it('a dagu run id is a trace: its failing cases reach the page', () => {
+    expect(hasRunTrace({ trace: '034gpYTGEnSPcL7jOsEBMT' })).toBe(true);
+    const run = parseNightlyLog(RUN_ONE_RED.replace('trace=nightly-1790000000000-7', 'trace=034gpYTGEnSPcL7jOsEBMT'))!;
+    expect(run.trace).toBe('034gpYTGEnSPcL7jOsEBMT');
+    const page = renderNightlyPage(run, { cases: { 'a.bats': [{ name: 'broke', result: 'fail' }] } });
+    expect(page).not.toContain('no trace (before #4536)');
+    // NEGATIVE PROOF: a dagu CHILD run id (44 characters) or a bare word is not the run's trace
+    expect(hasRunTrace({ trace: '4sGBks7Qn2Lw9xYpR3tUvZ8aBcDeFgHiJkLmNoPqRsTu' })).toBe(false);
+    expect(hasRunTrace({ trace: 'nightly' })).toBe(false);
+  });
 });
 
 describe('#4536 the page counts what the run counted', () => {

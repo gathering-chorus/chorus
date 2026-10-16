@@ -1,11 +1,12 @@
 # #4465 fixture — the cicd pipeline's rows as the SPARQL SELECT returns them. demo-fitness, prove-live
 # and crawl-delta are inline bash in werk.yml today, not verbs, so they are not rows yet (design §5).
 # #4514 reopen 2: refreshed from the graph 2026-10-13 21:26 (inputShape, withArgs columns added).
+# #4540: the test step runs the cicd-test child pipeline (werk-test as steps), SCOPE=diff.
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 commit	1	1	skill-werk-commit	werk-commit	deterministic	werk-commit	{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]		WerkCommitInput	atomic=true
 commit	1	2	skill-werk-push	werk-push	deterministic	werk-push	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
 build	2	1	skill-werk-build	werk-build	deterministic	werk-build	{card} {caller} [--target {target}] [--atomic {atomic}]		WerkBuildInput	target=werk
-test	3	1	skill-werk-test	werk-test	deterministic	werk-test	{card} {caller} [--domain={domain}] [--type={type}]		WerkTestInput	
+test	3	1	skill-werk-test-pipeline	the tests: cicd-test, scope diff	pipeline	cicd-test				SCOPE=diff
 test	3	2	skill-werk-review	werk-review	deterministic	werk-review	{card} {caller}		WerkCardOnlyInput	
 demo	4	1	skill-werk-deploy-demo	werk-deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
 demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up {caller} {card}		WerkCardOnlyInput	

@@ -5402,7 +5402,7 @@
       "version": "1",
       "vertebra": "proving",
       "source": "werk-test",
-      "description": "The nightly run's wall-clock elapsed measured against Jeff's bar (default 900s, NIGHTLY_ELAPSED_BAR_SECS). Emitted every run so drift above the bar is visible on the spine, not discovered in the morning. #4022 AC3.",
+      "description": "The nightly run's wall-clock elapsed measured against Jeff's bar (default 900s, WERK_TEST_ELAPSED_BAR_SECS). Emitted every run so drift above the bar is visible on the spine, not discovered in the morning. #4022 AC3.",
       "keys": [
         "elapsed_secs",
         "bar_secs",

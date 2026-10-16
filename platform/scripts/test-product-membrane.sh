@@ -36,7 +36,7 @@ MEMBRANE_STALE_RED_DAYS="${MEMBRANE_STALE_RED_DAYS:-30}"
 # #4131 — under the nightly this unit is a VERDICT on proof freshness: the
 # drill itself only ever runs attended. (#4141 retired the restore-drill wrapper
 # that used to share this shape.)
-if [ -n "${NIGHTLY_UNIT_TIMEOUT:-}${WERK_TEST_NIGHTLY:-}" ] && [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
+if [ -n "${WERK_TEST_UNIT_TIMEOUT:-}${WERK_TEST_NIGHTLY:-}" ] && [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
   _last=$(grep -E '^[0-9]+ OK$' "$MEMBRANE_LEDGER" 2>/dev/null | tail -1 | cut -d' ' -f1)
   if [ -z "$_last" ]; then
     echo "product-membrane: RED — the membrane has never been proven on this box (no attended run recorded in $MEMBRANE_LEDGER; run: MEMBRANE_ALLOW_UNDER_AGENT=1 $0)"

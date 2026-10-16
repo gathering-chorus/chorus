@@ -23,7 +23,7 @@ use werk_test::{
     is_node_test_file, node_test_plan, package_test_script,
 };
 
-mod nightly_all;
+mod all_scope;
 
 // #4446 — a scheduled job logs its own failure.
 #[allow(dead_code)] // each crate uses part of the shared helper
@@ -97,7 +97,7 @@ mod demo_verdict_4474 {
     /// NEGATIVE PROOF — the nightly and flag modes must never write a card's badge
     #[test]
     fn other_modes_record_nothing() {
-        assert_eq!(demo_verdict_call(&a(&["--nightly", "--run-all"]), 0), None);
+        assert_eq!(demo_verdict_call(&a(&["run", "--scope=all"]), 0), None);
         assert_eq!(demo_verdict_call(&a(&["4474", "--json"]), 0), None);
         assert_eq!(demo_verdict_call(&a(&[]), 0), None);
     }
@@ -106,11 +106,9 @@ mod demo_verdict_4474 {
 /// Parse `card` and `role`, find the card's werk, detect affected units on the
 /// diff, run the planned checks, emit typed failures to the spine, and gate.
 fn run(args: &[String]) -> Result<i32, String> {
-    // #3920 fold — `werk-test --nightly`: the 03:00 cargo lane runs through THIS
-    // verb, so nextest (#3929), the needs-stack typed skips (#3919), and the
-    // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
-    // #4145 — `--nightly --run-all`: the whole run (pre-checks, lanes, census,
-    // record, nudges, readout) in the runner; launchd's 03:00 job.
+    // #3920 fold — the nightly's lane runs through THIS verb, so nextest
+    // (#3929), the needs-stack typed skips (#3919), and the per-case result
+    // writes (#3592) apply at 03:00 identically to the gate.
     // #4198 — `werk-test --scope-of [--root <dir>] <path>...`: what each path,
     // changed on its own, would run on a card — read-only, nothing runs. The
     // answer to "is this file claimed by a unit, or refused?" without making a
@@ -118,22 +116,34 @@ fn run(args: &[String]) -> Result<i32, String> {
     if args.first().map(String::as_str) == Some("--scope-of") {
         return Ok(scope_of(&args[1..]));
     }
-    if args.iter().any(|a| a == "--nightly") {
-        // #4531 — every suite this run spawns learns its lane. Timing checks
-        // run in the nightly only (Jeff 2026-10-14: "we must not run perf tests
-        // in demo"); WERK_TEST_NIGHTLY cannot say that, it is set in both lanes.
+    // #4540 — the nightly is the same steps with scope = all, plus notify
+    if let Some(step) = args.first().map(String::as_str) {
+        let all = args.iter().any(|a| a == "--scope=all");
+        if step == "notify" || (all && werk_test::run_dir::STEPS.contains(&step)) {
+            std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
+            return all_scope::step_all(step, &args[1..], args, &pin_or_handoff);
+        }
+    }
+    // #4540 — the nightly's read-only answers, by name: `last-run`
+    // (daily-review), `load-gate` (load-reclassify), `classify` (the row fold).
+    // The 03:00 run itself is the dagu nightly calling the steps above.
+    if let Some(r) = all_scope::read_mode(args) {
+        return r;
+    }
+    // `lane` — the one queue the run step drives as its child (every type in
+    // Jeff's order, the stage pick in WERK_TEST_STAGES). Internal to `run`.
+    if args.first().map(String::as_str) == Some("lane") {
+        // #4531 — every suite this run spawns learns its lane: timing checks
+        // run in the nightly only (Jeff 2026-10-14)
         std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
-        // read-only modes first (--last-run / --load-gate / --lock-probe): they
-        // must never fall through to a real run (a test's --lock-probe did, 19:30)
-        if let Some(r) = nightly_all::run_mode(args) {
-            return r;
-        }
-        if args.iter().any(|a| a == "--run-all") {
-            return nightly_all::run_all(args);
-        }
-        return run_nightly(args);
+        return run_nightly(&args[1..]);
     }
     std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(false));
+    // #4540 — `werk-test <step> <card> <role>` runs one step; without a step
+    // name the five run in order in this process (fixtures, hand runs).
+    let all_args = args;
+    let step: Option<String> = args.first().filter(|a| werk_test::run_dir::STEPS.contains(&a.as_str())).cloned();
+    let args: &[String] = if step.is_some() { &args[1..] } else { args };
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     let card = positional
         .first()
@@ -182,7 +192,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         Ok(Some(own)) => {
             use std::os::unix::process::CommandExt;
             println!("werk-test: this card changes werk-test — handing the run to its own build {}", own.display());
-            let err = std::process::Command::new(&own).args(args).env(werk_test::OWN_BUILD_ENV, "1").exec();
+            let err = std::process::Command::new(&own).args(all_args).env(werk_test::OWN_BUILD_ENV, "1").exec();
             return Err(format!("could not start the card's own werk-test {}: {}", own.display(), err));
         }
         Ok(None) => {
@@ -195,7 +205,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 println!("werk-test: the slot copy {} is older than the installed one and this card does not build werk-test — using the installed werk-test {}",
                     current.display(), inst.display());
                 emit_spine("test.slot.stale", &role, &card, &trace, &[("path", &current.display().to_string())]);
-                let err = std::process::Command::new(&inst).args(args).env(werk_test::STALE_SLOT_ENV, "1").exec();
+                let err = std::process::Command::new(&inst).args(all_args).env(werk_test::STALE_SLOT_ENV, "1").exec();
                 return Err(format!("could not start the installed werk-test {}: {}", inst.display(), err));
             }
         }
@@ -205,12 +215,163 @@ fn run(args: &[String]) -> Result<i32, String> {
             return Ok(1);
         }
     }
+
+    let runs_base = std::env::var("WERK_TEST_RUNS").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        Path::new(&std::env::var("HOME").unwrap_or_default()).join(".chorus/werk-test-runs")
+    });
+    let key = werk_test::run_dir::run_key(&trace, step.as_deref(), &card, std::process::id())?;
+    let dir = werk_test::run_dir::RunDir::create(werk_test::run_dir::folder_for(&runs_base, &key)?)?;
+    if let Some(code) = pin_or_handoff(&dir, step.as_deref(), all_args)? {
+        return Ok(code);
+    }
+    let _ = PROGRESS_CTX.set((role.clone(), card.clone(), trace.clone()));
+    let ctx = Ctx { args: args.to_vec(), card, role, werk, trace, changed, dir };
+    match step.as_deref() {
+        // #4540 (Wren 10-16) — a step run names its scope; no default, so a
+        // child pipeline called without SCOPE refuses here, never runs "diff" by luck
+        Some("scope") if flag_value(args, "--scope").as_deref() != Some("diff") => {
+            Err("`werk-test scope <card> <role>` needs --scope=diff (or --scope=all for the nightly): a step has no default scope".into())
+        }
+        Some("scope") => Ok(step_scope(&ctx)?.unwrap_or(0)),
+        Some("prepare") => step_prepare(&ctx),
+        // #4540 (Jeff 10-16 B) — `run` is the one queue in his type order;
+        // `run --test-type=perf` runs perf alone after it, on a quiet box
+        Some("run") => match flag_value(args, "--test-type") {
+            Some(t) => step_run(&ctx, &t),
+            None => {
+                use_type_order(&ctx.dir);
+                for t in werk_test::run_dir::queue_types_in(&werk_test::stage_order()) {
+                    step_run(&ctx, t)?;
+                }
+                Ok(0)
+            }
+        },
+        Some("report") => step_report(&ctx, true),
+        Some("verdict") => step_verdict(&ctx),
+        _ => {
+            // all five here: what dagu runs as steps, in one process
+            let out = (|| -> Result<i32, String> {
+                if let Some(code) = step_scope(&ctx)? {
+                    return Ok(code);
+                }
+                step_prepare(&ctx)?;
+                use_type_order(&ctx.dir);
+                for t in werk_test::run_dir::queue_types_in(&werk_test::stage_order()) {
+                    step_run(&ctx, t)?;
+                }
+                step_run(&ctx, "perf")?;
+                step_report(&ctx, false)?;
+                step_verdict(&ctx)
+            })();
+            let _ = std::fs::remove_dir_all(&ctx.dir.path);
+            out
+        }
+    }
+}
+
+/// #4540 (Silas 10-16) — one run, one binary: scope pins the binary it is
+/// into the run folder; a later step hands the run to that copy. `None` = go on.
+fn pin_or_handoff(dir: &werk_test::run_dir::RunDir, step: Option<&str>, all_args: &[String]) -> Result<Option<i32>, String> {
+    let current = std::env::current_exe().map_err(|e| format!("own path: {}", e))?;
+    match step {
+        Some("scope") => werk_test::run_dir::pin_binary(dir, &current).map(|_| None),
+        Some(_) => {
+            let already = std::env::var(werk_test::run_dir::PINNED_ENV).as_deref() == Ok("1");
+            if already {
+                eprintln!("werk-test: running the run's pinned build {}", current.display());
+            }
+            match werk_test::run_dir::pinned_to_exec(dir, &current, already) {
+                Some(pinned) => {
+                    use std::os::unix::process::CommandExt;
+                    let err = std::process::Command::new(&pinned).args(all_args).env(werk_test::run_dir::PINNED_ENV, "1").exec();
+                    Err(format!("could not start the run's pinned werk-test {}: {}", pinned.display(), err))
+                }
+                None => Ok(None),
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+/// #4540 — what every step knows before it starts: the card, its werk and diff.
+struct Ctx {
+    args: Vec<String>,
+    card: String,
+    role: String,
+    werk: String,
+    trace: String,
+    changed: Vec<String>,
+    dir: werk_test::run_dir::RunDir,
+}
+
+/// #4540 — the registry rows scope read, from the run folder.
+fn rows_from(dir: &werk_test::run_dir::RunDir) -> Result<(Vec<TestRow>, Vec<String>, Vec<String>, &'static str), String> {
+    let tsv = dir.need("rows", "scope")?.join("\n");
+    let source = dir.need("source", "scope")?;
+    let (rows, names, entities) = parse_rows_and_names(&tsv);
+    let label = if source.first().map(String::as_str) == Some("model") { plan_source_label(true, rows.len()) } else { plan_source_label(false, 0) };
+    Ok((rows, names, entities, label))
+}
+
+/// #4540 — the selection both prepare and run need: what is in the units,
+/// which packages jest narrowed, which files it chose.
+struct Picks {
+    units: Vec<TestUnit>,
+    narrowed: Vec<String>,
+    chosen: std::collections::BTreeSet<String>,
+    crate_dirs: Vec<String>,
+}
+
+impl Picks {
+    fn new(werk: &str, units: &[TestUnit], jplan: &JestPlan) -> Picks {
+        let (narrowed, chosen) = match jplan {
+            JestPlan::Selected(sels) => (
+                sels.iter().map(|s| s.package.clone()).collect(),
+                sels.iter().flat_map(|s| s.test_files.iter().cloned()).collect(),
+            ),
+            JestPlan::FullFallback { .. } => (Vec::new(), Default::default()),
+        };
+        let crate_dirs = units.iter().filter_map(|u| match u {
+            TestUnit::RustCrate(c) => Some(crate_dir(werk, c)),
+            _ => None,
+        }).collect();
+        Picks { units: units.to_vec(), narrowed, chosen, crate_dirs }
+    }
+    fn in_units(&self, f: &str) -> bool {
+        self.crate_dirs.iter().any(|d| f.starts_with(&format!("{}/", d)))
+            || self.units.iter().any(|u| matches!(u, TestUnit::TsPackage(p) if f.starts_with(&format!("{}/", p))))
+    }
+    fn narrows(&self, f: &str) -> bool {
+        self.narrowed.iter().any(|p| f.starts_with(&format!("{p}/")))
+    }
+    fn picked(&self, f: &str) -> bool {
+        self.in_units(f) && (!self.narrows(f) || self.chosen.contains(f))
+    }
+    /// (every needs-stack file, the selected ones, the selected rows, the unit's rows)
+    fn needs_stack(&self, rows: &[TestRow]) -> (std::collections::BTreeSet<String>, Vec<String>, usize, usize) {
+        let ns_all = werk_test::needs_stack_files(rows);
+        let selected: Vec<String> = ns_all.iter().filter(|f| self.picked(f)).cloned().collect();
+        let in_units = |f: &str| self.in_units(f);
+        let tests = werk_test::needs_stack_in_selection(rows, &self.narrowed, &self.chosen, &in_units);
+        let registered = rows.iter().filter(|r| r.hermeticity == "needs-stack" && self.in_units(&r.file_path)).count();
+        (ns_all, selected, tests, registered)
+    }
+}
+
+/// #4540 step 1 — scope: what this diff runs, and why. `Some(code)` ends the
+/// run here (a select-only or explain run, or nothing to plan).
+fn step_scope(ctx: &Ctx) -> Result<Option<i32>, String> {
+    let (args, werk, changed, role, card, trace) = (&ctx.args[..], ctx.werk.as_str(), &ctx.changed, ctx.role.as_str(), ctx.card.as_str(), ctx.trace.as_str());
+
     let legacy_units = affected_units(&changed);
     // #3634 — stage 2: derive the plan from the tests domain. Model rows (filePath,
     // covers) widen the legacy path-derived units to every unit holding tests that
     // cover a touched domain — UNION, never smaller (the superset AC). A failed
     // fetch degrades to the legacy plan, loudly (test.plan.degraded), never silently.
-    let (rows, row_names, row_entities, plan_source) = fetch_test_rows();
+    let tsv = fetch_rows_tsv();
+    let (rows, _row_names, _row_entities, plan_source) = rows_of_tsv(tsv.as_deref());
+    ctx.dir.put("rows", &tsv.unwrap_or_default().lines().map(|l| l.to_string()).collect::<Vec<_>>())?;
+    ctx.dir.put("source", &[if plan_source == "model" { "model" } else { "fallback" }.to_string()])?;
     // #3661 AC2 — --domain/--type scope the DECLARED set; the scope is a model
     // predicate, so a scoped run refuses (loudly) when the domain is unreachable
     // instead of running an unscopable legacy plan. Unscoped keeps the degrade path.
@@ -364,25 +525,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         for u in &units {
             println!("select-only: {}", unit_name(u));
         }
-        return Ok(0);
+        return Ok(Some(0));
     }
-
-    // #4392 — build, in the werk, what the selected suites run, before any of
-    // them runs. A suite that runs an unbuilt or stale binary is red for the
-    // test world, not the product (four #4335 runs on 2026-09-27).
-    // Rule 3 (Jeff + Kade, 2026-09-27): a suite whose build failed reports
-    // UNMEASURED, by name, instead of running against a missing or stale build.
-    let unbuilt: std::collections::BTreeMap<String, String> = if args.iter().any(|a| a == "--explain") {
-        Default::default()
-    } else {
-        let m = build_for_suites(&werk, &units);
-        for (suite, why) in &m {
-            println!("   build FAILED for {}: {} — the suite reports UNMEASURED", suite, why);
-            emit_spine("test.build.failed", &role, &card, &trace, &[("message", &format!("{}: {}", suite, why))]);
-        }
-        m
-    };
-
     // #3917 AC5 — `--explain` answers "what would this diff measure?" without
     // running anything. The question had no answer before: the only way to learn
     // the gate had selected nothing was to read a green summary and disbelieve it.
@@ -394,9 +538,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         if units.is_empty() {
             println!("  {} — this diff would be waved through", gate_outcome(0, false).label());
         }
-        return Ok(0);
+        return Ok(Some(0));
     }
-
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
 
@@ -470,107 +613,15 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    // Quarantined cases (flaky holds), fetched from the tests domain (#2530).
-    // #4539 — only holds whose `until` is today or later apply; an expired one
-    // runs, and both are named on this line. One rule for cargo, playwright,
-    // jest and bats; a held case does not run (the card calls quarantine the bad
-    // test's off switch) and its unit names it UNMEASURED "quarantined until <date>".
-    let today = today_iso();
-    let all_holds = quarantined_cases();
-    let quarantined = werk_test::active_holds(&all_holds, &today);
-    let _ = HOLDS.set(quarantined.clone());
-    let q_names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
-    println!("{}", werk_test::quarantine_report_on(&all_holds, &today));
-
-    println!(
-        "-- werk-test #{} ({}) — {} unit(s), {} check(s){} --",
-        card,
-        role,
-        units.len(),
-        plan.len(),
-        if self_mod { ", changes the test gate — judged by its own build, a red blocks" } else { "" }
-    );
-
-    // #3621 — canonical run evidence: started at plan time, completed ALWAYS.
-    let started_at = std::time::Instant::now();
-    if plan_source == "fallback" {
-        emit_spine("test.plan.degraded", &role, &card, &trace,
-            &[("reason", "tests-domain-unreachable"), ("plan", "legacy-lanes")]);
-    }
-    let _ = PROGRESS_CTX.set((role.clone(), card.clone(), trace.clone()));
-    emit_spine(
-        "test.started",
-        &role,
-        &card,
-        &trace,
-        &[
-            ("units", &units.len().to_string()),
-            ("checks_planned", &plan.len().to_string()),
-            ("plan_source", plan_source),
-        ],
-    );
-    // #3919 — the integration tier. Registered needs-stack tests inside the
-    // selected units run ONLY with the live stack; without it they are a TYPED,
-    // counted SKIPPED state — never green-by-default, never silence.
-    let ns_all = werk_test::needs_stack_files(&rows);
-    let in_units = |f: &str| units.iter().any(|u| match u {
-        TestUnit::RustCrate(c) => f.starts_with(&format!("{}/", crate_dir(&werk, c))),
-        TestUnit::TsPackage(p) => f.starts_with(&format!("{}/", p)),
-        TestUnit::BatsSuite(_) => false,
-    });
-    // #4236 — both numbers come from the SELECTION. An empty selection means
-    // the lane did not narrow anything, so the unit's rows are the honest count.
-    let chosen: std::collections::BTreeSet<String> =
-        sel_details.iter().map(|d| d.file.clone()).collect();
-    // #4238 — which packages the jest lane NARROWED. Every other unit (cargo
-    // crate, bats suite) runs whole, so its needs-stack rows are all selected.
-    let narrowed: Vec<String> = match &jplan {
-        JestPlan::Selected(sels) => sels.iter().map(|s| s.package.clone()).collect(),
-        JestPlan::FullFallback { .. } => Vec::new(),
-    };
-    let narrows = |f: &str| narrowed.iter().any(|p| f.starts_with(&format!("{p}/")));
-    let selected_ns: Vec<String> = ns_all
-        .iter()
-        .filter(|f| in_units(f) && (!narrows(f) || chosen.contains(f.as_str())))
-        .cloned()
-        .collect();
-    let registered_in_unit = rows.iter()
-        .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
-        .count();
-    // count REGISTERED TESTS (rows), not files — the report must count what it names
-    let selected_ns_tests =
-        werk_test::needs_stack_in_selection(&rows, &narrowed, &chosen, &in_units);
-    if selected_ns_tests == 0 && registered_in_unit > 0 {
-        println!("{}", werk_test::integration_report_none_selected(registered_in_unit));
-    }
-    // #4336 — an empty needs-stack selection is only "nothing needs the stack"
-    // when the registry answered. On the fallback plan the rows are missing, so
-    // empty means UNKNOWN: probe the stack, or RUN_INTEGRATION goes true with no
-    // stack behind it and bare jest lists the integration tier (the #4111 state).
-    let stack = if selected_ns.is_empty() && plan_source != "fallback" {
-        werk_test::StackState::Up
-    } else {
-        stack_state_now()
-    };
-    let stack_down: Option<String> = stack_down_of(&stack);
-    // #4102 — the werk lane never set RUN_INTEGRATION, so every bats
-    // integration case self-skipped and reported `ok` in a green run (the
-    // three ACs of #4102 among them). The nightly lane sets it from the same
-    // probe; the werk lane must too, or a pipeline cannot prove an AC that
-    // needs the stack.
-    if stack_down.is_none() {
-        std::env::set_var("RUN_INTEGRATION", "true");
-    }
-    let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() };
     // #4539 — a test whose header says needs: machine or nightly proves the box
     // or the clock, not the card: a card run does not select it and says so in
-    // one line outside the verdict; the nightly runs it. Its files leave the
-    // run the same way stack-down needs-stack files do.
+    // one line outside the verdict; the nightly runs it.
+    let picks = Picks::new(werk, &units, &jplan);
     let nightly_candidates: Vec<String> = {
         let mut c: Vec<String> = rows.iter()
             .map(|r| r.file_path.clone())
             .chain(changed.iter().filter(|f| werk_test::is_card_test(f)).cloned())
-            .filter(|f| in_units(f) && (!narrows(f) || chosen.contains(f.as_str())))
+            .filter(|f| picks.picked(f))
             .collect();
         c.extend(units.iter().filter_map(|u| match u { TestUnit::BatsSuite(s) => Some(s.clone()), _ => None }));
         c.sort();
@@ -581,49 +632,151 @@ fn run(args: &[String]) -> Result<i32, String> {
         std::fs::read_to_string(format!("{}/{}", werk, f)).ok()
     });
     println!("{}", werk_test::nightly_only_report(&nightly_only));
-    let ns_excluded: Vec<String> = ns_excluded.into_iter()
-        .chain(nightly_only.iter().map(|(f, _)| f.clone()))
-        .collect();
+    // #4540 — the types this plan runs; a planned type with no result reads UNMEASURED
+    let mut types: Vec<String> = plan.iter().map(|c| werk_test::run_dir::check_type(c.kind).to_string()).collect();
+    if werk_test::ui_plan(werk_test::ui_lane_fires(changed) || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false),
+                          werk_test::ui_files(&rows).len()).is_some() {
+        types.push("ui".to_string());
+    }
+    types.sort();
+    types.dedup();
+    let d = &ctx.dir;
+    d.put("units", &werk_test::run_dir::units_lines(&units))?;
+    d.put("jest", &werk_test::run_dir::jest_lines(&jplan))?;
+    d.put("nightly", &werk_test::run_dir::pair_lines(nightly_only.iter().map(|(a, b)| (a, b))))?;
+    d.put("uncovered", &uncovered)?;
+    d.put("types", &types)?;
+    note_type_order(d)?;
+    let _ = self_mod;
+    Ok(None)
+}
+
+/// #4540 step 2 — prepare: build what the suites run, read the holds, probe
+/// the stack. Writes `unbuilt`, `holds`, `stack`.
+fn step_prepare(ctx: &Ctx) -> Result<i32, String> {
+    let (werk, changed, role, card, trace) = (ctx.werk.as_str(), &ctx.changed, ctx.role.as_str(), ctx.card.as_str(), ctx.trace.as_str());
+    let d = &ctx.dir;
+    let (rows, _, _, plan_source) = rows_from(d)?;
+    let units = werk_test::run_dir::units_of(&d.need("units", "scope")?)?;
+    let jplan = werk_test::run_dir::jest_of(&d.need("jest", "scope")?)?;
+    let plan = check_plan(&units);
+    let self_mod = is_self_modifying(changed);
+    let args: &[String] = &ctx.args;
+
+    // #4392 — build, in the werk, what the selected suites run, before any of
+    // them runs. A suite that runs an unbuilt or stale binary is red for the
+    // test world, not the product (four #4335 runs on 2026-09-27).
+    // Rule 3 (Jeff + Kade, 2026-09-27): a suite whose build failed reports
+    // UNMEASURED, by name, instead of running against a missing or stale build.
+    let unbuilt: std::collections::BTreeMap<String, String> = if args.iter().any(|a| a == "--explain") {
+        Default::default()
+    } else {
+        let m = build_for_suites(&werk, &units);
+        for (suite, why) in &m {
+            println!("   build FAILED for {}: {} — the suite reports UNMEASURED", suite, why);
+            emit_spine("test.build.failed", &role, &card, &trace, &[("message", &format!("{}: {}", suite, why))]);
+        }
+        m
+    };
+
+    d.put("unbuilt", &werk_test::run_dir::pair_lines(unbuilt.iter()))?;
+    // Quarantined cases (flaky holds), fetched from the tests domain (#2530).
+    // #4539 — only holds whose `until` is today or later apply; an expired one
+    // runs, and both are named on this line.
+    let today = today_iso();
+    let all_holds = quarantined_cases();
+    let quarantined = werk_test::active_holds(&all_holds, &today);
+    println!("{}", werk_test::quarantine_report_on(&all_holds, &today));
+    d.put("holds", &werk_test::run_dir::holds_lines(&quarantined))?;
+    println!(
+        "-- werk-test #{} ({}) — {} unit(s), {} check(s){} --",
+        card,
+        role,
+        units.len(),
+        plan.len(),
+        if self_mod { ", changes the test gate — judged by its own build, a red blocks" } else { "" }
+    );
+    if plan_source == "fallback" {
+        emit_spine("test.plan.degraded", role, card, trace,
+            &[("reason", "tests-domain-unreachable"), ("plan", "legacy-lanes")]);
+    }
+    emit_spine("test.started", role, card, trace,
+        &[("units", &units.len().to_string()), ("checks_planned", &plan.len().to_string()), ("plan_source", plan_source)]);
+    // #3919 — the integration tier. Registered needs-stack tests inside the
+    // selected units run ONLY with the live stack; without it they are a TYPED,
+    // counted SKIPPED state — never green-by-default, never silence.
+    let picks = Picks::new(werk, &units, &jplan);
+    let (_ns_all, selected_ns, selected_ns_tests, registered_in_unit) = picks.needs_stack(&rows);
+    if selected_ns_tests == 0 && registered_in_unit > 0 {
+        println!("{}", werk_test::integration_report_none_selected(registered_in_unit));
+    }
+    // #4336 — an empty needs-stack selection is only "nothing needs the stack"
+    // when the registry answered; on the fallback plan, probe.
+    let stack = if selected_ns.is_empty() && plan_source != "fallback" {
+        werk_test::StackState::Up
+    } else {
+        stack_state_now()
+    };
+    let stack_down: Option<String> = stack_down_of(&stack);
     if let werk_test::StackState::Unmeasurable(u) = &stack {
         println!("{}", werk_test::integration_report_unmeasurable(selected_ns_tests, u));
-        emit_spine("test.integration.unmeasurable", &role, &card, &trace,
+        emit_spine("test.integration.unmeasurable", role, card, trace,
             &[("count", &selected_ns_tests.to_string()), ("saw", u)]);
     } else {
-        // #4251 — when the stack is UP there is no plan line. It claimed a
-        // count before any lane had decided what to run, and was wrong three
-        // different ways in two days: 134 "ran" when one file was selected
-        // (#4236), 498 when 75 ran (#4238), 532 when 109 ran (this card). The
-        // measured line after the run is the only honest one. The typed SKIP
-        // and UNMEASURABLE states below still print — they are real states the
-        // run knows before it starts, not predictions of what will run.
+        // #4251 — no plan line when the stack is up; the measured line after the run is the honest one
         if stack_down.is_some() {
             println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
         } else if selected_ns_tests == 0 {
             println!("{}", werk_test::integration_report(0, None));
         }
         if let Some(down) = &stack_down {
-            emit_spine("test.integration.skipped", &role, &card, &trace,
+            emit_spine("test.integration.skipped", role, card, trace,
                 &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);
         }
     }
-    // #3920 — the browser lane: registered testConcern=ui files run as ONE
-    // workspace check when the diff touches a ui surface. Stack-gated like any
-    // needs-stack tier; zero registered = explicit absence, never vacuous.
-    let ui_set = werk_test::ui_files(&rows);
-    let ui_fired = werk_test::ui_lane_fires(&changed)
-        || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
-    let ui_check = werk_test::ui_plan(ui_fired, ui_set.len());
+    d.put("stack", &werk_test::run_dir::stack_lines(&stack))?;
+    Ok(0)
+}
+
+/// #4540 step 3 — run one test type's checks. Writes `ran-<type>` whole; exits
+/// 0 once written (the verdict gates), non-zero only when it could not run.
+fn step_run(ctx: &Ctx, test_type: &str) -> Result<i32, String> {
+    if !werk_test::run_dir::TEST_TYPES.contains(&test_type) {
+        return Err(format!("unknown test type {:?}; one of {}", test_type, werk_test::run_dir::TEST_TYPES.join(", ")));
+    }
+    let (werk, changed, role, card, trace) = (ctx.werk.as_str(), &ctx.changed, ctx.role.as_str(), ctx.card.as_str(), ctx.trace.as_str());
+    let d = &ctx.dir;
+    let (rows, row_names, _, _) = rows_from(d)?;
+    let units = werk_test::run_dir::units_of(&d.need("units", "scope")?)?;
+    let jplan = werk_test::run_dir::jest_of(&d.need("jest", "scope")?)?;
+    let nightly_only = werk_test::run_dir::pairs_of(&d.need("nightly", "scope")?);
+    let unbuilt: std::collections::BTreeMap<String, String> = werk_test::run_dir::pairs_of(&d.need("unbuilt", "prepare")?).into_iter().collect();
+    let quarantined = werk_test::run_dir::holds_of(&d.need("holds", "prepare")?);
+    let stack = werk_test::run_dir::stack_of(&d.need("stack", "prepare")?)?;
+    let _ = HOLDS.set(quarantined.clone());
+    let q_names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
+    let stack_down = stack_down_of(&stack);
+    // #4102 — the werk lane sets RUN_INTEGRATION from the probe, as the nightly does
+    if stack_down.is_none() {
+        std::env::set_var("RUN_INTEGRATION", "true");
+    }
+    let picks = Picks::new(werk, &units, &jplan);
+    let (ns_all, selected_ns, _, _) = picks.needs_stack(&rows);
+    let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() }
+        .into_iter()
+        .chain(nightly_only.iter().map(|(f, _)| f.clone()))
+        .collect();
+    let plan: Vec<_> = check_plan(&units).into_iter()
+        .filter(|c| werk_test::run_dir::check_type(c.kind) == test_type)
+        .collect();
     let mut any_failed = false;
-    // #4265 — suites that scored nothing, named in the summary so an
-    // UNMEASURED run can never be read as a clean one.
-    let mut unmeasured: Vec<String> = std::mem::take(&mut uncovered);
+    let mut failed_units: Vec<String> = Vec::new();
+    let mut unmeasured: Vec<String> = Vec::new();
     let mut failed_count: usize = 0;
-    // #3592 — every executed case, keyed to the registered identity, plus the
-    // loud counter for cargo cases that can't be joined unambiguously.
     let mut all_cases: Vec<CaseResult> = Vec::new();
     let mut unmatched_cargo: usize = 0;
-    let phase_started = std::time::Instant::now();
     let mut unit_costs: Vec<(String, f64)> = Vec::new();
+
     for check in &plan {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let check_started = std::time::Instant::now();
@@ -802,6 +955,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         if !ok {
             any_failed = true;
             failed_count += 1;
+            failed_units.push(format!("{}:{}", check.kind.label(), target));
             let msg = werk_test::unit_failure_message(check.kind.label(), target);
             emit_spine(
                 "test.failed",
@@ -816,7 +970,12 @@ fn run(args: &[String]) -> Result<i32, String> {
             );
         }
     }
-
+    // #3920 — the browser lane: registered ui files run as ONE workspace check
+    // when the diff touches a ui surface; it is the ui type's step.
+    let ui_set = werk_test::ui_files(&rows);
+    let ui_fired = werk_test::ui_lane_fires(changed)
+        || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
+    let ui_check = werk_test::ui_plan(ui_fired, ui_set.len()).filter(|_| test_type == "ui");
     if let Some(kind) = ui_check {
         if let Some(down) = &stack_down_ui(&selected_ns, &ns_all) {
             println!("   {}: SKIPPED (stack-down: {}) — {} registered ui file(s) not run; typed skip", kind.label(), down, ui_set.len());
@@ -836,6 +995,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 Some(false) => {
                     any_failed = true;
                     failed_count += 1;
+                    failed_units.push(format!("{}:workspace", kind.label()));
                     let msg = werk_test::unit_failure_message(kind.label(), "workspace");
                     emit_spine("test.failed", &role, &card, &trace,
                         &[("check", kind.label()), ("unit", "workspace"), ("message", msg.as_str())]);
@@ -846,14 +1006,40 @@ fn run(args: &[String]) -> Result<i32, String> {
                 Some(true) => {}
             }
         }
-    } else if ui_fired {
+    } else if ui_fired && test_type == "ui" {
         println!("   ui-flows: none registered testConcern=ui — explicit absence (#3443)");
     }
+
+    let _ = (any_failed, failed_count);
+    let result = werk_test::run_dir::TypeResult {
+        cases: all_cases, unmeasured, failed: failed_units, unit_secs: unit_costs, unmatched_cargo,
+    };
+    d.put(&format!("ran-{}", test_type), &result.lines())?;
+    Ok(0)
+}
+
+/// #4540 step 4 — report: the run's evidence (suite run, card coverage, cost,
+/// spine). Reads every `ran-*`; never gates. `steps`: dagu ran the steps, so
+/// the demo badge is written here.
+fn step_report(ctx: &Ctx, steps: bool) -> Result<i32, String> {
+    let (werk, changed, role, card, trace) = (ctx.werk.as_str(), &ctx.changed, ctx.role.as_str(), ctx.card.as_str(), ctx.trace.as_str());
+    let d = &ctx.dir;
+    let (rows, row_names, row_entities, plan_source) = rows_from(d)?;
+    let units = werk_test::run_dir::units_of(&d.need("units", "scope")?)?;
+    let jplan = werk_test::run_dir::jest_of(&d.need("jest", "scope")?)?;
+    let stack = werk_test::run_dir::stack_of(&d.need("stack", "prepare")?)?;
+    let plan = check_plan(&units);
+    let self_mod = is_self_modifying(changed);
+    let all = werk_test::run_dir::TypeResult::all(d);
+    let (all_cases, unit_costs, unmatched_cargo) = (&all.cases, &all.unit_secs, all.unmatched_cargo);
+    let failed_count = all.failed.len();
+    let any_failed = failed_count > 0;
+    let phase_elapsed: f64 = unit_costs.iter().map(|(_, s)| s).sum();
+
     // #3953/#3955 — the test phase reports what it selects cost: elapsed vs the
     // table's in-run target (col3). Over-target WARNS LOUDLY (spine event + the
     // per-unit culprit table) and NEVER blocks a green run — Jeff's ruling after
     // run 66 failed 1642 green tests at 701s.
-    let phase_elapsed = phase_started.elapsed().as_secs_f64();
     // #4436 — the slowest units and the step total, every run, not only when
     // the budget is blown: the hour on #4432 run 11 had no per-unit answer.
     print!("{}", werk_test::slowest_units_report(&unit_costs, 10, phase_elapsed));
@@ -873,80 +1059,90 @@ fn run(args: &[String]) -> Result<i32, String> {
                       .map(|(n, _)| n.as_str()).unwrap_or(""))]);
         }
     }
-    // #4265 — an unmeasured suite is reported before the verdict, so a run
-    // that proved nothing about a suite cannot be read as having passed it.
-    if !unmeasured.is_empty() {
-        println!("   UNMEASURED: {} suite(s) scored nothing — {}",
-                 unmeasured.len(), unmeasured.join(", "));
-    }
+
     let outcome = gate_outcome(units.len(), any_failed);
-    let execution_duration_ms = started_at.elapsed().as_millis();
-    let execution_extras = werk_test::completed_extras(
-        &outcome,
-        units.len(),
-        plan.len(),
-        failed_count,
-        execution_duration_ms,
-        self_mod,
-    );
+    let execution_duration_ms = (phase_elapsed * 1000.0) as u128;
+    let execution_extras = werk_test::completed_extras(&outcome, units.len(), plan.len(), failed_count, execution_duration_ms, self_mod);
     let execution_refs: Vec<(&str, &str)> = execution_extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    emit_spine("test.execution.completed", &role, &card, &trace, &execution_refs);
+    emit_spine("test.execution.completed", role, card, trace, &execution_refs);
     let writeback_started = std::time::Instant::now();
-    // #3634 write side — the run becomes a TestSuiteRun instance in the graph.
-    // Best-effort and WITNESSED either way: the gate's verdict never depends on
-    // the write, but a skipped post is a spine event, not a silence.
-    post_suite_run(&role, &card, &trace, plan_source, plan.len(), failed_count,
-        execution_duration_ms, outcome.label());
-    // #3592 — per-case wire-back. Unjoinable cargo cases are NAMED (spine),
-    // never silently dropped.
+    // #3634 write side — the run becomes a TestSuiteRun instance in the graph,
+    // best-effort and witnessed either way.
+    post_suite_run(role, card, trace, plan_source, plan.len(), failed_count, execution_duration_ms, outcome.label());
     if unmatched_cargo > 0 {
-        emit_spine("testresult.unmatched", &role, &card, &trace,
+        emit_spine("testresult.unmatched", role, card, trace,
             &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
     }
-    // #3592 — a TestResult's ofTest edge is mandatory, so only cases that JOIN
-    // to a registered Test are posted; executed-but-unregistered is its own
-    // loud surface (the mirror of the reconcile gap), never a fabricated identity.
     // #4139 — the measured integration line: what ran, after it ran
-    if stack_down.is_none() && selected_ns_tests > 0 {
+    let picks = Picks::new(werk, &units, &jplan);
+    let (_, selected_ns, selected_ns_tests, _) = picks.needs_stack(&rows);
+    if stack_down_of(&stack).is_none() && selected_ns_tests > 0 {
         let executed_ns = all_cases.iter().filter(|c| selected_ns.iter().any(|f| f == &c.file_path)).count();
         println!("{}", werk_test::integration_measured_report(selected_ns_tests, executed_ns));
     }
-    let (joined, unregistered) = werk_test::join_cases(&all_cases, &rows, &row_names, &row_entities);
+    let (joined, unregistered) = werk_test::join_cases(all_cases, &rows, &row_names, &row_entities);
     // #3983 — the card's own tests: recorded with the verdict, read at accept
     let (cov_state, cov_ran) = werk_test::card_coverage(plan_source, units.len(), joined.len());
     println!("card-coverage: {} ({} registered case(s) covering this diff ran)", cov_state, cov_ran);
-    emit_spine("test.card.coverage", &role, &card, &trace,
+    emit_spine("test.card.coverage", role, card, trace,
         &[("state", cov_state), ("ran", &cov_ran.to_string()), ("units", &units.len().to_string())]);
     let _ = CARD_COVERAGE.set(format!("{}:{}", cov_state, cov_ran));
     if unregistered > 0 {
-        emit_spine("testresult.unregistered", &role, &card, &trace,
-            &[("count", &unregistered.to_string())]);
+        emit_spine("testresult.unregistered", role, card, trace, &[("count", &unregistered.to_string())]);
         println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
     }
-    // #4536 — a card run writes no Test row: it tests unmerged code, so its
-    // result is not the Test's latest. Its cases are already in Loki
-    // (test.case.* per unit, above); only the canonical nightly writes rows.
-    let writeback_duration_ms = writeback_started.elapsed().as_millis();
-    let total_duration_ms = started_at.elapsed().as_millis();
-    let mut completed = werk_test::completed_extras(
-        &outcome,
-        units.len(),
-        plan.len(),
-        failed_count,
-        total_duration_ms,
-        self_mod,
-    );
+    // #4536 — a card run writes no Test row; only the canonical nightly does.
+    let mut completed = werk_test::completed_extras(&outcome, units.len(), plan.len(), failed_count, execution_duration_ms, self_mod);
     completed.push(("execution_duration_ms".into(), execution_duration_ms.to_string()));
-    completed.push(("writeback_duration_ms".into(), writeback_duration_ms.to_string()));
-    let completed_refs: Vec<(&str, &str)> = completed.iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    emit_spine("test.completed", &role, &card, &trace, &completed_refs);
-    let v = werk_test::verdict(all_cases.len(), any_failed, &unmeasured);
+    completed.push(("writeback_duration_ms".into(), writeback_started.elapsed().as_millis().to_string()));
+    let completed_refs: Vec<(&str, &str)> = completed.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    emit_spine("test.completed", role, card, trace, &completed_refs);
+    if steps {
+        let code = run_verdict(d)?.exit_code();
+        record_demo_verdict(&[card.to_string(), role.to_string()], code);
+    }
+    Ok(0)
+}
+
+/// #4540 — the verdict over every type's result, the uncovered paths, and any
+/// planned type that never reported.
+fn run_verdict(d: &werk_test::run_dir::RunDir) -> Result<werk_test::Verdict, String> {
+    let all = werk_test::run_dir::TypeResult::all(d);
+    let mut unmeasured: Vec<String> = d.need("uncovered", "scope")?;
+    for t in d.need("types", "scope")? {
+        if d.get(&format!("ran-{}", t)).is_none() {
+            unmeasured.push(format!("{} — did not report (its run step did not finish)", t));
+        }
+    }
+    unmeasured.extend(all.unmeasured.iter().cloned());
+    Ok(werk_test::verdict(all.cases.len(), !all.failed.is_empty(), &unmeasured))
+}
+
+/// #4540 step 5 — verdict: the one gate. RED wins; then UNMEASURED; then CLEAN.
+fn step_verdict(ctx: &Ctx) -> Result<i32, String> {
+    let d = &ctx.dir;
+    let all = werk_test::run_dir::TypeResult::all(d);
+    let v = run_verdict(d)?;
+    // #4265 — an unmeasured suite is reported before the verdict
+    if let werk_test::Verdict::Unmeasured(u) = &v {
+        if !u.is_empty() {
+            println!("   UNMEASURED: {} suite(s) scored nothing — {}", u.len(), u.join(", "));
+        }
+    }
+    if !all.failed.is_empty() {
+        println!("   RED in: {}", all.failed.join(", "));
+        // #4540 — the line /cws reads off the verdict step: which types went red
+        let red: Vec<&str> = werk_test::run_dir::TEST_TYPES.iter().copied()
+            .filter(|t| d.get(&format!("ran-{}", t)).is_some_and(|l| !werk_test::run_dir::TypeResult::of(&l).failed.is_empty()))
+            .collect();
+        println!("verdict: RED — {} type{} failed: {}", red.len(), if red.len() == 1 { "" } else { "s" }, red.join(", "));
+    }
     let exit = v.exit_code();
     println!("werk-test: {} (exit {})", v.label(), exit);
+    d.put("verdict", &[exit.to_string()])?;
     Ok(exit)
 }
+
 
 /// #3920 fold — the nightly cargo lane, through the ONE runner. Full selection
 /// from the registry (every registered Rust crate), nextest execution, the
@@ -1059,7 +1255,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #3975 — the graph writes authenticate as the NIGHTLY machine principal
     // (least-privilege scope: the tests graph only). Spine events keep role
     // "system" — who acted vs which credential wrote are different facts.
-    let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
+    let mint_role = std::env::var("WERK_TEST_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
     // #4063 — a werk-rooted nightly never writes prod's ledger (see
     // nightly_writeback_withheld). Withheld cases are counted and named once,
     // never silently, and never as "lost": nothing was promised to the store.
@@ -1100,7 +1296,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                     c.file_path,
                     c.test_name,
                     c.result,
-                    werk_test::nightly_run::registered_suffix_len(&c.test_name, registered)
+                    werk_test::run_record::registered_suffix_len(&c.test_name, registered)
                 );
             }
             println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
@@ -1191,13 +1387,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #4131 — a suite that can only ever self-refuse unattended (it boots out
     // every com.chorus.* agent and needs an explicit restore grant, #4004) has
     // no place in an unattended plan: it read "skipped" every night. The
-    // wrapper's NIGHTLY_DESTRUCTIVE_SUITES names them; same list, same seam.
+    // wrapper's WERK_TEST_DESTRUCTIVE_SUITES names them; same list, same seam.
     // #4135 — test-product-membrane.sh was excluded here as destructive (it
     // boots every com.chorus.* agent). Since #4131 it is a freshness VERDICT
     // under the nightly and refuses attended runs without an explicit grant,
     // so it is safe to plan; excluding it left a registered row no lane could
     // ever emit (LANE SILENT on the reconcile every night). Default: none.
-    let destructive: Vec<String> = std::env::var("NIGHTLY_DESTRUCTIVE_SUITES")
+    let destructive: Vec<String> = std::env::var("WERK_TEST_DESTRUCTIVE_SUITES")
         .unwrap_or_default()
         .split_whitespace().map(|s| s.to_string()).collect();
     let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
@@ -1228,7 +1424,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let security_pkgs: std::collections::BTreeSet<String> = ts_pkgs.iter()
         .filter(|p| sec_units.contains(*p)).cloned().collect();
     let stages = werk_test::plan_stages(&crates, &ts_pkgs, &bats_suites, &rows, &split_pkgs, &security_pkgs, integration_on);
-    let legs_noop = std::env::var("NIGHTLY_LEGS_NOOP").is_ok();
+    // #4540 (Jeff 10-16 B) — the queue runs every type but perf; perf runs
+    // alone after it as its own step. The step names which side it is.
+    let stages: Vec<werk_test::StagePlan> = match std::env::var(werk_test::STAGES_ENV).ok().as_deref() {
+        Some(pick) => stages.into_iter().filter(|sp| werk_test::stage_picked(pick, sp.stage)).collect(),
+        None => stages,
+    };
+    let legs_noop = std::env::var("WERK_TEST_LEGS_NOOP").is_ok();
     let npm_kind_of = |p: &str| -> &'static str { if security_pkgs.contains(p) { "security" } else { "npm" } };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
     // never produces its `nightly-unit|` line is folded by nightly-suites.sh
@@ -1256,17 +1458,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // jest are internally parallel, so their pools stay narrower than bats.
     let budget = werk_test::cpu_budget();
     let (cw_default, nextest_threads, nw_default, jest_workers, bats_default) = werk_test::lane_widths(budget);
-    let cap: f64 = std::env::var("NIGHTLY_LOAD_CAP").ok().and_then(|v| v.parse().ok())
+    let cap: f64 = std::env::var("WERK_TEST_LOAD_CAP").ok().and_then(|v| v.parse().ok())
         .unwrap_or_else(|| werk_test::load_cap(budget));
     let gate_wait = std::time::Duration::from_secs(
-        std::env::var("NIGHTLY_GATE_MAX_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180));
+        std::env::var("WERK_TEST_GATE_MAX_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180));
     let gate_tick = std::time::Duration::from_secs(5);
     println!("-- #4022 load-aware: budget {} cores, cap load {:.0}, cargo {}×{} threads, npm {}×{} jest workers, bats {} --",
         budget, cap, cw_default, nextest_threads, nw_default, jest_workers, bats_default);
-    let cargo_workers: usize = std::env::var("NIGHTLY_CARGO_WORKERS").ok()
+    let cargo_workers: usize = std::env::var("WERK_TEST_CARGO_WORKERS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(cw_default);
-    if std::env::var("NIGHTLY_NEXTEST_THREADS").is_err() {
-        std::env::set_var("NIGHTLY_NEXTEST_THREADS", nextest_threads.to_string());
+    if std::env::var("WERK_TEST_NEXTEST_THREADS").is_err() {
+        std::env::set_var("WERK_TEST_NEXTEST_THREADS", nextest_threads.to_string());
     }
     let ns_bins_for = |c: &str| -> Vec<String> {
         if stack_down.is_some() {
@@ -1288,7 +1490,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if integration_on {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
-    let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
+    let npm_workers: usize = std::env::var("WERK_TEST_NPM_WORKERS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
     // (#4152: one isolation list for the npm and file lanes)
     let iso_conf = std::fs::read_to_string(
@@ -1298,7 +1500,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
-    let bats_workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
+    let bats_workers: usize = std::env::var("WERK_TEST_SUITE_WORKERS").ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(bats_default);
 
@@ -1620,7 +1822,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
 
         // ── ui: the playwright flows (was an outer leg, #4278) ──
         if ui_here {
-            let cmd = std::env::var("NIGHTLY_PLAYWRIGHT_CMD")
+            let cmd = std::env::var("WERK_TEST_PLAYWRIGHT_CMD")
                 .unwrap_or_else(|_| format!("npx --no-install playwright test --reporter=line,{}", werk_test::PLAYWRIGHT_CASE_REPORTER));
             let mut c = Command::new("bash");
             c.arg("-c").arg(&cmd).current_dir(&root)
@@ -1716,7 +1918,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
     // #4022 AC3/AC4 — elapsed against Jeff's bar (default 15m), on the spine so
     // drift is visible, and a breach is loud in the run's own output.
-    let bar_secs: u64 = std::env::var("NIGHTLY_ELAPSED_BAR_SECS").ok()
+    let bar_secs: u64 = std::env::var("WERK_TEST_ELAPSED_BAR_SECS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(900);
     let elapsed_secs = (total_duration_ms / 1000) as u64;
     emit_spine("test.nightly.elapsed", &role, &card, &trace,
@@ -1814,7 +2016,7 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     // its budget is killed and scored failed, loudly.
     let out_path = tmp.join(format!("suite-{}.out", suite_slug));
     // #4035 — the UNIT cap, never the wrapper's LANE vocabulary. nightly-suites.sh
-    // env-prefixes NIGHTLY_SUITE_TIMEOUT=<lane cap, 7200s> onto the werk-test
+    // env-prefixes WERK_TEST_SUITE_TIMEOUT=<lane cap, 7200s> onto the werk-test
     // invocation for its own _run_capped, and the export reaches this process:
     // reading it here gave EVERY suite a 2-hour deadline. 2026-08-30: trivy hung,
     // burned hours inside the 2-wide pool, and three daytime runs went ~2h.
@@ -2196,7 +2398,7 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // #4126 taught test-restore-drill.sh to refuse there: a ~47min restore
     // (#4043 measured 2849s) cannot finish inside a 1200s per-unit cap, so it
     // is killed, scored fail, records no PASS, and looks overdue again the next
-    // night. That refusal reads $NIGHTLY_UNIT_TIMEOUT / $WERK_TEST_NIGHTLY, and
+    // night. That refusal reads $WERK_TEST_UNIT_TIMEOUT / $WERK_TEST_NIGHTLY, and
     // the runner exported NEITHER — unit_timeout() reads the variable in the
     // RUNNER's process; no child ever saw it. So the refusal could not fire and
     // the 2026-09-08 17:41 run still spent 1200.0s there. A gate that cannot
@@ -2209,7 +2411,7 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // isolation, but the runner telling the suite the truth about where it is,
     // and not overridable from outside the run.
     cmd.env("WERK_TEST_NIGHTLY", "1");
-    cmd.env("NIGHTLY_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
+    cmd.env("WERK_TEST_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
     // #4474 run 19 — every suite is rooted in the tree under test. v1 pinned
     // this from outside (`CHORUS_ROOT="$WERK" werk-test`, #3701); under werk v2
     // the scheduler's CHORUS_ROOT is canonical, so a jest suite read main's
@@ -2361,8 +2563,8 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
         return (werk_test::lane_unmeasured(why.clone()), Vec::new(), why);
     }
     // #4022 — each crate gets its share of the CPU budget (see lane_widths);
-    // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
-    let threads = std::env::var("NIGHTLY_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
+    // WERK_TEST_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
+    let threads = std::env::var("WERK_TEST_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
     let mut args: Vec<String> = if only_bins.is_empty() {
         werk_test::nextest_run_args_threads(quarantined, exclude_bins, threads)
     } else {
@@ -2661,7 +2863,7 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
             }
             {
                 // #4145 — keep the WHY of every failed case in the lane output
-                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                for l in werk_test::run_record::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
                     println!("{}", l);
                 }
                 let mut reasons = jest_reasons_via_jq(stdout.as_bytes(), werk);
@@ -2714,7 +2916,7 @@ fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, Stri
     let _ = std::fs::remove_file(&out_path);
     let _ = std::fs::remove_file(&err_path);
     if fin.timed_out {
-        let note = format!("!! {} killed after {}s — per-unit wall cap (NIGHTLY_UNIT_TIMEOUT, #4030)",
+        let note = format!("!! {} killed after {}s — per-unit wall cap (WERK_TEST_UNIT_TIMEOUT, #4030)",
             label, timeout.as_secs());
         eprintln!("{}", note);
         stderr.push('\n');
@@ -2908,7 +3110,7 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
             }
             {
                 // #4145 — keep the WHY of every failed case in the lane output
-                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                for l in werk_test::run_record::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
                     println!("{}", l);
                 }
                 {
@@ -3077,19 +3279,19 @@ fn status_ok(cmd: &mut Command) -> bool {
 
 /// #4537 — the nightly runs units on worker threads; a worker hands its lane
 /// notes to the stage that prints the unit's line.
-static NIGHTLY_UNMEASURED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+static WERK_TEST_UNMEASURED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
 
 fn note_nightly_unmeasured(item: &str) {
     let notes = werk_test::take_lane_unmeasured();
     if !notes.is_empty() {
-        if let Ok(mut m) = NIGHTLY_UNMEASURED.lock() {
+        if let Ok(mut m) = WERK_TEST_UNMEASURED.lock() {
             m.push((item.to_string(), notes.join("; ")));
         }
     }
 }
 
 fn nightly_unmeasured(item: &str) -> Option<String> {
-    NIGHTLY_UNMEASURED.lock().ok()?.iter().find(|(i, _)| i == item).map(|(_, r)| r.clone())
+    WERK_TEST_UNMEASURED.lock().ok()?.iter().find(|(i, _)| i == item).map(|(_, r)| r.clone())
 }
 
 /// #4265 — read a bats suite's exit code as a three-way outcome. 0 pass,
@@ -3172,7 +3374,45 @@ fn emit_spine(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str,
 /// curl|jq (the quarantine pattern; zero-dep per ADR-032 §6). Returns the rows
 /// plus the plan-source label: "model" on success, "fallback" on any failure —
 /// the caller witnesses the degradation, the gate still runs on legacy lanes.
-fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
+/// #4540 — the test types in the model's order (TestType rows, typeOrder),
+/// read from the store at scope. Empty when the store does not answer or holds
+/// no rows; the run then says so and keeps the built-in order.
+pub(crate) fn fetch_type_order() -> Vec<String> {
+    let endpoint = std::env::var("FUSEKI_QUERY").unwrap_or_else(|_| "http://localhost:3030/pods/query".into());
+    let q = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \
+             SELECT ?label ?order WHERE { GRAPH ?g { ?t a chorus:TestType ; rdfs:label ?label ; chorus:typeOrder ?order } } ORDER BY ?order";
+    let out = Command::new("curl")
+        .args(["-sfS", "--max-time", "15", "-H", "Accept: text/tab-separated-values", "--data-urlencode"])
+        .arg(format!("query={q}"))
+        .arg(&endpoint)
+        .output();
+    let Ok(out) = out else { return Vec::new() };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    werk_test::type_order_of_tsv(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// #4540 — what scope says about the order, and the file it hands the steps.
+pub(crate) fn note_type_order(dir: &werk_test::run_dir::RunDir) -> Result<(), String> {
+    let names = fetch_type_order();
+    match werk_test::order_from_model(&names) {
+        Some(o) => println!("type order (from the model): {}", o.join(", ")),
+        None => println!("type order: built-in — the model {} (TestType rows, typeOrder)",
+            if names.is_empty() { "holds no rows" } else { "holds a partial or bad order" }),
+    }
+    dir.put("type-order", &names)
+}
+
+/// #4540 — the run step hands the scope's order to the queue it starts.
+pub(crate) fn use_type_order(dir: &werk_test::run_dir::RunDir) {
+    if let Some(names) = dir.get("type-order") {
+        std::env::set_var(werk_test::TYPE_ORDER_ENV, names.join(","));
+    }
+}
+
+/// #4540 — the registry read as jq TSV; None when the door or jq failed.
+fn fetch_rows_tsv() -> Option<String> {
     let endpoint = std::env::var("OWL_API_TESTS")
         .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
     // #3634 gather hardening (silas): NO shell interpolation — curl and jq run as
@@ -3191,7 +3431,7 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // 1,000 each fit the cap; the links.next cursor walks them.
     let body = match fetch_all_pages(&endpoint) {
         Some(b) => b,
-        None => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
+        None => return None,
     };
     let mut jq = match Command::new("jq")
         .args(["-r", jq_filter])
@@ -3200,24 +3440,33 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
         .spawn()
     {
         Ok(c) => c,
-        Err(_) => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
+        Err(_) => return None,
     };
     if let Some(mut stdin) = jq.stdin.take() {
         use std::io::Write;
         if stdin.write_all(&body).is_err() {
-            return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0));
+            return None;
         }
     }
     let out = match jq.wait_with_output() {
         Ok(o) if o.status.success() => o.stdout,
-        _ => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
+        _ => return None,
     };
-    let tsv = String::from_utf8_lossy(&out);
-    let (rows, names, entities) = parse_rows_and_names(&tsv);
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// #4540 — rows, names and entities from the registry TSV; no TSV = the fallback plan.
+fn rows_of_tsv(tsv: Option<&str>) -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
+    let Some(tsv) = tsv else { return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)) };
+    let (rows, names, entities) = parse_rows_and_names(tsv);
     // #4536 — each row's current result, so only flipped cases are written
-    let _ = PRIOR_RESULTS.set(entities.iter().cloned().zip(werk_test::parse_prior_results(&tsv)).collect());
+    let _ = PRIOR_RESULTS.set(entities.iter().cloned().zip(werk_test::parse_prior_results(tsv)).collect());
     let label = plan_source_label(true, rows.len());
     (rows, names, entities, label)
+}
+
+fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
+    rows_of_tsv(fetch_rows_tsv().as_deref())
 }
 
 /// #3592 — shared token acquisition: $CHORUS_WRITE_TOKEN, else mint. Pulled out
@@ -3708,15 +3957,15 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         // #4035 two-caps-separate proof (#3734), one fixture, two legs.
         // Leg 1 — the LEAKED lane cap alone (1s) must NOT kill a 3s suite:
         // under the pre-#4035 read this leg dies at 1s and the test goes red.
-        std::env::set_var("NIGHTLY_SUITE_TIMEOUT", "1");
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        std::env::set_var("WERK_TEST_SUITE_TIMEOUT", "1");
+        std::env::remove_var("WERK_TEST_UNIT_TIMEOUT");
         let (dir, s) = world("slowish.sh",
             "sleep 3\necho '=== Results: 1 passed, 0 failed ==='\n");
         let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
         assert!(ok, "a suite inside the UNIT cap must survive a lane-cap leak: {}", text);
         // Leg 2 — the UNIT cap (2s) kills a hung suite, loud (#4022 AC4's half):
         // a suite that never exits breaches its budget, dies, reads as a fail.
-        std::env::set_var("NIGHTLY_UNIT_TIMEOUT", "2");
+        std::env::set_var("WERK_TEST_UNIT_TIMEOUT", "2");
         let (dir, s) = world("hung.sh", "echo started\nsleep 300\n");
         let t0 = std::time::Instant::now();
         let _ = werk_test::take_lane_unmeasured();
@@ -3730,8 +3979,8 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         let (dir, s) = world("failed-then-hung.sh",
             "echo 'not ok 1 the product broke'\nsleep 300\n");
         let (ok, cases, text) = run_bats_cases(dir.to_str().unwrap(), &s);
-        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
-        std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
+        std::env::remove_var("WERK_TEST_UNIT_TIMEOUT");
+        std::env::remove_var("WERK_TEST_SUITE_TIMEOUT");
         assert!(cases.iter().any(|(_, r)| r == "fail"), "{:?} {}", cases, text);
         assert!(!ok, "a failed case before the cap must stay red: {}", text);
         assert!(werk_test::take_lane_unmeasured().is_empty());

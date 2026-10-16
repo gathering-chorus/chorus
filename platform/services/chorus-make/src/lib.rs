@@ -97,6 +97,10 @@ pub fn check(rows: &[Row]) -> Vec<String> {
             "deterministic" if r.implemented_by.is_empty() => errs.push(format!(
                 "{}: a deterministic skill needs implementedBy (the binary that runs it)", r.skill)),
             "deterministic" | "human" => {}
+            // #4540 — a step that runs a whole child pipeline (`call:`)
+            "pipeline" if r.implemented_by.is_empty() => errs.push(format!(
+                "{}: a pipeline skill needs implementedBy (the Pipeline it calls)", r.skill)),
+            "pipeline" => {}
             "agent" => errs.push(format!(
                 "{}: an agent skill cannot run inside the v2 workflow yet", r.skill)),
             other => errs.push(format!("{}: unknown executor '{}'", r.skill, other)),
@@ -344,7 +348,7 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=")).map(String::from));
     (pairs, missing)
 }
 
@@ -355,6 +359,19 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
     if let Some(p) = prev {
         out.push_str(&format!("    depends: [{p}]\n"));
     }
+    // #4540 — a pipeline step runs its child as a dagu sub-run (`dag.run`). The child gets
+    // the card, the role and this run's trace (its own run id is another, so
+    // the trace rides as a param), plus the step's own pairs (SCOPE=diff).
+    if r.executor == "pipeline" {
+        // dagu 2.18: `call:` + `params:` is deprecated (Silas measured, 10-16);
+        // dag.run is the same sub-run, the shape of cicd's dag.enqueue step
+        let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string(), "TRACE=${CHORUS_TRACE_ID}".to_string()];
+        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=")).map(String::from));
+        out.push_str("    action: dag.run\n    with:\n");
+        out.push_str(&format!("      dag: {}\n", r.implemented_by));
+        out.push_str(&format!("      params: {}\n", quote(&params.join(" "))));
+        return;
+    }
     let cmd = if !r.input_shape.is_empty() {
         runner_call(r)
     } else if r.mode.is_empty() {
@@ -363,6 +380,11 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
         format!("{} {}", r.implemented_by, r.mode)
     };
     out.push_str(&format!("    command: {}\n", quote(&cmd)));
+    // #4540 (Wren 10-16) — a test type step writes its result and lets the
+    // next one run; only the verdict fails the run (RED wins)
+    if r.with_args.split_whitespace().any(|p| p == "continue_on=failure") {
+        out.push_str("    continue_on:\n      failure: true\n");
+    }
     if before_a_human {
         // #4474 run 6: the verb before a human go presents and exits
         // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
@@ -460,6 +482,120 @@ pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<Stri
     Ok(out)
 }
 
+/// #4540 — what a Pipeline row says about its whole run, when it says it: its
+/// queue, its schedule, its params, which param carries the trace, and what
+/// runs when the run is stopped or ends. Silas 10-16: these live on the
+/// Pipeline row, not as more name cases in chorus-make.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Pipe {
+    pub queue: String,
+    pub schedule: String,
+    pub params: Vec<String>,
+    pub trace_param: String,
+    pub on_abort: String,
+    pub on_exit: String,
+}
+
+/// A Pipeline row's fields, `key<TAB>value` per line (the SPARQL read writes
+/// the same). An unknown key is refused by name, never ignored.
+pub fn parse_pipe(tsv: &str) -> Result<Pipe, Vec<String>> {
+    let mut p = Pipe::default();
+    let mut errs = Vec::new();
+    for (i, line) in tsv.lines().enumerate() {
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once('\t') else {
+            errs.push(format!("line {}: want key<TAB>value", i + 1));
+            continue;
+        };
+        let v = v.trim().to_string();
+        match k.trim() {
+            "queue" => p.queue = v,
+            "schedule" => p.schedule = v,
+            "params" => p.params = v.split_whitespace().map(String::from).collect(),
+            "traceParam" => p.trace_param = v,
+            "onAbort" => p.on_abort = v,
+            "onExit" => p.on_exit = v,
+            other => errs.push(format!("line {}: unknown Pipeline field '{}'", i + 1, other)),
+        }
+    }
+    if p.queue.is_empty() {
+        errs.push("a Pipeline that runs straight names its queue".into());
+    }
+    if !p.trace_param.is_empty() && !p.params.contains(&p.trace_param) {
+        errs.push(format!("traceParam {} is not one of its params", p.trace_param));
+    }
+    if errs.is_empty() { Ok(p) } else { Err(errs) }
+}
+
+/// #4540 — a pipeline whose Pipeline row says how it runs (cicd-test, nightly):
+/// every step in order, no go, no land half. `known` is every Pipeline the
+/// graph holds: a step that calls a pipeline it does not hold is refused here.
+pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[String]) -> Result<String, Vec<String>> {
+    let rows = sorted(rows)?;
+    let mut errs: Vec<String> = rows.iter()
+        .filter(|r| r.executor == "pipeline" && !known.contains(&r.implemented_by))
+        .map(|r| format!("{}: calls pipeline '{}', which the graph does not hold", r.skill, r.implemented_by))
+        .collect();
+    if let Some(h) = rows.iter().find(|r| r.executor == "human") {
+        errs.push(format!("pipeline {pipeline} runs straight (its Pipeline row names a queue), but its rows call {}", h.skill));
+    }
+    if !errs.is_empty() {
+        return Err(errs);
+    }
+    let mut out = String::new();
+    out.push_str(HEADER);
+    out.push_str(&format!("description: {}\n", quote(&format!("werk v2 — pipeline {pipeline}, generated from the graph"))));
+    if !pipe.schedule.is_empty() {
+        out.push_str(&format!("schedule: {}\n", quote(&pipe.schedule)));
+    }
+    out.push_str(&format!("queue: {}\n", pipe.queue));
+    out.push_str("params:\n");
+    for p in &pipe.params {
+        out.push_str(&format!("  - {p}: \"\"\n"));
+    }
+    // the trace: the parent's, passed down as a param, else this run's id
+    let trace = if pipe.trace_param.is_empty() { "${DAG_RUN_ID}".to_string() } else { format!("${{{}}}", pipe.trace_param) };
+    out.push_str(&format!(concat!(
+        "env:\n",
+        "  - CHORUS_HOME: ${{CHORUS_HOME}}\n",
+        "  - CHORUS_WERK_BASE: ${{CHORUS_WERK_BASE}}\n",
+        "  - CHORUS_BIN: ${{CHORUS_BIN}}\n",
+        "  - CHORUS_ROOT: ${{CHORUS_HOME}}\n",
+        "  - CHORUS_TRACE_ID: {}\n",
+        // the card's own werk-test build, then the role's slot as cicd does
+        // (#4474 run 12). #4540 — werk-build never fills the slot (#3062) and
+        // main's werk-test knows no steps, so a card that adds a step could not
+        // test itself; with no card (the nightly) the first dir does not exist.
+        "  - PATH: ${{CHORUS_WERK_BASE}}/${{ROLE}}-${{CARD}}/platform/services/werk-test/target/release:${{CHORUS_WERK_BASE}}/${{ROLE}}-bin:${{PATH}}\n",
+    ), trace));
+    out.push_str("handler_on:\n");
+    // Who hears a failure: a child (it takes its trace from a parent) says
+    // nothing — the parent owns failure, so the card is nudged once (Silas
+    // measured the double nudge, 10-16). A pipeline with an exit handler tells
+    // people there (the nightly's notify names every red to its owner). Else a
+    // failure nudges the card's builder.
+    if pipe.trace_param.is_empty() && pipe.on_exit.is_empty() {
+        out.push_str(&format!(
+            "  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {pipeline} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+        ));
+    }
+    if !pipe.on_abort.is_empty() {
+        out.push_str(&format!("  abort:\n    command: {}\n", quote(&pipe.on_abort)));
+    }
+    if !pipe.on_exit.is_empty() {
+        out.push_str(&format!("  exit:\n    command: {}\n", quote(&pipe.on_exit)));
+    }
+    out.push_str("steps:\n");
+    let mut prev: Option<String> = None;
+    for r in &rows {
+        command_step(&mut out, &rows, r, &prev, false);
+        prev = Some(dagu_name(&rows, r));
+    }
+    Ok(out)
+}
+
 /// The land half: every step after the go, on the land queue, one land at a time.
 pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     if go_less(pipeline) {
@@ -535,6 +671,45 @@ SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode
 }
 ORDER BY ?stepOrder ?skillOrder
 "#;
+
+/// #4540 — the Pipeline row's own run fields (none set: an empty answer).
+pub const PIPE_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?queue ?schedule ?params ?traceParam ?onAbort ?onExit WHERE {
+  GRAPH ?g { ?p a chorus:Pipeline ; rdfs:label "{PIPELINE}" .
+    OPTIONAL { ?p chorus:runQueue ?queue } OPTIONAL { ?p chorus:runSchedule ?schedule }
+    OPTIONAL { ?p chorus:runParams ?params } OPTIONAL { ?p chorus:traceParam ?traceParam }
+    OPTIONAL { ?p chorus:onAbortRun ?onAbort } OPTIONAL { ?p chorus:onExitRun ?onExit } }
+}
+"#;
+
+/// Every Pipeline the graph holds, by label (a `pipeline` step may call only these).
+pub const PIPELINES_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE { GRAPH ?g { ?p a chorus:Pipeline ; rdfs:label ?label } }
+"#;
+
+pub fn pipe_query(pipeline: &str) -> String {
+    PIPE_QUERY.replace("{PIPELINE}", &pipeline.replace(['"', '\\', '\n'], ""))
+}
+
+/// The Pipeline row's fields as `key<TAB>value` lines for parse_pipe; empty
+/// when the row sets none (cicd, athena: generated the way they always were).
+pub fn pipe_tsv_from_sparql(tsv: &str) -> String {
+    let mut lines = tsv.lines();
+    let _header = lines.next();
+    let Some(row) = lines.find(|l| !l.trim().is_empty()) else { return String::new() };
+    let keys = ["queue", "schedule", "params", "traceParam", "onAbort", "onExit"];
+    row.split('\t').map(term).zip(keys)
+        .filter(|(v, _)| !v.is_empty())
+        .map(|(v, k)| format!("{k}\t{v}\n"))
+        .collect()
+}
+
+/// The labels from PIPELINES_QUERY's TSV.
+pub fn labels_from_sparql(tsv: &str) -> Vec<String> {
+    tsv.lines().skip(1).map(term).filter(|l| !l.is_empty()).collect()
+}
 
 pub fn rows_query(pipeline: &str) -> String {
     ROWS_QUERY.replace("{PIPELINE}", &pipeline.replace(['"', '\\', '\n'], ""))

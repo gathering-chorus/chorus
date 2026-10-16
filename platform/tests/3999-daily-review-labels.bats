@@ -12,14 +12,14 @@ setup() {
   STUB="$BATS_TEST_TMPDIR/stub-scripts"
   mkdir -p "$STUB"
   cp "$REVIEW" "$STUB/daily-review-quality.sh"
-  # #4145 — daily-review reads `werk-test-bin --nightly --last-run`; stub it with the fixture log
+  # #4145 — daily-review reads `werk-test-bin last-run` (#4540); stub it with the fixture log
   printf '#!/bin/sh\ncat "%s"\n' "$F" > "$STUB/last-run"; chmod +x "$STUB/last-run"
   printf '#!/bin/sh\necho "$@" >> "$BATS_TEST_TMPDIR/nudges.txt"\nexit 0\n' > "$STUB/ops-nudge"; chmod +x "$STUB/ops-nudge"
   printf '#!/bin/sh\nexit 0\n' > "$STUB/chorus-log"; chmod +x "$STUB/chorus-log"
 }
 
 run_review() {
-  NIGHTLY_LAST_RUN_BIN="$STUB/last-run" NIGHTLY_LOG_PATH="$F" CHORUS_ROOT="$BATS_TEST_DIRNAME/../.." bash "$STUB/daily-review-quality.sh" 2>/dev/null
+  WERK_TEST_LAST_RUN_BIN="$STUB/last-run" WERK_TEST_LOG_PATH="$F" CHORUS_ROOT="$BATS_TEST_DIRNAME/../.." bash "$STUB/daily-review-quality.sh" 2>/dev/null
 }
 
 @test "captured cargo line '652 pass, 2 fail' labels as counts, never BUILD BROKE" {

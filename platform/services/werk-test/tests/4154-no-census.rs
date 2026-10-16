@@ -12,7 +12,7 @@ fn src(name: &str) -> String {
 
 #[test]
 fn the_runner_has_no_census_reconcile_or_never_ran_path() {
-    let files = ["lib.rs", "main.rs", "nightly_all.rs", "nightly_run.rs"];
+    let files = ["lib.rs", "main.rs", "all_scope.rs", "run_record.rs"];
     let mut hits = Vec::new();
     for f in files {
         let text = src(f);

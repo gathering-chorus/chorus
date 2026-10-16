@@ -17,7 +17,7 @@ Usage:
 import html, re, sys, urllib.request
 
 import os
-BASE = os.environ.get("CHORUS_NIGHTLY_URL", "http://localhost:3340/nightly")
+BASE = os.environ.get("CHORUS_WERK_TEST_URL", "http://localhost:3340/nightly")
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "fixtures", "nightly-page-4413.html")
 
 def strip(page):

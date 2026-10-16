@@ -1,0 +1,3 @@
+# #4540 fixture — the 03:00 nightly: the cicd-test child with SCOPE=all.
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+test	1	1	skill-nightly-test	the tests, scope all	pipeline	cicd-test				SCOPE=all

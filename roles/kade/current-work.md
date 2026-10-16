@@ -28,5 +28,5 @@ Last updated: 2026-09-09 18:05 Boston
 - **`npm:jeff-bridwell-personal-site`** — 83 API endpoints without swagger tags (TD-027); no documentation theater.
 
 ## Context
-- Report page reads: nightly section from the official log; "Most recent stored run" from the store. Never write a validation run to the shared log (`NIGHTLY_LOG_PATH=<werk-local>` — the July "34 red" lesson).
+- Report page reads: nightly section from the official log; "Most recent stored run" from the store. Never write a validation run to the shared log (`WERK_TEST_LOG_PATH=<werk-local>` — the July "34 red" lesson).
 - Status-loop discipline (today's lesson, in memory): every tick ends visible; two ticks without new output = say STALLED and sample the process, never narrate "probably fine."

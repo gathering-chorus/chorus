@@ -9,7 +9,7 @@
 //! nudged, recorded and read out. These are the PURE halves of that work —
 //! every fold, classification, message and census is a function of its inputs
 //! and proven here; the orchestration (processes, files, clocks) lives in the
-//! binary's `nightly_all` module.
+//! binary's `all_scope` module.
 //!
 //! The output contract is unchanged on purpose: the page, the daily readers
 //! and the readout API parse `RUN|start|<ts>|pid=N`, `RUN|complete|<ts>|suites=N`,
@@ -855,7 +855,7 @@ pub fn suite_row_payload_timed(run_ts: &str, order: usize, row: &SuiteRow, ts_ms
 }
 
 /// #4156 — does this run write its record to the graph? A werk-rooted run
-/// never writes the team's store (#3722); NIGHTLY_GRAPH_ROWS=0 turns it off
+/// never writes the team's store (#3722); WERK_TEST_GRAPH_ROWS=0 turns it off
 /// anywhere. #4536 (Silas 08:04): no OWLAPI override — prod answers on :3360,
 /// the :3340 proxy and LAN names, so "names a store" could name prod, and a
 /// werk's PipelineRun/TestSuiteRun rows would land on Jeff's /nightly page.
@@ -1231,7 +1231,7 @@ pub fn last_run_rows(log: &str) -> Vec<String> {
 }
 
 /// The load gate's verdict line and pass/fail, from cores × per-core cap
-/// against the 1-minute load (`NIGHTLY_LOAD_STUB` is the test seam).
+/// against the 1-minute load (`WERK_TEST_LOAD_STUB` is the test seam).
 pub fn load_verdict(load: f64, cores: f64, per_core: f64) -> (bool, String) {
     let max = cores * per_core;
     (load <= max, format!("load={} max={:.1}", load, max))

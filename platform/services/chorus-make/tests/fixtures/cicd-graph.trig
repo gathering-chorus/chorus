@@ -22,7 +22,9 @@
   chorus:skill-werk-build a chorus:Skill ; rdfs:label "werk-build" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-build" ; chorus:arguments "{card} {caller} [--target {target}] [--atomic {atomic}]" ; chorus:inputShape chorus:WerkBuildInput .
   chorus:stepskill-cicd-build-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-build ; chorus:callsSkill chorus:skill-werk-build ; chorus:skillOrder 1 ; chorus:withArguments "target=werk" .
   chorus:skill-werk-test a chorus:Skill ; rdfs:label "werk-test" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-test" ; chorus:arguments "{card} {caller} [--domain={domain}] [--type={type}]" ; chorus:inputShape chorus:WerkTestInput .
-  chorus:stepskill-cicd-test-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-test ; chorus:skillOrder 1 .
+  # #4540 — the test step runs the cicd-test child pipeline (werk-test as steps), scope diff
+  chorus:skill-werk-test-pipeline a chorus:Skill ; rdfs:label "the tests: cicd-test, scope diff" ; chorus:executor "pipeline" ; chorus:implementedBy "cicd-test" .
+  chorus:stepskill-cicd-test-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-test-pipeline ; chorus:skillOrder 1 ; chorus:withArguments "SCOPE=diff" .
   chorus:skill-werk-review a chorus:Skill ; rdfs:label "werk-review" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-review" ; chorus:arguments "{card} {caller}" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-test-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-review ; chorus:skillOrder 2 .
   chorus:skill-werk-deploy-demo a chorus:Skill ; rdfs:label "werk-deploy-demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "{card} {caller} --target werk" ; chorus:inputShape chorus:WerkCardOnlyInput .
@@ -68,6 +70,7 @@
   chorus:skill-werk-push chorus:hasDomain chorus:version-control .
   chorus:skill-werk-build chorus:hasDomain chorus:builds .
   chorus:skill-werk-test chorus:hasDomain chorus:tests .
+  chorus:skill-werk-test-pipeline chorus:hasDomain chorus:tests .
   chorus:skill-werk-review chorus:hasDomain chorus:code .
   chorus:skill-werk-deploy-demo chorus:hasDomain chorus:deploys .
   chorus:skill-werk-deploy-env-up chorus:hasDomain chorus:deploys .

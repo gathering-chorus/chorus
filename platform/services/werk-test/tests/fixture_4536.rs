@@ -204,6 +204,7 @@ fn run_in_path(base: &Path, card: &str, registry_rows: &[String], patch_status: 
         .env_remove("CHORUS_HOME")
         .env("CHORUS_WRITE_TOKEN", "fixture")
         .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
         .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
         .env("WERK_STACK_PROBES", format!("door={door}/"))
         .output()
@@ -281,18 +282,19 @@ fn run_nightly(root_name: &str, files: &[(&str, &str)], registry_rows: &[String]
     let (port, patches) = stub(registry, patch_status);
     let door = format!("http://127.0.0.1:{}", port);
     let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
-        .arg("--nightly")
+        .arg("lane")
         .env("PATH", stub_path(&base))
         .env("CHORUS_ROOT", &root)
         .env_remove("CHORUS_HOME")
         .env("CHORUS_WRITE_TOKEN", "fixture")
         .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
         .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
         .env("WERK_STACK_PROBES", format!("door={door}/"))
-        .env("NIGHTLY_SUITE_WORKERS", "1")
-        .env("NIGHTLY_LOAD_CAP", "100000")
+        .env("WERK_TEST_SUITE_WORKERS", "1")
+        .env("WERK_TEST_LOAD_CAP", "100000")
         .output()
-        .expect("spawn werk-test --nightly");
+        .expect("spawn werk-test lane");
     let _ = std::fs::remove_dir_all(&base);
     let written = patches.lock().unwrap().clone();
     Run {
@@ -582,4 +584,320 @@ fn editing_only_a_needs_machine_test_binary_does_not_run_it() {
 fn negative_proof_without_the_header_the_edited_binary_runs() {
     let r = box_only_edit("r8d", "91038", "#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n");
     assert!(r.out.contains("werk-test: RED"), "{}", r.out);
+}
+
+// ── #4540 — the five steps, each its own process, through one run folder ──
+
+/// A werk like `run_fixture`'s, then `steps` run one by one (each a separate
+/// werk-test process) on one trace and one runs folder. Returns every step's run.
+fn run_steps(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[String], steps: &[&[&str]]) -> Vec<Run> {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let werk = base.join(format!("fix-{}", card));
+    std::fs::create_dir_all(&werk).unwrap();
+    git(&werk, &["init", "-q"]);
+    std::fs::write(werk.join("README"), "fixture\n").unwrap();
+    for g in ["platform/tests/doc-coherence-ratchet.test.sh", "platform/scripts/clippy-ratchet.sh"] {
+        let p = werk.join(g);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+    }
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "base"]);
+    for (path, body) in files {
+        let p = werk.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "card"]);
+    let registry = format!("{{\"data\":[{}]}}", registry_rows.join(","));
+    let (port, patches) = stub(registry, 200);
+    let door = format!("http://127.0.0.1:{}", port);
+    let path = stub_path(&base);
+    let mut runs = Vec::new();
+    for step in steps {
+        let mut argv: Vec<&str> = step.to_vec();
+        argv.splice(1..1, [card, "fix"]);
+        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+            .args(&argv)
+            .env("PATH", &path)
+            .env("CHORUS_WERK_BASE", &base)
+            .env("WERK_TEST_RUNS", base.join("runs"))
+            .env("CHORUS_TRACE_ID", format!("fixture-4540-{}", tag))
+            .env_remove("WERK_TEST_TREE")
+            .env_remove("CHORUS_HOME")
+            .env("CHORUS_WRITE_TOKEN", "fixture")
+            .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
+            .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
+            .env("WERK_STACK_PROBES", format!("door={door}/"))
+            .output()
+            .expect("spawn werk-test step");
+        runs.push(Run {
+            code: out.status.code().unwrap_or(-1),
+            out: format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+            patches: patches.lock().unwrap().clone(),
+        });
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    runs
+}
+
+/// #4540 — Jeff 10-16 B: the queue, then perf alone, then report and verdict.
+const ALL_STEPS: &[&[&str]] = &[
+    &["scope", "--scope=diff"], &["prepare"], &["run"], &["run", "--test-type=perf"], &["report"], &["verdict"],
+];
+
+/// Wren 10-16 NEGATIVE PROOF: a step run with no scope refuses at scope — the
+/// child pipeline called without SCOPE never runs a default by luck.
+#[test]
+fn negative_proof_a_scope_step_with_no_scope_refuses() {
+    let runs = run_steps("s6", "92006", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &[&["scope"], &["scope", "--scope="]]);
+    for r in &runs {
+        assert_eq!(r.code, 3, "{}", r.out);
+        assert!(r.out.contains("needs --scope=diff"), "{}", r.out);
+    }
+}
+
+#[test]
+fn the_steps_run_apart_reach_the_same_clean_verdict() {
+    let runs = run_steps("s1", "92001", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], ALL_STEPS);
+    for (r, s) in runs.iter().zip(ALL_STEPS) {
+        if s[0] != "verdict" {
+            assert_eq!(r.code, 0, "{:?}: {}", s, r.out);
+        }
+    }
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 0, "{}", v.out);
+    assert!(v.out.contains("werk-test: CLEAN (exit 0)"), "{}", v.out);
+}
+
+#[test]
+fn a_red_case_goes_green_in_its_type_step_and_red_at_the_verdict() {
+    let runs = run_steps("s2", "92002", &[("platform/tests/fail.bats", FAIL)],
+        &[row("platform/tests/fail.bats", "f", "test-fail")], ALL_STEPS);
+    let queue = &runs[2];
+    assert_eq!(queue.code, 0, "the run step writes its result and lets the next run: {}", queue.out);
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 1, "{}", v.out);
+    assert!(v.out.contains("RED in: bats:platform/tests/fail.bats"), "{}", v.out);
+    assert!(v.out.contains("verdict: RED — 1 type failed: unit"), "the line /cws reads: {}", v.out);
+}
+
+/// NEGATIVE PROOF: a planned type whose step never ran is not clean — the
+/// verdict names it UNMEASURED, never reads the missing file as nothing.
+#[test]
+fn negative_proof_a_type_step_that_never_ran_is_unmeasured_at_the_verdict() {
+    // the queue step never ran: every type it carries, unit among them, is missing
+    let skip_unit: Vec<&[&str]> = ALL_STEPS.iter().copied().filter(|s| *s != ["run"]).collect();
+    let runs = run_steps("s3", "92003", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &skip_unit);
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 2, "{}", v.out);
+    assert!(v.out.contains("unit — did not report"), "{}", v.out);
+}
+
+/// NEGATIVE PROOF: a step whose input was never written refuses, naming the
+/// step that writes it (dagu stops there, by name).
+#[test]
+fn negative_proof_a_step_before_its_inputs_refuses_and_names_them() {
+    let runs = run_steps("s4", "92004", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &[&["prepare"]]);
+    assert_eq!(runs[0].code, 3, "{}", runs[0].out);
+    assert!(runs[0].out.contains("run `werk-test scope` first"), "{}", runs[0].out);
+}
+
+/// A retried type step overwrites its own result: the case is counted once.
+#[test]
+fn a_retried_type_step_does_not_count_twice() {
+    let mut steps: Vec<&[&str]> = ALL_STEPS.to_vec();
+    steps.insert(3, &["run"]);
+    let runs = run_steps("s5", "92005", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &steps);
+    let v = runs.last().unwrap();
+    assert_eq!(v.code, 0, "{}", v.out);
+    let report = &runs[runs.len() - 2];
+    assert!(report.out.contains("card-coverage: covered (1 registered case(s)"), "{}", report.out);
+}
+
+// ── #4540 — the nightly as steps (scope = all), each its own process ──
+
+fn run_nightly_steps(tag: &str, files: &[(&str, &str)], registry_rows: &[String], steps: &[&[&str]]) -> Vec<Run> {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-n-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("chorus");
+    std::fs::create_dir_all(root.join("platform/scripts")).unwrap();
+    for (path, body) in files {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+    let registry = format!("{{\"data\":[{}]}}", registry_rows.join(","));
+    let (port, patches) = stub(registry, 200);
+    let door = format!("http://127.0.0.1:{}", port);
+    let mut runs = Vec::new();
+    for step in steps {
+        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+            .args(*step)
+            .env("PATH", stub_path(&base))
+            .env("CHORUS_ROOT", &root)
+            .env_remove("CHORUS_HOME")
+            .env("CHORUS_TRACE_ID", format!("fixture-4540-n-{}", tag))
+            .env("WERK_TEST_RUNS", base.join("runs"))
+            .env("WERK_TEST_LEGS_NOOP", "1")
+            .env("WERK_TEST_LEGS_NOOP", "1")
+            .env("WERK_TEST_LOG_PATH", base.join("nightly.log"))
+            .env("WERK_TEST_FAIL_DIR", base.join("fail"))
+            .env("WERK_TEST_NO_NUDGE", "1")
+            .env("WERK_TEST_LOAD_STUB", "0.1")
+            .env("CHORUS_WRITE_TOKEN", "fixture")
+            .env("OWLAPI", &door)
+            .env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+            .env("FUSEKI_QUERY", format!("{door}/query"))
+            .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns"))
+            .env("WERK_STACK_PROBES", format!("door={door}/"))
+            .env("WERK_TEST_SUITE_WORKERS", "1")
+            .env("WERK_TEST_LOAD_CAP", "100000")
+            .output()
+            .expect("spawn werk-test nightly step");
+        runs.push(Run {
+            code: out.status.code().unwrap_or(-1),
+            out: format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+            patches: patches.lock().unwrap().clone(),
+        });
+    }
+    // the run log, read from the FILE (Silas 06:08: under dagu stdout is the step log)
+    let log = std::fs::read_to_string(base.join("nightly.log")).unwrap_or_default();
+    runs.push(Run { code: 0, out: log, patches: Vec::new() });
+    let _ = std::fs::remove_dir_all(&base);
+    runs
+}
+
+const WERK_TEST_STEPS: &[&[&str]] = &[
+    &["scope", "--scope=all"], &["prepare", "--scope=all"], &["run", "--scope=all"],
+    &["run", "--scope=all", "--test-type=perf"], &["report", "--scope=all"], &["verdict", "--scope=all"],
+];
+
+#[test]
+fn the_nightly_steps_run_the_registry_and_write_one_log() {
+    let runs = run_nightly_steps("n1", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], WERK_TEST_STEPS);
+    let all = runs.iter().map(|r| r.out.as_str()).collect::<Vec<_>>().join("\n----\n");
+    let verdict = &runs[5];
+    assert_eq!(verdict.code, 0, "{all}");
+    assert!(verdict.out.contains("verdict: CLEAN"), "{all}");
+    let log = &runs[6].out;
+    assert!(log.contains("RUN|start|") && log.contains("RUN|complete|"), "{log}");
+    assert!(log.contains("SUITE|") && log.contains("platform/tests/pass.bats"), "{log}");
+    assert!(log.contains("nightly-plan|"), "the lane's pass-through lines reach the log file: {log}");
+}
+
+#[test]
+fn a_red_suite_makes_the_nightly_verdict_red() {
+    let runs = run_nightly_steps("n2", &[("platform/tests/fail.bats", FAIL)],
+        &[row("platform/tests/fail.bats", "f", "test-fail")], WERK_TEST_STEPS);
+    let all = runs.iter().map(|r| r.out.as_str()).collect::<Vec<_>>().join("\n----\n");
+    assert_eq!(runs[2].code, 0, "the run step writes its rows and lets report run: {all}");
+    assert_eq!(runs[5].code, 1, "{all}");
+    assert!(runs[5].out.contains("1 red"), "{all}");
+}
+
+/// NEGATIVE PROOF: a stopped run is recorded stopped, and never completes.
+#[test]
+fn negative_proof_a_stopped_nightly_says_stopped_never_complete() {
+    let runs = run_nightly_steps("n3", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")],
+        &[&["scope", "--scope=all"], &["report", "--scope=all", "--stopped"]]);
+    let log = &runs[2].out;
+    assert!(log.contains("RUN|stopped|"), "{log}");
+    assert!(!log.contains("RUN|complete|"), "{log}");
+}
+
+/// #4540 (Silas 10-16) — one run, one binary: a step after scope hands the
+/// run to the copy scope pinned, so a land that swaps werk-test between steps
+/// does not change what the run's later steps run.
+#[test]
+fn a_later_step_runs_the_copy_scope_pinned_not_the_installed_one() {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-pin-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let installed = base.join("werk-test-installed");
+    std::fs::copy(env!("CARGO_BIN_EXE_werk-test"), &installed).unwrap();
+    let step = |trace: &str, args: &[&str]| {
+        let o = Command::new(&installed).args(args)
+            .env("CHORUS_TRACE_ID", trace).env("WERK_TEST_RUNS", base.join("runs"))
+            .env("CHORUS_ROOT", &base).env_remove("CHORUS_HOME").env_remove("WERK_TEST_PINNED")
+            .env("WERK_TEST_LOG_PATH", base.join("log")).env("WERK_TEST_NO_NUDGE", "1")
+            .env("WERK_TEST_GRAPH_ROWS", "0").env("OWL_API_TESTS", "http://127.0.0.1:9/tests")
+            .output().unwrap();
+        format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
+    };
+    step("pin-a", &["scope", "--scope=all"]);
+    let pinned = base.join("runs/pin-a/werk-test-bin");
+    assert!(pinned.is_file(), "scope pinned the binary");
+    let out = step("pin-a", &["verdict", "--scope=all"]);
+    assert!(out.contains(&format!("running the run's pinned build {}", pinned.display())), "{out}");
+    // NEGATIVE PROOF: a run whose scope pinned nothing runs the binary it was started as
+    std::fs::create_dir_all(base.join("runs/pin-b")).unwrap();
+    let out = step("pin-b", &["verdict", "--scope=all"]);
+    assert!(!out.contains("pinned build"), "{out}");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+// ── #4540 — the queue runs types in the model's order ──
+
+fn typed_row(file: &str, test: &str, entity: &str, ttype: &str) -> String {
+    format!("{{\"filePath\":\"{file}\",\"covers\":\"werk\",\"testType\":\"{ttype}\",\
+             \"testName\":\"{test}\",\"name\":\"{entity}\",\"hermeticity\":\"hermetic\"}}")
+}
+
+fn plan_order(order: Option<&str>) -> Vec<String> {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-order-{}-{}", order.is_some(), std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("chorus");
+    for f in ["platform/tests/u.bats", "platform/tests/i.bats"] {
+        let p = root.join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, PASS).unwrap();
+    }
+    let registry = format!("{{\"data\":[{},{}]}}",
+        typed_row("platform/tests/u.bats", "p", "test-u", "unit"), typed_row("platform/tests/i.bats", "p", "test-i", "integration"));
+    let (port, _) = stub(registry, 200);
+    let door = format!("http://127.0.0.1:{}", port);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_werk-test"));
+    cmd.arg("lane").env("PATH", stub_path(&base)).env("CHORUS_ROOT", &root).env_remove("CHORUS_HOME")
+        .env("CHORUS_WRITE_TOKEN", "fixture").env("OWL_API_TESTS", format!("{door}/tests?limit=10000"))
+        .env("OWL_API_TESTSUITERUNS", format!("{door}/testsuiteruns")).env("WERK_STACK_PROBES", format!("door={door}/"))
+        .env("WERK_TEST_SUITE_WORKERS", "1").env("WERK_TEST_LOAD_CAP", "100000").env_remove("WERK_TEST_TYPE_ORDER");
+    if let Some(o) = order {
+        cmd.env("WERK_TEST_TYPE_ORDER", o);
+    }
+    let out = cmd.output().unwrap();
+    let _ = std::fs::remove_dir_all(&base);
+    String::from_utf8_lossy(&out.stdout).lines()
+        .filter_map(|l| l.strip_prefix("nightly-plan|")).map(String::from).collect()
+}
+
+#[test]
+fn the_queue_starts_types_in_the_built_in_order_by_default() {
+    let plan = plan_order(None);
+    let u = plan.iter().position(|l| l.contains("u.bats")).expect("unit planned");
+    let i = plan.iter().position(|l| l.contains("i.bats")).expect("integration planned");
+    assert!(u < i, "{plan:?}");
+}
+
+/// AC7 NEGATIVE PROOF (Wren 10-16): swap unit and integration in the model and
+/// the queue starts integration first.
+#[test]
+fn negative_proof_a_swapped_model_order_swaps_the_queue() {
+    let mut order: Vec<&str> = werk_test::STAGE_ORDER.to_vec();
+    let (u, i) = (order.iter().position(|s| *s == "unit").unwrap(), order.iter().position(|s| *s == "integration").unwrap());
+    order.swap(u, i);
+    let plan = plan_order(Some(&order.join(",")));
+    let u = plan.iter().position(|l| l.contains("u.bats")).expect("unit planned");
+    let i = plan.iter().position(|l| l.contains("i.bats")).expect("integration planned");
+    assert!(i < u, "{plan:?}");
 }

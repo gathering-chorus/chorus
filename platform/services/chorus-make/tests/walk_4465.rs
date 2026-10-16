@@ -45,7 +45,7 @@ fn the_werk_stream_walks_to_every_skill_and_its_domain() {
 fn a_missing_link_is_named_not_walked_past() {
     let broken = std::fs::read_to_string(fixture()).unwrap()
         .replace("chorus:pipeline-step-cicd-build chorus:coversStep chorus:value-stream-step-build .", "")
-        .replace("chorus:skill-werk-test chorus:hasDomain chorus:tests .", "");
+        .replace("chorus:skill-werk-test-pipeline chorus:hasDomain chorus:tests .", "");
     let path = format!("{}/walk-broken-{}.trig", std::env::temp_dir().display(), std::process::id());
     std::fs::write(&path, broken).unwrap();
     let w = walk_from_sparql_tsv(&run("Werk", &path)).expect("walk");
@@ -53,7 +53,8 @@ fn a_missing_link_is_named_not_walked_past() {
     let errs = walk_check(&w).expect_err("a broken chain must be red");
     let all = errs.join(" | ");
     assert!(all.contains("build"), "uncovered build step named: {all}");
-    assert!(all.contains("werk-test"), "domainless skill named: {all}");
+    // #4540 — the cicd test step's skill is the cicd-test call now
+    assert!(all.contains("skill-werk-test-pipeline") || all.contains("the tests: cicd-test"), "domainless skill named: {all}");
 }
 
 // A stream no pipeline automates is zero rows: refused, never an empty walk.

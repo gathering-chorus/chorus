@@ -41,7 +41,7 @@ ask() {
     return
   fi
   case "$1" in
-    LOKI\ *) loki_verdicts "${1#LOKI }" ;;
+    LOKI\ *) set -- ${1#LOKI }; loki_verdicts "$1" "${2:-}" ;;
     *) curl -s -m "${TEST_DIFF_TIMEOUT:-180}" -G "$FUSEKI_QUERY" --data-urlencode "query=$1" -H 'Accept: text/csv' 2>/dev/null ;;
   esac
 }
@@ -49,20 +49,33 @@ ask() {
 # One run's verdicts as `?k,?res` CSV (file|case,result), paged forward 5,000
 # at a time (Loki's per-query cap). No answer → nothing printed → exit 2 above.
 loki_verdicts() {
-  python3 - "$LOKI_URL" "$1" <<'PY'
+  python3 - "$LOKI_URL" "$1" "${2:-}" <<'PY'
 import json, sys, time, urllib.parse, urllib.request
-loki, trace = sys.argv[1], sys.argv[2]
+loki, trace, run_ts = sys.argv[1], sys.argv[2], sys.argv[3]
 # line filters only: a `| json` stage over a run's ~10,600 lines did not
 # answer in 100 s; the same read without it answers in 0.3 s (measured 10-15)
 q = ('{job="platform-chorus", appName="chorus-events"} |= ' + json.dumps('"trace":"%s"' % trace)
      + ' |= ' + json.dumps('"event":"test.case.'))
-# a #4536 trace is nightly-<epoch ms>-<pid>: it names its own start, so the
-# read is that hour back to six after, not a 30-day scan for one string
-try:
-    minted = int(trace.split("-")[1])
-except (IndexError, ValueError):
+# the read is the run's start an hour back to six after, not a 30-day scan for
+# one string. A #4536 trace is nightly-<epoch ms>-<pid> and names its own
+# start; a dagu run id (#4540) does not, so its PipelineRun's runTs does.
+def window(trace, run_ts):
+    import re, datetime
+    m = re.fullmatch(r"nightly-(\d+)-\d+", trace)
+    if m:
+        minted = int(m.group(1))
+    elif run_ts:
+        try:
+            minted = int(datetime.datetime.fromisoformat(run_ts.replace("Z", "+00:00")).timestamp() * 1000)
+        except ValueError:
+            return None
+    else:
+        return None
+    return (minted - 3600 * 1000) * 10**6, (minted + 6 * 3600 * 1000) * 10**6
+w = window(trace, run_ts)
+if w is None:
     sys.exit(0)
-start, end = (minted - 3600 * 1000) * 10**6, (minted + 6 * 3600 * 1000) * 10**6
+start, end = w
 word = {"test.case.passed": "pass", "test.case.failed": "fail", "test.case.skipped": "skip"}
 seen = {}
 try:
@@ -111,7 +124,16 @@ list_runs() {
   printf '%s' "$out" | tail -n +2 | sed 's/,/  /' | sed 's/^/  /'
 }
 
-verdicts_for() { ask "LOKI $1"; }
+# #4540 — a dagu run id names no time, so the read needs its run's start
+run_ts_of() {
+  case "$1" in nightly-*) return 0 ;; esac
+  local out; out=$(ask "$P SELECT ?ts WHERE { GRAPH <urn:chorus:domains:pipelines> {
+    ?r a c:PipelineRun ; c:traceId \"$1\" ; c:runTs ?ts } } LIMIT 1")
+  answered "$out" || return 0
+  printf '%s' "$out" | tail -n +2 | head -1 | sed 's/^"//; s/"$//'
+}
+
+verdicts_for() { ask "LOKI $1 $(run_ts_of "$1")"; }
 
 recent_two() {
   local out; out=$(ask "$RUNS_Q LIMIT 2")

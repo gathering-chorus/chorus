@@ -3,8 +3,10 @@
 # @domain: tests — the product domain this suite guards (#4334)
 #
 # #4145 — Jeff, 2026-09-11: "delete the nightly script, change the launchd".
-# `werk-test --nightly --run-all` is now the whole 03:00 run. These proofs
-# drive the binary the way launchd will, with every outside thing stubbed:
+# #4540 — the 03:00 run is the dagu nightly calling werk-test's steps with
+# scope = all (scope, prepare, run, run --test-type=perf, report, verdict,
+# notify). These proofs drive the binary the way dagu will, step by step, with
+# every outside thing stubbed:
 # the runner child (a script printing runner lines), the registry (a loopback
 # HTTP server counting its reads), the nudge primitive (a script appending to
 # a file), the log (a temp file). What the page reads must come out identical
@@ -17,7 +19,7 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   # #3528 — bring your own process table: a real nightly on the box must not refuse these runs
   printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
-  export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
+  export WERK_TEST_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/scripts" "$T/root/platform/tests" "$T/fail"
   # #4168/#4271 (kade) — every unit the fixture's runner reports must EXIST in
   # the fixture root. #4168 added the stale-registry probe over
@@ -34,6 +36,8 @@ setup() {
   chmod +x "$T/root/platform/scripts/chorus-identity-token"
   cat > "$T/runner.sh" <<'EOS'
 #!/bin/bash
+# #4540 — the run step drives the lane twice: the queue, then perf alone
+[ "$WERK_TEST_STAGES" = perf ] && exit 0
 echo "nightly-plan|bats|platform/tests/a.bats"
 echo "nightly-case|platform/tests/a.bats|one"
 echo "nightly-case|platform/tests/a.bats|two"
@@ -88,10 +92,16 @@ teardown() {
 }
 
 run_all() {
-  CHORUS_ROOT="$T/root" CHORUS_HOME="$T/root" NIGHTLY_LOG_PATH="$T/nightly.log" NIGHTLY_FAIL_DIR="$T/fail" \
-  NIGHTLY_LOCKDIR="$T/lock" OWLAPI="http://127.0.0.1:$PORT" NIGHTLY_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
-  NIGHTLY_RUNNER_CMD="${RUNNER:-$T/runner.sh}" NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
-  "$BIN" --nightly --run-all "$@"
+  local st=0 step
+  for step in "scope --scope=all" "prepare --scope=all" "run --scope=all" "run --scope=all --test-type=perf" \
+              "report --scope=all" "verdict --scope=all" "notify"; do
+    CHORUS_ROOT="${ROOT_DIR:-$T/root}" CHORUS_HOME="${ROOT_DIR:-$T/root}" WERK_TEST_LOG_PATH="${LOG_PATH-$T/nightly.log}" WERK_TEST_FAIL_DIR="$T/fail" \
+    CHORUS_TRACE_ID="${TRACE-034gpBats4145Fixture01}" WERK_TEST_RUNS="$T/runs" \
+    OWLAPI="http://127.0.0.1:$PORT" WERK_TEST_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
+    WERK_TEST_RUNNER_CMD="${RUNNER:-$T/runner.sh}" WERK_TEST_LEGS_NOOP=1 WERK_TEST_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent FUSEKI_QUERY=http://127.0.0.1:9/query \
+    "$BIN" $step "$@" || { [ "${step%% *}" = verdict ] || st=$?; }
+  done
+  return $st
 }
 
 @test "the log gets RUN|start, one SUITE row per unit in the page's shape, and RUN|complete with the count" {
@@ -176,23 +186,15 @@ EOS
 
 @test "a werk-rooted run writes its own log and nudges nobody (#3722)" {
   mkdir -p "$T/chorus-werk/kade-9/platform/tests"
-  CHORUS_ROOT="$T/chorus-werk/kade-9" CHORUS_HOME="$T/chorus-werk/kade-9" NIGHTLY_LOG_PATH="" NIGHTLY_FAIL_DIR="$T/fail" \
-  NIGHTLY_LOCKDIR="$T/lock2" OWLAPI="http://127.0.0.1:$PORT" NIGHTLY_API="http://127.0.0.1:$PORT" OPS_NUDGE="$T/nudge.sh" \
-  NIGHTLY_RUNNER_CMD="$T/runner.sh" NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent \
-  run "$BIN" --nightly --run-all
+  ROOT_DIR="$T/chorus-werk/kade-9" LOG_PATH="" run run_all
   [ "$status" -eq 0 ]
   [ -s /tmp/nightly-kade-9.log ]
   [ ! -f "$T/nudges.txt" ]
   rm -f /tmp/nightly-kade-9.log
 }
 
-@test "single flight: a second run while the first holds the lock is refused and says why" {
-  mkdir -p "$T/lock"; echo $$ > "$T/lock/pid"
-  run run_all
-  [ "$status" -eq 0 ]
-  [[ "$output$stderr" == *"REFUSED"* ]] || grep -q "REFUSED" <<< "$output"
-  [ ! -f "$T/nightly.log" ]
-}
+# #4540 — single flight is dagu's: the nightly queue runs one at a time
+# (Silas measured a second `dagu start` held until the first ended, 10-16).
 
 # #4271 item 2 — one joinable run id. The graph row and the log run must carry
 # the same id. As shipped the PipelineRun name was built at EMIT time, which is
@@ -237,21 +239,45 @@ EOS
   grep -q "^RUN|start|$recovered|" "$T/nightly.log"
 }
 
-@test "#4536 one trace: every lane and the run's PipelineRun carry the same id" {
+@test "#4536/#4540 one trace: every lane and the run's PipelineRun carry the dag run's id" {
   # 10-15: the lanes' case events said nightly-1792049381065-39455 and the
   # PipelineRun said nightly-1792056711, so /nightly could not find its own
-  # cases in Loki. run-all mints ONE trace before any lane starts.
+  # cases in Loki. Under dagu the trace is the dag run id, set on every step.
   cat > "$T/runner-trace.sh" <<EOS
 #!/bin/bash
 echo "\${CHORUS_TRACE_ID:-<unset>}" >> "$T/lane-traces.txt"
 exec "$T/runner.sh"
 EOS
   chmod +x "$T/runner-trace.sh"
-  RUNNER="$T/runner-trace.sh" run env -u CHORUS_TRACE_ID bash -c "$(declare -f run_all); T='$T' PORT='$PORT' BIN='$BIN' RUNNER='$T/runner-trace.sh' run_all"
+  TRACE=034gpTraceProof4540abcd RUNNER="$T/runner-trace.sh" run run_all
   [ -s "$T/lane-traces.txt" ] || { echo "no lane ran"; return 1; }
   lanes=$(sort -u "$T/lane-traces.txt")
-  [ "$(printf '%s\n' "$lanes" | wc -l | tr -d ' ')" -eq 1 ] || { echo "lanes had: $lanes"; return 1; }
-  [[ "$lanes" =~ ^nightly-[0-9]+-[0-9]+$ ]] || { echo "lane trace: $lanes"; return 1; }
-  grep '^/pipelineruns' "$T/posts.txt" | grep -q "\"traceId\":\"$lanes\"" \
+  [ "$lanes" = "034gpTraceProof4540abcd" ] || { echo "lanes had: $lanes"; return 1; }
+  grep '^/pipelineruns' "$T/posts.txt" | grep -q '"traceId":"034gpTraceProof4540abcd"' \
     || { echo "PipelineRun: $(grep '^/pipelineruns' "$T/posts.txt")"; return 1; }
+}
+
+@test "#4540 negative proof: a step with no trace refuses, never a folder shared by every untraced run" {
+  TRACE= run run_all
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"run folder needs a trace id"* ]] || return 1
+  [ ! -f "$T/nightly.log" ] || ! grep -q '^RUN|start|' "$T/nightly.log" || return 1
+}
+
+@test "#4540 perf planned but none reported is UNMEASURED, never green" {
+  cat > "$T/runner-perf.sh" <<'EOS'
+#!/bin/bash
+if [ "$WERK_TEST_STAGES" = perf ]; then echo "nightly-plan|perf|platform/tests/p.sh"; exit 0; fi
+echo "nightly-unit|bats|platform/tests/a.bats|pass|2 pass, 0 fail"
+EOS
+  chmod +x "$T/runner-perf.sh"
+  RUNNER="$T/runner-perf.sh" run run_all
+  grep -q '^SUITE|perf|stage:perf|silas|unmeasured|.*1 perf suite(s) planned, none reported' "$T/nightly.log"
+}
+
+@test "#4540 negative proof: no perf suite planned is named and not run, never a red or unmeasured row" {
+  run run_all
+  grep -q '^nightly-perf|0 suites planned — not run' "$T/nightly.log"
+  ! grep -q '^SUITE|perf|stage:perf|' "$T/nightly.log" || return 1
+  ! grep -q 'runner produced no unit results' "$T/nightly.log" || return 1
 }

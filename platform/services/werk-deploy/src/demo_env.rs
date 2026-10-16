@@ -955,7 +955,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 // #4022 — /owl proxies to the werk's athena-make, not prod's.
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
-                ("NIGHTLY_LOG_PATH", nightly_log.as_str()),
+                ("WERK_TEST_LOG_PATH", nightly_log.as_str()),
                 // Silas, 2026-09-02, proving #4058: the variant booted without
                 // these three, so an authz demo could not fail — the security
                 // envelope was pass-through (chorus-sdk walked straight through
@@ -1268,8 +1268,8 @@ mod tests {
         assert_eq!(werk_nightly_log_path("/x/chorus-werk/kade-4022"), "/tmp/nightly-kade-4022.log");
         let api = &env_services()[0];
         let p = werk_nightly_log_path("/x/chorus-werk/silas-9");
-        let plist = generate_plist(api, "silas", "/x/chorus-werk/silas-9", 3343, &[("NIGHTLY_LOG_PATH", p.as_str())]);
-        assert!(plist.contains("<key>NIGHTLY_LOG_PATH</key><string>/tmp/nightly-silas-9.log</string>"), "{}", plist);
+        let plist = generate_plist(api, "silas", "/x/chorus-werk/silas-9", 3343, &[("WERK_TEST_LOG_PATH", p.as_str())]);
+        assert!(plist.contains("<key>WERK_TEST_LOG_PATH</key><string>/tmp/nightly-silas-9.log</string>"), "{}", plist);
         assert!(!plist.contains("Library/Logs/Chorus"), "never production's nightly log: {}", plist);
     }
 

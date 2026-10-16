@@ -2,7 +2,7 @@
 //! #4416 — every nightly suite row carries how long the suite ran.
 //! Jeff, 2026-10-01: "we have run times for suites now?" — they did not.
 
-use werk_test::nightly_run::{
+use werk_test::run_record::{
     parse_suite_line, parse_unit_time_line, seconds, suite_row_payload, suite_row_payload_timed, unit_line_key, SuiteRow,
 };
 

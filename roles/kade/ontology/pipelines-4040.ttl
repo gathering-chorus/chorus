@@ -129,6 +129,56 @@ chorus:assertionFailureCount a owl:DatatypeProperty ;
 chorus:otherErrorCount a owl:DatatypeProperty ;
     rdfs:label "other errors" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
 
+# ── #4540 — how a pipeline runs, on its Pipeline row ─────────────────────────
+# Silas 10-16: the queue, schedule and handlers live on the Pipeline row, not as
+# name cases in chorus-make. Optional: a pipeline that sets none is generated
+# the way cicd and athena are today. (`chorus:schedule` is a Domain, so the
+# schedule property is runSchedule.)
+chorus:runQueue a owl:DatatypeProperty ;
+    rdfs:label "run queue" ;
+    rdfs:comment "The dagu queue the pipeline's runs wait on (platform/config/dagu.yaml): `nightly` runs one at a time. A sub-run ignores its queue (#4494), so a child's is nominal." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+chorus:runSchedule a owl:DatatypeProperty ;
+    rdfs:label "run schedule" ;
+    rdfs:comment "Cron for when the scheduler starts the pipeline (`0 3 * * *` = the 03:00 nightly). Absent: started by hand or by another pipeline." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+chorus:runParams a owl:DatatypeProperty ;
+    rdfs:label "run params" ;
+    rdfs:comment "The params a run takes, space-separated (`CARD ROLE SCOPE TRACE`)." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+chorus:traceParam a owl:DatatypeProperty ;
+    rdfs:label "trace param" ;
+    rdfs:comment "The param that carries the parent's trace (a child's own run id is another). Set: the pipeline is a child, and its parent owns failure." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+chorus:onAbortRun a owl:DatatypeProperty ;
+    rdfs:label "on abort" ;
+    rdfs:comment "The command a stopped run runs (the nightly records itself stopped)." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+chorus:onExitRun a owl:DatatypeProperty ;
+    rdfs:label "on exit" ;
+    rdfs:comment "The command every run runs at its end, red or green (the nightly's notify)." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+
+# #4540 — a Skill whose executor is "pipeline" runs a whole child pipeline;
+# its implementedBy names the Pipeline (its label), as a deterministic one
+# names its binary.
+
+# ── #4540 — test types, in the order the queue starts them ───────────────────
+# Jeff 2026-09-12: coverage, lint, security, unit, integration, ui, perf. The
+# rows are in test-type-instances.ttl; werk-test reads them at scope (Wren
+# 10-16: "a swap in the model changes the run order").
+chorus:TestType a owl:Class ;
+    rdfs:label "Test Type" ;
+    rdfs:comment "One kind of proving (the values of chorus:testType), with its place in the run order." .
+chorus:typeOrder a owl:DatatypeProperty ;
+    rdfs:label "type order" ;
+    rdfs:comment "Where the type starts in the run's one queue (1 first). Every type has one, each once." ;
+    rdfs:domain chorus:TestType ; rdfs:range xsd:integer .
+chorus:TestTypeShape a sh:NodeShape ;
+    sh:targetClass chorus:TestType ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:typeOrder ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
 # ── Shapes ──────────────────────────────────────────────────────────────────
 # Home graph: urn:chorus:domains:pipelines, derived from the domain's own
 # definesVocabulary claim (#4187). These three carried a chorus:instancesGraph

@@ -1,0 +1,5 @@
+queue	nightly
+schedule	0 3 * * *
+params	CARD ROLE
+onAbort	werk-test report --scope=all --stopped
+onExit	werk-test notify

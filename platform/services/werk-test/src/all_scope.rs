@@ -1,7 +1,7 @@
 // @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4145 — `werk-test --nightly --run-all`: the whole 03:00 run, in the runner.
 //! The orchestration half (processes, files, clocks) of what `nightly-suites.sh`
-//! did in bash; the pure half is `werk_test::nightly_run`. The child that runs
+//! did in bash; the pure half is `werk_test::run_record`. The child that runs
 //! the suites is THIS binary with `--nightly`, streamed to the lane file and
 //! folded live, so the 50-minute middle is unchanged and everything around it
 //! is one process that knows its own owners, its own cases and its own clock.
@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use werk_test::nightly_run::{crawl_line, json_rows, 
+use werk_test::run_record::{crawl_line, json_rows, 
     coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
     notify_messages, owner_for, owner_map, parse_floors, run_summary_fields,
     suite_result_fields, unit_slice, SuiteRow,
@@ -25,12 +25,21 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 // §1); libc's signal(2) is declared here directly.
 static STOP_SIGNAL: AtomicI32 = AtomicI32::new(0);
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+/// #4540 — the lane child, so a stop reaps it at once: the read loop only
+/// sees the flag when the child next prints, and a child mid-suite may not.
+static LANE_PID: AtomicI32 = AtomicI32::new(0);
 extern "C" {
     fn signal(sig: i32, handler: extern "C" fn(i32)) -> usize;
+    fn kill(pid: i32, sig: i32) -> i32;
 }
 extern "C" fn on_stop(sig: i32) {
     STOP_SIGNAL.store(sig, Ordering::SeqCst);
     STOP_REQUESTED.store(true, Ordering::SeqCst);
+    let pid = LANE_PID.load(Ordering::SeqCst);
+    if pid > 0 {
+        // kill(2) is async-signal-safe
+        unsafe { kill(pid, 15) };
+    }
 }
 
 /// #4253 — a leg row with the time its leg took, unless it already has one,
@@ -106,6 +115,9 @@ struct Ctx {
     ops_nudge: String,
     no_nudge: bool,
     owners: HashMap<String, String>,
+    /// #4540 — under dagu stdout is the step's log, not the run log: a step
+    /// writes the lane's pass-through lines to the run log itself
+    tee_log: bool,
     /// #4156 — the graph side of the run record: every SUITE row also lands
     /// as a TestSuiteRun the moment it is written, and the page reads those.
     graph: GraphRows,
@@ -115,7 +127,7 @@ struct Ctx {
 #[derive(Default)]
 struct GraphRows {
     /// off for a werk-rooted run (#3722: a werk never writes prod) and for
-    /// NIGHTLY_GRAPH_ROWS=0
+    /// WERK_TEST_GRAPH_ROWS=0
     enabled: bool,
     run_ts: std::cell::RefCell<String>,
     order: std::cell::Cell<usize>,
@@ -146,13 +158,13 @@ impl Ctx {
         let order = self.graph.order.get() + 1;
         self.graph.order.set(order);
         let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-        let role = env_or("WERK_NIGHTLY_MINT_ROLE", "nightly");
-        let body = werk_test::nightly_run::suite_row_payload_timed(&self.graph.run_ts.borrow(), order, row, ts);
+        let role = env_or("WERK_TEST_MINT_ROLE", "nightly");
+        let body = werk_test::run_record::suite_row_payload_timed(&self.graph.run_ts.borrow(), order, row, ts);
         // #4416 — a store whose shape predates suiteSeconds refuses the field
         // as off-model; the row still lands without it, never lost for a timing
         let landed = self.post_graph("testsuiteruns", &role, &body, &self.graph.token)
             || (row.millis.is_some()
-                && self.post_graph("testsuiteruns", &role, &werk_test::nightly_run::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts), &self.graph.token));
+                && self.post_graph("testsuiteruns", &role, &werk_test::run_record::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts), &self.graph.token));
         if landed {
             self.graph.written.set(self.graph.written.get() + 1);
         } else {
@@ -172,13 +184,13 @@ impl Ctx {
         if !self.graph.enabled {
             return;
         }
-        let role = env_or("WERK_NIGHTLY_MINT_ROLE", "nightly");
+        let role = env_or("WERK_TEST_MINT_ROLE", "nightly");
         let run_ts = self.graph.run_ts.borrow().clone();
         if edge == "start" {
-            let body = werk_test::nightly_run::live_row_payload(&run_ts, item, ms, werk_test::unit_timeout().as_secs());
+            let body = werk_test::run_record::live_row_payload(&run_ts, item, ms, werk_test::unit_timeout().as_secs());
             self.post_graph("testsuiteruns", &role, &body, &self.graph.token);
         } else {
-            let name = werk_test::nightly_run::live_row_name(&run_ts, item);
+            let name = werk_test::run_record::live_row_name(&run_ts, item);
             self.send_graph("DELETE", &format!("testsuiteruns/{}", name), &role, "", &self.graph.token);
         }
     }
@@ -240,11 +252,11 @@ impl Ctx {
     fn write_fail_log(&self, row: &SuiteRow, body: &str) {
         let head = format!("# unit: {} ({}) — verdict {}\n# summary: {}\n---\n", row.path, row.kind, row.status, row.summary);
         // #4144 AC5 — also under runs/<run_id>, so the next run cannot overwrite it
-        werk_test::nightly_run::keep_fail_text(&self.fail_dir, &self.run_id, &fail_log_name(&row.kind, &row.path), &format!("{}{}", head, body));
+        werk_test::run_record::keep_fail_text(&self.fail_dir, &self.run_id, &fail_log_name(&row.kind, &row.path), &format!("{}{}", head, body));
     }
 }
 
-/// `sysctl hw.ncpu` × NIGHTLY_LOAD_MAX_PER_CORE (1.5) against the 1-minute load.
+/// `sysctl hw.ncpu` × WERK_TEST_LOAD_MAX_PER_CORE (1.5) against the 1-minute load.
 fn load_gate() -> (bool, String) {
     let cores: f64 = Command::new("sysctl")
         .args(["-n", "hw.ncpu"])
@@ -252,8 +264,8 @@ fn load_gate() -> (bool, String) {
         .ok()
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
         .unwrap_or(8.0);
-    let per: f64 = env_or("NIGHTLY_LOAD_MAX_PER_CORE", "1.5").parse().unwrap_or(1.5);
-    let load: f64 = match std::env::var("NIGHTLY_LOAD_STUB").ok().filter(|v| !v.is_empty()) {
+    let per: f64 = env_or("WERK_TEST_LOAD_MAX_PER_CORE", "1.5").parse().unwrap_or(1.5);
+    let load: f64 = match std::env::var("WERK_TEST_LOAD_STUB").ok().filter(|v| !v.is_empty()) {
         Some(v) => v.parse().unwrap_or(0.0),
         None => Command::new("sysctl")
             .args(["-n", "vm.loadavg"])
@@ -269,62 +281,12 @@ fn pid_alive(pid: u32) -> bool {
     Command::new("kill").args(["-0", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// Single flight (#3597/#4008): a mkdir lock with the holder pid; a dead holder
-/// with no live runner is stale and taken over.
-fn acquire_lock(lockdir: &str) -> Result<(), String> {
-    if std::fs::create_dir(lockdir).is_ok() {
-        let _ = std::fs::write(format!("{}/pid", lockdir), std::process::id().to_string());
-        return Ok(());
-    }
-    let old: Option<u32> = std::fs::read_to_string(format!("{}/pid", lockdir)).ok().and_then(|s| s.trim().parse().ok());
-    if let Some(p) = old {
-        if pid_alive(p) {
-            return Err(format!("holder pid {} is alive", p));
-        }
-    }
-    // a dead holder is stale unless a runner is still alive (#4008). NIGHTLY_PS
-    // is the test seam: a command that prints `PID PPID ELAPSED COMMAND` rows.
-    let ps_cmd = env_or("NIGHTLY_PS", "ps -eo pid,ppid,etime,command");
-    let out = Command::new("bash").arg("-c").arg(&ps_cmd).output().ok();
-    if let Some(o) = out {
-        let me = std::process::id().to_string();
-        let parent = std::os::unix::process::parent_id().to_string();
-        let marker = env_or("NIGHTLY_RUNNER_MARKER", "werk-test --nightly|nightly-suites.sh --run-all|werk-test-bin --nightly");
-        for l in String::from_utf8_lossy(&o.stdout).lines().skip(1) {
-            let cols: Vec<&str> = l.split_whitespace().collect();
-            if cols.len() < 4 {
-                continue;
-            }
-            let (pid, age) = (cols[0], cols[2]);
-            if pid == me || pid == parent {
-                continue;
-            }
-            let cmd = cols[3..].join(" ");
-            if cmd.contains("--lock-probe") {
-                continue;
-            }
-            if marker.split('|').any(|m| cmd.contains(m)) {
-                return Err(format!(
-                    "holder pid {} is dead but runner pid {} is alive (age {})",
-                    old.map(|p| p.to_string()).unwrap_or("none".into()),
-                    pid,
-                    age
-                ));
-            }
-        }
-    }
-    let _ = std::fs::remove_dir_all(lockdir);
-    std::fs::create_dir(lockdir).map_err(|e| format!("lock {} could not be taken: {}", lockdir, e))?;
-    let _ = std::fs::write(format!("{}/pid", lockdir), std::process::id().to_string());
-    Ok(())
-}
-
 // #4152 — run_capped lives in lib.rs (drains pipes while the child runs).
 use werk_test::run_capped;
 
 fn stack_up(ctx: &Ctx) -> bool {
-    let api = env_or("NIGHTLY_STACK_API_URL", &format!("{}/api/chorus/context/health", ctx.api));
-    let fuseki = env_or("NIGHTLY_STACK_FUSEKI_URL", "http://localhost:3030/$/ping");
+    let api = env_or("WERK_TEST_STACK_API_URL", &format!("{}/api/chorus/context/health", ctx.api));
+    let fuseki = env_or("WERK_TEST_STACK_FUSEKI_URL", "http://localhost:3030/$/ping");
     let ok = |u: &str| {
         Command::new("curl")
             .args(["-fsS", "-m", "8", "--retry", "2", "--retry-delay", "5", "--retry-all-errors", "-o", "/dev/null", u])
@@ -376,14 +338,14 @@ fn read_pct_rust(path: &str) -> Option<f64> {
 }
 
 fn leg_coverage(ctx: &Ctx) -> Vec<SuiteRow> {
-    let floors_path = env_or("NIGHTLY_COVERAGE_FLOORS", &format!("{}/coverage-floors.yml", ctx.root));
+    let floors_path = env_or("WERK_TEST_COVERAGE_FLOORS", &format!("{}/coverage-floors.yml", ctx.root));
     let yaml = match std::fs::read_to_string(&floors_path) {
         Ok(y) => y,
         Err(_) => return Vec::new(),
     };
-    let fixtures = std::env::var("NIGHTLY_COVERAGE_FIXTURES").ok().filter(|v| !v.is_empty());
-    let cap = Duration::from_secs(env_or("NIGHTLY_COVERAGE_TIMEOUT_S", "600").parse().unwrap_or(600));
-    let workers = env_or("NIGHTLY_COVERAGE_WORKERS", "2");
+    let fixtures = std::env::var("WERK_TEST_COVERAGE_FIXTURES").ok().filter(|v| !v.is_empty());
+    let cap = Duration::from_secs(env_or("WERK_TEST_COVERAGE_TIMEOUT_S", "600").parse().unwrap_or(600));
+    let workers = env_or("WERK_TEST_COVERAGE_WORKERS", "2");
     let mut rows = Vec::new();
     for (lang, rel, floor) in parse_floors(&yaml) {
         let t = Instant::now();
@@ -470,7 +432,7 @@ fn leg_denominator(ctx: &Ctx, floors_yaml: &str) -> Option<SuiteRow> {
         return None;
     }
     let unconfigured: Vec<String> = present.iter().filter(|c| !configured.contains(&format!("platform/services/{}", c))).cloned().collect();
-    let baseline_file = env_or("NIGHTLY_COV_DENOM_BASELINE", &format!("{}/.coverage-denominator-baseline", ctx.root));
+    let baseline_file = env_or("WERK_TEST_COV_DENOM_BASELINE", &format!("{}/.coverage-denominator-baseline", ctx.root));
     let baseline: usize = std::fs::read_to_string(&baseline_file).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(unconfigured.len());
     let (row, new_baseline) = denominator_row(configured.len(), present.len(), &unconfigured, baseline);
     if let Some(nb) = new_baseline {
@@ -576,17 +538,26 @@ struct LaneResult {
     whys: Vec<(String, String, String, String)>,
 }
 
-fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
-    let exe = env_or("NIGHTLY_RUNNER_CMD", &std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "werk-test".into()));
+fn run_runner(ctx: &Ctx, box_over_load: bool, pick: Option<&str>) -> LaneResult {
+    let exe = env_or("WERK_TEST_RUNNER_CMD", &std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "werk-test".into()));
     let _ = std::fs::create_dir_all(&ctx.fail_dir);
     let lane_path = format!("{}/_lane-output.log", ctx.fail_dir);
-    let mut lane = OpenOptions::new().create(true).write(true).truncate(true).open(&lane_path).ok();
+    // #4540 — the perf step adds to the queue step's lane output, never erases it
+    let mut lane = if pick == Some("perf") {
+        OpenOptions::new().create(true).append(true).open(&lane_path).ok()
+    } else {
+        OpenOptions::new().create(true).write(true).truncate(true).open(&lane_path).ok()
+    };
     let mut cmd = Command::new(&exe);
     if !exe.ends_with(".sh") {
-        cmd.arg("--nightly");
+        cmd.arg("lane");
     }
     cmd.env("CHORUS_ROOT", &ctx.root).env("CHORUS_HOME", &ctx.home).env("ROLE", &ctx.role).stdout(Stdio::piped()).stderr(Stdio::piped());
     cmd.env(werk_test::UNIT_MARKS_ENV, "1");
+    // #4540 — the queue step or the perf step: which stages this lane runs
+    if let Some(p) = pick {
+        cmd.env(werk_test::STAGES_ENV, p);
+    }
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -595,6 +566,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             return LaneResult { gate_holds: 0, rows: vec![row], rc: 127, cases: Vec::new(), stored: None, whys: Vec::new() };
         }
     };
+    LANE_PID.store(child.id() as i32, Ordering::SeqCst);
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let err_thread = std::thread::spawn(move || {
@@ -625,10 +597,10 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         }
         lane_text.push_str(&line);
         lane_text.push('\n');
-        if let Some(c) = werk_test::nightly_run::parse_case_line(&line) {
+        if let Some(c) = werk_test::run_record::parse_case_line(&line) {
             cases.push(c);
         }
-        if let Some(n) = werk_test::nightly_run::parse_run_stored_line(&line) {
+        if let Some(n) = werk_test::run_record::parse_run_stored_line(&line) {
             stored = Some(n);
         }
         // #4155 — a failed case's reason goes into the run's log as it arrives
@@ -643,16 +615,16 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             let abs = if p.starts_with('/') { p.to_string() } else { format!("{}/{}", ctx.root, p) };
             std::path::Path::new(&abs).exists()
         };
-        if let Some((edge, item, ms)) = werk_test::nightly_run::parse_unit_mark(&line) {
+        if let Some((edge, item, ms)) = werk_test::run_record::parse_unit_mark(&line) {
             ctx.unit_mark(edge, &item, ms);
             continue;
         }
-        if let Some((key, ms)) = werk_test::nightly_run::parse_unit_time_line(&line) {
+        if let Some((key, ms)) = werk_test::run_record::parse_unit_time_line(&line) {
             unit_ms.insert(key, ms);
             continue;
         }
         if let Some((mut row, contradiction)) = fold_unit_line(&line, &|p| ctx.owner(p), box_over_load, &exists) {
-            row.millis = werk_test::nightly_run::unit_line_key(&line).and_then(|k| unit_ms.remove(&k));
+            row.millis = werk_test::run_record::unit_line_key(&line).and_then(|k| unit_ms.remove(&k));
             if contradiction {
                 eprintln!("nightly: REPORTER CONTRADICTION — row says pass with failures; recording fail (#3753 AC4, row-level)");
                 ctx.spine("nightly.reporter.contradiction", &[("suite".into(), row.suite_name().into()), ("kind".into(), row.kind.clone())]);
@@ -667,6 +639,9 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             rows.push(row);
         } else {
             println!("{}", line);
+            if ctx.tee_log {
+                ctx.append_log(&line);
+            }
         }
     }
     let status = child.wait().ok();
@@ -676,7 +651,24 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let _ = write!(f, "{}", err_text);
     }
     let rc = status.and_then(|s| s.code()).unwrap_or(1);
-    if rows.is_empty() {
+    // #4540 — the perf step's lane holds only registered perf suites; none is
+    // a valid answer there (its legs measure the run), not a dead runner
+    // #4540 (Silas 10-16) — two states the perf step keeps apart: no perf
+    // suite planned is named and not run, never red; perf suites planned and
+    // none reported is UNMEASURED, never green.
+    let planned = lane_text.lines().filter(|l| l.starts_with("nightly-plan|")).count();
+    if pick == Some("perf") && rows.is_empty() {
+        if planned == 0 {
+            println!("perf: 0 suites planned — not run (the perf legs still measure the run)");
+            ctx.append_log("nightly-perf|0 suites planned — not run");
+        } else {
+            let row = SuiteRow::new("perf", "stage:perf", "silas", "unmeasured",
+                &format!("0 pass, 0 fail (UNMEASURED — {} perf suite(s) planned, none reported, rc={})", planned, rc));
+            ctx.record_row(&row);
+            rows.push(row);
+        }
+    }
+    if rows.is_empty() && pick != Some("perf") {
         let reason = err_text.lines().last().unwrap_or("no output").to_string();
         let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner produced no unit results rc={} — {})", rc, reason));
         ctx.record_row(&row);
@@ -709,16 +701,16 @@ fn report_no_result(
     ctx: &Ctx,
     registered: &[(String, String)],
     cases: &[(String, String, String, String)],
-) -> Option<werk_test::nightly_run::TallyCounts> {
+) -> Option<werk_test::run_record::TallyCounts> {
     if registered.is_empty() {
         ctx.append_log("RUN|tally|registry unreadable — the run cannot say what it did not run");
         return None;
     }
-    let counts = werk_test::nightly_run::tally_counts(registered, cases);
+    let counts = werk_test::run_record::tally_counts(registered, cases);
     let tally = counts.line();
     ctx.append_log(&format!("RUN|tally|{}", tally));
     eprintln!("nightly: {}", tally);
-    let missing = werk_test::nightly_run::tests_with_no_result(registered, cases);
+    let missing = werk_test::run_record::tests_with_no_result(registered, cases);
     for (f, n) in missing.iter().take(200) {
         ctx.append_log(&format!("nightly-no-result|{}|{}", f, n));
     }
@@ -741,10 +733,11 @@ fn report_no_result(
 /// Read-only modes the script used to answer for live callers:
 /// `--last-run` (daily-review-quality), `--load-gate` (load-reclassify),
 /// `--lock-probe` (the single-flight tests).
-pub fn run_mode(args: &[String]) -> Option<Result<i32, String>> {
+pub fn read_mode(args: &[String]) -> Option<Result<i32, String>> {
+    let first = args.first().map(String::as_str);
     let home_dir = env_or("HOME", "/tmp");
-    if args.iter().any(|a| a == "--last-run") {
-        let log = env_or("NIGHTLY_LOG_PATH", &format!("{}/Library/Logs/Chorus/nightly-suites.log", home_dir));
+    if first == Some("last-run") {
+        let log = env_or("WERK_TEST_LOG_PATH", &format!("{}/Library/Logs/Chorus/nightly-suites.log", home_dir));
         let meta = match std::fs::metadata(&log) {
             Ok(m) => m,
             Err(_) => {
@@ -763,7 +756,7 @@ pub fn run_mode(args: &[String]) -> Option<Result<i32, String>> {
             "{}/Library/LaunchAgents/com.chorus.nightly-suites.plist",
             std::env::var("HOME").unwrap_or_default()
         );
-        let slots = werk_test::nightly_run::slots_from_plist(
+        let slots = werk_test::run_record::slots_from_plist(
             &std::fs::read_to_string(&plist).unwrap_or_default(),
         );
         let rows = last_run_rows(&body);
@@ -771,10 +764,10 @@ pub fn run_mode(args: &[String]) -> Option<Result<i32, String>> {
             let reds = rows.iter().filter(|l| l.contains("|fail|")).count();
             let summary = format!("{} red", reds);
             let reason = launchd_exit_reason();
-            if let Some(line) = werk_test::nightly_run::unmeasured_since_slot(
+            if let Some(line) = werk_test::run_record::unmeasured_since_slot(
                 &now_stamp(),
                 &slots,
-                werk_test::nightly_run::last_complete_stamp(&body).as_deref(),
+                werk_test::run_record::last_complete_stamp(&body).as_deref(),
                 &summary,
                 reason.as_deref(),
             ) {
@@ -788,67 +781,48 @@ pub fn run_mode(args: &[String]) -> Option<Result<i32, String>> {
         }
         return Some(Ok(0));
     }
-    if args.iter().any(|a| a == "--load-gate") {
+    if first == Some("load-gate") {
         let (ok, line) = load_gate();
         println!("{}", line);
         return Some(Ok(if ok { 0 } else { 1 }));
     }
     // `--classify <verdict> <summary>`: the row-level fold, for the wrapper's
     // tests (#3753 AC2) — timeouts fold to unmeasurable only under load.
-    if let Some(i) = args.iter().position(|a| a == "--classify") {
-        let verdict = args.get(i + 1).cloned().unwrap_or_default();
-        let summary = args.get(i + 2).cloned().unwrap_or_default();
+    if first == Some("classify") {
+        let verdict = args.get(1).cloned().unwrap_or_default();
+        let summary = args.get(2).cloned().unwrap_or_default();
         let (ok, _) = load_gate();
-        let (v, _) = werk_test::nightly_run::classify_verdict(&verdict, &summary, !ok);
+        let (v, _) = werk_test::run_record::classify_verdict(&verdict, &summary, !ok);
         println!("{}", v);
-        return Some(Ok(0));
-    }
-    if args.iter().any(|a| a == "--lock-probe") {
-        let lockdir = env_or("NIGHTLY_LOCKDIR", &format!("{}/chorus-nightly-suites.lock.d", env_or("TMPDIR", "/tmp").trim_end_matches('/')));
-        match acquire_lock(&lockdir) {
-            Ok(()) => {
-                println!("ACQUIRED");
-                let _ = std::fs::remove_dir_all(&lockdir);
-            }
-            Err(why) => println!("REFUSED {}", why),
-        }
         return Some(Ok(0));
     }
     None
 }
 
-pub fn run_all(args: &[String]) -> Result<i32, String> {
-    if let Some(r) = run_mode(args) {
-        return r;
-    }
-    install_stop_handler();
-    let root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME")).unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into());
-    // #4440 reopen — launchd starts this at cwd `/`: name the tree it tests
-    werk_test::set_repo_root(std::path::Path::new(&root));
-    // #4536 — one trace for the whole run, minted HERE before any lane starts,
-    // so every lane's case events and this run's PipelineRun carry the same id
-    // (10-15: cases said nightly-1792049381065-39455, the PipelineRun said
-    // nightly-1792056711, so /nightly could not find its own cases in Loki).
-    let trace = werk_test::run_trace_id(std::env::var("CHORUS_TRACE_ID").ok().as_deref(), epoch() as u128 * 1000, std::process::id());
-    std::env::set_var("CHORUS_TRACE_ID", &trace);
+
+/// The run's context: where its log, failures and graph rows go, and who it
+/// nudges. #4540: built the same by every nightly step.
+fn build_ctx(root: &str) -> Ctx {
+    let root = root.to_string();
     let home = env_or("CHORUS_HOME", &root);
     let home_dir = env_or("HOME", "/tmp");
     let mut ctx = Ctx {
         app_root: env_or("APP_ROOT", "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"),
-        log: env_or("NIGHTLY_LOG_PATH", &format!("{}/Library/Logs/Chorus/nightly-suites.log", home_dir)),
-        fail_dir: env_or("NIGHTLY_FAIL_DIR", &format!("{}/.chorus/nightly-failures", home_dir)),
-        lockdir: env_or("NIGHTLY_LOCKDIR", &format!("{}/chorus-nightly-suites.lock.d", env_or("TMPDIR", "/tmp").trim_end_matches('/'))),
+        log: env_or("WERK_TEST_LOG_PATH", &format!("{}/Library/Logs/Chorus/nightly-suites.log", home_dir)),
+        fail_dir: env_or("WERK_TEST_FAIL_DIR", &format!("{}/.chorus/nightly-failures", home_dir)),
+        lockdir: env_or("WERK_TEST_LOCKDIR", &format!("{}/chorus-nightly-suites.lock.d", env_or("TMPDIR", "/tmp").trim_end_matches('/'))),
         role: env_or("DEPLOY_ROLE", &env_or("CHORUS_ROLE", "system")),
-        run_id: env_or("NIGHTLY_RUN_ID", &format!("nr-{}-{}", epoch(), std::process::id())),
+        run_id: env_or("WERK_TEST_RUN_ID", &format!("nr-{}-{}", epoch(), std::process::id())),
         owlapi: env_or("OWLAPI", "http://localhost:3360"),
-        api: env_or("NIGHTLY_API", "http://localhost:3340"),
+        api: env_or("WERK_TEST_API", "http://localhost:3340"),
         ops_nudge: env_or("OPS_NUDGE", &format!("{}/platform/scripts/ops-nudge", root)),
-        no_nudge: std::env::var("NIGHTLY_NO_NUDGE").map(|v| v == "1").unwrap_or(false),
+        no_nudge: std::env::var("WERK_TEST_NO_NUDGE").map(|v| v == "1").unwrap_or(false),
         owners: HashMap::new(),
+        tee_log: false,
         graph: GraphRows {
-            enabled: werk_test::nightly_run::graph_rows_enabled(
+            enabled: werk_test::run_record::graph_rows_enabled(
                 &root,
-                std::env::var("NIGHTLY_GRAPH_ROWS").ok().as_deref(),
+                std::env::var("WERK_TEST_GRAPH_ROWS").ok().as_deref(),
             ),
             ..Default::default()
         },
@@ -857,201 +831,13 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
     };
     // #3722 — a werk-rooted run never writes the team's log or nudges the team
     if ctx.root.contains("/chorus-werk/") {
-        if std::env::var("NIGHTLY_LOG_PATH").map(|v| v.is_empty()).unwrap_or(true) {
+        if std::env::var("WERK_TEST_LOG_PATH").map(|v| v.is_empty()).unwrap_or(true) {
             ctx.log = format!("/tmp/nightly-{}.log", Path::new(&ctx.root).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
         }
         ctx.no_nudge = true;
         eprintln!("nightly: WERK RUN — isolated to {}, team nudge suppressed, graph rows {} (#3722)", ctx.log, if ctx.graph.enabled { "to the named store" } else { "off" });
     }
-    // #4156 — one-time: the runs that ran before the runner wrote its rows
-    if let Some(i) = args.iter().position(|a| a == "--backfill-graph") {
-        let n = args.get(i + 1).and_then(|v| v.parse::<usize>().ok()).unwrap_or(14);
-        return Ok(backfill_graph(&ctx, n));
-    }
-    if let Err(why) = acquire_lock(&ctx.lockdir) {
-        eprintln!("nightly-suites: REFUSED — {} — one run at a time (single-flight, #3597/#4008), lock {}", why, ctx.lockdir);
-        ctx.nudge("silas", &format!("nightly-suites: scheduled run SKIPPED — {} (#4037/#4008). The run did not happen; check the straggler.", why));
-        return Ok(0);
-    }
-    let result = run_locked(&mut ctx, args);
-    let _ = std::fs::remove_dir_all(&ctx.lockdir);
-    result
-}
-
-fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
-    // #3753 — a loaded box defers, then declares the night unmeasurable
-    let defer_max: u64 = env_or("NIGHTLY_LOAD_DEFER_SECS", "900").parse().unwrap_or(900);
-    let recheck: u64 = env_or("NIGHTLY_LOAD_RECHECK_SECS", "60").parse().unwrap_or(60);
-    let (mut ok, mut lg) = load_gate();
-    let mut deferred = 0u64;
-    while !ok && deferred < defer_max {
-        eprintln!("nightly: box loaded ({}) — deferring {}s ({}/{}s used, #3753)", lg, recheck, deferred, defer_max);
-        std::thread::sleep(Duration::from_secs(recheck));
-        deferred += recheck;
-        let g = load_gate();
-        ok = g.0;
-        lg = g.1;
-    }
-    if !ok {
-        ctx.append_log(&format!("RUN|unmeasurable|{}|{}|deferred={}s", now_stamp(), lg, deferred));
-        ctx.spine("nightly.run.unmeasurable", &[("deferred_s".into(), deferred.to_string()), ("reason".into(), "load".into())]);
-        ctx.spine("nightly.run.summary", &[("suites".into(), "0".into()), ("failed".into(), "0".into()), ("unmeasurable".into(), "all".into()), ("zero_red".into(), "unmeasurable".into())]);
-        eprintln!("nightly: UNMEASURABLE — {} after {}s defer; zero-red bar NOT measured tonight (#3753)", lg, deferred);
-        return Ok(0);
-    }
-    let t0 = Instant::now();
-    // #4271 — the run's id, minted ONCE. The log brackets the run with it and
-    // the graph's PipelineRun is named from it, so the two rows join. It used
-    // to be re-read at emit time, i.e. when the run FINISHED.
-    let started_at = now_stamp();
-    *ctx.graph.run_ts.borrow_mut() = started_at.clone();
-    if !ctx.append_log(&format!("RUN|start|{}|pid={}", started_at, std::process::id())) {
-        eprintln!("nightly: WARNING — cannot append to {}; this run's results reach NOBODY", ctx.log);
-    }
-    let (owners, registered) = read_registry(ctx);
-    ctx.owners = owners;
-    let mut rows: Vec<SuiteRow> = Vec::new();
-    let push = |ctx: &Ctx, r: SuiteRow, rows: &mut Vec<SuiteRow>| {
-        ctx.record_row(&r);
-        rows.push(r);
-    };
-    // #4278 — sample every com.chorus.* agent's pid at the start; the same
-    // sample at the end tells whether one died under the run. On 2026-09-23
-    // launchd SIGTERMed chorus-hooks twice inside the nightly (10:01, 10:09)
-    // and 424 unit suites said pass.
-    let daemons_at_start = sample_daemons();
-    let run_clock = Instant::now();
-    if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
-        // #4290 — first, because it is the prerequisite for everything that
-        // reads the graph: is the graph what git is, on every crawler domain?
-        // #4253 — every leg row carries the time its leg took (the runner's
-        // units are timed by their own SUITETIME lines)
-        let t = Instant::now();
-        push(ctx, timed(leg_crawler_validate(ctx), t), &mut rows);
-        // #4160 — Jeff's order (2026-09-12): coverage, then lint (eslint is
-        // lint), then smoke; the runner then runs security → … → perf.
-        for r in leg_coverage(ctx) {
-            push(ctx, r, &mut rows);
-        }
-        let t = Instant::now();
-        if let Some(r) = leg_lint(ctx) {
-            push(ctx, timed(r, t), &mut rows);
-        }
-        let t = Instant::now();
-        if let Some(r) = leg_app_eslint(ctx) {
-            push(ctx, timed(r, t), &mut rows);
-        }
-        let t = Instant::now();
-        if let Some(r) = leg_smoke(ctx) {
-            push(ctx, timed(r, t), &mut rows);
-        }
-    }
-    let (over, _) = load_gate();
-    let lane = run_runner(ctx, !over);
-    if stop_requested() {
-        let sig = STOP_SIGNAL.load(Ordering::SeqCst);
-        let stopped_at = now_stamp();
-        ctx.append_log(&format!("RUN|stopped|{}|signal={} pid={}", stopped_at, if sig == 2 { "INT" } else { "TERM" }, std::process::id()));
-        // #4156 — the graph says the run was stopped, so the page does too
-        rows.extend(lane.rows.iter().cloned());
-        let rec = werk_test::nightly_run::RunRecord {
-            run_ts: started_at.clone(), completed_at: stopped_at, outcome: Some("stopped".into()), tally: None, errors: None,
-        };
-        emit_pipeline_run(ctx, &rows, t0.elapsed().as_millis(), &started_at, None, &rec);
-        let _ = std::fs::remove_dir_all(&ctx.lockdir);
-        std::process::exit(if sig == 2 { 130 } else { 143 });
-    }
-    rows.extend(lane.rows.iter().cloned());
-    // #4278 — the production lanes: browser flows against the live surfaces,
-    // the bdd features, and two perf lines (agents steady? run within budget?).
-    // Jeff, 2026-09-23: "issues like this illustrate why i want api and ui runs
-    // and bdd and perf too in our nightly runs." Each lane reports UNMEASURED
-    // when it could not measure, never pass.
-    // #4277 — under the hermetic seam (NIGHTLY_LEGS_NOOP) these lanes stay
-    // off like the others: a fixture run must not launch Playwright, cucumber
-    // or launchctl, and 4145's row count reads the runner's rows alone.
-    if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
-        // #4160 — the ui lane runs INSIDE the runner now, in its type's
-        // stage (after e2e, before perf), so its row arrives with the runner's.
-        // #4292 — bdd is no longer one summary row here: each feature runs
-        // in the runner's file-suite lane and stores one result per scenario.
-        let t = Instant::now();
-        push(ctx, timed(leg_daemons(ctx, &daemons_at_start, &sample_daemons()), t), &mut rows);
-        let t = Instant::now();
-        push(ctx, timed(leg_duration(run_clock.elapsed().as_secs(), lane.gate_holds), t), &mut rows);
-    }
-    // #4247 — the census from the run's own record, in one unit, before the
-    // completion line so a reader sees the tally with the run it belongs to.
-    let tally = report_no_result(ctx, &registered, &lane.cases);
-    // #4155 — errors and exceptions as counts from the run's own reason lines
-    let error_counts = werk_test::why::error_counts(&lane.whys);
-    let errors = error_counts.line();
-    ctx.append_log(&format!("RUN|errors|{}", errors));
-    let completed_at = now_stamp();
-    ctx.append_log(&format!("RUN|complete|{}|suites={}", completed_at, rows.len()));
-    // #4144 AC5 — the lane's whole output stays with its run; two weeks of runs kept
-    let run_dir = werk_test::nightly_run::run_fail_dir(&ctx.fail_dir, &ctx.run_id);
-    let _ = std::fs::create_dir_all(&run_dir);
-    let _ = std::fs::copy(format!("{}/_lane-output.log", ctx.fail_dir), format!("{}/_lane-output.log", run_dir));
-    let pruned = werk_test::nightly_run::prune_run_dirs(&ctx.fail_dir, 14);
-    eprintln!("nightly: failure text kept in {} ({} older run folder(s) pruned, #4144)", run_dir, pruned);
-    if ctx.graph.enabled {
-        eprintln!("nightly: graph suite rows — {} written, {} failed (#4156)", ctx.graph.written.get(), ctx.graph.failed.get());
-        ctx.spine("nightly.graph.rows", &[("written".into(), ctx.graph.written.get().to_string()), ("failed".into(), ctx.graph.failed.get().to_string())]);
-    }
-    let rec = werk_test::nightly_run::RunRecord {
-        run_ts: started_at.clone(), completed_at, outcome: None, tally, errors: Some(error_counts),
-    };
-    // the tail: summary, record, per-row events, nudges, readout
-    ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
-    emit_pipeline_run(
-        ctx,
-        &rows,
-        t0.elapsed().as_millis(),
-        &started_at,
-        werk_test::nightly_run::run_test_counts(&lane.cases, lane.stored),
-        &rec,
-    );
-    mark_unseen_unmeasured(ctx);
-    for r in &rows {
-        let reason = if r.status == "fail" {
-            let p = format!("{}/{}", ctx.fail_dir, fail_log_name(&r.kind, &r.path));
-            std::fs::read_to_string(&p).ok().and_then(|t| {
-                t.lines()
-                    .find(|l| l.starts_with("!! ") && (l.contains("FAILED:") || l.contains("killed") || l.contains("FAIL LOUD") || l.contains("unavailable")))
-                    .or_else(|| t.lines().rev().find(|l| ["error", "panic", "fail", "assert"].iter().any(|k| l.to_ascii_lowercase().contains(k))))
-                    .map(|l| l.replace(['|', '"', '\n'], " ").chars().take(200).collect::<String>())
-            })
-        } else {
-            None
-        };
-        let (fields, contradiction) = suite_result_fields(r, reason.as_deref());
-        if contradiction {
-            ctx.spine("nightly.reporter.contradiction", &[("suite".into(), r.suite_name().into()), ("kind".into(), r.kind.clone())]);
-        }
-        ctx.spine("test.suite.result", &fields);
-    }
-    if !ctx.no_nudge {
-        let sec_owner = env_or("NIGHTLY_SECURITY_OWNER", "silas");
-        // #4180 — the crawler's last scheduled pass rides the TOTAL line, so a
-        // nightly that never fired or fired red is seen where the reds are.
-        let crawl_log = env_or("CRAWL_NIGHTLY_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
-        let crawl_text = std::fs::read_to_string(&crawl_log).ok();
-        let crawl = crawl_line(crawl_text.as_deref());
-        let msgs = notify_messages(&rows, &sec_owner, &crawl);
-        let last_kade = msgs.iter().rposition(|(to, _)| to == "kade");
-        for (i, (to, msg)) in msgs.iter().enumerate() {
-            // #4155 — the summary nudge carries the run's error counts
-            if Some(i) == last_kade {
-                ctx.nudge(to, &format!("{} — {}", msg, errors));
-            } else {
-                ctx.nudge(to, msg);
-            }
-        }
-        deliver_readout(ctx);
-    }
-    let _ = lane.rc;
-    Ok(0)
+    ctx
 }
 
 /// #4536 (Silas 08:32–08:33) — a Test the nightly never ran is unmeasured
@@ -1076,71 +862,24 @@ fn emit_pipeline_run(
     rows: &[SuiteRow],
     duration_ms: u128,
     started_at: &str,
-    tests: Option<werk_test::nightly_run::RunTestCounts>,
-    rec: &werk_test::nightly_run::RunRecord,
+    tests: Option<werk_test::run_record::RunTestCounts>,
+    rec: &werk_test::run_record::RunRecord,
 ) {
     // #4156 — a werk-rooted run writes no prod run record either (#3722)
     if !ctx.graph.enabled {
         eprintln!("nightly: pipeline-run emit SKIPPED — graph rows off for this run");
         return;
     }
-    let name = werk_test::nightly_run::pipeline_run_name(started_at);
+    let name = werk_test::run_record::pipeline_run_name(started_at);
     let trace = env_or("CHORUS_TRACE_ID", &format!("nightly-{}", epoch()));
-    let body = werk_test::nightly_run::pipeline_run_record_body(rows, &name, &trace, duration_ms, tests, rec);
+    let body = werk_test::run_record::pipeline_run_record_body(rows, &name, &trace, duration_ms, tests, rec);
     let failed = rows.iter().filter(|r| r.status == "fail").count();
     let token = std::cell::RefCell::new(None);
-    if ctx.post_graph("pipelineruns", &env_or("NIGHTLY_PIPELINE_ROLE", "wren"), &body, &token) {
+    if ctx.post_graph("pipelineruns", &env_or("WERK_TEST_PIPELINE_ROLE", "wren"), &body, &token) {
         eprintln!("nightly: pipeline-run recorded ({}, {} suites, {} failed)", if failed == 0 { "green" } else { "red" }, rows.len(), failed);
     } else {
         eprintln!("nightly: pipeline-run emit REFUSED or no token");
     }
-}
-
-/// #4156 — write the last `n` logged runs to the graph the way the runner now
-/// writes a run: a TestSuiteRun per SUITE row, and the run record on its
-/// PipelineRun (replaced, since the old emit wrote one without the tail).
-/// Re-runnable: a row already there answers 409 and is left alone.
-fn backfill_graph(ctx: &Ctx, n: usize) -> i32 {
-    if !ctx.graph.enabled {
-        eprintln!("backfill: REFUSED — graph rows are off for this root (a werk writes no prod rows, #3722)");
-        return 1;
-    }
-    let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
-    let runs = werk_test::nightly_run::logged_runs(&log, n);
-    let suite_role = env_or("WERK_NIGHTLY_MINT_ROLE", "nightly");
-    let run_role = env_or("NIGHTLY_PIPELINE_ROLE", "wren");
-    let (suite_tok, run_tok) = (std::cell::RefCell::new(None), std::cell::RefCell::new(None));
-    let mut failed = 0usize;
-    for run in &runs {
-        let (mut wrote, mut had) = (0usize, 0usize);
-        for (i, row) in run.rows.iter().enumerate() {
-            let body = werk_test::nightly_run::suite_row_payload(&run.record.run_ts, i + 1, row, 0);
-            match ctx.send_graph("POST", "testsuiteruns", &suite_role, &body, &suite_tok).as_str() {
-                c if c.starts_with('2') => wrote += 1,
-                "409" => had += 1,
-                _ => failed += 1,
-            }
-        }
-        let mut record = String::from("no record (the run never ended)");
-        if run.ended {
-            let name = werk_test::nightly_run::pipeline_run_name(&run.record.run_ts);
-            let secs = werk_test::nightly_run::stamp_gap_secs(&run.record.run_ts, &run.record.completed_at);
-            let tests = run.record.tally.map(|t| werk_test::nightly_run::RunTestCounts { run: t.ran, failed: t.failed, stored: t.ran });
-            let body = werk_test::nightly_run::pipeline_run_record_body(&run.rows, &name, &format!("backfill-{}", name), secs as u128 * 1000, tests, &run.record);
-            let put = ctx.send_graph("PUT", &format!("pipelineruns/{}", name.to_ascii_lowercase()), &run_role, &body, &run_tok);
-            record = if put.starts_with('2') {
-                "record replaced".into()
-            } else if ctx.post_graph("pipelineruns", &run_role, &body, &run_tok) {
-                "record written".into()
-            } else {
-                failed += 1;
-                format!("record REFUSED (PUT {})", put)
-            };
-        }
-        println!("backfill {} — {} suite rows written, {} already there, {}", run.record.run_ts, wrote, had, record);
-    }
-    println!("backfill: {} run(s), {} write(s) failed", runs.len(), failed);
-    if failed == 0 { 0 } else { 1 }
 }
 
 fn deliver_readout(ctx: &Ctx) {
@@ -1243,10 +982,10 @@ pub fn duration_verdict(secs: u64, budget_secs: u64) -> (&'static str, String) {
 }
 
 fn sample_daemons() -> std::collections::BTreeMap<String, Option<u32>> {
-    let cmd = env_or("NIGHTLY_LAUNCHCTL", "launchctl list");
+    let cmd = env_or("WERK_TEST_LAUNCHCTL", "launchctl list");
     let out = Command::new("bash").arg("-c").arg(&cmd).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    let agents = env_or("NIGHTLY_AGENT_DIR", &format!("{}/Library/LaunchAgents", env_or("HOME", "/tmp")));
+    let agents = env_or("WERK_TEST_AGENT_DIR", &format!("{}/Library/LaunchAgents", env_or("HOME", "/tmp")));
     let mut m = parse_launchctl(&out);
     m.retain(|label, _| {
         std::fs::read_to_string(format!("{agents}/{label}.plist"))
@@ -1294,7 +1033,7 @@ fn leg_daemons(
 /// on any gap, UNMEASURED when a domain could not be read or no lines came.
 fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     let bin = env_or(
-        "NIGHTLY_CRAWL_BIN",
+        "WERK_TEST_CRAWL_BIN",
         &format!("{}/.chorus/bin/chorus-crawl", env_or("HOME", "/tmp")),
     );
     let path = "chorus-crawl --validate";
@@ -1317,14 +1056,14 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     c.args(crawler_args(ctx.graph.enabled))
         .envs(crawler_env(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
-        .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
+        .env("CHORUS_ROLE", env_or("WERK_TEST_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
     let (rc, out) = run_capped(c, Duration::from_secs(1200));
     // #4185 — this is now the ONE full pass (the 04:30 job is retired), so its
     // output joins the crawler's own log: crawler-stale and the nightly's
     // TOTAL line read that file. Only a run that may write prod writes it.
     if ctx.graph.enabled {
-        let log = env_or("CRAWL_NIGHTLY_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+        let log = env_or("CRAWL_WERK_TEST_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
             use std::io::Write;
             let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n{out}");
@@ -1443,7 +1182,7 @@ fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
     // #4277 — the budget is a regression guard, so it sits above the measured
     // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
     // (4033s, 4252s) and the first budget (3600s) went red on a normal night.
-    let budget: u64 = env_or("NIGHTLY_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
+    let budget: u64 = env_or("WERK_TEST_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
     let (status, summary) = duration_verdict_with_load(secs, budget, holds);
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
 }
@@ -1624,7 +1363,7 @@ mod lanes_4278 {
             log: format!("{}/nightly.log", root), fail_dir: format!("{}/fails", root),
             lockdir: format!("{}/lock.d", root), role: "kade".into(), run_id: "test".into(),
             owlapi: "http://localhost:1".into(), api: "http://localhost:1".into(),
-            ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(),
+            ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(), tee_log: false,
             graph: GraphRows::default(),
         }
     }
@@ -1641,8 +1380,8 @@ mod lanes_4278 {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         let log = dir.join("crawl-nightly.log");
-        std::env::set_var("NIGHTLY_CRAWL_BIN", &bin);
-        std::env::set_var("CRAWL_NIGHTLY_LOG", &log);
+        std::env::set_var("WERK_TEST_CRAWL_BIN", &bin);
+        std::env::set_var("CRAWL_WERK_TEST_LOG", &log);
         let root = dir.to_str().unwrap();
         let werk = ctx_for(root);
         leg_crawler_validate(&werk);
@@ -1652,8 +1391,8 @@ mod lanes_4278 {
         leg_crawler_validate(&prod);
         let text = std::fs::read_to_string(&log).unwrap();
         assert!(text.contains("chorus-crawl: full (stub)") && text.contains("03:00 nightly"), "{text}");
-        std::env::remove_var("NIGHTLY_CRAWL_BIN");
-        std::env::remove_var("CRAWL_NIGHTLY_LOG");
+        std::env::remove_var("WERK_TEST_CRAWL_BIN");
+        std::env::remove_var("CRAWL_WERK_TEST_LOG");
     }
 
     // #4007 — the run names the suite in flight. A runner that dies with one
@@ -1669,11 +1408,11 @@ mod lanes_4278 {
             werk_test::UNIT_MARKS_ENV)).unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-        std::env::set_var("NIGHTLY_RUNNER_CMD", &stub);
+        std::env::set_var("WERK_TEST_RUNNER_CMD", &stub);
         let root = dir.to_str().unwrap();
         let ctx = ctx_for(root);
-        let _ = run_runner(&ctx, false);
-        std::env::remove_var("NIGHTLY_RUNNER_CMD");
+        let _ = run_runner(&ctx, false, None);
+        std::env::remove_var("WERK_TEST_RUNNER_CMD");
         let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
         assert!(log.contains("SUITESTART|a.bats|1000") && log.contains("SUITEEND|a.bats|2000"), "{log}");
         assert!(log.contains("SUITESTART|b.bats|3000"), "the unit in flight is named: {log}");
@@ -1683,7 +1422,7 @@ mod lanes_4278 {
 
     #[test]
     fn unit_marks_parse_and_other_unit_lines_do_not() {
-        use werk_test::nightly_run::{live_row_name, live_row_payload, parse_unit_mark};
+        use werk_test::run_record::{live_row_name, live_row_payload, parse_unit_mark};
         assert_eq!(parse_unit_mark("nightly-unit-start|platform/tests/x.bats|1700"), Some(("start", "platform/tests/x.bats".into(), 1700)));
         assert_eq!(parse_unit_mark("nightly-unit-end|werk-test#units|9"), Some(("end", "werk-test#units".into(), 9)));
         // NEGATIVE PROOF: the time line and the result line are not marks
@@ -1722,4 +1461,303 @@ mod leg_times_4253 {
         row.millis = Some(531_000);
         assert_eq!(timed(row, Instant::now()).millis, Some(531_000));
     }
+}
+
+// ───────────────────────── #4540 — the nightly as steps ─────────────────────────
+//
+// The 03:00 run is the same steps a card runs, with scope = all (Jeff 10-15:
+// "card runs and the nightly run the same steps; only the scope differs").
+// dagu runs them: scope, prepare, run (the one queue, every type but perf, in
+// Jeff's order), run --test-type=perf (alone, a quiet box), report, verdict,
+// and notify on exit. What one step hands the next is in the run folder,
+// keyed on the trace (CHORUS_TRACE_ID = the dag run id).
+
+fn runs_folder() -> Result<werk_test::run_dir::RunDir, String> {
+    let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    let base = std::env::var("WERK_TEST_RUNS").map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| Path::new(&env_or("HOME", "/tmp")).join(".chorus/werk-test-runs"));
+    werk_test::run_dir::RunDir::create(werk_test::run_dir::folder_for(&base, &trace)?)
+}
+
+fn rows_lines(rows: &[SuiteRow]) -> Vec<String> {
+    rows.iter().map(|r| format!("{}\t{}", r.millis.map(|m| m.to_string()).unwrap_or_default(), r.line())).collect()
+}
+
+fn suite_rows_of(lines: &[String]) -> Vec<SuiteRow> {
+    lines.iter().filter_map(|l| {
+        let (ms, line) = l.split_once('\t')?;
+        let mut r = werk_test::run_record::parse_suite_line(line)?;
+        r.millis = ms.parse().ok();
+        Some(r)
+    }).collect()
+}
+
+fn cases_lines(c: &[(String, String, String, String)]) -> Vec<String> {
+    use werk_test::run_dir::field;
+    c.iter().map(|(a, b, r, g)| format!("{}\t{}\t{}\t{}", field(a), field(b), field(r), field(g))).collect()
+}
+
+fn cases_of(lines: &[String]) -> Vec<(String, String, String, String)> {
+    lines.iter().filter_map(|l| {
+        let mut it = l.splitn(4, '\t');
+        Some((it.next()?.into(), it.next()?.into(), it.next()?.into(), it.next().unwrap_or("").into()))
+    }).collect()
+}
+
+/// The context for a step: the run's log and graph rows pick up where the
+/// last step left them (its start stamp and the graph row count).
+fn step_ctx(d: &werk_test::run_dir::RunDir) -> Ctx {
+    let root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME"))
+        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into());
+    werk_test::set_repo_root(Path::new(&root));
+    let mut ctx = build_ctx(&root);
+    ctx.tee_log = true;
+    if let Some(ts) = d.get("run-ts").and_then(|l| l.first().cloned()) {
+        *ctx.graph.run_ts.borrow_mut() = ts;
+    }
+    if let Some(n) = d.get("graph-order").and_then(|l| l.first().and_then(|v| v.parse().ok())) {
+        ctx.graph.order.set(n);
+    }
+    ctx.owners = werk_test::run_dir::pairs_of(&d.get("owners").unwrap_or_default()).into_iter().collect();
+    ctx
+}
+
+fn keep_order(ctx: &Ctx, d: &werk_test::run_dir::RunDir) -> Result<(), String> {
+    d.put("graph-order", &[ctx.graph.order.get().to_string()])
+}
+
+fn first_of(d: &werk_test::run_dir::RunDir, name: &str) -> Option<String> {
+    d.get(name).and_then(|l| l.first().cloned()).filter(|v| !v.is_empty())
+}
+
+/// One nightly step (scope = all).
+pub fn step_all(
+    step: &str,
+    args: &[String],
+    all_args: &[String],
+    pin: &dyn Fn(&werk_test::run_dir::RunDir, Option<&str>, &[String]) -> Result<Option<i32>, String>,
+) -> Result<i32, String> {
+    let d = runs_folder()?;
+    // #4540 — one run, one binary (scope pins it; later steps run the copy)
+    if let Some(code) = pin(&d, Some(step), all_args)? {
+        return Ok(code);
+    }
+    let ctx = step_ctx(&d);
+    match step {
+        "scope" => {
+            let started_at = now_stamp();
+            if !ctx.append_log(&format!("RUN|start|{}|pid={}", started_at, std::process::id())) {
+                eprintln!("nightly: WARNING — cannot append to {}; this run's results reach NOBODY", ctx.log);
+            }
+            let (owners, registered) = read_registry(&ctx);
+            d.put("run-ts", &[started_at])?;
+            d.put("owners", &werk_test::run_dir::pair_lines(owners.iter()))?;
+            d.put("registered", &werk_test::run_dir::pair_lines(registered.iter().map(|(a, b)| (a, b))))?;
+            // #4278 — every com.chorus.* agent's pid at the start; perf compares the end
+            let daemons = sample_daemons();
+            d.put("daemons", &daemons.iter().map(|(k, v)| format!("{}\t{}", k, v.map(|p| p.to_string()).unwrap_or_default())).collect::<Vec<_>>())?;
+            d.put("clock", &[epoch().to_string()])?;
+            crate::note_type_order(&d)?;
+            keep_order(&ctx, &d)?;
+            Ok(0)
+        }
+        "prepare" => {
+            // #3753 — a loaded box defers, then declares the night unmeasurable
+            let defer_max: u64 = env_or("WERK_TEST_LOAD_DEFER_SECS", "900").parse().unwrap_or(900);
+            let recheck: u64 = env_or("WERK_TEST_LOAD_RECHECK_SECS", "60").parse().unwrap_or(60);
+            let (mut ok, mut lg) = load_gate();
+            let mut deferred = 0u64;
+            while !ok && deferred < defer_max {
+                eprintln!("nightly: box loaded ({}) — deferring {}s ({}/{}s used, #3753)", lg, recheck, deferred, defer_max);
+                std::thread::sleep(Duration::from_secs(recheck));
+                deferred += recheck;
+                let g = load_gate();
+                ok = g.0;
+                lg = g.1;
+            }
+            if !ok {
+                ctx.append_log(&format!("RUN|unmeasurable|{}|{}|deferred={}s", now_stamp(), lg, deferred));
+                ctx.spine("nightly.run.unmeasurable", &[("deferred_s".into(), deferred.to_string()), ("reason".into(), "load".into())]);
+                d.put("unmeasurable", &[format!("{} after {}s", lg, deferred)])?;
+                eprintln!("nightly: UNMEASURABLE — {} after {}s defer; zero-red bar NOT measured tonight (#3753)", lg, deferred);
+            }
+            Ok(0)
+        }
+        "run" => {
+            if d.get("unmeasurable").is_some() {
+                eprintln!("nightly: the box never got quiet — nothing runs (#3753)");
+                return Ok(0);
+            }
+            let perf = args.iter().any(|a| a == "--test-type=perf");
+            let side = if perf { "perf" } else { "queue" };
+            let mut rows: Vec<SuiteRow> = Vec::new();
+            let push = |ctx: &Ctx, r: SuiteRow, rows: &mut Vec<SuiteRow>| {
+                ctx.record_row(&r);
+                rows.push(r);
+            };
+            let legs = std::env::var("WERK_TEST_LEGS_NOOP").is_err();
+            if !perf && legs {
+                // #4290 — first: is the graph what git is, on every crawler domain?
+                // A red here is a suite row; the tests still run (Silas 10-16).
+                let t = Instant::now();
+                push(&ctx, timed(leg_crawler_validate(&ctx), t), &mut rows);
+                // #4160 — Jeff's order: coverage, then lint, then smoke; the queue runs the rest
+                for r in leg_coverage(&ctx) {
+                    push(&ctx, r, &mut rows);
+                }
+                for leg in [leg_lint as fn(&Ctx) -> Option<SuiteRow>, leg_app_eslint, leg_smoke] {
+                    let t = Instant::now();
+                    if let Some(r) = leg(&ctx) {
+                        push(&ctx, timed(r, t), &mut rows);
+                    }
+                }
+            }
+            // #4540 — the queue starts types in the model's order
+            crate::use_type_order(&d);
+            // a dagu stop (TERM) reaps the lane child; the abort handler writes RUN|stopped
+            install_stop_handler();
+            let (over, _) = load_gate();
+            let lane = run_runner(&ctx, !over, Some(side));
+            if stop_requested() {
+                std::process::exit(if STOP_SIGNAL.load(Ordering::SeqCst) == 2 { 130 } else { 143 });
+            }
+            rows.extend(lane.rows.iter().cloned());
+            if perf && legs {
+                // #4278 — did an agent die under the run; did the run keep its budget
+                let start: std::collections::BTreeMap<String, Option<u32>> = d.get("daemons").unwrap_or_default().iter()
+                    .filter_map(|l| l.split_once('\t')).map(|(k, v)| (k.to_string(), v.parse().ok())).collect();
+                let t = Instant::now();
+                push(&ctx, timed(leg_daemons(&ctx, &start, &sample_daemons()), t), &mut rows);
+                let began: u64 = first_of(&d, "clock").and_then(|v| v.parse().ok()).unwrap_or_else(epoch);
+                let holds = first_of(&d, "holds-queue").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0) + lane.gate_holds;
+                let t = Instant::now();
+                push(&ctx, timed(leg_duration(epoch().saturating_sub(began), holds), t), &mut rows);
+            }
+            d.put(&format!("suites-{}", side), &rows_lines(&rows))?;
+            d.put(&format!("cases-{}", side), &cases_lines(&lane.cases))?;
+            d.put(&format!("whys-{}", side), &cases_lines(&lane.whys))?;
+            d.put(&format!("holds-{}", side), &[lane.gate_holds.to_string()])?;
+            d.put(&format!("stored-{}", side), &[lane.stored.map(|n| n.to_string()).unwrap_or_default()])?;
+            keep_order(&ctx, &d)?;
+            Ok(0)
+        }
+        "report" => step_report_all(&ctx, &d, args.iter().any(|a| a == "--stopped")),
+        "verdict" => {
+            let rows = all_rows(&d);
+            let red = rows.iter().filter(|r| r.status == "fail").count();
+            let unmeasured = rows.iter().filter(|r| r.status == "unmeasured").count();
+            let v = if d.get("unmeasurable").is_some() {
+                werk_test::Verdict::Unmeasured(vec!["the box never got quiet (#3753)".into()])
+            } else if red > 0 {
+                werk_test::Verdict::Red
+            } else if rows.is_empty() {
+                werk_test::Verdict::Unmeasured(vec!["ran nothing".into()])
+            } else if unmeasured > 0 {
+                werk_test::Verdict::Unmeasured(vec![format!("{} suite(s) unmeasured", unmeasured)])
+            } else {
+                werk_test::Verdict::Clean
+            };
+            println!("verdict: {} — {} suites, {} red, {} unmeasured", v.label(), rows.len(), red, unmeasured);
+            Ok(v.exit_code())
+        }
+        "notify" => {
+            if ctx.no_nudge {
+                return Ok(0);
+            }
+            let rows = all_rows(&d);
+            let errors = first_of(&d, "errors").unwrap_or_default();
+            let sec_owner = env_or("WERK_TEST_SECURITY_OWNER", "silas");
+            // #4180 — the crawler's last scheduled pass rides the TOTAL line
+            let crawl_log = env_or("CRAWL_WERK_TEST_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+            let crawl = crawl_line(std::fs::read_to_string(&crawl_log).ok().as_deref());
+            let msgs = notify_messages(&rows, &sec_owner, &crawl);
+            let last_kade = msgs.iter().rposition(|(to, _)| to == "kade");
+            for (i, (to, msg)) in msgs.iter().enumerate() {
+                // #4155 — the summary nudge carries the run's error counts
+                if Some(i) == last_kade && !errors.is_empty() {
+                    ctx.nudge(to, &format!("{} — {}", msg, errors));
+                } else {
+                    ctx.nudge(to, msg);
+                }
+            }
+            deliver_readout(&ctx);
+            Ok(0)
+        }
+        other => Err(format!("unknown step {:?}", other)),
+    }
+}
+
+/// Every suite row the run's steps wrote, the queue's before perf's.
+fn all_rows(d: &werk_test::run_dir::RunDir) -> Vec<SuiteRow> {
+    ["queue", "perf"].iter().flat_map(|s| suite_rows_of(&d.get(&format!("suites-{}", s)).unwrap_or_default())).collect()
+}
+
+/// #4540 report — the run's record: tally, errors, the log's completion line,
+/// the failure text it keeps, the PipelineRun, the Test rows it never ran, and
+/// one event per suite. `--stopped`: the dag was stopped; the record says so.
+fn step_report_all(ctx: &Ctx, d: &werk_test::run_dir::RunDir, stopped: bool) -> Result<i32, String> {
+    let rows = all_rows(d);
+    let started_at = ctx.graph.run_ts.borrow().clone();
+    let began: u64 = first_of(d, "clock").and_then(|v| v.parse().ok()).unwrap_or_else(epoch);
+    let duration_ms = epoch().saturating_sub(began) as u128 * 1000;
+    if stopped {
+        let stopped_at = now_stamp();
+        ctx.append_log(&format!("RUN|stopped|{}|signal=dagu pid={}", stopped_at, std::process::id()));
+        let rec = werk_test::run_record::RunRecord {
+            run_ts: started_at.clone(), completed_at: stopped_at, outcome: Some("stopped".into()), tally: None, errors: None,
+        };
+        emit_pipeline_run(ctx, &rows, duration_ms, &started_at, None, &rec);
+        return Ok(0);
+    }
+    if d.get("unmeasurable").is_some() {
+        ctx.spine("nightly.run.summary", &[("suites".into(), "0".into()), ("failed".into(), "0".into()), ("unmeasurable".into(), "all".into()), ("zero_red".into(), "unmeasurable".into())]);
+        return Ok(0);
+    }
+    let both = |name: &str| -> Vec<(String, String, String, String)> {
+        ["queue", "perf"].iter().flat_map(|s| cases_of(&d.get(&format!("{}-{}", name, s)).unwrap_or_default())).collect()
+    };
+    let cases = both("cases");
+    let whys = both("whys");
+    let stored: Option<usize> = ["queue", "perf"].iter()
+        .filter_map(|s| first_of(d, &format!("stored-{}", s)).and_then(|v| v.parse::<usize>().ok()))
+        .reduce(|a, b| a + b);
+    let registered = werk_test::run_dir::pairs_of(&d.get("registered").unwrap_or_default());
+    // #4247 — the census from the run's own record, before the completion line
+    let tally = report_no_result(ctx, &registered, &cases);
+    // #4155 — errors and exceptions as counts from the run's own reason lines
+    let error_counts = werk_test::why::error_counts(&whys);
+    let errors = error_counts.line();
+    ctx.append_log(&format!("RUN|errors|{}", errors));
+    d.put("errors", &[errors])?;
+    let completed_at = now_stamp();
+    ctx.append_log(&format!("RUN|complete|{}|suites={}", completed_at, rows.len()));
+    // #4144 AC5 — the lane's whole output stays with its run; two weeks kept
+    let run_dir = werk_test::run_record::run_fail_dir(&ctx.fail_dir, &ctx.run_id);
+    let _ = std::fs::create_dir_all(&run_dir);
+    let _ = std::fs::copy(format!("{}/_lane-output.log", ctx.fail_dir), format!("{}/_lane-output.log", run_dir));
+    let pruned = werk_test::run_record::prune_run_dirs(&ctx.fail_dir, 14);
+    eprintln!("nightly: failure text kept in {} ({} older run folder(s) pruned, #4144)", run_dir, pruned);
+    let rec = werk_test::run_record::RunRecord { run_ts: started_at.clone(), completed_at, outcome: None, tally, errors: Some(error_counts) };
+    ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
+    emit_pipeline_run(ctx, &rows, duration_ms, &started_at, werk_test::run_record::run_test_counts(&cases, stored), &rec);
+    mark_unseen_unmeasured(ctx);
+    for r in &rows {
+        let reason = if r.status == "fail" {
+            let p = format!("{}/{}", ctx.fail_dir, fail_log_name(&r.kind, &r.path));
+            std::fs::read_to_string(&p).ok().and_then(|t| {
+                t.lines()
+                    .find(|l| l.starts_with("!! ") && (l.contains("FAILED:") || l.contains("killed") || l.contains("FAIL LOUD") || l.contains("unavailable")))
+                    .or_else(|| t.lines().rev().find(|l| ["error", "panic", "fail", "assert"].iter().any(|k| l.to_ascii_lowercase().contains(k))))
+                    .map(|l| l.replace(['|', '"', '\n'], " ").chars().take(200).collect::<String>())
+            })
+        } else {
+            None
+        };
+        let (fields, contradiction) = suite_result_fields(r, reason.as_deref());
+        if contradiction {
+            ctx.spine("nightly.reporter.contradiction", &[("suite".into(), r.suite_name().into()), ("kind".into(), r.kind.clone())]);
+        }
+        ctx.spine("test.suite.result", &fields);
+    }
+    Ok(0)
 }
