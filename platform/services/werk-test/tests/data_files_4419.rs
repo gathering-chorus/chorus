@@ -5,7 +5,7 @@
 use werk_test::{data_file_keys, exercisers_of, is_data_file, TestRow};
 
 fn row(p: &str) -> TestRow {
-    TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+    TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() }
 }
 fn crate_of(f: &str) -> Option<String> {
     f.strip_prefix("platform/services/").and_then(|r| r.split('/').next()).map(|c| format!("platform/services/{c}"))

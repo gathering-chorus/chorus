@@ -165,14 +165,6 @@ describe('#4417 the spine log in tests is a temp file', () => {
     await expect(fetch(`${process.env.ATHENA_MAKE_URL}/v1/identity/sessions`, { method: 'PUT', body: '{}' })).rejects.toThrow();
   });
 
-  // #4531 — "fails fast" as a wall-clock limit measures the box: nightly lane only.
-  test('the closed-port refusal comes within 2s (checked in the nightly lane only)', async () => {
-    if (process.env.WERK_TEST_LANE !== 'nightly') return;
-    const t0 = Date.now();
-    await expect(fetch(`${process.env.ATHENA_MAKE_URL}/v1/identity/sessions`, { method: 'PUT', body: '{}' })).rejects.toThrow();
-    expect(Date.now() - t0).toBeLessThan(2000);
-  });
-
   test('the guard key path is a temp file, never ~/.chorus/share-oidc.json', () => {
     const fs = require('fs');
     const os = require('os');

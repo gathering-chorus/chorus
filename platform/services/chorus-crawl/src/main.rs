@@ -977,6 +977,8 @@ struct Parsed {
     tags: domain::TagCounts,
     /// one line per conflicted or unplaced file
     tag_lines: Vec<String>,
+    /// #4539 — `file: word` for each `@needs:` header with an unknown word
+    needs_unknown: Vec<String>,
 }
 
 /// The authored unit → domain rows, relative to the tree root (#4084).
@@ -1011,6 +1013,7 @@ fn parse_cases(
         complete: true,
         tags: domain::TagCounts::default(),
         tag_lines: Vec::new(),
+        needs_unknown: Vec::new(),
     };
     for path in test_files {
         if !registers_cases(path) {
@@ -1034,6 +1037,9 @@ fn parse_cases(
             continue;
         }
         let fc = cases::file_class(path, &content);
+        if let Some(w) = &fc.needs_unknown {
+            p.needs_unknown.push(format!("{path}: {w}"));
+        }
         if fc.declared {
             p.declared += 1
         } else {
@@ -1075,6 +1081,7 @@ fn parse_cases(
                 hermeticity: fc.hermeticity.to_string(),
                 concern: fc.concern.map(|c| c.to_string()),
                 in_file: in_file.clone(),
+                needs: fc.needs.unwrap_or_default().to_string(),
             });
         }
     }
@@ -2780,6 +2787,13 @@ fn main() {
     for l in &parsed.tag_lines {
         println!("chorus-crawl: {l}");
     }
+    if !parsed.needs_unknown.is_empty() {
+        println!(
+            "chorus-crawl: unknown @needs: {} — these tests stay in card runs until the word is machine or nightly: {}",
+            parsed.needs_unknown.len(),
+            parsed.needs_unknown.join("; ")
+        );
+    }
     println!(
         "chorus-crawl: logs posted={} replaced={} unchanged={} deleted={} · log files={} rows={}{}",
         lc.posted, lc.replaced, lc.unchanged, lc.deleted, log_files.len(), log_graph.len(),
@@ -3204,13 +3218,8 @@ fn main() {
                         .get(name.as_str())
                         .map(|g| g.fields.as_slice())
                         .unwrap_or(&[]);
-                    let mut fields = merge_row(existing, &row.owned_fields());
-                    // #4162 — the retired fields never survive a rewrite (the migration)
-                    fields.retain(|(k, _)| !cases::RETIRED_TEST_FIELDS.contains(&k.as_str()));
-                    // #4201 — an untagged file must not keep a folder-era covers
-                    if row.covers.is_empty() {
-                        fields.retain(|(k, _)| k != "covers");
-                    }
+                    // #4162 retired fields, #4201 untagged covers, #4539 a removed @needs:
+                    let mut fields = row.replace_fields(merge_row(existing, &row.owned_fields()));
                     prefixes.apply(&mut fields);
                     puts.push(PendingPut {
                         kind: "case",

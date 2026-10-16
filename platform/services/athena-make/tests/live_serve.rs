@@ -1,5 +1,6 @@
 // @test-type: integration — needs-stack: spawns athena-make against the live Fuseki
 // @domain: domains — placed by chorus-crawl's domain rules (#4538)
+// @needs: machine — the live Fuseki (#4539: card runs leave it to the nightly)
 //! #3506 / ADR-047 AC2+AC5 — LIVE serve-loop proof. Spawns the real binary on a
 //! scratch port against running Fuseki, smokes the serve-loop contract (discovery
 //! root, enveloped collections across primitives, ETag→304, served-OpenAPI-

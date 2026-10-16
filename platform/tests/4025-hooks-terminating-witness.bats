@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: integration:security — spawns a real daemon in its own world and signals it
 # @domain: services — the product domain this suite guards (#4334)
+# @needs: machine — spawns a real daemon and signals it (#4539: card runs leave it to the nightly)
 # #4025 — chorus-hooks names its terminator.
 #
 # Three exit -15 deaths in 24h with no record of who sent the signal. The fix

@@ -418,6 +418,9 @@ fn env_up_teardown(c: &str) -> bool {
     false
 }
 
+// #4539 — the `@needs:` header reader, one copy for the tagger and werk-test.
+include!("../../shared/test_needs.rs");
+
 /// The whole classification for one file: the authored header if it declares
 /// one, else the heuristic. `declared` says which, so the run can count them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -426,6 +429,10 @@ pub struct FileClass {
     pub hermeticity: &'static str,
     pub concern: Option<&'static str>,
     pub declared: bool,
+    /// #4539 — `@needs:` from the header; None = a card run may select it.
+    pub needs: Option<&'static str>,
+    /// #4539 — an `@needs:` header with a word we don't know.
+    pub needs_unknown: Option<String>,
 }
 
 /// #4292 — the `@test-type:` header line itself names `needs-stack`.
@@ -465,12 +472,16 @@ pub fn file_class(path: &str, content: &str) -> FileClass {
             },
             concern: concern.or(h_concern),
             declared: true,
+            needs: declared_needs(content),
+            needs_unknown: needs_header(content).and_then(|r| r.err()),
         },
         None => FileClass {
             layer: h_layer,
             hermeticity,
             concern: h_concern,
             declared: false,
+            needs: declared_needs(content),
+            needs_unknown: needs_header(content).and_then(|r| r.err()),
         },
     }
 }
@@ -1088,6 +1099,8 @@ pub struct CaseRow {
     pub concern: Option<String>,
     /// The CodeFile row this case lives in (stable_name of the path).
     pub in_file: String,
+    /// #4539 — testNeeds (machine | nightly), empty when the header says none.
+    pub needs: String,
 }
 
 /// #4162 — the fields a Test row no longer carries. The API refuses them as
@@ -1125,7 +1138,24 @@ impl CaseRow {
         if !self.covers.is_empty() {
             v.push(("covers".to_string(), self.covers.clone()));
         }
+        if !self.needs.is_empty() {
+            v.push(("testNeeds".to_string(), self.needs.clone()));
+        }
         v
+    }
+
+    /// The fields a replace writes: the served row's fields with this run's
+    /// owned ones over them, minus what must not survive — the retired fields
+    /// (#4162), a folder-era covers on an untagged file (#4201), and a testNeeds
+    /// whose `@needs:` header is gone (#4539: removing the header is how a test
+    /// returns to card runs, so the old value must not linger).
+    pub fn replace_fields(&self, merged: Vec<(String, String)>) -> Vec<(String, String)> {
+        merged
+            .into_iter()
+            .filter(|(k, _)| !RETIRED_TEST_FIELDS.contains(&k.as_str()))
+            .filter(|(k, _)| !(self.covers.is_empty() && k == "covers"))
+            .filter(|(k, _)| !(self.needs.is_empty() && k == "testNeeds"))
+            .collect()
     }
 }
 
@@ -1215,6 +1245,7 @@ pub fn row_matches(row: &CaseRow, g: &CaseInGraph) -> bool {
         && same_target(&served(&g.fields, "covers"), &row.covers)
         && served(&g.fields, "testType") == row.test_type()
         && served(&g.fields, "hermeticity") == row.hermeticity
+        && served(&g.fields, "testNeeds") == row.needs
         && RETIRED_TEST_FIELDS.iter().all(|f| served(&g.fields, f).is_empty())
 }
 
@@ -1634,12 +1665,61 @@ mod cases_4185 {
     /// #4162 NEGATIVE PROOF: a served row still carrying pyramidLayer or
     /// testConcern does not match, so the crawler rewrites it; the owned
     /// fields never carry either retired name.
+    /// #4539 — the `@needs:` header reaches the row, in all three comment forms.
+    #[test]
+    fn a_needs_header_is_read_in_every_comment_form() {
+        assert_eq!(declared_needs("#!/usr/bin/env bats\n# @test-type: unit\n# @needs: machine\n"), Some("machine"));
+        assert_eq!(declared_needs("// @test-type: perf\n// @needs: nightly — wall clock budget\n"), Some("nightly"));
+        assert_eq!(declared_needs("/**\n * @needs: Machine\n */"), Some("machine"));
+        assert_eq!(declared_needs("/* @needs: nightly */\nint x;"), Some("nightly"));
+        let c = "// @test-type: integration\n// @needs: machine\n#[test]\nfn t() {}\n";
+        assert_eq!(file_class("x/tests/live.rs", c).needs, Some("machine"));
+    }
+
+    /// #4539 NEGATIVE PROOF: no header, an unknown word, or a mention outside
+    /// a comment is no declaration — a card run may still select the test.
+    #[test]
+    fn negative_proof_no_needs_header_means_no_needs() {
+        assert_eq!(declared_needs("# @test-type: unit\n"), None);
+        assert_eq!(declared_needs("# @needs: stack\n"), None);
+        // a typo is not silent: the word comes back to be named
+        assert_eq!(needs_header("# @needs: machnie\n"), Some(Err("machnie".to_string())));
+        assert_eq!(file_class("a.bats", "# @test-type: unit\n# @needs: machnie\n@test \"x\" {\n}\n").needs_unknown.as_deref(), Some("machnie"));
+        assert_eq!(declared_needs("let s = \"@needs: machine\";\n"), None);
+        let late = format!("{}# @needs: machine\n", "# x\n".repeat(40));
+        assert_eq!(declared_needs(&late), None, "only the first 40 lines are a header");
+    }
+
+    /// #4539 NEGATIVE PROOF: removing the header must take the value off the
+    /// row. The served row still says machine; this run's row says nothing, so
+    /// the row does not match (it is rewritten) and the rewrite drops testNeeds.
+    #[test]
+    fn negative_proof_a_removed_needs_header_clears_the_row() {
+        let mut row = CaseRow {
+            file: "a.bats".into(), case: "c".into(), covers: "tests".into(),
+            layer: "unit".into(), hermeticity: "hermetic".into(), concern: None,
+            in_file: "file-a".into(), needs: "machine".into(),
+        };
+        let served = row.owned_fields();
+        assert!(served.contains(&("testNeeds".to_string(), "machine".to_string())));
+        let g = CaseInGraph { name: "t".into(), file: "a.bats".into(), case: "c".into(), fields: served.clone() };
+        assert!(row_matches(&row, &g), "control: same header, same row");
+        row.needs = String::new();
+        assert!(!row_matches(&row, &g), "header removed: the row must be rewritten");
+        let mut merged = served.clone();
+        merged.push(("quarantined".into(), "true".into()));
+        let out = row.replace_fields(merged);
+        assert!(!out.iter().any(|(k, _)| k == "testNeeds"), "{out:?}");
+        assert!(out.iter().any(|(k, _)| k == "quarantined"), "a person's field is kept");
+    }
+
     #[test]
     fn a_row_with_a_retired_field_is_rewritten_and_never_written() {
         let row = CaseRow {
             file: "a.bats".into(), case: "c".into(), covers: "tests".into(),
             layer: "unit".into(), hermeticity: "hermetic".into(), concern: Some("security".into()),
             in_file: "file-a".into(),
+            needs: String::new(),
         };
         let owned = row.owned_fields();
         assert!(owned.iter().any(|(k, v)| k == "testType" && v == "security"));
@@ -1849,6 +1929,7 @@ mod cases_4185 {
             hermeticity: "hermetic".into(),
             concern: None,
             in_file: "file-x".into(),
+            needs: String::new(),
         };
         assert!(row.owned_fields().contains(&("covers".to_string(), "tests".to_string())));
     }
@@ -1936,6 +2017,7 @@ mod cases_4185 {
             hermeticity: "hermetic".into(),
             concern: None,
             in_file: format!("file-{file}"),
+            needs: String::new(),
         }
     }
     fn g(name: &str, file: &str, case: &str) -> CaseInGraph {
