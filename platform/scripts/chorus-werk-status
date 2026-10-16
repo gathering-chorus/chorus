@@ -785,6 +785,18 @@ def test_unmeasured(run):
     return f"{len(um)} suite{'s' if len(um) != 1 else ''} unmeasured: " + ", ".join(um[:3]) + (" …" if len(um) > 3 else "")
 
 
+def retry_line(name, run_id, node):
+    """#4540 — the one retry /cws offers for a step that called a child
+    pipeline: the parent's own step and every step after it. Retrying one
+    inner step alone (`--sub-run-id`) is not offered: measured on dagu 2.18.2
+    it flips the run to succeeded while review onward stay aborted. None when
+    the step called no child. Pure."""
+    if not node.get("children"):
+        return None
+    return (f"retry: dagu --config {DAGU_CONFIG} retry --run-id={run_id}"
+            f" --step={node['step']['name']} --downstream {name}")
+
+
 def failed_reason(run, node):
     """#4540 — why a failed step stopped. A step that called a child pipeline
     (cicd's test step calls cicd-test) carries only "exit status N"; the
@@ -947,11 +959,9 @@ def dagu_detail(card, runs):
         if status == "failed":
             node = next((x for x in nodes_of(r) if x["step"]["name"] == step), {})
             why = "  — " + failed_reason(r, node)
-            if node.get("children"):
-                # #4540 — the only retry: the parent's own step and what follows.
-                # A child-only retry leaves review onward aborted (a false green).
-                why += (f"\n                                          retry: dagu --config {DAGU_CONFIG} retry"
-                        f" --run-id={r.get('dagRunId')} --step={step} --downstream {name}")
+            retry = retry_line(name, r.get("dagRunId"), node)
+            if retry:
+                why += "\n" + " " * 42 + retry
         print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
     land = dagu_land_line(card, "v2")
     if land:
@@ -1011,7 +1021,8 @@ def why_run(name, run_id):
     why = failed_reason(dict(d.get("dagRunDetails") or {}, name=name, dagRunId=run_id, nodes=nodes), node)
     live = LIVE_REFUSAL.search(why)
     word = node["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
-    print(live.group(0) if live else f"{name} failed at {word}: {why}")
+    retry = retry_line(name, run_id, node)
+    print(live.group(0) if live else f"{name} failed at {word}: {why}" + (f" · {retry}" if retry else ""))
     return 0
 
 
@@ -1113,6 +1124,13 @@ def fixture_4553():
             ("a partially succeeded run reads failed at its failed step",
              "failed at test" in line(162, [partial], [])
              and "failed" not in line(162, [dict(partial, statusLabel="succeeded", nodes=[node("succeeded", "skill-werk-test")])], [])),
+            # #4540 — the retry offered for a child stop is the parent's step plus
+            # downstream; negative proof: a step with no child offers none, and
+            # the line never carries --sub-run-id
+            ("a child stop offers only the parent retry",
+             (lambda r: r is not None and "--step=skill-werk-test --downstream cicd" in r and "--sub-run-id" not in r)(
+                 retry_line("cicd", "p", child_stop["nodes"][0]))
+             and retry_line("cicd", "x", node("failed", "skill-werk-build", "werk-build: error")) is None),
             ("a stop inside the child test pipeline names the child's step",
              "· verdict: RED — 2 types failed: unit, lint" in line(158, [child_stop], [])
              and NO_REASON in line(159, [run("p2", "cicd", "failed", 0, [dict(node("failed", "skill-werk-test", "exit status 1"),
