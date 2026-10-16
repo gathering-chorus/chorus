@@ -1647,7 +1647,7 @@ mod lanes_4278 {
             log: format!("{}/nightly.log", root), fail_dir: format!("{}/fails", root),
             lockdir: format!("{}/lock.d", root), role: "kade".into(), run_id: "test".into(),
             owlapi: "http://localhost:1".into(), api: "http://localhost:1".into(),
-            ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(),
+            ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(), tee_log: false,
             graph: GraphRows::default(),
         }
     }
@@ -1695,7 +1695,7 @@ mod lanes_4278 {
         std::env::set_var("NIGHTLY_RUNNER_CMD", &stub);
         let root = dir.to_str().unwrap();
         let ctx = ctx_for(root);
-        let _ = run_runner(&ctx, false);
+        let _ = run_runner(&ctx, false, None);
         std::env::remove_var("NIGHTLY_RUNNER_CMD");
         let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
         assert!(log.contains("SUITESTART|a.bats|1000") && log.contains("SUITEEND|a.bats|2000"), "{log}");
@@ -1815,8 +1815,17 @@ fn first_of(d: &werk_test::run_dir::RunDir, name: &str) -> Option<String> {
 }
 
 /// One nightly step (scope = all).
-pub fn step_all(step: &str, args: &[String]) -> Result<i32, String> {
+pub fn step_all(
+    step: &str,
+    args: &[String],
+    all_args: &[String],
+    pin: &dyn Fn(&werk_test::run_dir::RunDir, Option<&str>, &[String]) -> Result<Option<i32>, String>,
+) -> Result<i32, String> {
     let d = runs_folder()?;
+    // #4540 — one run, one binary (scope pins it; later steps run the copy)
+    if let Some(code) = pin(&d, Some(step), all_args)? {
+        return Ok(code);
+    }
     let ctx = step_ctx(&d);
     match step {
         "scope" => {

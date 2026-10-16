@@ -123,7 +123,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         let all = args.iter().any(|a| a == "--scope=all");
         if step == "notify" || (all && werk_test::run_dir::STEPS.contains(&step)) {
             std::env::set_var(werk_test::LANE_ENV, werk_test::lane_name(true));
-            return nightly_all::step_all(step, &args[1..]);
+            return nightly_all::step_all(step, &args[1..], args, &pin_or_handoff);
         }
     }
     if args.iter().any(|a| a == "--nightly") {
@@ -228,6 +228,9 @@ fn run(args: &[String]) -> Result<i32, String> {
         (true, Some(s)) => return Err(format!("`werk-test {}` needs CHORUS_TRACE_ID: the run folder is keyed on it", s)),
     };
     let dir = werk_test::run_dir::RunDir::create(werk_test::run_dir::folder_for(&runs_base, &key)?)?;
+    if let Some(code) = pin_or_handoff(&dir, step.as_deref(), all_args)? {
+        return Ok(code);
+    }
     let _ = PROGRESS_CTX.set((role.clone(), card.clone(), trace.clone()));
     let ctx = Ctx { args: args.to_vec(), card, role, werk, trace, changed, dir };
     match step.as_deref() {
@@ -262,6 +265,30 @@ fn run(args: &[String]) -> Result<i32, String> {
             let _ = std::fs::remove_dir_all(&ctx.dir.path);
             out
         }
+    }
+}
+
+/// #4540 (Silas 10-16) — one run, one binary: scope pins the binary it is
+/// into the run folder; a later step hands the run to that copy. `None` = go on.
+fn pin_or_handoff(dir: &werk_test::run_dir::RunDir, step: Option<&str>, all_args: &[String]) -> Result<Option<i32>, String> {
+    let current = std::env::current_exe().map_err(|e| format!("own path: {}", e))?;
+    match step {
+        Some("scope") => werk_test::run_dir::pin_binary(dir, &current).map(|_| None),
+        Some(_) => {
+            let already = std::env::var(werk_test::run_dir::PINNED_ENV).as_deref() == Ok("1");
+            if already {
+                eprintln!("werk-test: running the run's pinned build {}", current.display());
+            }
+            match werk_test::run_dir::pinned_to_exec(dir, &current, already) {
+                Some(pinned) => {
+                    use std::os::unix::process::CommandExt;
+                    let err = std::process::Command::new(&pinned).args(all_args).env(werk_test::run_dir::PINNED_ENV, "1").exec();
+                    Err(format!("could not start the run's pinned werk-test {}: {}", pinned.display(), err))
+                }
+                None => Ok(None),
+            }
+        }
+        None => Ok(None),
     }
 }
 

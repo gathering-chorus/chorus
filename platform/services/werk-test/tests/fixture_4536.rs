@@ -799,3 +799,34 @@ fn negative_proof_a_stopped_nightly_says_stopped_never_complete() {
     assert!(log.contains("RUN|stopped|"), "{log}");
     assert!(!log.contains("RUN|complete|"), "{log}");
 }
+
+/// #4540 (Silas 10-16) — one run, one binary: a step after scope hands the
+/// run to the copy scope pinned, so a land that swaps werk-test between steps
+/// does not change what the run's later steps run.
+#[test]
+fn a_later_step_runs_the_copy_scope_pinned_not_the_installed_one() {
+    let base = std::env::temp_dir().join(format!("werk-test-4540-pin-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let installed = base.join("werk-test-installed");
+    std::fs::copy(env!("CARGO_BIN_EXE_werk-test"), &installed).unwrap();
+    let step = |trace: &str, args: &[&str]| {
+        let o = Command::new(&installed).args(args)
+            .env("CHORUS_TRACE_ID", trace).env("WERK_TEST_RUNS", base.join("runs"))
+            .env("CHORUS_ROOT", &base).env_remove("CHORUS_HOME").env_remove("WERK_TEST_PINNED")
+            .env("NIGHTLY_LOG_PATH", base.join("log")).env("NIGHTLY_NO_NUDGE", "1")
+            .env("NIGHTLY_GRAPH_ROWS", "0").env("OWL_API_TESTS", "http://127.0.0.1:9/tests")
+            .output().unwrap();
+        format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
+    };
+    step("pin-a", &["scope", "--scope=all"]);
+    let pinned = base.join("runs/pin-a/werk-test-bin");
+    assert!(pinned.is_file(), "scope pinned the binary");
+    let out = step("pin-a", &["verdict", "--scope=all"]);
+    assert!(out.contains(&format!("running the run's pinned build {}", pinned.display())), "{out}");
+    // NEGATIVE PROOF: a run whose scope pinned nothing runs the binary it was started as
+    std::fs::create_dir_all(base.join("runs/pin-b")).unwrap();
+    let out = step("pin-b", &["verdict", "--scope=all"]);
+    assert!(!out.contains("pinned build"), "{out}");
+    let _ = std::fs::remove_dir_all(&base);
+}

@@ -78,6 +78,27 @@ impl RunDir {
     }
 }
 
+/// #4540 (Silas 10-16) — one run, one binary. The 05:11 land swapped
+/// werk-test-bin under a running nightly; under dagu every step starts the
+/// binary fresh, so a run could mix two builds. Scope copies the binary it is
+/// into the run folder; every later step runs that copy.
+pub const PINNED_BIN: &str = "werk-test-bin";
+pub const PINNED_ENV: &str = "WERK_TEST_PINNED";
+
+pub fn pin_binary(dir: &RunDir, exe: &Path) -> Result<(), String> {
+    let dst = dir.path.join(PINNED_BIN);
+    let tmp = dir.path.join(format!(".{}.tmp", PINNED_BIN));
+    std::fs::copy(exe, &tmp).map_err(|e| format!("pin {}: {}", exe.display(), e))?;
+    std::fs::rename(&tmp, &dst).map_err(|e| format!("pin {}: {}", dst.display(), e))
+}
+
+/// The pinned copy a later step must run instead of itself, if any: the run
+/// folder holds one, this process is not it, and it has not already handed off.
+pub fn pinned_to_exec(dir: &RunDir, current: &Path, already: bool) -> Option<PathBuf> {
+    let pinned = dir.path.join(PINNED_BIN);
+    (!already && pinned.is_file() && current != pinned).then_some(pinned)
+}
+
 /// One field of a line: tabs and newlines become spaces.
 pub fn field(s: &str) -> String {
     s.replace(['\t', '\n', '\r'], " ")
@@ -307,6 +328,23 @@ mod tests {
         assert!(folder_for(Path::new("/x"), "").is_err(), "no trace, no folder");
         assert!(folder_for(Path::new("/x"), "../up").is_err());
         assert_eq!(folder_for(Path::new("/x"), "034gp").unwrap(), PathBuf::from("/x/034gp"));
+        let _ = std::fs::remove_dir_all(&d.path);
+    }
+
+    /// One run, one binary: a later step runs the copy scope pinned.
+    #[test]
+    fn a_later_step_runs_the_binary_scope_pinned() {
+        let d = tmp("pin");
+        let exe = d.path.join("built");
+        std::fs::write(&exe, "v1").unwrap();
+        assert_eq!(pinned_to_exec(&d, &exe, false), None, "nothing pinned yet: run yourself");
+        pin_binary(&d, &exe).unwrap();
+        std::fs::write(&exe, "v2 — swapped by a land").unwrap();
+        let p = pinned_to_exec(&d, &exe, false).expect("a pinned copy to run");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "v1");
+        // NEGATIVE PROOF: the copy itself, or a step that already handed off, runs on
+        assert_eq!(pinned_to_exec(&d, &p, false), None);
+        assert_eq!(pinned_to_exec(&d, &exe, true), None);
         let _ = std::fs::remove_dir_all(&d.path);
     }
 
