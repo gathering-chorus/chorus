@@ -36,6 +36,7 @@ export interface SessionInfo {
 
 export interface ActivePairFact {
   card: number;
+  title?: string;
   navigator: string;
   driver?: string;
 }
@@ -50,6 +51,7 @@ export interface OwedNudgeFact {
 
 export interface WipCardFact {
   cardId: number;
+  title?: string;
   owner: string;
 }
 
@@ -60,11 +62,13 @@ export interface ActionFact {
 
 export interface PrincipalInfo {
   principal: string;
+  name?: string;
   roleKind?: 'agent' | 'human' | string;
 }
 
 export interface ReviewCardFact {
   cardId: number;
+  title?: string;
   reviewer: string;
   peer?: string;
 }
@@ -83,12 +87,14 @@ export interface ActorFactInput {
 
 export interface RoleStateResult {
   aboutPrincipal: string;
+  name?: string;
   stateValue: StateValue;
   stateSource: 'observed';
   activity: ActivityValue;
   pairRole?: 'driver' | 'navigator';
   pairedWith?: string;
   currentCard?: number | null;
+  currentCardTitle?: string;
   observedAt: string;
   waitingOn?: { on: string; what: string; since: string };
   sessions: Array<{ id: string; channel: string; live: boolean; lastActionAt?: string }>;
@@ -312,12 +318,36 @@ function applyDoorFailures(
   return stateOutcome.stateValue;
 }
 
-function resolvePrincipalInfo(p: string | PrincipalInfo): { principal: string; role: string; isHuman: boolean } {
+function formatPrincipalName(role: string): string {
+  if (role === 'abby-normal') return 'Abby Normal';
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function findCardTitle(cardId: number | null | undefined, input: ActorFactInput): string | undefined {
+  if (!cardId) return undefined;
+  const fromWip = input.wipCards?.find((c) => c.cardId === cardId);
+  if (fromWip?.title) return fromWip.title;
+  const fromReview = input.reviewCards?.find((c) => c.cardId === cardId);
+  if (fromReview?.title) return fromReview.title;
+  const fromPair = input.activePairs?.find((p) => p.card === cardId);
+  if (fromPair?.title) return fromPair.title;
+  return undefined;
+}
+
+function resolvePrincipalInfo(p: string | PrincipalInfo): {
+  principal: string;
+  role: string;
+  name: string;
+  isHuman: boolean;
+} {
   if (typeof p === 'string') {
-    return { principal: p, role: principalToRole(p), isHuman: false };
+    const role = principalToRole(p);
+    return { principal: p, role, name: formatPrincipalName(role), isHuman: false };
   }
   const isHuman = p.roleKind === 'human' || p.roleKind === 'person';
-  return { principal: p.principal, role: principalToRole(p.principal), isHuman };
+  const role = principalToRole(p.principal);
+  const name = p.name || formatPrincipalName(role);
+  return { principal: p.principal, role, name, isHuman };
 }
 
 function extractActionFact(actionMap: Map<string, ActionFact>, role: string, principal: string): {
@@ -346,7 +376,7 @@ function deriveOneActor(
   unmeasured: Array<{ source: string; reason: string }> | undefined,
   observedAt: string
 ): RoleStateResult {
-  const { principal, role, isHuman } = resolvePrincipalInfo(p);
+  const { principal, role, name, isHuman } = resolvePrincipalInfo(p);
   const allSessions = input.sessions ?? [];
   const mySessions = allSessions.filter((s) => s.principal === principal);
   const { actionFact, lastActionMs } = extractActionFact(actionMap, role, principal);
@@ -383,14 +413,19 @@ function deriveOneActor(
     hasLiveSession || activity === 'acting'
   );
 
+  const currentCard = stateOutcome.currentCard;
+  const currentCardTitle = findCardTitle(currentCard, input);
+
   return {
     aboutPrincipal: principal,
+    name,
     stateValue: finalStateValue,
     stateSource: 'observed',
     activity,
     pairRole: stateOutcome.pairRole,
     pairedWith: stateOutcome.pairedWith,
-    currentCard: stateOutcome.currentCard,
+    currentCard,
+    currentCardTitle,
     observedAt,
     waitingOn: stateOutcome.waitingOn,
     sessions: sessionResults,
@@ -578,11 +613,15 @@ async function fetchRolesFact(
       unmeasured.push({ source: 'athena:roles', reason: `HTTP ${res.status}` });
       return [];
     }
-    const json = (await res.json()) as { data?: Array<{ name: string; roleKind?: string }> };
-    return (json.data || []).filter(isTeamRole).map((r) => ({
-      principal: roleToPrincipal(r.name),
-      roleKind: r.roleKind || 'agent',
-    }));
+    const json = (await res.json()) as { data?: Array<{ name: string; label?: string; roleKind?: string }> };
+    return (json.data || []).filter(isTeamRole).map((r) => {
+      const cleanLabel = r.label ? r.label.replace(/^role-/, '') : '';
+      return {
+        principal: roleToPrincipal(r.name),
+        name: cleanLabel ? formatPrincipalName(cleanLabel) : formatPrincipalName(r.name),
+        roleKind: r.roleKind || 'agent',
+      };
+    });
   } catch (e: unknown) {
     unmeasured.push({ source: 'athena:roles', reason: e instanceof Error ? e.message : String(e) });
     return [];
@@ -635,9 +674,10 @@ async function fetchWipCardsFact(
       unmeasured.push({ source: 'chorus:board:wip', reason: `HTTP ${res.status}` });
       return [];
     }
-    const json = (await res.json()) as { data?: { cards?: Array<{ id: number; owner: string }> } };
+    const json = (await res.json()) as { data?: { cards?: Array<{ id: number; title?: string; owner: string }> } };
     return (json.data?.cards || []).map((c) => ({
       cardId: c.id,
+      title: c.title,
       owner: c.owner.toLowerCase(),
     }));
   } catch (e: unknown) {

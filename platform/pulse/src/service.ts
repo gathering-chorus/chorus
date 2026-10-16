@@ -19,6 +19,8 @@ import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
+import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
+import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
 
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
@@ -392,7 +394,9 @@ export function createApp(
   store: MessageStore,
   worker?: DeliveryWorker,
   emit?: EmitSpine,
-  actorStateService?: { getActorStates: () => unknown }
+  actorStateService?: { getActorStates: () => unknown },
+  changesOvernightService?: { getChanges: () => unknown },
+  readingsService?: { getReadings: () => unknown }
 ): Express {
   const app = express();
   app.use(express.json());
@@ -413,6 +417,31 @@ export function createApp(
             derivedAt: new Date().toISOString(),
             actors: [],
             unmeasured: [{ source: 'pulse:service', reason: 'actor-state-service uninitialized' }],
+          }
+    );
+  });
+  // #4563 — changes overnight derived once in pulse
+  app.get('/api/changes-overnight', (_req, res) => {
+    res.json(
+      changesOvernightService
+        ? changesOvernightService.getChanges()
+        : {
+            derivedAt: new Date().toISOString(),
+            watermark: null,
+            cards: [],
+            unmeasured: [{ source: 'pulse:service', reason: 'changes-overnight-service uninitialized' }],
+          }
+    );
+  });
+  // #4563 — source readings derived once in pulse
+  app.get('/api/readings', (_req, res) => {
+    res.json(
+      readingsService
+        ? readingsService.getReadings()
+        : {
+            derivedAt: new Date().toISOString(),
+            readings: [],
+            unmeasured: [{ source: 'pulse:service', reason: 'readings-service uninitialized' }],
           }
     );
   });
@@ -671,7 +700,19 @@ if (require.main === module) {
     );
     actorStateService.start();
 
-    const app = createApp(store, worker, emitSpine, actorStateService);
+    // #4563 — ChangesOvernightService: derives changes overnight on 15s timer into cache
+    const changesOvernightService = new ChangesOvernightService(
+      buildLiveChangesOvernightFetcher()
+    );
+    changesOvernightService.start();
+
+    // #4563 — ReadingsService: derives source readings on 15s timer into cache
+    const readingsService = new ReadingsService(
+      buildLiveReadingsFetcher()
+    );
+    readingsService.start();
+
+    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
       lifecycle.started();  // #4446 — round 1 imported the helper but never called it

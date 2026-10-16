@@ -170,9 +170,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
       boardUrl: 'http://127.0.0.1:1/board',
     });
 
-    const sources = await dataService.getTrustStripSources({
-      failSource: undefined,
-    });
+    const sources = await dataService.getTrustStripSources();
 
     const roomsSource = sources.find((s) => s.source === 'rooms');
     expect(roomsSource).toBeDefined();

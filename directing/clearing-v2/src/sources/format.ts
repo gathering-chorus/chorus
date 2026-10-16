@@ -25,16 +25,6 @@ export function formatTodayHeader(date = new Date()): string {
   return `${weekday}, ${month} ${day} · ${time}`;
 }
 
-/** Local-time HH:MM. */
-export function formatHHMM(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** Lowercase, alphanumerics only — the key used to match roles across sources. */
-export function normalizeId(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
 /** Agent and human rows only; probe rows excluded. */
 export function isPrincipalRow(r: DoorRole): boolean {
   if (!r.name) return false;
@@ -65,12 +55,4 @@ export function ownerBase(raw: string): string {
 
 export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-export function cardStatus(raw: string | undefined): 'landed' | 'blocked' | 'moved' | 'wip' {
-  const s = (raw || 'wip').toLowerCase();
-  if (s === 'done') return 'landed';
-  if (s === 'blocked') return 'blocked';
-  if (s === 'next') return 'moved';
-  return 'wip';
 }

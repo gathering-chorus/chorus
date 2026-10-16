@@ -99,6 +99,10 @@ chorus:section a owl:DatatypeProperty ;
     rdfs:label "section" ; rdfs:range xsd:string ;
     rdfs:comment "Which part of the pulse a reading is." .
 
+chorus:readingStatus a owl:DatatypeProperty ;
+    rdfs:label "reading status" ; rdfs:range xsd:string ;
+    rdfs:comment "ok when the source answered, unmeasured when it did not (the reason goes in unmeasuredSource). #4563." .
+
 chorus:readFrom a owl:DatatypeProperty ;
     rdfs:label "read from" ; rdfs:range xsd:string ;
     rdfs:comment "The producer a reading was read from, e.g. pulse-worker. A string, not the EventType producedBy edge." .
@@ -168,8 +172,12 @@ chorus:ReadingShape a sh:NodeShape ;
     sh:targetClass chorus:Reading ;
     rdfs:comment "One section of the pulse and when it was read." ;
     sh:property [ sh:path chorus:section ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:in ( "roles" "board" "health" "alerts" "events" "index_freshness" "nudges" ) ;
-                  sh:name "section" ; sh:description "Required. One of the sections pulse carries today." ] ;
+                  sh:in ( "roles" "board" "health" "alerts" "events" "index_freshness" "nudges" "rooms" "decisions" "loki" ) ;
+                  sh:name "section" ; sh:description "Required. One of the sections pulse carries. rooms, decisions and loki are the Clearing trust strip's sources, read by pulse so the page only presents them (#4563)." ] ;
+    sh:property [ sh:path chorus:readingStatus ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "ok" "unmeasured" ) ;
+                  sh:name "status" ; sh:description "ok or unmeasured; unmeasured carries its reason in unmeasuredSource." ] ;
+    sh:property [ sh:path chorus:unmeasuredSource ; sh:datatype xsd:string ;
+                  sh:name "unmeasured reason" ; sh:description "Why the source could not be read." ] ;
     sh:property [ sh:path chorus:readFrom ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:name "read from" ; sh:description "Required. The producer it was read from, e.g. pulse-worker." ] ;
     sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;

@@ -3,23 +3,20 @@
 import { BuzzRelayClient } from './relay-client';
 import { MessageRouter } from './router';
 import { ClearingMessage } from './types';
-import { RolesData, TodayData, RoomsData, TodayWorkingRole, DoorRolesResponse, TrustStripSource } from './sources/models';
-import { fetchJson, errorMessage } from './sources/http';
+import { RolesData, TodayData, RoomsData, DoorRolesResponse, TrustStripSource, TodayCardItem } from './sources/models';
+import { fetchJson } from './sources/http';
 import { formatBostonTime, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
 import { buildTrustStripSources, TrustStripOptions } from './sources/trust-strip';
-import { fetchRolesData } from './sources/roles';
-import { fetchAlerts, fetchLastJeffSessionEnd, fetchChangedCards } from './sources/today';
+import { fetchAlerts } from './sources/today';
+import { fetchActorState, fetchChangesOvernight, toActorRow, toChangedCard, unmeasuredText } from './sources/pulse';
 import { fetchDrawerCard, DrawerCard } from './sources/card';
 
-export type { TrustStripSource, RolePrincipal, RolesData, TodayCardItem, TodayData, RoomsData } from './sources/models';
+export type { TrustStripSource, ActorRow, RolesData, TodayCardItem, TodayData, RoomsData } from './sources/models';
 export { formatBostonTime, formatTodayHeader } from './sources/format';
 
 export interface DataServiceOptions {
   rolesUrl?: string;
-  boardUrl?: string;
   pulseUrl?: string;
-  sessionsUrl?: string;
-  lokiUrl?: string;
   cardsUrl?: string;
   alertsUrl?: string;
   relay: BuzzRelayClient;
@@ -28,31 +25,14 @@ export interface DataServiceOptions {
 }
 
 export interface RolesOptions {
-  rolesUrl?: string;
-  boardUrl?: string;
-  lokiUrl?: string;
-  sessionsUrl?: string;
-  fixture?: string;
+  pulseUrl?: string;
 }
 
 export interface TodayOptions extends RolesOptions {
-  cardsUrl?: string;
   alertsUrl?: string;
 }
 
 type RecentMessage = ClearingMessage & { threadCount?: number; threadLast?: string };
-
-function emptyToday(): TodayData {
-  return {
-    timeStr: formatTodayHeader(new Date()),
-    decisions: [],
-    decisionsCount: 0,
-    changedCards: [],
-    foldedCount: 0,
-    alerts: [],
-    workingRoles: [],
-  };
-}
 
 function slug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-');
@@ -72,117 +52,73 @@ function firstSet(explicit: string | undefined, fromEnv: string | undefined, fal
 
 export class DataService {
   private defaultRolesUrl: string;
-  private defaultBoardUrl: string;
   private defaultCardsUrl: string;
   private defaultAlertsUrl: string;
   private defaultPulseUrl: string;
-  private defaultSessionsUrl: string;
-  private defaultLokiUrl: string;
   private relay: BuzzRelayClient;
   private router: MessageRouter;
   private relayConfigured: boolean;
 
   constructor(options: DataServiceOptions) {
     this.defaultRolesUrl = firstSet(options.rolesUrl, process.env.ROLES_URL, 'http://localhost:3360/v1/roles/roles');
-    this.defaultBoardUrl = firstSet(options.boardUrl, process.env.BOARD_URL, 'http://localhost:3340/api/chorus/context/board');
     this.defaultCardsUrl = firstSet(options.cardsUrl, process.env.CARDS_URL, 'http://localhost:3360/v1/cards/cards');
     this.defaultAlertsUrl = firstSet(options.alertsUrl, process.env.ALERTS_URL, 'http://localhost:3340/api/chorus/context/alerts');
     this.defaultPulseUrl = firstSet(options.pulseUrl, process.env.PULSE_URL, 'http://127.0.0.1:3475');
-    this.defaultSessionsUrl = firstSet(options.sessionsUrl, process.env.SESSIONS_URL, 'http://localhost:3360/v1/identity/sessions');
-    this.defaultLokiUrl = firstSet(options.lokiUrl, process.env.LOKI_URL, 'http://localhost:3102');
     this.relay = options.relay;
     this.router = options.router;
     this.relayConfigured = options.relayConfigured ?? Boolean(this.relay.getRelayUrl() || process.env.BUZZ_RELAY_URL);
   }
 
-  /**
-   * Probes trust strip sources dynamically from live endpoints.
-   */
+  /** Trust strip: v2's own relay chip, then each reading pulse's /api/readings returns. */
   async getTrustStripSources(options?: TrustStripOptions): Promise<TrustStripSource[]> {
     return buildTrustStripSources({
-      rolesUrl: this.defaultRolesUrl,
-      boardUrl: this.defaultBoardUrl,
-      lokiUrl: this.defaultLokiUrl,
+      pulseUrl: this.defaultPulseUrl,
       relayConfigured: this.relayConfigured,
       relayConnected: () => this.relay.isConnected(),
     }, options);
   }
 
-  /**
-   * Fetches roles purely from the given rolesUrl and boardUrl.
-   * NO data literals (no hardcoded role names, cards, panes, or times).
-   */
+  /** Roles: every actor exactly as pulse's /api/actor-state reports it; v2 derives no state. */
   async getRolesData(options?: RolesOptions): Promise<RolesData> {
-    if (options?.fixture === 'fail' || options?.fixture === 'empty') {
-      return { principals: [], error: 'fixture empty/fail' };
-    }
-    return fetchRolesData({
-      rolesUrl: options?.rolesUrl || this.defaultRolesUrl,
-      boardUrl: options?.boardUrl || this.defaultBoardUrl,
-      lokiUrl: options?.lokiUrl || this.defaultLokiUrl,
-      sessionsUrl: options?.sessionsUrl || this.defaultSessionsUrl,
-    });
-  }
-
-  /** Who is working: agents whose derived state is working or idle (reuses getRolesData). */
-  private async getWorkingRoles(options: RolesOptions): Promise<{ roles: TodayWorkingRole[]; error?: string }> {
-    const rolesData = await this.getRolesData(options).catch((err: unknown): RolesData => ({
-      principals: [],
-      error: errorMessage(err) || 'roles unreadable',
-    }));
-    if (rolesData.error) return { roles: [], error: `roles unreadable (${rolesData.error})` };
-    if (rolesData.unmeasured) return { roles: [], error: rolesData.unmeasured };
-    const roles = rolesData.principals
-      .filter((p) => p.roleKind === 'agent' && (p.state === 'working' || p.state === 'idle'))
-      .map((p) => ({
-        role: p.id,
-        name: p.name,
-        state: p.state,
-        cardId: p.card?.id || 0,
-        cardTitle: p.card?.title || '',
-      }));
-    return { roles };
+    const read = await fetchActorState(options?.pulseUrl || this.defaultPulseUrl);
+    if (!read.ok) return { actors: [], unmeasured: read.reason };
+    return {
+      actors: (read.value.actors || []).map(toActorRow),
+      unmeasured: unmeasuredText(read.value.unmeasured),
+    };
   }
 
   /**
-   * Fetches Today page data:
-   * 1. Who is working: reuses getRolesData() directly.
+   * Today page data:
+   * 1. Working now: the actors from pulse's actor-state (same read as Roles).
    * 2. Alerts with resolving cards.
-   * 3. What changed since Jeff's last session ended.
-   * 4. Decisions owed: honest zero / red by name (unmodeled in Part 1).
+   * 3. Changed overnight: the cards pulse's changes-overnight returns, as sent.
+   * 4. Decisions owed: honest red by name (unmodeled in Part 1).
    */
-  async getTodayData(options?: TodayOptions | string): Promise<TodayData> {
-    const opts: TodayOptions = typeof options === 'string' ? { fixture: options } : options || {};
-    if (opts.fixture === 'fail') return emptyToday();
-
-    const sessionsUrl = opts.sessionsUrl || this.defaultSessionsUrl;
-    const working = await this.getWorkingRoles({
-      rolesUrl: opts.rolesUrl || this.defaultRolesUrl,
-      boardUrl: opts.boardUrl || this.defaultBoardUrl,
-      lokiUrl: opts.lokiUrl || this.defaultLokiUrl,
-      sessionsUrl,
-      fixture: opts.fixture,
-    });
-
-    // Unreadable alerts door -> no alerts row; unreadable sessions -> no since filter.
-    const alertsRead = await fetchAlerts(opts.alertsUrl || this.defaultAlertsUrl);
+  async getTodayData(options?: TodayOptions): Promise<TodayData> {
+    const pulseUrl = options?.pulseUrl || this.defaultPulseUrl;
+    const [roles, alertsRead, changes] = await Promise.all([
+      this.getRolesData({ pulseUrl }),
+      fetchAlerts(options?.alertsUrl || this.defaultAlertsUrl),
+      fetchChangesOvernight(pulseUrl),
+    ]);
+    // Unreadable alerts door -> no alerts row (unchanged by #4563).
     const alerts = alertsRead.ok ? alertsRead.value : [];
-    const lastEnd = await fetchLastJeffSessionEnd(sessionsUrl);
-    const since = lastEnd.ok ? lastEnd.value : null;
-    const changed = await fetchChangedCards(opts.cardsUrl || this.defaultCardsUrl, since, opts.lokiUrl || this.defaultLokiUrl);
-    const changedCards = changed.items;
+    const changedCards: TodayCardItem[] = changes.ok ? (changes.value.cards || []).map(toChangedCard) : [];
+    const watermark = changes.ok && changes.value.watermark ? formatBostonTime(changes.value.watermark) : undefined;
 
-    // Decisions owed: 0 owed, stays red by name in Part 1
     return {
       timeStr: formatTodayHeader(new Date()),
       decisions: [],
       decisionsCount: 0,
       changedCards,
-      changedUnmeasured: changed.unmeasured,
+      changedUnmeasured: changes.ok ? unmeasuredText(changes.value.unmeasured) : changes.reason,
+      watermark,
       foldedCount: Math.max(0, changedCards.length - 4),
       alerts,
-      workingRoles: working.roles,
-      workingUnmeasured: working.error,
+      // display filter: Working now leaves out actors pulse says are away or off
+      workingRoles: roles.actors.filter((a) => a.state !== 'off' && a.state !== 'away'),
+      workingUnmeasured: roles.unmeasured,
     };
   }
 
@@ -231,7 +167,7 @@ export class DataService {
   /**
    * Fetches card metadata from Athena cards door (single source) for drawer inspection.
    */
-  async getCard(cardId: number, options?: { cardsUrl?: string; boardUrl?: string }): Promise<DrawerCard | null> {
+  async getCard(cardId: number, options?: { cardsUrl?: string }): Promise<DrawerCard | null> {
     return fetchDrawerCard(options?.cardsUrl || this.defaultCardsUrl, cardId);
   }
 }

@@ -18,5 +18,12 @@ echo 'run platform/services/chorus-awake/src/main.rs' > "$T/platform/tests/awake
 [ "$(run_gate platform/services/chorus-awake/src/main.rs)" = 1 ] && grep -q awake.bats "$T/err" && ! grep -q other-main.bats "$T/err" && { echo "PASS negative proof: a test naming the deleted main.rs by its path still blocks"; pass=$((pass+1)); } || { echo "FAIL not caught: $(cat "$T/err")"; fail=$((fail+1)); }
 echo 'bash git-queue.sh' > "$T/platform/tests/q.bats"
 [ "$(run_gate scripts/git-queue.sh)" = 1 ] && grep -q q.bats "$T/err" && { echo "PASS negative proof: a script is still caught by its base name"; pass=$((pass+1)); } || { echo "FAIL script not caught"; fail=$((fail+1)); }
+# #4563 — deleting clearing-v2's sources/roles.ts was blocked by a test naming
+# platform/api/src/handlers/context-roles.ts: the base name matched as a substring.
+rm -f "$T"/platform/tests/*.bats
+echo 'scan platform/api/src/handlers/context-roles.ts' > "$T/platform/tests/ctx.bats"
+[ "$(run_gate directing/clearing-v2/src/sources/roles.ts)" = 0 ] && { echo "PASS a longer name that ends in roles.ts does not block"; pass=$((pass+1)); } || { echo "FAIL blocked: $(cat "$T/err")"; fail=$((fail+1)); }
+echo 'import directing/clearing-v2/src/sources/roles.ts' > "$T/platform/tests/v2.bats"
+[ "$(run_gate directing/clearing-v2/src/sources/roles.ts)" = 1 ] && grep -q v2.bats "$T/err" && ! grep -q ctx.bats "$T/err" && { echo "PASS negative proof: a test naming the deleted roles.ts still blocks"; pass=$((pass+1)); } || { echo "FAIL not caught: $(cat "$T/err")"; fail=$((fail+1)); }
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]
