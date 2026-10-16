@@ -3,6 +3,7 @@
 //! chorus-make check    <pipeline> <rows.tsv> <file>     exit 1 on drift (pre-commit / pipeline)
 //! chorus-make graph    <pipeline>                       read the rows from the store (FUSEKI_QUERY), write the workflow
 //! chorus-make walk     <stream label>                   walk stream → steps → pipeline → skills → domains; exit 1 on a broken link (AC7)
+//! chorus-make straight <pipeline> <rows.tsv> <pipe.tsv> <known,pipelines>  a pipeline its Pipeline row runs straight (#4540)
 //! chorus-make parity   <rows.tsv> <tool names>          exit 1 when a tool-name list and the skills wrap different verbs (ADR-062 §9; the old MCP server is retired #4515, its names are a frozen fixture)
 use std::process::exit;
 
@@ -80,6 +81,18 @@ fn main() {
                 exit(1)
             });
             match chorus_make::generate_named(&a[2], &rows) {
+                Ok(t) => print!("{t}"),
+                Err(errs) => { for e in errs { eprintln!("chorus-make: refused: {e}"); } exit(1) }
+            }
+        }
+        // #4540 — a pipeline whose Pipeline row says how it runs (cicd-test, nightly)
+        Some("straight") if a.len() == 6 => {
+            let pipe = chorus_make::parse_pipe(&read(&a[4])).unwrap_or_else(|errs| {
+                for e in errs { eprintln!("chorus-make: {e}"); }
+                exit(1)
+            });
+            let known: Vec<String> = a[5].split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+            match chorus_make::generate_straight(&a[2], &pipe, &rows(&a[3]), &known) {
                 Ok(t) => print!("{t}"),
                 Err(errs) => { for e in errs { eprintln!("chorus-make: refused: {e}"); } exit(1) }
             }

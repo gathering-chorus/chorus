@@ -475,6 +475,11 @@ def nodes_of(run):
 def dagu_summary(run):
     """(result, step) in dagu's own words: the step that failed, waits or runs."""
     status = run.get("statusLabel", "?")
+    # #4540 — a step with `continue_on: failure` that failed leaves the run
+    # `partially_succeeded` (dagu 2.18.2, measured): its work did not pass,
+    # so it reads failed at that step, never as a kind of success
+    if status == "partially_succeeded":
+        status = "failed"
     # #4540 — a child-step retry flips the run to succeeded while the steps
     # after its call step stay aborted (measured on dagu 2.18.2, 2026-10-16):
     # a run that skipped work is not done, whatever its label says
@@ -1063,6 +1068,7 @@ def fixture_4553():
         SUB_RUNS[("cicd", "p2", "none")] = []
         never_ran = run("n", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("aborted", "skill-werk-review")], 160)
         all_ran = run("n2", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("succeeded", "skill-werk-review")], 161)
+        partial = run("q", "cicd", "partially_succeeded", 0, [node("failed", "skill-werk-test", "werk-test: REFUSED — x"), node("succeeded", "skill-werk-review")], 162)
         cases = [
             ("a reopened WIP card never reads landed",
              "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
@@ -1089,6 +1095,11 @@ def fixture_4553():
             # review onward aborted. Negative proof: every step ran reads succeeded.
             ("a succeeded run with a step that never ran reads not done",
              "not done" in line(160, [never_ran], []) and "not done" not in line(161, [all_ran], [])),
+            # #4540 — continue_on: failure leaves dagu's partially_succeeded.
+            # Negative proof: the same run labelled succeeded is not failed.
+            ("a partially succeeded run reads failed at its failed step",
+             "failed at test" in line(162, [partial], [])
+             and "failed" not in line(162, [dict(partial, statusLabel="succeeded", nodes=[node("succeeded", "skill-werk-test")])], [])),
             ("a stop inside the child test pipeline names the child's step",
              "· verdict: RED — 2 types failed: unit, lint" in line(158, [child_stop], [])
              and NO_REASON in line(159, [run("p2", "cicd", "failed", 0, [dict(node("failed", "skill-werk-test", "exit status 1"),

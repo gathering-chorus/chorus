@@ -1,0 +1,8 @@
+# #4540 fixture — the cicd-test child pipeline: werk-test as steps (Jeff 10-16 B: one queue, perf alone).
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+scope	1	1	skill-werk-test-scope	werk-test scope	deterministic	werk-test	scope ${CARD} ${ROLE} --scope=${SCOPE}			
+prepare	2	1	skill-werk-test-prepare	werk-test prepare	deterministic	werk-test	prepare ${CARD} ${ROLE} --scope=${SCOPE}			
+run	3	1	skill-werk-test-run	werk-test run: the one queue, every type but perf, in Jeff's type order	deterministic	werk-test	run ${CARD} ${ROLE} --scope=${SCOPE}			continue_on=failure
+perf	4	1	skill-werk-test-perf	werk-test run perf alone, on a quiet box	deterministic	werk-test	run ${CARD} ${ROLE} --scope=${SCOPE} --test-type=perf			continue_on=failure
+report	5	1	skill-werk-test-report	werk-test report	deterministic	werk-test	report ${CARD} ${ROLE} --scope=${SCOPE}			continue_on=failure
+verdict	6	1	skill-werk-test-verdict	werk-test verdict	deterministic	werk-test	verdict ${CARD} ${ROLE} --scope=${SCOPE}			
