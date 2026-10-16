@@ -105,7 +105,7 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
     await new Promise(r => setTimeout(r, 200));
   }
   throw new Error(`test Clearing failed to start on port ${TEST_PORT} within 10s:\n${spawnLog.join('')}`);
-}, 15000); // #4530 — the hook waits up to 10 s for its Clearing; jest's 5 s default killed it first
+}, 15000); // slow-by-design (#4530): the hook waits up to 10 s for its Clearing; jest's 5 s default killed it first
 
 afterAll(async () => {
   if (graph) await graph.close();
