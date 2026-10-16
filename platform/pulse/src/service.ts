@@ -18,9 +18,11 @@ import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
+import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
 
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
+
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { callerRole } from './caller-identity';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
@@ -386,7 +388,12 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   });
 }
 
-export function createApp(store: MessageStore, worker?: DeliveryWorker, emit?: EmitSpine): Express {
+export function createApp(
+  store: MessageStore,
+  worker?: DeliveryWorker,
+  emit?: EmitSpine,
+  actorStateService?: { getActorStates: () => unknown }
+): Express {
   const app = express();
   app.use(express.json());
   const metrics = buildMetrics();
@@ -397,8 +404,21 @@ export function createApp(store: MessageStore, worker?: DeliveryWorker, emit?: E
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
+  // #4560 — actor state derived once in pulse, every surface presents it
+  app.get('/api/actor-state', (_req, res) => {
+    res.json(
+      actorStateService
+        ? actorStateService.getActorStates()
+        : {
+            derivedAt: new Date().toISOString(),
+            actors: [],
+            unmeasured: [{ source: 'pulse:service', reason: 'actor-state-service uninitialized' }],
+          }
+    );
+  });
   return app;
 }
+
 
 // #2727 AC2/AC12: production-side worker dependencies. Tests inject mocks
 // via DeliveryWorker constructor; this block wires the real chorus-inject
@@ -573,22 +593,23 @@ if (require.main === module) {
     // reply.rendered (Clearing) inside the window fires reply.delivery.gap.
     // Reads the spine TAIL only (last 512KB) — the spine is never rotated
     // (Jeff's ruling) and a full read per tick would grow with it forever.
+    const spinePath = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
+      || path.join(os.homedir(), '.chorus', 'chorus.log');
+    const readTail = async (): Promise<string> => {
+      const TAIL_BYTES = 512 * 1024;
+      const fh = await fsOpen(spinePath, 'r');
+      try {
+        const { size } = await fh.stat();
+        const start = Math.max(0, size - TAIL_BYTES);
+        const buf = Buffer.alloc(size - start);
+        await fh.read(buf, 0, buf.length, start);
+        return buf.toString('utf8');
+      } finally {
+        await fh.close();
+      }
+    };
+
     {
-      const spinePath = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
-        || path.join(os.homedir(), '.chorus', 'chorus.log');
-      const readTail = async (): Promise<string> => {
-        const TAIL_BYTES = 512 * 1024;
-        const fh = await fsOpen(spinePath, 'r');
-        try {
-          const { size } = await fh.stat();
-          const start = Math.max(0, size - TAIL_BYTES);
-          const buf = Buffer.alloc(size - start);
-          await fh.read(buf, 0, buf.length, start);
-          return buf.toString('utf8');
-        } finally {
-          await fh.close();
-        }
-      };
       startReplyGapWatch(readTail, async (gap) => {
         await emitSpine('reply.delivery.gap', {
           role: gap.role, hash: gap.hash, emittedAt: gap.emittedAt, surface: 'clearing',
@@ -644,10 +665,17 @@ if (require.main === module) {
       }, 2000).unref();
     }
 
-    const app = createApp(store, worker, emitSpine);
+    // #4560 — ActorStateService: derives actor state on 15s timer into cache
+    const actorStateService = new ActorStateService(
+      buildLiveActorFactFetcher({ store, readTail })
+    );
+    actorStateService.start();
+
+    const app = createApp(store, worker, emitSpine, actorStateService);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
       lifecycle.started();  // #4446 — round 1 imported the helper but never called it
     });
   })();
 }
+

@@ -486,7 +486,19 @@ export class MessageStore {
     return this.db.prepare(sql).all(...params) as Message[];
   }
 
+  getOwedNudges(): Array<{ id: number; from: string; to: string; content: string; sentAt: string; expects: 'reply' | 'decision' | 'action' }> {
+    try {
+      const rows = this.db.prepare(
+        "SELECT id, \"from\", \"to\", content, created_at as sentAt, nudge_expects as expects FROM messages WHERE type = 'nudge' AND nudge_class = 'r2r' AND nudge_expects IN ('reply', 'decision', 'action') AND acknowledged = 0 ORDER BY id DESC LIMIT 50"
+      ).all() as Array<{ id: number; from: string; to: string; content: string; sentAt: string; expects: 'reply' | 'decision' | 'action' }>;
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
   // --- Stats ---
+
 
   getStats(): { total: number; pending: number; byType: Record<string, number> } {
     const total = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c;
