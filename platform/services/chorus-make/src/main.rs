@@ -81,6 +81,20 @@ fn main() {
                 for e in errs { eprintln!("chorus-make: {e}"); }
                 exit(1)
             });
+            // #4540 — a Pipeline row that says how it runs (a queue) is generated straight
+            let pipe_tsv = chorus_make::pipe_tsv_from_sparql(&sparql(&chorus_make::pipe_query(&a[2])));
+            if !pipe_tsv.is_empty() {
+                let pipe = chorus_make::parse_pipe(&pipe_tsv).unwrap_or_else(|errs| {
+                    for e in errs { eprintln!("chorus-make: {e}"); }
+                    exit(1)
+                });
+                let known = chorus_make::labels_from_sparql(&sparql(chorus_make::PIPELINES_QUERY));
+                match chorus_make::generate_straight(&a[2], &pipe, &rows, &known) {
+                    Ok(t) => print!("{t}"),
+                    Err(errs) => { for e in errs { eprintln!("chorus-make: refused: {e}"); } exit(1) }
+                }
+                return;
+            }
             match chorus_make::generate_named(&a[2], &rows) {
                 Ok(t) => print!("{t}"),
                 Err(errs) => { for e in errs { eprintln!("chorus-make: refused: {e}"); } exit(1) }

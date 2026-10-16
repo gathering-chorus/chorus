@@ -102,3 +102,15 @@ fn a_child_pipeline_has_no_failure_handler_and_a_top_level_one_keeps_it() {
     let out = generate_straight("x", &top, &rows("cicd-test-rows.tsv"), &known()).unwrap();
     assert!(out.contains("  failure:\n"), "{out}");
 }
+
+/// #4540 — the graph read: a Pipeline row's run fields become parse_pipe input;
+/// a row that sets none is empty (cicd stays the shape it always was).
+#[test]
+fn the_pipeline_rows_run_fields_read_from_the_store() {
+    let tsv = "?queue\t?schedule\t?params\t?traceParam\t?onAbort\t?onExit\n\"nightly\"\t\"0 3 * * *\"\t\"CARD ROLE\"\t\t\"werk-test report --scope=all --stopped\"\t\"werk-test notify\"\n";
+    let pipe = parse_pipe(&chorus_make::pipe_tsv_from_sparql(tsv)).unwrap();
+    assert_eq!(pipe, parse_pipe(&fixture("nightly-pipe.tsv")).unwrap());
+    // NEGATIVE PROOF: no run fields set reads as nothing, never a default queue
+    assert_eq!(chorus_make::pipe_tsv_from_sparql("?queue\t?schedule\t?params\t?traceParam\t?onAbort\t?onExit\n\t\t\t\t\t\n"), "");
+    assert_eq!(chorus_make::labels_from_sparql("?label\n\"cicd\"\n\"cicd-test\"\n"), vec!["cicd", "cicd-test"]);
+}

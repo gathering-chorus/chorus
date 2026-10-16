@@ -669,6 +669,45 @@ SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode
 ORDER BY ?stepOrder ?skillOrder
 "#;
 
+/// #4540 — the Pipeline row's own run fields (none set: an empty answer).
+pub const PIPE_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?queue ?schedule ?params ?traceParam ?onAbort ?onExit WHERE {
+  GRAPH ?g { ?p a chorus:Pipeline ; rdfs:label "{PIPELINE}" .
+    OPTIONAL { ?p chorus:runQueue ?queue } OPTIONAL { ?p chorus:runSchedule ?schedule }
+    OPTIONAL { ?p chorus:runParams ?params } OPTIONAL { ?p chorus:traceParam ?traceParam }
+    OPTIONAL { ?p chorus:onAbortRun ?onAbort } OPTIONAL { ?p chorus:onExitRun ?onExit } }
+}
+"#;
+
+/// Every Pipeline the graph holds, by label (a `pipeline` step may call only these).
+pub const PIPELINES_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE { GRAPH ?g { ?p a chorus:Pipeline ; rdfs:label ?label } }
+"#;
+
+pub fn pipe_query(pipeline: &str) -> String {
+    PIPE_QUERY.replace("{PIPELINE}", &pipeline.replace(['"', '\\', '\n'], ""))
+}
+
+/// The Pipeline row's fields as `key<TAB>value` lines for parse_pipe; empty
+/// when the row sets none (cicd, athena: generated the way they always were).
+pub fn pipe_tsv_from_sparql(tsv: &str) -> String {
+    let mut lines = tsv.lines();
+    let _header = lines.next();
+    let Some(row) = lines.find(|l| !l.trim().is_empty()) else { return String::new() };
+    let keys = ["queue", "schedule", "params", "traceParam", "onAbort", "onExit"];
+    row.split('\t').map(term).zip(keys)
+        .filter(|(v, _)| !v.is_empty())
+        .map(|(v, k)| format!("{k}\t{v}\n"))
+        .collect()
+}
+
+/// The labels from PIPELINES_QUERY's TSV.
+pub fn labels_from_sparql(tsv: &str) -> Vec<String> {
+    tsv.lines().skip(1).map(term).filter(|l| !l.is_empty()).collect()
+}
+
 pub fn rows_query(pipeline: &str) -> String {
     ROWS_QUERY.replace("{PIPELINE}", &pipeline.replace(['"', '\\', '\n'], ""))
 }

@@ -66,8 +66,9 @@
     # 0.7.0 (#4536): TestShape gains result, runTs, cardId, failureReason
     # (optional): each Test row holds its latest result, updated in place.
     # 0.8.0 (#4539): TestShape gains testNeeds (machine | nightly, optional).
+    # 0.9.0 (#4540): the tests domain claims TestType (pipelines-4040.ttl).
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
-    owl:versionInfo "0.8.0" ;
+    owl:versionInfo "0.9.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -476,7 +477,8 @@ chorus:tests a chorus:Domain ;
     # gate:arch; this was the last role-* in the file.
     chorus:ownedBy chorus:principal-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
-    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
+    # #4540 — TestType: the test types in the order the run's one queue starts them
+    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun , chorus:TestType ;
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
