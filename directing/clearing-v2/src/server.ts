@@ -355,7 +355,7 @@ function roomOf(event: NostrEvent): string {
   return roomTag ? roomTag[1] : 'team';
 }
 
-function toClearingMessage(event: NostrEvent, role: string, tick: boolean): ClearingMessage {
+function toClearingMessage(event: NostrEvent, role: string, tick: boolean, signer?: string): ClearingMessage {
   return {
     id: event.id,
     from: role,
@@ -366,6 +366,7 @@ function toClearingMessage(event: NostrEvent, role: string, tick: boolean): Clea
     pubkey: event.pubkey,
     room: roomOf(event),
     tick,
+    signer,
   };
 }
 
@@ -383,19 +384,21 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     if (!verifyNostrEvent(event)) {
       return;
     }
-    let role = resolveRoleByPubkey(event.pubkey, deps.keys) || 'unattributed';
+    const signerRole = resolveRoleByPubkey(event.pubkey, deps.keys) || 'unattributed';
+    let role = signerRole;
     // #4591 — on bridge-signed events, unwrap the true author from the author tag
-    if (role === 'bridge' && Array.isArray(event.tags)) {
+    if (signerRole === 'bridge' && Array.isArray(event.tags)) {
       const authorTag = event.tags.find((t) => t[0] === 'author');
       if (authorTag && authorTag[1]) {
         role = authorTag[1];
       }
     }
-    const msg = toClearingMessage(event, role, deps.isRelayConnected());
+    const msg = toClearingMessage(event, role, deps.isRelayConnected(), signerRole);
     if (!deps.router.ingest(msg)) return;
     deps.broadcastSSE('message', msg);
-    // #4571 — only Jeff's own messages are Jeff input; agents nudge each other on their own path.
-    if (role !== 'jeff') return;
+    // #4571/#4591 — only direct cryptographic sends from Jeff are Jeff input;
+    // bridge-signed notes are transcript/room mirrors, never a second pulse injection.
+    if (signerRole !== 'jeff') return;
     for (const nudge of deps.router.extractNudges(msg)) {
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
         if (!r.ok) {
