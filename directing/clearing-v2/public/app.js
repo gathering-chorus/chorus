@@ -184,7 +184,8 @@ function initStream() {
   evtSource.addEventListener('init', (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.messages) {
+      // #4574 — pages without a message list (Board, Roles) ignore the room's history
+      if (data.messages && messagesContainer) {
         messagesContainer.innerHTML = '';
         data.messages.forEach(appendMessage);
       }

@@ -4,7 +4,7 @@ import { BuzzRelayClient } from './relay-client';
 import { MessageRouter } from './router';
 import { ClearingMessage } from './types';
 import { RolesData, TodayData, RoomsData, DoorRolesResponse, TrustStripSource, TodayCardItem } from './sources/models';
-import { fetchJson } from './sources/http';
+import { fetchJson, failureReason } from './sources/http';
 import { formatBostonTime, formatBostonWhen, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
 import { buildTrustStripSources, TrustStripOptions } from './sources/trust-strip';
 import { fetchAlerts } from './sources/today';
@@ -102,8 +102,9 @@ export class DataService {
       fetchAlerts(options?.alertsUrl || this.defaultAlertsUrl),
       fetchChangesOvernight(pulseUrl),
     ]);
-    // Unreadable alerts door -> no alerts row (unchanged by #4563).
+    // #4574 — unreadable alerts source reads unmeasured with the reason, never empty or zero.
     const alerts = alertsRead.ok ? alertsRead.value : [];
+    const alertsUnmeasured = alertsRead.ok ? undefined : `alerts API unreadable (${failureReason(alertsRead, 'connection refused')})`;
     const changedCards: TodayCardItem[] = changes.ok ? (changes.value.cards || []).map(toChangedCard) : [];
     const watermark = changes.ok && changes.value.watermark ? formatBostonWhen(changes.value.watermark) : undefined;
 
@@ -116,6 +117,7 @@ export class DataService {
       watermark,
       foldedCount: Math.max(0, changedCards.length - 4),
       alerts,
+      alertsUnmeasured,
       // display filter: Working now leaves out actors pulse says are away or off
       workingRoles: roles.actors.filter((a) => a.state !== 'off' && a.state !== 'away'),
       workingUnmeasured: roles.unmeasured,

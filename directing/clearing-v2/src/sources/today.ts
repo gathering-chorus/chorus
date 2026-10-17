@@ -1,5 +1,5 @@
 // @domain: messages
-// Today page: alerts with resolving cards. Who is working and what changed overnight come from pulse (sources/pulse.ts).
+// Today page: alerts from the alerts API (trigger event + trigger data, #4574). Who is working and what changed overnight come from pulse (sources/pulse.ts).
 
 import { TodayAlert, AlertItem, AlertsResponse } from './models';
 import { Fetched, fetchJson } from './http';
@@ -28,26 +28,45 @@ function resolvingCardOf(item: AlertItem): number {
   return isNaN(parsed) ? 0 : parsed;
 }
 
-/** One alert row, or null when the item is neither firing nor acked. `seen` = alerts kept so far. */
+function alertStatusOf(item: AlertItem): TodayAlert['status'] | null {
+  const raw = (item.status || item.state || '').toLowerCase();
+  if (raw && raw !== 'firing' && raw !== 'acked') return null;
+  return raw === 'acked' ? 'acked' : 'firing';
+}
+
+function alertTitleOf(item: AlertItem): string {
+  // never item.description: that is the alert's 'why' (Jeff 10-16: trigger + data, no why)
+  return item.trigger || item.label || item.title || item.name || '';
+}
+
+function alertMetaOf(item: AlertItem, title: string, status: TodayAlert['status'], resolvingCard: number): string {
+  const card = resolvingCard > 0 ? ` · #${resolvingCard}` : '';
+  // trigger data is the measured values the API serves; until it serves them, say so
+  if (item.data) return `${item.data}${card}`;
+  return `no trigger data yet${card}`;
+}
+
+/** #4574 — trigger event first (rule/name), then trigger data (measured values), never the description.
+ *  Rows from /api/chorus/context/alerts omit status because data.alerts lists firing rows only. */
 function toTodayAlert(item: AlertItem, seen: number): TodayAlert | null {
-  const rawStatus = (item.status || item.state || '').toLowerCase();
-  if (rawStatus !== 'firing' && rawStatus !== 'acked') return null;
-  const status: TodayAlert['status'] = rawStatus;
+  const status = alertStatusOf(item);
+  if (!status) return null;
   const resolvingCard = resolvingCardOf(item);
-  const fallbackMeta = resolvingCard > 0 ? `${status === 'firing' ? 'new' : 'changed'} · #${resolvingCard}` : status;
+  const title = alertTitleOf(item);
   return {
     id: String(item.id || item.name || `alert-${seen + 1}`),
     status,
-    title: item.label || item.title || item.name || '',
+    title,
     resolvingCard,
-    meta: item.meta || fallbackMeta,
+    meta: alertMetaOf(item, title, status, resolvingCard),
   };
 }
 
-/** Alerts with resolving cards, read from alertsUrl (zero literals). */
+/** Alerts with trigger + data, read from alertsUrl (zero literals). */
 export async function fetchAlerts(alertsUrl: string): Promise<Fetched<TodayAlert[]>> {
   const r = await fetchJson<AlertsResponse | AlertItem[] | null>(alertsUrl, READ_TIMEOUT_MS);
   if (!r.ok) return r;
+  if (!r.value) return { ok: false, message: 'alerts API returned no body' };
   const alerts: TodayAlert[] = [];
   for (const item of alertItems(r.value)) {
     const alert = toTodayAlert(item, alerts.length);

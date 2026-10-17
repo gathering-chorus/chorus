@@ -68,6 +68,8 @@ export interface TodayData {
   watermark?: string;
   foldedCount: number;
   alerts: TodayAlert[];
+  /** Set when the alerts API could not be read: named with reason, never 0 firing. */
+  alertsUnmeasured?: string;
   workingRoles: ActorRow[];
   /** Set when actor-state could not be read or pulse listed unmeasured sources: named, never a zero. */
   workingUnmeasured?: string;
@@ -108,8 +110,12 @@ export interface AlertItem {
   name?: string;
   status?: string;
   state?: string;
+  severity?: string;
   label?: string;
   title?: string;
+  description?: string;
+  trigger?: string;
+  data?: string;
   meta?: string;
   resolvingCard?: string | number;
   links?: { resolvingCard?: string | number };

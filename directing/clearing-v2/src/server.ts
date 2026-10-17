@@ -15,7 +15,8 @@ import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
-import { renderTodayPage, renderRolesPage, renderRoomsPage } from './views';
+import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage } from './views';
+import { fetchBoard } from './sources/board';
 import { DataService } from './data-service';
 
 export interface ClearingV2Config {
@@ -67,6 +68,7 @@ export function notSignedIn(signInUrl: string | undefined): { ok: false; error: 
 }
 const PULSE_URL = process.env.PULSE_URL || activeConfig.pulseUrl || 'http://127.0.0.1:3475';
 const ROLES_URL = process.env.ROLES_URL || activeConfig.rolesUrl || 'http://localhost:3360/v1/roles/roles';
+const BOARD_URL = process.env.BOARD_URL || activeConfig.boardUrl || 'http://localhost:3340/api/chorus/context/board';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
 
@@ -105,6 +107,7 @@ interface RouteContext {
   keys: Map<string, string>;
   cookieKey?: Buffer | null;
   signInUrl?: string;
+  boardUrl: string;
 }
 
 // Helper: test overrides only allowed via x-* headers in test mode, NEVER via URL query parameters
@@ -136,6 +139,17 @@ function registerPageRoutes(ctx: RouteContext): void {
       dataService.getTrustStripSources({ pulseUrl }),
     ]);
     res.type('html').send(renderTodayPage(todayData, sources));
+  });
+
+  // #4574 — the Board tab: the board API's columns as served; ?card=N opens that card.
+  app.get('/board', async (req: Request, res: Response) => {
+    const { pulseUrl } = getTestOverrides(req);
+    const card = Number(req.query.card);
+    const [columns, sources] = await Promise.all([
+      fetchBoard(ctx.boardUrl),
+      dataService.getTrustStripSources({ pulseUrl }),
+    ]);
+    res.type('html').send(renderBoardPage(columns, Number.isInteger(card) && card > 0 ? card : null, sources));
   });
 
   app.get('/roles', async (req: Request, res: Response) => {
@@ -447,6 +461,7 @@ export function createApp(options?: CreateAppOptions) {
     keys,
     cookieKey: options?.cookieKey,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
+    boardUrl: options?.boardUrl ?? BOARD_URL,
   });
 
   return { app, router, tileService, dataService, relay };
