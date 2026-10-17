@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""#4577 — the store writes the pair pipeline needs, DRY RUN unless --apply.
+# @domain: pipelines
+
+The rows are read from chorus-make's pair fixtures (pair-rows.tsv,
+pair-pipe.tsv), the same rows the drift bats generates pair.yaml from, so the
+store and the committed pipeline cannot differ. Each write prints as ADD /
+CHANGE / SAME against the door. Nothing is written without --apply, and
+--apply is a prod write: it runs only after Jeff's yes on the dry run.
+
+Order: the model (onFailureRun on Pipeline) deploys first at the land, so the
+door serves the field; then Skills, PipelineSteps, StepSkills, and the
+Pipeline last, so the pipeline never names a step that is not there yet.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or
+the fixtures could not be read (no plan is guessed).
+"""
+import json, os, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+FX = os.path.join(ROOT, "platform/services/chorus-make/tests/fixtures")
+OWNER = "principal-kade"
+COVERS = {"proof": "value-stream-step-test"}  # every other pair step is Building
+
+
+def rows():
+    out = []
+    for line in open(os.path.join(FX, "pair-rows.tsv")):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#") or line.startswith("step\t"):
+            continue
+        f = line.split("\t") + [""] * 11
+        out.append(dict(zip(["step", "stepOrder", "skillOrder", "skill", "label", "executor",
+                             "implementedBy", "mode", "onFail", "inputShape", "withArgs"], f[:11])))
+    return out
+
+
+def pipe():
+    p = {}
+    for line in open(os.path.join(FX, "pair-pipe.tsv")):
+        if "\t" in line and not line.startswith("#"):
+            k, v = line.rstrip("\n").split("\t", 1)
+            p[k] = v
+    return p
+
+
+def want():
+    skills, steps, stepskills = [], [], []
+    for r in rows():
+        skills.append({"name": r["skill"].removeprefix("skill-"), "label": r["label"], "executor": r["executor"],
+                       "implementedBy": r["implementedBy"], "arguments": r["mode"], "hasDomain": "pipelines",
+                       "ownedBy": OWNER, "runsAs": "" if r["executor"] == "human" else "caller"})
+        steps.append({"name": f"pair-{r['step']}", "label": f"pipeline-step-pair-{r['step']}", "executor": r["executor"],
+                      "stepOrder": r["stepOrder"], "coversStep": COVERS.get(r["step"], "value-stream-step-building")})
+        stepskills.append({"name": f"pair-{r['step']}-{r['skillOrder']}", "label": f"pair {r['step']} {r['skillOrder']}: {r['label']}",
+                           "callsSkill": r["skill"], "forStep": f"pipeline-step-pair-{r['step']}",
+                           "skillOrder": r["skillOrder"], "withArguments": r["withArgs"], "ownedBy": OWNER})
+    p = pipe()
+    pipelines = [{"name": "pair", "label": "pipeline-pair", "automates": "value-stream-werk", "pipelineStatus": "operating",
+                  "runQueue": p.get("queue", ""), "runParams": p.get("params", ""), "onFailureRun": p.get("onFailure", ""),
+                  "hasStep": " ".join(f"pipeline-step-pair-{r['step']}" for r in rows())}]
+    return [("skills/skills", skills), ("pipelinesteps", steps), ("stepskills", stepskills), ("pipelines", pipelines)]
+
+
+def call(method, path, body=None):
+    req = urllib.request.Request(f"{DOOR}{path}", method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.load(r)
+
+
+def main():
+    apply = "--apply" in sys.argv[1:]
+    try:
+        plan = want()
+    except OSError as e:
+        print(f"fixtures unreadable: {e} — no plan")
+        return 2
+    try:
+        live = {c: {r["name"]: r for r in (call("GET", f"/{c}?limit=1000").get("data") or [])} for c, _ in plan}
+    except Exception as e:
+        print(f"door unreadable at {DOOR}: {e} — no plan")
+        return 2
+    served = set().union(*(set(r) for r in live["pipelines"].values())) if live["pipelines"] else set()
+    print("TBox  Pipeline.onFailureRun served by the door: " + ("yes" if "onFailureRun" in served
+          else "NOT SERVED (deploy the model first; the door refuses the field until then)"))
+    counts, refused = {"ADD": 0, "CHANGE": 0, "SAME": 0}, 0
+    for coll, rs in plan:
+        for w in rs:
+            have = live[coll].get(w["name"])
+            if have is None:
+                kind, detail = "ADD", json.dumps(w, sort_keys=True)
+            else:
+                diff = {k: f"{have.get(k, '')!r} -> {v!r}" for k, v in w.items() if str(have.get(k, "")) != str(v)}
+                kind, detail = ("SAME", "") if not diff else ("CHANGE", json.dumps(diff))
+            counts[kind] += 1
+            print(f"{kind:<6} {coll}/{w['name']}  {detail}")
+            if apply and kind != "SAME":
+                try:
+                    if kind == "ADD":
+                        call("POST", f"/{coll}", w)
+                    else:
+                        call("PATCH", f"/{coll}/{w['name']}", {k: v for k, v in w.items() if k != "name"})
+                except Exception as e:
+                    refused += 1
+                    print(f"  REFUSED {coll}/{w['name']}: {e}")
+    verb = "applied" if apply else "nothing written (dry run)"
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — {verb}")
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -47,3 +47,8 @@ queues:
     # not stop a second `dagu start`, so the scheduler enqueues here.
     - name: nightly
       max_concurrency: 1
+    # #4577 — pairs (made by chorus-make). A pair run spends most of its life
+    # waiting on its navigator's green, so several run at once; its tests run
+    # as a cicd-test sub-run and its hand-off is enqueued on werk.
+    - name: pair
+      max_concurrency: 4
