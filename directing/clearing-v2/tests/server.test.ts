@@ -8,7 +8,10 @@ import path from 'path';
 import { WebSocketServer } from 'ws';
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import fs from 'fs';
+import os from 'os';
 import { createApp, loadConfig } from '../src/server';
+import { loadKnownKeys } from '../src/identity';
 import { TileService } from '../src/tile-service';
 import { serializeEvent, buildEventId, verifyNostrEvent, resolveRoleByPubkey } from '../src/identity';
 import { mintShareSessionCookie } from '../src/share-session';
@@ -34,7 +37,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('createApp initializes app, router, relay and tileService', () => {
     const { app, router, tileService, relay } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
     });
     expect(app).toBeDefined();
     expect(router).toBeDefined();
@@ -43,7 +46,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   });
 
   test('TileService initializes known team roles with idle state', () => {
-    const tileService = new TileService('http://127.0.0.1:3475');
+    const tileService = new TileService('http://127.0.0.1:9');
     const tiles = tileService.getTiles();
     expect(tiles.length).toBe(5);
     const roles = tiles.map(t => t.role);
@@ -84,7 +87,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
 
     const { app } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       rolesUrl: `http://127.0.0.1:${stubPort}/roles`,
       boardUrl: `http://127.0.0.1:${stubPort}/board`,
     });
@@ -124,7 +127,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
     const deadRelayPort = 3499;
     const { app } = createApp({
       relayUrl: `ws://127.0.0.1:${deadRelayPort}`,
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
 
@@ -182,7 +185,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('NEGATIVE PROOF: /api/send refuses unsigned posts with 401', async () => {
     const { app } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
     });
     const server = http.createServer(app);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
@@ -206,7 +209,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('NEGATIVE PROOF: /api/send refuses events signed by unregistered keys with 401', async () => {
     const { app } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
     const server = http.createServer(app);
@@ -223,7 +226,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
       expect(res.status).toBe(401);
       const json = await res.json() as any;
       expect(json.ok).toBe(false);
-      expect(json.error).toMatch(/unregistered/i);
+      expect(json.error).toBe('not-signed-in'); // #4571: an unregistered key is refused as not signed in, naming the door
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -232,7 +235,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('accepts event signed by registered key, taking sender strictly from the key', async () => {
     const { app, router } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
     const server = http.createServer(app);
@@ -260,10 +263,26 @@ describe('Clearing v2: Server App & Tile Service', () => {
   });
 
   test('POST /api/room/bind requires verified session cookie, refusing unauthenticated with 401 (#3827)', async () => {
+    const jeffInputs: Array<{ to: string; content: string; caller: string | undefined }> = [];
+    const pulseStub = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += String(c); });
+      req.on('end', () => {
+        if (req.method === 'POST' && req.url === '/api/jeff-input') {
+          const parsed = JSON.parse(body);
+          jeffInputs.push({ to: parsed.to, content: parsed.content, caller: req.headers['x-chorus-clearing-caller'] as string | undefined });
+        }
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end('{"ok":true}');
+      });
+    });
+    await new Promise<void>((r) => pulseStub.listen(0, '127.0.0.1', () => r()));
+    const pulsePort = (pulseStub.address() as any).port;
+
     const testCookieKey = Buffer.from('test-secret-cookie-key-for-session-32b');
     const { app, router } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: `http://127.0.0.1:${pulsePort}`,
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
       cookieKey: testCookieKey,
     });
@@ -320,8 +339,11 @@ describe('Clearing v2: Server App & Tile Service', () => {
       // no relay in this test, so the sent tick stays off: the tick means the relay
       // accepted it (rooms.feature:19), not that the server received it
       expect(recent[0].tick).toBe(false);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(jeffInputs).toEqual([{ to: 'wren', content: 'Hello team from Jeff browser', caller: '1' }]);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
+      await new Promise<void>((r) => pulseStub.close(() => r()));
     }
   });
 });
@@ -332,5 +354,143 @@ describe('Clearing v2: #4570 Service Run & WiFi Binding', () => {
     expect(cfg.port).toBe(3472);
     expect(cfg.host).toBe('0.0.0.0');
     expect(cfg.pulseUrl).toBe('http://127.0.0.1:3475');
+  });
+});
+
+describe('Clearing v2: #4571 Known Keys from ~/.chorus/identity', () => {
+  test('loadKnownKeys loads every <home>/.chorus/identity/<who>/nostr.json pubkey (pubkey only, never seckey)', () => {
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-v2-id-'));
+    try {
+      const idDir = path.join(tmpHome, '.chorus', 'identity');
+      const wrenPriv = new Uint8Array(32).fill(11);
+      const wrenPub = bytesToHex(schnorr.getPublicKey(wrenPriv));
+      const silasPriv = new Uint8Array(32).fill(22);
+      const silasPub = bytesToHex(schnorr.getPublicKey(silasPriv));
+      const seckeyOnlyPriv = new Uint8Array(32).fill(33);
+      const seckeyOnlyPub = bytesToHex(schnorr.getPublicKey(seckeyOnlyPriv));
+
+      fs.mkdirSync(path.join(idDir, 'wren'), { recursive: true });
+      fs.writeFileSync(path.join(idDir, 'wren', 'nostr.json'), JSON.stringify({ pubkey: wrenPub.toUpperCase(), seckey: 'ignored' }));
+
+      fs.mkdirSync(path.join(idDir, 'silas'), { recursive: true });
+      fs.writeFileSync(path.join(idDir, 'silas', 'nostr.json'), JSON.stringify({ pubkey: silasPub }));
+
+      // NEGATIVE PROOF: a file with seckey only (no pubkey) is never derived or loaded
+      fs.mkdirSync(path.join(idDir, 'kade'), { recursive: true });
+      fs.writeFileSync(path.join(idDir, 'kade', 'nostr.json'), JSON.stringify({ seckey: bytesToHex(seckeyOnlyPriv) }));
+
+      const keys = loadKnownKeys(tmpHome);
+      expect(keys.get(wrenPub)).toBe('wren');
+      expect(keys.get(silasPub)).toBe('silas');
+      expect(keys.get(seckeyOnlyPub)).toBeUndefined();
+      expect( resolveRoleByPubkey(wrenPub, keys) ).toBe('wren');
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Clearing v2: #4571 AC3 Live Role Reply via SSE without Reload', () => {
+  const wrenPriv = new Uint8Array(32).fill(55);
+  const wrenPub = bytesToHex(schnorr.getPublicKey(wrenPriv));
+
+  function signReply(privKey: Uint8Array, text: string): NostrEvent {
+    const pubkey = bytesToHex(schnorr.getPublicKey(privKey));
+    const createdAt = Math.floor(Date.now() / 1000);
+    const tags = [['t', 'team'], ['t', 'reply']];
+    const serialized = serializeEvent(pubkey, createdAt, 1, tags, text);
+    const id = buildEventId(serialized);
+    const sig = bytesToHex(schnorr.sign(hexToBytes(id), privKey));
+    return { id, pubkey, created_at: createdAt, kind: 1, tags, content: text, sig };
+  }
+
+  test('role reply arriving from Buzz relay streams over /api/events SSE without reload, while forged event is dropped (negative proof)', async () => {
+    const relayHttp = http.createServer();
+    const wss = new WebSocketServer({ server: relayHttp });
+    let relaySocket: any = null;
+    const reqReceived = new Promise<void>((resolve) => {
+      wss.on('connection', (ws) => {
+        relaySocket = ws;
+        ws.on('message', (raw) => {
+          const frame = JSON.parse(String(raw));
+          if (frame[0] === 'REQ') resolve();
+        });
+      });
+    });
+
+    await new Promise<void>((r) => relayHttp.listen(0, '127.0.0.1', () => r()));
+    const relayPort = (relayHttp.address() as any).port;
+
+    const { app, relay } = createApp({
+      relayUrl: `ws://127.0.0.1:${relayPort}`,
+      pulseUrl: 'http://127.0.0.1:9',
+      knownKeys: new Map([[wrenPub, 'wren']]),
+      relaySigner: null,
+    });
+
+    const clearingServer = http.createServer(app);
+    await new Promise<void>((r) => clearingServer.listen(0, '127.0.0.1', () => r()));
+    const clearingPort = (clearingServer.address() as any).port;
+
+    relay.connect();
+    await reqReceived;
+
+    const sseMessages: Array<{ event: string; data: any }> = [];
+    let onMessageEvent: (() => void) | null = null;
+    const messageArrived = new Promise<void>((resolve) => {
+      onMessageEvent = resolve;
+    });
+
+    const sseReq = http.get(`http://127.0.0.1:${clearingPort}/api/events`, (res) => {
+      let buf = '';
+      res.on('data', (chunk) => {
+        buf += String(chunk);
+        const frames = buf.split('\n\n');
+        buf = frames.pop() || '';
+        for (const f of frames) {
+          const lines = f.split('\n');
+          const evLine = lines.find((l) => l.startsWith('event: '));
+          const dataLine = lines.find((l) => l.startsWith('data: '));
+          if (evLine && dataLine) {
+            const ev = evLine.slice(7).trim();
+            const parsed = JSON.parse(dataLine.slice(6));
+            sseMessages.push({ event: ev, data: parsed });
+            if (ev === 'message' && onMessageEvent) onMessageEvent();
+          }
+        }
+      });
+    });
+
+    try {
+      // Wait for initial SSE init event
+      await new Promise((r) => setTimeout(r, 50));
+
+      // 1. NEGATIVE PROOF: forged/tampered relay event is dropped and never streamed to SSE
+      const validReply = signReply(wrenPriv, 'Live reply from Wren without reload');
+      const forgedReply: NostrEvent = { ...validReply, content: 'Tampered text after signing' };
+      relaySocket.send(JSON.stringify(['EVENT', 'team-sub', forgedReply]));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(sseMessages.filter((m) => m.event === 'message')).toHaveLength(0);
+
+      // 2. POSITIVE PROOF: valid signed role reply from relay arrives on /api/events SSE without reload
+      relaySocket.send(JSON.stringify(['EVENT', 'team-sub', validReply]));
+      await messageArrived;
+
+      const msgEvents = sseMessages.filter((m) => m.event === 'message');
+      expect(msgEvents).toHaveLength(1);
+      expect(msgEvents[0].data).toMatchObject({
+        id: validReply.id,
+        from: 'wren',
+        text: 'Live reply from Wren without reload',
+        type: 'role-response',
+        room: 'team',
+        tick: true,
+      });
+    } finally {
+      sseReq.destroy();
+      relay.close();
+      await new Promise<void>((r) => clearingServer.close(() => r()));
+      await new Promise<void>((r) => wss.close(() => relayHttp.close(() => r())));
+    }
   });
 });

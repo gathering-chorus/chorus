@@ -1,3 +1,8 @@
+/** #4571 — the path prefix this page was served under ('' on the LAN, '/clearing-v2' via the door). */
+function clearingBase() {
+  return (typeof window !== 'undefined' && window.CLEARING_BASE) || '';
+}
+
 /* #3827 — Jeff's key, in Jeff's browser.
  *
  * Jeff's ruling (2026-08-11): "css pod is the top - all other integrations must
@@ -5,8 +10,9 @@
  * his WebID, and it is generated and used HERE, in the page. Nothing on the
  * server ever sees the private half.
  */
-import { schnorr } from '/vendor/@noble/curves/secp256k1.js';
-import { sha256 as nobleSha256 } from '/vendor/@noble/hashes/sha256.js';
+// #4571 — bare specifiers resolved by the page's importmap, so they follow the base path
+import { schnorr } from '@noble/curves/secp256k1.js';
+import { sha256 as nobleSha256 } from '@noble/hashes/sha256.js';
 
 const STORE = 'chorus.room.key.v1';
 
@@ -67,7 +73,7 @@ export function signEvent(sk, kind, tags, content) {
 
 export async function join(webid, customStorage) {
   const { sk, pubkey, fresh } = loadOrCreate(webid, customStorage);
-  const res = await fetch('/api/room/bind', {
+  const res = await fetch(clearingBase() + '/api/room/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pubkey, webid }),

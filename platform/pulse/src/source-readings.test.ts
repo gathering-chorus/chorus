@@ -3,6 +3,7 @@
 // @domain: awareness
 // @owner: wren
 
+import http from 'http';
 import request from 'supertest';
 import { MessageStore } from './store';
 import { createApp } from './service';
@@ -11,6 +12,7 @@ import {
   ReadingsService,
   ReadingsFactInput,
   RawProbeResult,
+  buildLiveReadingsFetcher,
 } from './source-readings';
 
 const SRC_BOARD = 'board';
@@ -157,5 +159,85 @@ describe('Source Readings — Service & Endpoint', () => {
     expect(res.body.readings.length).toBe(1);
     expect(res.body.readings[0].source).toBe(SRC_BOARD);
     expect(Array.isArray(res.body.unmeasured)).toBe(true);
+  });
+});
+
+describe('Source Readings — Live Fetcher & Service Resilience', () => {
+  test('buildLiveReadingsFetcher probes live HTTP doors and reports ok/failed honestly', async () => {
+    let failMode = false;
+    const srv = http.createServer((req, res) => {
+      if (failMode) {
+        res.writeHead(502);
+        res.end('Bad Gateway');
+        return;
+      }
+      if (req.url === '/board/wip') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: { timestamp: BOARD_TIME } }));
+      } else if (req.url === '/roles' || req.url === '/ready') {
+        res.writeHead(200);
+        res.end('ok');
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as { port: number }).port;
+    const base = `http://127.0.0.1:${port}`;
+
+    try {
+      const okFetcher = buildLiveReadingsFetcher({
+        boardUrl: `${base}/board`,
+        rolesUrl: `${base}/roles`,
+        lokiUrl: base,
+        buzzRelayUrl: 'ws://127.0.0.1:13000',
+        timeoutMs: 1000,
+      });
+      const okFacts = await okFetcher();
+      const okDerived = deriveReadings({ ...okFacts, probes: [...okFacts.probes, { source: 'custom', ok: true }] });
+      expect(okDerived.readings.find((r) => r.source === SRC_BOARD)?.status).toBe(STATUS_OK);
+      expect(okDerived.readings.find((r) => r.source === SRC_ROLES)?.status).toBe(STATUS_OK);
+      expect(okDerived.readings.find((r) => r.source === SRC_LOKI)?.status).toBe(STATUS_OK);
+      expect(okDerived.readings.find((r) => r.source === SRC_ROOMS)?.status).toBe(STATUS_OK);
+      expect(okDerived.readings.find((r) => r.source === 'custom')?.status).toBe(STATUS_OK);
+
+      failMode = true;
+      const failFetcher = buildLiveReadingsFetcher({
+        boardUrl: `${base}/board`,
+        rolesUrl: `${base}/roles`,
+        lokiUrl: base,
+        buzzRelayUrl: '',
+        timeoutMs: 1000,
+      });
+      const failFacts = await failFetcher();
+      const failDerived = deriveReadings(failFacts);
+      expect(failDerived.readings.find((r) => r.source === SRC_BOARD)?.status).toBe(STATUS_FAILED);
+      expect(failDerived.readings.find((r) => r.source === SRC_ROLES)?.status).toBe(STATUS_FAILED);
+      expect(failDerived.readings.find((r) => r.source === SRC_LOKI)?.status).toBe(STATUS_FAILED);
+      expect(failDerived.readings.find((r) => r.source === SRC_ROOMS)?.reason).toBe('relay not configured');
+
+      const connRefusedFetcher = buildLiveReadingsFetcher({
+        boardUrl: 'http://127.0.0.1:1/board',
+        rolesUrl: 'http://127.0.0.1:1/roles',
+        lokiUrl: 'http://127.0.0.1:1',
+        timeoutMs: 200,
+      });
+      const refusedFacts = await connRefusedFetcher();
+      expect(refusedFacts.probes.find((p) => p.source === SRC_BOARD)?.ok).toBe(false);
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
+
+  test('ReadingsService handles fetcher rejection and start/stop lifecycle', async () => {
+    const failingFetcher = jest.fn().mockRejectedValue(new Error('probe crash'));
+    const service = new ReadingsService(failingFetcher, 60000);
+    service.start();
+    service.start(); // idempotent
+    const res = await service.refresh();
+    expect(res.readings).toEqual([]);
+    expect(res.unmeasured).toEqual([{ source: 'pulse:readings', reason: 'probe crash' }]);
+    service.stop();
   });
 });
