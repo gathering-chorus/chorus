@@ -1790,7 +1790,7 @@ chorus:references      a owl:DatatypeProperty ; rdfs:label "references" ; rdfs:r
 chorus:diagram         a owl:DatatypeProperty ; rdfs:label "diagram" ; rdfs:range xsd:string ;
     rdfs:comment "A picture the design carries, held as data: mermaid source, first line a '%% caption' comment naming what it shows. Repeatable — one value per diagram. #4094: Jeff, 2026-09-03: 'we are completely abandoning diagrams and other visual flows from the html when we migrate.' Rendered in the Flows chapter of the product, service and domain pages." .
 # --- #4576 core attributes every class carries (Jeff 2026-09-16: "name id description create and
-# change user and datetimes"; 2026-10-17: required, old rows get the fixed date 2026-10-17T00:00:00Z).
+# change user and datetimes"; 2026-10-17: required; rows written before the stamps carry the chorus repo's first-commit date, 2026-03-29T15:35:26Z, Jeff 08:17).
 # Every class shape says `sh:node chorus:CoreShape` explicitly (Silas: visible, not implied); the id is
 # the row's IRI. athena-make stamps createdAt/createdBy on create and changedAt/changedBy on every write.
 chorus:createdAt a owl:DatatypeProperty ; rdfs:label "createdAt" ; rdfs:range xsd:string ;
@@ -2597,10 +2597,7 @@ chorus:assignedTo a owl:ObjectProperty ;
 chorus:produces a owl:ObjectProperty ;
     rdfs:domain chorus:Step .
 
-chorus:createdBy a owl:ObjectProperty ;
-    rdfs:comment "Decision creates Workflow." ;
-    rdfs:domain chorus:Workflow ;
-    rdfs:range chorus:Decision .
+# #4576: the old createdBy (Workflow -> Decision, 0 rows) is gone; createdBy is now the core stamp (Principal).
 
 # --- Work item relationships ---
 

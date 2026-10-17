@@ -960,6 +960,18 @@ pub fn no_credential_refusal(prefix: &str) -> String {
 /// The write credential is prepended HERE, at the one door, so no call site can
 /// forget it — the same "one place owns the credential" rule `fuseki-auth.sh`
 /// states for the bash writers.
+/// #4576 — the update that copies each sh:node target's properties onto the
+/// shape that names it (transitively). The property nodes are shared, not
+/// copied, so a CoreShape property is one node however many shapes carry it.
+/// Pure; idempotent (an INSERT of triples already present adds nothing).
+pub fn flatten_node_shapes_sparql(graph: &str) -> String {
+    format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#>\n\
+         INSERT {{ GRAPH <{graph}> {{ ?s sh:property ?p }} }}\n\
+         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n sh:property ?p . FILTER(?s != ?n) }} }}"
+    )
+}
+
 fn curl(args: &[&str]) -> Result<String, String> {
     // #4175 — EVERY Fuseki call carries a timeout, applied here at the one door
     // so no call site can forget it. On 2026-09-14 a compaction held the write
@@ -1380,6 +1392,18 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         return Err(fail(&format!("stamp-write-failed-http-{scode}")));
     }
     println!("athena-deploy: stamped deployedFromCommit={stamp_sha}");
+
+    // #4576 — flatten sh:node at load: every shape that names another with sh:node
+    // (chorus:CoreShape) gets that shape's properties as its own, so every reader
+    // that walks sh:property (athena-make, -gen, -validate, -model, the atlas)
+    // sees them with no change. One source place, the TTL; the store carries all.
+    let flat = flatten_node_shapes_sparql(&ontology);
+    let fcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+        "-H", "Content-Type: application/sparql-update", "--data-binary", &flat, &update])?;
+    if !ok_http(&fcode) {
+        return Err(fail(&format!("sh-node-flatten-failed-http-{fcode}")));
+    }
+    println!("athena-deploy: flattened sh:node shapes in <{ontology}>");
 
     // #3752 — execute what `athena-model retire-claim` staged. Fail-closed at
     // every ask, idempotent on absent, and every delete backed up first (AC3).
@@ -2207,6 +2231,20 @@ fn riot_available() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// #4576 — sh:node is flattened in the deploy's own graph, transitively, and
+    /// never onto the target itself. The store proof (a shape naming CoreShape
+    /// gains its property; a shape that does not, does not; a second run adds
+    /// nothing) was run on the in-memory chorus-test dataset, 2026-10-17 08:20.
+    #[test]
+    fn flatten_update_targets_the_graph_and_follows_sh_node() {
+        let q = flatten_node_shapes_sparql("urn:chorus:ontology");
+        assert!(q.contains("INSERT { GRAPH <urn:chorus:ontology> { ?s sh:property ?p } }"), "{q}");
+        assert!(q.contains("?s sh:node+ ?n . ?n sh:property ?p"), "{q}");
+        assert!(q.contains("FILTER(?s != ?n)"), "{q}");
+        assert!(!q.contains("DELETE"), "flatten only adds: {q}");
+    }
     use super::*;
 
     #[test]

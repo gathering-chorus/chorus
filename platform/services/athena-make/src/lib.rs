@@ -2434,7 +2434,8 @@ pub fn missing_required<'a>(required: &'a [String], present: &[&str]) -> Option<
     required
         .iter()
         .map(|r| r.split('|').next().unwrap_or(r))
-        .find(|r| *r != "label" && *r != "name" && !present.contains(r))
+        // #4576 — a stamp is required by the shape but supplied by the door, never the body
+        .find(|r| *r != "label" && *r != "name" && !is_stamp(r) && !present.contains(r))
 }
 
 fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_commit: &str) -> Result<PreparedCreate, CreatePrepareError> {
@@ -2562,9 +2563,15 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
         }
     }
     // #4101 — stamps from the write; a document with no declared word is a draft
-    fields.retain(|(f, _)| f != "changedAt" && f != "changedIn" && f != "writeCount");
-    fields.extend(write_stamps(table, landed_commit));
+    fields.retain(|(f, _)| !is_stamp(f));
+    edges.retain(|(f, _, _)| !is_stamp(f));
+    let stamps = write_stamps(table, landed_commit);
+    let now = stamps.iter().find(|(k, _)| k == "changedAt").map(|(_, v)| v.clone()).unwrap_or_else(utc_now);
+    fields.extend(stamps);
     fields.extend(version_stamp(table, None));
+    let (af, ae) = actor_stamps(table, caller_role, &now, None);   // #4576
+    fields.extend(af);
+    edges.extend(ae);
     if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
         fields.push(("docState".to_string(), "draft".to_string()));
     }
@@ -3157,6 +3164,49 @@ mod bounds_closedshape_tests {
         assert!(write_stamps(&plain, "abc").is_empty());
     }
 
+    /// #4576 — who and when, required on every row (CoreShape). The door stamps
+    /// createdAt/createdBy on the first write and keeps them; changedBy is the
+    /// caller on every write; the body can set none of them, and a shape that
+    /// requires a stamp does not make the body carry it.
+    /// NEGATIVE PROOFS: a body createdBy is refused; a real missing field is still
+    /// caught next to required stamps; a replace that kept "now" would fail the
+    /// kept-creation assert; a class without the fields gets no stamps.
+    #[test]
+    fn the_door_stamps_who_and_when_and_keeps_creation() {
+        let core = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+            class: "https://jeffbridwell.com/chorus#Note".into(),
+            fields: vec!["noteText".into(), "changedAt".into(), "createdAt".into(), "createdBy|edge:Principal".into(), "changedBy|edge:Principal".into(), "ownedBy|edge:Principal".into()],
+            routes: vec![], secured: vec![], mandatory: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![],
+            write_required: vec!["noteText|field".into(), "createdAt|field".into(), "createdBy|edge".into(), "changedBy|edge".into()],
+            instances_graph: "urn:chorus:domains:notes".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
+        };
+        // create: the stamps come from the write, so the body needs none of them
+        let req = prepare_create(r#"{"name":"n1","noteText":"hi"}"#, &core, "kade", "").unwrap();
+        let at = req.fields.iter().find(|(f, _)| f == "createdAt").map(|(_, v)| v.clone()).expect("createdAt stamped");
+        assert!(at.ends_with('Z') && at.len() == 20, "{at}");
+        assert_eq!(at, req.fields.iter().find(|(f, _)| f == "changedAt").map(|(_, v)| v.clone()).unwrap());
+        let edge = |e: &[(String, String, String)], k: &str| e.iter().find(|(p, _, _)| p == k).map(|(_, kind, v)| (kind.clone(), v.clone()));
+        assert_eq!(edge(&req.edges, "createdBy"), Some((kind_of_class("Principal"), "kade".to_string())));
+        assert_eq!(edge(&req.edges, "changedBy"), Some((kind_of_class("Principal"), "kade".to_string())));
+        // a real missing field is still refused beside the required stamps
+        let e = prepare_create(r#"{"name":"n2"}"#, &core, "kade", "").expect_err("noteText is missing");
+        assert!(e.message.contains("'noteText' is required"), "{}", e.message);
+        // the body may not set a stamp
+        for k in ["createdAt", "createdBy", "changedBy"] {
+            assert_eq!(body_sets_a_stamp(&format!(r#"{{"name":"n3","{k}":"x"}}"#)).as_deref(), Some(k));
+        }
+        // a later write keeps creation and names its own caller
+        let (f, e) = actor_stamps(&core, "wren", "2026-10-18T09:00:00Z", Some((CREATED_BEFORE_STAMPS.to_string(), "kade".to_string())));
+        assert_eq!(f, vec![("createdAt".to_string(), CREATED_BEFORE_STAMPS.to_string())]);
+        assert_eq!(edge(&e, "createdBy").map(|(_, v)| v), Some("kade".to_string()));
+        assert_eq!(edge(&e, "changedBy").map(|(_, v)| v), Some("wren".to_string()));
+        // a class whose shape does not carry them gets none
+        let plain = RouteTable { fields: vec!["label".into()], write_required: vec![], ..core.clone() };
+        let (f, e) = actor_stamps(&plain, "wren", "2026-10-18T09:00:00Z", None);
+        assert!(f.is_empty() && e.is_empty());
+    }
+
+
     #[test]
     fn create_object_parser_takes_lists_of_strings() {
         let parsed = parse_create_object(r#"{"name":"athena","hasDomain":["products","services","domains"],"diagram":["%% a\\nflowchart TD","%% b\\nflowchart LR"],"label":"Athena"}"#)
@@ -3295,13 +3345,16 @@ mod bounds_closedshape_tests {
 /// shape carries them: changedAt (UTC ISO, now) and changedIn (the land's commit,
 /// from the X-Landed-Commit header the poster sends; "unknown" for a hand write).
 /// A body that tries to set either is refused: they are facts about the write.
+fn utc_now() -> String {
+    Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
+}
+
 pub fn write_stamps(table: &RouteTable, landed_commit: &str) -> Vec<(String, String)> {
     let has = |k: &str| table.fields.iter().any(|f| f.split('|').next() == Some(k));
     let mut out = Vec::new();
     if has("changedAt") {
-        let now = Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]).output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
-        out.push(("changedAt".to_string(), now));
+        out.push(("changedAt".to_string(), utc_now()));
     }
     if has("changedIn") {
         out.push(("changedIn".to_string(), if landed_commit.trim().is_empty() { "unknown".to_string() } else { landed_commit.trim().to_string() }));
@@ -3310,7 +3363,46 @@ pub fn write_stamps(table: &RouteTable, landed_commit: &str) -> Vec<(String, Str
 }
 
 pub fn body_sets_a_stamp(body: &str) -> Option<String> {
-    json_top_level_keys(body).into_iter().find(|k| k == "changedAt" || k == "changedIn" || k == "writeCount")
+    json_top_level_keys(body).into_iter().find(|k| is_stamp(k))
+}
+
+/// #4101 + #4576 — every property the door stamps; a body never sets one.
+pub const STAMPS: [&str; 6] = ["changedAt", "changedIn", "writeCount", "createdAt", "createdBy", "changedBy"];
+pub fn is_stamp(k: &str) -> bool { STAMPS.contains(&k) }
+
+/// #4576 — the date every row written before the door stamped creation carries:
+/// the chorus repo's first commit (d98dbbd40, 2026-03-29 11:35:26 -04:00).
+/// Jeff 2026-10-17 08:10 "i feel its a required attribute set it to a fixed date",
+/// 08:17 "maybe the date we default is chorus repo create date in git".
+pub const CREATED_BEFORE_STAMPS: &str = "2026-03-29T15:35:26Z";
+
+/// #4576 — who and when, on a class whose shape carries them (CoreShape via sh:node).
+/// createdAt/createdBy: the first write's, kept on every later write (`created`
+/// is the row's current pair; None on create). changedBy: the caller, every write.
+/// Returns (fields, principal edges).
+pub fn actor_stamps(table: &RouteTable, caller_role: &str, now: &str, created: Option<(String, String)>)
+    -> (Vec<(String, String)>, Vec<(String, String, String)>) {
+    let has = |k: &str| table.fields.iter().any(|f| f.split('|').next() == Some(k));
+    let principal = kind_of_class("Principal");
+    let (at, by) = created.unwrap_or_else(|| (now.to_string(), caller_role.to_string()));
+    let mut fields = Vec::new();
+    let mut edges = Vec::new();
+    if has("createdAt") { fields.push(("createdAt".to_string(), at)); }
+    if has("createdBy") { edges.push(("createdBy".to_string(), principal.clone(), by)); }
+    if has("changedBy") { edges.push(("changedBy".to_string(), principal, caller_role.to_string())); }
+    (fields, edges)
+}
+
+/// #4576 — the row's current createdAt/createdBy. A row the door wrote before
+/// creation was stamped reads as the fixed date and its owner, never as "now".
+fn query_created(class: &str, entity: &str, instances_graph: &str) -> Option<(String, String)> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:ownedBy ?o . OPTIONAL {{ <{s}> chorus:createdAt ?a }} OPTIONAL {{ <{s}> chorus:createdBy ?b }} BIND(CONCAT(COALESCE(STR(?a), '{d}'), '|', REPLACE(STR(COALESCE(?b, ?o)), '.*[#/]', '')) AS ?v) }} }} LIMIT 1",
+        ns = NS, g = instances_graph, s = entity_subject(class, entity), d = CREATED_BEFORE_STAMPS
+    );
+    let v = sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())?;
+    let (a, b) = v.split_once('|')?;
+    Some((a.to_string(), b.strip_prefix("principal-").unwrap_or(b).to_string()))
 }
 
 /// #4101 — the version a person can say: the row's write count. `previous` is the
@@ -3709,6 +3801,12 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                 let _ = dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
                     "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, v)], token);
             }
+            // #4576 — changedBy names the caller: one value, so the old link goes first
+            if table.fields.iter().any(|f| f.split('|').next() == Some("changedBy")) {
+                let pred = format!("<{}changedBy>", NS);
+                let _ = dal_batch(&graph, &[(format!("<{}>", subject), pred, "?o".to_string())], &[], token);
+                let _ = dal_run(&link_args(&kind, name, &graph, "changedBy", &kind_of_class("Principal"), &[caller_role.to_string()]), token);
+            }
             emit_write_spine(caller_role, "patch", name, &changed.join(","), "ok");
             write_resp("ok", &format!("patched {}: {}", name, changed.join(", ")))
         }
@@ -3735,8 +3833,14 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
             // semantic rather than athena-make's prior partial-update (a competing impl).
             let kind = kind_of_class(class_local);
             let (mut fields, mut owner_edges) = verified_owner_projection(table, caller_role);
-            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "writeCount").cloned());
-            fields.extend(write_stamps(table, landed_commit));   // #4101
+            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && !is_stamp(field)).cloned());
+            let stamps = write_stamps(table, landed_commit);   // #4101
+            let now = stamps.iter().find(|(k, _)| k == "changedAt").map(|(_, v)| v.clone()).unwrap_or_else(utc_now);
+            fields.extend(stamps);
+            // #4576 — creation is kept from the row being replaced; changedBy is the caller
+            let (af, ae) = actor_stamps(table, caller_role, &now, query_created(&table.class, name, &table.instances_graph));
+            fields.extend(af);
+            owner_edges.extend(ae);
             let prev = query_version(&table.class, name, &table.instances_graph);
             // #4102 — one commit, one version: a second post from the same land is
             // the same change, so the row keeps the version it already has.
@@ -3752,7 +3856,7 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
             owner_edges.extend(
                 edges
                     .iter()
-                    .filter(|(property, _, _)| property != "ownedBy")
+                    .filter(|(property, _, _)| property != "ownedBy" && !is_stamp(property))
                     .cloned(),
             );
             // #4102 — keep the version being replaced, as a Revision row, before the
