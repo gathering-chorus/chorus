@@ -848,18 +848,6 @@ fn existing_log_rows(api: &str, token: &str) -> Result<Vec<LogInGraph>, String> 
     Ok(out)
 }
 
-/// #4310 — the TestResult names whose `ofTest` is this case, asked of the door
-/// (#4433: no hand-written SPARQL). An anonymous read, as before; the deletes
-/// still go through the door with the crawler's identity.
-fn results_of_case(api: &str, case_name: &str) -> Result<Vec<String>, String> {
-    let rows = fetch_rows_where(api, None, "TestResult", &format!("ofTest={case_name}"))?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
-        .filter(|n| !n.is_empty())
-        .collect())
-}
-
 /// Every row of one served class, as flat field maps — paged by the door's own
 /// `links.next`, to exhaustion (see the note on existing_rows' first cut).
 fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, String)>>, String> {
@@ -2993,14 +2981,11 @@ fn main() {
     );
     let mut wrote = 0usize;
     let mut failed: Vec<String> = Vec::new();
-    // #4352 — results of vanished cases that another principal owns, by owner
-    let mut held: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     // #4185 — what the case deletes DID, not what the plan wanted. The plan line
     // said deleted=704 every night while the cases whose results another
     // principal holds stayed put, so the number never fell and looked like a
     // delete that did not stick.
     let mut cases_gone: usize = 0;
-    let mut cases_kept: usize = 0;
     let mut batch: Vec<String> = Vec::new();
 
     let ident = ident.as_ref().expect("writes happen only with an identity");
@@ -3244,58 +3229,12 @@ fn main() {
                     });
                 }
                 CaseAction::Delete { name, file, case } => {
-                    // #4310 — a case's results go first, through the same door.
-                    // Deleting only the Test left 746 TestResults pointing at 103
-                    // missing tests (2026-09-25). If the lookup or any result
-                    // delete fails, the case stays, so nothing dangles.
-                    // #4185 reworks case writes/deletes here: keep this cascade.
-                    match results_of_case(&api, &name) {
-                        Ok(results) => {
-                            let res_coll = collection_for(&api, "TestResult");
-                            let mut all_gone = true;
-                            // #4185 — a case's results go in batches, one API call and
-                            // one store update each (one at a time measured 1.4 rows/s,
-                            // 2026-09-30). A batch the API refuses (a result someone
-                            // else owns, a row already gone) falls back to one at a
-                            // time below, so held results are still named per owner.
-                            let mut leftover: Vec<&String> = Vec::new();
-                            for chunk in results.chunks(cases::DELETE_BATCH_ROWS) {
-                                let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
-                                    write(ident, &api, "POST", &format!("{c}/delete-batch"), Some(&cases::delete_batch_body(chunk)))
-                                });
-                                if del.is_err() {
-                                    leftover.extend(chunk);
-                                }
-                            }
-                            for r in leftover {
-                                let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
-                                    write(ident, &api, "DELETE", &format!("{c}/{r}"), None)
-                                });
-                                if let Err(e) = del {
-                                    all_gone = false;
-                                    // #4352 — principals own their rows (Jeff, 09-17). A
-                                    // result another principal owns is theirs to remove:
-                                    // the case stays and the result is reported as held
-                                    // for its owner, never counted as a failed write.
-                                    match refused_as_not_owner(&e) {
-                                        Some(owner) => *held.entry(owner).or_default() += 1,
-                                        None => failed
-                                            .push(format!("delete result {r} of {file} :: {case}: {e}")),
-                                    }
-                                }
-                            }
-                            if all_gone {
-                                match write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None) {
-                                    Ok(_) => cases_gone += 1,
-                                    Err(e) => failed.push(format!("delete case {file} :: {case}: {e}")),
-                                }
-                            } else {
-                                cases_kept += 1;
-                            }
-                        }
-                        Err(e) => failed.push(format!(
-                            "delete case {file} :: {case}: results lookup failed, case kept: {e}"
-                        )),
+                    // #4579 — no TestResult rows remain (Jeff 10-17: the graph
+                    // stops logging test results), so a case goes alone; the
+                    // #4310 result cascade went with them.
+                    match write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None) {
+                        Ok(_) => cases_gone += 1,
+                        Err(e) => failed.push(format!("delete case {file} :: {case}: {e}")),
                     }
                 }
                 CaseAction::Unchanged { .. } => {}
@@ -3557,14 +3496,7 @@ fn main() {
     }
 
     if !dry_run {
-        println!(
-            "chorus-crawl: cases deleted={cases_gone} kept={cases_kept} (kept = a result another principal owns still points at it)"
-        );
-    }
-    for (owner, n) in &held {
-        println!(
-            "chorus-crawl: held {n} result(s) of vanished cases for their owner {owner} — not the crawler's to delete; their cases stay (#4352)"
-        );
+        println!("chorus-crawl: cases deleted={cases_gone}");
     }
     if !failed.is_empty() {
         for f in failed.iter().take(5) {
@@ -3587,17 +3519,6 @@ fn main() {
 /// Each failure reduced to `VERB /route/family -> STATUS`, counted, most first.
 /// A failure line the crawler prints reads like
 /// `delete case path :: name: DELETE /tests/tests/<id> -> HTTP 403`.
-/// #4352 — the owner named by an authz refusal that says this row is not ours
-/// ("not this row's owner (ownedBy nightly)"), or None for any other failure.
-fn refused_as_not_owner(err: &str) -> Option<String> {
-    if !err.contains("HTTP 403") || !err.contains("not this row's owner") {
-        return None;
-    }
-    let after = err.split("ownedBy ").nth(1)?;
-    let owner: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
-    (!owner.is_empty()).then_some(owner)
-}
-
 fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for f in failed {
@@ -4162,28 +4083,6 @@ mod failure_classes_4201 {
             failure_classes(&failed),
             vec![("(no route in line) -> HTTP ?".to_string(), 1)]
         );
-    }
-}
-
-/// #4352 — principals own their rows: a result another principal owns is held
-/// for them, not a failed write.
-#[cfg(test)]
-mod held_for_owner_4352 {
-    use super::refused_as_not_owner;
-
-    #[test]
-    fn a_refusal_naming_another_owner_is_held_for_that_owner() {
-        let e = r#"DELETE /tests/results/r1 -> HTTP 403 { "error": "authz", "message": "not this row's owner (ownedBy nightly); no Permission row opens this write" }"#;
-        assert_eq!(refused_as_not_owner(e), Some("nightly".to_string()));
-    }
-
-    /// NEGATIVE PROOF: any other failure — a 403 for another reason, a 422, a
-    /// dead store — is still a failed write and keeps the run red.
-    #[test]
-    fn every_other_failure_is_still_a_failure() {
-        assert_eq!(refused_as_not_owner("DELETE /tests/results/r1 -> HTTP 403 { \"error\": \"authn\" }"), None);
-        assert_eq!(refused_as_not_owner("DELETE /tests/results/r1 -> HTTP 422 not this row's owner (ownedBy nightly)"), None);
-        assert_eq!(refused_as_not_owner("curl: connection refused"), None);
     }
 }
 

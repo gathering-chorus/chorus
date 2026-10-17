@@ -334,14 +334,6 @@ chorus:TestSuiteRun a owl:Class ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.test_result {result} per card; nightly reporter (NOT TRUSTED until #3272/#3273)" ;
     chorus:ingestionStatus "ingestible" .
 
-chorus:TestResult a owl:Class ;
-    chorus:mintKey ("filePath" "testName" "runTs") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Test Result" ;
-    rdfs:comment "One Test's outcome in one run — the grain werk-test and flake-quarantine (#2530) need. Requires Test identity first." ;
-    chorus:dataSource "NONE TODAY — depends on chorus:Test identity + a per-test result emission path" ;
-    chorus:ingestionStatus "needs-identity" .
-
 chorus:covers a owl:ObjectProperty ;
     rdfs:label "covers" ;
     rdfs:domain chorus:Test ; rdfs:range chorus:Domain ;
@@ -478,7 +470,9 @@ chorus:tests a chorus:Domain ;
     chorus:ownedBy chorus:principal-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     # #4540 — TestType: the test types in the order the run's one queue starts them
-    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun , chorus:TestType ;
+    # #4579 — TestResult retired (Jeff 10-17: "deprecate logging in the graph"):
+    # a case's latest result lives on its Test row (#4536), each run's on Loki.
+    chorus:definesVocabulary chorus:Test , chorus:TestSuiteRun , chorus:TestType ;
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
@@ -628,34 +622,6 @@ chorus:TestSuiteRunShape a sh:NodeShape ;
     # #4416 — optional: only rows the runner timed carry it
     sh:property [ sh:path chorus:suiteSeconds ]  .
 
-chorus:TestResultShape a sh:NodeShape ;
-    sh:targetClass chorus:TestResult ;
-    # #3592 (steward MUST-FIX, #3675 pattern) — explicit instance home, matching
-    # the DAL write target. See TestSuiteRunShape note.
-    chorus:instancesGraph "urn:chorus:domains:tests" ;
-    # #4201 — the owner is a Principal, not a word. athena-make's
-    # verified_owner_projection writes a typed edge when the shape declares the
-    # class and a bare literal of the caller's role name when it does not
-    # (athena-make/src/lib.rs:2139). Undeclared here, every row this graph took
-    # today landed with ownedBy "kade" as a string, which the door can never
-    # write again. minCount stays off: the server stamps the value, the shape
-    # only says what kind of thing it is.
-    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
-    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ] ;
-    # #3925 — results get a clock. runTs = when the test RAN (offset-ISO
-    # Boston, run-start clocked — post time is not run time, Wren's catch).
-    # minCount 0 THIS bump: 137,184 existing rows backfill from
-    # dcterms:created (upper bound, noted in the backfill script); tightens
-    # to minCount 1 next bump once the backfill count reads full.
-    sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
-    # cardId optional BY DESIGN, not by migration: a nightly run has no card.
-    # Absence is typed (key omitted), never an empty string.
-    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ] ;
-    # #4155 — why a failed case failed; optional, failed results only.
-    sh:property [ sh:path chorus:failureReason ; sh:datatype xsd:string ]  .
-
 chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
     sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:CodeFile ] ;   # #4185 — the crawler's CodeFile row, not the unserved SourceFile
@@ -693,13 +659,3 @@ chorus:VerbRunEdgesShape a sh:NodeShape ;
 chorus:ScenarioVerifiedByShape a sh:NodeShape ;
     sh:targetClass chorus:Scenario ;
     sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
-
-chorus:TestResultEdgesShape a sh:NodeShape ;
-    sh:targetClass chorus:TestResult ;
-    sh:property [ sh:path chorus:ofTest ; sh:minCount 1 ; sh:class chorus:Test ] .
-
-chorus:ofTest a owl:ObjectProperty ;
-    rdfs:label "of test" ;
-    rdfs:domain chorus:TestResult ; rdfs:range chorus:Test ;
-    rdfs:comment "TestResult -> its Test. The FK that makes the result chain joinable; required by shape." .
-

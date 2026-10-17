@@ -126,11 +126,6 @@ chorus:routedomain-api-chorus-stats a chorus:UnitDomainMapping ;
     chorus:routePath "/api/chorus/stats" ;
     chorus:hasDomain chorus:metrics .
 
-chorus:routedomain-api-chorus-test-run-latest a chorus:UnitDomainMapping ;
-    rdfs:label "/api/chorus/test-run/latest → tests" ;
-    chorus:routePath "/api/chorus/test-run/latest" ;
-    chorus:hasDomain chorus:tests .
-
 chorus:routedomain-api-chorus-ui-pages a chorus:UnitDomainMapping ;
     rdfs:label "/api/chorus/ui-pages → code" ;
     chorus:routePath "/api/chorus/ui-pages" ;
@@ -320,11 +315,6 @@ chorus:routedomain-ontology-views-domain a chorus:UnitDomainMapping ;
     rdfs:label "/ontology-views/:domain → domains" ;
     chorus:routePath "/ontology-views/:domain" ;
     chorus:hasDomain chorus:domains .
-
-chorus:routedomain-test-run a chorus:UnitDomainMapping ;
-    rdfs:label "/test-run → tests" ;
-    chorus:routePath "/test-run" ;
-    chorus:hasDomain chorus:tests .
 
 chorus:routedomain-werk a chorus:UnitDomainMapping ;
     rdfs:label "/werk → cicd" ;
