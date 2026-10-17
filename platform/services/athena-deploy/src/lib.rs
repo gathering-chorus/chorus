@@ -2124,8 +2124,11 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             //    MODEL, not of the served routes: a route is <domain>/<plural>
             //    and a substring match cannot tell CodeFile's /code/files from
             //    a File route — it refused File on exactly that collision.
+            //    #4576 — asked of the domains graph, where a claim lives (#4338)
+            //    and the only place athena-make reads one: counting every graph
+            //    let a test's leftover copy of the model refuse the retirement.
             let claimed = curl(&["-s", "--data-urlencode",
-                &format!("query=SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH ?g {{ ?d \
+                &format!("query=SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{DOMAINS_GRAPH}> {{ ?d \
                           <https://jeffbridwell.com/chorus#definesVocabulary> <{class}> }} }}"),
                 "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
             match count_from_answer(&claimed) {
