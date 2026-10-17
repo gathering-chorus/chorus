@@ -891,16 +891,27 @@ pub fn merge_sparql(staging: &str, ontology: &str) -> String {
 /// the ontology graph, the class axioms included. Pure.
 pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
 const ONTOLOGY_DEFAULT: &str = "urn:chorus:ontology";
-pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str) -> String {
+pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, additive: bool) -> String {
     let c = "https://jeffbridwell.com/chorus#";
     let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
     // what the row carries in the domains graph (labels ride along: a row needs one)
     let row = format!("!((?p = <{rdf_type}> && ?o != <{c}Domain>) || STRSTARTS(STR(?p), \"http://www.w3.org/2002/07/owl#\"))");
+    // #4576 — a Domain is one the staging OR the domains graph types: a card
+    // load stages only the subjects it changed, and a domain whose type line
+    // did not change (roles, gaining Teammate) is still a Domain.
+    let is_domain = |g: &str| format!("{{ GRAPH <{g}> {{ ?s a <{c}Domain> }} }} UNION {{ GRAPH <{domains}> {{ ?s a <{c}Domain> }} }}");
+    // #4576 — a card load is additive: it stages only the lines of the files it
+    // changed, so replacing a predicate's values would drop the ones held in
+    // files it did not touch (identity lost Session, SessionRun and Presence).
+    // Removals on a card go through the retirements ledger.
+    let replace = if additive { String::new() } else {
+        format!("DELETE {{ GRAPH <{domains}> {{ ?s ?p ?old }} }} WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o FILTER({row}) }} {} \
+                 GRAPH <{domains}> {{ ?s ?p ?old }} }} ; ", is_domain(staging))
+    };
     format!(
-        "DELETE {{ GRAPH <{dom}> {{ ?s ?p ?old }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} \
-         GRAPH <{dom}> {{ ?s ?p ?old }} }} ; \
-         INSERT {{ GRAPH <{dom}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} }} ; \
-         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s a <{c}Domain> ; ?p ?o }} }}",
+        "{replace}INSERT {{ GRAPH <{dom}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{stg}> {{ ?s ?p ?o FILTER({row}) }} {} }} ; \
+         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s ?p ?o }} {} }}",
+        is_domain(staging), is_domain(ontology),
         dom = domains, stg = staging, ont = ontology,
     )
 }
@@ -1536,7 +1547,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         String::new()
     };
     // #4338 — the ontology graph holds the model only: Domain rows go home.
-    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH)) } else { String::new() };
+    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH, plan.is_some())) } else { String::new() };
     let sparql = format!("{retire_clause}{bnodes}{}{rehome}", merge_sparql(&staging, &ontology));
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
@@ -3011,7 +3022,7 @@ mod rehome_4338 {
             c:legacy a owl:Class , c:Domain ; rdfs:label "legacy" ; c:definesVocabulary c:Principal . }
 <urn:dom> { c:identity c:gaps "written by the API, keep" ; c:definesVocabulary c:Retired . }
 "#).unwrap();
-        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom"));
+        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom", false));
         let ru = dir.join("u.ru");
         std::fs::write(&ru, &q).unwrap();
         let o = Command::new(&update).arg(format!("--data={}", data.display()))
@@ -3030,5 +3041,64 @@ mod rehome_4338 {
         assert!(!dom.contains("c:Retired"), "a stale definesVocabulary survived:\n{after}");
         assert!(dom.contains("written by the API, keep"), "the re-home wiped an API-written field:\n{after}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// #4576 — a card load stages only the subjects it changed. Run, not read: the
+/// re-home must add a card's claims without dropping the ones in files it left
+/// alone, and must re-home a claim for a domain whose type line it did not stage.
+#[cfg(test)]
+mod rehome_card_4576 {
+    use super::{merge_sparql, rehome_domain_rows_sparql};
+    use std::process::Command;
+
+    fn run(additive: bool) -> Option<String> {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().ok()?;
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return None; }
+        let dir = std::env::temp_dir().join(format!("rehome-4576-{}-{additive}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        // the card changed identity's AgentRuntime line and added roles' Teammate claim;
+        // Session is claimed in a file it did not touch, roles' type line is unchanged
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:stg> { c:identity a c:Domain ; c:definesVocabulary c:AgentRuntime .
+            c:roles c:definesVocabulary c:Teammate . }
+<urn:dom> { c:identity a c:Domain ; c:definesVocabulary c:Session , c:Principal .
+            c:roles a c:Domain ; c:definesVocabulary c:Role . }
+"#).unwrap();
+        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom", additive));
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let _ = std::fs::remove_dir_all(&dir);
+        Some(String::from_utf8_lossy(&o.stdout).to_string())
+    }
+
+    fn block(after: &str, g: &str) -> String {
+        let Some(i) = after.find(&format!("<{g}>")) else { return String::new() };
+        let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len());
+        after[i..j].to_string()
+    }
+
+    #[test]
+    fn a_card_load_adds_claims_and_keeps_the_rest() {
+        let Some(after) = run(true) else { return };
+        let (dom, ont) = (block(&after, "urn:dom"), block(&after, "urn:ont"));
+        assert!(dom.contains("c:AgentRuntime") && dom.contains("c:Session") && dom.contains("c:Principal"),
+            "a claim from a file the card did not touch was dropped:\n{after}");
+        assert!(dom.contains("c:Teammate") && dom.contains("c:Role"), "roles' new claim did not reach the domains graph:\n{after}");
+        assert!(!ont.contains("c:roles") && !ont.contains("c:identity"), "a Domain stayed in the ontology graph:\n{after}");
+    }
+
+    #[test]
+    fn negative_proof_the_full_replace_drops_an_unstaged_claim() {
+        // the replace a full model-set deploy keeps is exactly what a card load must not run
+        let Some(after) = run(false) else { return };
+        let dom = block(&after, "urn:dom");
+        assert!(!dom.contains("c:Session"), "the replace no longer replaces, so this proof cannot tell the two apart:\n{after}");
+        assert!(dom.contains("c:Teammate"), "{after}");
     }
 }
