@@ -22,3 +22,9 @@ chorus:CoreShape a sh:NodeShape ;
     # included, served only their IRI). A class that marks its own fields marks these itself.
     # the four Dublin Core stamps are a rule, not fields (#4312): the DAL writes them, no caller sends them
     sh:sparql chorus:StampedByTheDal .
+
+# #4590 — the DAL's creator and contributor stamps link a row to the principal who
+# made or changed it, so they cross hierarchies the way ownedBy does. Without this,
+# athena-validate called every converted creator stamp a bad link (run 2: 1,179).
+<http://purl.org/dc/terms/creator>     chorus:crossesHierarchy "authorship: every row names the principal who created it." .
+<http://purl.org/dc/terms/contributor> chorus:crossesHierarchy "authorship: every row names the principal who last changed it." .
