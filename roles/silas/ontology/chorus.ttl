@@ -1800,7 +1800,12 @@ chorus:CoreShape a sh:NodeShape ;
     sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ] ;
     sh:property [ sh:path chorus:comment ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ] ;
     # the four Dublin Core stamps are a rule, not fields (#4312): the DAL writes them, no caller sends them
-    sh:sparql chorus:StampedByTheDal .
+    sh:sparql chorus:StampedByTheDal ;
+    # Jeff 10:12 "descriptions everywhere": a class with no template of its own gets this one
+    chorus:descriptionTemplate "{label}, a {class}" .
+
+chorus:descriptionTemplate a owl:DatatypeProperty ; rdfs:label "descriptionTemplate" ; rdfs:range xsd:string ;
+    rdfs:comment "The sentence the DAL writes as a row's description when a write carries none, and the backfill writes on rows missing one. Placeholders are the class's field names plus {class}; a missing field shows as ?. On CoreShape it is every class's default; a class shape's own template overrides it. #4576." .
 
 chorus:changedAt       a owl:DatatypeProperty ; rdfs:label "changedAt" ; rdfs:range xsd:string ;
     rdfs:comment "When this row last changed, UTC ISO, stamped by the door on every create and replace — never typed. #4101: Jeff, 2026-09-03: 'our docs dont show version'; version is a fact about the write, not a number a person maintains." .
