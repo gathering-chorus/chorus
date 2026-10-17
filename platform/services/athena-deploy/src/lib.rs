@@ -966,20 +966,22 @@ pub fn no_credential_refusal(prefix: &str) -> String {
 /// copied, so a CoreShape property is one node however many shapes carry it.
 /// Pure; idempotent (an INSERT of triples already present adds nothing).
 pub fn flatten_node_shapes_sparql(graph: &str) -> String {
-    // #4576 — the class wins: a node-target property whose sh:path the shape
-    // already declares is NOT copied (two declarations of one path make
-    // athena-make refuse the class: "field declared twice with different
-    // kinds"). The first statement also removes any such copy an earlier
-    // flatten left, so a store that took the bad version heals on redeploy.
+    // #4576 — the class wins: a node-target property whose FIELD NAME (the
+    // door names a field by its path's local name, so rdfs:comment and
+    // chorus:comment are both "comment") the shape already declares is NOT
+    // copied: two declarations of one field make athena-make refuse the class
+    // ("field declared twice with different kinds"). The first statement also
+    // removes any such copy an earlier flatten left, so a store heals on redeploy.
+    let same_field = "?p sh:path ?pa . ?s sh:property ?own . ?own sh:path ?oa . FILTER(?own != ?p) \
+         FILTER(REPLACE(STR(?pa), \".*[#/]\", \"\") = REPLACE(STR(?oa), \".*[#/]\", \"\"))";
     format!(
         "PREFIX sh: <http://www.w3.org/ns/shacl#>\n\
          DELETE {{ GRAPH <{graph}> {{ ?s sh:property ?p }} }}\n\
-         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n sh:property ?p . ?p sh:path ?path . \
-           ?s sh:property ?own . ?own sh:path ?path . FILTER(?own != ?p) \
+         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n sh:property ?p . {same_field} \
            FILTER NOT EXISTS {{ ?n sh:property ?own }} FILTER(?s != ?n) }} }} ;\n\
          INSERT {{ GRAPH <{graph}> {{ ?s ?k ?p }} }}\n\
          WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n ?k ?p . VALUES ?k {{ sh:property sh:sparql }} FILTER(?s != ?n) \
-           FILTER NOT EXISTS {{ ?p sh:path ?path . ?s sh:property ?own . ?own sh:path ?path . FILTER(?own != ?p) }} }} }}"
+           FILTER NOT EXISTS {{ {same_field} }} }} }}"
     )
 }
 
@@ -2459,7 +2461,8 @@ mod tests {
         let q = flatten_node_shapes_sparql("urn:chorus:ontology");
         assert!(q.contains("INSERT { GRAPH <urn:chorus:ontology> { ?s ?k ?p } }"), "{q}");
         assert!(q.contains("?s sh:node+ ?n . ?n ?k ?p . VALUES ?k { sh:property sh:sparql }"), "rules travel with properties: {q}");
-        assert!(q.contains("FILTER NOT EXISTS { ?p sh:path ?path . ?s sh:property ?own"), "the class's own declaration wins: {q}");
+        assert!(q.contains("FILTER NOT EXISTS { ?p sh:path ?pa . ?s sh:property ?own"), "the class's own declaration wins: {q}");
+        assert!(q.contains("REPLACE(STR(?pa), \".*[#/]\", \"\") = REPLACE(STR(?oa)"), "compared by field name, not path: {q}");
         assert!(q.starts_with("PREFIX sh:") && q.contains("DELETE { GRAPH <urn:chorus:ontology> { ?s sh:property ?p } }"), "an earlier duplicate is removed: {q}");
         assert!(q.contains("FILTER(?s != ?n)"), "{q}");
     }
