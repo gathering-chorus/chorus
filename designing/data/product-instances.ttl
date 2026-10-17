@@ -328,7 +328,7 @@ chorus:loom a chorus:Product ;
     chorus:status """exploring""" ;
     chorus:gaps """Decisions still live as text with no API and no check that they are enforced; skills are files rather than queryable entries; root-cause analyses are not yet modeled.""" ;
     chorus:hasDesignDoc chorus:document-loom-subproduct-design ;
-    chorus:hasDomain chorus:rcas, chorus:roles, chorus:principles, chorus:policies, chorus:practices, chorus:skills, chorus:decisions, chorus:spine, chorus:awareness ;   # #4576 (Jeff 10-17)
+    chorus:hasDomain chorus:rcas, chorus:roles, chorus:principles, chorus:policies, chorus:practices, chorus:skills, chorus:decisions, chorus:spine ;   # #4576 (Jeff 10-17); awareness stays on Pulse until pulse-api moves with it
     chorus:publishesPreAuth """true""" ;
     chorus:promise """Loom is the operating model — the team's persistent memory of how it works. It holds the normative layer: the principles the team stands on, the practices that express them, the policies that enforce them, the decisions it has made, the roles it is made of, the skills those roles can invoke, and the analyses of what went wrong.
 The promise is coordination without a switchboard. A few AI agents and one person work together because the rules of working are written down, enforced where actions happen, and fed back from experience — not because a person relays every message and remembers every rule.
@@ -377,7 +377,7 @@ chorus:pulse a chorus:Product ;
     chorus:status """operating""" ;
     chorus:gaps """No relation between roles, so who is blocked on whom cannot be answered; machine load is missing from the reading; some activity arrives without a known author; consumers do not yet read the age of what they are shown.""" ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
-    chorus:hasDomain chorus:streams ;   # #4576 (Jeff 10-17): awareness moved to Loom   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
+    chorus:hasDomain chorus:awareness, chorus:streams ;   # #4576: awareness to Loom is its own card (pulse-api serves it)   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
     chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
     chorus:consumesEvent chorus:eventtype-card-pulled ;
     chorus:publishesPreAuth """true""" ;

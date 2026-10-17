@@ -326,6 +326,13 @@ pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
     RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
 }
 
+/// #4576 — a product the generator builds runs its own server, so it declares
+/// `server.bind`. `model.namespace` alone is not enough: Athena declares it (#4519)
+/// and is served by athena-make v1, never generated.
+pub fn runs_own_server(declared: &[(String, String)]) -> bool {
+    declared.iter().any(|(k, _)| k == "server.bind")
+}
+
 /// #4513 — one argument of a tool, from a ToolInput shape's property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolArg {
