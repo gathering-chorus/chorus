@@ -346,3 +346,38 @@ describe('#4575: DOM id match, duplicate suppression, and safe markdown bold/cod
     });
   });
 });
+
+// #4575 — Abby's catch: a live message first seen as v1's bridge mirror kept the name
+// "bridge" on screen when the role's own copy arrived; only the data attribute changed.
+describe('live bridge copy takes the real author name (#4575)', () => {
+  test('the visible name changes to the role; a bridge-only message keeps bridge (negative proof)', () => {
+    const container: any = { children: [], appendChild: (c: any) => container.children.push(c) };
+    const find = (el: any, cls: string): any => {
+      for (const c of el.children || []) {
+        if (typeof c.className === 'string' && c.className.split(' ').includes(cls)) return c;
+        const hit = find(c, cls);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const mk = (tag: string): any => {
+      const el: any = { tag, className: '', id: '', textContent: '', dataset: {}, children: [], appendChild: (c: any) => el.children.push(c) };
+      el.querySelector = (sel: string) => find(el, sel.replace(/^\./, ''));
+      return el;
+    };
+    (global as any).document = {
+      getElementById: (id: string) => (id === 'messages-stream' ? container : container.children.find((c: any) => c.id === id) || null),
+      createElement: mk,
+      createTextNode: (t: string) => ({ tag: '#text', textContent: t }),
+    };
+    jest.isolateModules(() => {
+      const { appendMessage } = require('../public/app.js');
+      appendMessage({ id: 'b1', from: 'bridge', text: 'build is green', ts: '2026-10-17T10:40:00.000Z', visible: true });
+      appendMessage({ id: 'k1', from: 'kade', text: 'build is green', ts: '2026-10-17T10:40:01.000Z', visible: true });
+      appendMessage({ id: 'b2', from: 'bridge', text: 'jeff via v1', ts: '2026-10-17T10:41:00.000Z', visible: true });
+      expect(container.children).toHaveLength(2);
+      expect(find(container.children[0], 'message-author').textContent.toLowerCase()).toContain('kade');
+      expect(find(container.children[1], 'message-author').textContent.toLowerCase()).toContain('bridge');
+    });
+  });
+});

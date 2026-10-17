@@ -139,6 +139,12 @@ function appendMessage(msg) {
     if (sameBodyEl.dataset.from === 'bridge' && msg.from !== 'bridge') {
       sameBodyEl.id = `msg-${msg.id}`;
       sameBodyEl.dataset.from = msg.from;
+      // #4575 — the visible name follows too, not only the data attribute
+      const authorEl = sameBodyEl.querySelector && sameBodyEl.querySelector('.message-author');
+      if (authorEl) {
+        authorEl.textContent = formatAuthor(msg.from);
+        authorEl.className = `message-author ${msg.from}`;
+      }
     }
     return;
   }
