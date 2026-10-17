@@ -1799,10 +1799,8 @@ chorus:CoreShape a sh:NodeShape ;
     rdfs:comment "The attributes every class carries: a name, a description, who created it and when, and who last changed it and when. #4576." ;
     sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ] ;
     sh:property [ sh:path chorus:comment ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ] ;
-    sh:property [ sh:path dcterms:created ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "created at" ] ;
-    sh:property [ sh:path dcterms:creator ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; sh:name "created by" ] ;
-    sh:property [ sh:path dcterms:modified ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "changed at" ] ;
-    sh:property [ sh:path dcterms:contributor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; sh:name "changed by" ] .
+    # the four Dublin Core stamps are a rule, not fields (#4312): the DAL writes them, no caller sends them
+    sh:sparql chorus:StampedByTheDal .
 
 chorus:changedAt       a owl:DatatypeProperty ; rdfs:label "changedAt" ; rdfs:range xsd:string ;
     rdfs:comment "When this row last changed, UTC ISO, stamped by the door on every create and replace — never typed. #4101: Jeff, 2026-09-03: 'our docs dont show version'; version is a fact about the write, not a number a person maintains." .

@@ -2434,17 +2434,7 @@ pub fn missing_required<'a>(required: &'a [String], present: &[&str]) -> Option<
     required
         .iter()
         .map(|r| r.split('|').next().unwrap_or(r))
-        .find(|r| *r != "label" && *r != "name" && !is_dal_stamp(r) && !present.contains(r))
-}
-
-/// #4576 — the audit stamps athena-model writes on every governed write
-/// (dcterms created/modified/creator/contributor). CoreShape requires them, but
-/// the DAL supplies them, never the body, so they never count as missing here.
-/// A shape path with no '#' keeps its whole IRI as the field name.
-pub fn is_dal_stamp(field: &str) -> bool {
-    const DCT: &str = "http://purl.org/dc/terms/";
-    let local = field.strip_prefix(DCT).unwrap_or(field);
-    field.starts_with(DCT) && ["created", "modified", "creator", "contributor"].contains(&local)
+        .find(|r| *r != "label" && *r != "name" && !present.contains(r))
 }
 
 fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_commit: &str) -> Result<PreparedCreate, CreatePrepareError> {
@@ -3126,21 +3116,6 @@ mod bounds_closedshape_tests {
         ] {
             assert!(parse_create_object(bad).is_err(), "malformed JSON must be refused: {bad}");
         }
-    }
-
-    /// #4576 — CoreShape (flattened into every class shape) requires the dcterms
-    /// audit stamps; the DAL writes them, so a create never needs them in its
-    /// body. NEGATIVE PROOFS: a real missing field beside them is still refused,
-    /// and a non-dcterms field that merely shares a stamp's local name is not skipped.
-    #[test]
-    fn dal_stamps_are_required_but_never_missing_from_a_body() {
-        const D: &str = "http://purl.org/dc/terms/";
-        let req: Vec<String> = ["created", "modified", "creator", "contributor"].iter()
-            .map(|k| format!("{D}{k}|field")).chain(["noteText|field".to_string()]).collect();
-        assert_eq!(missing_required(&req, &["noteText"]), None, "the four stamps never count as missing");
-        assert_eq!(missing_required(&req, &[]), Some("noteText"), "a real missing field is still refused");
-        assert!(is_dal_stamp(&format!("{D}created")) && !is_dal_stamp("created") && !is_dal_stamp(&format!("{D}title")));
-        assert_eq!(missing_required(&["created|field".to_string()], &[]), Some("created"), "a chorus field named created is not a stamp");
     }
 
     /// #4096 — a list value parses to every element, in order; a plain string is a
