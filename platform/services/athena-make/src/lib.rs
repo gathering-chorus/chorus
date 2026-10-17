@@ -2267,7 +2267,11 @@ pub fn entity_subject(class: &str, name: &str) -> String {
         // #4485 — Machine too: chorus:library and chorus:bedroom are authored bare, and
         // 269 onMachine links point at those IRIs. Minting `machine-library` made every
         // write to a listed machine 404 (measured on the staging door, 2026-10-11).
-        "Product" | "Domain" | "Test" | "Principle" | "Machine" => format!("{}{}", NS, name),
+        // #4576 — AgentRuntime too: its three rows are authored bare (chorus:runtime-agy)
+        // and every Principal's agentRuntime link names those IRIs. Minting
+        // `agent-runtime-runtime-agy` made each read of a listed runtime 404
+        // (measured on the staging door, run 11, 2026-10-17).
+        "Product" | "Domain" | "Test" | "Principle" | "Machine" | "AgentRuntime" => format!("{}{}", NS, name),
         _ => format!("{}{}-{}", NS, kind_of_class(local), name),
     }
 }
@@ -2293,7 +2297,7 @@ pub fn served_name(class: &str, subject: &str) -> String {
         // the same un-prefixed kinds as `entity_subject` — the two lists are one
         // rule seen from both ends, and the round-trip test fails the moment they
         // stop agreeing.
-        "Product" | "Domain" | "Test" | "Principle" | "Machine" => local.to_string(),
+        "Product" | "Domain" | "Test" | "Principle" | "Machine" | "AgentRuntime" => local.to_string(),
         _ => {
             let prefix = format!("{}-", kind_of_class(class_local));
             local.strip_prefix(&prefix).unwrap_or(local).to_string()
@@ -8415,6 +8419,9 @@ mod tests {
         assert_ne!(entity_subject("https://jeffbridwell.com/chorus#Document", "x"), format!("{}x", NS));
         // #4485 — a Machine is addressed by the bare IRI its 269 onMachine links name
         assert_eq!(entity_subject("https://jeffbridwell.com/chorus#Machine", "library"), format!("{}library", NS));
+        // #4576 — an AgentRuntime is addressed by the bare IRI its rows and links carry
+        assert_eq!(entity_subject("https://jeffbridwell.com/chorus#AgentRuntime", "runtime-agy"), format!("{}runtime-agy", NS));
+        assert_eq!(served_name("https://jeffbridwell.com/chorus#AgentRuntime", &format!("{}runtime-agy", NS)), "runtime-agy");
     }
 
     /// #4114 — the name a list serves must be the name its own read accepts.

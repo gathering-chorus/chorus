@@ -141,6 +141,10 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/wren/ontology/awareness-4018.ttl"),
             format!("{root}/roles/wren/ontology/product-design-4018.ttl"),
             format!("{root}/roles/wren/ontology/pulse-settings-4490.ttl"),  // #4490: pulse-api's settings as Property rows
+            // #4576: the AgentRuntime class, its fields and shape. Outside the set, the
+            // class never reached the store (prod: the shape and 0 triples of the class),
+            // so identity's claim on it pointed at nothing a validator calls a class.
+            format!("{root}/roles/silas/ontology/agent-runtimes-4444.ttl"),
         ],
     }
 }
@@ -1024,10 +1028,23 @@ fn core_rows(ontology: &str, missing: &str) -> String {
     )
 }
 
+/// #4576 — where a slug literal creator's Principal comes from: the Principal
+/// named principal-<slug> when one exists, else the row's ownedBy, else the
+/// owner of the domain whose instancesGraph holds the row. Run 11: 23 code
+/// rows said "athena-deploy-model", a deploy script, not a Principal (principals
+/// own things, services do not); they go to the code domain's owner. A literal
+/// none of the three can name stays as it is, so the pass cannot loop on it.
+const CREATOR_IRI_FROM: &str = "\n\
+    BIND(IRI(CONCAT(STR(chorus:), \"principal-\", STR(?lit))) AS ?named)\n\
+    OPTIONAL { GRAPH ?pg { ?named a chorus:Principal } BIND(?named AS ?pw) }\n\
+    OPTIONAL { GRAPH ?g { ?s chorus:ownedBy ?own } FILTER(isIRI(?own)) }\n\
+    OPTIONAL { GRAPH <urn:chorus:domains:domains> { ?dom chorus:instancesGraph ?gi ; chorus:ownedBy ?downer } FILTER(STR(?gi) = STR(?g) && isIRI(?downer)) }\n\
+    BIND(COALESCE(?pw, ?own, ?downer) AS ?w0) FILTER(BOUND(?w0))";
+
 /// What each pass selects, and where its value comes from. Pure.
 ///   created      missing           -> the repo's first commit date
 ///   modified     missing           -> the row's created
-///   creator-iri  a role-slug literal -> that role's Principal IRI (literal removed)
+///   creator-iri  a slug literal      -> its Principal, else the row's or its domain's owner (literal removed)
 ///   creator      missing           -> the row's ownedBy (a row with no owner stays red)
 ///   contributor  missing           -> the row's creator
 fn stamp_pass(prop: &str) -> (&'static str, String, &'static str, &'static str) {
@@ -1036,15 +1053,22 @@ fn stamp_pass(prop: &str) -> (&'static str, String, &'static str, &'static str) 
         "created" => ("FILTER NOT EXISTS { ?s dct:created ?x }", format!("BIND(\"{CREATED_BEFORE_STAMPS}\" AS ?w)"), "", "created"),
         "modified" => ("?s dct:created ?w . FILTER NOT EXISTS { ?s dct:modified ?x }", String::new(), "", "modified"),
         "creator-iri" => ("?s dct:creator ?lit . FILTER(isLiteral(?lit) && REGEX(STR(?lit), \"^[a-z0-9-]+$\"))",
-            "BIND(IRI(CONCAT(STR(chorus:), \"principal-\", STR(?lit))) AS ?w)".to_string(), "?s dct:creator ?lit .", "creator"),
+            String::new(), "?s dct:creator ?lit .", "creator"),
         "creator" => ("?s chorus:ownedBy ?w . FILTER(isIRI(?w)) FILTER NOT EXISTS { ?s dct:creator ?x }", String::new(), "", "creator"),
         _ => ("?s dct:creator ?w . FILTER(isIRI(?w)) FILTER NOT EXISTS { ?s dct:contributor ?x }", String::new(), "", "contributor"),
     }
 }
 
+/// The rows a pass selects: core rows missing the stamp, and for creator-iri
+/// only the ones whose Principal can be named.
+fn stamp_rows(ontology: &str, prop: &str, pat: &str) -> String {
+    let from = if prop == "creator-iri" { CREATOR_IRI_FROM } else { "" };
+    format!("{}{from}", core_rows(ontology, pat))
+}
+
 pub fn core_stamp_count_sparql(ontology: &str, prop: &str) -> String {
     let (pat, _, _, _) = stamp_pass(prop);
-    format!("{STAMP_PREFIXES}\nSELECT (COUNT(*) AS ?n) WHERE {{ SELECT DISTINCT ?g ?s WHERE {{ {} }} }}", core_rows(ontology, pat))
+    format!("{STAMP_PREFIXES}\nSELECT (COUNT(*) AS ?n) WHERE {{ SELECT DISTINCT ?g ?s WHERE {{ {} }} }}", stamp_rows(ontology, prop, pat))
 }
 
 /// One bounded pass: at most `limit` rows per update, so a 100k-row class is
@@ -1053,16 +1077,14 @@ pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> Strin
     let (pat, bind, del, pred) = stamp_pass(prop);
     let (sel, group) = if prop == "created" { ("DISTINCT ?g ?s", "") } else { ("?g ?s (SAMPLE(?w0) AS ?w)", " GROUP BY ?g ?s") };
     let inner = if prop == "created" { pat.to_string() } else { pat.replace("?w", "?w0") };
-    let (inner, bind) = if prop == "creator-iri" {
-        (format!("{pat}"), bind.clone())
-    } else { (inner, bind.clone()) };
-    let sel = if prop == "creator-iri" { "DISTINCT ?g ?s ?lit" } else { sel };
-    let group = if prop == "creator-iri" { "" } else { group };
+    let inner = if prop == "creator-iri" { pat.to_string() } else { inner };
+    let sel = if prop == "creator-iri" { "?g ?s ?lit (SAMPLE(?w0) AS ?w)" } else { sel };
+    let group = if prop == "creator-iri" { " GROUP BY ?g ?s ?lit" } else { group };
     let delete = if del.is_empty() { String::new() } else { format!("DELETE {{ GRAPH ?g {{ {del} }} }}\n") };
     format!(
         "{STAMP_PREFIXES}\n{delete}INSERT {{ GRAPH ?g {{ ?s dct:{pred} ?w }} }}\n\
          WHERE {{ {{ SELECT {sel} WHERE {{ {} }}{group} LIMIT {limit} }} {bind} }}",
-        core_rows(ontology, &inner)
+        stamp_rows(ontology, prop, &inner)
     )
 }
 
@@ -1161,24 +1183,36 @@ pub fn backfill_descriptions(ontology: &str, query: &str, update: &str) -> Resul
     Ok(format!("descriptions filled from {} template(s): +{filled}", rows.len()))
 }
 
-/// #4576 — every CoreShape row has a name. A row with neither chorus:label nor
-/// rdfs:label (run 11: 259 Documents, 10 KeyRegistryEntries) gets one from what it
-/// already says about itself: its title, its docTitle, else the last part of its IRI.
-const LABEL_MISSING: &str = "FILTER NOT EXISTS { ?s chorus:label ?x } FILTER NOT EXISTS { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?y }";
+/// #4576 — every CoreShape row has a name. A row of a class that requires chorus:label
+/// and lacks it (run 11: 259 Documents, 10 KeyRegistryEntries, 3 AgentRuntimes) gets one
+/// from what it already says about itself: its rdfs:label, title, docTitle, else its IRI.
+const LABEL_MISSING: &str = "FILTER NOT EXISTS { ?s chorus:label ?x }";
+
+/// The rows a name pass touches: rows of a class whose flattened shape requires
+/// chorus:label (a class that names its own label field, e.g. rdfs:label, keeps it),
+/// in every graph but test-ephemeral ones, still without one. Pure.
+fn label_rows(ontology: &str) -> String {
+    format!(
+        "{{ SELECT DISTINCT ?c WHERE {{ GRAPH <{ontology}> {{ ?sh sh:targetClass ?c ; sh:property ?p . ?p sh:path chorus:label ; sh:minCount ?m FILTER(?m >= 1) }} }} }}\n\
+         GRAPH ?g {{ ?s a ?c . {LABEL_MISSING} }}\n\
+         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }}"
+    )
+}
 
 /// One bounded pass of label fill. Pure.
 pub fn label_insert_sparql(ontology: &str, limit: u32) -> String {
     format!(
         "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:label ?l }} }}\n\
          WHERE {{ {{ SELECT ?g ?s (SAMPLE(?l0) AS ?l) WHERE {{ {rows} \
+         OPTIONAL {{ GRAPH ?g {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?r }} }} \
          OPTIONAL {{ GRAPH ?g {{ ?s dct:title ?t }} }} OPTIONAL {{ GRAPH ?g {{ ?s chorus:docTitle ?d }} }} \
-         BIND(COALESCE(STR(?t), STR(?d), REPLACE(STR(?s), \"^.*[#/]\", \"\")) AS ?l0) }} GROUP BY ?g ?s LIMIT {limit} }} }}",
-        rows = core_rows(ontology, LABEL_MISSING)
+         BIND(COALESCE(STR(?r), STR(?t), STR(?d), REPLACE(STR(?s), \"^.*[#/]\", \"\")) AS ?l0) }} GROUP BY ?g ?s LIMIT {limit} }} }}",
+        rows = label_rows(ontology)
     )
 }
 
 pub fn label_count_sparql(ontology: &str) -> String {
-    format!("{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ {} }}", core_rows(ontology, LABEL_MISSING))
+    format!("{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ {} }}", label_rows(ontology))
 }
 
 /// Fill missing names in bounded passes, refusing a pass that makes no progress.
@@ -2509,14 +2543,17 @@ fn riot_available() -> bool {
 
 #[cfg(test)]
 mod tests {
-    /// #4576 — a row gets a name only when it has neither chorus:label nor
-    /// rdfs:label, and the name comes from its title, docTitle, else its IRI.
+    /// #4576 — a row gets a name only when its class requires chorus:label and it has
+    /// none; the name comes from its rdfs:label, title, docTitle, else its IRI.
     /// Proven on staging 12:15: 293 rows without a name -> 0 ("About", "Contact" from titles).
     #[test]
     fn label_fill_only_touches_nameless_rows_and_prefers_the_title() {
         let ins = label_insert_sparql("urn:o", 10);
-        assert!(ins.contains("FILTER NOT EXISTS { ?s chorus:label ?x }") && ins.contains("rdf-schema#label> ?y }"), "{ins}");
+        assert!(ins.contains("FILTER NOT EXISTS { ?s chorus:label ?x }"), "{ins}");
+        assert!(ins.contains("sh:path chorus:label ; sh:minCount ?m"), "only classes that require chorus:label: {ins}");
+        let r = ins.find("STR(?r)").unwrap();
         let t = ins.find("STR(?t)").unwrap();
+        assert!(r < t, "rdfs:label first: {ins}");
         let d = ins.find("STR(?d)").unwrap();
         let iri = ins.find("REPLACE(STR(?s)").unwrap();
         assert!(t < d && d < iri, "title, then docTitle, then the IRI: {ins}");
@@ -2560,6 +2597,7 @@ mod tests {
         let iri = core_stamp_insert_sparql("urn:chorus:ontology", "creator-iri", 7);
         assert!(iri.contains("DELETE { GRAPH ?g { ?s dct:creator ?lit . } }") && iri.contains("principal-"), "the literal goes, the IRI comes: {iri}");
         assert!(iri.contains("^[a-z0-9-]+$"), "only a role slug converts: {iri}");
+        assert!(iri.contains("COALESCE(?pw, ?own, ?downer)") && iri.contains("FILTER(BOUND(?w0))"), "a Principal, else an owner, never a made-up IRI: {iri}");
         let c = core_stamp_insert_sparql("urn:chorus:ontology", "contributor", 7);
         assert!(c.contains("?s dct:creator ?w0 . FILTER(isIRI(?w0))"), "contributor from an IRI creator only: {c}");
         assert_eq!(csv_count("n\n42\n"), Some(42));
@@ -2634,7 +2672,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 33, "the ontology set is 33 files (#4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 34, "the ontology set is 34 files (#4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
@@ -3162,5 +3200,50 @@ mod rehome_card_4576 {
         let dom = block(&after, "urn:dom");
         assert!(!dom.contains("c:Session"), "the replace no longer replaces, so this proof cannot tell the two apart:\n{after}");
         assert!(dom.contains("c:Teammate"), "{after}");
+    }
+}
+
+/// #4576 — the creator-iri pass, run, not read: a slug that names a Principal
+/// becomes it; one that names no Principal goes to its domain's owner; one with
+/// no owner anywhere stays, and is no longer counted, so the pass ends.
+#[cfg(test)]
+mod creator_iri_4576 {
+    use super::{core_stamp_count_sparql, core_stamp_insert_sparql};
+    use std::process::Command;
+
+    #[test]
+    fn a_slug_that_is_not_a_principal_goes_to_the_domain_owner() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        let dir = std::env::temp_dir().join(format!("creator-4576-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix d: <http://purl.org/dc/terms/> .
+<urn:chorus:ontology> { c:LangShape sh:targetClass c:Language ; sh:node c:CoreShape . }
+<urn:sec> { c:principal-kade a c:Principal . }
+<urn:chorus:domains:domains> { c:code c:instancesGraph "urn:code" ; c:ownedBy c:principal-kade .
+                               c:loose c:instancesGraph "urn:loose" . }
+<urn:code> { c:lang-rust a c:Language ; d:creator "kade" .
+             c:lang-sql a c:Language ; d:creator "athena-deploy-model" . }
+<urn:loose> { c:lang-x a c:Language ; d:creator "athena-deploy-model" . }
+"#).unwrap();
+        let q = core_stamp_insert_sparql("urn:chorus:ontology", "creator-iri", 50);
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}\n{q}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        // the made-up IRI must not appear anywhere
+        assert!(!after.contains("principal-athena-deploy-model"), "a slug that is not a Principal became one:\n{after}");
+        // the row with no owner keeps its literal (nothing to name it with)
+        assert!(after.contains("\"athena-deploy-model\""), "the unownable row lost its creator:\n{after}");
+        // NEGATIVE PROOF: lang-sql no longer carries the literal; it went to the code owner
+        let code = { let i = after.find("<urn:code>").unwrap(); let j = after[i..].find('}').map(|k| i + k).unwrap(); after[i..j].to_string() };
+        assert!(!code.contains("\"athena-deploy-model\"") && code.matches("principal-kade").count() >= 2, "lang-sql was not given its domain's owner:\n{after}");
+        // the count cannot see the unownable row, so the pass loop ends
+        assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER(BOUND(?w0))"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

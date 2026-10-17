@@ -28,7 +28,7 @@
 
 chorus:AgentRuntime a owl:Class ;
     rdfs:label "Agent runtime" ;
-    rdfs:comment "A program a role session runs on (Claude Code, Gemini CLI, Antigravity CLI): how to start it, where its hooks live, and how its hook input and replies are shaped." .
+    rdfs:comment "A program a role session runs on (Claude Code, Gemini CLI, Antigravity CLI): how to start it, where its hooks live, and how its hook input and replies are shaped. Its rows live in urn:chorus:domains:identity (#4572)." .
 
 chorus:identity chorus:definesVocabulary chorus:AgentRuntime .
 
