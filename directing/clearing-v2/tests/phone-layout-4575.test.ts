@@ -44,3 +44,16 @@ test("a row with many sessions shows one plus a count, so it stays one line tall
   expect(cell).toContain('+3');
   expect(cell).not.toContain('<br>');
 });
+
+// #4575 — Jeff 07:01: "i dont see a way to send now in board". Every page has one composer.
+test('Board, Roles and Today carry the #team composer; Rooms keeps exactly its own (negative proof)', async () => {
+  const { renderBoardPage, renderRoomsPage } = await import('../src/views');
+  const board = renderBoardPage([], null, []);
+  const roles = renderRolesPage({ actors: [] } as never, []);
+  for (const html of [board, roles]) {
+    expect(html.match(/id="composer-form"/g)).toHaveLength(1);
+    expect(html).toContain('Message #team...');
+  }
+  const rooms = renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, []);
+  expect(rooms.match(/id="composer-form"/g)).toHaveLength(1);
+});

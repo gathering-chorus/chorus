@@ -32,6 +32,16 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
   </nav>`;
 }
 
+/** #4575 — Jeff 07:01: "i dont see a way to send now in board". Every page carries the
+ *  #team composer (Rooms has its own, per room); no @ goes to Wren, as in the room. */
+const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
+    <form id="composer-form">
+      <input type="text" id="composer-input" placeholder="Message #team..." autocomplete="off">
+      <button type="submit" id="composer-send">Send</button>
+    </form>
+    <div id="send-error" class="send-error" role="alert"></div>
+  </footer>`;
+
 export function renderPageShell(
   title: string,
   activeNav: string,
@@ -74,6 +84,7 @@ export function renderPageShell(
     ${chipsHtml}
   </div>
   ${bodyContent}
+  ${activeNav === 'rooms' ? '' : TEAM_COMPOSER}
   <script src="/app.js"></script>
 </body>
 </html>`;

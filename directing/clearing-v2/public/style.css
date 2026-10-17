@@ -748,3 +748,6 @@ tr.you td {
   /* #4575 — a role's session list no longer stretches its row: one line, the full list on tap */
   .role-sessions { max-width: 9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* #4575 — the #team composer on non-Rooms pages stays at the bottom of the screen */
+.page-composer { position: sticky; bottom: 0; z-index: 5; }
