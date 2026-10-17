@@ -80,7 +80,7 @@ The pipeline's steps, in order:
 |------|-----|--------------|
 | pair-start | dagu | refuses a card not in WIP; writes `/tmp/pair-<card-id>.md` from the card's AC; registers the pair (driver and navigator) for the heartbeat; emits `pair.started`; nudges the navigator with the green command |
 | pair-green | **navigator** | waits until the navigator says every AC is green (a dagu human task, the same mechanism as Jeff's go) |
-| pair-check | dagu | the green must come from the navigator; the driver's is refused. `decision=stop` ends the pair |
+| pair-check | dagu | the green must come from the navigator; the driver's is refused. `decision=stop` ends the pair (the navigator, or Abby or Jeff when the navigator is gone) |
 | pair-local-proof | dagu | the werk-test steps on the werk (cicd-test, scope diff) |
 | pair-hand-off | dagu | enqueues the card's ONE cicd run |
 | pair-end | dagu | For-Jeff summary from the slice log (pair file + card comment); deregisters; `pair.ended` |
@@ -304,7 +304,8 @@ skill name to dangle ("unknown skill"). The driver's only job is to **register t
 so the daemon knows to watch it.
 
 pair-start registers the pair (`$CHORUS_HOME/ops/active-pairs/<card>.json`, with
-the driver and the navigator) and pair-end removes it; nobody writes it by hand.
+the driver and the navigator) and pair-end removes it; nobody writes it by hand. A pair whose card
+is no longer in WIP is dropped by the daemon on its next tick (#4577).
 
 **How the daemon decides (you do nothing — it ticks on its own):** each 60s tick it reads
 the navigator's observation stream (the same tool-turn stream `pulse-gather`/gemba use),
@@ -321,7 +322,7 @@ the daemon never escalates on missing data.
 When the driver completes an AC item and nudges the navigator:
 - **0-60s:** Navigator responds with next directive. Normal flow.
 - **60-120s:** Stall warning prints automatically (from heartbeat monitor above).
-- **120s+:** Driver re-nudges with urgency (automatic from heartbeat monitor).
+- **120s+:** the daemon nudges the navigator, naming the driver who is waiting (#4577).
 - **180s+:** `pair.navigator.stall` on the spine, and the daemon nudges Abby (abby-normal), who runs the ceremonies (#4577).
 
 **Why escalate at 3 minutes, not 10?** Because 10 minutes of silence in a pair is the pair dying. The navigator's scope loop IS the pair — if it stops for 3 minutes without a declared reason (blocking operation, investigate mode), the pair is already over. Early escalation gives the navigator a chance to re-engage before the session context drifts.

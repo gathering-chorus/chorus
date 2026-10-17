@@ -50,6 +50,8 @@ start)
     printf '\n## Back to slice %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$pf"
     say "#$card back to slice; waiting for $nav's green"
   else
+    # #4577 (Abby 3) — a pair file someone already keeps is added to, never overwritten
+    [ -f "$pf" ] && printf '\n---\n' >> "$pf"
     {
       echo "# Pair #$card — $driver drives, $nav navigates"
       echo
@@ -59,7 +61,7 @@ start)
       awk '/## AC/{f=1;next} /^\s*(##|Domains:)/{f=0} f' <<<"$view" | sed 's/^    //'
       echo
       echo "## Slice log"
-    } > "$pf"
+    } >> "$pf"
     spine pair.started system "card=$card" "driver=$driver" "partner=$nav"
     say "#$card paired: $driver drives, $nav navigates; pair file $pf"
   fi
@@ -71,11 +73,18 @@ start)
 check)
   card="${1:-}"; nav="${2:-}"; by="${3:-}"; decision="${4:-}"
   [ -n "$card" ] && [ -n "$nav" ] || die "usage: pair check CARD NAVIGATOR BY DECISION"
-  [ "$by" = "$nav" ] || die "#$card: the green must come from the navigator $nav, not '${by}'"
+  # #4577 (Abby 2) — a pair whose navigator is gone can be ended by Abby, who
+  # runs the ceremonies, or by Jeff; only the navigator gives the green
+  if [ "$by" != "$nav" ]; then
+    case "$decision:$by" in
+      stop:abby-normal|stop:jeff) ;;
+      *) die "#$card: the green must come from the navigator $nav, not '${by}'" ;;
+    esac
+  fi
   case "$decision" in
     green) spine pair.green system "card=$card" "nav=$nav"; say "#$card: $nav says every AC is green" ;;
     stop) drv=$(grep -o '"driver":"[^"]*"' "$REG/$card.json" 2>/dev/null | cut -d'"' -f4)
-          "$0" end "$card" "${drv:-?}" "$nav" >/dev/null; die "#$card: $nav ended the pair" ;;
+          "$0" end "$card" "${drv:-?}" "$nav" >/dev/null; die "#$card: $by ended the pair" ;;
     *) die "#$card: '$decision' is not green or stop" ;;
   esac
   ;;
