@@ -74,6 +74,7 @@ export function buildNote(msg: ClearingMsg, topic: string, signer: NostrSigner):
   // the signature rather than about the clock.
   const created_at = Number.isFinite(parsed) ? Math.floor(parsed / 1000) : Math.floor(Date.now() / 1000);
   const tags: string[][] = [['t', topic]];
+  if (msg.from) tags.push(['author', msg.from]);
   const { id, sig } = signer.signEvent(serialize(pubkey, created_at, 1, tags, msg.text));
   return { id, pubkey, created_at, kind: 1, tags, content: msg.text, sig };
 }
