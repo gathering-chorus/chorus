@@ -119,5 +119,4 @@ chorus:runtime-claude-code a chorus:AgentRuntime ;
     chorus:replyDeny "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"{reason}\"}}" ;
     chorus:replyContext "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"{context}\"}}" .
 
-# Abby runs on agy (Jeff, 2026-10-14 08:16: "abby").
-<https://jeffbridwell.com/chorus#principal-abby-normal> chorus:agentRuntime chorus:runtime-agy .
+# Abby's agentRuntime edge is on her Principal row (identity-principals-3613.ttl), not here (#4576).

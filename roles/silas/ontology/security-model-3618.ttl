@@ -279,7 +279,8 @@ chorus:PrincipalShape a sh:NodeShape ;
     sh:property chorus:PrincipalShape-principalKind ;
     sh:property chorus:PrincipalShape-canSignIn ;
     sh:property chorus:PrincipalShape-holdsRole ;
-    sh:property chorus:PrincipalShape-wearsHat .
+    sh:property chorus:PrincipalShape-wearsHat ;
+    sh:property chorus:PrincipalShape-agentRuntime .
 # #3830 — where a person's NAME goes: rdfs:label, the one required text field,
 # which Jeff's row had carried a description in for three months ("jeff (human
 # principal - root authority)") because nothing said otherwise. foaf:name is
@@ -329,6 +330,14 @@ chorus:PrincipalShape-canSignIn a sh:PropertyShape ;
 # OPTIONAL by minCount, deliberately: Jeff holds no role (he is the authority
 # the roles serve), workers hold none by rule. Typed by sh:class so a dangling
 # or mistyped object is refused — which is the actual risk during a re-seed.
+# #4576 — the runtime an agent principal's sessions start on (#4444). It is a fact
+# about the Principal, so it lives on the Principal's row in security, where the
+# door reads it; in the identity graph beside the runtime rows it was in the store
+# and never served (run 16: field-dropped agentRuntime on abby-normal).
+chorus:PrincipalShape-agentRuntime a sh:PropertyShape ;
+    sh:path chorus:agentRuntime ; sh:maxCount 1 ; sh:class chorus:AgentRuntime ;
+    sh:message "agentRuntime must name one chorus:AgentRuntime that exists" .
+
 chorus:PrincipalShape-holdsRole a sh:PropertyShape ;
     sh:path chorus:holdsRole ; sh:maxCount 1 ; sh:class chorus:Role ;
     sh:message "holdsRole must point at a chorus:Role that exists — a dangling role reference is how a re-seed loses the identity-to-role seam silently" .
