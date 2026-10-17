@@ -365,9 +365,16 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
     if r.executor == "pipeline" {
         // dagu 2.18: `call:` + `params:` is deprecated (Silas measured, 10-16);
         // dag.run is the same sub-run, the shape of cicd's dag.enqueue step
-        let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string(), "TRACE=${CHORUS_TRACE_ID}".to_string()];
-        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=")).map(String::from));
-        out.push_str("    action: dag.run\n    with:\n");
+        // #4577 — `enqueue=true`: hand the card to that pipeline and go on
+        // (the pair's hand-off to cicd, which waits hours for a go); the
+        // child runs on its own queue as its own run, so it gets no TRACE
+        let enqueue = r.with_args.split_whitespace().any(|p| p == "enqueue=true");
+        let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string()];
+        if !enqueue {
+            params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
+        }
+        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true").map(String::from));
+        out.push_str(if enqueue { "    action: dag.enqueue\n    with:\n" } else { "    action: dag.run\n    with:\n" });
         out.push_str(&format!("      dag: {}\n", r.implemented_by));
         out.push_str(&format!("      params: {}\n", quote(&params.join(" "))));
         return;
@@ -494,6 +501,9 @@ pub struct Pipe {
     pub trace_param: String,
     pub on_abort: String,
     pub on_exit: String,
+    /// #4577 — what runs when the run fails, in place of the builder's nudge
+    /// (the pair re-enqueues itself at red: back to slice)
+    pub on_failure: String,
 }
 
 /// A Pipeline row's fields, `key<TAB>value` per line (the SPARQL read writes
@@ -517,6 +527,7 @@ pub fn parse_pipe(tsv: &str) -> Result<Pipe, Vec<String>> {
             "traceParam" => p.trace_param = v,
             "onAbort" => p.on_abort = v,
             "onExit" => p.on_exit = v,
+            "onFailure" => p.on_failure = v,
             other => errs.push(format!("line {}: unknown Pipeline field '{}'", i + 1, other)),
         }
     }
@@ -538,8 +549,16 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
         .filter(|r| r.executor == "pipeline" && !known.contains(&r.implemented_by))
         .map(|r| format!("{}: calls pipeline '{}', which the graph does not hold", r.skill, r.implemented_by))
         .collect();
-    if let Some(h) = rows.iter().find(|r| r.executor == "human") {
-        errs.push(format!("pipeline {pipeline} runs straight (its Pipeline row names a queue), but its rows call {}", h.skill));
+    // #4577 — a human step in a straight pipeline is a role's, never Jeff's go:
+    // its row names the param that holds who answers (`by=NAVIGATOR`) and the
+    // answers it takes (`choices=green|stop`). Without both it is refused, so
+    // a go row can never land in a pipeline that has no land half.
+    for h in rows.iter().filter(|r| r.executor == "human") {
+        match human_by(h) {
+            Some((by, choices)) if pipe.params.contains(&by) && choices.len() >= 2 => {}
+            Some((by, _)) if !pipe.params.contains(&by) => errs.push(format!("{}: answered by {by}, which is not one of the pipeline's params", h.skill)),
+            _ => errs.push(format!("pipeline {pipeline} runs straight (its Pipeline row names a queue), but its rows call {} with no by= and choices= (who answers, and how)", h.skill)),
+        }
     }
     if !errs.is_empty() {
         return Err(errs);
@@ -576,7 +595,9 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
     // measured the double nudge, 10-16). A pipeline with an exit handler tells
     // people there (the nightly's notify names every red to its owner). Else a
     // failure nudges the card's builder.
-    if pipe.trace_param.is_empty() && pipe.on_exit.is_empty() {
+    if !pipe.on_failure.is_empty() {
+        out.push_str(&format!("  failure:\n    command: {}\n", quote(&pipe.on_failure)));
+    } else if pipe.trace_param.is_empty() && pipe.on_exit.is_empty() {
         out.push_str(&format!(
             "  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {pipeline} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));
@@ -590,10 +611,45 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
     for r in &rows {
-        command_step(&mut out, &rows, r, &prev, false);
+        if r.executor == "human" {
+            role_task_step(&mut out, &rows, r, &prev);
+        } else {
+            command_step(&mut out, &rows, r, &prev, false);
+        }
         prev = Some(dagu_name(&rows, r));
     }
     Ok(out)
+}
+
+/// #4577 — `by=PARAM choices=a|b` from a human row's withArguments.
+pub fn human_by(r: &Row) -> Option<(String, Vec<String>)> {
+    let get = |k: &str| r.with_args.split_whitespace().find_map(|p| p.strip_prefix(k).map(String::from));
+    let by = get("by=")?;
+    let choices = get("choices=").map(|c| c.split('|').filter(|x| !x.is_empty()).map(String::from).collect()).unwrap_or_default();
+    Some((by, choices))
+}
+
+/// #4577 — a human step a role completes (the navigator's green): dagu's
+/// human.task, its form asking who answers and which answer. The step after
+/// it checks the answer came from the role the run names (pair-check).
+fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>) {
+    let (by, choices) = human_by(r).unwrap_or_default();
+    let id = dagu_name(rows, r);
+    out.push_str(&format!("  - name: {id}\n"));
+    out.push_str(&format!("    description: {}\n", quote(&r.label)));
+    if let Some(p) = prev {
+        out.push_str(&format!("    depends: [{p}]\n"));
+    }
+    out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
+    out.push_str("    action: human.task\n    with:\n");
+    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? (${{{by}}} answers)", r.label))));
+    out.push_str(concat!(
+        "      form:\n        type: object\n        properties:\n",
+        "          by:\n            type: string\n",
+        "          decision:\n            type: string\n",
+    ));
+    out.push_str(&format!("            enum: [{}]\n", choices.join(", ")));
+    out.push_str("        required: [by, decision]\n");
 }
 
 /// The land half: every step after the go, on the land queue, one land at a time.
@@ -675,11 +731,12 @@ ORDER BY ?stepOrder ?skillOrder
 /// #4540 — the Pipeline row's own run fields (none set: an empty answer).
 pub const PIPE_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?queue ?schedule ?params ?traceParam ?onAbort ?onExit WHERE {
+SELECT ?queue ?schedule ?params ?traceParam ?onAbort ?onExit ?onFailure WHERE {
   GRAPH ?g { ?p a chorus:Pipeline ; rdfs:label "{PIPELINE}" .
     OPTIONAL { ?p chorus:runQueue ?queue } OPTIONAL { ?p chorus:runSchedule ?schedule }
     OPTIONAL { ?p chorus:runParams ?params } OPTIONAL { ?p chorus:traceParam ?traceParam }
-    OPTIONAL { ?p chorus:onAbortRun ?onAbort } OPTIONAL { ?p chorus:onExitRun ?onExit } }
+    OPTIONAL { ?p chorus:onAbortRun ?onAbort } OPTIONAL { ?p chorus:onExitRun ?onExit }
+    OPTIONAL { ?p chorus:onFailureRun ?onFailure } }
 }
 "#;
 
@@ -699,7 +756,7 @@ pub fn pipe_tsv_from_sparql(tsv: &str) -> String {
     let mut lines = tsv.lines();
     let _header = lines.next();
     let Some(row) = lines.find(|l| !l.trim().is_empty()) else { return String::new() };
-    let keys = ["queue", "schedule", "params", "traceParam", "onAbort", "onExit"];
+    let keys = ["queue", "schedule", "params", "traceParam", "onAbort", "onExit", "onFailure"];
     row.split('\t').map(term).zip(keys)
         .filter(|(v, _)| !v.is_empty())
         .map(|(v, k)| format!("{k}\t{v}\n"))

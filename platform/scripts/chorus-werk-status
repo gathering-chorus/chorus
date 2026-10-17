@@ -53,6 +53,8 @@ PRESENTED_TTL_MS = 24 * 3600 * 1000
 DAGU = os.environ.get("CWS_DAGU", "http://127.0.0.1:8526")
 DAGU_DAG = os.environ.get("CWS_DAGU_DAG", "cicd")
 ATHENA_DAG = os.environ.get("CWS_ATHENA_DAG", "athena")
+# #4577 — a pair runs as its own pipeline; its run is where the card is while it pairs
+PAIR_DAG = os.environ.get("CWS_PAIR_DAG", "pair")
 # #4553 — main is the fact a land reached: the card's commit there after the land began
 GIT_DIR = os.environ.get("CWS_GIT_DIR", os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")))
 MAIN_REF = os.environ.get("CWS_MAIN_REF", "origin/main")
@@ -390,6 +392,36 @@ def athena_only_reads(listing, line):
     return "validate" in shown and "athena run 1" in shown and "no run yet" not in shown and cicd_only == []
 
 
+def pair_reads(listing, line):
+    """#4577 fixture: dagu_runs over a stubbed run list holding one pair run
+    waiting on its navigator. Negative proof: the cicd-and-athena read (before
+    #4577) finds no run for the card, and a cicd run at its go still reads
+    waiting for your go."""
+    global dagu_list
+    keep = dagu_list
+    dagu_list = lambda name, since: [r for r in listing() if r["name"] == name]
+    try:
+        all_, old = dagu_runs(4577), [r for r in (dagu_runs(4577) or []) if r["name"] != PAIR_DAG]
+    finally:
+        dagu_list = keep
+    shown = line(4577, all_, []) if all_ else "no run yet"
+    # a cicd run the pair hands off to is not refused by the pair's own run;
+    # negative proof: a second cicd run still is
+    import io, contextlib
+    handing = lambda: [dict(listing()[0], statusLabel="running"),
+                       dict(listing()[0], name="cicd", dagRunId="c1", statusLabel="running")]
+    dagu_list = lambda name, since: [r for r in handing() if r["name"] == name]
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            free = live_other(4577, "c1")
+            dagu_list = lambda name, since: [r for r in handing() + [dict(handing()[1], dagRunId="c0")] if r["name"] == name]
+            held = live_other(4577, "c1")
+    finally:
+        dagu_list = keep
+    return ("pair: waiting for silas's green" in shown and "pair run 1" in shown and old == []
+            and free == 0 and held == 3)
+
+
 def fixture_mode():
     with tempfile.TemporaryDirectory() as td:
         global RUNS_DIR
@@ -459,7 +491,7 @@ def dagu_runs(card, dag=None):
     # #4536 — a card's run starts on the athena pipeline (model) and hands off to
     # cicd; Jeff 10:31 "include athena in scope of cws". Read 13:10: #4536 had
     # 8 athena runs and /cws said "no runs". The card's runs are both halves.
-    names = [dag] if dag else [DAGU_DAG, ATHENA_DAG]
+    names = [dag] if dag else [DAGU_DAG, ATHENA_DAG, PAIR_DAG]
     runs = []
     try:
         for name in names:
@@ -880,6 +912,11 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
     since = parse_ts(node.get("startedAt") or run.get("queuedAt") or run.get("startedAt"))
     ended = parse_ts(run.get("finishedAt") or node.get("finishedAt"))
     pre = "land: " if land else ""
+    # #4577 — a pair's run reads as the pair: "pair: local-proof", and at its
+    # human step it waits on the navigator, never on Jeff's go
+    paired = land is None and run.get("name") == PAIR_DAG
+    if paired:
+        pre, word = "pair: ", word.replace("pair-", "")
     if status == "queued":
         place = places.get(run.get("dagRunId"))
         where = f"{pre}waiting in line" + (f" ({ordinal(place)})" if place else "")
@@ -890,9 +927,14 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         # commands buried the status. The line is the status; the commands
         # print once, under the v2 runs, on /cws <card>.
         where = "waiting for your go"
+        if paired:
+            nav = re.search(r"NAVIGATOR=\"?(\S+?)\"?(?:\s|$)", run.get("params") or "")
+            where = f"pair: waiting for {nav.group(1) if nav else 'the navigator'}'s green"
     elif status == "succeeded" and not land and any(
             n.get("statusLabel") == "skipped" and n["step"]["name"] == f"{DAGU_DAG}-land" for n in nodes_of(run)):
         where = "rejected at the go"
+    elif status == "succeeded" and paired:
+        where = "pair: ended, handed to cicd"
     elif status == "succeeded":
         where = "landed" if land else "go given, land not queued"
         # #4186 reopen — the model half rides the card's own line
@@ -1040,7 +1082,9 @@ def live_other(card, me):
         name = r.get("name", DAGU_DAG)
         count[name] = count.get(name, 0) + 1
         n[r.get("dagRunId")] = count[name]
-    other = [r for r in live_runs(runs) if r.get("dagRunId") != me
+    # #4577 — a pair's run is not a build: its hand-off enqueues the card's
+    # cicd run while the pair run is still running, and must not refuse it
+    other = [r for r in live_runs(runs) if r.get("dagRunId") != me and r.get("name") != PAIR_DAG
              and r.get("statusLabel") in ("running", "queued")]
     if not other:
         return 0
@@ -1141,6 +1185,11 @@ def fixture_4553():
             # same card has no run, the "no run yet" Jeff saw for #4536.
             ("an athena-only card with a live run never reads no run yet",
              athena_only_reads(lambda: [run("v3", "athena", "running", 0, [node("running", "skill-athena-validate")], 4536)], line)),
+            # #4577 — a pair waits on its navigator's green, not Jeff's go
+            ("a pair run reads the pair's step and its navigator",
+             pair_reads(lambda: [dict(run("pr", "pair", "waiting", 0, [node("succeeded", "skill-pair-start"), node("waiting", "skill-pair-green")], 4577),
+                                      params="CARD=4577 ROLE=kade NAVIGATOR=silas")], line)
+             and "waiting for your go" in line(4578, [run("w", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4578)], [])),
         ]
         DAGU, GIT_DIR, MAIN_REF, LOKI = keep
     for name, ok in cases:

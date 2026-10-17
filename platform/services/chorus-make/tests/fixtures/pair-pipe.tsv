@@ -1,0 +1,3 @@
+queue	pair
+params	CARD ROLE NAVIGATOR
+onFailure	${CHORUS_HOME}/platform/scripts/pair red ${CARD} ${ROLE} ${NAVIGATOR} ${DAG_RUN_ID}

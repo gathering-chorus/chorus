@@ -111,6 +111,8 @@ pub fn escalation(prev: Level, cur: Level) -> Option<Level> {
 pub struct PairEntry {
     pub card: String,
     pub navigator: String,
+    /// #4577 — the driver, written by pair-start; kept through every tick
+    pub driver: String,
     pub last_seen_iso: String,
     pub last_active_epoch: i64,
     pub last_level: Level,
@@ -121,6 +123,7 @@ impl PairEntry {
         Some(PairEntry {
             card: json_str_field(j, "card")?,
             navigator: json_str_field(j, "navigator")?,
+            driver: json_str_field(j, "driver").unwrap_or_default(),
             last_seen_iso: json_str_field(j, "last_seen_iso").unwrap_or_default(),
             last_active_epoch: json_str_field(j, "last_active_epoch")
                 .and_then(|s| s.parse().ok())
@@ -130,8 +133,8 @@ impl PairEntry {
     }
     fn to_json(&self) -> String {
         format!(
-            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\"}}",
-            self.card, self.navigator, self.last_seen_iso, self.last_active_epoch, self.last_level.label()
+            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\"}}",
+            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label()
         )
     }
 }
@@ -146,8 +149,24 @@ fn registry_dir(home: &Path) -> PathBuf {
     home.join("ops/active-pairs")
 }
 
+/// #4577 — PAIR_OBS_DIR moves the observation streams (tests); the team-scan dir otherwise.
 fn observations_path(role: &str) -> PathBuf {
-    PathBuf::from(format!("/tmp/claude-team-scan/{}-observations.jsonl", role))
+    let dir = env::var("PAIR_OBS_DIR").unwrap_or_else(|_| "/tmp/claude-team-scan".to_string());
+    PathBuf::from(format!("{}/{}-observations.jsonl", dir, role))
+}
+
+/// #4577 — who hears a stalled navigator: Abby, who runs the ceremonies. Before,
+/// the 180s tier only emitted an event (as "wren") and nobody acted on it.
+pub const STALL_TO: &str = "abby-normal";
+
+/// #4577 — the nudge a level sends: only a stall nudges, and only Abby.
+pub fn stall_nudge(card: &str, navigator: &str, level: Level, silence: i64) -> Option<(String, String)> {
+    (level == Level::Stall).then(|| {
+        (
+            STALL_TO.to_string(),
+            format!("pair #{card}: navigator {navigator} silent {silence}s; the pair has stopped. Restart the navigator or end the pair."),
+        )
+    })
 }
 
 /// Emit one event to the ONE spine via `chorus-log` — best-effort, never blocks.
@@ -157,7 +176,8 @@ fn emit_spine(home: &Path, event: &str, extras: &[(&str, &str)]) {
         Some(s) => s.to_string(),
         None => return,
     };
-    let mut argv: Vec<String> = vec![event.to_string(), "wren".to_string()];
+    // #4577 — the daemon's own events are the system's, not a role's
+    let mut argv: Vec<String> = vec![event.to_string(), "system".to_string()];
     for (k, v) in extras {
         argv.push(format!("{}={}", k, v));
     }
@@ -182,6 +202,9 @@ fn fire(home: &Path, entry: &PairEntry, level: Level, silence: i64) {
             ("elapsed", &format!("{}s", silence)),
         ],
     );
+    if let Some((to, msg)) = stall_nudge(&entry.card, &entry.navigator, level, silence) {
+        let _ = Command::new("bash").arg(home.join("platform/scripts/ops-nudge")).args([&to, &msg]).env_remove("CHORUS_ROLE").output();
+    }
 }
 
 /// One tick: walk every active pair, update its silence state on the daemon's clock,

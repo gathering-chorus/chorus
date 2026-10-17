@@ -158,6 +158,11 @@ chorus:onExitRun a owl:DatatypeProperty ;
     rdfs:label "on exit" ;
     rdfs:comment "The command every run runs at its end, red or green (the nightly's notify)." ;
     rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
+# #4577 — the pair goes back to slice on a red: its failure re-enqueues it.
+chorus:onFailureRun a owl:DatatypeProperty ;
+    rdfs:label "on failure" ;
+    rdfs:comment "The command a failed run runs, in place of the builder's nudge (the pair's `pair red`: back to slice, a new run waits for the navigator's green)." ;
+    rdfs:domain chorus:Pipeline ; rdfs:range xsd:string .
 
 # #4540 — a Skill whose executor is "pipeline" runs a whole child pipeline;
 # its implementedBy names the Pipeline (its label), as a deterministic one
