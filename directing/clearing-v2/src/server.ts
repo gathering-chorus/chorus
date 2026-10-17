@@ -1,6 +1,6 @@
 // @domain: messages
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -168,6 +168,17 @@ function registerPageRoutes(ctx: RouteContext): void {
     const roomsData = await dataService.getRoomsData(room, { rolesUrl });
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage(room, roomsData, sources));
+  });
+
+  // #4581 — numeric card shortcut: /1 or /clearing-v2/1 redirects to board with that card open
+  app.get('/:card', (req: Request, res: Response, next: NextFunction) => {
+    const rawCard = req.params.card;
+    const card = Array.isArray(rawCard) ? rawCard[0] : rawCard;
+    if (typeof card === 'string' && /^\d+$/.test(card)) {
+      const base = res.locals.base || '';
+      return res.redirect(`${base}/board?card=${card}`);
+    }
+    next();
   });
 }
 
@@ -407,6 +418,7 @@ function mountBasePath(app: express.Express): void {
   app.use((req: Request, res: Response, next) => {
     const { url, base } = stripBase(req.url);
     req.url = url;
+    res.locals.base = base;
     const send = res.send.bind(res);
     res.send = ((body?: unknown) => send(typeof body === 'string' && /^\s*</.test(body) ? injectBase(withBase(body, base), base) : body)) as typeof res.send;
     next();
