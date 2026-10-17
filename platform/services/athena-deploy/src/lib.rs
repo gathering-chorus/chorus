@@ -972,6 +972,84 @@ pub fn flatten_node_shapes_sparql(graph: &str) -> String {
     )
 }
 
+/// #4576 — Jeff 2026-10-17 08:10 "i feel its a required attribute set it to a
+/// fixed date", 08:17 "maybe the date we default is chorus repo create date in
+/// git": d98dbbd40, 2026-03-29 11:35:26 -04:00. Same value as athena-make's.
+pub const CREATED_BEFORE_STAMPS: &str = "2026-03-29T15:35:26Z";
+pub const CORE_STAMPS: [&str; 4] = ["createdAt", "changedAt", "createdBy", "changedBy"];
+
+/// #4576 — the rows of every class whose shape names chorus:CoreShape, in every
+/// graph but the test-ephemeral ones, that lack `prop`. Dates take the fixed
+/// value; createdBy/changedBy take the row's ownedBy (a row with no owner is
+/// left for the shape to name, never guessed). Pure.
+pub fn core_stamp_rows(ontology: &str, prop: &str) -> String {
+    // changedAt runs after createdAt, so it takes the row's own creation date:
+    // a row is never changed before it was created.
+    let owner = match prop {
+        "createdBy" | "changedBy" => "?s chorus:ownedBy ?v . ",
+        "changedAt" => "?s chorus:createdAt ?v . ",
+        _ => "",
+    };
+    format!(
+        "{{ SELECT DISTINCT ?c WHERE {{ GRAPH <{ontology}> {{ ?sh sh:targetClass ?c ; sh:node chorus:CoreShape }} }} }}\n\
+         GRAPH ?g {{ ?s a ?c . {owner}FILTER NOT EXISTS {{ ?s chorus:{prop} ?x }} }}\n\
+         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }}"
+    )
+}
+
+const STAMP_PREFIXES: &str = "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <https://jeffbridwell.com/chorus#>";
+
+pub fn core_stamp_count_sparql(ontology: &str, prop: &str) -> String {
+    format!("{STAMP_PREFIXES}\nSELECT (COUNT(*) AS ?n) WHERE {{ SELECT DISTINCT ?g ?s WHERE {{ {} }} }}", core_stamp_rows(ontology, prop))
+}
+
+/// One bounded pass: at most `limit` rows per update, so a million-row graph is
+/// many short updates, never one that holds the store.
+pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> String {
+    let fixed = format!("BIND(\"{CREATED_BEFORE_STAMPS}\" AS ?w)");
+    let (sel, bind, group) = if prop == "createdAt" {
+        ("DISTINCT ?g ?s", fixed.as_str(), "")
+    } else {
+        ("?g ?s (SAMPLE(?v) AS ?w)", "", " GROUP BY ?g ?s")
+    };
+    format!(
+        "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:{prop} ?w }} }}\n\
+         WHERE {{ {{ SELECT {sel} WHERE {{ {} }}{group} LIMIT {limit} }} {bind} }}",
+        core_stamp_rows(ontology, prop)
+    )
+}
+
+fn csv_count(body: &str) -> Option<u64> {
+    body.lines().nth(1).and_then(|l| l.trim().trim_matches('"').parse().ok())
+}
+
+/// Runs the passes for each stamp until none is missing; refuses if a pass makes
+/// no progress (the count would loop forever otherwise).
+pub fn backfill_core_stamps(ontology: &str, query: &str, update: &str) -> Result<String, String> {
+    let limit: u32 = env_or("CORE_STAMP_BATCH", "50000").parse().unwrap_or(50000);
+    let mut report = Vec::new();
+    for prop in CORE_STAMPS {
+        let count = |q: &str| -> Result<u64, String> {
+            let b = curl(&["-s", "--data-urlencode", &format!("query={q}"), "-H", "Accept: text/csv", query])?;
+            csv_count(&b).ok_or_else(|| format!("core-stamps: could not read the {prop} count: {}", b.trim()))
+        };
+        let cq = core_stamp_count_sparql(ontology, prop);
+        let mut left = count(&cq)?;
+        let first = left;
+        while left > 0 {
+            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+                "-H", "Content-Type: application/sparql-update", "--data-binary",
+                &core_stamp_insert_sparql(ontology, prop, limit), update])?;
+            if !ok_http(&code) { return Err(format!("core-stamps-{prop}-failed-http-{code}")); }
+            let now = count(&cq)?;
+            if now >= left { return Err(format!("core-stamps: {prop} pass made no progress ({left} rows still missing it)")); }
+            left = now;
+        }
+        report.push(format!("{prop} +{first}"));
+    }
+    Ok(format!("core stamps backfilled ({}): {}", CREATED_BEFORE_STAMPS, report.join(", ")))
+}
+
 fn curl(args: &[&str]) -> Result<String, String> {
     // #4175 — EVERY Fuseki call carries a timeout, applied here at the one door
     // so no call site can forget it. On 2026-09-14 a compaction held the write
@@ -1404,6 +1482,14 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         return Err(fail(&format!("sh-node-flatten-failed-http-{fcode}")));
     }
     println!("athena-deploy: flattened sh:node shapes in <{ontology}>");
+
+    // #4576 — the who/when stamps are required (CoreShape). A row written before
+    // the door stamped them gets the fixed date and its owner, once: each pass
+    // adds only what is missing, so a later deploy finds nothing to do.
+    match backfill_core_stamps(&ontology, &query, &update) {
+        Ok(line) => println!("athena-deploy: {line}"),
+        Err(e) => return Err(fail(&e)),
+    }
 
     // #3752 — execute what `athena-model retire-claim` staged. Fail-closed at
     // every ask, idempotent on absent, and every delete backed up first (AC3).
@@ -2244,6 +2330,25 @@ mod tests {
         assert!(q.contains("?s sh:node+ ?n . ?n sh:property ?p"), "{q}");
         assert!(q.contains("FILTER(?s != ?n)"), "{q}");
         assert!(!q.contains("DELETE"), "flatten only adds: {q}");
+    }
+
+    /// #4576 — the backfill follows the model (only classes that name CoreShape),
+    /// skips test-ephemeral graphs, takes the owner for the By stamps and the
+    /// repo's first-commit date for the At stamps, and is bounded per pass.
+    /// The store proof (fill, refill finds nothing, an ownerless row stays empty,
+    /// a class without CoreShape untouched) ran on the in-memory chorus-test.
+    #[test]
+    fn core_stamp_backfill_is_bounded_owned_and_follows_the_shape() {
+        let by = core_stamp_insert_sparql("urn:chorus:ontology", "createdBy", 7);
+        assert!(by.contains("?s chorus:ownedBy ?v") && by.contains("LIMIT 7") && by.contains("sh:node chorus:CoreShape"), "{by}");
+        assert!(by.contains("FILTER NOT EXISTS { ?s chorus:createdBy ?x }"), "{by}");
+        assert!(by.contains("test-ephemeral"), "{by}");
+        let at = core_stamp_insert_sparql("urn:chorus:ontology", "createdAt", 7);
+        assert!(at.contains(CREATED_BEFORE_STAMPS) && !at.contains("ownedBy"), "{at}");
+        let ch = core_stamp_insert_sparql("urn:chorus:ontology", "changedAt", 7);
+        assert!(ch.contains("?s chorus:createdAt ?v") && !ch.contains(CREATED_BEFORE_STAMPS), "changedAt follows the row's createdAt: {ch}");
+        assert_eq!(csv_count("n\n42\n"), Some(42));
+        assert_eq!(csv_count("error"), None);
     }
     use super::*;
 
