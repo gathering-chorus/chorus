@@ -777,3 +777,156 @@ mod row_change_tests {
         bad(r#"{"method":"PATCH","path":"/v1/a/b/c","owner":"wren","body":{"x":"y"},"card":"1"}"#, "last key");
     }
 }
+
+const ATHENA_MAKE_SRC: &str = "platform/services/athena-make";
+
+/// #4578 — the athena-make staging should serve for this card, or None. Only a
+/// werk card whose diff touches athena-make has a build of its own; every other
+/// card keeps staging on the installed binary (a role slot can be weeks older
+/// than prod). A landed card never points staging anywhere.
+fn card_athena_make_bin(card: &Card) -> Result<Option<String>, String> {
+    if card.commit.is_some() {
+        return Ok(None);
+    }
+    let git = |args: &[&str]| -> String {
+        Command::new("git").arg("-C").arg(&card.werk).args(args).output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
+    };
+    let base = card_scope::base_rev(card);
+    let changed = !git(&["diff", "--name-only", &base, "--", ATHENA_MAKE_SRC]).is_empty();
+    let last = git(&["log", "-1", "--format=%ct", &format!("{base}..HEAD"), "--", ATHENA_MAKE_SRC]).parse::<u64>().ok();
+    let slot = slot_bin(&card.werk, "athena-make");
+    let built = std::fs::metadata(&slot).and_then(|m| m.modified()).ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    staging_card_bin(changed, &slot, built, last)
+}
+
+/// The role slot next to a werk: `<base>/<role>-<card>` -> `<base>/<role>-bin/<name>`.
+pub fn slot_bin(werk: &str, name: &str) -> String {
+    let p = std::path::Path::new(werk);
+    let slot = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let role = slot.rsplit_once('-').map(|(r, _)| r).unwrap_or(slot);
+    let base = p.parent().map(|b| b.display().to_string()).unwrap_or_default();
+    format!("{base}/{role}-bin/{name}")
+}
+
+/// Unix seconds as `YYYY-MM-DDTHH:MM:SSZ` (civil-from-days; no date crate here).
+pub fn iso_utc(secs: u64) -> String {
+    let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// Pure: whether staging serves the slot build. Not changed = None. Changed, but
+/// the slot build is missing or older than the card's last athena-make commit =
+/// REFUSED, naming both times, so a run never proves a build the card replaced.
+pub fn staging_card_bin(changed: bool, slot: &str, built: Option<u64>, last_commit: Option<u64>) -> Result<Option<String>, String> {
+    if !changed {
+        return Ok(None);
+    }
+    let Some(built) = built else {
+        return Err(format!("the card changes athena-make but {slot} does not exist — run the tools step (werk-deploy --target werk) first (#4578)"));
+    };
+    if let Some(last) = last_commit.filter(|l| *l > built) {
+        return Err(format!("{slot} was built at {}, before the card's last athena-make commit at {} — rebuild it before staging serves it (#4578)", iso_utc(built), iso_utc(last)));
+    }
+    Ok(Some(slot.to_string()))
+}
+
+/// #4578 — the file the staging athena-make launcher reads to serve a card's
+/// build (com.chorus.athena-make.staging names it as ATHENA_MAKE_BIN_FILE).
+pub fn staging_bin_pointer() -> String {
+    env_or("ATHENA_MAKE_BIN_FILE", &format!("{}/.chorus/staging/athena-make.bin", std::env::var("HOME").unwrap_or_default()))
+}
+
+/// Point staging at `card_bin` (None or empty = the run built no athena-make:
+/// nothing to do). A path that is not an executable file is REFUSED here, before
+/// any restart, so the run never proves yesterday's binary while saying it
+/// proved its own.
+pub fn point_staging_at(card_bin: Option<&str>, pointer: &str) -> Result<Option<String>, String> {
+    let Some(bin) = card_bin.map(str::trim).filter(|b| !b.is_empty()) else { return Ok(None) };
+    let exec = std::fs::metadata(bin).map(|m| {
+        use std::os::unix::fs::PermissionsExt;
+        m.is_file() && m.permissions().mode() & 0o111 != 0
+    }).unwrap_or(false);
+    if !exec {
+        return Err(format!("ATHENA_MAKE_CARD_BIN '{bin}' is not an executable file — staging would serve the old athena-make (#4578)"));
+    }
+    if let Some(dir) = std::path::Path::new(pointer).parent() { let _ = std::fs::create_dir_all(dir); }
+    std::fs::write(pointer, format!("{bin}\n")).map_err(|e| format!("{pointer}: {e}"))?;
+    Ok(Some(format!("staging athena-make: serving the card build {bin}")))
+}
+
+/// #4578 — `athena-deploy staging release`: staging goes back to the installed
+/// athena-make. Removes the pointer and restarts the staging unit. Safe to run
+/// when nothing was pointed (the end of every Athena run calls it).
+pub fn release_staging() -> Result<String, String> {
+    let pointer = staging_bin_pointer();
+    let had = std::path::Path::new(&pointer).exists();
+    if had { std::fs::remove_file(&pointer).map_err(|e| format!("{pointer}: {e}"))?; }
+    let api = env_or("ATHENA_MAKE_STAGING_URL", "http://localhost:3368");
+    let label = env_or("ATHENA_MAKE_STAGING_LABEL", "com.chorus.athena-make.staging");
+    if !had { return Ok("staging athena-make: already the installed binary".into()); }
+    let serve = env_or("ATHENA_SERVE_BIN", "athena-serve");
+    let s = Command::new(&serve).args([label.as_str(), &format!("{}/health", api.trim_end_matches('/')), "--kickstart", "--timeout", "90"])
+        .output().map_err(|e| format!("{serve} not runnable: {e}"))?;
+    if !s.status.success() {
+        return Err(format!("{serve} {label}: {} — staging released but not healthy", String::from_utf8_lossy(&s.stderr).trim()));
+    }
+    Ok("staging athena-make: released, back on the installed binary".into())
+}
+
+#[cfg(test)]
+mod staging_pointer_tests {
+    use super::*;
+
+    /// #4578 — NEGATIVE PROOF: a card build that is missing, or not executable,
+    /// is refused and the pointer is never written; no build = nothing written.
+    #[test]
+    fn staging_points_only_at_a_real_card_build() {
+        let dir = std::env::temp_dir().join(format!("ptr-4578-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ptr = dir.join("athena-make.bin").display().to_string();
+        assert_eq!(point_staging_at(None, &ptr).unwrap(), None);
+        assert_eq!(point_staging_at(Some("  "), &ptr).unwrap(), None);
+        assert!(!std::path::Path::new(&ptr).exists());
+        let e = point_staging_at(Some("/nonexistent/athena-make"), &ptr).unwrap_err();
+        assert!(e.contains("not an executable file"), "{e}");
+        let plain = dir.join("plain"); std::fs::write(&plain, "x").unwrap();
+        assert!(point_staging_at(Some(&plain.display().to_string()), &ptr).is_err(), "a non-executable file is refused");
+        assert!(!std::path::Path::new(&ptr).exists(), "a refused build writes no pointer");
+        let bin = dir.join("athena-make");
+        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let line = point_staging_at(Some(&bin.display().to_string()), &ptr).unwrap().unwrap();
+        assert!(line.contains("serving the card build"));
+        assert_eq!(std::fs::read_to_string(&ptr).unwrap().trim(), bin.display().to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #4578 — staging serves a slot build only for a card that changed athena-make,
+    /// and only when that build is newer than the card's last athena-make commit.
+    #[test]
+    fn staging_serves_the_slot_build_only_when_the_card_changed_it_and_it_is_fresh() {
+        let slot = "/w/wren-bin/athena-make";
+        assert_eq!(staging_card_bin(false, slot, Some(1), Some(9)).unwrap(), None, "a card that never touched athena-make");
+        assert_eq!(staging_card_bin(true, slot, Some(10), Some(9)).unwrap().as_deref(), Some(slot));
+        assert_eq!(staging_card_bin(true, slot, Some(10), None).unwrap().as_deref(), Some(slot), "uncommitted change, built after");
+        // NEGATIVE PROOF: changed, but the slot is missing or older than the card's commit
+        assert!(staging_card_bin(true, slot, None, Some(9)).unwrap_err().contains("does not exist"));
+        let e = staging_card_bin(true, slot, Some(5), Some(9)).unwrap_err();
+        assert!(e.contains("built at 1970-01-01T00:00:05Z") && e.contains("commit at 1970-01-01T00:00:09Z"), "{e}");
+        assert_eq!(iso_utc(1_792_243_800), "2026-10-17T13:30:00Z");
+        assert_eq!(slot_bin("/w/wren-4578", "athena-make"), slot);
+        assert_eq!(slot_bin("/w/abby-normal-4530", "athena-make"), "/w/abby-normal-bin/athena-make");
+    }
+}
