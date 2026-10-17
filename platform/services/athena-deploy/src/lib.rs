@@ -1040,6 +1040,101 @@ pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> Strin
     )
 }
 
+/// #4576 — the SPARQL expression a description template renders to, per row.
+/// `{field}` is the row's chorus:<field> (a link renders its local name), `{class}`
+/// the class's local name, `{label}` the row's label or its own local name; a
+/// value the row lacks renders "?". Returns (OPTIONAL patterns, CONCAT expr). Pure.
+pub fn description_sparql(template: &str, class_local: &str) -> (String, String) {
+    let lit = |t: &str| format!("\"{}\"", t.replace('\\', "\\\\").replace('"', "\\\""));
+    let mut parts: Vec<String> = Vec::new();
+    let mut optionals = String::new();
+    let mut rest = template;
+    let mut n = 0;
+    while let Some(open) = rest.find('{') {
+        if open > 0 { parts.push(lit(&rest[..open])); }
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('}') else { parts.push(lit(&rest[open..])); rest = ""; break; };
+        let key = &after[..close];
+        match key {
+            "class" => parts.push(lit(class_local)),
+            "label" => {
+                optionals.push_str("OPTIONAL { ?s chorus:label ?lbl } ");
+                parts.push("COALESCE(STR(?lbl), REPLACE(STR(?s), \".*[#/]\", \"\"))".into());
+            }
+            k if k.chars().all(|c| c.is_ascii_alphanumeric()) => {
+                n += 1;
+                optionals.push_str(&format!("OPTIONAL {{ ?s chorus:{k} ?v{n} }} "));
+                parts.push(format!("COALESCE(IF(isIRI(?v{n}), REPLACE(STR(?v{n}), \".*[#/]\", \"\"), STR(?v{n})), \"?\")"));
+            }
+            other => parts.push(lit(&format!("{{{other}}}"))),
+        }
+        rest = &after[close + 1..];
+    }
+    if !rest.is_empty() { parts.push(lit(rest)); }
+    let expr = if parts.len() == 1 { parts.remove(0) } else { format!("CONCAT({})", parts.join(", ")) };
+    (optionals, expr)
+}
+
+/// #4576 — the classes that have a description template (own, or via sh:node),
+/// as `class|template` rows.
+pub fn description_templates_sparql(ontology: &str) -> String {
+    format!(
+        "{STAMP_PREFIXES}\nSELECT ?v WHERE {{ GRAPH <{ontology}> {{ \
+           {{ ?sh sh:targetClass ?c ; chorus:descriptionTemplate ?t }} UNION \
+           {{ ?sh sh:targetClass ?c ; sh:node+ ?n . ?n chorus:descriptionTemplate ?t FILTER NOT EXISTS {{ ?sh chorus:descriptionTemplate ?own }} }} }} \
+         BIND(CONCAT(STR(?c), \"|\", STR(?t)) AS ?v) }}"
+    )
+}
+
+/// One bounded pass of description fill for one class. Pure.
+pub fn description_insert_sparql(class: &str, template: &str, limit: u32) -> String {
+    let local = class.rsplit(['#', '/']).next().unwrap_or(class);
+    let (optionals, expr) = description_sparql(template, local);
+    format!(
+        "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:comment ?w }} }}\n\
+         WHERE {{ {{ SELECT ?g ?s (SAMPLE(?w0) AS ?w) WHERE {{ GRAPH ?g {{ ?s a <{class}> . FILTER NOT EXISTS {{ ?s chorus:comment ?x }} {optionals}BIND({expr} AS ?w0) }} \
+         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }} }} GROUP BY ?g ?s LIMIT {limit} }} }}"
+    )
+}
+
+pub fn description_count_sparql(class: &str) -> String {
+    format!(
+        "{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH ?g {{ ?s a <{class}> . FILTER NOT EXISTS {{ ?s chorus:comment ?x }} }} \
+         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }} }}"
+    )
+}
+
+/// Fill every templated class's missing descriptions, bounded passes, refusing
+/// a pass that makes no progress.
+pub fn backfill_descriptions(ontology: &str, query: &str, update: &str) -> Result<String, String> {
+    let limit: u32 = env_or("CORE_STAMP_BATCH", "50000").parse().unwrap_or(50000);
+    let body = curl(&["-s", "--data-urlencode", &format!("query={}", description_templates_sparql(ontology)), "-H", "Accept: text/csv", query])?;
+    let mut rows: Vec<(String, String)> = body.lines().skip(1)
+        .filter_map(|l| l.trim().trim_matches('"').split_once('|').map(|(c, t)| (c.to_string(), t.replace("\"\"", "\""))))
+        .collect();
+    rows.sort(); rows.dedup_by(|a, b| a.0 == b.0);
+    let mut filled = 0u64;
+    for (class, template) in &rows {
+        let count = || -> Result<u64, String> {
+            let b = curl(&["-s", "--data-urlencode", &format!("query={}", description_count_sparql(class)), "-H", "Accept: text/csv", query])?;
+            csv_count(&b).ok_or_else(|| format!("descriptions: could not count {class}: {}", b.trim()))
+        };
+        let mut left = count()?;
+        let first = left;
+        while left > 0 {
+            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+                "-H", "Content-Type: application/sparql-update", "--data-binary",
+                &description_insert_sparql(class, template, limit), update])?;
+            if !ok_http(&code) { return Err(format!("descriptions-{class}-failed-http-{code}")); }
+            let now = count()?;
+            if now >= left { return Err(format!("descriptions: {class} pass made no progress ({left} rows still without one)")); }
+            left = now;
+        }
+        filled += first;
+    }
+    Ok(format!("descriptions filled from {} template(s): +{filled}", rows.len()))
+}
+
 fn csv_count(body: &str) -> Option<u64> {
     body.lines().nth(1).and_then(|l| l.trim().trim_matches('"').parse().ok())
 }
@@ -1508,6 +1603,11 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     // the door stamped them gets the fixed date and its owner, once: each pass
     // adds only what is missing, so a later deploy finds nothing to do.
     match backfill_core_stamps(&ontology, &query, &update) {
+        Ok(line) => println!("athena-deploy: {line}"),
+        Err(e) => return Err(fail(&e)),
+    }
+    // #4576 — and every templated class's missing descriptions
+    match backfill_descriptions(&ontology, &query, &update) {
         Ok(line) => println!("athena-deploy: {line}"),
         Err(e) => return Err(fail(&e)),
     }
@@ -2374,6 +2474,20 @@ mod tests {
         assert!(c.contains("?s dct:creator ?w0 . FILTER(isIRI(?w0))"), "contributor from an IRI creator only: {c}");
         assert_eq!(csv_count("n\n42\n"), Some(42));
         assert_eq!(csv_count("error"), None);
+    }
+
+    /// #4576 — a description template renders per row: fields by value, links by
+    /// local name, {class} as the class, {label} with a fallback, "?" for a gap.
+    #[test]
+    fn description_template_renders_to_sparql() {
+        let (opt, expr) = description_sparql("Test {testName} in {filePath}, owned by {ownedBy}", "Test");
+        assert!(opt.contains("OPTIONAL { ?s chorus:testName ?v1 }") && opt.contains("?s chorus:ownedBy ?v3"), "{opt}");
+        assert!(expr.starts_with("CONCAT(\"Test \", COALESCE(IF(isIRI(?v1)"), "{expr}");
+        assert!(expr.contains("\"?\")") && expr.contains("\", owned by \""), "{expr}");
+        let (_, e2) = description_sparql("{label}, a {class}", "Teammate");
+        assert!(e2.contains("COALESCE(STR(?lbl)") && e2.contains("\", a \", \"Teammate\""), "{e2}");
+        let ins = description_insert_sparql("https://jeffbridwell.com/chorus#Test", "{label}, a {class}", 9);
+        assert!(ins.contains("FILTER NOT EXISTS { ?s chorus:comment ?x }") && ins.contains("LIMIT 9") && ins.contains("test-ephemeral"), "{ins}");
     }
 
     #[test]

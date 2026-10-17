@@ -436,6 +436,11 @@ pub struct ShapeReq {
     /// every field at chorus:<name>; it also writes these at the path the shape
     /// names, so a row satisfies its own shape.
     pub field_paths: BTreeMap<String, String>,
+    /// #4576 — the class's chorus:descriptionTemplate, or the one its shape
+    /// reaches through sh:node (CoreShape's default). A write with no comment
+    /// gets its description rendered from this (Jeff 10-12/10-17: descriptions
+    /// everywhere, inferred where possible).
+    pub description_template: Option<String>,
 }
 
 /// #4358 — one sh:pattern as the model declares it. `source` is the regex text
@@ -756,6 +761,14 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
         }
     }
 
+    // #4576 — own template first, else the nearest one through sh:node
+    let description_template = store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ \
+           {{ ?s sh:targetClass <{c}> ; chorus:descriptionTemplate ?v }} UNION \
+           {{ ?s sh:targetClass <{c}> ; sh:node+ ?n . ?n chorus:descriptionTemplate ?v \
+              FILTER NOT EXISTS {{ ?s chorus:descriptionTemplate ?own }} }} }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    ))?.into_iter().next();
     Ok(ShapeReq {
         required,
         enums,
@@ -767,6 +780,7 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
         patterns,
         node_patterns,
         field_paths,
+        description_template,
     })
 }
 
@@ -1732,6 +1746,31 @@ fn prefetch_uniqueness_conflicts(
 /// uniqueness, referential-integrity, and audit preparation whether the caller
 /// used `add` or `add-batch`. The planner performs reads only; callers cannot
 /// observe a partial write because no Store::update occurs here.
+/// #4576 — render a description template. `{field}` takes the write's value
+/// for that field, or the target's local name for a link; `{class}` is the
+/// class's local name; `{label}` falls back to the row's name. A placeholder
+/// with no value renders "?", so the description exists and the gap shows.
+pub fn render_description(template: &str, req: &WriteReq, class: &str) -> String {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('}') else { out.push_str(&rest[open..]); rest = ""; break; };
+        let key = &after[..close];
+        let value = match key {
+            "class" => Some(class.rsplit(['#', '/']).next().unwrap_or(class).to_string()),
+            "label" => Some(req.fields.get("label").cloned().unwrap_or_else(|| req.name.clone())),
+            k => req.fields.get(k).cloned()
+                .or_else(|| req.edges.iter().find(|(p, _, _)| p == k).map(|(_, _, t)| t.clone())),
+        };
+        out.push_str(value.as_deref().filter(|v| !v.is_empty()).unwrap_or("?"));
+        rest = &after[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn plan_writes<'a>(
     store: &dyn Store,
     reqs: &'a [WriteReq],
@@ -1789,6 +1828,16 @@ fn plan_writes<'a>(
     for plan in plans.iter_mut() {
         let extra = declared_path_triples(&plan.subject, plan.req, &shapes[&plan.class]);
         plan.turtle.push_str(&extra);
+    }
+    // #4576 — a write with no description gets one from its class's template.
+    let mut described: BTreeSet<String> = BTreeSet::new();
+    for plan in plans.iter_mut() {
+        if plan.req.fields.contains_key("comment") { continue; }
+        if let Some(t) = shapes[&plan.class].description_template.as_deref() {
+            let text = render_description(t, plan.req, &plan.class);
+            plan.turtle.push_str(&format!("<{s}> <{ns}comment> \"{v}\" .\n", s = plan.subject, ns = NS, v = esc(&text)));
+            described.insert(plan.subject.clone());
+        }
     }
 
     // A SHACL property's value channel is part of its type contract. Accepting
@@ -1885,7 +1934,8 @@ fn plan_writes<'a>(
         for need in &shape.required {
             let satisfied = req.fields.contains_key(need)
                 || req.edges.iter().any(|(p, _, _)| p == need)
-                || need == "label";
+                || need == "label"
+                || (need == "comment" && described.contains(&plan.subject));
             if !satisfied {
                 witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", need)]);
                 return Err(WritePlanError::for_req(req, format!(
@@ -3852,6 +3902,8 @@ mod tests {
         proof_missing: bool,
         /// #4187 — the domain that definesVocabulary every kind (None = unclaimed)
         domain: Option<String>,
+        /// #4576 — the class's description template (None = no template)
+        template: Option<String>,
         pub updates: std::cell::RefCell<Vec<String>>,
     }
     impl Store for StubStore {
@@ -3878,6 +3930,8 @@ mod tests {
                             .to_string()
                     })
                     .collect())
+            } else if sparql.contains("descriptionTemplate") {
+                Ok(self.template.clone().into_iter().collect())
             } else if sparql.contains("VALUES ?target") {
                 Ok(self
                     .existing
@@ -3916,6 +3970,7 @@ mod tests {
             update_error: None,
             proof_missing: false,
             domain: Some("tests".into()),
+            template: None,
             updates: Default::default(),
         }
     }
@@ -4314,6 +4369,32 @@ mod tests {
     /// role name; contributor is this write's, creator the first write's.
     /// NEGATIVE PROOFS: an old role literal becomes its Principal; a literal that
     /// is not a role slug is kept as written, never guessed into a principal.
+    #[test]
+    fn description_template_fills_a_missing_comment_and_never_a_given_one() {
+        // #4576 — Jeff 10-12/10-17: descriptions everywhere, inferred where possible.
+        let kade = format!("{}principal-kade", NS);
+        let mut store = stub(&[kade.as_str()], &["comment"]);
+        store.template = Some("Test {testName} in {filePath}, owned by {ownedBy}".into());
+        let mut req = WriteReq { kind: "role".into(), name: "t1".into(), ..Default::default() };
+        req.fields.insert("testName".into(), "it loads".into());
+        req.edges.push(("ownedBy".into(), "principal".into(), "kade".into()));
+        write(&store, &req, &tid()).unwrap();
+        let up = store.updates.borrow()[0].clone();
+        assert!(up.contains("comment> \"Test it loads in ?, owned by kade\""), "filled, gap shown as ?: {up}");
+        // a body that brings its own comment keeps it
+        let store2 = { let mut s2 = stub(&[], &["comment"]); s2.template = Some("{label}, a {class}".into()); s2 };
+        let mut own = WriteReq { kind: "role".into(), name: "t2".into(), ..Default::default() };
+        own.fields.insert("comment".into(), "hand written".into());
+        write(&store2, &own, &tid()).unwrap();
+        let up2 = store2.updates.borrow()[0].clone();
+        assert!(up2.contains("hand written") && !up2.contains(", a Role"), "{up2}");
+        // NEGATIVE PROOF: no template and no comment is still refused
+        let bare = stub(&[], &["comment"]);
+        let e = write(&bare, &WriteReq { kind: "role".into(), name: "t3".into(), ..Default::default() }, &tid()).unwrap_err();
+        assert!(e.contains("requires 'comment'"), "{e}");
+        assert_eq!(render_description("{label}, a {class}", &WriteReq { kind: "x".into(), name: "n".into(), ..Default::default() }, "https://jeffbridwell.com/chorus#Teammate"), "n, a Teammate");
+    }
+
     #[test]
     fn write_names_the_principal_as_creator_and_contributor() {
         let store = stub(&[], &[]);
