@@ -22,7 +22,7 @@ chorus:code a chorus:Domain ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
   chorus:repoTarget "platform/scripts/clippy-ratchet.sh" ;
-  chorus:definesVocabulary chorus:CodeFile , chorus:File , chorus:SourceFile .  # #4576: File, SourceFile homed (Kade confirmed 07:54)
+  chorus:definesVocabulary chorus:CodeFile .  # #4576: File and SourceFile were retired (Jeff 2026-09-18, ledger 228-229), not homed
 
 chorus:pipelines a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:pipelines" ;  # #4422 (wren): the crawl reads this, never a guessed name

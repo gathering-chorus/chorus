@@ -145,6 +145,7 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             // class never reached the store (prod: the shape and 0 triples of the class),
             // so identity's claim on it pointed at nothing a validator calls a class.
             format!("{root}/roles/silas/ontology/agent-runtimes-4444.ttl"),
+            format!("{root}/roles/silas/ontology/core-shape-4576.ttl"),  // #4576: CoreShape + StampedByTheDal
         ],
     }
 }
@@ -2447,7 +2448,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 34, "the ontology set is 34 files (#4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 35, "the ontology set is 35 files (#4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));

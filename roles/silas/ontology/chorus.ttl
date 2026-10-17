@@ -1789,21 +1789,8 @@ chorus:references      a owl:DatatypeProperty ; rdfs:label "references" ; rdfs:r
     rdfs:comment "Cards, ADRs, decisions and documents this design rests on. The design doc §References." .
 chorus:diagram         a owl:DatatypeProperty ; rdfs:label "diagram" ; rdfs:range xsd:string ;
     rdfs:comment "A picture the design carries, held as data: mermaid source, first line a '%% caption' comment naming what it shows. Repeatable — one value per diagram. #4094: Jeff, 2026-09-03: 'we are completely abandoning diagrams and other visual flows from the html when we migrate.' Rendered in the Flows chapter of the product, service and domain pages." .
-# --- #4576 core attributes every class carries (Jeff 2026-09-16: "name id description create and
-# change user and datetimes"; 2026-10-17: required; rows written before the stamps carry the chorus repo's first-commit date, 2026-03-29T15:35:26Z, Jeff 08:17).
-# Every class shape says `sh:node chorus:CoreShape` explicitly (Silas: visible, not implied); the id is
-# the row's IRI. The stamps are Dublin Core, which athena-model's DAL already writes on every write
-# (Silas 09:50: 1.66M rows carry dcterms:modified) — no chorus twins. created and creator are kept from
-# the first write; modified and contributor are the last write.
-chorus:CoreShape a sh:NodeShape ;
-    rdfs:comment "The attributes every class carries: a name, a description, who created it and when, and who last changed it and when. #4576." ;
-    sh:property [ sh:path chorus:label ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:comment ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ; chorus:exposure chorus:public ] ;
-    # public: a shape that declares exposure hides every unmarked field, so without it the
-    # flatten put name and description on Machine, Disk, LogSource and ServiceInstance and
-    # their doors dropped them (run 11, 8 rows)
-    # the four Dublin Core stamps are a rule, not fields (#4312): the DAL writes them, no caller sends them
-    sh:sparql chorus:StampedByTheDal .
+# --- #4576 CoreShape (the attributes every class carries) lives in core-shape-4576.ttl: it names
+# StampedByTheDal, defined in session-model-4302.ttl, and this file must parse on its own.
 
 
 chorus:changedAt       a owl:DatatypeProperty ; rdfs:label "changedAt" ; rdfs:range xsd:string ;
