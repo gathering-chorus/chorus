@@ -41,7 +41,7 @@ chorus:source a owl:DatatypeProperty ;
     rdfs:comment "Where the principle came from, as one citation: Hemenway, T. Gaia's Garden, 2nd ed., p. N." .
 
 chorus:PrincipleShape a sh:NodeShape ;
-    sh:targetClass chorus:Principle ;
+    sh:targetClass chorus:Principle ; sh:node chorus:CoreShape ;
     rdfs:comment "One of the 14 permaculture principles from Toby Hemenway's Gaia's Garden that the team designs by, with what it means to Jeff and to the code." ;
     # The row's IRI. Standard SHACL: a node shape's sh:pattern tests the focus node.
     sh:pattern "^https://jeffbridwell\\.com/chorus#hemenway-[a-z0-9]+(-[a-z0-9]+)*$" ;

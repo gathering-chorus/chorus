@@ -324,7 +324,7 @@ chorus:streamCard a owl:ObjectProperty ;
     rdfs:range chorus:string .
 
 chorus:StreamEventShape a sh:NodeShape ;
-    sh:targetClass chorus:StreamEvent ;
+    sh:targetClass chorus:StreamEvent ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:streamRole ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:streamTool ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:streamPhase ; sh:minCount 1 ] ;

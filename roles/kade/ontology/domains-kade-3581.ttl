@@ -107,20 +107,20 @@ chorus:exercises a owl:ObjectProperty ;
     rdfs:range chorus:CodeFile .
 
 chorus:CodeKindShape a sh:NodeShape ;
-    sh:targetClass chorus:CodeKind ;
+    sh:targetClass chorus:CodeKind ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
 
 chorus:LanguageShape a sh:NodeShape ;
-    sh:targetClass chorus:Language ;
+    sh:targetClass chorus:Language ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:adoptedFrom ; sh:datatype xsd:string ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
 
 chorus:CodeFileShape a sh:NodeShape ;
-    sh:targetClass chorus:CodeFile ;
+    sh:targetClass chorus:CodeFile ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     # #4405 reopen 3 — a file names the repository it lives in, like a CodeUnit
     sh:property [ sh:path chorus:inRepository ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
@@ -181,13 +181,13 @@ chorus:httpMethod a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:PageShape a sh:NodeShape ;
-    sh:targetClass chorus:Page ;
+    sh:targetClass chorus:Page ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:route ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:pageType ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .
 
 chorus:EndpointShape a sh:NodeShape ;
-    sh:targetClass chorus:Endpoint ;
+    sh:targetClass chorus:Endpoint ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:routePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:httpMethod ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .
@@ -231,7 +231,7 @@ chorus:repoRemote a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:RepositoryShape a sh:NodeShape ;
-    sh:targetClass chorus:Repository ;
+    sh:targetClass chorus:Repository ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:repoRemote ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     # #4405 reopen — repositories nest and depend like products and domains
     # (Jeff, 2026-10-12): partOf is the one parent, dependsOn what it needs to
@@ -249,7 +249,7 @@ chorus:inRepository a owl:ObjectProperty ;
     rdfs:range chorus:Repository .
 
 chorus:CodeUnitShape a sh:NodeShape ;
-    sh:targetClass chorus:CodeUnit ;
+    sh:targetClass chorus:CodeUnit ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:inRepository ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
     sh:property [ sh:path chorus:unitPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:unitKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;

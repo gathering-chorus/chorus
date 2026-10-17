@@ -93,7 +93,7 @@ chorus:Principal a owl:Class ;
     # and is for concept schemes, not people.
     rdfs:subClassOf foaf:Agent ;
     rdfs:label "Principal" ;
-    rdfs:comment "An authenticatable actor: an agent session, a service, a herald job, or Jeff. The thing a token asserts. A Principal HOLDS roles (roles domain) and OWNS credentials — a role is something an identity holds, not something it is. The nudge-registry poisoning (#3608) was the collapse of this distinction. #3618." .
+    rdfs:comment "The identity a credential proves: what a token asserts, for a person, an agent, a service or a job. Owns credentials. A Teammate signs in as one; it is not a job (Role) and not a session (Session). #3618, #4576." .
 
 chorus:KeyRegistryEntry a owl:Class ;
     rdfs:label "Key Registry Entry" ;
@@ -257,7 +257,7 @@ chorus:servedBy a owl:ObjectProperty ;
 # the deploy (#3726 SECURITY_SET), and the projection (#3776/ADR-057) all use — so
 # SERVED == ENFORCED stops depending on a boot-time default nobody can see.
 chorus:PrincipalShape a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     # #4220 named identity as the eventual home: who you are belongs in
     # identity, what you may do stays in security. But the 12 Principal rows are
     # still in security, and this line is what athena-make reads to find them.
@@ -343,7 +343,7 @@ chorus:PrincipalShape-wearsHat a sh:PropertyShape ;
 # A principal that can sign in must have a WebID to sign in AS. This is the half
 # of the old minCount that was right, kept and scoped to where it holds.
 chorus:PrincipalSignInNeedsWebId a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     sh:severity sh:Violation ;
     sh:sparql [
         sh:message "a principal with canSignIn=true must carry a webId" ;
@@ -359,7 +359,7 @@ chorus:PrincipalSignInNeedsWebId a sh:NodeShape ;
 # conventions — the point of modelling the kind is that the model enforces what
 # the kind means, instead of a human remembering it.
 chorus:PrincipalWorkerCannotSignIn a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     sh:severity sh:Violation ;
     sh:sparql [
         sh:message "a service principal cannot sign in" ;
@@ -371,7 +371,7 @@ chorus:PrincipalWorkerCannotSignIn a sh:NodeShape ;
         """ ;
     ] .
 chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     sh:severity sh:Violation ;
     sh:sparql [
         sh:message "a service principal holds no role" ;
@@ -384,7 +384,7 @@ chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
     ] .
 
 chorus:KeyRegistryEntryShape a sh:NodeShape ;
-    sh:targetClass chorus:KeyRegistryEntry ;
+    sh:targetClass chorus:KeyRegistryEntry ; sh:node chorus:CoreShape ;
     # #4340 — the declared home is where the rows are. The five nostr keys
     # (bridge, jeff, wren, kade, marknakib) live in the security graph; without
     # this the route read identity and served 0 of 5 (Login ER, 09-20), so a
@@ -410,7 +410,7 @@ chorus:KeyRegistryEntryShape-permittedScope a sh:PropertyShape ;
     sh:message "scopes stay inside the chorus realm" .
 
 chorus:APISurfaceShape a sh:NodeShape ;
-    sh:targetClass chorus:APISurface ;
+    sh:targetClass chorus:APISurface ; sh:node chorus:CoreShape ;
     sh:property chorus:APISurfaceShape-label ;
     sh:property chorus:APISurfaceShape-servedBy .
     # securedBy deliberately NOT minCount 1: unsecured surfaces must be
@@ -421,7 +421,7 @@ chorus:APISurfaceShape-servedBy a sh:PropertyShape ;
     sh:path chorus:servedBy ; sh:minCount 1 .
 
 chorus:GateShape a sh:NodeShape ;
-    sh:targetClass chorus:Gate ;
+    sh:targetClass chorus:Gate ; sh:node chorus:CoreShape ;
     sh:property chorus:GateShape-label ;
     sh:property chorus:GateShape-ownerRole .
 chorus:GateShape-label a sh:PropertyShape ;
@@ -442,7 +442,7 @@ chorus:GateShape-ownerRole a sh:PropertyShape ;
 # migration, tracked as a #3618 follow-on note, not folded in here.
 
 chorus:APISurfaceShape a sh:NodeShape ;
-    sh:targetClass chorus:APISurface ;
+    sh:targetClass chorus:APISurface ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:servedBy ; sh:minCount 1 ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
@@ -453,7 +453,7 @@ chorus:APISurfaceShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:GateShape a sh:NodeShape ;
-    sh:targetClass chorus:Gate ;
+    sh:targetClass chorus:Gate ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     # #4316 — optional (see GateShape-ownerRole above): required here, it refused
     # the four stage gates at the seed.

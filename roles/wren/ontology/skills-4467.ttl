@@ -36,7 +36,7 @@ chorus:callsSkill a owl:ObjectProperty ; rdfs:label "calls skill" .
 chorus:skillOrder a owl:DatatypeProperty ; rdfs:label "skill order" .
 
 chorus:SkillShape a sh:NodeShape ;
-    sh:targetClass chorus:Skill ;
+    sh:targetClass chorus:Skill ; sh:node chorus:CoreShape ;
     rdfs:comment "Something the team runs: a slash skill an agent runs, a verb automation runs, or a human step like Jeff's go." ;
     sh:pattern "^https://jeffbridwell\\.com/chorus#skill-[a-z0-9]+(-[a-z0-9]+)*$" ;
     sh:message "a skill row is named skill-<name>, lowercase, e.g. skill-werk-deploy-env-up" ;
@@ -128,7 +128,7 @@ chorus:wait a owl:DatatypeProperty ; rdfs:label "wait" ; rdfs:comment "Run to th
 
 # Ordered join, a row per (step, skill): the door handles rows, not rdf:Lists.
 chorus:StepSkillShape a sh:NodeShape ;
-    sh:targetClass chorus:StepSkill ;
+    sh:targetClass chorus:StepSkill ; sh:node chorus:CoreShape ;
     rdfs:comment "Which skill a pipeline step calls, and in what order. chorus-make reads these to write the v2 workflow." ;
     sh:property [ sh:path chorus:forStep ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:PipelineStep ; sh:name "step" ;
                   sh:description "Required. The pipeline step that calls the skill." ] ;

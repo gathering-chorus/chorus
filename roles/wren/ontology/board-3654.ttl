@@ -95,7 +95,7 @@ chorus:ChunkMembership a owl:Class ;
 # Service ABox-in-ontology shapes).
 
 chorus:CardShape a sh:NodeShape ;
-  sh:targetClass chorus:Card ;
+  sh:targetClass chorus:Card ; sh:node chorus:CoreShape ;
   # #4187 — the pin is GONE. #3686 added it because the serve route needed a
   # declared home and urn:chorus:domains:cards did not exist. It does now, and
   # holds all 229 rows (copied and verified 2026-09-18 11:39). athena-make's
@@ -121,7 +121,7 @@ chorus:CardShape a sh:NodeShape ;
                 sh:in ( "new" "enhance" "fix" "chore" "swat" "issue" ) ] .
 
 chorus:ChunkShape a sh:NodeShape ;
-  sh:targetClass chorus:Chunk ;
+  sh:targetClass chorus:Chunk ; sh:node chorus:CoreShape ;
   # #4187 — pin removed; the board domain claims Chunk, and all 21 rows are in
   # urn:chorus:domains:board (copied and verified 2026-09-18 12:47).
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -131,7 +131,7 @@ chorus:ChunkShape a sh:NodeShape ;
   sh:property [ sh:path chorus:loomSequence ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] .
 
 chorus:ChunkMembershipShape a sh:NodeShape ;
-  sh:targetClass chorus:ChunkMembership ;
+  sh:targetClass chorus:ChunkMembership ; sh:node chorus:CoreShape ;
   # #4187 — pin removed; all 218 rows are in urn:chorus:domains:board
   # (copied and verified 2026-09-18 12:47).
   sh:property [ sh:path chorus:inChunk ; sh:minCount 1 ; sh:class chorus:Chunk ] ;
@@ -207,7 +207,7 @@ chorus:checkExpect a owl:DatatypeProperty ;
   rdfs:comment "What a met AC returns: a status and body match for http, true or a count for sparql, pass for test." .
 
 chorus:CardACShape a sh:NodeShape ;
-  sh:targetClass chorus:CardAC ;
+  sh:targetClass chorus:CardAC ; sh:node chorus:CoreShape ;
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
   sh:property [ sh:path chorus:acFor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Card ] ;

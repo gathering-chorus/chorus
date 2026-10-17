@@ -19,7 +19,7 @@ chorus:enforcedBy a owl:ObjectProperty ;
     rdfs:range chorus:CodeFile .
 
 chorus:PolicyShape a sh:NodeShape ;
-    sh:targetClass chorus:Policy ;
+    sh:targetClass chorus:Policy ; sh:node chorus:CoreShape ;
     rdfs:comment "A binary team rule, in plain words, and the hook that holds it when one does." ;
     sh:pattern "^https://jeffbridwell\\.com/chorus#policy-[a-z0-9]+(-[a-z0-9]+)*$" ;
     sh:message "a policy row is named policy-<name>, lowercase, e.g. policy-word-cap" ;

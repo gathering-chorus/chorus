@@ -17,7 +17,7 @@ chorus:identity chorus:definesVocabulary chorus:Session .
 
 chorus:Session a owl:Class ;
     rdfs:label "Session" ;
-    rdfs:comment "One login of a Principal to Chorus: the token chorus-awake obtained for the role before its first turn, with issue and expiry times and the macOS account the process runs as. Open until the session ends or the token expires. A Principal with no open Session is not logged in and cannot write. #4202." .
+    rdfs:comment "One login of a Principal to Chorus: the token chorus-awake obtained before the first turn, with issue and expiry times and the macOS account the process runs as. Open until the session ends or the token expires. A Principal with no open Session is not logged in and cannot write. #4202." .
 
 chorus:tokenId a owl:DatatypeProperty ;
     rdfs:label "token id" ;
@@ -64,7 +64,7 @@ chorus:hostAccount a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:SessionShape a sh:NodeShape ;
-    sh:targetClass chorus:Session ;
+    sh:targetClass chorus:Session ; sh:node chorus:CoreShape ;
     # #4204 — a Session lives in its OWN graph, not security's. Rows landing in
     # urn:chorus:domains:security meant logging in required Write on the graph
     # that holds Principals, Credentials and Permission rows: wren and kade were

@@ -96,7 +96,7 @@ chorus:runtimeRetired a owl:DatatypeProperty ; rdfs:label "retired" ; rdfs:domai
     rdfs:comment "Why this runtime may no longer be started, when it may not. A launch on a retired runtime is refused with this text." .
 
 chorus:AgentRuntimeShape a sh:NodeShape ;
-    sh:targetClass chorus:AgentRuntime ;
+    sh:targetClass chorus:AgentRuntime ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:identity" ;
     chorus:writeAuthority "deploy" ;
     chorus:generatedBy "athena-model" ;

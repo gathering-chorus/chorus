@@ -52,11 +52,11 @@ chorus:ownerSequence a owl:DatatypeProperty ;
 # the complete one; this is the duplicate.
 
 chorus:ProductOrderShape a sh:NodeShape ;
-  sh:targetClass chorus:Product ;
+  sh:targetClass chorus:Product ; sh:node chorus:CoreShape ;
   sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
 
 chorus:DomainOrderShape a sh:NodeShape ;
-  sh:targetClass chorus:Domain ;
+  sh:targetClass chorus:Domain ; sh:node chorus:CoreShape ;
   sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
 
 
@@ -85,7 +85,7 @@ chorus:DomainOrderShape a sh:NodeShape ;
 # =============================================================================
 
 chorus:RoleShape a sh:NodeShape ;
-  sh:targetClass chorus:Role ;
+  sh:targetClass chorus:Role ; sh:node chorus:CoreShape ;
   # #4187 — pin removed 2026-09-18. The roles domain claims Role, AgentRole and
   # HumanRole, so the home derives from the model; the six Role rows were copied
   # to urn:chorus:domains:roles and verified before this line came out.
