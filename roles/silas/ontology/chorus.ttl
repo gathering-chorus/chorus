@@ -1792,22 +1792,17 @@ chorus:diagram         a owl:DatatypeProperty ; rdfs:label "diagram" ; rdfs:rang
 # --- #4576 core attributes every class carries (Jeff 2026-09-16: "name id description create and
 # change user and datetimes"; 2026-10-17: required; rows written before the stamps carry the chorus repo's first-commit date, 2026-03-29T15:35:26Z, Jeff 08:17).
 # Every class shape says `sh:node chorus:CoreShape` explicitly (Silas: visible, not implied); the id is
-# the row's IRI. athena-make stamps createdAt/createdBy on create and changedAt/changedBy on every write.
-chorus:createdAt a owl:DatatypeProperty ; rdfs:label "createdAt" ; rdfs:range xsd:string ;
-    rdfs:comment "When the row was first written (ISO 8601 UTC), stamped by athena-make. #4576." .
-chorus:createdBy a owl:ObjectProperty ; rdfs:label "createdBy" ; rdfs:range chorus:Principal ;
-    rdfs:comment "The Principal whose write created the row, stamped by athena-make. #4576." .
-chorus:changedBy a owl:ObjectProperty ; rdfs:label "changedBy" ; rdfs:range chorus:Principal ;
-    rdfs:comment "The Principal whose write last changed the row, stamped by athena-make. #4576." .
-
+# the row's IRI. The stamps are Dublin Core, which athena-model's DAL already writes on every write
+# (Silas 09:50: 1.66M rows carry dcterms:modified) — no chorus twins. created and creator are kept from
+# the first write; modified and contributor are the last write.
 chorus:CoreShape a sh:NodeShape ;
-    rdfs:comment "The attributes every class carries: a name, a description, and who created and last changed it, when. #4576." ;
+    rdfs:comment "The attributes every class carries: a name, a description, who created it and when, and who last changed it and when. #4576." ;
     sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ] ;
     sh:property [ sh:path chorus:comment ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ] ;
-    sh:property [ sh:path chorus:createdAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "created at" ] ;
-    sh:property [ sh:path chorus:createdBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; sh:name "created by" ] ;
-    sh:property [ sh:path chorus:changedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "changed at" ] ;
-    sh:property [ sh:path chorus:changedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; sh:name "changed by" ] .
+    sh:property [ sh:path dcterms:created ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "created at" ] ;
+    sh:property [ sh:path dcterms:creator ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; sh:name "created by" ] ;
+    sh:property [ sh:path dcterms:modified ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "changed at" ] ;
+    sh:property [ sh:path dcterms:contributor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; sh:name "changed by" ] .
 
 chorus:changedAt       a owl:DatatypeProperty ; rdfs:label "changedAt" ; rdfs:range xsd:string ;
     rdfs:comment "When this row last changed, UTC ISO, stamped by the door on every create and replace — never typed. #4101: Jeff, 2026-09-03: 'our docs dont show version'; version is a fact about the write, not a number a person maintains." .
