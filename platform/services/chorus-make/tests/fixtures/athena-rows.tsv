@@ -2,11 +2,15 @@
 # rows land (live 2026-10-14: steps shape/forge/seed/validate exist, no StepSkill yet).
 # Go-less (Jeff 2026-10-14): Model → Make → Deploy (staging) → Validate; on success it enqueues the
 # card's werk run. The prod Land is its own pipeline, athena-land (athena-land-rows.tsv).
+# #4578 — tools (step 0): build the card's changed model tools into the role's own slot
+# first, so every later step runs the card's athena-gen/-deploy/-validate/-make, never a stale copy.
 # withArgs is the AthenaVerbInput list: each args= pair is one item, in order (chorus-runner args_from_pairs).
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+tools	0	1	skill-werk-deploy-demo	werk-deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
 shape	1	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--card args=${CARD}
 forge	2	1	skill-athena-gen	athena-gen	deterministic	athena-gen	{args}		AthenaVerbInput	args=generate args=--card args=${CARD}
 athena-baseline-copy	3	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=copy
 athena-baseline	4	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--staging args=--write-baseline
 seed	5	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=--card args=${CARD}
 validate	6	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--staging
+release	7	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=release

@@ -115,8 +115,8 @@ fn negative_proof_every_other_land_keeps_werk_land_and_the_model_hook() {
 fn a_skill_two_steps_call_is_named_by_skill_and_step_and_a_unique_one_is_not() {
     let r = rows("athena-rows.tsv");
     let names: Vec<String> = r.iter().map(|x| dagu_name(&r, x)).collect();
-    assert_eq!(names, vec!["skill-athena-validate-shape", "skill-athena-gen", "skill-athena-deploy-athena-baseline-copy",
-        "skill-athena-validate-athena-baseline", "skill-athena-deploy-seed", "skill-athena-validate-validate"]);
+    assert_eq!(names, vec!["skill-werk-deploy-demo", "skill-athena-validate-shape", "skill-athena-gen", "skill-athena-deploy-athena-baseline-copy",
+        "skill-athena-validate-athena-baseline", "skill-athena-deploy-seed", "skill-athena-validate-validate", "skill-athena-deploy-release"]);
     assert!(check(&r).is_empty(), "{:?}", check(&r));
     let c = rows("cicd-rows.tsv");
     assert!(c.iter().all(|x| dagu_name(&c, x) == chorus_make::step_name(x)), "cicd names unchanged");
@@ -125,16 +125,16 @@ fn a_skill_two_steps_call_is_named_by_skill_and_step_and_a_unique_one_is_not() {
 #[test]
 fn negative_proof_one_skill_twice_in_one_step_still_collides() {
     let mut r = rows("athena-rows.tsv");
-    r[3].step = "shape".into();
-    r[3].step_order = 1;
-    r[3].skill_order = 2;
+    r[4].step = "shape".into();
+    r[4].step_order = 1;
+    r[4].skill_order = 2;
     assert!(check(&r).iter().any(|e| e.contains("skill-athena-validate: called twice in one step")), "{:?}", check(&r));
 }
 
 #[test]
 fn negative_proof_an_athena_step_without_its_args_list_is_refused() {
     let mut r = rows("athena-rows.tsv");
-    r[0].with_args.clear();
+    r[1].with_args.clear();
     assert!(check(&r).iter().any(|e| e.contains("step shape calls athena-validate without args")), "{:?}", check(&r));
 }
 
@@ -157,4 +157,18 @@ fn the_walk_of_the_athena_stream_flags_nothing() {
     let broken = WALK.replace("\"athena-land\"\t\"athena-deploy\"\t\"land\"\t\"1\"\t\"athena-deploy\"\t\"deploys\"", "\"athena-land\"\t\"\"\t\"land\"\t\"\"\t\"\"\t\"\"");
     let e = walk_check(&walk_from_sparql_tsv(&broken).unwrap()).unwrap_err();
     assert!(e.iter().any(|x| x.contains("pipeline step `land` covers no value-stream step")), "{e:?}");
+}
+
+/// #4578 — the card's own model tools are built into the role's slot before any
+/// athena step runs, so a run never checks a card with yesterday's athena-gen.
+#[test]
+fn athena_builds_the_cards_tools_before_its_first_check() {
+    let y = athena();
+    let tools = y.find("call werk-deploy-demo card=${CARD}").unwrap_or_else(|| panic!("no tools step:\n{y}"));
+    let first = y.find("call athena-validate args=--card").expect("shape step");
+    assert!(tools < first, "tools must come first:\n{y}");
+    // NEGATIVE PROOF: without the tools row, the first step is the check and nothing installs the card's tools
+    let r: Vec<_> = rows("athena-rows.tsv").into_iter().filter(|x| x.step != "tools").collect();
+    let bare = generate("athena", &r).expect("generates");
+    assert!(!bare.contains("werk-deploy"), "{bare}");
 }

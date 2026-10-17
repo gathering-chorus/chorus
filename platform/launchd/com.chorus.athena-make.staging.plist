@@ -18,6 +18,9 @@
   <dict>
     <key>CHORUS_FUSEKI</key><string>http://localhost:3030/staging</string>
     <key>CHORUS_HOME</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <!-- #4578 — a card's Athena run points this file at its own athena-make, and
+         removes it after; absent or empty = the installed binary. -->
+    <key>ATHENA_MAKE_BIN_FILE</key><string>/Users/jeffbridwell/.chorus/staging/athena-make.bin</string>
     <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>KeepAlive</key><true/>

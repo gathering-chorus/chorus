@@ -52,4 +52,21 @@ if [ -r "$_credenv" ]; then
 fi
 set +a
 
-exec "$HOME/.chorus/bin/athena-make" "$@"
+# #4578 — a unit may serve a CARD's build instead of the installed one. The unit
+# names a pointer file (ATHENA_MAKE_BIN_FILE); a card's Athena run writes the
+# path of its own athena-make there and removes it after. No pointer, or an
+# empty one, runs the installed binary as before (prod's plist names none).
+# A pointer that names a missing or non-executable file is REFUSED, never read
+# as "use prod": a run that thinks it is proving its build must not be served
+# yesterday's.
+bin="$HOME/.chorus/bin/athena-make"
+if [ -n "${ATHENA_MAKE_BIN_FILE:-}" ] && [ -s "$ATHENA_MAKE_BIN_FILE" ]; then
+  card_bin="$(head -1 "$ATHENA_MAKE_BIN_FILE" | tr -d '[:space:]')"
+  if [ ! -x "$card_bin" ]; then
+    echo "athena-make-launch: REFUSED — $ATHENA_MAKE_BIN_FILE names '$card_bin', which is not an executable file" >&2
+    exit 78
+  fi
+  echo "athena-make-launch: serving the card build $card_bin (from $ATHENA_MAKE_BIN_FILE)" >&2
+  bin="$card_bin"
+fi
+exec "$bin" "$@"
