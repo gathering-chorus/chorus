@@ -17,6 +17,9 @@ check() { # dir whose */ontology/*.ttl (or *.ttl for fixtures) are the model -> 
 import sys, collections
 SH = "<http://www.w3.org/ns/shacl#"
 core = "<https://jeffbridwell.com/chorus#CoreShape>"
+# Jeff 2026-10-17 08:24, on TestResult: "i thought we were gonna deprecate logging in the graph
+# this one class always causes non functional issues". Its ~1.1M rows are log data, not model; no stamps.
+EXEMPT = {"<https://jeffbridwell.com/chorus#TestResult>"}
 target, node, nodeshapes = {}, collections.defaultdict(set), set()
 for line in sys.stdin:
     parts = line.split(" ", 2)
@@ -25,7 +28,7 @@ for line in sys.stdin:
     if p == SH + "targetClass>": target[s] = o
     elif p == SH + "node>": node[s].add(o)
     elif o == SH + "NodeShape>": nodeshapes.add(s)
-bad = [f"shape for {c} has no sh:node chorus:CoreShape" for s, c in sorted(target.items()) if core not in node[s]]
+bad = [f"shape for {c} has no sh:node chorus:CoreShape" for s, c in sorted(target.items()) if core not in node[s] and c not in EXEMPT]
 if core not in nodeshapes: bad.append("chorus:CoreShape is not defined")
 for b in bad: print("  " + b)
 print(f"class shapes {len(target)}, violations {len(bad)}")

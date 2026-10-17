@@ -2350,7 +2350,6 @@ mod tests {
         assert_eq!(csv_count("n\n42\n"), Some(42));
         assert_eq!(csv_count("error"), None);
     }
-    use super::*;
 
     #[test]
     fn prove_trace_refuses_a_run_that_left_no_record_4195() {

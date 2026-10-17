@@ -478,7 +478,7 @@ chorus:tests a chorus:Domain ;
     chorus:ownedBy chorus:principal-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     # #4540 — TestType: the test types in the order the run's one queue starts them
-    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun , chorus:TestType , chorus:Scenario , chorus:QualityFinding ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54)
+    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Actor ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); Actor = the BDD scenario actor
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
@@ -629,7 +629,7 @@ chorus:TestSuiteRunShape a sh:NodeShape ;
     sh:property [ sh:path chorus:suiteSeconds ]  .
 
 chorus:TestResultShape a sh:NodeShape ;
-    sh:targetClass chorus:TestResult ; sh:node chorus:CoreShape ;
+    sh:targetClass chorus:TestResult ;
     # #3592 (steward MUST-FIX, #3675 pattern) — explicit instance home, matching
     # the DAL write target. See TestSuiteRunShape note.
     chorus:instancesGraph "urn:chorus:domains:tests" ;
@@ -695,7 +695,7 @@ chorus:ScenarioVerifiedByShape a sh:NodeShape ;
     sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
 
 chorus:TestResultEdgesShape a sh:NodeShape ;
-    sh:targetClass chorus:TestResult ; sh:node chorus:CoreShape ;
+    sh:targetClass chorus:TestResult ;
     sh:property [ sh:path chorus:ofTest ; sh:minCount 1 ; sh:class chorus:Test ] .
 
 chorus:ofTest a owl:ObjectProperty ;
@@ -703,3 +703,7 @@ chorus:ofTest a owl:ObjectProperty ;
     rdfs:domain chorus:TestResult ; rdfs:range chorus:Test ;
     rdfs:comment "TestResult -> its Test. The FK that makes the result chain joinable; required by shape." .
 
+
+# #4576 — Actor is the BDD scenario actor (Given/When/Then subject), homed in tests.
+chorus:ActorShape a sh:NodeShape ;
+    sh:targetClass chorus:Actor ; sh:node chorus:CoreShape .

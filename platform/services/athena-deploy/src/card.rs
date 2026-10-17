@@ -44,6 +44,9 @@ pub struct CardPlan {
     /// #4536 — the retirement lines this card added, as a file: the deploy runs
     /// these, never the whole ledger.
     pub retirements: Option<String>,
+    /// #4576 — the row-change lines this card added (designing/schemas/row-changes.jsonl),
+    /// as a file: each is one call through athena-make, posted as its owner.
+    pub row_changes: Option<String>,
 }
 
 /// The paths of a commit's tree that a deploy reads: every roles/*/ontology
@@ -367,6 +370,21 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     let rfile = format!("{dir}/retirements.jsonl");
     std::fs::write(&rfile, added).map_err(|e| CardError::Failed(format!("{rfile}: {e}")))?;
     p.retirements = Some(rfile);
+    // #4576 — and only the row changes this card added: rows go through the door
+    // when the card that changes them lands, never re-seeded from a file (Jeff 10-06).
+    let rows_ledger = "designing/schemas/row-changes.jsonl";
+    let rows_added = if card.sources.iter().any(|s| s == rows_ledger) {
+        let werk_text = std::fs::read_to_string(card.abs(rows_ledger)).unwrap_or_default();
+        let git = if card.commit.is_some() { card_scope::chorus_home() } else { card.werk.clone() };
+        let base = Command::new("git").args(["-C", &git, "show", &format!("{}:{rows_ledger}", card_scope::base_rev(&card))]).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        added_lines(&werk_text, &base)
+    } else {
+        String::new()
+    };
+    let wfile = format!("{dir}/row-changes.jsonl");
+    std::fs::write(&wfile, rows_added).map_err(|e| CardError::Failed(format!("{wfile}: {e}")))?;
+    p.row_changes = Some(wfile);
     // #4536 — an ontology file loads only the subjects the card changed
     if !p.ontology.is_empty() {
         let werk = format!("{}/", card.werk.trim_end_matches('/'));
@@ -477,6 +495,11 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     match served_check_live(&api, &classes) {
         Ok(lines) => out.extend(lines),
         Err(lines) => return Err(CardError::Failed(lines.join("\n"))),
+    }
+    // #4576 — the card's row changes, through the door it just restarted
+    if let Some(f) = &p.row_changes {
+        let text = std::fs::read_to_string(f).unwrap_or_default();
+        out.extend(post_row_changes(&text, &api).map_err(CardError::Failed)?);
     }
     Ok(out.join("\n"))
 }
@@ -656,5 +679,101 @@ mod staging_pointer_tests {
         assert_eq!(model, "/w/wren-bin/athena-model");
         let e = staging_card_bin(true, &model, Some(5), Some(9)).unwrap_err();
         assert!(e.contains("last athena-model commit"), "{e}");
+    }
+}
+
+/// #4576 — one staged row change: a call through athena-make, made as `owner`.
+/// `{"method":"POST|PATCH|PUT","path":"/v1/<domain>/<class>[/<name>]","owner":"<role>",
+///   "card":"<n>","status":"staged","body":{...}}` with `body` the LAST key.
+#[derive(Debug, PartialEq)]
+pub struct RowChange { pub method: String, pub path: String, pub owner: String, pub body: String }
+
+pub fn parse_row_change(line: &str) -> Result<RowChange, String> {
+    let t = line.trim();
+    let field = |k: &str| -> Option<String> {
+        let at = t.find(&format!("\"{k}\""))? + k.len() + 2;
+        let rest = t[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    let method = field("method").ok_or("row change has no method")?;
+    if !["POST", "PATCH", "PUT"].contains(&method.as_str()) {
+        return Err(format!("row change method {method:?}: only POST, PATCH or PUT (a delete is a retirement)"));
+    }
+    let path = field("path").ok_or("row change has no path")?;
+    if !path.starts_with("/v1/") || path.contains("..") || path.contains('?') {
+        return Err(format!("row change path {path:?} is not a /v1/ door path"));
+    }
+    let owner = field("owner").filter(|o| !o.is_empty() && o.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        .ok_or("row change has no owner (rows post as their owner)")?;
+    let at = t.find("\"body\"").ok_or("row change has no body")?;
+    let body = t[at + 6..].trim_start().strip_prefix(':').ok_or("row change body has no value")?.trim();
+    let body = body.strip_suffix('}').ok_or("row change is not a JSON object")?.trim();
+    if !body.starts_with('{') || !body.ends_with('}') {
+        return Err("row change body must be a JSON object and the last key".into());
+    }
+    Ok(RowChange { method, path, owner, body: body.to_string() })
+}
+
+/// Post every line, in order, each as its owner. A POST the door answers 409
+/// (the row is already there: a re-run on the same staging copy) is retried as
+/// PUT to the row's own path, so a re-run converges instead of failing. Any other
+/// refusal stops the run, naming the line and the door's words.
+pub fn post_row_changes(text: &str, api: &str) -> Result<Vec<String>, String> {
+    let root = env_or("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus");
+    let mut out = Vec::new();
+    for (i, line) in text.lines().filter(|l| !l.trim().is_empty()).enumerate() {
+        let rc = parse_row_change(line).map_err(|e| format!("row-changes line {}: {e}", i + 1))?;
+        let id = Command::new(format!("{root}/platform/scripts/chorus-identity-token")).arg(&rc.owner).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| format!("row-changes line {}: no identity for owner '{}'", i + 1, rc.owner))?;
+        let send = |method: &str, path: &str| -> (String, String) {
+            let url = format!("{}{}", api.trim_end_matches('/'), path);
+            let auth = format!("Authorization: Bearer {id}");
+            let o = Command::new("curl").args(["-s", "-m", "30", "-X", method, "-H", "Content-Type: application/json",
+                "-H", &auth, "--data-binary", &rc.body, "-w", "\n%{http_code}", &url]).output();
+            let text = o.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let (b, c) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
+            (c.trim().to_string(), b.trim().to_string())
+        };
+        let (mut code, mut said) = send(&rc.method, &rc.path);
+        if rc.method == "POST" && code == "409" {
+            if let Some(name) = body_name(&rc.body) {
+                let row = format!("{}/{name}", rc.path.trim_end_matches('/'));
+                (code, said) = send("PUT", &row);
+            }
+        }
+        if !code.starts_with('2') {
+            return Err(format!("row-changes line {} ({} {} as {}): HTTP {code}: {said}", i + 1, rc.method, rc.path, rc.owner));
+        }
+        out.push(format!("row-change {} {} {} as {}: HTTP {code}", i + 1, rc.method, rc.path, rc.owner));
+    }
+    Ok(out)
+}
+
+fn body_name(body: &str) -> Option<String> {
+    let at = body.find("\"name\"")? + 6;
+    let rest = body[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    Some(rest[..rest.find('"')?].to_string())
+}
+
+#[cfg(test)]
+mod row_change_tests {
+    use super::*;
+
+    /// #4576 — NEGATIVE PROOFS: a delete, a non-door path, an ownerless line and a
+    /// body that is not last are each refused by name; a good line parses whole.
+    #[test]
+    fn row_change_lines_parse_or_are_refused_by_name() {
+        let ok = r#"{"method":"POST","path":"/v1/roles/teammates","owner":"wren","card":"4576","status":"staged","body":{"name":"teammate-kade","signsInAs":"principal-kade"}}"#;
+        let rc = parse_row_change(ok).unwrap();
+        assert_eq!(rc, RowChange { method: "POST".into(), path: "/v1/roles/teammates".into(), owner: "wren".into(),
+            body: r#"{"name":"teammate-kade","signsInAs":"principal-kade"}"#.into() });
+        assert_eq!(body_name(&rc.body).as_deref(), Some("teammate-kade"));
+        let bad = |l: &str, want: &str| { let e = parse_row_change(l).unwrap_err(); assert!(e.contains(want), "{l} -> {e}"); };
+        bad(r#"{"method":"DELETE","path":"/v1/a/b/c","owner":"wren","body":{}}"#, "a delete is a retirement");
+        bad(r#"{"method":"PATCH","path":"/other/a/b","owner":"wren","body":{}}"#, "not a /v1/ door path");
+        bad(r#"{"method":"PATCH","path":"/v1/a/b/c","body":{}}"#, "no owner");
+        bad(r#"{"method":"PATCH","path":"/v1/a/b/c","owner":"wren","body":{"x":"y"},"card":"1"}"#, "last key");
     }
 }
