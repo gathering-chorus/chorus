@@ -508,6 +508,21 @@ pub fn slot_bin(werk: &str, name: &str) -> String {
     format!("{base}/{role}-bin/{name}")
 }
 
+/// Unix seconds as `YYYY-MM-DDTHH:MM:SSZ` (civil-from-days; no date crate here).
+pub fn iso_utc(secs: u64) -> String {
+    let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
 /// Pure: whether staging serves the slot build. Not changed = None. Changed, but
 /// the slot build is missing or older than the card's last athena-make commit =
 /// REFUSED, naming both times, so a run never proves a build the card replaced.
@@ -519,7 +534,7 @@ pub fn staging_card_bin(changed: bool, slot: &str, built: Option<u64>, last_comm
         return Err(format!("the card changes athena-make but {slot} does not exist — run the tools step (werk-deploy --target werk) first (#4578)"));
     };
     if let Some(last) = last_commit.filter(|l| *l > built) {
-        return Err(format!("{slot} was built at {built} (unix), before the card's last athena-make commit at {last} — rebuild it before staging serves it (#4578)"));
+        return Err(format!("{slot} was built at {}, before the card's last athena-make commit at {} — rebuild it before staging serves it (#4578)", iso_utc(built), iso_utc(last)));
     }
     Ok(Some(slot.to_string()))
 }
@@ -607,7 +622,8 @@ mod staging_pointer_tests {
         // NEGATIVE PROOF: changed, but the slot is missing or older than the card's commit
         assert!(staging_card_bin(true, slot, None, Some(9)).unwrap_err().contains("does not exist"));
         let e = staging_card_bin(true, slot, Some(5), Some(9)).unwrap_err();
-        assert!(e.contains("built at 5") && e.contains("commit at 9"), "{e}");
+        assert!(e.contains("built at 1970-01-01T00:00:05Z") && e.contains("commit at 1970-01-01T00:00:09Z"), "{e}");
+        assert_eq!(iso_utc(1_792_243_800), "2026-10-17T13:30:00Z");
         assert_eq!(slot_bin("/w/wren-4578", "athena-make"), slot);
         assert_eq!(slot_bin("/w/abby-normal-4530", "athena-make"), "/w/abby-normal-bin/athena-make");
     }
