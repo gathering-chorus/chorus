@@ -2,8 +2,12 @@
 // @test-type: unit — deriveActorState over fact fixtures, the endpoint over an in-memory app; no live services
 // @card: #4560
 // @owner: wren
+import fs from 'fs';
+import http from 'http';
+import os from 'os';
+import path from 'path';
 import request from 'supertest';
-import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, lokiActionQuery, type ActorFactInput } from './actor-state';
+import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, readActivePairsFromDisk, lokiActionQuery, type ActorFactInput } from './actor-state';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
@@ -784,3 +788,124 @@ describe('Actor State - Loki activity query', () => {
     expect(logqlQuotedEscapesValid(broken)).toBe(false);
   });
 });
+
+/* eslint-disable security/detect-non-literal-fs-filename -- test fixture files under mkdtempSync */
+describe('Actor State - Disk Pairs & Service Resilience', () => {
+  test('readActivePairsFromDisk reads valid pair JSON files and skips invalid/non-json files', () => {
+    const tmpOps = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-pairs-'));
+    try {
+      expect(readActivePairsFromDisk(path.join(tmpOps, 'missing'))).toEqual([]);
+      fs.writeFileSync(path.join(tmpOps, '4571.json'), JSON.stringify({ navigator: ROLE_ABBY_NAME, driver: 'wren' }));
+      fs.writeFileSync(path.join(tmpOps, '4572.json'), '{bad-json');
+      fs.writeFileSync(path.join(tmpOps, 'readme.txt'), 'ignored');
+      fs.writeFileSync(path.join(tmpOps, 'notanumber.json'), JSON.stringify({ navigator: 'kade' }));
+
+      const pairs = readActivePairsFromDisk(tmpOps);
+      expect(pairs.length).toBe(2);
+      expect(pairs.find((pair) => pair.card === 4571)).toEqual({ card: 4571, navigator: ROLE_ABBY_NAME, driver: 'wren' });
+      expect(pairs.find((pair) => pair.card === 4572)?.navigator).toBe('');
+    } finally {
+      fs.rmSync(tmpOps, { recursive: true, force: true });
+    }
+  });
+
+  test('ActorStateService handles fetcher throw with and without prior known principals and start/stop', async () => {
+    let shouldThrow = true;
+    const fetcher = jest.fn().mockImplementation(() => {
+      if (shouldThrow) return Promise.reject(new Error('door timeout'));
+      return Promise.resolve({
+        now: baseNow,
+        principals: [P_KADE],
+        sessions: [],
+        actions: {},
+      });
+    });
+
+    const service = new ActorStateService(fetcher, 60000);
+    service.start();
+    service.start();
+
+    const res1 = await service.refresh();
+    expect(res1.actors).toEqual([]);
+    expect(res1.unmeasured[0].reason).toBe('door timeout');
+
+    shouldThrow = false;
+    await service.refresh();
+    expect(service.getActorStates().actors.length).toBe(1);
+
+    shouldThrow = true;
+    const res3 = await service.refresh();
+    expect(res3.actors.length).toBe(1);
+    expect(res3.actors[0].stateValue).toBe(STATE_UNMEASURED);
+
+    service.stop();
+  });
+});
+
+function createStubActorServer(getFailMode: () => boolean): http.Server {
+  return http.createServer((req, res) => {
+    if (getFailMode()) {
+      res.writeHead(502);
+      res.end('Bad Gateway');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url?.startsWith('/v1/roles/roles')) {
+      res.end(JSON.stringify({ data: [{ name: 'wren', label: 'role-wren', roleKind: ROLE_AGENT }, { name: 'jeff', roleKind: ROLE_HUMAN }] }));
+    } else if (req.url?.startsWith('/v1/identity/sessions')) {
+      res.end(JSON.stringify({ data: [{ name: 's-wren', ownedBy: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 }] }));
+    } else if (req.url?.startsWith('/api/chorus/context/board/wip')) {
+      res.end(JSON.stringify({ data: { cards: [{ id: 4571, title: 'Clearing v2', owner: 'Wren' }] } }));
+    } else {
+      res.end(JSON.stringify({ data: { result: [{ metric: { role: 'wren' }, value: [1700000000, '4'] }, { metric: { role: 'bridge' }, value: [1700000000, '1'] }] } }));
+    }
+  });
+}
+
+describe('Actor State - Live Fact Fetcher', () => {
+  test('buildLiveActorFactFetcher gathers roles, sessions, wip, loki, spine tail, and owed-nudge replies', async () => {
+    let failMode = false;
+    const srv = createStubActorServer(() => failMode);
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as { port: number }).port;
+    const base = `http://127.0.0.1:${port}`;
+    const tmpOps = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-ops-'));
+
+    try {
+      const nowIso = new Date().toISOString();
+      const tailLines = [
+        JSON.stringify({ role: 'wren', event: 'agent.action', timestamp: nowIso }),
+        JSON.stringify({ role: 'system', event: 'ignored', timestamp: nowIso }),
+        'not-valid-json',
+      ].join('\n');
+
+      const fetcher = buildLiveActorFactFetcher({
+        store: {
+          getOwedNudges: () => [{ from: 'wren', to: ROLE_ABBY_NAME, expects: 'reply', sentAt: '2026-10-16T12:00:00Z' }],
+          queryMessages: () => [{ from: ROLE_ABBY_NAME, to: 'wren', createdAt: '2026-10-16T12:05:00Z' }],
+        },
+        readTail: () => Promise.resolve(tailLines),
+        athenaBaseUrl: base,
+        chorusApiBaseUrl: base,
+        lokiBaseUrl: base,
+        opsDir: tmpOps,
+      });
+
+      const okFacts = await fetcher();
+      expect(okFacts.principals.length).toBe(2);
+      expect(okFacts.sessions?.length).toBe(1);
+      expect(okFacts.wipCards?.length).toBe(1);
+      expect(okFacts.actions?.wren.recent5mCount).toBeGreaterThan(0);
+      expect(okFacts.actions?.jeff.recent5mCount).toBeGreaterThan(0);
+      expect(okFacts.owedNudges?.[0]?.repliedAt).toBe('2026-10-16T12:05:00Z');
+
+      failMode = true;
+      const failFacts = await fetcher();
+      expect(failFacts.unmeasured?.length).toBeGreaterThanOrEqual(4);
+    } finally {
+      fs.rmSync(tmpOps, { recursive: true, force: true });
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
+});
+/* eslint-enable security/detect-non-literal-fs-filename */

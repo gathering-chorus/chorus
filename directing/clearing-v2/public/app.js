@@ -1,3 +1,8 @@
+/** #4571 — the path prefix this page was served under ('' on the LAN, '/clearing-v2' via the door). */
+function clearingBase() {
+  return (typeof window !== 'undefined' && window.CLEARING_BASE) || '';
+}
+
 // @domain: messages
 
 const messagesContainer = typeof document !== 'undefined' ? document.getElementById('messages-stream') : null;
@@ -174,7 +179,7 @@ function updateTiles(tiles) {
 
 // Setup EventSource for SSE live stream
 function initStream() {
-  const evtSource = new EventSource('/api/events');
+  const evtSource = new EventSource(clearingBase() + '/api/events');
 
   evtSource.addEventListener('init', (e) => {
     try {
@@ -253,7 +258,7 @@ async function handleSendMessage(text, options = {}) {
       throw new Error('fetch is not defined');
     }
 
-    const res = await fetchFn('/api/send', {
+    const res = await fetchFn(clearingBase() + '/api/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: signedEvent, from: 'jeff', text: cleanText }),
@@ -263,6 +268,13 @@ async function handleSendMessage(text, options = {}) {
       let errName = `HTTP ${res.status}`;
       try {
         const json = await res.json();
+        // #4571 — no session here: say so and link the door, keep the typed text
+        if (json && json.error === 'not-signed-in') {
+          if (inputEl) inputEl.value = savedText;
+          showSignInNeeded(statusEl, json);
+          if (btnEl) { if (btnEl.classList) btnEl.classList.remove('sending'); btnEl.textContent = 'Send'; }
+          return;
+        }
         if (json && json.error) errName = json.error;
       } catch {
         const txt = await res.text().catch(() => '');
@@ -313,6 +325,20 @@ async function handleSendMessage(text, options = {}) {
   }
 }
 
+/** #4571 — the 401 names why and where to sign in; render it as text plus a link. */
+function showSignInNeeded(statusEl, json) {
+  if (!statusEl) return;
+  statusEl.textContent = json.detail || 'Not signed in.';
+  if (json.signInUrl && typeof document !== 'undefined' && document.createElement) {
+    statusEl.textContent = 'Not signed in here. ';
+    const a = document.createElement('a');
+    a.href = json.signInUrl;
+    a.textContent = 'Sign in to send';
+    statusEl.appendChild(a);
+  }
+  statusEl.style.display = 'block';
+}
+
 // Form send handler
 if (composerForm && composerInput) {
   composerForm.addEventListener('submit', async (e) => {
@@ -325,7 +351,7 @@ if (typeof window !== 'undefined') {
   // Periodic tile poll as fallback
   setInterval(async () => {
     try {
-      const res = await fetch('/api/tiles');
+      const res = await fetch(clearingBase() + '/api/tiles');
       if (res.ok) {
         const tiles = await res.json();
         updateTiles(tiles);

@@ -8,7 +8,10 @@ import path from 'path';
 import { WebSocketServer } from 'ws';
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import fs from 'fs';
+import os from 'os';
 import { createApp, loadConfig } from '../src/server';
+import { loadKnownKeys } from '../src/identity';
 import { TileService } from '../src/tile-service';
 import { serializeEvent, buildEventId, verifyNostrEvent, resolveRoleByPubkey } from '../src/identity';
 import { mintShareSessionCookie } from '../src/share-session';
@@ -223,7 +226,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
       expect(res.status).toBe(401);
       const json = await res.json() as any;
       expect(json.ok).toBe(false);
-      expect(json.error).toMatch(/unregistered/i);
+      expect(json.error).toBe('not-signed-in'); // #4571: an unregistered key is refused as not signed in, naming the door
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -332,5 +335,38 @@ describe('Clearing v2: #4570 Service Run & WiFi Binding', () => {
     expect(cfg.port).toBe(3472);
     expect(cfg.host).toBe('0.0.0.0');
     expect(cfg.pulseUrl).toBe('http://127.0.0.1:3475');
+  });
+});
+
+describe('Clearing v2: #4571 Known Keys from ~/.chorus/identity', () => {
+  test('loadKnownKeys loads every <home>/.chorus/identity/<who>/nostr.json pubkey (pubkey only, never seckey)', () => {
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-v2-id-'));
+    try {
+      const idDir = path.join(tmpHome, '.chorus', 'identity');
+      const wrenPriv = new Uint8Array(32).fill(11);
+      const wrenPub = bytesToHex(schnorr.getPublicKey(wrenPriv));
+      const silasPriv = new Uint8Array(32).fill(22);
+      const silasPub = bytesToHex(schnorr.getPublicKey(silasPriv));
+      const seckeyOnlyPriv = new Uint8Array(32).fill(33);
+      const seckeyOnlyPub = bytesToHex(schnorr.getPublicKey(seckeyOnlyPriv));
+
+      fs.mkdirSync(path.join(idDir, 'wren'), { recursive: true });
+      fs.writeFileSync(path.join(idDir, 'wren', 'nostr.json'), JSON.stringify({ pubkey: wrenPub.toUpperCase(), seckey: 'ignored' }));
+
+      fs.mkdirSync(path.join(idDir, 'silas'), { recursive: true });
+      fs.writeFileSync(path.join(idDir, 'silas', 'nostr.json'), JSON.stringify({ pubkey: silasPub }));
+
+      // NEGATIVE PROOF: a file with seckey only (no pubkey) is never derived or loaded
+      fs.mkdirSync(path.join(idDir, 'kade'), { recursive: true });
+      fs.writeFileSync(path.join(idDir, 'kade', 'nostr.json'), JSON.stringify({ seckey: bytesToHex(seckeyOnlyPriv) }));
+
+      const keys = loadKnownKeys(tmpHome);
+      expect(keys.get(wrenPub)).toBe('wren');
+      expect(keys.get(silasPub)).toBe('silas');
+      expect(keys.get(seckeyOnlyPub)).toBeUndefined();
+      expect( resolveRoleByPubkey(wrenPub, keys) ).toBe('wren');
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   });
 });

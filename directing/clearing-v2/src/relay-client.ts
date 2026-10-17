@@ -45,6 +45,10 @@ export class MockWebSocket implements WebSocketLike {
     this.emit('close');
   }
 
+  triggerClose(): void {
+    this.emit('close');
+  }
+
   triggerOpen(): void {
     this.emit('open');
   }
@@ -77,6 +81,8 @@ export interface BuzzRelayClientOptions {
   /** The relay is host-scoped (v1: "connect via the LAN IP, never localhost"). */
   hostHeader?: string;
   nowSec?: () => number;
+  /** #4571 — wait before redialing a dropped socket (default 5 s). */
+  reconnectDelayMs?: number;
 }
 
 export class BuzzRelayClient {
@@ -91,7 +97,11 @@ export class BuzzRelayClient {
   private signer?: RelaySigner;
   private hostHeader?: string;
   private nowSec: () => number;
-  private authState: 'none' | 'challenged' | 'sent' | 'no-signer' = 'none';
+  private authState: 'none' | 'challenged' | 'sent' | 'ok' | 'refused' | 'no-signer' = 'none';
+  private authEventId = '';
+  private reconnectDelayMs: number;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
 
   constructor(options: BuzzRelayClientOptions) {
     this.relayUrl = options.relayUrl;
@@ -102,6 +112,7 @@ export class BuzzRelayClient {
     this.signer = options.signer;
     this.hostHeader = options.hostHeader;
     this.nowSec = options.nowSec || (() => Math.floor(Date.now() / 1000));
+    this.reconnectDelayMs = options.reconnectDelayMs ?? 5000;
   }
 
   /** 'no-signer' = the relay asked for AUTH and the room has no reader key: name it. */
@@ -118,6 +129,10 @@ export class BuzzRelayClient {
   }
 
   connect(): void {
+    this.stopped = false;
+    // a new socket starts unauthenticated: a reconnect must not inherit the last AUTH
+    this.authState = 'none';
+    this.authEventId = '';
     if (!this.relayUrl) {
       this.connected = false;
       return;
@@ -146,6 +161,7 @@ export class BuzzRelayClient {
     ws.on('close', () => {
       this.connected = false;
       this.ws = null;
+      this.scheduleReconnect();
     });
 
     ws.on('error', () => {
@@ -153,8 +169,26 @@ export class BuzzRelayClient {
     });
   }
 
+  /** #4571 — the room can read: the socket is open and, if the relay challenged,
+   *  it accepted our AUTH. An open socket the relay refuses is not "connected". */
   isConnected(): boolean {
-    return this.connected;
+    return this.connected && (this.authState === 'none' || this.authState === 'ok');
+  }
+
+  private scheduleReconnect(): void {
+    if (this.stopped || this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.stopped) this.connect();
+    }, this.reconnectDelayMs);
+    (this.reconnectTimer as { unref?: () => void }).unref?.();
+  }
+
+  /** The relay's own address for the AUTH relay tag (v1 authRelayUrl): dialing through
+   *  the tunnel, the relay only accepts a tag naming the Host it serves. */
+  private authRelayTag(): string {
+    if (!this.hostHeader) return this.relayUrl;
+    return `${this.relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${this.hostHeader}`;
   }
 
   getBufferedCount(): number {
@@ -191,32 +225,39 @@ export class BuzzRelayClient {
   }
 
   private handleMessage(raw: string): void {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed[0] === 'AUTH' && typeof parsed[1] === 'string') {
-        this.authState = 'challenged';
-        if (!this.signer || !this.ws) {
-          this.authState = 'no-signer';
-          return;
-        }
-        this.ws.send(authFrame(parsed[1], this.relayUrl, this.signer, this.nowSec()));
-        this.authState = 'sent';
-        // the REQ sent on open was refused before AUTH; ask again, in order after it
-        this.subscribe();
-        return;
-      }
-      if (Array.isArray(parsed) && parsed[0] === 'EVENT' && parsed[2]) {
-        const event = parsed[2] as NostrEvent;
-        if (this.onEventCallback) {
-          this.onEventCallback(event);
-        }
-      }
+      parsed = JSON.parse(raw);
     } catch {
-      // ignore unparseable
+      return; // ignore unparseable
+    }
+    if (!Array.isArray(parsed)) return;
+    if (parsed[0] === 'AUTH' && typeof parsed[1] === 'string') {
+      this.answerChallenge(parsed[1]);
+    } else if (parsed[0] === 'OK' && this.authEventId && parsed[1] === this.authEventId) {
+      this.authState = parsed[2] === true ? 'ok' : 'refused';
+    } else if (parsed[0] === 'EVENT' && parsed[2] && this.onEventCallback) {
+      this.onEventCallback(parsed[2] as NostrEvent);
     }
   }
 
+  private answerChallenge(challenge: string): void {
+    this.authState = 'challenged';
+    if (!this.signer || !this.ws) {
+      this.authState = 'no-signer';
+      return;
+    }
+    const frame = authFrame(challenge, this.authRelayTag(), this.signer, this.nowSec());
+    this.authEventId = (JSON.parse(frame)[1] as { id: string }).id;
+    this.ws.send(frame);
+    this.authState = 'sent';
+    // the REQ sent on open was refused before AUTH; ask again, in order after it
+    this.subscribe();
+  }
+
   close(): void {
+    this.stopped = true;
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.ws) {
       this.ws.close();
       this.ws = null;

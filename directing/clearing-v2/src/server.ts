@@ -2,11 +2,14 @@
 
 import express, { Request, Response } from 'express';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { MessageRouter } from './router';
 import { TileService } from './tile-service';
-import { BuzzRelayClient } from './relay-client';
-import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
+import { BuzzRelayClient, RelaySigner } from './relay-client';
+import { bridgeSigner } from './relay-signer';
+import { stripBase, withBase, injectBase } from './base-path';
+import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity, loadKnownKeys } from './identity';
 import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
@@ -16,6 +19,10 @@ import { DataService } from './data-service';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
+  /** #4571 — the Host the relay serves; the tunnel dial (127.0.0.1:13000) 404s without it. */
+  buzzRelayHost?: string;
+  /** #4571 — the common door's v2 address, where a session exists (Silas: no second sign-in). */
+  signInUrl?: string;
   pulseUrl?: string;
   rolesUrl?: string;
   boardUrl?: string;
@@ -48,15 +55,22 @@ const activeConfig = loadConfig(cliConfigPath);
 const PORT = parseInt(process.env.PORT || (activeConfig.port ? String(activeConfig.port) : '3472'), 10);
 const HOST = process.env.HOST || activeConfig.host || '127.0.0.1';
 const BUZZ_RELAY_URL = process.env.BUZZ_RELAY_URL || activeConfig.buzzRelayUrl || '';
+const BUZZ_RELAY_HOST = process.env.BUZZ_RELAY_HOST_HEADER || activeConfig.buzzRelayHost || '';
+const SIGN_IN_URL = process.env.CLEARING_V2_SIGNIN_URL || activeConfig.signInUrl || '';
+
+/** #4571 — the refusal for join/send without a session: why, and where to sign in. */
+export function notSignedIn(signInUrl: string | undefined): { ok: false; error: 'not-signed-in'; detail: string; signInUrl?: string } {
+  return signInUrl
+    ? { ok: false, error: 'not-signed-in', detail: `Not signed in here. Sign in at ${signInUrl} to join the room and send.`, signInUrl }
+    : { ok: false, error: 'not-signed-in', detail: 'Not signed in: sign in through the common door to join the room and send.' };
+}
 const PULSE_URL = process.env.PULSE_URL || activeConfig.pulseUrl || 'http://127.0.0.1:3475';
 const ROLES_URL = process.env.ROLES_URL || activeConfig.rolesUrl || 'http://localhost:3360/v1/roles/roles';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
 
-// Known pubkeys map for role attribution
-const KNOWN_KEYS = new Map<string, string>([
-  ['b9d4bfd85efd8aeeacaef985d4e12325cb1d7d527755be875a3813836e06d9b7', 'abby-normal'],
-]);
+// Known pubkeys map for role attribution (#4571: loaded from ~/.chorus/identity/<who>/nostr.json)
+const KNOWN_KEYS = loadKnownKeys();
 
 export function shareSessionWebId(req: Request, keyBuffer?: Buffer | null): string | null {
   const raw = shareSessionFromHeader(req.headers.cookie);
@@ -89,6 +103,7 @@ interface RouteContext {
   onInboundEvent: (event: NostrEvent) => void;
   keys: Map<string, string>;
   cookieKey?: Buffer | null;
+  signInUrl?: string;
 }
 
 // Helper: test overrides only allowed via x-* headers in test mode, NEVER via URL query parameters
@@ -216,7 +231,8 @@ function registerWriteRoutes(ctx: RouteContext): void {
 
     const identity = resolveSenderIdentity(event, keys);
     if (!identity) {
-      res.status(401).json({ ok: false, error: 'unsigned or unregistered post refused: valid signed event from registered key required (#3743)' });
+      // #3743: identity only from a verified event whose key a signed-in session bound.
+      res.status(401).json(notSignedIn(ctx.signInUrl));
       return;
     }
 
@@ -231,6 +247,7 @@ function registerWriteRoutes(ctx: RouteContext): void {
     const principal = sessionPrincipal(req, cookieKey);
     const outcome = decideBind(principal?.webid, req.body?.pubkey);
     if (!outcome.ok) {
+      if (outcome.error === 'not-signed-in') { res.status(401).json(notSignedIn(ctx.signInUrl)); return; }
       res.status(outcome.status).json({ ok: false, error: outcome.error, detail: outcome.detail });
       return;
     }
@@ -256,6 +273,10 @@ export interface CreateAppOptions {
   knownKeys?: Map<string, string>;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
+  /** #4571 — test seams: the relay's Host and reader key (null = no key), the sign-in door. */
+  relayHost?: string;
+  signInUrl?: string;
+  relaySigner?: RelaySigner | null;
 }
 
 interface ResolvedUrls {
@@ -352,8 +373,33 @@ function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
   };
 }
 
+/** #4571 — read #team as the registered bridge identity, through the relay's own Host. */
+function makeRelay(relayUrl: string, onEvent: (event: NostrEvent) => void, options: CreateAppOptions = {}): BuzzRelayClient {
+  const reader = options.relaySigner !== undefined ? { signer: options.relaySigner ?? undefined, reason: 'no reader key (test)' } : bridgeSigner(os.homedir());
+  if (relayUrl && !reader.signer) console.warn(`Buzz relay: ${reader.reason ?? 'no reader key'} — Rooms cannot read`);
+  return new BuzzRelayClient({
+    relayUrl,
+    topic: 'team',
+    onEvent,
+    signer: reader.signer,
+    hostHeader: options.relayHost ?? (BUZZ_RELAY_HOST || undefined),
+  });
+}
+
+/** #4571 — strip /clearing-v2 before routing; HTML gets the prefix on its links and as CLEARING_BASE. */
+function mountBasePath(app: express.Express): void {
+  app.use((req: Request, res: Response, next) => {
+    const { url, base } = stripBase(req.url);
+    req.url = url;
+    const send = res.send.bind(res);
+    res.send = ((body?: unknown) => send(typeof body === 'string' && /^\s*</.test(body) ? injectBase(withBase(body, base), base) : body)) as typeof res.send;
+    next();
+  });
+}
+
 export function createApp(options?: CreateAppOptions) {
   const app = express();
+  mountBasePath(app);
   mountStatic(app);
 
   const router = new MessageRouter(500);
@@ -375,11 +421,7 @@ export function createApp(options?: CreateAppOptions) {
     isRelayConnected: () => relay.isConnected(),
   });
 
-  const relay = new BuzzRelayClient({
-    relayUrl: urls.relayUrl,
-    topic: 'team',
-    onEvent: onInboundEvent,
-  });
+  const relay = makeRelay(urls.relayUrl, onInboundEvent, options);
 
   const dataService = new DataService({
     rolesUrl: urls.rolesUrl,
@@ -402,6 +444,7 @@ export function createApp(options?: CreateAppOptions) {
     onInboundEvent,
     keys,
     cookieKey: options?.cookieKey,
+    signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
   });
 
   return { app, router, tileService, dataService, relay };
@@ -417,7 +460,7 @@ if (require.main === module) {
   app.listen(PORT, HOST, () => {
     console.log(`Clearing v2 running at http://${HOST}:${PORT}`);
     if (BUZZ_RELAY_URL) {
-      console.log(`Connected to Buzz relay at ${BUZZ_RELAY_URL}`);
+      console.log(`Dialing Buzz relay at ${BUZZ_RELAY_URL}${BUZZ_RELAY_HOST ? ` (Host ${BUZZ_RELAY_HOST})` : ''}; /health says when the room can read`);
     } else {
       console.log('Buzz relay not configured (trust strip shows rooms failed: relay not configured)');
     }

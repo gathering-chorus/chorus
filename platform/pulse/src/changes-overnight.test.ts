@@ -2,10 +2,12 @@
 // @test-type: unit — pure derivation over fact fixtures, endpoint over express app
 // @card: #4563
 // @owner: wren
+import http from 'http';
 import request from 'supertest';
 import {
   deriveChangesOvernight,
   ChangesOvernightService,
+  buildLiveChangesOvernightFetcher,
   type ChangesFactInput,
   type RawSessionRow,
   type RawCardMove,
@@ -323,5 +325,81 @@ describe('Changes Overnight — Service and Endpoint', () => {
     expect(res.body.cards[0].id).toBe(4560);
     expect(Array.isArray(res.body.unmeasured)).toBe(true);
     expect(res.body.unmeasured).toEqual([]);
+  });
+});
+
+describe('Changes Overnight — Live Fetcher & Service Resilience', () => {
+  test('buildLiveChangesOvernightFetcher fetches sessions and loki moves over HTTP', async () => {
+    let mode: 'ok' | 'no-watermark' | 'fail' = 'ok';
+    const srv = http.createServer((req, res) => {
+      if (mode === 'fail') {
+        res.writeHead(502);
+        res.end('Bad Gateway');
+        return;
+      }
+      if (req.url?.startsWith('/v1/identity/sessions')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        const data = mode === 'no-watermark'
+          ? []
+          : [{ name: 's-jeff-closed', ownedBy: P_JEFF, channel: CH_BROWSER, sessionState: 'closed', endedAt: WATERMARK_ISO }];
+        res.end(JSON.stringify({ data }));
+      } else if (req.url?.startsWith('/loki/api/v1/query_range')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        const moveLine = JSON.stringify({
+          event: EV_ACCEPTED,
+          card_id: '#4566',
+          title: TITLE_ACTOR_STATE,
+          role: 'abby-normal',
+          timestamp: AFTER_WATERMARK_ISO,
+        });
+        res.end(JSON.stringify({
+          data: { result: [{ values: [['1', moveLine], ['2', 'not-json']] }] },
+        }));
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as { port: number }).port;
+    const base = `http://127.0.0.1:${port}`;
+
+    try {
+      const fetcher = buildLiveChangesOvernightFetcher(base, base);
+      const okInput = await fetcher();
+      const okDerived = deriveChangesOvernight(okInput);
+      expect(okDerived.watermark).toBe(WATERMARK_ISO);
+      expect(okDerived.cards.length).toBe(1);
+      expect(okDerived.cards[0].id).toBe(4566);
+      expect(okDerived.cards[0].owner).toBe('Abby Normal');
+
+      mode = 'no-watermark';
+      const emptyInput = await fetcher();
+      expect(emptyInput.lokiMoves).toEqual([]);
+
+      mode = 'fail';
+      const failInput = await fetcher();
+      expect(failInput.unmeasured?.some((u) => u.source === SRC_SESSIONS)).toBe(true);
+
+      // Sessions ok, Loki 502
+      mode = 'ok';
+      const lokiFailFetcher = buildLiveChangesOvernightFetcher(base, 'http://127.0.0.1:1');
+      const lokiFailInput = await lokiFailFetcher();
+      const lokiFailDerived = deriveChangesOvernight(lokiFailInput);
+      expect(lokiFailDerived.unmeasured.some((u) => u.source === SRC_LOKI)).toBe(true);
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
+
+  test('ChangesOvernightService handles fetcher rejection and start/stop lifecycle', async () => {
+    const failingFetcher = jest.fn().mockRejectedValue(new Error('overnight crash'));
+    const service = new ChangesOvernightService(failingFetcher, 60000);
+    service.start();
+    service.start(); // idempotent
+    const res = await service.refresh();
+    expect(res.watermark).toBeNull();
+    expect(res.unmeasured).toEqual([{ source: 'pulse:changes-overnight', reason: 'overnight crash' }]);
+    service.stop();
   });
 });
