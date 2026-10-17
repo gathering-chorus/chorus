@@ -36,7 +36,7 @@ chorus:athena a chorus:Product ;
     chorus:status """building""" ;
     chorus:gaps """An older generation of relationships still being retired; a thin service layer; two vocabularies for the same things; three naming conventions for identifiers; design documents seeded into a graph the document API does not read.""" ;
     chorus:hasDesignDoc chorus:document-athena-product-design ;
-    chorus:hasDomain chorus:products, chorus:services, chorus:domains, chorus:value-streams ;
+    chorus:hasDomain chorus:products, chorus:services, chorus:domains, chorus:value-streams, chorus:persistence, chorus:provenance ;   # #4576 (Jeff 10-17)
     chorus:publishesPreAuth """true""" ;
     chorus:promise """Athena is the model of what exists. It holds the canonical description of a product world — the products, the domains they are made of, the services that run inside those domains, and the value stream that carries work through them — as a graph with rules attached. Everything else in Chorus is placed in that graph: a principle, a pipeline, a log stream is a thing Athena knows about.
 It is a design pipeline, not a schema. The structure (product, domain, service) is the product layer. The narrative on this page — the promise, the shape, the API, what stands and what is planned — is the design layer, stored on the model itself. The pipeline is what moves both: every entry is validated against the same rules, advances through one lifecycle (exploring, building, operating, retiring), and is shown by the same pages.
@@ -105,7 +105,7 @@ flowchart LR
     chorus:status """building""" ;
     chorus:gaps """No AC checks on cards and no verdict or route on the card; chorus-make does not exist yet, so no borg pipeline runs; no single prod service list (83 running against 13 designed); no canary (one copy of everything); no liveness signal; alerts routed by hand.""" ;
     chorus:hasDesignDoc chorus:document-borg-product-design ;
-    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:properties, chorus:alerts, chorus:monitors, chorus:logs, chorus:identity, chorus:metrics, chorus:persistence, chorus:schedule ;   # #4422 persistence, #4081 schedule
+    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:properties, chorus:alerts, chorus:monitors, chorus:logs, chorus:metrics ;   # #4576 (Jeff 10-17): identity, security -> chorus services; persistence -> athena; schedule -> chorus
     chorus:publishesPreAuth """true""" ;
     chorus:promise """The system sees itself, so no person has to be the eyes. Borg watches everything it can reach — services, health, alerts, and the gap between how the system is drawn and how it actually runs — and surfaces the one thing that needs a person, calmly, to the person who owns it.
 Its product is not dashboards. It is your attention back. Every time the owner is the first to notice a stall is a failure of this product. A service that froze silently for weeks is the anti-promise made concrete, and the reason Borg exists.
@@ -149,7 +149,7 @@ chorus:chorus a chorus:Product ;
     chorus:status """operating""" ;
     chorus:gaps """Self-regulation is the frontier: the system has the structure to hold its own health but not yet the reflex, so a person still tends to notice drift first. Several memory sources have no ingestion path.""" ;
     chorus:hasDesignDoc chorus:document-chorus-as-platform ;
-    chorus:hasDomain chorus:search, chorus:memory ;
+    chorus:hasDomain chorus:search, chorus:memory, chorus:knowledge, chorus:board, chorus:schedule, chorus:values, chorus:identity, chorus:security ;   # #4576 (Jeff 10-17): security and search are services Chorus owns
     # #4130 — NO partOf here, and this is a measured limit, not an oversight.
     # The top of this product tree has no partOf, so every chain that climbs
     # through it (werk, gates-service, cards-service) dead-ends at a Product,
@@ -328,7 +328,7 @@ chorus:loom a chorus:Product ;
     chorus:status """exploring""" ;
     chorus:gaps """Decisions still live as text with no API and no check that they are enforced; skills are files rather than queryable entries; root-cause analyses are not yet modeled.""" ;
     chorus:hasDesignDoc chorus:document-loom-subproduct-design ;
-    chorus:hasDomain chorus:rcas, chorus:roles, chorus:principles, chorus:policies, chorus:practices, chorus:skills, chorus:decisions ;
+    chorus:hasDomain chorus:rcas, chorus:roles, chorus:principles, chorus:policies, chorus:practices, chorus:skills, chorus:decisions, chorus:spine, chorus:awareness ;   # #4576 (Jeff 10-17)
     chorus:publishesPreAuth """true""" ;
     chorus:promise """Loom is the operating model — the team's persistent memory of how it works. It holds the normative layer: the principles the team stands on, the practices that express them, the policies that enforce them, the decisions it has made, the roles it is made of, the skills those roles can invoke, and the analyses of what went wrong.
 The promise is coordination without a switchboard. A few AI agents and one person work together because the rules of working are written down, enforced where actions happen, and fed back from experience — not because a person relays every message and remembers every rule.
@@ -377,7 +377,7 @@ chorus:pulse a chorus:Product ;
     chorus:status """operating""" ;
     chorus:gaps """No relation between roles, so who is blocked on whom cannot be answered; machine load is missing from the reading; some activity arrives without a known author; consumers do not yet read the age of what they are shown.""" ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
-    chorus:hasDomain chorus:awareness, chorus:streams ;   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
+    chorus:hasDomain chorus:streams ;   # #4576 (Jeff 10-17): awareness moved to Loom   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
     chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
     chorus:consumesEvent chorus:eventtype-card-pulled ;
     chorus:publishesPreAuth """true""" ;
@@ -626,27 +626,4 @@ chorus:gathering a chorus:Product ;
 # #4509 — the Services product (Jeff 2026-10-12 19:55: "i agree w decisions lets write
 # this into graph as services product design"). Its IRI is not chorus:services, which is
 # the domain: one identifier carrying both meanings is the Pulse lesson.
-chorus:services-product a chorus:Product ;
-    chorus:docState """draft""" ;
-    chorus:label """Services""" ;
-    rdfs:label """Services""" ;
-    chorus:comment """How every service's tools are declared, generated and run: one tool runner, written once, and each tool a row in the model. A child product of Chorus.""" ;
-    rdfs:comment """How every service's tools are declared, generated and run: one tool runner, written once, and each tool a row in the model. A child product of Chorus.""" ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:vision """An agent adds or changes a tool by writing one model row through the door. The runner serves it, with the same caller check, timeout, trace and error as every other tool, and nobody edits server code.""" ;
-    chorus:valueProposition """The services API gives the agents one consistent way to manage their own tools (Jeff, 2026-10-12). Today a tool is hand-written twice and its errors name nothing; after this a tool is one row, and every error says who called which tool and why it failed.""" ;
-    chorus:audience """The agents first, who call tools all day and now also declare them; the owner second, who reads one error line instead of an alert that names nothing; every product third, since each gets its own generated runner, the wine diary included.""" ;
-    chorus:status """building""" ;
-    chorus:gaps """No runner exists yet; tools are hand-written in one 4,211-line file. Skill has no input shape, binding or timeout fields yet. athena-gen generates APIs but no tools. The installed MCP library (1.29) cannot speak the 2026-07-28 release, and the pinned 1.31 security fix was never installed.""" ;
-    chorus:hasDesignDoc chorus:document-services-product-design ;
-    chorus:hasDomain chorus:services ;
-    chorus:promise """This is the Services product, the way tools are made and run. It is not a Service row: identity, the Clearing and the rest are services whose tools it serves. One way to make a tool, one way to run it, one way to read what went wrong. An agent declares a tool as a model row; athena-gen generates it; the runner serves it on the current MCP release; the caller is verified; the error names the caller, the tool and the reason.""" ;
-    chorus:structure """Two halves. The runner core is written once: transport for MCP 2026-07-28 with a fallback for 2025 clients, caller identity from a verified token, dispatch from a generated tool table, per-tool timeouts, one trace id passed to whatever a tool runs, one error line, and the Tasks extension for long-running tools. A tool is a Skill row with more fields: input shape, output shape, owner, what it runs (a door collection, a binary or a chorus-api route), timeout, and whether it is long-running. Door collections need no row: athena-gen generates their list, get and add tools by the ADR-031 naming.
-Reviewed 2026-10-12 by Silas and Kade, and the core owns these too: a tool that can run past about two minutes returns a run id and status instead of blocking (a full crawl takes about 35 minutes), on the Tasks extension; a running task survives a runner restart, or a land refuses to start while one could be lost; callers outside a session (launchd as the crawler principal) are checked like any session; there is one path, so dagu steps and launchd call the runner, never the binaries directly; deadlines and process-group reaping stay inside each verb (#4128).""" ;
-    chorus:asIs """Measured 2026-10-12. One MCP server serves 52 tools through one hand-written switch, each tool's input written twice. The caller is an unchecked header, and some calls arrive as unknown. The server answers the 2026-07-28 handshake with 400, which Claude Code 2.1.296 tries first and then falls back from; that is most of the MCP 400 alerts, found on 08-21 and 09-02 and lost twice. Errors go to three places and a minted trace id is never passed on. About a dozen tools copy what the model door already serves. The same idea was drafted in April (services-service-design.md) and never built.""" ;
-    chorus:toBe """Agents manage tools through the services API: write a tool row through the door and the runner serves it after the next generate. One runner per product, generated the way athena-gen generates each product's API, so the wine diary gets tools without calling Chorus. The old server's file is deleted and a check fails if a hand-written tool comes back. The MCP 400 alerts stop because their cause is gone.""" ;
-    chorus:notInScope """Changing a tool row for werk-merge or deploy by a plain door write: those rows land through werk with Jeff's go (Kade, 2026-10-12). The tools' own logic: a werk verb, a herald or a door collection stays with its owner. Identity issuance belongs to the identity service; the runner only verifies. Pipelines (chorus-make) and the heralds core (#4405) are siblings that plug in, not parts of this product.""" ;
-    chorus:references """Decisions Jeff agreed 2026-10-12 19:55: (1) the core is Rust on rmcp, since athena-gen already emits Rust crates and rmcp implements 2026-07-28 as stable; (2) a tool is more fields on Skill, not a new class, per the August ruling that a verb is an automated deterministic skill; (3) one runner generated per product; (4) Wren owns the core, Silas owns borg-tend-herald, Kade owns the werk verbs.
-Order of work: reinstall the MCP library so the 1.31 fix is in; the runner core serving door collections beside the old server; tool rows on Skill and athena-gen emitting the tool table, first plugin borg-tend-herald; werk and athena verbs as plugins, long ones on Tasks; the old server retires.
-Sources: modelcontextprotocol.io/specification/2026-07-28/changelog; github.com/modelcontextprotocol/rust-sdk; card #4405 plugin contract; designing/docs/services-product-design.html.""" ;
-    chorus:partOf chorus:chorus .
+# #4576 (Jeff 10-17): services-product retired; services stays with Athena.

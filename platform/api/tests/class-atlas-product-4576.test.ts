@@ -23,7 +23,7 @@ const HOMES = new Map([
 
 function checkAtlasHtmlGrouping(html: string): string[] {
   const missing: string[] = [];
-  if (!/class="aprod"/.test(html)) missing.push("product-section");
+  if (!/(?:class="aprod"|className\s*=\s*.aprod.)/.test(html)) missing.push("product-section");
   if (!/dom\.product\s*\|\|\s*.unassigned./.test(html)) missing.push("unassigned-fallback");
   if (!/querySelectorAll\(.\.aprod.\)/.test(html)) missing.push("pick-hides-empty-product");
   return missing;
@@ -43,7 +43,7 @@ describe("#4576 Class Atlas groups Product -> Domain -> Class", () => {
   it("classAtlasHandler queries urn:chorus:domains:products for chorus:Product hasDomain", async () => {
     const realFetch = global.fetch;
     let asked = "";
-    global.fetch = (async (url: string, init?: { body?: string }) => {
+    global.fetch = (async (_url: string, init?: { body?: string }) => {
       if (init?.body) asked = decodeURIComponent(init.body);
       return { ok: true, status: 200, json: async () => ({ results: { bindings: ROWS } }) };
     }) as unknown as typeof fetch;

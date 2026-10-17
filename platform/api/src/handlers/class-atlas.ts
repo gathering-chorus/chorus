@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 
 export interface SparqlTerm { type: string; value: string; datatype?: string }
 export interface SparqlBinding {
-  domain?: SparqlTerm; class?: SparqlTerm; prop?: SparqlTerm;
+  product?: SparqlTerm; domain?: SparqlTerm; class?: SparqlTerm; prop?: SparqlTerm;
   min?: SparqlTerm; max?: SparqlTerm; dt?: SparqlTerm; rc?: SparqlTerm; parent?: SparqlTerm;
   // #4053 — one row per sh:in list member (rdf:rest*/rdf:first), so a four-value
   // enum arrives as four rows that must fold into one attribute.
@@ -75,7 +75,7 @@ export interface AtlasClass {
 
 /** One row of athena-make's discovery document, plus the collection's live count. */
 export interface ServedInfo { kind: string; collection: string; count?: number }
-export interface AtlasDomain { name: string; classes: AtlasClass[] }
+export interface AtlasDomain { name: string; product?: string; classes: AtlasClass[] }
 export interface Atlas { domains: AtlasDomain[] }
 
 const local = (v: string | undefined): string => String(v || '').split(/[#/]/).pop() || '';
@@ -206,6 +206,29 @@ export function annotateServed(atlas: Atlas, served: readonly ServedInfo[]): Atl
   return atlas;
 }
 
+function domainProductMap(rows: SparqlBinding[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const row of rows) {
+    const dom = local(row.domain?.value);
+    const prod = local(row.product?.value);
+    if (dom && prod && !out.has(dom)) out.set(dom, prod);
+  }
+  return out;
+}
+
+function toAtlasDomain(
+  name: string,
+  classes: Map<string, AtlasClass>,
+  domainProducts: ReadonlyMap<string, string>
+): AtlasDomain {
+  const product = domainProducts.get(name);
+  return {
+    name,
+    ...(product ? { product } : {}),
+    classes: [...classes.values()].sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
 export function buildClassAtlas(
   rows: SparqlBinding[],
   classHomes: ReadonlyMap<string, string>
@@ -213,6 +236,7 @@ export function buildClassAtlas(
   // domain → class → accumulated view. A property can appear in several rows
   // (one per OPTIONAL combination); merge by name, never duplicate.
   const domains = new Map<string, Map<string, AtlasClass>>();
+  const domainProducts = domainProductMap(rows);
 
   for (const row of rows) {
     const dom = local(row.domain?.value);
@@ -238,10 +262,7 @@ export function buildClassAtlas(
 
   return {
     domains: [...domains.entries()]
-      .map(([name, classes]) => ({
-        name,
-        classes: [...classes.values()].sort((a, b) => a.name.localeCompare(b.name)),
-      }))
+      .map(([name, classes]) => toAtlasDomain(name, classes, domainProducts))
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
@@ -261,7 +282,7 @@ const ATLAS_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef ?shapeDef WHERE { GRAPH <urn:chorus:domains:domains> { ?domain chorus:definesVocabulary ?class } GRAPH <urn:chorus:ontology> {
+SELECT ?product ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef ?shapeDef WHERE { GRAPH <urn:chorus:domains:domains> { ?domain chorus:definesVocabulary ?class } OPTIONAL { GRAPH <urn:chorus:domains:products> { ?product a chorus:Product ; chorus:hasDomain ?domain } } GRAPH <urn:chorus:ontology> {
   OPTIONAL { ?class rdfs:comment ?classDef }
   OPTIONAL { ?shp sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
     OPTIONAL { ?prop sh:inversePath ?invOf . OPTIONAL { ?invOf rdfs:comment ?invDef } }
