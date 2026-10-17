@@ -101,11 +101,13 @@ fn main() {
             Some("copy") => athena_deploy::staging::copy(&base, &prod, &stg, &manifest),
             Some("publish") => athena_deploy::staging::publish(&base, &prod, &stg, &manifest),
             Some("rollback") => athena_deploy::staging::rollback(&base, &prod, &manifest),
+            // #4578 — the end of an Athena run: staging back on the installed athena-make
+            Some("release") => athena_deploy::card::release_staging(),
             Some("audit") => {
                 let make = std::env::var("ATHENA_MAKE_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/athena-make", std::env::var("HOME").unwrap_or_default()));
                 athena_deploy::staging::audit(&base, &prod, &stg, &manifest, &prod_api, &make)
             }
-            _ => { eprintln!("usage: athena-deploy staging copy|audit|publish|rollback"); std::process::exit(2); }
+            _ => { eprintln!("usage: athena-deploy staging copy|audit|publish|rollback|release"); std::process::exit(2); }
         };
         match r {
             Ok(s) => { println!("{s}"); std::process::exit(0); }

@@ -20,8 +20,12 @@ handler_on:
   success:
     command: '${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run · dagu ${DAG_RUN_ID}"; exit 1; }'
 steps:
+  - name: skill-werk-deploy-demo
+    description: "werk-deploy-demo"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-demo card=${CARD}"
   - name: skill-athena-validate-shape
     description: "athena-validate"
+    depends: [skill-werk-deploy-demo]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-validate args=--card args=${CARD}"
   - name: skill-athena-gen
     description: "athena-gen"
@@ -43,3 +47,7 @@ steps:
     description: "athena-validate"
     depends: [skill-athena-deploy-seed]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-validate args=--staging"
+  - name: skill-athena-deploy-release
+    description: "athena-deploy"
+    depends: [skill-athena-validate-validate]
+    command: "${HOME}/.chorus/bin/chorus-runner call athena-deploy args=staging args=release"

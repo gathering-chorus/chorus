@@ -22,6 +22,16 @@ setup() {
   # #4577 — the pair pipeline
   run "$CM" check-straight pair "$F/pair-rows.tsv" "$F/pair-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/pair.yaml"
   [ "$status" -eq 0 ]
+  # #4578 — athena builds the card's tools first and releases staging last
+  run "$CM" check athena "$F/athena-rows.tsv" "$ROOT/platform/pipelines/athena.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "negative proof: an athena without its tools step is drift (#4578)" {
+  grep -v 'werk-deploy-demo' "$ROOT/platform/pipelines/athena.yaml" > "$BATS_TEST_TMPDIR/athena.yaml"
+  ! cmp -s "$ROOT/platform/pipelines/athena.yaml" "$BATS_TEST_TMPDIR/athena.yaml" || return 1
+  run "$CM" check athena "$F/athena-rows.tsv" "$BATS_TEST_TMPDIR/athena.yaml"
+  [ "$status" -eq 1 ]
 }
 
 @test "negative proof: a pair whose green a hand edit gave to the driver is drift" {
