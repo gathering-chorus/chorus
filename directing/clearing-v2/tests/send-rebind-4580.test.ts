@@ -5,7 +5,6 @@
 // #4580 reopen — Jeff 2026-10-17 15:11 "still cant message in clearing v2". The server keeps
 // bound room keys in memory, so after any restart this browser's key is unknown and every
 // send is "not signed in". The page now binds its key with the session and retries once.
-/* eslint-disable @typescript-eslint/no-var-requires */
 
 const NOT_SIGNED_IN = { ok: false, error: 'not-signed-in', detail: 'Not signed in here.', signInUrl: 'https://door/' };
 
