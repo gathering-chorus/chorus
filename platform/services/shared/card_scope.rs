@@ -344,10 +344,26 @@ pub fn ntriples_at(werk: &str, rev: &str, rel: &str) -> String {
 /// The triples about one subject (`<iri>` with its angle brackets), sorted.
 /// Blank-node labels differ per parse (`_:b0` vs `_:b7`), so they are
 /// normalised first: the same list is not a change.
+/// A subject's lines plus the lines of every blank node it reaches (its property
+/// shapes), blank labels blurred: #4590 — a change inside `sh:property [ … ]`
+/// changes the shape that holds it.
 fn triples_about(nt: &str, subject: &str) -> Vec<String> {
-    let key = format!("{subject} ");
     let bnode = |l: &str| l.split_whitespace().map(|t| if t.starts_with("_:") { "_:b" } else { t }).collect::<Vec<_>>().join(" ");
-    let mut v: Vec<String> = nt.lines().filter(|l| l.starts_with(&key)).map(bnode).collect();
+    let mut keys = vec![subject.to_string()];
+    let mut v: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < keys.len() {
+        let key = format!("{} ", keys[i]);
+        for l in nt.lines().filter(|l| l.starts_with(&key)) {
+            for t in l.split_whitespace().skip(1).filter(|t| t.starts_with("_:")) {
+                if !keys.iter().any(|k| k == t) {
+                    keys.push(t.to_string());
+                }
+            }
+            v.push(bnode(l));
+        }
+        i += 1;
+    }
     v.sort();
     v
 }
@@ -377,6 +393,14 @@ mod changed_4536 {
     const LABEL: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
     fn class(n: &str, label: &str) -> String {
         format!("<urn:x#{n}> {TYPE} {OWL} .\n<urn:x#{n}> {LABEL} \"{label}\" .\n")
+    }
+
+    #[test]
+    fn a_change_inside_a_blank_property_shape_changes_its_shape() {
+        let shape = |dt: &str| format!("<urn:x#S> <urn:x#property> _:b1 .\n_:b1 <urn:x#datatype> <urn:x#{dt}> .\n");
+        assert_eq!(changed_subjects(&shape("int"), &shape("string")), vec!["<urn:x#S>".to_string()]);
+        // negative proof: the same shape with other blank labels is unchanged
+        assert!(changed_subjects(&shape("int"), &shape("int").replace("_:b1", "_:z9")).is_empty());
     }
 
     #[test]

@@ -78,7 +78,7 @@ fn generated_products<'a>(store: &oxigraph::store::Store, touched: impl Iterator
 /// named) on a card with no werk or no model change, on a touched class no
 /// product serves, and on a change that touches no product at all.
 fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
-    use athena_gen::card::{card_scope, changed_since_main, only_changed, product_out, products_for, touched};
+    use athena_gen::card::{card_scope, changed_since_main, only_changed, product_out, products_for, touched, via_shared_shapes};
     let card = card_scope::resolve(card_id).unwrap_or_else(|e| die(e));
     let ttl: Vec<PathBuf> = card.ttl().iter().map(|r| PathBuf::from(card.abs(r))).collect();
     println!("card #{}: {} model file(s) in {}", card.card, ttl.len(), card.werk);
@@ -92,7 +92,22 @@ fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
     }
     let root = PathBuf::from(&card.werk);
     let store = load_model(&root);
-    let (products, unserved) = products_for(&store, &t).unwrap_or_else(|e| die(e));
+    let (mut products, unserved) = products_for(&store, &t).unwrap_or_else(|e| die(e));
+    // #4590 — a changed shared shape reaches the classes whose shapes name it
+    let reached = via_shared_shapes(&store, &changed).unwrap_or_else(|e| die(e));
+    if !reached.is_empty() {
+        println!("card #{}: {} class(es) reached through a changed shared shape", card.card, reached.len());
+        let via = athena_gen::card::Touched { classes: reached, ..Default::default() };
+        let (more, _) = products_for(&store, &via).unwrap_or_else(|e| die(e));
+        for (p, classes) in more {
+            let e = products.entry(p).or_default();
+            for c in classes {
+                if !e.contains(&c) {
+                    e.push(c);
+                }
+            }
+        }
+    }
     for (p, classes) in &products {
         if classes.is_empty() {
             println!("card #{}: {p} (its own rows changed)", card.card);
