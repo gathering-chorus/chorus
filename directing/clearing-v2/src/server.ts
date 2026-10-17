@@ -378,12 +378,19 @@ interface InboundDeps {
 }
 
 /** Handles an incoming verified event from the Buzz relay: ingest, broadcast, forward nudges to Pulse. */
-function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
+export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
   return (event: NostrEvent) => {
     if (!verifyNostrEvent(event)) {
       return;
     }
-    const role = resolveRoleByPubkey(event.pubkey, deps.keys) || 'unattributed';
+    let role = resolveRoleByPubkey(event.pubkey, deps.keys) || 'unattributed';
+    // #4591 — on bridge-signed events, unwrap the true author from the author tag
+    if (role === 'bridge' && Array.isArray(event.tags)) {
+      const authorTag = event.tags.find((t) => t[0] === 'author');
+      if (authorTag && authorTag[1]) {
+        role = authorTag[1];
+      }
+    }
     const msg = toClearingMessage(event, role, deps.isRelayConnected());
     if (!deps.router.ingest(msg)) return;
     deps.broadcastSSE('message', msg);

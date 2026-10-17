@@ -141,7 +141,7 @@ describe('#3823 outbound', () => {
     expect(result).toBe('sent');
     expect(sent[0].pubkey).toBe(derivedSigner('bridge', TEST_SECRET).pubkey);
     expect(sent[0].pubkey).not.toBe(derivedSigner('kade', TEST_SECRET).pubkey);
-    expect(sent[0].tags).toEqual([['t', 'team']]);
+    expect(sent[0].tags).toEqual([['t', 'team'], ['author', 'kade']]);
   });
 
   test('the note carries the text alone — the author is the signature', () => {
