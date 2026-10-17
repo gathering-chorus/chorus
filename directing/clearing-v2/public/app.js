@@ -331,11 +331,23 @@ async function handleSendMessage(text, options = {}) {
       throw new Error('fetch is not defined');
     }
 
-    const res = await fetchFn(clearingBase() + '/api/send', {
+    const post = () => fetchFn(clearingBase() + '/api/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: signedEvent, from: 'jeff', text: cleanText }),
     });
+    let res = await post();
+    // #4580 reopen — the server only accepts keys a signed-in session bound, and it holds
+    // those in memory, so a server restart forgets this browser's key. On "not signed in",
+    // bind the key with the session cookie (POST /api/room/bind) and retry the send once.
+    if (!res.ok && res.status === 401 && signedEvent && signedEvent.pubkey) {
+      const bind = await fetchFn(clearingBase() + '/api/room/bind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pubkey: signedEvent.pubkey, webid }),
+      });
+      if (bind && bind.ok) res = await post();
+    }
 
     if (!res.ok) {
       let errName = `HTTP ${res.status}`;
