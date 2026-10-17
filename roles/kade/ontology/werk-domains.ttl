@@ -478,7 +478,7 @@ chorus:tests a chorus:Domain ;
     chorus:ownedBy chorus:principal-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     # #4540 — TestType: the test types in the order the run's one queue starts them
-    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun , chorus:TestType ;
+    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun , chorus:TestType , chorus:Scenario , chorus:QualityFinding ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54)
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;

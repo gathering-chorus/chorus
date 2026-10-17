@@ -22,7 +22,7 @@ chorus:code a chorus:Domain ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
   chorus:repoTarget "platform/scripts/clippy-ratchet.sh" ;
-  chorus:definesVocabulary chorus:CodeFile .
+  chorus:definesVocabulary chorus:CodeFile , chorus:File , chorus:SourceFile .  # #4576: File, SourceFile homed (Kade confirmed 07:54)
 
 chorus:pipelines a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:pipelines" ;  # #4422 (wren): the crawl reads this, never a guessed name
@@ -30,7 +30,9 @@ chorus:pipelines a chorus:Domain ;
   chorus:purpose "Own how a change travels from commit to running production — the typed, composable build->land pipeline — so every card follows one proven path with witnesses at each step, not ad-hoc scripting." ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
-  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun , chorus:PipelineStep ;
+  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun , chorus:PipelineStep ,
+    chorus:CardDiff , chorus:ConflictHold , chorus:DemoVerdict , chorus:GateResult , chorus:MergeEvent ,
+    chorus:ReviewVerdict , chorus:VerbRun , chorus:WerkSlot , chorus:Witness , chorus:TypedRefusal , chorus:RecoveryAction ;  # #4576: 11 homed (Kade confirmed 07:54)
   chorus:hasChild chorus:cicd .
 
 chorus:cicd a chorus:Domain ;
@@ -38,7 +40,7 @@ chorus:cicd a chorus:Domain ;
   chorus:purpose "Run werk's Building value stream as one orchestrated engine — act + werk.yml driving commit->build->deploy->test->rollback — so the pipeline is a single declared, observable mechanism rather than a chain of hand-run verbs." ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
-  chorus:repoTarget ".github/workflows/werk.yml" ; chorus:definesVocabulary chorus:Workflow .
+  chorus:repoTarget ".github/workflows/werk.yml" ; chorus:definesVocabulary chorus:Workflow , chorus:Deployment .  # #4576: Deployment homed (Kade confirmed 07:54)
 
 chorus:version-control a chorus:Domain ;
   rdfs:label "version-control" ; chorus:comment "Git workflow, branches, worktrees, hooks, and commit policy enforcement." ;

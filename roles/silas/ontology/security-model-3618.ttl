@@ -74,8 +74,8 @@ chorus:identity a chorus:Domain ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:atStep chorus:value-stream-step-reflecting ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
-    chorus:instancesGraph "urn:chorus:domains:security" ;
-    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry ;
+    chorus:instancesGraph "urn:chorus:domains:identity" ;  # #4576: measured, identity rows (Session, SessionRun, Presence) live in the identity graph; Principal keeps security via its shape
+    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry, chorus:AgentRuntime ;  # #4576: AgentRuntime homed here (its instancesGraph is identity; closes #4572)
     chorus:status "building" ;
     chorus:gaps """Single CSS instance is a hard-fail dependency for every login; the Host-spoof in login.handler.ts is load-bearing; the Clearing public door and MCP/pulse loopback trust are not on the seam; DEPLOY_ROLE self-attribution is still accepted where a token is not yet required (commitments open, no card).""" ;
     chorus:hasDesignDoc chorus:document-service-design-security .
