@@ -21,6 +21,8 @@
     <!-- #4578 — a card's Athena run points this file at its own athena-make, and
          removes it after; absent or empty = the installed binary. -->
     <key>ATHENA_MAKE_BIN_FILE</key><string>/Users/jeffbridwell/.chorus/staging/athena-make.bin</string>
+    <!-- #4578 reopen — the same for the card's athena-model, the DAL the door runs. -->
+    <key>ATHENA_MODEL_BIN_FILE</key><string>/Users/jeffbridwell/.chorus/staging/athena-model.bin</string>
     <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>KeepAlive</key><true/>
