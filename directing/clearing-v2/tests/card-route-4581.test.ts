@@ -6,15 +6,12 @@
 import http from 'http';
 import { createApp } from '../src/server';
 
-async function withApp(fn: (port: number) => Promise<void>) {
+test('numeric paths redirect to /board?card=N under both LAN and /clearing-v2 prefix', async () => {
   const { app } = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', relaySigner: null });
   const server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
-  try { await fn((server.address() as { port: number }).port); } finally { await new Promise<void>((r) => server.close(() => r())); }
-}
-
-test('numeric paths redirect to /board?card=N under both LAN and /clearing-v2 prefix', async () => {
-  await withApp(async (port) => {
+  const port = (server.address() as { port: number }).port;
+  try {
     const resTunnel = await fetch(`http://127.0.0.1:${port}/clearing-v2/1`, { redirect: 'manual' });
     expect(resTunnel.status).toBe(302);
     expect(resTunnel.headers.get('location')).toBe('/clearing-v2/board?card=1');
@@ -22,11 +19,46 @@ test('numeric paths redirect to /board?card=N under both LAN and /clearing-v2 pr
     const resLan = await fetch(`http://127.0.0.1:${port}/4580`, { redirect: 'manual' });
     expect(resLan.status).toBe(302);
     expect(resLan.headers.get('location')).toBe('/board?card=4580');
-  });
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
 });
 
 test('negative proof: non-numeric path does not redirect and 404s', async () => {
-  await withApp(async (port) => {
-    expect((await fetch(`http://127.0.0.1:${port}/clearing-v2/not-a-card`, { redirect: 'manual' })).status).toBe(404);
-  });
+  const { app } = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', relaySigner: null });
+  const server = http.createServer(app);
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/clearing-v2/not-a-card`, { redirect: 'manual' });
+    expect(res.status).toBe(404);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('negative proof: alphanumeric path with leading digits (/1abc) does not redirect and 404s', async () => {
+  const { app } = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', relaySigner: null });
+  const server = http.createServer(app);
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/1abc`, { redirect: 'manual' });
+    expect(res.status).toBe(404);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('negative proof: named routes like /board are not intercepted and still return 200', async () => {
+  const { app } = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', relaySigner: null });
+  const server = http.createServer(app);
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/board`, { redirect: 'manual' });
+    expect(res.status).toBe(200);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
 });
