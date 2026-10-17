@@ -121,15 +121,40 @@ function formatMessageTime(ts) {
   }
 }
 
+function stripPromptHeader(text) {
+  return String(text || '').replace(/^---\s+[^|\n]+\|[^\n]+---\s*\n*/, '');
+}
+
 function appendMessage(msg) {
   if (!msg || !msg.visible || !messagesContainer) return;
 
-  const existing = document.getElementById(`msg-${msg.id}`);
+  const existing = document.getElementById(`msg-${msg.id}`) || document.getElementById(msg.id);
   if (existing) return; // avoid duplicates
+
+  const cleanText = stripPromptHeader(msg.text || '');
+  const bodyKey = cleanText.trim();
+  const children = Array.isArray(messagesContainer.children) ? messagesContainer.children : Array.from(messagesContainer.children || []);
+  const sameBodyEl = bodyKey ? children.find((c) => c && c.dataset && c.dataset.body === bodyKey) : null;
+  if (sameBodyEl) {
+    if (sameBodyEl.dataset.from === 'bridge' && msg.from !== 'bridge') {
+      sameBodyEl.id = `msg-${msg.id}`;
+      sameBodyEl.dataset.from = msg.from;
+      // #4575 — the visible name follows too, not only the data attribute
+      const authorEl = sameBodyEl.querySelector && sameBodyEl.querySelector('.message-author');
+      if (authorEl) {
+        authorEl.textContent = formatAuthor(msg.from);
+        authorEl.className = `message-author ${msg.from}`;
+      }
+    }
+    return;
+  }
 
   const el = document.createElement('div');
   el.className = 'message';
   el.id = `msg-${msg.id}`;
+  if (!el.dataset) el.dataset = {};
+  el.dataset.from = msg.from;
+  el.dataset.body = bodyKey;
 
   const header = document.createElement('div');
   header.className = 'message-header';
@@ -154,7 +179,7 @@ function appendMessage(msg) {
 
   const text = document.createElement('div');
   text.className = 'message-text';
-  appendLinkedText(text, msg.text || '');
+  appendLinkedText(text, cleanText);
 
   el.appendChild(header);
   el.appendChild(text);
@@ -163,26 +188,51 @@ function appendMessage(msg) {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-/** #4574 — #N in a message opens that card. Built from DOM nodes: the message text is
+/** #4574/#4575 — #N card links, **bold**, and `code` built from DOM nodes: the message text is
  *  never parsed as HTML, so a message cannot inject markup. */
 function appendLinkedText(parent, text) {
-  const parts = String(text).split(/#(\d+)/);
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      if (parts[i]) parent.appendChild(document.createTextNode(parts[i]));
-      continue;
+  const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|#\d+)/g);
+  for (const tok of tokens) {
+    if (!tok) continue;
+    if (tok.startsWith('`') && tok.endsWith('`') && tok.length > 2) {
+      const code = document.createElement('code');
+      code.textContent = tok.slice(1, -1);
+      parent.appendChild(code);
+    } else if (tok.startsWith('**') && tok.endsWith('**') && tok.length > 4) {
+      const strong = document.createElement('strong');
+      strong.textContent = tok.slice(2, -2);
+      parent.appendChild(strong);
+    } else if (/^#\d+$/.test(tok)) {
+      const id = tok.slice(1);
+      const a = document.createElement('a');
+      a.className = 'cid card-ref';
+      a.href = '#';
+      a.textContent = tok;
+      a.onclick = () => {
+        if (typeof openCardDrawer === 'function') openCardDrawer(id);
+        return false;
+      };
+      parent.appendChild(a);
+    } else {
+      parent.appendChild(document.createTextNode(tok));
     }
-    const id = parts[i];
-    const a = document.createElement('a');
-    a.className = 'cid card-ref';
-    a.href = '#';
-    a.textContent = '#' + id;
-    a.onclick = () => {
-      if (typeof openCardDrawer === 'function') openCardDrawer(id);
-      return false;
-    };
-    parent.appendChild(a);
   }
+}
+
+/** #4575 — on a phone the room fills exactly what is visible, so Send sits above Safari's
+ *  bar. window.innerHeight is the visible height; the header above the room varies (the
+ *  trust strip wraps), so a fixed calc() left Send under the bar on Jeff's iPhone. */
+function fitChatToViewport() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const chat = document.querySelector('.chat');
+  if (!chat || !chat.getBoundingClientRect) return;
+  if (window.innerWidth > 768) { chat.style.height = ''; return; }
+  const top = chat.getBoundingClientRect().top + window.scrollY;
+  chat.style.height = Math.max(240, window.innerHeight - top) + 'px';
+}
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('load', fitChatToViewport);
+  window.addEventListener('resize', fitChatToViewport);
 }
 
 function updateTiles(tiles) {

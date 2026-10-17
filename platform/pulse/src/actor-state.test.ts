@@ -7,7 +7,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import request from 'supertest';
-import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, readActivePairsFromDisk, lokiActionQuery, type ActorFactInput } from './actor-state';
+import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, readActivePairsFromDisk, lokiActionQuery, utcIso, type ActorFactInput } from './actor-state';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
@@ -909,3 +909,13 @@ describe('Actor State - Live Fact Fetcher', () => {
   });
 });
 /* eslint-enable security/detect-non-literal-fs-filename */
+
+// #4575 — waiting "since" is an ISO instant, not SQLite's zoneless UTC text read as local time.
+describe('Actor State - waiting since is an instant', () => {
+  it('turns SQLite UTC text into ISO Z, and leaves zoned stamps alone (negative proof)', () => {
+    expect(utcIso('2026-10-17 12:07:44')).toBe('2026-10-17T12:07:44Z');
+    expect(new Date(utcIso('2026-10-17 10:07:44')).toISOString()).toBe('2026-10-17T10:07:44.000Z');
+    expect(utcIso('2026-10-17T12:07:44.000Z')).toBe('2026-10-17T12:07:44.000Z');
+    expect(utcIso('2026-10-17T08:07:44-04:00')).toBe('2026-10-17T08:07:44-04:00');
+  });
+});

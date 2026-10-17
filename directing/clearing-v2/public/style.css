@@ -118,6 +118,8 @@
 }
 
 * { box-sizing: border-box; }
+/* #4575 — iOS Safari must not re-scale text on its own (Jeff 10-17 06:25: "resizes in ways i dont quite follow") */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
@@ -125,6 +127,7 @@ body {
   font: 14.5px/1.55 "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   overflow-x: hidden;
   min-height: 100vh;
+  min-height: 100dvh; /* #4575 — the visible viewport, not the one behind Safari's URL bar */
   display: flex;
   flex-direction: column;
 }
@@ -568,6 +571,8 @@ nav.top .n {
   background: var(--frame);
   border-top: 1px solid var(--line2);
   padding: 10px 14px;
+  /* #4575 — keep Send above the iPhone's home bar and Safari's floating URL bar */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
 }
 #composer-form {
   display: flex;
@@ -707,6 +712,7 @@ tr.you td {
   }
   .chat {
     height: calc(100vh - 190px);
+    height: calc(100dvh - 190px); /* #4575 — 100vh on iOS runs under the URL bar, hiding Send */
   }
 }
 
@@ -733,4 +739,15 @@ tr.you td {
   .app-header {
     padding: 6px 10px;
   }
+  /* #4575 — on a phone the sender line sits above the text, so the text gets the full width */
+  .message { flex-direction: column; gap: 2px; }
+  /* #4575 — iOS zooms the page when a field under 16px gets focus; that was the "resize" */
+  #composer-input { font-size: 16px; }
+  /* #4575 — long words and links wrap inside the message, never past the screen edge */
+  .message-text, .msg .body > div { overflow-wrap: anywhere; }
+  /* #4575 — a role's session list no longer stretches its row: one line, the full list on tap */
+  .role-sessions { max-width: 9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* #4575 — the #team composer on non-Rooms pages stays at the bottom of the screen */
+.page-composer { position: sticky; bottom: 0; z-index: 5; }
