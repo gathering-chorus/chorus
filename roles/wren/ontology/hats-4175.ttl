@@ -300,5 +300,7 @@ chorus:TeammateShape a sh:NodeShape ;
     sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:signsInAs ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:servesAs ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    # the door stamps the writer as owner; the owner rule says who may change the row (run 16)
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;
     chorus:instancesGraph "urn:chorus:domains:roles" ;
     chorus:generatedBy "athena-model" .
