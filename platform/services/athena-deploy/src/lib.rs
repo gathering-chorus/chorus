@@ -974,48 +974,68 @@ pub fn flatten_node_shapes_sparql(graph: &str) -> String {
 
 /// #4576 — Jeff 2026-10-17 08:10 "i feel its a required attribute set it to a
 /// fixed date", 08:17 "maybe the date we default is chorus repo create date in
-/// git": d98dbbd40, 2026-03-29 11:35:26 -04:00. Same value as athena-make's.
+/// git": d98dbbd40, 2026-03-29 11:35:26 -04:00.
 pub const CREATED_BEFORE_STAMPS: &str = "2026-03-29T15:35:26Z";
-pub const CORE_STAMPS: [&str; 4] = ["createdAt", "changedAt", "createdBy", "changedBy"];
 
-/// #4576 — the rows of every class whose shape names chorus:CoreShape, in every
-/// graph but the test-ephemeral ones, that lack `prop`. Dates take the fixed
-/// value; createdBy/changedBy take the row's ownedBy (a row with no owner is
-/// left for the shape to name, never guessed). Pure.
-pub fn core_stamp_rows(ontology: &str, prop: &str) -> String {
-    // changedAt runs after createdAt, so it takes the row's own creation date:
-    // a row is never changed before it was created.
-    let owner = match prop {
-        "createdBy" | "changedBy" => "?s chorus:ownedBy ?v . ",
-        "changedAt" => "?s chorus:createdAt ?v . ",
-        _ => "",
-    };
+/// #4576 — the four audit stamps CoreShape requires are the dcterms ones
+/// athena-model already writes on every governed write (Jeff 2026-06-11):
+/// created (first write), modified (last write), creator (first writer's
+/// Principal), contributor (last writer's Principal). A row written before a
+/// stamp existed gets it once, in this order, each from what the row already has.
+pub const CORE_STAMPS: [&str; 5] = ["created", "modified", "creator-iri", "creator", "contributor"];
+
+const STAMP_PREFIXES: &str = "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX dct: <http://purl.org/dc/terms/>";
+
+/// The rows a stamp pass touches: every row of a class whose shape names
+/// chorus:CoreShape (TestResult does not), in every graph but test-ephemeral
+/// ones, still missing the stamp. Pure.
+fn core_rows(ontology: &str, missing: &str) -> String {
     format!(
         "{{ SELECT DISTINCT ?c WHERE {{ GRAPH <{ontology}> {{ ?sh sh:targetClass ?c ; sh:node chorus:CoreShape }} }} }}\n\
-         GRAPH ?g {{ ?s a ?c . {owner}FILTER NOT EXISTS {{ ?s chorus:{prop} ?x }} }}\n\
+         GRAPH ?g {{ ?s a ?c . {missing} }}\n\
          FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }}"
     )
 }
 
-const STAMP_PREFIXES: &str = "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <https://jeffbridwell.com/chorus#>";
-
-pub fn core_stamp_count_sparql(ontology: &str, prop: &str) -> String {
-    format!("{STAMP_PREFIXES}\nSELECT (COUNT(*) AS ?n) WHERE {{ SELECT DISTINCT ?g ?s WHERE {{ {} }} }}", core_stamp_rows(ontology, prop))
+/// What each pass selects, and where its value comes from. Pure.
+///   created      missing           -> the repo's first commit date
+///   modified     missing           -> the row's created
+///   creator-iri  a role-slug literal -> that role's Principal IRI (literal removed)
+///   creator      missing           -> the row's ownedBy (a row with no owner stays red)
+///   contributor  missing           -> the row's creator
+fn stamp_pass(prop: &str) -> (&'static str, String, &'static str, &'static str) {
+    // (pattern binding ?w, delete template, insert predicate)
+    match prop {
+        "created" => ("FILTER NOT EXISTS { ?s dct:created ?x }", format!("BIND(\"{CREATED_BEFORE_STAMPS}\" AS ?w)"), "", "created"),
+        "modified" => ("?s dct:created ?w . FILTER NOT EXISTS { ?s dct:modified ?x }", String::new(), "", "modified"),
+        "creator-iri" => ("?s dct:creator ?lit . FILTER(isLiteral(?lit) && REGEX(STR(?lit), \"^[a-z0-9-]+$\"))",
+            "BIND(IRI(CONCAT(STR(chorus:), \"principal-\", STR(?lit))) AS ?w)".to_string(), "?s dct:creator ?lit .", "creator"),
+        "creator" => ("?s chorus:ownedBy ?w . FILTER(isIRI(?w)) FILTER NOT EXISTS { ?s dct:creator ?x }", String::new(), "", "creator"),
+        _ => ("?s dct:creator ?w . FILTER(isIRI(?w)) FILTER NOT EXISTS { ?s dct:contributor ?x }", String::new(), "", "contributor"),
+    }
 }
 
-/// One bounded pass: at most `limit` rows per update, so a million-row graph is
-/// many short updates, never one that holds the store.
+pub fn core_stamp_count_sparql(ontology: &str, prop: &str) -> String {
+    let (pat, _, _, _) = stamp_pass(prop);
+    format!("{STAMP_PREFIXES}\nSELECT (COUNT(*) AS ?n) WHERE {{ SELECT DISTINCT ?g ?s WHERE {{ {} }} }}", core_rows(ontology, pat))
+}
+
+/// One bounded pass: at most `limit` rows per update, so a 100k-row class is
+/// several short updates, never one that holds the store.
 pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> String {
-    let fixed = format!("BIND(\"{CREATED_BEFORE_STAMPS}\" AS ?w)");
-    let (sel, bind, group) = if prop == "createdAt" {
-        ("DISTINCT ?g ?s", fixed.as_str(), "")
-    } else {
-        ("?g ?s (SAMPLE(?v) AS ?w)", "", " GROUP BY ?g ?s")
-    };
+    let (pat, bind, del, pred) = stamp_pass(prop);
+    let (sel, group) = if prop == "created" { ("DISTINCT ?g ?s", "") } else { ("?g ?s (SAMPLE(?w0) AS ?w)", " GROUP BY ?g ?s") };
+    let inner = if prop == "created" { pat.to_string() } else { pat.replace("?w", "?w0") };
+    let (inner, bind) = if prop == "creator-iri" {
+        (format!("{pat}"), bind.clone())
+    } else { (inner, bind.clone()) };
+    let sel = if prop == "creator-iri" { "DISTINCT ?g ?s ?lit" } else { sel };
+    let group = if prop == "creator-iri" { "" } else { group };
+    let delete = if del.is_empty() { String::new() } else { format!("DELETE {{ GRAPH ?g {{ {del} }} }}\n") };
     format!(
-        "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:{prop} ?w }} }}\n\
+        "{STAMP_PREFIXES}\n{delete}INSERT {{ GRAPH ?g {{ ?s dct:{pred} ?w }} }}\n\
          WHERE {{ {{ SELECT {sel} WHERE {{ {} }}{group} LIMIT {limit} }} {bind} }}",
-        core_stamp_rows(ontology, prop)
+        core_rows(ontology, &inner)
     )
 }
 
@@ -2339,14 +2359,18 @@ mod tests {
     /// a class without CoreShape untouched) ran on the in-memory chorus-test.
     #[test]
     fn core_stamp_backfill_is_bounded_owned_and_follows_the_shape() {
-        let by = core_stamp_insert_sparql("urn:chorus:ontology", "createdBy", 7);
-        assert!(by.contains("?s chorus:ownedBy ?v") && by.contains("LIMIT 7") && by.contains("sh:node chorus:CoreShape"), "{by}");
-        assert!(by.contains("FILTER NOT EXISTS { ?s chorus:createdBy ?x }"), "{by}");
-        assert!(by.contains("test-ephemeral"), "{by}");
-        let at = core_stamp_insert_sparql("urn:chorus:ontology", "createdAt", 7);
+        let by = core_stamp_insert_sparql("urn:chorus:ontology", "creator", 7);
+        assert!(by.contains("?s chorus:ownedBy ?w0") && by.contains("LIMIT 7") && by.contains("sh:node chorus:CoreShape"), "{by}");
+        assert!(by.contains("FILTER NOT EXISTS { ?s dct:creator ?x }") && by.contains("test-ephemeral"), "{by}");
+        let at = core_stamp_insert_sparql("urn:chorus:ontology", "created", 7);
         assert!(at.contains(CREATED_BEFORE_STAMPS) && !at.contains("ownedBy"), "{at}");
-        let ch = core_stamp_insert_sparql("urn:chorus:ontology", "changedAt", 7);
-        assert!(ch.contains("?s chorus:createdAt ?v") && !ch.contains(CREATED_BEFORE_STAMPS), "changedAt follows the row's createdAt: {ch}");
+        let m = core_stamp_insert_sparql("urn:chorus:ontology", "modified", 7);
+        assert!(m.contains("?s dct:created ?w0") && !m.contains(CREATED_BEFORE_STAMPS), "modified follows the row's created: {m}");
+        let iri = core_stamp_insert_sparql("urn:chorus:ontology", "creator-iri", 7);
+        assert!(iri.contains("DELETE { GRAPH ?g { ?s dct:creator ?lit . } }") && iri.contains("principal-"), "the literal goes, the IRI comes: {iri}");
+        assert!(iri.contains("^[a-z0-9-]+$"), "only a role slug converts: {iri}");
+        let c = core_stamp_insert_sparql("urn:chorus:ontology", "contributor", 7);
+        assert!(c.contains("?s dct:creator ?w0 . FILTER(isIRI(?w0))"), "contributor from an IRI creator only: {c}");
         assert_eq!(csv_count("n\n42\n"), Some(42));
         assert_eq!(csv_count("error"), None);
     }

@@ -173,7 +173,9 @@ fn batch_members_may_reference_each_other_and_commit_once_with_add_audit() {
     assert_eq!(update.matches("DELETE WHERE").count(), 0, "create-only batch never deletes subjects");
     assert_eq!(update.matches("INSERT {").count(), 1, "one conditional transaction body");
     assert!(update.contains("FILTER NOT EXISTS"), "absence check and insert share one atomic update: {update}");
-    assert!(update.contains("creator> \"kade\""), "verified add audit is retained: {update}");
+    // #4576 — the audit names the Principal IRI; this write's Principal is the contributor
+    assert!(update.contains("creator> <https://jeffbridwell.com/chorus#principal-kade>"), "verified add audit is retained: {update}");
+    assert!(update.contains("contributor> <https://jeffbridwell.com/chorus#principal-kade>"), "contributor stamped: {update}");
     assert!(update.contains("created> \""), "created audit stamp is retained: {update}");
 
     let non_identity_asks = store
