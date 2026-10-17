@@ -429,6 +429,20 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     Ok((card, p, classes))
 }
 
+/// #4590 — the kinds the door served before a deploy and not after, except
+/// classes the card's own retirements name. On 2026-10-17 the #4576 land took
+/// Session, Presence, Teammate and Actor off prod and reported only the card's
+/// own classes; nothing compared the rest. An unreadable "before" measures
+/// nothing and loses nothing. Pure.
+pub fn routes_lost(before: &str, after: &str, retirements: &str) -> Vec<String> {
+    let had = discovery_routes(before);
+    let now: Vec<String> = discovery_routes(after).into_iter().map(|(k, _)| k).collect();
+    had.into_iter().map(|(k, _)| k)
+        .filter(|k| !now.contains(k))
+        .filter(|k| !retirements.contains(&format!("#{k}\"")))
+        .collect()
+}
+
 /// #4590 — whether this binary's source tree (built in, by build.rs) is the one the
 /// card landed. A role slot holds whatever that role's last card built: on
 /// 2026-10-17 the #4576 land ran a build from #4580 and none of #4576's deploy
@@ -514,6 +528,9 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     if let Some(r) = &p.retirements {
         std::env::set_var("RETIREMENTS_FILE", r);
     }
+    // #4590 — what the door served before this deploy, to compare after the restart
+    let before = get_body(&format!("{}/", api.trim_end_matches('/')));
+    let retired = p.retirements.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
     // #4578 — staging serves the card's own athena-make when the run built one
@@ -543,6 +560,13 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
             "{serve} {label}: {} — loaded but athena-make is not healthy",
             String::from_utf8_lossy(&s.stderr).trim()
         )));
+    }
+    let after = get_body(&format!("{}/", api.trim_end_matches('/')));
+    let lost = routes_lost(&before, &after, &retired);
+    if !lost.is_empty() {
+        return Err(CardError::Failed(format!(
+            "served: {} route(s) the door served before this deploy are gone after it: {} — a card loses a route only by retiring its class (#4590)",
+            lost.len(), lost.join(", "))));
     }
     match served_check_live(&api, &classes) {
         Ok(lines) => out.extend(lines),
@@ -872,5 +896,27 @@ mod land_build_4590 {
     #[test]
     fn this_build_names_its_tree() {
         assert!(!env!("ATHENA_DEPLOY_SRC_TREE").is_empty());
+    }
+}
+
+/// #4590 — a deploy that takes routes away fails loudly.
+#[cfg(test)]
+mod routes_lost_4590 {
+    use super::routes_lost;
+    fn disco(kinds: &[&str]) -> String {
+        let p: Vec<String> = kinds.iter().map(|k| format!("{{ \"kind\": \"{k}\", \"collection\": \"/v1/x/{k}s\" }}")).collect();
+        format!("{{ \"kind\": \"Discovery\", \"primitives\": [{}] }}", p.join(", "))
+    }
+    #[test]
+    fn a_route_gone_after_the_deploy_is_named() {
+        let before = disco(&["Session", "Teammate", "Principal"]);
+        assert!(routes_lost(&before, &disco(&["Session", "Teammate", "Principal", "New"]), "").is_empty());
+        // NEGATIVE PROOF: the #4576 shape: Session and Teammate gone
+        assert_eq!(routes_lost(&before, &disco(&["Principal"]), ""), vec!["Session", "Teammate"]);
+        // a class the card retires may go
+        let ret = "{\"retire_class\": \"https://jeffbridwell.com/chorus#Teammate\", \"status\": \"staged\"}";
+        assert_eq!(routes_lost(&before, &disco(&["Principal"]), ret), vec!["Session"]);
+        // an unreadable before loses nothing
+        assert!(routes_lost("", &disco(&[]), "").is_empty());
     }
 }
