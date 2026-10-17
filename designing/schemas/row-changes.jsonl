@@ -8,3 +8,4 @@
 {"method": "POST", "path": "/v1/roles/teammates", "owner": "wren", "card": "4576", "status": "staged", "body": {"name": "teammate-kade", "label": "Kade", "signsInAs": "principal-kade", "servesAs": ["role-kade"]}}
 {"method": "POST", "path": "/v1/roles/teammates", "owner": "wren", "card": "4576", "status": "staged", "body": {"name": "teammate-wren", "label": "Wren", "signsInAs": "principal-wren", "servesAs": ["role-wren"]}}
 {"method": "POST", "path": "/v1/roles/teammates", "owner": "wren", "card": "4576", "status": "staged", "body": {"name": "teammate-abby-normal", "label": "Abby Normal", "signsInAs": "principal-abby-normal", "servesAs": ["role-abby-normal"]}}
+{"method": "PATCH", "path": "/v1/knowledge/documents/services-product-design", "owner": "wren", "card": "4576", "status": "staged", "body": {"hasProduct": "https://jeffbridwell.com/chorus#athena"}}

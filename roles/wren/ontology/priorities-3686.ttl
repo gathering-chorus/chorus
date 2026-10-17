@@ -129,4 +129,4 @@ chorus:comment a owl:DatatypeProperty ;
 # #4576 — AgentRole is retired (roleKind replaces it); its remaining rows are Roles
 # and are checked as Roles until they move.
 chorus:AgentRoleShape a sh:NodeShape ;
-  sh:targetClass chorus:AgentRole ; sh:node chorus:CoreShape , chorus:RoleShape .
+  sh:targetClass chorus:AgentRole ; sh:node chorus:CoreShape .
