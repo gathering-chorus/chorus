@@ -22,10 +22,34 @@ pub enum EngagementVerdict {
 /// {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":..}]}}.
 /// Returns the concatenated text of the last assistant entry, or None. (AC1 input —
 /// "what did I actually say this turn.")
+///
+/// #4573 — reads only the end of the log: 8 MB, then 64 MB, then the whole
+/// file only if no reply is found that far back. Reading the whole log after
+/// every reply held 1.2 GB in chorus-hooks (a 465 MB log, measured 10-16).
 pub fn last_assistant_text(transcript_path: &str) -> Option<String> {
-    let content = std::fs::read_to_string(transcript_path).ok()?;
+    last_assistant_text_within(transcript_path, &[8 * 1024 * 1024, 64 * 1024 * 1024, u64::MAX])
+}
+
+/// `last_assistant_text` with the read windows given — the seam the
+/// further-back proof uses.
+pub fn last_assistant_text_within(transcript_path: &str, windows: &[u64]) -> Option<String> {
+    for &w in windows {
+        let mut f = std::fs::File::open(transcript_path).ok()?;
+        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+        let lines = crate::session_cache::tail_lines_within(&mut f, usize::MAX, w);
+        if let Some(t) = last_assistant_in(&lines) {
+            return Some(t);
+        }
+        if w >= len {
+            return None;
+        }
+    }
+    None
+}
+
+fn last_assistant_in(lines: &[String]) -> Option<String> {
     let mut last: Option<String> = None;
-    for line in content.lines() {
+    for line in lines {
         let v: serde_json::Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => continue,
@@ -139,5 +163,41 @@ pub fn inject_engagement_verdict(surfaced: &[String], response: &str) -> Engagem
             surfaced.len(),
             names.join(" | ")
         ),
+    }
+}
+
+#[cfg(test)]
+mod tail_read_4573 {
+    use super::last_assistant_text_within;
+
+    fn log(dir: &std::path::Path, lines: &[String]) -> String {
+        let p = dir.join("t.jsonl");
+        std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+        p.to_string_lossy().into_owned()
+    }
+    fn assistant(t: &str) -> String {
+        format!(r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"{t}"}}]}}}}"#)
+    }
+
+    #[test]
+    fn the_last_reply_is_found_in_the_tail() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut l: Vec<String> = (0..50).map(|i| format!(r#"{{"type":"user","n":{i}}}"#)).collect();
+        l.push(assistant("first"));
+        l.push(assistant("latest"));
+        let p = log(tmp.path(), &l);
+        assert_eq!(last_assistant_text_within(&p, &[200, u64::MAX]).as_deref(), Some("latest"));
+    }
+
+    /// NEGATIVE PROOF: a reply further back than the first window is still
+    /// found by a wider read — never "no reply".
+    #[test]
+    fn negative_proof_a_reply_before_the_tail_is_still_found() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut l = vec![assistant("old reply")];
+        l.extend((0..200).map(|i| format!(r#"{{"type":"user","n":{i}}}"#)));
+        let p = log(tmp.path(), &l);
+        assert_eq!(last_assistant_text_within(&p, &[200]).as_deref(), None, "a 200-byte window alone cannot see it");
+        assert_eq!(last_assistant_text_within(&p, &[200, u64::MAX]).as_deref(), Some("old reply"));
     }
 }
