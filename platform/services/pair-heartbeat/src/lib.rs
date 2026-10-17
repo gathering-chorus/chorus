@@ -159,14 +159,44 @@ fn observations_path(role: &str) -> PathBuf {
 /// the 180s tier only emitted an event (as "wren") and nobody acted on it.
 pub const STALL_TO: &str = "abby-normal";
 
-/// #4577 — the nudge a level sends: only a stall nudges, and only Abby.
-pub fn stall_nudge(card: &str, navigator: &str, level: Level, silence: i64) -> Option<(String, String)> {
-    (level == Level::Stall).then(|| {
-        (
+/// #4577 — the nudge a level sends. A stall nudges Abby; at 120s the
+/// navigator hears it first (Abby's review, 10-17: the renudge tier only
+/// logged). Below that, nobody is nudged.
+pub fn level_nudge(card: &str, navigator: &str, driver: &str, level: Level, silence: i64) -> Option<(String, String)> {
+    let driver = if driver.is_empty() { "the driver" } else { driver };
+    match level {
+        Level::Stall => Some((
             STALL_TO.to_string(),
-            format!("pair #{card}: navigator {navigator} silent {silence}s; the pair has stopped. Restart the navigator or end the pair."),
-        )
-    })
+            format!("pair #{card}: navigator {navigator} silent {silence}s; the pair has stopped. Restart the navigator, or end it: `--input by=abby-normal --input decision=stop`."),
+        )),
+        Level::ReNudge => Some((
+            navigator.to_string(),
+            format!("pair #{card}: you have been quiet {silence}s and {driver} is waiting on you. Give the next direction, or the pair goes to Abby at 180s."),
+        )),
+        _ => None,
+    }
+}
+
+/// #4577 — the cards in WIP, read from the board (PAIR_BOARD_URL, the context
+/// API by default). None when the board cannot be read: nothing is pruned then.
+pub fn wip_ids(json: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut rest = json;
+    while let Some(i) = rest.find("\"id\":") {
+        rest = &rest[i + 5..];
+        let n: String = rest.trim_start().trim_start_matches('"').chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !n.is_empty() {
+            ids.push(n);
+        }
+    }
+    ids
+}
+
+fn board_wip() -> Option<Vec<String>> {
+    let url = env::var("PAIR_BOARD_URL").unwrap_or_else(|_| "http://127.0.0.1:3340/api/chorus/context/board/wip".to_string());
+    let out = Command::new("curl").args(["-sf", "--max-time", "10", &url]).output().ok()?;
+    let body = String::from_utf8_lossy(&out.stdout).into_owned();
+    (out.status.success() && body.contains("\"cards\"")).then(|| wip_ids(&body))
 }
 
 /// Emit one event to the ONE spine via `chorus-log` — best-effort, never blocks.
@@ -202,7 +232,7 @@ fn fire(home: &Path, entry: &PairEntry, level: Level, silence: i64) {
             ("elapsed", &format!("{}s", silence)),
         ],
     );
-    if let Some((to, msg)) = stall_nudge(&entry.card, &entry.navigator, level, silence) {
+    if let Some((to, msg)) = level_nudge(&entry.card, &entry.navigator, &entry.driver, level, silence) {
         let _ = Command::new("bash").arg(home.join("platform/scripts/ops-nudge")).args([&to, &msg]).env_remove("CHORUS_ROLE").output();
     }
 }
@@ -219,6 +249,8 @@ pub fn run() -> R<String> {
         Err(_) => return Ok("no active pairs".to_string()), // registry absent => nothing to watch
     };
 
+    let wip = board_wip();
+    let mut pruned = 0;
     let mut watched = 0;
     let mut fired = 0;
     for de in entries.flatten() {
@@ -234,6 +266,16 @@ pub fn run() -> R<String> {
             Some(e) => e,
             None => continue,
         };
+        // #4577 (Abby, 10-17 09:24) — five pairs on Done cards kept nudging her:
+        // a pair whose card left WIP is over, and is dropped here
+        if let Some(wip) = &wip {
+            if !wip.contains(&entry.card) {
+                let _ = fs::remove_file(&path);
+                emit_spine(&home, "pair.ended", &[("card", entry.card.as_str()), ("reason", "card-not-in-wip")]);
+                pruned += 1;
+                continue;
+            }
+        }
         watched += 1;
 
         let stream = fs::read_to_string(observations_path(&entry.navigator)).unwrap_or_default();
@@ -264,5 +306,6 @@ pub fn run() -> R<String> {
         let _ = fs::write(&path, entry.to_json());
     }
 
-    Ok(format!("pair-heartbeat: watched {} pair(s), fired {} escalation(s)", watched, fired))
+    Ok(format!("pair-heartbeat: watched {} pair(s), fired {} escalation(s), dropped {} not in WIP{}", watched, fired, pruned,
+        if wip.is_none() { " (board unreadable: none dropped)" } else { "" }))
 }

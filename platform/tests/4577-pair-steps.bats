@@ -102,3 +102,27 @@ EOF
   grep -q '^pair.slice system card=4577' "$L/spine"
   grep -q '^pair.ended system card=4577' "$L/spine"
 }
+
+# #4577 reopen 1 — Abby's review, 10-17 09:18
+@test "Abby or Jeff can end a pair whose navigator is gone" {
+  bash "$PAIR" start 4577 kade silas >/dev/null
+  run bash "$PAIR" check 4577 silas abby-normal stop
+  [[ "$output" == *"abby-normal ended the pair"* ]] || return 1
+  [ ! -e "$CHORUS_HOME/ops/active-pairs/4577.json" ]
+}
+
+@test "negative proof: Abby cannot give the navigator's green, and the driver cannot stop for him" {
+  run bash "$PAIR" check 4577 silas abby-normal green
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must come from the navigator silas"* ]] || return 1
+  run bash "$PAIR" check 4577 silas kade stop
+  [[ "$output" == *"must come from the navigator silas"* ]] || return 1
+}
+
+@test "start keeps a pair file that is already there" {
+  echo "# notes Wren kept" > "$PAIR_DIR/pair-4577.md"
+  run bash "$PAIR" start 4577 kade silas
+  [ "$status" -eq 0 ]
+  head -1 "$PAIR_DIR/pair-4577.md" | grep -q '^# notes Wren kept'
+  grep -q '^# Pair #4577 — kade drives, silas navigates' "$PAIR_DIR/pair-4577.md"
+}

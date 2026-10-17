@@ -195,7 +195,19 @@ chorus:PipelineShape a sh:NodeShape ;
     sh:property [ sh:path chorus:pipelineStatus ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:automates ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
                   sh:class chorus:ValueStream ; sh:name "automates" ;
-                  sh:description "Required. The value stream this pipeline automates (cicd → werk, athena → athena)." ] .
+                  sh:description "Required. The value stream this pipeline automates (cicd → werk, athena → athena)." ] ;
+    # #4577 reopen 1 — the door refused the pair row (422 off-model hasStep,
+    # then onFailureRun): #4540's run fields and the step links were declared
+    # as properties but never put in the shape, so no Pipeline row could carry them.
+    sh:property [ sh:path chorus:hasStep ; sh:nodeKind sh:IRI ; sh:class chorus:PipelineStep ;
+                  sh:name "has step" ; sh:description "The pipeline's steps; chorus-make reads them in step order." ] ;
+    sh:property [ sh:path chorus:runQueue ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:runSchedule ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:runParams ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:traceParam ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:onAbortRun ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:onExitRun ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:onFailureRun ; sh:maxCount 1 ] .
 
 chorus:PipelineStepShape a sh:NodeShape ;
     sh:targetClass chorus:PipelineStep ;

@@ -66,3 +66,45 @@ EOF
   [[ "$output" == *"no plan"* ]] || return 1
   [[ "$output" != *"ADD"* ]] || return 1
 }
+
+# #4577 reopen 1 — the door refused the pair row: 'hasStep', then
+# 'onFailureRun', were not in PipelineShape. Every field the plan sends a
+# Pipeline must be a path of the shape the door checks.
+shape_has() {
+  local qf="$BATS_TEST_TMPDIR/q.rq"
+  printf 'PREFIX c: <https://jeffbridwell.com/chorus#>\nPREFIX sh: <http://www.w3.org/ns/shacl#>\nASK { c:PipelineShape sh:property/sh:path c:%s }\n' "$1" > "$qf"
+  arq --data="$ROOT/roles/kade/ontology/pipelines-4040.ttl" --query="$qf" 2>/dev/null | grep -qiE 'yes|true'
+}
+
+@test "every field the plan sends a Pipeline is in PipelineShape" {
+  command -v arq >/dev/null || { echo "arq not installed: unmeasured, not green"; false; }
+  run python3 "$PLAN"
+  keys=$(printf '%s\n' "$output" | sed -n 's/^ADD    pipelines\/pair  //p' | python3 -c 'import sys,json; print(" ".join(k for k in json.load(sys.stdin) if k not in ("name","label")))')
+  [ -n "$keys" ] || return 1
+  for k in $keys; do shape_has "$k" || { echo "PipelineShape lacks $k"; return 1; }; done
+}
+
+@test "negative proof: a field outside PipelineShape is caught" {
+  command -v arq >/dev/null || { echo "arq not installed: unmeasured, not green"; false; }
+  ! shape_has bogusField4577 || return 1
+  shape_has onFailureRun || return 1
+}
+
+# #4577 reopen 1 — every write was refused and the line said "applied"
+@test "negative proof: --apply with refused writes says REFUSED and exits 1, never applied" {
+  printf '#!/bin/bash\necho "POST x → 403"; exit 1\n' > "$BATS_TEST_TMPDIR/runner"; chmod +x "$BATS_TEST_TMPDIR/runner"
+  CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" run python3 "$PLAN" --apply
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"— REFUSED 19 of 19"* ]] || return 1
+  [[ "$output" != *"applied"* ]] || return 1
+}
+
+@test "--apply writes each row as the caller through the runner and says applied" {
+  printf '#!/bin/bash\necho "$*" >> %s/calls; echo "POST x → 201"\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/runner"; chmod +x "$BATS_TEST_TMPDIR/runner"
+  CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" run python3 "$PLAN" --apply
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"19 add, 0 change; 0 same — applied"* ]] || return 1
+  [ "$(wc -l < "$BATS_TEST_TMPDIR/calls")" -eq 19 ]
+  grep -q '^call athena-add domain=pipelines class=pipelines fields=.*"hasStep": "pair-start pair-green' "$BATS_TEST_TMPDIR/calls"
+  grep -q '^call athena-add domain=skills class=stepskills fields=.*"callsSkill": "pair-start"' "$BATS_TEST_TMPDIR/calls"
+}

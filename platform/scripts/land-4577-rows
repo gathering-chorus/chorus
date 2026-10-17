@@ -14,13 +14,18 @@ Pipeline last, so the pipeline never names a step that is not there yet.
 Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or
 the fixtures could not be read (no plan is guessed).
 """
-import json, os, sys, urllib.request
+import json, os, subprocess, sys, urllib.request
 
 DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 FX = os.path.join(ROOT, "platform/services/chorus-make/tests/fixtures")
 OWNER = "principal-kade"
-COVERS = {"proof": "value-stream-step-test"}  # every other pair step is Building
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+DOOR_CLASS = {"skills/skills": ("skills", "skills"), "pipelinesteps": ("pipelines", "steps"),
+              "stepskills": ("skills", "stepskills"), "pipelines": ("pipelines", "pipelines")}
+# #4577 reopen 1 — references go to the door as bare names; it mints the
+# prefix and refuses one sent with it (422 double-prefix, ADR-040 Rule 0)
+COVERS = {"proof": "test"}  # every other pair step is Building
 
 
 def rows():
@@ -50,16 +55,23 @@ def want():
         skills.append({"name": r["skill"].removeprefix("skill-"), "label": r["label"], "executor": r["executor"],
                        "implementedBy": r["implementedBy"], "arguments": r["mode"], "hasDomain": "pipelines",
                        "ownedBy": OWNER, "runsAs": "" if r["executor"] == "human" else "caller"})
-        steps.append({"name": f"pair-{r['step']}", "label": f"pipeline-step-pair-{r['step']}", "executor": r["executor"],
-                      "stepOrder": r["stepOrder"], "coversStep": COVERS.get(r["step"], "value-stream-step-building")})
+        steps.append({"name": f"pair-{r['step']}", "label": f"pair-{r['step']}", "executor": r["executor"],
+                      "stepOrder": r["stepOrder"], "coversStep": COVERS.get(r["step"], "building")})
         stepskills.append({"name": f"pair-{r['step']}-{r['skillOrder']}", "label": f"pair {r['step']} {r['skillOrder']}: {r['label']}",
-                           "callsSkill": r["skill"], "forStep": f"pipeline-step-pair-{r['step']}",
+                           "callsSkill": r["skill"].removeprefix("skill-"), "forStep": f"pair-{r['step']}",
                            "skillOrder": r["skillOrder"], "withArguments": r["withArgs"], "ownedBy": OWNER})
     p = pipe()
-    pipelines = [{"name": "pair", "label": "pipeline-pair", "automates": "value-stream-werk", "pipelineStatus": "operating",
+    pipelines = [{"name": "pair", "label": "pipeline-pair", "automates": "werk", "pipelineStatus": "operating",
                   "runQueue": p.get("queue", ""), "runParams": p.get("params", ""), "onFailureRun": p.get("onFailure", ""),
-                  "hasStep": " ".join(f"pipeline-step-pair-{r['step']}" for r in rows())}]
+                  "hasStep": " ".join(f"pair-{r['step']}" for r in rows())}]
     return [("skills/skills", skills), ("pipelinesteps", steps), ("stepskills", stepskills), ("pipelines", pipelines)]
+
+
+def bare(v):
+    """The door serves a reference with its minted prefix; the plan sends it bare."""
+    for p in ("value-stream-step-", "value-stream-", "pipeline-step-", "skill-"):
+        v = " ".join(x.removeprefix(p) for x in str(v).split())
+    return str(v)
 
 
 def call(method, path, body=None):
@@ -92,20 +104,27 @@ def main():
             if have is None:
                 kind, detail = "ADD", json.dumps(w, sort_keys=True)
             else:
-                diff = {k: f"{have.get(k, '')!r} -> {v!r}" for k, v in w.items() if str(have.get(k, "")) != str(v)}
+                diff = {k: f"{have.get(k, '')!r} -> {v!r}" for k, v in w.items() if bare(have.get(k, "")) != str(v)}
                 kind, detail = ("SAME", "") if not diff else ("CHANGE", json.dumps(diff))
             counts[kind] += 1
             print(f"{kind:<6} {coll}/{w['name']}  {detail}")
-            if apply and kind != "SAME":
-                try:
-                    if kind == "ADD":
-                        call("POST", f"/{coll}", w)
-                    else:
-                        call("PATCH", f"/{coll}/{w['name']}", {k: v for k, v in w.items() if k != "name"})
-                except Exception as e:
+            if apply and kind == "ADD":
+                # #4577 reopen 1 — a bare POST is 401: the write goes as the
+                # caller, through the runner's athena-add (the door's authz
+                # then decides; Wren's skills rows are hers to write)
+                dom, cls = DOOR_CLASS[coll]
+                r = subprocess.run([RUNNER, "call", "athena-add", f"domain={dom}", f"class={cls}",
+                                    f"fields={json.dumps(w)}"], capture_output=True, text=True)
+                if r.returncode != 0 or " → 201" not in r.stdout + r.stderr:
                     refused += 1
-                    print(f"  REFUSED {coll}/{w['name']}: {e}")
-    verb = "applied" if apply else "nothing written (dry run)"
+                    print(f"  REFUSED {coll}/{w['name']}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+            elif apply and kind == "CHANGE":
+                refused += 1
+                print(f"  REFUSED {coll}/{w['name']}: a CHANGE is not written by this plan; fix the row by hand")
+    # #4577 reopen 1 — it printed "applied" with all 19 refused: a refused
+    # write is the line, never a kind of done
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
     print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — {verb}")
     return 1 if refused else 0
 
