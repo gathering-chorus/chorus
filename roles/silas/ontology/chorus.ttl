@@ -2971,7 +2971,7 @@ chorus:stale a owl:DatatypeProperty ;
 # writes never fail-closed. The chorus:writeOwner annotations (crawler vs enrichment)
 # remain the per-predicate authorship control; this shape is the DAL floor + type check.
 chorus:FileShape a sh:NodeShape ;
-    sh:targetClass chorus:File ; sh:node chorus:CoreShape ;
+    sh:targetClass chorus:File ;
     chorus:instancesGraph "urn:chorus:instances" ;
     sh:property [ sh:path chorus:filePath         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:fileSha          ; sh:datatype xsd:string ] ;

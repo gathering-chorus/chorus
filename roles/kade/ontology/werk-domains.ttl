@@ -576,7 +576,7 @@ chorus:QualityFindingShape a sh:NodeShape ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
 
 chorus:SourceFileShape a sh:NodeShape ;
-    sh:targetClass chorus:SourceFile ; sh:node chorus:CoreShape ;
+    sh:targetClass chorus:SourceFile ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ]  .
 
 chorus:TestShape a sh:NodeShape ;

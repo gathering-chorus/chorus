@@ -13,13 +13,22 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 check() { # dir whose */ontology/*.ttl (or *.ttl for fixtures) are the model -> violations, exit 1 on any
   local files; files=$(ls "$1"/*/ontology/*.ttl 2>/dev/null; ls "$1"/*.ttl 2>/dev/null)
   # parse with riot, so the check reads the graph, not the text layout
-  riot --output=ntriples $files 2>/dev/null | python3 -c '
+  riot --output=ntriples $files 2>/dev/null | RETIREMENTS="${2:-}" python3 -c '
 import sys, collections
 SH = "<http://www.w3.org/ns/shacl#"
 core = "<https://jeffbridwell.com/chorus#CoreShape>"
 # Jeff 2026-10-17 08:24, on TestResult: "i thought we were gonna deprecate logging in the graph
 # this one class always causes non functional issues". Its ~1.1M rows are log data, not model; no stamps.
 EXEMPT = {"<https://jeffbridwell.com/chorus#TestResult>"}
+# classes the retirement ledger retires (File, SourceFile: Jeff 2026-09-18) are leaving; named, not silent
+import json, os
+_ledger = os.environ.get("RETIREMENTS", "")
+RETIRED = set()
+if _ledger and os.path.exists(_ledger):
+    for _l in open(_ledger):
+        _l = _l.strip()
+        if _l and json.loads(_l).get("retire_class"):
+            RETIRED.add("<" + json.loads(_l)["retire_class"] + ">")
 target, node, nodeshapes = {}, collections.defaultdict(set), set()
 for line in sys.stdin:
     parts = line.split(" ", 2)
@@ -28,7 +37,9 @@ for line in sys.stdin:
     if p == SH + "targetClass>": target[s] = o
     elif p == SH + "node>": node[s].add(o)
     elif o == SH + "NodeShape>": nodeshapes.add(s)
-bad = [f"shape for {c} has no sh:node chorus:CoreShape" for s, c in sorted(target.items()) if core not in node[s] and c not in EXEMPT]
+bad = [f"shape for {c} has no sh:node chorus:CoreShape" for s, c in sorted(target.items()) if core not in node[s] and c not in EXEMPT and c not in RETIRED]
+skipped = sorted(c.rsplit("#", 1)[-1].rstrip(">") for s, c in target.items() if core not in node[s] and c in RETIRED)
+if skipped: print("  retired, pending removal: " + ", ".join(skipped))
 if core not in nodeshapes: bad.append("chorus:CoreShape is not defined")
 for b in bad: print("  " + b)
 print(f"class shapes {len(target)}, violations {len(bad)}")
@@ -47,4 +58,4 @@ if [ "${1:-}" = "--self-test" ]; then
   check "$T/nocore" >/dev/null && { echo "FAIL NEGATIVE: a model with no CoreShape passed"; exit 1; }
   echo "PASS self-test: a shape without the core node, and a model without CoreShape, are each red"; exit 0
 fi
-check "$ROOT/roles"
+check "$ROOT/roles" "$ROOT/designing/schemas/model-retirements.jsonl"
