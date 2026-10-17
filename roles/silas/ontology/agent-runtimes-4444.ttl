@@ -33,7 +33,7 @@ chorus:AgentRuntime a owl:Class ;
 chorus:identity chorus:definesVocabulary chorus:AgentRuntime .
 
 chorus:agentRuntime a owl:ObjectProperty ; rdfs:label "agent runtime" ; rdfs:domain chorus:Principal ; rdfs:range chorus:AgentRuntime ;
-    rdfs:comment "The runtime this principal's sessions start on. An agent principal with none cannot be started." .
+    rdfs:comment "The runtime this principal's sessions start on. An agent principal with none cannot be started. It sits on the Principal's row in urn:chorus:domains:security, where PrincipalShape declares it (#4576)." .
 
 chorus:runtimeBinary a owl:DatatypeProperty ; rdfs:label "binary" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "The program to start, as a path or a name on PATH (agy, claude)." .
