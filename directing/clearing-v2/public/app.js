@@ -154,13 +154,35 @@ function appendMessage(msg) {
 
   const text = document.createElement('div');
   text.className = 'message-text';
-  text.textContent = msg.text;
+  appendLinkedText(text, msg.text || '');
 
   el.appendChild(header);
   el.appendChild(text);
 
   messagesContainer.appendChild(el);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+/** #4574 — #N in a message opens that card. Built from DOM nodes: the message text is
+ *  never parsed as HTML, so a message cannot inject markup. */
+function appendLinkedText(parent, text) {
+  const parts = String(text).split(/#(\d+)/);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      if (parts[i]) parent.appendChild(document.createTextNode(parts[i]));
+      continue;
+    }
+    const id = parts[i];
+    const a = document.createElement('a');
+    a.className = 'cid card-ref';
+    a.href = '#';
+    a.textContent = '#' + id;
+    a.onclick = () => {
+      if (typeof openCardDrawer === 'function') openCardDrawer(id);
+      return false;
+    };
+    parent.appendChild(a);
+  }
 }
 
 function updateTiles(tiles) {
@@ -184,7 +206,8 @@ function initStream() {
   evtSource.addEventListener('init', (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.messages) {
+      // #4574 — pages without a message list (Board, Roles) ignore the room's history
+      if (data.messages && messagesContainer) {
         messagesContainer.innerHTML = '';
         data.messages.forEach(appendMessage);
       }

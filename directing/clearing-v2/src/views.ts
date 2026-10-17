@@ -1,3 +1,4 @@
+import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
@@ -192,15 +193,16 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
 
       <!-- Alerts & Working now -->
       <div class="card alerts-section">
-        <div class="sec-t">Alerts · ${data.alerts.length > 0 ? 'new or changed only' : 'no source (part 2)'}</div>
+        <div class="sec-t">Alerts · ${data.alertsUnmeasured ? 'unmeasured' : `${data.alerts.length} firing`}</div>
+        ${renderUnmeasured('alerts-unmeasured', data.alertsUnmeasured)}
         <div class="list">
           ${data.alerts.length > 0 ? data.alerts.map(a => `
             <div class="li">
               <span class="tag ${a.status === 'firing' ? 't-bad' : 't-warn'}">${a.status}</span>
               <div class="grow">${a.title}<div class="meta">${a.meta}${a.resolvingCard > 0 ? ` · <a class="cid alert-resolving-card" href="/board?card=${a.resolvingCard}">#${a.resolvingCard}</a>` : ''}</div></div>
             </div>
-          `).join('') : `
-            <div class="empty-state mono meta" style="padding:4px 0;color:var(--faint)">no source (part 2)</div>
+          `).join('') : data.alertsUnmeasured ? '' : `
+            <div class="empty-state mono meta" style="padding:4px 0;color:var(--faint)">0 firing</div>
           `}
         </div>
         <div class="sec-t working-now" style="margin-top:14px">Working now</div>
@@ -286,7 +288,7 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       const m = document.getElementById('drawer-card-meta');
       if (d) d.style.display = 'block';
       if (l) {
-        l.href = '/board?card=' + id;
+        l.href = (window.CLEARING_BASE || '') + '/board?card=' + id;
         l.textContent = '#' + id;
       }
       if (t) t.textContent = 'Loading #' + id + '...';
@@ -356,4 +358,33 @@ ${ROOM_CARD_DRAWER}
 ${ROOM_DRAWER_SCRIPT}`;
 
   return renderPageShell(`Room #${room}`, 'rooms', content, sources);
+}
+
+
+function escapeHtml(t: string): string {
+  return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** #4574 — the Board tab: the board API's columns as served. A column the API cannot
+ *  give says unmeasured with the reason; v2 sorts nothing into columns itself. */
+export function renderBoardPage(columns: BoardColumn[], openCard: number | null, sources: TrustStripSource[]): string {
+  const col = (c: BoardColumn) => `
+      <section class="board-col">
+        <h3>${c.name}${c.ok ? ` <span class="meta">${c.cards.length}</span>` : ''}</h3>
+        ${c.ok
+          ? (c.cards.length === 0
+            ? '<div class="meta">0 cards</div>'
+            : c.cards.map((k) => `<div class="board-card" data-open-card="${k.id}"><a class="cid card-ref" href="#" onclick="openCardDrawer('${k.id}');return false;">#${k.id}</a> ${escapeHtml(k.title)}${k.owner ? ` <span class="meta">${escapeHtml(k.owner)}</span>` : ''}</div>`).join(''))
+          : renderUnmeasured('board-unmeasured', c.reason)}
+      </section>`;
+  const content = `
+  <div class="page board-page" style="display:flex">
+    <div style="flex:1">
+      <div class="ph"><h2>Board</h2><span class="ex">chorus board API</span></div>
+      <div class="board-cols">${columns.map(col).join('')}</div>
+    </div>
+${ROOM_CARD_DRAWER}
+  </div>
+${ROOM_DRAWER_SCRIPT}${openCard ? `  <script>openCardDrawer('${openCard}');</script>\n` : ''}`;
+  return renderPageShell('Board', 'board', content, sources);
 }

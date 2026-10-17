@@ -47,6 +47,7 @@ describe('Clearing v2 Frontend Helpers', () => {
         };
         return el;
       },
+      createTextNode: (t: string) => ({ tag: '#text', textContent: t }),
     };
 
     jest.isolateModules(() => {
@@ -278,4 +279,28 @@ test('a signed event verifies, and a tampered one does not (negative proof)', ()
   const ev = rk.signEvent(sk, 1, [['t', 'team']], 'morning');
   expect(verifyNostrEvent(ev)).toBe(true);
   expect(verifyNostrEvent({ ...ev, content: 'evening' })).toBe(false);
+});
+
+// #4574 — Abby's catch: live and history messages rendered #N as plain text, so no card link
+// in Rooms opened. Every #N is now a link built from DOM nodes; markup in a message stays text.
+describe('room messages link #N to the card (#4574)', () => {
+  test('a #N becomes a card link; the rest stays text, markup included (negative proof)', () => {
+    const container: any = { children: [], appendChild: (c: any) => container.children.push(c) };
+    const mk = (tag: string): any => { const el: any = { tag, className: '', id: '', textContent: '', href: '', children: [], appendChild: (c: any) => el.children.push(c) }; return el; };
+    (global as any).document = {
+      getElementById: (id: string) => (id === 'messages-stream' ? container : null),
+      createElement: mk,
+      createTextNode: (t: string) => ({ tag: '#text', textContent: t }),
+    };
+    jest.isolateModules(() => {
+      const { appendMessage } = require('../public/app.js');
+      appendMessage({ id: 'm1', from: 'jeff', text: 'see #4574 and <b>#12</b>', ts: '2026-10-17T08:00:00.000Z', visible: true });
+      const text = container.children[0].children.find((c: any) => c.className === 'message-text');
+      const links = text.children.filter((c: any) => c.tag === 'a');
+      expect(links.map((a: any) => a.textContent)).toEqual(['#4574', '#12']);
+      expect(links[0].className).toContain('card-ref');
+      const plain = text.children.filter((c: any) => c.tag === '#text').map((c: any) => c.textContent).join('|');
+      expect(plain).toBe('see | and <b>|</b>');
+    });
+  });
 });
