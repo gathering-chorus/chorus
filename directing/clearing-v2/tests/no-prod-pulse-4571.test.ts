@@ -11,7 +11,7 @@ import path from 'path';
 
 const LIVE = /(pulseUrl:\s*|TileService\()['"`]https?:\/\/(127\.0\.0\.1|localhost):3475/;
 
-export function liveCallers(dir: string): string[] {
+function liveCallers(dir: string): string[] {
   return fs.readdirSync(dir).filter((f) => f.endsWith('.test.ts'))
     .flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').split('\n')
       .map((l, i) => (LIVE.test(l) ? `${f}:${i + 1}` : '')).filter(Boolean));
