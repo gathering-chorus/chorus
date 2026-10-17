@@ -37,7 +37,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('createApp initializes app, router, relay and tileService', () => {
     const { app, router, tileService, relay } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
     });
     expect(app).toBeDefined();
     expect(router).toBeDefined();
@@ -46,7 +46,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   });
 
   test('TileService initializes known team roles with idle state', () => {
-    const tileService = new TileService('http://127.0.0.1:3475');
+    const tileService = new TileService('http://127.0.0.1:9');
     const tiles = tileService.getTiles();
     expect(tiles.length).toBe(5);
     const roles = tiles.map(t => t.role);
@@ -87,7 +87,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
 
     const { app } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       rolesUrl: `http://127.0.0.1:${stubPort}/roles`,
       boardUrl: `http://127.0.0.1:${stubPort}/board`,
     });
@@ -127,7 +127,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
     const deadRelayPort = 3499;
     const { app } = createApp({
       relayUrl: `ws://127.0.0.1:${deadRelayPort}`,
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
 
@@ -185,7 +185,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('NEGATIVE PROOF: /api/send refuses unsigned posts with 401', async () => {
     const { app } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
     });
     const server = http.createServer(app);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
@@ -209,7 +209,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('NEGATIVE PROOF: /api/send refuses events signed by unregistered keys with 401', async () => {
     const { app } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
     const server = http.createServer(app);
@@ -235,7 +235,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('accepts event signed by registered key, taking sender strictly from the key', async () => {
     const { app, router } = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
     });
     const server = http.createServer(app);
@@ -423,7 +423,7 @@ describe('Clearing v2: #4571 AC3 Live Role Reply via SSE without Reload', () => 
 
     const { app, relay } = createApp({
       relayUrl: `ws://127.0.0.1:${relayPort}`,
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys: new Map([[wrenPub, 'wren']]),
       relaySigner: null,
     });

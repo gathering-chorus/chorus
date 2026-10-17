@@ -33,7 +33,7 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
   beforeAll(async () => {
     const created = createApp({
       relayUrl: 'ws://127.0.0.1:3499', // dead port in all tests
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       knownKeys,
     });
     server = http.createServer(created.app);
@@ -136,7 +136,7 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
   test('4. NEGATIVE PROOF: an empty room shows empty with zero fake seed messages', async () => {
     const freshApp = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
       rolesUrl: 'http://127.0.0.1:1/roles',
       boardUrl: 'http://127.0.0.1:1/board',
     });
@@ -188,7 +188,7 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
   test('6. NEGATIVE PROOF: message timestamps format in Boston time (America/New_York), not UTC', async () => {
     const appInstance = createApp({
       relayUrl: 'ws://127.0.0.1:3499',
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
     });
     // Ingest a message with 17:21 UTC (which is 13:21 in Boston during EDT / UTC-4)
     appInstance.router.ingest({
@@ -234,7 +234,7 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
   test('8. NEGATIVE PROOF: unconfirmed post to dead relay has NO delivery tick; relay event has tick', async () => {
     const appInstance = createApp({
       relayUrl: 'ws://127.0.0.1:3499', // dead relay
-      pulseUrl: 'http://127.0.0.1:3475',
+      pulseUrl: 'http://127.0.0.1:9',
     });
     const s = http.createServer(appInstance.app);
     await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
