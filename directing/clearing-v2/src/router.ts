@@ -76,6 +76,15 @@ export class MessageRouter {
       }
     }
 
+    // #4571 — v1 rule ("no @ = Wren gets it"): unaddressed Jeff input routes to wren.
+    if (nudges.length === 0 && msg.from === 'jeff') {
+      nudges.push({
+        from: 'jeff',
+        to: 'wren',
+        content: msg.text,
+      });
+    }
+
     return nudges;
   }
 

@@ -69,13 +69,33 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
     });
   });
 
-  test('NEGATIVE PROOF: note without @role generates zero nudges', () => {
+  test('Jeff note without @role routes to wren ("no @ = Wren gets it", #4571)', () => {
     const msg: ClearingMessage = {
-      id: 'note-no-mention',
+      id: 'note-jeff-no-mention',
       from: 'jeff',
-      text: 'General broadcast message to the room with no handle',
+      text: 'Status check on the release',
       ts: new Date().toISOString(),
       type: 'jeff-input',
+      visible: true,
+    };
+
+    const nudges = router.extractNudges(msg);
+    expect(nudges).toEqual([
+      {
+        from: 'jeff',
+        to: 'wren',
+        content: 'Status check on the release',
+      },
+    ]);
+  });
+
+  test('NEGATIVE PROOF: role note without @role generates zero nudges', () => {
+    const msg: ClearingMessage = {
+      id: 'note-no-mention',
+      from: 'silas',
+      text: 'General broadcast message to the room with no handle',
+      ts: new Date().toISOString(),
+      type: 'role-response',
       visible: true,
     };
 
