@@ -227,8 +227,17 @@ fn base_ntriples(card: &Card, rel: &str) -> String {
 /// pipelines and version-control fragments into the ontology graph, rows that
 /// live in the domains graph and change through the door. Pure.
 pub fn changed_triples(nt: &str, base_nt: &str) -> String {
+    subject_closure(nt, card_scope::changed_subjects(nt, base_nt))
+}
+
+/// #4590 — every line of `nt` about the `seeds` subjects, with the blank nodes
+/// they reach. Given the whole model set's lines, a subject a card changed in one
+/// file brings its lines from every file: the merge replaces a staged subject
+/// whole, so staging only the changed file's half erased the rest in prod
+/// (2026-10-17: SessionShape lost actsAs and 9 more fields, every login 422'd). Pure.
+pub fn subject_closure(nt: &str, seeds: Vec<String>) -> String {
     let subj = |l: &str| l.split_whitespace().next().unwrap_or("").to_string();
-    let mut keep: Vec<String> = card_scope::changed_subjects(nt, base_nt);
+    let mut keep: Vec<String> = seeds;
     let mut i = 0;
     while i < keep.len() {
         let s = keep[i].clone();
@@ -385,25 +394,68 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     let wfile = format!("{dir}/row-changes.jsonl");
     std::fs::write(&wfile, rows_added).map_err(|e| CardError::Failed(format!("{wfile}: {e}")))?;
     p.row_changes = Some(wfile);
-    // #4536 — an ontology file loads only the subjects the card changed
+    // #4536 — an ontology load carries only the subjects the card changed;
+    // #4590 — each with its lines from EVERY model file, not just the one it changed in
     if !p.ontology.is_empty() {
         let werk = format!("{}/", card.werk.trim_end_matches('/'));
-        let mut files = Vec::new();
+        let mut subjects: Vec<String> = Vec::new();
+        let mut root = String::new();
         for abs in &p.ontology {
             let rel = abs.strip_prefix(&werk).unwrap_or(abs);
-            let nt = card_scope::ntriples(&[abs.clone()]).map_err(|e| CardError::Refused(format!("card #{}: {rel}: {e}", card.card)))?;
-            let changed = changed_triples(&nt, &base_ntriples(&card, rel));
-            if changed.is_empty() {
-                continue;
+            if root.is_empty() {
+                root = abs.strip_suffix(rel).unwrap_or(&werk).trim_end_matches('/').to_string();
             }
-            let out = format!("{dir}/{}.nt", rel.replace('/', "_"));
-            std::fs::write(&out, changed).map_err(|e| CardError::Failed(format!("{out}: {e}")))?;
-            files.push(out);
+            let nt = card_scope::ntriples(&[abs.clone()]).map_err(|e| CardError::Refused(format!("card #{}: {rel}: {e}", card.card)))?;
+            for s in card_scope::changed_subjects(&nt, &base_ntriples(&card, rel)) {
+                if !subjects.contains(&s) { subjects.push(s); }
+            }
         }
-        p.ontology = files;
+        let mut sources: Vec<String> = crate::model_set(&root, None).into_iter()
+            .filter(|f| std::path::Path::new(f).is_file()).collect();
+        for f in &p.ontology {
+            if !sources.contains(f) { sources.push(f.clone()); }
+        }
+        let all = card_scope::ntriples(&sources).map_err(|e| CardError::Refused(format!("card #{}: the model set: {e}", card.card)))?;
+        let staged = subject_closure(&all, subjects);
+        p.ontology = if staged.is_empty() {
+            Vec::new()
+        } else {
+            let out = format!("{dir}/card-subjects.nt");
+            std::fs::write(&out, staged).map_err(|e| CardError::Failed(format!("{out}: {e}")))?;
+            vec![out]
+        };
     }
     let classes = card_classes(&card).map_err(CardError::Refused)?;
     Ok((card, p, classes))
+}
+
+/// #4590 — the kinds the door served before a deploy and not after, except
+/// classes the card's own retirements name. On 2026-10-17 the #4576 land took
+/// Session, Presence, Teammate and Actor off prod and reported only the card's
+/// own classes; nothing compared the rest. An unreadable "before" measures
+/// nothing and loses nothing. Pure.
+pub fn routes_lost(before: &str, after: &str, retirements: &str) -> Vec<String> {
+    let had = discovery_routes(before);
+    let now: Vec<String> = discovery_routes(after).into_iter().map(|(k, _)| k).collect();
+    had.into_iter().map(|(k, _)| k)
+        .filter(|k| !now.contains(k))
+        .filter(|k| !retirements.contains(&format!("#{k}\"")))
+        .collect()
+}
+
+/// #4590 — whether this binary's source tree (built in, by build.rs) is the one the
+/// card landed. A role slot holds whatever that role's last card built: on
+/// 2026-10-17 the #4576 land ran a build from #4580 and none of #4576's deploy
+/// code ran on prod. Refuses a mismatch and a build from uncommitted source. Pure.
+pub fn land_build_matches(built: &str, landed: &str, card: &str, sha: &str) -> Result<(), String> {
+    if built == landed && !built.ends_with("+dirty") && !landed.starts_with('+') {
+        return Ok(());
+    }
+    Err(format!(
+        "card #{card}: this athena-deploy was built from source tree {built}, but the land of {short} needs {landed}; \
+         build athena-deploy from canonical at {short} (a role slot holds another card's code) (#4590)",
+        short = &sha[..sha.len().min(12)]
+    ))
 }
 
 /// `athena-deploy [staging] --card <n> [--landed] [--target canonical]`.
@@ -422,6 +474,20 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
                 "card #{}: landed commit {} carries no model source — nothing to deploy\ncard #{}: result=none",
                 card.card, &sha[..sha.len().min(12)], card.card
             ));
+        }
+    }
+    if mode == Mode::Landed {
+        // #4590 — a land runs only a build of the code it landed. A repo that holds no
+        // athena-deploy source (a product repo, a test fixture) lands with chorus's own.
+        let card = card_scope::resolve_landed(card_id).map_err(CardError::Refused)?;
+        let sha = card.commit.clone().unwrap_or_default();
+        let home = card_scope::chorus_home();
+        let at = |path: &str| Command::new("git").args(["-C", &home, "rev-parse", &format!("{sha}:{path}")]).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        let src = at("platform/services/athena-deploy/src");
+        if !src.is_empty() {
+            let landed = format!("{src}+{}", at("platform/services/shared"));
+            land_build_matches(env!("ATHENA_DEPLOY_SRC_TREE"), &landed, &card.card, &sha).map_err(CardError::Refused)?;
         }
     }
     let (card, p, classes) = prepare_mode(card_id, mode)?;
@@ -462,6 +528,9 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     if let Some(r) = &p.retirements {
         std::env::set_var("RETIREMENTS_FILE", r);
     }
+    // #4590 — what the door served before this deploy, to compare after the restart
+    let before = get_body(&format!("{}/", api.trim_end_matches('/')));
+    let retired = p.retirements.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
     // #4578 — staging serves the card's own athena-make when the run built one
@@ -491,6 +560,13 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
             "{serve} {label}: {} — loaded but athena-make is not healthy",
             String::from_utf8_lossy(&s.stderr).trim()
         )));
+    }
+    let after = get_body(&format!("{}/", api.trim_end_matches('/')));
+    let lost = routes_lost(&before, &after, &retired);
+    if !lost.is_empty() {
+        return Err(CardError::Failed(format!(
+            "served: {} route(s) the door served before this deploy are gone after it: {} — a card loses a route only by retiring its class (#4590)",
+            lost.len(), lost.join(", "))));
     }
     match served_check_live(&api, &classes) {
         Ok(lines) => out.extend(lines),
@@ -775,5 +851,72 @@ mod row_change_tests {
         bad(r#"{"method":"PATCH","path":"/other/a/b","owner":"wren","body":{}}"#, "not a /v1/ door path");
         bad(r#"{"method":"PATCH","path":"/v1/a/b/c","body":{}}"#, "no owner");
         bad(r#"{"method":"PATCH","path":"/v1/a/b/c","owner":"wren","body":{"x":"y"},"card":"1"}"#, "last key");
+    }
+}
+
+/// #4590 — a subject a card changed in one file is staged with its lines from
+/// every file. SessionShape lived in session-4202.ttl and session-model-4302.ttl;
+/// #4576 changed only the first, staged only its half, and the merge (which
+/// replaces a staged subject whole) erased actsAs and 9 more fields in prod.
+#[cfg(test)]
+mod split_subject_4590 {
+    use super::{changed_triples, subject_closure};
+    const S: &str = "<urn:x#SessionShape>";
+    const P: &str = "<http://www.w3.org/ns/shacl#property>";
+
+    #[test]
+    fn a_changed_subject_brings_its_lines_from_every_file() {
+        // file A (the card changed it): SessionShape gains a node; file B (untouched) holds actsAs
+        let a_base = format!("{S} {P} <urn:x#label> .\n");
+        let a_now = format!("{S} {P} <urn:x#label> .\n{S} <http://www.w3.org/ns/shacl#node> <urn:x#CoreShape> .\n");
+        let b = format!("{S} {P} <urn:x#actsAs> .\n<urn:x#Other> {P} <urn:x#x> .\n");
+        let all = format!("{a_now}{b}");
+        let staged = subject_closure(&all, vec![S.to_string()]);
+        assert!(staged.contains("actsAs") && staged.contains("CoreShape") && staged.contains("label"), "{staged}");
+        assert!(!staged.contains("urn:x#Other"), "a subject the card did not change came along: {staged}");
+        // NEGATIVE PROOF: staging the changed file alone (today's code) drops the other file's half
+        let one_file = changed_triples(&a_now, &a_base);
+        assert!(!one_file.contains("actsAs"), "the one-file load is not the bug this test pins: {one_file}");
+    }
+}
+
+/// #4590 — a land refuses a deploy binary built from any tree but the landed one.
+#[cfg(test)]
+mod land_build_4590 {
+    use super::land_build_matches;
+    #[test]
+    fn a_land_runs_only_a_build_of_what_it_landed() {
+        assert!(land_build_matches("aaa+sss", "aaa+sss", "4576", "5f837cfe0794").is_ok());
+        // NEGATIVE PROOFS: another card's build, an uncommitted build, an unreadable landed tree
+        let e = land_build_matches("bbb+sss", "aaa+sss", "4576", "5f837cfe0794").unwrap_err();
+        assert!(e.contains("built from source tree bbb+sss") && e.contains("needs aaa+sss") && e.contains("5f837cfe0794"), "{e}");
+        assert!(land_build_matches("aaa+sss+dirty", "aaa+sss+dirty", "4576", "x").is_err(), "a dirty build passed");
+        assert!(land_build_matches("+", "+", "4576", "x").is_err(), "an unreadable tree passed");
+    }
+    #[test]
+    fn this_build_names_its_tree() {
+        assert!(!env!("ATHENA_DEPLOY_SRC_TREE").is_empty());
+    }
+}
+
+/// #4590 — a deploy that takes routes away fails loudly.
+#[cfg(test)]
+mod routes_lost_4590 {
+    use super::routes_lost;
+    fn disco(kinds: &[&str]) -> String {
+        let p: Vec<String> = kinds.iter().map(|k| format!("{{ \"kind\": \"{k}\", \"collection\": \"/v1/x/{k}s\" }}")).collect();
+        format!("{{ \"kind\": \"Discovery\", \"primitives\": [{}] }}", p.join(", "))
+    }
+    #[test]
+    fn a_route_gone_after_the_deploy_is_named() {
+        let before = disco(&["Session", "Teammate", "Principal"]);
+        assert!(routes_lost(&before, &disco(&["Session", "Teammate", "Principal", "New"]), "").is_empty());
+        // NEGATIVE PROOF: the #4576 shape: Session and Teammate gone
+        assert_eq!(routes_lost(&before, &disco(&["Principal"]), ""), vec!["Session", "Teammate"]);
+        // a class the card retires may go
+        let ret = "{\"retire_class\": \"https://jeffbridwell.com/chorus#Teammate\", \"status\": \"staged\"}";
+        assert_eq!(routes_lost(&before, &disco(&["Principal"]), ret), vec!["Session"]);
+        // an unreadable before loses nothing
+        assert!(routes_lost("", &disco(&[]), "").is_empty());
     }
 }

@@ -74,6 +74,28 @@ pub fn only_changed(t: Touched, changed: &BTreeSet<String>) -> Touched {
     }
 }
 
+/// #4590 — a changed shared shape (a node shape with no target class, named by
+/// other shapes through sh:node) reaches every class whose shape names it. Those
+/// classes were not changed by the card, so a reached class no product serves is
+/// not the card's to answer for; the caller maps the rest to their products.
+pub fn via_shared_shapes(store: &Store, changed: &BTreeSet<String>) -> Result<BTreeSet<String>, ModelError> {
+    let mut out = BTreeSet::new();
+    if changed.is_empty() {
+        return Ok(out);
+    }
+    let values: Vec<String> = changed.iter().map(|s| format!("<{s}>")).collect();
+    let q = format!(
+        "SELECT DISTINCT ?c WHERE {{ VALUES ?shared {{ {} }} ?shared a sh:NodeShape . \
+         FILTER NOT EXISTS {{ ?shared sh:targetClass ?any }} \
+         ?s sh:targetClass ?c ; (sh:node|sh:property)+ ?shared . FILTER(isIRI(?c)) }}",
+        values.join(" ")
+    );
+    for r in select_iri(store, &q)? {
+        out.insert(r["c"].clone());
+    }
+    Ok(out)
+}
+
 /// The bare IRIs a card's files changed against main, by the shared rule. A file
 /// riot cannot read is an error naming it.
 pub fn changed_since_main(werk: &str, rels: &[String]) -> Result<BTreeSet<String>, ModelError> {
