@@ -15,10 +15,10 @@
 # the first write; modified and contributor are the last write.
 chorus:CoreShape a sh:NodeShape ;
     rdfs:comment "The attributes every class carries: a name, a description, who created it and when, and who last changed it and when. #4576." ;
-    sh:property [ sh:path chorus:label ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:comment ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ; chorus:exposure chorus:public ] ;
-    # public: a shape that declares exposure hides every unmarked field, so without it the
-    # flatten put name and description on Machine, Disk, LogSource and ServiceInstance and
-    # their doors dropped them (run 11, 8 rows)
+    sh:property [ sh:path chorus:label ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ] ;
+    sh:property [ sh:path chorus:comment ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ] ;
+    # #4590 — no exposure marks here: the flatten copies these fields onto every class, and a
+    # class with any marked field hides every unmarked one (2026-10-17: 70 classes, principals
+    # included, served only their IRI). A class that marks its own fields marks these itself.
     # the four Dublin Core stamps are a rule, not fields (#4312): the DAL writes them, no caller sends them
     sh:sparql chorus:StampedByTheDal .
