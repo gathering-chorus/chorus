@@ -21,11 +21,24 @@
 
 setup() {
   ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
+  # #4575 — a werk has no target/ (build output is not in git), so a repo-build
+  # path alone went red in every pipeline and green by hand from canonical.
+  # Read this tree's build when it has one (a card that changes athena-deploy
+  # is tested on its own build), else the INSTALLED recovery binary.
   DEPLOY="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
+  [ -f "$DEPLOY" ] || DEPLOY="${ATHENA_DEPLOY_BIN:-$HOME/.chorus/bin/athena-deploy-bin}"
 }
 
 @test "the recovery path exists where the incident runbook says it does" {
   [ -f "$DEPLOY" ]
+}
+
+@test "NEGATIVE PROOF: grep on a missing file is status 2, so the absence checks must not accept it" {
+  # The two absence checks below used `-ne 0`, which a missing file (status 2)
+  # satisfied: they passed against nothing. They now require the file and
+  # status 1 exactly.
+  run grep -n "CHORUS_IDENTITY_TOKEN" "$BATS_TEST_TMPDIR/no-such-binary"
+  [ "$status" -eq 2 ]
 }
 
 @test "recovery authenticates to the STORE — it reads Fuseki credentials" {
@@ -36,8 +49,9 @@ setup() {
   # CHORUS_IDENTITY_TOKEN is what the DAL demands (#3687). If the recovery path
   # ever requires it, emptying the allow-set becomes unrecoverable by anyone who
   # was in it — which is everyone who could fix it.
+  [ -f "$DEPLOY" ]
   run grep -n "CHORUS_IDENTITY_TOKEN" "$DEPLOY"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
 }
 
 @test "NEGATIVE PROOF: recovery does not CALL the identity-gated writer" {
@@ -48,6 +62,7 @@ setup() {
   # and failed on two PROSE mentions of athena-model in comments. A check that
   # cannot tell a comment from a command cannot tell the two states it exists to
   # separate — the same defect this file exists to prevent, reproduced inside it.
+  [ -f "$DEPLOY" ]
   run bash -c "sed 's/#.*//' '$DEPLOY' | grep -nE '(^|[^-a-z])athena-model[[:space:]]+(add|set|seed|delete|link|unlink|mint)'"
   [ "$status" -ne 0 ]
 }
