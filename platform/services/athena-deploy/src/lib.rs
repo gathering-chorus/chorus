@@ -1135,19 +1135,31 @@ pub fn description_templates_sparql(ontology: &str) -> String {
 }
 
 /// One bounded pass of description fill for one class. Pure.
+/// #4576 — a row is missing its description when it has no chorus:comment, and
+/// no rdfs:comment either where its class's own shape names rdfs:comment as the
+/// field (DomainShape does: run 11 filled chorus:comment on the code domain next
+/// to its rdfs:comment, and the door, serving one "comment", dropped the other).
+fn desc_missing(class: &str) -> String {
+    format!("FILTER NOT EXISTS {{ ?s chorus:comment ?x }} \
+             FILTER NOT EXISTS {{ ?s <http://www.w3.org/2000/01/rdf-schema#comment> ?y . \
+             GRAPH <urn:chorus:ontology> {{ ?dsh sh:targetClass <{class}> ; sh:property/sh:path <http://www.w3.org/2000/01/rdf-schema#comment> }} }}")
+}
+
 pub fn description_insert_sparql(class: &str, template: &str, limit: u32) -> String {
+    let desc_missing_pat = desc_missing(class);
     let local = class.rsplit(['#', '/']).next().unwrap_or(class);
     let (optionals, expr) = description_sparql(template, local);
     format!(
         "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:comment ?w }} }}\n\
-         WHERE {{ {{ SELECT ?g ?s (SAMPLE(?w0) AS ?w) WHERE {{ GRAPH ?g {{ ?s a <{class}> . FILTER NOT EXISTS {{ ?s chorus:comment ?x }} {optionals}BIND({expr} AS ?w0) }} \
+         WHERE {{ {{ SELECT ?g ?s (SAMPLE(?w0) AS ?w) WHERE {{ GRAPH ?g {{ ?s a <{class}> . {desc_missing_pat} {optionals}BIND({expr} AS ?w0) }} \
          FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }} }} GROUP BY ?g ?s LIMIT {limit} }} }}"
     )
 }
 
 pub fn description_count_sparql(class: &str) -> String {
+    let desc_missing_pat = desc_missing(class);
     format!(
-        "{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH ?g {{ ?s a <{class}> . FILTER NOT EXISTS {{ ?s chorus:comment ?x }} }} \
+        "{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH ?g {{ ?s a <{class}> . {desc_missing_pat} }} \
          FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }} }}"
     )
 }
@@ -3245,5 +3257,43 @@ mod creator_iri_4576 {
         // the count cannot see the unownable row, so the pass loop ends
         assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER(BOUND(?w0))"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// #4576 — the description fill, run: a row whose class names rdfs:comment as its
+/// field and has one is described; a row whose class does not still gets chorus:comment.
+#[cfg(test)]
+mod description_fill_4576 {
+    use super::description_insert_sparql;
+    use std::process::Command;
+
+    #[test]
+    fn an_rdfs_comment_counts_only_where_the_shape_names_it() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        let dir = std::env::temp_dir().join(format!("desc-4576-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:chorus:ontology> { c:DomainShape sh:targetClass c:Domain ; sh:property [ sh:path rdfs:comment ] .
+                        c:DocShape sh:targetClass c:Document ; sh:property [ sh:path c:comment ] . }
+<urn:dom> { c:code a c:Domain ; rdfs:comment "the code domain" .
+            c:bare a c:Domain .
+            c:doc-1 a c:Document ; rdfs:comment "old style" . }
+"#).unwrap();
+        let q = format!("{} ;\n{}", description_insert_sparql("https://jeffbridwell.com/chorus#Domain", "{class} row", 50),
+            description_insert_sparql("https://jeffbridwell.com/chorus#Document", "{class} row", 50));
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}\n{q}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        // NEGATIVE PROOF: the code domain already has its description; no second "comment"
+        assert_eq!(after.matches("\"Domain row\"").count(), 1, "only the bare Domain is filled, never code (it has rdfs:comment):\n{after}");
+        assert!(after.contains("\"Domain row\""), "the Domain with no description was not filled:\n{after}");
+        assert!(after.contains("\"Document row\""), "a Document's rdfs:comment is not its field and must not count:\n{after}");
     }
 }
