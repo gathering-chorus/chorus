@@ -329,9 +329,9 @@ fn same_kind_shape_is_loaded_once_for_the_entire_batch() {
             && !q.contains("# athena-model instance home"))
         .count();
     // #4358 — nine: sh:pattern added a property-level and a node-level read, and
-    // the declared field paths (rdfs:comment) one more; #4576 the description
-    // template one more.
-    assert_eq!(shape_selects, 10, "read_shape's ten queries run once per distinct class, not once per entity");
+    // the declared field paths (rdfs:comment) one more. (#4576's template read is
+    // gone with the template fill, Jeff 2026-10-17 12:58.)
+    assert_eq!(shape_selects, 9, "read_shape's nine queries run once per distinct class, not once per entity");
     assert_eq!(store.updates.borrow().len(), 1);
 }
 

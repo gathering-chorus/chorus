@@ -268,14 +268,15 @@ chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
 # #4576 — CoreShape carries this rule for every class (Jeff 10-17: name, id,
 # description, created and changed by and at). creator is the first writer and
 # contributor the last, each a Principal IRI, never a role name.
+# #4576 (Jeff 2026-10-17 12:58, "manufacturing data on this is a lot of work and not much
+# gain"): a row written before the DAL stamped has no stamp, and nothing makes one up. The
+# rule checks what the DAL writes: a contributor, when there is one, names a Principal. A
+# creator may still be a name from before Principals existed.
 chorus:StampedByTheDal a sh:SPARQLConstraint ;
-    sh:message "a row carries the DAL's stamp: dcterms:created and dcterms:modified, and dcterms:creator and dcterms:contributor naming a Principal" ;
+    sh:message "the DAL's contributor stamp names a Principal, not a bare name" ;
     sh:select """
         SELECT $this WHERE {
-          FILTER ( NOT EXISTS { $this <http://purl.org/dc/terms/created> ?a }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/modified> ?c }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/creator> ?b . FILTER(isIRI(?b)) }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/contributor> ?d . FILTER(isIRI(?d)) } )
+          $this <http://purl.org/dc/terms/contributor> ?d . FILTER(!isIRI(?d))
         }""" .
 
 # --- SessionRun ---------------------------------------------------------------

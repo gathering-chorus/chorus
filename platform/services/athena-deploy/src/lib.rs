@@ -1003,17 +1003,11 @@ pub fn flatten_node_shapes_sparql(graph: &str) -> String {
     )
 }
 
-/// #4576 — Jeff 2026-10-17 08:10 "i feel its a required attribute set it to a
-/// fixed date", 08:17 "maybe the date we default is chorus repo create date in
-/// git": d98dbbd40, 2026-03-29 11:35:26 -04:00.
-pub const CREATED_BEFORE_STAMPS: &str = "2026-03-29T15:35:26Z";
-
-/// #4576 — the four audit stamps CoreShape requires are the dcterms ones
-/// athena-model already writes on every governed write (Jeff 2026-06-11):
-/// created (first write), modified (last write), creator (first writer's
-/// Principal), contributor (last writer's Principal). A row written before a
-/// stamp existed gets it once, in this order, each from what the row already has.
-pub const CORE_STAMPS: [&str; 5] = ["created", "modified", "creator-iri", "creator", "contributor"];
+/// #4576 — the one backfill left on old rows (Jeff 2026-10-17 12:58: "manufacturing
+/// data on this is a lot of work and not much gain"): a creator written as a role
+/// slug becomes that role's Principal IRI, the same fact in the form the DAL writes.
+/// Nothing else is filled in: a row with no stamp keeps none.
+pub const CORE_STAMPS: [&str; 1] = ["creator-iri"];
 
 const STAMP_PREFIXES: &str = "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX dct: <http://purl.org/dc/terms/>";
 
@@ -1028,35 +1022,20 @@ fn core_rows(ontology: &str, missing: &str) -> String {
     )
 }
 
-/// #4576 — where a slug literal creator's Principal comes from: the Principal
-/// named principal-<slug> when one exists, else the row's ownedBy, else the
-/// owner of the domain whose instancesGraph holds the row. Run 11: 23 code
-/// rows said "athena-deploy-model", a deploy script, not a Principal (principals
-/// own things, services do not); they go to the code domain's owner. A literal
-/// none of the three can name stays as it is, so the pass cannot loop on it.
+/// #4576 — a slug creator converts only when principal-<slug> exists. Run 11: 23
+/// code rows say "athena-deploy-model", a deploy script, not a Principal; they keep
+/// that name rather than borrow an owner who did not write them, and the pass does
+/// not count them, so it cannot loop on them.
 const CREATOR_IRI_FROM: &str = "\n\
-    BIND(IRI(CONCAT(STR(chorus:), \"principal-\", STR(?lit))) AS ?named)\n\
-    OPTIONAL { GRAPH ?pg { ?named a chorus:Principal } BIND(?named AS ?pw) }\n\
-    OPTIONAL { GRAPH ?g { ?s chorus:ownedBy ?own } FILTER(isIRI(?own)) }\n\
-    OPTIONAL { GRAPH <urn:chorus:domains:domains> { ?dom chorus:instancesGraph ?gi ; chorus:ownedBy ?downer } FILTER(STR(?gi) = STR(?g) && isIRI(?downer)) }\n\
-    BIND(COALESCE(?pw, ?own, ?downer) AS ?w0) FILTER(BOUND(?w0))";
+    BIND(IRI(CONCAT(STR(chorus:), \"principal-\", STR(?lit))) AS ?w0)\n\
+    FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }";
 
-/// What each pass selects, and where its value comes from. Pure.
-///   created      missing           -> the repo's first commit date
-///   modified     missing           -> the row's created
-///   creator-iri  a slug literal      -> its Principal, else the row's or its domain's owner (literal removed)
-///   creator      missing           -> the row's ownedBy (a row with no owner stays red)
-///   contributor  missing           -> the row's creator
-fn stamp_pass(prop: &str) -> (&'static str, String, &'static str, &'static str) {
-    // (pattern binding ?w, delete template, insert predicate)
-    match prop {
-        "created" => ("FILTER NOT EXISTS { ?s dct:created ?x }", format!("BIND(\"{CREATED_BEFORE_STAMPS}\" AS ?w)"), "", "created"),
-        "modified" => ("?s dct:created ?w . FILTER NOT EXISTS { ?s dct:modified ?x }", String::new(), "", "modified"),
-        "creator-iri" => ("?s dct:creator ?lit . FILTER(isLiteral(?lit) && REGEX(STR(?lit), \"^[a-z0-9-]+$\"))",
-            String::new(), "?s dct:creator ?lit .", "creator"),
-        "creator" => ("?s chorus:ownedBy ?w . FILTER(isIRI(?w)) FILTER NOT EXISTS { ?s dct:creator ?x }", String::new(), "", "creator"),
-        _ => ("?s dct:creator ?w . FILTER(isIRI(?w)) FILTER NOT EXISTS { ?s dct:contributor ?x }", String::new(), "", "contributor"),
-    }
+/// What a pass selects, and where its value comes from. Pure.
+///   creator-iri  a slug literal -> its Principal (literal removed)
+fn stamp_pass(_prop: &str) -> (&'static str, String, &'static str, &'static str) {
+    // (pattern binding ?lit, extra binds, delete template, insert predicate)
+    ("?s dct:creator ?lit . FILTER(isLiteral(?lit) && REGEX(STR(?lit), \"^[a-z0-9-]+$\"))",
+        String::new(), "?s dct:creator ?lit .", "creator")
 }
 
 /// The rows a pass selects: core rows missing the stamp, and for creator-iri
@@ -1075,124 +1054,13 @@ pub fn core_stamp_count_sparql(ontology: &str, prop: &str) -> String {
 /// several short updates, never one that holds the store.
 pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> String {
     let (pat, bind, del, pred) = stamp_pass(prop);
-    let (sel, group) = if prop == "created" { ("DISTINCT ?g ?s", "") } else { ("?g ?s (SAMPLE(?w0) AS ?w)", " GROUP BY ?g ?s") };
-    let inner = if prop == "created" { pat.to_string() } else { pat.replace("?w", "?w0") };
-    let inner = if prop == "creator-iri" { pat.to_string() } else { inner };
-    let sel = if prop == "creator-iri" { "?g ?s ?lit (SAMPLE(?w0) AS ?w)" } else { sel };
-    let group = if prop == "creator-iri" { " GROUP BY ?g ?s ?lit" } else { group };
+    let (inner, sel, group) = (pat.to_string(), "?g ?s ?lit (SAMPLE(?w0) AS ?w)", " GROUP BY ?g ?s ?lit");
     let delete = if del.is_empty() { String::new() } else { format!("DELETE {{ GRAPH ?g {{ {del} }} }}\n") };
     format!(
         "{STAMP_PREFIXES}\n{delete}INSERT {{ GRAPH ?g {{ ?s dct:{pred} ?w }} }}\n\
          WHERE {{ {{ SELECT {sel} WHERE {{ {} }}{group} LIMIT {limit} }} {bind} }}",
         stamp_rows(ontology, prop, &inner)
     )
-}
-
-/// #4576 — the SPARQL expression a description template renders to, per row.
-/// `{field}` is the row's chorus:<field> (a link renders its local name), `{class}`
-/// the class's local name, `{label}` the row's label or its own local name; a
-/// value the row lacks renders "?". Returns (OPTIONAL patterns, CONCAT expr). Pure.
-pub fn description_sparql(template: &str, class_local: &str) -> (String, String) {
-    let lit = |t: &str| format!("\"{}\"", t.replace('\\', "\\\\").replace('"', "\\\""));
-    let mut parts: Vec<String> = Vec::new();
-    let mut optionals = String::new();
-    let mut rest = template;
-    let mut n = 0;
-    while let Some(open) = rest.find('{') {
-        if open > 0 { parts.push(lit(&rest[..open])); }
-        let after = &rest[open + 1..];
-        let Some(close) = after.find('}') else { parts.push(lit(&rest[open..])); rest = ""; break; };
-        let key = &after[..close];
-        match key {
-            "class" => parts.push(lit(class_local)),
-            "label" => {
-                optionals.push_str("OPTIONAL { ?s chorus:label ?lbl } ");
-                parts.push("COALESCE(STR(?lbl), REPLACE(STR(?s), \".*[#/]\", \"\"))".into());
-            }
-            k if k.chars().all(|c| c.is_ascii_alphanumeric()) => {
-                n += 1;
-                optionals.push_str(&format!("OPTIONAL {{ ?s chorus:{k} ?v{n} }} "));
-                parts.push(format!("COALESCE(IF(isIRI(?v{n}), REPLACE(STR(?v{n}), \".*[#/]\", \"\"), STR(?v{n})), \"?\")"));
-            }
-            other => parts.push(lit(&format!("{{{other}}}"))),
-        }
-        rest = &after[close + 1..];
-    }
-    if !rest.is_empty() { parts.push(lit(rest)); }
-    let expr = if parts.len() == 1 { parts.remove(0) } else { format!("CONCAT({})", parts.join(", ")) };
-    (optionals, expr)
-}
-
-/// #4576 — the classes that have a description template (own, or via sh:node),
-/// as `class|template` rows.
-pub fn description_templates_sparql(ontology: &str) -> String {
-    format!(
-        "{STAMP_PREFIXES}\nSELECT ?v WHERE {{ GRAPH <{ontology}> {{ \
-           {{ ?sh sh:targetClass ?c ; chorus:descriptionTemplate ?t }} UNION \
-           {{ ?sh sh:targetClass ?c ; sh:node+ ?n . ?n chorus:descriptionTemplate ?t FILTER NOT EXISTS {{ ?sh chorus:descriptionTemplate ?own }} }} }} \
-         BIND(CONCAT(STR(?c), \"|\", STR(?t)) AS ?v) }}"
-    )
-}
-
-/// One bounded pass of description fill for one class. Pure.
-/// #4576 — a row is missing its description when it has no chorus:comment, and
-/// no rdfs:comment either where its class's own shape names rdfs:comment as the
-/// field (DomainShape does: run 11 filled chorus:comment on the code domain next
-/// to its rdfs:comment, and the door, serving one "comment", dropped the other).
-fn desc_missing(class: &str) -> String {
-    format!("FILTER NOT EXISTS {{ ?s chorus:comment ?x }} \
-             FILTER NOT EXISTS {{ ?s <http://www.w3.org/2000/01/rdf-schema#comment> ?y . \
-             GRAPH <urn:chorus:ontology> {{ ?dsh sh:targetClass <{class}> ; sh:property/sh:path <http://www.w3.org/2000/01/rdf-schema#comment> }} }}")
-}
-
-pub fn description_insert_sparql(class: &str, template: &str, limit: u32) -> String {
-    let desc_missing_pat = desc_missing(class);
-    let local = class.rsplit(['#', '/']).next().unwrap_or(class);
-    let (optionals, expr) = description_sparql(template, local);
-    format!(
-        "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:comment ?w }} }}\n\
-         WHERE {{ {{ SELECT ?g ?s (SAMPLE(?w0) AS ?w) WHERE {{ GRAPH ?g {{ ?s a <{class}> . {desc_missing_pat} {optionals}BIND({expr} AS ?w0) }} \
-         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }} }} GROUP BY ?g ?s LIMIT {limit} }} }}"
-    )
-}
-
-pub fn description_count_sparql(class: &str) -> String {
-    let desc_missing_pat = desc_missing(class);
-    format!(
-        "{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH ?g {{ ?s a <{class}> . {desc_missing_pat} }} \
-         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }} }}"
-    )
-}
-
-/// Fill every templated class's missing descriptions, bounded passes, refusing
-/// a pass that makes no progress.
-pub fn backfill_descriptions(ontology: &str, query: &str, update: &str) -> Result<String, String> {
-    let limit: u32 = env_or("CORE_STAMP_BATCH", "50000").parse().unwrap_or(50000);
-    let body = curl(&["-s", "--data-urlencode", &format!("query={}", description_templates_sparql(ontology)), "-H", "Accept: text/csv", query])?;
-    let mut rows: Vec<(String, String)> = body.lines().skip(1)
-        .filter_map(|l| l.trim().trim_matches('"').split_once('|').map(|(c, t)| (c.to_string(), t.replace("\"\"", "\""))))
-        .collect();
-    rows.sort(); rows.dedup_by(|a, b| a.0 == b.0);
-    let mut filled = 0u64;
-    for (class, template) in &rows {
-        let count = || -> Result<u64, String> {
-            let b = curl(&["-s", "--data-urlencode", &format!("query={}", description_count_sparql(class)), "-H", "Accept: text/csv", query])?;
-            csv_count(&b).ok_or_else(|| format!("descriptions: could not count {class}: {}", b.trim()))
-        };
-        let mut left = count()?;
-        let first = left;
-        while left > 0 {
-            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
-                "-H", "Content-Type: application/sparql-update", "--data-binary",
-                &description_insert_sparql(class, template, limit), update])?;
-            if !ok_http(&code) { return Err(format!("descriptions-{class}-failed-http-{code}")); }
-            let now = count()?;
-            if now >= left { return Err(format!("descriptions: {class} pass made no progress ({left} rows still without one)")); }
-            left = now;
-        }
-        filled += first;
-    }
-    Ok(format!("descriptions filled from {} template(s): +{filled}", rows.len()))
 }
 
 fn csv_count(body: &str) -> Option<u64> {
@@ -1223,7 +1091,7 @@ pub fn backfill_core_stamps(ontology: &str, query: &str, update: &str) -> Result
         }
         report.push(format!("{prop} +{first}"));
     }
-    Ok(format!("core stamps backfilled ({}): {}", CREATED_BEFORE_STAMPS, report.join(", ")))
+    Ok(format!("core stamps backfilled: {}", report.join(", ")))
 }
 
 fn curl(args: &[&str]) -> Result<String, String> {
@@ -1659,15 +1527,9 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     }
     println!("athena-deploy: flattened sh:node shapes in <{ontology}>");
 
-    // #4576 — the who/when stamps are required (CoreShape). A row written before
-    // the door stamped them gets the fixed date and its owner, once: each pass
-    // adds only what is missing, so a later deploy finds nothing to do.
+    // #4576 — a role-slug creator becomes its Principal; nothing else is filled in
+    // on old rows (Jeff 2026-10-17 12:58).
     match backfill_core_stamps(&ontology, &query, &update) {
-        Ok(line) => println!("athena-deploy: {line}"),
-        Err(e) => return Err(fail(&e)),
-    }
-    // #4576 — and every templated class's missing descriptions
-    match backfill_descriptions(&ontology, &query, &update) {
         Ok(line) => println!("athena-deploy: {line}"),
         Err(e) => return Err(fail(&e)),
     }
@@ -2515,42 +2377,18 @@ mod tests {
         assert!(q.contains("FILTER(?s != ?n)"), "{q}");
     }
 
-    /// #4576 — the backfill follows the model (only classes that name CoreShape),
-    /// skips test-ephemeral graphs, takes the owner for the By stamps and the
-    /// repo's first-commit date for the At stamps, and is bounded per pass.
-    /// The store proof (fill, refill finds nothing, an ownerless row stays empty,
-    /// a class without CoreShape untouched) ran on the in-memory chorus-test.
+    /// #4576 — the one backfill left converts a role-slug creator to its Principal,
+    /// follows the model (only classes that name CoreShape), skips test-ephemeral
+    /// graphs and is bounded per pass. Nothing is invented: no date, no owner.
     #[test]
-    fn core_stamp_backfill_is_bounded_owned_and_follows_the_shape() {
-        let by = core_stamp_insert_sparql("urn:chorus:ontology", "creator", 7);
-        assert!(by.contains("?s chorus:ownedBy ?w0") && by.contains("LIMIT 7") && by.contains("sh:node chorus:CoreShape"), "{by}");
-        assert!(by.contains("FILTER NOT EXISTS { ?s dct:creator ?x }") && by.contains("test-ephemeral"), "{by}");
-        let at = core_stamp_insert_sparql("urn:chorus:ontology", "created", 7);
-        assert!(at.contains(CREATED_BEFORE_STAMPS) && !at.contains("ownedBy"), "{at}");
-        let m = core_stamp_insert_sparql("urn:chorus:ontology", "modified", 7);
-        assert!(m.contains("?s dct:created ?w0") && !m.contains(CREATED_BEFORE_STAMPS), "modified follows the row's created: {m}");
+    fn core_stamp_backfill_converts_a_slug_and_invents_nothing() {
+        assert_eq!(CORE_STAMPS, ["creator-iri"], "#4576: no made-up stamps on old rows (Jeff 12:58)");
         let iri = core_stamp_insert_sparql("urn:chorus:ontology", "creator-iri", 7);
         assert!(iri.contains("DELETE { GRAPH ?g { ?s dct:creator ?lit . } }") && iri.contains("principal-"), "the literal goes, the IRI comes: {iri}");
-        assert!(iri.contains("^[a-z0-9-]+$"), "only a role slug converts: {iri}");
-        assert!(iri.contains("COALESCE(?pw, ?own, ?downer)") && iri.contains("FILTER(BOUND(?w0))"), "a Principal, else an owner, never a made-up IRI: {iri}");
-        let c = core_stamp_insert_sparql("urn:chorus:ontology", "contributor", 7);
-        assert!(c.contains("?s dct:creator ?w0 . FILTER(isIRI(?w0))"), "contributor from an IRI creator only: {c}");
+        assert!(iri.contains("^[a-z0-9-]+$") && iri.contains("LIMIT 7") && iri.contains("sh:node chorus:CoreShape") && iri.contains("test-ephemeral"), "{iri}");
+        assert!(iri.contains("FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }") && !iri.contains("ownedBy"), "a Principal or nothing, never an owner: {iri}");
         assert_eq!(csv_count("n\n42\n"), Some(42));
         assert_eq!(csv_count("error"), None);
-    }
-
-    /// #4576 — a description template renders per row: fields by value, links by
-    /// local name, {class} as the class, {label} with a fallback, "?" for a gap.
-    #[test]
-    fn description_template_renders_to_sparql() {
-        let (opt, expr) = description_sparql("Test {testName} in {filePath}, owned by {ownedBy}", "Test");
-        assert!(opt.contains("OPTIONAL { ?s chorus:testName ?v1 }") && opt.contains("?s chorus:ownedBy ?v3"), "{opt}");
-        assert!(expr.starts_with("CONCAT(\"Test \", COALESCE(IF(isIRI(?v1)"), "{expr}");
-        assert!(expr.contains("\"?\")") && expr.contains("\", owned by \""), "{expr}");
-        let (_, e2) = description_sparql("{label}, a {class}", "Teammate");
-        assert!(e2.contains("COALESCE(STR(?lbl)") && e2.contains("\", a \", \"Teammate\""), "{e2}");
-        let ins = description_insert_sparql("https://jeffbridwell.com/chorus#Test", "{label}, a {class}", 9);
-        assert!(ins.contains("FILTER NOT EXISTS { ?s chorus:comment ?x }") && ins.contains("LIMIT 9") && ins.contains("test-ephemeral"), "{ins}");
     }
 
     #[test]
@@ -3141,15 +2979,15 @@ mod rehome_card_4576 {
 }
 
 /// #4576 — the creator-iri pass, run, not read: a slug that names a Principal
-/// becomes it; one that names no Principal goes to its domain's owner; one with
-/// no owner anywhere stays, and is no longer counted, so the pass ends.
+/// becomes it; one that names no Principal keeps its name and is not counted, so
+/// the pass ends.
 #[cfg(test)]
 mod creator_iri_4576 {
     use super::{core_stamp_count_sparql, core_stamp_insert_sparql};
     use std::process::Command;
 
     #[test]
-    fn a_slug_that_is_not_a_principal_goes_to_the_domain_owner() {
+    fn a_slug_becomes_its_principal_and_nothing_else_is_invented() {
         let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
         let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
@@ -3174,51 +3012,13 @@ mod creator_iri_4576 {
         let after = String::from_utf8_lossy(&o.stdout).to_string();
         // the made-up IRI must not appear anywhere
         assert!(!after.contains("principal-athena-deploy-model"), "a slug that is not a Principal became one:\n{after}");
-        // the row with no owner keeps its literal (nothing to name it with)
-        assert!(after.contains("\"athena-deploy-model\""), "the unownable row lost its creator:\n{after}");
-        // NEGATIVE PROOF: lang-sql no longer carries the literal; it went to the code owner
-        let code = { let i = after.find("<urn:code>").unwrap(); let j = after[i..].find('}').map(|k| i + k).unwrap(); after[i..j].to_string() };
-        assert!(!code.contains("\"athena-deploy-model\"") && code.matches("principal-kade").count() >= 2, "lang-sql was not given its domain's owner:\n{after}");
-        // the count cannot see the unownable row, so the pass loop ends
-        assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER(BOUND(?w0))"));
+        // both script-named rows keep their name: the code domain's owner did not write them
+        assert_eq!(after.matches("\"athena-deploy-model\"").count(), 2, "a script-named row was given someone's name:\n{after}");
+        // NEGATIVE PROOF: lang-rust's slug did convert, so the pass is not a no-op
+        assert!(!after.contains("d:creator \"kade\"") && !after.contains("creator> \"kade\""), "the Principal slug did not convert:\n{after}");
+        assert!(after.contains("principal-kade"), "{after}");
+        // the count cannot see a name with no Principal, so the pass loop ends
+        assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }"));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-}
-
-/// #4576 — the description fill, run: a row whose class names rdfs:comment as its
-/// field and has one is described; a row whose class does not still gets chorus:comment.
-#[cfg(test)]
-mod description_fill_4576 {
-    use super::description_insert_sparql;
-    use std::process::Command;
-
-    #[test]
-    fn an_rdfs_comment_counts_only_where_the_shape_names_it() {
-        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
-        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
-        let dir = std::env::temp_dir().join(format!("desc-4576-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let data = dir.join("d.trig");
-        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-<urn:chorus:ontology> { c:DomainShape sh:targetClass c:Domain ; sh:property [ sh:path rdfs:comment ] .
-                        c:DocShape sh:targetClass c:Document ; sh:property [ sh:path c:comment ] . }
-<urn:dom> { c:code a c:Domain ; rdfs:comment "the code domain" .
-            c:bare a c:Domain .
-            c:doc-1 a c:Document ; rdfs:comment "old style" . }
-"#).unwrap();
-        let q = format!("{} ;\n{}", description_insert_sparql("https://jeffbridwell.com/chorus#Domain", "{class} row", 50),
-            description_insert_sparql("https://jeffbridwell.com/chorus#Document", "{class} row", 50));
-        let ru = dir.join("u.ru");
-        std::fs::write(&ru, &q).unwrap();
-        let o = Command::new(&update).arg(format!("--data={}", data.display()))
-            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
-        assert!(o.status.success(), "update failed: {}\n{q}", String::from_utf8_lossy(&o.stderr));
-        let after = String::from_utf8_lossy(&o.stdout).to_string();
-        let _ = std::fs::remove_dir_all(&dir);
-        // NEGATIVE PROOF: the code domain already has its description; no second "comment"
-        assert_eq!(after.matches("\"Domain row\"").count(), 1, "only the bare Domain is filled, never code (it has rdfs:comment):\n{after}");
-        assert!(after.contains("\"Domain row\""), "the Domain with no description was not filled:\n{after}");
-        assert!(after.contains("\"Document row\""), "a Document's rdfs:comment is not its field and must not count:\n{after}");
     }
 }
