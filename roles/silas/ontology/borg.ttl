@@ -351,7 +351,7 @@ borg:NetworkEndpoint borg:belongsToSurface borg:networkSurface .
 # =============================================================================
 
 borg:EngineShape a sh:NodeShape ;
-    sh:targetClass borg:Engine ;
+    sh:targetClass borg:Engine ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path borg:engineName ;
         sh:minCount 1 ;
@@ -369,7 +369,7 @@ borg:EngineShape a sh:NodeShape ;
     ] .
 
 borg:EnvironmentShape a sh:NodeShape ;
-    sh:targetClass borg:Environment ;
+    sh:targetClass borg:Environment ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path borg:instanceOf ;
         sh:minCount 1 ;
@@ -382,7 +382,7 @@ borg:EnvironmentShape a sh:NodeShape ;
     ] .
 
 borg:ResourceShape a sh:NodeShape ;
-    sh:targetClass borg:Resource ;
+    sh:targetClass borg:Resource ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path borg:servedBy ;
         sh:minCount 1 ;

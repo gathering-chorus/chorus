@@ -38,7 +38,11 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
     let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
     // #4432 (Jeff 2026-10-06) — row sets left the deploy; rows live in the store.
     // Security stays only as the lockout recovery path until a restore is proven (#4171).
-    let expected = ["security"];
+    // Identity carries the three AgentRuntime rows (#4572): athena-gen writes
+    // agent_runtimes.json from the file, and the door would mint different IRIs
+    // (agentruntime-<name>, not runtime-<name>), breaking the Principal links. They
+    // leave once athena-gen reads the rows from the store (follow-on card).
+    let expected = ["security", "identity"];
     for want in expected {
         assert!(names.contains(&want), "{want} missing from {names:?}");
     }
@@ -46,7 +50,7 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
         assert!(expected.contains(got), "{got} is in the manifest and not in this test");
     }
     let files: usize = sets.iter().map(|s| s.files.len()).sum();
-    assert_eq!(files, 2, "principals and permissions only (#4432)");
+    assert_eq!(files, 3, "principals, permissions and the agent runtimes only (#4432, #4572)");
 }
 
 #[test]

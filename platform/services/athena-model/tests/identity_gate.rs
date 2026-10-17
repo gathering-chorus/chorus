@@ -114,7 +114,7 @@ fn registered_claim_verifies_and_stamps_creator() {
     let ups = s.updates.borrow();
     assert_eq!(ups.len(), 1);
     assert!(
-        ups[0].contains("creator> \"kade\""),
+        ups[0].contains("creator> <https://jeffbridwell.com/chorus#principal-kade>"), // #4576 — the Principal IRI
         "creator stamped with the verified identity, not a default: {}",
         ups[0]
     );

@@ -180,7 +180,7 @@ chorus:roles chorus:definesVocabulary chorus:wearsHat .
 
 
 chorus:HatShape a sh:NodeShape ;
-    sh:targetClass chorus:Hat ;
+    sh:targetClass chorus:Hat ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hatLayer ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:jdOwns ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -194,7 +194,7 @@ chorus:HatShape a sh:NodeShape ;
 
 
 chorus:AppointmentShape a sh:NodeShape ;
-    sh:targetClass chorus:Appointment ;
+    sh:targetClass chorus:Appointment ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:appointee ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path chorus:appointedHat ; sh:minCount 1 ; sh:class chorus:Hat ] ;
@@ -271,3 +271,36 @@ chorus:AgentRole owl:deprecated true ;
 
 chorus:HumanRole owl:deprecated true ;
     rdfs:comment "DEPRECATED (#4175) — use chorus:roleKind \"human\". Same reason as chorus:AgentRole." .
+
+
+# --- #4576 Teammate (Jeff 2026-10-17 07:38: the page word names the class) --------------
+# Someone on the team, a person or an agent: Jeff, Silas, Kade, Wren, Abby Normal.
+# Not a Principal (the identity a credential proves, in security) and not a Role (a job).
+# chorus:Actor keeps its own meaning: an actor in a test scenario.
+
+chorus:Teammate a owl:Class ;
+    rdfs:label "Teammate" ;
+    rdfs:comment "Someone on the team who does work, a person or an agent. Signs in as exactly one Principal and serves in one or more Roles." .
+chorus:roles chorus:definesVocabulary chorus:Teammate .
+
+chorus:signsInAs a owl:ObjectProperty ;
+    rdfs:label "signs in as" ;
+    rdfs:comment "The one Principal a Teammate's credentials prove." ;
+    rdfs:domain chorus:Teammate ;
+    rdfs:range chorus:Principal .
+
+chorus:servesAs a owl:ObjectProperty ;
+    rdfs:label "serves as" ;
+    rdfs:comment "A Role (a job) this Teammate does; hats over products come through that Role's Appointments." ;
+    rdfs:domain chorus:Teammate ;
+    rdfs:range chorus:Role .
+
+chorus:TeammateShape a sh:NodeShape ;
+    sh:targetClass chorus:Teammate ; sh:node chorus:CoreShape ;
+    sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:signsInAs ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;
+    sh:property [ sh:path chorus:servesAs ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    # the door stamps the writer as owner; the owner rule says who may change the row (run 16)
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;
+    chorus:instancesGraph "urn:chorus:domains:roles" ;
+    chorus:generatedBy "athena-model" .

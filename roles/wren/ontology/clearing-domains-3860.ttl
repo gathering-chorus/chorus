@@ -44,7 +44,7 @@ chorus:emittedBy a owl:ObjectProperty ;
     rdfs:comment "The role the event is attributed to. Unattributed events are the drop-class #3959 made visible." .
 
 chorus:SpineEventShape a sh:NodeShape ;
-    sh:targetClass chorus:SpineEvent ;
+    sh:targetClass chorus:SpineEvent ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:eventKind ; sh:minCount 1 ; sh:datatype xsd:string ] .
 
@@ -74,7 +74,7 @@ chorus:ofType a owl:ObjectProperty ;
     rdfs:comment "The vocabulary entry this occurrence is an instance of." .
 
 chorus:EventTypeShape a sh:NodeShape ;
-    sh:targetClass chorus:EventType ;
+    sh:targetClass chorus:EventType ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:eventName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:eventCategory ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "fact" "diagnostic" ) ] .

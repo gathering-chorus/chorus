@@ -44,7 +44,7 @@ chorus:memoryLayer a owl:ObjectProperty ;
     rdfs:comment "Which layer of Memory this subject belongs to: short-term, long-term, or knowledge." .
 
 chorus:MemoryShape a sh:NodeShape ;
-    sh:targetClass chorus:Memory ;
+    sh:targetClass chorus:Memory ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
     chorus:instancesGraph "urn:chorus:domains:memory" ;
@@ -85,7 +85,7 @@ chorus:knowledge a chorus:Domain ;
 # nothing — advertised-but-not-served. A class serves when a sh:targetClass
 # shape exists; modeled here, not special-cased in the generator.
 chorus:KnowledgeShape a sh:NodeShape ;
-    sh:targetClass chorus:Knowledge ;
+    sh:targetClass chorus:Knowledge ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
     chorus:instancesGraph "urn:chorus:domains:knowledge" ;

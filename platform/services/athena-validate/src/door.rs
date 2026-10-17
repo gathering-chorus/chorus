@@ -24,7 +24,7 @@ pub fn api_base() -> String {
 
 /// Predicates the door is not expected to project: audit fields it generates
 /// itself, and rdf:type, which it serves under its own key.
-const NOT_PROJECTED: [&str; 5] = ["type", "created", "creator", "modified", "iri"];
+const NOT_PROJECTED: [&str; 6] = ["type", "created", "creator", "modified", "contributor", "iri"]; // #4576: contributor = the last writer, door-owned like the other dcterms stamps
 
 /// Which of a subject's stored predicates are missing from the served JSON.
 ///
@@ -176,6 +176,15 @@ mod tests {
         assert!(k.contains(&"name".to_string()));
         assert!(k.contains(&"label".to_string()));
         assert!(k.contains(&"docState".to_string()));
+    }
+
+    /// #4576 — contributor (the last writer) is a door-owned stamp, not a dropped
+    /// field; a real field stored beside it is still reported.
+    #[test]
+    fn contributor_is_a_stamp_not_a_dropped_field() {
+        let stored = vec!["label".into(), "contributor".into(), "hasDomain".into()];
+        let served = vec!["label".into()];
+        assert_eq!(dropped(&stored, &served), vec!["hasDomain".to_string()]);
     }
 
     /// NEGATIVE PROOF (#3734): the real case. werk holds hasDomain in the store

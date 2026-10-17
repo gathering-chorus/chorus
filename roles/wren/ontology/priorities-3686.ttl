@@ -52,11 +52,11 @@ chorus:ownerSequence a owl:DatatypeProperty ;
 # the complete one; this is the duplicate.
 
 chorus:ProductOrderShape a sh:NodeShape ;
-  sh:targetClass chorus:Product ;
+  sh:targetClass chorus:Product ; sh:node chorus:CoreShape ;
   sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
 
 chorus:DomainOrderShape a sh:NodeShape ;
-  sh:targetClass chorus:Domain ;
+  sh:targetClass chorus:Domain ; sh:node chorus:CoreShape ;
   sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
 
 
@@ -85,7 +85,7 @@ chorus:DomainOrderShape a sh:NodeShape ;
 # =============================================================================
 
 chorus:RoleShape a sh:NodeShape ;
-  sh:targetClass chorus:Role ;
+  sh:targetClass chorus:Role ; sh:node chorus:CoreShape ;
   # #4187 — pin removed 2026-09-18. The roles domain claims Role, AgentRole and
   # HumanRole, so the home derives from the model; the six Role rows were copied
   # to urn:chorus:domains:roles and verified before this line came out.
@@ -125,3 +125,8 @@ chorus:comment a owl:DatatypeProperty ;
     rdfs:comment "The row's own prose description as served by the generated API — the writable twin of rdfs:comment, which the store holds but the door does not accept on a write. Declared on Role because #4179 made RoleShape require it and a shape must not require an undeclared predicate (Silas, gate-arch 2026-09-16). It is used far more widely — Domain 40, Document 22, Product 9, Role 6, measured 2026-09-16 — and every one of those is equally undeclared; widening the domain needs a class those share, which does not exist yet. Narrow and true here beats broad and invented." ;
     rdfs:domain chorus:Role ;
     rdfs:range xsd:string .
+
+# #4576 — AgentRole is retired (roleKind replaces it); its remaining rows are Roles
+# and are checked as Roles until they move.
+chorus:AgentRoleShape a sh:NodeShape ;
+  sh:targetClass chorus:AgentRole ; sh:node chorus:CoreShape .

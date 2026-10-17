@@ -65,7 +65,7 @@ fn generated_products<'a>(store: &oxigraph::store::Store, touched: impl Iterator
     let mut built = Vec::new();
     for p in touched {
         let declared = athena_gen::model::settings(store, p).unwrap_or_else(|e| die(e));
-        if declared.iter().any(|(k, _)| k == "model.namespace") {
+        if athena_gen::model::runs_own_server(&declared) {
             built.push(p.clone());
         } else {
             println!("card #{card}: {p} declares no settings — served by the v1 door, nothing to generate");

@@ -6,13 +6,17 @@
 
 /// Model sources: any TTL under a role's ontology dir, plus the staged
 /// retirements file (#3752 — landing a card that stages one must run the model
-/// deploy so the retirement section executes it).
+/// deploy so the retirement section executes it), plus the row-changes ledger (#4576).
 pub fn is_model_source(path: &str) -> bool {
     let l = path.trim();
     (l.ends_with(".ttl")
         && l.starts_with("roles/")
         && l.splitn(3, '/').nth(2).is_some_and(|rest| rest.starts_with("ontology/")))
         || l == "designing/schemas/model-retirements.jsonl"
+        // #4576 — and the row-changes ledger: a card that adds a row change must
+        // run the model deploy so the change posts through the door (run 12 staged
+        // 11 lines and posted none: the card's sources never named the file).
+        || l == "designing/schemas/row-changes.jsonl"
 }
 
 // #4432 (Jeff 2026-10-06: "why do we reload this data as part of our deploy"):

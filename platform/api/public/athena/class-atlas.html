@@ -24,6 +24,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
           border-radius:2px;color:var(--muted,#5b6675);text-decoration:none;background:var(--panel,#fff)}
   .anav a:hover{border-color:#0d6a89;color:#0d6a89}
   .anav a small{color:var(--muted,#a8b0bb);margin-left:4px}
+  .aprod{margin-bottom:24px;padding:12px;border:1px solid var(--line,#cdd5de);border-radius:6px;background:var(--bg,#fbfcfd)}
+  .aprod-h{font:600 16px system-ui,sans-serif;margin:0 0 12px;padding-bottom:6px;border-bottom:2px solid #0f6b5c}
+  .aprod-h small{font:400 12px ui-monospace,Menlo,monospace;color:var(--muted,#5b6675);margin-left:8px}
   .adom{border:1px solid var(--line,#d8dee6);border-radius:4px;background:var(--panel,#fff);
         margin-bottom:18px;overflow:hidden}
   .adom h2{font:600 13px ui-monospace,Menlo,monospace;padding:9px 13px;margin:0;
@@ -211,6 +214,10 @@ function pick(name) {
     const has = [...sec.querySelectorAll('.cls[data-cls]')].some(function (c) { return c.style.display !== 'none'; });
     sec.style.display = (!name || has) ? '' : 'none';
   });
+  document.querySelectorAll('.aprod').forEach(function (psec) {
+    const has = [...psec.querySelectorAll('.adom')].some(function (d) { return d.style.display !== 'none'; });
+    psec.style.display = (!name || has) ? '' : 'none';
+  });
   document.querySelectorAll('#picked').forEach(function (el) {
     el.textContent = name ? ('showing ' + name) : 'showing all classes';
   });
@@ -247,45 +254,65 @@ window.pick = pick;
     out.appendChild(warn);
   }
   const SIZES = classSizes(atlas);
+  // #4576 — group Product -> Domain -> Class (Chorus first as top-level parent, then child products, unassigned last).
+  const byProduct = new Map();
   for (const dom of atlas.domains) {
-    const a = document.createElement('a');
-    a.href = '#dom-' + ident(dom.name);
-    a.textContent = dom.name;
-    const n = document.createElement('small');
-    n.textContent = String(dom.classes.length);
-    a.appendChild(n);
-    nav.appendChild(a);
+    const prod = dom.product || 'unassigned';
+    if (!byProduct.has(prod)) byProduct.set(prod, []);
+    byProduct.get(prod).push(dom);
+  }
+  const prodRank = (p) => (p === 'chorus' || p === 'chorusProduct' ? 0 : p === 'unassigned' ? 2 : 1);
+  const sortedProds = [...byProduct.keys()].sort((a, b) => prodRank(a) - prodRank(b) || a.localeCompare(b));
+  for (const prodName of sortedProds) {
+    const doms = byProduct.get(prodName);
+    const psec = document.createElement('section');
+    psec.className = 'aprod'; psec.id = 'prod-' + ident(prodName);
+    const ph = document.createElement('h2');
+    ph.className = 'aprod-h'; ph.textContent = prodName;
+    const phs = document.createElement('small');
+    const totalCls = doms.reduce((n, d) => n + d.classes.length, 0);
+    phs.textContent = doms.length + ' domain' + (doms.length === 1 ? '' : 's') + ' · ' + totalCls + ' class' + (totalCls === 1 ? '' : 'es');
+    ph.appendChild(phs);
+    psec.appendChild(ph);
+    out.appendChild(psec);
+    for (const dom of doms) {
+      const a = document.createElement('a');
+      a.href = '#dom-' + ident(dom.name);
+      a.textContent = prodName + ' / ' + dom.name;
+      const n = document.createElement('small');
+      n.textContent = String(dom.classes.length);
+      a.appendChild(n);
+      nav.appendChild(a);
 
-    const sec = document.createElement('section');
-    sec.className = 'adom'; sec.id = 'dom-' + ident(dom.name);
-    const h = document.createElement('h2');
-    h.textContent = dom.name;
-    const hs = document.createElement('small');
-    hs.textContent = dom.classes.length + ' class' + (dom.classes.length === 1 ? '' : 'es');
-    h.appendChild(hs);
-    const div = document.createElement('div'); div.className = 'adia';
-    sec.appendChild(h); sec.appendChild(div);
-    out.appendChild(sec);
-    const hp = document.createElement('span');
-    hp.id = 'picked'; hp.className = 'cpill'; hp.textContent = 'showing all classes';
-    h.appendChild(hp);
-    const hb = document.createElement('button');
-    hb.id = 'showall'; hb.textContent = 'show all'; hb.style.marginLeft = '8px';
-    hb.onclick = function () { pick(null); };
-    h.appendChild(hb);
-    try {
-      const { svg, bindFunctions } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom, SIZES));
-      div.innerHTML = svg;
-      if (bindFunctions) bindFunctions(div);
-    } catch (e) {
-      div.textContent = 'diagram failed for ' + dom.name + ': ' + e.message;
+      const sec = document.createElement('section');
+      sec.className = 'adom'; sec.id = 'dom-' + ident(dom.name);
+      const h = document.createElement('h2');
+      h.textContent = dom.name;
+      const hs = document.createElement('small');
+      hs.textContent = dom.classes.length + ' class' + (dom.classes.length === 1 ? '' : 'es');
+      h.appendChild(hs);
+      const div = document.createElement('div'); div.className = 'adia';
+      sec.appendChild(h); sec.appendChild(div);
+      psec.appendChild(sec);
+      const hp = document.createElement('span');
+      hp.id = 'picked'; hp.className = 'cpill'; hp.textContent = 'showing all classes';
+      h.appendChild(hp);
+      const hb = document.createElement('button');
+      hb.id = 'showall'; hb.textContent = 'show all'; hb.style.marginLeft = '8px';
+      hb.onclick = function () { pick(null); };
+      h.appendChild(hb);
+      try {
+        const { svg, bindFunctions } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom, SIZES));
+        div.innerHTML = svg;
+        if (bindFunctions) bindFunctions(div);
+      } catch (e) {
+        div.textContent = 'diagram failed for ' + dom.name + ': ' + e.message;
+      }
+      const tables = document.createElement('div');
+      tables.style.padding = '0 10px 10px';
+      tables.innerHTML = dom.classes.map((c) => classBlock(c, dom.name, SIZES)).join('');
+      sec.appendChild(tables);
     }
-    // #4053 — the schema tables: the map answers "what depends on what", these
-    // answer "what is inside, what is required, and what does it mean".
-    const tables = document.createElement('div');
-    tables.style.padding = '0 10px 10px';
-    tables.innerHTML = dom.classes.map((c) => classBlock(c, dom.name, SIZES)).join('');
-    sec.appendChild(tables);
   }
 })();
 </script>
