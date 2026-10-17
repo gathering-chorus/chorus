@@ -1195,58 +1195,6 @@ pub fn backfill_descriptions(ontology: &str, query: &str, update: &str) -> Resul
     Ok(format!("descriptions filled from {} template(s): +{filled}", rows.len()))
 }
 
-/// #4576 — every CoreShape row has a name. A row of a class that requires chorus:label
-/// and lacks it (run 11: 259 Documents, 10 KeyRegistryEntries, 3 AgentRuntimes) gets one
-/// from what it already says about itself: its rdfs:label, title, docTitle, else its IRI.
-const LABEL_MISSING: &str = "FILTER NOT EXISTS { ?s chorus:label ?x }";
-
-/// The rows a name pass touches: rows of a class whose flattened shape requires
-/// chorus:label (a class that names its own label field, e.g. rdfs:label, keeps it),
-/// in every graph but test-ephemeral ones, still without one. Pure.
-fn label_rows(ontology: &str) -> String {
-    format!(
-        "{{ SELECT DISTINCT ?c WHERE {{ GRAPH <{ontology}> {{ ?sh sh:targetClass ?c ; sh:property ?p . ?p sh:path chorus:label ; sh:minCount ?m FILTER(?m >= 1) }} }} }}\n\
-         GRAPH ?g {{ ?s a ?c . {LABEL_MISSING} }}\n\
-         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }}"
-    )
-}
-
-/// One bounded pass of label fill. Pure.
-pub fn label_insert_sparql(ontology: &str, limit: u32) -> String {
-    format!(
-        "{STAMP_PREFIXES}\nINSERT {{ GRAPH ?g {{ ?s chorus:label ?l }} }}\n\
-         WHERE {{ {{ SELECT ?g ?s (SAMPLE(?l0) AS ?l) WHERE {{ {rows} \
-         OPTIONAL {{ GRAPH ?g {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?r }} }} \
-         OPTIONAL {{ GRAPH ?g {{ ?s dct:title ?t }} }} OPTIONAL {{ GRAPH ?g {{ ?s chorus:docTitle ?d }} }} \
-         BIND(COALESCE(STR(?r), STR(?t), STR(?d), REPLACE(STR(?s), \"^.*[#/]\", \"\")) AS ?l0) }} GROUP BY ?g ?s LIMIT {limit} }} }}",
-        rows = label_rows(ontology)
-    )
-}
-
-pub fn label_count_sparql(ontology: &str) -> String {
-    format!("{STAMP_PREFIXES}\nSELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ {} }}", label_rows(ontology))
-}
-
-/// Fill missing names in bounded passes, refusing a pass that makes no progress.
-pub fn backfill_labels(ontology: &str, query: &str, update: &str) -> Result<String, String> {
-    let limit: u32 = env_or("CORE_STAMP_BATCH", "50000").parse().unwrap_or(50000);
-    let count = || -> Result<u64, String> {
-        let b = curl(&["-s", "--data-urlencode", &format!("query={}", label_count_sparql(ontology)), "-H", "Accept: text/csv", query])?;
-        csv_count(&b).ok_or_else(|| format!("labels: could not count: {}", b.trim()))
-    };
-    let mut left = count()?;
-    let first = left;
-    while left > 0 {
-        let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
-            "-H", "Content-Type: application/sparql-update", "--data-binary", &label_insert_sparql(ontology, limit), update])?;
-        if !ok_http(&code) { return Err(format!("labels-failed-http-{code}")); }
-        let now = count()?;
-        if now >= left { return Err(format!("labels: pass made no progress ({left} rows still without a name)")); }
-        left = now;
-    }
-    Ok(format!("names filled: +{first}"))
-}
-
 fn csv_count(body: &str) -> Option<u64> {
     body.lines().nth(1).and_then(|l| l.trim().trim_matches('"').parse().ok())
 }
@@ -1720,11 +1668,6 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     }
     // #4576 — and every templated class's missing descriptions
     match backfill_descriptions(&ontology, &query, &update) {
-        Ok(line) => println!("athena-deploy: {line}"),
-        Err(e) => return Err(fail(&e)),
-    }
-    // #4576 — and every CoreShape row's missing name
-    match backfill_labels(&ontology, &query, &update) {
         Ok(line) => println!("athena-deploy: {line}"),
         Err(e) => return Err(fail(&e)),
     }
@@ -2555,26 +2498,6 @@ fn riot_available() -> bool {
 
 #[cfg(test)]
 mod tests {
-    /// #4576 — a row gets a name only when its class requires chorus:label and it has
-    /// none; the name comes from its rdfs:label, title, docTitle, else its IRI.
-    /// Proven on staging 12:15: 293 rows without a name -> 0 ("About", "Contact" from titles).
-    #[test]
-    fn label_fill_only_touches_nameless_rows_and_prefers_the_title() {
-        let ins = label_insert_sparql("urn:o", 10);
-        assert!(ins.contains("FILTER NOT EXISTS { ?s chorus:label ?x }"), "{ins}");
-        assert!(ins.contains("sh:path chorus:label ; sh:minCount ?m"), "only classes that require chorus:label: {ins}");
-        let r = ins.find("STR(?r)").unwrap();
-        let t = ins.find("STR(?t)").unwrap();
-        assert!(r < t, "rdfs:label first: {ins}");
-        let d = ins.find("STR(?d)").unwrap();
-        let iri = ins.find("REPLACE(STR(?s)").unwrap();
-        assert!(t < d && d < iri, "title, then docTitle, then the IRI: {ins}");
-        // NEGATIVE PROOF: the count and the insert select the same rows, so a pass that
-        // fills nothing is caught as no progress rather than looping
-        assert!(label_count_sparql("urn:o").contains(LABEL_MISSING));
-        assert!(ins.contains("LIMIT 10"));
-    }
-
     use super::*;
 
     /// #4576 — sh:node is flattened in the deploy's own graph, transitively, and

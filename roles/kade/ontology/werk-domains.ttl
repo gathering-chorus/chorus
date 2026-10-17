@@ -581,7 +581,6 @@ chorus:SourceFileShape a sh:NodeShape ;
 
 chorus:TestShape a sh:NodeShape ;
     sh:targetClass chorus:Test ; sh:node chorus:CoreShape ;
-    chorus:descriptionTemplate "Test {testName} in {filePath}, owned by {ownedBy}" ;  # #4576: the description the DAL fills when a write has none
     # #3570 — Test's instance HOME graph. owl-api resolve_instances_graph reads this declared
     # override (lib.rs:803) → serves /tests from urn:chorus:domains:tests, not the vague
     # urn:chorus:instances bucket. The 4617 Test instances are moved there to match. ("tests not
