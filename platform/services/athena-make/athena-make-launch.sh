@@ -69,4 +69,16 @@ if [ -n "${ATHENA_MAKE_BIN_FILE:-}" ] && [ -s "$ATHENA_MAKE_BIN_FILE" ]; then
   echo "athena-make-launch: serving the card build $card_bin (from $ATHENA_MAKE_BIN_FILE)" >&2
   bin="$card_bin"
 fi
+# #4578 reopen — and the card's DAL: the door runs athena-model for every write
+# (CHORUS_MODEL_BIN, else athena-model on PATH = the installed one). Same rule:
+# a pointer naming a missing or non-executable file is REFUSED.
+if [ -n "${ATHENA_MODEL_BIN_FILE:-}" ] && [ -s "$ATHENA_MODEL_BIN_FILE" ]; then
+  card_model="$(head -1 "$ATHENA_MODEL_BIN_FILE" | tr -d '[:space:]')"
+  if [ ! -x "$card_model" ]; then
+    echo "athena-make-launch: REFUSED — $ATHENA_MODEL_BIN_FILE names '$card_model', which is not an executable file" >&2
+    exit 78
+  fi
+  echo "athena-make-launch: the door writes through the card DAL $card_model (from $ATHENA_MODEL_BIN_FILE)" >&2
+  export CHORUS_MODEL_BIN="$card_model"
+fi
 exec "$bin" "$@"

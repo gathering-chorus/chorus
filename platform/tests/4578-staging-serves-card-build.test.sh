@@ -27,12 +27,13 @@ PROD_PLIST="$REPO_ROOT/platform/launchd/com.chorus.athena-make.plist"
 SBX="$(mktemp -d)"; trap 'rm -rf "$SBX"' EXIT
 export HOME="$SBX/home"; mkdir -p "$HOME/.chorus/bin" "$SBX/stubbin" "$SBX/card"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$SBX/stubbin/curl"; chmod +x "$SBX/stubbin/curl"
-fake() { printf '#!/usr/bin/env bash\necho %s > "%s/ran"\n' "$1" "$SBX" > "$2"; chmod +x "$2"; }
+fake() { printf '#!/usr/bin/env bash\necho %s > "%s/ran"\necho "${CHORUS_MODEL_BIN:-installed-dal}" > "%s/dal"\n' "$1" "$SBX" "$SBX" > "$2"; chmod +x "$2"; }
 fake installed "$HOME/.chorus/bin/athena-make"
 fake card "$SBX/card/athena-make"
 export CHORUS_FUSEKI="http://localhost:3030/staging"
 run() { rm -f "$SBX/ran"; PATH="$SBX/stubbin:$PATH" bash "$LAUNCHER" serve >/dev/null 2>"$SBX/err"; echo $?; }
 ran() { cat "$SBX/ran" 2>/dev/null || echo none; }
+dal() { cat "$SBX/dal" 2>/dev/null || echo none; }
 
 unset ATHENA_MAKE_BIN_FILE
 rc=$(run); [ "$rc" = 0 ] && [ "$(ran)" = installed ] && ok "no pointer: the installed binary runs" || no "no pointer: rc=$rc ran=$(ran)"
@@ -50,6 +51,26 @@ if [ "$rc" = 78 ] && [ "$(ran)" = none ] && grep -q "REFUSED" "$SBX/err"; then
   ok "NEGATIVE PROOF: a pointer to a missing build is refused and nothing runs"
 else
   no "missing build: rc=$rc ran=$(ran) (must be 78, none)"
+fi
+
+# #4578 reopen — the card's DAL
+unset ATHENA_MAKE_BIN_FILE ATHENA_MODEL_BIN_FILE
+rm -f "$SBX/dal"; rc=$(run); [ "$rc" = 0 ] && [ "$(dal)" = installed-dal ] && ok "no DAL pointer: the door runs the installed athena-model" || no "no DAL pointer: rc=$rc dal=$(dal)"
+printf '#!/usr/bin/env bash\n' > "$SBX/card/athena-model"; chmod +x "$SBX/card/athena-model"
+export ATHENA_MODEL_BIN_FILE="$SBX/athena-model.bin"
+echo "$SBX/card/athena-model" > "$ATHENA_MODEL_BIN_FILE"
+rm -f "$SBX/dal"; rc=$(run); [ "$rc" = 0 ] && [ "$(dal)" = "$SBX/card/athena-model" ] && ok "DAL pointer: the door writes through the card's athena-model" || no "DAL pointer: rc=$rc dal=$(dal)"
+echo "$SBX/card/no-model" > "$ATHENA_MODEL_BIN_FILE"
+rc=$(run)
+if [ "$rc" = 78 ] && [ "$(ran)" = none ] && grep -q "REFUSED" "$SBX/err"; then
+  ok "NEGATIVE PROOF: a DAL pointer to a missing build is refused and nothing runs"
+else
+  no "missing DAL: rc=$rc ran=$(ran) (must be 78, none)"
+fi
+unset ATHENA_MODEL_BIN_FILE
+grep -q "<key>ATHENA_MODEL_BIN_FILE</key>" "$STAGING_PLIST" && ok "staging plist names the DAL pointer" || no "staging plist lacks ATHENA_MODEL_BIN_FILE"
+if [ -f "$PROD_PLIST" ]; then
+  grep -q "ATHENA_MODEL_BIN_FILE" "$PROD_PLIST" && no "prod plist names a DAL pointer" || ok "prod plist names no DAL pointer"
 fi
 
 grep -q "<key>ATHENA_MAKE_BIN_FILE</key>" "$STAGING_PLIST" && ok "staging plist names the pointer" || no "staging plist lacks ATHENA_MAKE_BIN_FILE"
