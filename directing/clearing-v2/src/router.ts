@@ -27,13 +27,13 @@ export class MessageRouter {
     }
   }
 
-  private findSameBody(room: string, body: string, fromFilter?: (from: string) => boolean): ClearingMessage | undefined {
+  private findSameBody(room: string, body: string, filter?: (m: ClearingMessage) => boolean): ClearingMessage | undefined {
     if (!body) return undefined;
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const m = this.messages.at(i);
       if (!m) continue;
       if ((m.room || 'team') !== room) continue;
-      if (fromFilter && !fromFilter(m.from)) continue;
+      if (filter && !filter(m)) continue;
       if (m.text.trim() === body) return m;
     }
     return undefined;
@@ -55,8 +55,14 @@ export class MessageRouter {
       return false;
     }
 
-    if (msg.from !== 'bridge') {
-      const bridgeCopy = this.findSameBody(room, body, (f) => f === 'bridge');
+    // #4591 — a bridge-signed mirror whose author was unwrapped to msg.from is an echo if the room already holds it
+    if (msg.signer === 'bridge' && this.findSameBody(room, body, (m) => m.from === msg.from)) {
+      this.seenIds.add(msg.id);
+      return false;
+    }
+
+    if (msg.signer !== 'bridge' && msg.from !== 'bridge') {
+      const bridgeCopy = this.findSameBody(room, body, (m) => m.from === 'bridge' || (m.from === msg.from && m.signer === 'bridge'));
       if (bridgeCopy) {
         this.seenIds.add(msg.id);
         Object.assign(bridgeCopy, { ...msg, text: cleanText });

@@ -22,6 +22,7 @@ export interface ClearingMessage {
   pubkey?: string;
   room?: string;
   tick?: boolean;
+  signer?: string;
 }
 
 export interface RoleTile {

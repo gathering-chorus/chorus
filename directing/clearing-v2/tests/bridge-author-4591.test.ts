@@ -165,4 +165,58 @@ describe('#4591: Bridge author unwrapping and message deduplication', () => {
     expect(container.children[0].id).toBe('msg-real-1');
     expect(router.getRecent(1)).toEqual([]);
   });
+
+  test('bridge-signed note with author jeff does NOT trigger deliverJeffInput to pulse', () => {
+    const router = new MessageRouter();
+    const pulseCalls: string[] = [];
+    // Mock global fetch to observe pulse calls
+    (global as any).fetch = jest.fn().mockImplementation((url: string) => {
+      pulseCalls.push(url);
+      return Promise.resolve({ ok: true });
+    });
+
+    const handler = makeInboundHandler({
+      router,
+      keys,
+      pulseUrl: 'http://127.0.0.1:9999',
+      broadcastSSE: jest.fn(),
+      isRelayConnected: () => true,
+    });
+
+    const event = makeSignedEvent(bridgeSk, '@wren test input', [['t', 'team'], ['author', 'jeff']]);
+    handler(event);
+
+    expect(pulseCalls.length).toBe(0);
+  });
+
+  test('router drops bridge-signed echo when same author and body already exist in room', () => {
+    const router = new MessageRouter();
+    // 1. Direct send from Jeff
+    const directIngested = router.ingest({
+      id: 'jeff-direct-1',
+      from: 'jeff',
+      text: 'hello team',
+      ts: '2026-10-17T18:00:00.000Z',
+      type: 'jeff-input',
+      visible: true,
+      signer: 'jeff',
+    });
+    expect(directIngested).toBe(true);
+
+    // 2. Bridge echo arrives with new id but same body and author
+    const echoIngested = router.ingest({
+      id: 'bridge-echo-1',
+      from: 'jeff',
+      text: 'hello team',
+      ts: '2026-10-17T18:00:01.000Z',
+      type: 'jeff-input',
+      visible: true,
+      signer: 'bridge',
+    });
+    expect(echoIngested).toBe(false);
+
+    expect(router.getRecent(10).length).toBe(1);
+    expect(router.getRecent(10)[0].id).toBe('jeff-direct-1');
+  });
 });
+
