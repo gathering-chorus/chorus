@@ -3,12 +3,24 @@ import { Before, Given, When, Then } from '@cucumber/cucumber';
 import * as assert from 'assert';
 import * as http from 'http';
 
-const BASE_URL = process.env.CLEARING_V2_URL || 'http://127.0.0.1:3472';
-// #4570 — these scenarios read a running Clearing v2. When nothing answers at
-// BASE_URL the result is UNMEASURED (every step skipped), never a red: a red must
-// mean v2 is broken, not that no v2 was started on this box.
+// #4574 — these scenarios sign in as Jeff and post. Pointed at the live v2 (:3472) they
+// typed "Morning team" into Wren's terminal as Jeff from the 04:46 nightly (once #4570 made
+// v2 always on). They run only against a test instance named in CLEARING_V2_URL, never the
+// live port; with none named the result is UNMEASURED, never a red and never a live post.
+const LIVE_V2 = /:(3472)(\/|$)/;
+const BASE_URL = process.env.CLEARING_V2_URL || '';
+export function v2TestTarget(url: string): { ok: true } | { ok: false; reason: string } {
+  if (!url) return { ok: false, reason: 'no test instance of Clearing v2 (set CLEARING_V2_URL)' };
+  if (LIVE_V2.test(url)) return { ok: false, reason: `refusing the live Clearing v2 at ${url}` };
+  return { ok: true };
+}
 Before(async function ({ pickle }) {
   if (!pickle.uri.includes('clearing-v2')) return undefined;
+  const target = v2TestTarget(BASE_URL);
+  if (!target.ok) {
+    console.log(`UNMEASURED: ${target.reason}`);
+    return 'skipped';
+  }
   const up = await new Promise<boolean>((resolve) => {
     const req = http.get(BASE_URL, (res) => { res.resume(); resolve(true); });
     req.setTimeout(2000, () => { req.destroy(); resolve(false); });
