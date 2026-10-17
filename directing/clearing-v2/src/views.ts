@@ -45,7 +45,7 @@ export function renderPageShell(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title} · The Clearing v2</title>
   <link rel="stylesheet" href="/style.css">
   <script type="importmap">
@@ -229,7 +229,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
                 <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
                 <td class="meta">${a.activity || '–'}</td>
                 <td>${renderCardRef(a.card)}</td>
-                <td class="mono meta role-sessions">${a.sessions.length > 0 ? a.sessions.join('<br>') : '–'}</td>
+                <td class="mono meta role-sessions" title="${a.sessions.join(' · ')}">${a.sessions.length > 0 ? a.sessions[0] + (a.sessions.length > 1 ? ` <span class="faint">+${a.sessions.length - 1}</span>` : '') : '–'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -250,10 +250,17 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
   return renderPageShell('Roles', 'roles', content, sources);
 }
 
+function formatRoomText(raw: string): string {
+  return escapeHtml(raw)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+}
+
 function renderRoomMessage(m: RoomsData['messages'][number]): string {
-          const linkifiedText = m.text.replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+          const linkifiedText = formatRoomText(m.text);
           return `
-            <div class="msg" id="${m.id}">
+            <div class="msg" id="msg-${m.id}">
               <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
               <div class="body">
                 <span class="nm who-${m.from}">${m.from}</span>

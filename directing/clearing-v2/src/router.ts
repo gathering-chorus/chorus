@@ -4,6 +4,12 @@ import { ClearingMessage, PulseNudgePayload } from './types';
 
 const KNOWN_ROLES: Set<string> = new Set(['jeff', 'wren', 'silas', 'kade', 'abby-normal']);
 
+/** #4575 — strip the Chorus Prompt header ("--- Role | ... ---") so a role's signed reply
+ *  and v1's bridge-signed mirror share one clean body and match as the same message. */
+export function stripPromptHeader(text: string): string {
+  return (text || '').replace(/^---\s+[^|\n]+\|[^\n]+---\s*\n*/, '');
+}
+
 export class MessageRouter {
   private messages: ClearingMessage[] = [];
   private seenIds: Set<string> = new Set();
@@ -13,29 +19,54 @@ export class MessageRouter {
     this.maxMessages = maxMessages;
   }
 
+  private trimIfFull(): void {
+    if (this.messages.length <= this.maxMessages) return;
+    const removed = this.messages.shift();
+    if (removed && this.seenIds.size > this.maxMessages * 5) {
+      this.seenIds.delete(removed.id);
+    }
+  }
+
+  private findSameBody(room: string, body: string, fromFilter?: (from: string) => boolean): ClearingMessage | undefined {
+    if (!body) return undefined;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages.at(i);
+      if (!m) continue;
+      if ((m.room || 'team') !== room) continue;
+      if (fromFilter && !fromFilter(m.from)) continue;
+      if (m.text.trim() === body) return m;
+    }
+    return undefined;
+  }
+
   /**
    * Ingest a message into the router.
-   * Returns true if newly ingested, or false if duplicate/dropped.
+   * Returns true if newly ingested (or upgraded from a bridge copy), or false if duplicate/dropped.
    */
   ingest(msg: ClearingMessage): boolean {
-    if (!msg.id) return false;
-    if (this.seenIds.has(msg.id)) {
+    if (!msg.id || this.seenIds.has(msg.id)) return false;
+
+    const cleanText = stripPromptHeader(msg.text);
+    const body = cleanText.trim();
+    const room = msg.room || 'team';
+
+    if (msg.from === 'bridge' && this.findSameBody(room, body)) {
+      this.seenIds.add(msg.id);
       return false;
     }
 
-    this.seenIds.add(msg.id);
-    this.messages.push(msg);
-
-    if (this.messages.length > this.maxMessages) {
-      const removed = this.messages.shift();
-      if (removed) {
-        // Keep seenIds bounded to prevent unbounded memory growth
-        if (this.seenIds.size > this.maxMessages * 5) {
-          this.seenIds.delete(removed.id);
-        }
+    if (msg.from !== 'bridge') {
+      const bridgeCopy = this.findSameBody(room, body, (f) => f === 'bridge');
+      if (bridgeCopy) {
+        this.seenIds.add(msg.id);
+        Object.assign(bridgeCopy, { ...msg, text: cleanText });
+        return true;
       }
     }
 
+    this.seenIds.add(msg.id);
+    this.messages.push({ ...msg, text: cleanText });
+    this.trimIfFull();
     return true;
   }
 

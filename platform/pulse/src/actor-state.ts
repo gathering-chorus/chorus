@@ -259,6 +259,13 @@ function isNudgeCleared(nudge: OwedNudgeFact, allOwed: OwedNudgeFact[]): boolean
   return reverseMs > 0 && sentMs > 0 && reverseMs >= sentMs;
 }
 
+/** #4575 — messages.db stamps created_at with SQLite's UTC "YYYY-MM-DD HH:MM:SS" (no zone).
+ *  Served as-is, every reader took it for Boston time: Jeff's phone showed "waiting since
+ *  Fri 12:07" at 06:33. Serve it as an ISO instant; anything already zoned passes through. */
+export function utcIso(sqliteTs: string): string {
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(sqliteTs) ? `${sqliteTs.replace(' ', 'T')}Z` : sqliteTs;
+}
+
 function evaluateWaiting(
   role: string,
   hasLiveSession: boolean,
@@ -274,7 +281,7 @@ function evaluateWaiting(
     waitingOn: {
       on: roleToPrincipal(match.to),
       what: match.expects,
-      since: match.sentAt,
+      since: utcIso(match.sentAt),
     },
   };
 }

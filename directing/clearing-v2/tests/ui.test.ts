@@ -304,3 +304,45 @@ describe('room messages link #N to the card (#4574)', () => {
     });
   });
 });
+
+describe('#4575: DOM id match, duplicate suppression, and safe markdown bold/code', () => {
+  test('renderRoomsPage uses id="msg-<id>" matching appendMessage, and same event id twice renders one row (negative proof)', () => {
+    const { renderRoomsPage } = require('../src/views');
+    const html = renderRoomsPage('team', {
+      room: 'team',
+      channels: ['team'],
+      directRoles: ['wren'],
+      relayConnected: true,
+      messages: [{ id: 'ev-dup-42', from: 'kade', text: '**Bold** and `code` on #4575 <img src=x onerror=alert(1)>', time: '06:05', tick: true }],
+    }, []);
+    expect(html).toContain('id="msg-ev-dup-42"');
+    expect(html).toContain('<strong>Bold</strong>');
+    expect(html).toContain('<code>code</code>');
+    expect(html).not.toContain('**Bold**');
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+
+    const container: any = { children: [], appendChild: (c: any) => container.children.push(c) };
+    const mk = (tag: string): any => ({ tag, className: '', id: '', textContent: '', href: '', dataset: {}, children: [], appendChild(c: any) { this.children.push(c); } });
+    (global as any).document = {
+      getElementById: (id: string) => {
+        if (id === 'messages-stream') return container;
+        return container.children.find((c: any) => c.id === id) || null;
+      },
+      createElement: mk,
+      createTextNode: (t: string) => ({ tag: '#text', textContent: t }),
+    };
+
+    jest.isolateModules(() => {
+      const { appendMessage } = require('../public/app.js');
+      appendMessage({ id: 'ev-dup-42', from: 'kade', text: '**Bold** and `code`', ts: '2026-10-17T10:05:00.000Z', visible: true });
+      appendMessage({ id: 'ev-dup-42', from: 'kade', text: '**Bold** and `code`', ts: '2026-10-17T10:05:00.000Z', visible: true });
+      expect(container.children).toHaveLength(1);
+      const textEl = container.children[0].children.find((c: any) => c.className === 'message-text');
+      const strongs = textEl.children.filter((c: any) => c.tag === 'strong');
+      const codes = textEl.children.filter((c: any) => c.tag === 'code');
+      expect(strongs.map((s: any) => s.textContent)).toEqual(['Bold']);
+      expect(codes.map((c: any) => c.textContent)).toEqual(['code']);
+    });
+  });
+});
