@@ -9,6 +9,7 @@ import { TileService } from './tile-service';
 import { BuzzRelayClient, RelaySigner } from './relay-client';
 import { bridgeSigner } from './relay-signer';
 import { stripBase, withBase, injectBase } from './base-path';
+import { deliverJeffInput } from './jeff-input';
 import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity, loadKnownKeys } from './identity';
 import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
@@ -361,13 +362,14 @@ function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
     const msg = toClearingMessage(event, role, deps.isRelayConnected());
     if (!deps.router.ingest(msg)) return;
     deps.broadcastSSE('message', msg);
+    // #4571 — only Jeff's own messages are Jeff input; agents nudge each other on their own path.
+    if (role !== 'jeff') return;
     for (const nudge of deps.router.extractNudges(msg)) {
-      fetch(`${deps.pulseUrl}/api/nudge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nudge),
-      }).catch(() => {
-        // fire-and-forget: Pulse delivery failure does not block the room; the message is already ingested
+      void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
+        if (!r.ok) {
+          console.error(`[clearing-v2] Jeff's message to ${nudge.to} was not handed off: ${r.reason}`);
+          deps.broadcastSSE('delivery', { to: nudge.to, ok: false, reason: r.reason, id: msg.id });
+        }
       });
     }
   };
