@@ -2671,6 +2671,8 @@ mod tests {
         use super::model_scope::*;
         assert!(is_model_source("roles/wren/ontology/principles-3749.ttl"));
         assert!(is_model_source("designing/schemas/model-retirements.jsonl"));
+        assert!(is_model_source("designing/schemas/row-changes.jsonl"), "#4576: a card's row changes post only if the ledger is a source");
+        assert!(!is_model_source("designing/schemas/row-changes.jsonl.bak"));
         assert!(!is_model_source("roles/wren/notes/x.ttl"), "a TTL outside ontology/ is not a model source");
         assert!(!is_model_source("platform/tests/fixtures/principles-4186-violations.ttl"), "a fixture is never a model source");
         let diff = "roles/wren/ontology/a.ttl\nplatform/services/x/src/lib.rs\ndesigning/data/b.ttl\n";

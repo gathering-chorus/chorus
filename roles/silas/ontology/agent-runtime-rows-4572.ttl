@@ -10,7 +10,8 @@
 # domain-set-manifest.txt loads this file there. athena-gen still reads it to write
 # platform/services/shared/agent_runtimes.json, which is unchanged by the move.
 # The rows carry the audit stamps (#4576) because the file loader, unlike the DAL,
-# does not stamp: created = the #4444 land (58d51f654), modified = this move.
+# does not stamp, or name: chorus:label is the name CoreShape requires (run 12), rdfs:label
+# what athena-gen reads. created = the #4444 land (58d51f654), modified = this move.
 
 # ---------------------------------------------------------------- the rows
 # agy: Antigravity CLI 1.3.5. From https://antigravity.google/docs/hooks/ and
@@ -26,6 +27,7 @@ chorus:runtime-agy a chorus:AgentRuntime ;
     dcterms:creator chorus:principal-silas ; dcterms:contributor chorus:principal-silas ;
     chorus:comment "Antigravity CLI (agy), the program Abby Normal runs on: its binary, sign-in, hook events and input fields." ;
     rdfs:label "Antigravity CLI (agy)" ;
+    chorus:label "Antigravity CLI (agy)" ;
     chorus:runtimeBinary "agy" ;
     chorus:runtimeAuth "google-login" ;
     chorus:runtimeHooksFile ".gemini/config/hooks.json" ;
@@ -71,6 +73,7 @@ chorus:runtime-gemini-cli a chorus:AgentRuntime ;
     dcterms:creator chorus:principal-silas ; dcterms:contributor chorus:principal-silas ;
     chorus:comment "Gemini CLI, a program a role session can run on: its binary, sign-in, hook events and input fields." ;
     rdfs:label "Gemini CLI" ;
+    chorus:label "Gemini CLI" ;
     chorus:runtimeBinary "gemini" ;
     chorus:runtimeAuth "api-key" ;
     chorus:runtimeKeyEnv "GEMINI_API_KEY" ;
@@ -97,6 +100,7 @@ chorus:runtime-claude-code a chorus:AgentRuntime ;
     dcterms:creator chorus:principal-silas ; dcterms:contributor chorus:principal-silas ;
     chorus:comment "Claude Code, the program Silas, Wren and Kade run on: its binary, sign-in, hook events and input fields." ;
     rdfs:label "Claude Code" ;
+    chorus:label "Claude Code" ;
     chorus:runtimeBinary "claude" ;
     chorus:runtimeAuth "subscription" ;
     chorus:runtimeHooksFile ".claude/settings.json" ;
