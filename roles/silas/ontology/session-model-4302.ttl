@@ -265,13 +265,17 @@ chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
 # fields are not caller input anyway: the DAL stamps all three on every write.
 # So the requirement stays and moves here, where it gates without becoming a
 # field anyone is asked to send.
+# #4576 — CoreShape carries this rule for every class (Jeff 10-17: name, id,
+# description, created and changed by and at). creator is the first writer and
+# contributor the last, each a Principal IRI, never a role name.
 chorus:StampedByTheDal a sh:SPARQLConstraint ;
-    sh:message "a row carries the DAL's stamp: dcterms:created, dcterms:creator and dcterms:modified" ;
+    sh:message "a row carries the DAL's stamp: dcterms:created and dcterms:modified, and dcterms:creator and dcterms:contributor naming a Principal" ;
     sh:select """
         SELECT $this WHERE {
           FILTER ( NOT EXISTS { $this <http://purl.org/dc/terms/created> ?a }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/creator> ?b }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/modified> ?c } )
+                || NOT EXISTS { $this <http://purl.org/dc/terms/modified> ?c }
+                || NOT EXISTS { $this <http://purl.org/dc/terms/creator> ?b . FILTER(isIRI(?b)) }
+                || NOT EXISTS { $this <http://purl.org/dc/terms/contributor> ?d . FILTER(isIRI(?d)) } )
         }""" .
 
 # --- SessionRun ---------------------------------------------------------------

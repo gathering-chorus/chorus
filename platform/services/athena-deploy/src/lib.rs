@@ -960,15 +960,16 @@ pub fn no_credential_refusal(prefix: &str) -> String {
 /// The write credential is prepended HERE, at the one door, so no call site can
 /// forget it — the same "one place owns the credential" rule `fuseki-auth.sh`
 /// states for the bash writers.
-/// #4576 — the update that copies each sh:node target's properties onto the
-/// shape that names it (transitively). The property nodes are shared, not
+/// #4576 — the update that copies each sh:node target's properties AND its
+/// SPARQL rules (sh:sparql: the DAL stamp is a rule, #4312) onto the shape that
+/// names it (transitively). The property nodes are shared, not
 /// copied, so a CoreShape property is one node however many shapes carry it.
 /// Pure; idempotent (an INSERT of triples already present adds nothing).
 pub fn flatten_node_shapes_sparql(graph: &str) -> String {
     format!(
         "PREFIX sh: <http://www.w3.org/ns/shacl#>\n\
-         INSERT {{ GRAPH <{graph}> {{ ?s sh:property ?p }} }}\n\
-         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n sh:property ?p . FILTER(?s != ?n) }} }}"
+         INSERT {{ GRAPH <{graph}> {{ ?s ?k ?p }} }}\n\
+         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n ?k ?p . VALUES ?k {{ sh:property sh:sparql }} FILTER(?s != ?n) }} }}"
     )
 }
 
@@ -2346,8 +2347,8 @@ mod tests {
     #[test]
     fn flatten_update_targets_the_graph_and_follows_sh_node() {
         let q = flatten_node_shapes_sparql("urn:chorus:ontology");
-        assert!(q.contains("INSERT { GRAPH <urn:chorus:ontology> { ?s sh:property ?p } }"), "{q}");
-        assert!(q.contains("?s sh:node+ ?n . ?n sh:property ?p"), "{q}");
+        assert!(q.contains("INSERT { GRAPH <urn:chorus:ontology> { ?s ?k ?p } }"), "{q}");
+        assert!(q.contains("?s sh:node+ ?n . ?n ?k ?p . VALUES ?k { sh:property sh:sparql }"), "rules travel with properties: {q}");
         assert!(q.contains("FILTER(?s != ?n)"), "{q}");
         assert!(!q.contains("DELETE"), "flatten only adds: {q}");
     }
