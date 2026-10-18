@@ -8,7 +8,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { createApp } from '../src/server';
-import { parsePipelineOutput } from '../src/sources/pipeline';
+import { parsePipelineOutput, fetchCardPipeline } from '../src/sources/pipeline';
 import { toDrawerCard } from '../src/sources/card';
 import { renderBoardPage } from '../src/views';
 
@@ -187,6 +187,7 @@ describe('Card #4598: Card Details & Live /cws Pipeline State in Clearing v2', (
     expect(html).toContain('id="drawer-card-ac"');
     expect(html).toContain('id="drawer-card-cws"');
     expect(html).toContain('id="drawer-card-cws-motion"');
+    expect(html).toContain("p.status === 'unmeasured'");
     expect(html).toContain('openCardDrawer(\'4598\')');
     expect(html).toContain('data-open-card="4598"');
   });
@@ -201,5 +202,40 @@ describe('Card #4598: Card Details & Live /cws Pipeline State in Clearing v2', (
     // Checks that card drawer rules exist in phone block
     expect(phoneBlock).toContain('.card-drawer');
     expect(phoneBlock).toMatch(/max-width:\s*100vw|width:\s*100%/);
+  });
+
+  test('fetchCardPipeline returns unmeasured with reason when cws fails without prior output', async () => {
+    const res = await fetchCardPipeline(9999, {
+      runCws: async () => {
+        throw new Error('Traceback (most recent call last):\n  File "chorus-werk-status", line 1234, in <module>\nTimeoutError: Loki slow');
+      },
+    });
+    expect(res.cardId).toBe(9999);
+    expect(res.status).toBe('unmeasured');
+    expect(res.isLive).toBe(false);
+    expect(res.unmeasuredReason).toBe('TimeoutError: Loki slow');
+    expect(res.output).toContain('unmeasured');
+    expect(res.output).not.toContain('Traceback');
+  });
+
+  test('NEGATIVE PROOF: fetchCardPipeline retains last good output when cws times out or errors', async () => {
+    // 1. Initial successful run
+    const res1 = await fetchCardPipeline(8888, {
+      runCws: async () => RUNNING_CWS_OUTPUT,
+    });
+    expect(res1.status).toBe('running');
+    expect(res1.output).toBe(RUNNING_CWS_OUTPUT);
+
+    // 2. Subsequent timeout/crash
+    const res2 = await fetchCardPipeline(8888, {
+      runCws: async () => {
+        throw new Error('Timed out after 10000ms');
+      },
+    });
+    expect(res2.status).toBe('unmeasured');
+    expect(res2.isLive).toBe(false);
+    expect(res2.unmeasuredReason).toContain('Timed out');
+    expect(res2.output).toContain(RUNNING_CWS_OUTPUT);
+    expect(res2.output).toContain('[unmeasured: Timed out after 10000ms — showing last good output]');
   });
 });
