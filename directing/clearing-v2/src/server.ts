@@ -128,7 +128,7 @@ function registerPageRoutes(ctx: RouteContext): void {
 
   app.get('/', async (req: Request, res: Response) => {
     const { pulseUrl, rolesUrl } = getTestOverrides(req);
-    const roomsData = await dataService.getRoomsData('team', { rolesUrl });
+    const roomsData = await dataService.getRoomsData('team', { rolesUrl, pulseUrl });
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage('team', roomsData, sources));
   });
@@ -146,11 +146,12 @@ function registerPageRoutes(ctx: RouteContext): void {
   app.get('/board', async (req: Request, res: Response) => {
     const { pulseUrl } = getTestOverrides(req);
     const card = Number(req.query.card);
-    const [columns, sources] = await Promise.all([
+    const [columns, sources, rolesData] = await Promise.all([
       fetchBoard(ctx.boardUrl),
       dataService.getTrustStripSources({ pulseUrl }),
+      dataService.getRolesData({ pulseUrl }),
     ]);
-    res.type('html').send(renderBoardPage(columns, Number.isInteger(card) && card > 0 ? card : null, sources));
+    res.type('html').send(renderBoardPage(columns, Number.isInteger(card) && card > 0 ? card : null, sources, rolesData));
   });
 
   app.get('/roles', async (req: Request, res: Response) => {
@@ -166,7 +167,7 @@ function registerPageRoutes(ctx: RouteContext): void {
     const rawRoom = req.params.room;
     const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
     const { pulseUrl, rolesUrl } = getTestOverrides(req);
-    const roomsData = await dataService.getRoomsData(room, { rolesUrl });
+    const roomsData = await dataService.getRoomsData(room, { rolesUrl, pulseUrl });
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage(room, roomsData, sources));
   });

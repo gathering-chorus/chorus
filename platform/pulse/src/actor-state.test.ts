@@ -39,6 +39,9 @@ const SRC_ATHENA_ROLES = 'athena:roles';
 const SRC_SESSIONS = 'athena:identity:sessions';
 const SRC_LOKI = 'loki:activity';
 const ERR_502 = 'HTTP 502 Bad Gateway';
+const ROLE_ABBY = 'abby-normal';
+const TITLE_4595 = 'Clearing v2 streams';
+const TITLE_4591 = 'Message backlog order';
 
 const baseNow = new Date('2026-10-16T12:20:00Z');
 
@@ -47,7 +50,7 @@ describe('Actor State - Pairing and In-Ceremony', () => {
     const input: ActorFactInput = {
       now: baseNow,
       principals: [P_WREN, P_ABBY],
-      activePairs: [{ card: 4560, navigator: 'wren', driver: 'abby-normal' }],
+      activePairs: [{ card: 4560, navigator: 'wren', driver: ROLE_ABBY }],
       wipCards: [{ cardId: 4560, owner: 'wren' }],
       sessions: [
         { id: 's-wren', principal: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 },
@@ -344,6 +347,143 @@ describe('Actor State - Dynamic Principals and Activity', () => {
     const actingStates = deriveActorState(actingInput);
     const kadeActing = actingStates.find((s) => s.aboutPrincipal === P_KADE);
     expect(kadeActing?.activity).toBe(ACT_ACTING);
+  });
+
+  test('negative proof: role inactive for 10 minutes derives activity: idle (not acting)', () => {
+    // baseNow is 2026-10-16T12:20:00Z. 10m ago is 12:10:00Z.
+    const tenMinAgo = '2026-10-16T12:10:00Z';
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_ABBY],
+      sessions: [
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: tenMinAgo },
+      ],
+      actions: {
+        [ROLE_ABBY]: {
+          recent5mCount: 0,
+          recent30mCount: 2,
+          lastActionAt: tenMinAgo,
+        },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+    expect(abby?.activity).toBe('idle');
+    expect(abby?.activity).not.toBe(ACT_ACTING);
+  });
+});
+
+describe('Actor State - WIP Cards and Steps', () => {
+  test('0..n WIP cards per role: role holding two cards gets both in cards array; role holding 0 gets empty array', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_ABBY, P_SILAS],
+      sessions: [
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+        { id: 's-silas', principal: P_SILAS, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      wipCards: [
+        { cardId: 4591, title: TITLE_4591, owner: ROLE_ABBY },
+        { cardId: 4595, title: TITLE_4595, owner: ROLE_ABBY },
+      ],
+    };
+
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+    const silas = states.find((s) => s.aboutPrincipal === P_SILAS);
+
+    // Negative proof: Abby holds two WIP cards; Silas holds zero
+    expect(abby?.cards).toHaveLength(2);
+    expect(abby?.cards).toEqual([
+      { id: 4591, title: TITLE_4591, step: 'coding' },
+      { id: 4595, title: TITLE_4595, step: 'coding' },
+    ]);
+    expect(silas?.cards).toEqual([]);
+  });
+
+  test('per card, step = latest dagu run step, fallback to coding when no run', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_ABBY],
+      sessions: [
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      wipCards: [
+        { cardId: 4591, title: TITLE_4591, owner: ROLE_ABBY, step: 'werk-test' },
+        { cardId: 4595, title: TITLE_4595, owner: ROLE_ABBY }, // no step, cardSteps has it
+      ],
+      cardSteps: {
+        4595: 'failed at werk-build',
+      },
+    };
+
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+    expect(abby?.cards).toHaveLength(2);
+    expect(abby?.cards[0].step).toBe('werk-test');
+    expect(abby?.cards[1].step).toBe('failed at werk-build');
+  });
+});
+
+describe('Actor State - Pairing and Streams', () => {
+  test('pairing: both driver and navigator rows show the same card with step', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_WREN, P_ABBY],
+      activePairs: [{ card: 4595, navigator: 'wren', driver: ROLE_ABBY, title: TITLE_4595 }],
+      wipCards: [{ cardId: 4595, title: TITLE_4595, owner: ROLE_ABBY, step: 'werk-test' }],
+      sessions: [
+        { id: 's-wren', principal: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      actions: {
+        wren: { lastActionAt: SEEN_1218, recent5mCount: 4 },
+        [ROLE_ABBY]: { lastActionAt: SEEN_1218, recent5mCount: 6 },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const wren = states.find((s) => s.aboutPrincipal === P_WREN);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+
+    expect(wren?.stateValue).toBe('pairing');
+    expect(wren?.pairRole).toBe('navigator');
+    expect(wren?.cards).toHaveLength(1);
+    expect(wren?.cards[0].id).toBe(4595);
+    expect(wren?.cards[0].step).toBe('werk-test');
+
+    expect(abby?.stateValue).toBe('pairing');
+    expect(abby?.pairRole).toBe('driver');
+    expect(abby?.cards).toHaveLength(1);
+    expect(abby?.cards[0].id).toBe(4595);
+    expect(abby?.cards[0].step).toBe('werk-test');
+  });
+
+  test('stream per role: actor carries recent stream actions and timestamps from derived activity', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_KADE],
+      sessions: [
+        { id: 's-kade', principal: P_KADE, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      actions: {
+        kade: {
+          lastActionAt: SEEN_1218,
+          recent5mCount: 1,
+          recentActions: [
+            { action: 'executed build', timestamp: SEEN_1218 },
+            { action: 'edited file', timestamp: '2026-10-16T12:17:00Z' },
+          ],
+        },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const kade = states.find((s) => s.aboutPrincipal === P_KADE);
+    expect(kade?.stream).toHaveLength(2);
+    expect(kade?.stream?.[0].action).toBe('executed build');
+    expect(kade?.stream?.[0].timestamp).toBe(SEEN_1218);
   });
 });
 
@@ -769,7 +909,7 @@ describe('Actor State - #4566 AC3 & AC4', () => {
 // Backtick strings are raw, so they are set aside before the check.
 function logqlQuotedEscapesValid(q: string): boolean {
   const quoted = q.replace(/`[^`]*`/g, '``').match(/"(?:[^"\\]|\\.)*"/g) ?? [];
-  return quoted.every((s) => !/\\[^abfnrtv\\"0-7xuU]/.test(s));
+  return quoted.every((s) => !s.match(/\\[^abfnrtv\\"0-7xuU]/));
 }
 
 describe('Actor State - Loki activity query', () => {

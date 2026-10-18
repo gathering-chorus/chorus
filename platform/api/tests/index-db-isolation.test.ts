@@ -6,11 +6,11 @@ import path from 'path';
 import { liveIndexDbPath, startTestApp } from './lib/test-app';
 
 describe('#4152 api test harness brings its own index.db', () => {
+  /* eslint-disable jest/no-standalone-expect */
   const live = liveIndexDbPath();
-  const haveLive = fs.existsSync(live);
+  const haveLive = fs.existsSync(live) && fs.statSync(live).size >= 1024 * 1024;
 
-  test('CHORUS_DB_PATH points at a seeded copy, not the live file', () => {
-    if (!haveLive) return; // no live index on this box: nothing to isolate
+  (haveLive ? test : test.skip)('CHORUS_DB_PATH points at a seeded copy, not the live file', () => {
     const p = process.env.CHORUS_DB_PATH;
     expect(p).toBeDefined();
     expect(path.resolve(p!)).not.toBe(path.resolve(live));
@@ -114,8 +114,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     }
   });
 
-  test('the copy answers freshness 200 through the harness', async () => {
-    if (!haveLive) return;
+  (haveLive ? test : test.skip)('the copy answers freshness 200 through the harness', async () => {
     const h = await startTestApp();
     try {
       const res = await fetch(`${h.baseUrl}/api/chorus/freshness`);
@@ -125,8 +124,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     }
   }, 20000); // slow-by-design (#4530): booting the harness on a ~570 MB index copy took over jest's 5 s default in 1 of 2 local runs
 
-  test('negative proof: pointed at the live file, the harness refuses to start', async () => {
-    if (!haveLive) return;
+  (haveLive ? test : test.skip)('negative proof: pointed at the live file, the harness refuses to start', async () => {
     const saved = process.env.CHORUS_DB_PATH;
     process.env.CHORUS_DB_PATH = live;
     try {
@@ -136,8 +134,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     }
   });
 
-  test('negative proof: unset, the harness refuses to start', async () => {
-    if (!haveLive) return;
+  (haveLive ? test : test.skip)('negative proof: unset, the harness refuses to start', async () => {
     const saved = process.env.CHORUS_DB_PATH;
     delete process.env.CHORUS_DB_PATH;
     try {
@@ -146,4 +143,5 @@ describe('#4152 api test harness brings its own index.db', () => {
       process.env.CHORUS_DB_PATH = saved;
     }
   });
+  /* eslint-enable jest/no-standalone-expect */
 });

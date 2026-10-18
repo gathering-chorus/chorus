@@ -54,11 +54,14 @@ export interface WipCardFact {
   cardId: number;
   title?: string;
   owner: string;
+  step?: string;
 }
 
 export interface ActionFact {
   lastActionAt?: string;
   recent5mCount?: number;
+  recent30mCount?: number;
+  recentActions?: Array<{ action: string; timestamp: string }>;
 }
 
 export interface PrincipalInfo {
@@ -74,6 +77,12 @@ export interface ReviewCardFact {
   peer?: string;
 }
 
+export interface RoleCardFact {
+  id: number;
+  title: string;
+  step?: string;
+}
+
 export interface ActorFactInput {
   now?: Date;
   principals: Array<string | PrincipalInfo>;
@@ -83,6 +92,7 @@ export interface ActorFactInput {
   owedNudges?: OwedNudgeFact[];
   wipCards?: WipCardFact[];
   reviewCards?: ReviewCardFact[];
+  cardSteps?: Record<number, string>;
   unmeasured?: Array<{ source: string; reason: string }>;
 }
 
@@ -96,6 +106,8 @@ export interface RoleStateResult {
   pairedWith?: string;
   currentCard?: number | null;
   currentCardTitle?: string;
+  cards: RoleCardFact[];
+  stream?: Array<{ action: string; timestamp: string }>;
   observedAt: string;
   waitingOn?: { on: string; what: string; since: string };
   sessions: Array<{ id: string; channel: string; live: boolean; lastActionAt?: string }>;
@@ -414,6 +426,48 @@ function combineUnmeasured(
   return merged.length > 0 ? merged : undefined;
 }
 
+function resolveMyWipCards(
+  input: ActorFactInput,
+  role: string,
+  stateOutcome: DerivedStateOutcome
+): RoleCardFact[] {
+  const myWipCards: RoleCardFact[] = (input.wipCards ?? [])
+    .filter((c) => principalToRole(c.owner) === role)
+    .map((c) => ({
+      id: c.cardId,
+      title: c.title || '',
+      step: c.step || input.cardSteps?.[c.cardId] || 'coding',
+    }));
+
+  if (stateOutcome.stateValue === 'pairing' && stateOutcome.currentCard) {
+    if (!myWipCards.some((c) => c.id === stateOutcome.currentCard)) {
+      const fromWip = input.wipCards?.find((c) => c.cardId === stateOutcome.currentCard);
+      const pairedTitle = findCardTitle(stateOutcome.currentCard, input) || '';
+      const pairedStep = fromWip?.step || input.cardSteps?.[stateOutcome.currentCard] || 'coding';
+      myWipCards.unshift({
+        id: stateOutcome.currentCard,
+        title: pairedTitle,
+        step: pairedStep,
+      });
+    }
+  }
+
+  return myWipCards;
+}
+
+function resolveActorStream(
+  actionFact: ActionFact | undefined,
+  finalStateValue: string
+): Array<{ action: string; timestamp: string }> {
+  if (actionFact?.recentActions && actionFact.recentActions.length > 0) {
+    return actionFact.recentActions;
+  }
+  if (actionFact?.lastActionAt) {
+    return [{ action: finalStateValue, timestamp: actionFact.lastActionAt }];
+  }
+  return [];
+}
+
 function deriveOneActor(
   p: string | PrincipalInfo,
   input: ActorFactInput,
@@ -462,8 +516,10 @@ function deriveOneActor(
     hasLiveSession || activity === 'acting'
   );
 
-  const currentCard = stateOutcome.currentCard;
+  const myWipCards = resolveMyWipCards(input, role, stateOutcome);
+  const currentCard = stateOutcome.currentCard ?? (myWipCards.length > 0 ? myWipCards[0].id : null);
   const currentCardTitle = findCardTitle(currentCard, input);
+  const stream = resolveActorStream(actionFact, finalStateValue);
 
   return {
     aboutPrincipal: principal,
@@ -475,6 +531,8 @@ function deriveOneActor(
     pairedWith: stateOutcome.pairedWith,
     currentCard,
     currentCardTitle,
+    cards: myWipCards,
+    stream,
     observedAt,
     waitingOn: stateOutcome.waitingOn,
     sessions: sessionResults,
@@ -762,17 +820,14 @@ function populateLoki5m(targetMap: Map<string, ActionFact>, json5m: LokiQueryRes
 
 function populateLoki30m(
   targetMap: Map<string, ActionFact>,
-  json30m: LokiQueryResult,
-  nowIso: string
+  json30m: LokiQueryResult
 ): void {
   for (const item of json30m.data?.result || []) {
     const role = normalizeLokiRole(item.metric?.role);
     if (!role) continue;
     const existing = targetMap.get(role) || {};
     const count30m = parseInt(item.value?.[1] || '0', 10);
-    if (count30m > 0 && !existing.lastActionAt) {
-      existing.lastActionAt = nowIso;
-    }
+    existing.recent30mCount = (existing.recent30mCount ?? 0) + count30m;
     targetMap.set(role, existing);
   }
 }
@@ -785,8 +840,7 @@ export function lokiActionQuery(window: string): string {
 
 async function fetchLokiActionFacts(
   lokiBase: string,
-  unmeasured: Array<{ source: string; reason: string }>,
-  nowIso: string
+  unmeasured: Array<{ source: string; reason: string }>
 ): Promise<Map<string, ActionFact>> {
   const result = new Map<string, ActionFact>();
   const q5m = encodeURIComponent(lokiActionQuery('5m'));
@@ -802,7 +856,7 @@ async function fetchLokiActionFacts(
       const json5m = (await res5m.json()) as LokiQueryResult;
       const json30m = (await res30m.json()) as LokiQueryResult;
       populateLoki5m(result, json5m);
-      populateLoki30m(result, json30m, nowIso);
+      populateLoki30m(result, json30m);
     } else {
       unmeasured.push({ source: 'loki:activity', reason: `HTTP ${res5m.status || res30m.status}` });
     }
@@ -822,9 +876,18 @@ function resolveSpineEventRole(ev: { role?: string; event?: string }): string {
   return role;
 }
 
+function recordRecentAction(existing: ActionFact, timestamp: string, actionDesc: string): void {
+  const recent = existing.recentActions || [];
+  if (!recent.some((r) => r.timestamp === timestamp && r.action === actionDesc)) {
+    recent.push({ action: actionDesc, timestamp });
+    recent.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    existing.recentActions = recent.slice(0, 5);
+  }
+}
+
 function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>): void {
   try {
-    const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string };
+    const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string; action?: string };
     const role = resolveSpineEventRole(ev);
     if (!role) return;
     const tsMs = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
@@ -835,9 +898,16 @@ function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>):
     if (tsMs > cur) {
       existing.lastActionAt = ev.timestamp;
     }
-    if (ev.event === 'jeff.input.delivered' && Date.now() - tsMs <= FIVE_MINUTES_MS) {
+    const ageMs = Date.now() - tsMs;
+    if (ageMs <= FIVE_MINUTES_MS) {
       existing.recent5mCount = (existing.recent5mCount ?? 0) + 1;
     }
+    if (ageMs <= THIRTY_MINUTES_MS) {
+      existing.recent30mCount = (existing.recent30mCount ?? 0) + 1;
+    }
+
+    recordRecentAction(existing, ev.timestamp, ev.action || ev.event || 'action');
+
     targetMap.set(role, existing);
   } catch (jsonErr: unknown) {
     void jsonErr;
@@ -859,6 +929,87 @@ async function appendSpineTailActions(
   }
 }
 
+function resolveNodeStep(
+  nodes: Array<{ step: { name: string }; statusLabel: string }>,
+  runStatusLabel?: string
+): string {
+  const activeNode = nodes.find((n) => n.statusLabel === 'running') ||
+    nodes.find((n) => n.statusLabel === 'waiting') ||
+    nodes.find((n) => n.statusLabel === 'failed');
+  if (activeNode) {
+    const nodeName = activeNode.step.name.replace(/^skill-/, '').replace(/-pipeline$/, '');
+    return activeNode.statusLabel === 'failed' ? `failed at ${nodeName}` : nodeName;
+  }
+  if (runStatusLabel === 'succeeded') return 'landed';
+  return runStatusLabel || 'coding';
+}
+
+export async function fetchDaguCardSteps(
+  daguBase: string,
+  wipCards: WipCardFact[],
+  unmeasured: Array<{ source: string; reason: string }>
+): Promise<Record<number, string>> {
+  const steps: Record<number, string> = {};
+  if (wipCards.length === 0) return steps;
+  try {
+    const res = await fetch(`${daguBase}/api/v1/dag-runs?name=cicd`, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) {
+      unmeasured.push({ source: 'dagu:runs', reason: `HTTP ${res.status}` });
+      for (const c of wipCards) steps[c.cardId] = 'unmeasured';
+      return steps;
+    }
+    const json = (await res.json()) as {
+      dagRuns?: Array<{
+        params?: string;
+        dagRunId: string;
+        statusLabel?: string;
+        queuedAt?: string;
+        startedAt?: string;
+      }>;
+    };
+    const dagRuns = json.dagRuns || [];
+
+    await Promise.all(
+      wipCards.map(async (card) => {
+        // eslint-disable-next-line security/detect-non-literal-regexp
+        const cardPattern = new RegExp(`(?:^|\\s)CARD="?${card.cardId}"?(?:\\s|$)`);
+        const matchingRuns = dagRuns.filter((r) => r.params && cardPattern.test(r.params));
+        if (matchingRuns.length === 0) {
+          steps[card.cardId] = 'coding';
+          return;
+        }
+        matchingRuns.sort((a, b) => {
+          const tA = new Date(a.queuedAt || a.startedAt || 0).getTime();
+          const tB = new Date(b.queuedAt || b.startedAt || 0).getTime();
+          return tB - tA;
+        });
+        const matchingRun = matchingRuns[0];
+        try {
+          const detailRes = await fetch(`${daguBase}/api/v1/dags/cicd/dag-runs/${matchingRun.dagRunId}`, { signal: AbortSignal.timeout(1500) });
+          if (detailRes.ok) {
+            const detailJson = (await detailRes.json()) as {
+              dagRun?: {
+                nodes?: Array<{ step: { name: string }; statusLabel: string }>;
+                statusLabel?: string;
+              };
+            };
+            const nodes = detailJson.dagRun?.nodes || [];
+            steps[card.cardId] = resolveNodeStep(nodes, matchingRun.statusLabel);
+          } else {
+            steps[card.cardId] = 'unmeasured';
+          }
+        } catch {
+          steps[card.cardId] = 'unmeasured';
+        }
+      })
+    );
+  } catch (e: unknown) {
+    unmeasured.push({ source: 'dagu:runs', reason: e instanceof Error ? e.message : String(e) });
+    for (const c of wipCards) steps[c.cardId] = 'unmeasured';
+  }
+  return steps;
+}
+
 export function buildLiveActorFactFetcher(options: {
   store: {
     getOwedNudges: () => Array<{ from: string; to: string; expects: 'reply' | 'decision' | 'action'; sentAt: string }>;
@@ -868,24 +1019,26 @@ export function buildLiveActorFactFetcher(options: {
   athenaBaseUrl?: string;
   chorusApiBaseUrl?: string;
   lokiBaseUrl?: string;
+  daguBaseUrl?: string;
   opsDir?: string;
 }): () => Promise<ActorFactInput> {
   const athenaBase = options.athenaBaseUrl || process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
   const apiBase = options.chorusApiBaseUrl || process.env.CHORUS_API_URL || 'http://localhost:3340';
   const lokiBase = options.lokiBaseUrl || process.env.LOKI_URL || 'http://localhost:3102';
+  const daguBase = options.daguBaseUrl || process.env.DAGU_URL || 'http://127.0.0.1:8526';
 
   return async (): Promise<ActorFactInput> => {
     const unmeasured: Array<{ source: string; reason: string }> = [];
     const now = new Date();
-    const nowIso = now.toISOString();
 
     const [principals, sessions, wipCards, actionMap] = await Promise.all([
       fetchRolesFact(athenaBase, unmeasured),
       fetchSessionsFact(athenaBase, unmeasured),
       fetchWipCardsFact(apiBase, unmeasured),
-      fetchLokiActionFacts(lokiBase, unmeasured, nowIso),
+      fetchLokiActionFacts(lokiBase, unmeasured),
     ]);
 
+    const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
     const activePairs = readActivePairsFromDisk(options.opsDir);
     await appendSpineTailActions(actionMap, options.readTail);
 
@@ -918,6 +1071,7 @@ export function buildLiveActorFactFetcher(options: {
       sessions,
       actions: actionsRecord,
       wipCards,
+      cardSteps,
       owedNudges,
       unmeasured: unmeasured.length > 0 ? unmeasured : undefined,
     };
