@@ -7,6 +7,11 @@ fn main() {
         // (act stops, clean), real error→1. The outcome carries the exit code.
         Ok(out) => {
             println!("{}", out.message);
+            // #4502 — a step that stops says why on stderr too: dagu keeps the
+            // stderr tail as the step's record, and /cws names the stop from it
+            if out.exit != 0 {
+                eprintln!("werk-demo: {}", out.message.lines().next().unwrap_or(""));
+            }
             out.exit
         }
         Err(e) => {

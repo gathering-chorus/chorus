@@ -1,0 +1,15 @@
+# #4502 fixture — the demo, its own pipeline (Jeff 10-12 21:18: "the demo gets its own dagu pipeline (a demo DAG),
+# and cicd calls it as one step"). validate → 5 gates + 3 peer reviews in parallel → session-smoke → announce.
+# Jeff's go stays in cicd: dagu refuses a human task in a sub-DAG (measured 10-18 07:43, #4577).
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+validate	1	1	skill-werk-demo-validate	demo: validate (WIP, has AC)	deterministic	werk-demo	validate ${CARD} ${ROLE}			
+gates	2	1	skill-werk-demo-gate-product	demo: gate product	deterministic	werk-demo	run-gate ${CARD} ${ROLE} product			parallel=true
+gates	2	1	skill-werk-demo-gate-code	demo: gate code	deterministic	werk-demo	run-gate ${CARD} ${ROLE} code			parallel=true
+gates	2	1	skill-werk-demo-gate-quality	demo: gate quality	deterministic	werk-demo	run-gate ${CARD} ${ROLE} quality			parallel=true
+gates	2	1	skill-werk-demo-gate-arch	demo: gate arch	deterministic	werk-demo	run-gate ${CARD} ${ROLE} arch			parallel=true
+gates	2	1	skill-werk-demo-gate-ops	demo: gate ops	deterministic	werk-demo	run-gate ${CARD} ${ROLE} ops			parallel=true
+gates	2	1	skill-werk-demo-review-1	demo: peer review 1	deterministic	werk-demo	run-review ${CARD} ${ROLE} 1			parallel=true
+gates	2	1	skill-werk-demo-review-2	demo: peer review 2	deterministic	werk-demo	run-review ${CARD} ${ROLE} 2			parallel=true
+gates	2	1	skill-werk-demo-review-3	demo: peer review 3	deterministic	werk-demo	run-review ${CARD} ${ROLE} 3			parallel=true
+smoke	3	1	skill-werk-demo-session-smoke	demo: each changed role's session signs in and makes one tool call	deterministic	werk-demo	session-smoke ${CARD} ${ROLE}			
+announce	4	1	skill-werk-demo-announce	demo: announce (one ask per round)	deterministic	werk-demo	announce ${CARD} ${ROLE}			

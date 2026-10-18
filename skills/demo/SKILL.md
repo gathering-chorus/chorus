@@ -1,125 +1,73 @@
 ---
 name: demo
-description: The proving ceremony — werk-demo runs the gates itself (headless claude -p) + present/feedback/verdict; the demoer presents (#3443).
+description: The proving ceremony — the demo is its own dagu pipeline (validate, 5 gates + 3 peer reviews in parallel, session-smoke, announce) that cicd calls as one step, then Jeff's go (#4502).
 user-invocable: true
 ---
 
 # /demo — the proving ceremony
 
-Since #3116, `/demo` is the **proving ceremony only**: present the already-running werk instance to a prover, gather quality + value feedback, record one verdict. It does **not** build or deploy — the act (build → deploy → env-up) is the prior steps in the one pipeline (`werk.yml`, run via act — #3236 retired `werk-mcp.sh` into it). Demo points at what is already up.
+`/demo` presents the already-running werk instance to Jeff and asks for his go. It does
+**not** build or deploy: the prior steps of the card's run (werk v2,
+`platform/pipelines/cicd.yaml`) already did commit → build → test → deploy-demo → env-up.
 
-Two layers split the work (#3443):
-- **`werk-demo` (the binary)** RUNS the 5 gates itself — one headless `claude -p` per gate, fed the gate's `SKILL.md` + the card AC + the branch diff — and records each `demo.gate.result`. It also handles the deterministic mechanics: present the variant, fire the verbatim feedback gather, hold the review window, emit `demo.verdict`. `claude -p` is a subprocess like git or cargo; the old "an LLM gate can't run in the zero-dep binary" excuse is retired.
-- **The demoer (this agent)** presents the finished, already-gated state to Jeff and routes each recorded gate result to its owning role for review. It no longer spawns gate subagents — the binary owns gate execution.
+## The flow (#4502, Jeff 2026-10-18 11:31 "that looks right")
+
+The demo is its own pipeline, `platform/pipelines/demo.yaml` (Jeff 2026-10-12 21:18: "the
+demo gets its own dagu pipeline (a demo DAG), and cicd calls it as one step"). Each box is
+its own dagu step inside it. /cws names the box a demo stopped at and why; that box can be
+retried alone. Jeff's go stays in cicd, after the demo call: dagu refuses a human task in a
+sub-DAG. cicd starts the demo from the card's own werk file
+(`dagu start <werk>/platform/pipelines/demo.yaml -- CARD ROLE TRACE`), not by name: an
+enqueued run finds a pipeline by name on main only, so a card that changes the demo still
+runs its own. The demo is then its own "demo" run, its TRACE the cicd run's id.
+
+```
+cicd:  … env-up ─► demo ─────────────────────────────────────────────► Jeff's go ─► land
+demo:  validate ─► [gate-product, gate-code, gate-quality, gate-arch, gate-ops,
+                    review-1, review-2, review-3]   (in parallel)
+                ─► session-smoke ─► announce
+```
+
+On "more", the demo reruns alone against the card's deployed variant, with no rebuild:
+`dagu --config $CHORUS_HOME/platform/config/dagu.yaml start $CHORUS_WERK_BASE/<role>-<card>/platform/pipelines/demo.yaml -- CARD=<card> ROLE=<role> TRACE=`
+(an empty TRACE gets a fresh trace; once demo.yaml is on main, `enqueue demo -- …` by name
+works too). A stopped demo inside a card's run is retried with the cicd demo step
+(`dagu retry --run-id=<cicd run> --step=skill-werk-demo-pipeline --downstream cicd`): the
+gates and reviews already recorded for the round are kept, so only the stopped step works again.
+
+| step | command | exit |
+|---|---|---|
+| validate | `werk-demo validate <card> <role>` | 1 when the card is not WIP/Now or has no AC |
+| gate | `werk-demo run-gate <card> <role> <product\|code\|quality\|arch\|ops>` | 0 when a verdict is recorded (pass or concerns); 1 only when the gate could not run |
+| review | `werk-demo run-review <card> <role> <1\|2\|3>` | same rule; the peers are every agent role but the builder (wren, silas, kade, abby-normal → 3 each) |
+| session-smoke | `werk-demo session-smoke <card> <role>` | 1 when a changed role's session cannot start from the werk build and make one tool call; "nothing to smoke" is a named pass |
+| announce | `werk-demo announce <card> <role>` | 1 when any gate or review has no result this round |
+
+Gates and reviews are headless runs (one `claude -p` each, fed the gate's
+`skills/gate-<g>/SKILL.md`, or the peer's persona, plus the card AC and the branch diff).
+They **inform**; Jeff's go decides (#3263). A gate saying "concerns" never stops the run.
+
+## One ask per round (Jeff 11:33 "really noisy and repetitive"; #3971)
+
+`announce` sends ONE message for the round: card, round, gates, reviews x/3, tests, AC,
+where to look, go / no / more. A second announce for the same round sends nothing, and
+nothing is sent after Jeff's go is recorded. Nobody is asked to reply: there is no
+feedback gather and no waiting on peers.
 
 ## Invocation
 
-```
-/demo <card-id>
-```
-
-## The JX (Jeff, 2026-06-10): prework is sealed BEFORE the conversation
-
-A demo is a **conversation that opens only when everything is already done.** Jeff is
-never dragged into a demo that isn't ready to run. Two phases, never interleaved:
-
-1. **Prework — silent, no Jeff, runs to completion:** gates + (the prior verbs already
-   did build → test → deploy → env-up). Gates run HERE, before any announce.
-2. **The announce IS the ready-gate.** It fires *only* when every gate is recorded AND
-   the variant is up. Its existence is the guarantee that walking in won't waste Jeff's
-   attention. If prework fails, there is **no announce** — Jeff sees `NOT READY: <what
-   failed>`, never a demo invitation.
-3. **The conversation — Jeff + demoer:** present the finished state, walk it, go/no.
-   **Nothing computes during the conversation** — that's why it can never hang or lock
-   Jeff out; all the slow work already happened in prework, before he was pulled in.
-
-The old bug (what this replaces): gates ran *in the conversation turn* — 5 subagents
-dripped serially for minutes while Jeff watched a spinner, and the pipeline announced
-"presented" before gates had run at all. Gates are prework now, run BY THE BINARY. The
-announce comes last.
-
-## Step 1 — PREWORK: werk-demo runs the gates itself (silent, before any announce)
-
-**You no longer spawn gate subagents.** `werk-demo` runs the 5 gates itself when you
-invoke it (#3443): for each gate with no result yet for this round, it spawns one
-headless `claude -p` — fed the gate's `skills/gate-<g>/SKILL.md` as the system prompt and
-the card AC + branch diff (`origin/main...HEAD`) as context — and records each
-`demo.gate.result`. A garbled or errored gate records `result=error` (VISIBLE on the
-cockpit), never a silent pass.
-
-| Gate | Owning role (reviewer) |
-|---|---|
-| product  | wren |
-| code     | kade |
-| quality  | kade |
-| arch     | silas |
-| ops      | silas |
-
-The owning role still **reviews** its gate's recorded result after the fact (async,
-non-blocking — a finished artifact, not work to do); it just no longer has to *run* it.
-
-**Where gates self-run:** anywhere the `claude` CLI resolves — Jeff's machine and local
-`act`. There the pipeline self-gates end-to-end, headless, with no demoer step. Only on
-hosted CI (no `claude` binary, no auth) does the binary degrade: it skips gate-run AND
-enforcement rather than break the build (#3284 lesson). The "an LLM gate can't run in the
-zero-dep binary or headless `act`" claim is **retired** — `claude -p` is a subprocess.
-
-**Cold-eyes review (#3193) — still a demoer step.** This is a *review-floor*, separate
-from the 5 gates: spawn ONE Explore-type review subagent with FRESH context — give it
-ONLY the card's AC and the branch diff (`git diff $(git merge-base origin/main HEAD)..HEAD`
-in the werk), no build conversation, so it cannot rationalize. Prompt it ADVERSARIALLY
-(find problems, default-skeptical), hunting: AC items the diff doesn't actually cover (the
-#1 lie), aspirational-as-built, bugs, missing tests, scope creep. Record via `werk-review
-verdict <card-id> pass|fail <findings>` — the binary REJECTS a fail with no specific
-findings and any verdict recorded before the pipeline's review-floor ran (anti-ceremony,
-#3193). Advisory today: a fail informs Jeff's go, it does not block the present.
-
-**Ready-gate (the announce contract):** only after all 5 gates are recorded AND the
-variant is reachable does the binary proceed to present → announce. If any gate FAILS or
-the variant is down, **the demo STOPS — no present, no announce.** Jeff sees `NOT READY:
-<gate or variant that failed>`, never an invitation to a demo that can't run.
-
-The gate results are the quality gather. They are **not** the proving verdict — a green gate is not a verdict, and a peer's review is never the verdict (proving is Jeff or a machine, never peer-blessing). Recording a gate attests it RAN; the verdict is still the prover's.
-
-**Gates are REQUIRED to present (#3284 — invariant execution).** `werk-demo` REFUSES to present unless all 5 gates have recorded a `demo.gate.result` for the card (it emits `demo.refused reason=gates-missing` and exits non-zero). With #3443 the binary *runs* the gates before this check, so the refusal now only triggers where gates genuinely couldn't run (no claude) — a demo that reaches present with no gates fails LOUD instead of silently showing "(none run)".
-
-This is NOT a contradiction of #3263 ("the machine shows, it never vetoes your go"). The refusal blocks *presenting un-gated*; it never blocks Jeff's GO — gates inform the decision, they don't decide it. Jeff's go stays sovereign.
-
-The flow (#3443, replacing the #3284 demoer-runs-gates flow):
-- The pipeline (`chorus-werk`, werk v2: `platform/pipelines/cicd.yaml`) builds → deploys → env-ups the variant, **then invokes `werk-demo`**, which runs the gates itself against the live variant and presents. There is no separate "standby, wait for a demoer to run gates" step.
-- `werk-demo` present shows the cockpit (verb checklist) + each gate's verdict. Jeff says **go** → it runs to completion (land). "Test in demo, accept in demo."
-
-Still true: the machine-checkable floor (work **tested** via `werk-demo test-result`, variant **up and reachable**) feeds the decision surface; an *uninformed* go is what the surface guards against.
-
-## Step 2 — Invoke the binary (present → feedback → window → verdict)
-
-```
-werk-demo <card-id>
-```
-
-The harness invokes it with `DEPLOY_ROLE`, `CHORUS_HOME`, `CHORUS_WERK_BASE`, `CHORUS_TRACE_ID` in env. The binary:
-- **Presents** the running werk variant (announces the variant URL/ports to Bridge; emits `card.demo.started`).
-- **Fires the product/domain feedback gather** to peers — VERBATIM (the 4 questions; pinned by `feedback_message_is_verbatim`). Re-nudges unacked peers within the ACK window.
-- **Holds the review window** so Jeff can react and peers can answer (the binary sleeps; the agent must not jump into /acp prose).
-- **Records one `demo.verdict`** `{card, pass|fail, prover, gates, feedback}`. Prover defaults to **Jeff** (his eyes on the variant during the window); `CHORUS_DEMO_PROVER` selects the machine prover (run the card's Experience test against the deployed instance) when the card has a machine-checkable assertion.
+The pipeline runs these steps; a role does not. To retry a stopped step, use the retry
+line /cws prints. `werk-demo <card> <role>` with no step refuses and lists the steps.
 
 ## What gates acceptance
 
-`werk-accept` (step 8 of the flat sequence) finalizes a card **only** if a `demo.verdict=pass` exists for it on record. There is no `demo:preflight-pass` comment chain anymore and no 4-event `demo.*.completed` chain — one verdict, read from the werk-demo witness. DEC-048 (a builder can't self-accept a code card; Jeff is the human authority) stays enforced in `werk-accept`.
-
-**GO is one silent ceremony (#3327).** Jeff's GO at the demo IS the accept (GO=accept, #3311) — it's recorded once, at the demo. `werk-accept` then runs *inside* the same `go:true` pipeline (merge → werk-deploy-prod → finalize); it records the go internally and finalizes **silently**. There is no second go to give and no copy-paste step — the only human-facing output is `#N finalized`. If you ever see `werk-accept` re-announce "go signaled… act continues to merge," that's the WIP-limbo recovery path (a transport drop left the card un-finalized), not the normal flow.
-
-## What this replaces (#3116)
-
-- The in-binary **gate-chain + go-run-your-gate nudge relay** → gates are now subagents the demoer initiates; results route to roles for review.
-- The in-binary **act** (`werk-build` / `werk-deploy` / env-up) → the prior verbs do that; demo never builds or deploys.
-- **smoke / stakes-brief / signal-mechanics** → smoke folds into the machine prover; the verdict is the output.
-- The **#2864 cascade** (`demo-service-design.html`) and its 5 cascading hooks → retired. Design of record: `designing/docs/demo-service-design.html` (the proving-ceremony model).
-- `accept_gate`'s `demo:preflight-pass` + `demo.show.completed` evidence → `demo.verdict=pass`.
+The land half reads `demo.presented` and Jeff's go (`werk-demo go`, recorded by the go
+step) from the witness, keyed by round and patch. DEC-048 (a builder can't self-accept)
+stays enforced in `werk-accept`.
 
 ## Rules still enforced
 
-- Validate: card exists, status WIP/Now, has AC; AC pre-flight all checked.
-- The product/domain feedback gather fires to peers, verbatim, with re-nudge on silence.
-- The review window holds before the verdict is recorded (no premature /acp prose).
-- DEC-048 self-accept block — enforced at `werk-accept`.
+- Validate: card exists, status WIP/Now, has AC.
+- Every gate and every peer review has a result for this round before the announce.
+- The announce is the ready-gate: if prework fails, there is no announce.
+- Jeff's go stays sovereign: gates and reviews inform it, never decide it.

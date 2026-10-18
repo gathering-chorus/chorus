@@ -35,14 +35,14 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(ids.first(), Some(&"skill-werk-commit"));
     let go = ids.iter().position(|i| *i == "skill-werk-go").expect("the go is a step");
-    assert_eq!(ids[go - 1], "skill-werk-demo");
+    assert_eq!(ids[go - 1], "skill-werk-demo-pipeline"); // #4502 — the demo is its own pipeline (Jeff 10-12 21:18), one step here
     // #4494 — after the go the card enqueues its land; the land steps are in the land half
     assert_eq!(&ids[go + 1..], &["cicd-land"]);
     let land = generate_land("cicd", &cicd()).unwrap();
     let land_ids: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(land_ids.first(), Some(&"skill-werk-merge"));
     assert_eq!(land_ids.last(), Some(&"skill-werk-accept"));
-    assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo]\n    id: skill_werk_go\n    action: human.task\n"));
+    assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo-pipeline]\n    id: skill_werk_go\n    action: human.task\n"));
     for half in [&out, &land] {
         assert!(half.starts_with(chorus_make::HEADER));
         // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
@@ -111,11 +111,15 @@ fn negative_proof_a_deterministic_skill_with_no_binary_is_refused() {
     assert!(check(&cicd()).is_empty(), "the real rows pass, so the refusal is about the edit");
 }
 
+// #4502 — two skills at one order in a step now run in parallel (the demo's
+// gates and reviews); only a human step must hold its order alone.
 #[test]
-fn negative_proof_two_skills_at_one_order_and_no_rows_are_refused() {
+fn negative_proof_a_skill_sharing_the_go_s_order_and_no_rows_are_refused() {
     let mut rows = cicd();
-    rows[1].skill_order = 1; // push now collides with commit inside step commit
-    assert!(check(&rows).iter().any(|e| e.contains("two skills hold order 1 in step commit")));
+    let go = rows.iter().position(|r| r.executor == "human").expect("cicd has a go");
+    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo-pipeline").expect("cicd calls the demo pipeline");
+    rows[demo].skill_order = rows[go].skill_order; // the demo call now collides with Jeff's go
+    assert!(check(&rows).iter().any(|e| e.contains("skill-werk-demo-pipeline") && e.contains("with a human step")), "{:?}", check(&rows));
     assert!(generate("cicd", &[]).is_err(), "no rows is refused, never an empty workflow");
 }
 
@@ -138,14 +142,21 @@ fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
 }
 
 // #4474 run 6: werk-demo presented, exited 2 (held for the go) and dagu
-// failed the run before the go step it was waiting for.
+// failed the run before the go step it was waiting for. #4502: the demo is its
+// own pipeline and its announce exits 0 when it has asked (werk-demo steps), so
+// no step holds an exit 2 any more: the step before the go is the demo call.
+// Negative proof: a deterministic step put right before the go still holds.
 #[test]
 fn only_the_step_before_the_go_treats_presented_as_success() {
     let out = generate("cicd", &cicd()).unwrap();
     let held = "    continue_on:\n      exit_code: [2]\n      mark_success: true\n";
-    assert_eq!(out.matches(held).count(), 1, "exactly one step may hold");
-    let demo = out.split("  - name: ").find(|s| s.starts_with("skill-werk-demo\n")).unwrap();
-    assert!(demo.contains(held), "the demo step holds for the go");
+    assert_eq!(out.matches(held).count(), 0, "the demo call holds nothing: {out}");
+    let mut rows = cicd();
+    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo-pipeline").unwrap();
+    rows[demo].executor = "deterministic".into();
+    rows[demo].implemented_by = "werk-demo".into();
+    let out = generate("cicd", &rows).unwrap();
+    assert_eq!(out.matches(held).count(), 1, "a command right before the go still holds for it");
 }
 
 #[test]
@@ -259,4 +270,22 @@ fn every_fixture_named_here_exists() {
         let local = f.strip_prefix("platform/services/chorus-make/").unwrap();
         assert!(std::path::Path::new(&dir).join(local).is_file(), "missing fixture {f}");
     }
+}
+
+/// #4502 (Jeff 13:56 "its a 4502 miss") — the demo step starts the card's own
+/// werk file, because an enqueued parent finds a `dag.run` child by name on
+/// main only (Silas 10-16). NEGATIVE PROOF: without `from=werk` the same row is
+/// the by-name sub-run again, and the marker never reaches the child's params.
+#[test]
+fn the_demo_step_starts_the_cards_own_demo_file() {
+    let out = generate("cicd", &cicd()).unwrap();
+    let step = out.split("  - name: ").find(|s| s.starts_with("skill-werk-demo-pipeline\n")).unwrap();
+    assert!(step.contains("    command: \"env -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml start ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/pipelines/demo.yaml -- CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID}\"\n"), "{step}");
+    assert!(!step.contains("dag.run") && !step.contains("from=werk"), "{step}");
+    let mut rows = cicd();
+    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo-pipeline").unwrap();
+    rows[demo].with_args = String::new();
+    let plain = generate("cicd", &rows).unwrap();
+    let step = plain.split("  - name: ").find(|s| s.starts_with("skill-werk-demo-pipeline\n")).unwrap();
+    assert!(step.contains("    action: dag.run\n    with:\n      dag: demo\n") && !step.contains(" start "), "{step}");
 }
