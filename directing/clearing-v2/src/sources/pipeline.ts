@@ -15,61 +15,87 @@ export interface CardPipelineStatus {
   failedReason?: string;
 }
 
+function extractFailureFromLine(line: string): { failedStep?: string; failedReason?: string } | null {
+  const parts = line.split('—');
+  const left = parts[0] || '';
+  const failedIdx = left.indexOf('failed');
+  if (failedIdx === -1) return null;
+
+  const afterFailed = left.slice(failedIdx + 6).trim();
+  const words = afterFailed.split(/\s+/).filter(Boolean);
+  const rawStep = words[0] === 'at' ? words[1] : words[0];
+  if (!rawStep) return null;
+
+  const failedReason = parts.length > 1 ? parts.slice(1).join('—').trim() : undefined;
+  return { failedStep: rawStep, failedReason };
+}
+
+function extractFailure(output: string): { failedStep?: string; failedReason?: string } {
+  const failureLines = output.split('\n').filter((l) => l.includes('failed'));
+
+  // First check lines with '—' containing step and reason
+  for (const line of failureLines) {
+    if (line.includes('—')) {
+      const res = extractFailureFromLine(line);
+      if (res?.failedStep) return res;
+    }
+  }
+
+  // Fallback to any line indicating failure
+  for (const line of failureLines) {
+    const res = extractFailureFromLine(line);
+    if (res?.failedStep) return res;
+  }
+
+  return {};
+}
+
+function extractRunningStep(firstLine: string, output: string): string | undefined {
+  if (firstLine.includes('·')) {
+    const dots = firstLine.split('·').map((s) => s.trim());
+    const lastDot = dots[dots.length - 1];
+    if (lastDot && !lastDot.toLowerCase().includes('running')) {
+      return lastDot;
+    }
+  }
+  const lines = output.split('\n');
+  for (const line of lines) {
+    const idx = line.indexOf('running');
+    if (idx !== -1) {
+      const rest = line.slice(idx + 7).trim();
+      const token = rest.split(/\s+/)[0];
+      if (token && token.length > 0) return token;
+    }
+  }
+  return undefined;
+}
+
+function derivePipelineStatus(firstLine: string, output: string, hasFailure: boolean): CardPipelineStatus['status'] {
+  const lowerFirst = firstLine.toLowerCase();
+  if (lowerFirst.includes('no runs') || lowerFirst.includes('no run yet')) return 'no-runs';
+  if (lowerFirst.includes('landed')) return 'landed';
+  if (lowerFirst.includes('running')) return 'running';
+  if (lowerFirst.includes('waiting')) return 'waiting';
+  if (lowerFirst.includes('failed')) return 'failed';
+  if (lowerFirst.includes('succeeded')) return 'succeeded';
+  if (hasFailure && !output.toLowerCase().includes('running')) return 'failed';
+  return 'unknown';
+}
+
 export function parsePipelineOutput(cardId: number, output: string): CardPipelineStatus {
   const lines = output.split('\n');
   const firstLine = lines[0] || '';
 
-  let failedStep: string | undefined;
-  let failedReason: string | undefined;
+  const { failedStep, failedReason } = extractFailure(output);
+  const status = derivePipelineStatus(firstLine, output, Boolean(failedStep || failedReason));
   let step: string | undefined;
-  let status: CardPipelineStatus['status'] = 'unknown';
 
-  // Look for failed step and reason in the table or output
-  // e.g.: "cicd  1  10-17 20:35  20:35   failed      skill-werk-commit  — werk-commit: git rev-parse..."
-  // or: "failed skill-werk-commit — reason"
-  const tableMatch = output.match(/^\s*\S+\s+\d+\s+[\d:-]+\s+[\d:-]+\s+failed\s+([\w-]+)(?:\s*—\s*([^\n]+))?/m);
-  if (tableMatch) {
-    failedStep = tableMatch[1];
-    failedReason = tableMatch[2]?.trim();
-  } else {
-    const failedDashMatch = output.match(/\bfailed\s+([\w-]+)\s*—\s*([^\n]+)/i);
-    if (failedDashMatch) {
-      failedStep = failedDashMatch[1];
-      failedReason = failedDashMatch[2]?.trim();
-    } else {
-      const generalMatch = output.match(/\bfailed\s+(?:at\s+)?([\w-]+)/i);
-      if (generalMatch && generalMatch[1] !== 'at') {
-        failedStep = generalMatch[1];
-      }
-    }
-  }
-
-  // Determine overall status from first line / dagu line
-  if (/no runs|no run yet/i.test(firstLine)) {
-    status = 'no-runs';
-  } else if (/\blanded\b/i.test(firstLine)) {
-    status = 'landed';
-  } else if (/\brunning\b/i.test(firstLine)) {
-    status = 'running';
-    const stepMatch = firstLine.match(/running\s*(?:·\s*[^·]+·\s*([\w-]+))?/i);
-    if (stepMatch && stepMatch[1]) {
-      step = stepMatch[1];
-    } else {
-      const runningTableMatch = output.match(/running\s+([\w-]+)/i);
-      if (runningTableMatch) step = runningTableMatch[1];
-    }
-  } else if (/\bwaiting\b/i.test(firstLine)) {
-    status = 'waiting';
+  if (status === 'running') {
+    step = extractRunningStep(firstLine, output);
+  } else if (status === 'waiting') {
     step = 'skill-werk-go';
-  } else if (/\bfailed\b/i.test(firstLine)) {
-    status = 'failed';
-  } else if (/\bsucceeded\b/i.test(firstLine)) {
-    status = 'succeeded';
-  } else if ((failedStep || failedReason) && !/\brunning\b/i.test(output)) {
-    status = 'failed';
   }
 
-  // #4598 AC: Motion and auto-refresh while live
   const isLive = status === 'running' || status === 'waiting';
 
   return {
@@ -84,6 +110,7 @@ export function parsePipelineOutput(cardId: number, output: string): CardPipelin
 }
 
 export function resolveChorusWerkStatusBin(): string | null {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   if (process.env.CHORUS_WERK_STATUS_BIN && fs.existsSync(process.env.CHORUS_WERK_STATUS_BIN)) {
     return process.env.CHORUS_WERK_STATUS_BIN;
   }
@@ -110,8 +137,9 @@ export async function fetchCardPipeline(
     try {
       const out = await options.runCws(cardId);
       return parsePipelineOutput(cardId, out);
-    } catch (e: any) {
-      return parsePipelineOutput(cardId, `Error running chorus-werk-status: ${e.message}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return parsePipelineOutput(cardId, `Error running chorus-werk-status: ${msg}`);
     }
   }
 
