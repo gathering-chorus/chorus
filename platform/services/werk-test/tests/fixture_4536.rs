@@ -193,6 +193,7 @@ fn run_in_path(base: &Path, card: &str, registry_rows: &[String], patch_status: 
     let (port, patches) = stub(registry, patch_status);
     let door = format!("http://127.0.0.1:{}", port);
     let mut cmd = Command::new(bin.unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_werk-test"))));
+    cmd.env_remove("WERK_TEST_STALE_SLOT_SKIPPED"); // the outer run's hand-off flag must not leak in (#4592 run 1)
     for (k, v) in extra {
         cmd.env(k, v);
     }

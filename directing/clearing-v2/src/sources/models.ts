@@ -93,6 +93,7 @@ export interface RoomsData {
     threadCount?: number;
     threadLast?: string;
     type?: string;
+    kind?: 'nudge' | 'alert';
   }>;
 }
 

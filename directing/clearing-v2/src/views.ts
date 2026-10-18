@@ -2,6 +2,7 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
+import type { KindCount } from './sources/message-counts';
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -328,7 +329,7 @@ function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const thinkingClass = isThinking ? ' msg-thinking' : '';
   const thinkingBadge = isThinking ? '<span class="badge-thinking">thinking</span>' : '';
   return `
-    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}">
+    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
       <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
       <div class="body">
         <span class="nm who-${m.from}">${m.from}</span>
@@ -345,6 +346,25 @@ function renderRoomMessage(m: RoomsData['messages'][number]): string {
     </div>
   `;
 }
+
+// #4592 — the "team nudges" toggle: hides or shows nudges between roles and
+// system alerts (anything with data-kind). On by default to match the old
+// Clearing (Jeff 10-17 20:50), remembered per device. Replies carry no kind.
+const TEAM_NUDGES_KEY = 'clearing-v2.teamNudges';
+const TEAM_NUDGES_TOGGLE = `  <style>body.hide-team-nudges [data-kind] { display: none; }</style>
+  <script>
+    (function () {
+      var box = document.getElementById('team-nudges');
+      var on = true;
+      try { on = localStorage.getItem('${TEAM_NUDGES_KEY}') !== 'off'; } catch (e) {}
+      function apply(v) { document.body.classList.toggle('hide-team-nudges', !v); if (box) box.checked = v; }
+      apply(on);
+      if (box) box.addEventListener('change', function () {
+        try { localStorage.setItem('${TEAM_NUDGES_KEY}', box.checked ? 'on' : 'off'); } catch (e) {}
+        apply(box.checked);
+      });
+    })();
+  </script>`;
 
 const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style="display:none">
       <div class="row" style="justify-content:space-between;align-items:center">
@@ -665,6 +685,8 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
           <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
           <div class="row" style="gap:10px;align-items:center">
             <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:12px;padding:3px 8px;cursor:pointer">Thinking: ON</button>
+            <label class="meta"><input type="checkbox" id="team-nudges" checked> team nudges</label>
+            <a class="meta" href="/counts">counts</a>
             <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
           </div>
         </div>
@@ -697,9 +719,34 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     </div>
   </div>
   <script>window.PULSE_ACTORS = ${JSON.stringify(railActors)};</script>
-${ROOM_DRAWER_SCRIPT}`;
+${ROOM_DRAWER_SCRIPT}
+${TEAM_NUDGES_TOGGLE}`;
 
   return renderPageShell(`Room #${room}`, 'rooms', content, sources);
+}
+
+
+/**
+ * #4592 — today's messages by kind: sent, reached Buzz, gap. A source that
+ * cannot be read is named, never shown as zeros (a red must mean the product
+ * broke, not that the page could not look).
+ */
+export function renderCountsPage(rows: KindCount[], meta: { day: string; error?: string }, sources: TrustStripSource[]): string {
+  const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '—' : v}</td>`;
+  const body = meta.error
+    ? `<div class="meta fail" style="padding:16px">Counts could not be read: ${escapeHtml(meta.error)}</div>`
+    : `<table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Kind</th><th>Sent</th><th>Reached Buzz</th><th>Gap</th></tr></thead>
+      <tbody>
+${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reached)}${cell(r.gap, r.gap ? 'fail' : '')}</tr>`).join('\n')}
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:12px">Role reply: sent not measured — replies go from each role straight to the relay, and pulse does not carry them.</p>`;
+  const content = `<main class="page counts-page" style="padding:14px">
+    <h2>Messages today <span class="meta">${meta.day}, Boston</span></h2>
+    ${body}
+  </main>`;
+  return renderPageShell('Messages today', 'counts', content, sources);
 }
 
 function escapeHtml(t: string): string {

@@ -23,6 +23,8 @@ export interface ClearingMessage {
   room?: string;
   tick?: boolean;
   signer?: string;
+  /** #4592 — a nudge between roles or a system alert (v1 tags the note); the room's toggle hides these. */
+  kind?: 'nudge' | 'alert';
 }
 
 export interface RoleTile {
