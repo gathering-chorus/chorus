@@ -1,17 +1,19 @@
 // @test-type: unit
 // @domain: tests · @card: 4416 · owner: kade
 // #4416 — Jeff, 2026-10-01: "we have run times for suites now?" The page lists
-// the run's slowest suites from the seconds each TestSuiteRun row carries.
-import { runsFromGraph } from '../src/handlers/nightly-graph';
+// the run's slowest suites from the seconds the run log carries (SUITETIME, #4253);
+// #4579 reopen moved the page off TestSuiteRun rows onto the log.
+import { parseAllRuns } from '../src/handlers/nightly-readout';
 import { renderNightlyPage, slowestSuites } from '../src/handlers/nightly-report';
 
-const HEAD = 'runTs,order,kind,fp,owner,res,sum,ts,secs';
-const RECORD = 'runTs,runOutcome,runCompletedAt\n2026-10-01T16:30:00,red,2026-10-01T18:00:00\n';
-
 function run(secs: (string | undefined)[]) {
-  const rows = [HEAD, ...secs.map((s, i) =>
-    ['2026-10-01T16:30:00', i + 1, 'bats', `platform/tests/s${i + 1}.bats`, 'kade', 'pass', '"1 pass, 0 fail"', 1790000000000 + i, s ?? ''].join(','))];
-  return runsFromGraph(rows.join('\n') + '\n', RECORD, 1790000000000)[0];
+  const lines = ['RUN|start|2026-10-01T16:30:00|pid=1'];
+  secs.forEach((s, i) => {
+    lines.push(`SUITE|bats|platform/tests/s${i + 1}.bats|kade|pass|1 pass, 0 fail`);
+    if (s !== undefined) lines.push(`SUITETIME|bats|platform/tests/s${i + 1}.bats|${s}`);
+  });
+  lines.push('RUN|complete|2026-10-01T18:00:00|suites=' + secs.length);
+  return parseAllRuns(lines.join('\n'))[0];
 }
 
 describe('#4416 the slowest suites, from the seconds the run wrote', () => {

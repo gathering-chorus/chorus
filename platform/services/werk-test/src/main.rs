@@ -16,7 +16,7 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    is_test_suite_path, scope_declared_edges, scoped_test_reason, suite_run_payload,
+    is_test_suite_path, scope_declared_edges, scoped_test_reason,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     discover_ts_packages, set_repo_root,
@@ -1065,9 +1065,8 @@ fn step_report(ctx: &Ctx, steps: bool) -> Result<i32, String> {
     let execution_refs: Vec<(&str, &str)> = execution_extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     emit_spine("test.execution.completed", role, card, trace, &execution_refs);
     let writeback_started = std::time::Instant::now();
-    // #3634 write side — the run becomes a TestSuiteRun instance in the graph,
-    // best-effort and witnessed either way.
-    post_suite_run(role, card, trace, plan_source, plan.len(), failed_count, execution_duration_ms, outcome.label());
+    // #4579 reopen — the run no longer becomes a TestSuiteRun in the graph
+    // (Jeff 10-18 19:10); the run folder and the spine carry it.
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", role, card, trace,
             &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
@@ -1869,8 +1868,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     stored_total.fetch_add(poster.join().unwrap_or(0), Ordering::SeqCst);
     println!("nightly: poster drained in {} ms after the last unit (#4144)", poster_wait.elapsed().as_millis());
     let writeback_started = std::time::Instant::now();
-    post_suite_run(&mint_role, &card, &trace, plan_source, crates.len(), failed_count,
-        execution_duration_ms, outcome.label());
     let unmatched_cargo = unmatched_cargo.load(Ordering::SeqCst);
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", &role, &card, &trace,
@@ -3537,44 +3534,6 @@ fn store_latest_results(
 
 // #4154 — `werk-test --reconcile` (registered minus executed) retired with the
 // nightly census; the crawler keeps the registry current, the runner trusts it.
-
-/// #3634 write side — POST the run's TestSuiteRun through the generated write
-/// surface with a #3619-scoped token. Token: $CHORUS_WRITE_TOKEN if the runner
-/// provides it, else minted via chorus-identity-token (ES256 identity from the
-/// realm env inside the script — never echoed here). Every outcome is witnessed:
-/// testsuiterun.posted / testsuiterun.post.skipped with the reason.
-#[allow(clippy::too_many_arguments)]
-fn post_suite_run(
-    role: &str,
-    card: &str,
-    trace: &str,
-    plan_source: &str,
-    checks_planned: usize,
-    checks_failed: usize,
-    duration_ms: u128,
-    verdict: &str,
-) {
-    let endpoint = std::env::var("OWL_API_TESTSUITERUNS")
-        .unwrap_or_else(|_| "http://localhost:3360/testsuiteruns".to_string());
-    let Some(token) = write_token(role) else {
-        emit_spine("testsuiterun.post.skipped", role, card, trace,
-            &[("reason", "no-write-token")]);
-        return;
-    };
-    let payload = suite_run_payload(card, role, trace, plan_source, checks_planned,
-        checks_failed, duration_ms, verdict);
-    let args = werk_test::suite_run_post_args(&endpoint, &token, &payload);
-    let ok = Command::new("curl")
-        .args(&args)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if ok {
-        emit_spine("testsuiterun.posted", role, card, trace, &[("verdict", verdict), ("plan_source", plan_source)]);
-    } else {
-        emit_spine("testsuiterun.post.skipped", role, card, trace, &[("reason", "post-failed")]);
-    }
-}
 
 /// Mint a write token — #3689: ES256 CSS IDENTITY, no scope in the token.
 /// Scope is model data now (chorus:hasScope on the Principal, resolved at the

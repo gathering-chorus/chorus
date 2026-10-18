@@ -42,7 +42,8 @@ import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athe
 import { classAtlasHandler } from './handlers/class-atlas';
 import { vocabularyHandler } from './handlers/vocabulary';
 import { renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
-import { loadRunsFromGraph, fusekiCsv } from './handlers/nightly-graph';
+import { fusekiCsv } from './handlers/nightly-graph';
+import { loadRunsFromLog } from './handlers/nightly-log';
 import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/crawler-validate';
 import { loadSensors, renderSensorsSection } from './handlers/sensors-panel';
 import { findRun, buildReadout, renderReadoutText, previousFinished, type NightlyRunRecord } from './handlers/nightly-readout';
@@ -454,13 +455,12 @@ app.get('/clearing', (req: Request, res: Response) =>
 // the same object, and nightly-suites.sh delivers the text form to Jeff by
 // nudge when a run finishes. A role asked "was last night green" reads this
 // route (`nightly-suites.sh --readout`), so two roles give the same numbers.
-// #4156 — the runs come from the graph rows the run wrote (TestSuiteRun per
-// SUITE row, PipelineRun for the tail). Nothing here reads nightly-suites.log:
-// a store that does not answer is a 503, never a quiet fallback to the file.
-const WERK_TEST_UNREAD = 'the nightly run record could not be read from the graph (the store did not answer); '
-  + 'refusing to report numbers from anywhere else';
+// #4579 reopen — the runs come from the run log (nightly-suites.log), the one
+// place the runner writes the whole run; the graph no longer carries them
+// (Jeff 10-18 19:10). A log that cannot be read is a 503, never an empty green.
+const WERK_TEST_UNREAD = 'the nightly run log could not be read; refusing to report numbers from anywhere else';
 const nightlyFuseki = (): string => process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
-const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromGraph(fusekiCsv(nightlyFuseki()));
+const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromLog();
 
 function readoutFor(runs: NightlyRunRecord[], runId: string) {
   const run = findRun(runs, runId);
@@ -472,7 +472,7 @@ app.get('/api/chorus/nightly/runs', async (_req: Request, res: Response) => {
   const runs = await nightlyRuns();
   if (!runs) { res.status(503).json({ error: WERK_TEST_UNREAD }); return; }
   res.json({
-    source: 'graph',
+    source: 'log',
     runs: [...runs].reverse().map((r) => ({
       runId: r.runId, startedAt: r.startedAt, completedAt: r.completedAt ?? null, completed: r.completed,
       suites: r.rows.length, failed: r.rows.filter((x) => x.status === 'fail').length,
