@@ -116,13 +116,17 @@ export class MessageRouter {
       }
     }
 
-    // #4571 — v1 rule ("no @ = Wren gets it"): unaddressed Jeff input routes to wren.
+    // #4604: unaddressed Jeff input routes to every role as in v1 (#3833).
     if (nudges.length === 0 && msg.from === 'jeff') {
-      nudges.push({
-        from: 'jeff',
-        to: 'wren',
-        content: msg.text,
-      });
+      for (const role of KNOWN_ROLES) {
+        if (role !== 'jeff') {
+          nudges.push({
+            from: 'jeff',
+            to: role,
+            content: msg.text,
+          });
+        }
+      }
     }
 
     return nudges;
