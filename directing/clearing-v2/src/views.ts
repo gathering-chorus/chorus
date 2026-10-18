@@ -640,10 +640,10 @@ function renderActorRailHtml(railActors: ActorRow[]): string {
 
 function renderInlineNavHtml(data: RoomsData, room: string, railActors: ActorRow[]): string {
   return `
-    <div class="rooms-nav-inline rside">
-      <span class="rooms-inline-group"><span class="lab">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
+    <div class="rooms-nav-inline" id="rooms-nav-bar">
+      <span class="rooms-inline-group"><span class="rooms-nav-label">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
       <span class="sep">·</span>
-      <span class="rooms-inline-group"><span class="lab">Direct</span> ${data.directRoles.map(dr => {
+      <span class="rooms-inline-group"><span class="rooms-nav-label">Direct</span> ${data.directRoles.map(dr => {
         const slug = dr.toLowerCase().replace(/\s+/g, '-');
         const actor = railActors.find(a => a.id.toLowerCase() === slug || a.name.toLowerCase() === dr.toLowerCase());
         const andon = roleAndonLight(actor);
