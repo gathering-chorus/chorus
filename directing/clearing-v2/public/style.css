@@ -480,6 +480,7 @@ nav.top .n {
 .rooms {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -523,6 +524,7 @@ nav.top .n {
 .chat {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   min-width: 0;
   max-width: 100%;
   flex: 1;
@@ -1015,7 +1017,9 @@ tr.you td {
 .rooms-view {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  /* #4597: a fixed-height frame, not a flex-grow child of an auto-height page —
+     otherwise it grows with the message list and Send ends up thousands of px down */
+  flex: 0 0 auto;
   min-height: 0;
   min-width: 0;
   max-width: 100%;

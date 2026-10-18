@@ -18,7 +18,7 @@ import { ClearingMessage, NostrEvent } from './types';
 import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage } from './views';
 import { bostonMidnight, countKinds, fetchPulseToday, sentFromPulse } from './sources/message-counts';
 import { fetchBoard } from './sources/board';
-import { DataService } from './data-service';
+import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
@@ -274,7 +274,7 @@ function registerReadApiRoutes(ctx: RouteContext): void {
 
     ctx.sseClients.push(res);
 
-    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(100), tiles: tileService.getTiles() })}\n\n`);
+    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(ROOM_PAGE_MESSAGES), tiles: tileService.getTiles() })}\n\n`);
 
     req.on('close', () => {
       const idx = ctx.sseClients.indexOf(res);

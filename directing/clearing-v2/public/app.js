@@ -324,7 +324,16 @@ function fitChatToViewport() {
   const top = chat.getBoundingClientRect().top + window.scrollY;
   chat.style.height = Math.max(240, window.innerHeight - top) + 'px';
 }
+/** #4597 — the room's history is rendered by the server and nothing scrolled it, so the
+ *  room opened at the oldest message. Open it at the newest. */
+function scrollRoomToNewest() {
+  if (typeof document === 'undefined') return;
+  const stream = document.getElementById('messages-stream');
+  if (stream) stream.scrollTop = stream.scrollHeight;
+}
 if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
+  window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
 }
@@ -562,6 +571,7 @@ if (typeof module !== 'undefined' && module.exports) {
     appendMessage,
     appendLinkedText,
     updateTiles,
+    scrollRoomToNewest,
     initStream,
     loadOrCreateRoomKey,
     signEvent,
