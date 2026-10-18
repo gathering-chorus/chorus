@@ -383,10 +383,13 @@ async function handleSendMessage(text, options = {}) {
       throw new Error(errName);
     }
 
-    // Success
+    // Success. #4608 — the roles got it; say so plainly if Buzz did not store it.
+    let sent = null;
+    try { sent = await res.json(); } catch {}
     if (statusEl) {
-      statusEl.textContent = '';
-      statusEl.style.display = 'none';
+      const notStored = sent && sent.stored === false;
+      statusEl.textContent = notStored ? `Sent to the team, but not stored in Buzz: ${sent.reason || 'no reason given'}` : '';
+      statusEl.style.display = notStored ? 'block' : 'none';
     }
     if (btnEl) {
       if (btnEl.classList) {
