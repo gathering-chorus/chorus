@@ -9,10 +9,11 @@ export interface CardPipelineStatus {
   cardId: number;
   output: string;
   isLive: boolean;
-  status: 'running' | 'waiting' | 'failed' | 'succeeded' | 'landed' | 'no-runs' | 'unknown';
+  status: 'running' | 'waiting' | 'failed' | 'succeeded' | 'landed' | 'no-runs' | 'unmeasured' | 'unknown';
   step?: string;
   failedStep?: string;
   failedReason?: string;
+  unmeasuredReason?: string;
 }
 
 function extractFailureFromLine(line: string): { failedStep?: string; failedReason?: string } | null {
@@ -126,6 +127,48 @@ export function resolveChorusWerkStatusBin(): string | null {
   return null;
 }
 
+const lastGoodOutputByCard = new Map<number, string>();
+
+function isCwsFailure(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.startsWith('error:') ||
+    lower.includes('traceback (most recent call last):') ||
+    lower.includes('syntaxerror:') ||
+    lower.includes('permission denied') ||
+    lower.includes('timed out')
+  );
+}
+
+function extractCleanReason(raw: string): string {
+  const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+  const excLine = lines.slice().reverse().find((l) => l.includes('Error:') || l.includes('Exception:'));
+  if (excLine) return excLine;
+  return lines[0] || 'unmeasured';
+}
+
+function buildUnmeasuredStatus(cardId: number, rawReason: string): CardPipelineStatus {
+  const cleanReason = extractCleanReason(rawReason);
+  const lastGood = lastGoodOutputByCard.get(cardId);
+  if (lastGood) {
+    const parsed = parsePipelineOutput(cardId, lastGood);
+    return {
+      ...parsed,
+      isLive: false,
+      status: 'unmeasured',
+      unmeasuredReason: cleanReason,
+      output: `${lastGood}\n\n[unmeasured: ${cleanReason} — showing last good output]`,
+    };
+  }
+  return {
+    cardId,
+    output: `unmeasured (${cleanReason})`,
+    isLive: false,
+    status: 'unmeasured',
+    unmeasuredReason: cleanReason,
+  };
+}
+
 export async function fetchCardPipeline(
   cardId: number,
   options?: {
@@ -136,10 +179,14 @@ export async function fetchCardPipeline(
   if (options?.runCws) {
     try {
       const out = await options.runCws(cardId);
+      if (isCwsFailure(out)) {
+        return buildUnmeasuredStatus(cardId, out);
+      }
+      lastGoodOutputByCard.set(cardId, out);
       return parsePipelineOutput(cardId, out);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return parsePipelineOutput(cardId, `Error running chorus-werk-status: ${msg}`);
+      return buildUnmeasuredStatus(cardId, msg);
     }
   }
 
@@ -155,7 +202,17 @@ export async function fetchCardPipeline(
 
   return new Promise<CardPipelineStatus>((resolve) => {
     execFile('python3', [binPath, String(cardId)], { timeout: 10000, env: process.env }, (err, stdout, stderr) => {
-      const out = stdout || stderr || (err ? `Error: ${err.message}` : 'No output');
+      if (err) {
+        const execErr = err as { killed?: boolean; signal?: string; message?: string };
+        const isTimeout = Boolean(execErr.killed || execErr.signal === 'SIGTERM' || execErr.message?.includes('timed out'));
+        const reason = isTimeout ? 'Timed out after 10s' : (err.message || stderr || 'Failed to read status');
+        return resolve(buildUnmeasuredStatus(cardId, reason));
+      }
+      const out = stdout || stderr || 'No output';
+      if (isCwsFailure(out)) {
+        return resolve(buildUnmeasuredStatus(cardId, out));
+      }
+      lastGoodOutputByCard.set(cardId, out);
       resolve(parsePipelineOutput(cardId, out));
     });
   });

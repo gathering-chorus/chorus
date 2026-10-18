@@ -488,6 +488,9 @@ const ROOM_DRAWER_SCRIPT = `  <script>
             } else if (p.status === 'failed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">failed' + (p.failedStep ? ' at ' + drawerEscape(p.failedStep) : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
+            } else if (p.status === 'unmeasured') {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">unmeasured' + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
+              if (cwsMotion) cwsMotion.style.display = 'none';
             } else if (p.status === 'landed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-ok">landed</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
