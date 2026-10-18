@@ -96,20 +96,44 @@ pub fn count_messages(rows: &[MessageRow], today: &str) -> Counts {
     c
 }
 
+/// A string field of a one-line JSON object. Spaces around the colon are
+/// allowed: a writer that adds one must not drop the line (Kade, #4634).
 fn json_str<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let k = format!("\"{key}\":\"");
-    let at = line.find(&k)? + k.len();
-    let rest = &line[at..];
-    Some(&rest[..rest.find('"')?])
+    let k = format!("\"{key}\"");
+    let mut from = 0;
+    while let Some(i) = line[from..].find(&k) {
+        let rest = line[from + i + k.len()..].trim_start();
+        if let Some(rest) = rest.strip_prefix(':') {
+            let rest = rest.trim_start().strip_prefix('"')?;
+            return Some(&rest[..rest.find('"')?]);
+        }
+        from += i + k.len();
+    }
+    None
 }
 
 /// Spine lines per Boston day before `today`: every event, and each role's
 /// commands (agent.action — the streams). A line with no readable time is
-/// skipped, never counted on a guessed day.
+/// never counted on a guessed day; it is counted as `unreadable-lines` on the
+/// day of the last line that could be read, so a writer change shows up.
 pub fn count_events<'a>(lines: impl Iterator<Item = &'a str>, today: &str) -> Counts {
     let mut c = Counts::new();
+    let mut last_day: Option<String> = None;
+    let mut pending_unreadable = 0u64;
     for line in lines {
-        let Some(day) = json_str(line, "timestamp").and_then(boston_day) else { continue };
+        let Some(day) = json_str(line, "timestamp").and_then(boston_day) else {
+            match &last_day {
+                Some(d) if d.as_str() < today => *c.entry((d.clone(), "unreadable-lines".into(), None)).or_insert(0) += 1,
+                Some(_) => {}
+                None => pending_unreadable += 1,
+            }
+            continue;
+        };
+        if pending_unreadable > 0 && day.as_str() < today {
+            *c.entry((day.clone(), "unreadable-lines".into(), None)).or_insert(0) += pending_unreadable;
+            pending_unreadable = 0;
+        }
+        last_day = Some(day.clone());
         if day.as_str() >= today {
             continue;
         }
@@ -122,6 +146,24 @@ pub fn count_events<'a>(lines: impl Iterator<Item = &'a str>, today: &str) -> Co
         }
     }
     c
+}
+
+/// Every day from the first counted day to the day before `today` gets each
+/// team metric, 0 when nothing happened: a day that was read is never left
+/// blank, so a blank day can only mean it was not read (Kade, #4634).
+pub fn fill_zero_days(counts: &mut Counts, metrics: &[&str], today: &str) {
+    let num = |d: &str| -> Option<i64> {
+        Some(days_from_civil(d.get(0..4)?.parse().ok()?, d.get(5..7)?.parse().ok()?, d.get(8..10)?.parse().ok()?))
+    };
+    let Some(first) = counts.keys().map(|(d, _, _)| d.clone()).min() else { return };
+    let (Some(a), Some(t)) = (num(&first), num(today)) else { return };
+    for n in a..t {
+        let (y, m, d) = civil_from_days(n);
+        let day = format!("{y:04}-{m:02}-{d:02}");
+        for metric in metrics {
+            counts.entry((day.clone(), metric.to_string(), None)).or_insert(0);
+        }
+    }
 }
 
 /// A reading's name: <sensor>-<metric>[-<role>]-<day>, so a rerun replaces
@@ -171,6 +213,23 @@ pub fn missing_days(counts: &Counts) -> Vec<String> {
         })
         .filter(|d| !have.contains(d.as_str()))
         .collect()
+}
+
+pub type ReadingRow = (String, Vec<(String, String)>);
+
+/// What a pass must write: readings not yet stored, readings whose value
+/// changed (a late-arriving line), and how many already match.
+pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>) -> (Vec<ReadingRow>, Vec<ReadingRow>, usize) {
+    let (mut create, mut update, mut unchanged) = (vec![], vec![], 0);
+    for (name, fields) in desired {
+        let value = fields.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.clone()).unwrap_or_default();
+        match stored.get(&name) {
+            None => create.push((name, fields)),
+            Some(v) if v.parse::<f64>().ok() == value.parse::<f64>().ok() => unchanged += 1,
+            Some(_) => update.push((name, fields)),
+        }
+    }
+    (create, update, unchanged)
 }
 
 #[cfg(test)]
@@ -252,5 +311,45 @@ mod tests {
         assert_eq!(missing_days(&c), vec!["2026-10-16".to_string()]);
         c.insert(("2026-10-16".into(), "events".into(), None), 1);
         assert!(missing_days(&c).is_empty());
+    }
+
+    #[test]
+    fn a_quiet_day_reads_zero_and_is_not_missing() {
+        let mut c = Counts::new();
+        c.insert(("2026-10-15".into(), "nudges".into(), None), 3);
+        c.insert(("2026-10-17".into(), "nudges".into(), None), 2);
+        fill_zero_days(&mut c, &["nudges", "alerts"], "2026-10-18");
+        assert_eq!(c.get(&("2026-10-16".into(), "nudges".into(), None)), Some(&0));
+        assert_eq!(c.get(&("2026-10-17".into(), "alerts".into(), None)), Some(&0));
+        assert!(missing_days(&c).is_empty());
+        assert!(c.keys().all(|(d, _, _)| d.as_str() < "2026-10-18"));
+    }
+
+    #[test]
+    fn a_spaced_writer_still_counts_and_an_unreadable_line_is_its_own_reading() {
+        let lines = [
+            r#"{"event" : "agent.action", "role": "kade", "timestamp" : "2026-10-17T14:00:00Z"}"#,
+            r#"{"event":"x","when":"2026-10-17T15:00:00Z"}"#,
+        ];
+        let c = count_events(lines.iter().copied(), "2026-10-18");
+        let get = |m: &str, r: Option<&str>| c.get(&("2026-10-17".to_string(), m.to_string(), r.map(str::to_string))).copied();
+        assert_eq!(get("commands", Some("kade")), Some(1));
+        assert_eq!(get("unreadable-lines", None), Some(1));
+        assert_eq!(get("events", None), Some(1));
+    }
+
+    #[test]
+    fn a_rerun_writes_only_new_and_changed_days() {
+        let mut c = Counts::new();
+        c.insert(("2026-10-15".into(), "events".into(), None), 4);
+        c.insert(("2026-10-16".into(), "events".into(), None), 5);
+        c.insert(("2026-10-17".into(), "events".into(), None), 6);
+        let mut stored = BTreeMap::new();
+        stored.insert("events-events-2026-10-15".to_string(), "4".to_string());
+        stored.insert("events-events-2026-10-16".to_string(), "3".to_string());
+        let (create, update, unchanged) = plan_readings(reading_rows("events", &c, "r"), &stored);
+        assert_eq!(create.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["events-events-2026-10-17"]);
+        assert_eq!(update.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["events-events-2026-10-16"]);
+        assert_eq!(unchanged, 1);
     }
 }
