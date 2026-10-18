@@ -1,0 +1,39 @@
+# memory-backup-stale.yml — #4634. A backup copy of messages or events is more than a day old.
+#
+# Reads ONLY the herald sensors' SensorReadings (Jeff, 2026-10-18: monitors and
+# alerts run on sensor output; only sensors touch the world). READINGS_URL is
+# the seam: a test hands it a file:// fixture. No reading at all is its own
+# finding ("no-reading"): a silent sensor must never read as healthy.
+#
+# alert-runner contract: stdout must equal literal "ok" for success.
+
+name: memory-backup-stale
+description: the Bedroom copy of pulse messages.db or the spine is older than 24 hours
+severity: warning
+owner: silas
+schedule: "17 * * * *"
+
+check: |
+  URL="${READINGS_URL:-http://localhost:3360/v1/heralds/sensorreadings?limit=5000}"
+  BODY=$(curl -sf -m 20 "$URL") || { echo "no-reading:readings-unreadable"; exit 1; }
+  printf '%s' "$BODY" | python3 -c '
+  import json, sys, datetime, zoneinfo
+  rows = json.load(sys.stdin).get("data", [])
+  today = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
+  TODAY, YDAY = today.isoformat(), (today - datetime.timedelta(days=1)).isoformat()
+  def val(sensor, metric, day):
+      for r in rows:
+          if r.get("readingOfSensor") == sensor and r.get("readingMetric") == metric and str(r.get("readingDay", ""))[:10] == day and not r.get("readingRole"):
+              return float(r.get("readingValue"))
+      return None
+  bad = []
+  for s in ("messages", "events"):
+      h = val(s, "backup-age", TODAY)
+      if h is None: bad.append(f"no-reading:{s}-backup-age-{TODAY}")
+      elif h > 24: bad.append(f"stale:{s}-copy-{int(h)}h>24h")
+  print(" ".join(bad) or "ok"); sys.exit(1 if bad else 0)
+  '
+
+action: |
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "memory-backup-stale: rule the Bedroom copy of pulse messages.db or the spine is older than 24 hours; values from the sensor readings, see /v1/heralds/sensorreadings" 2>/dev/null || true
