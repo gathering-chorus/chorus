@@ -76,6 +76,8 @@ chorus:fieldToolName a owl:DatatypeProperty ; rdfs:label "tool name field" ; rdf
 chorus:fieldToolArgs a owl:DatatypeProperty ; rdfs:label "tool args field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string .
 chorus:runtimeToolMap a owl:DatatypeProperty ; rdfs:label "tool name map" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "One native tool name and the Chorus guard's name for it, as native=chorus (run_command=Bash). A tool not named here is not guarded: it gets the ask reply, so the person approves it." .
+chorus:runtimeEnv a owl:DatatypeProperty ; rdfs:label "start variable" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "One environment variable the runtime starts with, as NAME=value (agy: SSH_CONNECTION, so it keeps its token in a file instead of a keychain the principal cannot open, #4544)." .
 chorus:runtimeArgMap a owl:DatatypeProperty ; rdfs:label "tool argument map" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "One native tool argument and the guard's name for it, as native=chorus (CommandLine=command)." .
 chorus:replyAsk a owl:DatatypeProperty ; rdfs:label "ask reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
@@ -122,6 +124,7 @@ chorus:AgentRuntimeShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fieldToolArgs ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:runtimeToolMap ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:runtimeArgMap ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeEnv ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:replyAsk ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:eventAfterTool ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:replyNone ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
