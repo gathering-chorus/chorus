@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.memory-sensors</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- #4634 — the messages and events sensors, once a day after midnight Boston so
+         yesterday is complete. Through the one runner (herald-run), as their owner,
+         each recorded as a SensorRun. `;` not `&&`: an unmeasured messages pass must
+         not stop the events pass. -->
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas herald-run '{"role":"silas","sensor":"messages","wait":true}'; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas herald-run '{"role":"silas","sensor":"events","wait":true}'</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>4</integer>
+    <key>Minute</key><integer>45</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/memory-sensors.log</string>
+  <key>StandardErrorPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/memory-sensors.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_ROLE</key><string>silas</string>
+    <key>CHORUS_OWL_API</key><string>http://localhost:3360</string>
+  </dict>
+</dict>
+</plist>

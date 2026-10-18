@@ -186,6 +186,22 @@ mod tests_4405 {
         assert!(!is_run_name("sensor-run-code-20261012t213005z", "code"), "a kind-prefixed name is a 422 at the door");
     }
 
+    /// #4634 — the runner refuses any sensor its input shape doesn't list, so the
+    /// sensors the 10-17 rename left calling a dead tool were joined by new
+    /// sensors the runner would refuse. The model's list and this one must match.
+    #[test]
+    fn the_runner_input_shape_lists_exactly_these_sensors() {
+        let ttl = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../roles/wren/ontology/skills-4467.ttl")).expect("skills model readable");
+        let block = &ttl[ttl.find("chorus:HeraldRunInput").expect("HeraldRunInput present")..];
+        let line = block.lines().find(|l| l.contains("sh:name \"sensor\"")).expect("sensor property present");
+        let inside = &line[line.find("sh:in (").expect("an sh:in list") + 7..line.find(')').unwrap()];
+        let mut listed: Vec<&str> = inside.split('"').filter(|s| !s.trim().is_empty()).collect();
+        let mut ours: Vec<&str> = SENSORS.to_vec();
+        listed.sort();
+        ours.sort();
+        assert_eq!(listed, ours, "the runner would refuse a sensor crawl offers, or offer one crawl lacks");
+    }
+
     #[test]
     fn a_pass_that_cannot_read_its_store_is_unmeasured_not_green_or_red() {
         assert_eq!(outcome(UNMEASURED_EXIT, None), "unmeasured");
