@@ -390,9 +390,11 @@ export class SessionTailer {
   }
 
   private processLine(role: string, line: string): void {
-    let entry: { type?: string; uuid?: string; timestamp?: string; message?: { content?: unknown; stop_reason?: string } };
+    let entry: { type?: string; uuid?: string; timestamp?: string; isCompactSummary?: boolean; message?: { content?: unknown; stop_reason?: string; isCompactSummary?: boolean } };
     try { entry = JSON.parse(line); } catch { return; }
     const ts = entry.timestamp || new Date().toISOString();
+    // #4593 — a compaction summary in a role transcript is never Jeff
+    if (entry.isCompactSummary || entry.message?.isCompactSummary) return;
     if (entry.type === 'user') return this.handleUserMessage(role, entry, ts);
     if (entry.type === 'assistant') return this.handleAssistantMessage(role, entry, ts);
   }

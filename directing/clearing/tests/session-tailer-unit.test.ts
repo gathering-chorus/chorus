@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { MessageRouter } from '../src/router';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'session-tailer-test-'));
 process.env.CLEARING_PROJECTS_DIR = TMP;
@@ -169,6 +170,41 @@ describe('SessionTailer.processLine — user messages', () => {
   test('user message with no content at all is dropped', () => {
     fire('kade', { type: 'user', message: {} });
     expect(router.ingest).not.toHaveBeenCalled();
+  });
+
+  // #4593 — compaction summary lines marked isCompactSummary must never post to the room
+  test('#4593 transcript line marked isCompactSummary is never posted to the room', () => {
+    const realRouter = new MessageRouter();
+    jest.spyOn(realRouter, 'ingest');
+    const { SessionTailer } = load();
+    const t = new SessionTailer(realRouter as any);
+    const post = (role: string, entry: any) =>
+      (t as any).processLine(role, JSON.stringify(entry));
+
+    post('wren', {
+      type: 'user',
+      isCompactSummary: true,
+      message: { content: 'This summary was generated at 2026-10-17T20:00:34-04:00.\n# User Requests...' },
+    });
+    expect(realRouter.ingest).not.toHaveBeenCalled();
+
+    post('silas', {
+      type: 'user',
+      message: { content: 'Summary of session', isCompactSummary: true },
+    });
+    expect(realRouter.ingest).not.toHaveBeenCalled();
+
+    // NEGATIVE PROOF: a normal Jeff line without isCompactSummary is posted to the room
+    post('wren', {
+      type: 'user',
+      message: { content: 'Jeff: real message to wren' },
+    });
+    expect(realRouter.ingest).toHaveBeenCalledTimes(1);
+    expect(realRouter.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'jeff',
+      text: 'Jeff: real message to wren',
+      type: 'jeff-input',
+    }));
   });
 });
 
