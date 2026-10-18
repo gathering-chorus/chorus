@@ -347,16 +347,16 @@ function renderRoomMessage(m: RoomsData['messages'][number]): string {
   `;
 }
 
-// #4592 — the "team nudges" toggle: hides or shows nudges between roles and
-// system alerts (anything with data-kind). On by default to match the old
-// Clearing (Jeff 10-17 20:50), remembered per device. Replies carry no kind.
+// #4592 / #4618 — the "team nudges" toggle: hides or shows nudges between roles and
+// system alerts (anything with data-kind). Off by default to keep the room focused
+// on primary signals (Jeff 10-18 13:43), remembered per device. Replies carry no kind.
 const TEAM_NUDGES_KEY = 'clearing-v2.teamNudges';
 const TEAM_NUDGES_TOGGLE = `  <style>body.hide-team-nudges [data-kind] { display: none; }</style>
   <script>
     (function () {
       var box = document.getElementById('team-nudges');
-      var on = true;
-      try { on = localStorage.getItem('${TEAM_NUDGES_KEY}') !== 'off'; } catch (e) {}
+      var on = false;
+      try { on = localStorage.getItem('${TEAM_NUDGES_KEY}') === 'on'; } catch (e) {}
       function apply(v) { document.body.classList.toggle('hide-team-nudges', !v); if (box) box.checked = v; }
       apply(on);
       if (box) box.addEventListener('change', function () {
@@ -685,7 +685,7 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
           <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><b>${headerTitle}</b> <span class="meta" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${data.directRoles.join(', ')}</span></div>
           <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
             <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
-            <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges" checked> nudges</label>
+            <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges"> nudges</label>
             <a class="meta" href="/counts" style="font-size:11px">counts</a>
             <span class="ex" style="font-size:10.5px">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
           </div>

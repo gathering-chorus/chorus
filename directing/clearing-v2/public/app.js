@@ -35,12 +35,12 @@ function getLocalStorage(custom) {
   return null;
 }
 
-// #4592 — the room's "team nudges" toggle, on by default, remembered per device.
+// #4592 / #4618 — the room's "team nudges" toggle, off by default, remembered per device.
 // The room page's own script reads the same key (views.ts TEAM_NUDGES_KEY).
 const TEAM_NUDGES_KEY = 'clearing-v2.teamNudges';
 function teamNudgesOn(customStorage) {
   const storage = getLocalStorage(customStorage);
-  try { return !storage || storage.getItem(TEAM_NUDGES_KEY) !== 'off'; } catch { return true; }
+  try { return !!storage && storage.getItem(TEAM_NUDGES_KEY) === 'on'; } catch { return false; }
 }
 function setTeamNudges(customStorage, on) {
   const storage = getLocalStorage(customStorage);
