@@ -60,7 +60,7 @@ export interface IndexAllSourcesDeps {
   // Principal slug the deps layer resolved from the pubkey via the security
   // graph — empty string when no Principal owns the key (indexer renders it
   // unattributed:<pubkey8>, visible + auditable, never fabricated).
-  fetchBuzz?: () => Promise<Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string }>>;
+  fetchBuzz?: () => Promise<Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string; tags?: string[][] }>>;
   // #3136 REFINE — full doc catalog (all ~402 docs from the SOURCE_DIRS scan, not the
   // 33-entry curated registry). Returns path-bearing entries; indexDocsFrom reads each
   // absPath's content. Injected so the indexer stays hermetic; tests stub it.
@@ -324,15 +324,33 @@ function indexGraphRows(ctx: IndexCtx, rows: Array<{ source: string; id: string;
 // nudge-retire condition: relay messages must be as searchable as messages.db.
 function indexBuzz(
   ctx: IndexCtx,
-  rows: Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string }>,
+  rows: Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string; tags?: string[][] }>,
 ): string {
   let n = 0;
   for (const ev of rows) {
+    if (ev.kind === 1) continue; // Clearing v2's room — indexClearingRoom (#4605)
     const who = ev.author && ev.author.length > 0 ? ev.author : `unattributed:${ev.pubkey.slice(0, 8)}`;
     ctx.insert.run!('buzz', `buzz:${ev.id}`, `buzz:${ev.channel || 'team'}`, who, who, ev.content, ev.created_at);
     n++;
   }
   return `${n} buzz events indexed`;
+}
+
+// #4605 — Clearing v2 posts every room message to the relay as kind 1. Room posts
+// are signed by the v2 server's key with an `author` tag naming who typed it; role
+// replies carry a `role` tag. The tag is the signer's attestation, so it names the
+// row; with no tag the row stays under the signing Principal (never invented).
+function indexClearingRoom(ctx: IndexCtx, rows: Parameters<typeof indexBuzz>[1]): string {
+  let n = 0;
+  for (const ev of rows) {
+    if (ev.kind !== 1) continue;
+    const tag = (k: string) => ev.tags?.find((x) => x[0] === k)?.[1];
+    const signer = ev.author && ev.author.length > 0 ? ev.author : `unattributed:${ev.pubkey.slice(0, 8)}`;
+    const who = tag('author') || tag('role') || signer;
+    ctx.insert.run!('clearing', `clearing:${ev.id}`, 'clearing:team', who, who, ev.content, ev.created_at);
+    n++;
+  }
+  return `${n} room messages indexed`;
 }
 
 // #3136 — coverage signal. The failure this card exists to prevent is a knowledge
@@ -440,10 +458,11 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
     runSource('practices', results, () => indexGraphRows(ctx, graphRows, 'practice'));
     // #3695 AC3 — buzz prefetch + index; relay-down = this source errors, loop survives.
     if (deps.fetchBuzz) {
-      let buzzRows: Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string }> = [];
+      let buzzRows: Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string; tags?: string[][] }> = [];
       try {
         buzzRows = await deps.fetchBuzz();
         runSource('buzz', results, () => indexBuzz(ctx, buzzRows));
+        runSource('clearing-v2', results, () => indexClearingRoom(ctx, buzzRows));
       } catch (err: unknown) {
         results.buzz = `error: ${err instanceof Error ? err.message : String(err)}`;
       }
