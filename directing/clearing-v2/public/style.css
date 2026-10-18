@@ -570,6 +570,42 @@ nav.top .n {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.msg .body pre, .message .message-text pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  background: var(--sunk, #161b22);
+  border: 1px solid var(--line2, #30363d);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.msg .body code, .message .message-text code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.msg .body pre code, .message .message-text pre code {
+  white-space: pre;
+}
+.msg .body ul, .message .message-text ul,
+.msg .body ol, .message .message-text ol {
+  margin: 4px 0 6px 18px;
+  padding-left: 0;
+}
+.msg .body li, .message .message-text li {
+  margin: 2px 0;
+  line-height: 1.4;
+}
+.msg .body a, .message .message-text a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg .body a.cid, .message .message-text a.cid {
+  text-decoration: none;
+}
 .msg .nm, .message-author {
   font-weight: 600;
   font-size: 13px;

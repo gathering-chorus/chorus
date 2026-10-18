@@ -203,10 +203,8 @@ function appendMessage(msg) {
   container.scrollTop = container.scrollHeight;
 }
 
-/** #4574/#4575 — #N card links, **bold**, and `code` built from DOM nodes: the message text is
- *  never parsed as HTML, so a message cannot inject markup. */
-function appendLinkedText(parent, text) {
-  const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|#\d+)/g);
+function appendInlineText(parent, text) {
+  const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|https?:\/\/[^\s<>"']+|#\d+)/g);
   for (const tok of tokens) {
     if (!tok) continue;
     if (tok.startsWith('`') && tok.endsWith('`') && tok.length > 2) {
@@ -217,6 +215,19 @@ function appendLinkedText(parent, text) {
       const strong = document.createElement('strong');
       strong.textContent = tok.slice(2, -2);
       parent.appendChild(strong);
+    } else if (/^https?:\/\//.test(tok)) {
+      const m = tok.match(/^(https?:\/\/[^\s<>"']+?)([.,;!?)]*)$/);
+      const url = m ? m[1] : tok;
+      const punct = m ? m[2] : '';
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = url;
+      parent.appendChild(a);
+      if (punct) {
+        parent.appendChild(document.createTextNode(punct));
+      }
     } else if (/^#\d+$/.test(tok)) {
       const id = tok.slice(1);
       const a = document.createElement('a');
@@ -230,6 +241,74 @@ function appendLinkedText(parent, text) {
       parent.appendChild(a);
     } else {
       parent.appendChild(document.createTextNode(tok));
+    }
+  }
+}
+
+function appendBlocks(parent, text) {
+  const lines = text.split('\n');
+  let currentUl = null;
+  let currentOl = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)$/);
+
+    if (bulletMatch) {
+      currentOl = null;
+      if (!currentUl) {
+        currentUl = document.createElement('ul');
+        parent.appendChild(currentUl);
+      }
+      const li = document.createElement('li');
+      appendInlineText(li, bulletMatch[1]);
+      currentUl.appendChild(li);
+    } else if (numberedMatch) {
+      currentUl = null;
+      if (!currentOl) {
+        currentOl = document.createElement('ol');
+        parent.appendChild(currentOl);
+      }
+      const li = document.createElement('li');
+      appendInlineText(li, numberedMatch[2]);
+      currentOl.appendChild(li);
+    } else {
+      currentUl = null;
+      currentOl = null;
+      if (i > 0 && parent.children && parent.children.length > 0) {
+        const lastChild = parent.children[parent.children.length - 1];
+        const lastTag = lastChild && (lastChild.tag || lastChild.tagName);
+        if (lastTag !== 'UL' && lastTag !== 'OL' && lastTag !== 'ul' && lastTag !== 'ol') {
+          parent.appendChild(document.createElement('br'));
+        }
+      }
+      if (line.length > 0) {
+        appendInlineText(parent, line);
+      }
+    }
+  }
+}
+
+/** #4574/#4575/#4597 — #N card links, http(s) links, **bold**, lists, code fences and line breaks
+ *  built from DOM nodes: the message text is never parsed as HTML, so a message cannot inject markup. */
+function appendLinkedText(parent, text) {
+  const str = String(text);
+  const parts = str.split(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const fenceMatch = part.match(/^```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```$/);
+      const lang = fenceMatch ? fenceMatch[1] : '';
+      const codeContent = fenceMatch ? fenceMatch[2].replace(/\n$/, '') : part.slice(3, -3);
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (lang) code.className = `language-${lang}`;
+      code.textContent = codeContent;
+      pre.appendChild(code);
+      parent.appendChild(pre);
+    } else {
+      appendBlocks(parent, part);
     }
   }
 }
@@ -470,6 +549,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatAuthor,
     formatMessageTime,
     appendMessage,
+    appendLinkedText,
     updateTiles,
     initStream,
     loadOrCreateRoomKey,

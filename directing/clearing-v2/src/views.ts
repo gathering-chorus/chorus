@@ -316,14 +316,98 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
   return renderPageShell('Teammates', 'roles', content, sources);
 }
 
-function formatRoomText(raw: string): string {
-  return escapeHtml(raw)
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+function formatInlineHtml(text: string): string {
+  let escaped = escapeHtml(text);
+
+  // Preserve inline code first so its contents are not bolded or linked
+  const inlineCodes: string[] = [];
+  escaped = escaped.replace(/`([^`\n]+)`/g, (_match, code) => {
+    inlineCodes.push(`<code>${code}</code>`);
+    return `\x00CODE_${inlineCodes.length - 1}\x00`;
+  });
+
+  // Bold **...**
+  escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+
+  // URLs (http/https): clickable, open in new tab (AC2)
+  escaped = escaped.replace(/(https?:\/\/[^\s<>"']+)/g, (_match, url) => {
+    const m = url.match(/^(https?:\/\/[^\s<>"']+?)([.,;!?)]*)$/);
+    const cleanUrl = m ? m[1] : url;
+    const punct = m ? m[2] : '';
+    return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${cleanUrl}</a>${punct}`;
+  });
+
+  // #card refs
+  escaped = escaped.replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+
+  // Restore inline code
+  inlineCodes.forEach((code, i) => {
+    escaped = escaped.replace(`\x00CODE_${i}\x00`, code);
+  });
+
+  return escaped;
 }
 
-function renderRoomMessage(m: RoomsData['messages'][number]): string {
+export function formatRoomText(raw: string): string {
+  // 1. Extract code fences first so their contents are preserved literally (AC4)
+  const fences: string[] = [];
+  const textWithoutFences = raw.replace(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g, (_match, fence) => {
+    const m = fence.match(/^```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```$/);
+    const lang = m ? m[1] : '';
+    const code = m ? m[2].replace(/\n$/, '') : fence.slice(3, -3);
+    const langCls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
+    fences.push(`<pre><code${langCls}>${escapeHtml(code)}</code></pre>`);
+    return `\x00FENCE_${fences.length - 1}\x00`;
+  });
+
+  // 2. Format lines and list blocks
+  const lines = textWithoutFences.split('\n');
+  const output: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  for (const [i, line] of lines.entries()) {
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)$/);
+
+    if (bulletMatch) {
+      if (inOl) { output.push('</ol>'); inOl = false; }
+      if (!inUl) { output.push('<ul>'); inUl = true; }
+      output.push(`<li>${formatInlineHtml(bulletMatch[1])}</li>`);
+    } else if (numberedMatch) {
+      if (inUl) { output.push('</ul>'); inUl = false; }
+      if (!inOl) { output.push('<ol>'); inOl = true; }
+      output.push(`<li>${formatInlineHtml(numberedMatch[2])}</li>`);
+    } else {
+      if (inUl) { output.push('</ul>'); inUl = false; }
+      if (inOl) { output.push('</ol>'); inOl = false; }
+
+      if (line.includes('\x00FENCE_')) {
+        output.push(line);
+      } else {
+        if (i > 0 && output.length > 0 && !output[output.length - 1].endsWith('</ul>') && !output[output.length - 1].endsWith('</ol>')) {
+          output.push('<br>');
+        }
+        if (line.length > 0) {
+          output.push(formatInlineHtml(line));
+        }
+      }
+    }
+  }
+  if (inUl) output.push('</ul>');
+  if (inOl) output.push('</ol>');
+
+  let result = output.join('');
+
+  // Restore code fences
+  fences.forEach((fence, i) => {
+    result = result.replace(`\x00FENCE_${i}\x00`, fence);
+  });
+
+  return result;
+}
+
+export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
   const thinkingClass = isThinking ? ' msg-thinking' : '';
