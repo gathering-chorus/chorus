@@ -2,7 +2,7 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
-import type { KindCount } from './sources/message-counts';
+import { DAY_COLUMNS, type DayRow } from './sources/readings';
 import type { Streams } from './sources/streams';
 
 function renderTrustChip(s: TrustStripSource): string {
@@ -838,22 +838,23 @@ ${TEAM_NUDGES_TOGGLE}`;
  * cannot be read is named, never shown as zeros (a red must mean the product
  * broke, not that the page could not look).
  */
-export function renderCountsPage(rows: KindCount[], meta: { day: string; error?: string }, sources: TrustStripSource[]): string {
-  const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '—' : v}</td>`;
-  const body = meta.error
-    ? `<div class="meta fail" style="padding:16px">Counts could not be read: ${escapeHtml(meta.error)}</div>`
-    : `<table class="counts-table" style="width:100%;border-collapse:collapse">
-      <thead><tr><th style="text-align:left">Kind</th><th>Sent</th><th>Reached Buzz</th><th>Gap</th></tr></thead>
+/** #4634 — messages and events by day since day 1, from the sensors' readings. */
+export function renderCountsPage(days: DayRow[], meta: { error?: string }, sources: TrustStripSource[]): string {
+  const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '<span class="meta">unmeasured</span>' : v}</td>`;
+  const body = meta.error || days.length === 0
+    ? `<div class="meta fail" style="padding:16px">Unmeasured: ${escapeHtml(meta.error || 'the sensors have written no readings yet')}</div>`
+    : `<div style="overflow-x:auto"><table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Day</th>${DAY_COLUMNS.map(([, , l]) => `<th>${l}</th>`).join('')}</tr></thead>
       <tbody>
-${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reached)}${cell(r.gap, r.gap ? 'fail' : '')}</tr>`).join('\n')}
+${days.map((d) => `        <tr><td>${d.day}</td>${d.values.map((v, i) => cell(v, (DAY_COLUMNS[i][1] === 'messages-kept' && v !== null && d.values[0] !== null && v < (d.values[0] as number)) || (DAY_COLUMNS[i][1] === 'events' && v === 0) ? 'fail' : '')).join('')}</tr>`).join('\n')}
       </tbody>
-    </table>
-    <p class="meta" style="margin-top:12px">Role reply: sent not measured — replies go from each role straight to the relay, and pulse does not carry them.</p>`;
+    </table></div>
+    <p class="meta" style="margin-top:12px">From the herald sensors (messages: pulse and Buzz; events: the spine). A day is counted once it is over.</p>`;
   const content = `<main class="page counts-page" style="padding:14px">
-    <h2>Messages today <span class="meta">${meta.day}, Boston</span></h2>
+    <h2>Messages and events by day <span class="meta">Boston days</span></h2>
     ${body}
   </main>`;
-  return renderPageShell('Messages today', 'counts', content, sources);
+  return renderPageShell('Messages and events', 'counts', content, sources);
 }
 
 /**

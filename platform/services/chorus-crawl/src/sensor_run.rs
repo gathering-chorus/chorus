@@ -126,8 +126,14 @@ pub fn run_fields(sensor: &str, target: &str, started: &str, ended: Option<&str>
 
 /// Green only when the pass exited 0 AND counted. An exit 0 with no tally
 /// line is a pass that did not do what it says, and reads red.
+/// Exit 3 is a pass that could not read what it measures (#4634): the run
+/// says unmeasured, never green and never a 0.
+pub const UNMEASURED_EXIT: i32 = 3;
+
 pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
-    if exit == 0 && counts.is_some() {
+    if exit == UNMEASURED_EXIT {
+        "unmeasured"
+    } else if exit == 0 && counts.is_some() {
         "green"
     } else {
         "red"
@@ -178,6 +184,14 @@ mod tests_4405 {
         assert!(!is_run_name("code-x y", "code"));
         // NEGATIVE PROOF (reopen 5): the old prefixed name is the one the door refused
         assert!(!is_run_name("sensor-run-code-20261012t213005z", "code"), "a kind-prefixed name is a 422 at the door");
+    }
+
+    #[test]
+    fn a_pass_that_cannot_read_its_store_is_unmeasured_not_green_or_red() {
+        assert_eq!(outcome(UNMEASURED_EXIT, None), "unmeasured");
+        let c = Counts { create: 1, update: 0, delete: 0, unchanged: 0 };
+        assert_eq!(outcome(0, Some(c)), "green");
+        assert_eq!(outcome(1, Some(c)), "red");
     }
 
     #[test]

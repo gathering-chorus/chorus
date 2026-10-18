@@ -147,20 +147,22 @@ pub fn count_events<S: AsRef<str>>(lines: impl Iterator<Item = S>, today: &str) 
     c
 }
 
-/// Every day from the first counted day to the day before `today` gets each
-/// team metric, 0 when nothing happened: a day that was read is never left
-/// blank, so a blank day can only mean it was not read (Kade, #4634).
+/// Every day from a metric's first counted day to the day before `today` gets
+/// that metric, 0 when nothing happened: a day that was read is never left
+/// blank (Kade, #4634). Before a metric's first day it stays blank: the source
+/// did not record that kind yet (commands began 08-21, your messages 06-11), so
+/// a 0 there would claim a silence that was never measured.
 pub fn fill_zero_days(counts: &mut Counts, metrics: &[&str], today: &str) {
     let num = |d: &str| -> Option<i64> {
         Some(days_from_civil(d.get(0..4)?.parse().ok()?, d.get(5..7)?.parse().ok()?, d.get(8..10)?.parse().ok()?))
     };
-    let Some(first) = counts.keys().map(|(d, _, _)| d.clone()).min() else { return };
-    let (Some(a), Some(t)) = (num(&first), num(today)) else { return };
-    for n in a..t {
-        let (y, m, d) = civil_from_days(n);
-        let day = format!("{y:04}-{m:02}-{d:02}");
-        for metric in metrics {
-            counts.entry((day.clone(), metric.to_string(), None)).or_insert(0);
+    let Some(t) = num(today) else { return };
+    for metric in metrics {
+        let first = counts.iter().filter(|((_, m, r), v)| m == metric && r.is_none() && **v > 0).map(|((d, _, _), _)| d.clone()).min();
+        let Some(a) = first.as_deref().and_then(num) else { continue };
+        for n in a..t {
+            let (y, m, d) = civil_from_days(n);
+            counts.entry((format!("{y:04}-{m:02}-{d:02}"), metric.to_string(), None)).or_insert(0);
         }
     }
 }
@@ -386,6 +388,7 @@ mod tests {
         let mut c = Counts::new();
         c.insert(("2026-10-15".into(), "nudges".into(), None), 3);
         c.insert(("2026-10-17".into(), "nudges".into(), None), 2);
+        c.insert(("2026-10-15".into(), "alerts".into(), None), 1);
         fill_zero_days(&mut c, &["nudges", "alerts"], "2026-10-18");
         assert_eq!(c.get(&("2026-10-16".into(), "nudges".into(), None)), Some(&0));
         assert_eq!(c.get(&("2026-10-17".into(), "alerts".into(), None)), Some(&0));
@@ -465,5 +468,17 @@ mod tests {
         assert_eq!(c.get(&("2026-10-17".into(), "messages-sent".into(), None)), Some(&837));
         assert_eq!(c.get(&("2026-10-17".into(), "messages-kept".into(), None)), Some(&0));
         assert_eq!(c.len(), 2);
+    }
+
+    #[test]
+    fn a_metric_is_not_zero_filled_before_the_source_first_recorded_it() {
+        let mut c = Counts::new();
+        c.insert(("2026-08-19".into(), "events".into(), None), 100);
+        c.insert(("2026-08-21".into(), "commands".into(), None), 5);
+        c.insert(("2026-08-21".into(), "events".into(), None), 90);
+        fill_zero_days(&mut c, &["events", "commands"], "2026-08-23");
+        assert!(c.get(&("2026-08-20".into(), "commands".into(), None)).is_none(), "commands did not exist yet on 08-20");
+        assert_eq!(c.get(&("2026-08-22".into(), "commands".into(), None)), Some(&0));
+        assert_eq!(c.get(&("2026-08-20".into(), "events".into(), None)), Some(&0));
     }
 }

@@ -1,3 +1,4 @@
+// @domain: messages
 /**
  * #4634 — moved here from Clearing v2 (#4592), so the messages sensor derives
  * and v2 only presents: one rule, one copy (Kade, Wren 2026-10-18).

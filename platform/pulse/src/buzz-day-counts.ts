@@ -1,3 +1,4 @@
+// @domain: messages
 /**
  * #4634 — the messages sensor's Buzz reader. Prints one JSON line per Boston
  * day before today: {"day","sent","kept"} by the countKinds rule, read from

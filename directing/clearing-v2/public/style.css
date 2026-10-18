@@ -1257,3 +1257,7 @@ tr.you td {
 .stream-col h3 { margin: 0 0 6px; font-size: 14px; text-transform: capitalize; }
 .stream-line { font-size: 12.5px; line-height: 1.4; padding: 3px 0; border-top: 1px solid var(--line2); overflow-wrap: anywhere; }
 .stream-line .tm { color: var(--meta); margin-right: 4px; }
+/* #4634 — the by-day counts: a day where Buzz kept fewer than were sent reads red */
+.counts-table td.fail { color: var(--bad); font-weight: 600; }
+.counts-table th, .counts-table td { padding: 6px 8px; white-space: nowrap; }
+.counts-table td.num { text-align: right; }
