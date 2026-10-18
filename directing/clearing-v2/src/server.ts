@@ -390,6 +390,7 @@ export interface CreateAppOptions {
 }
 
 interface ResolvedUrls {
+  readingsUrl: string;
   pulseUrl: string;
   relayUrl: string;
   rolesUrl: string;
@@ -406,6 +407,7 @@ function resolveUrls(options: CreateAppOptions = {}): ResolvedUrls {
     cardsUrl: options.cardsUrl || CARDS_URL,
     athenaCardUrl: options.athenaCardUrl,
     alertsUrl: options.alertsUrl || ALERTS_URL,
+    readingsUrl: options.readingsUrl || READINGS_URL,
   };
 }
 
@@ -589,7 +591,7 @@ export function createApp(options?: CreateAppOptions) {
     boardUrl: options?.boardUrl ?? BOARD_URL,
     streamUrl: STREAM_URL,
     pulseUrl: urls.pulseUrl,
-    readingsUrl: options?.readingsUrl || READINGS_URL,
+    readingsUrl: urls.readingsUrl,
     readOnly,
   });
 

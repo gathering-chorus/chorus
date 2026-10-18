@@ -26,7 +26,8 @@ export const DAY_COLUMNS: Array<[string, string, string]> = [
   ['events', 'unreadable-lines', 'Unreadable lines'],
 ];
 
-export interface DayRow { day: string; values: Array<number | null> }
+export interface DayCell { metric: string; value: number | null }
+export interface DayRow { day: string; values: DayCell[] }
 
 /** Team totals by day, newest first; a column with no reading is null (shown as unmeasured). */
 export function byDay(readings: Reading[]): DayRow[] {
@@ -43,7 +44,7 @@ export function byDay(readings: Reading[]): DayRow[] {
     day,
     values: DAY_COLUMNS.map(([s, m]) => {
       const v = days.get(day)!.get(`${s}/${m}`);
-      return v === undefined || Number.isNaN(v) ? null : v;
+      return { metric: m, value: v === undefined || Number.isNaN(v) ? null : v };
     }),
   }));
 }

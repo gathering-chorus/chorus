@@ -22,9 +22,9 @@ describe('#4634 /counts presents the readings by day', () => {
     ]);
     expect(days.map((d) => d.day)).toEqual(['2026-10-17', '2026-10-16']);
     const col = (m: string) => DAY_COLUMNS.findIndex(([, metric]) => metric === m);
-    expect(days[1].values[col('messages-sent')]).toBe(789);
-    expect(days[0].values[col('events')]).toBe(156021);
-    expect(days[0].values[col('nudges')]).toBeNull();
+    expect(days[1].values[col('messages-sent')].value).toBe(789);
+    expect(days[0].values[col('events')].value).toBe(156021);
+    expect(days[0].values[col('nudges')].value).toBeNull();
   });
 
   test('a day with none of the table\'s readings (today, backups only) is not shown as a row of unmeasured', () => {

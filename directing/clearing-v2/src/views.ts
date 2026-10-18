@@ -2,7 +2,7 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
-import { DAY_COLUMNS, type DayRow } from './sources/readings';
+import { DAY_COLUMNS, type DayCell, type DayRow } from './sources/readings';
 import type { Streams } from './sources/streams';
 
 function renderTrustChip(s: TrustStripSource): string {
@@ -838,6 +838,13 @@ ${TEAM_NUDGES_TOGGLE}`;
  * cannot be read is named, never shown as zeros (a red must mean the product
  * broke, not that the page could not look).
  */
+/** #4634 — a day where Buzz kept fewer than were sent, or the spine read 0 events. */
+function redCell(c: DayCell, d: DayRow): boolean {
+  const sent = d.values.find((x) => x.metric === 'messages-sent')?.value;
+  if (c.metric === 'messages-kept') return c.value !== null && sent !== null && sent !== undefined && c.value < sent;
+  return c.metric === 'events' && c.value === 0;
+}
+
 /** #4634 — messages and events by day since day 1, from the sensors' readings. */
 export function renderCountsPage(days: DayRow[], meta: { error?: string }, sources: TrustStripSource[]): string {
   const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '<span class="meta">unmeasured</span>' : v}</td>`;
@@ -846,7 +853,7 @@ export function renderCountsPage(days: DayRow[], meta: { error?: string }, sourc
     : `<div style="overflow-x:auto"><table class="counts-table" style="width:100%;border-collapse:collapse">
       <thead><tr><th style="text-align:left">Day</th>${DAY_COLUMNS.map(([, , l]) => `<th>${l}</th>`).join('')}</tr></thead>
       <tbody>
-${days.map((d) => `        <tr><td>${d.day}</td>${d.values.map((v, i) => cell(v, (DAY_COLUMNS[i][1] === 'messages-kept' && v !== null && d.values[0] !== null && v < (d.values[0] as number)) || (DAY_COLUMNS[i][1] === 'events' && v === 0) ? 'fail' : '')).join('')}</tr>`).join('\n')}
+${days.map((d) => `        <tr><td>${d.day}</td>${d.values.map((c) => cell(c.value, redCell(c, d) ? 'fail' : '')).join('')}</tr>`).join('\n')}
       </tbody>
     </table></div>
     <p class="meta" style="margin-top:12px">From the herald sensors (messages: pulse and Buzz; events: the spine). A day is counted once it is over.</p>`;

@@ -60,7 +60,7 @@ export function roomText(m: BuzzMessage): { text: string; kind: 'nudge' | 'alert
 }
 
 /** A relay frame as text, whichever buffer shape ws hands over. */
-function frameText(data: WebSocket.RawData): string {
+export function frameText(data: WebSocket.RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
   return Buffer.from(data as ArrayBuffer).toString('utf8');
 }

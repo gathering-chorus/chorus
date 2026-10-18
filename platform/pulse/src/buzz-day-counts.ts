@@ -14,7 +14,7 @@ import os from 'os';
 import path from 'path';
 import Database from 'better-sqlite3';
 import WebSocket from 'ws';
-import { bridgeSignerFromHome, signNote } from './buzz-writer';
+import { bridgeSignerFromHome, frameText, signNote } from './buzz-writer';
 import { countDays, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
 
 function readRows(db: string): DatedPulseRow[] {
@@ -38,7 +38,7 @@ function readNotes(url: string, host: string | undefined, since: number, timeout
     ws.on('error', (e) => { clearTimeout(timer); reject(e); });
     ws.on('message', (data) => {
       let f: unknown[];
-      try { f = JSON.parse(data.toString()) as unknown[]; } catch { return; }
+      try { f = JSON.parse(frameText(data)) as unknown[]; } catch { return; }
       if (f[0] === 'AUTH' && typeof f[1] === 'string') {
         const relay = host ? `ws://${host}` : url;
         ws.send(JSON.stringify(['AUTH', signNote(signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', f[1]]], '')]));
