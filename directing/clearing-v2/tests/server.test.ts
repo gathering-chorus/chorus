@@ -339,7 +339,9 @@ describe('Clearing v2: Server App & Tile Service', () => {
       // no relay in this test, so the sent tick stays off: the tick means the relay
       // accepted it (rooms.feature:19), not that the server received it
       expect(recent[0].tick).toBe(false);
-      await new Promise((r) => setTimeout(r, 30));
+      // #4592 — wait for the four hand-offs, not a fixed 30ms: on a busy box the
+      // fourth POST lands later and a timing assert reads as a product red.
+      for (let i = 0; i < 100 && jeffInputs.length < 4; i++) await new Promise((r) => setTimeout(r, 20));
       expect(jeffInputs.length).toBe(4);
       expect(new Set(jeffInputs.map((i: any) => i.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal']));
       expect(jeffInputs.every((i: any) => i.content === 'Hello team from Jeff browser' && i.caller === '1')).toBe(true);

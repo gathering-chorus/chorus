@@ -239,13 +239,8 @@ export class BuzzRelayClient {
       this.answerChallenge(parsed[1]);
     } else if (parsed[0] === 'OK' && this.authEventId && parsed[1] === this.authEventId) {
       this.authState = parsed[2] === true ? 'ok' : 'refused';
-    } else if (parsed[0] === 'EVENT' && typeof parsed[1] === 'string' && this.fetches.has(parsed[1])) {
-      if (parsed[2]) this.fetches.get(parsed[1])!.events.push(parsed[2] as NostrEvent);
-    } else if (parsed[0] === 'EOSE' && typeof parsed[1] === 'string' && this.fetches.has(parsed[1])) {
-      const f = this.fetches.get(parsed[1])!;
-      this.fetches.delete(parsed[1]);
-      if (this.ws) this.ws.send(JSON.stringify(['CLOSE', parsed[1]]));
-      f.done(f.events);
+    } else if (this.handleFetchFrame(parsed)) {
+      // a one-shot read's frame (#4592); never the room's feed
     } else if (parsed[0] === 'EVENT' && parsed[2] && this.onEventCallback) {
       this.onEventCallback(parsed[2] as NostrEvent);
     }
@@ -268,6 +263,19 @@ export class BuzzRelayClient {
       this.fetches.set(id, { events: [], done: (events) => { clearTimeout(timer); resolve(events); } });
       this.ws!.send(JSON.stringify(['REQ', id, { kinds: [1], '#t': [this.topic, 'reply'], since, limit: 10000 }]));
     });
+  }
+
+  /** #4592 — EVENT/EOSE for a fetchSince subscription. True when the frame was one. */
+  private handleFetchFrame(parsed: unknown[]): boolean {
+    const f = typeof parsed[1] === 'string' ? this.fetches.get(parsed[1]) : undefined;
+    if (!f) return false;
+    if (parsed[0] === 'EVENT' && parsed[2]) f.events.push(parsed[2] as NostrEvent);
+    if (parsed[0] === 'EOSE') {
+      this.fetches.delete(parsed[1] as string);
+      if (this.ws) this.ws.send(JSON.stringify(['CLOSE', parsed[1]]));
+      f.done(f.events);
+    }
+    return true;
   }
 
   private answerChallenge(challenge: string): void {

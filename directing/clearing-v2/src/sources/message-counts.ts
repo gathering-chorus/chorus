@@ -45,20 +45,26 @@ function body(content: string): string {
   return content.replace(/^\[nudge from [^\]|]+\|[^\]]*\]\s*/, '');
 }
 
-/** Each pulse row → what was sent. The text matches clearing/src/tailer.ts. */
+/** One nudge row → what the room carries for it (clearing/src/tailer.ts). */
+function nudgeSent(r: PulseRow): Sent | null {
+  const text = body(r.content);
+  if (!text) return null;
+  if (r.to === 'jeff') return { kind: 'nudge-to-jeff', text };
+  if (r.from === 'system') return { kind: 'system-alert', text: `[alert → ${r.to}] ${text}` };
+  return { kind: 'nudge-between-roles', text: `[nudge from ${r.from} → ${r.to}] ${text}` };
+}
+
+/** Each pulse row → what was sent. One Jeff message is one row per role it is for: counted once. */
 export function sentFromPulse(rows: PulseRow[]): Sent[] {
   const out: Sent[] = [];
   const jeff = new Set<string>();
   for (const r of rows) {
-    if (r.type === 'jeff-input') {
-      // one Jeff message is one row per role it is for: count it once
-      if (!jeff.has(r.content)) { jeff.add(r.content); out.push({ kind: 'jeff-input', text: r.content }); }
-    } else if (r.type === 'nudge') {
-      const text = body(r.content);
-      if (!text) continue;
-      if (r.to === 'jeff') out.push({ kind: 'nudge-to-jeff', text });
-      else if (r.from === 'system') out.push({ kind: 'system-alert', text: `[alert → ${r.to}] ${text}` });
-      else out.push({ kind: 'nudge-between-roles', text: `[nudge from ${r.from} → ${r.to}] ${text}` });
+    if (r.type === 'nudge') {
+      const s = nudgeSent(r);
+      if (s) out.push(s);
+    } else if (r.type === 'jeff-input' && !jeff.has(r.content)) {
+      jeff.add(r.content);
+      out.push({ kind: 'jeff-input', text: r.content });
     }
   }
   return out;
@@ -78,11 +84,10 @@ export function countKinds(sent: Sent[], notes: Pick<NostrEvent, 'content' | 'ta
   const texts = new Map<string, number>();
   let replies = 0;
   for (const n of notes) {
-    if ((n.tags || []).some((t) => t[0] === 't' && t[1] === 'reply')) replies++;
+    if (n.tags.some((t) => t[0] === 't' && t[1] === 'reply')) replies++;
     else texts.set(n.content, (texts.get(n.content) || 0) + 1);
   }
-  return (Object.keys(KIND_LABELS) as MessageKind[]).map((kind) => {
-    const label = KIND_LABELS[kind];
+  return (Object.entries(KIND_LABELS) as Array<[MessageKind, string]>).map(([kind, label]) => {
     if (kind === 'role-reply') return { kind, label, sent: null, reached: replies, gap: null };
     const mine = sent.filter((s) => s.kind === kind);
     let reached = 0;
