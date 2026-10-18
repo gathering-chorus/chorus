@@ -72,6 +72,9 @@ const ROLES_URL = process.env.ROLES_URL || activeConfig.rolesUrl || 'http://loca
 const BOARD_URL = process.env.BOARD_URL || activeConfig.boardUrl || 'http://localhost:3340/api/chorus/context/board';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
+/** #4625 — a demo v2 reads the real room and never writes it: no send, no pulse hand-off. */
+const READ_ONLY = process.env.CLEARING_V2_READONLY === '1';
+export const READ_ONLY_REASON = 'read-only demo: this Clearing does not send';
 
 // Known pubkeys map for role attribution (#4571: loaded from ~/.chorus/identity/<who>/nostr.json)
 const KNOWN_KEYS = loadKnownKeys();
@@ -111,6 +114,8 @@ interface RouteContext {
   boardUrl: string;
   /** #4592 — the counts page reads pulse's message store. */
   pulseUrl: string;
+  /** #4625 — refuse /api/send by name. */
+  readOnly: boolean;
 }
 
 // Helper: test overrides only allowed via x-* headers in test mode, NEVER via URL query parameters
@@ -285,6 +290,10 @@ function registerWriteRoutes(ctx: RouteContext): void {
   // event/session; the client-supplied `from` field and 'jeff' default are RETIRED.
   // (Ported from v1 server.ts:1700-1705 / sender-identity.ts — the exact hole Mark fell through in #3743).
   app.post('/api/send', async (req: Request, res: Response) => {
+    if (ctx.readOnly) {
+      res.status(403).json({ ok: false, reason: READ_ONLY_REASON });
+      return;
+    }
     const event: NostrEvent | undefined = req.body?.event || (req.body?.id && req.body?.sig ? req.body : undefined);
 
     const identity = resolveSenderIdentity(event, keys);
@@ -344,6 +353,8 @@ export interface CreateAppOptions {
   relayHost?: string;
   signInUrl?: string;
   relaySigner?: RelaySigner | null;
+  /** #4625 — defaults to CLEARING_V2_READONLY=1 (set by the demo env). */
+  readOnly?: boolean;
 }
 
 interface ResolvedUrls {
@@ -430,6 +441,8 @@ interface InboundDeps {
   pulseUrl: string;
   broadcastSSE: (type: string, data: unknown) => void;
   isRelayConnected: () => boolean;
+  /** #4625 — a demo shows Jeff's notes and never hands them to pulse again. */
+  readOnly?: boolean;
 }
 
 /** Handles an incoming verified event from the Buzz relay: ingest, broadcast, forward nudges to Pulse. */
@@ -452,7 +465,7 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     deps.broadcastSSE('message', msg);
     // #4571/#4591 — only direct cryptographic sends from Jeff are Jeff input;
     // bridge-signed notes are transcript/room mirrors, never a second pulse injection.
-    if (signerRole !== 'jeff') return;
+    if (signerRole !== 'jeff' || deps.readOnly) return;
     for (const nudge of deps.router.extractNudges(msg)) {
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
         if (!r.ok) {
@@ -499,6 +512,7 @@ export function createApp(options?: CreateAppOptions) {
   const tileService = new TileService(urls.pulseUrl);
   const keys = options?.knownKeys || KNOWN_KEYS;
   const relayConfigured = options?.relayConfigured ?? Boolean(urls.relayUrl);
+  const readOnly = options?.readOnly ?? READ_ONLY;
 
   // Track SSE clients
   const sseClients: Response[] = [];
@@ -511,6 +525,7 @@ export function createApp(options?: CreateAppOptions) {
     pulseUrl: urls.pulseUrl,
     broadcastSSE,
     isRelayConnected: () => relay.isConnected(),
+    readOnly,
   });
 
   const relay = makeRelay(urls.relayUrl, onInboundEvent, options);
@@ -541,6 +556,7 @@ export function createApp(options?: CreateAppOptions) {
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
     pulseUrl: urls.pulseUrl,
+    readOnly,
   });
 
   return { app, router, tileService, dataService, relay };
