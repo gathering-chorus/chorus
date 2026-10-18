@@ -147,10 +147,19 @@ sq() {
 }
 
 # ── AC7 negative proofs ──
-@test "AC7 negative: an unclaimed class stays unmounted (Witness has no route)" {
+# #4544: was Witness, which #4576 homed (claimed by the werk domain), so the
+# check went red for the right reason. Handoff is declared and claimed by no
+# domain; the first assert fails loud if a later card claims it, so the
+# subject is replaced instead of the check passing or failing for nothing.
+@test "AC7 negative: an unclaimed class stays unmounted (Handoff has no route)" {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run; blocking-leg runs predate the model deploy by construction"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
-  run curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$OWL_URL/witnesses"
+  dir="$(mktemp -d "${BATS_TMPDIR:-/tmp}/plall.XXXXXX")"
+  riot --output=nt "$REPO"/roles/*/ontology/*.ttl > "$dir/all.nt" 2>/dev/null
+  run sq "$dir/all.nt" 'ASK { ?d c:definesVocabulary c:Handoff }'
+  rm -rf "$dir"
+  [[ "$output" == [Nn]o || "$output" == "false" ]] || { echo "Handoff is now claimed: pick another unclaimed class"; return 1; }
+  run curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$OWL_URL/handoffs"
   [ "$output" != "200" ]
 }
 
