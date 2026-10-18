@@ -10,15 +10,20 @@ import { buildTrustStripSources, TrustStripOptions } from './sources/trust-strip
 import { fetchAlerts } from './sources/today';
 import { fetchActorState, fetchChangesOvernight, toActorRow, toChangedCard, unmeasuredText } from './sources/pulse';
 import { fetchDrawerCard, DrawerCard } from './sources/card';
+import { fetchCardPipeline, CardPipelineStatus } from './sources/pipeline';
 
 export type { TrustStripSource, ActorRow, RolesData, TodayCardItem, TodayData, RoomsData } from './sources/models';
+export type { DrawerCard } from './sources/card';
+export type { CardPipelineStatus } from './sources/pipeline';
 export { formatBostonTime, formatTodayHeader } from './sources/format';
 
 export interface DataServiceOptions {
   rolesUrl?: string;
   pulseUrl?: string;
   cardsUrl?: string;
+  athenaCardUrl?: string;
   alertsUrl?: string;
+  runWerkStatus?: (cardId: number) => Promise<string>;
   relay: BuzzRelayClient;
   router: MessageRouter;
   relayConfigured?: boolean;
@@ -53,8 +58,10 @@ function firstSet(explicit: string | undefined, fromEnv: string | undefined, fal
 export class DataService {
   private defaultRolesUrl: string;
   private defaultCardsUrl: string;
+  private defaultAthenaCardUrl: string;
   private defaultAlertsUrl: string;
   private defaultPulseUrl: string;
+  private runWerkStatus?: (cardId: number) => Promise<string>;
   private relay: BuzzRelayClient;
   private router: MessageRouter;
   private relayConfigured: boolean;
@@ -62,8 +69,10 @@ export class DataService {
   constructor(options: DataServiceOptions) {
     this.defaultRolesUrl = firstSet(options.rolesUrl, process.env.ROLES_URL, 'http://localhost:3360/v1/roles/roles');
     this.defaultCardsUrl = firstSet(options.cardsUrl, process.env.CARDS_URL, 'http://localhost:3360/v1/cards/cards');
+    this.defaultAthenaCardUrl = firstSet(options.athenaCardUrl, process.env.ATHENA_CARD_URL, 'http://localhost:3340/api/athena/card');
     this.defaultAlertsUrl = firstSet(options.alertsUrl, process.env.ALERTS_URL, 'http://localhost:3340/api/chorus/context/alerts');
     this.defaultPulseUrl = firstSet(options.pulseUrl, process.env.PULSE_URL, 'http://127.0.0.1:3475');
+    this.runWerkStatus = options.runWerkStatus;
     this.relay = options.relay;
     this.router = options.router;
     this.relayConfigured = options.relayConfigured ?? Boolean(this.relay.getRelayUrl() || process.env.BUZZ_RELAY_URL);
@@ -167,9 +176,19 @@ export class DataService {
   }
 
   /**
-   * Fetches card metadata from Athena cards door (single source) for drawer inspection.
+   * Fetches card metadata from Athena card detail or Athena cards door for drawer inspection.
    */
-  async getCard(cardId: number, options?: { cardsUrl?: string }): Promise<DrawerCard | null> {
-    return fetchDrawerCard(options?.cardsUrl || this.defaultCardsUrl, cardId);
+  async getCard(cardId: number, options?: { cardsUrl?: string; athenaCardUrl?: string }): Promise<DrawerCard | null> {
+    return fetchDrawerCard(options?.cardsUrl || this.defaultCardsUrl, cardId, {
+      athenaCardUrl: options?.athenaCardUrl || this.defaultAthenaCardUrl,
+    });
+  }
+
+  /**
+   * #4598: Fetches card pipeline state exactly as /cws <card> prints it.
+   */
+  async getCardPipeline(cardId: number, options?: { cwsBin?: string; runCws?: (cardId: number) => Promise<string> }): Promise<CardPipelineStatus> {
+    const runCws = options?.runCws || this.runWerkStatus;
+    return fetchCardPipeline(cardId, { ...options, runCws });
   }
 }

@@ -288,46 +288,184 @@ function renderRoomMessage(m: RoomsData['messages'][number]): string {
           `;
 }
 
-const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style="display:none;width:320px;border-left:1px solid var(--border-color);padding:14px;background:var(--bg-secondary)">
-      <div class="row" style="justify-content:space-between">
+const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style="display:none">
+      <div class="row" style="justify-content:space-between;align-items:center">
         <a class="cid" id="drawer-card-link" href="#" target="_blank"></a>
-        <button class="btn ghost" onclick="closeCardDrawer()">✕</button>
+        <button class="btn ghost drawer-close-btn" onclick="closeCardDrawer()" style="font-size:16px;padding:4px 8px;cursor:pointer">✕</button>
       </div>
       <h3 id="drawer-card-title" style="margin-top:10px">Loading card...</h3>
       <div class="meta" id="drawer-card-meta" style="margin-top:6px"></div>
-      <div class="meta" id="drawer-card-desc" style="margin-top:10px"></div>
+
+      <div id="drawer-card-desc-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
+        <div class="sec-t" style="margin-bottom:6px">Description</div>
+        <div class="card-desc-body" id="drawer-card-desc" style="font-size:13px;line-height:1.45;white-space:pre-wrap;color:var(--ink-secondary, inherit)"></div>
+      </div>
+
+      <div id="drawer-card-ac-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
+        <div class="sec-t" style="margin-bottom:6px">Acceptance Criteria</div>
+        <div class="card-ac-list" id="drawer-card-ac"></div>
+      </div>
+
+      <div id="drawer-card-cws-container" style="margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div class="sec-t">Pipeline State <span class="meta mono">/cws</span></div>
+          <div id="drawer-cws-indicator"></div>
+        </div>
+        <div id="drawer-card-cws-motion" class="cws-motion-bar" style="display:none;margin-bottom:8px"></div>
+        <pre class="cws-output" id="drawer-card-cws" style="font-size:11px;font-family:var(--font-mono, monospace);white-space:pre-wrap;background:var(--bg-primary, #111);padding:10px;border-radius:6px;overflow-x:auto;max-height:360px">Loading pipeline state...</pre>
+      </div>
     </aside>`;
 
 const ROOM_DRAWER_SCRIPT = `  <script>
+    var currentCardDrawerId = null;
+    var currentPipelineTimer = null;
+
+    function drawerEscape(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
     async function openCardDrawer(id) {
-      const d = document.getElementById('card-drawer');
-      const l = document.getElementById('drawer-card-link');
-      const t = document.getElementById('drawer-card-title');
-      const m = document.getElementById('drawer-card-meta');
+      if (currentPipelineTimer) {
+        clearTimeout(currentPipelineTimer);
+        currentPipelineTimer = null;
+      }
+      currentCardDrawerId = String(id);
+      var d = document.getElementById('card-drawer');
+      var l = document.getElementById('drawer-card-link');
+      var t = document.getElementById('drawer-card-title');
+      var m = document.getElementById('drawer-card-meta');
+      var descCont = document.getElementById('drawer-card-desc-container');
+      var descEl = document.getElementById('drawer-card-desc');
+      var acCont = document.getElementById('drawer-card-ac-container');
+      var acEl = document.getElementById('drawer-card-ac');
+      var cwsEl = document.getElementById('drawer-card-cws');
+      var cwsMotion = document.getElementById('drawer-card-cws-motion');
+      var cwsInd = document.getElementById('drawer-cws-indicator');
+
       if (d) d.style.display = 'block';
       if (l) {
         l.href = (window.CLEARING_BASE || '') + '/board?card=' + id;
         l.textContent = '#' + id;
       }
-      if (t) t.textContent = 'Loading #' + id + '...';
+      if (t) t.textContent = 'Loading card #' + id + '...';
       if (m) m.textContent = '';
+      if (descCont) descCont.style.display = 'none';
+      if (descEl) descEl.textContent = '';
+      if (acCont) acCont.style.display = 'none';
+      if (acEl) acEl.innerHTML = '';
+      if (cwsEl) cwsEl.textContent = 'Loading pipeline state...';
+      if (cwsMotion) cwsMotion.style.display = 'none';
+      if (cwsInd) cwsInd.innerHTML = '<span class="chip">reading pipeline...</span>';
+
+      // 1. Fetch card details first so title, owner, status, description, and AC display immediately
       try {
-        const res = await fetch('/api/cards/' + id);
+        var res = await fetch('/api/cards/' + id);
+        if (String(id) === currentCardDrawerId) {
+          if (res.ok) {
+            var json = await res.json();
+            if (json.ok && json.card) {
+              var c = json.card;
+              if (t) t.textContent = c.title;
+              var metaParts = [];
+              if (c.owner) metaParts.push('Owner: ' + drawerEscape(c.owner));
+              if (c.status) metaParts.push('Status: ' + drawerEscape(c.status));
+              if (c.priority) metaParts.push('Priority: ' + drawerEscape(c.priority));
+              if (m) m.textContent = metaParts.join(' · ');
+
+              if (c.description && descEl && descCont) {
+                descEl.textContent = c.description;
+                descCont.style.display = 'block';
+              }
+
+              if (c.acItems && c.acItems.length > 0 && acEl && acCont) {
+                acEl.innerHTML = c.acItems.map(function(item) {
+                  return '<div class="ac-item" style="margin:4px 0;display:flex;align-items:flex-start;gap:6px">' +
+                    '<input type="checkbox" disabled ' + (item.checked ? 'checked' : '') + ' style="margin-top:2px">' +
+                    '<span style="font-size:12.5px;line-height:1.4' + (item.checked ? ';text-decoration:line-through;color:var(--muted)' : '') + '">' + drawerEscape(item.text) + '</span>' +
+                    '</div>';
+                }).join('');
+                acCont.style.display = 'block';
+              }
+            }
+          } else {
+            if (t) t.textContent = 'Card #' + id + ' not found on board';
+          }
+        }
+      } catch (e) {
+        if (String(id) === currentCardDrawerId && t) t.textContent = 'Card #' + id;
+      }
+
+      // 2. Fetch live pipeline status without blocking card details
+      loadCardPipeline(id);
+    }
+
+    async function loadCardPipeline(id) {
+      if (String(id) !== currentCardDrawerId) return;
+      var cwsEl = document.getElementById('drawer-card-cws');
+      var cwsMotion = document.getElementById('drawer-card-cws-motion');
+      var cwsInd = document.getElementById('drawer-cws-indicator');
+
+      try {
+        var res = await fetch('/api/cards/' + id + '/pipeline');
+        if (String(id) !== currentCardDrawerId) return;
         if (res.ok) {
-          const json = await res.json();
-          if (json.ok && json.card) {
-            if (t) t.textContent = json.card.title;
-            if (m) m.textContent = (json.card.owner ? 'Owner: ' + json.card.owner : '') + (json.card.status ? ' · Status: ' + json.card.status : '');
+          var json = await res.json();
+          if (json.ok && json.pipeline) {
+            var p = json.pipeline;
+            if (cwsEl) cwsEl.textContent = p.output || 'no runs';
+
+            if (p.status === 'running') {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-running"><span class="motion-pulse-dot"></span> running' + (p.step ? ': ' + drawerEscape(p.step) : '') + '</span>';
+              if (cwsMotion) {
+                cwsMotion.style.display = 'flex';
+                cwsMotion.innerHTML = '<span class="motion-pulse-dot"></span><span>Step ' + drawerEscape(p.step || 'running') + ' in motion...</span>';
+              }
+            } else if (p.status === 'waiting') {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-waiting"><span class="motion-pulse-dot"></span> waiting for go</span>';
+              if (cwsMotion) {
+                cwsMotion.style.display = 'flex';
+                cwsMotion.innerHTML = '<span class="motion-pulse-dot"></span><span>Waiting for your go...</span>';
+              }
+            } else if (p.status === 'failed') {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">failed' + (p.failedStep ? ' at ' + drawerEscape(p.failedStep) : '') + '</span>';
+              if (cwsMotion) cwsMotion.style.display = 'none';
+            } else if (p.status === 'landed') {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-ok">landed</span>';
+              if (cwsMotion) cwsMotion.style.display = 'none';
+            } else if (p.status === 'succeeded') {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-ok">succeeded</span>';
+              if (cwsMotion) cwsMotion.style.display = 'none';
+            } else {
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip">' + drawerEscape(p.status || 'no runs') + '</span>';
+              if (cwsMotion) cwsMotion.style.display = 'none';
+            }
+
+            if (p.isLive) {
+              currentPipelineTimer = setTimeout(function() {
+                loadCardPipeline(id);
+              }, 2500);
+            }
             return;
           }
         }
-        if (t) t.textContent = 'Card #' + id + ' not found on board';
-      } catch {
-        if (t) t.textContent = 'Card #' + id;
+        if (cwsEl) cwsEl.textContent = 'Pipeline status unreadable';
+        if (cwsMotion) cwsMotion.style.display = 'none';
+        if (cwsInd) cwsInd.innerHTML = '<span class="chip strip-source-fail">unreadable</span>';
+      } catch (err) {
+        if (String(id) !== currentCardDrawerId) return;
+        if (cwsEl) cwsEl.textContent = 'Failed to read pipeline: ' + err.message;
+        if (cwsMotion) cwsMotion.style.display = 'none';
       }
     }
+
     function closeCardDrawer() {
-      const d = document.getElementById('card-drawer');
+      if (currentPipelineTimer) {
+        clearTimeout(currentPipelineTimer);
+        currentPipelineTimer = null;
+      }
+      currentCardDrawerId = null;
+      var d = document.getElementById('card-drawer');
       if (d) d.style.display = 'none';
     }
   </script>`;
@@ -392,7 +530,7 @@ export function renderBoardPage(columns: BoardColumn[], openCard: number | null,
         ${c.ok
           ? (c.cards.length === 0
             ? '<div class="meta">0 cards</div>'
-            : c.cards.map((k) => `<div class="board-card" data-open-card="${k.id}"><a class="cid card-ref" href="#" onclick="openCardDrawer('${k.id}');return false;">#${k.id}</a> ${escapeHtml(k.title)}${k.owner ? ` <span class="meta">${escapeHtml(k.owner)}</span>` : ''}</div>`).join(''))
+            : c.cards.map((k) => `<div class="board-card" data-open-card="${k.id}" onclick="openCardDrawer('${k.id}');return false;"><a class="cid card-ref" href="#" onclick="openCardDrawer('${k.id}');return false;">#${k.id}</a> ${escapeHtml(k.title)}${k.owner ? ` <span class="meta">${escapeHtml(k.owner)}</span>` : ''}</div>`).join(''))
           : renderUnmeasured('board-unmeasured', c.reason)}
       </section>`;
   const content = `
