@@ -848,6 +848,32 @@ pub fn clearing_url_for(role: &str) -> String {
     format!("http://localhost:{}/", variant_port(role, 3481, 3470))
 }
 
+/// #4625 — a card that changes Clearing v2 gets its own read-only v2 in demo
+/// (werk-deploy demo_env: base 3501, same role slots), and its link goes there.
+const CLEARING_V2_SRC: &str = "directing/clearing-v2/";
+const CLEARING_V2_BASE: u16 = 3501;
+
+pub fn is_clearing_v2_card(changed: &[String]) -> bool {
+    changed.iter().any(|f| f.starts_with(CLEARING_V2_SRC))
+}
+
+pub fn clearing_url_for_card(role: &str, changed: &[String]) -> String {
+    if is_clearing_v2_card(changed) {
+        format!("http://localhost:{}/", variant_port(role, CLEARING_V2_BASE, 3472))
+    } else {
+        clearing_url_for(role)
+    }
+}
+
+/// #4625 — why a link cannot show this card: a v2 card whose link isn't a v2 demo port.
+pub fn clearing_link_refusal(changed: &[String], url: &str) -> Option<String> {
+    if !is_clearing_v2_card(changed) {
+        return None;
+    }
+    let v2 = (0..4u16).any(|slot| url.contains(&format!(":{}/", CLEARING_V2_BASE + slot)));
+    if v2 { None } else { Some(format!("this card changes Clearing v2, but its demo link {} is not a Clearing v2 demo", url)) }
+}
+
 /// #4458 — a role's demo-copy port: the service's first-role port plus the
 /// role's slot, in the order werk-deploy's demo_env::known_roles() gives them
 /// (this crate takes no dependency on werk-deploy, ADR-032). A role with no
@@ -1276,7 +1302,21 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 
     // #3100 AC#4 — the visible announce, per-role variant ports (#3092).
     let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port(role, 3343, 3340));
-    let clearing_url = clearing_url_for(role);
+    // #4625 — a v2 card links to its own v2, and is refused if that v2 isn't up.
+    let werk = format!("{}/{}-{}", env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    }), role, card);
+    let changed = changed_paths(&werk).unwrap_or_default();
+    let clearing_url = clearing_url_for_card(role, &changed);
+    let v2_problem = clearing_link_refusal(&changed, &clearing_url).or_else(|| {
+        let up = run("curl", &["-s", "-f", "-o", "/dev/null", "--max-time", "5", &format!("{}health", clearing_url)]).is_ok();
+        (is_clearing_v2_card(&changed) && !up).then(|| format!("this card changes Clearing v2, but its demo v2 {} does not answer", clearing_url))
+    });
+    if let Some(why) = v2_problem {
+        jsonl(home, role, card, &trace, "demo.refused", &fail_extra("clearing-v2-not-shown"));
+        emit_spine_reason(home, "demo.refused", role, card, &trace, "clearing-v2-not-shown");
+        return Err(why);
+    }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
     // #3263 — the machine shows, it does not gate: the status below is for the
@@ -3125,5 +3165,32 @@ mod own_tests_3983 {
         assert_eq!(coverage_field("covered"), "");
         assert_eq!(coverage_field("made-up:3"), "");
         assert_eq!(coverage_field("no-code:0"), ",\"coverage\":\"no-code:0\"");
+    }
+}
+
+/// #4625 — a Clearing v2 card's demo link opens that card's v2, never v1.
+/// Jeff, 2026-10-18 16:37, on #4597: "seems no different/worse" — the link was v1.
+#[cfg(test)]
+mod clearing_v2_link_4625 {
+    use super::*;
+
+    fn paths(p: &[&str]) -> Vec<String> { p.iter().map(|s| s.to_string()).collect() }
+
+    #[test]
+    fn a_v2_card_links_to_its_v2_and_other_cards_keep_v1() {
+        let v2 = paths(&["directing/clearing-v2/public/app.js"]);
+        assert_eq!(clearing_url_for_card("abby-normal", &v2), "http://localhost:3504/");
+        assert_eq!(clearing_url_for_card("silas", &v2), "http://localhost:3501/");
+        assert_eq!(clearing_url_for_card("kade", &paths(&["platform/pulse/src/x.ts"])), clearing_url_for("kade"));
+        assert_eq!(clearing_link_refusal(&v2, &clearing_url_for_card("wren", &v2)), None);
+    }
+
+    /// NEGATIVE PROOF: a v2 card announced with the v1 link is refused by name.
+    #[test]
+    fn a_v2_card_with_the_v1_link_is_refused() {
+        let v2 = paths(&["directing/clearing-v2/src/server.ts"]);
+        let why = clearing_link_refusal(&v2, &clearing_url_for("abby-normal")).expect("v1 link must be refused");
+        assert!(why.contains("Clearing v2"), "{why}");
+        assert_eq!(clearing_link_refusal(&paths(&["directing/clearing/src/x.ts"]), &clearing_url_for("kade")), None);
     }
 }
