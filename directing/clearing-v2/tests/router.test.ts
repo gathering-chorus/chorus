@@ -186,4 +186,51 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
     expect(recent).toHaveLength(1);
     expect(recent[0].text).toBe('Morning from v1 Clearing');
   });
+
+  test('#4595: backlog arriving newest-first is sorted chronologically and keeps newest 100', () => {
+    const r = new MessageRouter(150);
+    for (let minute = 8; minute >= 0; minute--) {
+      r.ingest({
+        id: `ev-backlog-${minute}`,
+        from: 'wren',
+        text: `Backlog minute 07:0${minute}`,
+        ts: `2026-10-18T11:0${minute}:00.000Z`,
+        type: 'role-response',
+        visible: true,
+        room: 'team',
+      });
+    }
+    r.ingest({
+      id: 'ev-live-0801',
+      from: 'jeff',
+      text: 'Live message 08:01',
+      ts: '2026-10-18T12:01:00.000Z',
+      type: 'jeff-input',
+      visible: true,
+      room: 'team',
+    });
+
+    const recent = r.getRecent(10);
+    expect(recent).toHaveLength(10);
+    expect(recent[0].id).toBe('ev-backlog-0');
+    expect(recent[recent.length - 1].id).toBe('ev-live-0801');
+    expect(recent[recent.length - 2].id).toBe('ev-backlog-8');
+
+    for (let i = 1; i < recent.length; i++) {
+      expect(recent[i].ts >= recent[i - 1].ts).toBe(true);
+    }
+  });
+
+  test('negative proof: out-of-order backlog does not let 06:07 precede 08:01 when newer messages exist', () => {
+    const r = new MessageRouter(5);
+    r.ingest({ id: 'msg-0708', from: 'wren', text: '07:08 note', ts: '2026-10-18T11:08:00.000Z', type: 'role-response', visible: true, room: 'team' });
+    r.ingest({ id: 'msg-0607', from: 'wren', text: '06:07 note', ts: '2026-10-18T10:07:00.000Z', type: 'role-response', visible: true, room: 'team' });
+    r.ingest({ id: 'msg-0801', from: 'jeff', text: '08:01 note', ts: '2026-10-18T12:01:00.000Z', type: 'jeff-input', visible: true, room: 'team' });
+
+    const recent = r.getRecent(3);
+    expect(recent.map((m) => m.id)).toEqual(['msg-0607', 'msg-0708', 'msg-0801']);
+    const idx0607 = recent.findIndex((m) => m.id === 'msg-0607');
+    const idx0801 = recent.findIndex((m) => m.id === 'msg-0801');
+    expect(idx0801 - idx0607).not.toBe(1);
+  });
 });

@@ -20,10 +20,11 @@ export class MessageRouter {
   }
 
   private trimIfFull(): void {
-    if (this.messages.length <= this.maxMessages) return;
-    const removed = this.messages.shift();
-    if (removed && this.seenIds.size > this.maxMessages * 5) {
-      this.seenIds.delete(removed.id);
+    while (this.messages.length > this.maxMessages) {
+      const removed = this.messages.shift();
+      if (removed && this.seenIds.size > this.maxMessages * 5) {
+        this.seenIds.delete(removed.id);
+      }
     }
   }
 
@@ -66,20 +67,22 @@ export class MessageRouter {
       if (bridgeCopy) {
         this.seenIds.add(msg.id);
         Object.assign(bridgeCopy, { ...msg, text: cleanText });
+        this.messages.sort((a, b) => (a.ts || '').localeCompare(b.ts || '') || a.id.localeCompare(b.id));
         return true;
       }
     }
 
     this.seenIds.add(msg.id);
     this.messages.push({ ...msg, text: cleanText });
+    this.messages.sort((a, b) => (a.ts || '').localeCompare(b.ts || '') || a.id.localeCompare(b.id));
     this.trimIfFull();
     return true;
   }
 
   /**
-   * Get recent visible messages, optionally filtered by room.
+   * Get recent visible messages, optionally filtered by room, newest `limit` in chronological order.
    */
-  getRecent(limit = 50, room?: string): ClearingMessage[] {
+  getRecent(limit = 100, room?: string): ClearingMessage[] {
     return this.messages
       .filter((m) => {
         if (!m.visible) return false;
