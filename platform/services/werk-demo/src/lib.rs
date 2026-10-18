@@ -283,10 +283,26 @@ pub fn verdict_proven(witness: &str, card: u64, role: &str, round: &str, patch_i
         && jeff_go_recorded(witness, card, round, patch_id)
 }
 
-/// The two peer roles owed a 4-question gather for this demo: everyone but the
-/// demoer. (jeff is the prover, not a gather peer.)
+/// #4502 — the agent roles that review each other's demos: the roles door's
+/// teammates minus jeff (the prover, not a peer), measured 2026-10-18 11:50:
+/// abby-normal, kade, silas, wren — the roles with a CLAUDE.md source under
+/// designing/claudemd/roles/. The persona read at review time is the generated
+/// roles/<name>/CLAUDE.md, or AGENTS.md for abby-normal (she runs on agy). The
+/// drift test `peer_roles_match_the_role_dirs_with_a_persona` fails when a role
+/// is added or removed without this list.
+pub const PEER_ROLES: [&str; 4] = ["wren", "silas", "kade", "abby-normal"];
+
+/// The peer roles owed a review for this demo: every agent role but the
+/// demoer. Every builder gets the same count (3), so the pipeline's review
+/// steps are fixed: run-review 1..3. (jeff is the prover, not a peer.)
 pub fn gather_peers(role: &str) -> Vec<&'static str> {
-    ["wren", "silas", "kade"].into_iter().filter(|r| *r != role).collect()
+    PEER_ROLES.into_iter().filter(|r| *r != role).collect()
+}
+
+/// #4502 — a peer's persona: roles/<peer>/CLAUDE.md, else AGENTS.md (abby-normal).
+pub fn peer_persona_path(home: &Path, peer: &str) -> std::path::PathBuf {
+    let claude = home.join(format!("roles/{}/CLAUDE.md", peer));
+    if claude.is_file() { claude } else { home.join(format!("roles/{}/AGENTS.md", peer)) }
 }
 
 /// Peers with NO demo.gather.replied recorded for the card. Empty = both
@@ -673,31 +689,6 @@ fn run(cmd: &str, args: &[&str]) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// #3969 — the Clearing `/api/message` bridge is authenticated as of #3966
-/// (anonymous writes 401). Every demo bridge post below is a server-side caller
-/// on the box, so it presents the BRIDGE_TOKEN the Clearing server reads from
-/// `~/.chorus/bridge-auth-token` (os.homedir()/.chorus, NOT $CHORUS_HOME).
-/// Returns the full header string `Authorization: Bearer <tok>` so a call site
-/// can splice `"-H", &auth` into its curl args. Empty token → header with an
-/// empty bearer, which the guard refuses fail-loud (a 401 that names itself),
-/// never a silent skip.
-fn bridge_auth_header() -> String {
-    let path = format!(
-        "{}/.chorus/bridge-auth-token",
-        env::var("HOME").unwrap_or_default()
-    );
-    let tok = fs::read_to_string(path).unwrap_or_default();
-    format_bridge_auth(tok.trim())
-}
-
-/// Pure header formatter, split out so the negative proof (#3734) can exercise
-/// the empty-token case without a real file: an empty token yields an empty
-/// bearer (which the guard 401s fail-loud), NEVER an omitted header that would
-/// silently fall back to anonymous — the failure mode #3966 exposed.
-fn format_bridge_auth(token: &str) -> String {
-    format!("Authorization: Bearer {}", token)
-}
-
 /// flock guard — auto-releases on drop (and on crash, kernel-level).
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
@@ -799,58 +790,18 @@ fn emit_spine_reason(home: &Path, event: &str, role: &str, card: u64, trace: &st
     }
 }
 
-/// The product/domain feedback gather sent to each demoee (#3100 / #3116).
-/// VERBATIM — pinned by `feedback_message_is_verbatim`. Neutral framing by
-/// design: pointers + ask, no editorializing that biases the reply; sender +
-/// ack-required up front; "read the card and the code" (recipient forms their
-/// own read). NO "before /acp" pressure, NO "narrow/clean/delivered" pre-frame —
-/// those inherit the builder's satisfaction to the reviewer. Q2 addresses the
-/// recipient AS the user ("you and your domain"); Q4 is the Loom-discriminator
-/// lens no peer can answer for. `\n` is escaped because the string is embedded
-/// into a JSON body downstream.
-///
-/// Prior (#3100): 3 questions, Q2 = "how does it impact your users?".
-/// Current (#3116): Q2 named to "you and your domain" (the demoee IS the user);
-/// +Q4 Loom lens (the discriminator no peer can answer for). Approach: extract
-/// to a pure fn so the wording is pinned by test and can't silently soften.
-/// #3858 — the one-line room announce: card, title, AC tally, gate state,
-/// the decision ask, and the trace link for everything else. Jeff's rule via
-/// Wren's screenshot: the room is a phone; detail goes behind the link.
-pub fn bridge_announce_line(card: u64, title: &str, checked: usize, total: usize, gates_green: bool, trace: &str) -> String {
-    let gates = if gates_green { "gates ✓" } else { "gates ✗" };
-    // #3892 (found live): byte-slicing panicked mid-'—' on a real card title
-    // ("not a char boundary"). Truncate on a CHARACTER boundary.
-    let t: String = if title.chars().count() > 60 {
-        title.chars().take(60).collect()
-    } else {
-        title.to_string()
-    };
-    format!(
-        "🎬 #{card} · {t} · AC {checked}/{total} · {gates} · go / no / more · http://localhost:3340/borg/trace.html?card={card}&trace={trace}"
-    )
-}
-
-
-/// Send a feedback nudge to `other` via `chorus-hook-shim nudge-send` (#4515).
-/// The same path the clearing-nudge tool runs. Returns Err when the
-/// send is refused or fails.
-/// Used by signal() for the initial round and by demo() for re-nudge on
-/// unacked peers (#3100 AC #2).
-/// #3305 — pure wire shape for the gather nudge: JSON-RPC tools/call on
-/// clearing-nudge. Unit-pinned (the e2e happy path now legitimately
-/// sends zero nudges, so the shape can't be pinned there).
-/// #3443 AC2/AC8 — the gather is REPLY-REQUIRED by construction: every demo
-/// nudge carries `expects:"reply"`, never the default `expects:"none"`. That is
-/// what makes the recipient OWE a response — the #3218 RESPOND-FIRST hook holds
-/// their session until they ack, so the demo's `gathers_missing` ready-gate
-/// (announce_ready_full) can actually be satisfied by a real reply instead of
-/// hoping a fire-and-forget FYI gets noticed. The sender cannot downgrade it.
+/// #4502 — the demo's one message, through the same Rust path the
+/// clearing-nudge tool runs (`chorus-hook-shim nudge-send`, #4515): word cap,
+/// recipient check, spine, pulse. It is a NOTICE (expects none): the demo asks
+/// Jeff for his go, it does not make the builder owe a reply. The gather that
+/// needed `expects reply` (#3443) is gone — peer reviews are headless steps —
+/// and a reply-required announce made the builder answer it, one more message.
 pub fn nudge_send_args(from: &str, to: &str, message: &str) -> Vec<String> {
     // #4515 — the old MCP server is gone; nudges go through the same Rust path
     // the clearing-nudge tool runs (`chorus-hook-shim nudge-send`):
     // word cap, recipient check, spine, pulse. The message is one argv item,
     // never spliced into JSON.
-    vec!["nudge-send".into(), from.into(), to.into(), message.into(), "--expects".into(), "reply".into()]
+    vec!["nudge-send".into(), from.into(), to.into(), message.into(), "--expects".into(), "none".into()]
 }
 
 /// #4515 — the nudge binary. Tests point CHORUS_HOOK_SHIM at a dead path so a
@@ -877,22 +828,6 @@ pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, ver
 
 
 
-/// #3995 — the Bridge URL seam. Hardcoded :3470 let a test post into Jeff's
-/// live Clearing (paged him twice 2026-08-23); env-overridable so the runner's
-/// suite world can dead-port it. Default unchanged for real demos.
-fn bridge_url() -> String {
-    std::env::var("CHORUS_BRIDGE_URL")
-        .unwrap_or_else(|_| "http://localhost:3470/api/message".to_string())
-}
-
-
-/// #3511 — surface the demo to JEFF via the nudge wire (to=jeff), so he actually
-/// SEES it in his terminal — the invisibility (a silent demo.presented spine event)
-/// was #3499's whole failure. Best-effort: a send failure never blocks the demo;
-/// the block still holds for his go. Single-line, no embedded double-quotes, so it
-/// interpolates safely into the JSON-RPC body. This is the MINIMAL mechanism pointer
-/// (run `werk-demo go <card>` to land); the rich announce stays the DemoOutcome
-/// message + Bridge post. The announce CONTENT is Jeff's to shape — this is the slot.
 /// #4075 — the werk's own Clearing (env-up runs it per role, see werk-deploy
 /// demo_env env_services): silas=3481, kade=3482, wren=3483. The announce
 /// carries it so Jeff opens THIS round's room, not prod's.
@@ -911,32 +846,37 @@ pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
     }
 }
 
-fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round: &str) {
+/// #4502 — the ONE message a demo round sends (Jeff 10-18 11:33: "demo is
+/// really noisy and repetitive about messages it sends as nudges"; folds #3971).
+/// Measured 10-18 in this file: each announce sent 5 — four room posts (the
+/// "[demo] presenting" line, "[TEST SURFACE READY]", "[DEMO READY FOR JEFF]",
+/// the one-line decision surface) plus this nudge. Now only this nudge goes
+/// out: card, round, the gate/review/test/AC tally, where to look, the go.
+/// Sent from "system" to the demoer's session (#3544: from≠to so it injects).
+pub fn announce_line(card: u64, round: &str, tally: &str, variant_url: &str, clearing: &str) -> String {
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
-    let clearing = clearing_url_for(from);
-    // #3746 — Jeff, reviewing the tree-rendered room: "the werk-demo styling and
-    // length of messages is a lot." One line: card, round (the stale-present
-    // discipline), where to look, the three answers. The reassurance prose said
-    // the same thing on every demo and taught nothing; `werk-demo go` stays
-    // discoverable in docs, not in every announce.
-    let msg = format!("Demo ready — #{} · round {} · {} · clearing {} · go / no / more", card, round, url, clearing);
-    // #3544 — the announce must DELIVER (osascript-inject) into the demoer's session,
-    // not just persist. In the detached act pipeline there is no driving-role turn to
-    // print DemoOutcome.message, so this nudge IS the only live surface Jeff sees. The
-    // bug: it was sent from=<demoer> to=<demoer>, which pulse's announce-boundary drops
-    // as 'self-echo' (decide(): from===to → deliver:false) — so it persisted but never
-    // injected. FIX (Jeff's framing): it's an OPS-NUDGE — the demo MACHINE surfacing into
-    // a session, not a role echoing itself. Send from "system" (a MACHINE_SENDER) → to the
-    // demoer: from≠to kills self-echo, machine lane delivers, it injects into the demoer's
-    // terminal where Jeff is watching. `from` stays the RECIPIENT (the demoer's session).
-    // `from` stays the RECIPIENT (the demoer's session); the sender is "system".
-    let args = nudge_send_args("system", from, &msg);
+    format!("Demo ready — #{} · round {} · {} · {} · clearing {} · go / no / more", card, round, tally, url, clearing)
+}
+
+/// #4502 — true when this round already sent its one ask, or Jeff's go is in:
+/// either way the announce sends nothing (a re-present of the same round, or a
+/// retry after the go, is silent). Pure; keyed like every other witness read.
+pub fn announce_silent(witness: &str, card: u64, round: &str, patch_id: &str) -> bool {
+    let card_key = format!("\"card_id\":{},", card);
+    jeff_go_recorded(witness, card, round, patch_id)
+        || witness.lines().any(|l| {
+            l.contains("\"event\":\"demo.announced\"") && l.contains(&card_key) && line_keyed(l, round, patch_id)
+        })
+}
+
+fn announce_to_jeff(from: &str, trace: &str, msg: &str) {
+    let args = nudge_send_args("system", from, msg);
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
     let _ = run(&hook_shim(), &argv);
     let _ = trace;
 }
 
-/// Step 5: signal — cards demo + spine event + Bridge post. Best-effort: the
+/// Step 5: signal — cards demo + spine event. Best-effort: the
 /// announce, not a gate. #4502 — the feedback-nudge loop is gone: peer reviews
 /// are their own headless steps (#3539), nobody is asked to reply.
 fn signal(card: u64, role: &str, home: &Path, trace: &str) {
@@ -945,22 +885,136 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
     let _ = run(&script_path(home, "cards"), &["demo", &card_s]);
     emit_spine(home, "card.demo.started", role, card, trace);
 
-    // Bridge post (localhost:3470 — Jeff's center panel)
-    let bridge_body = format!(
-        r#"{{"from":"{}","text":"[demo] #{} — werk-demo: presenting the running werk variant for review"}}"#,
-        role, card
-    );
-    let auth = bridge_auth_header();
-    let _ = run(
-        "curl",
-        &[
-            "-s", "-X", "POST",
-            &bridge_url(),
-            "-H", "Content-Type: application/json",
-            "-H", &auth,
-            "-d", &bridge_body,
-        ],
-    );
+    // #4502 — no room post here: the round sends one message, at the end of announce
+}
+
+// --- session-smoke (#4502) ---
+//
+// AC: "The demo starts a throwaway session of each changed role from the werk
+// build (its own config and hooks), signs it in, and runs one tool call, before
+// Jeff's go." Silas 10-14: #4377, #4520 and #4444 were proven only after land.
+
+/// Session config every Claude role loads: a change here touches all of them.
+const SMOKE_SHARED: [&str; 4] = ["designing/claudemd/shared/", ".claude/", "platform/services/chorus-hooks/", "skills/"];
+/// The Claude-session roles (abby-normal runs on agy, not claude).
+const SMOKE_CLAUDE_ROLES: [&str; 3] = ["wren", "silas", "kade"];
+
+/// #4502 — the roles whose session config the card's changed paths touch:
+/// roles/<r>/ or designing/claudemd/roles/<r>/ for that role, the shared
+/// paths above for every Claude role. Order: PEER_ROLES. Pure.
+pub fn smoke_roles(changed: &[String]) -> Vec<&'static str> {
+    let shared = changed.iter().any(|f| SMOKE_SHARED.iter().any(|p| f.starts_with(p)));
+    PEER_ROLES
+        .into_iter()
+        .filter(|r| {
+            (shared && SMOKE_CLAUDE_ROLES.contains(r))
+                || changed.iter().any(|f| {
+                    f.starts_with(&format!("roles/{}/", r)) || f.starts_with(&format!("designing/claudemd/roles/{}/", r))
+                })
+        })
+        .collect()
+}
+
+/// The card's changed paths (git diff --name-only origin/main...HEAD), trusting
+/// only the card's own werk (#4599/#4602: a werk another user owns is "dubious
+/// ownership" to git otherwise).
+pub fn changed_paths(werk: &str) -> Result<Vec<String>, String> {
+    let o = Command::new("git")
+        .env("GIT_CONFIG_COUNT", "1").env("GIT_CONFIG_KEY_0", "safe.directory").env("GIT_CONFIG_VALUE_0", werk)
+        .arg("-C").arg(werk).args(["diff", "--name-only", "origin/main...HEAD"]).output()
+        .map_err(|e| format!("git could not run in {}: {}", werk, e))?;
+    if !o.status.success() {
+        return Err(format!("git diff failed in {}: {}", werk, String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).lines().map(str::to_string).collect())
+}
+
+/// One throwaway headless session of `r`, started in the werk's roles/<r>/ so it
+/// loads that build's own .claude settings and hooks, asked for exactly one
+/// Bash call. Ok when the call's output comes back; Err names why not.
+fn smoke_one(werk: &str, r: &str, card: u64) -> Result<(), String> {
+    if !SMOKE_CLAUDE_ROLES.contains(&r) {
+        return Err(format!("{} runs on agy; this box has no headless agy smoke, so its session is unmeasured", r));
+    }
+    let bin = claude_bin().ok_or("claude binary not resolvable")?;
+    let dir = Path::new(werk).join("roles").join(r);
+    if !dir.is_dir() {
+        return Err(format!("no roles/{} in the werk", r));
+    }
+    let token = format!("smoke-{}-{}", card, r);
+    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
+    let mut child = Command::new(&bin)
+        .current_dir(&dir)
+        .env("CHORUS_ROLE", r).env("ROLE", r).env("CHORUS_HEADLESS", "1")
+        .args(["-p", "--model", &model, "--no-session-persistence", "--output-format", "text",
+               "--allowedTools", &format!("Bash(echo {})", token)])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("claude spawn failed: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(format!("Run exactly one Bash command, `echo {}`, and reply with its output only.", token).as_bytes());
+    }
+    let secs: u64 = env::var("CHORUS_SMOKE_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) if start.elapsed() >= Duration::from_secs(secs) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("no answer in {}s", secs));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(250)),
+            Err(e) => return Err(format!("wait failed: {}", e)),
+        }
+    };
+    let mut out = String::new();
+    let mut err = String::new();
+    if let Some(mut o) = child.stdout.take() { let _ = o.read_to_string(&mut out); }
+    if let Some(mut e) = child.stderr.take() { let _ = e.read_to_string(&mut err); }
+    if !status.success() {
+        return Err(format!("session exited {}: {}", status.code().unwrap_or(-1), err.trim().lines().last().unwrap_or("")));
+    }
+    if !out.contains(&token) {
+        return Err(format!("the tool call did not come back (no `{}` in the reply)", token));
+    }
+    Ok(())
+}
+
+/// #4502 — the session-smoke step. No role config in the diff is a named
+/// pass, never a silent one; any role that cannot start, run its hooks and
+/// make one tool call fails the step, named.
+pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    let werk = format!("{}/{}-{}", werk_base, role, card);
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let changed = match changed_paths(&werk) {
+        Ok(c) => c,
+        Err(why) => return Ok(DemoOutcome { message: format!("session-smoke #{} could not read the diff: {}", card, why), exit: 1 }),
+    };
+    let roles = smoke_roles(&changed);
+    if roles.is_empty() {
+        jsonl(home, role, card, &trace, "demo.smoke.result", ",\"result\":\"none\"");
+        return Ok(DemoOutcome { message: format!("session-smoke #{}: nothing to smoke: no role config in the diff", card), exit: 0 });
+    }
+    let mut failed = Vec::new();
+    for r in &roles {
+        let res = smoke_one(&werk, r, card);
+        let (word, why) = match &res { Ok(()) => ("pass", String::new()), Err(e) => ("fail", e.clone()) };
+        jsonl(home, role, card, &trace, "demo.smoke.result",
+              &format!(",\"smoked\":\"{}\",\"result\":\"{}\",\"why\":\"{}\"", r, word, why.replace('"', "'")));
+        if let Err(e) = res { failed.push(format!("{}: {}", r, e)); }
+    }
+    emit_spine(home, "demo.smoke.recorded", role, card, &trace);
+    if failed.is_empty() {
+        Ok(DemoOutcome { message: format!("session-smoke #{}: {} started from the werk build and made one tool call", card, roles.join(", ")), exit: 0 })
+    } else {
+        Ok(DemoOutcome { message: format!("session-smoke #{} failed — {}", card, failed.join(" · ")), exit: 1 })
+    }
 }
 
 // --- the demo steps (#4502) ---
@@ -1190,53 +1244,19 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     }
     emit_spine(home, "demo.gates.recorded", role, card, &trace);
 
-    // Step 5: signal — board demo + spine event + Bridge (best-effort; this
-    // announces, it does not gate).
+    // Step 5: signal — board demo + spine event (best-effort; it does not gate).
     signal(card, role, home, &trace);
     jsonl(home, role, card, &trace, "demo.signal.completed", "");
 
     // #3100 — announce the TEST SURFACE: the service ports and CLI verbs the
     // card's new code runs on, so the window is a real test window.
-    let api_port = variant_port(role, 3343, 3340);
-    let test_surface_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
-        role, card, api_port, role
-    );
-    let auth = bridge_auth_header();
-    if let Err(e) = run("curl", &[
-        "-s", "-f", "-X", "POST",
-        &bridge_url(),
-        "-H", "Content-Type: application/json",
-        "-H", &auth,
-        "-d", &test_surface_body,
-    ]) {
-        jsonl(home, role, card, &trace, "demo.bridge.failed",
-              &format!(",\"reason\":\"test_surface:{}\",\"failureClass\":\"{}\"", e.replace('"', "'"), failure_class("bridge-fail")));
-    }
+    // #4502 — the test surface is named in the round's one message, not posted to the room
     emit_spine(home, "demo.test_surface.ready", role, card, &trace);
     jsonl(home, role, card, &trace, "demo.test_surface.ready", "");
 
     // #3100 AC#4 — the visible announce, per-role variant ports (#3092).
     let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port(role, 3343, 3340));
     let clearing_url = clearing_url_for(role);
-    let pause_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nClearing: {}\nAwaiting your eyes (or a machine verdict).\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
-        role, card, variant_url, clearing_url
-    );
-    let auth = bridge_auth_header();
-    if let Err(e) = run(
-        "curl",
-        &[
-            "-s", "-f", "-X", "POST",
-            &bridge_url(),
-            "-H", "Content-Type: application/json",
-            "-H", &auth,
-            "-d", &pause_body,
-        ],
-    ) {
-        jsonl(home, role, card, &trace, "demo.bridge.failed",
-              &format!(",\"reason\":\"{}\",\"failureClass\":\"{}\"", e.replace('"', "'"), failure_class("bridge-fail")));
-    }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
     // #3263 — the machine shows, it does not gate: the status below is for the
@@ -1286,21 +1306,12 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     if !role_feedback.is_empty() { parts.push(role_feedback); }
     parts.push(claim);
     parts.push(format!("variant: {}", variant_status));
-    parts.push(test_summary);
+    parts.push(test_summary.clone());
     parts.push("──────────────────────────────────".to_string());
     parts.push("Look at the variant, ask me anything, or tell me to TEST it.".to_string());
     parts.push(format!("Then your call → `werk-demo go {}` to land · no/more to hold.", card));
     let announce = parts.join("\n");
     // #3858 — the room gets ONE line; the full surface is this step's message.
-    let surface_body = format!(
-        r#"{{"from":"{}","text":"{}"}}"#,
-        role,
-        bridge_announce_line(card, &title, checked, total, gates_green, &trace)
-            .replace('\\', " ").replace('"', "'")
-    );
-    let auth = bridge_auth_header();
-    let _ = run("curl", &["-s", "-f", "-X", "POST", &bridge_url(),
-                          "-H", "Content-Type: application/json", "-H", &auth, "-d", &surface_body]);
     jsonl(home, role, card, &trace, "demo.decision_surface",
           &format!(",\"ac\":\"{}/{}\"", checked, total));
 
@@ -1314,8 +1325,18 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
                    checked, total, round, variant_url, land_patch));
     emit_spine(home, "demo.presented", role, card, &trace);
     // #3548 — never re-announce "ready for GO" once Jeff's go is recorded.
-    if !jeff_go_recorded(&witness, card, &round, &patch) {
-        announce_to_jeff(role, card, &trace, &variant_url, &round);
+    // #4502 — ONE ask per round: never a second for the same round, never
+    // after the go (#3971's "one card, one go"). The tally is what Jeff weighs.
+    if !announce_silent(&witness, card, &round, &patch) {
+        let reviews = gather_peers(role).len();
+        let reviews_in = reviews - announce_missing(&witness, card, role, &round, &patch)
+            .iter().filter(|m| m.starts_with("review-")).count();
+        let tally = format!("gates {} · reviews {}/{} · {} · AC {}/{}",
+            if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
+            test_summary.replace("tests: ", "tests "), checked, total);
+        announce_to_jeff(role, &trace, &announce_line(card, &round, &tally, &variant_url, &clearing_url));
+        jsonl(home, role, card, &trace, "demo.announced",
+              &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
     }
     Ok(DemoOutcome { message: announce, exit: 0 })
 }
@@ -1973,12 +1994,12 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
         return;
     }
     let _ = round; // verdict round/patch are stamped by record_gather_replied (current_round/current_patch_id)
-    let peer_md = home.join(format!("roles/{}/CLAUDE.md", peer));
+    let peer_md = peer_persona_path(home, peer);
     let identity = match fs::read_to_string(&peer_md) {
         Ok(s) => s,
         Err(e) => {
             record_gather_replied(home, role, card, peer, "error",
-                &format!("peer CLAUDE.md unreadable {}: {}", peer_md.display(), e));
+                &format!("peer persona unreadable {}: {}", peer_md.display(), e));
             return;
         }
     };
@@ -2137,7 +2158,7 @@ fn card_test_verdict(werk: &str) -> &'static str {
 }
 
 /// #4502 — the demo's step subcommands: `<step> <card> <role> [arg]`.
-pub const DEMO_STEPS: [&str; 4] = ["validate", "run-gate", "run-review", "announce"];
+pub const DEMO_STEPS: [&str; 5] = ["validate", "run-gate", "run-review", "session-smoke", "announce"];
 
 /// #4474 — whose werk the demo is for. A step names the builder role the way
 /// every werk verb does (`<step> <card> <role>`, #4502), so a dagu step needs no
@@ -2182,6 +2203,7 @@ pub fn run_demo() -> R<DemoOutcome> {
                 let n: usize = args.next().and_then(|s| s.parse().ok()).ok_or_else(usage)?;
                 run_review_step(card, role, &home, n)
             }
+            "session-smoke" => session_smoke_step(card, role, &home),
             _ => announce_step(card, role, &home),
         };
     }
@@ -2291,23 +2313,6 @@ fn usage() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // #3969 — the demo bridge posts to the now-authenticated Clearing must carry
-    // a Bearer header. NEGATIVE PROOF (#3734): an empty token must still produce
-    // a header (empty bearer → the guard 401s fail-loud), never an omitted one
-    // that silently reverts to the anonymous post #3966 broke.
-    #[test]
-    fn bridge_auth_header_carries_the_token_as_a_bearer() {
-        assert_eq!(format_bridge_auth("secret-abc"), "Authorization: Bearer secret-abc");
-    }
-
-    #[test]
-    fn bridge_auth_empty_token_is_a_present_but_empty_bearer_not_omitted() {
-        // fail-loud: the header exists (guard sees it, 401s a blank bearer),
-        // rather than vanishing and letting the post go anonymous.
-        assert_eq!(format_bridge_auth(""), "Authorization: Bearer ");
-        assert!(format_bridge_auth("").starts_with("Authorization: Bearer"));
-    }
 
     #[test]
     fn ac_counts_counts_checked_and_total() {
@@ -2472,14 +2477,15 @@ mod tests {
         // Both peers replied at round sha "rA" carrying patch-id "pidX". A rebase
         // churns the round to "rB" but the tree (patch-id) is unchanged.
         let w = "{\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"silas\",\"round\":\"rA\",\"patch_id\":\"pidX\"}\n\
-                 {\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"kade\",\"round\":\"rA\",\"patch_id\":\"pidX\"}";
+                 {\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"kade\",\"round\":\"rA\",\"patch_id\":\"pidX\"}\n\
+                 {\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"abby-normal\",\"round\":\"rA\",\"patch_id\":\"pidX\"}";
         // churned round rB, SAME patch pidX → replies still count (no re-nudge loop)
         assert!(gathers_missing(w, 3461, "wren", "rB", "pidX").is_empty(),
             "patch-id match must survive the round churn");
         // different patch (real content change) AND churned round → genuinely missing
-        assert_eq!(gathers_missing(w, 3461, "wren", "rB", "pidY"), vec!["silas", "kade"]);
+        assert_eq!(gathers_missing(w, 3461, "wren", "rB", "pidY"), vec!["silas", "kade", "abby-normal"]);
         // empty patch → round-only fallback (no false match; #3459 parity)
-        assert_eq!(gathers_missing(w, 3461, "wren", "rB", ""), vec!["silas", "kade"]);
+        assert_eq!(gathers_missing(w, 3461, "wren", "rB", ""), vec!["silas", "kade", "abby-normal"]);
         // exact round still works
         assert!(gathers_missing(w, 3461, "wren", "rA", "").is_empty());
     }
@@ -2533,8 +2539,10 @@ mod tests {
 
     #[test]
     fn gather_peers_excludes_the_demoer() {
-        assert_eq!(gather_peers("wren"), vec!["silas", "kade"]);
-        assert_eq!(gather_peers("kade"), vec!["wren", "silas"]);
+        assert_eq!(gather_peers("wren"), vec!["silas", "kade", "abby-normal"]);
+        assert_eq!(gather_peers("kade"), vec!["wren", "silas", "abby-normal"]);
+        // #4502 — every builder gets the same count, Abby included
+        assert_eq!(gather_peers("abby-normal"), vec!["wren", "silas", "kade"]);
     }
 
     #[test]
@@ -2543,7 +2551,7 @@ mod tests {
         // announce fired here and Jeff's go preceded the team's input. Now: standby.
         let w = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect::<Vec<_>>().join("\n");
         assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates without gathers ⇒ no announce");
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas", "kade"]);
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas", "kade", "abby-normal"]);
     }
 
     #[test]
@@ -2552,7 +2560,7 @@ mod tests {
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
         assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "one peer's reply is not the team's feedback");
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas"]);
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas", "abby-normal"]);
     }
 
     #[test]
@@ -2560,8 +2568,9 @@ mod tests {
         let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
         lines.push(gather_line(3352, "silas"));
         lines.push(gather_line(3352, "kade"));
+        lines.push(gather_line(3352, "abby-normal"));
         let w = lines.join("\n");
-        assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + both replies ⇒ announce");
+        assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + every peer's reply ⇒ announce");
     }
 
 
@@ -2584,11 +2593,12 @@ mod tests {
         let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3365, g)).collect();
         lines.push(gather_line(3365, "silas"));
         lines.push(gather_line(3365, "kade"));
+        lines.push(gather_line(3365, "abby-normal"));
         let w = lines.join("\n"); // a fully-passed ROUND r1
         assert!(announce_ready_full(&w, 3365, "wren", "r1", "", false), "r1 evidence satisfies r1");
         assert!(!announce_ready_full(&w, 3365, "wren", "r2", "", false), "r1 evidence must NOT satisfy r2");
         assert_eq!(gates_missing(&w, 3365, "r2", "").len(), 5, "all gates fresh per round");
-        assert_eq!(gathers_missing(&w, 3365, "wren", "r2", "").len(), 2, "all feedback fresh per round");
+        assert_eq!(gathers_missing(&w, 3365, "wren", "r2", "").len(), 3, "all feedback fresh per round");
     }
 
     #[test]
@@ -2645,12 +2655,12 @@ mod tests {
     }
 
     #[test]
-    fn mcp_nudge_body_is_reply_required_never_none() {
-        // #3443 AC2/AC8 — the gather is reply-required by construction; a demo
-        // nudge must never be fire-and-forget (expects=none).
-        let a = nudge_send_args("wren", "silas", "msg");
-        assert_eq!(&a[4..], &["--expects", "reply"], "gather must be expects=reply: {:?}", a);
-        assert!(!a.contains(&"none".to_string()), "gather must never be expects=none: {:?}", a);
+    fn the_announce_is_a_notice_never_a_reply_owed() {
+        // #4502 — the announce asks Jeff, it does not make the builder owe a
+        // reply (a reply is one more message). Negative proof: no "reply".
+        let a = nudge_send_args("system", "wren", "msg");
+        assert_eq!(&a[4..], &["--expects", "none"], "{:?}", a);
+        assert!(!a.contains(&"reply".to_string()), "{:?}", a);
     }
 
 
@@ -2693,7 +2703,7 @@ mod tests {
     #[test]
     fn gathers_missing_ignores_other_cards_comma_terminated() {
         let w = format!("{}\n{}", gather_line(33520, "silas"), gather_line(33520, "kade"));
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", "").len(), 2, "card 33520's gathers must not satisfy 3352");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", "").len(), 3, "card 33520's gathers must not satisfy 3352");
     }
 
     #[test]
@@ -2860,20 +2870,6 @@ mod tests {
 }
 
 #[cfg(test)]
-mod announce_truncation_3892 {
-    use super::bridge_announce_line;
-
-    #[test]
-    fn multibyte_title_truncates_on_char_boundary_not_panic() {
-        // negative proof: the exact live crash — em-dash straddling byte 60
-        let title = "Membrane panics in werk logs get labeled or silenced — three misdiagnoses in two days";
-        let line = bridge_announce_line(3892, title, 1, 2, true, "t");
-        assert!(line.contains("#3892"));
-        assert!(!line.is_empty());
-    }
-}
-
-#[cfg(test)]
 mod test_badge_4012 {
     use super::*;
     use std::fs;
@@ -2946,8 +2942,14 @@ mod test_badge_4012 {
         assert_eq!(test_result_recorded_for_patch(&w, 4011, "fe82611b").as_deref(), Some("pass"));
     }
 
+    // #4502 — both tests read CHORUS_DEMO_TEST_CMD and the control sets it; the
+    // process env is shared across test threads, so they take turns (the
+    // negative proof read "pass" once when the control's set landed mid-run).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn negative_proof_an_unrunnable_suite_reads_unmeasured_not_fail() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // A werk with no Cargo.toml cannot produce a cargo verdict. Reporting that
         // as "fail" is the 631-row lie: an absent measurement dressed as a failing
         // one. UNMEASURED is the honest third state (#4009 established it for the
@@ -2960,6 +2962,7 @@ mod test_badge_4012 {
 
     #[test]
     fn control_a_runnable_suite_still_reports_a_real_pass_or_fail() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // The control for the proof above: with a runnable command the verdict is
         // measured, so "unmeasured" cannot be a constant the code always returns.
         let dir = std::env::temp_dir().join("werk-demo-4012-runnable");

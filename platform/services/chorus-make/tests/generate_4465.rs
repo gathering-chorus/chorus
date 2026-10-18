@@ -35,14 +35,14 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(ids.first(), Some(&"skill-werk-commit"));
     let go = ids.iter().position(|i| *i == "skill-werk-go").expect("the go is a step");
-    assert_eq!(ids[go - 1], "skill-werk-demo");
+    assert_eq!(ids[go - 1], "skill-werk-demo-announce"); // #4502 — the demo is steps; announce is the last
     // #4494 — after the go the card enqueues its land; the land steps are in the land half
     assert_eq!(&ids[go + 1..], &["cicd-land"]);
     let land = generate_land("cicd", &cicd()).unwrap();
     let land_ids: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(land_ids.first(), Some(&"skill-werk-merge"));
     assert_eq!(land_ids.last(), Some(&"skill-werk-accept"));
-    assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo]\n    id: skill_werk_go\n    action: human.task\n"));
+    assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo-announce]\n    id: skill_werk_go\n    action: human.task\n"));
     for half in [&out, &land] {
         assert!(half.starts_with(chorus_make::HEADER));
         // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
@@ -117,9 +117,9 @@ fn negative_proof_a_deterministic_skill_with_no_binary_is_refused() {
 fn negative_proof_a_skill_sharing_the_go_s_order_and_no_rows_are_refused() {
     let mut rows = cicd();
     let go = rows.iter().position(|r| r.executor == "human").expect("cicd has a go");
-    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo").expect("cicd has a demo");
-    rows[demo].skill_order = rows[go].skill_order; // the demo now collides with Jeff's go
-    assert!(check(&rows).iter().any(|e| e.contains("skill-werk-demo") && e.contains("with a human step")), "{:?}", check(&rows));
+    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo-announce").expect("cicd has a demo announce");
+    rows[demo].skill_order = rows[go].skill_order; // the announce now collides with Jeff's go
+    assert!(check(&rows).iter().any(|e| e.contains("skill-werk-demo-announce") && e.contains("with a human step")), "{:?}", check(&rows));
     assert!(generate("cicd", &[]).is_err(), "no rows is refused, never an empty workflow");
 }
 
@@ -148,8 +148,8 @@ fn only_the_step_before_the_go_treats_presented_as_success() {
     let out = generate("cicd", &cicd()).unwrap();
     let held = "    continue_on:\n      exit_code: [2]\n      mark_success: true\n";
     assert_eq!(out.matches(held).count(), 1, "exactly one step may hold");
-    let demo = out.split("  - name: ").find(|s| s.starts_with("skill-werk-demo\n")).unwrap();
-    assert!(demo.contains(held), "the demo step holds for the go");
+    let demo = out.split("  - name: ").find(|s| s.starts_with("skill-werk-demo-announce\n")).unwrap();
+    assert!(demo.contains(held), "the step before the go (the demo's announce) holds for it");
 }
 
 #[test]

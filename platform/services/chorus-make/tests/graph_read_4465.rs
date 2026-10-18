@@ -27,7 +27,7 @@ fn run(pipeline: &str) -> String {
 #[test]
 fn the_graph_read_gives_the_same_workflow_as_the_rows_file() {
     let from_graph = rows_from_sparql_tsv(&run("cicd")).expect("rows");
-    assert_eq!(from_graph.len(), 13);
+    assert_eq!(from_graph.len(), 23); // #4502 — the one demo row became 11 (validate, 5 gates, 3 reviews, smoke, announce)
     let from_file = parse_rows(&std::fs::read_to_string(format!("{}/tests/fixtures/cicd-rows.tsv", dir())).unwrap()).unwrap();
     assert_eq!(generate("cicd", &from_graph).unwrap(), generate("cicd", &from_file).unwrap());
 }

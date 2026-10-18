@@ -51,16 +51,56 @@ steps:
     description: "werk-deploy env-up"
     depends: [skill-werk-deploy-demo]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-env-up card=${CARD}"
-  - name: skill-werk-demo
-    description: "/demo"
+  - name: skill-werk-demo-validate
+    description: "demo: validate (WIP, has AC)"
     depends: [skill-werk-deploy-env-up]
-    command: "${HOME}/.chorus/bin/chorus-runner call werk-demo card=${CARD}"
+    command: "werk-demo validate ${CARD} ${ROLE}"
+  - name: skill-werk-demo-gate-arch
+    description: "demo: gate arch"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-gate ${CARD} ${ROLE} arch"
+  - name: skill-werk-demo-gate-code
+    description: "demo: gate code"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-gate ${CARD} ${ROLE} code"
+  - name: skill-werk-demo-gate-ops
+    description: "demo: gate ops"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-gate ${CARD} ${ROLE} ops"
+  - name: skill-werk-demo-gate-product
+    description: "demo: gate product"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-gate ${CARD} ${ROLE} product"
+  - name: skill-werk-demo-gate-quality
+    description: "demo: gate quality"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-gate ${CARD} ${ROLE} quality"
+  - name: skill-werk-demo-review-1
+    description: "demo: peer review 1"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-review ${CARD} ${ROLE} 1"
+  - name: skill-werk-demo-review-2
+    description: "demo: peer review 2"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-review ${CARD} ${ROLE} 2"
+  - name: skill-werk-demo-review-3
+    description: "demo: peer review 3"
+    depends: [skill-werk-demo-validate]
+    command: "werk-demo run-review ${CARD} ${ROLE} 3"
+  - name: skill-werk-demo-session-smoke
+    description: "demo: each changed role's session signs in and makes one tool call"
+    depends: [skill-werk-demo-gate-arch, skill-werk-demo-gate-code, skill-werk-demo-gate-ops, skill-werk-demo-gate-product, skill-werk-demo-gate-quality, skill-werk-demo-review-1, skill-werk-demo-review-2, skill-werk-demo-review-3]
+    command: "werk-demo session-smoke ${CARD} ${ROLE}"
+  - name: skill-werk-demo-announce
+    description: "demo: announce (one ask per round)"
+    depends: [skill-werk-demo-session-smoke]
+    command: "werk-demo announce ${CARD} ${ROLE}"
     continue_on:
       exit_code: [2]
       mark_success: true
   - name: skill-werk-go
     description: "Jeff's go"
-    depends: [skill-werk-demo]
+    depends: [skill-werk-demo-announce]
     id: skill_werk_go
     action: human.task
     with:

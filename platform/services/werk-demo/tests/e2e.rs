@@ -104,8 +104,10 @@ exit 0
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
     std::env::set_var("CHORUS_TRACE_ID", "e2e-trace-abc123");
     // #3995 — never speak to live services from a test: dead-port both HTTP seams.
-    std::env::set_var("CHORUS_HOOK_SHIM", "/nonexistent/chorus-hook-shim-4515");
-    std::env::set_var("CHORUS_BRIDGE_URL", "http://127.0.0.1:9/api/message");
+    // #4502 — the shim LOGS each send, so the test counts the round's asks
+    let shim_log = tmp("shimlog").join("calls");
+    write_exec(&bin.join("chorus-hook-shim-stub"), &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\nexit 0\n", shim_log.display()));
+    std::env::set_var("CHORUS_HOOK_SHIM", bin.join("chorus-hook-shim-stub"));
     // no variant is up in the test; the reachability check is live in the pipeline
     std::env::set_var("CHORUS_DEMO_SKIP_VARIANT_CHECK", "1");
     // no real werk here; the fixture seeds demo.test_result directly
@@ -123,11 +125,11 @@ exit 0
     // --- step: announce, NEGATIVE PROOF 1: nothing recorded → refused, every step named ---
     let none = announce_step(3046, "wren", &home).expect("announce returns Ok when it refuses");
     assert_eq!(none.exit, 1, "announce with no gates/reviews must refuse: {}", none.message);
-    for step in ["gate-product", "gate-code", "gate-quality", "gate-arch", "gate-ops", "review-silas", "review-kade"] {
+    for step in ["gate-product", "gate-code", "gate-quality", "gate-arch", "gate-ops", "review-silas", "review-kade", "review-abby-normal"] {
         assert!(none.message.contains(step), "refusal names {}: {}", step, none.message);
     }
 
-    // seed the 5 gates + the tests verdict + ONE peer review
+    // seed the 5 gates + the tests verdict + two of the three peer reviews
     let mut seed = fs::read_to_string(&witness_path).unwrap_or_default();
     for g in ["product", "code", "quality", "arch", "ops"] {
         seed.push_str(&format!(
@@ -137,12 +139,13 @@ exit 0
     }
     seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
     seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"verdict\":\"pass\",\"note\":\"ack\"}\n");
+    seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"abby-normal\",\"round\":\"e2e-r1\",\"verdict\":\"pass\",\"note\":\"ack\"}\n");
     fs::write(&witness_path, &seed).unwrap();
 
     // --- NEGATIVE PROOF 2: one review missing → refused, naming only that review ---
     let one = announce_step(3046, "wren", &home).expect("announce returns Ok when it refuses");
     assert_eq!(one.exit, 1, "announce with a review missing must refuse: {}", one.message);
-    assert!(one.message.contains("review-silas") && !one.message.contains("review-kade") && !one.message.contains("gate-"),
+    assert!(one.message.contains("review-silas") && !one.message.contains("review-kade") && !one.message.contains("review-abby-normal") && !one.message.contains("gate-"),
             "names only the missing review: {}", one.message);
     let w = fs::read_to_string(&witness_path).unwrap();
     assert!(!w.contains("\"event\":\"demo.presented\""), "a refused announce presents nothing:\n{}", w);
@@ -154,7 +157,7 @@ exit 0
     let errored = announce_step(3046, "wren", &home).unwrap();
     assert_eq!(errored.exit, 1, "an errored review is missing: {}", errored.message);
 
-    // --- happy path: the second review lands → announce presents, exit 0 ---
+    // --- happy path: the last review lands → announce presents, exit 0 ---
     let mut both = fs::read_to_string(&witness_path).unwrap();
     both.push_str("{\"ts\":2,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"verdict\":\"concerns\",\"note\":\"watch the land\"}\n");
     fs::write(&witness_path, &both).unwrap();
@@ -188,5 +191,25 @@ exit 0
     for gone in ["demo.gather.sent", "demo.gather.block", "demo.gather.timeout", "demo.prework.standby", "demo.verdict"] {
         assert!(!witness.contains(&format!("\"event\":\"{}\"", gone)), "{} must not fire; got:\n{}", gone, witness);
     }
+    // #4502 — ONE message per round (Jeff 11:33 "really noisy and repetitive";
+    // #3971 folded): the round's ask went out once, and no room posts at all.
+    let asks = |p: &PathBuf| fs::read_to_string(p).unwrap_or_default().lines().filter(|l| l.contains("Demo ready — #3046")).count();
+    assert_eq!(asks(&shim_log), 1, "one ask for the round: {}", fs::read_to_string(&shim_log).unwrap_or_default());
+    let sent = fs::read_to_string(&shim_log).unwrap_or_default();
+    assert!(sent.contains("gates ✓") && sent.contains("reviews 3/3") && sent.contains("AC 2/2") && sent.contains("go / no / more"),
+            "the one ask carries the tally and the go: {}", sent);
+    assert!(!curl_calls.contains("/api/message"), "no room posts: {}", curl_calls);
+    // NEGATIVE PROOF 1: a second announce for the same round sends nothing
+    let again = announce_step(3046, "wren", &home).unwrap();
+    assert_eq!(again.exit, 0, "{}", again.message);
+    assert_eq!(asks(&shim_log), 1, "a re-present of the same round asks 0 more times");
+    // NEGATIVE PROOF 2: after Jeff's go, nothing is sent even for a fresh announce
+    let mut w2 = fs::read_to_string(&witness_path).unwrap();
+    w2 = w2.lines().filter(|l| !l.contains("\"event\":\"demo.announced\"")).collect::<Vec<_>>().join("\n") + "\n";
+    w2.push_str("{\"ts\":3,\"event\":\"demo.go\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"t\",\"round\":\"e2e-r1\"}\n");
+    fs::write(&witness_path, &w2).unwrap();
+    let after_go = announce_step(3046, "wren", &home).unwrap();
+    assert_eq!(after_go.exit, 0, "{}", after_go.message);
+    assert_eq!(asks(&shim_log), 1, "after the go, no ask is sent");
     let _ = fs::remove_file(trace_path);
 }

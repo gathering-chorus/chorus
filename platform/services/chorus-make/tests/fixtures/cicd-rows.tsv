@@ -2,6 +2,7 @@
 # and crawl-delta are inline bash in werk.yml today, not verbs, so they are not rows yet (design §5).
 # #4514 reopen 2: refreshed from the graph 2026-10-13 21:26 (inputShape, withArgs columns added).
 # #4540: the test step runs the cicd-test child pipeline (werk-test as steps), SCOPE=diff.
+# #4502: the demo is steps — validate, 5 gates + 3 peer reviews in parallel (one order), session-smoke, announce.
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 commit	1	1	skill-werk-commit	werk-commit	deterministic	werk-commit	{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]		WerkCommitInput	atomic=true
 commit	1	2	skill-werk-push	werk-push	deterministic	werk-push	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
@@ -10,8 +11,18 @@ test	3	1	skill-werk-test-pipeline	the tests: cicd-test, scope diff	pipeline	cicd
 test	3	2	skill-werk-review	werk-review	deterministic	werk-review	{card} {caller}		WerkCardOnlyInput	
 demo	4	1	skill-werk-deploy-demo	werk-deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
 demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up {caller} {card}		WerkCardOnlyInput	
-demo	4	3	skill-werk-demo	/demo	deterministic	werk-demo	{card} {caller}		WerkCardOnlyInput	
-demo	4	4	skill-werk-go	Jeff's go	human					
+demo	4	3	skill-werk-demo-validate	demo: validate (WIP, has AC)	deterministic	werk-demo	validate ${CARD} ${ROLE}			
+demo	4	4	skill-werk-demo-gate-product	demo: gate product	deterministic	werk-demo	run-gate ${CARD} ${ROLE} product			
+demo	4	4	skill-werk-demo-gate-code	demo: gate code	deterministic	werk-demo	run-gate ${CARD} ${ROLE} code			
+demo	4	4	skill-werk-demo-gate-quality	demo: gate quality	deterministic	werk-demo	run-gate ${CARD} ${ROLE} quality			
+demo	4	4	skill-werk-demo-gate-arch	demo: gate arch	deterministic	werk-demo	run-gate ${CARD} ${ROLE} arch			
+demo	4	4	skill-werk-demo-gate-ops	demo: gate ops	deterministic	werk-demo	run-gate ${CARD} ${ROLE} ops			
+demo	4	4	skill-werk-demo-review-1	demo: peer review 1	deterministic	werk-demo	run-review ${CARD} ${ROLE} 1			
+demo	4	4	skill-werk-demo-review-2	demo: peer review 2	deterministic	werk-demo	run-review ${CARD} ${ROLE} 2			
+demo	4	4	skill-werk-demo-review-3	demo: peer review 3	deterministic	werk-demo	run-review ${CARD} ${ROLE} 3			
+demo	4	5	skill-werk-demo-session-smoke	demo: each changed role's session signs in and makes one tool call	deterministic	werk-demo	session-smoke ${CARD} ${ROLE}			
+demo	4	6	skill-werk-demo-announce	demo: announce (one ask per round)	deterministic	werk-demo	announce ${CARD} ${ROLE}			
+demo	4	7	skill-werk-go	Jeff's go	human					
 land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
 land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	{mode}		WerkSyncInput	mode=ff
 land	5	3	skill-werk-deploy-prod	werk-deploy-prod	deterministic	werk-deploy	{card} {caller} --target canonical		WerkCardOnlyInput	

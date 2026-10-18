@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_demo::{announce_missing, demo_role, run_gate_step, run_review_step, step_outcome, step_result};
+use werk_demo::{announce_missing, demo_role, run_gate_step, run_review_step, session_smoke_step, smoke_roles, step_outcome, step_result};
 
 fn tmp(tag: &str) -> PathBuf {
     let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -50,6 +50,9 @@ fn each_step_exits_by_what_it_recorded() {
     fs::create_dir_all(home.join("ops/logs")).unwrap();
     fs::write(home.join("skills/gate-code/SKILL.md"), "# gate-code\nTests green, build clean.\n").unwrap();
     fs::write(home.join("roles/silas/CLAUDE.md"), "# Silas\nArchitect.\n").unwrap();
+    // #4502 — abby-normal runs on agy: her persona is AGENTS.md, not CLAUDE.md
+    fs::create_dir_all(home.join("roles/abby-normal")).unwrap();
+    fs::write(home.join("roles/abby-normal/AGENTS.md"), "# Abby\nProgram manager.\n").unwrap();
     write_exec(&home.join("platform/scripts/cards"), "#!/bin/sh\necho '#4502 card'\nexit 0\n");
     write_exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
     // the card's werk: origin/main, then one commit on top — a real branch diff
@@ -76,7 +79,6 @@ fn each_step_exits_by_what_it_recorded() {
     std::env::set_var("CHORUS_DEMO_ROUND", "r4502");
     std::env::set_var("CHORUS_TRACE_ID", "t4502");
     std::env::set_var("CHORUS_HOOK_SHIM", "/nonexistent/chorus-hook-shim-4515");
-    std::env::set_var("CHORUS_BRIDGE_URL", "http://127.0.0.1:9/api/message");
 
     // NEGATIVE PROOF: the model fails → the gate records "error" → exit 1, named
     fs::write(&fail_flag, "").unwrap();
@@ -106,17 +108,70 @@ fn each_step_exits_by_what_it_recorded() {
     let rev = run_review_step(4502, "wren", &home, 1).unwrap();
     assert_eq!(rev.exit, 0, "{}", rev.message);
     assert!(rev.message.contains("review by silas"), "{}", rev.message);
-    // review 2 is kade, whose CLAUDE.md is absent → "error" → exit 1, named
+    // review 2 is kade, whose persona file is absent → "error" → exit 1, named
     let missing = run_review_step(4502, "wren", &home, 2).unwrap();
     assert_eq!(missing.exit, 1, "a review that could not run exits non-zero: {}", missing.message);
-    assert!(missing.message.contains("review by kade") && missing.message.contains("CLAUDE.md unreadable"), "{}", missing.message);
-    // NEGATIVE PROOF: wren has 2 peers; there is no review 3, and no review 0
-    assert!(run_review_step(4502, "wren", &home, 3).is_err());
+    assert!(missing.message.contains("review by kade") && missing.message.contains("persona unreadable"), "{}", missing.message);
+    // review 3 is abby-normal, read from AGENTS.md → runs → exit 0
+    let abby = run_review_step(4502, "wren", &home, 3).unwrap();
+    assert_eq!(abby.exit, 0, "abby's review reads AGENTS.md: {}", abby.message);
+    assert!(abby.message.contains("review by abby-normal"), "{}", abby.message);
+    // NEGATIVE PROOF: every builder has exactly 3 peers; no review 4, no review 0
+    assert!(run_review_step(4502, "wren", &home, 4).is_err());
     assert!(run_review_step(4502, "wren", &home, 0).is_err());
 
     // announce still needs the other 4 gates and kade's review (the error counts as missing)
     let need = announce_missing(&witness(&home), 4502, "wren", "r4502", "");
     assert_eq!(need, vec!["gate-product", "gate-quality", "gate-arch", "gate-ops", "review-kade"], "{:?}", need);
+
+    // --- session-smoke (#4502 AC: a throwaway session of each changed role) ---
+    // the card's diff is a.txt only → a NAMED pass, never a silent one
+    let none = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(none.exit, 0, "{}", none.message);
+    assert!(none.message.contains("nothing to smoke: no role config in the diff"), "{}", none.message);
+
+    // the card touches silas's settings → a silas session from the werk must make one tool call
+    fs::create_dir_all(werk.join("roles/silas/.claude")).unwrap();
+    fs::write(werk.join("roles/silas/.claude/settings.json"), "{}\n").unwrap();
+    git(&werk, &["add", "roles"]);
+    git(&werk, &["commit", "-q", "-m", "silas config"]);
+    let smoke_stub = home.join("claude-smoke");
+    write_exec(&smoke_stub, &format!(
+        "#!/bin/sh\nin=$(cat)\nif [ -f \"{}\" ]; then echo 'hook refused Bash' >&2; exit 2; fi\necho \"$in\" | grep -o 'smoke-[0-9]*-[a-z-]*' | head -1\n",
+        fail_flag.display()
+    ));
+    std::env::set_var("CHORUS_CLAUDE_BIN", &smoke_stub);
+    let ok = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(ok.exit, 0, "{}", ok.message);
+    assert!(ok.message.contains("silas started from the werk build and made one tool call"), "{}", ok.message);
+    // NEGATIVE PROOF: the session cannot run its tool call → exit 1, role and error named
+    fs::write(&fail_flag, "").unwrap();
+    let bad = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(bad.exit, 1, "{}", bad.message);
+    assert!(bad.message.contains("silas: session exited 2: hook refused Bash"), "{}", bad.message);
+    fs::remove_file(&fail_flag).unwrap();
+    // abby-normal's own files changed → named unmeasured (agy has no headless smoke), never a pass
+    fs::create_dir_all(werk.join("roles/abby-normal")).unwrap();
+    fs::write(werk.join("roles/abby-normal/AGENTS.md"), "# Abby\n").unwrap();
+    git(&werk, &["add", "roles"]);
+    git(&werk, &["commit", "-q", "-m", "abby persona"]);
+    let abby = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(abby.exit, 1, "{}", abby.message);
+    assert!(abby.message.contains("abby-normal: abby-normal runs on agy"), "{}", abby.message);
+}
+
+#[test]
+fn smoke_roles_reads_which_sessions_a_diff_touches() {
+    let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert!(smoke_roles(&v(&["README.md", "platform/services/werk-demo/src/lib.rs"])).is_empty());
+    assert_eq!(smoke_roles(&v(&["roles/kade/.claude/settings.json"])), vec!["kade"]);
+    assert_eq!(smoke_roles(&v(&["designing/claudemd/roles/silas/tone.md"])), vec!["silas"]);
+    assert_eq!(smoke_roles(&v(&["designing/claudemd/roles/abby-normal/title.md"])), vec!["abby-normal"]);
+    // shared session config touches every Claude role (abby-normal runs on agy)
+    assert_eq!(smoke_roles(&v(&["platform/services/chorus-hooks/src/lib.rs"])), vec!["wren", "silas", "kade"]);
+    assert_eq!(smoke_roles(&v(&["skills/demo/SKILL.md"])), vec!["wren", "silas", "kade"]);
+    // NEGATIVE PROOF: a path that merely contains a role name is not that role's config
+    assert!(smoke_roles(&v(&["platform/scripts/kade-notes.sh", "docs/roles-kade.md"])).is_empty());
 }
 
 #[test]
@@ -149,4 +204,37 @@ fn a_step_takes_its_role_from_its_third_word() {
     assert_eq!(demo_role(&a(&["announce", "4502", "wren"]), "silas").unwrap(), "wren");
     // NEGATIVE PROOF: a step with no role and no DEPLOY_ROLE is refused, never blank
     assert!(demo_role(&a(&["validate", "4502"]), "").is_err());
+}
+
+/// #4502 — PEER_ROLES is the set of roles with a tracked CLAUDE.md source
+/// (designing/claudemd/roles/<role>/; the roles/<role>/CLAUDE.md beside each is
+/// generated and gitignored, and abby-normal's agy persona is roles/abby-normal/
+/// AGENTS.md). A role added or removed without the list is caught here.
+/// Negative proof: a source set with one more role does not match.
+fn source_roles(dir: &Path) -> Vec<String> {
+    let mut v: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn peer_roles_match_the_role_dirs_with_a_persona() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let src = Path::new(&manifest).join("../../../designing/claudemd/roles");
+    let mut want: Vec<String> = werk_demo::PEER_ROLES.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    assert_eq!(source_roles(&src), want, "PEER_ROLES drifted from designing/claudemd/roles/*");
+
+    // negative proof: one more role source is a mismatch
+    let t = std::env::temp_dir().join(format!("peers4502-{}", std::process::id()));
+    for r in werk_demo::PEER_ROLES.iter().chain(["newrole"].iter()) {
+        fs::create_dir_all(t.join(r)).unwrap();
+    }
+    assert_ne!(source_roles(&t), want, "a fifth role must not match the four peers");
+    let _ = fs::remove_dir_all(&t);
 }

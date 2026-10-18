@@ -1162,6 +1162,19 @@ def fixture_4553():
              "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
             ("a failed step names its reason",
              "REFUSED" in line(151, [refused], []) and "no reason in dagu's record" in line(151, [noise], [])),
+            # #4502 — the demo is steps: a stop names the demo step and the
+            # werk-demo line dagu kept. Negative proof: a gate stop never reads
+            # as the announce, and an announce stop never as a gate.
+            ("a demo stopped at a gate, review or smoke names that step and why",
+             (lambda g, a: "failed at demo-gate-code" in g and "could not run: no headless model" in g
+              and "failed at demo-announce" in a and "refused" in a
+              and "demo-announce" not in g and "demo-gate-code" not in a)(
+                 line(4502, [run("dg", "cicd", "failed", 0, [node("failed", "skill-werk-demo-gate-code",
+                      "exit status 1\nwerk-demo: gate code for #4502 could not run: no headless model on this box")], 4502)], []),
+                 line(4503, [run("da", "cicd", "failed", 0, [node("failed", "skill-werk-demo-announce",
+                      "exit status 1\nwerk-demo: announce #4503 refused — no result this round from: [review-silas]")], 4503)], []))
+             and "silas: session exited 2" in line(4504, [run("ds", "cicd", "failed", 0, [node("failed", "skill-werk-demo-session-smoke",
+                      "exit status 1\nwerk-demo: session-smoke #4504 failed — silas: session exited 2: hook refused Bash")], 4504)], [])),
             ("a land whose merge is on main reads landed",
              "landed on main" in line(152, *merge_fail(152)) and "landed on main" not in line(15, *merge_fail(15))),  # #15 is not #152 or #1520
             ("an aborted run after the go does not hide the land",

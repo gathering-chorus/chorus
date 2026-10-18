@@ -54,14 +54,18 @@ fn siblings_generate_the_same_bytes_in_any_row_order() {
     assert_eq!(generate("cicd", &rows).unwrap(), generate("cicd", &shuffled).unwrap());
 }
 
-// NEGATIVE PROOF: distinct orders are the linear chain — the cicd golden is
-// unchanged byte for byte, and every step in it has at most one dependency.
+// NEGATIVE PROOF: distinct orders are the linear chain. The cicd rows with
+// the demo's one sibling order removed (slice 2 put the 8 gate/review rows
+// there) generate no fan-in at all; with them, the golden has exactly one.
 #[test]
 fn negative_proof_distinct_orders_stay_the_linear_golden() {
     let rows = parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap();
     let out = generate("cicd", &rows).unwrap();
     assert_eq!(out, fixture("fixtures/cicd-golden.yaml"));
-    assert!(out.lines().filter(|l| l.starts_with("    depends: [")).all(|l| !l.contains(", ")), "no fan-in:\n{out}");
+    let fan_in = |o: &str| o.lines().filter(|l| l.starts_with("    depends: [") && l.contains(", ")).count();
+    assert_eq!(fan_in(&out), 1, "one fan-in: smoke waits for the 8 siblings:\n{out}");
+    let linear: Vec<_> = rows.into_iter().filter(|r| !(r.step == "demo" && r.skill_order == 4)).collect();
+    assert_eq!(fan_in(&generate("cicd", &linear).unwrap()), 0, "distinct orders: no fan-in");
 }
 
 fn rows_sorted(rows: &[chorus_make::Row]) -> Vec<chorus_make::Row> {
