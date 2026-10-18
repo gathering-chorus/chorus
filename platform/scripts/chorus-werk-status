@@ -556,8 +556,15 @@ def dagu_go(card, run):
     step_id = node["step"].get("id") or node["step"]["name"].replace("-", "_")
     # Wren 2026-10-10: without --config the CLI looks in its default home and
     # answers "run not found"
-    cmd = (f"dagu --config {DAGU_CONFIG} human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
-           f" --step {step_id} --input accepter=jeff")
+    dag = run.get("name") or DAGU_DAG
+    base = f"dagu --config {DAGU_CONFIG} human-task complete {dag} --run-id {run.get('dagRunId')} --step {step_id}"
+    if dag == PAIR_DAG:
+        # #4577 (Wren 07:37) — the pair's green is the navigator's, in the pair
+        # step's own inputs; the cicd go (accepter=jeff, go|no) is refused there
+        nav = re.search(r"(?:^|\s)NAVIGATOR=\"?([\w-]+)", run.get("params") or "")
+        cmd = f"{base} --input by={nav.group(1) if nav else 'NAVIGATOR'}"
+        return f" · green: {cmd} --input decision=green · stop: {cmd} --input decision=stop"
+    cmd = f"{base} --input accepter=jeff"
     # #4494 — a go can be a no: the land is skipped and the run ends
     return f" · go: {cmd} --input decision=go · no: {cmd} --input decision=no"
 
@@ -1190,6 +1197,14 @@ def fixture_4553():
              pair_reads(lambda: [dict(run("pr", "pair", "waiting", 0, [node("succeeded", "skill-pair-start"), node("waiting", "skill-pair-green")], 4577),
                                       params="CARD=4577 ROLE=kade NAVIGATOR=silas")], line)
              and "waiting for your go" in line(4578, [run("w", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4578)], [])),
+            # #4577 (Wren 07:37) — the pair's hint is the navigator's green on
+            # the pair dag; negative proof: a cicd run still offers Jeff's go
+            ("a pair's hint completes the pair step as its navigator",
+             (lambda g: "complete pair " in g and "--input by=silas --input decision=green" in g and "accepter=jeff" not in g)(
+                 dagu_go(4577, dict(run("pg", "pair", "waiting", 0, [node("waiting", "skill-pair-green")], 4577),
+                                    params="CARD=4577 ROLE=kade NAVIGATOR=silas")))
+             and (lambda g: "complete cicd " in g and "accepter=jeff" in g and "by=" not in g)(
+                 dagu_go(4578, run("cg", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4578)))),
         ]
         DAGU, GIT_DIR, MAIN_REF, LOKI = keep
     for name, ok in cases:
