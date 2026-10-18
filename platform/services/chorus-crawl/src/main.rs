@@ -1925,24 +1925,59 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         let spine = std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log"));
         let archives: Vec<String> = std::env::var("CHORUS_SPINE_ARCHIVES").map(|v| v.split(':').filter(|s| !s.is_empty()).map(String::from).collect())
             .unwrap_or_else(|_| vec![format!("{home}/.chorus/chorus.log.archived-20260723.gz")]);
-        let mut text = String::new();
+        // streamed line by line: the spine is gigabytes, never read into memory whole
+        use std::io::BufRead;
+        let mut readers: Vec<Box<dyn BufRead>> = Vec::new();
         for a in &archives {
-            match sh("gzip", &["-dc", a], "/") {
-                Ok(t) => text.push_str(&t),
+            match Command::new("gzip").args(["-dc", a]).stdout(std::process::Stdio::piped()).spawn() {
+                Ok(child) => readers.push(Box::new(std::io::BufReader::new(child.stdout.expect("piped stdout")))),
                 Err(e) => { println!("{which}: UNMEASURED — cannot read archive {a} ({e}); no readings written"); return 3; }
             }
         }
-        match std::fs::read_to_string(&spine) {
-            Ok(t) => text.push_str(&t),
+        match std::fs::File::open(&spine) {
+            Ok(f) => readers.push(Box::new(std::io::BufReader::new(f))),
             Err(e) => { println!("{which}: UNMEASURED — cannot read {spine} ({e}); no readings written"); return 3; }
         }
-        let mut c = count_events(text.lines(), &today);
+        let lines = readers.into_iter().flat_map(|r| r.split(b'\n').map_while(Result::ok).map(|b| String::from_utf8_lossy(&b).into_owned()));
+        let mut c = count_events(lines, &today);
         fill_zero_days(&mut c, &["events", "commands", "unreadable-lines"], &today);
         c
     };
     if counts.is_empty() {
         println!("{which}: UNMEASURED — the source held no countable day; no readings written");
         return 3;
+    }
+    // #4634 AC1/2 — the store and its Bedroom copy: size, and the copy's age.
+    // Recorded for today (the day it was measured). An unreadable copy is
+    // unmeasured: no copy readings, and the pass says so.
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let (src, copy) = if which == "messages" {
+            (std::env::var("CHORUS_PULSE_DB").unwrap_or_else(|_| format!("{root}/platform/pulse/messages.db")),
+             std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| "/Users/jeffbridwell/Backups/library/CascadeProjects/CascadeProjects/chorus/platform/pulse/messages.db".into()))
+        } else {
+            (std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log")),
+             std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| "/Users/jeffbridwell/Backups/library/dot-chorus/.chorus/chorus.log".into()))
+        };
+        let store_bytes = std::fs::metadata(&src).ok().map(|m| m.len());
+        let host = std::env::var("CHORUS_BACKUP_HOST").unwrap_or_else(|_| "192.168.86.242".into());
+        let stat = if host == "local" {
+            sh("stat", &["-f", "%z %m", &copy], "/")
+        } else {
+            sh("ssh", &["-o", "ConnectTimeout=8", "-o", "BatchMode=yes", &host, &format!("stat -f '%z %m' '{copy}'")], "/")
+        };
+        let copy_read = stat.ok().and_then(|t| {
+            let mut p = t.split_whitespace();
+            Some((p.next()?.parse::<u64>().ok()?, p.next()?.parse::<u64>().ok()?))
+        });
+        if copy_read.is_none() {
+            println!("{which}: backup copy UNMEASURED — could not read {copy} on {host}");
+        }
+        let b = backup_readings(&today, store_bytes, copy_read, now_secs());
+        if let Some(h) = backup_stale(&b, &today, 24) {
+            println!("{which}: backup copy is {h} hours old (over 24)");
+        }
+        counts.extend(b);
     }
     let gaps = missing_days(&counts);
     if !gaps.is_empty() {

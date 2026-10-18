@@ -116,11 +116,12 @@ fn json_str<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 /// commands (agent.action — the streams). A line with no readable time is
 /// never counted on a guessed day; it is counted as `unreadable-lines` on the
 /// day of the last line that could be read, so a writer change shows up.
-pub fn count_events<'a>(lines: impl Iterator<Item = &'a str>, today: &str) -> Counts {
+pub fn count_events<S: AsRef<str>>(lines: impl Iterator<Item = S>, today: &str) -> Counts {
     let mut c = Counts::new();
     let mut last_day: Option<String> = None;
     let mut pending_unreadable = 0u64;
     for line in lines {
+        let line = line.as_ref();
         let Some(day) = json_str(line, "timestamp").and_then(boston_day) else {
             match &last_day {
                 Some(d) if d.as_str() < today => *c.entry((d.clone(), "unreadable-lines".into(), None)).or_insert(0) += 1,
@@ -175,6 +176,35 @@ pub fn reading_name(sensor: &str, metric: &str, role: Option<&str>, day: &str) -
     }
 }
 
+/// The unit a metric is measured in, so an age and a size never mix.
+pub fn unit_of(metric: &str) -> &'static str {
+    match metric {
+        "backup-age" => "hours",
+        "backup-bytes" | "store-bytes" => "bytes",
+        _ => "count",
+    }
+}
+
+/// What a sensor read about its store and its backup copy, for one day: the
+/// store's size, the copy's size and how old the copy is. A copy that could
+/// not be read gives no copy readings (unmeasured), never a zero.
+pub fn backup_readings(day: &str, store_bytes: Option<u64>, copy: Option<(u64, u64)>, now_secs: u64) -> Counts {
+    let mut c = Counts::new();
+    if let Some(b) = store_bytes {
+        c.insert((day.to_string(), "store-bytes".into(), None), b);
+    }
+    if let Some((bytes, mtime)) = copy {
+        c.insert((day.to_string(), "backup-bytes".into(), None), bytes);
+        c.insert((day.to_string(), "backup-age".into(), None), now_secs.saturating_sub(mtime) / 3600);
+    }
+    c
+}
+
+/// A copy is stale when it is more than `max_hours` old (the alert's rule).
+pub fn backup_stale(c: &Counts, day: &str, max_hours: u64) -> Option<u64> {
+    c.get(&(day.to_string(), "backup-age".to_string(), None)).copied().filter(|h| *h > max_hours)
+}
+
 /// The SensorReading rows for a set of counts, as (name, fields).
 pub fn reading_rows(sensor: &str, counts: &Counts, run: &str) -> Vec<(String, Vec<(String, String)>)> {
     counts
@@ -185,7 +215,7 @@ pub fn reading_rows(sensor: &str, counts: &Counts, run: &str) -> Vec<(String, Ve
                 ("readingDay".to_string(), day.clone()),
                 ("readingMetric".to_string(), metric.clone()),
                 ("readingValue".to_string(), v.to_string()),
-                ("readingUnit".to_string(), "count".to_string()),
+                ("readingUnit".to_string(), unit_of(metric).to_string()),
                 ("readingRun".to_string(), run.to_string()),
             ];
             if let Some(r) = role {
@@ -351,5 +381,27 @@ mod tests {
         assert_eq!(create.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["events-events-2026-10-17"]);
         assert_eq!(update.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["events-events-2026-10-16"]);
         assert_eq!(unchanged, 1);
+    }
+
+    #[test]
+    fn backup_readings_carry_bytes_and_hours_and_a_26_hour_copy_is_stale() {
+        let now = 1_000_000;
+        let c = backup_readings("2026-10-18", Some(5_220_000_000), Some((4_400_000_000, now - 26 * 3600)), now);
+        assert_eq!(c.get(&("2026-10-18".into(), "backup-age".into(), None)), Some(&26));
+        assert_eq!(backup_stale(&c, "2026-10-18", 24), Some(26));
+        let rows = reading_rows("events", &c, "r");
+        let unit = |n: &str| rows.iter().find(|r| r.0 == n).and_then(|r| r.1.iter().find(|(k, _)| k == "readingUnit")).map(|(_, v)| v.clone());
+        assert_eq!(unit("events-backup-age-2026-10-18").as_deref(), Some("hours"));
+        assert_eq!(unit("events-backup-bytes-2026-10-18").as_deref(), Some("bytes"));
+    }
+
+    #[test]
+    fn negative_proof_a_fresh_copy_is_not_stale_and_an_unread_copy_writes_nothing() {
+        let now = 1_000_000;
+        let fresh = backup_readings("2026-10-18", Some(10), Some((10, now - 2 * 3600)), now);
+        assert_eq!(backup_stale(&fresh, "2026-10-18", 24), None);
+        let unread = backup_readings("2026-10-18", Some(10), None, now);
+        assert!(unread.get(&("2026-10-18".into(), "backup-age".into(), None)).is_none());
+        assert!(unread.get(&("2026-10-18".into(), "backup-bytes".into(), None)).is_none());
     }
 }
