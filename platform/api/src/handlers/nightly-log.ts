@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- the path is NIGHTLY_LOG (env or the fixed ~/Library/Logs default), never request input (#4579) */
 // #4579 reopen — the nightly runs, read from the run log the runner writes.
 //
 // Jeff 10-18 19:10 ("yes"): stop carrying per-run test results in the graph;
