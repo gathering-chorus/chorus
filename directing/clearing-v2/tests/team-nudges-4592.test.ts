@@ -39,7 +39,7 @@ describe('#4592 a note says its kind', () => {
 });
 
 describe('#4592 the team nudges toggle', () => {
-  test('the room marks nudges and alerts by kind and offers the toggle, on', () => {
+  test('the room marks nudges and alerts by kind and offers the toggle, off by default', () => {
     const html = renderRoomsPage('team', data([
       { id: 'a', from: 'kade', text: '[nudge from kade → silas] ping', kind: 'nudge' },
       { id: 'b', from: 'system', text: '[alert → wren] stale log', kind: 'alert' },
@@ -47,7 +47,8 @@ describe('#4592 the team nudges toggle', () => {
     ]), []);
     expect(html).toMatch(/id="msg-a"[^>]*data-kind="nudge"/);
     expect(html).toMatch(/id="msg-b"[^>]*data-kind="alert"/);
-    expect(html).toMatch(/<input[^>]*id="team-nudges"[^>]*checked/);
+    expect(html).toMatch(/<input[^>]*id="team-nudges"/);
+    expect(html).not.toMatch(/<input[^>]*id="team-nudges"[^>]*checked/);
     expect(html).toContain('body.hide-team-nudges [data-kind]');
   });
 
@@ -58,13 +59,13 @@ describe('#4592 the team nudges toggle', () => {
     expect(html).not.toMatch(/id="msg-c"[^>]*data-kind/);
   });
 
-  test('on by default, remembered per device, under the key the room page reads', () => {
+  test('off by default, remembered per device, under the key the room page reads', () => {
     const s = storage();
-    expect(teamNudgesOn(s)).toBe(true);
-    setTeamNudges(s, false);
     expect(teamNudgesOn(s)).toBe(false);
     setTeamNudges(s, true);
     expect(teamNudgesOn(s)).toBe(true);
+    setTeamNudges(s, false);
+    expect(teamNudgesOn(s)).toBe(false);
     // the page's own toggle script must read the same key the helper writes
     const html = renderRoomsPage('team', data([]), []);
     expect(s.keys()).toHaveLength(1);
