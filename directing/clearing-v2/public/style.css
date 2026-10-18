@@ -923,6 +923,19 @@ tr.you td {
   .app-header {
     padding: 4px 10px;
   }
+  /* #4597 / #4617 — status dots sit beside title in app header without word clutter on narrow width */
+  .app-header .trust-strip .chip {
+    font-size: 0;
+  }
+  .app-header .trust-strip .chip .fail-source-name {
+    display: none;
+  }
+  .app-header .trust-strip .chip i {
+    margin-right: 0;
+  }
+  .app-header .trust-strip {
+    gap: 6px;
+  }
   /* #4575 — on a phone the sender line sits above the text, so the text gets the full width */
   .message { flex-direction: column; gap: 2px; }
   /* #4575 — iOS zooms the page when a field under 16px gets focus; that was the "resize" */
@@ -1037,9 +1050,16 @@ tr.you td {
   flex-shrink: 0;
   transition: border-color 0.15s ease;
   user-select: none;
+  text-decoration: none;
+  color: inherit;
 }
 .actor-tile:hover {
   border-color: var(--accent);
+}
+.actor-tile.on {
+  border-color: var(--accent);
+  background: var(--accentbg);
+  font-weight: 600;
 }
 .actor-tile-info {
   display: flex;

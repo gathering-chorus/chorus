@@ -468,6 +468,11 @@ const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style=
         <div class="card-ac-list" id="drawer-card-ac"></div>
       </div>
 
+      <div id="drawer-card-comments-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
+        <div class="sec-t" style="margin-bottom:6px">Recent Comments</div>
+        <div class="card-comments-list" id="drawer-card-comments"></div>
+      </div>
+
       <div id="drawer-card-cws-container" style="margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
         <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
           <div class="sec-t">Pipeline State <span class="meta mono">/cws</span></div>
@@ -501,6 +506,8 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       var descEl = document.getElementById('drawer-card-desc');
       var acCont = document.getElementById('drawer-card-ac-container');
       var acEl = document.getElementById('drawer-card-ac');
+      var commentsCont = document.getElementById('drawer-card-comments-container');
+      var commentsEl = document.getElementById('drawer-card-comments');
       var cwsEl = document.getElementById('drawer-card-cws');
       var cwsMotion = document.getElementById('drawer-card-cws-motion');
       var cwsInd = document.getElementById('drawer-cws-indicator');
@@ -516,11 +523,13 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       if (descEl) descEl.textContent = '';
       if (acCont) acCont.style.display = 'none';
       if (acEl) acEl.innerHTML = '';
+      if (commentsCont) commentsCont.style.display = 'none';
+      if (commentsEl) commentsEl.innerHTML = '';
       if (cwsEl) cwsEl.textContent = 'Loading pipeline state...';
       if (cwsMotion) cwsMotion.style.display = 'none';
       if (cwsInd) cwsInd.innerHTML = '<span class="chip">reading pipeline...</span>';
 
-      // 1. Fetch card details first so title, owner, status, description, and AC display immediately
+      // 1. Fetch card details first so title, owner, status, description, AC, and comments display immediately
       try {
         var res = await fetch('/api/cards/' + id);
         if (String(id) === currentCardDrawerId) {
@@ -548,6 +557,18 @@ const ROOM_DRAWER_SCRIPT = `  <script>
                     '</div>';
                 }).join('');
                 acCont.style.display = 'block';
+              }
+
+              if (c.comments && c.comments.length > 0 && commentsEl && commentsCont) {
+                commentsEl.innerHTML = c.comments.slice(-3).map(function(item) {
+                  var authorText = item.author ? '<b>' + drawerEscape(item.author) + '</b>' : '<b>comment</b>';
+                  var timeText = item.time ? ' <span class="meta" style="font-size:11px">' + drawerEscape(item.time) + '</span>' : '';
+                  return '<div class="comment-item" style="margin:8px 0;padding:6px 8px;background:var(--bg-primary, rgba(0,0,0,0.03));border:1px solid var(--line2);border-radius:4px;font-size:12.5px;line-height:1.4">' +
+                    '<div style="margin-bottom:3px;font-size:11.5px">' + authorText + timeText + '</div>' +
+                    '<div style="white-space:pre-wrap">' + drawerEscape(item.text) + '</div>' +
+                    '</div>';
+                }).join('');
+                commentsCont.style.display = 'block';
               }
             }
           } else {
@@ -592,8 +613,9 @@ const ROOM_DRAWER_SCRIPT = `  <script>
             } else if (p.status === 'failed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">failed' + (p.failedStep ? ' at ' + drawerEscape(p.failedStep) : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
-            } else if (p.status === 'unmeasured') {
-              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">unmeasured' + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
+            } else if (p.status === 'unmeasured' || p.status === 'stale' || p.isStale) {
+              var staleLabel = (p.isStale || p.status === 'stale') ? 'stale' : 'unmeasured';
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">' + staleLabel + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
             } else if (p.status === 'landed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-ok">landed</span>';
@@ -720,13 +742,41 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     };
   });
 
+  const peopleRowHtml = `
+    <div class="actor-rail people-row" id="rooms-people-row">
+      <a class="actor-tile team-tile${room === 'team' ? ' on' : ''}" href="/rooms/team" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/team';return false;">
+        <span class="av a-team">#</span>
+        <div class="actor-tile-info">
+          <div class="actor-tile-name"><b>#team</b></div>
+          <div class="actor-tile-card">channel</div>
+        </div>
+      </a>
+      ${railActors.map(a => {
+        const andon = roleAndonLight(a);
+        const cardText = a.cards && a.cards.length > 0
+          ? a.cards.map(c => `#${c.id}`).join(', ')
+          : (a.card ? `#${a.card.id}` : 'no card');
+        const isActive = room.toLowerCase() === a.id.toLowerCase();
+        return `
+          <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
+            <span class="av a-${a.id}">${a.name.charAt(0)}</span>
+            <div class="actor-tile-info">
+              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${escapeHtml(a.name)}</b></div>
+              <div class="actor-tile-card">${escapeHtml(cardText)}</div>
+            </div>
+          </a>
+        `;
+      }).join('')}
+    </div>`;
+
   const content = `
   <div class="rooms-view">
+    ${peopleRowHtml}
     <div class="rooms">
       <main class="chat chat-container" style="flex:1;min-width:0">
         <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
           <div style="min-width:0;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
-            <select id="room-picker" class="room-picker" onchange="window.location.href='/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
+            <select id="room-picker" class="room-picker" onchange="window.location.href=(window.CLEARING_BASE || '') + '/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
               <optgroup label="Rooms">
                 ${data.channels.map(c => `<option value="${c}"${room === c ? ' selected' : ''}># ${c}</option>`).join('')}
               </optgroup>
@@ -804,7 +854,8 @@ ${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reache
   return renderPageShell('Messages today', 'counts', content, sources);
 }
 
-function escapeHtml(t: string): string {
+function escapeHtml(t: string | undefined): string {
+  if (!t) return '';
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 

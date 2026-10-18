@@ -529,6 +529,16 @@ if (composerForm && composerInput) {
   });
 }
 
+function initTrustStripTooltips() {
+  if (typeof document === 'undefined') return;
+  const chips = document.querySelectorAll('.app-header .trust-strip .chip');
+  chips.forEach((chip) => {
+    if (!chip.title) {
+      chip.title = chip.textContent.trim().replace(/\s+/g, ' ');
+    }
+  });
+}
+
 if (typeof window !== 'undefined') {
   // Periodic tile poll as fallback
   setInterval(async () => {
@@ -542,6 +552,7 @@ if (typeof window !== 'undefined') {
   }, 5000);
 
   initStream();
+  initTrustStripTooltips();
 }
 
 if (typeof module !== 'undefined' && module.exports) {
