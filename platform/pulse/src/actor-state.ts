@@ -502,7 +502,7 @@ function deriveOneActor(
     ? actionFact.recentActions
     : (actionFact?.lastActionAt
         ? [{ action: finalStateValue, timestamp: actionFact.lastActionAt }]
-        : [{ action: finalStateValue, timestamp: observedAt }]);
+        : []);
 
   return {
     aboutPrincipal: principal,

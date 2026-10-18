@@ -220,6 +220,59 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     expect(html).toContain('werk-test');
   });
 
+  test('AC4: The Board tab shows each card owner as awake, working or quiet, from the same pulse read', () => {
+    const roles: RolesData = {
+      actors: [
+        {
+          id: 'abby-normal',
+          name: 'Abby Normal',
+          state: 'building',
+          activity: 'acting',
+          cards: [{ id: 4595, title: 'Clearing v2 streams' }],
+          sessions: ['pane · live'],
+        },
+        {
+          id: 'silas',
+          name: 'Silas',
+          state: 'available',
+          activity: 'idle',
+          cards: [{ id: 4580, title: 'Ops watchdog' }],
+          sessions: ['pane · live'],
+        },
+        {
+          id: 'kade',
+          name: 'Kade',
+          state: 'off',
+          activity: 'idle',
+          cards: [{ id: 4577, title: 'Pairing engine' }],
+          sessions: [],
+        },
+      ],
+    };
+
+    const columns: BoardColumn[] = [
+      {
+        name: 'WIP',
+        ok: true,
+        cards: [
+          { id: 4595, title: 'Clearing v2 streams', owner: 'Abby Normal' },
+          { id: 4580, title: 'Ops watchdog', owner: 'Silas' },
+          { id: 4577, title: 'Pairing engine', owner: 'Kade' },
+        ],
+      },
+    ];
+
+    const htmlBoard = renderBoardPage(columns, null, [], roles);
+    expect(htmlBoard).toContain('presence-working');
+    expect(htmlBoard).toContain('presence-awake');
+    expect(htmlBoard).toContain('presence-quiet');
+
+    // Individual ownerPresence helper returns the exact classification
+    expect(ownerPresence('Abby Normal', roles).status).toBe('working');
+    expect(ownerPresence('Silas', roles).status).toBe('awake');
+    expect(ownerPresence('Kade', roles).status).toBe('quiet');
+  });
+
   test('Negative proof: a role inactive for 10 minutes shows as quiet, not working', () => {
     const inactiveActor = {
       id: 'kade',

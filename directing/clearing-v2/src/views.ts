@@ -183,12 +183,6 @@ export function ownerPresence(ownerName?: string, rolesData?: RolesData): { stat
   if (actor.activity === 'acting') {
     return { status: 'working', text: 'working', dotClass: 'd-ok andon-working' };
   }
-  if (actor.activity === 'idle') {
-    return { status: 'quiet', text: 'quiet', dotClass: 'd-mut' };
-  }
-  if (actor.state === 'building' || actor.state === 'pairing' || actor.state === 'reviewing') {
-    return { status: 'working', text: 'working', dotClass: 'd-ok andon-working' };
-  }
   if (actor.state === 'available' || (actor.sessions && actor.sessions.some((s) => s.includes('live')))) {
     return { status: 'awake', text: 'awake', dotClass: 'd-info' };
   }
