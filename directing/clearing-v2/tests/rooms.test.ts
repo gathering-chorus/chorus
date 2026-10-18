@@ -53,24 +53,22 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
       directRoles: ['Wren', 'Silas', 'Kade', 'Abby Normal'],
       messages: [],
     }, []);
-    expect(rendered).toContain('href="/rooms/gathering"');
+    expect(rendered).toContain('id="room-picker"');
+    expect(rendered).toContain('<option value="gathering" selected># gathering</option>');
 
     const res = await fetch(`http://127.0.0.1:${port}/rooms/gathering`);
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // Sidebar has rooms list with links
-    expect(html).toContain('href="/rooms/team"');
-    expect(html).toContain('href="/rooms/gathering"');
+    // Room picker has rooms list
+    expect(html).toContain('value="team"');
+    expect(html).toContain('value="gathering"');
 
-    // Gathering is highlighted active
-    expect(html).toMatch(/<div class="r on"><a href="\/rooms\/gathering"/);
+    // Gathering is highlighted active (selected)
+    expect(html).toContain('<option value="gathering" selected># gathering</option>');
 
     // Negative proof: team is NOT active
-    expect(html).not.toMatch(/<div class="r on"><a href="\/rooms\/team"/);
-
-    // Header displays room name
-    expect(html).toContain('# gathering');
+    expect(html).not.toContain('<option value="team" selected>');
 
     // Negative proof: Dead relay must show 'relay disconnected', never 'live relay' (#3734)
     expect(html).toContain('relay disconnected');
@@ -84,23 +82,21 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
       directRoles: ['Wren', 'Silas', 'Kade', 'Abby Normal'],
       messages: [],
     }, []);
-    expect(rendered).toContain('href="/rooms/wren"');
+    expect(rendered).toContain('id="room-picker"');
+    expect(rendered).toContain('<option value="wren" selected>@ Wren</option>');
 
     const res = await fetch(`http://127.0.0.1:${port}/rooms/wren`);
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // Direct roles are clickable links in sidebar
-    expect(html).toContain('href="/rooms/wren"');
-    expect(html).toContain('href="/rooms/silas"');
-    expect(html).toContain('href="/rooms/kade"');
-    expect(html).toContain('href="/rooms/abby-normal"');
+    // Direct roles are present in room picker
+    expect(html).toContain('value="wren"');
+    expect(html).toContain('value="silas"');
+    expect(html).toContain('value="kade"');
+    expect(html).toContain('value="abby-normal"');
 
-    // Wren is highlighted active in direct list
-    expect(html).toMatch(/<div class="r on"><a href="\/rooms\/wren"/);
-
-    // Header displays direct conversation
-    expect(html).toContain('@ Wren');
+    // Wren is selected in room picker
+    expect(html).toContain('<option value="wren" selected>@ Wren</option>');
   });
 
   test('3. NEGATIVE PROOF: messages are scoped by room and do not leak across rooms', async () => {

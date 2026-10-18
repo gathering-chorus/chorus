@@ -62,7 +62,7 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     ],
   };
 
-  test('AC1 & AC2: Rooms tab displays the actor rail with all 4 roles and streams from pulse', () => {
+  test('AC1 & AC2: Rooms tab drops actor rail (#4617) while preserving stream drawer and role stream support', () => {
     const roomsData: RoomsData = {
       room: 'team',
       channels: ['team', 'gathering'],
@@ -72,14 +72,8 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     };
 
     const html = renderRoomsPage('team', roomsData, []);
-    expect(html).toContain('id="rooms-actor-rail"');
-    expect(html).toContain('actor-tile-wren');
-    expect(html).toContain('actor-tile-silas');
-    expect(html).toContain('actor-tile-kade');
-    expect(html).toContain('actor-tile-abby-normal');
-
-    // Abby shows WIP cards in rail
-    expect(html).toContain('#4591, #4595');
+    // #4617: Actor rail is dropped on Rooms (Teammates has it)
+    expect(html).not.toContain('id="rooms-actor-rail"');
     // Stream drawer markup is present
     expect(html).toContain('id="stream-drawer"');
     expect(html).toContain('openRoleStream');
@@ -104,7 +98,7 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     expect(silasAndon.cssClass).toBe('andon-idle');
   });
 
-  test('AC6: Rooms tab displays ROOMS and DIRECT lists on one line with andon light beside each name', () => {
+  test('AC6: Rooms tab displays Rooms and Direct in #room-picker dropdown (#4617)', () => {
     const roomsData: RoomsData = {
       room: 'team',
       channels: ['team', 'gathering', 'chorus'],
@@ -114,12 +108,11 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     };
 
     const html = renderRoomsPage('team', roomsData, []);
-    expect(html).toContain('rooms-nav-inline');
-    expect(html).toContain('Rooms');
-    expect(html).toContain('Direct');
-    // Each direct role has andon dot beside name
-    expect(html).toContain('andon-dot andon-waiting'); // Wren
-    expect(html).toContain('andon-dot andon-working'); // Abby Normal
+    expect(html).toContain('id="room-picker"');
+    expect(html).toContain('label="Rooms"');
+    expect(html).toContain('label="Direct"');
+    expect(html).toContain('<option value="team" selected># team</option>');
+    expect(html).toContain('<option value="wren">@ Wren</option>');
   });
 
   test('AC7 & AC8: Thinking text is marked as thinking (not reply) and toggle controls visibility', () => {
