@@ -7,7 +7,7 @@ import { liveIndexDbPath, startTestApp } from './lib/test-app';
 
 describe('#4152 api test harness brings its own index.db', () => {
   const live = liveIndexDbPath();
-  const haveLive = fs.existsSync(live);
+  const haveLive = fs.existsSync(live) && fs.statSync(live).size >= 1024 * 1024;
 
   test('CHORUS_DB_PATH points at a seeded copy, not the live file', () => {
     if (!haveLive) return; // no live index on this box: nothing to isolate
