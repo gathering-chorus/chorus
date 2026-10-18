@@ -417,9 +417,19 @@ fi
 # Clearing external reachability (from network perspective — bind check)
 # #3719 rider — probe /health, not / : the clearing stopped serving its root
 # path (404) while /health stays 200, and the / probe false-fired 2026-07-31.
-clearing_result=$(curl -s --max-time 5 "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+# #4579/#4633 (Kade, measured 10-18 19:52) — the check exists to catch a
+# 127.0.0.1-only bind. The Clearing answers the LAN with a 302 to its public
+# host by design, so that redirect proves the bind; a 302 anywhere else does
+# not. The address is this Mac's own LAN IP today (DHCP moves it: .36 went
+# stale), CHORUS_HOME_IP being the seam a test hands a stub.
+HOME_IP="${CHORUS_HOME_IP:-$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)}"
+clearing_probe=$(curl -s --max-time 5 "http://${HOME_IP}:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code} %{redirect_url}" 2>/dev/null || echo "000")
+clearing_result=${clearing_probe%% *}
+clearing_redirect=${clearing_probe#* }
 if [ "$clearing_result" = "200" ]; then
-  pass "clearing-external" "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/health → ${clearing_result}"
+  pass "clearing-external" "http://${HOME_IP}:${CLEARING_PORT}/health → ${clearing_result}"
+elif [ "$clearing_result" = "302" ] && [[ "$clearing_redirect" == https://clearing.lightlifeurbangardens.com/* ]]; then
+  pass "clearing-external" "http://${HOME_IP}:${CLEARING_PORT}/health → 302 to the public host (LAN-bound)"
 else
   # try localhost as fallback to distinguish "down" vs "not externally bound"
   local_result=$(curl -s --max-time 5 "http://localhost:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
