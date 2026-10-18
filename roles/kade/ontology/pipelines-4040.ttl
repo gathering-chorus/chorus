@@ -232,7 +232,7 @@ chorus:PipelineRunShape a sh:NodeShape ;
     sh:property [ sh:path chorus:runDurationMs ] ;
     sh:property [ sh:path chorus:testsRun ] ;
     sh:property [ sh:path chorus:testsFailed ] ;
-    # #4272 — the writer (nightly_run.rs:684) sends these; the store declared
+    # #4272 — the writer (werk-test's run record, then in a file since retired by #4541) sends these; the store declared
     # none of them, so the 08:05 run's emit was REFUSED 422 and wrote no row.
     sh:property [ sh:path chorus:suitesRun ] ;
     sh:property [ sh:path chorus:suitesFailed ] ;
