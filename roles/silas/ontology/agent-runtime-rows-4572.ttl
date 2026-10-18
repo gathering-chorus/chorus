@@ -23,13 +23,18 @@
 # transcript line of type USER_INPUT. Reply shapes are still the documented
 # ones until the adapter's first live run.
 chorus:runtime-agy a chorus:AgentRuntime ;
-    dcterms:created "2026-10-14T15:28:43Z" ; dcterms:modified "2026-10-17T00:00:00Z" ;
-    dcterms:creator chorus:principal-silas ; dcterms:contributor chorus:principal-silas ;
+    dcterms:created "2026-10-14T15:28:43Z" ; dcterms:modified "2026-10-18T00:00:00Z" ;
+    dcterms:creator chorus:principal-silas ; dcterms:contributor chorus:principal-silas , chorus:principal-wren ;
     chorus:comment "Antigravity CLI (agy), the program Abby Normal runs on: its binary, sign-in, hook events and input fields." ;
     rdfs:label "Antigravity CLI (agy)" ;
     chorus:label "Antigravity CLI (agy)" ;
     chorus:runtimeBinary "agy" ;
     chorus:runtimeAuth "google-login" ;
+    # #4544: agy saves its refreshed Google token to the keychain every hour; her
+    # account never logs in at the console, so macOS asked Jeff on his screen
+    # (measured 10-17/18: every hour at :24-:27). With SSH_CONNECTION set agy
+    # keeps the token in a file (its own fallback, measured from the binary 10-15).
+    chorus:runtimeEnv "SSH_CONNECTION=chorus-local 0 local 0" ;
     chorus:runtimeHooksFile ".gemini/config/hooks.json" ;
     chorus:runtimeMcpFile ".gemini/config/mcp_config.json" ;
     chorus:runtimeHooksLayout "named-hooks" ;

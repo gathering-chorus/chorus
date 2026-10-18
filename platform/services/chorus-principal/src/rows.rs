@@ -763,6 +763,15 @@ pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir
         let var = rs(row, "runtimeKeyEnv").filter(|v| v.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')).ok_or(format!("{runtime}: api-key sign-in needs runtimeKeyEnv"))?;
         parts.push(format!("{{ [ ! -f ~/.chorus/secrets/{binary}.key ] || export {var}=\"$(cat ~/.chorus/secrets/{binary}.key)\"; }}"));
     }
+    // #4544 — variables the row says this runtime starts with (agy: SSH_CONNECTION,
+    // so it keeps its token in a file, not a keychain her account cannot open).
+    for pair in rlist(row, "runtimeEnv") {
+        let (k, v) = pair.split_once('=').filter(|(k, v)| {
+            !k.is_empty() && k.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b" ._-/:".contains(&b))
+        }).ok_or(format!("{runtime}: runtimeEnv entry {pair:?} is not NAME=value with a safe name and value"))?;
+        parts.push(format!("export {k}='{v}'"));
+    }
     for (file_key, content) in [("runtimeHooksFile", hooks), ("runtimeMcpFile", mcp)] {
         let rel = rs(row, file_key).filter(|p| safe(p) && !p.contains("..")).ok_or(format!("{runtime}: no usable {file_key}"))?;
         parts.push(format!("mkdir -p \"$(dirname ~/{rel})\" && echo {} | base64 -d > ~/{rel}", b64(content.to_string().as_bytes())));

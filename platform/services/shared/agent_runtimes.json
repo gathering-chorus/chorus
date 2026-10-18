@@ -33,6 +33,9 @@
       ],
       "runtimeAuth": "google-login",
       "runtimeBinary": "agy",
+      "runtimeEnv": [
+        "SSH_CONNECTION=chorus-local 0 local 0"
+      ],
       "runtimeHooksFile": ".gemini/config/hooks.json",
       "runtimeHooksLayout": "named-hooks",
       "runtimeMcpFile": ".gemini/config/mcp_config.json",
