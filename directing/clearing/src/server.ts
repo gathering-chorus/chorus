@@ -13,7 +13,7 @@ import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
 import path from 'path';
 import { TilePoller } from './tiles';
-import { MessageRouter, isRoleName, type ChannelMessage } from './router';
+import { MessageRouter, isRoleName, publishesToRoom, type ChannelMessage } from './router';
 import { RoomJournal } from './room-journal';
 import { randomUUID } from 'crypto';
 import { verifyShareSession, shareSessionFromHeader, readCookieKey, relayRenew } from './share-session';
@@ -1501,7 +1501,7 @@ messageRouter.on('message', (msg) => {
   // #3823 — publish outbound, but NEVER re-publish what arrived from the relay:
   // otherwise every Clearing that receives a note broadcasts it again and the
   // room amplifies itself into a loop.
-  if (room && !msg.buzzInbound) room.publish(msg);
+  if (room && publishesToRoom(msg)) room.publish(msg);
 });
 
 // #3831 — NOT started at import. See startBackgroundWork() below.
