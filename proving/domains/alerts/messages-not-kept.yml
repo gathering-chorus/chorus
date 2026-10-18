@@ -11,7 +11,7 @@ name: messages-not-kept
 description: yesterday's messages-sent and messages-kept readings differ
 severity: warning
 owner: silas
-schedule: "17 * * * *"
+schedule: "17 6 * * *"
 
 check: |
   # today's and yesterday's readings only, filtered by day, so a full page can

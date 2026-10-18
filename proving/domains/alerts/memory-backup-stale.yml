@@ -11,7 +11,7 @@ name: memory-backup-stale
 description: the Bedroom copy of pulse messages.db or the spine is older than 24 hours
 severity: warning
 owner: silas
-schedule: "17 * * * *"
+schedule: "17 6 * * *"
 
 check: |
   # today's and yesterday's readings only, filtered by day, so a full page can

@@ -82,7 +82,7 @@ chorus:SensorShape a sh:NodeShape ;
     sh:targetClass chorus:Sensor ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:heralds" ;
     chorus:generatedBy "athena-model" ;
-    sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorReads ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorWrites ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:takesTarget ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;

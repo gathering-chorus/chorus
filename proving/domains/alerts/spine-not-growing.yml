@@ -1,4 +1,4 @@
-# spine-not-growing.yml — #4634. The spine stopped growing: today's size is not above yesterday's, or yesterday read 0 events.
+# spine-not-growing.yml — #4634. The spine stopped growing: not written in the last 10 minutes (0.17 h), or yesterday read 0 events.
 #
 # Reads ONLY the herald sensors' SensorReadings (Jeff, 2026-10-18: monitors and
 # alerts run on sensor output; only sensors touch the world). READINGS_URL is
@@ -8,10 +8,10 @@
 # alert-runner contract: stdout must equal literal "ok" for success.
 
 name: spine-not-growing
-description: the spine (events store) did not grow since yesterday, or yesterday had 0 events
+description: the spine was not written in the last 10 minutes, or yesterday had 0 events
 severity: warning
 owner: silas
-schedule: "17 * * * *"
+schedule: "*/10 * * * *"
 
 check: |
   # today's and yesterday's readings only, filtered by day, so a full page can
@@ -35,13 +35,13 @@ check: |
           if r.get("readingOfSensor") == sensor and r.get("readingMetric") == metric and str(r.get("readingDay", ""))[:10] == day and not r.get("readingRole"):
               return float(r.get("readingValue"))
       return None
-  now, prev, ev = val("events", "store-bytes", TODAY), val("events", "store-bytes", YDAY), val("events", "events", YDAY)
-  if now is None: print(f"no-reading:events-store-bytes-{TODAY}"); sys.exit(1)
+  age, ev = val("spine", "spine-write-age", TODAY), val("events", "events", YDAY)
+  if age is None: print(f"no-reading:spine-spine-write-age-{TODAY}"); sys.exit(1)
+  if age > 0.17: print(f"stalled:spine-last-written-{age:.2f}h-ago>0.17h"); sys.exit(1)
   if ev is not None and ev == 0: print(f"gap:0-events-on-{YDAY}"); sys.exit(1)
-  if prev is not None and now <= prev: print(f"stalled:spine-{int(now)}b<={int(prev)}b"); sys.exit(1)
   print("ok")
   '
 
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "spine-not-growing: rule the spine (events store) did not grow since yesterday, or yesterday had 0 events: $STATUS" 2>/dev/null || true
+  "$OPS_NUDGE" silas "spine-not-growing: rule the spine was not written in the last 10 minutes, or yesterday had 0 events: $STATUS" 2>/dev/null || true

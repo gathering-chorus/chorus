@@ -62,14 +62,14 @@ PY
   [ "$output" = "ok" ]
 }
 
-@test "spine: a day with 0 events fires, and a spine that did not grow fires" {
-  readings events store-bytes "$TODAY" 200 events store-bytes "$YDAY" 100 events events "$YDAY" 0
+@test "spine: not written for 12 minutes fires; yesterday with 0 events fires; fresh and busy is ok" {
+  readings spine spine-write-age "$TODAY" 0.2 events events "$YDAY" 9
+  run check spine-not-growing
+  [[ "$output" == "stalled:spine-last-written-0.20h-ago>0.17h" ]] || return 1
+  readings spine spine-write-age "$TODAY" 0.01 events events "$YDAY" 0
   run check spine-not-growing
   [[ "$output" == "gap:0-events-on-$YDAY" ]] || return 1
-  readings events store-bytes "$TODAY" 100 events store-bytes "$YDAY" 100 events events "$YDAY" 9
-  run check spine-not-growing
-  [[ "$output" == stalled:* ]] || return 1
-  readings events store-bytes "$TODAY" 200 events store-bytes "$YDAY" 100 events events "$YDAY" 9
+  readings spine spine-write-age "$TODAY" 0.01 events events "$YDAY" 9
   run check spine-not-growing
   [ "$output" = "ok" ]
 }

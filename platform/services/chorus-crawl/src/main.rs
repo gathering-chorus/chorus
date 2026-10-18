@@ -1813,7 +1813,12 @@ fn run_sensor(args: &[String]) -> i32 {
             bad => { eprintln!("chorus-crawl sensor: unknown arg {bad} — nothing ran"); return 2; }
         }
     }
-    let mut pass: Vec<String> = if sensor == "files" { vec![] } else { vec![sensor.clone()] };
+    // #4634 — the spine sensor is the events pass's 10-minute write-age check
+    let mut pass: Vec<String> = match sensor.as_str() {
+        "files" => vec![],
+        "spine" => vec!["events".to_string(), "--age-only".to_string()],
+        _ => vec![sensor.clone()],
+    };
     if let Some(t) = &target { pass.extend(["--target".to_string(), t.clone()]); }
     if dry_run { pass.push("--dry-run".to_string()); }
     let home = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
@@ -1921,7 +1926,7 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
             Ok(t) => {
                 let age = std::time::SystemTime::now().duration_since(t).map(|d| d.as_secs_f64()).unwrap_or(0.0) / 3600.0;
                 println!("events: spine last written {age:.2} h ago");
-                vec![decimal_reading("events", "spine-write-age", &today, age, &std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| "events-unrecorded".into()))]
+                vec![decimal_reading(if age_only { "spine" } else { "events" }, "spine-write-age", &today, age, &std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| "events-unrecorded".into()))]
             }
             Err(e) => { println!("events: UNMEASURED — cannot read {spine} ({e}); no readings written"); return 3; }
         }
