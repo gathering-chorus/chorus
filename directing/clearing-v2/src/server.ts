@@ -118,6 +118,7 @@ function getTestOverrides(req: Request) {
     pulseUrl: req.headers['x-pulse-url'] as string | undefined,
     rolesUrl: req.headers['x-roles-url'] as string | undefined,
     cardsUrl: req.headers['x-cards-url'] as string | undefined,
+    athenaCardUrl: req.headers['x-athena-card-url'] as string | undefined,
     alertsUrl: req.headers['x-alerts-url'] as string | undefined,
   };
 }
@@ -220,13 +221,26 @@ function registerReadApiRoutes(ctx: RouteContext): void {
       res.status(400).json({ ok: false, error: 'invalid card id' });
       return;
     }
-    const { cardsUrl } = getTestOverrides(req);
-    const card = await dataService.getCard(cardId, { cardsUrl });
+    const { cardsUrl, athenaCardUrl } = getTestOverrides(req);
+    const card = await dataService.getCard(cardId, { cardsUrl, athenaCardUrl });
     if (!card) {
       res.status(404).json({ ok: false, error: `card #${cardId} not found` });
       return;
     }
     res.json({ ok: true, card });
+  });
+
+  // #4598: Read live /cws pipeline status for a card from chorus-werk-status
+  app.get(['/api/cards/:id/pipeline', '/api/cards/:id/cws'], async (req: Request, res: Response) => {
+    const rawId = req.params.id;
+    const idStr = Array.isArray(rawId) ? rawId[0] : rawId;
+    const cardId = parseInt(idStr, 10);
+    if (isNaN(cardId)) {
+      res.status(400).json({ ok: false, error: 'invalid card id' });
+      return;
+    }
+    const pipeline = await dataService.getCardPipeline(cardId);
+    res.json({ ok: true, pipeline });
   });
 
   app.get('/api/events', (req: Request, res: Response) => {
@@ -295,7 +309,9 @@ export interface CreateAppOptions {
   /** Accepted for older callers; unread since #4563 (roles, today and the strip read pulse). */
   boardUrl?: string;
   cardsUrl?: string;
+  athenaCardUrl?: string;
   alertsUrl?: string;
+  runWerkStatus?: (cardId: number) => Promise<string>;
   knownKeys?: Map<string, string>;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
@@ -310,6 +326,7 @@ interface ResolvedUrls {
   relayUrl: string;
   rolesUrl: string;
   cardsUrl: string;
+  athenaCardUrl?: string;
   alertsUrl: string;
 }
 
@@ -319,6 +336,7 @@ function resolveUrls(options: CreateAppOptions = {}): ResolvedUrls {
     relayUrl: options.relayUrl ?? BUZZ_RELAY_URL,
     rolesUrl: options.rolesUrl || ROLES_URL,
     cardsUrl: options.cardsUrl || CARDS_URL,
+    athenaCardUrl: options.athenaCardUrl,
     alertsUrl: options.alertsUrl || ALERTS_URL,
   };
 }
@@ -464,8 +482,10 @@ export function createApp(options?: CreateAppOptions) {
   const dataService = new DataService({
     rolesUrl: urls.rolesUrl,
     cardsUrl: urls.cardsUrl,
+    athenaCardUrl: urls.athenaCardUrl,
     alertsUrl: urls.alertsUrl,
     pulseUrl: urls.pulseUrl,
+    runWerkStatus: options?.runWerkStatus,
     relay,
     router,
     relayConfigured,
