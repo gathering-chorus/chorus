@@ -79,11 +79,11 @@ export function renderPageShell(
       <h1>The Clearing <span class="badge-v2">v2</span></h1>
       <span class="relay-status" id="relay-indicator">Connecting...</span>
     </div>
+    <div class="strip trust-strip" id="trust-dots">
+      ${chipsHtml}
+    </div>
   </header>
   ${renderNav(activeNav, counts)}
-  <div class="strip trust-strip">
-    ${chipsHtml}
-  </div>
   ${bodyContent}
   ${activeNav === 'rooms' ? '' : TEAM_COMPOSER}
   <script src="/app.js"></script>
@@ -617,42 +617,6 @@ const ROOM_DRAWER_SCRIPT = `  <script>
     }
   </script>`;
 
-function renderActorRailHtml(railActors: ActorRow[]): string {
-  return `
-    <div class="actor-rail" id="rooms-actor-rail">
-      ${railActors.map(a => {
-        const andon = roleAndonLight(a);
-        const cardText = a.cards && a.cards.length > 0
-          ? a.cards.map(c => `#${c.id}`).join(', ')
-          : (a.card ? `#${a.card.id}` : 'no card');
-        return `
-          <div class="actor-tile actor-tile-${a.id}" data-role="${a.id}" onclick="openRoleStream('${a.id}');return false;">
-            <span class="av a-${a.id}">${a.name.charAt(0)}</span>
-            <div class="actor-tile-info">
-              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${a.name}</b></div>
-              <div class="actor-tile-card">${escapeHtml(cardText)}</div>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>`;
-}
-
-function renderInlineNavHtml(data: RoomsData, room: string, railActors: ActorRow[]): string {
-  return `
-    <div class="rooms-nav-inline" id="rooms-nav-bar">
-      <span class="rooms-inline-group"><span class="rooms-nav-label">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
-      <span class="sep">·</span>
-      <span class="rooms-inline-group"><span class="rooms-nav-label">Direct</span> ${data.directRoles.map(dr => {
-        const slug = dr.toLowerCase().replace(/\s+/g, '-');
-        const actor = railActors.find(a => a.id.toLowerCase() === slug || a.name.toLowerCase() === dr.toLowerCase());
-        const andon = roleAndonLight(actor);
-        const isActive = room === slug;
-        return `<div class="r ${isActive ? 'on' : ''}"><a href="/rooms/${slug}" style="text-decoration:none;color:inherit"><span class="andon-dot ${andon.cssClass}"></span>${dr}</a></div>`;
-      }).join('')}</span>
-    </div>`;
-}
-
 export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
   const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
   const isDirect = Boolean(directRoleMatch);
@@ -672,17 +636,24 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     };
   });
 
-  const actorRailHtml = renderActorRailHtml(railActors);
-  const inlineNavHtml = renderInlineNavHtml(data, room, railActors);
-
   const content = `
   <div class="rooms-view">
-    ${actorRailHtml}
-    ${inlineNavHtml}
     <div class="rooms">
       <main class="chat chat-container" style="flex:1;min-width:0">
         <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
-          <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><b>${headerTitle}</b> <span class="meta" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${data.directRoles.join(', ')}</span></div>
+          <div style="min-width:0;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
+            <select id="room-picker" class="room-picker" onchange="window.location.href='/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
+              <optgroup label="Rooms">
+                ${data.channels.map(c => `<option value="${c}"${room === c ? ' selected' : ''}># ${c}</option>`).join('')}
+              </optgroup>
+              <optgroup label="Direct">
+                ${data.directRoles.map(dr => {
+                  const slug = dr.toLowerCase().replace(/\s+/g, '-');
+                  return `<option value="${slug}"${room === slug ? ' selected' : ''}>@ ${dr}</option>`;
+                }).join('')}
+              </optgroup>
+            </select>
+          </div>
           <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
             <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
             <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges"> nudges</label>

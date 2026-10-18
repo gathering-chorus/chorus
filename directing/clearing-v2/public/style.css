@@ -178,6 +178,17 @@ p { margin: 0; max-width: 72ch; }
 .relay-status.connected {
   color: var(--ok);
 }
+.app-header .trust-strip {
+  background: transparent;
+  border-bottom: none;
+  padding: 0;
+  min-height: auto;
+  gap: 8px;
+  margin-left: auto;
+}
+.app-header .trust-strip .chip {
+  cursor: default;
+}
 
 /* Top Nav */
 nav.top {
