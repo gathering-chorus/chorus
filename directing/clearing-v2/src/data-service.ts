@@ -55,6 +55,10 @@ function firstSet(explicit: string | undefined, fromEnv: string | undefined, fal
   return explicit || fromEnv || fallback;
 }
 
+/** #4597 — Jeff, 10-18 17:42: "i dont want 8 pages worth of chats i want 1 page".
+ *  The room shows its newest messages, about one screen, not the last 100. */
+export const ROOM_PAGE_MESSAGES = 15;
+
 export class DataService {
   private defaultRolesUrl: string;
   private defaultCardsUrl: string;
@@ -154,7 +158,7 @@ export class DataService {
       (c) => !directRoles.some((dr) => slug(dr) === c.toLowerCase())
     );
 
-    const recent: RecentMessage[] = this.router.getRecent(100, room);
+    const recent: RecentMessage[] = this.router.getRecent(ROOM_PAGE_MESSAGES, room);
     const messages = recent.map((m) => {
       const cardMatch = m.text.match(/#(\d+)/);
       return {
