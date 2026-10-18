@@ -141,6 +141,11 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/wren/ontology/awareness-4018.ttl"),
             format!("{root}/roles/wren/ontology/product-design-4018.ttl"),
             format!("{root}/roles/wren/ontology/pulse-settings-4490.ttl"),  // #4490: pulse-api's settings as Property rows
+            // #4576: the AgentRuntime class, its fields and shape. Outside the set, the
+            // class never reached the store (prod: the shape and 0 triples of the class),
+            // so identity's claim on it pointed at nothing a validator calls a class.
+            format!("{root}/roles/silas/ontology/agent-runtimes-4444.ttl"),
+            format!("{root}/roles/silas/ontology/core-shape-4576.ttl"),  // #4576: CoreShape + StampedByTheDal
         ],
     }
 }
@@ -891,16 +896,27 @@ pub fn merge_sparql(staging: &str, ontology: &str) -> String {
 /// the ontology graph, the class axioms included. Pure.
 pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
 const ONTOLOGY_DEFAULT: &str = "urn:chorus:ontology";
-pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str) -> String {
+pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, additive: bool) -> String {
     let c = "https://jeffbridwell.com/chorus#";
     let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
     // what the row carries in the domains graph (labels ride along: a row needs one)
     let row = format!("!((?p = <{rdf_type}> && ?o != <{c}Domain>) || STRSTARTS(STR(?p), \"http://www.w3.org/2002/07/owl#\"))");
+    // #4576 — a Domain is one the staging OR the domains graph types: a card
+    // load stages only the subjects it changed, and a domain whose type line
+    // did not change (roles, gaining Teammate) is still a Domain.
+    let is_domain = |g: &str| format!("{{ GRAPH <{g}> {{ ?s a <{c}Domain> }} }} UNION {{ GRAPH <{domains}> {{ ?s a <{c}Domain> }} }}");
+    // #4576 — a card load is additive: it stages only the lines of the files it
+    // changed, so replacing a predicate's values would drop the ones held in
+    // files it did not touch (identity lost Session, SessionRun and Presence).
+    // Removals on a card go through the retirements ledger.
+    let replace = if additive { String::new() } else {
+        format!("DELETE {{ GRAPH <{domains}> {{ ?s ?p ?old }} }} WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o FILTER({row}) }} {} \
+                 GRAPH <{domains}> {{ ?s ?p ?old }} }} ; ", is_domain(staging))
+    };
     format!(
-        "DELETE {{ GRAPH <{dom}> {{ ?s ?p ?old }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} \
-         GRAPH <{dom}> {{ ?s ?p ?old }} }} ; \
-         INSERT {{ GRAPH <{dom}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} }} ; \
-         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s a <{c}Domain> ; ?p ?o }} }}",
+        "{replace}INSERT {{ GRAPH <{dom}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{stg}> {{ ?s ?p ?o FILTER({row}) }} {} }} ; \
+         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s ?p ?o }} {} }}",
+        is_domain(staging), is_domain(ontology),
         dom = domains, stg = staging, ont = ontology,
     )
 }
@@ -960,6 +976,125 @@ pub fn no_credential_refusal(prefix: &str) -> String {
 /// The write credential is prepended HERE, at the one door, so no call site can
 /// forget it — the same "one place owns the credential" rule `fuseki-auth.sh`
 /// states for the bash writers.
+/// #4576 — the update that copies each sh:node target's properties AND its
+/// SPARQL rules (sh:sparql: the DAL stamp is a rule, #4312) onto the shape that
+/// names it (transitively). The property nodes are shared, not
+/// copied, so a CoreShape property is one node however many shapes carry it.
+/// Pure; idempotent (an INSERT of triples already present adds nothing).
+pub fn flatten_node_shapes_sparql(graph: &str) -> String {
+    // #4576 — the class wins: a node-target property is NOT copied when the
+    // class already has a field of that NAME (the door names a field by its
+    // path's local name, so rdfs:comment and chorus:comment are both
+    // "comment"), declared by ANY shape athena-make reads for the class: every
+    // shape targeting the class or a superclass (rdfs:subClassOf*; Heartbeat
+    // inherits Memory's rdfs:label), not only the one naming sh:node (Principal
+    // has four). Two declarations of one field make athena-make refuse the
+    // class. The first statement removes any such copy an earlier flatten left.
+    let same_field = "?p sh:path ?pa . ?s sh:targetClass ?tc . ?tc rdfs:subClassOf* ?anc . \
+         ?s2 sh:targetClass ?anc ; sh:property ?own . ?own sh:path ?oa . FILTER(?own != ?p) \
+         FILTER NOT EXISTS { ?n sh:property ?own } \
+         FILTER(REPLACE(STR(?pa), \".*[#/]\", \"\") = REPLACE(STR(?oa), \".*[#/]\", \"\"))";
+    format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n\
+         DELETE {{ GRAPH <{graph}> {{ ?s sh:property ?p }} }}\n\
+         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n sh:property ?p . FILTER(?s != ?n) {same_field} }} }} ;\n\
+         INSERT {{ GRAPH <{graph}> {{ ?s ?k ?p }} }}\n\
+         WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n ?k ?p . VALUES ?k {{ sh:property sh:sparql }} FILTER(?s != ?n) \
+           FILTER NOT EXISTS {{ {same_field} }} }} }}"
+    )
+}
+
+/// #4576 — the one backfill left on old rows (Jeff 2026-10-17 12:58: "manufacturing
+/// data on this is a lot of work and not much gain"): a creator written as a role
+/// slug becomes that role's Principal IRI, the same fact in the form the DAL writes.
+/// Nothing else is filled in: a row with no stamp keeps none.
+pub const CORE_STAMPS: [&str; 1] = ["creator-iri"];
+
+const STAMP_PREFIXES: &str = "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX dct: <http://purl.org/dc/terms/>";
+
+/// The rows a stamp pass touches: every row of a class whose shape names
+/// chorus:CoreShape (TestResult does not), in every graph but test-ephemeral
+/// ones, still missing the stamp. Pure.
+fn core_rows(ontology: &str, missing: &str) -> String {
+    format!(
+        "{{ SELECT DISTINCT ?c WHERE {{ GRAPH <{ontology}> {{ ?sh sh:targetClass ?c ; sh:node chorus:CoreShape }} }} }}\n\
+         GRAPH ?g {{ ?s a ?c . {missing} }}\n\
+         FILTER NOT EXISTS {{ GRAPH ?ng {{ ?n chorus:graphIri ?gs ; chorus:graphStatus \"test-ephemeral\" }} FILTER(STR(?g) = ?gs) }}"
+    )
+}
+
+/// #4576 — a slug creator converts only when principal-<slug> exists. Run 11: 23
+/// code rows say "athena-deploy-model", a deploy script, not a Principal; they keep
+/// that name rather than borrow an owner who did not write them, and the pass does
+/// not count them, so it cannot loop on them.
+const CREATOR_IRI_FROM: &str = "\n\
+    BIND(IRI(CONCAT(STR(chorus:), \"principal-\", STR(?lit))) AS ?w0)\n\
+    FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }";
+
+/// What a pass selects, and where its value comes from. Pure.
+///   creator-iri  a slug literal -> its Principal (literal removed)
+fn stamp_pass(_prop: &str) -> (&'static str, String, &'static str, &'static str) {
+    // (pattern binding ?lit, extra binds, delete template, insert predicate)
+    ("?s dct:creator ?lit . FILTER(isLiteral(?lit) && REGEX(STR(?lit), \"^[a-z0-9-]+$\"))",
+        String::new(), "?s dct:creator ?lit .", "creator")
+}
+
+/// The rows a pass selects: core rows missing the stamp, and for creator-iri
+/// only the ones whose Principal can be named.
+fn stamp_rows(ontology: &str, prop: &str, pat: &str) -> String {
+    let from = if prop == "creator-iri" { CREATOR_IRI_FROM } else { "" };
+    format!("{}{from}", core_rows(ontology, pat))
+}
+
+pub fn core_stamp_count_sparql(ontology: &str, prop: &str) -> String {
+    let (pat, _, _, _) = stamp_pass(prop);
+    format!("{STAMP_PREFIXES}\nSELECT (COUNT(*) AS ?n) WHERE {{ SELECT DISTINCT ?g ?s WHERE {{ {} }} }}", stamp_rows(ontology, prop, pat))
+}
+
+/// One bounded pass: at most `limit` rows per update, so a 100k-row class is
+/// several short updates, never one that holds the store.
+pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> String {
+    let (pat, bind, del, pred) = stamp_pass(prop);
+    let (inner, sel, group) = (pat.to_string(), "?g ?s ?lit (SAMPLE(?w0) AS ?w)", " GROUP BY ?g ?s ?lit");
+    let delete = if del.is_empty() { String::new() } else { format!("DELETE {{ GRAPH ?g {{ {del} }} }}\n") };
+    format!(
+        "{STAMP_PREFIXES}\n{delete}INSERT {{ GRAPH ?g {{ ?s dct:{pred} ?w }} }}\n\
+         WHERE {{ {{ SELECT {sel} WHERE {{ {} }}{group} LIMIT {limit} }} {bind} }}",
+        stamp_rows(ontology, prop, &inner)
+    )
+}
+
+fn csv_count(body: &str) -> Option<u64> {
+    body.lines().nth(1).and_then(|l| l.trim().trim_matches('"').parse().ok())
+}
+
+/// Runs the passes for each stamp until none is missing; refuses if a pass makes
+/// no progress (the count would loop forever otherwise).
+pub fn backfill_core_stamps(ontology: &str, query: &str, update: &str) -> Result<String, String> {
+    let limit: u32 = env_or("CORE_STAMP_BATCH", "50000").parse().unwrap_or(50000);
+    let mut report = Vec::new();
+    for prop in CORE_STAMPS {
+        let count = |q: &str| -> Result<u64, String> {
+            let b = curl(&["-s", "--data-urlencode", &format!("query={q}"), "-H", "Accept: text/csv", query])?;
+            csv_count(&b).ok_or_else(|| format!("core-stamps: could not read the {prop} count: {}", b.trim()))
+        };
+        let cq = core_stamp_count_sparql(ontology, prop);
+        let mut left = count(&cq)?;
+        let first = left;
+        while left > 0 {
+            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+                "-H", "Content-Type: application/sparql-update", "--data-binary",
+                &core_stamp_insert_sparql(ontology, prop, limit), update])?;
+            if !ok_http(&code) { return Err(format!("core-stamps-{prop}-failed-http-{code}")); }
+            let now = count(&cq)?;
+            if now >= left { return Err(format!("core-stamps: {prop} pass made no progress ({left} rows still missing it)")); }
+            left = now;
+        }
+        report.push(format!("{prop} +{first}"));
+    }
+    Ok(format!("core stamps backfilled: {}", report.join(", ")))
+}
+
 fn curl(args: &[&str]) -> Result<String, String> {
     // #4175 — EVERY Fuseki call carries a timeout, applied here at the one door
     // so no call site can forget it. On 2026-09-14 a compaction held the write
@@ -1315,7 +1450,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         String::new()
     };
     // #4338 — the ontology graph holds the model only: Domain rows go home.
-    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH)) } else { String::new() };
+    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH, plan.is_some())) } else { String::new() };
     let sparql = format!("{retire_clause}{bnodes}{}{rehome}", merge_sparql(&staging, &ontology));
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
@@ -1380,6 +1515,25 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         return Err(fail(&format!("stamp-write-failed-http-{scode}")));
     }
     println!("athena-deploy: stamped deployedFromCommit={stamp_sha}");
+
+    // #4576 — flatten sh:node at load: every shape that names another with sh:node
+    // (chorus:CoreShape) gets that shape's properties as its own, so every reader
+    // that walks sh:property (athena-make, -gen, -validate, -model, the atlas)
+    // sees them with no change. One source place, the TTL; the store carries all.
+    let flat = flatten_node_shapes_sparql(&ontology);
+    let fcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+        "-H", "Content-Type: application/sparql-update", "--data-binary", &flat, &update])?;
+    if !ok_http(&fcode) {
+        return Err(fail(&format!("sh-node-flatten-failed-http-{fcode}")));
+    }
+    println!("athena-deploy: flattened sh:node shapes in <{ontology}>");
+
+    // #4576 — a role-slug creator becomes its Principal; nothing else is filled in
+    // on old rows (Jeff 2026-10-17 12:58).
+    match backfill_core_stamps(&ontology, &query, &update) {
+        Ok(line) => println!("athena-deploy: {line}"),
+        Err(e) => return Err(fail(&e)),
+    }
 
     // #3752 — execute what `athena-model retire-claim` staged. Fail-closed at
     // every ask, idempotent on absent, and every delete backed up first (AC3).
@@ -1970,8 +2124,11 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             //    MODEL, not of the served routes: a route is <domain>/<plural>
             //    and a substring match cannot tell CodeFile's /code/files from
             //    a File route — it refused File on exactly that collision.
+            //    #4576 — asked of the domains graph, where a claim lives (#4338)
+            //    and the only place athena-make reads one: counting every graph
+            //    let a test's leftover copy of the model refuse the retirement.
             let claimed = curl(&["-s", "--data-urlencode",
-                &format!("query=SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH ?g {{ ?d \
+                &format!("query=SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{DOMAINS_GRAPH}> {{ ?d \
                           <https://jeffbridwell.com/chorus#definesVocabulary> <{class}> }} }}"),
                 "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
             match count_from_answer(&claimed) {
@@ -2209,6 +2366,35 @@ fn riot_available() -> bool {
 mod tests {
     use super::*;
 
+    /// #4576 — sh:node is flattened in the deploy's own graph, transitively, and
+    /// never onto the target itself. The store proof (a shape naming CoreShape
+    /// gains its property; a shape that does not, does not; a second run adds
+    /// nothing) was run on the in-memory chorus-test dataset, 2026-10-17 08:20.
+    #[test]
+    fn flatten_update_targets_the_graph_and_follows_sh_node() {
+        let q = flatten_node_shapes_sparql("urn:chorus:ontology");
+        assert!(q.contains("INSERT { GRAPH <urn:chorus:ontology> { ?s ?k ?p } }"), "{q}");
+        assert!(q.contains("?s sh:node+ ?n . ?n ?k ?p . VALUES ?k { sh:property sh:sparql }"), "rules travel with properties: {q}");
+        assert!(q.contains("FILTER NOT EXISTS { ?p sh:path ?pa . ?s sh:targetClass ?tc . ?tc rdfs:subClassOf* ?anc"), "any shape the class reads wins, inherited ones too: {q}");
+        assert!(q.contains("REPLACE(STR(?pa), \".*[#/]\", \"\") = REPLACE(STR(?oa)"), "compared by field name, not path: {q}");
+        assert!(q.starts_with("PREFIX sh:") && q.contains("DELETE { GRAPH <urn:chorus:ontology> { ?s sh:property ?p } }"), "an earlier duplicate is removed: {q}");
+        assert!(q.contains("FILTER(?s != ?n)"), "{q}");
+    }
+
+    /// #4576 — the one backfill left converts a role-slug creator to its Principal,
+    /// follows the model (only classes that name CoreShape), skips test-ephemeral
+    /// graphs and is bounded per pass. Nothing is invented: no date, no owner.
+    #[test]
+    fn core_stamp_backfill_converts_a_slug_and_invents_nothing() {
+        assert_eq!(CORE_STAMPS, ["creator-iri"], "#4576: no made-up stamps on old rows (Jeff 12:58)");
+        let iri = core_stamp_insert_sparql("urn:chorus:ontology", "creator-iri", 7);
+        assert!(iri.contains("DELETE { GRAPH ?g { ?s dct:creator ?lit . } }") && iri.contains("principal-"), "the literal goes, the IRI comes: {iri}");
+        assert!(iri.contains("^[a-z0-9-]+$") && iri.contains("LIMIT 7") && iri.contains("sh:node chorus:CoreShape") && iri.contains("test-ephemeral"), "{iri}");
+        assert!(iri.contains("FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }") && !iri.contains("ownedBy"), "a Principal or nothing, never an owner: {iri}");
+        assert_eq!(csv_count("n\n42\n"), Some(42));
+        assert_eq!(csv_count("error"), None);
+    }
+
     #[test]
     fn prove_trace_refuses_a_run_that_left_no_record_4195() {
         // NEGATIVE PROOF (#3734): fewer events than legs is red and names both numbers
@@ -2250,6 +2436,8 @@ mod tests {
         use super::model_scope::*;
         assert!(is_model_source("roles/wren/ontology/principles-3749.ttl"));
         assert!(is_model_source("designing/schemas/model-retirements.jsonl"));
+        assert!(is_model_source("designing/schemas/row-changes.jsonl"), "#4576: a card's row changes post only if the ledger is a source");
+        assert!(!is_model_source("designing/schemas/row-changes.jsonl.bak"));
         assert!(!is_model_source("roles/wren/notes/x.ttl"), "a TTL outside ontology/ is not a model source");
         assert!(!is_model_source("platform/tests/fixtures/principles-4186-violations.ttl"), "a fixture is never a model source");
         let diff = "roles/wren/ontology/a.ttl\nplatform/services/x/src/lib.rs\ndesigning/data/b.ttl\n";
@@ -2263,7 +2451,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 33, "the ontology set is 33 files (#4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 35, "the ontology set is 35 files (#4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
@@ -2713,7 +2901,7 @@ mod rehome_4338 {
             c:legacy a owl:Class , c:Domain ; rdfs:label "legacy" ; c:definesVocabulary c:Principal . }
 <urn:dom> { c:identity c:gaps "written by the API, keep" ; c:definesVocabulary c:Retired . }
 "#).unwrap();
-        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom"));
+        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom", false));
         let ru = dir.join("u.ru");
         std::fs::write(&ru, &q).unwrap();
         let o = Command::new(&update).arg(format!("--data={}", data.display()))
@@ -2731,6 +2919,110 @@ mod rehome_4338 {
         // NEGATIVE PROOF: the old value of a re-staged predicate is gone; an API-written field survives
         assert!(!dom.contains("c:Retired"), "a stale definesVocabulary survived:\n{after}");
         assert!(dom.contains("written by the API, keep"), "the re-home wiped an API-written field:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// #4576 — a card load stages only the subjects it changed. Run, not read: the
+/// re-home must add a card's claims without dropping the ones in files it left
+/// alone, and must re-home a claim for a domain whose type line it did not stage.
+#[cfg(test)]
+mod rehome_card_4576 {
+    use super::{merge_sparql, rehome_domain_rows_sparql};
+    use std::process::Command;
+
+    fn run(additive: bool) -> Option<String> {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().ok()?;
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return None; }
+        let dir = std::env::temp_dir().join(format!("rehome-4576-{}-{additive}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        // the card changed identity's AgentRuntime line and added roles' Teammate claim;
+        // Session is claimed in a file it did not touch, roles' type line is unchanged
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:stg> { c:identity a c:Domain ; c:definesVocabulary c:AgentRuntime .
+            c:roles c:definesVocabulary c:Teammate . }
+<urn:dom> { c:identity a c:Domain ; c:definesVocabulary c:Session , c:Principal .
+            c:roles a c:Domain ; c:definesVocabulary c:Role . }
+"#).unwrap();
+        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom", additive));
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let _ = std::fs::remove_dir_all(&dir);
+        Some(String::from_utf8_lossy(&o.stdout).to_string())
+    }
+
+    fn block(after: &str, g: &str) -> String {
+        let Some(i) = after.find(&format!("<{g}>")) else { return String::new() };
+        let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len());
+        after[i..j].to_string()
+    }
+
+    #[test]
+    fn a_card_load_adds_claims_and_keeps_the_rest() {
+        let Some(after) = run(true) else { return };
+        let (dom, ont) = (block(&after, "urn:dom"), block(&after, "urn:ont"));
+        assert!(dom.contains("c:AgentRuntime") && dom.contains("c:Session") && dom.contains("c:Principal"),
+            "a claim from a file the card did not touch was dropped:\n{after}");
+        assert!(dom.contains("c:Teammate") && dom.contains("c:Role"), "roles' new claim did not reach the domains graph:\n{after}");
+        assert!(!ont.contains("c:roles") && !ont.contains("c:identity"), "a Domain stayed in the ontology graph:\n{after}");
+    }
+
+    #[test]
+    fn negative_proof_the_full_replace_drops_an_unstaged_claim() {
+        // the replace a full model-set deploy keeps is exactly what a card load must not run
+        let Some(after) = run(false) else { return };
+        let dom = block(&after, "urn:dom");
+        assert!(!dom.contains("c:Session"), "the replace no longer replaces, so this proof cannot tell the two apart:\n{after}");
+        assert!(dom.contains("c:Teammate"), "{after}");
+    }
+}
+
+/// #4576 — the creator-iri pass, run, not read: a slug that names a Principal
+/// becomes it; one that names no Principal keeps its name and is not counted, so
+/// the pass ends.
+#[cfg(test)]
+mod creator_iri_4576 {
+    use super::{core_stamp_count_sparql, core_stamp_insert_sparql};
+    use std::process::Command;
+
+    #[test]
+    fn a_slug_becomes_its_principal_and_nothing_else_is_invented() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        let dir = std::env::temp_dir().join(format!("creator-4576-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix d: <http://purl.org/dc/terms/> .
+<urn:chorus:ontology> { c:LangShape sh:targetClass c:Language ; sh:node c:CoreShape . }
+<urn:sec> { c:principal-kade a c:Principal . }
+<urn:chorus:domains:domains> { c:code c:instancesGraph "urn:code" ; c:ownedBy c:principal-kade .
+                               c:loose c:instancesGraph "urn:loose" . }
+<urn:code> { c:lang-rust a c:Language ; d:creator "kade" .
+             c:lang-sql a c:Language ; d:creator "athena-deploy-model" . }
+<urn:loose> { c:lang-x a c:Language ; d:creator "athena-deploy-model" . }
+"#).unwrap();
+        let q = core_stamp_insert_sparql("urn:chorus:ontology", "creator-iri", 50);
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}\n{q}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        // the made-up IRI must not appear anywhere
+        assert!(!after.contains("principal-athena-deploy-model"), "a slug that is not a Principal became one:\n{after}");
+        // both script-named rows keep their name: the code domain's owner did not write them
+        assert_eq!(after.matches("\"athena-deploy-model\"").count(), 2, "a script-named row was given someone's name:\n{after}");
+        // NEGATIVE PROOF: lang-rust's slug did convert, so the pass is not a no-op
+        assert!(!after.contains("d:creator \"kade\"") && !after.contains("creator> \"kade\""), "the Principal slug did not convert:\n{after}");
+        assert!(after.contains("principal-kade"), "{after}");
+        // the count cannot see a name with no Principal, so the pass loop ends
+        assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

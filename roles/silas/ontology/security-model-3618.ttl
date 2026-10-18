@@ -74,8 +74,8 @@ chorus:identity a chorus:Domain ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:atStep chorus:value-stream-step-reflecting ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
-    chorus:instancesGraph "urn:chorus:domains:security" ;
-    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry ;
+    chorus:instancesGraph "urn:chorus:domains:identity" ;  # #4576: measured, identity rows (Session, SessionRun, Presence) live in the identity graph; Principal keeps security via its shape
+    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry, chorus:AgentRuntime ;  # #4576: AgentRuntime homed here (its instancesGraph is identity; closes #4572)
     chorus:status "building" ;
     chorus:gaps """Single CSS instance is a hard-fail dependency for every login; the Host-spoof in login.handler.ts is load-bearing; the Clearing public door and MCP/pulse loopback trust are not on the seam; DEPLOY_ROLE self-attribution is still accepted where a token is not yet required (commitments open, no card).""" ;
     chorus:hasDesignDoc chorus:document-service-design-security .
@@ -93,7 +93,7 @@ chorus:Principal a owl:Class ;
     # and is for concept schemes, not people.
     rdfs:subClassOf foaf:Agent ;
     rdfs:label "Principal" ;
-    rdfs:comment "An authenticatable actor: an agent session, a service, a herald job, or Jeff. The thing a token asserts. A Principal HOLDS roles (roles domain) and OWNS credentials — a role is something an identity holds, not something it is. The nudge-registry poisoning (#3608) was the collapse of this distinction. #3618." .
+    rdfs:comment "The identity a credential proves: what a token asserts, for a person, an agent, a service or a job. Owns credentials. A Teammate signs in as one; it is not a job (Role) and not a session (Session). #3618, #4576." .
 
 chorus:KeyRegistryEntry a owl:Class ;
     rdfs:label "Key Registry Entry" ;
@@ -257,7 +257,7 @@ chorus:servedBy a owl:ObjectProperty ;
 # the deploy (#3726 SECURITY_SET), and the projection (#3776/ADR-057) all use — so
 # SERVED == ENFORCED stops depending on a boot-time default nobody can see.
 chorus:PrincipalShape a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     # #4220 named identity as the eventual home: who you are belongs in
     # identity, what you may do stays in security. But the 12 Principal rows are
     # still in security, and this line is what athena-make reads to find them.
@@ -279,7 +279,8 @@ chorus:PrincipalShape a sh:NodeShape ;
     sh:property chorus:PrincipalShape-principalKind ;
     sh:property chorus:PrincipalShape-canSignIn ;
     sh:property chorus:PrincipalShape-holdsRole ;
-    sh:property chorus:PrincipalShape-wearsHat .
+    sh:property chorus:PrincipalShape-wearsHat ;
+    sh:property chorus:PrincipalShape-agentRuntime .
 # #3830 — where a person's NAME goes: rdfs:label, the one required text field,
 # which Jeff's row had carried a description in for three months ("jeff (human
 # principal - root authority)") because nothing said otherwise. foaf:name is
@@ -329,6 +330,14 @@ chorus:PrincipalShape-canSignIn a sh:PropertyShape ;
 # OPTIONAL by minCount, deliberately: Jeff holds no role (he is the authority
 # the roles serve), workers hold none by rule. Typed by sh:class so a dangling
 # or mistyped object is refused — which is the actual risk during a re-seed.
+# #4576 — the runtime an agent principal's sessions start on (#4444). It is a fact
+# about the Principal, so it lives on the Principal's row in security, where the
+# door reads it; in the identity graph beside the runtime rows it was in the store
+# and never served (run 16: field-dropped agentRuntime on abby-normal).
+chorus:PrincipalShape-agentRuntime a sh:PropertyShape ;
+    sh:path chorus:agentRuntime ; sh:maxCount 1 ; sh:class chorus:AgentRuntime ;
+    sh:message "agentRuntime must name one chorus:AgentRuntime that exists" .
+
 chorus:PrincipalShape-holdsRole a sh:PropertyShape ;
     sh:path chorus:holdsRole ; sh:maxCount 1 ; sh:class chorus:Role ;
     sh:message "holdsRole must point at a chorus:Role that exists — a dangling role reference is how a re-seed loses the identity-to-role seam silently" .
@@ -343,7 +352,7 @@ chorus:PrincipalShape-wearsHat a sh:PropertyShape ;
 # A principal that can sign in must have a WebID to sign in AS. This is the half
 # of the old minCount that was right, kept and scoped to where it holds.
 chorus:PrincipalSignInNeedsWebId a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     sh:severity sh:Violation ;
     sh:sparql [
         sh:message "a principal with canSignIn=true must carry a webId" ;
@@ -359,7 +368,7 @@ chorus:PrincipalSignInNeedsWebId a sh:NodeShape ;
 # conventions — the point of modelling the kind is that the model enforces what
 # the kind means, instead of a human remembering it.
 chorus:PrincipalWorkerCannotSignIn a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     sh:severity sh:Violation ;
     sh:sparql [
         sh:message "a service principal cannot sign in" ;
@@ -371,7 +380,7 @@ chorus:PrincipalWorkerCannotSignIn a sh:NodeShape ;
         """ ;
     ] .
 chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
+    sh:targetClass chorus:Principal ; sh:node chorus:CoreShape ;
     sh:severity sh:Violation ;
     sh:sparql [
         sh:message "a service principal holds no role" ;
@@ -384,7 +393,7 @@ chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
     ] .
 
 chorus:KeyRegistryEntryShape a sh:NodeShape ;
-    sh:targetClass chorus:KeyRegistryEntry ;
+    sh:targetClass chorus:KeyRegistryEntry ; sh:node chorus:CoreShape ;
     # #4340 — the declared home is where the rows are. The five nostr keys
     # (bridge, jeff, wren, kade, marknakib) live in the security graph; without
     # this the route read identity and served 0 of 5 (Login ER, 09-20), so a
@@ -410,7 +419,7 @@ chorus:KeyRegistryEntryShape-permittedScope a sh:PropertyShape ;
     sh:message "scopes stay inside the chorus realm" .
 
 chorus:APISurfaceShape a sh:NodeShape ;
-    sh:targetClass chorus:APISurface ;
+    sh:targetClass chorus:APISurface ; sh:node chorus:CoreShape ;
     sh:property chorus:APISurfaceShape-label ;
     sh:property chorus:APISurfaceShape-servedBy .
     # securedBy deliberately NOT minCount 1: unsecured surfaces must be
@@ -421,7 +430,7 @@ chorus:APISurfaceShape-servedBy a sh:PropertyShape ;
     sh:path chorus:servedBy ; sh:minCount 1 .
 
 chorus:GateShape a sh:NodeShape ;
-    sh:targetClass chorus:Gate ;
+    sh:targetClass chorus:Gate ; sh:node chorus:CoreShape ;
     sh:property chorus:GateShape-label ;
     sh:property chorus:GateShape-ownerRole .
 chorus:GateShape-label a sh:PropertyShape ;
@@ -442,7 +451,7 @@ chorus:GateShape-ownerRole a sh:PropertyShape ;
 # migration, tracked as a #3618 follow-on note, not folded in here.
 
 chorus:APISurfaceShape a sh:NodeShape ;
-    sh:targetClass chorus:APISurface ;
+    sh:targetClass chorus:APISurface ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:servedBy ; sh:minCount 1 ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
@@ -453,7 +462,7 @@ chorus:APISurfaceShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:GateShape a sh:NodeShape ;
-    sh:targetClass chorus:Gate ;
+    sh:targetClass chorus:Gate ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     # #4316 — optional (see GateShape-ownerRole above): required here, it refused
     # the four stage gates at the seed.

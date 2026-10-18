@@ -1,0 +1,30 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# core-shape-4576.ttl — the shape every class shape names (sh:node chorus:CoreShape). Its own
+# file because it names the StampedByTheDal rule from session-model-4302.ttl: inside chorus.ttl
+# that made chorus.ttl unparseable on its own (#4576, 4053-consumes-shor.bats).
+
+# --- #4576 core attributes every class carries (Jeff 2026-09-16: "name id description create and
+# change user and datetimes"; 2026-10-17: required; rows written before the stamps carry the chorus repo's first-commit date, 2026-03-29T15:35:26Z, Jeff 08:17).
+# Every class shape says `sh:node chorus:CoreShape` explicitly (Silas: visible, not implied); the id is
+# the row's IRI. The stamps are Dublin Core, which athena-model's DAL already writes on every write
+# (Silas 09:50: 1.66M rows carry dcterms:modified) — no chorus twins. created and creator are kept from
+# the first write; modified and contributor are the last write.
+chorus:CoreShape a sh:NodeShape ;
+    rdfs:comment "The attributes every class carries: a name, a description, who created it and when, and who last changed it and when. #4576." ;
+    sh:property [ sh:path chorus:label ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "name" ] ;
+    sh:property [ sh:path chorus:comment ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "description" ] ;
+    # #4590 — no exposure marks here: the flatten copies these fields onto every class, and a
+    # class with any marked field hides every unmarked one (2026-10-17: 70 classes, principals
+    # included, served only their IRI). A class that marks its own fields marks these itself.
+    # the four Dublin Core stamps are a rule, not fields (#4312): the DAL writes them, no caller sends them
+    sh:sparql chorus:StampedByTheDal .
+
+# #4590 — the DAL's creator and contributor stamps link a row to the principal who
+# made or changed it, so they cross hierarchies the way ownedBy does. Without this,
+# athena-validate called every converted creator stamp a bad link (run 2: 1,179).
+<http://purl.org/dc/terms/creator>     chorus:crossesHierarchy "authorship: every row names the principal who created it." .
+<http://purl.org/dc/terms/contributor> chorus:crossesHierarchy "authorship: every row names the principal who last changed it." .

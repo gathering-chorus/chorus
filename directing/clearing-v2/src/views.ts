@@ -25,7 +25,7 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
     <a href="/decisions" class="${on('decisions')}">Decisions${countBadge(counts?.decisions)}</a>
     <a href="/rooms/team" class="${on('rooms')}">Rooms</a>
     <a href="/board" class="${on('board')}">Board</a>
-    <a href="/roles" class="${on('roles')}">Roles</a>
+    <a href="/roles" class="${on('roles')}">Teammates</a>
     <a href="/calendar" class="${on('calendar')}">Calendar</a>
     <a href="/plans" class="${on('plans')}">Plans</a>
     <a href="/alerts" class="${on('alerts')}">Alerts${countBadge(counts?.alerts)}</a>
@@ -231,7 +231,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
   const table = data.actors.length === 0 ? '' : `
         <table class="roles-table">
           <thead>
-            <tr><th>Actor</th><th>State</th><th>Activity</th><th>Card</th><th>Sessions</th></tr>
+            <tr><th>Teammate</th><th>State</th><th>Activity</th><th>Card</th><th>Sessions</th></tr>
           </thead>
           <tbody>
             ${data.actors.map(a => `
@@ -250,7 +250,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
     : '';
   const content = `
   <div class="page roles-page">
-    <div class="ph"><h2>Roles</h2><span class="ex">pulse actor-state</span></div>
+    <div class="ph"><h2>Teammates</h2><span class="ex">pulse actor-state</span></div>
     <div class="tw">
       ${renderUnmeasured('roles-unmeasured', data.unmeasured)}
       ${empty}
@@ -258,7 +258,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
     </div>
   </div>`;
 
-  return renderPageShell('Roles', 'roles', content, sources);
+  return renderPageShell('Teammates', 'roles', content, sources);
 }
 
 function formatRoomText(raw: string): string {

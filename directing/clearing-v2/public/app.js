@@ -126,25 +126,27 @@ function stripPromptHeader(text) {
 }
 
 function appendMessage(msg) {
-  if (!msg || !msg.visible || !messagesContainer) return;
+  const container = messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
+  if (!msg || !msg.visible || !container) return;
 
   const existing = document.getElementById(`msg-${msg.id}`) || document.getElementById(msg.id);
   if (existing) return; // avoid duplicates
 
   const cleanText = stripPromptHeader(msg.text || '');
   const bodyKey = cleanText.trim();
-  const children = Array.isArray(messagesContainer.children) ? messagesContainer.children : Array.from(messagesContainer.children || []);
-  const sameBodyEl = bodyKey ? children.find((c) => c && c.dataset && c.dataset.body === bodyKey) : null;
-  if (sameBodyEl) {
-    if (sameBodyEl.dataset.from === 'bridge' && msg.from !== 'bridge') {
-      sameBodyEl.id = `msg-${msg.id}`;
-      sameBodyEl.dataset.from = msg.from;
-      // #4575 — the visible name follows too, not only the data attribute
-      const authorEl = sameBodyEl.querySelector && sameBodyEl.querySelector('.message-author');
-      if (authorEl) {
-        authorEl.textContent = formatAuthor(msg.from);
-        authorEl.className = `message-author ${msg.from}`;
-      }
+  const children = Array.isArray(container.children) ? container.children : Array.from(container.children || []);
+  // #4591 — only upgrade a placeholder bridge message if the incoming message has the same body;
+  // do not drop distinct messages that happen to share identical text.
+  const bridgePlaceholder = (bodyKey && msg.from !== 'bridge')
+    ? children.find((c) => c && c.dataset && c.dataset.from === 'bridge' && c.dataset.body === bodyKey)
+    : null;
+  if (bridgePlaceholder) {
+    bridgePlaceholder.id = `msg-${msg.id}`;
+    bridgePlaceholder.dataset.from = msg.from;
+    const authorEl = bridgePlaceholder.querySelector && bridgePlaceholder.querySelector('.message-author');
+    if (authorEl) {
+      authorEl.textContent = formatAuthor(msg.from);
+      authorEl.className = `message-author ${msg.from}`;
     }
     return;
   }
@@ -184,8 +186,8 @@ function appendMessage(msg) {
   el.appendChild(header);
   el.appendChild(text);
 
-  messagesContainer.appendChild(el);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
 }
 
 /** #4574/#4575 — #N card links, **bold**, and `code` built from DOM nodes: the message text is
@@ -331,11 +333,23 @@ async function handleSendMessage(text, options = {}) {
       throw new Error('fetch is not defined');
     }
 
-    const res = await fetchFn(clearingBase() + '/api/send', {
+    const post = () => fetchFn(clearingBase() + '/api/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: signedEvent, from: 'jeff', text: cleanText }),
     });
+    let res = await post();
+    // #4580 reopen — the server only accepts keys a signed-in session bound, and it holds
+    // those in memory, so a server restart forgets this browser's key. On "not signed in",
+    // bind the key with the session cookie (POST /api/room/bind) and retry the send once.
+    if (!res.ok && res.status === 401 && signedEvent && signedEvent.pubkey) {
+      const bind = await fetchFn(clearingBase() + '/api/room/bind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pubkey: signedEvent.pubkey, webid }),
+      });
+      if (bind && bind.ok) res = await post();
+    }
 
     if (!res.ok) {
       let errName = `HTTP ${res.status}`;

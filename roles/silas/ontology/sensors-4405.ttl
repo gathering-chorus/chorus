@@ -55,7 +55,7 @@ chorus:requestedBy a owl:ObjectProperty ; rdfs:label "requested by" ; rdfs:domai
     rdfs:comment "Who asked for the pass (a role, Jeff, or launchd). The rows are still written as the sensor's owner." .
 
 chorus:SensorShape a sh:NodeShape ;
-    sh:targetClass chorus:Sensor ;
+    sh:targetClass chorus:Sensor ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:heralds" ;
     chorus:generatedBy "athena-model" ;
     sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" ) ; chorus:exposure chorus:public ] ;
@@ -66,7 +66,7 @@ chorus:SensorShape a sh:NodeShape ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .
 
 chorus:SensorRunShape a sh:NodeShape ;
-    sh:targetClass chorus:SensorRun ;
+    sh:targetClass chorus:SensorRun ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:heralds" ;
     chorus:generatedBy "athena-model" ;
     sh:property [ sh:path chorus:runOfSensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Sensor ; chorus:exposure chorus:public ] ;

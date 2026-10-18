@@ -122,7 +122,7 @@ chorus:waitReason a owl:DatatypeProperty ;
 # --- shapes ------------------------------------------------------------------
 
 chorus:RoleStateShape a sh:NodeShape ;
-    sh:targetClass chorus:RoleState ;
+    sh:targetClass chorus:RoleState ; sh:node chorus:CoreShape ;
     rdfs:comment "One principal's state now." ;
     sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "principal" ; sh:description "Required. Whose state this is." ] ;
@@ -151,7 +151,7 @@ chorus:RoleStateShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:HeartbeatShape a sh:NodeShape ;
-    sh:targetClass chorus:Heartbeat ;
+    sh:targetClass chorus:Heartbeat ; sh:node chorus:CoreShape ;
     rdfs:comment "One beat from one session." ;
     sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "principal" ; sh:description "Required. Whose session beat." ] ;
@@ -169,7 +169,7 @@ chorus:HeartbeatShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:ReadingShape a sh:NodeShape ;
-    sh:targetClass chorus:Reading ;
+    sh:targetClass chorus:Reading ; sh:node chorus:CoreShape ;
     rdfs:comment "One section of the pulse and when it was read." ;
     sh:property [ sh:path chorus:section ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "roles" "board" "health" "alerts" "events" "index_freshness" "nudges" "rooms" "decisions" "loki" ) ;
@@ -188,7 +188,7 @@ chorus:ReadingShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:WaitingOnShape a sh:NodeShape ;
-    sh:targetClass chorus:WaitingOn ;
+    sh:targetClass chorus:WaitingOn ; sh:node chorus:CoreShape ;
     rdfs:comment "Who waits on whom or on which card, and why." ;
     sh:property [ sh:path chorus:waiter ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "waiter" ; sh:description "Required. The principal who is waiting." ] ;

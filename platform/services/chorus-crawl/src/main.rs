@@ -296,22 +296,11 @@ fn flush_puts(
     let mut queue: std::collections::VecDeque<PendingPut> = puts.drain(..).collect();
     // the first one, alone: learn the prefix, mint the token
     if let Some(mut first) = queue.pop_front() {
-        let mut attempt = 0;
-        loop {
-            let body = fields_json(&first.fields);
-            match write(ident, api, "PUT", &first.path, Some(&body)) {
-                Ok(_) => {
-                    *wrote += 1;
-                    break;
-                }
-                Err(e) if attempt == 0 && prefixes.learn(&e) && prefixes.apply(&mut first.fields) => {
-                    attempt += 1
-                }
-                Err(e) => {
-                    failed.push(format!("update {} {}: {e}", first.kind, first.label));
-                    break;
-                }
-            }
+        let path = first.path.clone();
+        let mut send = |f: &[(String, String)]| write(ident, api, "PUT", &path, Some(&fields_json(f))).map(|_| ());
+        match chorus_crawl::put_learning(&mut first.fields, prefixes, &mut send) {
+            Ok(()) => *wrote += 1,
+            Err(e) => failed.push(format!("update {} {}: {e}", first.kind, first.label)),
         }
     }
     for p in queue.iter_mut() {
@@ -348,16 +337,25 @@ fn flush_puts(
         for (p, r) in results {
             match r {
                 Ok(()) => *wrote += 1,
-                Err(e) if e.contains("HTTP 401") => {
-                    // token died mid-chunk: once more, alone, after a re-mint
-                    let body = fields_json(&p.fields);
-                    match write(ident, api, "PUT", &p.path, Some(&body)) {
-                        Ok(_) => *wrote += 1,
+                // token died mid-chunk (once more, alone, after a re-mint), or
+                // the door named a prefix this row carries (#4586): learn it,
+                // strip it, send again alone
+                Err(e) if e.contains("HTTP 401") || chorus_crawl::named_prefix(&e).is_some() => {
+                    let mut p = p;
+                    prefixes.learn(&e);
+                    let path = p.path.clone();
+                    let mut send = |f: &[(String, String)]| write(ident, api, "PUT", &path, Some(&fields_json(f))).map(|_| ());
+                    match chorus_crawl::put_learning(&mut p.fields, prefixes, &mut send) {
+                        Ok(()) => *wrote += 1,
                         Err(e2) => failed.push(format!("update {} {}: {e2}", p.kind, p.label)),
                     }
                 }
                 Err(e) => failed.push(format!("update {} {}: {e}", p.kind, p.label)),
             }
+        }
+        // a prefix learned in this chunk is stripped from every row still queued
+        for p in queue.iter_mut() {
+            prefixes.apply(&mut p.fields);
         }
     }
 }

@@ -50,7 +50,7 @@ chorus: a owl:Ontology ;
 
 chorus:Role a owl:Class ;
     rdfs:label "Role" ;
-    rdfs:comment "A persistent perspective within Chorus. Each role has context (CLAUDE.md, state files, briefs) that shapes how it thinks. Same model, different lens." .
+    rdfs:comment "A job on the team, such as product manager or architect. Teammates serve as Roles; hats over products come through a Role's Appointments. #4576." .
 
 chorus:HumanRole a owl:Class ;
     rdfs:subClassOf chorus:Role ;
@@ -60,7 +60,8 @@ chorus:HumanRole a owl:Class ;
 chorus:AgentRole a owl:Class ;
     rdfs:subClassOf chorus:Role ;
     rdfs:label "Agent Role" ;
-    rdfs:comment "Filled by an AI agent. Persistent across sessions via state files and memory." .
+    owl:deprecated true ;
+    rdfs:comment "Retired (#4576): whether a Role is filled by an agent or a person is the Role's roleKind, not a subclass. Its rows move to Role with roleKind agent." .
 
 
 
@@ -157,7 +158,7 @@ chorus:CollectionDomain a owl:Class ;
 
 chorus:Actor a owl:Class ;
     rdfs:label "Actor" ;
-    rdfs:comment "An actor that interacts with a domain. Has a role and a set of actions." .
+    rdfs:comment "Someone acting in a test scenario (BDD): the subject of a Given/When/Then step. Not a team member; that is a Teammate. #4576." .
 
 chorus:Scenario a owl:Class ;
     rdfs:label "Scenario" ;
@@ -322,7 +323,7 @@ chorus:roleSource a owl:ObjectProperty ; rdfs:label "role source" ; rdfs:domain 
     rdfs:comment "The store this one copies, derives from or caches. Required unless storeRole is systemOfRecord, refused when it is." .
 
 chorus:PersistenceStoreShape a sh:NodeShape ;
-    sh:targetClass chorus:PersistenceStore ;
+    sh:targetClass chorus:PersistenceStore ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:persistence" ;
     sh:property [ sh:path rdfs:label            ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:storeType      ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
@@ -568,7 +569,7 @@ chorus:DocumentShape a sh:NodeShape ;
     sh:property [ sh:path chorus:changedAt       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
     sh:property [ sh:path chorus:changedIn       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
     sh:property [ sh:path chorus:docState        ; sh:minCount 1 ; sh:in ( "draft" "current" "superseded" "retired" ) ] ;   # #4101 — one declared word
-    sh:targetClass chorus:Document ;
+    sh:targetClass chorus:Document ; sh:node chorus:CoreShape ;
     # #3860 — declared home (#3647). Without this pin the pen defaulted Document
     # writes to urn:chorus:instances while athena-make serves Documents from
     # urn:chorus:domains:documents: written-but-never-served. Pin makes pen and
@@ -651,7 +652,7 @@ chorus:availableBytes a owl:DatatypeProperty ; rdfs:label "available bytes" ; rd
     rdfs:comment "Bytes free on the volume (df). Percent full is df's: usedBytes / (usedBytes + availableBytes), rounded up, computed by the reader. On APFS capacityBytes is the shared container's, so usedBytes / capacityBytes understates a volume." .
 
 chorus:MachineShape a sh:NodeShape ;
-    sh:targetClass chorus:Machine ;
+    sh:targetClass chorus:Machine ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
     sh:property [ sh:path rdfs:label           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:hostname      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
@@ -665,7 +666,7 @@ chorus:MachineShape a sh:NodeShape ;
     sh:property [ sh:path chorus:ownedBy       ; sh:class chorus:Principal ] .
 
 chorus:DiskShape a sh:NodeShape ;
-    sh:targetClass chorus:Disk ;
+    sh:targetClass chorus:Disk ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
     sh:property [ sh:path rdfs:label           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:onMachine     ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine ; chorus:exposure chorus:public ] ;
@@ -1397,7 +1398,7 @@ chorus:repoTarget a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:CredentialShape a sh:NodeShape ;
-    sh:targetClass chorus:Credential ;
+    sh:targetClass chorus:Credential ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path rdfs:label ;
         sh:minCount 1 ;
@@ -1420,7 +1421,7 @@ chorus:CredentialShape a sh:NodeShape ;
     ] .
 
 chorus:PermissionShape a sh:NodeShape ;
-    sh:targetClass chorus:Permission ;
+    sh:targetClass chorus:Permission ; sh:node chorus:CoreShape ;
     # #4183 — rows live with the principals they govern; the door serves and
     # writes them at /v1/security/permissions.
     chorus:instancesGraph "urn:chorus:domains:security" ;
@@ -1451,7 +1452,7 @@ chorus:PermissionShape a sh:NodeShape ;
     ] .
 
 chorus:SecurityProbeShape a sh:NodeShape ;
-    sh:targetClass chorus:SecurityProbe ;
+    sh:targetClass chorus:SecurityProbe ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path rdfs:label ;
         sh:minCount 1 ;
@@ -1474,7 +1475,7 @@ chorus:SecurityProbeShape a sh:NodeShape ;
     ] .
 
 chorus:AuthBoundaryShape a sh:NodeShape ;
-    sh:targetClass chorus:AuthBoundary ;
+    sh:targetClass chorus:AuthBoundary ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path rdfs:label ;
         sh:minCount 1 ;
@@ -1548,7 +1549,7 @@ chorus:propertyScope a owl:DatatypeProperty ;
 # credential-specific (domain chorus:Credential); a Property uses propertyScope.
 
 chorus:PropertyShape a sh:NodeShape ;
-    sh:targetClass chorus:Property ;
+    sh:targetClass chorus:Property ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path chorus:propertyKey ;
         sh:minCount 1 ;
@@ -1659,7 +1660,7 @@ chorus:sourceCard a owl:DatatypeProperty ;
 # (allowedValue->sh:in, edgeTargetClass->sh:class, keyValueType->sh:datatype) are COMPILED
 # by the DAL from each PropertyKey row at write (#3436) — never hand-authored per key.
 chorus:PropertyCarrierShape a sh:NodeShape ;
-    sh:targetClass chorus:Property ;
+    sh:targetClass chorus:Property ; sh:node chorus:CoreShape ;
     sh:xone (
         [ sh:property [ sh:path chorus:propertyValue    ; sh:minCount 1 ; sh:maxCount 1 ] ;
           sh:property [ sh:path chorus:propertyValueRef ; sh:maxCount 0 ] ]
@@ -1672,7 +1673,7 @@ chorus:PropertyCarrierShape a sh:NodeShape ;
 # appliesToClass + lifecycleEnabled are core to every registry row; the arm-specific carriers
 # (keyValueType/allowedValue | edgeTargetClass/hubProjected) stay optional, propertyKind-discriminated.
 chorus:PropertyKeyShape a sh:NodeShape ;
-    sh:targetClass chorus:PropertyKey ;
+    sh:targetClass chorus:PropertyKey ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path chorus:keyName ;
         sh:minCount 1 ; sh:maxCount 1 ;
@@ -1788,6 +1789,10 @@ chorus:references      a owl:DatatypeProperty ; rdfs:label "references" ; rdfs:r
     rdfs:comment "Cards, ADRs, decisions and documents this design rests on. The design doc §References." .
 chorus:diagram         a owl:DatatypeProperty ; rdfs:label "diagram" ; rdfs:range xsd:string ;
     rdfs:comment "A picture the design carries, held as data: mermaid source, first line a '%% caption' comment naming what it shows. Repeatable — one value per diagram. #4094: Jeff, 2026-09-03: 'we are completely abandoning diagrams and other visual flows from the html when we migrate.' Rendered in the Flows chapter of the product, service and domain pages." .
+# --- #4576 CoreShape (the attributes every class carries) lives in core-shape-4576.ttl: it names
+# StampedByTheDal, defined in session-model-4302.ttl, and this file must parse on its own.
+
+
 chorus:changedAt       a owl:DatatypeProperty ; rdfs:label "changedAt" ; rdfs:range xsd:string ;
     rdfs:comment "When this row last changed, UTC ISO, stamped by the door on every create and replace — never typed. #4101: Jeff, 2026-09-03: 'our docs dont show version'; version is a fact about the write, not a number a person maintains." .
 chorus:changedIn       a owl:DatatypeProperty ; rdfs:label "changedIn" ; rdfs:range xsd:string ;
@@ -1840,7 +1845,7 @@ chorus:provenance a chorus:Domain ;
 chorus:athena chorus:hasDomain chorus:provenance .
 
 chorus:VersionShape a sh:NodeShape ;
-    sh:targetClass chorus:Version ;
+    sh:targetClass chorus:Version ; sh:node chorus:CoreShape ;
     # #4211 — provenance is a domain (Jeff, 2026-09-18: "i like having a provenance domain"),
     # so these rows live in its graph rather than the v1 catch-all they were written to.
     chorus:instancesGraph "urn:chorus:domains:provenance" ;
@@ -1883,7 +1888,7 @@ chorus:layerRank a owl:DatatypeProperty ;
     rdfs:comment "Order of layers, lowest first (foundation 0, build 1, capability 2). A dependsOn edge from a domain to a domain in a higher-ranked layer is refused." .
 
 chorus:LayerShape a sh:NodeShape ;
-    sh:targetClass chorus:Layer ;
+    sh:targetClass chorus:Layer ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:domains" ;
     sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment     ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -1897,7 +1902,7 @@ chorus:inStream a owl:ObjectProperty ; rdfs:label "in stream" ; rdfs:domain chor
     rdfs:comment "A step belongs to a value stream (ADR-041 line 80). AS-IS edge: chorus:belongsTo." .
 
 chorus:StepShape a sh:NodeShape ;
-    sh:targetClass chorus:ValueStreamStep ;
+    sh:targetClass chorus:ValueStreamStep ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. Absent means NOT published.
     # #4187 — pin removed; value-streams claims Step and all 55 rows are in
     # urn:chorus:domains:value-streams (copied and verified 2026-09-18 14:02).
@@ -1908,7 +1913,7 @@ chorus:StepShape a sh:NodeShape ;
 
 # --- ValueStreamShape (NEW — was absent in both v0.3.0 and the stranded draft) ---
 chorus:ValueStreamShape a sh:NodeShape ;
-    sh:targetClass chorus:ValueStream ;
+    sh:targetClass chorus:ValueStream ; sh:node chorus:CoreShape ;
     # #4187 — pin removed; value-streams claims the class and all 8 rows are in
     # urn:chorus:domains:value-streams (copied and verified 2026-09-18 14:02).
     chorus:treeEdge chorus:contains, chorus:hasValueStream ;  # #3660 — the generated /tree read descends these (the proven (contains/hasValueStream?)* recursion)
@@ -1926,7 +1931,7 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:changedIn       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
-    sh:targetClass chorus:Product ;
+    sh:targetClass chorus:Product ; sh:node chorus:CoreShape ;
     # 2026-08-02 — /products served 0 while EIGHT complete products (athena, borg,
     # chorus, clearing, convergence, loom, pulse, werk) sat in urn:chorus:instances,
     # each with a real hasDesignDoc. Without this line the generated route falls
@@ -2054,7 +2059,7 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:instancesGraph  ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4422 — every Domain row carries it, the door never served it (0 of 57, 2026-10-11); the stores crawl reads the chorus graphs from here, not by SPARQL (#4433)
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
-    sh:targetClass chorus:Domain ;
+    sh:targetClass chorus:Domain ; sh:node chorus:CoreShape ;
     # #4237, 2026-09-21 — was "urn:chorus:ontology". #3581 pointed it there because
     # that is where the rows LIVED; today they do not. Jeff, 2026-09-03: no rows in
     # the ontology graph, every row in its own domain graph. All 90 Domain rows now
@@ -2105,7 +2110,7 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:property [ sh:path chorus:oidcClientId     ; sh:datatype xsd:string ] ;   # #4412 — the OIDC client id people sign in through, when this service is a sign-in surface
     sh:property [ sh:path chorus:builtFrom        ; sh:class chorus:CodeUnit ] ;   # #4499 — the code units this service is built from (crawler-written)
-    sh:targetClass chorus:Service ;
+    sh:targetClass chorus:Service ; sh:node chorus:CoreShape ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
     # urn:chorus:ontology to fix a READ (the serve defaulted to the empty
     # urn:chorus:instances and /services returned 0). But athena-model:916
@@ -2257,7 +2262,7 @@ chorus:hasThreshold a owl:ObjectProperty ;
 
 
 chorus:EmitContractShape a sh:NodeShape ;
-    sh:targetClass chorus:EmitContract ;
+    sh:targetClass chorus:EmitContract ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
     # Every one of these seven classes declared urn:chorus:ontology while not a
@@ -2267,7 +2272,7 @@ chorus:EmitContractShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:MetricShape a sh:NodeShape ;
-    sh:targetClass chorus:Metric ;
+    sh:targetClass chorus:Metric ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
@@ -2576,10 +2581,7 @@ chorus:assignedTo a owl:ObjectProperty ;
 chorus:produces a owl:ObjectProperty ;
     rdfs:domain chorus:Step .
 
-chorus:createdBy a owl:ObjectProperty ;
-    rdfs:comment "Decision creates Workflow." ;
-    rdfs:domain chorus:Workflow ;
-    rdfs:range chorus:Decision .
+# #4576: the old createdBy (Workflow -> Decision, 0 rows) is gone; createdBy is now the core stamp (Principal).
 
 # --- Work item relationships ---
 
@@ -3063,7 +3065,7 @@ chorus:external a owl:DatatypeProperty ;   # #4472 — shared by ServiceInstance
     rdfs:range xsd:boolean .
 
 chorus:ServiceInstanceShape a sh:NodeShape ;
-    sh:targetClass chorus:ServiceInstance ;
+    sh:targetClass chorus:ServiceInstance ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:services" ;   # harvested facts live in the
     # dedicated domain-named graph (Silas ruling 16:06), NOT the ontology
     # graph — model-deploy additive-merge must never wipe or resurrect
@@ -3133,7 +3135,7 @@ chorus:lastExitCode a owl:DatatypeProperty ;
     rdfs:range xsd:integer .
 
 chorus:ScheduledJobShape a sh:NodeShape ;
-    sh:targetClass chorus:ScheduledJob ;
+    sh:targetClass chorus:ScheduledJob ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:schedule" ;   # #4081 — its own domain now (was services); the crawl owns it, OUT of MODEL_SET
     # #4081 — the schedule itself, read from the plist and launchctl, never typed
     sh:property [ sh:path chorus:scheduleKind ; sh:minCount 0 ; sh:maxCount 1 ; sh:in ( "calendar" "interval" ) ; chorus:exposure chorus:public ] ;
@@ -3251,7 +3253,7 @@ chorus:logStatus a owl:DatatypeProperty ;
     rdfs:domain chorus:LogSource ; rdfs:range xsd:string .
 
 chorus:LogSourceShape a sh:NodeShape ;
-    sh:targetClass chorus:LogSource ;
+    sh:targetClass chorus:LogSource ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:logs" ;   # harvested-state graph, domain-named (ADR-051); OUT of MODEL_SET
     sh:property [ sh:path rdfs:label           ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string   ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:launchdLabel  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string   ; chorus:exposure chorus:public ] ;
@@ -3278,7 +3280,7 @@ chorus:UnitDomainMapping a owl:Class ;
     rdfs:comment "ADR-027 / ADR-060 §5: the ONE authored place that says which domain a launchd unit (or Loki-only job) belongs to. Every harvester (logs, services, alerts, monitors, the crawler's unit facets) joins on launchdLabel and copies hasDomain from here. Authored rows (unit-domain-4084.ttl); an unmapped unit is a red in log-harvest --check, never a guess." .
 
 chorus:UnitDomainMappingShape a sh:NodeShape ;
-    sh:targetClass chorus:UnitDomainMapping ;
+    sh:targetClass chorus:UnitDomainMapping ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
     sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:launchdLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;

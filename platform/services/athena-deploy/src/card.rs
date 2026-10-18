@@ -44,6 +44,9 @@ pub struct CardPlan {
     /// #4536 — the retirement lines this card added, as a file: the deploy runs
     /// these, never the whole ledger.
     pub retirements: Option<String>,
+    /// #4576 — the row-change lines this card added (designing/schemas/row-changes.jsonl),
+    /// as a file: each is one call through athena-make, posted as its owner.
+    pub row_changes: Option<String>,
 }
 
 /// The paths of a commit's tree that a deploy reads: every roles/*/ontology
@@ -224,8 +227,17 @@ fn base_ntriples(card: &Card, rel: &str) -> String {
 /// pipelines and version-control fragments into the ontology graph, rows that
 /// live in the domains graph and change through the door. Pure.
 pub fn changed_triples(nt: &str, base_nt: &str) -> String {
+    subject_closure(nt, card_scope::changed_subjects(nt, base_nt))
+}
+
+/// #4590 — every line of `nt` about the `seeds` subjects, with the blank nodes
+/// they reach. Given the whole model set's lines, a subject a card changed in one
+/// file brings its lines from every file: the merge replaces a staged subject
+/// whole, so staging only the changed file's half erased the rest in prod
+/// (2026-10-17: SessionShape lost actsAs and 9 more fields, every login 422'd). Pure.
+pub fn subject_closure(nt: &str, seeds: Vec<String>) -> String {
     let subj = |l: &str| l.split_whitespace().next().unwrap_or("").to_string();
-    let mut keep: Vec<String> = card_scope::changed_subjects(nt, base_nt);
+    let mut keep: Vec<String> = seeds;
     let mut i = 0;
     while i < keep.len() {
         let s = keep[i].clone();
@@ -367,25 +379,83 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     let rfile = format!("{dir}/retirements.jsonl");
     std::fs::write(&rfile, added).map_err(|e| CardError::Failed(format!("{rfile}: {e}")))?;
     p.retirements = Some(rfile);
-    // #4536 — an ontology file loads only the subjects the card changed
+    // #4576 — and only the row changes this card added: rows go through the door
+    // when the card that changes them lands, never re-seeded from a file (Jeff 10-06).
+    let rows_ledger = "designing/schemas/row-changes.jsonl";
+    let rows_added = if card.sources.iter().any(|s| s == rows_ledger) {
+        let werk_text = std::fs::read_to_string(card.abs(rows_ledger)).unwrap_or_default();
+        let git = if card.commit.is_some() { card_scope::chorus_home() } else { card.werk.clone() };
+        let base = Command::new("git").args(["-C", &git, "show", &format!("{}:{rows_ledger}", card_scope::base_rev(&card))]).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        added_lines(&werk_text, &base)
+    } else {
+        String::new()
+    };
+    let wfile = format!("{dir}/row-changes.jsonl");
+    std::fs::write(&wfile, rows_added).map_err(|e| CardError::Failed(format!("{wfile}: {e}")))?;
+    p.row_changes = Some(wfile);
+    // #4536 — an ontology load carries only the subjects the card changed;
+    // #4590 — each with its lines from EVERY model file, not just the one it changed in
     if !p.ontology.is_empty() {
         let werk = format!("{}/", card.werk.trim_end_matches('/'));
-        let mut files = Vec::new();
+        let mut subjects: Vec<String> = Vec::new();
+        let mut root = String::new();
         for abs in &p.ontology {
             let rel = abs.strip_prefix(&werk).unwrap_or(abs);
-            let nt = card_scope::ntriples(&[abs.clone()]).map_err(|e| CardError::Refused(format!("card #{}: {rel}: {e}", card.card)))?;
-            let changed = changed_triples(&nt, &base_ntriples(&card, rel));
-            if changed.is_empty() {
-                continue;
+            if root.is_empty() {
+                root = abs.strip_suffix(rel).unwrap_or(&werk).trim_end_matches('/').to_string();
             }
-            let out = format!("{dir}/{}.nt", rel.replace('/', "_"));
-            std::fs::write(&out, changed).map_err(|e| CardError::Failed(format!("{out}: {e}")))?;
-            files.push(out);
+            let nt = card_scope::ntriples(&[abs.clone()]).map_err(|e| CardError::Refused(format!("card #{}: {rel}: {e}", card.card)))?;
+            for s in card_scope::changed_subjects(&nt, &base_ntriples(&card, rel)) {
+                if !subjects.contains(&s) { subjects.push(s); }
+            }
         }
-        p.ontology = files;
+        let mut sources: Vec<String> = crate::model_set(&root, None).into_iter()
+            .filter(|f| std::path::Path::new(f).is_file()).collect();
+        for f in &p.ontology {
+            if !sources.contains(f) { sources.push(f.clone()); }
+        }
+        let all = card_scope::ntriples(&sources).map_err(|e| CardError::Refused(format!("card #{}: the model set: {e}", card.card)))?;
+        let staged = subject_closure(&all, subjects);
+        p.ontology = if staged.is_empty() {
+            Vec::new()
+        } else {
+            let out = format!("{dir}/card-subjects.nt");
+            std::fs::write(&out, staged).map_err(|e| CardError::Failed(format!("{out}: {e}")))?;
+            vec![out]
+        };
     }
     let classes = card_classes(&card).map_err(CardError::Refused)?;
     Ok((card, p, classes))
+}
+
+/// #4590 — the kinds the door served before a deploy and not after, except
+/// classes the card's own retirements name. On 2026-10-17 the #4576 land took
+/// Session, Presence, Teammate and Actor off prod and reported only the card's
+/// own classes; nothing compared the rest. An unreadable "before" measures
+/// nothing and loses nothing. Pure.
+pub fn routes_lost(before: &str, after: &str, retirements: &str) -> Vec<String> {
+    let had = discovery_routes(before);
+    let now: Vec<String> = discovery_routes(after).into_iter().map(|(k, _)| k).collect();
+    had.into_iter().map(|(k, _)| k)
+        .filter(|k| !now.contains(k))
+        .filter(|k| !retirements.contains(&format!("#{k}\"")))
+        .collect()
+}
+
+/// #4590 — whether this binary's source tree (built in, by build.rs) is the one the
+/// card landed. A role slot holds whatever that role's last card built: on
+/// 2026-10-17 the #4576 land ran a build from #4580 and none of #4576's deploy
+/// code ran on prod. Refuses a mismatch and a build from uncommitted source. Pure.
+pub fn land_build_matches(built: &str, landed: &str, card: &str, sha: &str) -> Result<(), String> {
+    if built == landed && !built.ends_with("+dirty") && !landed.starts_with('+') {
+        return Ok(());
+    }
+    Err(format!(
+        "card #{card}: this athena-deploy was built from source tree {built}, but the land of {short} needs {landed}; \
+         build athena-deploy from canonical at {short} (a role slot holds another card's code) (#4590)",
+        short = &sha[..sha.len().min(12)]
+    ))
 }
 
 /// `athena-deploy [staging] --card <n> [--landed] [--target canonical]`.
@@ -404,6 +474,20 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
                 "card #{}: landed commit {} carries no model source — nothing to deploy\ncard #{}: result=none",
                 card.card, &sha[..sha.len().min(12)], card.card
             ));
+        }
+    }
+    if mode == Mode::Landed {
+        // #4590 — a land runs only a build of the code it landed. A repo that holds no
+        // athena-deploy source (a product repo, a test fixture) lands with chorus's own.
+        let card = card_scope::resolve_landed(card_id).map_err(CardError::Refused)?;
+        let sha = card.commit.clone().unwrap_or_default();
+        let home = card_scope::chorus_home();
+        let at = |path: &str| Command::new("git").args(["-C", &home, "rev-parse", &format!("{sha}:{path}")]).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        let src = at("platform/services/athena-deploy/src");
+        if !src.is_empty() {
+            let landed = format!("{src}+{}", at("platform/services/shared"));
+            land_build_matches(env!("ATHENA_DEPLOY_SRC_TREE"), &landed, &card.card, &sha).map_err(CardError::Refused)?;
         }
     }
     let (card, p, classes) = prepare_mode(card_id, mode)?;
@@ -444,8 +528,27 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     if let Some(r) = &p.retirements {
         std::env::set_var("RETIREMENTS_FILE", r);
     }
+    // #4590 — what the door served before this deploy, to compare after the restart
+    let before = get_body(&format!("{}/", api.trim_end_matches('/')));
+    let retired = p.retirements.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
+    // #4578 — staging serves the card's own athena-make when the run built one
+    // (only when the card changed athena-make: the role slot's build, which the
+    // pipeline's tools step installed); the restart
+    // below picks it up through the launcher's pointer file. Prod never does.
+    // #4578 reopen — and its own athena-model (the DAL the door runs for every
+    // write): #4576 changed the DAL's stamps and staging kept writing with the
+    // installed one, so a run could not prove them.
+    if staging {
+        for (name, pointer) in [("athena-make", staging_bin_pointer()), ("athena-model", staging_model_pointer())] {
+            let card_bin = card_slot_bin(&card, name).map_err(CardError::Refused)?;
+            if let Some(line) = point_staging_at(card_bin.as_deref(), &pointer)
+                .map_err(CardError::Refused)? {
+                out.push(line);
+            }
+        }
+    }
     // athena-make reads the shapes at boot: restart it and wait for healthy.
     let serve = env_or("ATHENA_SERVE_BIN", "athena-serve");
     let s = Command::new(&serve)
@@ -458,9 +561,362 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
             String::from_utf8_lossy(&s.stderr).trim()
         )));
     }
+    let after = get_body(&format!("{}/", api.trim_end_matches('/')));
+    let lost = routes_lost(&before, &after, &retired);
+    if !lost.is_empty() {
+        return Err(CardError::Failed(format!(
+            "served: {} route(s) the door served before this deploy are gone after it: {} — a card loses a route only by retiring its class (#4590)",
+            lost.len(), lost.join(", "))));
+    }
     match served_check_live(&api, &classes) {
         Ok(lines) => out.extend(lines),
         Err(lines) => return Err(CardError::Failed(lines.join("\n"))),
     }
+    // #4576 — the card's row changes, through the door it just restarted
+    if let Some(f) = &p.row_changes {
+        let text = std::fs::read_to_string(f).unwrap_or_default();
+        out.extend(post_row_changes(&text, &api).map_err(CardError::Failed)?);
+    }
     Ok(out.join("\n"))
+}
+
+/// #4578 — the build of `name` (athena-make, athena-model) staging should run for
+/// this card, or None. Only a werk card whose diff touches that crate has a build
+/// of its own; every other card keeps staging on the installed binary (a role
+/// slot can be weeks older than prod). A landed card never points staging anywhere.
+fn card_slot_bin(card: &Card, name: &str) -> Result<Option<String>, String> {
+    if card.commit.is_some() {
+        return Ok(None);
+    }
+    let git = |args: &[&str]| -> String {
+        Command::new("git").arg("-C").arg(&card.werk).args(args).output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
+    };
+    let base = card_scope::base_rev(card);
+    let src = format!("platform/services/{name}");
+    let changed = !git(&["diff", "--name-only", &base, "--", &src]).is_empty();
+    let last = git(&["log", "-1", "--format=%ct", &format!("{base}..HEAD"), "--", &src]).parse::<u64>().ok();
+    let slot = slot_bin(&card.werk, name);
+    let built = std::fs::metadata(&slot).and_then(|m| m.modified()).ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    staging_card_bin(changed, &slot, built, last)
+}
+
+/// The role slot next to a werk: `<base>/<role>-<card>` -> `<base>/<role>-bin/<name>`.
+pub fn slot_bin(werk: &str, name: &str) -> String {
+    let p = std::path::Path::new(werk);
+    let slot = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let role = slot.rsplit_once('-').map(|(r, _)| r).unwrap_or(slot);
+    let base = p.parent().map(|b| b.display().to_string()).unwrap_or_default();
+    format!("{base}/{role}-bin/{name}")
+}
+
+/// Unix seconds as `YYYY-MM-DDTHH:MM:SSZ` (civil-from-days; no date crate here).
+pub fn iso_utc(secs: u64) -> String {
+    let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// Pure: whether staging serves the slot build. Not changed = None. Changed, but
+/// the slot build is missing or older than the card's last athena-make commit =
+/// REFUSED, naming both times, so a run never proves a build the card replaced.
+pub fn staging_card_bin(changed: bool, slot: &str, built: Option<u64>, last_commit: Option<u64>) -> Result<Option<String>, String> {
+    if !changed {
+        return Ok(None);
+    }
+    let name = std::path::Path::new(slot).file_name().and_then(|n| n.to_str()).unwrap_or("the crate");
+    let Some(built) = built else {
+        return Err(format!("the card changes {name} but {slot} does not exist — run the tools step (werk-deploy --target werk) first (#4578)"));
+    };
+    if let Some(last) = last_commit.filter(|l| *l > built) {
+        return Err(format!("{slot} was built at {}, before the card's last {name} commit at {} — rebuild it before staging serves it (#4578)", iso_utc(built), iso_utc(last)));
+    }
+    Ok(Some(slot.to_string()))
+}
+
+/// #4578 — the file the staging athena-make launcher reads to serve a card's
+/// build (com.chorus.athena-make.staging names it as ATHENA_MAKE_BIN_FILE).
+pub fn staging_bin_pointer() -> String {
+    env_or("ATHENA_MAKE_BIN_FILE", &format!("{}/.chorus/staging/athena-make.bin", std::env::var("HOME").unwrap_or_default()))
+}
+
+/// #4578 reopen — the file naming the card's athena-model, the DAL (the launcher exports
+/// it as CHORUS_MODEL_BIN; com.chorus.athena-make.staging names it as ATHENA_MODEL_BIN_FILE).
+pub fn staging_model_pointer() -> String {
+    env_or("ATHENA_MODEL_BIN_FILE", &format!("{}/.chorus/staging/athena-model.bin", std::env::var("HOME").unwrap_or_default()))
+}
+
+/// Point staging at `card_bin` (None or empty = the card built none: the pointer
+/// is removed, so a run that died before its release cannot leave the next card
+/// on its build). A path that is not an executable file is REFUSED here, before
+/// any restart, so the run never proves yesterday's binary while saying it
+/// proved its own.
+pub fn point_staging_at(card_bin: Option<&str>, pointer: &str) -> Result<Option<String>, String> {
+    let Some(bin) = card_bin.map(str::trim).filter(|b| !b.is_empty()) else {
+        if std::path::Path::new(pointer).exists() {
+            std::fs::remove_file(pointer).map_err(|e| format!("{pointer}: {e}"))?;
+        }
+        return Ok(None);
+    };
+    let exec = std::fs::metadata(bin).map(|m| {
+        use std::os::unix::fs::PermissionsExt;
+        m.is_file() && m.permissions().mode() & 0o111 != 0
+    }).unwrap_or(false);
+    if !exec {
+        return Err(format!("the card build '{bin}' is not an executable file — staging would run the installed one (#4578)"));
+    }
+    if let Some(dir) = std::path::Path::new(pointer).parent() { let _ = std::fs::create_dir_all(dir); }
+    std::fs::write(pointer, format!("{bin}\n")).map_err(|e| format!("{pointer}: {e}"))?;
+    let name = std::path::Path::new(bin).file_name().and_then(|n| n.to_str()).unwrap_or("athena-make");
+    Ok(Some(format!("staging {name}: serving the card build {bin}")))
+}
+
+/// #4578 — `athena-deploy staging release`: staging goes back to the installed
+/// athena-make. Removes the pointer and restarts the staging unit. Safe to run
+/// when nothing was pointed (the end of every Athena run calls it).
+pub fn release_staging() -> Result<String, String> {
+    let mut had = false;
+    for pointer in [staging_bin_pointer(), staging_model_pointer()] {
+        if std::path::Path::new(&pointer).exists() {
+            std::fs::remove_file(&pointer).map_err(|e| format!("{pointer}: {e}"))?;
+            had = true;
+        }
+    }
+    let api = env_or("ATHENA_MAKE_STAGING_URL", "http://localhost:3368");
+    let label = env_or("ATHENA_MAKE_STAGING_LABEL", "com.chorus.athena-make.staging");
+    if !had { return Ok("staging athena-make: already the installed binary".into()); }
+    let serve = env_or("ATHENA_SERVE_BIN", "athena-serve");
+    let s = Command::new(&serve).args([label.as_str(), &format!("{}/health", api.trim_end_matches('/')), "--kickstart", "--timeout", "90"])
+        .output().map_err(|e| format!("{serve} not runnable: {e}"))?;
+    if !s.status.success() {
+        return Err(format!("{serve} {label}: {} — staging released but not healthy", String::from_utf8_lossy(&s.stderr).trim()));
+    }
+    Ok("staging athena-make: released, back on the installed binary".into())
+}
+
+#[cfg(test)]
+mod staging_pointer_tests {
+    use super::*;
+
+    /// #4578 — NEGATIVE PROOF: a card build that is missing, or not executable,
+    /// is refused and the pointer is never written; no build = nothing written.
+    #[test]
+    fn staging_points_only_at_a_real_card_build() {
+        let dir = std::env::temp_dir().join(format!("ptr-4578-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ptr = dir.join("athena-make.bin").display().to_string();
+        assert_eq!(point_staging_at(None, &ptr).unwrap(), None);
+        assert_eq!(point_staging_at(Some("  "), &ptr).unwrap(), None);
+        assert!(!std::path::Path::new(&ptr).exists());
+        let e = point_staging_at(Some("/nonexistent/athena-make"), &ptr).unwrap_err();
+        assert!(e.contains("not an executable file"), "{e}");
+        let plain = dir.join("plain"); std::fs::write(&plain, "x").unwrap();
+        assert!(point_staging_at(Some(&plain.display().to_string()), &ptr).is_err(), "a non-executable file is refused");
+        assert!(!std::path::Path::new(&ptr).exists(), "a refused build writes no pointer");
+        let bin = dir.join("athena-make");
+        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let line = point_staging_at(Some(&bin.display().to_string()), &ptr).unwrap().unwrap();
+        assert!(line.contains("serving the card build"));
+        assert_eq!(std::fs::read_to_string(&ptr).unwrap().trim(), bin.display().to_string());
+        // NEGATIVE PROOF: the next card that built none clears an earlier card's pointer
+        assert_eq!(point_staging_at(None, &ptr).unwrap(), None);
+        assert!(!std::path::Path::new(&ptr).exists(), "a stale pointer would serve another card's build");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #4578 — staging serves a slot build only for a card that changed athena-make,
+    /// and only when that build is newer than the card's last athena-make commit.
+    #[test]
+    fn staging_serves_the_slot_build_only_when_the_card_changed_it_and_it_is_fresh() {
+        let slot = "/w/wren-bin/athena-make";
+        assert_eq!(staging_card_bin(false, slot, Some(1), Some(9)).unwrap(), None, "a card that never touched athena-make");
+        assert_eq!(staging_card_bin(true, slot, Some(10), Some(9)).unwrap().as_deref(), Some(slot));
+        assert_eq!(staging_card_bin(true, slot, Some(10), None).unwrap().as_deref(), Some(slot), "uncommitted change, built after");
+        // NEGATIVE PROOF: changed, but the slot is missing or older than the card's commit
+        assert!(staging_card_bin(true, slot, None, Some(9)).unwrap_err().contains("does not exist"));
+        let e = staging_card_bin(true, slot, Some(5), Some(9)).unwrap_err();
+        assert!(e.contains("built at 1970-01-01T00:00:05Z") && e.contains("commit at 1970-01-01T00:00:09Z"), "{e}");
+        assert_eq!(iso_utc(1_792_243_800), "2026-10-17T13:30:00Z");
+        assert_eq!(slot_bin("/w/wren-4578", "athena-make"), slot);
+        assert_eq!(slot_bin("/w/abby-normal-4530", "athena-make"), "/w/abby-normal-bin/athena-make");
+        // #4578 reopen — the DAL's slot build, refused by its own name when stale
+        let model = slot_bin("/w/wren-4576", "athena-model");
+        assert_eq!(model, "/w/wren-bin/athena-model");
+        let e = staging_card_bin(true, &model, Some(5), Some(9)).unwrap_err();
+        assert!(e.contains("last athena-model commit"), "{e}");
+    }
+}
+
+/// #4576 — one staged row change: a call through athena-make, made as `owner`.
+/// `{"method":"POST|PATCH|PUT","path":"/v1/<domain>/<class>[/<name>]","owner":"<role>",
+///   "card":"<n>","status":"staged","body":{...}}` with `body` the LAST key.
+#[derive(Debug, PartialEq)]
+pub struct RowChange { pub method: String, pub path: String, pub owner: String, pub body: String }
+
+pub fn parse_row_change(line: &str) -> Result<RowChange, String> {
+    let t = line.trim();
+    let field = |k: &str| -> Option<String> {
+        let at = t.find(&format!("\"{k}\""))? + k.len() + 2;
+        let rest = t[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    let method = field("method").ok_or("row change has no method")?;
+    if !["POST", "PATCH", "PUT"].contains(&method.as_str()) {
+        return Err(format!("row change method {method:?}: only POST, PATCH or PUT (a delete is a retirement)"));
+    }
+    let path = field("path").ok_or("row change has no path")?;
+    if !path.starts_with("/v1/") || path.contains("..") || path.contains('?') {
+        return Err(format!("row change path {path:?} is not a /v1/ door path"));
+    }
+    let owner = field("owner").filter(|o| !o.is_empty() && o.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        .ok_or("row change has no owner (rows post as their owner)")?;
+    let at = t.find("\"body\"").ok_or("row change has no body")?;
+    let body = t[at + 6..].trim_start().strip_prefix(':').ok_or("row change body has no value")?.trim();
+    let body = body.strip_suffix('}').ok_or("row change is not a JSON object")?.trim();
+    if !body.starts_with('{') || !body.ends_with('}') {
+        return Err("row change body must be a JSON object and the last key".into());
+    }
+    Ok(RowChange { method, path, owner, body: body.to_string() })
+}
+
+/// Post every line, in order, each as its owner. A POST the door answers 409
+/// (the row is already there: a re-run on the same staging copy) is retried as
+/// PUT to the row's own path, so a re-run converges instead of failing. Any other
+/// refusal stops the run, naming the line and the door's words.
+pub fn post_row_changes(text: &str, api: &str) -> Result<Vec<String>, String> {
+    let root = env_or("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus");
+    let mut out = Vec::new();
+    for (i, line) in text.lines().filter(|l| !l.trim().is_empty()).enumerate() {
+        let rc = parse_row_change(line).map_err(|e| format!("row-changes line {}: {e}", i + 1))?;
+        let id = Command::new(format!("{root}/platform/scripts/chorus-identity-token")).arg(&rc.owner).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| format!("row-changes line {}: no identity for owner '{}'", i + 1, rc.owner))?;
+        let send = |method: &str, path: &str| -> (String, String) {
+            let url = format!("{}{}", api.trim_end_matches('/'), path);
+            let auth = format!("Authorization: Bearer {id}");
+            let o = Command::new("curl").args(["-s", "-m", "30", "-X", method, "-H", "Content-Type: application/json",
+                "-H", &auth, "--data-binary", &rc.body, "-w", "\n%{http_code}", &url]).output();
+            let text = o.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let (b, c) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
+            (c.trim().to_string(), b.trim().to_string())
+        };
+        let (mut code, mut said) = send(&rc.method, &rc.path);
+        if rc.method == "POST" && code == "409" {
+            if let Some(name) = body_name(&rc.body) {
+                let row = format!("{}/{name}", rc.path.trim_end_matches('/'));
+                (code, said) = send("PUT", &row);
+            }
+        }
+        if !code.starts_with('2') {
+            return Err(format!("row-changes line {} ({} {} as {}): HTTP {code}: {said}", i + 1, rc.method, rc.path, rc.owner));
+        }
+        out.push(format!("row-change {} {} {} as {}: HTTP {code}", i + 1, rc.method, rc.path, rc.owner));
+    }
+    Ok(out)
+}
+
+fn body_name(body: &str) -> Option<String> {
+    let at = body.find("\"name\"")? + 6;
+    let rest = body[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    Some(rest[..rest.find('"')?].to_string())
+}
+
+#[cfg(test)]
+mod row_change_tests {
+    use super::*;
+
+    /// #4576 — NEGATIVE PROOFS: a delete, a non-door path, an ownerless line and a
+    /// body that is not last are each refused by name; a good line parses whole.
+    #[test]
+    fn row_change_lines_parse_or_are_refused_by_name() {
+        let ok = r#"{"method":"POST","path":"/v1/roles/teammates","owner":"wren","card":"4576","status":"staged","body":{"name":"teammate-kade","signsInAs":"principal-kade"}}"#;
+        let rc = parse_row_change(ok).unwrap();
+        assert_eq!(rc, RowChange { method: "POST".into(), path: "/v1/roles/teammates".into(), owner: "wren".into(),
+            body: r#"{"name":"teammate-kade","signsInAs":"principal-kade"}"#.into() });
+        assert_eq!(body_name(&rc.body).as_deref(), Some("teammate-kade"));
+        let bad = |l: &str, want: &str| { let e = parse_row_change(l).unwrap_err(); assert!(e.contains(want), "{l} -> {e}"); };
+        bad(r#"{"method":"DELETE","path":"/v1/a/b/c","owner":"wren","body":{}}"#, "a delete is a retirement");
+        bad(r#"{"method":"PATCH","path":"/other/a/b","owner":"wren","body":{}}"#, "not a /v1/ door path");
+        bad(r#"{"method":"PATCH","path":"/v1/a/b/c","body":{}}"#, "no owner");
+        bad(r#"{"method":"PATCH","path":"/v1/a/b/c","owner":"wren","body":{"x":"y"},"card":"1"}"#, "last key");
+    }
+}
+
+/// #4590 — a subject a card changed in one file is staged with its lines from
+/// every file. SessionShape lived in session-4202.ttl and session-model-4302.ttl;
+/// #4576 changed only the first, staged only its half, and the merge (which
+/// replaces a staged subject whole) erased actsAs and 9 more fields in prod.
+#[cfg(test)]
+mod split_subject_4590 {
+    use super::{changed_triples, subject_closure};
+    const S: &str = "<urn:x#SessionShape>";
+    const P: &str = "<http://www.w3.org/ns/shacl#property>";
+
+    #[test]
+    fn a_changed_subject_brings_its_lines_from_every_file() {
+        // file A (the card changed it): SessionShape gains a node; file B (untouched) holds actsAs
+        let a_base = format!("{S} {P} <urn:x#label> .\n");
+        let a_now = format!("{S} {P} <urn:x#label> .\n{S} <http://www.w3.org/ns/shacl#node> <urn:x#CoreShape> .\n");
+        let b = format!("{S} {P} <urn:x#actsAs> .\n<urn:x#Other> {P} <urn:x#x> .\n");
+        let all = format!("{a_now}{b}");
+        let staged = subject_closure(&all, vec![S.to_string()]);
+        assert!(staged.contains("actsAs") && staged.contains("CoreShape") && staged.contains("label"), "{staged}");
+        assert!(!staged.contains("urn:x#Other"), "a subject the card did not change came along: {staged}");
+        // NEGATIVE PROOF: staging the changed file alone (today's code) drops the other file's half
+        let one_file = changed_triples(&a_now, &a_base);
+        assert!(!one_file.contains("actsAs"), "the one-file load is not the bug this test pins: {one_file}");
+    }
+}
+
+/// #4590 — a land refuses a deploy binary built from any tree but the landed one.
+#[cfg(test)]
+mod land_build_4590 {
+    use super::land_build_matches;
+    #[test]
+    fn a_land_runs_only_a_build_of_what_it_landed() {
+        assert!(land_build_matches("aaa+sss", "aaa+sss", "4576", "5f837cfe0794").is_ok());
+        // NEGATIVE PROOFS: another card's build, an uncommitted build, an unreadable landed tree
+        let e = land_build_matches("bbb+sss", "aaa+sss", "4576", "5f837cfe0794").unwrap_err();
+        assert!(e.contains("built from source tree bbb+sss") && e.contains("needs aaa+sss") && e.contains("5f837cfe0794"), "{e}");
+        assert!(land_build_matches("aaa+sss+dirty", "aaa+sss+dirty", "4576", "x").is_err(), "a dirty build passed");
+        assert!(land_build_matches("+", "+", "4576", "x").is_err(), "an unreadable tree passed");
+    }
+    #[test]
+    fn this_build_names_its_tree() {
+        assert!(!env!("ATHENA_DEPLOY_SRC_TREE").is_empty());
+    }
+}
+
+/// #4590 — a deploy that takes routes away fails loudly.
+#[cfg(test)]
+mod routes_lost_4590 {
+    use super::routes_lost;
+    fn disco(kinds: &[&str]) -> String {
+        let p: Vec<String> = kinds.iter().map(|k| format!("{{ \"kind\": \"{k}\", \"collection\": \"/v1/x/{k}s\" }}")).collect();
+        format!("{{ \"kind\": \"Discovery\", \"primitives\": [{}] }}", p.join(", "))
+    }
+    #[test]
+    fn a_route_gone_after_the_deploy_is_named() {
+        let before = disco(&["Session", "Teammate", "Principal"]);
+        assert!(routes_lost(&before, &disco(&["Session", "Teammate", "Principal", "New"]), "").is_empty());
+        // NEGATIVE PROOF: the #4576 shape: Session and Teammate gone
+        assert_eq!(routes_lost(&before, &disco(&["Principal"]), ""), vec!["Session", "Teammate"]);
+        // a class the card retires may go
+        let ret = "{\"retire_class\": \"https://jeffbridwell.com/chorus#Teammate\", \"status\": \"staged\"}";
+        assert_eq!(routes_lost(&before, &disco(&["Principal"]), ret), vec!["Session"]);
+        // an unreadable before loses nothing
+        assert!(routes_lost("", &disco(&[]), "").is_empty());
+    }
 }

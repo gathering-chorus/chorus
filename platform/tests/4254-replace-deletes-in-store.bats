@@ -41,9 +41,13 @@ setup() {
 }
 
 teardown() {
-  curl -s -o /dev/null -X DELETE "${GSP}?graph=${REPLACE_GRAPH}" || true
-  curl -s -o /dev/null -X DELETE "${GSP}?graph=${MERGE_GRAPH}" || true
-  curl -s -o /dev/null -X DELETE "${GSP}?graph=${ONTO_GRAPH}" || true
+  # #4576 — with the write credential: Shiro refuses an anonymous DELETE, so
+  # without it every run left its graphs behind (20 found in werk-silas, 10-17).
+  local auth=()
+  test -n "${FUSEKI_ADMIN_PASSWORD:-}" && auth=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
+  curl -s -o /dev/null "${auth[@]+"${auth[@]}"}" -X DELETE "${GSP}?graph=${REPLACE_GRAPH}" || true
+  curl -s -o /dev/null "${auth[@]+"${auth[@]}"}" -X DELETE "${GSP}?graph=${MERGE_GRAPH}" || true
+  curl -s -o /dev/null "${auth[@]+"${auth[@]}"}" -X DELETE "${GSP}?graph=${ONTO_GRAPH}" || true
   rm -rf "$WORK"
 }
 

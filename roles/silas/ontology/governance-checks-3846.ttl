@@ -68,7 +68,7 @@ chorus:provenRedRows a owl:DatatypeProperty ;
     rdfs:range xsd:integer .
 
 chorus:GovernanceCheckShape a sh:NodeShape ;
-    sh:targetClass chorus:GovernanceCheck ;
+    sh:targetClass chorus:GovernanceCheck ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:checkQuery ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:checkSeverity ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:boundTo ; sh:minCount 1 ] ;

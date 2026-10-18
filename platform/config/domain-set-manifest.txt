@@ -24,3 +24,6 @@
 # a backup restore is proven (#4171); then they leave too.
 security|urn:chorus:domains:security|roles/silas/ontology/identity-principals-3613.ttl
 security|urn:chorus:domains:security|roles/silas/ontology/permissions-4183.ttl
+# #4572 — AgentRuntime rows: athena-gen generates agent_runtimes.json from the
+# file, so these rows stay file-sourced (like principals) and load into their home.
+identity|urn:chorus:domains:identity|roles/silas/ontology/agent-runtime-rows-4572.ttl

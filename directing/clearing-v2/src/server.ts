@@ -1,6 +1,6 @@
 // @domain: messages
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -168,6 +168,17 @@ function registerPageRoutes(ctx: RouteContext): void {
     const roomsData = await dataService.getRoomsData(room, { rolesUrl });
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage(room, roomsData, sources));
+  });
+
+  // #4581 — numeric card shortcut: /1 or /clearing-v2/1 redirects to board with that card open
+  app.get('/:card', (req: Request, res: Response, next: NextFunction) => {
+    const rawCard = req.params.card;
+    const card = Array.isArray(rawCard) ? rawCard[0] : rawCard;
+    if (typeof card === 'string' && /^\d+$/.test(card)) {
+      const base = res.locals.base || '';
+      return res.redirect(`${base}/board?card=${card}`);
+    }
+    next();
   });
 }
 
@@ -344,7 +355,7 @@ function roomOf(event: NostrEvent): string {
   return roomTag ? roomTag[1] : 'team';
 }
 
-function toClearingMessage(event: NostrEvent, role: string, tick: boolean): ClearingMessage {
+function toClearingMessage(event: NostrEvent, role: string, tick: boolean, signer?: string): ClearingMessage {
   return {
     id: event.id,
     from: role,
@@ -355,6 +366,7 @@ function toClearingMessage(event: NostrEvent, role: string, tick: boolean): Clea
     pubkey: event.pubkey,
     room: roomOf(event),
     tick,
+    signer,
   };
 }
 
@@ -367,17 +379,26 @@ interface InboundDeps {
 }
 
 /** Handles an incoming verified event from the Buzz relay: ingest, broadcast, forward nudges to Pulse. */
-function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
+export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
   return (event: NostrEvent) => {
     if (!verifyNostrEvent(event)) {
       return;
     }
-    const role = resolveRoleByPubkey(event.pubkey, deps.keys) || 'unattributed';
-    const msg = toClearingMessage(event, role, deps.isRelayConnected());
+    const signerRole = resolveRoleByPubkey(event.pubkey, deps.keys) || 'unattributed';
+    let role = signerRole;
+    // #4591 — on bridge-signed events, unwrap the true author from the author tag
+    if (signerRole === 'bridge' && Array.isArray(event.tags)) {
+      const authorTag = event.tags.find((t) => t[0] === 'author');
+      if (authorTag && authorTag[1]) {
+        role = authorTag[1];
+      }
+    }
+    const msg = toClearingMessage(event, role, deps.isRelayConnected(), signerRole);
     if (!deps.router.ingest(msg)) return;
     deps.broadcastSSE('message', msg);
-    // #4571 — only Jeff's own messages are Jeff input; agents nudge each other on their own path.
-    if (role !== 'jeff') return;
+    // #4571/#4591 — only direct cryptographic sends from Jeff are Jeff input;
+    // bridge-signed notes are transcript/room mirrors, never a second pulse injection.
+    if (signerRole !== 'jeff') return;
     for (const nudge of deps.router.extractNudges(msg)) {
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
         if (!r.ok) {
@@ -407,6 +428,7 @@ function mountBasePath(app: express.Express): void {
   app.use((req: Request, res: Response, next) => {
     const { url, base } = stripBase(req.url);
     req.url = url;
+    res.locals.base = base;
     const send = res.send.bind(res);
     res.send = ((body?: unknown) => send(typeof body === 'string' && /^\s*</.test(body) ? injectBase(withBase(body, base), base) : body)) as typeof res.send;
     next();

@@ -62,7 +62,7 @@ chorus:alertRoute a owl:DatatypeProperty ;
 # ---------------------------------------------------------------------------
 
 chorus:AlertShape a sh:NodeShape ;
-    sh:targetClass chorus:Alert ;
+    sh:targetClass chorus:Alert ; sh:node chorus:CoreShape ;
     # Jeff 2026-09-03: no catch-all instances graph. Alert rows live in the
     # alerts domain's own graph, which is also where the harvester writes.
     chorus:instancesGraph "urn:chorus:domains:alerts" ;
@@ -142,7 +142,7 @@ chorus:measures a owl:DatatypeProperty ;
     rdfs:domain chorus:Monitor ; rdfs:range xsd:string .
 
 chorus:MonitorShape a sh:NodeShape ;
-    sh:targetClass chorus:Monitor ;
+    sh:targetClass chorus:Monitor ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:monitors" ;
     sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:monitorKind ; sh:minCount 1 ; sh:in ( "probe" "check" ) ] ;

@@ -22,7 +22,7 @@ chorus:code a chorus:Domain ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
   chorus:repoTarget "platform/scripts/clippy-ratchet.sh" ;
-  chorus:definesVocabulary chorus:CodeFile .
+  chorus:definesVocabulary chorus:CodeFile .  # #4576: File and SourceFile were retired (Jeff 2026-09-18, ledger 228-229), not homed
 
 chorus:pipelines a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:pipelines" ;  # #4422 (wren): the crawl reads this, never a guessed name
@@ -30,7 +30,9 @@ chorus:pipelines a chorus:Domain ;
   chorus:purpose "Own how a change travels from commit to running production — the typed, composable build->land pipeline — so every card follows one proven path with witnesses at each step, not ad-hoc scripting." ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
-  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun , chorus:PipelineStep ;
+  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun , chorus:PipelineStep ,
+    chorus:CardDiff , chorus:ConflictHold , chorus:DemoVerdict , chorus:GateResult , chorus:MergeEvent ,
+    chorus:ReviewVerdict , chorus:VerbRun , chorus:WerkSlot , chorus:Witness , chorus:TypedRefusal , chorus:RecoveryAction ;  # #4576: 11 homed (Kade confirmed 07:54)
   chorus:hasChild chorus:cicd .
 
 chorus:cicd a chorus:Domain ;
@@ -38,7 +40,7 @@ chorus:cicd a chorus:Domain ;
   chorus:purpose "Run werk's Building value stream as one orchestrated engine — act + werk.yml driving commit->build->deploy->test->rollback — so the pipeline is a single declared, observable mechanism rather than a chain of hand-run verbs." ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
-  chorus:repoTarget ".github/workflows/werk.yml" ; chorus:definesVocabulary chorus:Workflow .
+  chorus:repoTarget ".github/workflows/werk.yml" ; chorus:definesVocabulary chorus:Workflow , chorus:Deployment .  # #4576: Deployment homed (Kade confirmed 07:54)
 
 chorus:version-control a chorus:Domain ;
   rdfs:label "version-control" ; chorus:comment "Git workflow, branches, worktrees, hooks, and commit policy enforcement." ;
@@ -105,20 +107,20 @@ chorus:exercises a owl:ObjectProperty ;
     rdfs:range chorus:CodeFile .
 
 chorus:CodeKindShape a sh:NodeShape ;
-    sh:targetClass chorus:CodeKind ;
+    sh:targetClass chorus:CodeKind ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
 
 chorus:LanguageShape a sh:NodeShape ;
-    sh:targetClass chorus:Language ;
+    sh:targetClass chorus:Language ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:adoptedFrom ; sh:datatype xsd:string ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
 
 chorus:CodeFileShape a sh:NodeShape ;
-    sh:targetClass chorus:CodeFile ;
+    sh:targetClass chorus:CodeFile ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     # #4405 reopen 3 — a file names the repository it lives in, like a CodeUnit
     sh:property [ sh:path chorus:inRepository ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
@@ -179,13 +181,13 @@ chorus:httpMethod a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:PageShape a sh:NodeShape ;
-    sh:targetClass chorus:Page ;
+    sh:targetClass chorus:Page ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:route ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:pageType ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .
 
 chorus:EndpointShape a sh:NodeShape ;
-    sh:targetClass chorus:Endpoint ;
+    sh:targetClass chorus:Endpoint ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:routePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:httpMethod ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .
@@ -229,7 +231,7 @@ chorus:repoRemote a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:RepositoryShape a sh:NodeShape ;
-    sh:targetClass chorus:Repository ;
+    sh:targetClass chorus:Repository ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:repoRemote ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     # #4405 reopen — repositories nest and depend like products and domains
     # (Jeff, 2026-10-12): partOf is the one parent, dependsOn what it needs to
@@ -247,7 +249,7 @@ chorus:inRepository a owl:ObjectProperty ;
     rdfs:range chorus:Repository .
 
 chorus:CodeUnitShape a sh:NodeShape ;
-    sh:targetClass chorus:CodeUnit ;
+    sh:targetClass chorus:CodeUnit ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:inRepository ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
     sh:property [ sh:path chorus:unitPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:unitKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;

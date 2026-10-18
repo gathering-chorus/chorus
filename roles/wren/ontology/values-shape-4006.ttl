@@ -27,7 +27,7 @@ chorus:expressedBy a owl:ObjectProperty ;
     rdfs:comment "The principles that carry this value into practice. A value with no expressedBy edge is unfalsifiable." .
 
 chorus:ValueShape a sh:NodeShape ;
-    sh:targetClass chorus:Value ;
+    sh:targetClass chorus:Value ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:expressedBy ; sh:minCount 1 ; sh:class chorus:Principle ] ;

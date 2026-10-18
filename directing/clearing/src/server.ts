@@ -1457,7 +1457,14 @@ const room = process.env.BUZZ_ROOM_ENABLED === '1'
   ? startRoom({
     relayUrl: process.env.BUZZ_RELAY_URL ?? 'ws://192.168.86.242:3000',
     topic: process.env.BUZZ_ROOM_TOPIC ?? 'team',
-    ingest: (msg) => messageRouter.ingest({ ...msg, buzzInbound: true }),
+    ingest: (msg) => {
+      messageRouter.ingest({ ...msg, buzzInbound: true });
+      if (msg.from === 'jeff') {
+        for (const role of roomRoles()) {
+          messageRouter.expectEcho(role, msg.text);
+        }
+      }
+    },
     // #4445 — demo variants set this so they can show the relay without writing to it
     readOnly: process.env.CLEARING_ROOM_READONLY === '1',
     // #4445 — dial after the first roles read, so the replay can name Abby

@@ -58,6 +58,8 @@ chorus:principal-abby-normal a chorus:Principal ;
     # domain, product, service or value stream, so no Appointment and no ownedBy.
     chorus:wearsHat chorus:hat-product-manager, chorus:hat-solutions-architect,
         chorus:hat-engineering-lead, chorus:hat-operations-lead ;
+    # Abby runs on agy (Jeff, 2026-10-14 08:16: "abby"); athena-gen reads it for agent_runtimes.json.
+    chorus:agentRuntime chorus:runtime-agy ;
     chorus:canSignIn "false" .
 
 chorus:principal-kade a chorus:Principal ;

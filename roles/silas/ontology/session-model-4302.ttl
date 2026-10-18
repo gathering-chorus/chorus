@@ -265,19 +265,24 @@ chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
 # fields are not caller input anyway: the DAL stamps all three on every write.
 # So the requirement stays and moves here, where it gates without becoming a
 # field anyone is asked to send.
+# #4576 — CoreShape carries this rule for every class (Jeff 10-17: name, id,
+# description, created and changed by and at). creator is the first writer and
+# contributor the last, each a Principal IRI, never a role name.
+# #4576 (Jeff 2026-10-17 12:58, "manufacturing data on this is a lot of work and not much
+# gain"): a row written before the DAL stamped has no stamp, and nothing makes one up. The
+# rule checks what the DAL writes: a contributor, when there is one, names a Principal. A
+# creator may still be a name from before Principals existed.
 chorus:StampedByTheDal a sh:SPARQLConstraint ;
-    sh:message "a row carries the DAL's stamp: dcterms:created, dcterms:creator and dcterms:modified" ;
+    sh:message "the DAL's contributor stamp names a Principal, not a bare name" ;
     sh:select """
         SELECT $this WHERE {
-          FILTER ( NOT EXISTS { $this <http://purl.org/dc/terms/created> ?a }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/creator> ?b }
-                || NOT EXISTS { $this <http://purl.org/dc/terms/modified> ?c } )
+          $this <http://purl.org/dc/terms/contributor> ?d . FILTER(!isIRI(?d))
         }""" .
 
 # --- SessionRun ---------------------------------------------------------------
 
 chorus:SessionRunShape a sh:NodeShape ;
-    sh:targetClass chorus:SessionRun ;
+    sh:targetClass chorus:SessionRun ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:identity" ;
     sh:property chorus:SessionRunShape-label , chorus:SessionRunShape-comment , chorus:SessionRunShape-ownedBy ,
                 chorus:SessionRunShape-runOf , chorus:SessionRunShape-previousRun , chorus:SessionRunShape-startedAt ,
@@ -327,7 +332,7 @@ chorus:EndedRunSaysWhy a sh:SPARQLConstraint ;
 # --- Presence -----------------------------------------------------------------
 
 chorus:PresenceShape a sh:NodeShape ;
-    sh:targetClass chorus:Presence ;
+    sh:targetClass chorus:Presence ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:identity" ;
     sh:property chorus:PresenceShape-label , chorus:PresenceShape-comment , chorus:PresenceShape-ownedBy ,
                 chorus:PresenceShape-presenceOf , chorus:PresenceShape-pane , chorus:PresenceShape-tty ,
@@ -457,7 +462,7 @@ chorus:overChannel a owl:ObjectProperty ;
 # --- Context ------------------------------------------------------------------
 
 chorus:ContextShape a sh:NodeShape ;
-    sh:targetClass chorus:Context ;
+    sh:targetClass chorus:Context ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:memory" ;
     sh:property chorus:ContextShape-label , chorus:ContextShape-comment , chorus:ContextShape-ownedBy ,
                 chorus:ContextShape-contextOf , chorus:ContextShape-contextKind ;
@@ -476,7 +481,7 @@ chorus:ContextShape-contextKind a sh:PropertyShape ;
 # --- Conversation -------------------------------------------------------------
 
 chorus:ConversationShape a sh:NodeShape ;
-    sh:targetClass chorus:Conversation ;
+    sh:targetClass chorus:Conversation ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:memory" ;
     sh:property chorus:ConversationShape-label , chorus:ConversationShape-comment , chorus:ConversationShape-ownedBy ,
                 chorus:ConversationShape-conversationOf , chorus:ConversationShape-conversationId ;
@@ -494,7 +499,7 @@ chorus:ConversationShape-conversationId a sh:PropertyShape ;
 # --- Channel ------------------------------------------------------------------
 
 chorus:ChannelShape a sh:NodeShape ;
-    sh:targetClass chorus:Channel ;
+    sh:targetClass chorus:Channel ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:messages" ;
     sh:property chorus:ChannelShape-label , chorus:ChannelShape-comment , chorus:ChannelShape-ownedBy ,
                 chorus:ChannelShape-channelKind ;
@@ -576,7 +581,7 @@ chorus:reachableOver a owl:ObjectProperty ;
 # --- Message (replaces the retired blank-node MessageShape) -------------------
 
 chorus:MessageRecordShape a sh:NodeShape ;
-    sh:targetClass chorus:Message ;
+    sh:targetClass chorus:Message ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:messages" ;
     sh:property chorus:MessageRecordShape-label , chorus:MessageRecordShape-ownedBy , chorus:MessageRecordShape-sentBy ,
                 chorus:MessageRecordShape-sentTo , chorus:MessageRecordShape-senderName , chorus:MessageRecordShape-sentInSession ,
@@ -610,7 +615,7 @@ chorus:MessageShape-overChannel a sh:PropertyShape ;
 # --- Delivery -----------------------------------------------------------------
 
 chorus:DeliveryShape a sh:NodeShape ;
-    sh:targetClass chorus:Delivery ;
+    sh:targetClass chorus:Delivery ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:messages" ;
     sh:property chorus:DeliveryShape-label , chorus:DeliveryShape-ownedBy , chorus:DeliveryShape-deliveryOf ,
                 chorus:DeliveryShape-deliveredTo , chorus:DeliveryShape-overChannel , chorus:DeliveryShape-deliveryOutcome ,
@@ -709,7 +714,7 @@ chorus:ADR a owl:Class ;
     rdfs:comment "An architecture decision record: one decision with its context, rationale and trade-offs. The markdown file is the record; this row names it (filePath) so other rows can point at the decision they enforce (boundTo). #4324." .
 
 chorus:ADRShape a sh:NodeShape ;
-    sh:targetClass chorus:ADR ;
+    sh:targetClass chorus:ADR ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:decisions" ;
     sh:property chorus:ADRShape-label , chorus:ADRShape-comment , chorus:ADRShape-ownedBy , chorus:ADRShape-filePath .
 chorus:ADRShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .

@@ -27,7 +27,7 @@
 
 
 chorus:PracticeShape a sh:NodeShape ;
-    sh:targetClass chorus:Practice ;
+    sh:targetClass chorus:Practice ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
     # the anti-rot constraint (11/23 dangling before this existed)

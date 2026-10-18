@@ -44,6 +44,29 @@ use std::process::Command;
 use serde::Deserialize;
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
+
+/// #4576 — the Principal a write is attributed to, as an IRI (Jeff 10-17: the
+/// role name and the principal are not the same thing; dcterms:creator and
+/// dcterms:contributor name the Principal).
+pub fn principal_term(role: &str) -> String {
+    format!("<{NS}principal-{role}>")
+}
+
+/// #4576 — a stored dcterms:creator as the term to write back. An IRI is kept.
+/// An old literal role slug ("kade") becomes that role's Principal IRI. Any other
+/// literal ("Kade (Engineer)") is kept as it was, for the shape to name: never
+/// guessed into someone's principal.
+pub fn creator_term(stored: &str) -> String {
+    if let Some(iri) = stored.strip_prefix("iri:") {
+        return format!("<{iri}>");
+    }
+    let lit = stored.strip_prefix("lit:").unwrap_or(stored);
+    if !lit.is_empty() && lit.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        principal_term(lit)
+    } else {
+        format!("\"{}\"", esc(lit))
+    }
+}
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
 /// #4291 — rdfs:label. The model defines chorus:label as "the writable twin of
 /// rdfs:label … Every row-bearing shape carries both" (hats-4175.ttl) and ADR-028
@@ -1767,7 +1790,6 @@ fn plan_writes<'a>(
         let extra = declared_path_triples(&plan.subject, plan.req, &shapes[&plan.class]);
         plan.turtle.push_str(&extra);
     }
-
     // A SHACL property's value channel is part of its type contract. Accepting
     // an sh:class property in `fields` serializes an RDF literal and bypasses
     // referential-integrity/target-type checks; accepting a modeled field
@@ -2077,7 +2099,7 @@ fn existing_batch_subjects(
 fn existing_created(
     store: &dyn Store,
     plans: &[PlannedWrite<'_>],
-) -> Result<BTreeMap<String, String>, WritePlanError> {
+) -> Result<BTreeMap<String, (String, Option<String>)>, WritePlanError> {
     const DCT: &str = "http://purl.org/dc/terms/";
     let mut by_graph: BTreeMap<&str, Vec<&PlannedWrite<'_>>> = BTreeMap::new();
     for plan in plans {
@@ -2087,12 +2109,14 @@ fn existing_created(
     for (graph, group) in by_graph {
         let values = group.iter().map(|p| format!("<{}>", p.subject)).collect::<Vec<_>>().join(" ");
         let rows = store.select_v(&format!(
-            "SELECT ?v WHERE {{ VALUES ?s {{ {values} }} GRAPH <{graph}> {{ ?s <{dct}created> ?created }} BIND(CONCAT(STR(?s), '|', STR(?created)) AS ?v) }}",
+            "SELECT ?v WHERE {{ VALUES ?s {{ {values} }} GRAPH <{graph}> {{ ?s <{dct}created> ?created OPTIONAL {{ ?s <{dct}creator> ?cr }} }} BIND(CONCAT(STR(?s), '|', STR(?created), '|', IF(BOUND(?cr), IF(isIRI(?cr), CONCAT('iri:', STR(?cr)), CONCAT('lit:', STR(?cr))), '')) AS ?v) }}",
             values = values, graph = graph, dct = DCT
         )).map_err(|e| WritePlanError::for_req(group[0].req, e))?;
         for row in rows {
-            if let Some((subject, created)) = row.split_once('|') {
-                found.insert(subject.to_string(), created.to_string());
+            let mut parts = row.splitn(3, '|');
+            if let (Some(subject), Some(created)) = (parts.next(), parts.next()) {
+                let creator = parts.next().filter(|c| !c.is_empty()).map(str::to_string);
+                found.insert(subject.to_string(), (created.to_string(), creator));
             }
         }
     }
@@ -2124,14 +2148,14 @@ fn prove_create_only_commit(
            GRAPH ?candidateGraph {{ \
              ?candidate <{dct}created> \"{stamp}\" ; \
                         <{dct}modified> \"{stamp}\" ; \
-                        <{dct}creator> \"{creator}\" . \
+                        <{dct}creator> {creator} . \
            }} \
            BIND(STR(?candidate) AS ?v) \
          }}",
         values = values,
         dct = DCT,
         stamp = esc(stamp),
-        creator = esc(creator),
+        creator = principal_term(creator),
     );
     let rows = store.select_v(&query).map_err(|error| {
         format!(
@@ -2238,10 +2262,15 @@ fn commit_writes(
                 s = plan.subject, ns = NS, r = RDFS_LABEL, v = esc(&plan.req.name)
             )
         };
-        let created = created_by_subject.get(&plan.subject).unwrap_or(&now);
+        // #4576 — created and creator are the FIRST write's and are kept; modified
+        // and contributor are this write's. Both name a Principal, not a role.
+        let (created, first) = match created_by_subject.get(&plan.subject) {
+            Some((c, cr)) => (c.as_str(), cr.as_deref().map(creator_term).unwrap_or_else(|| principal_term(creator))),
+            None => (now.as_str(), principal_term(creator)),
+        };
         let stamps = format!(
-            "<{s}> <{d}created> \"{c}\" .\n<{s}> <{d}modified> \"{m}\" .\n<{s}> <{d}creator> \"{creator}\" .\n",
-            s = plan.subject, d = DCT, c = esc(created), m = esc(&now), creator = esc(creator)
+            "<{s}> <{d}created> \"{c}\" .\n<{s}> <{d}modified> \"{m}\" .\n<{s}> <{d}creator> {first} .\n<{s}> <{d}contributor> {by} .\n",
+            s = plan.subject, d = DCT, c = esc(created), m = esc(&now), first = first, by = principal_term(creator)
         );
         let body = inserts.entry(plan.graph.as_str()).or_default();
         body.push_str(&plan.turtle);
@@ -3511,18 +3540,24 @@ pub fn seed_multi_at(
             }
             // created preserved (write() pattern), modified bumped, creator = the
             // verified identity, provenance = the migration stamp.
-            let existing_created = store
+            let existing = store
                 .select_v(&format!(
-                    "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
+                    "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?c OPTIONAL {{ <{s}> <{d}creator> ?cr }} }} BIND(CONCAT(STR(?c), '|', IF(BOUND(?cr), IF(isIRI(?cr), CONCAT('iri:', STR(?cr)), CONCAT('lit:', STR(?cr))), '')) AS ?v) }}",
                     g = gg, s = iri, d = DCT
                 ))?
                 .into_iter()
                 .next();
-            let created = existing_created.unwrap_or_else(|| now.clone());
+            // #4576 — first write's created/creator kept; contributor = this write's Principal
+            // a bare value (no '|') is the created stamp alone
+            let (created, first) = match existing.as_deref().map(|v| v.split_once('|').unwrap_or((v, ""))) {
+                Some((c, cr)) if !cr.is_empty() => (c.to_string(), creator_term(cr)),
+                Some((c, _)) => (c.to_string(), principal_term(&creator)),
+                None => (now.clone(), principal_term(&creator)),
+            };
             body.push_str(&format!(
-                "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> \"{cr}\" . {st} <{ns}provenance> \"{pv}\" . {st} <{ns}contentHash> \"{ch}\" . ",
+                "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> {first} . {st} <{d}contributor> {by} . {st} <{ns}provenance> \"{pv}\" . {st} <{ns}contentHash> \"{ch}\" . ",
                 st = subject_term, d = DCT, c = esc(&created), m = esc(&now),
-                cr = esc(&creator), ns = NS, pv = esc(provenance), ch = hash
+                first = first, by = principal_term(&creator), ns = NS, pv = esc(provenance), ch = hash
             ));
         }
         let (ns_, no_) = (order.len().to_string(), kind.to_string());
@@ -4272,6 +4307,27 @@ mod tests {
         assert!(up.contains("dc/terms/created"), "created stamped");
         assert!(up.contains("dc/terms/modified"), "modified stamped");
         assert!(up.contains("dc/terms/creator"), "creator stamped");
+    }
+
+    /// #4576 — creator and contributor name the Principal (an IRI), never the
+    /// role name; contributor is this write's, creator the first write's.
+    /// NEGATIVE PROOFS: an old role literal becomes its Principal; a literal that
+    /// is not a role slug is kept as written, never guessed into a principal.
+    #[test]
+    fn write_names_the_principal_as_creator_and_contributor() {
+        let store = stub(&[], &[]);
+        let req = WriteReq { kind: "role".into(), name: "audit-p".into(), ..Default::default() };
+        let id = tid();
+        write(&store, &req, &id).unwrap();
+        let up = store.updates.borrow()[0].clone();
+        let me = principal_term(id.role());
+        assert!(up.contains(&format!("<http://purl.org/dc/terms/creator> {me}")), "creator is the Principal IRI: {up}");
+        assert!(up.contains(&format!("<http://purl.org/dc/terms/contributor> {me}")), "contributor is the Principal IRI: {up}");
+        assert!(!up.contains(&format!("creator> \"{}\"", id.role())), "no role-name literal: {up}");
+        assert_eq!(principal_term("kade"), format!("<{NS}principal-kade>"));
+        assert_eq!(creator_term("lit:abby-normal"), format!("<{NS}principal-abby-normal>"));
+        assert_eq!(creator_term(&format!("iri:{NS}principal-wren")), format!("<{NS}principal-wren>"));
+        assert_eq!(creator_term("lit:Kade (Engineer)"), "\"Kade (Engineer)\"");
     }
 
     #[test]

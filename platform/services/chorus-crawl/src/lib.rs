@@ -1761,6 +1761,29 @@ impl PrefixMemory {
     }
 }
 
+/// #4586 — one PUT that learns from the door: a refusal that names a prefix is
+/// learned, the prefix stripped, and the row sent again, for as long as each
+/// refusal strips something. Before, only the first PUT of a pass could learn,
+/// so a later row carrying a served `code-file-…` edge (a test file's
+/// `exercises`) was refused and stayed refused: 52 on 2026-10-17.
+pub fn put_learning<F>(fields: &mut [(String, String)], prefixes: &mut PrefixMemory, send: &mut F) -> Result<(), String>
+where
+    F: FnMut(&[(String, String)]) -> Result<(), String>,
+{
+    prefixes.apply(fields);
+    loop {
+        match send(fields) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                prefixes.learn(&e);
+                if !prefixes.apply(fields) {
+                    return Err(e);
+                }
+            }
+        }
+    }
+}
+
 /// The prefix a door refusal names, if any.
 pub fn named_prefix(err: &str) -> Option<&str> {
     let i = err.find("already starts with '")?;
@@ -1838,6 +1861,58 @@ mod identity_4192 {
         assert!(m.apply(&mut row2));
         assert_eq!(row2[0].1, "test");
         assert_eq!(row2[1].1, "a.rs");
+    }
+
+    /// The door as the 10-17 crawl met it: a value carrying the CodeFile mint
+    /// prefix is refused with the prefix named; a bare one is accepted.
+    fn door(sent: &mut Vec<Vec<(String, String)>>) -> impl FnMut(&[(String, String)]) -> Result<(), String> + '_ {
+        move |f: &[(String, String)]| {
+            sent.push(f.to_vec());
+            match f.iter().find(|(_, v)| v.starts_with("code-file-")) {
+                Some((_, v)) => Err(format!("PUT /code/files/t -> HTTP 422 double-prefix: '{v}' already starts with 'code-file-'")),
+                None => Ok(()),
+            }
+        }
+    }
+
+    #[test]
+    fn a_served_edge_on_a_later_row_is_sent_bare_4586() {
+        let mut m = PrefixMemory::default();
+        let mut sent = Vec::new();
+        // row one has no edge: accepted first time, nothing learned
+        let mut plain = vec![("filePath".to_string(), "a.rs".to_string())];
+        assert!(put_learning(&mut plain, &mut m, &mut door(&mut sent)).is_ok());
+        assert!(m.is_empty());
+        // row two carries the edge as the door serves it
+        let mut test = vec![
+            ("filePath".to_string(), "t.bats".to_string()),
+            ("exercises".to_string(), "code-file-file-designing-x-1".to_string()),
+            ("exercises".to_string(), "code-file-file-platform-y-2".to_string()),
+        ];
+        assert_eq!(put_learning(&mut test, &mut m, &mut door(&mut sent)), Ok(()));
+        let last = sent.last().unwrap();
+        assert_eq!(last[1].1, "file-designing-x-1");
+        assert_eq!(last[2].1, "file-platform-y-2");
+        // and a third row is bare before its first send
+        let n = sent.len();
+        let mut third = vec![("exercises".to_string(), "code-file-file-z-3".to_string())];
+        assert!(put_learning(&mut third, &mut m, &mut door(&mut sent)).is_ok());
+        assert_eq!(sent.len(), n + 1, "no refused round trip once learned");
+    }
+
+    // NEGATIVE PROOF (#3734): sending the served value as it is — what the
+    // chunked writers did — is refused by the same door; and a refusal that
+    // names no prefix comes back as the error, never a silent success.
+    #[test]
+    fn negative_proof_the_served_value_is_refused_and_a_nameless_refusal_is_returned_4586() {
+        let mut sent = Vec::new();
+        let row = vec![("exercises".to_string(), "code-file-file-designing-x-1".to_string())];
+        assert!(door(&mut sent)(&row).is_err(), "the old body: prefixed value, refused");
+        let mut m = PrefixMemory::default();
+        let mut r = row.clone();
+        let mut deny = |_: &[(String, String)]| Err::<(), String>("HTTP 403 authz".to_string());
+        assert_eq!(put_learning(&mut r, &mut m, &mut deny), Err("HTTP 403 authz".to_string()));
+        assert_eq!(r, row, "nothing stripped on a refusal that names no prefix");
     }
 
     // NEGATIVE PROOF: a value that does not carry the prefix is left alone, and

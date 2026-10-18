@@ -209,3 +209,32 @@ fn negative_proof_a_new_domainless_class_in_the_same_file_is_still_refused() {
     assert!(!out.contains("OldOrphan"), "{out}");
     assert!(!w.join("directing/products").exists());
 }
+
+// #4590 — #4590 run 1 (2026-10-17): the card changed only CoreShape, the shared
+// shape every class shape names through sh:node, and gen refused it as touching
+// no product. A changed shared shape reaches the classes whose shapes name it.
+const SHARED: &str = "c:BaseShape a sh:NodeShape ; sh:property [ sh:path c:id ; sh:datatype xsd:string ] .\n";
+
+#[test]
+fn a_changed_shared_shape_reaches_the_products_of_the_classes_that_name_it() {
+    let named = format!("{P}{WIDGET}c:WidgetShape sh:node c:BaseShape .\n");
+    let (base, w) = werk_with_main("shared", "9110",
+        &[("roles/wren/ontology/widgets.ttl", named.clone()), ("roles/wren/ontology/base.ttl", format!("{P}{SHARED}"))],
+        &[("roles/wren/ontology/base.ttl", format!("{P}c:BaseShape a sh:NodeShape ; sh:property [ sh:path c:id ; sh:datatype xsd:integer ] .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9110"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("1 class(es) reached through a changed shared shape"), "{out}");
+    assert!(out.contains("card #9110: gizmo <- Widget"), "{out}");
+    assert!(w.join("directing/products/gizmo/api/Cargo.toml").is_file(), "{out}");
+}
+
+#[test]
+fn negative_proof_a_changed_shape_no_class_names_still_touches_no_product() {
+    let (base, w) = werk_with_main("shared-unnamed", "9111",
+        &[("roles/wren/ontology/base.ttl", format!("{P}{SHARED}"))],
+        &[("roles/wren/ontology/base.ttl", format!("{P}c:BaseShape a sh:NodeShape ; sh:property [ sh:path c:id ; sh:datatype xsd:integer ] .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9111"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("card #9111: the card's model change touches no product"), "{out}");
+    assert!(!w.join("directing/products").exists());
+}

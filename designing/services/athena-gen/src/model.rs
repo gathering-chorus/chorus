@@ -326,6 +326,13 @@ pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
     RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
 }
 
+/// #4576 — a product the generator builds runs its own server, so it declares
+/// `server.bind`. `model.namespace` alone is not enough: Athena declares it (#4519)
+/// and is served by athena-make v1, never generated.
+pub fn runs_own_server(declared: &[(String, String)]) -> bool {
+    declared.iter().any(|(k, _)| k == "server.bind")
+}
+
 /// #4513 — one argument of a tool, from a ToolInput shape's property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolArg {
@@ -407,7 +414,10 @@ pub fn agent_runtimes(store: &Store) -> Result<RuntimeTable, ModelError> {
     t.single = select(store, "SELECT ?path WHERE { c:AgentRuntimeShape sh:property ?ps . ?ps sh:path ?path ; sh:maxCount 1 }")?
         .into_iter().map(|r| r["path"].clone()).collect();
     t.single.sort();
-    for r in select(store, "SELECT ?r ?p ?v WHERE { ?r a c:AgentRuntime ; ?p ?v FILTER(isLiteral(?v)) }")? {
+    // #4576 — a runtime's table is its configuration: the core attributes every
+    // row carries (CoreShape's name and description, the DAL's dcterms stamps)
+    // are about the row, not the program, and stay out of agent_runtimes.json.
+    for r in select(store, "SELECT ?r ?p ?v WHERE { ?r a c:AgentRuntime ; ?p ?v FILTER(isLiteral(?v)) FILTER(!STRSTARTS(STR(?p), \"http://purl.org/dc/terms/\")) FILTER NOT EXISTS { c:CoreShape sh:property/sh:path ?p } }")? {
         let row = t.runtimes.entry(strip(&r["r"], "runtime-")).or_default();
         let key = if r["p"] == "label" { "label".to_string() } else { r["p"].clone() };
         row.entry(key).or_default().push(r["v"].clone());
