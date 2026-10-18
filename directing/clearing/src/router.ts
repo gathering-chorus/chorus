@@ -16,6 +16,8 @@ export interface ChannelMessage {
   ts: string;
   /** #3823 — arrived from the Buzz relay; must not be published back to it. */
   buzzInbound?: boolean;
+  /** #4609 — pulse writes this message to Buzz itself; v1 shows it but never republishes it. */
+  writtenByPulse?: boolean;
   /** `gap` (#3893) names messages that never arrived — the only system-authored
    *  type that is always visible. */
   type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe' | 'gap' | 'alert';
@@ -54,10 +56,11 @@ export class MessageRouter extends EventEmitter {
   private echoes: Array<{ role: string; text: string; until: number }> = [];
 
   /** Ingest a raw message, classify it, and store */
-  ingest(raw: { id?: string; from: string; text: string; ts: string; type?: string; level?: string; buzzInbound?: boolean }): void {
+  ingest(raw: { id?: string; from: string; text: string; ts: string; type?: string; level?: string; buzzInbound?: boolean; writtenByPulse?: boolean }): void {
     const classified: ChannelMessage = { ...this.classify(raw), id: raw.id ?? contentId(raw) };
     if (raw.level) classified.level = raw.level;
     if (raw.buzzInbound) classified.buzzInbound = true;
+    if (raw.writtenByPulse) classified.writtenByPulse = true;
     if (this.seenIds.has(classified.id)) return;
     this.remember(classified.id);
 
@@ -362,4 +365,13 @@ function isRoleToRole(from: string, text: string): boolean {
   if (deliveredTo && isRoomRole(deliveredTo[1])) return true;
 
   return false;
+}
+
+/**
+ * #4609 — does v1 publish this message to the Buzz room? Not what arrived from
+ * the relay (that would loop, #3823), and not what pulse writes itself (nudges
+ * and alerts since #4609: one writer, no doubles).
+ */
+export function publishesToRoom(msg: Pick<ChannelMessage, 'buzzInbound' | 'writtenByPulse'>): boolean {
+  return !msg.buzzInbound && !msg.writtenByPulse;
 }

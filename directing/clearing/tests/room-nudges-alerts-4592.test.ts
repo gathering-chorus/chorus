@@ -69,3 +69,37 @@ describe('#4592 a published note carries its kind', () => {
     expect(note('role-response').tags.some((t) => t[0] === 'kind')).toBe(false);
   });
 });
+
+// #4609 — pulse is now the one writer of nudges and alerts to Buzz. v1 still
+// shows them (from its spine tailer), but no longer publishes its own copy.
+import { publishesToRoom } from '../src/router';
+import { ChorusLogTailer } from '../src/tailer';
+
+describe('#4609 v1 shows nudges but leaves writing them to pulse', () => {
+  const tail = (role: string, payload: string) => {
+    const router = new MessageRouter();
+    const tailer = new ChorusLogTailer(router);
+    (tailer as unknown as { processLine(l: string): void }).processLine(JSON.stringify({ event: 'nudge.emitted', role, payload }));
+    return last(router);
+  };
+
+  test('a nudge between roles, an alert and a nudge to Jeff are shown and not republished', () => {
+    for (const m of [
+      tail('kade', 'from=kade,to=silas,chars=4,content=ping'),
+      tail('system', 'from=system,to=wren,chars=9,content=log stale'),
+      tail('wren', 'from=wren,to=jeff,chars=5,content=ready'),
+    ]) {
+      expect(m.visible).toBe(true);
+      expect(publishesToRoom(m)).toBe(false);
+    }
+  });
+
+  // NEGATIVE PROOF: a role's reply and Jeff's own input are still published by v1.
+  test('negative proof: a reply and Jeff\'s input are still published', () => {
+    const router = new MessageRouter();
+    router.ingest({ from: 'wren', text: 'a reply', ts: new Date().toISOString(), type: 'role-response' });
+    expect(publishesToRoom(last(router))).toBe(true);
+    router.ingest({ from: 'jeff', text: 'hello', ts: new Date().toISOString(), type: 'jeff-input' });
+    expect(publishesToRoom(last(router))).toBe(true);
+  });
+});

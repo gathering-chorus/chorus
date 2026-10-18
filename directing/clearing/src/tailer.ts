@@ -171,8 +171,9 @@ export class ChorusLogTailer extends EventEmitter {
     const content = packed.match(/content=(.+)/)?.[1] || '';
     if (!content) return;
     const ts = parsed.timestamp || new Date().toISOString();
+    // #4609 — pulse writes every nudge and alert to Buzz; v1 shows them only.
     if (target === 'jeff') {
-      this.router.ingest({ from: role, text: content, ts, type: 'role-response' });
+      this.router.ingest({ from: role, text: content, ts, type: 'role-response', writtenByPulse: true });
       return;
     }
     // #4592 — every other nudge reaches the room too, and so Buzz: a nudge
@@ -180,10 +181,10 @@ export class ChorusLogTailer extends EventEmitter {
     // "im really not clear what % of messages are in buzz". The room showed the
     // answers without the questions behind them, or the alerts that caused them.
     if (role === 'system') {
-      this.router.ingest({ from: 'system', text: `[alert → ${target}] ${content}`, ts, type: 'alert' });
+      this.router.ingest({ from: 'system', text: `[alert → ${target}] ${content}`, ts, type: 'alert', writtenByPulse: true });
       return;
     }
-    this.router.ingest({ from: role, text: `[nudge from ${role} → ${target}] ${content}`, ts, type: 'role-to-role' });
+    this.router.ingest({ from: role, text: `[nudge from ${role} → ${target}] ${content}`, ts, type: 'role-to-role', writtenByPulse: true });
   }
 
   private processLine(line: string): void {
