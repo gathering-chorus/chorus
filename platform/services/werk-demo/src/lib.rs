@@ -91,18 +91,6 @@ pub fn refuse_spine_args(event: &str, role: &str, card: u64, trace: &str, reason
 /// verdict until each has left a demo.gate.result in the witness.
 pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "ops"];
 
-/// Given the werk-demo witness content + a card id, return the required gates
-/// with NO demo.gate.result recorded for the card. Empty = the full gate gather
-/// ran → a verdict may be recorded. card_id is matched comma-terminated so a
-/// gate for #31 can't satisfy #3 (the #3116/#31160 collision class).
-/// #3319 (Jeff's JX) — the announce is the ready-gate. The announce-bearing tail of
-/// demo() (signal → test-surface → DEMO READY → peer feedback) may fire ONLY when this
-/// returns true: every required gate is recorded for the card, OR the test suite is
-/// driving the tail directly (skip_gate_check). False ⇒ stand by silently, no announce —
-/// Jeff is never pulled into a demo before its gates exist.
-pub fn announce_ready(witness: &str, card: u64, round: &str, patch_id: &str, skip_gate_check: bool) -> bool {
-    skip_gate_check || gates_missing(witness, card, round, patch_id).is_empty()
-}
 
 /// #3352 — the demo ceremony as an INVARIANT ordering, verb-enforced:
 ///   gates recorded → gathers sent → gathers REPLIED → announce → go.
@@ -276,13 +264,6 @@ pub fn current_patch_id(role: &str, card: u64) -> String {
     patch_id_for_card(&werk_base, role, card)
 }
 
-/// #3305 AC2/AC3 — the peers actually OWED a gather nudge this round: exactly
-/// gathers_missing. A peer whose reply is on the witness for THIS round is
-/// never re-nudged, however many times the demo re-presents. A new round
-/// re-asks everyone by design (#3365 round discipline, not the re-fire bug).
-pub fn nudge_targets(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<&'static str> {
-    gathers_missing(witness, card, role, round, patch_id)
-}
 
 pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, patch_id: &str, skip: bool) -> bool {
     skip || (gates_missing(witness, card, round, patch_id).is_empty() && gathers_missing(witness, card, role, round, patch_id).is_empty())
@@ -343,36 +324,7 @@ pub fn jeff_go_recorded(witness: &str, card: u64, round: &str, patch_id: &str) -
     })
 }
 
-/// #3548 — should the demo fire the "ready for your GO" announce?
-/// Only when PRESENTING-for-go: gates ran (`!skip_gate_check`), gathers sent
-/// (`!skip_gather_send`), and Jeff's go is NOT yet recorded (`!go_recorded`).
-/// When `go_recorded` is true the demo step is re-running on the LANDING invoke
-/// (werk.yml one-job-one-run) — re-announcing "ready for GO" there is the duplicate
-/// that baits a re-issued `go` and reads as a cw loop. Pure decision, no I/O.
-pub fn should_announce_ready(skip_gate_check: bool, skip_gather_send: bool, go_recorded: bool) -> bool {
-    !skip_gate_check && !skip_gather_send && !go_recorded
-}
 
-/// #3443 AC2 — peers who have NOT yet been SENT a gather this round. Distinct
-/// from gathers_missing (which tracks REPLIES): sending is keyed on
-/// demo.gather.sent so a re-invoke before a peer replies does NOT re-fire the
-/// nudge (the #3305 refire-storm guard). Empty = both peers already have the
-/// reply-required gather; the stop hook (#3218) then holds them until they ack.
-pub fn gathers_unsent(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<&'static str> {
-    let card_key = format!("\"card_id\":{},", card);
-    gather_peers(role)
-        .into_iter()
-        .filter(|peer| {
-            let peer_key = format!("\"peer\":\"{}\"", peer);
-            !witness.lines().any(|l| {
-                l.contains("\"event\":\"demo.gather.sent\"")
-                    && l.contains(&card_key)
-                    && l.contains(&peer_key)
-                    && line_keyed(l, round, patch_id)
-            })
-        })
-        .collect()
-}
 
 pub fn gates_missing(witness: &str, card: u64, round: &str, patch_id: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
@@ -878,12 +830,6 @@ pub fn bridge_announce_line(card: u64, title: &str, checked: usize, total: usize
     )
 }
 
-pub fn feedback_message(card: u64, from: &str) -> String {
-    format!(
-        "[feedback #{} — ACK REQUIRED]\\nFrom: {}\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.",
-        card, from
-    )
-}
 
 /// Send a feedback nudge to `other` via `chorus-hook-shim nudge-send` (#4515).
 /// The same path the clearing-nudge tool runs. Returns Err when the
@@ -913,25 +859,11 @@ fn hook_shim() -> String {
     std::env::var("CHORUS_HOOK_SHIM").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "chorus-hook-shim".to_string())
 }
 
-/// #3443 AC2 — record that a reply-required gather was SENT to a peer this round
-/// (dedup key for gathers_unsent so re-invokes don't re-fire). Distinct from the
-/// demo.gather.replied the peer's ack records.
-fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &str, trace: &str) {
-    let pid = current_patch_id(role, card); // #3461 — survive rebase-churn
-    jsonl(home, role, card, trace, "demo.gather.sent",
-          &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\"", peer, round, pid));
-    emit_spine(home, "demo.gather.sent", role, card, trace);
-}
 
-/// #3479 — record that a peer REPLIED to a gather (the feedback the announce gate
-/// requires). THE missing wire: the writer existed only behind a manual CLI nobody
-/// ran on a real reply, so gathers_missing never emptied → no demo.presented →
-/// forced override. This is the single canonical writer, called by both the CLI
-/// and a peer's explicit reply (the old register-feedback tool retired with #4515).
-/// Keyed peer+round+patch_id so a reply survives rebase-churn (#3461 line_keyed),
-/// and carries the verdict (pass|concerns|block) + substance. The GATE is
-/// unchanged (Jeff's bar: tests+gates+feedback registered → presented); this only
-/// makes the feedback that already happens actually register.
+/// #3479 — record a peer review's verdict (pass|concerns|block|error) and
+/// substance on the witness. #4502 — the single writer, called by the headless
+/// review step (run_one_review); keyed peer+round+patch_id so a review survives
+/// rebase-churn (#3461 line_keyed). The announce step reads it.
 pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, verdict: &str, note: &str) {
     let round = current_round(role, card);
     let pid = current_patch_id(role, card);
@@ -941,89 +873,9 @@ pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, ver
           &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"verdict\":\"{}\",\"note\":\"{}\"",
                    peer, round, pid, verdict, n));
     emit_spine(home, "demo.gather.replied", role, card, &trace);
-
-    // #3466 — fire the announce witness the MOMENT this reply COMPLETES the set.
-    // The gap (#3479 wired the reply; this wires the announce): in a headless
-    // pipeline nothing re-invokes demo() after peers reply, so the demo.presented
-    // witness werk-merge's land-gate reads never landed even though the gate's
-    // conditions (gates recorded + ALL gathers replied, THIS round) were satisfied
-    // by this very reply. demo() only emits demo.presented on a fresh invocation
-    // that happens to run after the replies are in — which a demoer-less pipeline
-    // never does, so the land refused a card that was actually fully demoed. Emit
-    // here, idempotently. The GATE is unchanged; this makes the announce that
-    // SHOULD fire actually fire without a manual re-present.
-    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    if should_emit_announce(&witness, card, role, &round, &pid) {
-        jsonl(home, role, card, &trace, "demo.presented",
-              &format!(",\"round\":\"{}\",\"patch_id\":\"{}\",\"via\":\"gather-completion\"", round, pid));
-        emit_spine(home, "demo.presented", role, card, &trace);
-    }
 }
 
-/// #3466 — pure decision: should recording a reply now emit the demo.presented
-/// witness? True iff the announce gate's conditions are met for THIS round (gates
-/// recorded AND both gathers replied) AND no announce for this round already
-/// exists (idempotent — a re-replied peer never double-announces). Pure over the
-/// witness string so the announce-on-completion wire is unit-testable without the
-/// file/git/spine I/O of record_gather_replied.
-pub fn should_emit_announce(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> bool {
-    let card_key = format!("\"card_id\":{},", card);
-    let already = witness.lines().any(|l| {
-        l.contains("\"event\":\"demo.presented\"") && l.contains(&card_key) && line_keyed(l, round, patch_id)
-    });
-    !already && announce_ready_full(witness, card, role, round, patch_id, false)
-}
 
-/// #3443 AC2 — the binary FIRES the reply-required gathers itself, BEFORE the
-/// announce standby. Previously the gather send lived in signal() AFTER the
-/// standby return, so a headless demo (no demoer agent) stood by forever having
-/// never sent them — the chicken/egg Jeff caught live: a gather can't be
-/// "replied" until it's "sent", and sending was the deleted demoer step. Sends
-/// only after gates are recorded (gates → gathers → replies → announce) and only
-/// to peers with no demo.gather.sent this round. The expects=reply envelope
-/// (nudge_send_args) + the #3218 RESPOND-FIRST hook make the peer owe an ack; the
-/// hook fires at the recipient's turn-end so the gather never queues silently
-/// behind their auto/focus-mode work.
-fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
-    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let patch = current_patch_id(role, card); // #3461 — patch-id tolerant matching across rebase-churn
-    if !gates_missing(&witness, card, round, &patch).is_empty() {
-        return; // gates not recorded yet — don't ask peers to review un-gated work
-    }
-    let mut sent: Vec<&str> = Vec::new();
-    for peer in gathers_unsent(&witness, card, role, round, &patch) {
-        if let Err(e) = send_mcp_nudge(role, peer, card, trace) {
-            jsonl(home, role, card, trace, "demo.nudge.failed",
-                  &format!(",\"to\":\"{}\",\"reason\":\"{}\",\"failureClass\":\"{}\"", peer, e.replace('"', "'"), failure_class("nudge-fail")));
-        } else {
-            record_gather_sent(home, role, card, peer, round, trace);
-            sent.push(peer);
-        }
-    }
-    // #3443 (Jeff's catch) — make the ask VISIBLE to the human overseer. The
-    // gathers go peer-to-peer; without this, the gathers-pending STANDBY is
-    // silent to Jeff — he can't see the team was asked ("I don't see nudges to
-    // them"). One Bridge post + spine event names exactly who was gathered and
-    // that the demo HOLDS until they reply. Best-effort, like the other signals.
-    if !sent.is_empty() {
-        let text = format!(
-            "[demo] #{} — fired reply-required gathers to [{}]; demo HOLDS until they reply (no announce, no go until the team's feedback is in)",
-            card, sent.join(", ")
-        );
-        let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
-        let auth = bridge_auth_header();
-        let _ = run("curl", &[
-            "-s", "-X", "POST",
-            &bridge_url(),
-            "-H", "Content-Type: application/json",
-            "-H", &auth,
-            "-d", &bridge_body,
-        ]);
-        jsonl(home, role, card, trace, "demo.gathers.surfaced",
-              &format!(",\"peers\":\"{}\",\"round\":\"{}\"", sent.join(","), round));
-        emit_spine(home, "demo.gathers.surfaced", role, card, trace);
-    }
-}
 
 /// #3995 — the Bridge URL seam. Hardcoded :3470 let a test post into Jeff's
 /// live Clearing (paged him twice 2026-08-23); env-overridable so the runner's
@@ -1033,11 +885,6 @@ fn bridge_url() -> String {
         .unwrap_or_else(|_| "http://localhost:3470/api/message".to_string())
 }
 
-fn send_mcp_nudge(from: &str, other: &str, card: u64, _trace: &str) -> R<()> {
-    let args = nudge_send_args(from, other, &feedback_message(card, from));
-    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-    run(&hook_shim(), &argv).map(|_| ())
-}
 
 /// #3511 — surface the demo to JEFF via the nudge wire (to=jeff), so he actually
 /// SEES it in his terminal — the invisibility (a silent demo.presented spine event)
@@ -1089,11 +936,10 @@ fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round
     let _ = trace;
 }
 
-/// Step 5: signal — cards demo + spine event + Bridge post + feedback nudges.
-/// All four are best-effort (the act has already gated; signal is the announcement,
-/// not a gate). Bridge + nudges are HTTP POSTs to localhost services (zero-dep:
-/// curl as a subprocess, mirroring the verb-contract).
-fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec<String> {
+/// Step 5: signal — cards demo + spine event + Bridge post. Best-effort: the
+/// announce, not a gate. #4502 — the feedback-nudge loop is gone: peer reviews
+/// are their own headless steps (#3539), nobody is asked to reply.
+fn signal(card: u64, role: &str, home: &Path, trace: &str) {
     let card_s = card.to_string();
     // board demo signal
     let _ = run(&script_path(home, "cards"), &["demo", &card_s]);
@@ -1115,58 +961,88 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
             "-d", &bridge_body,
         ],
     );
-
-    // Feedback nudges go through the clearing-nudge MCP tool — the team's
-    // canonical nudge surface, via send_mcp_nudge() (shared with the re-nudge
-    // path in demo() for AC #2).
-    //
-    // #3352 — a failed gather send is LOUD, never silent. The old behavior wrote
-    // demo.nudge.failed to a log nobody reads and walked on as if the team had
-    // been asked — the "secret back door" Jeff named: the ceremony's sends fail
-    // mid-pipeline under load and nobody learns until he asks "did u nudge the
-    // team". Failed peers are returned so demo() puts them ON the surface.
-    let mut send_failed: Vec<String> = Vec::new();
-    // #3305 — only the peers still OWED this round (nudge_targets). Previously
-    // this loop hit BOTH peers unconditionally on every re-present: 8 sightings
-    // in one day (5x silas, refire storms on wren + kade), each one an
-    // ACK-REQUIRED on an already-answered gather — the 2-touch contract broken
-    // by the ceremony itself.
-    for other in owed.iter() {
-        if let Err(e) = send_mcp_nudge(role, other, card, trace) {
-            jsonl(home, role, card, trace, "demo.nudge.failed",
-                  &format!(",\"to\":\"{}\",\"reason\":\"{}\",\"failureClass\":\"{}\"", other, e.replace('"', "'"), failure_class("nudge-fail")));
-            send_failed.push(other.to_string());
-        }
-    }
-    send_failed
 }
 
-// --- the demo act ---
+// --- the demo steps (#4502) ---
+//
+// #4502 (Jeff 2026-10-18 11:31, "that looks right") — the demo is dagu steps,
+// not one binary run in a hidden order:
+//   validate → [gate-product, -code, -quality, -arch, -ops, review-peer-1, -2]
+//   in parallel → session-smoke → announce → Jeff's go.
+// Each step is one subcommand below; dagu shows which one stopped and retries
+// it alone. The old all-in-one `werk-demo <card> <role>` (gates one by one,
+// then a poll for peer reviews, then the announce) is gone: the 2 peer reviews
+// are headless runs (#3539), so they are parallel steps, not a wait.
+// Gates and reviews inform; Jeff's go stays sovereign (#3263/DEC-048).
 
-/// Testable core — all inputs explicit. #3116: the proving ceremony only —
-/// validate → present → feedback gather → review window → verdict. The act
-/// (build/deploy/env-up) is done by the PRIOR verbs in the flat sequence; the
-/// gates run as subagents in the /demo skill layer. demo records demo.verdict;
-/// werk-accept gates finalize on it.
-/// #3511 — ONE run, but it STOPS for Jeff. The demo is a CONVERSATION (the /demo
-/// skill's own JX): the machine does prework (gates) + peer-review (gathers), then
-/// ANNOUNCES the finished, gated variant to Jeff, then BLOCKS for HIS in-run go
-/// (`werk-demo go <card>`) before it returns proven. The sequence the verb already
-/// documents — gates → gathers REPLIED → announce → go — restored after #3499
-/// silently collapsed past the announce+go and made peer-blessing the verdict
-/// (which it never is). Exit: 0 = Jeff's go recorded (proven → merge); 2 = no go /
-/// timeout / present-only (green, presented-not-landed); 1 = error. There is NO
-/// at-invoke go: only Jeff's recorded go lands a card, so an agent can never
-/// auto-accept (the self-accept hole closed by construction). Two block phases,
-/// each round+patch-keyed (#3461) so a content-preserving rebase loses neither the
-/// peer replies nor Jeff's go.
-pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
+fn read_witness(home: &Path) -> String {
+    fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default()
+}
+
+/// #4502 — the latest recorded (result, text) for one keyed step in this
+/// round: a gate (`demo.gate.result`, keyed `gate`, fields result/findings) or
+/// a peer review (`demo.gather.replied`, keyed `peer`, fields verdict/note).
+/// None when nothing is recorded for this round/patch. Pure.
+#[allow(clippy::too_many_arguments)]
+pub fn step_result(
+    witness: &str,
+    card: u64,
+    event: &str,
+    key: &str,
+    value: &str,
+    result_field: &str,
+    text_field: &str,
+    round: &str,
+    patch_id: &str,
+) -> Option<(String, String)> {
+    let card_key = format!("\"card_id\":{},", card);
+    let event_key = format!("\"event\":\"{}\"", event);
+    let value_key = format!("\"{}\":\"{}\"", key, value);
+    witness
+        .lines()
+        .rev()
+        .find(|l| l.contains(&event_key) && l.contains(&card_key) && l.contains(&value_key) && line_keyed(l, round, patch_id))
+        .map(|l| {
+            (
+                json_str_after(l, result_field).unwrap_or_default(),
+                json_str_after(l, text_field).unwrap_or_default(),
+            )
+        })
+}
+
+/// #4502 — a step's exit from what it recorded. A result that says the step
+/// could not run ("error", or nothing recorded) is non-zero and names why; any
+/// verdict (pass, fail, concerns, block) is exit 0 — the gate informs, Jeff's
+/// go decides (#3263). Pure.
+pub fn step_outcome(what: &str, card: u64, recorded: Option<(String, String)>) -> DemoOutcome {
+    match recorded {
+        None => DemoOutcome {
+            message: format!("{} for #{} could not run: no result recorded", what, card),
+            exit: 1,
+        },
+        Some((r, why)) if r == "error" => DemoOutcome {
+            message: format!(
+                "{} for #{} could not run: {}",
+                what,
+                card,
+                if why.is_empty() { "no reason recorded" } else { why.as_str() }
+            ),
+            exit: 1,
+        },
+        Some((r, why)) => DemoOutcome {
+            message: format!("{} for #{}: {}{}", what, card, r, if why.is_empty() { String::new() } else { format!(" — {}", why) }),
+            exit: 0,
+        },
+    }
+}
+
+/// #4502 step 1 — validate: the card exists, is WIP/Now and has AC. Records the
+/// AC count (informational: the announce shows it, it never refuses, #3263) and
+/// the single gate-evidence comment + trace file /acp reads (#2910 / #2897).
+pub fn validate_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
     jsonl(home, role, card, &trace, "demo.started", "");
-
     let card_s = card.to_string();
-
-    // Step 1: validate — exists + WIP/Now.
     let cj = run(&script_path(home, "cards"), &["view", &card_s, "--json"])
         .map_err(|e| format!("validate: cannot read card #{}: {}", card, e))?;
     let status = json_str_field(&cj, "status").unwrap_or_default();
@@ -1175,8 +1051,6 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         emit_spine_reason(home, "demo.refused", role, card, &trace, "wrong-status");
         return Err(format!("#{} is {} — must be WIP/Now to demo", card, status));
     }
-
-    // Step 1.5: AC pre-flight — all AC checked (uses the human view for checkboxes).
     let cv = run(&script_path(home, "cards"), &["view", &card_s])?;
     let (checked, total) = ac_counts(&cv);
     if total == 0 {
@@ -1184,96 +1058,121 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         emit_spine_reason(home, "demo.refused", role, card, &trace, "no-ac");
         return Err(format!("#{} has no acceptance criteria", card));
     }
-    // #3263 — AC completeness is INFORMATIONAL, not a refuse. The demo DEMONSTRATES
-    // the AC and Jeff's go is the verification; pre-ticked boxes are not a precondition
-    // (that's the "self-attest then show" model this card replaces — you can't honestly
-    // tick a demonstrable AC before the demo that proves it). The count rides the
-    // decision surface so Jeff sees AC X/Y before deciding — informed, not gated.
     jsonl(home, role, card, &trace, "demo.ac_status",
           &format!(",\"checked\":{},\"total\":{}", checked, total));
-    // Post the SINGLE gate-evidence comment + trace file (#2910 / #2897). Without
-    // these, /acp will refuse "no demo evidence" via done-gate.sh / accept_gate.
     post_preflight_evidence(home, card, role, checked, total, &trace)?;
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
+    Ok(DemoOutcome {
+        message: format!("#{} valid: {}, AC {}/{} checked (shown at announce, never a refusal)", card, status, checked, total),
+        exit: 0,
+    })
+}
 
-    // INVARIANT GATE EXECUTION (#3237/#3284, now #3443). Refuse to PRESENT unless
-    // all 5 gates left a demo.gate.result in the witness. This blocks presenting
-    // UN-GATED; it never blocks Jeff's go (#3263/DEC-048 sovereign-go intact —
-    // gates inform, never veto). #3443: the binary RUNS the gates itself (headless
-    // claude -p, see run_gates below) just before this check, so the refusal now
-    // only triggers where gates genuinely couldn't run. Refusing here, before any
-    // announce, is what makes a gate-less demo fail LOUD instead of silently
-    // presenting "(none run)". Skippable only in the unit/e2e suite.
-    //
-    // #3318/#3443 — the act/CI degrade. #3318 SKIPPED enforcement under act/CI
-    // because "no agent to run gates" there. #3443 retires that excuse: where the
-    // claude binary resolves (Jeff's box, local act) the binary self-gates and we
-    // ENFORCE. The only remaining skip is hosted CI with no claude (gates_ran=false
-    // AND in_act) — degrade, don't break the build. Detected via ACT/GITHUB_ACTIONS.
-    let in_act = std::env::var("ACT").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
-    let skip_gate_check =
-        std::env::var("CHORUS_DEMO_SKIP_GATE_CHECK").map(|v| v == "1").unwrap_or(false);
-    // #3365 — the round this demo proves: the werk's HEAD sha. All step
-    // evidence (gates, gathers, announce) must carry it; prior rounds' records
-    // never satisfy this one.
+/// #4502 — run ONE gate (product|code|quality|arch|ops) as its own dagu step,
+/// unless it already has a result for this round (a retry after a pass is a
+/// no-op). Exit 0 when a verdict is recorded; non-zero, named, when the gate
+/// could not run (no headless model on the box, or an "error" result).
+pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOutcome> {
+    if !REQUIRED_GATES.contains(&gate) {
+        return Err(format!("unknown gate '{}' — one of {:?}", gate, REQUIRED_GATES));
+    }
     let round = current_round(role, card);
-    let patch = current_patch_id(role, card); // #3461 — patch-id tolerant matching across rebase-churn
-    // #3443 AC1 — RUN the gates ourselves before enforcing their presence. Where
-    // claude is available (Jeff's box, local act) the binary self-gates: one
-    // headless `claude -p` per absent gate, recorded via record_gate. This kills
-    // the demoer-agent dependency (#3116) AND the act/CI standby (#3318) — gates
-    // now run in the headless path too. Skippable only in the unit/e2e suite,
-    // which seeds its own gate results.
-    let skip_gate_run = std::env::var("CHORUS_DEMO_SKIP_GATE_RUN").map(|v| v == "1").unwrap_or(false);
-    let gates_ran = !skip_gate_run && headless_available();
-    if gates_ran {
-        run_gates(home, role, card, &round, &trace);
+    let patch = current_patch_id(role, card);
+    let what = format!("gate {}", gate);
+    let recorded = |w: &str| step_result(w, card, "demo.gate.result", "gate", gate, "result", "findings", &round, &patch);
+    if let Some(done) = recorded(&read_witness(home)).filter(|(r, _)| r != "error") {
+        return Ok(step_outcome(&format!("{} (already recorded this round)", what), card, Some(done)));
     }
-    // Enforce gate presence whenever we ran them, or whenever we're in the
-    // interactive (non-act) path. The only path that still skips enforcement is
-    // hosted CI with no claude binary (gates_ran=false AND in_act) — degrade, do
-    // not break the build (#3284 lesson).
-    if !skip_gate_check && (gates_ran || !in_act) {
-        let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        let absent = gates_missing(&witness, card, &round, &patch);
-        if !absent.is_empty() {
-            jsonl(home, role, card, &trace, "demo.refused",
-                  &format!("{},\"missing\":\"{}\"", fail_extra("gates-missing"), absent.join(",")));
-            emit_spine_reason(home, "demo.refused", role, card, &trace, "gates-missing");
-            return Ok(DemoOutcome {
-                message: format!(
-                    "demo #{} REFUSED to present — gates not run: [{}]. All 5 gates \
-                     (product, code, quality, arch, ops) must record a demo.gate.result before \
-                     the demo presents (invariant execution, #3284). Run them via the /demo \
-                     skill's gate subagents, then re-run. Jeff's GO stays sovereign — this blocks \
-                     presenting UN-GATED, never your go.",
-                    card, absent.join(", ")
-                ),
-                exit: 1,
-            });
-        }
+    if !headless_available() {
+        return Ok(DemoOutcome {
+            message: format!("{} for #{} could not run: no headless model on this box (no claude, no chorus-agent profile)", what, card),
+            exit: 1,
+        });
     }
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    emit_spine(home, "demo.gates.running", role, card, &trace);
+    run_one_gate(home, role, card, gate, &round);
+    Ok(step_outcome(&what, card, recorded(&read_witness(home))))
+}
 
-    // #3263 — THE DEMO RUNS THE TESTS ITSELF and records the result. This ends the
-    // "did the tests actually run?" argument: the evidence is the artifact (a recorded
-    // demo.test_result + spine event), not a human claim. It does NOT gate — a red or
-    // un-run result is SHOWN on the decision surface; Jeff's go stays sovereign.
-    // Skippable only in the unit/e2e suite (which seeds its own result, no real werk).
-    //
-    // #3638 — the SAME RUN's werk-test verdict wins. The pipeline's BLOCKING test
-    // step (#3190/#3634) already ran the card's affected units and recorded via
-    // `werk-demo test-result`; re-running the generic cargo default here produced
-    // a false `tests: fail` on every card (no root Cargo.toml — the badge
-    // contradicted the blocking verdict on the same surface). Trace-scoped: only a
-    // result recorded under THIS run's trace suppresses the self-run, so a stale
-    // record from an earlier round never masks an unrun suite.
+/// #4502 — run the n-th peer review (1-based, the order gather_peers gives) as
+/// its own dagu step: one headless review loaded with that peer's CLAUDE.md
+/// (#3539). Same exit rule as a gate. No longer waits for the gates: the
+/// reviews run beside them.
+pub fn run_review_step(card: u64, role: &str, home: &Path, n: usize) -> R<DemoOutcome> {
+    let peers = gather_peers(role);
+    let peer = match n.checked_sub(1).and_then(|i| peers.get(i)) {
+        Some(p) => *p,
+        None => return Err(format!("no peer {} for {} — {} has {} peers: {:?}", n, role, role, peers.len(), peers)),
+    };
+    let round = current_round(role, card);
+    let patch = current_patch_id(role, card);
+    let what = format!("review by {}", peer);
+    let recorded = |w: &str| step_result(w, card, "demo.gather.replied", "peer", peer, "verdict", "note", &round, &patch);
+    if let Some(done) = recorded(&read_witness(home)).filter(|(r, _)| r != "error") {
+        return Ok(step_outcome(&format!("{} (already recorded this round)", what), card, Some(done)));
+    }
+    if !headless_available() {
+        return Ok(DemoOutcome {
+            message: format!("{} for #{} could not run: no headless model on this box (no claude, no chorus-agent profile)", what, card),
+            exit: 1,
+        });
+    }
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    emit_spine(home, "demo.reviews.running", role, card, &trace);
+    run_one_review(home, role, card, peer, &round);
+    Ok(step_outcome(&what, card, recorded(&read_witness(home))))
+}
+
+/// #4502 — what announce still needs: the gates and peer reviews with no
+/// usable result this round ("error" counts as missing — it never ran). Pure.
+pub fn announce_missing(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<String> {
+    let usable = |r: Option<(String, String)>| r.is_some_and(|(v, _)| v != "error");
+    let mut missing: Vec<String> = REQUIRED_GATES
+        .iter()
+        .filter(|g| !usable(step_result(witness, card, "demo.gate.result", "gate", g, "result", "findings", round, patch_id)))
+        .map(|g| format!("gate-{}", g))
+        .collect();
+    missing.extend(
+        gather_peers(role)
+            .into_iter()
+            .filter(|p| !usable(step_result(witness, card, "demo.gather.replied", "peer", p, "verdict", "note", round, patch_id)))
+            .map(|p| format!("review-{}", p)),
+    );
+    missing
+}
+
+/// #4502 — the announce step: refuses, naming each missing step, unless every
+/// gate and peer review has a result this round; then shows Jeff the decision
+/// surface (tests verdict, AC x/y, gates, reviews, the claim) and exits 0.
+/// Nothing waits or polls here.
+pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let round = current_round(role, card);
+    let patch = current_patch_id(role, card);
+    let missing = announce_missing(&read_witness(home), card, role, &round, &patch);
+    if !missing.is_empty() {
+        jsonl(home, role, card, &trace, "demo.refused",
+              &format!("{},\"missing\":\"{}\"", fail_extra("gates-missing"), missing.join(",")));
+        emit_spine_reason(home, "demo.refused", role, card, &trace, "gates-missing");
+        return Ok(DemoOutcome {
+            message: format!(
+                "announce #{} refused — no result this round from: [{}]. Retry those steps; \
+                 gates and reviews inform, your go decides.",
+                card, missing.join(", ")
+            ),
+            exit: 1,
+        });
+    }
+    let cv = run(&script_path(home, "cards"), &["view", &card.to_string()])?;
+    let (checked, total) = ac_counts(&cv);
+
+    // #3263 / #3638 / #4012 — the tests verdict on the surface: this patch's
+    // werk-test result wins, then this trace's; only with neither does the
+    // demo run the card's tests itself. Shown, never a refusal.
     if !std::env::var("CHORUS_DEMO_SKIP_TEST_RUN").map(|v| v == "1").unwrap_or(false) {
-        let witness_now = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        // #4012 — CONTENT first, trace as the fallback. A re-present of identical
-        // content reuses the verdict already paid for that patch; only genuinely
-        // new content re-runs. The trace arm stays for witness rows written before
-        // this card, which carry no patch_id.
+        let witness_now = read_witness(home);
         let paid = test_result_recorded_for_patch(&witness_now, card, &patch)
             .or_else(|| test_result_recorded_for_trace(&witness_now, card, &trace));
         if let Some(res) = paid {
@@ -1289,155 +1188,15 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
             jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
         }
     }
-
-    // #3443 — the GATE step is RUN BY THIS BINARY (run_gates above), not delegated
-    // to the /demo skill's subagents. The owning role still REVIEWS its recorded
-    // result async, but execution is the binary's. The old go-run-your-gate nudge
-    // relay + the in-binary gate-chain wait stay retired (the agents-grading-agents
-    // relay was the waste, not the gates). Smoke folds into the machine prover.
     emit_spine(home, "demo.gates.recorded", role, card, &trace);
 
-    // #3443 AC2 — FIRE the reply-required gathers HERE, before the standby. This
-    // is the bug Jeff caught live: the gather send lived only in signal() (below,
-    // after the standby return), so a headless demo stood by on gathers-pending
-    // having never sent them. fire_gathers sends to unsent peers once gates are
-    // recorded; the expects=reply envelope + #3218 hook make each peer owe an
-    // ack. Skippable only in the unit/e2e suite (which seeds replies directly).
-    let skip_gather_send =
-        std::env::var("CHORUS_DEMO_SKIP_GATHER_SEND").map(|v| v == "1").unwrap_or(false);
-    if !skip_gather_send {
-        // #3539 — gathers-as-gates: where claude is available (Jeff's box, local act),
-        // the binary RUNS each peer's review itself (spawned headless claude -p,
-        // recorded in-process) — peer review is a GATE, not a nudge we wait on. Only
-        // in hosted CI with no claude do we fall back to the old send-the-nudge path.
-        if headless_available() {
-            run_reviews(home, role, card, &round, &trace);
-        } else {
-            fire_gathers(home, role, card, &trace, &round);
-        }
-    }
-
-    // #3319 (Jeff's JX, 2026-06-10): THE ANNOUNCE IS THE READY-GATE. The
-    // announce-bearing tail below (signal → test-surface → DEMO READY → peer
-    // feedback) fires ONLY when prework is sealed — every required gate recorded.
-    // The interactive demoer already REFUSED above (~line 590) if gates are
-    // missing; the only way to reach here un-gated is the headless act prework
-    // path, which skips that refusal because it has no LLM to run gates. In that
-    // path we STAND BY: the variant is up, gates are pending the interactive
-    // demoer, and we emit NO announce — no Bridge post, no peer nudges, no
-    // "DEMO READY". Jeff is never dragged into a demo before it can run. The
-    // demoer runs the 5 gates as prework (/demo Step 1), then re-invokes; on that
-    // pass gates are present and the announce fires for real.
-    // (skip_gate_check = the unit/e2e suite, which drives the full tail directly.)
-    {
-        let witness_pre = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        // #3352 — the full invariant: gates recorded AND both peer gathers REPLIED.
-        // Jeff's spec: "announce happens b4 role feedback so go precedes that" — the
-        // announce may not exist until the team's feedback is IN. Typed standby names
-        // exactly what's missing so the demoer knows the next prework step.
-        if !announce_ready_full(&witness_pre, card, role, &round, &patch, skip_gate_check) {
-            let gates_absent = gates_missing(&witness_pre, card, &round, &patch);
-
-            // GATES pending → no demoer recorded the 5 gates; blocking can't fill them
-            // (nothing async writes gate results). Stand by, exit 2 — can't prove by
-            // waiting. Happy path the in-run #3443 demoer records gates ABOVE this, so
-            // this is the defensive fallback (hosted CI with no claude, or a skipped run).
-            if !gates_absent.is_empty() {
-                let gathers_absent = gathers_missing(&witness_pre, card, role, &round, &patch);
-                emit_spine(home, "demo.prework.standby", role, card, &trace);
-                jsonl(home, role, card, &trace, "demo.prework.standby",
-                      &format!(",\"reason\":\"gates-pending\",\"gates_missing\":\"{}\",\"gathers_missing\":\"{}\"",
-                               gates_absent.join(","), gathers_absent.join(",")));
-                return Ok(DemoOutcome {
-                    message: format!(
-                        "demo #{} — prework standby (gates-pending, round {}). Gates not recorded: [{}] \
-                         — cannot prove by waiting (no async writer fills gates). Run them \
-                         (`werk-demo gate ...`) then re-invoke. Presented-not-landed (clean stop).",
-                        card, round, gates_absent.join(",")
-                    ),
-                    exit: 2,
-                });
-            }
-
-            // Gates recorded; only the peer GATHERS are outstanding (fired above).
-            // #3511 — BLOCK-POLL in this SAME run for PEER REVIEW: hold until the
-            // replies land (same round → zero churn) or the window closes. Detached
-            // act run, safe to block. No go gating — EVERY run blocks for peer review,
-            // then announces to Jeff and blocks for HIS go (below). The test suite
-            // (skip_gate_check) never reaches here — announce_ready_full short-circuits.
-            {
-                let timeout_s = std::env::var("CHORUS_DEMO_BLOCK_TIMEOUT")
-                    .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600);
-                let start = Instant::now();
-                emit_spine(home, "demo.gather.block", role, card, &trace);
-                jsonl(home, role, card, &trace, "demo.gather.block",
-                      &format!(",\"round\":\"{}\",\"timeout_s\":{}", round, timeout_s));
-                loop {
-                    let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-                    if gathers_missing(&w, card, role, &round, &patch).is_empty() {
-                        // peer review IN at THIS round → fall through to announce + Jeff's go.
-                        break;
-                    }
-                    if start.elapsed().as_secs() >= timeout_s {
-                        let gathers_absent = gathers_missing(&w, card, role, &round, &patch);
-                        emit_spine(home, "demo.gather.timeout", role, card, &trace);
-                        jsonl(home, role, card, &trace, "demo.gather.timeout",
-                              &format!(",\"round\":\"{}\",\"gathers_missing\":\"{}\",\"waited_s\":{}",
-                                       round, gathers_absent.join(","), timeout_s));
-                        return Ok(DemoOutcome {
-                            message: format!(
-                                "demo #{} — gather TIMEOUT after {}s (round {}). Peers [{}] did not \
-                                 review; NOTHING landed (clean stop, green). Re-run once they ack.",
-                                card, timeout_s, round, gathers_absent.join(",")
-                            ),
-                            exit: 2,
-                        });
-                    }
-                    sleep(Duration::from_secs(10));
-                }
-            }
-        }
-    }
-
-    // Step 5: signal — board demo + spine event + Bridge + feedback nudges (best-effort,
-    // the act has already gated; this announces). Step 4 stakes-brief is human-driven
-    // content; demo-v2 records it in spine events, not as a separate gate.
-    // #3305 — fresh witness read at the send site: only peers still owed THIS
-    // round get the 4-question nudge; an acked peer is never re-fired however
-    // many times the demo re-presents.
-    let witness_now = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let owed = nudge_targets(&witness_now, card, role, &round, &patch);
-    let gather_send_failed = signal(card, role, home, &trace, &owed);
-    if !gather_send_failed.is_empty() {
-        // #3352 — surface the send failure in the returned message itself: the
-        // demoer (and Jeff) see it in-window and send by hand; the announce
-        // stays held anyway (gathers_missing requires replies).
-        jsonl(home, role, card, &trace, "demo.gather.send_failed",
-              &format!(",\"peers\":\"{}\"", gather_send_failed.join(",")));
-        return Ok(DemoOutcome {
-            message: format!(
-                "demo #{} — GATHER SEND FAILED to [{}]. The feedback nudges did NOT \
-                 reach those peers (MCP send error mid-pipeline — see demo.nudge.failed \
-                 in the witness). Send the 4 questions by hand (werk-demo gather-text {}) \
-                 and record replies (werk-demo gather {} <peer> replied), then re-invoke. \
-                 No announce until the team is actually asked.",
-                card, gather_send_failed.join(","), card, card
-            ),
-            exit: 0,
-        });
-    }
+    // Step 5: signal — board demo + spine event + Bridge (best-effort; this
+    // announces, it does not gate).
+    signal(card, role, home, &trace);
     jsonl(home, role, card, &trace, "demo.signal.completed", "");
 
-    // #3116 — the ACT is OUT of demo. build → deploy → env-up are the PRIOR
-    // atomic verbs in the flat sequence (werk-mcp.sh steps 3-4); they stand up
-    // the role's werk variant. Demo only POINTS at that already-running instance
-    // — it never builds or deploys. (Boundary confirmed with Kade, #3211/#3222.)
-
-    // #3100 — announce the TEST SURFACE before the test window opens. Names
-    // service ports + CLI-verb binary paths so the demo-er + team + Jeff know
-    // exactly what new code is running and where to hit it. Without this, the
-    // pause is a "comment window" with no surface to comment on; with it, the
-    // pause becomes a real test window. Silas paired the framing on #3101.
+    // #3100 — announce the TEST SURFACE: the service ports and CLI verbs the
+    // card's new code runs on, so the window is a real test window.
     let api_port = variant_port(role, 3343, 3340);
     let test_surface_body = format!(
         r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
@@ -1457,27 +1216,13 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     emit_spine(home, "demo.test_surface.ready", role, card, &trace);
     jsonl(home, role, card, &trace, "demo.test_surface.ready", "");
 
-    // #3109 Bug 1 fix: `demo.show.completed` previously fired here, right after
-    // deploy and BEFORE the peer-engagement check below. Since /acp's accept_gate
-    // reads `demo.show.completed`, that order let /acp admit a card before peers
-    // had actually exercised the variant — the contamination Silas hit on #3109
-    // today. The emission is now moved to AFTER the peer-engagement loop and
-    // gated on no escalations; if any peer failed to exercise, the demo emits
-    // `demo.show.refused` instead and /acp refuses.
-
-    // #3100 AC#4 — visible announce. Owner/head-of-product (Jeff) gets a
-    // framed shape he cannot miss: [DEMO READY FOR JEFF] banner prefix, card
-    // id, variant URL, explicit react prompt. Not a scrollable Bridge line.
-    // Per-role werk-api ports per #3092 (silas=3343, kade=3344, wren=3345);
-    // canonical 3340 fallback for unknown role.
+    // #3100 AC#4 — the visible announce, per-role variant ports (#3092).
     let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port(role, 3343, 3340));
     let clearing_url = clearing_url_for(role);
     let pause_body = format!(
         r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nClearing: {}\nAwaiting your eyes (or a machine verdict).\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
         role, card, variant_url, clearing_url
     );
-    // -f + exit-check so the silent-success class can't recur on this surface
-    // (Kade's debt-note catch — AC2 spirit leaks beyond signal()).
     let auth = bridge_auth_header();
     if let Err(e) = run(
         "curl",
@@ -1494,13 +1239,9 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
-    // #3263 — THE MACHINE SHOWS, IT DOES NOT GATE. Jeff's go is sovereign (DEC-048):
-    // the demo presents the truth so the decision is never blind, but it NEVER refuses
-    // his go over test / variant / AC status — "if I say go it does not matter if tests
-    // ran." Below we only COMPUTE honest status for the decision surface; no refusals.
-    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-
-    // running: is the variant actually reachable right now? Informational only.
+    // #3263 — the machine shows, it does not gate: the status below is for the
+    // decision surface only.
+    let witness = read_witness(home);
     let skip_variant_check =
         std::env::var("CHORUS_DEMO_SKIP_VARIANT_CHECK").map(|v| v == "1").unwrap_or(false);
     let variant_status = if skip_variant_check {
@@ -1510,35 +1251,19 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     } else {
         format!("running → {} (NOT reachable)", variant_url)
     };
-
-    // tested: did the demo's test run record a result? (informational on the surface)
     let test_res = test_result_recorded(&witness, card);
     let test_summary = match &test_res {
         Some(r) => format!("tests: {} · {}", r, coverage_words(coverage_recorded(&witness, card).as_deref())),
         None => "tests: NOT run".to_string(),
     };
-
-    // gates: #3284 (AC7) — each gate's VERDICT (✓/✗/-), not just which ran, so the
-    // decision surface carries the feedback (the #3251 residual).
     let gate_summary = render_gate_summary(&witness, card);
-    // #3858 — the room line's gate bit: green only when the summary carries no
-    // failure mark (the summary itself is the source of truth for per-gate state).
     let gates_green = !gate_summary.contains('✗') && !gate_summary.to_lowercase().contains("fail");
-
-    // #3284 (AC1-4) — the execution-state cockpit, from the card's real events.
     let events = fetch_card_events(card);
     let cockpit = render_execution_state(&events, test_res.as_deref());
     let gate_feedback = render_gate_feedback(&witness, card);
 
-    // #3284 — THE ANNOUNCE, in Jeff's 5-step order: gates required (gate_summary) ·
-    // feedback required (gate_feedback) · announced here · then he asks questions /
-    // asks to test · then go / no. Built ONCE as plain text and RETURNED as this
-    // verb's message — because in auto/focus mode Jeff sees only the agent's
-    // end-of-turn reply, never a Bridge post; the agent pastes this verbatim.
-    // #3511 — THE ANNOUNCE, the four things Jeff named (2026-06-19): (1) each gate's
-    // status, (2) the team's role feedback, (3) the card # + description + AC, and
-    // (4) a CLAIM of how to prove it works against the variant. Built once, RETURNED
-    // as the verb's message AND surfaced to Jeff via the wire (announce_to_jeff).
+    // #3511 — the announce, the four things Jeff named: each gate's status, the
+    // team's review, the card + AC, and a claim of how to prove it works.
     let title = card_title(&cv);
     let experience = extract_section(&cv, "Experience");
     let ac_items = render_ac_items(&cv);
@@ -1551,25 +1276,22 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 
     let mut parts: Vec<String> = Vec::new();
     parts.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
-    parts.push(format!("🎬 {}", if title.is_empty() { format!("#{}", card) } else { title.clone() })); // (3) card # + title
+    parts.push(format!("🎬 {}", if title.is_empty() { format!("#{}", card) } else { title.clone() }));
     parts.push(format!("   DEMO · ready for your GO · AC {}/{}", checked, total));
     parts.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
-    parts.push(cockpit.clone());
-    if !ac_items.is_empty() { parts.push(ac_items); }                       // (3) AC items
-    parts.push(gate_summary.clone());                                       // (1) gate status
-    if !gate_feedback.is_empty() { parts.push(gate_feedback.clone()); }     // per-gate findings
-    if !role_feedback.is_empty() { parts.push(role_feedback); }             // (2) role feedback
-    parts.push(claim);                                                      // (4) prove-it claim
+    parts.push(cockpit);
+    if !ac_items.is_empty() { parts.push(ac_items); }
+    parts.push(gate_summary);
+    if !gate_feedback.is_empty() { parts.push(gate_feedback); }
+    if !role_feedback.is_empty() { parts.push(role_feedback); }
+    parts.push(claim);
     parts.push(format!("variant: {}", variant_status));
-    parts.push(test_summary.clone());
+    parts.push(test_summary);
     parts.push("──────────────────────────────────".to_string());
     parts.push("Look at the variant, ask me anything, or tell me to TEST it.".to_string());
     parts.push(format!("Then your call → `werk-demo go {}` to land · no/more to hold.", card));
     let announce = parts.join("\n");
-    // #3858 — the ROOM gets ONE LINE (Jeff reads it on a phone; the full cockpit
-    // above fills his screen — his screenshot, 2026-08-13). The rich announce
-    // stays this verb's returned message (the session reply); the room line
-    // carries exactly the decision contract + the trace link for detail.
+    // #3858 — the room gets ONE line; the full surface is this step's message.
     let surface_body = format!(
         r#"{{"from":"{}","text":"{}"}}"#,
         role,
@@ -1582,51 +1304,20 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     jsonl(home, role, card, &trace, "demo.decision_surface",
           &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // #3279 — PRESENT-AND-EXIT. The demo no longer BLOCKS for the decision. Blocking
-    // here held the synchronous MCP call open for the entire human wait, and a held
-    // call drops on long waits (the client↔chorus-mcp transport self-sever, #3277) —
-    // it could not survive a 10-12h walk-away. The earlier "fix" (detach the run)
-    // then lost Jeff's in-session visibility entirely (he saw nothing, was asked to
-    // approve blind). Both are wrong. So the demo PRESENTS (variant up + decision
-    // surface, posted above) and EXITS cleanly — Half A of the pipeline ends here.
-    // NOTHING is held: there is no wait to drop and no detached process to leak.
-    // Jeff decides whenever — minutes, or hours, or after a reboot — and his GO runs
-    // Half B (werk.yml's go-gated `land` job: merge → sync → deploy → accept). The "wait"
-    // costs nothing because it is a stopped pipeline, not a held connection.
-    // #3459 — record the card's patch-id alongside the round so werk-merge can
-    // accept a content-preserving rebase (sha moved, change identical) on land.
-    let patch = std::env::var("CHORUS_WERK_BASE").ok()
+    // #3279 / #3459 — present-and-exit; the land half reads demo.presented and
+    // Jeff's go (`werk-demo go`) from the witness, patch-keyed.
+    let land_patch = std::env::var("CHORUS_WERK_BASE").ok()
         .map(|wb| patch_id_for_card(&wb, role, card))
         .unwrap_or_default();
     jsonl(home, role, card, &trace, "demo.presented",
           &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\",\"patch_id\":\"{}\"",
-                   checked, total, round, variant_url, patch));
+                   checked, total, round, variant_url, land_patch));
     emit_spine(home, "demo.presented", role, card, &trace);
-    // #3511 (corrected — Jeff 2026-06-19: "no 24 loop · u just fucking wait ·
-    // however long it takes") — the demo PRESENTS and EXITS. It does NOT block
-    // in-process for the go. The announce is RETURNED as this run's message; the
-    // driving role prints it as its final turn output and STOPS — the conversation
-    // turn IS the wait, and it holds however long Jeff takes (no timeout, no 24h
-    // loop, no detached process). The in-process jeffgo loop was the bug: it forced
-    // a backgrounded run whose own events flashed the turn past Jeff before he could
-    // read the announce. Present-and-exit restores the #3279 design that loop violated.
-    //
-    // Jeff's GO is the separate, whenever-ready step: `werk-demo go <card>` records
-    // demo.go → the go-gated land (werk-merge reads demo.presented + demo.go) merges.
-    // Only Jeff's recorded go lands a card — the self-accept hole stays closed by
-    // construction (no at-invoke go flag exists for an agent to set).
-    // #3548 — do NOT re-announce "ready for GO" when Jeff's go is ALREADY recorded for
-    // this round/patch. On the go-invoke the demo step re-runs (werk.yml one-job-one-run),
-    // so present-and-exit would fire the announce AGAIN on the LANDING run — the duplicate
-    // that baits a re-issued `go` and reads as a "cw loop that runs over and over."
-    // jeff_go_recorded (#3461 patch-tolerant) is the same witness slot the land verdict
-    // reads; gating on it makes the announce fire ONLY when presenting-for-go, never when
-    // landing. The DELIVERY of that announce (#3544 system-sender) is unchanged.
-    let go_recorded = jeff_go_recorded(&witness, card, &round, &patch);
-    if should_announce_ready(skip_gate_check, skip_gather_send, go_recorded) {
+    // #3548 — never re-announce "ready for GO" once Jeff's go is recorded.
+    if !jeff_go_recorded(&witness, card, &round, &patch) {
         announce_to_jeff(role, card, &trace, &variant_url, &round);
     }
-    Ok(DemoOutcome { message: announce, exit: 2 })
+    Ok(DemoOutcome { message: announce, exit: 0 })
 }
 
 /// #3237 — record one gate's result into the witness so the verdict step can
@@ -2401,55 +2092,7 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
     record_gather_replied(home, role, card, peer, &verdict, &findings);
 }
 
-/// #3539 — run every peer review with NO reply recorded for THIS round, each as a
-/// spawned headless claude -p (run_one_review), recording demo.gather.replied. The
-/// run_gates sibling for peer feedback: the demo no longer waits on a live peer
-/// session to reply — it runs the review and records it, deterministically. Only
-/// reviews un-gated work (gates recorded first); already-replied reviews (patch-
-/// keyed, survive churn) are not re-run.
-fn run_reviews(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
-    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let patch = current_patch_id(role, card);
-    if !gates_missing(&witness, card, round, &patch).is_empty() {
-        return; // don't review un-gated work
-    }
-    let absent = gathers_missing(&witness, card, role, round, &patch);
-    if absent.is_empty() {
-        return;
-    }
-    emit_spine(home, "demo.reviews.running", role, card, trace);
-    // Surface to the human overseer (Jeff): reviews run in-process, no live peer is
-    // block-asked. Best-effort, mirrors fire_gathers' surface.
-    let text = format!(
-        "[demo] #{} — running spawned peer reviews [{}] in-process (gathers-as-gates, #3539); no live-session wait",
-        card, absent.join(", ")
-    );
-    let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
-    let auth = bridge_auth_header();
-    let _ = run("curl", &[
-        "-s", "-X", "POST", &bridge_url(),
-        "-H", "Content-Type: application/json", "-H", &auth, "-d", &bridge_body,
-    ]);
-    for peer in absent {
-        run_one_review(home, role, card, peer, round);
-    }
-}
 
-/// AC1 (#3443) — run every required gate that has NO result for THIS round,
-/// recording each itself. Already-recorded gates (e.g. a re-invoke after a drop)
-/// are not re-run. The demo no longer depends on a demoer agent to spawn gates.
-fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
-    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let patch = current_patch_id(role, card); // #3461 — patch-id tolerant across rebase-churn
-    let absent = gates_missing(&witness, card, round, &patch);
-    if absent.is_empty() {
-        return;
-    }
-    emit_spine(home, "demo.gates.running", role, card, trace);
-    for gate in absent {
-        run_one_gate(home, role, card, gate, round);
-    }
-}
 
 /// #3263 — record the pipeline's test outcome into the witness so the informed-go
 /// check can require it (and Jeff sees it before the go). Called by werk.yml's test
@@ -2493,23 +2136,31 @@ fn card_test_verdict(werk: &str) -> &'static str {
     if run_card_tests(werk) { "pass" } else { "fail" }
 }
 
-/// #4474 — whose werk the ceremony demos. `werk-demo <card> <role>` names the
-/// builder role the way every other werk verb does (`<card> <role>`), so werk
-/// v2's dagu step needs no DEPLOY_ROLE (Jeff 2026-10-09: DEPLOY_ROLE is
-/// identity; a run must not assert one). Without the argument, and for every
-/// subcommand, DEPLOY_ROLE stays the source, unchanged from v1.
+/// #4502 — the demo's step subcommands: `<step> <card> <role> [arg]`.
+pub const DEMO_STEPS: [&str; 4] = ["validate", "run-gate", "run-review", "announce"];
+
+/// #4474 — whose werk the demo is for. A step names the builder role the way
+/// every werk verb does (`<step> <card> <role>`, #4502), so a dagu step needs no
+/// DEPLOY_ROLE (Jeff 2026-10-09: DEPLOY_ROLE is identity; a run must not assert
+/// one). The recording subcommands (gate, test-result, go, verdict) keep
+/// DEPLOY_ROLE as their source, unchanged from v1.
 pub fn demo_role(argv: &[String], deploy_role: &str) -> R<String> {
-    let ceremony = argv.first().is_some_and(|a| a.parse::<u64>().is_ok());
-    let named = if ceremony { argv.get(1).map(|r| r.trim()).filter(|r| !r.is_empty()) } else { None };
-    match named.or(Some(deploy_role.trim()).filter(|r| !r.is_empty())) {
+    let named = match argv.first().map(String::as_str) {
+        Some(step) if DEMO_STEPS.contains(&step) => argv.get(2),
+        Some(first) if first.parse::<u64>().is_ok() => argv.get(1),
+        _ => None,
+    };
+    match named.map(|r| r.trim()).filter(|r| !r.is_empty()).or(Some(deploy_role.trim()).filter(|r| !r.is_empty())) {
         Some(r) => Ok(r.to_string()),
-        None => Err("no role: pass `werk-demo <card> <role>` or set DEPLOY_ROLE".to_string()),
+        None => Err("no role: pass `werk-demo <step> <card> <role>` or set DEPLOY_ROLE".to_string()),
     }
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
-/// Two forms: `werk-demo <card-id>` (the ceremony) and `werk-demo gate <card>
-/// <gate> <result>` (a gate subagent recording its result, #3237).
+/// The demo steps (#4502) — `validate`, `run-gate <gate>`, `run-review <n>`,
+/// `announce`, each `<step> <card> <role>` — plus the recording subcommands:
+/// `gate` (record a gate result, #3237), `test-result` (werk-test's verdict),
+/// `go` (Jeff's go) and `verdict` (the land's witness check).
 pub fn run_demo() -> R<DemoOutcome> {
     let argv: Vec<String> = env::args().skip(1).collect();
     let role = demo_role(&argv, &env::var("DEPLOY_ROLE").unwrap_or_default())?;
@@ -2518,9 +2169,22 @@ pub fn run_demo() -> R<DemoOutcome> {
         .unwrap_or_else(|_| Path::new(&env::var("HOME").unwrap_or_default()).join("CascadeProjects/chorus"));
 
     let mut args = argv.into_iter();
-    let first = args
-        .next()
-        .ok_or("usage: werk-demo <card-id> [role] | werk-demo gate <card> <gate> <result>")?;
+    let first = args.next().ok_or_else(usage)?;
+
+    if DEMO_STEPS.contains(&first.as_str()) {
+        let card: u64 = args.next().and_then(|s| s.parse().ok()).ok_or_else(usage)?;
+        let _role_arg = args.next();
+        let role = role.trim();
+        return match first.as_str() {
+            "validate" => validate_step(card, role, &home),
+            "run-gate" => run_gate_step(card, role, &home, &args.next().ok_or_else(usage)?),
+            "run-review" => {
+                let n: usize = args.next().and_then(|s| s.parse().ok()).ok_or_else(usage)?;
+                run_review_step(card, role, &home, n)
+            }
+            _ => announce_step(card, role, &home),
+        };
+    }
 
     if first == "gate" {
         let card: u64 = args
@@ -2543,70 +2207,6 @@ pub fn run_demo() -> R<DemoOutcome> {
             ),
             exit: 0,
         });
-    }
-
-    if first == "gather-text" {
-        // #3352 — the 4-question gather is VERBATIM from the verb, not improvised
-        // per-demoer. The demoer (or orchestrator) sends exactly this text; wording
-        // drift across roles/models is impossible.
-        let card: u64 = args
-            .next()
-            .and_then(|s| s.parse().ok())
-            .ok_or("usage: werk-demo gather-text <card>")?;
-        return Ok(DemoOutcome {
-            message: format!(
-                "[feedback #{c} — ACK REQUIRED] From: {r}. Read the card. Read the diff (werk {r}-{c}). \
-                 (1) How does this impact your products? (2) How does this impact you and your domain? \
-                 (3) Am I over-building or under-planning? (4) Does this strengthen the system, or just \
-                 please the room? Ack: substantive reply or blocked-on-X within 10 min. Demo HOLDS for \
-                 your reply — record it with: werk-demo gather {c} <your-role> replied",
-                c = card, r = role.trim()
-            ),
-            exit: 0,
-        });
-    }
-
-    if first == "gather" {
-        // #3352 — record gather lifecycle evidence on the witness: sent when the
-        // 4-question nudge goes out, replied when the peer's ACK arrives. The
-        // announce requires `replied` from every peer (gathers_missing); a model
-        // cannot claim feedback that isn't witnessed.
-        let card: u64 = args
-            .next()
-            .and_then(|s| s.parse().ok())
-            .ok_or("usage: werk-demo gather <card> <peer> <sent|replied> [note]")?;
-        let peer = args.next().ok_or("usage: werk-demo gather <card> <peer> <sent|replied> [note]")?;
-        if !["wren", "silas", "kade"].contains(&peer.as_str()) {
-            return Err(format!("unknown peer '{}' — one of wren|silas|kade", peer));
-        }
-        let phase = args.next().unwrap_or_else(|| "replied".to_string());
-        match phase.as_str() {
-            "sent" => {
-                let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
-                let round = current_round(role.trim(), card);
-                record_gather_sent(&home, role.trim(), card, &peer, &round, &trace);
-                return Ok(DemoOutcome {
-                    message: format!("gather sent recorded for #{}: peer={}", card, peer),
-                    exit: 0,
-                });
-            }
-            "replied" => {
-                // #3479 — `replied [verdict] [note...]`: verdict (pass|concerns|block)
-                // is parsed if present, else defaults to pass with the rest as note
-                // (backward-compatible). Routes through the single canonical writer.
-                let rest: Vec<String> = args.collect();
-                let (verdict, note) = match rest.split_first() {
-                    Some((v, n)) if ["pass", "concerns", "block"].contains(&v.as_str()) => (v.clone(), n.join(" ")),
-                    _ => ("pass".to_string(), rest.join(" ")),
-                };
-                record_gather_replied(&home, role.trim(), card, &peer, &verdict, &note);
-                return Ok(DemoOutcome {
-                    message: format!("gather replied recorded for #{}: peer={} verdict={}", card, peer, verdict),
-                    exit: 0,
-                });
-            }
-            other => return Err(format!("unknown gather phase '{}' — sent|replied", other)),
-        }
     }
 
     if first == "test-result" {
@@ -2674,12 +2274,18 @@ pub fn run_demo() -> R<DemoOutcome> {
         });
     }
 
-    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id> [role]")?;
-    // #3511 — NO go at invoke. Every run proves (gates + peer gathers) → ANNOUNCES
-    // to Jeff → blocks for HIS in-run go (`werk-demo go <card>`) before merge. The
-    // go-flag conflation is gone: there is no arg for an agent to set, so only
-    // Jeff's recorded go can land a card (self-accept hole closed by construction).
-    demo(card, role.trim(), &home)
+    // #4502 — the all-in-one `werk-demo <card> <role>` is gone: the demo is
+    // dagu steps now. Refuse by name rather than run part of a demo.
+    Err(usage())
+}
+
+fn usage() -> String {
+    format!(
+        "usage: werk-demo <{}> <card> <role> [gate|n] — the demo runs as these steps (#4502): \
+         validate · run-gate <product|code|quality|arch|ops> · run-review <1|2> · announce; \
+         recording: werk-demo gate|test-result|go|verdict <card> ...",
+        DEMO_STEPS.join("|")
+    )
 }
 
 #[cfg(test)]
@@ -2828,14 +2434,6 @@ mod tests {
         assert_eq!(json_str_field("{\"status\":\"Done\"}", "status"), Some("Done".to_string()));
     }
 
-    #[test]
-    fn feedback_message_is_verbatim() {
-        // Pinned byte-for-byte (#3116). Q2 = "you and your domain" (demoee is the
-        // user); Q4 = the Loom discriminator lens. Changing this is a deliberate
-        // product decision, not a refactor — this test is the guard that makes it so.
-        let expected = "[feedback #3116 — ACK REQUIRED]\\nFrom: wren\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.";
-        assert_eq!(feedback_message(3116, "wren"), expected);
-    }
 
     // #3237 — gate-evidence enforcement. The demo verdict can't be recorded
     // unless all 5 gates left a demo.gate.result in the witness for the card.
@@ -2906,23 +2504,8 @@ mod tests {
         assert!(!line_keyed(l, "rB", ""));           // empty patch, wrong round → no match
     }
 
-    // #3319 — the announce is the ready-gate: no announce fires until gates are recorded.
-    #[test]
-    fn announce_blocked_when_any_gate_missing() {
-        let w = format!("{}\n{}", gate_line(3319, "product"), gate_line(3319, "code"));
-        assert!(!announce_ready(&w, 3319, "r1", "", false), "missing gates ⇒ stand by, no announce");
-    }
 
-    #[test]
-    fn announce_allowed_when_all_five_recorded() {
-        let w = REQUIRED_GATES.iter().map(|g| gate_line(3319, g)).collect::<Vec<_>>().join("\n");
-        assert!(announce_ready(&w, 3319, "r1", "", false), "all 5 gates ⇒ announce may fire");
-    }
 
-    #[test]
-    fn announce_blocked_when_witness_empty() {
-        assert!(!announce_ready("", 3319, "r1", "", false), "no gates at all ⇒ never announce");
-    }
 
     // #3324 AUDIT — announce_skip_drives_tail_for_test_suite deleted: with skip=true
     // announce_ready is `true || …` — the assert could not fail (passes-by-definition).
@@ -2981,38 +2564,7 @@ mod tests {
         assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + both replies ⇒ announce");
     }
 
-    #[test]
-    fn should_announce_ready_suppresses_when_go_already_recorded() {
-        // #3548 — the loop fix. Presenting-for-go (no go yet) ⇒ announce fires.
-        assert!(should_announce_ready(false, false, false), "present-for-go ⇒ announce");
-        // Landing run (go already recorded) ⇒ NO re-announce (kills the duplicate / loop bait).
-        assert!(!should_announce_ready(false, false, true), "go already recorded ⇒ suppress on land");
-        // Skip paths still suppress regardless of go state.
-        assert!(!should_announce_ready(true, false, false), "skip_gate_check ⇒ suppress");
-        assert!(!should_announce_ready(false, true, false), "skip_gather_send ⇒ suppress");
-    }
 
-    #[test]
-    fn should_emit_announce_fires_on_completing_reply_then_is_idempotent() {
-        // #3466 — the announce-on-completion wire: once gates + BOTH replies are in
-        // for THIS round, recording the completing reply must emit demo.presented
-        // (the witness werk-merge's land-gate reads), and never double-emit.
-        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3466, g)).collect();
-        lines.push(gather_line(3466, "silas"));
-        lines.push(gather_line(3466, "kade"));
-        let w = lines.join("\n");
-        assert!(should_emit_announce(&w, 3466, "wren", "r1", ""), "gates + both replies ⇒ emit the witness");
-
-        // one peer short ⇒ no announce (the gate is unchanged)
-        let mut partial: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3466, g)).collect();
-        partial.push(gather_line(3466, "kade"));
-        assert!(!should_emit_announce(&partial.join("\n"), 3466, "wren", "r1", ""), "one reply short ⇒ no announce");
-
-        // idempotent: a demo.presented already on the witness for this round ⇒ no re-emit
-        let already = format!("{}\n{}", w,
-            r#"{"ts":9,"event":"demo.presented","role":"wren","card_id":3466,"trace_id":"t","round":"r1","patch_id":""}"#);
-        assert!(!should_emit_announce(&already, 3466, "wren", "r1", ""), "already announced ⇒ no double-emit");
-    }
 
     #[test]
     fn gather_sent_alone_does_not_satisfy_replied() {
@@ -3101,48 +2653,10 @@ mod tests {
         assert!(!a.contains(&"none".to_string()), "gather must never be expects=none: {:?}", a);
     }
 
-    #[test]
-    fn gathers_unsent_dedupes_on_sent_not_replied() {
-        // #3443 AC2 — a peer already SENT this round is not re-fired (no #3305
-        // storm), even though they have not yet REPLIED. The other peer is unsent.
-        let w = r#"{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3443,"trace_id":"t","peer":"silas","round":"r1"}"#;
-        assert_eq!(gathers_unsent(w, 3443, "wren", "r1", ""), vec!["kade"]);
-        // but they STILL count as missing-reply until they actually reply
-        assert!(gathers_missing(w, 3443, "wren", "r1", "").contains(&"silas"));
-    }
 
-    #[test]
-    fn gathers_unsent_all_when_nothing_sent() {
-        assert_eq!(gathers_unsent("", 3443, "wren", "r1", ""), vec!["silas", "kade"]);
-    }
 
-    #[test]
-    fn nudge_targets_skips_replied_peers_same_round() {
-        // wren already replied this round → only silas is owed a nudge (AC2).
-        let w = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#;
-        assert_eq!(nudge_targets(w, 3305, "kade", "r1", ""), vec!["silas"]);
-    }
 
-    #[test]
-    fn nudge_targets_empty_when_all_replied_no_refire_on_represent() {
-        // both peers replied this round → re-presenting fires ZERO nudges (AC3:
-        // re-running a demo does not reset acked peers; sightings #1-#8, 2026-06-12).
-        let w = format!(
-            "{}
-{}",
-            r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#,
-            r#"{"ts":2,"event":"demo.gather.replied","role":"silas","card_id":3305,"trace_id":"t","peer":"silas","round":"r1","note":""}"#
-        );
-        assert!(nudge_targets(&w, 3305, "kade", "r1", "").is_empty(), "no re-fire to acked peers");
-    }
 
-    #[test]
-    fn nudge_targets_fresh_round_renudges_per_3365() {
-        // a NEW round legitimately re-asks: #3365 expires evidence per round —
-        // that is round discipline, not the re-fire bug.
-        let w = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#;
-        assert_eq!(nudge_targets(w, 3305, "kade", "r2", ""), vec!["wren", "silas"]);
-    }
 
     #[test]
     fn round_for_card_resolves_owners_werk_regardless_of_invoker() {

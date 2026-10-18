@@ -111,11 +111,15 @@ fn negative_proof_a_deterministic_skill_with_no_binary_is_refused() {
     assert!(check(&cicd()).is_empty(), "the real rows pass, so the refusal is about the edit");
 }
 
+// #4502 — two skills at one order in a step now run in parallel (the demo's
+// gates and reviews); only a human step must hold its order alone.
 #[test]
-fn negative_proof_two_skills_at_one_order_and_no_rows_are_refused() {
+fn negative_proof_a_skill_sharing_the_go_s_order_and_no_rows_are_refused() {
     let mut rows = cicd();
-    rows[1].skill_order = 1; // push now collides with commit inside step commit
-    assert!(check(&rows).iter().any(|e| e.contains("two skills hold order 1 in step commit")));
+    let go = rows.iter().position(|r| r.executor == "human").expect("cicd has a go");
+    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo").expect("cicd has a demo");
+    rows[demo].skill_order = rows[go].skill_order; // the demo now collides with Jeff's go
+    assert!(check(&rows).iter().any(|e| e.contains("skill-werk-demo") && e.contains("with a human step")), "{:?}", check(&rows));
     assert!(generate("cicd", &[]).is_err(), "no rows is refused, never an empty workflow");
 }
 
