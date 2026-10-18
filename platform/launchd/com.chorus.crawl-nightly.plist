@@ -30,7 +30,7 @@
          is 10 minutes; the SensorRun row carries the outcome. -->
     <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh</string>
     <string>kade</string>
-    <string>borg-tend-herald</string>
+    <string>herald-run</string>
     <string>{"role":"kade","sensor":"files"}</string>
   </array>
   <key>EnvironmentVariables</key>
