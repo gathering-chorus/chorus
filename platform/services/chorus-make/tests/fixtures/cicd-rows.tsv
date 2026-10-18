@@ -12,14 +12,14 @@ test	3	2	skill-werk-review	werk-review	deterministic	werk-review	{card} {caller}
 demo	4	1	skill-werk-deploy-demo	werk-deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
 demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up {caller} {card}		WerkCardOnlyInput	
 demo	4	3	skill-werk-demo-validate	demo: validate (WIP, has AC)	deterministic	werk-demo	validate ${CARD} ${ROLE}			
-demo	4	4	skill-werk-demo-gate-product	demo: gate product	deterministic	werk-demo	run-gate ${CARD} ${ROLE} product			
-demo	4	4	skill-werk-demo-gate-code	demo: gate code	deterministic	werk-demo	run-gate ${CARD} ${ROLE} code			
-demo	4	4	skill-werk-demo-gate-quality	demo: gate quality	deterministic	werk-demo	run-gate ${CARD} ${ROLE} quality			
-demo	4	4	skill-werk-demo-gate-arch	demo: gate arch	deterministic	werk-demo	run-gate ${CARD} ${ROLE} arch			
-demo	4	4	skill-werk-demo-gate-ops	demo: gate ops	deterministic	werk-demo	run-gate ${CARD} ${ROLE} ops			
-demo	4	4	skill-werk-demo-review-1	demo: peer review 1	deterministic	werk-demo	run-review ${CARD} ${ROLE} 1			
-demo	4	4	skill-werk-demo-review-2	demo: peer review 2	deterministic	werk-demo	run-review ${CARD} ${ROLE} 2			
-demo	4	4	skill-werk-demo-review-3	demo: peer review 3	deterministic	werk-demo	run-review ${CARD} ${ROLE} 3			
+demo	4	4	skill-werk-demo-gate-product	demo: gate product	deterministic	werk-demo	run-gate ${CARD} ${ROLE} product			parallel=true
+demo	4	4	skill-werk-demo-gate-code	demo: gate code	deterministic	werk-demo	run-gate ${CARD} ${ROLE} code			parallel=true
+demo	4	4	skill-werk-demo-gate-quality	demo: gate quality	deterministic	werk-demo	run-gate ${CARD} ${ROLE} quality			parallel=true
+demo	4	4	skill-werk-demo-gate-arch	demo: gate arch	deterministic	werk-demo	run-gate ${CARD} ${ROLE} arch			parallel=true
+demo	4	4	skill-werk-demo-gate-ops	demo: gate ops	deterministic	werk-demo	run-gate ${CARD} ${ROLE} ops			parallel=true
+demo	4	4	skill-werk-demo-review-1	demo: peer review 1	deterministic	werk-demo	run-review ${CARD} ${ROLE} 1			parallel=true
+demo	4	4	skill-werk-demo-review-2	demo: peer review 2	deterministic	werk-demo	run-review ${CARD} ${ROLE} 2			parallel=true
+demo	4	4	skill-werk-demo-review-3	demo: peer review 3	deterministic	werk-demo	run-review ${CARD} ${ROLE} 3			parallel=true
 demo	4	5	skill-werk-demo-session-smoke	demo: each changed role's session signs in and makes one tool call	deterministic	werk-demo	session-smoke ${CARD} ${ROLE}			
 demo	4	6	skill-werk-demo-announce	demo: announce (one ask per round)	deterministic	werk-demo	announce ${CARD} ${ROLE}			
 demo	4	7	skill-werk-go	Jeff's go	human					

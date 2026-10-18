@@ -111,9 +111,16 @@ pub fn check(rows: &[Row]) -> Vec<String> {
         // #4502 — skills sharing a step's order run in parallel (the demo's
         // gates and reviews); a human step must hold its order alone.
         let at_order = || rows.iter().filter(|o| o.step == r.step && o.skill_order == r.skill_order);
-        if !seen.insert((r.step.clone(), r.skill_order)) && at_order().any(|o| o.executor == "human") {
+        if !seen.insert((r.step.clone(), r.skill_order)) {
             let names: Vec<&str> = at_order().map(|o| o.skill.as_str()).collect();
-            errs.push(format!("{} share order {} in step {} with a human step; a human step stands alone", names.join(", "), r.skill_order, r.step));
+            if at_order().any(|o| o.executor == "human") {
+                errs.push(format!("{} share order {} in step {} with a human step; a human step stands alone", names.join(", "), r.skill_order, r.step));
+            } else if !at_order().all(|o| o.with_args.split_whitespace().any(|p| p == PARALLEL)) {
+                // #4502 (Abby's review) — a shared order is parallel only when
+                // every row says so; an accidental collision is refused, never
+                // silently fanned out
+                errs.push(format!("{} share order {} in step {}; mark every one {} to run them in parallel", names.join(", "), r.skill_order, r.step, PARALLEL));
+            }
         }
     }
     errs
@@ -156,6 +163,9 @@ fn quote(s: &str) -> String {
 /// #4494 — the queues the two halves run on (platform/config/dagu.yaml):
 /// cards on `werk`, several at once; lands on `werk-land`, one at a time,
 /// because a land writes main and prod.
+/// #4502 — a row's withArguments marker: rows sharing an order run in parallel
+/// only when every one carries it (an unmarked collision is refused).
+pub const PARALLEL: &str = "parallel=true";
 pub const CARD_QUEUE: &str = "werk";
 pub const LAND_QUEUE: &str = "werk-land";
 
@@ -385,7 +395,7 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=")).map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL).map(String::from));
     (pairs, missing)
 }
 
@@ -408,7 +418,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
         }
-        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true").map(String::from));
+        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL).map(String::from));
         if enqueue {
             // #4577 pair run 1 (10-18 07:43): dagu runs a dag.enqueue target
             // as a sub-DAG and refuses it — "human task steps are not allowed

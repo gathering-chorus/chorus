@@ -21,7 +21,7 @@ const SIBLINGS: [&str; 7] = [
 fn demo_rows() -> String {
     let mut tsv = String::from("demo\t4\t1\tskill-demo-validate\tvalidate\tdeterministic\twerk-demo\tvalidate {card} {caller}\t\t\t\n");
     for s in SIBLINGS {
-        tsv.push_str(&format!("demo\t4\t2\t{s}\t{s}\tdeterministic\twerk-demo\trun\t\t\t\n"));
+        tsv.push_str(&format!("demo\t4\t2\t{s}\t{s}\tdeterministic\twerk-demo\trun\t\t\tparallel=true\n"));
     }
     tsv.push_str("demo\t4\t3\tskill-demo-announce\tannounce\tdeterministic\twerk-demo\tannounce {card} {caller}\t\t\t\n");
     tsv.push_str("demo\t4\t4\tskill-werk-go\tJeff's go\thuman\t\t\t\t\t\n");
@@ -72,4 +72,18 @@ fn rows_sorted(rows: &[chorus_make::Row]) -> Vec<chorus_make::Row> {
     let mut r = rows.to_vec();
     r.sort_by(|a, b| (a.step_order, &a.step, a.skill_order, &a.skill).cmp(&(b.step_order, &b.step, b.skill_order, &b.skill)));
     r
+}
+
+// #4502 (Abby's review) — NEGATIVE PROOF: a shared order without the marker is
+// an accidental collision and is refused, never silently fanned out; one
+// unmarked row in the group is enough to refuse it
+#[test]
+fn negative_proof_an_unmarked_shared_order_is_refused() {
+    let unmarked = demo_rows().replace("\tparallel=true\n", "\t\n");
+    let errs = generate("cicd", &parse_rows(&unmarked).unwrap()).unwrap_err();
+    assert!(errs.iter().any(|e| e.contains("share order 2 in step demo; mark every one parallel=true")), "{errs:?}");
+    let one_unmarked = demo_rows().replacen("\tparallel=true\n", "\t\n", 1);
+    assert!(generate("cicd", &parse_rows(&one_unmarked).unwrap()).is_err(), "one unmarked sibling refuses the group");
+    // and the marker never reaches a step's command
+    assert!(!generate("cicd", &parse_rows(&demo_rows()).unwrap()).unwrap().contains("parallel=true"));
 }
