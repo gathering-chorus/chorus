@@ -52,10 +52,7 @@ steps:
   - name: skill-pair-hand-off
     description: "hand off: one cicd run"
     depends: [skill-pair-local-proof]
-    action: dag.enqueue
-    with:
-      dag: cicd
-      params: "CARD=${CARD} ROLE=${ROLE}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}"
   - name: skill-pair-end
     description: "pair end: the For-Jeff summary, deregister"
     depends: [skill-pair-hand-off]

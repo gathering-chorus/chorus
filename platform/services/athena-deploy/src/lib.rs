@@ -146,6 +146,9 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             // so identity's claim on it pointed at nothing a validator calls a class.
             format!("{root}/roles/silas/ontology/agent-runtimes-4444.ttl"),
             format!("{root}/roles/silas/ontology/core-shape-4576.ttl"),  // #4576: CoreShape + StampedByTheDal
+            // #4576 reopen: Borg's shapes (Engine, Environment, Resource) live here, in the
+            // one graph the door reads; outside the set they reached it only on a card load.
+            format!("{root}/roles/silas/ontology/borg.ttl"),
         ],
     }
 }
@@ -451,7 +454,29 @@ pub fn path_in_werk(path: &str) -> bool {
 /// at: bodies orphaned by EARLIER deploys are unreachable from any subject, so
 /// the walk cannot find them, and a blank node with no parent is garbage here
 /// by definition. Six passes each, because removing a parent orphans children.
+///
+/// #4576 reopen — a node the staged shape only BORROWS through `sh:node` is not
+/// its body: the flatten links every CoreShape user to CoreShape's own property
+/// nodes, about 105 shapes to one pair, so walking into them from a user emptied
+/// the name and description fields of every other user (2026-10-18, the #4544
+/// land at 05:53 and 06:10). The owner's own deploy still cleans them, and the
+/// flatten then drops the links left pointing at an emptied node.
 pub fn bnode_cleanup(staging: &str, ontology: &str, depth: usize, sweeps: usize) -> String {
+    cleanup(staging, ontology, depth, sweeps, true)
+}
+
+/// The #4029 walk without the borrowed-node guard: exists only so the negative
+/// proof can show the break the guard prevents. Never called by a deploy.
+pub fn bnode_cleanup_unguarded_for_proof(staging: &str, ontology: &str, depth: usize, sweeps: usize) -> String {
+    cleanup(staging, ontology, depth, sweeps, false)
+}
+
+fn cleanup(staging: &str, ontology: &str, depth: usize, sweeps: usize, guard: bool) -> String {
+    let borrowed = if guard {
+        " FILTER NOT EXISTS { ?s <http://www.w3.org/ns/shacl#node>+ ?nn . ?nn <http://www.w3.org/ns/shacl#property> ?b1 }"
+    } else {
+        ""
+    };
     let mut out = String::new();
     for d in (1..=depth).rev() {
         let mut chain = String::from("?s ?p0 ?b1 .");
@@ -462,7 +487,7 @@ pub fn bnode_cleanup(staging: &str, ontology: &str, depth: usize, sweeps: usize)
         }
         out.push_str(&format!(
             "DELETE {{ GRAPH <{ontology}> {{ ?b{d} ?pl ?ol }} }} WHERE {{ GRAPH <{staging}> \
-             {{ ?s ?sp ?so }} GRAPH <{ontology}> {{ {chain} ?b{d} ?pl ?ol FILTER({filt}) }} }} ; "
+             {{ ?s ?sp ?so }} GRAPH <{ontology}> {{ {chain} ?b{d} ?pl ?ol FILTER({filt}){borrowed} }} }} ; "
         ));
     }
     for _ in 0..sweeps {
@@ -994,8 +1019,13 @@ pub fn flatten_node_shapes_sparql(graph: &str) -> String {
          ?s2 sh:targetClass ?anc ; sh:property ?own . ?own sh:path ?oa . FILTER(?own != ?p) \
          FILTER NOT EXISTS { ?n sh:property ?own } \
          FILTER(REPLACE(STR(?pa), \".*[#/]\", \"\") = REPLACE(STR(?oa), \".*[#/]\", \"\"))";
+    // #4576 reopen — first drop every link to a property node with nothing in
+    // it: when the owner (CoreShape) is redeployed its old nodes are emptied, and
+    // a user still pointing at one would serve a field with no path.
     format!(
         "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n\
+         DELETE {{ GRAPH <{graph}> {{ ?s sh:property ?e }} }}\n\
+         WHERE {{ GRAPH <{graph}> {{ ?s sh:property ?e . FILTER(isBlank(?e)) FILTER NOT EXISTS {{ ?e ?ep ?eo }} }} }} ;\n\
          DELETE {{ GRAPH <{graph}> {{ ?s sh:property ?p }} }}\n\
          WHERE {{ GRAPH <{graph}> {{ ?s sh:node+ ?n . ?n sh:property ?p . FILTER(?s != ?n) {same_field} }} }} ;\n\
          INSERT {{ GRAPH <{graph}> {{ ?s ?k ?p }} }}\n\
@@ -2451,7 +2481,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 35, "the ontology set is 35 files (#4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 36, "the ontology set is 36 files (#4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
@@ -2465,6 +2495,11 @@ mod tests {
         assert!(!s.iter().any(|m| m.ends_with("cmdb-layers-4293.ttl")));
         // #4302 — SessionRun and Presence; dropping it unserves both routes.
         assert!(s.iter().any(|m| m.ends_with("session-model-4302.ttl")));
+        // #4576 reopen (Silas 2026-10-18): Borg's shapes live in the ontology graph,
+        // the only graph flatten, CoreShape and the door read. Outside the set, a
+        // card that edited borg.ttl loaded it there while a stale copy sat in
+        // urn:borg:ontology, and every pipeline went red on source exclusivity.
+        assert!(s.iter().any(|m| m.ends_with("/roles/silas/ontology/borg.ttl")));
     }
 
     #[test]

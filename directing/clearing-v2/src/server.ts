@@ -251,7 +251,7 @@ function registerReadApiRoutes(ctx: RouteContext): void {
 
     ctx.sseClients.push(res);
 
-    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(50), tiles: tileService.getTiles() })}\n\n`);
+    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(100), tiles: tileService.getTiles() })}\n\n`);
 
     req.on('close', () => {
       const idx = ctx.sseClients.indexOf(res);
