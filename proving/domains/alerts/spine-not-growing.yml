@@ -37,6 +37,15 @@ check: |
       return None
   age, ev = val("spine", "spine-write-age", TODAY), val("events", "events", YDAY)
   if age is None: print(f"no-reading:spine-spine-write-age-{TODAY}"); sys.exit(1)
+  # a stopped sensor leaves its last reading frozen at ok: age the reading itself
+  # from the start stamp of its run (spine-YYYYMMDDtHHMMSSz), never trust a stale value
+  import re
+  run = next((r.get("readingRun", "") for r in rows if r.get("readingOfSensor") == "spine" and r.get("readingMetric") == "spine-write-age" and str(r.get("readingDay", ""))[:10] == TODAY), "")
+  m = re.search(r"(\d{8})t(\d{6})z", str(run))
+  if not m: print(f"no-reading:spine-run-unreadable-{run}"); sys.exit(1)
+  taken = datetime.datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S").replace(tzinfo=datetime.timezone.utc)
+  stale_h = (datetime.datetime.now(datetime.timezone.utc) - taken).total_seconds() / 3600
+  if stale_h > 0.17: print(f"stale-reading:spine-sensor-last-ran-{stale_h:.2f}h-ago>0.17h"); sys.exit(1)
   if age > 0.17: print(f"stalled:spine-last-written-{age:.2f}h-ago>0.17h"); sys.exit(1)
   if ev is not None and ev == 0: print(f"gap:0-events-on-{YDAY}"); sys.exit(1)
   print("ok")

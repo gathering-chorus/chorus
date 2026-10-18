@@ -24,11 +24,12 @@ PY
   READINGS_URL="file://$T/r.json" bash "$T/check.sh"
 }
 
-readings() { # readings <sensor metric day value>...
-  python3 - "$T/r.json" "$@" <<'PY'
-import json, sys
-out, a = sys.argv[1], sys.argv[2:]
-rows = [{"readingOfSensor": a[i], "readingMetric": a[i+1], "readingDay": a[i+2], "readingValue": a[i+3]} for i in range(0, len(a), 4)]
+readings() { # readings <sensor metric day value>... (each run stamped now, or RUN_AGO_MIN minutes ago)
+  python3 - "$T/r.json" "${RUN_AGO_MIN:-0}" "$@" <<'PY'
+import json, sys, datetime
+out, ago, a = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+stamp = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=ago)).strftime("%Y%m%dt%H%M%Sz")
+rows = [{"readingOfSensor": a[i], "readingMetric": a[i+1], "readingDay": a[i+2], "readingValue": a[i+3], "readingRun": f"{a[i]}-{stamp}"} for i in range(0, len(a), 4)]
 json.dump({"data": rows}, open(out, "w"))
 PY
 }
@@ -72,6 +73,12 @@ PY
   readings spine spine-write-age "$TODAY" 0.01 events events "$YDAY" 9
   run check spine-not-growing
   [ "$output" = "ok" ]
+}
+
+@test "negative proof: a fresh-looking reading from a sensor that stopped 30 minutes ago is stale, not ok" {
+  RUN_AGO_MIN=30 readings spine spine-write-age "$TODAY" 0.01 events events "$YDAY" 9
+  run check spine-not-growing
+  [[ "$output" == stale-reading:spine-sensor-last-ran-0.5* ]] || return 1
 }
 
 @test "an unreadable readings source is a finding, never ok" {
