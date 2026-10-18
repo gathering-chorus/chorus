@@ -35,6 +35,18 @@ function getLocalStorage(custom) {
   return null;
 }
 
+// #4592 / #4618 — the room's "team nudges" toggle, off by default, remembered per device.
+// The room page's own script reads the same key (views.ts TEAM_NUDGES_KEY).
+const TEAM_NUDGES_KEY = 'clearing-v2.teamNudges';
+function teamNudgesOn(customStorage) {
+  const storage = getLocalStorage(customStorage);
+  try { return !!storage && storage.getItem(TEAM_NUDGES_KEY) === 'on'; } catch { return false; }
+}
+function setTeamNudges(customStorage, on) {
+  const storage = getLocalStorage(customStorage);
+  try { if (storage) storage.setItem(TEAM_NUDGES_KEY, on ? 'on' : 'off'); } catch {}
+}
+
 function loadOrCreateRoomKey(webid, customStorage) {
   if (!webid) {
     throw new Error('room-key: not signed in — no WebID to bind a key to. Sign in first; a key minted now would belong to nobody.');
@@ -157,6 +169,7 @@ function appendMessage(msg) {
   if (!el.dataset) el.dataset = {};
   el.dataset.from = msg.from;
   el.dataset.body = bodyKey;
+  if (msg.kind) el.dataset.kind = msg.kind; // #4592 — the team nudges toggle hides these
 
   const header = document.createElement('div');
   header.className = 'message-header';
@@ -370,10 +383,13 @@ async function handleSendMessage(text, options = {}) {
       throw new Error(errName);
     }
 
-    // Success
+    // Success. #4608 — the roles got it; say so plainly if Buzz did not store it.
+    let sent = null;
+    try { sent = await res.json(); } catch {}
     if (statusEl) {
-      statusEl.textContent = '';
-      statusEl.style.display = 'none';
+      const notStored = sent && sent.stored === false;
+      statusEl.textContent = notStored ? `Sent to the team, but not stored in Buzz: ${sent.reason || 'no reason given'}` : '';
+      statusEl.style.display = notStored ? 'block' : 'none';
     }
     if (btnEl) {
       if (btnEl.classList) {
@@ -459,5 +475,7 @@ if (typeof module !== 'undefined' && module.exports) {
     loadOrCreateRoomKey,
     signEvent,
     handleSendMessage,
+    teamNudgesOn,
+    setTeamNudges,
   };
 }

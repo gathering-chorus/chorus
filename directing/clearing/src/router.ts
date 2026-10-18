@@ -18,7 +18,7 @@ export interface ChannelMessage {
   buzzInbound?: boolean;
   /** `gap` (#3893) names messages that never arrived — the only system-authored
    *  type that is always visible. */
-  type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe' | 'gap';
+  type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe' | 'gap' | 'alert';
   level?: string;
   visible: boolean;
 }
@@ -176,6 +176,10 @@ const classificationRules: ClassificationRule[] = [
   // plumbing — a notice about hidden messages, hidden. Proven by deleting this
   // rule in room-gap-render-3893.test.ts.
   (r) => r.type === 'gap' ? { type: 'gap', visible: true } : null,
+  // #4592 — a system alert (pulse's nudge to a role) is shown, as an alert. It
+  // runs above the plumbing sweep for the gap marker's reason: it is sent by
+  // `system`, and alerts quote paths, so the sweep would hide every one.
+  (r) => r.type === 'alert' ? { type: 'alert', visible: true } : null,
   // Synthetic probe messages — hidden (#1933)
   (r) => (r.type === 'probe' || r.from === 'probe') ? { type: 'probe', visible: false } : null,
   // Batch progress / chorus-query system messages — hidden (#1706)

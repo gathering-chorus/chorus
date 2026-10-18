@@ -15,7 +15,8 @@ import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
-import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage } from './views';
+import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage } from './views';
+import { bostonMidnight, countKinds, fetchPulseToday, sentFromPulse } from './sources/message-counts';
 import { fetchBoard } from './sources/board';
 import { DataService } from './data-service';
 
@@ -108,6 +109,8 @@ interface RouteContext {
   cookieKey?: Buffer | null;
   signInUrl?: string;
   boardUrl: string;
+  /** #4592 — the counts page reads pulse's message store. */
+  pulseUrl: string;
 }
 
 // Helper: test overrides only allowed via x-* headers in test mode, NEVER via URL query parameters
@@ -131,6 +134,20 @@ function registerPageRoutes(ctx: RouteContext): void {
     const roomsData = await dataService.getRoomsData('team', { rolesUrl, pulseUrl });
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage('team', roomsData, sources));
+  });
+
+  // #4592 — today's messages by kind: sent (pulse's message store) vs reached Buzz (the relay).
+  app.get('/counts', async (req: Request, res: Response) => {
+    const { pulseUrl } = getTestOverrides(req);
+    const since = bostonMidnight();
+    const day = new Date(since * 1000 + 12 * 3600 * 1000).toISOString().slice(0, 10);
+    const sources = await dataService.getTrustStripSources({ pulseUrl });
+    try {
+      const [rows, notes] = await Promise.all([fetchPulseToday(pulseUrl || ctx.pulseUrl, since), ctx.relay.fetchSince(since)]);
+      res.type('html').send(renderCountsPage(countKinds(sentFromPulse(rows), notes), { day }, sources));
+    } catch (e) {
+      res.type('html').send(renderCountsPage([], { day, error: (e as Error).message }, sources));
+    }
   });
 
   app.get('/today', async (req: Request, res: Response) => {
@@ -267,7 +284,7 @@ function registerWriteRoutes(ctx: RouteContext): void {
   // #3743 — resolveSenderIdentity: identity comes strictly from the verified cryptographic
   // event/session; the client-supplied `from` field and 'jeff' default are RETIRED.
   // (Ported from v1 server.ts:1700-1705 / sender-identity.ts — the exact hole Mark fell through in #3743).
-  app.post('/api/send', (req: Request, res: Response) => {
+  app.post('/api/send', async (req: Request, res: Response) => {
     const event: NostrEvent | undefined = req.body?.event || (req.body?.id && req.body?.sig ? req.body : undefined);
 
     const identity = resolveSenderIdentity(event, keys);
@@ -277,9 +294,16 @@ function registerWriteRoutes(ctx: RouteContext): void {
       return;
     }
 
-    relay.publish(event!);
+    // #4608 — the relay stores only notes signed by this connection's identity
+    // (the bridge), so the room stores Jeff's words as the bridge, author-tagged,
+    // with his own signed id so the copy is never shown twice. Delivery to the
+    // roles does not wait on Buzz; the answer says whether Buzz stored it.
     onInboundEvent(event!);
-    res.json({ ok: true, id: event!.id, from: identity.role });
+    const room = roomOf(event!);
+    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id]], event!.created_at);
+    const stored = copy ? await relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
+    if (!stored.ok) console.error(`[clearing-v2] ${identity.role}'s message ${event!.id.slice(0, 12)} was not stored in Buzz: ${stored.reason}`);
+    res.json({ ok: true, id: event!.id, from: identity.role, stored: stored.ok, ...(stored.ok ? {} : { reason: stored.reason }) });
   });
 
   // #3827 — Room key bind endpoint: identity comes strictly from the verified session cookie,
@@ -374,9 +398,20 @@ function roomOf(event: NostrEvent): string {
   return roomTag ? roomTag[1] : 'team';
 }
 
+/** #4592 — the note's kind tag (v1's buildNote), only the two kinds the room's toggle owns. */
+export function kindOf(event: { tags?: string[][] }): 'nudge' | 'alert' | undefined {
+  const v = (event.tags || []).find((t) => t[0] === 'kind')?.[1];
+  return v === 'nudge' || v === 'alert' ? v : undefined;
+}
+
 function toClearingMessage(event: NostrEvent, role: string, tick: boolean, signer?: string): ClearingMessage {
+  const kind = kindOf(event);
+  // #4608 — the room's stored copy of a sender's note carries that note's id, so
+  // the copy and the original are one message (the router drops a seen id).
+  const signed = Array.isArray(event.tags) ? event.tags.find((t) => t[0] === 'signed')?.[1] : undefined;
   return {
-    id: event.id,
+    ...(kind ? { kind } : {}),
+    id: signed || event.id,
     from: role,
     text: event.content,
     ts: new Date(event.created_at * 1000).toISOString(),
@@ -505,6 +540,7 @@ export function createApp(options?: CreateAppOptions) {
     cookieKey: options?.cookieKey,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
+    pulseUrl: urls.pulseUrl,
   });
 
   return { app, router, tileService, dataService, relay };

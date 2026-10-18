@@ -229,15 +229,20 @@ nav.top .n {
 /* Trust Strip */
 .strip, .trust-strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  padding: 6px 14px;
-  font: 11.5px "JetBrains Mono", monospace;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  gap: 6px 12px;
+  padding: 3px 12px;
+  font: 11px "JetBrains Mono", monospace;
   color: var(--muted);
   background: var(--sunk);
   border-bottom: 1px solid var(--line2);
   align-items: center;
+  min-height: 22px;
 }
+.strip::-webkit-scrollbar, .trust-strip::-webkit-scrollbar { display: none; }
 .strip span, .strip .chip {
   white-space: nowrap;
   display: inline-flex;
@@ -463,9 +468,10 @@ nav.top .n {
 /* Rooms & Chat Layout */
 .rooms {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  min-width: 0;
   background: var(--frame);
 }
 .rside, .rooms-sidebar {
@@ -507,28 +513,35 @@ nav.top .n {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  max-width: 100%;
   flex: 1;
   background: var(--panel);
 }
 .chat-container {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
   flex: 1;
   overflow: hidden;
 }
 .messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px 0;
+  min-width: 0;
 }
 .msg, .message {
   display: flex;
   gap: 10px;
   padding: 8px 14px;
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 .msg:hover {
   background: var(--sunk);
@@ -538,6 +551,13 @@ nav.top .n {
   min-width: 0;
   font-size: 13.5px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.msg .body > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg .nm, .message-author {
   font-weight: 600;
@@ -821,8 +841,9 @@ tr.you td {
     color: var(--ink);
   }
   .chat {
-    height: calc(100vh - 190px);
-    height: calc(100dvh - 190px); /* #4575 — 100vh on iOS runs under the URL bar, hiding Send */
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
   }
 }
 
@@ -835,26 +856,32 @@ tr.you td {
   h2 { font-size: 15px; }
   .grid2 { grid-template-columns: 1fr; }
   .strip, .trust-strip {
-    font-size: 10.5px;
-    gap: 4px 10px;
-    padding: 6px 10px;
+    font-size: 10px;
+    gap: 8px;
+    padding: 2px 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    min-height: 20px;
   }
+  .strip::-webkit-scrollbar, .trust-strip::-webkit-scrollbar { display: none; }
   nav.top {
-    padding: 0 8px;
+    padding: 0 6px;
   }
   nav.top a {
-    padding: 8px 6px;
-    font-size: 12px;
+    padding: 6px 5px;
+    font-size: 11.5px;
   }
   .app-header {
-    padding: 6px 10px;
+    padding: 4px 10px;
   }
   /* #4575 — on a phone the sender line sits above the text, so the text gets the full width */
   .message { flex-direction: column; gap: 2px; }
   /* #4575 — iOS zooms the page when a field under 16px gets focus; that was the "resize" */
   #composer-input { font-size: 16px; }
   /* #4575 — long words and links wrap inside the message, never past the screen edge */
-  .message-text, .msg .body > div { overflow-wrap: anywhere; }
+  .message-text, .msg .body, .msg .body > div { overflow-wrap: anywhere; word-break: break-word; }
   /* #4575 — a role's session list no longer stretches its row: one line, the full list on tap */
   .role-sessions { max-width: 9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* #4574 — on phone, board columns scroll sideways at 85vw with a peek of the next column */
@@ -890,7 +917,34 @@ tr.you td {
     padding: 12px;
   }
   .actor-rail {
-    padding: 6px 10px;
+    padding: 3px 8px;
+    gap: 6px;
+  }
+  .actor-tile {
+    padding: 2px 7px;
+    font-size: 11px;
+    gap: 5px;
+  }
+  .actor-tile .av {
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+  }
+  .actor-tile-name {
+    font-size: 11px;
+  }
+  .actor-tile-card {
+    font-size: 10px;
+  }
+  .rooms-nav-inline {
+    padding: 3px 8px;
+    gap: 4px 6px;
+    font-size: 11px;
+  }
+  .rooms-nav-inline .r {
+    padding: 2px 6px;
+    font-size: 11px;
   }
 }
 
@@ -898,6 +952,16 @@ tr.you td {
 .page-composer { position: sticky; bottom: 0; z-index: 5; }
 
 /* #4595 — Actor Rail, Andon Lights, and Streams */
+.rooms-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  height: calc(100vh - 85px);
+  height: calc(100dvh - 85px);
+}
 .actor-rail {
   display: flex;
   gap: 8px;
@@ -906,8 +970,12 @@ tr.you td {
   border-bottom: 1px solid var(--line2);
   overflow-x: auto;
   align-items: center;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
 }
+.actor-rail::-webkit-scrollbar { display: none; }
 .actor-tile {
   display: inline-flex;
   align-items: center;
@@ -919,6 +987,7 @@ tr.you td {
   cursor: pointer;
   white-space: nowrap;
   font-size: 12px;
+  flex-shrink: 0;
   transition: border-color 0.15s ease;
   user-select: none;
 }
@@ -979,43 +1048,59 @@ tr.you td {
 /* Inline ROOMS and DIRECT (Jeff 20:48) */
 .rooms-nav-inline {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 6px 14px;
+  gap: 6px 10px;
+  padding: 6px 12px;
   background: var(--frame);
   border-bottom: 1px solid var(--line2);
   font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
 }
+.rooms-nav-inline::-webkit-scrollbar { display: none; }
 .rooms-inline-group {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-shrink: 0;
 }
-.rooms-inline-group b {
-  font-size: 11px;
-  color: var(--muted);
+.rooms-nav-label {
+  font: 600 10.5px "JetBrains Mono", monospace;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  margin-right: 2px;
+  flex-shrink: 0;
 }
-.rooms-nav-inline .r-link {
+.rooms-nav-inline .r-link,
+.rooms-nav-inline .r {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 7px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
   text-decoration: none;
-  color: var(--ink);
-  border: 1px solid transparent;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
 }
-.rooms-nav-inline .r-link.on {
+.rooms-nav-inline .r-link.on,
+.rooms-nav-inline .r.on {
   background: var(--accentbg);
   border-color: var(--accent);
+  color: var(--ink);
   font-weight: 600;
 }
 .rooms-nav-inline .sep {
   color: var(--faint);
+  flex-shrink: 0;
+  margin: 0 2px;
 }
 
 /* Thinking messages and toggle */

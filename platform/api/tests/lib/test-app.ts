@@ -95,9 +95,20 @@ export async function startTestApp(): Promise<TestApp> {
   return {
     baseUrl,
     port,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      }),
+    close: () => closeServer(server),
   };
+}
+
+/**
+ * #4613 — close the server and every connection it still holds. server.close()
+ * alone waits for in-flight requests and kept-alive sockets to end on their own;
+ * under load one outlived jest's 5 s afterAll hook and turned four runs red on
+ * 10-14 and 10-18 with every test passing. closeAllConnections() (Node >= 18.2)
+ * ends them, so close() finishes promptly whatever the box is doing.
+ */
+export function closeServer(server: Server): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+    server.closeAllConnections();
+  });
 }

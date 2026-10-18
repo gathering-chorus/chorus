@@ -167,6 +167,7 @@ export class DataService {
         threadCount: m.threadCount,
         threadLast: m.threadLast,
         type: m.type,
+        ...(m.kind ? { kind: m.kind } : {}),
       };
     });
 

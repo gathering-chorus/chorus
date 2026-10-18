@@ -2,6 +2,7 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
+import type { KindCount } from './sources/message-counts';
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -328,7 +329,7 @@ function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const thinkingClass = isThinking ? ' msg-thinking' : '';
   const thinkingBadge = isThinking ? '<span class="badge-thinking">thinking</span>' : '';
   return `
-    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}">
+    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
       <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
       <div class="body">
         <span class="nm who-${m.from}">${m.from}</span>
@@ -345,6 +346,25 @@ function renderRoomMessage(m: RoomsData['messages'][number]): string {
     </div>
   `;
 }
+
+// #4592 / #4618 — the "team nudges" toggle: hides or shows nudges between roles and
+// system alerts (anything with data-kind). Off by default to keep the room focused
+// on primary signals (Jeff 10-18 13:43), remembered per device. Replies carry no kind.
+const TEAM_NUDGES_KEY = 'clearing-v2.teamNudges';
+const TEAM_NUDGES_TOGGLE = `  <style>body.hide-team-nudges [data-kind] { display: none; }</style>
+  <script>
+    (function () {
+      var box = document.getElementById('team-nudges');
+      var on = false;
+      try { on = localStorage.getItem('${TEAM_NUDGES_KEY}') === 'on'; } catch (e) {}
+      function apply(v) { document.body.classList.toggle('hide-team-nudges', !v); if (box) box.checked = v; }
+      apply(on);
+      if (box) box.addEventListener('change', function () {
+        try { localStorage.setItem('${TEAM_NUDGES_KEY}', box.checked ? 'on' : 'off'); } catch (e) {}
+        apply(box.checked);
+      });
+    })();
+  </script>`;
 
 const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style="display:none">
       <div class="row" style="justify-content:space-between;align-items:center">
@@ -620,10 +640,10 @@ function renderActorRailHtml(railActors: ActorRow[]): string {
 
 function renderInlineNavHtml(data: RoomsData, room: string, railActors: ActorRow[]): string {
   return `
-    <div class="rooms-nav-inline rside">
-      <span class="rooms-inline-group"><span class="lab">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
+    <div class="rooms-nav-inline" id="rooms-nav-bar">
+      <span class="rooms-inline-group"><span class="rooms-nav-label">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
       <span class="sep">·</span>
-      <span class="rooms-inline-group"><span class="lab">Direct</span> ${data.directRoles.map(dr => {
+      <span class="rooms-inline-group"><span class="rooms-nav-label">Direct</span> ${data.directRoles.map(dr => {
         const slug = dr.toLowerCase().replace(/\s+/g, '-');
         const actor = railActors.find(a => a.id.toLowerCase() === slug || a.name.toLowerCase() === dr.toLowerCase());
         const andon = roleAndonLight(actor);
@@ -660,12 +680,14 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     ${actorRailHtml}
     ${inlineNavHtml}
     <div class="rooms">
-      <main class="chat chat-container" style="flex:1">
-        <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)">
-          <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
-          <div class="row" style="gap:10px;align-items:center">
-            <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:12px;padding:3px 8px;cursor:pointer">Thinking: ON</button>
-            <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
+      <main class="chat chat-container" style="flex:1;min-width:0">
+        <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
+          <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><b>${headerTitle}</b> <span class="meta" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${data.directRoles.join(', ')}</span></div>
+          <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
+            <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
+            <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges"> nudges</label>
+            <a class="meta" href="/counts" style="font-size:11px">counts</a>
+            <span class="ex" style="font-size:10.5px">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
           </div>
         </div>
         <div class="messages" id="messages-stream">
@@ -697,9 +719,34 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     </div>
   </div>
   <script>window.PULSE_ACTORS = ${JSON.stringify(railActors)};</script>
-${ROOM_DRAWER_SCRIPT}`;
+${ROOM_DRAWER_SCRIPT}
+${TEAM_NUDGES_TOGGLE}`;
 
   return renderPageShell(`Room #${room}`, 'rooms', content, sources);
+}
+
+
+/**
+ * #4592 — today's messages by kind: sent, reached Buzz, gap. A source that
+ * cannot be read is named, never shown as zeros (a red must mean the product
+ * broke, not that the page could not look).
+ */
+export function renderCountsPage(rows: KindCount[], meta: { day: string; error?: string }, sources: TrustStripSource[]): string {
+  const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '—' : v}</td>`;
+  const body = meta.error
+    ? `<div class="meta fail" style="padding:16px">Counts could not be read: ${escapeHtml(meta.error)}</div>`
+    : `<table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Kind</th><th>Sent</th><th>Reached Buzz</th><th>Gap</th></tr></thead>
+      <tbody>
+${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reached)}${cell(r.gap, r.gap ? 'fail' : '')}</tr>`).join('\n')}
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:12px">Role reply: sent not measured — replies go from each role straight to the relay, and pulse does not carry them.</p>`;
+  const content = `<main class="page counts-page" style="padding:14px">
+    <h2>Messages today <span class="meta">${meta.day}, Boston</span></h2>
+    ${body}
+  </main>`;
+  return renderPageShell('Messages today', 'counts', content, sources);
 }
 
 function escapeHtml(t: string): string {
