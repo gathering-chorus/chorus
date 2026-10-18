@@ -191,7 +191,9 @@ mod tests_4405 {
     /// sensors the runner would refuse. The model's list and this one must match.
     #[test]
     fn the_runner_input_shape_lists_exactly_these_sensors() {
-        let ttl = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../roles/wren/ontology/skills-4467.ttl")).expect("skills model readable");
+        // runtime manifest dir, never env!(): a binary built in one werk must not read another's file (#4030)
+        let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+        let ttl = std::fs::read_to_string(format!("{dir}/../../../roles/wren/ontology/skills-4467.ttl")).expect("skills model readable");
         let block = &ttl[ttl.find("chorus:HeraldRunInput").expect("HeraldRunInput present")..];
         let line = block.lines().find(|l| l.contains("sh:name \"sensor\"")).expect("sensor property present");
         let inside = &line[line.find("sh:in (").expect("an sh:in list") + 7..line.find(')').unwrap()];
