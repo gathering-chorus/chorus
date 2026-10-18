@@ -434,6 +434,13 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
 /// Session, Presence, Teammate and Actor off prod and reported only the card's
 /// own classes; nothing compared the rest. An unreadable "before" measures
 /// nothing and loses nothing. Pure.
+/// #4579 reopen — the retirements a deploy's route check exempts: every line in
+/// the card's tree's ledger (earlier cards' landed retirements, which staging may
+/// not have caught up with) plus the lines this card added. Pure.
+pub fn route_exemptions(ledger_in_tree: &str, added: &str) -> String {
+    format!("{ledger_in_tree}\n{added}")
+}
+
 pub fn routes_lost(before: &str, after: &str, retirements: &str) -> Vec<String> {
     let had = discovery_routes(before);
     let now: Vec<String> = discovery_routes(after).into_iter().map(|(k, _)| k).collect();
@@ -530,7 +537,10 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     }
     // #4590 — what the door served before this deploy, to compare after the restart
     let before = get_body(&format!("{}/", api.trim_end_matches('/')));
-    let retired = p.retirements.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
+    let retired = route_exemptions(
+        &std::fs::read_to_string(card.abs("designing/schemas/model-retirements.jsonl")).unwrap_or_default(),
+        &p.retirements.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default(),
+    );
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
     // #4578 — staging serves the card's own athena-make when the run built one
@@ -918,5 +928,19 @@ mod routes_lost_4590 {
         assert_eq!(routes_lost(&before, &disco(&["Principal"]), ret), vec!["Session"]);
         // an unreadable before loses nothing
         assert!(routes_lost("", &disco(&[]), "").is_empty());
+    }
+
+    /// #4579 reopen — #4579 landed the TestResult retirement; staging still served
+    /// /tests/results, so #4634's run (which retires nothing) failed on a route an
+    /// earlier card retired. Exempt what the card's tree has retired, not only what
+    /// this card added.
+    #[test]
+    fn a_route_an_earlier_card_retired_is_not_this_cards_loss() {
+        use super::route_exemptions;
+        let before = disco(&["TestResult", "Session"]);
+        let ledger = "{\"retire_subject\": \"https://jeffbridwell.com/chorus#TestResult\", \"card\": \"4579\"}\n";
+        assert!(routes_lost(&before, &disco(&["Session"]), &route_exemptions(ledger, "")).is_empty());
+        // NEGATIVE PROOF: a class no ledger line retires is still a loss
+        assert_eq!(routes_lost(&before, &disco(&["TestResult"]), &route_exemptions(ledger, "")), vec!["Session"]);
     }
 }
