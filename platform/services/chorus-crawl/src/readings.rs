@@ -200,6 +200,13 @@ pub fn backup_readings(day: &str, store_bytes: Option<u64>, copy: Option<(u64, u
     c
 }
 
+/// Days a metric reads 0 although the source is never truly silent: the
+/// spine always has events, so events=0 is a gap in the record, not a quiet
+/// day (Kade, #4634: 04-26..05-03 read 0, the 05-04 loss).
+pub fn zero_days(c: &Counts, metric: &str) -> Vec<String> {
+    c.iter().filter(|((_, m, r), v)| m == metric && r.is_none() && **v == 0).map(|((d, _, _), _)| d.clone()).collect()
+}
+
 /// A copy is stale when it is more than `max_hours` old (the alert's rule).
 pub fn backup_stale(c: &Counts, day: &str, max_hours: u64) -> Option<u64> {
     c.get(&(day.to_string(), "backup-age".to_string(), None)).copied().filter(|h| *h > max_hours)
@@ -403,5 +410,13 @@ mod tests {
         let unread = backup_readings("2026-10-18", Some(10), None, now);
         assert!(unread.get(&("2026-10-18".into(), "backup-age".into(), None)).is_none());
         assert!(unread.get(&("2026-10-18".into(), "backup-bytes".into(), None)).is_none());
+    }
+
+    #[test]
+    fn a_zero_event_day_is_a_gap_and_a_busy_day_is_not() {
+        let lines = [r#"{"event":"a","timestamp":"2026-10-14T14:00:00Z"}"#, r#"{"event":"a","timestamp":"2026-10-16T14:00:00Z"}"#];
+        let mut c = count_events(lines.iter().copied(), "2026-10-17");
+        fill_zero_days(&mut c, &["events"], "2026-10-17");
+        assert_eq!(zero_days(&c, "events"), vec!["2026-10-15".to_string()]);
     }
 }

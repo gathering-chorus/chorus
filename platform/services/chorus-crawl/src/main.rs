@@ -1979,6 +1979,12 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         }
         counts.extend(b);
     }
+    if which == "events" {
+        let z = zero_days(&counts, "events");
+        if !z.is_empty() {
+            println!("events: {} day(s) with 0 events — a gap in the spine, not a quiet day: {}", z.len(), z.join(" "));
+        }
+    }
     let gaps = missing_days(&counts);
     if !gaps.is_empty() {
         println!("{which}: {} day(s) with no reading: {}", gaps.len(), gaps.join(" "));
