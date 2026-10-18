@@ -23,6 +23,11 @@
              path, but keeping committed == the working installed config avoids the
              divergence that hid the #3085 ABI crash. -->
         <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- #4605: the scheduled index reads the Buzz relay (Clearing v2's room and
+             older Buzz chat) only when this is set; com.chorus.api has the same value.
+             Without it the worker skips the relay and room messages never reach search. -->
+        <key>BUZZ_RELAY_HOST</key>
+        <string>bedroom</string>
     </dict>
 </dict>
 </plist>
