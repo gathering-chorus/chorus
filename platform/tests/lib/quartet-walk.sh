@@ -64,22 +64,15 @@ fi
 TOKEN_BIN="${CHORUS_TOKEN_BIN:-$ROOT/platform/scripts/chorus-identity-token}"
 OWNER="${CHORUS_ROLE:-wren}"
 TOKEN="$([ -x "$TOKEN_BIN" ] && "$TOKEN_BIN" "$OWNER" 2>/dev/null || true)"
-# #4283 — one TestResult per API per owner, recorded through the API itself so
-# /nightly and the store name the endpoint. Only on the production walk (the
-# nightly's 4279 lane); werk-only walks record nothing (QUARTET_RECORD=0).
+# #4283 — one result per API per owner, so a red names the endpoint. #4579:
+# recorded as a quartet.result spine event, not a TestResult row. Only on the
+# production walk (the nightly's 4279 lane); werk-only walks record nothing.
 source "$ROOT/platform/tests/lib/quartet-record.sh"
 [ "${QUARTET_PROD:-}" = "1" ] || QUARTET_RECORD=0
-OF_TEST=""
-if [ "${QUARTET_RECORD:-1}" != "0" ]; then
-  [ -n "${FUSEKI_AUTH+x}" ] || [ ! -r "$ROOT/platform/scripts/fuseki-auth.sh" ] || source "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-  OF_TEST="$(curl -s --max-time 20 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -G "${FUSEKI_QUERY:-http://localhost:3030/pods/query}" \
-    --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?t WHERE { GRAPH <urn:chorus:domains:tests> { ?t a c:Test ; c:filePath \"platform/tests/4279-api-quartet-prod.bats\" ; c:testName ?n FILTER(STRSTARTS(?n, \"$OWNER: quartet\")) } } LIMIT 1" \
-    -H 'Accept: text/csv' 2>/dev/null | tail -n +2 | tr -d '\r' | head -1)"
-fi
 # verdict line + record, one call (#4283)
 emit() { # class verdict detail
   printf '%-22s %-8s %s\n' "$1" "$2" "$3"
-  quartet_record "$API" "$TOKEN" "$OWNER" "$1" "$2" "$3" "$OF_TEST"
+  quartet_record "$API" "$TOKEN" "$OWNER" "$1" "$2" "$3"
 }
 if [ -z "$TOKEN" ]; then
   echo "UNMEASURED: no owner identity token (tried $TOKEN_BIN $OWNER)." >&2

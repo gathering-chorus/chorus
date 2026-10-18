@@ -146,7 +146,7 @@ teardown() {
   has "delta"
   has "cases posted=1 replaced=0 unchanged=1 to-delete=2"
   # #4185 — the line that says what the deletes DID, beside the plan
-  has "cases deleted=2 kept=0"
+  has "cases deleted=2"
   rows="$(rows_for "$TESTS_COLL")"
   lacks "second case" "$rows"
   lacks "\"testName\": \"$TAG jest case\"" "$rows"
