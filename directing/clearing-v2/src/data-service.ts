@@ -138,8 +138,11 @@ export class DataService {
    * roles door, and router messages.
    * NO fake seeds, NO hardcoded role names or channels, NO literal card/thread values.
    */
-  async getRoomsData(room = 'team', options?: { rolesUrl?: string }): Promise<RoomsData> {
-    const directRoles = await fetchDirectRoles(options?.rolesUrl || this.defaultRolesUrl);
+  async getRoomsData(room = 'team', options?: { rolesUrl?: string; pulseUrl?: string }): Promise<RoomsData> {
+    const [directRoles, rolesData] = await Promise.all([
+      fetchDirectRoles(options?.rolesUrl || this.defaultRolesUrl),
+      this.getRolesData({ pulseUrl: options?.pulseUrl }),
+    ]);
 
     const relayTopic = this.relay.getTopic() || 'team';
     const knownRooms = this.router.getKnownRooms();
@@ -163,6 +166,7 @@ export class DataService {
         cardId: cardMatch ? parseInt(cardMatch[1], 10) : undefined,
         threadCount: m.threadCount,
         threadLast: m.threadLast,
+        type: m.type,
       };
     });
 
@@ -171,6 +175,7 @@ export class DataService {
       channels: channels.length > 0 ? channels : ['team'],
       directRoles,
       relayConnected: this.relay.isConnected(),
+      actors: rolesData.actors,
       messages,
     };
   }

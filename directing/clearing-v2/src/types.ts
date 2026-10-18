@@ -17,7 +17,7 @@ export interface ClearingMessage {
   from: string;
   text: string;
   ts: string;
-  type: 'jeff-input' | 'role-response' | 'system' | 'gap';
+  type: 'jeff-input' | 'role-response' | 'system' | 'gap' | 'thinking';
   visible: boolean;
   pubkey?: string;
   room?: string;
@@ -30,6 +30,8 @@ export interface RoleTile {
   name: string;
   state: 'idle' | 'building' | 'blocked' | 'observing' | 'waiting';
   card: number | null;
+  cards?: Array<{ id: number; title: string }>;
+  stream?: Array<{ action: string; timestamp: string }>;
   lastActivity: string | null;
   lastEvent: string | null;
   lastSeenAt: string | null;

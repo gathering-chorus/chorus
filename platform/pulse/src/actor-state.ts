@@ -59,6 +59,8 @@ export interface WipCardFact {
 export interface ActionFact {
   lastActionAt?: string;
   recent5mCount?: number;
+  recent30mCount?: number;
+  recentActions?: Array<{ action: string; timestamp: string }>;
 }
 
 export interface PrincipalInfo {
@@ -96,6 +98,8 @@ export interface RoleStateResult {
   pairedWith?: string;
   currentCard?: number | null;
   currentCardTitle?: string;
+  cards: Array<{ id: number; title: string }>;
+  stream?: Array<{ action: string; timestamp: string }>;
   observedAt: string;
   waitingOn?: { on: string; what: string; since: string };
   sessions: Array<{ id: string; channel: string; live: boolean; lastActionAt?: string }>;
@@ -462,8 +466,18 @@ function deriveOneActor(
     hasLiveSession || activity === 'acting'
   );
 
-  const currentCard = stateOutcome.currentCard;
+  const myWipCards = (input.wipCards ?? [])
+    .filter((c) => principalToRole(c.owner) === role)
+    .map((c) => ({ id: c.cardId, title: c.title || '' }));
+
+  const currentCard = stateOutcome.currentCard ?? (myWipCards.length > 0 ? myWipCards[0].id : null);
   const currentCardTitle = findCardTitle(currentCard, input);
+
+  const stream = actionFact?.recentActions && actionFact.recentActions.length > 0
+    ? actionFact.recentActions
+    : (actionFact?.lastActionAt
+        ? [{ action: finalStateValue, timestamp: actionFact.lastActionAt }]
+        : [{ action: finalStateValue, timestamp: observedAt }]);
 
   return {
     aboutPrincipal: principal,
@@ -475,6 +489,8 @@ function deriveOneActor(
     pairedWith: stateOutcome.pairedWith,
     currentCard,
     currentCardTitle,
+    cards: myWipCards,
+    stream,
     observedAt,
     waitingOn: stateOutcome.waitingOn,
     sessions: sessionResults,
@@ -762,17 +778,14 @@ function populateLoki5m(targetMap: Map<string, ActionFact>, json5m: LokiQueryRes
 
 function populateLoki30m(
   targetMap: Map<string, ActionFact>,
-  json30m: LokiQueryResult,
-  nowIso: string
+  json30m: LokiQueryResult
 ): void {
   for (const item of json30m.data?.result || []) {
     const role = normalizeLokiRole(item.metric?.role);
     if (!role) continue;
     const existing = targetMap.get(role) || {};
     const count30m = parseInt(item.value?.[1] || '0', 10);
-    if (count30m > 0 && !existing.lastActionAt) {
-      existing.lastActionAt = nowIso;
-    }
+    existing.recent30mCount = (existing.recent30mCount ?? 0) + count30m;
     targetMap.set(role, existing);
   }
 }
@@ -785,8 +798,7 @@ export function lokiActionQuery(window: string): string {
 
 async function fetchLokiActionFacts(
   lokiBase: string,
-  unmeasured: Array<{ source: string; reason: string }>,
-  nowIso: string
+  unmeasured: Array<{ source: string; reason: string }>
 ): Promise<Map<string, ActionFact>> {
   const result = new Map<string, ActionFact>();
   const q5m = encodeURIComponent(lokiActionQuery('5m'));
@@ -802,7 +814,7 @@ async function fetchLokiActionFacts(
       const json5m = (await res5m.json()) as LokiQueryResult;
       const json30m = (await res30m.json()) as LokiQueryResult;
       populateLoki5m(result, json5m);
-      populateLoki30m(result, json30m, nowIso);
+      populateLoki30m(result, json30m);
     } else {
       unmeasured.push({ source: 'loki:activity', reason: `HTTP ${res5m.status || res30m.status}` });
     }
@@ -824,7 +836,7 @@ function resolveSpineEventRole(ev: { role?: string; event?: string }): string {
 
 function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>): void {
   try {
-    const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string };
+    const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string; action?: string };
     const role = resolveSpineEventRole(ev);
     if (!role) return;
     const tsMs = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
@@ -835,9 +847,22 @@ function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>):
     if (tsMs > cur) {
       existing.lastActionAt = ev.timestamp;
     }
-    if (ev.event === 'jeff.input.delivered' && Date.now() - tsMs <= FIVE_MINUTES_MS) {
+    const ageMs = Date.now() - tsMs;
+    if (ageMs <= FIVE_MINUTES_MS) {
       existing.recent5mCount = (existing.recent5mCount ?? 0) + 1;
     }
+    if (ageMs <= THIRTY_MINUTES_MS) {
+      existing.recent30mCount = (existing.recent30mCount ?? 0) + 1;
+    }
+
+    const actionDesc = ev.action || ev.event || 'action';
+    const recent = existing.recentActions || [];
+    if (!recent.some((r) => r.timestamp === ev.timestamp && r.action === actionDesc)) {
+      recent.push({ action: actionDesc, timestamp: ev.timestamp });
+      recent.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      existing.recentActions = recent.slice(0, 5);
+    }
+
     targetMap.set(role, existing);
   } catch (jsonErr: unknown) {
     void jsonErr;
@@ -883,7 +908,7 @@ export function buildLiveActorFactFetcher(options: {
       fetchRolesFact(athenaBase, unmeasured),
       fetchSessionsFact(athenaBase, unmeasured),
       fetchWipCardsFact(apiBase, unmeasured),
-      fetchLokiActionFacts(lokiBase, unmeasured, nowIso),
+      fetchLokiActionFacts(lokiBase, unmeasured),
     ]);
 
     const activePairs = readActivePairsFromDisk(options.opsDir);

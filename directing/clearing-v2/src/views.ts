@@ -126,9 +126,56 @@ function renderActorDetail(a: ActorRow): string {
   ].join('');
 }
 
+export function renderCardRefs(cards?: Array<{ id: number; title: string }>, card?: ActorRow['card']): string {
+  const list = cards && cards.length > 0 ? cards : (card ? [card] : []);
+  if (list.length === 0) return '<span class="meta">–</span>';
+  return list
+    .map((c) => `<a class="cid" href="/board?card=${c.id}">#${c.id}</a>${c.title ? ` <span class="meta">${escapeHtml(c.title)}</span>` : ''}`)
+    .join('<br>');
+}
+
 function renderCardRef(card: ActorRow['card']): string {
-  if (!card) return '<span class="meta">–</span>';
-  return `<a class="cid" href="/board?card=${card.id}">#${card.id}</a>${card.title ? ` <span class="meta">${card.title}</span>` : ''}`;
+  return renderCardRefs(undefined, card);
+}
+
+export function roleAndonLight(actor?: ActorRow): { status: 'working' | 'waiting' | 'idle' | 'stalled'; cssClass: string } {
+  if (!actor) return { status: 'idle', cssClass: 'andon-idle' };
+  if (actor.state === 'waiting') {
+    return { status: 'waiting', cssClass: 'andon-waiting' };
+  }
+  if (actor.state === 'stalled' || actor.state === 'unmeasured') {
+    return { status: 'stalled', cssClass: 'andon-stalled' };
+  }
+  if (actor.activity === 'acting') {
+    return { status: 'working', cssClass: 'andon-working' };
+  }
+  if (actor.activity === 'idle') {
+    return { status: 'idle', cssClass: 'andon-idle' };
+  }
+  if (actor.state === 'building' || actor.state === 'pairing' || actor.state === 'reviewing') {
+    return { status: 'working', cssClass: 'andon-working' };
+  }
+  return { status: 'idle', cssClass: 'andon-idle' };
+}
+
+export function ownerPresence(ownerName?: string, rolesData?: RolesData): { status: 'working' | 'awake' | 'quiet'; text: string; dotClass: string } {
+  if (!ownerName) return { status: 'quiet', text: 'quiet', dotClass: 'd-mut' };
+  const slug = ownerName.toLowerCase().replace(/\s+/g, '-').replace(/^principal-/, '');
+  const actor = rolesData?.actors.find((a) => a.id.toLowerCase() === slug || a.name.toLowerCase() === ownerName.toLowerCase());
+  if (!actor) return { status: 'quiet', text: 'quiet', dotClass: 'd-mut' };
+  if (actor.activity === 'acting') {
+    return { status: 'working', text: 'working', dotClass: 'd-ok andon-working' };
+  }
+  if (actor.activity === 'idle') {
+    return { status: 'quiet', text: 'quiet', dotClass: 'd-mut' };
+  }
+  if (actor.state === 'building' || actor.state === 'pairing' || actor.state === 'reviewing') {
+    return { status: 'working', text: 'working', dotClass: 'd-ok andon-working' };
+  }
+  if (actor.state === 'available' || (actor.sessions && actor.sessions.some((s) => s.includes('live')))) {
+    return { status: 'awake', text: 'awake', dotClass: 'd-info' };
+  }
+  return { status: 'quiet', text: 'quiet', dotClass: 'd-mut' };
 }
 
 function renderUnmeasured(cls: string, text: string | undefined): string {
@@ -148,7 +195,7 @@ function renderWorkingNow(data: TodayData): string {
             <div class="li">
               <span class="av a-${w.id}">${w.name.charAt(0)}</span>
               <div class="grow">${w.name} · ${renderStateBadge(w)}
-                <div class="meta">${w.card ? renderCardRef(w.card) : 'no current card'}</div>
+                <div class="meta">${renderCardRefs(w.cards, w.card)}</div>
                 ${renderActorDetail(w)}
               </div>
             </div>
@@ -239,7 +286,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
                 <td><span class="row"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
                 <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
                 <td class="meta">${a.activity || '–'}</td>
-                <td>${renderCardRef(a.card)}</td>
+                <td>${renderCardRefs(a.cards, a.card)}</td>
                 <td class="mono meta role-sessions" title="${a.sessions.join(' · ')}">${a.sessions.length > 0 ? a.sessions[0] + (a.sessions.length > 1 ? ` <span class="faint">+${a.sessions.length - 1}</span>` : '') : '–'}</td>
               </tr>
             `).join('')}
@@ -269,23 +316,27 @@ function formatRoomText(raw: string): string {
 }
 
 function renderRoomMessage(m: RoomsData['messages'][number]): string {
-          const linkifiedText = formatRoomText(m.text);
-          return `
-            <div class="msg" id="msg-${m.id}">
-              <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
-              <div class="body">
-                <span class="nm who-${m.from}">${m.from}</span>
-                <span class="tm">${m.time}</span>
-                ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
-                <div>${linkifiedText}</div>
-                ${m.threadCount ? `
-                  <div class="thread-container" style="margin-top:6px">
-                    <span class="thr">${m.threadCount} working replies${m.threadLast ? ` · last ${m.threadLast}` : ''}</span>
-                  </div>
-                ` : ''}
-              </div>
-            </div>
-          `;
+  const linkifiedText = formatRoomText(m.text);
+  const isThinking = m.type === 'thinking';
+  const thinkingClass = isThinking ? ' msg-thinking' : '';
+  const thinkingBadge = isThinking ? '<span class="badge-thinking">thinking</span>' : '';
+  return `
+    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}">
+      <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
+      <div class="body">
+        <span class="nm who-${m.from}">${m.from}</span>
+        <span class="tm">${m.time}</span>
+        ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
+        ${thinkingBadge}
+        <div>${linkifiedText}</div>
+        ${m.threadCount ? `
+          <div class="thread-container" style="margin-top:6px">
+            <span class="thr">${m.threadCount} working replies${m.threadLast ? ` · last ${m.threadLast}` : ''}</span>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
 }
 
 const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style="display:none">
@@ -468,6 +519,72 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       var d = document.getElementById('card-drawer');
       if (d) d.style.display = 'none';
     }
+
+    function toggleThinking() {
+      var cont = document.getElementById('messages-stream');
+      var btn = document.getElementById('thinking-toggle-btn');
+      if (!cont) return;
+      var isHidden = cont.classList.toggle('hide-thinking');
+      if (btn) btn.textContent = isHidden ? 'Thinking: OFF' : 'Thinking: ON';
+      try {
+        localStorage.setItem('clearing_thinking_visible', isHidden ? 'false' : 'true');
+      } catch (e) {}
+    }
+
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('clearing_thinking_visible') === 'false') {
+        var cont = document.getElementById('messages-stream');
+        var btn = document.getElementById('thinking-toggle-btn');
+        if (cont) cont.classList.add('hide-thinking');
+        if (btn) btn.textContent = 'Thinking: OFF';
+      }
+    } catch (e) {}
+
+    function openRoleStream(roleId) {
+      var drawer = document.getElementById('stream-drawer');
+      var title = document.getElementById('stream-drawer-title');
+      var status = document.getElementById('stream-drawer-status');
+      var cardsEl = document.getElementById('stream-drawer-cards');
+      var actionsEl = document.getElementById('stream-drawer-actions');
+      if (!drawer) return;
+
+      var actors = window.PULSE_ACTORS || [];
+      var actor = actors.find(function(a) { return a.id === roleId; });
+      if (!actor) return;
+
+      if (title) title.innerHTML = '<b>' + drawerEscape(actor.name) + ' Stream</b>';
+      if (status) status.innerHTML = 'State: <b>' + drawerEscape(actor.state) + '</b> · Activity: <b>' + drawerEscape(actor.activity || 'idle') + '</b>';
+
+      var cards = actor.cards && actor.cards.length > 0 ? actor.cards : (actor.card ? [actor.card] : []);
+      if (cardsEl) {
+        if (cards.length === 0) {
+          cardsEl.innerHTML = '<span class="meta">0 WIP cards</span>';
+        } else {
+          cardsEl.innerHTML = '<div class="sec-t" style="margin-bottom:4px">WIP Cards</div>' + cards.map(function(c) {
+            return '<div><a class="cid" href="/board?card=' + c.id + '">#' + c.id + '</a> ' + drawerEscape(c.title) + '</div>';
+          }).join('');
+        }
+      }
+
+      if (actionsEl) {
+        var stream = actor.stream || [];
+        if (stream.length === 0) {
+          actionsEl.innerHTML = '<div class="meta" style="padding:8px 0">no recent actions recorded</div>';
+        } else {
+          actionsEl.innerHTML = stream.map(function(s) {
+            var timeStr = s.timestamp ? s.timestamp.slice(11, 16) : '';
+            return '<div class="stream-item"><span class="stream-ts">' + drawerEscape(timeStr) + '</span> <span class="stream-action">' + drawerEscape(s.action) + '</span></div>';
+          }).join('');
+        }
+      }
+
+      drawer.style.display = 'flex';
+    }
+
+    function closeStreamDrawer() {
+      var drawer = document.getElementById('stream-drawer');
+      if (drawer) drawer.style.display = 'none';
+    }
   </script>`;
 
 export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
@@ -475,47 +592,98 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
   const isDirect = Boolean(directRoleMatch);
   const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
 
-  const content = `
-  <div class="rooms">
-    <aside class="rside rooms-sidebar">
-      <div class="lab">Rooms</div>
-      ${data.channels.map(c => `
-        <div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>
-      `).join('')}
-      <div class="lab">Direct</div>
-      ${data.directRoles.map(dr => {
-        const slug = dr.toLowerCase().replace(/\s+/g, '-');
-        const isActive = room === slug;
-        return `<div class="r ${isActive ? 'on' : ''}"><a href="/rooms/${slug}" style="text-decoration:none;color:inherit">${dr}</a></div>`;
-      }).join('')}
-    </aside>
-    <main class="chat chat-container">
-      <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)">
-        <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
-        <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
-      </div>
-      <div class="messages" id="messages-stream">
-        ${data.messages.length === 0 ? `
-          <div class="empty-feed" style="padding:24px;color:var(--meta);text-align:center">
-            No messages in ${headerTitle} yet
+  const knownRoleSlugs = ['wren', 'silas', 'kade', 'abby-normal'];
+  const railActors: ActorRow[] = knownRoleSlugs.map(roleId => {
+    const found = (data.actors || []).find(a => a.id.toLowerCase() === roleId || a.name.toLowerCase().replace(/\s+/g, '-') === roleId);
+    if (found) return found;
+    return {
+      id: roleId,
+      name: roleId === 'abby-normal' ? 'Abby Normal' : roleId.charAt(0).toUpperCase() + roleId.slice(1),
+      state: 'idle',
+      sessions: [],
+      cards: [],
+      stream: [],
+    };
+  });
+
+  const actorRailHtml = `
+    <div class="actor-rail" id="rooms-actor-rail">
+      ${railActors.map(a => {
+        const andon = roleAndonLight(a);
+        const cardText = a.cards && a.cards.length > 0
+          ? a.cards.map(c => `#${c.id}`).join(', ')
+          : (a.card ? `#${a.card.id}` : 'no card');
+        return `
+          <div class="actor-tile actor-tile-${a.id}" data-role="${a.id}" onclick="openRoleStream('${a.id}');return false;">
+            <span class="av a-${a.id}">${a.name.charAt(0)}</span>
+            <div class="actor-tile-info">
+              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${a.name}</b></div>
+              <div class="actor-tile-card">${escapeHtml(cardText)}</div>
+            </div>
           </div>
-        ` : data.messages.map(renderRoomMessage).join('')}
-      </div>
-      <footer class="composer-bar">
-        <form id="composer-form">
-          <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-          <button type="submit" id="composer-send">Send</button>
-        </form>
-        <div id="send-error" class="send-error" role="alert"></div>
-      </footer>
-    </main>
-${ROOM_CARD_DRAWER}
+        `;
+      }).join('')}
+    </div>`;
+
+  const inlineNavHtml = `
+    <div class="rooms-nav-inline rside">
+      <span class="rooms-inline-group"><span class="lab">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
+      <span class="sep">·</span>
+      <span class="rooms-inline-group"><span class="lab">Direct</span> ${data.directRoles.map(dr => {
+        const slug = dr.toLowerCase().replace(/\s+/g, '-');
+        const actor = railActors.find(a => a.id.toLowerCase() === slug || a.name.toLowerCase() === dr.toLowerCase());
+        const andon = roleAndonLight(actor);
+        const isActive = room === slug;
+        return `<div class="r ${isActive ? 'on' : ''}"><a href="/rooms/${slug}" style="text-decoration:none;color:inherit"><span class="andon-dot ${andon.cssClass}"></span>${dr}</a></div>`;
+      }).join('')}</span>
+    </div>`;
+
+  const content = `
+  <div class="rooms-view">
+    ${actorRailHtml}
+    ${inlineNavHtml}
+    <div class="rooms">
+      <main class="chat chat-container" style="flex:1">
+        <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)">
+          <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
+          <div class="row" style="gap:10px;align-items:center">
+            <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:12px;padding:3px 8px;cursor:pointer">Thinking: ON</button>
+            <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
+          </div>
+        </div>
+        <div class="messages" id="messages-stream">
+          ${data.messages.length === 0 ? `
+            <div class="empty-feed" style="padding:24px;color:var(--meta);text-align:center">
+              No messages in ${headerTitle} yet
+            </div>
+          ` : data.messages.map(renderRoomMessage).join('')}
+        </div>
+        <footer class="composer-bar">
+          <form id="composer-form">
+            <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
+            <button type="submit" id="composer-send">Send</button>
+          </form>
+          <div id="send-error" class="send-error" role="alert"></div>
+        </footer>
+      </main>
+      <aside class="stream-drawer" id="stream-drawer" style="display:none">
+        <div class="stream-drawer-h">
+          <div id="stream-drawer-title"><b>Role Stream</b></div>
+          <button class="btn ghost" onclick="closeStreamDrawer();return false;" style="font-size:16px;padding:4px 8px;cursor:pointer">✕</button>
+        </div>
+        <div id="stream-drawer-status" class="meta" style="margin-bottom:8px"></div>
+        <div id="stream-drawer-cards" style="margin-bottom:10px"></div>
+        <div class="sec-t" style="margin-bottom:6px">Recent Actions (Pulse Stream)</div>
+        <div id="stream-drawer-actions" class="stream-list"></div>
+      </aside>
+  ${ROOM_CARD_DRAWER}
+    </div>
   </div>
+  <script>window.PULSE_ACTORS = ${JSON.stringify(railActors)};</script>
 ${ROOM_DRAWER_SCRIPT}`;
 
   return renderPageShell(`Room #${room}`, 'rooms', content, sources);
 }
-
 
 function escapeHtml(t: string): string {
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -523,22 +691,25 @@ function escapeHtml(t: string): string {
 
 /** #4574 — the Board tab: the board API's columns as served. A column the API cannot
  *  give says unmeasured with the reason; v2 sorts nothing into columns itself. */
-export function renderBoardPage(columns: BoardColumn[], openCard: number | null, sources: TrustStripSource[]): string {
+export function renderBoardPage(columns: BoardColumn[], openCard: number | null, sources: TrustStripSource[], rolesData?: RolesData): string {
   const col = (c: BoardColumn) => `
       <section class="board-col">
         <h3>${c.name}${c.ok ? ` <span class="meta">${c.cards.length}</span>` : ''}</h3>
         ${c.ok
           ? (c.cards.length === 0
             ? '<div class="meta">0 cards</div>'
-            : c.cards.map((k) => `
+            : c.cards.map((k) => {
+              const presence = ownerPresence(k.owner, rolesData);
+              return `
             <div class="board-card" data-open-card="${k.id}" onclick="openCardDrawer('${k.id}');return false;">
               <div class="task-id"><a class="cid card-ref" href="#" onclick="openCardDrawer('${k.id}');return false;">#${k.id}</a></div>
               <div class="board-card-title">${escapeHtml(k.title)}</div>
               ${k.owner ? `
                 <div class="board-card-meta">
-                  <span>${escapeHtml(k.owner)}</span>
+                  <span class="card-owner-presence"><span class="dot ${presence.dotClass}"></span> <span>${escapeHtml(k.owner)}</span> · <span class="presence-label presence-${presence.status}">${presence.text}</span></span>
                 </div>` : ''}
-            </div>`).join(''))
+            </div>`;
+            }).join(''))
           : renderUnmeasured('board-unmeasured', c.reason)}
       </section>`;
   const content = `

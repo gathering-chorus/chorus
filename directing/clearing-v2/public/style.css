@@ -880,7 +880,216 @@ tr.you td {
     border-left: none;
     padding: 12px;
   }
+  /* #4595 — on a phone the stream drawer fits the full screen width */
+  .stream-drawer {
+    width: 100%;
+    max-width: 100vw;
+    left: 0;
+    right: 0;
+    border-left: none;
+    padding: 12px;
+  }
+  .actor-rail {
+    padding: 6px 10px;
+  }
 }
 
 /* #4575 — the #team composer on non-Rooms pages stays at the bottom of the screen */
 .page-composer { position: sticky; bottom: 0; z-index: 5; }
+
+/* #4595 — Actor Rail, Andon Lights, and Streams */
+.actor-rail {
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--sunk);
+  border-bottom: 1px solid var(--line2);
+  overflow-x: auto;
+  align-items: center;
+  scrollbar-width: thin;
+}
+.actor-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+  transition: border-color 0.15s ease;
+  user-select: none;
+}
+.actor-tile:hover {
+  border-color: var(--accent);
+}
+.actor-tile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.actor-tile-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.actor-tile-card {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Andon light styling and animations */
+.andon-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.andon-working {
+  background: var(--ok);
+  animation: andon-pulse 1.6s infinite ease-in-out;
+}
+.andon-waiting {
+  background: var(--warn);
+}
+.andon-idle {
+  background: var(--faint);
+  opacity: 0.7;
+}
+.andon-stalled {
+  background: var(--bad);
+  animation: andon-blink 1s infinite ease-in-out;
+}
+
+@keyframes andon-pulse {
+  0% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(61, 122, 74, 0.7); }
+  60% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(61, 122, 74, 0); }
+  100% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(61, 122, 74, 0); }
+}
+
+@keyframes andon-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Inline ROOMS and DIRECT (Jeff 20:48) */
+.rooms-nav-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 6px 14px;
+  background: var(--frame);
+  border-bottom: 1px solid var(--line2);
+  font-size: 12px;
+}
+.rooms-inline-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rooms-inline-group b {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.rooms-nav-inline .r-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--ink);
+  border: 1px solid transparent;
+}
+.rooms-nav-inline .r-link.on {
+  background: var(--accentbg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.rooms-nav-inline .sep {
+  color: var(--faint);
+}
+
+/* Thinking messages and toggle */
+.msg-thinking, .message.msg-thinking {
+  background: rgba(120, 120, 120, 0.06);
+  border-left: 2px solid var(--faint);
+  font-style: italic;
+  opacity: 0.88;
+}
+.badge-thinking {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: var(--chrome);
+  color: var(--muted);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 6px;
+  font-style: normal;
+}
+.hide-thinking .msg-thinking,
+.hide-thinking .message.msg-thinking {
+  display: none !important;
+}
+
+/* Stream drawer */
+.stream-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  max-width: 90vw;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+}
+.stream-drawer-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line2);
+  margin-bottom: 12px;
+}
+.stream-item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.stream-item .stream-ts {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  margin-right: 6px;
+}
+
+/* Board owner presence */
+.card-owner-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.presence-label {
+  font-size: 11px;
+}
+.presence-working { color: var(--ok); font-weight: 600; }
+.presence-awake { color: var(--info); }
+.presence-quiet { color: var(--faint); }

@@ -69,9 +69,10 @@ function liveSessionLines(all: NonNullable<PulseActor['sessions']>): string[] {
 
 export function toActorRow(a: PulseActor): ActorRow {
   const short = shortPrincipal(a.aboutPrincipal);
-  const card = typeof a.currentCard === 'number'
-    ? { id: a.currentCard, title: a.currentCardTitle || '' }
-    : null;
+  const rawCards = Array.isArray(a.cards) && a.cards.length > 0
+    ? a.cards
+    : (typeof a.currentCard === 'number' ? [{ id: a.currentCard, title: a.currentCardTitle || '' }] : []);
+  const card = rawCards.length > 0 ? rawCards[0] : null;
   const w = a.waitingOn;
   return {
     id: short,
@@ -80,6 +81,8 @@ export function toActorRow(a: PulseActor): ActorRow {
     activity: a.activity,
     pair: a.pairRole && a.pairedWith ? `${a.pairRole} with ${shortPrincipal(a.pairedWith)}` : undefined,
     card,
+    cards: rawCards,
+    stream: a.stream || [],
     waiting: w ? [w.what, w.on ? `on ${shortPrincipal(w.on)}` : '', w.since ? `since ${formatBostonWhen(w.since)}` : ''].filter(Boolean).join(' ') : undefined,
     // display filter: live sessions listed, the rest counted (pulse decides live)
     sessions: liveSessionLines(a.sessions || []),

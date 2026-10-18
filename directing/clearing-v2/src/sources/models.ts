@@ -20,6 +20,8 @@ export interface ActorRow {
   /** "driver with wren" when pulse names a pair role and partner. */
   pair?: string;
   card?: { id: number; title: string } | null;
+  cards?: Array<{ id: number; title: string }>;
+  stream?: Array<{ action: string; timestamp: string }>;
   /** "reply on kade since …" when pulse names what the actor waits on. */
   waiting?: string;
   sessions: string[];
@@ -80,6 +82,7 @@ export interface RoomsData {
   channels: string[];
   directRoles: string[];
   relayConnected?: boolean;
+  actors?: ActorRow[];
   messages: Array<{
     id: string;
     from: string;
@@ -89,6 +92,7 @@ export interface RoomsData {
     cardId?: number;
     threadCount?: number;
     threadLast?: string;
+    type?: string;
   }>;
 }
 
@@ -173,6 +177,8 @@ export interface PulseActor {
   pairedWith?: string;
   currentCard?: number | null;
   currentCardTitle?: string;
+  cards?: Array<{ id: number; title: string }>;
+  stream?: Array<{ action: string; timestamp: string }>;
   waitingOn?: { on?: string; what?: string; since?: string };
   sessions?: Array<{ id?: string; channel?: string; live?: boolean; lastActionAt?: string }>;
   unmeasuredSource?: PulseUnmeasured[];

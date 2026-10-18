@@ -345,6 +345,83 @@ describe('Actor State - Dynamic Principals and Activity', () => {
     const kadeActing = actingStates.find((s) => s.aboutPrincipal === P_KADE);
     expect(kadeActing?.activity).toBe(ACT_ACTING);
   });
+
+  test('negative proof: role inactive for 10 minutes derives activity: idle (not acting)', () => {
+    // baseNow is 2026-10-16T12:20:00Z. 10m ago is 12:10:00Z.
+    const tenMinAgo = '2026-10-16T12:10:00Z';
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_ABBY],
+      sessions: [
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: tenMinAgo },
+      ],
+      actions: {
+        'abby-normal': {
+          recent5mCount: 0,
+          recent30mCount: 2,
+          lastActionAt: tenMinAgo,
+        },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+    expect(abby?.activity).toBe('idle');
+    expect(abby?.activity).not.toBe(ACT_ACTING);
+  });
+
+  test('0..n WIP cards per role: role holding two cards gets both in cards array; role holding 0 gets empty array', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_ABBY, P_SILAS],
+      sessions: [
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+        { id: 's-silas', principal: P_SILAS, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      wipCards: [
+        { cardId: 4591, title: 'Message backlog order', owner: 'abby-normal' },
+        { cardId: 4595, title: 'Clearing v2 streams', owner: 'abby-normal' },
+      ],
+    };
+
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+    const silas = states.find((s) => s.aboutPrincipal === P_SILAS);
+
+    // Negative proof: Abby holds two WIP cards; Silas holds zero
+    expect(abby?.cards).toHaveLength(2);
+    expect(abby?.cards).toEqual([
+      { id: 4591, title: 'Message backlog order' },
+      { id: 4595, title: 'Clearing v2 streams' },
+    ]);
+    expect(silas?.cards).toEqual([]);
+  });
+
+  test('stream per role: actor carries recent stream actions and timestamps from derived activity', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_KADE],
+      sessions: [
+        { id: 's-kade', principal: P_KADE, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      actions: {
+        kade: {
+          lastActionAt: SEEN_1218,
+          recent5mCount: 1,
+          recentActions: [
+            { action: 'executed build', timestamp: SEEN_1218 },
+            { action: 'edited file', timestamp: '2026-10-16T12:17:00Z' },
+          ],
+        },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const kade = states.find((s) => s.aboutPrincipal === P_KADE);
+    expect(kade?.stream).toHaveLength(2);
+    expect(kade?.stream?.[0].action).toBe('executed build');
+    expect(kade?.stream?.[0].timestamp).toBe(SEEN_1218);
+  });
 });
 
 describe('Actor State - Door Failures and Unmeasured Fallbacks', () => {
@@ -769,7 +846,7 @@ describe('Actor State - #4566 AC3 & AC4', () => {
 // Backtick strings are raw, so they are set aside before the check.
 function logqlQuotedEscapesValid(q: string): boolean {
   const quoted = q.replace(/`[^`]*`/g, '``').match(/"(?:[^"\\]|\\.)*"/g) ?? [];
-  return quoted.every((s) => !/\\[^abfnrtv\\"0-7xuU]/.test(s));
+  return quoted.every((s) => !s.match(/\\[^abfnrtv\\"0-7xuU]/));
 }
 
 describe('Actor State - Loki activity query', () => {
