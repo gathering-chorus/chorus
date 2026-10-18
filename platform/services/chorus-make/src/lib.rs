@@ -224,6 +224,16 @@ fn fail_routes_in(all: &[Row], part: &[Row]) -> String {
         .join(",")
 }
 
+/// #4599: git trusts the card's own werk and no other. A werk another user owns
+/// (abby-normal's are uid 505; dagu runs as 501) stops git with "dubious
+/// ownership"; git 2.43 has no wildcard, and a global safe.directory entry is a
+/// write in Jeff's config that nobody removes.
+const GIT_TRUST: &str = concat!(
+    "  - GIT_CONFIG_COUNT: 1\n",
+    "  - GIT_CONFIG_KEY_0: safe.directory\n",
+    "  - GIT_CONFIG_VALUE_0: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}\n",
+);
+
 /// The header both halves share: params, the machine's env, the failure nudge.
 fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str, routes: &str, on_success: Option<&str>) {
     out.push_str(HEADER);
@@ -250,11 +260,12 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
         "  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}\n",
         "  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}\n",
         "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
-        // #4474 run 12: under the scheduler the verbs resolved to the installed
-        // ones, so the card's own werk-demo never ran. The role's slot comes
-        // first, as chorus-env-setup.sh does for a role's shell (#2995).
-        "  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
     ));
+    out.push_str(GIT_TRUST);
+    // #4474 run 12: under the scheduler the verbs resolved to the installed
+    // ones, so the card's own werk-demo never ran. The role's slot comes
+    // first, as chorus-env-setup.sh does for a role's shell (#2995).
+    out.push_str("  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n");
     // #4474 run 15: a v2 run failed at test and nobody heard for 40 minutes; v1's
     // pipeline nudges, and no role polls (Jeff: "the pipeline nudges you"). dagu's
     // own failure handler tells the builder role, through the one nudge door.
@@ -583,12 +594,15 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
         "  - CHORUS_BIN: ${{CHORUS_BIN}}\n",
         "  - CHORUS_ROOT: ${{CHORUS_HOME}}\n",
         "  - CHORUS_TRACE_ID: {}\n",
+    ), trace));
+    out.push_str(GIT_TRUST);
+    out.push_str(concat!(
         // the card's own werk-test build, then the role's slot as cicd does
         // (#4474 run 12). #4540 — werk-build never fills the slot (#3062) and
         // main's werk-test knows no steps, so a card that adds a step could not
         // test itself; with no card (the nightly) the first dir does not exist.
-        "  - PATH: ${{CHORUS_WERK_BASE}}/${{ROLE}}-${{CARD}}/platform/services/werk-test/target/release:${{CHORUS_WERK_BASE}}/${{ROLE}}-bin:${{PATH}}\n",
-    ), trace));
+        "  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/services/werk-test/target/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
+    ));
     out.push_str("handler_on:\n");
     // Who hears a failure: a child (it takes its trace from a parent) says
     // nothing — the parent owns failure, so the card is nudged once (Silas
