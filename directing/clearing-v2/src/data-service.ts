@@ -151,7 +151,7 @@ export class DataService {
       (c) => !directRoles.some((dr) => slug(dr) === c.toLowerCase())
     );
 
-    const recent: RecentMessage[] = this.router.getRecent(50, room);
+    const recent: RecentMessage[] = this.router.getRecent(100, room);
     const messages = recent.map((m) => {
       const cardMatch = m.text.match(/#(\d+)/);
       return {
