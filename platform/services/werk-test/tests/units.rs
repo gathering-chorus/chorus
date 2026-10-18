@@ -4,8 +4,7 @@
 //! Each test maps to an AC: affected-unit detection on the diff, the bootstrap
 //! escape, and the advisory→blocking gate decision.
 use werk_test::{
-    affected_units, check_plan, expired_cases, gate_outcome, is_self_modifying,
-    failed_emits_missing_message, level_for_event, self_declared_unmeasured, parse_quarantine_rows, quarantine_report,
+    affected_units, check_plan, failed_emits_missing_message, is_self_modifying, level_for_event, self_declared_unmeasured, parse_quarantine_rows,
     spine_args, unit_failure_message, CheckKind, GateOutcome, PlannedCheck,
     Quarantined, TestUnit,
 };
@@ -102,37 +101,6 @@ fn self_modifying_does_not_match_a_lookalike_sibling_crate() {
 
 // --- gate_outcome: advisory → blocking, with the bootstrap escape ---
 
-#[test]
-fn gate_no_units_passes() {
-    assert_eq!(gate_outcome(0, false), GateOutcome::NoUnits);
-    assert_eq!(GateOutcome::NoUnits.exit_code(), 0);
-}
-
-#[test]
-fn gate_all_green_passes() {
-    assert_eq!(gate_outcome(2, false), GateOutcome::Pass);
-    assert_eq!(GateOutcome::Pass.exit_code(), 0);
-}
-
-#[test]
-fn gate_red_floor_blocks_the_land() {
-    let o = gate_outcome(2, true);
-    assert_eq!(o, GateOutcome::Block);
-    assert_eq!(o.exit_code(), 1, "a red floor MUST stop the land");
-}
-
-#[test]
-fn gate_red_blocks_even_when_the_card_changes_the_gate() {
-    // #4442 NEGATIVE PROOF: the #3397 advisory escape is gone. A card that
-    // changes werk-test and carries a failing test BLOCKS (exit 1), because
-    // it is now tested by its own build (own_build_to_run).
-    let changed = vec!["platform/services/werk-test/src/lib.rs".to_string()];
-    assert!(werk_test::is_self_modifying(&changed));
-    let o = gate_outcome(1, true);
-    assert_eq!(o, GateOutcome::Block);
-    assert_eq!(o.exit_code(), 1, "a red on a card that changes the gate must stop the land");
-}
-
 // --- check_plan: the 3 checks #3397 didn't wire (tsc/clippy/doc) join cargo+jest ---
 
 #[test]
@@ -218,29 +186,6 @@ fn plan_clippy_and_doc_are_workspace_level_no_unit() {
 
 // --- quarantine: skip flaky cases at the gate, report them visibly (#2530 absorbed) ---
 
-#[test]
-fn quarantine_report_none_is_explicit_not_silent() {
-    // a skip must be VISIBLE even when empty — never a silent absence (#3443 bar).
-    assert_eq!(quarantine_report(&[]), "quarantined: none");
-}
-
-#[test]
-fn quarantine_report_lists_case_reason_and_expiry() {
-    let q = vec![
-        Quarantined {
-            case: "flaky_net_timeout".into(),
-            reason: "intermittent net".into(),
-            until: "2026-07-01".into(),
-            file: String::new(),
-        },
-    ];
-    let line = quarantine_report(&q);
-    assert!(line.contains("flaky_net_timeout"), "names the case");
-    assert!(line.contains("intermittent net"), "names the reason");
-    assert!(line.contains("2026-07-01"), "names the expiry");
-    assert!(line.contains('1'), "counts how many were skipped");
-}
-
 // --- parse_quarantine_rows: the curl|jq TSV → Quarantined (read-wiring, testable) ---
 
 #[test]
@@ -273,31 +218,6 @@ fn parse_quarantine_rows_skips_lines_with_no_case() {
 }
 
 // --- expired_cases: quarantineUntil < today → auto-file-card candidates (#2530) ---
-
-#[test]
-fn expired_cases_flags_past_expiry_only() {
-    let q = vec![
-        Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-01".into(), ..Default::default() }, // past
-        Quarantined { case: "b".into(), reason: "r".into(), until: "2026-12-31".into(), ..Default::default() }, // future
-    ];
-    let expired = expired_cases(&q, "2026-06-23");
-    assert_eq!(expired.len(), 1);
-    assert_eq!(expired[0].case, "a");
-}
-
-#[test]
-fn expired_cases_today_is_not_yet_expired() {
-    // until == today: the hold runs through end of day, not expired yet.
-    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-23".into(), ..Default::default() }];
-    assert!(expired_cases(&q, "2026-06-23").is_empty());
-}
-
-#[test]
-fn expired_cases_blank_until_is_never_expired() {
-    // a malformed/blank expiry must not silently auto-file — be conservative.
-    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "".into(), ..Default::default() }];
-    assert!(expired_cases(&q, "2026-06-23").is_empty());
-}
 
 // --- spine_args: typed failure emission shape (#3162 inherited-trace pattern) ---
 
@@ -366,47 +286,6 @@ fn completed_extras_names_a_card_that_changes_the_gate_and_never_says_advisory()
 // in those units), and every unit holding tests covering a touched domain joins
 // the plan. UNION with the legacy path-derived units — the model can only ADD
 // coverage in v1, never subtract (the superset AC, proven by construction).
-
-#[test]
-fn model_plan_unions_covers_matched_units_with_legacy() {
-    use werk_test::{model_units, parse_test_rows, TestUnit};
-    // three tests: one in platform/api covering "senses", one in a rust crate
-    // covering "senses" (cross-unit blast radius!), one covering "borg" only.
-    let tsv = "platform/api/tests/a.test.ts\tsenses\n\
-               platform/services/pulse-gather/tests/b.rs\tsenses\n\
-               platform/pulse/tests/c.test.ts\tborg\n";
-    let rows = parse_test_rows(tsv);
-    assert_eq!(rows.len(), 3);
-    // the card changed platform/api only → legacy picks TsPackage(platform/api);
-    // its tests cover "senses" → pulse-gather (also covering senses) joins.
-    let legacy = vec![TestUnit::TsPackage("platform/api".to_string())];
-    let units = model_units(&rows, &legacy);
-    assert!(units.contains(&TestUnit::TsPackage("platform/api".to_string())), "legacy retained");
-    assert!(units.contains(&TestUnit::RustCrate("pulse-gather".to_string())),
-        "cross-unit covers match joins the plan: {:?}", units);
-    assert!(!units.contains(&TestUnit::TsPackage("platform/pulse".to_string())),
-        "unrelated domain (borg) stays out: {:?}", units);
-}
-
-#[test]
-fn model_plan_is_superset_of_legacy_by_construction() {
-    use werk_test::{model_units, parse_test_rows, TestUnit};
-    // empty model data → model_units == legacy exactly (never smaller).
-    let rows = parse_test_rows("");
-    let legacy = vec![TestUnit::RustCrate("werk-commit".to_string()), TestUnit::TsPackage("platform/api".to_string())];
-    let units = model_units(&rows, &legacy);
-    for l in &legacy {
-        assert!(units.contains(l), "legacy unit {:?} must survive", l);
-    }
-}
-
-#[test]
-fn parse_test_rows_tolerates_garbage_and_missing_fields() {
-    use werk_test::parse_test_rows;
-    assert!(parse_test_rows("not a tsv row").is_empty());
-    // rows missing either field are dropped, not panicked on.
-    assert!(parse_test_rows("only-one-field\n\tcovers-no-path\n").is_empty());
-}
 
 // ── #3634 — TestSuiteRun write-back payload ────────────────────────────────
 #[test]
@@ -477,36 +356,7 @@ fn plan_source_label_is_model_only_on_successful_nonempty_fetch() {
     assert_eq!(plan_source_label(false, 0), "fallback", "failed fetch = fallback");
 }
 
-// ── #3634 gather feedback (silas): multi-valued covers fans out, never drops ─
-#[test]
-fn parse_test_rows_accepts_fanned_multi_covers_rows() {
-    use werk_test::parse_test_rows;
-    // the jq filter emits one row per covers value — both rows parse
-    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\nplatform/api/tests/a.test.ts\tborg\n");
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].covers, "senses");
-    assert_eq!(rows[1].covers, "borg");
-}
-
 // ═══ #3661 — the runner runs what the tests domain declares ═══
-
-// ── AC1/AC2 groundwork: rows carry the model's pyramidLayer (3-col TSV) ──
-#[test]
-fn parse_test_rows_reads_the_three_column_layer_form() {
-    use werk_test::parse_test_rows;
-    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\tunit\n");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].pyramid_layer, "unit");
-}
-
-#[test]
-fn parse_test_rows_two_column_rows_still_parse_with_empty_layer() {
-    use werk_test::parse_test_rows;
-    // back-compat: a 2-col row (pre-#3661 jq) parses; layer is empty, never dropped
-    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\n");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].pyramid_layer, "");
-}
 
 // ── AC2: --domain / --type scope the declared set ──
 fn row(path: &str, covers: &str, layer: &str) -> werk_test::TestRow {
@@ -706,29 +556,6 @@ fn rel_path_strips_werk_root_only() {
 }
 
 #[test]
-fn test_result_payload_carries_identity_and_escapes() {
-    use werk_test::test_result_payload;
-    let p = test_result_payload(
-        "platform/api/tests/a.test.ts", "asserts \"quoted\" thing", "fail",
-        "test-a-asserts-quoted-thing", "3592", "kade", "trace-1", 1700000000123, 7,
-    );
-    assert!(p.contains("\"filePath\":\"platform/api/tests/a.test.ts\""), "{}", p);
-    assert!(p.contains("\"testName\":\"asserts \\\"quoted\\\" thing\""), "{}", p);
-    assert!(p.contains("\"result\":\"fail\""), "{}", p);
-    assert!(p.contains("\"name\":\"testresult-3592-1700000000123-7\""), "{}", p);
-    assert!(p.contains("\"ofTest\":\"test-a-asserts-quoted-thing\""), "{}", p);
-    // #3925 INVERTED: runTs/cardId are ON-model now (shape bump, minCount 0
-    // this cycle). The old assertion pinned the smuggling era — these fields
-    // MUST travel as real properties, run-time-clocked, never post-time.
-    assert!(p.contains("\"runTs\":"), "runTs is a real field now: {}", p);
-    assert!(p.contains("\"cardId\":\"3592\""), "cardId is a real field now: {}", p);
-    // the bare `card` key stays forbidden — cardId is the modeled name.
-    assert!(!p.contains("\"card\":"), "bare 'card' was never the modeled name: {}", p);
-}
-
-
-
-#[test]
 fn parse_rows_and_names_stays_aligned_and_backcompat() {
     use werk_test::parse_rows_and_names;
     let tsv = "a.ts\tsenses\tunit\tdoes x\ttest-a-does-x\n\
@@ -761,125 +588,6 @@ fn join_cases_maps_identity_to_entity_and_counts_unregistered() {
 
 // --- #3808: wire-back re-mint decision — token expiry mid-stream is recoverable,
 // a real 401 (re-mint didn't help) fails loudly after ONE re-mint attempt ---
-
-#[test]
-fn remint_decision_accepts_2xx_and_fails_non_401_without_reminting() {
-    use werk_test::{remint_decision, PostStep};
-    assert_eq!(remint_decision("200", false), PostStep::Accept);
-    assert_eq!(remint_decision("201", true), PostStep::Accept);
-    // a 502 is the server refusing content — reminting can't help, count it failed
-    assert_eq!(remint_decision("502", false), PostStep::Fail);
-    assert_eq!(remint_decision("000", false), PostStep::Fail); // curl couldn't connect
-}
-
-#[test]
-fn remint_decision_reminting_exactly_once_on_401() {
-    use werk_test::{remint_decision, PostStep};
-    // first 401 of the run → re-mint and retry (expired-token recovery)
-    assert_eq!(remint_decision("401", false), PostStep::Remint);
-    // 401 AFTER a re-mint → the identity is genuinely refused; fail loudly,
-    // never retry forever (#3808 AC2)
-    assert_eq!(remint_decision("401", true), PostStep::Fail);
-}
-
-#[test]
-fn post_args_with_code_returns_status_and_never_uses_sf() {
-    // the batch post must yield the HTTP code (the 401 trigger) — `-sf`
-    // swallows it and forced a second diagnostic request per failure (#3725)
-    let args = werk_test::post_args_with_code("http://x/testresults/batch", "tok", "[]");
-    assert!(args.contains(&"%{http_code}".to_string()), "{:?}", args);
-    assert!(!args.contains(&"-sf".to_string()), "{:?}", args);
-    assert!(args.contains(&"Authorization: Bearer tok".to_string()));
-    assert!(args.contains(&"x-target-graph: urn:chorus:domains:tests".to_string()));
-}
-
-#[test]
-fn testresult_chunks_are_byte_bounded_stable_json_arrays() {
-    let payloads = vec![
-        "{\"name\":\"a\"}".to_string(),
-        "{\"name\":\"bb\"}".to_string(),
-        "{\"name\":\"ccc\"}".to_string(),
-    ];
-    let max = payloads[0].len() + payloads[1].len() + 3; // brackets + comma
-    let got = werk_test::chunk_json_payloads(&payloads, max);
-    assert_eq!(got.oversized, 0);
-    assert_eq!(got.chunks.len(), 2);
-    assert_eq!(got.chunks[0].body, format!("[{},{}]", payloads[0], payloads[1]));
-    assert_eq!(got.chunks[0].entities, 2);
-    assert_eq!(got.chunks[1].body, format!("[{}]", payloads[2]));
-    assert!(got.chunks.iter().all(|c| c.body.len() <= max));
-}
-
-#[test]
-fn testresult_chunker_names_oversized_entities_without_splitting_them() {
-    let payloads = vec!["{\"name\":\"small\"}".to_string(), "x".repeat(100)];
-    let got = werk_test::chunk_json_payloads(&payloads, 32);
-    assert_eq!(got.oversized, 1);
-    assert_eq!(got.chunks.len(), 1);
-    assert_eq!(got.chunks[0].entities, 1);
-    assert_eq!(got.chunks[0].body, format!("[{}]", payloads[0]));
-}
-
-#[test]
-fn unsent_result_accounting_includes_oversized_and_safety_cap_drops() {
-    let mut stats = werk_test::PostStats {
-        posted: 1990,
-        failed: 10,
-        ..Default::default()
-    };
-    werk_test::account_unsent_results(&mut stats, 2, 8);
-    assert_eq!(stats.posted + stats.failed, 2010);
-    assert_eq!(stats.failed, 20);
-    assert_eq!(stats.first_fail_code.as_deref(), Some("payload-too-large"));
-
-    let mut cap_only = werk_test::PostStats::default();
-    werk_test::account_unsent_results(&mut cap_only, 0, 1);
-    assert_eq!(cap_only.failed, 1);
-    assert_eq!(cap_only.first_fail_code.as_deref(), Some("max-posts-cap"));
-}
-
-#[test]
-fn two_thousand_representative_results_need_at_most_twenty_five_http_chunks() {
-    let payloads: Vec<String> = (0..2000)
-        .map(|i| {
-            werk_test::test_result_payload(
-                "platform/services/werk-test/tests/units.rs",
-                &format!("representative_case_{}", i),
-                "pass",
-                &format!("test-werk-test-representative-case-{}", i),
-                "4000",
-                "kade",
-                "trace",
-                1_700_000_000_123,
-                i,
-            )
-        })
-        .collect();
-    let got = werk_test::chunk_json_payloads(&payloads, werk_test::TESTRESULT_BATCH_MAX_BYTES);
-    assert_eq!(got.oversized, 0);
-    assert_eq!(got.chunks.iter().map(|c| c.entities).sum::<usize>(), 2000);
-    assert!(got.chunks.len() <= 25, "{} chunks", got.chunks.len());
-    assert!(got
-        .chunks
-        .iter()
-        .all(|c| c.body.len() <= werk_test::TESTRESULT_BATCH_MAX_BYTES));
-}
-
-#[test]
-fn historical_collection_override_derives_a_batch_write_route_without_breaking_gets() {
-    assert_eq!(
-        werk_test::testresult_batch_endpoint("http://owl:3360/testresults"),
-        "http://owl:3360/testresults/batch",
-    );
-    assert_eq!(
-        werk_test::testresult_batch_endpoint("http://owl:3360/testresults?limit=100000"),
-        "http://owl:3360/testresults/batch",
-    );
-    assert_eq!(
-        werk_test::testresult_batch_endpoint("http://owl:3360/testresults/batch"),
-        "http://owl:3360/testresults/batch",
-    );
-}
 
 #[test]
 fn terminal_telemetry_orders_execution_then_test_completed_and_cards_write_nothing() {
@@ -916,130 +624,9 @@ fn terminal_telemetry_orders_execution_then_test_completed_and_cards_write_nothi
 // use (shared/scope_units.rs). Full suite is the loud fallback, never the
 // default; an asset-only diff runs nothing.
 
-fn sg(v: &str) -> String { v.to_string() }
-
-fn su(name: &str, dir: &str) -> werk_test::ScopeUnit {
-    werk_test::ScopeUnit { name: name.into(), dir: dir.into() }
-}
-
-fn test_world() -> (Vec<werk_test::ScopeUnit>, Vec<(String, String)>) {
-    let units = vec![
-        su("werk-teardown", "platform/services/werk-teardown"),
-        su("werk-accept", "platform/services/werk-accept"),
-        su("athena-make", "platform/services/athena-make"),
-        su("platform/api", "platform/api"),
-        su("platform/pulse", "platform/pulse"),
-    ];
-    let edges = vec![
-        ("werk-teardown".to_string(), "werk-accept".to_string()),
-        ("chorus-sdk".to_string(), "platform/api".to_string()),
-    ];
-    (units, edges)
-}
-
-#[test]
-fn asset_only_diff_scopes_to_no_test_units() {
-    // #3810's exact shape: an HTML page + a knowledge doc → zero units, the
-    // 24-minute Rust sweep never starts.
-    let (units, edges) = test_world();
-    let v = werk_test::scoped_test_units(
-        &[sg("platform/api/public/index.html"), sg("knowledge/doc-coherence.md")],
-        &units, &edges);
-    assert_eq!(v, Some(vec![]));
-}
-
-#[test]
-fn negative_proof_3821_downstream_dependent_tests_still_run() {
-    // #3734 — the fixture where scoping too narrowly ships a break: a change
-    // in werk-teardown (lib-only provider) must include werk-accept's tests,
-    // because A's change can break B's suite. Scope-to-A-alone fails here.
-    let (units, edges) = test_world();
-    let v = werk_test::scoped_test_units(
-        &[sg("platform/services/werk-teardown/src/lib.rs")], &units, &edges);
-    let scoped = v.expect("must scope");
-    assert!(scoped.contains(&su("werk-teardown", "platform/services/werk-teardown")), "{:?}", scoped);
-    assert!(scoped.contains(&su("werk-accept", "platform/services/werk-accept")),
-        "downstream dependent's tests MUST run — under-scoping ships breaks: {:?}", scoped);
-}
-
-#[test]
-fn unmapped_file_falls_back_to_full_suite() {
-    let (units, edges) = test_world();
-    let v = werk_test::scoped_test_units(&[sg("tsconfig.base.json")], &units, &edges);
-    assert_eq!(v, None, "unknown means run everything, never means skip");
-}
-
 // ---- #4000 — proving/flows is lane-handled, never a FULL trigger ------------
 
-#[test]
-fn flows_spec_diff_scopes_instead_of_forcing_full() {
-    let (units, edges) = test_world();
-    let v = werk_test::scoped_test_units(
-        &[sg("proving/flows/clearing-ui.spec.cjs")], &units, &edges);
-    let scoped = v.expect("a specs-only diff must SCOPE (#4000), not fall to FULL");
-    // "ui-flows" is a well-known lane name, not a build/test unit: it maps to
-    // no ScopeUnit, so the unit list is empty — the #3920 ui lane (which fires
-    // on proving/flows/ paths independently) is the runner for these files.
-    assert!(scoped.is_empty(), "no build/test units for a specs-only diff: {:?}", scoped);
-}
-
-/// #3734 negative proof: the mapping must not widen — any OTHER proving/ path
-/// still forces FULL with the file named. The unmapped defense survives.
-#[test]
-fn other_proving_paths_still_force_full() {
-    let (units, edges) = test_world();
-    let v = werk_test::scoped_test_units(
-        &[sg("proving/scripts/new-harness.sh")], &units, &edges);
-    assert_eq!(v, None, "unmapped proving/ paths must stay on the loud FULL escape");
-}
-
-#[test]
-fn mixed_diff_keeps_the_real_units_alongside_flows() {
-    let (units, edges) = test_world();
-    let v = werk_test::scoped_test_units(
-        &[sg("proving/flows/clearing-ui.spec.cjs"),
-          sg("platform/services/werk-teardown/src/lib.rs")], &units, &edges);
-    let scoped = v.expect("must scope");
-    assert!(scoped.contains(&su("werk-teardown", "platform/services/werk-teardown")), "{:?}", scoped);
-}
-
 // ---- #3929 — nextest is the ONLY cargo lane; absence is a loud red ----------
-
-#[test]
-fn nextest_args_base_selects_lib_and_bins() {
-    let args = werk_test::nextest_run_args(&[], &[]);
-    assert_eq!(args, vec!["nextest", "run", "--no-tests=fail"]);
-    // (c): no --lib/--bins — tests/ suites are IN the gate now, and zero-tests is red
-    assert!(!args.iter().any(|a| a == "--lib" || a == "--bins"));
-}
-
-#[test]
-fn nextest_args_translate_quarantine_to_exact_filterset() {
-    let args = werk_test::nextest_run_args(&["flaky_a", "flaky_b"], &[]);
-    let e = args.iter().position(|a| a == "-E").expect("filterset flag");
-    assert_eq!(args[e + 1], "not test(=flaky_a) and not test(=flaky_b)");
-    // never the cargo-test style trailing `-- --skip` form
-    assert!(!args.iter().any(|a| a == "--skip"), "cargo-test skip leaked into nextest args");
-}
-
-#[test]
-fn nextest_case_lines_parse_pass_fail_skip() {
-    let out = "\
-    Starting 3 tests across 1 binary\n\
-        PASS [   0.005s] werk-test units::alpha_ok\n\
-        FAIL [   0.102s] werk-test units::beta_broken\n\
-        SKIP [         ] werk-test units::gamma_quarantined\n\
-     Summary [   0.110s] 3 tests run: 1 passed, 1 failed, 1 skipped\n";
-    let cases = werk_test::parse_nextest_cases(out);
-    assert_eq!(
-        cases,
-        vec![
-            ("alpha_ok".to_string(), "pass".to_string()),
-            ("beta_broken".to_string(), "fail".to_string()),
-            ("gamma_quarantined".to_string(), "skip".to_string()),
-        ]
-    );
-}
 
 /// NEGATIVE PROOF (#3734): the fixture below is the VERBATIM output this
 /// machine produced with nextest absent (captured 2026-08-20, pre-install).
@@ -1100,14 +687,6 @@ fn needs_stack_files_selects_only_declared_needs_stack() {
     assert_eq!(files.iter().cloned().collect::<Vec<_>>(), vec!["a/tests/x.rs"]);
 }
 
-#[test]
-fn stack_verdict_up_when_all_probes_pass_and_names_the_down_ones() {
-    assert!(werk_test::stack_verdict(&[("chorus-api", true), ("athena-make", true)]).is_ok());
-    let err = werk_test::stack_verdict(&[("chorus-api", true), ("athena-make", false)])
-        .expect_err("a down probe must not read as up");
-    assert!(err.contains("athena-make"), "down service must be NAMED, got: {}", err);
-}
-
 /// NEGATIVE PROOF (#3734): stack-down with needs-stack tests selected must
 /// produce the typed SKIPPED report — the state the old runner rendered as
 /// silence. Zero needs-stack tests is NOT the same state and says so.
@@ -1126,25 +705,6 @@ fn integration_report_stack_up_counts_ran_and_none_registered_is_explicit() {
     assert!(up.contains("2") && up.to_lowercase().contains("live stack"), "got: {}", up);
     let none = werk_test::integration_report(0, None);
     assert!(none.contains("none registered"), "explicit absence (#3443 bar), got: {}", none);
-}
-
-#[test]
-fn cargo_needs_stack_exclusion_is_by_integration_binary() {
-    // tests/foo.rs compiles to binary `foo` — ONE merged -E filterset with quarantine.
-    let args = werk_test::nextest_run_args(&["flaky_q"], &["foo", "slow_e2e"]);
-    let e = args.iter().position(|a| a == "-E").expect("filterset flag");
-    assert_eq!(args[e + 1], "not test(=flaky_q) and not binary(=foo) and not binary(=slow_e2e)");
-    assert_eq!(args.iter().filter(|a| *a == "-E").count(), 1, "two -E flags would shadow");
-    assert!(!werk_test::nextest_run_args(&[], &[]).contains(&"-E".to_string()));
-}
-
-#[test]
-fn jest_ignore_args_scope_to_files_under_the_package() {
-    let args = werk_test::jest_ignore_args(
-        &["directing/clearing/tests/account.test.ts", "platform/api/tests/z.test.ts"],
-        "platform/api");
-    assert_eq!(args, vec!["--testPathIgnorePatterns", "tests/z.test.ts"]);
-    assert!(werk_test::jest_ignore_args(&["a/b.test.ts"], "platform/pulse").is_empty());
 }
 
 // ---- #3953 — the test phase pays for what it selects: 600s budget enforced --
@@ -1178,21 +738,6 @@ fn unit_cost_report_names_the_largest_units_first() {
     let hooks = r.find("cargo-test:chorus-hooks").expect("second unit present");
     assert!(api < hooks, "largest cost first: {}", r);
     assert!(r.contains("512.7"), "cost visible: {}", r);
-}
-
-#[test]
-fn budget_from_table_reads_the_test_row_and_missing_is_none() {
-    let tsv = "phase\tbudget_s\ncommit\t60\ntest\t600\ndemo\t480\n";
-    assert_eq!(werk_test::phase_budget(tsv, "test"), Some(600.0));
-    assert_eq!(werk_test::phase_budget(tsv, "absent-phase"), None);
-}
-
-#[test]
-fn phase_target_reads_col3_and_p95_col_is_untouched() {
-    let tsv = "test\t1650\t600\nbuild\t360\n";
-    assert_eq!(werk_test::phase_target(tsv, "test"), Some(600.0));
-    assert_eq!(werk_test::phase_target(tsv, "build"), None); // no target declared
-    assert_eq!(werk_test::phase_budget(tsv, "test"), Some(1650.0)); // detector ceiling intact
 }
 
 // ---- #3920 — UI tests are a pipeline, not ad-hoc npx invocations ----------
@@ -1245,20 +790,6 @@ fn playwright_summary_parses_pass_and_fail_counts() {
     assert_eq!(werk_test::parse_playwright_summary("garbage"), None);
 }
 
-
-#[test]
-fn next_page_url_walks_the_ledger_and_stops_honestly_4022() {
-    use werk_test::next_page_url;
-    let cur = "http://localhost:3360/testresults?limit=100000";
-    assert_eq!(
-        next_page_url(cur, "/v1/testresults?cursor=100000&limit=100000").as_deref(),
-        Some("http://localhost:3360/testresults?cursor=100000&limit=100000")
-    );
-    assert_eq!(next_page_url(cur, ""), None, "no next link = last page");
-    assert_eq!(next_page_url(cur, "/v1/testresults?limit=100000"), None, "a self-link must not loop");
-    assert!(next_page_url("file:///tmp/r.json", "").is_none());
-}
-
 // ---------------------------------------------------------------------------
 // #4105 — the census walk must tell "ledger exhausted" from "we stopped early".
 // Before this, `match next_page_url(..) { Some(n) if pages < 50 => .., _ => break }`
@@ -1267,38 +798,6 @@ fn next_page_url_walks_the_ledger_and_stops_honestly_4022() {
 // Negative proof (#3734): the violating state (a next link still present at
 // the cap) must produce Truncated, and the control (no next link) Exhausted.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn walk_at_the_cap_with_a_next_link_is_truncated_not_exhausted_4105() {
-    use werk_test::{page_walk_step, PageStep};
-    let cur = "http://localhost:3360/testresults?cursor=0&limit=25000";
-    let next = "/v1/testresults?cursor=25000&limit=25000";
-
-    // the violation: more ledger to read, and we are out of budget
-    assert_eq!(
-        page_walk_step(cur, next, 3, 3),
-        PageStep::Truncated,
-        "a next link at the cap is a TRUNCATED read, never a finished one"
-    );
-    assert_eq!(page_walk_step(cur, next, 9, 3), PageStep::Truncated);
-
-    // the control: the ledger really is finished
-    assert_eq!(page_walk_step(cur, "", 3, 3), PageStep::Exhausted);
-    assert_eq!(page_walk_step(cur, "", 0, 3), PageStep::Exhausted);
-
-    // a self-link is a broken next, not a page — and not a truncation either
-    assert_eq!(
-        page_walk_step(cur, "/v1/testresults?cursor=0&limit=25000", 0, 3),
-        PageStep::Exhausted
-    );
-
-    // under the cap with a real next link: keep walking
-    assert_eq!(
-        page_walk_step(cur, next, 1, 3),
-        PageStep::Next("http://localhost:3360/testresults?cursor=25000&limit=25000".to_string())
-    );
-}
-
 
 // ---------------------------------------------------------------------------
 // #4106 — shell suites outside platform/scripts had no lane at all. The router

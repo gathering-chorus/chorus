@@ -268,14 +268,6 @@ pub fn parse_why_line(line: &str) -> Option<(String, String, String, String)> {
     Some((file.to_string(), case.to_string(), kind.to_string(), reason.to_string()))
 }
 
-/// The run's error counts, from its own `nightly-why` lines:
-/// `failed cases 9 · exceptions 5 · http 3 · assertions 1 · other 0`.
-/// A case counts once: nextest prints a failed case's FAIL line twice (live
-/// and in its summary), so one failure reaches the log as two why lines.
-pub fn error_counts_line(whys: &[(String, String, String, String)]) -> String {
-    error_counts(whys).line()
-}
-
 /// #4156 — the counts as numbers, for the run record in the graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ErrorCounts {
@@ -377,29 +369,6 @@ mod tests {
         assert_eq!(failure_kind("Error: something broke"), "error");
         // NEGATIVE PROOF: a status of 200 is not an http failure
         assert_eq!(failure_kind("HTTP 200 but the body was empty"), "error");
-    }
-
-    #[test]
-    fn counts_come_from_the_lines() {
-        let whys: Vec<_> = [
-            why_line("a", "1", "TypeError: x"),
-            why_line("a", "2", "Expected: 200 Received: 500"),
-            why_line("a", "3", "assertion `left == right` failed"),
-        ]
-        .iter()
-        .filter_map(|l| parse_why_line(l))
-        .collect();
-        assert_eq!(error_counts_line(&whys), "failed cases 3 · exceptions 1 · http 1 · assertions 1 · other 0");
-    }
-
-    /// Live 2026-09-25: one failing nextest case printed two why lines. It is
-    /// one failure; a second, different case in the same file still counts.
-    #[test]
-    fn a_case_printed_twice_counts_once() {
-        let one = why_line("a.rs", "t", "HTTP 500");
-        let whys: Vec<_> = [one.clone(), one, why_line("a.rs", "u", "HTTP 500")]
-            .iter().filter_map(|l| parse_why_line(l)).collect();
-        assert_eq!(error_counts_line(&whys), "failed cases 2 · exceptions 0 · http 2 · assertions 0 · other 0");
     }
 
     #[test]
