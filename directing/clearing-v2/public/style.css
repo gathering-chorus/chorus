@@ -679,9 +679,81 @@ tr.you td {
   box-sizing: border-box;
 }
 
-.board-card {
-  cursor: pointer;
+/* #4574 — Board Columns & Cards */
+.board-cols {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 12px;
+  -webkit-overflow-scrolling: touch;
 }
+
+.board-col {
+  flex: 1;
+  min-width: 280px;
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-snap-align: start;
+}
+
+.board-col h3 {
+  font: 600 12px "JetBrains Mono", monospace;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line2);
+  margin-bottom: 2px;
+}
+
+.board-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+.board-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+
+.board-card .task-id {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.board-card-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.board-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 
 .cws-motion-bar {
   display: flex;
@@ -785,6 +857,20 @@ tr.you td {
   .message-text, .msg .body > div { overflow-wrap: anywhere; }
   /* #4575 — a role's session list no longer stretches its row: one line, the full list on tap */
   .role-sessions { max-width: 9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* #4574 — on phone, board columns scroll sideways at 85vw with a peek of the next column */
+  .board-cols {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 12px;
+    padding: 0 4px 12px;
+  }
+  .board-col {
+    flex: 0 0 85vw;
+    min-width: 85vw;
+    max-width: 85vw;
+    scroll-snap-align: start;
+  }
   /* #4598 — on a phone the card drawer fits the screen without horizontal blowout */
   .card-drawer {
     width: 100%;
