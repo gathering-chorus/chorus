@@ -221,6 +221,22 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: "/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
         },
+        // #4625 — the werk's own Clearing v2, read-only: it reads the real room
+        // through the relay tunnel and this werk's pulse and door, and refuses
+        // every send. OPTIONAL: only for a card that changes directing/clearing-v2.
+        // 3501-3504: clear of every other variant's ports (test below).
+        EnvService {
+            name: "clearing-v2".to_string(),
+            kind: EnvServiceKind::TsService,
+            base_port: 3501,
+            source_dir_rel: "directing/clearing-v2".to_string(),
+            program_args_template: ProgramArgsTemplate::Node {
+                entry: "dist/server.js".to_string(),
+            },
+            port_env: "PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
+        },
         // #4514 — the werk's own tool runner, so a card that changes it can show
         // a long Task surviving a runner restart on the demo, never on prod's.
         // 3372-3375: clear of every other variant's ports. Binds 127.0.0.1.
@@ -243,7 +259,9 @@ pub fn env_services() -> Vec<EnvService> {
 /// pulse: its nudge gate reads pulse's message store). A service not listed
 /// here is always started, which keeps today's demo for cards touching none.
 pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
-    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/"]),
+    // #4625 — v2 reads pulse, so a v2 card gets the werk's pulse too.
+    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/", "directing/clearing-v2/"]),
+    ("clearing-v2", &["directing/clearing-v2/"]),
     // #4514 — a demo runner only for cards that change the runner
     ("chorus-runner", &["platform/services/chorus-runner/"]),
 ];
@@ -301,6 +319,39 @@ pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str)
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
     ])
+}
+
+/// #4625 — the demo v2's environment: read-only, the real room through the
+/// relay tunnel (reading only), and this werk's pulse, door and api.
+pub fn clearing_v2_extra_env(role: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
+    let door = format!("http://localhost:{}", env_port_for("athena-make", role)?);
+    let api = format!("http://localhost:{}", env_port_for("chorus-api", role)?);
+    Ok(vec![
+        ("CLEARING_V2_READONLY".into(), "1".into()),
+        ("HOST".into(), "0.0.0.0".into()),
+        ("PULSE_URL".into(), format!("http://127.0.0.1:{}", env_port_for("pulse", role)?)),
+        ("ROLES_URL".into(), format!("{}/v1/roles/roles", door)),
+        ("CARDS_URL".into(), format!("{}/v1/cards/cards", door)),
+        ("BOARD_URL".into(), format!("{}/api/chorus/context/board", api)),
+        ("ALERTS_URL".into(), format!("{}/api/chorus/context/alerts", api)),
+        ("BUZZ_RELAY_URL".into(), "ws://127.0.0.1:13000".into()),
+        ("BUZZ_RELAY_HOST_HEADER".into(), "192.168.86.242:3000".into()),
+        ("HOME".into(), home.to_string()),
+        ("PATH".into(), path.to_string()),
+    ])
+}
+
+/// #4625 — a demo v2 that could send, or hand Jeff's words to prod pulse.
+pub fn clearing_v2_env_prod_leak(env: &[(String, String)]) -> Option<String> {
+    let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+    if get("CLEARING_V2_READONLY") != Some("1") {
+        return Some("CLEARING_V2_READONLY is not 1, so the demo could post into the real room".into());
+    }
+    match get("PULSE_URL") {
+        Some(u) if u.ends_with(":3475") || u.ends_with(":3475/") => Some(format!("PULSE_URL={u} is prod pulse")),
+        None => Some("PULSE_URL unset: v2 would default to prod pulse".into()),
+        _ => None,
+    }
 }
 
 /// #4398 — prod surfaces a variant pulse must never be handed.
@@ -931,6 +982,12 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path, prod_relay.as_deref())?;
         let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path)?;
         let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path)?;
+        let clearing_v2_owned = clearing_v2_extra_env(role, &home_dir, &variant_path)?;
+        if svc.name == "clearing-v2" {
+            if let Some(leak) = clearing_v2_env_prod_leak(&clearing_v2_owned) {
+                return Err(format!("env_up: refusing to start the variant Clearing v2 — {}", leak));
+            }
+        }
         if svc.name == "pulse" {
             if let Some(leak) = pulse_env_prod_leak(&pulse_owned, &home_dir) {
                 return Err(format!("env_up: refusing to start the variant pulse — {}", leak));
@@ -1014,6 +1071,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "chorus-runner" => runner_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            "clearing-v2" => clearing_v2_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
 
@@ -1618,5 +1676,60 @@ mod credential_4451 {
         let bad = "<dict>\n    <key>FUSEKI_ADMIN_PASSWORD</key><string>x</string>\n</dict>";
         assert!(plist_holds_fuseki_credential(bad));
         assert!(!plist_holds_fuseki_credential("<key>FUSEKI_WRITE_ENV</key><string>/p</string>"));
+    }
+}
+
+/// #4625 — a card that changes Clearing v2 gets its own read-only v2 in demo.
+/// Jeff, 2026-10-18 16:37, on #4597's demo: "seems no different/worse" — the
+/// demo's only Clearing was v1, so three v2 cards that day were shown nothing.
+#[cfg(test)]
+mod clearing_v2_demo_4625 {
+    use super::*;
+
+    fn names(changed: &[&str]) -> Vec<String> {
+        let c: Vec<String> = changed.iter().map(|s| s.to_string()).collect();
+        services_for_diff(&c).into_iter().map(|s| s.name).collect()
+    }
+
+    #[test]
+    fn a_v2_card_gets_v2_and_its_pulse_and_other_cards_get_neither() {
+        let v2 = names(&["directing/clearing-v2/public/app.js"]);
+        assert!(v2.contains(&"clearing-v2".to_string()), "{v2:?}");
+        assert!(v2.contains(&"pulse".to_string()), "v2 reads pulse: {v2:?}");
+        let other = names(&["platform/tests/x.bats"]);
+        assert!(!other.contains(&"clearing-v2".to_string()), "{other:?}");
+    }
+
+    #[test]
+    fn the_demo_v2_is_read_only_and_reads_this_werks_pulse_and_door() {
+        let env = clearing_v2_extra_env("kade", "/Users/x", "/usr/bin").unwrap();
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+        assert_eq!(get("CLEARING_V2_READONLY"), "1");
+        assert_eq!(get("PULSE_URL"), format!("http://127.0.0.1:{}", env_port_for("pulse", "kade").unwrap()));
+        assert!(get("ROLES_URL").contains(&format!(":{}/", env_port_for("athena-make", "kade").unwrap())), "{}", get("ROLES_URL"));
+        assert_eq!(clearing_v2_env_prod_leak(&env), None);
+    }
+
+    /// NEGATIVE PROOF: the leak check refuses a v2 that could write or nudge prod.
+    #[test]
+    fn the_leak_check_refuses_a_writable_v2_and_prod_pulse() {
+        let base = clearing_v2_extra_env("kade", "/Users/x", "/usr/bin").unwrap();
+        let without_ro: Vec<_> = base.iter().filter(|(k, _)| k != "CLEARING_V2_READONLY").cloned().collect();
+        assert!(clearing_v2_env_prod_leak(&without_ro).is_some());
+        let prod_pulse: Vec<_> = base.iter().map(|(k, v)| if k == "PULSE_URL" { (k.clone(), "http://127.0.0.1:3475".to_string()) } else { (k.clone(), v.clone()) }).collect();
+        assert!(clearing_v2_env_prod_leak(&prod_pulse).is_some());
+    }
+
+    #[test]
+    fn v2_ports_collide_with_no_other_demo_service() {
+        let mut seen = std::collections::HashSet::new();
+        for svc in env_services() {
+            for role in known_roles() {
+                let p = svc.port_for(role).unwrap();
+                if p == 0 { continue; }
+                assert!(seen.insert(p), "{} {} port {} taken twice", svc.name, role, p);
+                if svc.name == "clearing" { assert!(seen.insert(clearing_https_port(p))); }
+            }
+        }
     }
 }
