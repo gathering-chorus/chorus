@@ -426,6 +426,48 @@ function combineUnmeasured(
   return merged.length > 0 ? merged : undefined;
 }
 
+function resolveMyWipCards(
+  input: ActorFactInput,
+  role: string,
+  stateOutcome: DerivedStateOutcome
+): RoleCardFact[] {
+  const myWipCards: RoleCardFact[] = (input.wipCards ?? [])
+    .filter((c) => principalToRole(c.owner) === role)
+    .map((c) => ({
+      id: c.cardId,
+      title: c.title || '',
+      step: c.step || input.cardSteps?.[c.cardId] || 'coding',
+    }));
+
+  if (stateOutcome.stateValue === 'pairing' && stateOutcome.currentCard) {
+    if (!myWipCards.some((c) => c.id === stateOutcome.currentCard)) {
+      const fromWip = input.wipCards?.find((c) => c.cardId === stateOutcome.currentCard);
+      const pairedTitle = findCardTitle(stateOutcome.currentCard, input) || '';
+      const pairedStep = fromWip?.step || input.cardSteps?.[stateOutcome.currentCard] || 'coding';
+      myWipCards.unshift({
+        id: stateOutcome.currentCard,
+        title: pairedTitle,
+        step: pairedStep,
+      });
+    }
+  }
+
+  return myWipCards;
+}
+
+function resolveActorStream(
+  actionFact: ActionFact | undefined,
+  finalStateValue: string
+): Array<{ action: string; timestamp: string }> {
+  if (actionFact?.recentActions && actionFact.recentActions.length > 0) {
+    return actionFact.recentActions;
+  }
+  if (actionFact?.lastActionAt) {
+    return [{ action: finalStateValue, timestamp: actionFact.lastActionAt }];
+  }
+  return [];
+}
+
 function deriveOneActor(
   p: string | PrincipalInfo,
   input: ActorFactInput,
@@ -474,35 +516,10 @@ function deriveOneActor(
     hasLiveSession || activity === 'acting'
   );
 
-  const myWipCards: RoleCardFact[] = (input.wipCards ?? [])
-    .filter((c) => principalToRole(c.owner) === role)
-    .map((c) => ({
-      id: c.cardId,
-      title: c.title || '',
-      step: c.step || input.cardSteps?.[c.cardId] || 'coding',
-    }));
-
-  if (stateOutcome.stateValue === 'pairing' && stateOutcome.currentCard) {
-    if (!myWipCards.some((c) => c.id === stateOutcome.currentCard)) {
-      const fromWip = input.wipCards?.find((c) => c.cardId === stateOutcome.currentCard);
-      const pairedTitle = findCardTitle(stateOutcome.currentCard, input) || '';
-      const pairedStep = fromWip?.step || input.cardSteps?.[stateOutcome.currentCard] || 'coding';
-      myWipCards.unshift({
-        id: stateOutcome.currentCard,
-        title: pairedTitle,
-        step: pairedStep,
-      });
-    }
-  }
-
+  const myWipCards = resolveMyWipCards(input, role, stateOutcome);
   const currentCard = stateOutcome.currentCard ?? (myWipCards.length > 0 ? myWipCards[0].id : null);
   const currentCardTitle = findCardTitle(currentCard, input);
-
-  const stream = actionFact?.recentActions && actionFact.recentActions.length > 0
-    ? actionFact.recentActions
-    : (actionFact?.lastActionAt
-        ? [{ action: finalStateValue, timestamp: actionFact.lastActionAt }]
-        : []);
+  const stream = resolveActorStream(actionFact, finalStateValue);
 
   return {
     aboutPrincipal: principal,
@@ -859,6 +876,15 @@ function resolveSpineEventRole(ev: { role?: string; event?: string }): string {
   return role;
 }
 
+function recordRecentAction(existing: ActionFact, timestamp: string, actionDesc: string): void {
+  const recent = existing.recentActions || [];
+  if (!recent.some((r) => r.timestamp === timestamp && r.action === actionDesc)) {
+    recent.push({ action: actionDesc, timestamp });
+    recent.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    existing.recentActions = recent.slice(0, 5);
+  }
+}
+
 function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>): void {
   try {
     const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string; action?: string };
@@ -880,13 +906,7 @@ function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>):
       existing.recent30mCount = (existing.recent30mCount ?? 0) + 1;
     }
 
-    const actionDesc = ev.action || ev.event || 'action';
-    const recent = existing.recentActions || [];
-    if (!recent.some((r) => r.timestamp === ev.timestamp && r.action === actionDesc)) {
-      recent.push({ action: actionDesc, timestamp: ev.timestamp });
-      recent.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-      existing.recentActions = recent.slice(0, 5);
-    }
+    recordRecentAction(existing, ev.timestamp, ev.action || ev.event || 'action');
 
     targetMap.set(role, existing);
   } catch (jsonErr: unknown) {
@@ -915,7 +935,7 @@ export async function fetchDaguCardSteps(
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<Record<number, string>> {
   const steps: Record<number, string> = {};
-  if (!wipCards || wipCards.length === 0) return steps;
+  if (wipCards.length === 0) return steps;
   try {
     const res = await fetch(`${daguBase}/api/v1/dag-runs?name=cicd`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) {
@@ -927,6 +947,7 @@ export async function fetchDaguCardSteps(
 
     await Promise.all(
       wipCards.map(async (card) => {
+        // eslint-disable-next-line security/detect-non-literal-regexp
         const cardPattern = new RegExp(`(?:^|\\s)CARD="?${card.cardId}"?(?:\\s|$)`);
         const matchingRun = dagRuns.find((r) => r.params && cardPattern.test(r.params));
         if (!matchingRun) {
