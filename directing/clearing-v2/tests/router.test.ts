@@ -187,7 +187,7 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
     expect(recent[0].text).toBe('Morning from v1 Clearing');
   });
 
-  test('#4595: backlog arriving newest-first is sorted chronologically and keeps newest 100', () => {
+  test('#4591: backlog arriving newest-first is sorted chronologically and keeps newest 100', () => {
     const r = new MessageRouter(150);
     for (let minute = 8; minute >= 0; minute--) {
       r.ingest({
