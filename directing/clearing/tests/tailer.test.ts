@@ -199,13 +199,47 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     }));
   });
 
-  test('nudge.emitted to non-jeff is dropped', () => {
+  // #4592 — a nudge between roles reaches the room (and so Buzz), under the
+  // sender's name and naming who it was for. Jeff 10-17: "im really not clear
+  // what % of messages are in buzz". This was the 'dropped' test until #4592.
+  test('nudge.emitted between roles surfaces as role-to-role, naming the target', () => {
     const r = makeRouter();
     const t = new ChorusLogTailer(r as any);
     (t as any).processLine(JSON.stringify({
       event: 'nudge.emitted',
       role: 'kade',
-      from: 'kade,to=silas,chars=13,trace=t-2,content=internal ping',
+      payload: 'from=kade,to=silas,chars=13,trace=t-2,origin=mcp,content=internal ping, with a comma',
+    }));
+    expect(r.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'kade',
+      text: '[nudge from kade → silas] internal ping, with a comma',
+      type: 'role-to-role',
+    }));
+  });
+
+  // #4592 — a system alert (pulse's nudge to a role) reaches the room as an alert.
+  test('nudge.emitted from system surfaces as an alert, naming the target', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      event: 'nudge.emitted',
+      role: 'system',
+      payload: 'from=system,to=wren,chars=40,trace=t-3,origin=mcp,content=chorus-api event loop blocked 6480ms',
+    }));
+    expect(r.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'system',
+      text: '[alert → wren] chorus-api event loop blocked 6480ms',
+      type: 'alert',
+    }));
+  });
+
+  test('nudge.emitted between roles with no content is dropped', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      event: 'nudge.emitted',
+      role: 'kade',
+      payload: 'from=kade,to=silas,chars=0',
     }));
     expect(r.ingest).not.toHaveBeenCalled();
   });

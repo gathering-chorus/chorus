@@ -102,6 +102,9 @@ export class BuzzRelayClient {
   private reconnectDelayMs: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  /** #4592 — one-shot reads (today's notes for the counts page), kept apart from the room's feed. */
+  private fetches = new Map<string, { events: NostrEvent[]; done: (events: NostrEvent[]) => void }>();
+  private fetchSeq = 0;
 
   constructor(options: BuzzRelayClientOptions) {
     this.relayUrl = options.relayUrl;
@@ -236,9 +239,35 @@ export class BuzzRelayClient {
       this.answerChallenge(parsed[1]);
     } else if (parsed[0] === 'OK' && this.authEventId && parsed[1] === this.authEventId) {
       this.authState = parsed[2] === true ? 'ok' : 'refused';
+    } else if (parsed[0] === 'EVENT' && typeof parsed[1] === 'string' && this.fetches.has(parsed[1])) {
+      if (parsed[2]) this.fetches.get(parsed[1])!.events.push(parsed[2] as NostrEvent);
+    } else if (parsed[0] === 'EOSE' && typeof parsed[1] === 'string' && this.fetches.has(parsed[1])) {
+      const f = this.fetches.get(parsed[1])!;
+      this.fetches.delete(parsed[1]);
+      if (this.ws) this.ws.send(JSON.stringify(['CLOSE', parsed[1]]));
+      f.done(f.events);
     } else if (parsed[0] === 'EVENT' && parsed[2] && this.onEventCallback) {
       this.onEventCallback(parsed[2] as NostrEvent);
     }
+  }
+
+  /**
+   * #4592 — every #team note since `since` (epoch seconds), as one read that ends
+   * at the relay's EOSE. Rejects, naming why, if the relay is not readable or
+   * never finishes: an empty list must only ever mean nothing was there.
+   */
+  fetchSince(since: number, timeoutMs = 10000): Promise<NostrEvent[]> {
+    if (!this.ws || !this.isConnected()) return Promise.reject(new Error('relay not connected'));
+    const id = `fetch-${++this.fetchSeq}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.fetches.delete(id);
+        if (this.ws) this.ws.send(JSON.stringify(['CLOSE', id]));
+        reject(new Error(`relay sent no EOSE within ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.fetches.set(id, { events: [], done: (events) => { clearTimeout(timer); resolve(events); } });
+      this.ws!.send(JSON.stringify(['REQ', id, { kinds: [1], '#t': [this.topic, 'reply'], since, limit: 10000 }]));
+    });
   }
 
   private answerChallenge(challenge: string): void {

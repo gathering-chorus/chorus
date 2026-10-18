@@ -15,7 +15,8 @@ import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
-import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage } from './views';
+import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage } from './views';
+import { bostonMidnight, countKinds, fetchPulseToday, sentFromPulse } from './sources/message-counts';
 import { fetchBoard } from './sources/board';
 import { DataService } from './data-service';
 
@@ -108,6 +109,8 @@ interface RouteContext {
   cookieKey?: Buffer | null;
   signInUrl?: string;
   boardUrl: string;
+  /** #4592 — the counts page reads pulse's message store. */
+  pulseUrl: string;
 }
 
 // Helper: test overrides only allowed via x-* headers in test mode, NEVER via URL query parameters
@@ -131,6 +134,20 @@ function registerPageRoutes(ctx: RouteContext): void {
     const roomsData = await dataService.getRoomsData('team', { rolesUrl, pulseUrl });
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     res.type('html').send(renderRoomsPage('team', roomsData, sources));
+  });
+
+  // #4592 — today's messages by kind: sent (pulse's message store) vs reached Buzz (the relay).
+  app.get('/counts', async (req: Request, res: Response) => {
+    const { pulseUrl } = getTestOverrides(req);
+    const since = bostonMidnight();
+    const day = new Date(since * 1000 + 12 * 3600 * 1000).toISOString().slice(0, 10);
+    const sources = await dataService.getTrustStripSources({ pulseUrl });
+    try {
+      const [rows, notes] = await Promise.all([fetchPulseToday(pulseUrl || ctx.pulseUrl, since), ctx.relay.fetchSince(since)]);
+      res.type('html').send(renderCountsPage(countKinds(sentFromPulse(rows), notes), { day }, sources));
+    } catch (e) {
+      res.type('html').send(renderCountsPage([], { day, error: (e as Error).message }, sources));
+    }
   });
 
   app.get('/today', async (req: Request, res: Response) => {
@@ -374,8 +391,16 @@ function roomOf(event: NostrEvent): string {
   return roomTag ? roomTag[1] : 'team';
 }
 
+/** #4592 — the note's kind tag (v1's buildNote), only the two kinds the room's toggle owns. */
+export function kindOf(event: { tags?: string[][] }): 'nudge' | 'alert' | undefined {
+  const v = (event.tags || []).find((t) => t[0] === 'kind')?.[1];
+  return v === 'nudge' || v === 'alert' ? v : undefined;
+}
+
 function toClearingMessage(event: NostrEvent, role: string, tick: boolean, signer?: string): ClearingMessage {
+  const kind = kindOf(event);
   return {
+    ...(kind ? { kind } : {}),
     id: event.id,
     from: role,
     text: event.content,
@@ -505,6 +530,7 @@ export function createApp(options?: CreateAppOptions) {
     cookieKey: options?.cookieKey,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
+    pulseUrl: urls.pulseUrl,
   });
 
   return { app, router, tileService, dataService, relay };

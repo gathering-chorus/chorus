@@ -167,13 +167,21 @@ export class ChorusLogTailer extends EventEmitter {
                 || packed.split(',')[0]
                 || '';
     const content = packed.match(/content=(.+)/)?.[1] || '';
-    if (target !== 'jeff' || !content) return;
-    this.router.ingest({
-      from: role,
-      text: content,
-      ts: parsed.timestamp || new Date().toISOString(),
-      type: 'role-response',
-    });
+    if (!content) return;
+    const ts = parsed.timestamp || new Date().toISOString();
+    if (target === 'jeff') {
+      this.router.ingest({ from: role, text: content, ts, type: 'role-response' });
+      return;
+    }
+    // #4592 — every other nudge reaches the room too, and so Buzz: a nudge
+    // between roles under its sender, a system alert as an alert. Jeff 10-17:
+    // "im really not clear what % of messages are in buzz". The room showed the
+    // answers without the questions behind them, or the alerts that caused them.
+    if (role === 'system') {
+      this.router.ingest({ from: 'system', text: `[alert → ${target}] ${content}`, ts, type: 'alert' });
+      return;
+    }
+    this.router.ingest({ from: role, text: `[nudge from ${role} → ${target}] ${content}`, ts, type: 'role-to-role' });
   }
 
   private processLine(line: string): void {

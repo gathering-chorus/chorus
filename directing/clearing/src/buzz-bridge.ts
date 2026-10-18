@@ -75,6 +75,10 @@ export function buildNote(msg: ClearingMsg, topic: string, signer: NostrSigner):
   const created_at = Number.isFinite(parsed) ? Math.floor(parsed / 1000) : Math.floor(Date.now() / 1000);
   const tags: string[][] = [['t', topic]];
   if (msg.from) tags.push(['author', msg.from]);
+  // #4592 — the kind, for v2's per-kind counts and its "team nudges" toggle.
+  // Replies and Jeff's input carry none, so the toggle can never hide them.
+  const kind = msg.type === 'role-to-role' ? 'nudge' : msg.type === 'alert' ? 'alert' : '';
+  if (kind) tags.push(['kind', kind]);
   const { id, sig } = signer.signEvent(serialize(pubkey, created_at, 1, tags, msg.text));
   return { id, pubkey, created_at, kind: 1, tags, content: msg.text, sig };
 }
