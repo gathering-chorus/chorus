@@ -33,7 +33,11 @@ import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
+import { BuzzWriter, bridgeSignerFromHome, type BuzzMessage } from './buzz-writer';
 import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
+
+/** #4609 — what createApp needs from the Buzz writer: fire one post, no answer. */
+export interface BuzzPoster { post(m: BuzzMessage): void }
 const lifecycle = serviceLifecycle('com.chorus.pulse');
 
 // #4398 — a card's demo runs its own pulse on the role's port (3496-3498) when
@@ -223,7 +227,7 @@ async function nudgeCallerOk(headers: express.Request['headers'], from: unknown)
   return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
 }
 
-function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
+function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker, buzz?: BuzzPoster): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
     // accepted any request carrying a guessable X-Chorus-MCP-Caller header;
@@ -263,6 +267,8 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
+    // #4609 — the Buzz note goes out beside delivery, never ahead of it.
+    buzz?.post({ id: Number(id), from, to, content: marked });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
     if (worker) {
       worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null }).catch(() => { /* worker handles its own state */ });
@@ -396,14 +402,15 @@ export function createApp(
   emit?: EmitSpine,
   actorStateService?: { getActorStates: () => unknown },
   changesOvernightService?: { getChanges: () => unknown },
-  readingsService?: { getReadings: () => unknown }
+  readingsService?: { getReadings: () => unknown },
+  buzz?: BuzzPoster
 ): Express {
   const app = express();
   app.use(express.json());
   const metrics = buildMetrics();
   registerRequestLogging(app, metrics);
   registerHealthMetricsRoutes(app, store, metrics);
-  registerNudgeRoutes(app, store, metrics, worker);
+  registerNudgeRoutes(app, store, metrics, worker, buzz);
   registerJeffInputRoutes(app, store, worker);
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
@@ -712,7 +719,12 @@ if (require.main === module) {
     );
     readingsService.start();
 
-    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService);
+    // #4609 — pulse writes every nudge and alert to Buzz. Only where the relay
+    // is configured (the prod plist): a demo or test pulse must never write the
+    // team's room. A miss is logged every time and alerted to ops once per 10 min.
+    const buzz = startBuzzWriter(store, worker, emitSpine);
+
+    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
       lifecycle.started();  // #4446 — round 1 imported the helper but never called it
@@ -720,3 +732,32 @@ if (require.main === module) {
   })();
 }
 
+
+
+/** #4609 — the production Buzz writer, or none when PULSE_BUZZ_RELAY_URL is unset. */
+function startBuzzWriter(store: MessageStore, worker: DeliveryWorker | undefined, emit: EmitSpine): BuzzWriter | undefined {
+  const relayUrl = process.env.PULSE_BUZZ_RELAY_URL;
+  if (!relayUrl) {
+    log('info', 'buzz.writer.off', { reason: 'PULSE_BUZZ_RELAY_URL not set' });
+    return undefined;
+  }
+  const { signer, reason } = bridgeSignerFromHome(os.homedir());
+  if (!signer) {
+    log('error', 'buzz.writer.off', { reason });
+    return undefined;
+  }
+  return new BuzzWriter({
+    relayUrl,
+    hostHeader: process.env.PULSE_BUZZ_RELAY_HOST || undefined,
+    signer,
+    onMiss: (note, why, alert) => {
+      const msg = note.tags.find((t) => t[0] === 'msg')?.[1];
+      log('error', 'buzz.write.missed', { msg, reason: why });
+      void emit('buzz.write.missed', { msg: msg ?? '', reason: why });
+      if (!alert) return;
+      const text = `Buzz did not store ${msg}: ${why}. Messages are still delivered; /counts shows the gap. Next alert in 10 min at most.`;
+      const id = store.sendNudge('system', 'silas', text);
+      if (worker) worker.enqueue({ id, from: 'system', to: 'silas', content: text, delivery_attempts: 0, trace_id: null }).catch(() => { /* worker handles its own state */ });
+    },
+  });
+}
