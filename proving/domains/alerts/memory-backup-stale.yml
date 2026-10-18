@@ -14,8 +14,17 @@ owner: silas
 schedule: "17 * * * *"
 
 check: |
-  URL="${READINGS_URL:-http://localhost:3360/v1/heralds/sensorreadings?limit=5000}"
-  BODY=$(curl -sf -m 20 "$URL") || { echo "no-reading:readings-unreadable"; exit 1; }
+  # today's and yesterday's readings only, filtered by day, so a full page can
+  # never push today's rows off and read as a false red (Kade, #4634)
+  if [ -n "$READINGS_URL" ]; then
+    BODY=$(curl -sf -m 20 "$READINGS_URL") || { echo "no-reading:readings-unreadable"; exit 1; }
+  else
+    BASE="http://localhost:3360/v1/heralds/sensorreadings"
+    T=$(TZ=America/New_York date +%F); Y=$(TZ=America/New_York date -v-1d +%F)
+    A=$(curl -sf -m 20 "$BASE?readingDay=$T&limit=1000") || { echo "no-reading:readings-unreadable"; exit 1; }
+    B=$(curl -sf -m 20 "$BASE?readingDay=$Y&limit=1000") || { echo "no-reading:readings-unreadable"; exit 1; }
+    BODY=$(printf '%s\n%s' "$A" "$B" | python3 -c 'import json,sys; print(json.dumps({"data": [r for l in sys.stdin if l.strip() for r in json.loads(l).get("data", [])]}))')
+  fi
   printf '%s' "$BODY" | python3 -c '
   import json, sys, datetime, zoneinfo
   rows = json.load(sys.stdin).get("data", [])
@@ -36,4 +45,4 @@ check: |
 
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "memory-backup-stale: rule the Bedroom copy of pulse messages.db or the spine is older than 24 hours; values from the sensor readings, see /v1/heralds/sensorreadings" 2>/dev/null || true
+  "$OPS_NUDGE" silas "memory-backup-stale: rule the Bedroom copy of pulse messages.db or the spine is older than 24 hours: $STATUS" 2>/dev/null || true

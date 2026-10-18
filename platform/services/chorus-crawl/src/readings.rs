@@ -179,7 +179,7 @@ pub fn reading_name(sensor: &str, metric: &str, role: Option<&str>, day: &str) -
 /// The unit a metric is measured in, so an age and a size never mix.
 pub fn unit_of(metric: &str) -> &'static str {
     match metric {
-        "backup-age" => "hours",
+        "backup-age" | "spine-write-age" => "hours",
         "backup-bytes" | "store-bytes" => "bytes",
         _ => "count",
     }
@@ -210,6 +210,23 @@ pub fn zero_days(c: &Counts, metric: &str) -> Vec<String> {
 /// A copy is stale when it is more than `max_hours` old (the alert's rule).
 pub fn backup_stale(c: &Counts, day: &str, max_hours: u64) -> Option<u64> {
     c.get(&(day.to_string(), "backup-age".to_string(), None)).copied().filter(|h| *h > max_hours)
+}
+
+/// A single decimal reading (an age in hours), outside the day counts: the
+/// spine's write age is measured every few minutes and must keep its
+/// fraction, so 10 minutes reads 0.17 h, never 0 (Kade, #4634).
+pub fn decimal_reading(sensor: &str, metric: &str, day: &str, value: f64, run: &str) -> ReadingRow {
+    (
+        reading_name(sensor, metric, None, day),
+        vec![
+            ("readingOfSensor".to_string(), sensor.to_string()),
+            ("readingDay".to_string(), day.to_string()),
+            ("readingMetric".to_string(), metric.to_string()),
+            ("readingValue".to_string(), format!("{value:.2}")),
+            ("readingUnit".to_string(), "hours".to_string()),
+            ("readingRun".to_string(), run.to_string()),
+        ],
+    )
 }
 
 /// The SensorReading rows for a set of counts, as (name, fields).
@@ -418,5 +435,13 @@ mod tests {
         let mut c = count_events(lines.iter().copied(), "2026-10-17");
         fill_zero_days(&mut c, &["events"], "2026-10-17");
         assert_eq!(zero_days(&c, "events"), vec!["2026-10-15".to_string()]);
+    }
+
+    #[test]
+    fn the_spine_write_age_keeps_its_fraction() {
+        let r = decimal_reading("events", "spine-write-age", "2026-10-18", 600.0 / 3600.0, "run");
+        assert_eq!(r.0, "events-spine-write-age-2026-10-18");
+        assert!(r.1.contains(&("readingValue".to_string(), "0.17".to_string())));
+        assert!(r.1.contains(&("readingUnit".to_string(), "hours".to_string())));
     }
 }
