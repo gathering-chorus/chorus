@@ -19,8 +19,8 @@ export interface ActorRow {
   activity?: string;
   /** "driver with wren" when pulse names a pair role and partner. */
   pair?: string;
-  card?: { id: number; title: string } | null;
-  cards?: Array<{ id: number; title: string }>;
+  card?: { id: number; title: string; step?: string } | null;
+  cards?: Array<{ id: number; title: string; step?: string }>;
   stream?: Array<{ action: string; timestamp: string }>;
   /** "reply on kade since …" when pulse names what the actor waits on. */
   waiting?: string;
@@ -177,7 +177,7 @@ export interface PulseActor {
   pairedWith?: string;
   currentCard?: number | null;
   currentCardTitle?: string;
-  cards?: Array<{ id: number; title: string }>;
+  cards?: Array<{ id: number; title: string; step?: string }>;
   stream?: Array<{ action: string; timestamp: string }>;
   waitingOn?: { on?: string; what?: string; since?: string };
   sessions?: Array<{ id?: string; channel?: string; live?: boolean; lastActionAt?: string }>;

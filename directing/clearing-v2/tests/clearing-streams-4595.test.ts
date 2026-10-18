@@ -18,8 +18,8 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
         activity: 'acting',
         card: { id: 4591, title: 'Message backlog order' },
         cards: [
-          { id: 4591, title: 'Message backlog order' },
-          { id: 4595, title: 'Clearing v2 streams' },
+          { id: 4591, title: 'Message backlog order', step: 'werk-test' },
+          { id: 4595, title: 'Clearing v2 streams', step: 'werk-build' },
         ],
         stream: [
           { action: 'ran tests', timestamp: '2026-10-18T12:35:00Z' },
@@ -157,13 +157,17 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     expect(html).toContain('toggleThinking()');
   });
 
-  test('AC9: Teammates and Board show every WIP card a role holds (0..n cards)', () => {
+  test('AC9: Teammates and Board show every WIP card a role holds (0..n cards) with steps', () => {
     const htmlRoles = renderRolesPage(mockRolesData, []);
     // Abby holds 2 cards: both #4591 and #4595 appear
     expect(htmlRoles).toContain('#4591');
     expect(htmlRoles).toContain('#4595');
-    // Silas holds 0 cards: shows dash –
+    // Value stream step per card shows in Activity column (werk-test, werk-build)
+    expect(htmlRoles).toContain('werk-test');
+    expect(htmlRoles).toContain('werk-build');
+    // Silas holds 0 cards: shows dash – and idle activity
     expect(htmlRoles).toContain('–');
+    expect(htmlRoles).toContain('idle');
 
     // Board page renders all WIP cards
     const columns: BoardColumn[] = [
@@ -182,6 +186,38 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     expect(htmlBoard).toContain('#4595');
     // Shows card owner presence from pulse read
     expect(htmlBoard).toContain('presence-working');
+  });
+
+  test('Teammates: pairing roles both show the card with pairing with partner (role)', () => {
+    const pairRolesData: RolesData = {
+      actors: [
+        {
+          id: 'abby-normal',
+          name: 'Abby Normal',
+          state: 'pairing',
+          activity: 'acting',
+          pair: 'pairing with wren (driver)',
+          card: { id: 4595, title: 'Clearing v2 streams', step: 'werk-test' },
+          cards: [{ id: 4595, title: 'Clearing v2 streams', step: 'werk-test' }],
+          sessions: ['pane · live'],
+        },
+        {
+          id: 'wren',
+          name: 'Wren',
+          state: 'pairing',
+          activity: 'acting',
+          pair: 'pairing with abby-normal (navigator)',
+          card: { id: 4595, title: 'Clearing v2 streams', step: 'werk-test' },
+          cards: [{ id: 4595, title: 'Clearing v2 streams', step: 'werk-test' }],
+          sessions: ['pane · live'],
+        },
+      ],
+    };
+
+    const html = renderRolesPage(pairRolesData, []);
+    expect(html).toContain('pairing with wren (driver)');
+    expect(html).toContain('pairing with abby-normal (navigator)');
+    expect(html).toContain('werk-test');
   });
 
   test('Negative proof: a role inactive for 10 minutes shows as quiet, not working', () => {

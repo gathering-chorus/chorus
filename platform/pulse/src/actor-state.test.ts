@@ -391,10 +391,66 @@ describe('Actor State - Dynamic Principals and Activity', () => {
     // Negative proof: Abby holds two WIP cards; Silas holds zero
     expect(abby?.cards).toHaveLength(2);
     expect(abby?.cards).toEqual([
-      { id: 4591, title: 'Message backlog order' },
-      { id: 4595, title: 'Clearing v2 streams' },
+      { id: 4591, title: 'Message backlog order', step: 'coding' },
+      { id: 4595, title: 'Clearing v2 streams', step: 'coding' },
     ]);
     expect(silas?.cards).toEqual([]);
+  });
+
+  test('per card, step = latest dagu run step, fallback to coding when no run', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_ABBY],
+      sessions: [
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      wipCards: [
+        { cardId: 4591, title: 'Message backlog order', owner: 'abby-normal', step: 'werk-test' },
+        { cardId: 4595, title: 'Clearing v2 streams', owner: 'abby-normal' }, // no step, cardSteps has it
+      ],
+      cardSteps: {
+        4595: 'werk-build',
+      },
+    };
+
+    const states = deriveActorState(input);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+    expect(abby?.cards).toHaveLength(2);
+    expect(abby?.cards[0].step).toBe('werk-test');
+    expect(abby?.cards[1].step).toBe('werk-build');
+  });
+
+  test('pairing: both driver and navigator rows show the same card with step', () => {
+    const input: ActorFactInput = {
+      now: baseNow,
+      principals: [P_WREN, P_ABBY],
+      activePairs: [{ card: 4595, navigator: 'wren', driver: 'abby-normal', title: 'Clearing v2 streams' }],
+      wipCards: [{ cardId: 4595, title: 'Clearing v2 streams', owner: 'abby-normal', step: 'werk-test' }],
+      sessions: [
+        { id: 's-wren', principal: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+        { id: 's-abby', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1218 },
+      ],
+      actions: {
+        wren: { lastActionAt: SEEN_1218, recent5mCount: 4 },
+        'abby-normal': { lastActionAt: SEEN_1218, recent5mCount: 6 },
+      },
+    };
+
+    const states = deriveActorState(input);
+    const wren = states.find((s) => s.aboutPrincipal === P_WREN);
+    const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
+
+    expect(wren?.stateValue).toBe('pairing');
+    expect(wren?.pairRole).toBe('navigator');
+    expect(wren?.cards).toHaveLength(1);
+    expect(wren?.cards[0].id).toBe(4595);
+    expect(wren?.cards[0].step).toBe('werk-test');
+
+    expect(abby?.stateValue).toBe('pairing');
+    expect(abby?.pairRole).toBe('driver');
+    expect(abby?.cards).toHaveLength(1);
+    expect(abby?.cards[0].id).toBe(4595);
+    expect(abby?.cards[0].step).toBe('werk-test');
   });
 
   test('stream per role: actor carries recent stream actions and timestamps from derived activity', () => {

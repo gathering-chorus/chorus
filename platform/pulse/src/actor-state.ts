@@ -54,6 +54,7 @@ export interface WipCardFact {
   cardId: number;
   title?: string;
   owner: string;
+  step?: string;
 }
 
 export interface ActionFact {
@@ -76,6 +77,12 @@ export interface ReviewCardFact {
   peer?: string;
 }
 
+export interface RoleCardFact {
+  id: number;
+  title: string;
+  step?: string;
+}
+
 export interface ActorFactInput {
   now?: Date;
   principals: Array<string | PrincipalInfo>;
@@ -85,6 +92,7 @@ export interface ActorFactInput {
   owedNudges?: OwedNudgeFact[];
   wipCards?: WipCardFact[];
   reviewCards?: ReviewCardFact[];
+  cardSteps?: Record<number, string>;
   unmeasured?: Array<{ source: string; reason: string }>;
 }
 
@@ -98,7 +106,7 @@ export interface RoleStateResult {
   pairedWith?: string;
   currentCard?: number | null;
   currentCardTitle?: string;
-  cards: Array<{ id: number; title: string }>;
+  cards: RoleCardFact[];
   stream?: Array<{ action: string; timestamp: string }>;
   observedAt: string;
   waitingOn?: { on: string; what: string; since: string };
@@ -466,9 +474,26 @@ function deriveOneActor(
     hasLiveSession || activity === 'acting'
   );
 
-  const myWipCards = (input.wipCards ?? [])
+  const myWipCards: RoleCardFact[] = (input.wipCards ?? [])
     .filter((c) => principalToRole(c.owner) === role)
-    .map((c) => ({ id: c.cardId, title: c.title || '' }));
+    .map((c) => ({
+      id: c.cardId,
+      title: c.title || '',
+      step: c.step || input.cardSteps?.[c.cardId] || 'coding',
+    }));
+
+  if (stateOutcome.stateValue === 'pairing' && stateOutcome.currentCard) {
+    if (!myWipCards.some((c) => c.id === stateOutcome.currentCard)) {
+      const fromWip = input.wipCards?.find((c) => c.cardId === stateOutcome.currentCard);
+      const pairedTitle = findCardTitle(stateOutcome.currentCard, input) || '';
+      const pairedStep = fromWip?.step || input.cardSteps?.[stateOutcome.currentCard] || 'coding';
+      myWipCards.unshift({
+        id: stateOutcome.currentCard,
+        title: pairedTitle,
+        step: pairedStep,
+      });
+    }
+  }
 
   const currentCard = stateOutcome.currentCard ?? (myWipCards.length > 0 ? myWipCards[0].id : null);
   const currentCardTitle = findCardTitle(currentCard, input);
@@ -884,6 +909,63 @@ async function appendSpineTailActions(
   }
 }
 
+export async function fetchDaguCardSteps(
+  daguBase: string,
+  wipCards: WipCardFact[],
+  unmeasured: Array<{ source: string; reason: string }>
+): Promise<Record<number, string>> {
+  const steps: Record<number, string> = {};
+  if (!wipCards || wipCards.length === 0) return steps;
+  try {
+    const res = await fetch(`${daguBase}/api/v1/dag-runs?name=cicd`, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) {
+      for (const c of wipCards) steps[c.cardId] = 'coding';
+      return steps;
+    }
+    const json = (await res.json()) as { dagRuns?: Array<{ params?: string; dagRunId: string; statusLabel?: string }> };
+    const dagRuns = json.dagRuns || [];
+
+    await Promise.all(
+      wipCards.map(async (card) => {
+        const cardPattern = new RegExp(`(?:^|\\s)CARD="?${card.cardId}"?(?:\\s|$)`);
+        const matchingRun = dagRuns.find((r) => r.params && cardPattern.test(r.params));
+        if (!matchingRun) {
+          steps[card.cardId] = 'coding';
+          return;
+        }
+        try {
+          const detailRes = await fetch(`${daguBase}/api/v1/dags/cicd/dag-runs/${matchingRun.dagRunId}`, { signal: AbortSignal.timeout(1500) });
+          if (detailRes.ok) {
+            const detailJson = (await detailRes.json()) as {
+              dagRun?: {
+                nodes?: Array<{ step: { name: string }; statusLabel: string }>;
+                statusLabel?: string;
+              };
+            };
+            const nodes = detailJson.dagRun?.nodes || [];
+            const activeNode = nodes.find((n) => n.statusLabel === 'running') ||
+              nodes.find((n) => n.statusLabel === 'waiting') ||
+              nodes.find((n) => n.statusLabel === 'failed');
+            if (activeNode) {
+              steps[card.cardId] = activeNode.step.name.replace(/^skill-/, '').replace(/-pipeline$/, '');
+            } else {
+              steps[card.cardId] = matchingRun.statusLabel === 'succeeded' ? 'landed' : (matchingRun.statusLabel || 'coding');
+            }
+          } else {
+            steps[card.cardId] = 'coding';
+          }
+        } catch {
+          steps[card.cardId] = 'coding';
+        }
+      })
+    );
+  } catch (e: unknown) {
+    unmeasured.push({ source: 'dagu:runs', reason: e instanceof Error ? e.message : String(e) });
+    for (const c of wipCards) steps[c.cardId] = 'coding';
+  }
+  return steps;
+}
+
 export function buildLiveActorFactFetcher(options: {
   store: {
     getOwedNudges: () => Array<{ from: string; to: string; expects: 'reply' | 'decision' | 'action'; sentAt: string }>;
@@ -893,16 +975,17 @@ export function buildLiveActorFactFetcher(options: {
   athenaBaseUrl?: string;
   chorusApiBaseUrl?: string;
   lokiBaseUrl?: string;
+  daguBaseUrl?: string;
   opsDir?: string;
 }): () => Promise<ActorFactInput> {
   const athenaBase = options.athenaBaseUrl || process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
   const apiBase = options.chorusApiBaseUrl || process.env.CHORUS_API_URL || 'http://localhost:3340';
   const lokiBase = options.lokiBaseUrl || process.env.LOKI_URL || 'http://localhost:3102';
+  const daguBase = options.daguBaseUrl || process.env.DAGU_URL || 'http://127.0.0.1:8526';
 
   return async (): Promise<ActorFactInput> => {
     const unmeasured: Array<{ source: string; reason: string }> = [];
     const now = new Date();
-    const nowIso = now.toISOString();
 
     const [principals, sessions, wipCards, actionMap] = await Promise.all([
       fetchRolesFact(athenaBase, unmeasured),
@@ -911,6 +994,7 @@ export function buildLiveActorFactFetcher(options: {
       fetchLokiActionFacts(lokiBase, unmeasured),
     ]);
 
+    const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
     const activePairs = readActivePairsFromDisk(options.opsDir);
     await appendSpineTailActions(actionMap, options.readTail);
 
@@ -943,6 +1027,7 @@ export function buildLiveActorFactFetcher(options: {
       sessions,
       actions: actionsRecord,
       wipCards,
+      cardSteps,
       owedNudges,
       unmeasured: unmeasured.length > 0 ? unmeasured : undefined,
     };

@@ -126,12 +126,29 @@ function renderActorDetail(a: ActorRow): string {
   ].join('');
 }
 
-export function renderCardRefs(cards?: Array<{ id: number; title: string }>, card?: ActorRow['card']): string {
+export function renderCardRefs(
+  cards?: Array<{ id: number; title: string; step?: string }>,
+  card?: ActorRow['card'],
+  pair?: string
+): string {
   const list = cards && cards.length > 0 ? cards : (card ? [card] : []);
   if (list.length === 0) return '<span class="meta">–</span>';
   return list
-    .map((c) => `<a class="cid" href="/board?card=${c.id}">#${c.id}</a>${c.title ? ` <span class="meta">${escapeHtml(c.title)}</span>` : ''}`)
+    .map((c) => {
+      const pairText = pair ? ` <span class="meta pair-tag">(${escapeHtml(pair)})</span>` : '';
+      return `<a class="cid" href="/board?card=${c.id}">#${c.id}</a>${c.title ? ` <span class="meta">${escapeHtml(c.title)}</span>` : ''}${pairText}`;
+    })
     .join('<br>');
+}
+
+export function renderActivity(a: ActorRow): string {
+  if (a.activity === 'idle') return 'idle';
+  if (a.activity === 'unmeasured') return 'unmeasured';
+  const list = a.cards && a.cards.length > 0 ? a.cards : (a.card ? [a.card] : []);
+  if (list.length > 0) {
+    return list.map((c) => escapeHtml(c.step || 'coding')).join('<br>');
+  }
+  return a.activity || '–';
 }
 
 function renderCardRef(card: ActorRow['card']): string {
@@ -285,8 +302,8 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
               <tr class="${a.id === 'jeff' ? 'you' : ''}">
                 <td><span class="row"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
                 <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
-                <td class="meta">${a.activity || '–'}</td>
-                <td>${renderCardRefs(a.cards, a.card)}</td>
+                <td class="meta">${renderActivity(a)}</td>
+                <td>${renderCardRefs(a.cards, a.card, a.pair)}</td>
                 <td class="mono meta role-sessions" title="${a.sessions.join(' · ')}">${a.sessions.length > 0 ? a.sessions[0] + (a.sessions.length > 1 ? ` <span class="faint">+${a.sessions.length - 1}</span>` : '') : '–'}</td>
               </tr>
             `).join('')}
