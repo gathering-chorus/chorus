@@ -340,7 +340,9 @@ describe('Clearing v2: Server App & Tile Service', () => {
       // accepted it (rooms.feature:19), not that the server received it
       expect(recent[0].tick).toBe(false);
       await new Promise((r) => setTimeout(r, 30));
-      expect(jeffInputs).toEqual([{ to: 'wren', content: 'Hello team from Jeff browser', caller: '1' }]);
+      expect(jeffInputs.length).toBe(4);
+      expect(new Set(jeffInputs.map((i: any) => i.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal']));
+      expect(jeffInputs.every((i: any) => i.content === 'Hello team from Jeff browser' && i.caller === '1')).toBe(true);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
       await new Promise<void>((r) => pulseStub.close(() => r()));

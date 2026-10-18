@@ -69,7 +69,8 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
     });
   });
 
-  test('Jeff note without @role routes to wren ("no @ = Wren gets it", #4571)', () => {
+  test('unaddressed Jeff message routes to every role (wren, silas, kade, abby-normal, #4604)', () => {
+    const r = new MessageRouter();
     const msg: ClearingMessage = {
       id: 'note-jeff-no-mention',
       from: 'jeff',
@@ -79,13 +80,26 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
       visible: true,
     };
 
-    const nudges = router.extractNudges(msg);
+    const nudges = r.extractNudges(msg);
+    expect(nudges.length).toBe(4);
+    expect(new Set(nudges.map((n) => n.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal']));
+    expect(nudges.every((n) => n.from === 'jeff' && n.content === 'Status check on the release')).toBe(true);
+  });
+
+  test('addressed Jeff message with @kade goes only to kade (#4604)', () => {
+    const r = new MessageRouter();
+    const msg: ClearingMessage = {
+      id: 'note-jeff-kade',
+      from: 'jeff',
+      text: '@kade update please',
+      ts: new Date().toISOString(),
+      type: 'jeff-input',
+      visible: true,
+    };
+
+    const nudges = r.extractNudges(msg);
     expect(nudges).toEqual([
-      {
-        from: 'jeff',
-        to: 'wren',
-        content: 'Status check on the release',
-      },
+      { from: 'jeff', to: 'kade', content: '@kade update please' },
     ]);
   });
 
