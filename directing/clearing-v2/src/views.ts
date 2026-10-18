@@ -640,10 +640,10 @@ function renderActorRailHtml(railActors: ActorRow[]): string {
 
 function renderInlineNavHtml(data: RoomsData, room: string, railActors: ActorRow[]): string {
   return `
-    <div class="rooms-nav-inline rside">
-      <span class="rooms-inline-group"><span class="lab">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
+    <div class="rooms-nav-inline" id="rooms-nav-bar">
+      <span class="rooms-inline-group"><span class="rooms-nav-label">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
       <span class="sep">·</span>
-      <span class="rooms-inline-group"><span class="lab">Direct</span> ${data.directRoles.map(dr => {
+      <span class="rooms-inline-group"><span class="rooms-nav-label">Direct</span> ${data.directRoles.map(dr => {
         const slug = dr.toLowerCase().replace(/\s+/g, '-');
         const actor = railActors.find(a => a.id.toLowerCase() === slug || a.name.toLowerCase() === dr.toLowerCase());
         const andon = roleAndonLight(actor);
@@ -680,14 +680,14 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     ${actorRailHtml}
     ${inlineNavHtml}
     <div class="rooms">
-      <main class="chat chat-container" style="flex:1">
-        <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)">
-          <div><b>${headerTitle}</b> <span class="meta">${data.directRoles.join(', ')}</span></div>
-          <div class="row" style="gap:10px;align-items:center">
-            <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:12px;padding:3px 8px;cursor:pointer">Thinking: ON</button>
-            <label class="meta"><input type="checkbox" id="team-nudges" checked> team nudges</label>
-            <a class="meta" href="/counts">counts</a>
-            <span class="ex">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
+      <main class="chat chat-container" style="flex:1;min-width:0">
+        <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
+          <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><b>${headerTitle}</b> <span class="meta" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${data.directRoles.join(', ')}</span></div>
+          <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
+            <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
+            <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges" checked> nudges</label>
+            <a class="meta" href="/counts" style="font-size:11px">counts</a>
+            <span class="ex" style="font-size:10.5px">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
           </div>
         </div>
         <div class="messages" id="messages-stream">
