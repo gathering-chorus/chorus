@@ -11,7 +11,7 @@ test	3	1	skill-werk-test-pipeline	the tests: cicd-test, scope diff	pipeline	cicd
 test	3	2	skill-werk-review	werk-review	deterministic	werk-review	{card} {caller}		WerkCardOnlyInput	
 demo	4	1	skill-werk-deploy-demo	werk-deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
 demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up {caller} {card}		WerkCardOnlyInput	
-demo	4	3	skill-werk-demo-pipeline	the demo: its own pipeline, called as one step	pipeline	demo				
+demo	4	3	skill-werk-demo-pipeline	the demo: its own pipeline, called as one step	pipeline	demo				from=werk
 demo	4	4	skill-werk-go	Jeff's go	human					
 land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
 land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	{mode}		WerkSyncInput	mode=ff

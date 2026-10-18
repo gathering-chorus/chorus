@@ -16,7 +16,10 @@ The demo is its own pipeline, `platform/pipelines/demo.yaml` (Jeff 2026-10-12 21
 demo gets its own dagu pipeline (a demo DAG), and cicd calls it as one step"). Each box is
 its own dagu step inside it. /cws names the box a demo stopped at and why; that box can be
 retried alone. Jeff's go stays in cicd, after the demo call: dagu refuses a human task in a
-sub-DAG.
+sub-DAG. cicd starts the demo from the card's own werk file
+(`dagu start <werk>/platform/pipelines/demo.yaml -- CARD ROLE TRACE`), not by name: an
+enqueued run finds a pipeline by name on main only, so a card that changes the demo still
+runs its own. The demo is then its own "demo" run, its TRACE the cicd run's id.
 
 ```
 cicd:  … env-up ─► demo ─────────────────────────────────────────────► Jeff's go ─► land
@@ -26,8 +29,11 @@ demo:  validate ─► [gate-product, gate-code, gate-quality, gate-arch, gate-o
 ```
 
 On "more", the demo reruns alone against the card's deployed variant, with no rebuild:
-`dagu --config $CHORUS_HOME/platform/config/dagu.yaml enqueue demo -- CARD=<card> ROLE=<role> TRACE=`
-(an empty TRACE gets a fresh trace).
+`dagu --config $CHORUS_HOME/platform/config/dagu.yaml start $CHORUS_WERK_BASE/<role>-<card>/platform/pipelines/demo.yaml -- CARD=<card> ROLE=<role> TRACE=`
+(an empty TRACE gets a fresh trace; once demo.yaml is on main, `enqueue demo -- …` by name
+works too). A stopped demo inside a card's run is retried with the cicd demo step
+(`dagu retry --run-id=<cicd run> --step=skill-werk-demo-pipeline --downstream cicd`): the
+gates and reviews already recorded for the round are kept, so only the stopped step works again.
 
 | step | command | exit |
 |---|---|---|

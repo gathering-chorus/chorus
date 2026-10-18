@@ -32,7 +32,7 @@
   chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up {caller} {card}" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-demo-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ; chorus:skillOrder 2 .
   chorus:skill-werk-demo-pipeline a chorus:Skill ; rdfs:label "the demo: its own pipeline, called as one step" ; chorus:executor "pipeline" ; chorus:implementedBy "demo" .
-  chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-pipeline ; chorus:skillOrder 3 .
+  chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-pipeline ; chorus:skillOrder 3 ; chorus:withArguments "from=werk" .
   chorus:skill-werk-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
   chorus:stepskill-cicd-demo-go a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-go ; chorus:skillOrder 4 .
   chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .

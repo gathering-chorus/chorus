@@ -271,3 +271,21 @@ fn every_fixture_named_here_exists() {
         assert!(std::path::Path::new(&dir).join(local).is_file(), "missing fixture {f}");
     }
 }
+
+/// #4502 (Jeff 13:56 "its a 4502 miss") — the demo step starts the card's own
+/// werk file, because an enqueued parent finds a `dag.run` child by name on
+/// main only (Silas 10-16). NEGATIVE PROOF: without `from=werk` the same row is
+/// the by-name sub-run again, and the marker never reaches the child's params.
+#[test]
+fn the_demo_step_starts_the_cards_own_demo_file() {
+    let out = generate("cicd", &cicd()).unwrap();
+    let step = out.split("  - name: ").find(|s| s.starts_with("skill-werk-demo-pipeline\n")).unwrap();
+    assert!(step.contains("    command: \"env -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml start ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/pipelines/demo.yaml -- CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID}\"\n"), "{step}");
+    assert!(!step.contains("dag.run") && !step.contains("from=werk"), "{step}");
+    let mut rows = cicd();
+    let demo = rows.iter().position(|r| r.skill == "skill-werk-demo-pipeline").unwrap();
+    rows[demo].with_args = String::new();
+    let plain = generate("cicd", &rows).unwrap();
+    let step = plain.split("  - name: ").find(|s| s.starts_with("skill-werk-demo-pipeline\n")).unwrap();
+    assert!(step.contains("    action: dag.run\n    with:\n      dag: demo\n") && !step.contains(" start "), "{step}");
+}

@@ -54,10 +54,7 @@ steps:
   - name: skill-werk-demo-pipeline
     description: "the demo: its own pipeline, called as one step"
     depends: [skill-werk-deploy-env-up]
-    action: dag.run
-    with:
-      dag: demo
-      params: "CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID}"
+    command: "env -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml start ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/pipelines/demo.yaml -- CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID}"
   - name: skill-werk-go
     description: "Jeff's go"
     depends: [skill-werk-demo-pipeline]

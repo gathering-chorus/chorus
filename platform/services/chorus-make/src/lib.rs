@@ -166,6 +166,10 @@ fn quote(s: &str) -> String {
 /// #4502 — a row's withArguments marker: rows sharing an order run in parallel
 /// only when every one carries it (an unmarked collision is refused).
 pub const PARALLEL: &str = "parallel=true";
+/// #4502 — a pipeline row's withArguments marker: start the child from the
+/// card's werk file (`dagu start <werk>/platform/pipelines/<dag>.yaml`) instead
+/// of `dag.run` by name, which an enqueued parent resolves on main only.
+pub const FROM_WERK: &str = "from=werk";
 pub const CARD_QUEUE: &str = "werk";
 pub const LAND_QUEUE: &str = "werk-land";
 
@@ -395,7 +399,7 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL).map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL && *p != FROM_WERK).map(String::from));
     (pairs, missing)
 }
 
@@ -414,11 +418,35 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         // (the pair's hand-off to cicd, which waits hours for a go); the
         // child runs on its own queue as its own run, so it gets no TRACE
         let enqueue = r.with_args.split_whitespace().any(|p| p == "enqueue=true");
+        let from_werk = r.with_args.split_whitespace().any(|p| p == FROM_WERK);
         let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string()];
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
         }
-        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL).map(String::from));
+        params.extend(
+            r.with_args
+                .split_whitespace()
+                .filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK)
+                .map(String::from),
+        );
+        if from_werk {
+            // #4502 (Jeff 13:56 "its a 4502 miss") — an ENQUEUED parent finds a
+            // dag.run child by name in canonical's dags folder only (Silas
+            // 10-16), so a card that changes its child pipeline could not run
+            // it. `from=werk` starts the child from the card's own werk file (the
+            // workflow env never names CHORUS_ROLE, so only ROLE is cleared):
+            // its own top-level run, named after the file; the step fails when
+            // the child does (measured on a scratch dagu 10-18 13:57).
+            out.push_str(&format!(
+                "    command: {}\n",
+                quote(&format!(
+                    "env -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml start ${{CHORUS_WERK_BASE}}/${{ROLE}}-${{CARD}}/platform/pipelines/{}.yaml -- {}",
+                    r.implemented_by,
+                    params.join(" ")
+                ))
+            ));
+            return;
+        }
         if enqueue {
             // #4577 pair run 1 (10-18 07:43): dagu runs a dag.enqueue target
             // as a sub-DAG and refuses it — "human task steps are not allowed
