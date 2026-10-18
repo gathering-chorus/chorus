@@ -298,6 +298,9 @@ pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str)
         ("TMUX_BIN".into(), stub),
         ("CHORUS_API_URL".into(), format!("http://localhost:{}", env_port_for("chorus-api", role)?)),
         ("ATHENA_MAKE_URL".into(), format!("http://localhost:{}", env_port_for("athena-make", role)?)),
+        // #4623 — prod's Loki holds prod's spine, not this werk's, and each
+        // demo pulse polling it added a second pulse's load to Loki.
+        ("LOKI_URL".into(), "off".into()),
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
     ])
@@ -1552,6 +1555,15 @@ mod services_for_diff_4398 {
         assert!(get("CHORUS_INJECT_BIN").starts_with("/w/.chorus-demo/"));
         assert!(get("TMUX_BIN").starts_with("/w/.chorus-demo/"));
         assert_eq!(get("CHORUS_MESSAGES_DB"), "/w/.chorus-demo/messages.db");
+    }
+
+    /// #4623 — a variant pulse never polls prod's Loki: it holds prod's spine,
+    /// and each demo pulse doubled pulse's load on it.
+    #[test]
+    fn the_variant_pulse_runs_with_loki_off() {
+        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin").unwrap();
+        let loki = env.iter().find(|(n, _)| n == "LOKI_URL").map(|(_, v)| v.as_str());
+        assert_eq!(loki, Some("off"));
     }
 
     /// NEGATIVE PROOF: the leak check sees each prod surface it exists to refuse.

@@ -226,7 +226,10 @@ export function buildLiveReadingsFetcher(config: ReadingsLiveConfig = {}): Readi
       ok,
       error: ok ? undefined : 'door unreadable',
     }));
-    const lokiPromise = probeHttpUrl(`${lokiUrl}/ready`, timeoutMs).then((ok) => ({
+    // #4623 — a demo pulse runs with LOKI_URL=off: it never reads prod's Loki.
+    const lokiPromise = lokiUrl === 'off'
+      ? Promise.resolve({ source: 'loki', ok: false, error: 'loki off in this environment' })
+      : probeHttpUrl(`${lokiUrl}/ready`, timeoutMs).then((ok) => ({
       source: 'loki',
       ok,
       error: ok ? undefined : CONN_REFUSED,

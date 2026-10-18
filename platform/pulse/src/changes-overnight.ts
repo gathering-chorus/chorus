@@ -297,23 +297,51 @@ function parseLokiMoveLines(lines: Array<[string, string]>): RawCardMove[] {
   return result;
 }
 
+/** #4623 — each tick re-reads this much before the last read's end, for
+ *  lines promtail ships late. Duplicates in the overlap are dropped by key. */
+export const LOKI_REREAD_OVERLAP_MS = 2 * 60_000;
+
+/** #4623 — what one fetcher has already read since the current watermark. */
+interface MovesCache {
+  watermark: string;
+  readEndMs: number;
+  lines: Map<string, RawCardMove>;
+}
+
 async function fetchLiveLokiMoves(
   lokiBase: string,
   watermark: string,
+  cache: { current?: MovesCache },
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<RawCardMove[] | undefined> {
+  if (lokiBase === 'off') {
+    unmeasured.push({ source: 'loki:moves', reason: 'loki off in this environment' });
+    return undefined;
+  }
   try {
     const watermarkMs = new Date(watermark).getTime();
+    // #4623 — a full read from the watermark only when it changed; otherwise
+    // only what's new since the last read. Measured 2026-10-18: the full read
+    // every 15s split into ~150 internal Loki queries per tick.
+    const prior = cache.current?.watermark === watermark ? cache.current : undefined;
+    const startMs = prior ? Math.max(watermarkMs, prior.readEndMs - LOKI_REREAD_OVERLAP_MS) : watermarkMs;
+    const endMs = Date.now();
     const url = `${lokiBase}/loki/api/v1/query_range?query=${encodeURIComponent(MOVES_QUERY)}` +
-      `&start=${watermarkMs}000000&limit=500&direction=backward`;
+      `&start=${startMs}000000&end=${endMs}000000&limit=500&direction=backward`;
     const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) {
       unmeasured.push({ source: 'loki:moves', reason: `HTTP ${res.status}` });
       return undefined;
     }
     const json = (await res.json()) as { data?: { result?: Array<{ values?: Array<[string, string]> }> } };
-    const lines = (json.data?.result || []).flatMap((st) => st.values || []);
-    return parseLokiMoveLines(lines);
+    const values = (json.data?.result || []).flatMap((st) => st.values || []);
+    const lines = new Map(prior ? prior.lines : []);
+    for (const [ts, line] of values) {
+      const [move] = parseLokiMoveLines([[ts, line]]);
+      if (move) lines.set(`${ts}|${line}`, move);
+    }
+    cache.current = { watermark, readEndMs: endMs, lines };
+    return [...lines.values()];
   } catch (e: unknown) {
     unmeasured.push({ source: 'loki:moves', reason: e instanceof Error ? e.message : String(e) });
     return undefined;
@@ -324,6 +352,7 @@ export function buildLiveChangesOvernightFetcher(
   athenaBase = process.env.ATHENA_URL || 'http://localhost:3360',
   lokiBase = process.env.LOKI_URL || 'http://localhost:3102'
 ): () => Promise<ChangesFactInput> {
+  const cache: { current?: MovesCache } = {};
   return async (): Promise<ChangesFactInput> => {
     const unmeasured: Array<{ source: string; reason: string }> = [];
     const sessions = await fetchLiveSessions(athenaBase, unmeasured);
@@ -333,7 +362,7 @@ export function buildLiveChangesOvernightFetcher(
       return { now: new Date(), sessions, lokiMoves: [], unmeasured };
     }
 
-    const lokiMoves = await fetchLiveLokiMoves(lokiBase, watermark, unmeasured);
+    const lokiMoves = await fetchLiveLokiMoves(lokiBase, watermark, cache, unmeasured);
     return { now: new Date(), sessions, lokiMoves, unmeasured };
   };
 }

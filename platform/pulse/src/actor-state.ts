@@ -838,27 +838,45 @@ export function lokiActionQuery(window: string): string {
   return `sum by (role) (count_over_time({job="platform-chorus"}[${window}] |~ \`agent\\.action|"event":"jeff\\.input\\.delivered"\`))`;
 }
 
+/** #4623 — the 30-minute count is read at most this often; between reads the
+ *  last one is reused. The 5-minute count is read on every tick. */
+export const ACTION_30M_REFRESH_MS = 2 * 60_000;
+
+interface Action30mCache {
+  readAtMs: number;
+  json: LokiQueryResult;
+}
+
 async function fetchLokiActionFacts(
   lokiBase: string,
+  cache: { current?: Action30mCache },
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<Map<string, ActionFact>> {
   const result = new Map<string, ActionFact>();
+  if (lokiBase === 'off') {
+    unmeasured.push({ source: 'loki:activity', reason: 'loki off in this environment' });
+    return result;
+  }
   const q5m = encodeURIComponent(lokiActionQuery('5m'));
   const q30m = encodeURIComponent(lokiActionQuery('30m'));
+  const cached30m = cache.current && Date.now() - cache.current.readAtMs < ACTION_30M_REFRESH_MS
+    ? cache.current.json
+    : undefined;
 
   try {
     const [res5m, res30m] = await Promise.all([
       fetch(`${lokiBase}/loki/api/v1/query?query=${q5m}`, { signal: AbortSignal.timeout(3000) }),
-      fetch(`${lokiBase}/loki/api/v1/query?query=${q30m}`, { signal: AbortSignal.timeout(3500) }),
+      cached30m ? undefined : fetch(`${lokiBase}/loki/api/v1/query?query=${q30m}`, { signal: AbortSignal.timeout(3500) }),
     ]);
 
-    if (res5m.ok && res30m.ok) {
+    if (res5m.ok && (!res30m || res30m.ok)) {
       const json5m = (await res5m.json()) as LokiQueryResult;
-      const json30m = (await res30m.json()) as LokiQueryResult;
+      const json30m = cached30m ?? ((await res30m!.json()) as LokiQueryResult);
+      if (!cached30m) cache.current = { readAtMs: Date.now(), json: json30m };
       populateLoki5m(result, json5m);
       populateLoki30m(result, json30m);
     } else {
-      unmeasured.push({ source: 'loki:activity', reason: `HTTP ${res5m.status || res30m.status}` });
+      unmeasured.push({ source: 'loki:activity', reason: `HTTP ${res5m.status || res30m?.status}` });
     }
   } catch (e: unknown) {
     unmeasured.push({ source: 'loki:activity', reason: e instanceof Error ? e.message : String(e) });
@@ -1026,6 +1044,7 @@ export function buildLiveActorFactFetcher(options: {
   const apiBase = options.chorusApiBaseUrl || process.env.CHORUS_API_URL || 'http://localhost:3340';
   const lokiBase = options.lokiBaseUrl || process.env.LOKI_URL || 'http://localhost:3102';
   const daguBase = options.daguBaseUrl || process.env.DAGU_URL || 'http://127.0.0.1:8526';
+  const action30mCache: { current?: Action30mCache } = {};
 
   return async (): Promise<ActorFactInput> => {
     const unmeasured: Array<{ source: string; reason: string }> = [];
@@ -1035,7 +1054,7 @@ export function buildLiveActorFactFetcher(options: {
       fetchRolesFact(athenaBase, unmeasured),
       fetchSessionsFact(athenaBase, unmeasured),
       fetchWipCardsFact(apiBase, unmeasured),
-      fetchLokiActionFacts(lokiBase, unmeasured),
+      fetchLokiActionFacts(lokiBase, action30mCache, unmeasured),
     ]);
 
     const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
