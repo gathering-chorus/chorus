@@ -51,28 +51,24 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     expect(router.ingest).not.toHaveBeenCalled();
   });
 
-  test('card.demo.started with title surfaces as Demo ready', () => {
-    fire(JSON.stringify({
-      event: 'card.demo.started',
-      role: 'kade',
-      card: '2167',
-      title: 'coverage push',
-      timestamp: '2026-04-17T20:00:00Z',
-    }));
-    expect(router.ingest).toHaveBeenCalledWith({
-      from: 'kade',
-      text: 'Demo ready: #2167 — coverage push',
-      ts: '2026-04-17T20:00:00Z',
-      type: 'demo-ready',
-    });
+  // #4502 (Jeff 10-18 13:10 "the demo noise is the main thing") — the demo's one
+  // message is werk-demo's announce; the spine event no longer posts to the room
+  test('card.demo.started posts nothing to the room (#4502)', () => {
+    fire(JSON.stringify({ event: 'card.demo.started', role: 'kade', card: '2167', title: 'coverage push' }));
+    fire(JSON.stringify({ event: 'card.demo.started', role: 'automation', card_id: '2167' }));
+    expect(router.ingest).not.toHaveBeenCalled();
   });
 
-  test('card.demo.started without title still surfaces (no em-dash)', () => {
-    fire(JSON.stringify({ event: 'card.demo.started', role: 'silas', card_id: '999' }));
-    expect(router.ingest).toHaveBeenCalled();
-    const arg = (router.ingest as jest.Mock).mock.calls[0][0];
-    expect(arg.text).toBe('Demo ready: #999');
-    expect(arg.text).not.toContain('—');
+  // #4502 — one card, one "Accepted" line. Negative proof: a different card
+  // still posts, so the dedupe is per card, not a mute.
+  test('a repeat card.accepted for the same card posts once; another card still posts', () => {
+    const ev = (card: string) => JSON.stringify({ event: 'card.accepted', role: 'silas', card_id: card, title: 't' });
+    fire(ev('4608'));
+    fire(ev('4608'));
+    expect(router.ingest).toHaveBeenCalledTimes(1);
+    fire(ev('4613'));
+    expect(router.ingest).toHaveBeenCalledTimes(2);
+    expect((router.ingest as jest.Mock).mock.calls[1][0].text).toBe('Accepted #4613 — t');
   });
 
   test('card.accepted emits board-event and surfaces acceptor', () => {
@@ -323,12 +319,12 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
     fs.writeFileSync(logPath, ''); // empty start
     tailer.start();
     const line = JSON.stringify({
-      event: 'card.demo.started', role: 'kade', card: '2167', title: 'phase 1',
+      event: 'card.accepted', role: 'kade', acceptor: 'jeff', card_id: '2167', title: 'phase 1',
     });
     fs.appendFileSync(logPath, line + '\n');
     (tailer as any).poll();
     expect(router.ingest).toHaveBeenCalledWith(expect.objectContaining({
-      text: 'Demo ready: #2167 — phase 1',
+      text: 'Accepted #2167 — phase 1',
     }));
   });
 

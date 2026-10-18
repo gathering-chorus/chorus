@@ -6382,6 +6382,47 @@
         "at": "When (ISO), from the child",
         "exit": "Its exit code, or running when it was still up"
       }
+    },
+    "demo.announced": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "#4502 — the demo round's one ask went out (Jeff 10-18 \"really noisy and repetitive\"; #3971). Keyed round+patch: a second announce for the round, or one after the go, sends nothing.",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key",
+        "round": "The round this ask was for",
+        "patch_id": "Content key of the round"
+      }
+    },
+    "demo.smoke.result": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "#4502 — one changed role's throwaway session from the werk build: started, ran its hooks, made one tool call (pass) or not (fail, why). result=none when no role config changed.",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key",
+        "smoked": "The role whose session was started",
+        "result": "pass | fail | none",
+        "why": "Why a smoke failed"
+      }
+    },
+    "demo.smoke.recorded": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "#4502 — the session-smoke step recorded a result for every changed role.",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key"
+      }
     }
   }
 }

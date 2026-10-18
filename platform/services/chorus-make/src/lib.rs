@@ -108,8 +108,19 @@ pub fn check(rows: &[Row]) -> Vec<String> {
         if !names.insert(dagu_name(rows, r)) {
             errs.push(format!("{}: called twice in one step; dagu step names must be unique", r.skill));
         }
+        // #4502 — skills sharing a step's order run in parallel (the demo's
+        // gates and reviews); a human step must hold its order alone.
+        let at_order = || rows.iter().filter(|o| o.step == r.step && o.skill_order == r.skill_order);
         if !seen.insert((r.step.clone(), r.skill_order)) {
-            errs.push(format!("{}: two skills hold order {} in step {}", r.skill, r.skill_order, r.step));
+            let names: Vec<&str> = at_order().map(|o| o.skill.as_str()).collect();
+            if at_order().any(|o| o.executor == "human") {
+                errs.push(format!("{} share order {} in step {} with a human step; a human step stands alone", names.join(", "), r.skill_order, r.step));
+            } else if !at_order().all(|o| o.with_args.split_whitespace().any(|p| p == PARALLEL)) {
+                // #4502 (Abby's review) — a shared order is parallel only when
+                // every row says so; an accidental collision is refused, never
+                // silently fanned out
+                errs.push(format!("{} share order {} in step {}; mark every one {} to run them in parallel", names.join(", "), r.skill_order, r.step, PARALLEL));
+            }
         }
     }
     errs
@@ -152,6 +163,13 @@ fn quote(s: &str) -> String {
 /// #4494 — the queues the two halves run on (platform/config/dagu.yaml):
 /// cards on `werk`, several at once; lands on `werk-land`, one at a time,
 /// because a land writes main and prod.
+/// #4502 — a row's withArguments marker: rows sharing an order run in parallel
+/// only when every one carries it (an unmarked collision is refused).
+pub const PARALLEL: &str = "parallel=true";
+/// #4502 — a pipeline row's withArguments marker: start the child from the
+/// card's werk file (`dagu start <werk>/platform/pipelines/<dag>.yaml`) instead
+/// of `dag.run` by name, which an enqueued parent resolves on main only.
+pub const FROM_WERK: &str = "from=werk";
 pub const CARD_QUEUE: &str = "werk";
 pub const LAND_QUEUE: &str = "werk-land";
 
@@ -199,8 +217,30 @@ fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
         return Err(errs);
     }
     let mut rows = rows.to_vec();
-    rows.sort_by(|a, b| (a.step_order, &a.step, a.skill_order).cmp(&(b.step_order, &b.step, b.skill_order)));
+    rows.sort_by(|a, b| (a.step_order, &a.step, a.skill_order, &a.skill).cmp(&(b.step_order, &b.step, b.skill_order, &b.skill)));
     Ok(rows)
+}
+
+/// #4502 — the rows in run order, grouped: rows sharing a step and an order are
+/// one group and run in parallel; every row of a group depends on the whole
+/// group before it. Distinct orders are groups of one — the linear chain.
+pub fn groups(rows: &[Row]) -> Vec<&[Row]> {
+    let mut out: Vec<&[Row]> = Vec::new();
+    let mut start = 0;
+    for i in 1..=rows.len() {
+        if i == rows.len() || (rows[i].step.as_str(), rows[i].skill_order) != (rows[start].step.as_str(), rows[start].skill_order) {
+            out.push(&rows[start..i]);
+            start = i;
+        }
+    }
+    out
+}
+
+/// #4502 — the `depends:` line for a step after a group (none for the first).
+fn depends_on(out: &mut String, prev: &[String]) {
+    if !prev.is_empty() {
+        out.push_str(&format!("    depends: [{}]\n", prev.join(", ")));
+    }
 }
 
 /// An IRI's local name (`…#value-stream-step-build` → `value-stream-step-build`).
@@ -359,17 +399,15 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=")).map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL && *p != FROM_WERK).map(String::from));
     (pairs, missing)
 }
 
-fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, before_a_human: bool) {
+fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before_a_human: bool) {
     let id = dagu_name(rows, r);
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
-    if let Some(p) = prev {
-        out.push_str(&format!("    depends: [{p}]\n"));
-    }
+    depends_on(out, prev);
     // #4540 — a pipeline step runs its child as a dagu sub-run (`dag.run`). The child gets
     // the card, the role and this run's trace (its own run id is another, so
     // the trace rides as a param), plus the step's own pairs (SCOPE=diff).
@@ -380,11 +418,35 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
         // (the pair's hand-off to cicd, which waits hours for a go); the
         // child runs on its own queue as its own run, so it gets no TRACE
         let enqueue = r.with_args.split_whitespace().any(|p| p == "enqueue=true");
+        let from_werk = r.with_args.split_whitespace().any(|p| p == FROM_WERK);
         let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string()];
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
         }
-        params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true").map(String::from));
+        params.extend(
+            r.with_args
+                .split_whitespace()
+                .filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK)
+                .map(String::from),
+        );
+        if from_werk {
+            // #4502 (Jeff 13:56 "its a 4502 miss") — an ENQUEUED parent finds a
+            // dag.run child by name in canonical's dags folder only (Silas
+            // 10-16), so a card that changes its child pipeline could not run
+            // it. `from=werk` starts the child from the card's own werk file (the
+            // workflow env never names CHORUS_ROLE, so only ROLE is cleared):
+            // its own top-level run, named after the file; the step fails when
+            // the child does (measured on a scratch dagu 10-18 13:57).
+            out.push_str(&format!(
+                "    command: {}\n",
+                quote(&format!(
+                    "env -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml start ${{CHORUS_WERK_BASE}}/${{ROLE}}-${{CARD}}/platform/pipelines/{}.yaml -- {}",
+                    r.implemented_by,
+                    params.join(" ")
+                ))
+            ));
+            return;
+        }
         if enqueue {
             // #4577 pair run 1 (10-18 07:43): dagu runs a dag.enqueue target
             // as a sub-DAG and refuses it — "human task steps are not allowed
@@ -442,16 +504,16 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     let card_end = rows.iter().position(|r| r.executor == "human").map_or(rows.len(), |g| g + 1);
     let mut out = String::new();
     preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes_in(&rows, &rows[..card_end]), None);
-    let mut prev: Option<String> = None;
-    for (i, r) in rows.iter().enumerate() {
-        let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
+    let mut prev: Vec<String> = Vec::new();
+    let grouped = groups(&rows);
+    for (g, group) in grouped.iter().enumerate() {
+        let before_a_human = grouped.get(g + 1).is_some_and(|n| n[0].executor == "human");
+        let r = &group[0];
         let id = dagu_name(&rows, r);
         if r.executor == "human" {
             out.push_str(&format!("  - name: {id}\n"));
             out.push_str(&format!("    description: {}\n", quote(&r.label)));
-            if let Some(p) = &prev {
-                out.push_str(&format!("    depends: [{p}]\n"));
-            }
+            depends_on(&mut out, &prev);
             // dagu 2.18 refuses a human.task with no id, and an id takes no
             // hyphens: the same row name, '-' as '_'.
             let go = id.replace('-', "_");
@@ -482,8 +544,10 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
             out.push_str(&format!("      params: \"CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}\"\n"));
             return Ok(out);
         }
-        command_step(&mut out, &rows, r, &prev, before_a_human);
-        prev = Some(id);
+        for r in group.iter() {
+            command_step(&mut out, &rows, r, &prev, before_a_human);
+        }
+        prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
     Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()])
 }
@@ -507,10 +571,12 @@ pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<Stri
         &fail_routes(&rows),
         (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK),
     );
-    let mut prev: Option<String> = None;
-    for r in &rows {
-        command_step(&mut out, &rows, r, &prev, false);
-        prev = Some(dagu_name(&rows, r));
+    let mut prev: Vec<String> = Vec::new();
+    for group in groups(&rows) {
+        for r in group {
+            command_step(&mut out, &rows, r, &prev, false);
+        }
+        prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
     Ok(out)
 }
@@ -638,14 +704,16 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
         out.push_str(&format!("  exit:\n    command: {}\n", quote(&pipe.on_exit)));
     }
     out.push_str("steps:\n");
-    let mut prev: Option<String> = None;
-    for r in &rows {
-        if r.executor == "human" {
-            role_task_step(&mut out, &rows, r, &prev);
-        } else {
-            command_step(&mut out, &rows, r, &prev, false);
+    let mut prev: Vec<String> = Vec::new();
+    for group in groups(&rows) {
+        for r in group {
+            if r.executor == "human" {
+                role_task_step(&mut out, &rows, r, &prev);
+            } else {
+                command_step(&mut out, &rows, r, &prev, false);
+            }
         }
-        prev = Some(dagu_name(&rows, r));
+        prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
     Ok(out)
 }
@@ -661,14 +729,12 @@ pub fn human_by(r: &Row) -> Option<(String, Vec<String>)> {
 /// #4577 — a human step a role completes (the navigator's green): dagu's
 /// human.task, its form asking who answers and which answer. The step after
 /// it checks the answer came from the role the run names (pair-check).
-fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>) {
+fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String]) {
     let (by, choices) = human_by(r).unwrap_or_default();
     let id = dagu_name(rows, r);
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
-    if let Some(p) = prev {
-        out.push_str(&format!("    depends: [{p}]\n"));
-    }
+    depends_on(out, prev);
     out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
     out.push_str("    action: human.task\n    with:\n");
     out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? (${{{by}}} answers)", r.label))));
@@ -692,10 +758,12 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
     };
     let mut out = String::new();
     preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
-    let mut prev: Option<String> = None;
-    for r in &rows[go + 1..] {
-        command_step(&mut out, &rows, r, &prev, false);
-        prev = Some(dagu_name(&rows, r));
+    let mut prev: Vec<String> = Vec::new();
+    for group in groups(&rows[go + 1..]) {
+        for r in group {
+            command_step(&mut out, &rows, r, &prev, false);
+        }
+        prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
     Ok(out)
 }

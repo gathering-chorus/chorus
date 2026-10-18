@@ -49,6 +49,7 @@ export class ChorusLogTailer extends EventEmitter {
   private router: MessageRouter;
   private lastSize = 0;
   private timer: NodeJS.Timeout | null = null;
+  private acceptedAt = new Map<string, number>(); // #4502 — card → last "Accepted" post
 
   constructor(router: MessageRouter) {
     super();
@@ -108,16 +109,11 @@ export class ChorusLogTailer extends EventEmitter {
     }
   }
 
-  private handleDemoStarted(parsed: SpineEntry, role: string): void {
-    const card = parsed.card || parsed.card_id || '';
-    const title = parsed.title || '';
-    this.router.ingest({
-      from: role,
-      text: `Demo ready: #${card}${title ? ` — ${title}` : ''}`,
-      ts: parsed.timestamp || new Date().toISOString(),
-      type: 'demo-ready',
-    });
-  }
+  // #4502 (Jeff 10-18 13:10 "the demo noise is the main thing") — a demo's one
+  // message is werk-demo's announce. The spine's card.demo.started stays an
+  // event (health, card story); posted to the room it was a second and third
+  // "Demo ready" line for the same round (two emits, 12:31 #4502).
+  private handleDemoStarted(_parsed: SpineEntry, _role: string): void {}
 
   private handleCardAccepted(parsed: SpineEntry, role: string): void {
     const card = parsed.card_id || parsed.card || '';
@@ -126,13 +122,19 @@ export class ChorusLogTailer extends EventEmitter {
     // highest authority in the system. 'unattributed' renders honestly and can
     // never satisfy a jeff-authority predicate.
     const acceptor = parsed.acceptor || 'unattributed';
+    this.emit('board-event', { type: 'card.accepted', card, role: acceptor, builder: role, ts: parsed.timestamp });
+    // #4502 — one card, one "Accepted" line: the land emits card.accepted more
+    // than once (#4608 posted twice at 12:34), so a repeat within 10 min is dropped
+    const now = Date.now();
+    const seen = this.acceptedAt.get(String(card));
+    this.acceptedAt.set(String(card), now);
+    if (seen !== undefined && now - seen < 10 * 60 * 1000) return;
     this.router.ingest({
       from: acceptor,
       text: `Accepted #${card}${title ? ` — ${title}` : ''}`,
       ts: parsed.timestamp || new Date().toISOString(),
       type: 'accept-request',
     });
-    this.emit('board-event', { type: 'card.accepted', card, role: acceptor, builder: role, ts: parsed.timestamp });
   }
 
   private handleRoleStateChanged(parsed: SpineEntry, role: string): void {

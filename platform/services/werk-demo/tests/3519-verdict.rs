@@ -29,8 +29,9 @@ fn gather(card: u64, peer: &str) -> String {
 #[test]
 fn verdict_proven_requires_gates_gathers_and_go() {
     let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
-    lines.push(gather(3519, "wren")); // peers of silas = wren, kade
+    lines.push(gather(3519, "wren")); // peers of silas = wren, kade, abby-normal (#4502)
     lines.push(gather(3519, "kade"));
+    lines.push(gather(3519, "abby-normal"));
     let full = format!("{}\n{}", lines.join("\n"), GO);
 
     // gates + both gathers + go all present for r1 → PROVEN (exit 0 → merge fires)
@@ -77,6 +78,7 @@ fn a_go_on_one_round_does_not_prove_another() {
     let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
     lines.push(gather(3519, "wren"));
     lines.push(gather(3519, "kade"));
+    lines.push(gather(3519, "abby-normal"));
     let witness = format!("{}\n{}", lines.join("\n"), GO);
 
     assert!(
@@ -97,6 +99,7 @@ fn a_commit_after_the_demo_invalidates_the_proof() {
     let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
     lines.push(gather(3519, "wren"));
     lines.push(gather(3519, "kade"));
+    lines.push(gather(3519, "abby-normal"));
     let witness = format!("{}\n{}", lines.join("\n"), GO);
 
     assert!(
@@ -112,6 +115,7 @@ fn another_cards_approval_does_not_prove_this_card() {
     let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
     lines.push(gather(3519, "wren"));
     lines.push(gather(3519, "kade"));
+    lines.push(gather(3519, "abby-normal"));
     let witness = format!("{}\n{}", lines.join("\n"), other_go);
 
     assert!(

@@ -799,6 +799,47 @@ def step_reason(node):
 # child's own name answers 404, measured 2026-10-16). The fixture fills it.
 SUB_RUNS = {}
 
+# #4502 (Jeff 13:56 "its a 4502 miss") — cicd's demo step starts the card's own
+# demo.yaml from its werk (`dagu start <werk>/platform/pipelines/demo.yaml`), a
+# top-level run named "demo" with the cicd run's id as its TRACE, not a sub-run:
+# an enqueued parent finds a dag.run child by name on main only (Silas 10-16).
+# The step names the pipeline it starts; the fixture fills STARTED.
+STARTS = {"skill-werk-demo-pipeline": os.environ.get("CWS_DEMO_DAG", "demo")}
+STARTED = {}
+
+
+def started_child(run, node):
+    """The top-level run the step started from the card's werk, or None. Matched
+    by CARD and TRACE = this run's id; else the card's newest run of that
+    pipeline that began after the step did."""
+    dag = STARTS.get((node.get("step") or {}).get("name", ""))
+    m = re.search(r"/platform/pipelines/([\w-]+)\.yaml", json.dumps(node.get("step") or {}))
+    dag = dag or (m.group(1) if m and " start " in json.dumps(node.get("step") or {}) else None)
+    card = re.search(r"(?:^|\s)CARD=\"?(\d+)", run.get("params") or "")
+    if not dag or not card:
+        return None
+    key = (dag, card.group(1))
+    if key not in STARTED:
+        STARTED[key] = dagu_runs(card.group(1), dag) or []
+    rid = run.get("dagRunId", "")
+    own = [r for r in STARTED[key] if re.search(r"(?:^|\s)TRACE=\"?%s\"?(?:\s|$)" % re.escape(rid), r.get("params") or "")]
+    if own:
+        return own[0]
+    began = parse_ts(node.get("startedAt")) or 0
+    later = [r for r in STARTED[key] if (parse_ts(r.get("startedAt") or r.get("queuedAt")) or 0) >= began]
+    return later[0] if later and began else None
+
+
+def child_runs(run, node):
+    """Every child a step ran, as (name, run id, its steps, sub id or None):
+    dag.run sub-runs (read through the parent) and runs it started from the werk."""
+    out = [(c.get("dagName", ""), c.get("dagRunId", ""), sub_nodes(run.get("name", DAGU_DAG), run.get("dagRunId", ""), c.get("dagRunId", "")), c.get("dagRunId", ""))
+           for c in node.get("children") or []]
+    top = started_child(run, node)
+    if top is not None:
+        out.append((top.get("name", ""), top.get("dagRunId", ""), nodes_of(top), None))
+    return out
+
 
 def sub_nodes(name, run_id, sub_id):
     key = (name, run_id, sub_id)
@@ -824,7 +865,7 @@ def test_unmeasured(run):
     return f"{len(um)} suite{'s' if len(um) != 1 else ''} unmeasured: " + ", ".join(um[:3]) + (" …" if len(um) > 3 else "")
 
 
-def retry_line(name, run_id, node, nodes=None):
+def retry_line(name, run_id, node, nodes=None, run=None):
     """#4540 — the retry /cws offers for a step that called a child pipeline:
     the parent's own step and every step after it. None when the step called no
     child.
@@ -835,16 +876,25 @@ def retry_line(name, run_id, node, nodes=None):
     aborted under a run that reads Succeeded (the #4540 trap). A second
     `retry --step <next parent step> --downstream` then runs them. So the
     alone-retry is those two commands, in order."""
-    if not node.get("children"):
+    kids = child_runs(run or {"name": name, "dagRunId": run_id}, node)
+    if not kids:
         return None
     base = f"dagu --config {DAGU_CONFIG} retry --run-id={run_id}"
     whole = f"{base} --step={node['step']['name']} --downstream {name}"
     order = [n["step"]["name"] for n in (nodes or [])]
     after = order[order.index(node["step"]["name"]) + 1] if node["step"]["name"] in order[:-1] else None
-    for child in node["children"]:
-        stop = next((n for n in sub_nodes(name, run_id, child.get("dagRunId", "")) if n.get("statusLabel") == "failed"), None)
+    for kid_name, kid_id, kid_nodes, sub in kids:
+        stop = next((n for n in kid_nodes if n.get("statusLabel") == "failed"), None)
+        if stop is not None and not sub:
+            # #4502 — a demo started from the werk is its own run. Measured on a
+            # scratch dagu 10-18 14:06: retrying the parent's NEXT step leaves it
+            # aborted under a run that reads Succeeded; retrying the parent's
+            # demo step starts the demo again from the werk and the rest runs.
+            # werk-demo keeps every gate and review already recorded for the
+            # round, so only the stopped step does its work again.
+            return f"retry {stop['step']['name']}: {whole} (recorded gates and reviews are kept; only {stop['step']['name']} runs again)"
         if stop is not None and after:
-            alone = f"{base} --sub-run-id={child['dagRunId']} --step={stop['step']['name']} --downstream {name}"
+            alone = f"{base} --sub-run-id={sub} --step={stop['step']['name']} --downstream {name}"
             return f"retry {stop['step']['name']} alone: {alone} · then: {base} --step={after} --downstream {name} · or the whole step: {whole}"
     return f"retry: {whole}"
 
@@ -855,8 +905,7 @@ def failed_reason(run, node):
     child's own stopped step and its words are the answer ("verdict: RED —
     unit, lint"). Else the step's record, then the run's red suites, then its
     unmeasured suites."""
-    for child in node.get("children") or []:
-        cn = sub_nodes(run.get("name", DAGU_DAG), run.get("dagRunId", ""), child.get("dagRunId", ""))
+    for _, _, cn, _ in child_runs(run, node):
         stop = next((n for n in cn if n.get("statusLabel") == "failed"), None)
         if stop is not None:
             word = stop["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
@@ -942,6 +991,13 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         where = f"{pre}waiting in line" + (f" ({ordinal(place)})" if place else "")
     elif status == "running":
         where = f"{pre}{word}"
+        # #4502 — a demo started from the werk names the step it is on:
+        # "demo: gate-code", read from the demo's own run
+        if not land and step in STARTS:
+            kid = started_child(run, node)
+            inner = next((n["step"]["name"] for n in (nodes_of(kid) if kid else []) if n.get("statusLabel") == "running"), None)
+            if inner:
+                where = f"{STARTS[step]}: " + inner.replace("skill-werk-demo-", "").replace("skill-werk-", "").replace("skill-", "")
     elif status == "waiting":
         # #4494 reopen 2 — Jeff 2026-10-13 "/cws looks broken": the go/no
         # commands buried the status. The line is the status; the commands
@@ -1021,7 +1077,7 @@ def dagu_detail(card, runs):
         if status == "failed":
             node = next((x for x in nodes_of(r) if x["step"]["name"] == step), {})
             why = "  — " + failed_reason(r, node)
-            retry = retry_line(name, r.get("dagRunId"), node, nodes_of(r))
+            retry = retry_line(name, r.get("dagRunId"), node, nodes_of(r), r)
             if retry:
                 why += "\n" + " " * 42 + retry
         print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
@@ -1083,7 +1139,7 @@ def why_run(name, run_id):
     why = failed_reason(dict(d.get("dagRunDetails") or {}, name=name, dagRunId=run_id, nodes=nodes), node)
     live = LIVE_REFUSAL.search(why)
     word = node["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
-    retry = retry_line(name, run_id, node, nodes)
+    retry = retry_line(name, run_id, node, nodes, {"name": name, "dagRunId": run_id, "params": (d.get("dagRunDetails") or {}).get("params", "")})
     print(live.group(0) if live else f"{name} failed at {word}: {why}" + (f" · {retry}" if retry else ""))
     return 0
 
@@ -1154,6 +1210,27 @@ def fixture_4553():
         SUB_RUNS[("cicd", "p", "kid")] = [node("succeeded", "skill-werk-run"),
                                           node("failed", "skill-werk-verdict", "exit status 1\nverdict: RED — 2 types failed: unit, lint")]
         SUB_RUNS[("cicd", "p2", "none")] = []
+        def demo_child(rid, card, stopped, why):
+            """#4502 — a cicd run whose demo step called the demo child, which
+            stopped at `stopped` (None: the child names no stopped step)."""
+            kid = f"{rid}-demo"
+            SUB_RUNS[("cicd", rid, kid)] = [node("succeeded", "skill-werk-demo-validate")] + (
+                [node("failed", stopped, why)] if stopped else [])
+            return run(rid, "cicd", "failed", 0, [dict(node("failed", "skill-werk-demo-pipeline", "exit status 1"),
+                                                      children=[{"dagRunId": kid, "dagName": "demo"}])], card)
+        def werk_demo(rid, card, stopped, why, trace=None, m=1):
+            """#4502 — cicd's demo step started the card's demo.yaml from its
+            werk: a top-level "demo" run whose TRACE is the cicd run's id."""
+            kid = run(f"{rid}-d", "demo", "failed" if stopped else "running", m,
+                      [node("succeeded", "skill-werk-demo-validate")] + ([node("failed", stopped, why)] if stopped
+                                                                         else [node("running", "skill-werk-demo-gate-code")]), card)
+            kid["params"] += f" TRACE={trace or rid}"
+            STARTED[("demo", str(card))] = STARTED.get(("demo", str(card)), []) + [kid]
+            st = "failed" if stopped else "running"
+            parent = run(rid, "cicd", st, 0, [dict(node(st, "skill-werk-demo-pipeline", "exit status 1" if stopped else ""), startedAt=at(1)),
+                                               node("not_started" if not stopped else "aborted", "skill-werk-go")], card)
+            parent["statusLabel"] = st
+            return parent
         never_ran = run("n", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("aborted", "skill-werk-review")], 160)
         all_ran = run("n2", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("succeeded", "skill-werk-review")], 161)
         partial = run("q", "cicd", "partially_succeeded", 0, [node("failed", "skill-werk-test", "werk-test: REFUSED — x"), node("succeeded", "skill-werk-review")], 162)
@@ -1162,6 +1239,41 @@ def fixture_4553():
              "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
             ("a failed step names its reason",
              "REFUSED" in line(151, [refused], []) and "no reason in dagu's record" in line(151, [noise], [])),
+            # #4502 — the demo is its own pipeline (Jeff 10-12 21:18), called
+            # from cicd as one step: a stop inside it names the demo step and the
+            # werk-demo line dagu kept, like a cicd-test child. Negative proofs:
+            # a gate stop never reads as the announce (and back), and a demo
+            # child that names no stopped step says so, never a guessed step.
+            # #4502 (Jeff 13:56) — the demo runs from the card's werk file as its
+            # own "demo" run. A stop names its step and why; a live demo names the
+            # step it is on; the retry re-runs cicd's demo step (recorded gates kept).
+            # Negative proof: a demo run of the same card with another TRACE that
+            # began before the step is not this run's demo, so no reason is guessed.
+            ("a demo started from the werk names its stopped step, its live step and its retry",
+             (lambda f: "demo-gate-code" in f and "could not run: no headless model" in f)(
+                 line(4510, [werk_demo("wf", 4510, "skill-werk-demo-gate-code",
+                      "exit status 1\nwerk-demo: gate code for #4510 could not run: no headless model on this box")], []))
+             and "demo: gate-code" in line(4511, [werk_demo("wl", 4511, None, "")], [])
+             and (lambda r: r is not None and r.startswith("retry skill-werk-demo-gate-code: ")
+                  and "--run-id=wf2 --step=skill-werk-demo-pipeline --downstream cicd" in r and "only skill-werk-demo-gate-code runs again" in r
+                  and "--step=skill-werk-go" not in r)(
+                 (lambda p: retry_line("cicd", "wf2", p["nodes"][0], p["nodes"], p))(
+                     werk_demo("wf2", 4512, "skill-werk-demo-gate-code", "exit status 1\nwerk-demo: gate code could not run")))
+             and (lambda p: NO_REASON in line(4513, [p], []))(
+                 (STARTED.__setitem__(("demo", "4513"), [dict(run("old-d", "demo", "failed", -30,
+                      [node("failed", "skill-werk-demo-gate-ops", "werk-demo: gate ops could not run")], 4513), params="CARD=4513 ROLE=wren TRACE=other")]),
+                  run("wn", "cicd", "failed", 0, [dict(node("failed", "skill-werk-demo-pipeline", "exit status 1"), startedAt=at(1))], 4513))[1])),
+            ("a demo stopped at a gate, review or smoke names that step and why",
+             (lambda g, a: "demo-gate-code" in g and "could not run: no headless model" in g
+              and "demo-announce" in a and "refused" in a
+              and "demo-announce" not in g and "demo-gate-code" not in a)(
+                 line(4502, [demo_child("dg", 4502, "skill-werk-demo-gate-code",
+                      "exit status 1\nwerk-demo: gate code for #4502 could not run: no headless model on this box")], []),
+                 line(4503, [demo_child("da", 4503, "skill-werk-demo-announce",
+                      "exit status 1\nwerk-demo: announce #4503 refused — no result this round from: [review-silas]")], []))
+             and "silas: session exited 2" in line(4504, [demo_child("ds", 4504, "skill-werk-demo-session-smoke",
+                      "exit status 1\nwerk-demo: session-smoke #4504 failed — silas: session exited 2: hook refused Bash")], [])
+             and NO_REASON in line(4505, [demo_child("dn", 4505, None, "")], [])),
             ("a land whose merge is on main reads landed",
              "landed on main" in line(152, *merge_fail(152)) and "landed on main" not in line(15, *merge_fail(15))),  # #15 is not #152 or #1520
             ("an aborted run after the go does not hide the land",

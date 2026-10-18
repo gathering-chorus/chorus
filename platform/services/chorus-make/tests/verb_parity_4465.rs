@@ -12,9 +12,11 @@ fn fixture(name: &str) -> String {
 }
 
 /// #4540 — a cicd run calls its test child too: its verbs are both files' rows.
+/// #4502 — and its demo child (the demo is its own pipeline, Jeff 10-12 21:18).
 fn cicd_and_child() -> Vec<chorus_make::Row> {
     let mut rows = parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap();
     rows.extend(parse_rows(&fixture("fixtures/cicd-test-rows.tsv")).unwrap());
+    rows.extend(parse_rows(&fixture("fixtures/demo-rows.tsv")).unwrap());
     rows
 }
 

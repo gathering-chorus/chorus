@@ -51,16 +51,13 @@ steps:
     description: "werk-deploy env-up"
     depends: [skill-werk-deploy-demo]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-env-up card=${CARD}"
-  - name: skill-werk-demo
-    description: "/demo"
+  - name: skill-werk-demo-pipeline
+    description: "the demo: its own pipeline, called as one step"
     depends: [skill-werk-deploy-env-up]
-    command: "${HOME}/.chorus/bin/chorus-runner call werk-demo card=${CARD}"
-    continue_on:
-      exit_code: [2]
-      mark_success: true
+    command: "env -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml start ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/pipelines/demo.yaml -- CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID}"
   - name: skill-werk-go
     description: "Jeff's go"
-    depends: [skill-werk-demo]
+    depends: [skill-werk-demo-pipeline]
     id: skill_werk_go
     action: human.task
     with:

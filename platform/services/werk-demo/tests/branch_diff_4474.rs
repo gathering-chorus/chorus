@@ -35,12 +35,21 @@ fn a_werk_git_cannot_diff_refuses_too() {
 
 #[test]
 fn the_v2_pipeline_hands_werk_demo_the_card_and_never_the_go() {
-    // #4515: werk.yml (v1) is retired. The v2 cicd pipeline calls werk-demo
-    // through the runner, which passes the caller as the role; the go is a
-    // separate human step and never an argument.
+    // #4515: werk.yml (v1) is retired. #4502: the v2 cicd pipeline calls each
+    // demo step with the card and the role; the go is a separate human step
+    // and never an argument.
     let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
     let yml = std::fs::read_to_string(format!("{dir}/../../../platform/pipelines/cicd.yaml")).unwrap();
-    assert!(yml.contains("chorus-runner call werk-demo card=${CARD}"));
+    // #4502 — the steps live in the demo pipeline (Jeff 10-12 21:18), which
+    // cicd starts from the card's own werk file as one step
+    let demo = std::fs::read_to_string(format!("{dir}/../../../platform/pipelines/demo.yaml")).unwrap();
+    for step in ["validate ${CARD} ${ROLE}", "run-gate ${CARD} ${ROLE} code", "run-review ${CARD} ${ROLE} 3",
+                 "session-smoke ${CARD} ${ROLE}", "announce ${CARD} ${ROLE}"] {
+        assert!(demo.contains(&format!("command: \"werk-demo {step}\"")), "missing demo step {step}");
+        assert!(!yml.contains(&format!("werk-demo {step}")), "cicd runs the demo pipeline, not its steps: {step}");
+    }
+    assert!(yml.contains("start ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/pipelines/demo.yaml -- CARD=${CARD} ROLE=${ROLE}"), "cicd starts the card's demo");
+    assert!(!yml.contains("werk-demo card=${CARD}"), "the all-in-one demo call is gone");
     assert!(!yml.contains("werk-demo card=${CARD} go"), "the go is a step, never werk-demo's argument");
     assert!(!yml.contains("${GO}"), "GO read as an argument is how role=false happened");
 }
