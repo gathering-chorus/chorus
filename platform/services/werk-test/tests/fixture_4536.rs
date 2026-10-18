@@ -534,7 +534,7 @@ fn the_nightly_does_not_run_a_held_case_and_names_it_unmeasured() {
 
 /// NEGATIVE PROOF: expired, the nightly runs the case and it is red.
 #[test]
-fn negative_proof_the_nightly_runs_an_expired_hold() {
+fn negative_proof_scope_all_runs_an_expired_hold() {
     let r = run_nightly("chorus", &[("platform/tests/held.bats", HELD)],
         &[row("platform/tests/held.bats", "p", "test-held-p"),
           held_row("platform/tests/held.bats", "f", "test-held-f", "2000-01-01")], 200);
@@ -544,7 +544,7 @@ fn negative_proof_the_nightly_runs_an_expired_hold() {
 
 /// The nightly selects what card runs leave to it: a needs: machine suite runs.
 #[test]
-fn the_nightly_runs_a_needs_machine_suite() {
+fn scope_all_runs_a_needs_machine_suite() {
     let r = run_nightly("chorus", &[("platform/tests/box.bats", BOX)],
         &[row("platform/tests/box.bats", "b", "test-box")], 200);
     assert!(r.out.contains("werk-test: RED"), "the nightly ran the box suite's failing case: {}", r.out);

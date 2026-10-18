@@ -16,7 +16,7 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload,
+    is_test_suite_path, scope_declared_edges, scoped_test_reason, suite_run_payload,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     discover_ts_packages, set_repo_root,

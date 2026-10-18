@@ -384,17 +384,6 @@ pub fn tests_with_no_result(
     out
 }
 
-/// #4247 — the run's counts, all in one unit: the registered test.
-///
-/// Suites stay a separate line labelled as suites. Jeff, 2026-09-20: "rather
-/// than stating everything in a different unit of measure can we be consistent".
-pub fn registered_test_tally(
-    registered: &[(String, String)],
-    ran: &[(String, String, String, String)],
-) -> String {
-    tally_counts(registered, ran).line()
-}
-
 /// #4156 — the tally as numbers, so the run record in the graph carries the
 /// same six the log line states. One computation, two renderings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -643,18 +632,6 @@ pub fn pipeline_run_name(started_at: &str) -> String {
     format!("nightly-{}", started_at.replace(':', "-"))
 }
 
-/// The inverse: the log runId a PipelineRun name points at, or None when the
-/// name is not one this runner minted. Case-insensitive on the date separator
-/// because the store lowercases names on the way in.
-pub fn run_id_from_pipeline_run_name(name: &str) -> Option<String> {
-    let rest = name.strip_prefix("nightly-")?;
-    let (date, time) = rest.split_once(['t', 'T'])?;
-    if date.len() != 10 || time.len() != 8 {
-        return None;
-    }
-    Some(format!("{}T{}", date, time.replace('-', ":")))
-}
-
 /// #4271 — rows the summary's per-status fields did not account for. Suites
 /// minus the sum of every emitted count. Zero is the only honest answer once
 /// the buckets are derived from the rows; a non-zero means a row's verdict
@@ -742,25 +719,6 @@ pub struct RunTestCounts {
     pub stored: usize,
 }
 
-/// The pipeline-run record body (`emit_pipeline_run`): outcome and counts.
-///
-/// #4271 — suites and tests are two units and now have two sets of names. The
-/// row used to send `testsRun` / `testsFailed` / `testsStored` and put SUITE
-/// counts in all three: the 2026-09-22 03:00 row reads testsRun 421,
-/// testsFailed 17, testsStored 430 for a night that ran 9,417 cases, failed 51
-/// and stored 9,417 results. `testsStored` is RETIRED rather than repaired
-/// (Kade, 07:28) — 134 rows already carry it meaning suites and no reader can
-/// date the change, so the old name keeps its old meaning as history.
-pub fn pipeline_run_body(
-    rows: &[SuiteRow],
-    name: &str,
-    trace: &str,
-    duration_ms: u128,
-    tests: Option<RunTestCounts>,
-) -> String {
-    pipeline_run_body_with(rows, name, trace, duration_ms, tests, None)
-}
-
 fn pipeline_run_body_with(
     rows: &[SuiteRow],
     name: &str,
@@ -806,7 +764,7 @@ pub struct RunRecord {
     pub errors: Option<crate::why::ErrorCounts>,
 }
 
-/// `pipeline_run_body` plus the #4156 run record fields.
+/// The PipelineRun body (`pipeline_run_body_with`) plus the #4156 run record fields.
 pub fn pipeline_run_record_body(
     rows: &[SuiteRow],
     name: &str,
@@ -877,106 +835,6 @@ pub fn graph_rows_enabled(root: &str, flag: Option<&str>) -> bool {
         return false;
     }
     !root.contains("/chorus-werk/")
-}
-
-/// #4156 — a run as the log recorded it, for the one-time backfill of runs
-/// that ran before the runner wrote its rows to the graph.
-#[derive(Debug, Clone, Default)]
-pub struct LoggedRun {
-    pub record: RunRecord,
-    pub rows: Vec<SuiteRow>,
-    /// the run reached RUN|complete or RUN|stopped; a run cut off mid-flight
-    /// gets its suite rows and no record, which the page reads as unfinished
-    pub ended: bool,
-}
-
-/// The last `n` runs in a nightly log, oldest first.
-pub fn logged_runs(log: &str, n: usize) -> Vec<LoggedRun> {
-    let mut runs: Vec<LoggedRun> = Vec::new();
-    for line in log.lines() {
-        if let Some(rest) = line.strip_prefix("RUN|start|") {
-            let ts = rest.split('|').next().unwrap_or("").to_string();
-            runs.push(LoggedRun { record: RunRecord { run_ts: ts, ..Default::default() }, ..Default::default() });
-            continue;
-        }
-        let Some(run) = runs.last_mut() else { continue };
-        if run.ended {
-            continue;
-        }
-        if let Some(row) = parse_suite_line(line) {
-            run.rows.push(row);
-        } else if let Some(rest) = line.strip_prefix("RUN|tally|") {
-            run.record.tally = parse_tally_line(rest);
-        } else if let Some(rest) = line.strip_prefix("RUN|errors|") {
-            run.record.errors = parse_errors_line(rest);
-        } else if let Some(rest) = line.strip_prefix("RUN|complete|") {
-            run.record.completed_at = rest.split('|').next().unwrap_or("").to_string();
-            run.ended = true;
-        } else if let Some(rest) = line.strip_prefix("RUN|stopped|") {
-            run.record.completed_at = rest.split('|').next().unwrap_or("").to_string();
-            run.record.outcome = Some("stopped".into());
-            run.ended = true;
-        }
-    }
-    let skip = runs.len().saturating_sub(n);
-    runs.into_iter().skip(skip).collect()
-}
-
-fn labelled_counts(body: &str) -> HashMap<String, usize> {
-    body.split('·')
-        .filter_map(|seg| {
-            let mut parts: Vec<&str> = seg.split_whitespace().collect();
-            let n = parts.pop()?.parse::<usize>().ok()?;
-            Some((parts.join(" "), n))
-        })
-        .collect()
-}
-
-/// `registered N · ran N · …`; None for the "registry unreadable" sentence.
-pub fn parse_tally_line(body: &str) -> Option<TallyCounts> {
-    let m = labelled_counts(body);
-    Some(TallyCounts {
-        registered: *m.get("registered")?,
-        ran: *m.get("ran")?,
-        passed: *m.get("passed")?,
-        failed: *m.get("failed")?,
-        unmeasured: *m.get("unmeasured")?,
-        no_result: *m.get("no result")?,
-    })
-}
-
-/// `failed cases N · exceptions N · http N · assertions N · other N`.
-pub fn parse_errors_line(body: &str) -> Option<crate::why::ErrorCounts> {
-    let m = labelled_counts(body);
-    Some(crate::why::ErrorCounts {
-        failed_cases: *m.get("failed cases")?,
-        exceptions: *m.get("exceptions")?,
-        http: *m.get("http")?,
-        assertions: *m.get("assertions")?,
-        other: *m.get("other")?,
-    })
-}
-
-/// Seconds between two `YYYY-MM-DDTHH:MM:SS` stamps on the same clock, or 0.
-pub fn stamp_gap_secs(from: &str, to: &str) -> u64 {
-    fn secs(s: &str) -> Option<i64> {
-        let (d, t) = s.split_once('T')?;
-        let mut dp = d.split('-').map(|x| x.parse::<i64>().ok());
-        let (y, mo, da) = (dp.next()??, dp.next()??, dp.next()??);
-        let mut tp = t.split(':').map(|x| x.parse::<i64>().ok());
-        let (h, mi, se) = (tp.next()??, tp.next()??, tp.next()??);
-        // days from civil (Howard Hinnant)
-        let y2 = if mo <= 2 { y - 1 } else { y };
-        let era = y2.div_euclid(400);
-        let yoe = y2 - era * 400;
-        let doy = (153 * (if mo > 2 { mo - 3 } else { mo + 9 }) + 2) / 5 + da - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        Some((era * 146097 + doe) * 86400 + h * 3600 + mi * 60 + se)
-    }
-    match (secs(from), secs(to)) {
-        (Some(a), Some(b)) if b >= a => (b - a) as u64,
-        _ => 0,
-    }
 }
 
 pub fn suite_row_name(run_ts: &str, order: usize) -> String {
@@ -1050,7 +908,6 @@ pub fn suite_result_fields(row: &SuiteRow, reason: Option<&str>) -> (Vec<(String
     (f, contradiction)
 }
 
-
 /// The fail-log path for a row (`_fail_log_path`): kind + path, separators to
 /// underscores, under the failure dir.
 pub fn fail_log_name(kind: &str, path: &str) -> String {
@@ -1090,34 +947,6 @@ pub fn prune_run_dirs(fail_dir: &str, keep: usize) -> usize {
 pub fn unit_slice<'a>(lane: &'a str, unit: &str) -> Vec<&'a str> {
     lane.lines().filter(|l| l.contains(unit)).collect()
 }
-
-/// The wrapper's `_extract_shell_summary`, kept for the smoke/lint/eslint legs
-/// and the wrapper tests that exercised it.
-pub fn shell_summary(out: &str, rc: i32) -> String {
-    for l in out.lines().rev() {
-        if l.starts_with("=== Results: ") && l.contains(" passed, ") && l.ends_with(" failed ===") {
-            let p = first_count(l, &["passed"]).unwrap_or(0);
-            let f = first_count(l, &["failed"]).unwrap_or(0);
-            return format!("{} pass, {} fail", p, f);
-        }
-    }
-    let p = out.lines().rev().find_map(|l| l.strip_prefix("Passed: ").and_then(|v| v.trim().parse::<usize>().ok()));
-    let f = out.lines().rev().find_map(|l| l.strip_prefix("Failed: ").and_then(|v| v.trim().parse::<usize>().ok()));
-    if let (Some(p), Some(f)) = (p, f) {
-        return format!("{} pass, {} fail", p, f);
-    }
-    if let Some(last) = out.lines().last() {
-        if first_count(last, &["pass", "ok"]).is_some() && first_count(last, &["fail"]).is_some() {
-            return last.to_string();
-        }
-    }
-    match rc {
-        0 => "1 ok, 0 fail (synthesized, no parseable line)".into(),
-        3 => "0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)".into(),
-        _ => format!("0 pass, 1 fail (synthesized rc={}, no parseable line)", rc),
-    }
-}
-
 
 /// #4145 — a failed jest case's WHY, kept. The runner parsed jest's JSON for
 /// names and status and dropped `failureMessages`, so a red inside the run
@@ -1204,7 +1033,6 @@ fn strip_ansi(s: &str) -> String {
     out
 }
 
-
 /// `--last-run` (#3606/#3272): replay the LATEST run's SUITE rows from the log.
 /// The block starts at the last `RUN|start|`; a block with no `RUN|complete|`
 /// is PARTIAL and says so as a loud meta row first (the 2026-07-04 false wall
@@ -1251,7 +1079,7 @@ pub fn load_verdict(load: f64, cores: f64, per_core: f64) -> (bool, String) {
 }
 
 #[cfg(test)]
-mod nightly_run_4145 {
+mod run_record_4145 {
     use super::*;
 
     #[test]
@@ -1286,7 +1114,6 @@ mod nightly_run_4145 {
         assert_eq!(rows, vec![("a.bats".to_string(), "one".to_string()), ("b.ts".to_string(), "say \"hi\"".to_string())]);
     }
 
-
     fn present_stub(_: &str) -> bool {
         true
     }
@@ -1294,7 +1121,6 @@ mod nightly_run_4145 {
     fn owner_stub(_: &str) -> String {
         "kade".into()
     }
-
 
     #[test]
     fn jest_failure_why_keeps_the_first_assertion_line_and_nothing_for_passes() {
@@ -1304,7 +1130,6 @@ mod nightly_run_4145 {
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert_eq!(lines[0], "!! jest:platform/api WHY: platform/api/tests/second.test.ts :: grp fails hard :: Error: expect(received).toBe(expected)");
     }
-
 
     #[test]
     fn last_run_replays_the_latest_block_and_flags_a_partial_one() {
@@ -1406,52 +1231,6 @@ mod nightly_run_4145 {
         assert_eq!(row.status, "fail", "a crate name is not a path that can go missing");
         let (row, _) = fold_unit_line("nightly-unit|npm|platform/api|fail|0 pass, 2 fail", &owner_stub, false, &gone).unwrap();
         assert_eq!(row.status, "fail");
-    }
-
-    // #4271 — the graph row and the log run must share one id. A reader who
-    // has the PipelineRun must be able to find the run in the log, and vice
-    // versa, without guessing which of two timestamps was meant.
-    #[test]
-    fn the_pipeline_run_name_carries_the_log_runid() {
-        let log = "RUN|start|2026-09-22T03:00:03|pid=10432\nSUITE|bats|a.bats|kade|pass|1 pass, 0 fail\nRUN|complete|2026-09-22T03:49:08|suites=430\n";
-        let started = log.lines().next().unwrap().split('|').nth(2).unwrap();
-        let name = super::pipeline_run_name(started);
-        assert_eq!(name, "nightly-2026-09-22T03-00-03");
-        assert_eq!(
-            super::run_id_from_pipeline_run_name(&name).as_deref(),
-            Some("2026-09-22T03:00:03"),
-            "the name round-trips back to the id the log brackets the run with"
-        );
-        // the store lowercases names on the way in; the join must survive that
-        assert_eq!(
-            super::run_id_from_pipeline_run_name(&name.to_lowercase()).as_deref(),
-            Some("2026-09-22T03:00:03")
-        );
-    }
-
-    // NEGATIVE PROOF (#3734): the name the runner actually emitted on
-    // 2026-09-22 — built at completion — must FAIL to join. Without this the
-    // round-trip above passes for any self-consistent pair of stamps and says
-    // nothing about whether the right stamp was chosen.
-    #[test]
-    fn negative_proof_a_completion_stamped_name_does_not_join_the_log_run() {
-        let log_run_id = "2026-09-22T03:00:03";
-        let as_shipped = format!("nightly-{}", "2026-09-22T03:49:08".replace(':', "-"));
-        assert_eq!(as_shipped, "nightly-2026-09-22T03-49-08", "this is the row in the graph today");
-        assert_ne!(
-            super::run_id_from_pipeline_run_name(&as_shipped).as_deref(),
-            Some(log_run_id),
-            "a completion-stamped name must not resolve to the run's log id"
-        );
-        assert_eq!(super::pipeline_run_name(log_run_id), "nightly-2026-09-22T03-00-03");
-    }
-
-    // A name this runner did not mint must say so rather than inventing an id.
-    #[test]
-    fn negative_proof_a_foreign_name_yields_no_runid() {
-        assert_eq!(super::run_id_from_pipeline_run_name("werk-4271-run-2"), None);
-        assert_eq!(super::run_id_from_pipeline_run_name("nightly-nonsense"), None);
-        assert_eq!(super::run_id_from_pipeline_run_name("nightly-2026-09-22T03-00"), None);
     }
 
     // #4271 — every row the run produced must reach a counted field. The
@@ -1662,7 +1441,6 @@ mod nightly_run_4145 {
         assert!(m[0].1.starts_with("nightly: all hermetic suites green"));
     }
 
-
     /// #4562 NEGATIVE PROOF: a run with no suites, or with an unmeasured one,
     /// is never "green" (10-16 10:13 a stopped run with 0 suites read green).
     #[test]
@@ -1688,76 +1466,8 @@ mod nightly_run_4145 {
     }
 
     #[test]
-    fn shell_summary_reads_the_three_forms_and_synthesizes_from_rc() {
-        assert_eq!(shell_summary("x\n=== Results: 4 passed, 1 failed ===\n", 1), "4 pass, 1 fail");
-        assert_eq!(shell_summary("Passed: 2\nFailed: 0\n", 0), "2 pass, 0 fail");
-        assert_eq!(shell_summary("3 ok, 0 fail", 0), "3 ok, 0 fail");
-        assert!(shell_summary("nothing", 3).contains("SELF-REFUSED"));
-        assert!(shell_summary("nothing", 2).contains("synthesized rc=2"));
-    }
-
-    #[test]
     fn fail_log_name_matches_the_wrappers_files() {
         assert_eq!(fail_log_name("bats", "platform/tests/deep-health.bats"), "bats-platform_tests_deep-health_bats.log");
-    }
-
-    #[test]
-    fn run_summary_and_pipeline_body_count_the_rows() {
-        let rows = vec![
-            SuiteRow::new("bats", "a", "wren", "fail", "0 pass, 1 fail"),
-            SuiteRow::new("bats", "b", "kade", "pass", "1 pass, 0 fail"),
-            SuiteRow::new("bats", "c", "kade", "skip", "skipped"),
-        ];
-        let f = run_summary_fields(&rows);
-        assert!(f.contains(&("red_by_owner".to_string(), "wren=1".to_string())));
-        assert!(f.contains(&("zero_red".to_string(), "false".to_string())));
-        let body = pipeline_run_body(&rows, "nightly-x", "t", 5, None);
-        assert!(body.contains("\"runOutcome\":\"red\""));
-        // #4271 — suite counts live under SUITE names now
-        assert!(body.contains("\"suitesRun\":\"2\""), "{body}");
-        assert!(body.contains("\"suitesFailed\":\"1\""), "{body}");
-        assert!(body.contains("\"suitesTotal\":\"3\""), "{body}");
-    }
-
-    // #4271 — the row lied in one unit. testsRun/testsFailed/testsStored all
-    // carried SUITE counts: the 2026-09-22 03:00 row says testsRun 421 and
-    // testsFailed 17 for a night that ran 9,417 cases and failed 51, and
-    // testsStored said 430 when 9,417 results were stored.
-    //
-    // Kade's ruling, 07:28: retire testsStored rather than repair its meaning.
-    // 134 rows already carry it meaning suites and no reader can date the
-    // change, so the old name keeps its old meaning as history.
-    #[test]
-    fn the_body_states_suites_and_tests_under_their_own_names() {
-        let rows = vec![
-            SuiteRow::new("bats", "a", "wren", "fail", "0 pass, 1 fail"),
-            SuiteRow::new("bats", "b", "kade", "pass", "1 pass, 0 fail"),
-        ];
-        let body = pipeline_run_body(&rows, "n", "t", 5, Some(super::RunTestCounts { run: 9417, failed: 51, stored: 9417 }));
-        for want in [
-            "\"suitesRun\":\"2\"",
-            "\"suitesFailed\":\"1\"",
-            "\"suitesTotal\":\"2\"",
-            "\"testsRun\":\"9417\"",
-            "\"testsFailed\":\"51\"",
-            "\"resultsStored\":\"9417\"",
-        ] {
-            assert!(body.contains(want), "missing {want} in {body}");
-        }
-        assert!(!body.contains("testsStored"), "the retired name must not be written again: {body}");
-    }
-
-    // NEGATIVE PROOF (#3734) — a run with no test-grain reading must OMIT the
-    // test fields, never send zero. Zero is a measurement; absence is not, and
-    // "0 tests failed" on a night nothing was measured reads as green.
-    #[test]
-    fn negative_proof_no_tally_omits_the_test_fields_rather_than_sending_zero() {
-        let rows = vec![SuiteRow::new("bats", "a", "kade", "pass", "1 pass, 0 fail")];
-        let body = pipeline_run_body(&rows, "n", "t", 5, None);
-        assert!(body.contains("\"suitesRun\":\"1\""), "the suite grain is still there: {body}");
-        assert!(!body.contains("testsRun"), "no tests reading, no testsRun field: {body}");
-        assert!(!body.contains("testsFailed"), "{body}");
-        assert!(!body.contains("resultsStored"), "{body}");
     }
 
 #[cfg(test)]
@@ -1883,37 +1593,6 @@ mod graph_record_4156 {
         }
     }
 
-    const LOG: &str = "RUN|start|2026-09-24T03:00:00|pid=1\n\
-SUITE|cargo|platform/services/x|silas|fail|1 pass, 1 fail\n\
-SUITE|bats|platform/tests/a.bats|kade|pass|bats: 1 passed, 0 failed\n\
-RUN|tally|registered 10 · ran 9 · passed 7 · failed 1 · unmeasured 1 · no result 1\n\
-RUN|errors|failed cases 1 · exceptions 0 · http 1 · assertions 0 · other 0\n\
-RUN|complete|2026-09-24T04:01:05|suites=2\n\
-RUN|start|2026-09-25T15:37:59|pid=2\n\
-SUITE|lint|/chorus|kade|pass|1 pass, 0 fail\n\
-RUN|tally|registry unreadable — the run cannot say what it did not run\n";
-
-    #[test]
-    fn the_backfill_reads_each_run_as_the_log_wrote_it() {
-        let runs = logged_runs(LOG, 10);
-        assert_eq!(runs.len(), 2);
-        let a = &runs[0];
-        assert!(a.ended);
-        assert_eq!(a.record.run_ts, "2026-09-24T03:00:00");
-        assert_eq!(a.record.completed_at, "2026-09-24T04:01:05");
-        assert_eq!(a.rows.len(), 2);
-        assert_eq!(a.record.tally.unwrap().no_result, 1);
-        assert_eq!(a.record.errors.unwrap().http, 1);
-        assert_eq!(stamp_gap_secs(&a.record.run_ts, &a.record.completed_at), 3665);
-        // a run cut off mid-flight: rows, no record, no invented tally
-        let b = &runs[1];
-        assert!(!b.ended);
-        assert_eq!(b.rows.len(), 1);
-        assert!(b.record.tally.is_none(), "the unreadable-registry sentence is not a reading");
-        // only the last n
-        assert_eq!(logged_runs(LOG, 1)[0].record.run_ts, "2026-09-25T15:37:59");
-    }
-
     #[test]
     fn a_werk_run_writes_no_prod_graph_rows() {
         assert!(graph_rows_enabled("/Users/j/CascadeProjects/chorus", None));
@@ -1927,7 +1606,7 @@ RUN|tally|registry unreadable — the run cannot say what it did not run\n";
 
 #[cfg(test)]
 mod one_unit_4247 {
-    use super::{parse_case_line, registered_test_tally, tests_with_no_result};
+    use super::{parse_case_line, tests_with_no_result};
 
     fn reg(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs.iter().map(|(f, n)| (f.to_string(), n.to_string())).collect()
@@ -1970,19 +1649,6 @@ mod one_unit_4247 {
         assert!(tests_with_no_result(&registered, &ran).is_empty());
     }
 
-    /// NEGATIVE PROOF — a three-field line (written before this card) parses
-    /// with an EMPTY result and is counted unmeasured, never as a pass.
-    #[test]
-    fn a_line_without_a_result_is_unmeasured_not_passed() {
-        assert_eq!(
-            parse_case_line("nightly-case|a.rs|one"),
-            Some(("a.rs".into(), "one".into(), String::new(), "one".into()))
-        );
-        let line = registered_test_tally(&reg(&[("a.rs", "one")]), &ran(&[("a.rs", "one", "")]));
-        assert!(line.contains("unmeasured 1"), "{line}");
-        assert!(line.contains("passed 0"), "{line}");
-    }
-
     /// The four-field line carries its verdict.
     #[test]
     fn a_line_with_a_result_carries_it() {
@@ -2005,33 +1671,6 @@ mod one_unit_4247 {
             parse_case_line("nightly-case|a.rs|reads a|b pair"),
             Some(("a.rs".into(), "reads a|b pair".into(), String::new(), "reads a|b pair".into()))
         );
-    }
-
-    /// #4271 — the four-field line: identity, verdict, and the BYTE LENGTH of
-    /// the registered name inside that identity. 42 cases generated by one
-    /// `describe.each` block all answer for the one registered row, and each
-    /// keeps the name it ran under.
-    #[test]
-    fn a_dynamic_case_line_carries_its_identity_and_its_join_key() {
-        let line = "nightly-case|cards.test.ts|matrix add P1 runs without throwing|pass|21";
-        assert_eq!(
-            parse_case_line(line),
-            Some((
-                "cards.test.ts".into(),
-                "matrix add P1 runs without throwing".into(),
-                "pass".into(),
-                "runs without throwing".into()
-            ))
-        );
-        // and the census joins on the registered row, so ONE registration is
-        // answered for by all of its generated cases
-        let registered = reg(&[("cards.test.ts", "runs without throwing")]);
-        let ran = ran_as(&[
-            ("cards.test.ts", "matrix add P1 runs without throwing", "pass", "runs without throwing"),
-            ("cards.test.ts", "matrix add P2 runs without throwing", "pass", "runs without throwing"),
-        ]);
-        assert!(tests_with_no_result(&registered, &ran).is_empty(), "the registered row DID run");
-        assert!(registered_test_tally(&registered, &ran).contains("ran 2"), "and two cases ran");
     }
 
     /// NEGATIVE PROOF (#3734) — matching the census on the case's OWN name is
@@ -2077,16 +1716,6 @@ mod one_unit_4247 {
         );
     }
 
-    /// Every count in the tally is the same unit — the registered test.
-    #[test]
-    fn the_tally_speaks_one_unit() {
-        let registered = reg(&[("a.rs", "one"), ("a.rs", "two"), ("b.bats", "three")]);
-        let ran = ran(&[("a.rs", "one", "pass"), ("b.bats", "three", "fail")]);
-        assert_eq!(
-            registered_test_tally(&registered, &ran),
-            "registered 3 · ran 2 · passed 1 · failed 1 · unmeasured 0 · no result 1"
-        );
-    }
 }
 
 /// #4251 — the most recent scheduled slot at or before `now`, as an ISO stamp.
@@ -2333,60 +1962,6 @@ mod schedule_slots_4562 {
     }
 }
 
-pub fn slots_from_plist(xml: &str) -> Vec<(u32, u32)> {
-    // Tag scan, not line parsing: launchd plists are written both one-key-per
-    // -line and all on one line, and the first version of this read only the
-    // first shape — it returned no slots for the array form and would have
-    // made the readout silently claim nothing.
-    #[derive(Clone, Copy)]
-    enum Tok {
-        Hour(u32),
-        Minute(u32),
-    }
-    let mut toks: Vec<Tok> = Vec::new();
-    let mut rest = xml;
-    while let Some(i) = rest.find("<key>") {
-        let after = &rest[i + 5..];
-        let Some(j) = after.find("</key>") else { break };
-        let key = &after[..j];
-        let tail = &after[j + 6..];
-        if key == "Hour" || key == "Minute" {
-            if let Some(a) = tail.find("<integer>") {
-                let v = &tail[a + 9..];
-                if let Some(b) = v.find("</integer>") {
-                    if let Ok(n) = v[..b].trim().parse::<u32>() {
-                        toks.push(if key == "Hour" { Tok::Hour(n) } else { Tok::Minute(n) });
-                    }
-                }
-            }
-        }
-        rest = tail;
-    }
-    let mut out: Vec<(u32, u32)> = Vec::new();
-    let mut cur: Option<(u32, u32)> = None;
-    for t in toks {
-        match t {
-            Tok::Hour(h) => {
-                if let Some(c) = cur.take() {
-                    out.push(c);
-                }
-                cur = Some((h, 0));
-            }
-            Tok::Minute(m) => {
-                if let Some(c) = cur.as_mut() {
-                    c.1 = m;
-                }
-            }
-        }
-    }
-    if let Some(c) = cur {
-        out.push(c);
-    }
-    out.sort();
-    out.dedup();
-    out
-}
-
 /// #4251 — the stamp of the most recent completed run in a nightly log.
 pub fn last_complete_stamp(log: &str) -> Option<String> {
     log.lines()
@@ -2399,51 +1974,7 @@ pub fn last_complete_stamp(log: &str) -> Option<String> {
 /// #4251 — the schedule comes from the job's plist, not a constant.
 #[cfg(test)]
 mod slots_from_plist_4251 {
-    use super::{last_complete_stamp, slots_from_plist};
-
-    const ONE: &str = r#"<dict>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>3</integer>
-    <key>Minute</key><integer>0</integer>
-  </dict>
-</dict>"#;
-
-    const TWO: &str = r#"<dict>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
-  </array>
-</dict>"#;
-
-    #[test]
-    fn a_single_interval_reads() {
-        assert_eq!(slots_from_plist(ONE), vec![(3, 0)]);
-    }
-
-    #[test]
-    fn an_array_of_intervals_reads_all_of_them() {
-        assert_eq!(slots_from_plist(TWO), vec![(6, 0), (13, 30)]);
-    }
-
-    /// NEGATIVE PROOF: a plist with no schedule yields NO slots, so the caller
-    /// makes no staleness claim at all. Defaulting to 03:00 here would invent
-    /// a schedule the job does not have and call every run late.
-    #[test]
-    fn no_schedule_yields_no_slots() {
-        assert!(slots_from_plist("<dict><key>Label</key><string>x</string></dict>").is_empty());
-        assert!(slots_from_plist("").is_empty());
-    }
-
-    /// An hour with no minute is on the hour, not dropped.
-    #[test]
-    fn an_hour_without_a_minute_is_on_the_hour() {
-        assert_eq!(
-            slots_from_plist("<dict><key>Hour</key><integer>4</integer></dict>"),
-            vec![(4, 0)]
-        );
-    }
+    use super::{last_complete_stamp};
 
     #[test]
     fn the_last_completed_run_is_the_one_read() {

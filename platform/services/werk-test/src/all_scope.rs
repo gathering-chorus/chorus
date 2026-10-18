@@ -264,10 +264,6 @@ fn load_gate() -> (bool, String) {
     load_verdict(load, cores, per)
 }
 
-fn pid_alive(pid: u32) -> bool {
-    Command::new("kill").args(["-0", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false)
-}
-
 // #4152 — run_capped lives in lib.rs (drains pipes while the child runs).
 use werk_test::run_capped;
 
@@ -782,7 +778,6 @@ pub fn read_mode(args: &[String]) -> Option<Result<i32, String>> {
     None
 }
 
-
 /// The run's context: where its log, failures and graph rows go, and who it
 /// nudges. #4540: built the same by every nightly step.
 fn build_ctx(root: &str) -> Ctx {
@@ -890,9 +885,6 @@ fn deliver_readout(ctx: &Ctx) {
 // the run, run duration vs budget). The pure parsers below are what the unit
 // tests prove; the legs are thin shells around a seam command so a fixture
 // can stand in for the real tool.
-
-
-
 
 /// `launchctl list` rows for com.chorus.* → label → pid (None when '-').
 pub fn parse_launchctl(out: &str) -> std::collections::BTreeMap<String, Option<u32>> {
@@ -1175,8 +1167,6 @@ fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
 }
 
-
-
 #[cfg(test)]
 mod crawl_first_4318 {
     use super::*;
@@ -1262,8 +1252,6 @@ x\n\
 #[cfg(test)]
 mod lanes_4278 {
     use super::*;
-
-
 
     #[test]
     fn launchctl_rows_and_restarts() {
@@ -1430,7 +1418,6 @@ mod lanes_4278 {
         let body = live_row_payload("2026-10-10T03:00:03", "a.bats", 5, 1200);
         assert!(body.contains("\"result\":\"running\"") && body.contains("timeout=1200s") && !body.contains("suiteOrder"), "{body}");
     }
-
 
 }
 

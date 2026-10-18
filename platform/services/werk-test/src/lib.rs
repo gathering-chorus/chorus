@@ -19,7 +19,6 @@
 pub mod run_record;
 pub mod why;
 pub mod run_dir;
-pub type R<T> = Result<T, String>;
 
 /// Known TS packages with their own jest config + node_modules (matches #3397's
 /// hardcoded set — the only packages whose tests are runnable in the werk).
@@ -552,16 +551,6 @@ pub struct Quarantined {
     pub file: String,
 }
 
-/// #3929 — nextest run args for a crate. ALL targets, not `--lib --bins`
-/// (Wren's (c), 2026-08-20): the old lane never ran tests/ suites — the gate
-/// could not see integration tests. `--no-tests=fail` is nextest's default,
-/// spelled out: a selected crate with zero tests is a red, not a silence.
-/// Quarantine translates to an exact-name filterset instead of libtest's
-/// substring `--skip`; empty quarantine adds no filterset at all.
-pub fn nextest_run_args(quarantined: &[&str], exclude_bins: &[&str]) -> Vec<String> {
-    nextest_run_args_threads(quarantined, exclude_bins, None)
-}
-
 /// #4022 — same args with an explicit `--test-threads N`. nextest's default is
 /// one thread per core, and the nightly runs several crates at once, so the
 /// default multiplied: 3 crates × 8 threads on an 8-core box before a single
@@ -618,25 +607,6 @@ pub fn classify_nextest_probe(ok: bool, out: &str, pin: (u32, u32, u32)) -> Resu
         return Err(format!("nextest-older-than-pin: installed {} < pinned {}", ver, pin_s));
     }
     Ok(())
-}
-
-/// #3929 — per-case lines from nextest's human output:
-/// `    PASS [   0.005s] <binary-id> path::to::case`. Bare fn name is the
-/// handle the inventory join uses, same as parse_cargo_cases.
-pub fn parse_nextest_cases(out: &str) -> Vec<(String, String)> {
-    out.lines()
-        .filter_map(|l| {
-            let t = l.trim();
-            let verdict = if t.starts_with("PASS ") { "pass" }
-                else if t.starts_with("FAIL ") { "fail" }
-                else if t.starts_with("SKIP ") { "skip" }
-                else { return None };
-            let after = t.split(']').nth(1)?.trim();
-            let path = after.split_whitespace().last()?;
-            let bare = path.rsplit("::").next().unwrap_or(path).to_string();
-            Some((bare, verdict.to_string()))
-        })
-        .collect()
 }
 
 /// #4063 — the same lines, keeping the FULL nextest path
@@ -749,16 +719,6 @@ pub fn parse_quarantine_rows(tsv: &str) -> Vec<Quarantined> {
         .collect()
 }
 
-/// The quarantines whose `until` is strictly before `today` (ISO `YYYY-MM-DD`,
-/// lexically ordered = chronologically ordered) — the auto-file-card candidates
-/// (#2530). `until == today` is NOT expired (the hold runs through end of day); a
-/// blank/malformed `until` is never expired (don't silently file on bad data).
-pub fn expired_cases<'a>(q: &'a [Quarantined], today: &str) -> Vec<&'a Quarantined> {
-    q.iter()
-        .filter(|x| !x.until.is_empty() && x.until.as_str() < today)
-        .collect()
-}
-
 /// #4045 — the ui-flows leg honoured no quarantine at all: `quarantined_cases()`
 /// fed `run_cargo` only, so a playwright spec ruled a known red (the Clearing
 /// scroll-follow, the Team Pulse "0 cards" count defect) blocked every card whose
@@ -782,13 +742,6 @@ pub fn playwright_grep_invert(quarantined: &[Quarantined]) -> Option<String> {
     terms.sort();
     terms.dedup();
     Some(terms.join("|"))
-}
-
-/// One-line, ALWAYS-printed report of the cases the gate skipped because they're
-/// quarantined — a skip must be VISIBLE, never a silent absence (#3443 "I don't see
-/// it" bar). Empty set → an explicit `quarantined: none`, not blank.
-pub fn quarantine_report(q: &[Quarantined]) -> String {
-    quarantine_report_on(q, "0000-00-00")
 }
 
 /// #4539 — the same line, split on `today`: the holds that apply, then the
@@ -1087,15 +1040,6 @@ pub fn completed_extras(
 }
 
 impl GateOutcome {
-    /// Process exit code: only `Block` stops the land (exit 1). `Pass` /
-    /// `NoUnits` → exit 0.
-    pub fn exit_code(&self) -> i32 {
-        match self {
-            GateOutcome::Block => 1,
-            _ => 0,
-        }
-    }
-
     /// Human label for the verb's summary line + the gh status description.
     pub fn label(&self) -> &'static str {
         match self {
@@ -1130,29 +1074,6 @@ pub struct TestRow {
     /// #4539 — the model's testNeeds ("machine" / "nightly"), or empty. A card
     /// run never selects a row that has one; the nightly selects every row.
     pub needs: String,
-}
-
-/// Parse `filePath\tcovers[\tpyramidLayer]` TSV rows; incomplete rows are
-/// dropped, never a panic. The layer column is optional (2-col back-compat).
-pub fn parse_test_rows(tsv: &str) -> Vec<TestRow> {
-    tsv.lines()
-        .filter_map(|l| {
-            let mut it = l.trim().split('\t');
-            match (it.next(), it.next()) {
-                (Some(f), Some(c)) if !f.trim().is_empty() && !c.trim().is_empty() => {
-                    Some(TestRow {
-                        file_path: f.trim().to_string(),
-                        covers: c.trim().to_string(),
-                        pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
-                        hermeticity: String::new(),
-                        test_concern: String::new(),
-                        needs: String::new(),
-                    })
-                }
-                _ => None,
-            }
-        })
-        .collect()
 }
 
 /// #3661 AC2 — filter the declared set by domain (`covers`) and/or type
@@ -1843,7 +1764,6 @@ pub struct CaseResult {
     pub result: String,
 }
 
-
 /// #4135 — jq's `@tsv` escapes a backslash as `\\` (and tab/newline/CR as
 /// `\t`/`\n`/`\r`). The registry holds the it-name as jest sees it, so a case
 /// named "escapes newlines to literal \\n" was emitted with doubled
@@ -1987,58 +1907,6 @@ pub fn rel_path(abs: &str, werk_root: &str) -> String {
         .to_string()
 }
 
-/// chorus:TestResult write payload — identity fields (filePath+testName) + the
-/// verdict + run context. `name` is mint-unique per (card, run-ts, index).
-#[allow(clippy::too_many_arguments)]
-/// #4033 — the per-unit store's claim on the run's index space. Result names
-/// are `testresult-<card>-<run ts>-<idx>`; the run ts is shared by every unit,
-/// so idx must be unique across units. Each unit claims `n` indices with one
-/// atomic fetch_add and numbers its payloads from the returned base. Two units
-/// that both start at 0 mint the same names and the store answers 409 for the
-/// whole chunk (2026-08-30 12:45: 190 units, 3 stored).
-pub fn claim_index_base(counter: &std::sync::atomic::AtomicUsize, n: usize) -> usize {
-    counter.fetch_add(n, std::sync::atomic::Ordering::SeqCst)
-}
-
-/// The minted name for a result — the identity the store keys a create on.
-pub fn test_result_name(card: &str, ts_millis: u128, idx: usize) -> String {
-    format!("testresult-{}-{}-{}", card, ts_millis, idx)
-}
-
-pub fn test_result_payload(
-    file_path: &str,
-    test_name: &str,
-    result: &str,
-    of_test: &str,
-    card: &str,
-    role: &str,
-    trace: &str,
-    ts_millis: u128,
-    idx: usize,
-) -> String {
-    // #3925 — runTs and cardId are REAL FIELDS now (shape bump: minCount 0
-    // this cycle, tightened to required once the 137k-row backfill lands).
-    // The minted name keeps its old form so existing joins survive, but the
-    // data no longer lives ONLY smuggled inside it. runTs is offset-ISO
-    // Boston (#3880), derived from the same ts_millis that keys the name —
-    // one clock, two representations, never two clocks.
-    // A nightly run has no card: cardId is OMITTED (typed absence), never "".
-    let _ = (role, trace);
-    let run_ts = boston_offset_iso(ts_millis);
-    let card_field = if card.is_empty() || card == "0" {
-        String::new()
-    } else {
-        format!(",\"cardId\":\"{}\"", json_escape(card))
-    };
-    format!(
-        "{{\"name\":\"testresult-{}-{}-{}\",\"filePath\":\"{}\",\"testName\":\"{}\",\
-         \"result\":\"{}\",\"ofTest\":\"{}\",\"runTs\":\"{}\"{}}}",
-        json_escape(card), ts_millis, idx,
-        json_escape(file_path), json_escape(test_name), json_escape(result), json_escape(of_test),
-        run_ts, card_field,
-    )
-}
-
 /// #3880 — offset-ISO in America/New_York from epoch millis, no chrono dep.
 /// EST/EDT boundary via the 2007+ US rule (2nd Sun Mar / 1st Sun Nov, UTC).
 pub fn boston_offset_iso(ts_millis: u128) -> String {
@@ -2086,7 +1954,6 @@ pub fn boston_offset_iso(ts_millis: u128) -> String {
     )
 }
 
-
 /// #4063 — the one stored verdict of a shell suite (`test-*.sh`): the registry
 /// names the script's single test by its file name, so the row joins.
 pub fn shell_suite_case(suite: &str, ok: bool) -> CaseResult {
@@ -2096,133 +1963,6 @@ pub fn shell_suite_case(suite: &str, ok: bool) -> CaseResult {
         result: if ok { "pass" } else { "fail" }.to_string(),
     }
 }
-
-
-/// #4106 — the state of one never-run registration, decided from evidence.
-///
-/// The card's complaint: 155 registered tests neither ran nor said why, and a
-/// bare count nobody can act on sits in the report every morning. Each of the
-/// four states below is decided from something we can look at — the file on
-/// disk, the executed ledger, the lane table — never from a declaration.
-///
-/// `LaneSilent` is a fifth state the card's AC did not name, and it is here
-/// because the evidence produces it: a file that exists, whose lane exists,
-/// for which the lane emitted nothing. Folding that into `NoLane` would be a
-/// lie about the lane table, and folding it into `Dead` a lie about the tree.
-/// It is the "the unit died empty" case the nightly already attributes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum GapState {
-    /// The file is not in the tree. The registration outlived its test.
-    Dead,
-    /// The file exists and its lane emitted cases for it — but never under this
-    /// name. The registry and the runner disagree about what the test is called.
-    NameMismatch,
-    /// No runner covers this path: `unit_of_path` has no unit for it. Nothing
-    /// could have run it, so "never ran" is accurate and the lane table is the bug.
-    NoLane,
-    /// The file exists, a lane covers it, and the lane emitted nothing for it.
-    /// The unit produced no results — fix the unit, not the ledger.
-    LaneSilent,
-}
-
-impl GapState {
-    pub fn label(self) -> &'static str {
-        match self {
-            GapState::Dead => "DEAD",
-            GapState::NameMismatch => "NAME MISMATCH",
-            GapState::NoLane => "NO LANE",
-            GapState::LaneSilent => "LANE SILENT",
-        }
-    }
-}
-
-
-/// Does ANY lane cover this path?
-///
-/// #4106 — `unit_of_path` alone was the wrong predicate and said so out loud:
-/// it called the 13 `proving/flows/*.spec.cjs` specs NO LANE while the browser
-/// lane runs them every time it fires. That lane does not select by path — it
-/// selects by `testConcern == "ui"` in the registry (`ui_files`), so the set of
-/// ui-registered files is the second half of the evidence. A predicate that
-/// cannot see one of the two selectors cannot answer the question.
-pub fn has_lane(path: &str, ui_registered: &std::collections::BTreeSet<String>) -> bool {
-    unit_of_path(path).is_some() || ui_registered.contains(path)
-}
-
-
-
-/// The names the runner actually emitted for one file, in ledger order, deduped.
-pub fn runner_names_for(file: &str, executed: &[(String, String)]) -> Vec<String> {
-    let mut seen: Vec<String> = Vec::new();
-    for (f, n) in executed {
-        if f == file && !seen.iter().any(|s| s == n) {
-            seen.push(n.clone());
-        }
-    }
-    seen
-}
-
-/// "ts 76, sh 113, rs 22 …" — never-run counts per file extension, largest first.
-pub fn reconcile_by_kind(gap: &[(String, String)]) -> String {
-    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
-    for (f, _) in gap {
-        let ext = f.rsplit('.').next().unwrap_or("?").to_string();
-        *counts.entry(ext).or_insert(0) += 1;
-    }
-    let mut v: Vec<(String, usize)> = counts.into_iter().collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    v.iter().map(|(k, c)| format!("{} {}", k, c)).collect::<Vec<_>>().join(", ")
-}
-
-/// #4022 — resolve a collection's `links.next` (a root-relative `/v1/...` path)
-/// against the page URL it came from. The ledger is 229k rows and a page caps
-/// at 100k, so the census walks pages; a next link that is absent, empty, or
-/// identical to the current page ends the walk (no self-loop on a broken link).
-pub fn next_page_url(current: &str, next: &str) -> Option<String> {
-    let next = next.trim();
-    if next.is_empty() {
-        return None;
-    }
-    let resolved = if next.starts_with("http://") || next.starts_with("https://") {
-        next.to_string()
-    } else {
-        let after_scheme = current.find("://").map(|i| i + 3).unwrap_or(0);
-        let origin_end = current[after_scheme..].find('/').map(|i| i + after_scheme).unwrap_or(current.len());
-        // the generated API mounts at "/" and self-links as "/v1/<coll>": strip
-        // the version prefix the server does not actually route.
-        let path = next.strip_prefix("/v1").unwrap_or(next);
-        format!("{}{}", &current[..origin_end], path)
-    };
-    if resolved == current { None } else { Some(resolved) }
-}
-
-/// #4105 — one step of the census walk, as three states instead of two.
-///
-/// The walk used to be `match next_page_url(..) { Some(n) if pages < 50 => .., _ => break }`.
-/// That `_` folded "the ledger is exhausted" and "we ran out of page budget"
-/// into the same break, and the caller then computed a never-run gap from a
-/// partial read — reporting tests that HAD executed as tests that never ran.
-/// A census that cannot tell those apart is not a census.
-#[derive(Debug, PartialEq, Eq)]
-pub enum PageStep {
-    /// keep walking, here is the next page
-    Next(String),
-    /// the collection is finished — no next link, or a broken/self link
-    Exhausted,
-    /// there is more ledger and no budget left: the read is INCOMPLETE
-    Truncated,
-}
-
-pub fn page_walk_step(current: &str, next: &str, pages_read: usize, cap: usize) -> PageStep {
-    match next_page_url(current, next) {
-        None => PageStep::Exhausted,
-        Some(u) if pages_read < cap => PageStep::Next(u),
-        Some(_) => PageStep::Truncated,
-    }
-}
-
-
-
 
 /// #3592 — 5-col fetch: `filePath\tcovers\tpyramidLayer\ttestName\tname`.
 /// Returns rows + the PARALLEL testName vec + the PARALLEL minted entity-name
@@ -2270,7 +2010,6 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
     }
     (rows, names, entities)
 }
-
 
 /// #4536 — the Test collection a row is PATCHed under: the registry URL
 /// without its query (`http://h/tests?limit=10000` → `http://h/tests`).
@@ -2464,249 +2203,6 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
 
 // ---- TestResult batch wire-back: bounded chunks + one token re-mint ----
 
-/// #4158 — the collection path a server ADVERTISES for a class, read from its
-/// discovery document. Same pattern chorus-crawl already uses ("route: read
-/// from the server's discovery document, never hardcoded"). A pre-#4158 server
-/// advertises `/v1/testresults`, a post-#4158 one advertises
-/// `/v1/tests/results`; following discovery is correct on both, so the caller
-/// carries no path shape and no land-ordering dependency. Hardcoding either
-/// literal is what lost 650 results in run 77 (2026-09-13).
-///
-/// Returns None when the document does not name the class — the caller keeps
-/// its configured default rather than inventing a route.
-pub fn advertised_collection(discovery_body: &str, kind: &str) -> Option<String> {
-    // Discovery is a flat list of primitives: { "kind": "TestResult",
-    // "collection": "/v1/tests/results", "deprecatedCollection": "/v1/testresults" }.
-    // Read the `collection` INSIDE the matched object only, bounded by that
-    // object's closing brace, so a neighbouring class cannot answer for it.
-    let needle = format!("\"kind\": \"{}\"", kind);
-    let start = discovery_body.find(&needle)? + needle.len();
-    let obj_end = discovery_body[start..].find('}').map(|i| start + i)?;
-    let slice = &discovery_body[start..obj_end];
-    let key = "\"collection\": \"";
-    let cstart = slice.find(key)? + key.len();
-    let cend = slice[cstart..].find('"')? + cstart;
-    let path = &slice[cstart..cend];
-    if path.is_empty() || !path.starts_with('/') {
-        return None;
-    }
-    // #4158 — discovery advertises the VERSIONED path (/v1/tests/results) but
-    // the write door only matched the bare form until this card fixed it
-    // (measured 2026-09-13 10:22: /testresults/batch 422, /v1/testresults/batch
-    // 404 on BOTH servers; run 86 lost 650 results to it). Servers predating
-    // that fix are still out there, and the bare form is served by every
-    // version, so strip the prefix here too and post to the form that always
-    // works.
-    let bare = path.strip_prefix("/v1").unwrap_or(path);
-    if bare.is_empty() || !bare.starts_with('/') {
-        return None;
-    }
-    Some(bare.to_string())
-}
-
-/// #4158 — the scheme+host of a configured endpoint, so a discovered PATH can
-/// be joined to whatever server this run was pointed at.
-pub fn origin_of(url: &str) -> Option<String> {
-    let scheme_end = url.find("://")? + 3;
-    let rest = &url[scheme_end..];
-    let host_end = rest.find('/').unwrap_or(rest.len());
-    Some(format!("{}{}", &url[..scheme_end], &rest[..host_end]))
-}
-
-/// Derive the batch-create route from the historical TestResult collection
-/// override. The old variable is also used by reconcile for GET, so callers can
-/// keep configuring one collection URL while writes append the batch suffix.
-pub fn testresult_batch_endpoint(collection: &str) -> String {
-    let base = collection
-        .split(['?', '#'])
-        .next()
-        .unwrap_or(collection)
-        .trim_end_matches('/');
-    if base.ends_with("/batch") {
-        base.to_string()
-    } else {
-        format!("{}/batch", base)
-    }
-}
-
-/// Leave headroom below athena-make's 64 KiB governed-write ceiling for HTTP framing
-/// and future envelope fields. The bound is on the serialized JSON array body,
-/// not an approximate entity count.
-pub const TESTRESULT_BATCH_MAX_BYTES: usize = 48 * 1024;
-
-/// One atomic TestResult batch. `entities` is carried beside the body so a
-/// failed chunk is accounted in entity units without parsing JSON on the client.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PostChunk {
-    pub body: String,
-    pub entities: usize,
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct ChunkedPayloads {
-    pub chunks: Vec<PostChunk>,
-    /// An individual entity larger than the chunk ceiling cannot be sent without
-    /// violating athena-make's request bound. It is failed loudly, never truncated.
-    pub oversized: usize,
-}
-
-/// Pack already-serialized flat JSON entities into JSON-array request bodies.
-/// Every returned body is `<= max_bytes`, input order is stable, and an entity
-/// is never split across requests (the server's transaction boundary).
-pub fn chunk_json_payloads(payloads: &[String], max_bytes: usize) -> ChunkedPayloads {
-    let mut out = ChunkedPayloads::default();
-    if max_bytes < 2 {
-        out.oversized = payloads.len();
-        return out;
-    }
-    let mut current: Vec<&str> = Vec::new();
-    let mut current_bytes = 2usize; // '[' + ']'
-    let flush = |items: &mut Vec<&str>, bytes: &mut usize, chunks: &mut Vec<PostChunk>| {
-        if items.is_empty() {
-            return;
-        }
-        chunks.push(PostChunk {
-            body: format!("[{}]", items.join(",")),
-            entities: items.len(),
-        });
-        items.clear();
-        *bytes = 2;
-    };
-    for payload in payloads {
-        let standalone = payload.len().saturating_add(2);
-        if standalone > max_bytes {
-            out.oversized += 1;
-            continue;
-        }
-        let addition = payload.len() + usize::from(!current.is_empty());
-        if current_bytes + addition > max_bytes {
-            flush(&mut current, &mut current_bytes, &mut out.chunks);
-        }
-        current_bytes += payload.len() + usize::from(!current.is_empty());
-        current.push(payload);
-    }
-    flush(&mut current, &mut current_bytes, &mut out.chunks);
-    out
-}
-
-/// What to do with one case-post's HTTP status (#3808). Decision table, not
-/// policy-in-the-loop: 2xx accepts; the FIRST 401 of a run re-mints (the token
-/// outlived chorus-identity-token's ~600s cache mid-stream — measured on #3802,
-/// 594 posted then 534 401s); a 401 AFTER re-minting means the identity itself
-/// is refused — fail loudly, never retry forever. Anything else (5xx, 000) is a
-/// server-side refusal a fresh token cannot cure.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PostStep {
-    Accept,
-    Remint,
-    Fail,
-}
-
-pub fn remint_decision(http_code: &str, reminted_already: bool) -> PostStep {
-    if http_code.starts_with('2') {
-        return PostStep::Accept;
-    }
-    if http_code == "401" && !reminted_already {
-        return PostStep::Remint;
-    }
-    PostStep::Fail
-}
-
-/// Batch POST argv that yields the status code (`-w %{http_code}`, stdout).
-/// One curl process now represents a byte-bounded atomic chunk, not one case.
-pub fn post_args_with_code(endpoint: &str, token: &str, payload: &str) -> Vec<String> {
-    vec![
-        "-s".into(), "-o".into(), "/dev/null".into(), "-w".into(), "%{http_code}".into(),
-        "--max-time".into(), "10".into(), "-X".into(), "POST".into(),
-        "-H".into(), format!("Authorization: Bearer {}", token),
-        "-H".into(), "Content-Type: application/json".into(),
-        "-H".into(), "x-target-graph: urn:chorus:domains:tests".into(),
-        "-d".into(), payload.into(), endpoint.into(),
-    ]
-}
-
-/// Outcome of a posting loop (#3808) — what the caller banners + puts on the
-/// spine. `remint_attempts` counts re-mint ATTEMPTS (0 or 1 by construction)
-/// — an attempt fires per expiry-shaped 401 whether or not the mint succeeded,
-/// so the field measures expiry frequency, not recovery success (reviewers'
-/// catch on the first round: a mint that refused still counted).
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct PostStats {
-    pub posted: usize,
-    pub failed: usize,
-    pub chunks_attempted: usize,
-    pub chunks_succeeded: usize,
-    pub chunks_failed: usize,
-    pub remint_attempts: usize,
-    pub first_fail_code: Option<String>,
-}
-
-/// Fold entities that never reached an HTTP chunk into the same entity-level
-/// accounting as refused chunks. `truncated_dropped` remains separately emitted
-/// by the caller, but the invariant stays complete: posted + failed equals the
-/// number of joined results presented to the write-back stage.
-pub fn account_unsent_results(stats: &mut PostStats, oversized: usize, truncated: usize) {
-    if oversized > 0 {
-        stats.failed += oversized;
-        if stats.first_fail_code.is_none() {
-            stats.first_fail_code = Some("payload-too-large".into());
-        }
-    }
-    if truncated > 0 {
-        stats.failed += truncated;
-        if stats.first_fail_code.is_none() {
-            stats.first_fail_code = Some("max-posts-cap".into());
-        }
-    }
-}
-
-/// Chunk-level posting with expired-token recovery. The first 401 re-mints once
-/// and retries the same atomic chunk. No path falls back to per-entity requests.
-pub fn post_results_loop(
-    endpoint: &str,
-    initial_token: &str,
-    chunks: &[PostChunk],
-    mint: &dyn Fn() -> Option<String>,
-) -> PostStats {
-    let mut stats = PostStats::default();
-    let mut token = initial_token.to_string();
-    let mut reminted_already = false;
-    for chunk in chunks {
-        stats.chunks_attempted += 1;
-        let mut code = post_once(endpoint, &token, &chunk.body);
-        if remint_decision(&code, reminted_already) == PostStep::Remint {
-            stats.remint_attempts += 1;
-            reminted_already = true;
-            if let Some(fresh) = mint() {
-                token = fresh;
-                code = post_once(endpoint, &token, &chunk.body);
-            }
-        }
-        match remint_decision(&code, reminted_already) {
-            PostStep::Accept => {
-                stats.posted += chunk.entities;
-                stats.chunks_succeeded += 1;
-            }
-            _ => {
-                stats.failed += chunk.entities;
-                stats.chunks_failed += 1;
-                if stats.first_fail_code.is_none() {
-                    stats.first_fail_code = Some(code);
-                }
-            }
-        }
-    }
-    stats
-}
-
-fn post_once(endpoint: &str, token: &str, payload: &str) -> String {
-    std::process::Command::new("curl")
-        .args(post_args_with_code(endpoint, token, payload))
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "000".to_string())
-}
-
 // #3821 — the ONE shared diff→units scoping core (also compiled by werk-build).
 include!("../../shared/scope_units.rs");
 
@@ -2839,20 +2335,6 @@ pub fn expand_by_naming_suites(
     out
 }
 
-pub fn scoped_test_units(
-    changed: &[String],
-    units: &[ScopeUnit],
-    edges: &[(String, String)],
-) -> Option<Vec<ScopeUnit>> {
-    let force_full = std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
-    match scope_unit_names(changed, units, edges, force_full) {
-        ScopeVerdict::Scoped(names) => Some(
-            units.iter().filter(|u| names.contains(&u.name)).cloned().collect(),
-        ),
-        ScopeVerdict::Full(_) => None,
-    }
-}
-
 /// #3892 — the runner hands every spawned suite a self-contained world so a
 /// lazy subprocess test resolving a prod surface lands in a tempdir instead
 /// of a MEMBRANE REFUSED panic in the werk log. Three misdiagnoses in 48h
@@ -2894,26 +2376,6 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         // and chorus-health paged Jeff from inside every daily run). Since #4515
         // it sends through nudge-send, so CHORUS_PULSE_URL above cages it too.
     ]
-}
-
-#[cfg(test)]
-mod npm_lane_4173 {
-    use super::npm_test_runner_script_is_node_test;
-
-    #[test]
-    fn a_cucumber_package_is_not_this_lanes_to_grade() {
-        assert!(!npm_test_runner_script_is_node_test("cucumber-js"));
-        assert!(!npm_test_runner_script_is_node_test("cucumber-js --tags @gate"));
-    }
-
-    // NEGATIVE PROOF: the skip must not swallow a node:test package. Those are
-    // still this lane's, so an empty one has to reach the FAIL LOUD below
-    // rather than being waved through as "someone else's lane".
-    #[test]
-    fn negative_proof_a_node_test_package_is_still_this_lanes_to_grade() {
-        assert!(npm_test_runner_script_is_node_test("tsx --test tests/*.test.ts"));
-        assert!(npm_test_runner_script_is_node_test("node --test"));
-    }
 }
 
 #[cfg(test)]
@@ -2965,6 +2427,7 @@ mod scope_unclaimed_4198 {
     }
 }
 
+#[cfg(test)]
 mod scope_vcs_metadata_4173 {
     use super::{expand_by_naming_suites, is_test_suite_path, scope_irrelevant, scoped_test_reason, text_names_path, ScopeUnit};
 
@@ -3084,9 +2547,8 @@ mod scope_vcs_metadata_4173 {
     /// instead of refusing the run as unmapped.
     #[test]
     fn the_contract_inventory_runs_its_own_suite_not_an_unmapped_refusal() {
-        use crate::WERK_CODE_CONTRACT;
         let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
-        let changed = vec![WERK_CODE_CONTRACT.to_string()];
+        let changed = vec!["platform/config/werk-code-contract.tsv".to_string()];
         assert_eq!(scoped_test_reason(&changed, &units, &[]), Ok(vec![]));
         // NEGATIVE PROOF: another file in platform/config is still unmapped
         assert_eq!(
@@ -3170,52 +2632,6 @@ mod scope_vcs_metadata_4173 {
         assert!(!scope_irrelevant("Cargo.toml"));
         // and a path merely CONTAINING the name is not git's metadata
         assert!(!scope_irrelevant("platform/services/gitignore-parser/src/lib.rs"));
-    }
-}
-
-#[cfg(test)]
-mod discovery_route_4158 {
-    use super::{advertised_collection, origin_of, testresult_batch_endpoint};
-
-    // The two shapes a real server returns, verbatim in structure.
-    const POST_4158: &str = r#"{ "count": 2, "primitives": [{ "kind": "Test", "collection": "/v1/tests/tests", "deprecatedCollection": "/v1/tests" }, { "kind": "TestResult", "collection": "/v1/tests/results", "deprecatedCollection": "/v1/testresults" }] }"#;
-    const PRE_4158: &str = r#"{ "count": 2, "primitives": [{ "kind": "Test", "collection": "/v1/tests" }, { "kind": "TestResult", "collection": "/v1/testresults" }] }"#;
-
-    #[test]
-    fn the_caller_follows_whichever_path_the_server_advertises() {
-        // #4158 AC4 — the caller carries NO path shape. The same code is right
-        // against a post-#4158 server and the pre-#4158 one it will meet until
-        // this lands on canonical.
-        assert_eq!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/tests/results"));
-        assert_eq!(advertised_collection(PRE_4158, "TestResult").as_deref(), Some("/testresults"));
-        // and the batch route is derived from whichever came back
-        let post = testresult_batch_endpoint(&format!("http://h:1{}", advertised_collection(POST_4158, "TestResult").unwrap()));
-        assert_eq!(post, "http://h:1/tests/results/batch");
-        let pre = testresult_batch_endpoint(&format!("http://h:1{}", advertised_collection(PRE_4158, "TestResult").unwrap()));
-        assert_eq!(pre, "http://h:1/testresults/batch");
-    }
-
-    #[test]
-    fn negative_proof_a_neighbour_class_cannot_answer_for_the_one_asked_for() {
-        // #3734 — the defect this shape invites: scanning for "collection"
-        // after a loose match and picking up the NEXT object's path. Test sits
-        // immediately before TestResult in both documents, so a reader that
-        // ran past the object boundary would hand back /v1/tests/tests for
-        // TestResult — the right graph, the wrong rows, and no error.
-        assert_eq!(advertised_collection(POST_4158, "Test").as_deref(), Some("/tests/tests"));
-        assert_ne!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/tests/tests"));
-        // a class the server does not serve yields None — the caller keeps its
-        // configured default instead of inventing a route
-        assert_eq!(advertised_collection(POST_4158, "CodeFile"), None);
-        assert_eq!(advertised_collection("", "TestResult"), None);
-        assert_eq!(advertised_collection(r#"{"kind": "TestResult", "collection": ""}"#, "TestResult"), None);
-    }
-
-    #[test]
-    fn origin_keeps_the_server_the_run_was_pointed_at() {
-        assert_eq!(origin_of("http://localhost:3365/testresults").as_deref(), Some("http://localhost:3365"));
-        assert_eq!(origin_of("http://localhost:3360").as_deref(), Some("http://localhost:3360"));
-        assert_eq!(origin_of("not-a-url"), None);
     }
 }
 
@@ -3507,91 +2923,6 @@ pub fn is_bats_suite(path: &str) -> bool {
     path.starts_with("platform/tests/") && path.ends_with(".bats")
 }
 
-/// #4333 — the werk-code contract inventory: data a script reads, proven by the
-/// suite that runs that script against it. Editing it runs that suite; it is
-/// neither a build input nor an unmapped path.
-pub const WERK_CODE_CONTRACT: &str = "platform/config/werk-code-contract.tsv";
-
-// ---------------------------------------------------------------------------
-// #3918 — the land lane's own telemetry.
-//
-// #3745 wrote the principle down: "The prod declaration is the RUNNER's identity,
-// never the tests'." It implemented that by clearing CHORUS_CONTEXT on the shell
-// line that invokes werk-test — which clears it for the RUNNER too. So werk-test
-// runs under act's CI=true with no declaration, the membrane classifies it Build,
-// and every spine event it emits panics on the way out. The land happens; the
-// record does not. Same principle, one level lower: the runner keeps its prod
-// identity, and clears the variable per spawned test child.
-// ---------------------------------------------------------------------------
-
-/// What a spawned child should inherit for `CHORUS_CONTEXT`.
-///
-/// `None` = leave the runner's own value in place (the runner IS prod work).
-/// `Some("")` = explicitly cleared, so the child classifies from its own ambient
-/// markers (BATS_TEST_TMPDIR / CARGO / NODE_ENV) exactly as #3745 intended.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ChildContext {
-    /// A test child: clear the declaration so the membrane sees the test.
-    Test,
-    /// A runner-side child (chorus-log, git, curl): keep the runner's identity.
-    Runner,
-}
-
-impl ChildContext {
-    /// The value to set on the child, or None to leave inherited.
-    pub fn env_value(self) -> Option<&'static str> {
-        match self {
-            ChildContext::Test => Some(""),
-            ChildContext::Runner => None,
-        }
-    }
-}
-
-/// Classify a spawned command by what it IS, not where it runs. The check that
-/// decides whether a process may write the production spine has to be able to
-/// separate these two — that is the whole defect.
-pub fn child_context(program: &str) -> ChildContext {
-    match program {
-        "cargo" | "bats" => ChildContext::Test,
-        p if p.ends_with("jest") || p.ends_with("tsc") => ChildContext::Test,
-        _ => ChildContext::Runner,
-    }
-}
-
-#[cfg(test)]
-mod land_lane_telemetry_3918 {
-    use super::*;
-
-    /// The runner's own emissions keep prod identity — this is the bug: they
-    /// were being cleared along with the tests', so they died on the membrane.
-    #[test]
-    fn the_runners_own_spine_emit_keeps_prod_identity() {
-        assert_eq!(child_context("bash"), ChildContext::Runner);
-        assert_eq!(child_context("bash").env_value(), None);
-    }
-
-    /// NEGATIVE PROOF (#3734), the other half: a genuine test child is STILL
-    /// cleared. If this ever returns Runner, the membrane's teeth are gone and
-    /// a test could write the production spine — the exact thing #3615 exists
-    /// to prevent. Both directions, or the distinction is unproven.
-    #[test]
-    fn a_real_test_child_is_still_cleared_and_therefore_still_refused() {
-        for p in ["cargo", "bats", "/usr/local/bin/jest", "node_modules/.bin/tsc"] {
-            assert_eq!(child_context(p), ChildContext::Test, "{} must classify as test", p);
-            assert_eq!(child_context(p).env_value(), Some(""), "{} must be cleared", p);
-        }
-    }
-
-    /// The classifier keys on what the child IS. A runner-side helper that
-    /// merely has a test-ish name must not be mistaken for a test.
-    #[test]
-    fn runner_helpers_are_not_tests() {
-        for p in ["git", "curl", "jq", "gh"] {
-            assert_eq!(child_context(p), ChildContext::Runner, "{} is runner-side", p);
-        }
-    }
-}
-
 // ── #4419 — a card runs the tests that exercise what it changed ──────────────
 //
 // The import-graph lane above keeps unit-layer files only, so an integration
@@ -3727,24 +3058,6 @@ mod test_result_clock_tests {
     use super::*;
 
     #[test]
-    fn payload_carries_run_ts_and_card_as_real_fields() {
-        let p = test_result_payload("a/b.test.ts", "case one", "pass", "test-x", "3925", "kade", "t", 1787264000000, 0);
-        assert!(p.contains("\"runTs\":\"2026-08-"), "offset-ISO runTs present: {p}");
-        assert!(p.contains("-04:00"), "August is EDT: {p}");
-        assert!(p.contains("\"cardId\":\"3925\""), "card as a real field: {p}");
-        assert!(p.contains("\"name\":\"testresult-3925-1787264000000-0\""), "old name form survives: {p}");
-    }
-
-    #[test]
-    fn nightly_run_omits_card_id_typed_absence_never_empty_string() {
-        // NEGATIVE PROOF (#3734): the failure mode is cardId:"" polluting the
-        // graph — absence must be OMISSION.
-        let p = test_result_payload("a/b.test.ts", "c", "pass", "t-x", "", "system", "t", 1787264000000, 1);
-        assert!(!p.contains("cardId"), "no cardId key at all: {p}");
-        assert!(p.contains("runTs"), "runTs still present on nightly rows: {p}");
-    }
-
-    #[test]
     fn boston_clock_handles_both_offsets() {
         // 2026-01-15 12:00 UTC → EST (-05:00) 07:00
         assert_eq!(boston_offset_iso(1768478400000), "2026-01-15T07:00:00-05:00");
@@ -3760,28 +3073,6 @@ pub fn needs_stack_files(rows: &[TestRow]) -> std::collections::BTreeSet<String>
         .filter(|r| r.hermeticity == "needs-stack")
         .map(|r| r.file_path.clone())
         .collect()
-}
-
-/// #4236 — the needs-stack tests THIS RUN SELECTED.
-///
-/// Wren's #4234 printed two lines that could not both be true: "134 needs-stack
-/// test(s) ran with the live stack" and "0 ran of 134 — a lane dropped the
-/// tier". Her diff selected one Clearing file that is not a needs-stack test;
-/// both counts came from every needs-stack row in the unit. The numerator
-/// counted the selection and the denominator counted the unit, so the gate
-/// could never agree with itself.
-///
-/// `selected` is the run's chosen files. Empty means the selection lane did not
-/// narrow anything (a full run), and the unit's rows are the honest count.
-pub fn selected_needs_stack(
-    rows: &[TestRow],
-    selected: &std::collections::BTreeSet<String>,
-    in_units: &dyn Fn(&str) -> bool,
-) -> usize {
-    rows.iter()
-        .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
-        .filter(|r| selected.is_empty() || selected.contains(&r.file_path))
-        .count()
 }
 
 /// #4238 — the count across EVERY lane, not just jest.
@@ -3821,13 +3112,6 @@ pub fn integration_report_none_selected(registered_in_unit: usize) -> String {
     format!(
         "integration: none selected — the diff covers no needs-stack test (the unit registers {registered_in_unit})"
     )
-}
-
-/// #3919 — the live-stack verdict from named probes. Down services are NAMED
-/// in the error; the caller renders the typed SKIPPED state from it.
-pub fn stack_verdict(probes: &[(&str, bool)]) -> Result<(), String> {
-    let down: Vec<&str> = probes.iter().filter(|(_, ok)| !ok).map(|(n, _)| *n).collect();
-    if down.is_empty() { Ok(()) } else { Err(down.join(", ")) }
 }
 
 /// #3919 — the ONE line the summary prints for the integration tier. A skip is
@@ -4278,17 +3562,6 @@ mod stages_4160 {
         assert!(jest_project_args_for(false, true, Some("hermetic")).is_empty());
     }
 
-    /// #4155 — the reason rides on the failed case's result row, escaped;
-    /// a passing case's row is unchanged.
-    #[test]
-    fn a_failed_result_row_carries_its_reason() {
-        let p = test_result_payload("a.test.ts", "t", "fail", "test-a", "", "system", "", 1787264000000, 0);
-        let with = with_failure_reason(&p, "TypeError: \"x\" is undefined");
-        assert!(with.ends_with(r#","failureReason":"TypeError: \"x\" is undefined"}"#), "{with}");
-        // NEGATIVE PROOF: no reason, no key
-        assert_eq!(with_failure_reason(&p, ""), p);
-    }
-
     #[test]
     fn nextest_bins_selects_named_binaries() {
         let a = nextest_run_args_bins(&[], &["live_serve"], None);
@@ -4308,15 +3581,6 @@ pub fn jest_project_args(has_hermetic_project: bool, run_integration: bool) -> V
     } else {
         Vec::new()
     }
-}
-
-/// #4155 — a failed case's result row carries why it failed. An empty reason
-/// adds nothing: absence is typed (key omitted), never "".
-pub fn with_failure_reason(payload: &str, reason: &str) -> String {
-    if reason.is_empty() || !payload.ends_with('}') {
-        return payload.to_string();
-    }
-    format!("{},\"failureReason\":\"{}\"}}", &payload[..payload.len() - 1], json_escape(reason))
 }
 
 /// #4160 — a staged run names its project: the unit stage runs `hermetic`,
@@ -4339,56 +3603,6 @@ pub fn stage_item_label(stage: &str, lane: &str, item: &str) -> (String, String)
         (_, Some((p, _))) => (stage.to_string(), p.to_string()),
         (l, None) => (l.to_string(), item.to_string()),
     }
-}
-
-/// #4139 — one `filePath\ttestName` line of the census's ledger walk, read
-/// through jq @tsv, so the name is unescaped exactly like the registry's
-/// (`parse_rows_and_names`) and the runner's (`parse_case_tsv`).
-pub fn ledger_case_from_tsv(line: &str) -> Option<(String, String)> {
-    let mut it = line.split('\t');
-    match (it.next(), it.next()) {
-        (Some(f), Some(n)) if !f.is_empty() => Some((f.to_string(), tsv_unescape(n))),
-        _ => None,
-    }
-}
-
-/// #3919 — exclude integration-test binaries from a nextest run: tests/foo.rs
-/// compiles to binary `foo`, so file-level exclusion is binary-level exact.
-pub fn nextest_exclude_binaries(bins: &[&str]) -> Vec<String> {
-    if bins.is_empty() {
-        return Vec::new();
-    }
-    let expr = bins.iter().map(|b| format!("not binary(={})", b))
-        .collect::<Vec<_>>().join(" and ");
-    vec!["-E".to_string(), expr]
-}
-
-/// #3919 — jest exclusion args for the needs-stack files inside one package;
-/// paths are made package-relative so jest's pattern matches its rootDir.
-pub fn jest_ignore_args(needs_stack: &[&str], pkg: &str) -> Vec<String> {
-    let prefix = format!("{}/", pkg);
-    let rel: Vec<String> = needs_stack.iter()
-        .filter_map(|f| f.strip_prefix(&prefix).map(|s| s.to_string()))
-        .collect();
-    if rel.is_empty() {
-        return Vec::new();
-    }
-    vec!["--testPathIgnorePatterns".to_string(), rel.join("|")]
-}
-
-/// #3953 — parse a phase's budget (seconds) from werk-phase-budgets.tsv
-/// (#3921's measured table). None = phase not in the table; the caller treats
-/// that as no-budget rather than inventing one.
-pub fn phase_budget(tsv: &str, phase: &str) -> Option<f64> {
-    tsv.lines()
-        .filter_map(|l| {
-            let mut it = l.split('\t');
-            match (it.next(), it.next()) {
-                (Some(p), Some(b)) if p.trim() == phase => b.trim().parse::<f64>().ok(),
-                _ => None,
-            }
-        })
-        .next()
 }
 
 /// #3953 — the IN-RUN enforcement target (col3, only where declared). The
@@ -4560,14 +3774,6 @@ pub fn nightly_cargo_crates(rows: &[TestRow]) -> Vec<String> {
 /// walker; a refused nightly is a red the morning read can see.
 pub fn nightly_requires_model(plan_source: &str) -> bool {
     plan_source != "model"
-}
-
-/// #3920 fold — the machine line nightly-suites.sh folds into its SUITE report.
-/// Verdict vocabulary is the gate's own (pass/fail from gate-counted cases;
-/// stack-down is the #3919 typed skip), so the nightly summary and the werk
-/// gate can never disagree on what red means.
-pub fn nightly_unit_line(crate_name: &str, ok: bool, passed: usize, failed: usize, ns_skipped: usize) -> String {
-    nightly_lane_line("cargo", crate_name, ok, passed, failed, ns_skipped)
 }
 
 /// #3974 — the generalized fold line: every lane (cargo/npm/bats) speaks the
@@ -4820,7 +4026,6 @@ pub fn nightly_lane_line_with_skips(kind: &str, unit: &str, ok: bool, passed: us
 pub fn nightly_plan_line(kind: &str, unit: &str) -> String {
     format!("nightly-plan|{}|{}", kind, unit)
 }
-
 
 /// #4030 — how a capped child ended.
 pub struct Finished {
@@ -5299,19 +4504,6 @@ mod nightly_via_runner_3920 {
         assert!(!nightly_requires_model("model"));
     }
 
-    #[test]
-    fn red_under_werk_test_is_red_in_the_nightly_line() {
-        // NEGATIVE PROOF (#3734): the guarded condition — a suite red under the
-        // runner — must be VISIBLY red in the line the nightly folds. A pass
-        // line and a fail line must be distinguishable by the |fail| token the
-        // nightly's SUITE parser keys on.
-        let red = nightly_unit_line("chorus-hooks", false, 40, 2, 0);
-        let green = nightly_unit_line("chorus-hooks", true, 42, 0, 0);
-        assert!(red.contains("|fail|"), "red line carries the fail verdict: {red}");
-        assert!(!green.contains("|fail|"), "green line must not: {green}");
-        assert_eq!(red, "nightly-unit|cargo|chorus-hooks|fail|40 pass, 2 fail");
-    }
-
     /// #4065 — a self-refused suite is its own verdict: skip, 0/0, reason in
     /// parentheses. Positive control on the exact line the wrapper folds.
     #[test]
@@ -5417,16 +4609,10 @@ mod nightly_via_runner_3920 {
         assert!(first_skip_reason("ok 1 handles # in a path\n").is_none(), "a # inside a name is not a directive");
     }
 
-    #[test]
-    fn stack_down_is_the_typed_skip_never_a_verdict_change() {
-        let line = nightly_unit_line("chorus-api-client", true, 10, 0, 3);
-        assert!(line.contains("3 SKIPPED (stack-down, typed #3919)"), "{line}");
-        assert!(line.contains("|pass|"), "typed skip is not a fail: {line}");
-    }
 }
 
 #[cfg(test)]
-mod nightly_all_lanes_3974 {
+mod all_scope_lanes_3974 {
     use super::*;
 
     fn row(path: &str) -> TestRow {
@@ -5599,7 +4785,6 @@ mod package_attribution_tests {
         assert!(!package_owns_case("platform/api", "platform/api"));
     }
 }
-
 
 /// #4004 — the lines worth surfacing when a playwright run reports failures.
 /// The runner used to print the summary alone, so a red flow never named itself
@@ -5945,73 +5130,6 @@ pub fn load_cap(budget: usize) -> f64 {
     budget as f64
 }
 
-/// #4022 — `run_pool` with a load gate. Before each unit a worker reads
-/// `load()`; while it exceeds `cap` the worker sleeps `tick` up to `max_wait`
-/// total, then proceeds regardless (bounded: the gate slows a run, it cannot
-/// wedge one). Returns the results in INPUT order plus the number of gate
-/// waits taken, so the report can say "held N times at load > cap".
-pub fn run_pool_gated<T, F, L>(units: &[String], workers: usize, cap: f64, load: L,
-    max_wait: std::time::Duration, tick: std::time::Duration, f: F) -> (Vec<(String, T)>, usize)
-where
-    T: Send + 'static,
-    F: Fn(&str) -> T + Send + Sync,
-    L: Fn() -> Option<f64> + Send + Sync,
-{
-    use std::sync::{Arc, Mutex};
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    if units.is_empty() { return (Vec::new(), 0); }
-    let workers = workers.max(1).min(units.len());
-    let next = AtomicUsize::new(0);
-    let waits = AtomicUsize::new(0);
-    let done = AtomicUsize::new(0);
-    let finished = AtomicBool::new(false);
-    let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
-        Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
-    std::thread::scope(|s| {
-        // #4022 — heartbeat. The nightly's wedge guard kills a lane that prints
-        // nothing for WERK_TEST_QUIET_CAP (600s). A narrow pool prints only when a
-        // unit finishes, and one long bats suite is silent for longer than that:
-        // 2026-08-29 11:45 the whole bats lane died that way at load 5. Progress
-        // is not a wedge; say so once a minute while anything is in flight.
-        s.spawn(|| {
-            let mut ticks = 0u32;
-            while !finished.load(Ordering::SeqCst) {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                ticks += 1;
-                if ticks % 60 == 0 {
-                    println!("-- pool heartbeat: {}/{} done, {} in flight, {} gate hold(s) --",
-                        done.load(Ordering::SeqCst), units.len(),
-                        next.load(Ordering::SeqCst).min(units.len()) - done.load(Ordering::SeqCst),
-                        waits.load(Ordering::SeqCst));
-                }
-            }
-        });
-        for _ in 0..workers {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::SeqCst);
-                if i >= units.len() { break; }
-                // the gate: hold while the box is over cap, bounded
-                let started = std::time::Instant::now();
-                while let Some(l) = load() {
-                    if l <= cap || started.elapsed() >= max_wait { break; }
-                    waits.fetch_add(1, Ordering::SeqCst);
-                    std::thread::sleep(tick);
-                }
-                let unit = &units[i];
-                let out = f(unit);
-                slots.lock().unwrap()[i] = Some((unit.clone(), out));
-                if done.fetch_add(1, Ordering::SeqCst) + 1 == units.len() {
-                    finished.store(true, Ordering::SeqCst);
-                }
-            });
-        }
-    });
-    finished.store(true, Ordering::SeqCst);
-    let out = Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
-        .into_iter().flatten().collect();
-    (out, waits.load(Ordering::SeqCst))
-}
-
 /// #4022 reopen 2026-10-14 — one queue for the whole nightly. Each stage used
 /// to run its cargo, npm and file pools one after another and wait for the
 /// last to drain: on 10-14 one suite or none was running for 3,134s of
@@ -6178,30 +5296,12 @@ mod one_queue_4022 {
         assert!(t.iter().all(|x| x.0 == "m" || !overlap(x, m)), "a job ran beside the alone job: {:?}", t);
     }
 
-    /// NEGATIVE PROOF: the old shape (a pool per stage, one after another) can
-    /// not overlap the tail, so the first test's check must fail on it.
-    #[test]
-    fn negative_proof_stage_by_stage_pools_leave_the_tail_alone() {
-        let t0 = std::time::Instant::now();
-        let log = Mutex::new(Vec::new());
-        let run = |k: &str, ms: u64| {
-            let a = t0.elapsed().as_millis();
-            std::thread::sleep(Duration::from_millis(ms));
-            log.lock().unwrap().push((k.to_string(), a, t0.elapsed().as_millis()));
-        };
-        run_pool_gated(&["s1-long".to_string()], 2, 100.0, || Some(0.0), Duration::ZERO, Duration::ZERO, |k| run(k, 300));
-        run_pool_gated(&["s2-a".to_string(), "s2-b".to_string()], 2, 100.0, || Some(0.0), Duration::ZERO, Duration::ZERO, |k| run(k, 50));
-        let t = log.into_inner().unwrap();
-        let long = t.iter().find(|x| x.0 == "s1-long").unwrap().clone();
-        assert!(!t.iter().filter(|x| x.0.starts_with("s2")).any(|x| overlap(x, &long)),
-            "the check cannot tell the two shapes apart");
-    }
 }
 
 #[cfg(test)]
 mod load_aware_4022 {
     use super::*;
-    use std::time::Duration;
+
 
     #[test]
     fn parses_sysctl_and_uptime_shapes() {
@@ -6223,112 +5323,6 @@ mod load_aware_4022 {
         assert!(cw >= 1 && nt >= 1 && nw >= 1 && jw >= 1 && bw >= 1);
     }
 
-    #[test]
-    fn nextest_args_carry_the_thread_share() {
-        let a = nextest_run_args_threads(&[], &[], Some(2));
-        let i = a.iter().position(|x| x == "--test-threads").expect("--test-threads present");
-        assert_eq!(a[i + 1], "2");
-        assert!(!nextest_run_args(&[], &[]).contains(&"--test-threads".to_string()), "legacy shape unchanged");
-    }
-
-    /// Negative proof (#3734): the state the gate exists for — a box over cap —
-    /// must be observable as waits, and must NOT drop or skip a unit.
-    #[test]
-    fn negative_proof_over_cap_holds_but_never_skips() {
-        let units: Vec<String> = (0..6).map(|i| format!("u{}", i)).collect();
-        let (out, waits) = run_pool_gated(&units, 3, 16.0, || Some(999.0),
-            Duration::from_millis(30), Duration::from_millis(10), |u| u.len());
-        assert!(waits > 0, "over cap must register as waits");
-        assert_eq!(out.len(), 6, "bounded gate: every unit still runs");
-        assert_eq!(out.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(),
-            units.iter().map(String::as_str).collect::<Vec<_>>(), "input order kept");
-    }
-
-    /// Control: under cap the gate is invisible — zero waits, same results.
-    #[test]
-    fn control_under_cap_never_waits() {
-        let units: Vec<String> = (0..6).map(|i| format!("u{}", i)).collect();
-        let (out, waits) = run_pool_gated(&units, 3, 16.0, || Some(1.5),
-            Duration::from_secs(1), Duration::from_millis(10), |u| u.len());
-        assert_eq!(waits, 0);
-        assert_eq!(out.len(), 6);
-    }
-
-    /// An unreadable load must not hold the run (no data ≠ over cap).
-    #[test]
-    fn unreadable_load_does_not_gate() {
-        let units: Vec<String> = vec!["a".into(), "b".into()];
-        let (out, waits) = run_pool_gated(&units, 2, 16.0, || None,
-            Duration::from_secs(1), Duration::from_millis(10), |u| u.len());
-        assert_eq!((out.len(), waits), (2, 0));
-    }
-}
-
-/// #4022 — bounded worker pool over units. Results come back in INPUT order
-/// regardless of completion order, so the per-suite report lines and the case
-/// accumulation stay deterministic — a shuffled report would make two runs of
-/// the same night diff against each other.
-pub fn run_pool<T, F>(units: &[String], workers: usize, f: F) -> Vec<(String, T)>
-where
-    T: Send + 'static,
-    F: Fn(&str) -> T + Send + Sync,
-{
-    use std::sync::{Arc, Mutex};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    if units.is_empty() { return Vec::new(); }
-    let workers = workers.max(1).min(units.len());
-    let next = AtomicUsize::new(0);
-    let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
-        Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
-    std::thread::scope(|s| {
-        for _ in 0..workers {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::SeqCst);
-                if i >= units.len() { break; }
-                let unit = &units[i];
-                let out = f(unit);
-                slots.lock().unwrap()[i] = Some((unit.clone(), out));
-            });
-        }
-    });
-    Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
-        .into_iter().flatten().collect()
-}
-
-#[cfg(test)]
-mod run_pool_tests {
-    use super::*;
-
-    #[test]
-    fn results_come_back_in_input_order_despite_uneven_durations() {
-        let units: Vec<String> = ["slow", "fast", "mid"].iter().map(|s| s.to_string()).collect();
-        let out = run_pool(&units, 3, |u| {
-            let ms = match u { "slow" => 60, "mid" => 20, _ => 1 };
-            std::thread::sleep(std::time::Duration::from_millis(ms));
-            u.len()
-        });
-        let names: Vec<&str> = out.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, vec!["slow", "fast", "mid"]);
-    }
-
-    #[test]
-    fn negative_proof_every_unit_runs_exactly_once() {
-        // The state a broken pool produces: a dropped or double-run unit.
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static CALLS: AtomicUsize = AtomicUsize::new(0);
-        let units: Vec<String> = (0..37).map(|i| format!("u{}", i)).collect();
-        let out = run_pool(&units, 5, |_| { CALLS.fetch_add(1, Ordering::SeqCst); });
-        assert_eq!(out.len(), 37);
-        assert_eq!(CALLS.load(Ordering::SeqCst), 37);
-    }
-
-    #[test]
-    fn a_pool_of_one_is_just_the_serial_order() {
-        let units: Vec<String> = ["a", "b"].iter().map(|s| s.to_string()).collect();
-        let out = run_pool(&units, 1, |u| u.to_string());
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].0, "a");
-    }
 }
 
 /// #4022 — the serialized tail split. needs-stack marks a suite as TOUCHING the
@@ -6520,45 +5514,7 @@ mod never_ran_causes_4063 {
 
     // --- the report lists every case and splits by kind ---
 
-
     // ---- #4106 — every never-run registration in exactly one state ----
-
-    fn k(f: &str, n: &str) -> (String, String) {
-        (f.to_string(), n.to_string())
-    }
-
-    /// No file registered with the ui concern — the default for fixtures that
-    /// are not about the browser lane.
-    fn no_ui() -> std::collections::BTreeSet<String> {
-        std::collections::BTreeSet::new()
-    }
-
-    /// The four states, one file each, against a tree we declare rather than
-    /// one on disk — so the proof is about the RULES, not about this checkout.
-    fn four_state_fixture() -> (Vec<(String, String)>, Vec<(String, String)>, Vec<String>) {
-        let gap = vec![
-            k("platform/api/tests/deleted.test.ts", "gone"),
-            k("platform/api/tests/renamed.test.ts", "the registry's name"),
-            k("docs/notes/orphan.test.js", "nothing runs .js under docs"),
-            k("platform/api/tests/silent.test.ts", "unit died empty"),
-        ];
-        // the ledger spoke about renamed.test.ts, under a different name
-        let executed = vec![k("platform/api/tests/renamed.test.ts", "the runner's name")];
-        // everything but deleted.test.ts is present in the tree
-        let on_disk = vec![
-            "platform/api/tests/renamed.test.ts".to_string(),
-            "docs/notes/orphan.test.js".to_string(),
-            "platform/api/tests/silent.test.ts".to_string(),
-        ];
-        (gap, executed, on_disk)
-    }
-
-
-
-
-
-
-
 
 }
 
@@ -6763,7 +5719,7 @@ mod athena_join_4136 {
 #[cfg(test)]
 mod integration_tier_4139 {
     use super::{
-        integration_measured_report, jest_project_args, join_cases, ledger_case_from_tsv,
+        integration_measured_report, jest_project_args, join_cases,
         parse_case_tsv, parse_rows_and_names,
     };
 
@@ -6808,7 +5764,6 @@ mod integration_tier_4139 {
         assert_eq!(joined[0].2, r"escapes newlines to literal \n");
         assert_eq!(joined[0].0.test_name, r"escSparql escapes newlines to literal \n");
     }
-
 
     // "integration: 1484 needs-stack test(s) ran with the live stack" was the
     // registry count, printed before anything ran.
@@ -6959,14 +5914,6 @@ mod ui_flows_verdict_4154 {
     }
 }
 
-/// #4173 — is a package.json `test` script this lane's to grade? node:test
-/// runners name `--test`; cucumber, mocha, vitest and friends do not, and they
-/// have their own lanes. Extracted so the rule is testable without a package on
-/// disk — the shape that let "no *.test.ts files" fail a cucumber package.
-pub fn npm_test_runner_script_is_node_test(script: &str) -> bool {
-    script.contains("--test")
-}
-
 /// #4435 — how to run a node:test package one file at a time, read from its
 /// package.json `test` script: the `npm run <x>` steps that must run first
 /// (agent-adapters' tests load `../dist`, so `npm run build && node --test …`)
@@ -7105,81 +6052,7 @@ mod node_test_plan_4435 {
 /// #4236 — the integration count comes from the selection, both halves.
 #[cfg(test)]
 mod selected_needs_stack_4236 {
-    use super::{integration_report_none_selected, selected_needs_stack, TestRow};
-
-    fn ns(file: &str) -> TestRow {
-        TestRow {
-            file_path: file.to_string(),
-            covers: "x".to_string(),
-            pyramid_layer: "integration".to_string(),
-            hermeticity: "needs-stack".to_string(),
-            test_concern: String::new(),
-            needs: String::new(),
-        }
-    }
-
-    fn hermetic(file: &str) -> TestRow {
-        TestRow { hermeticity: "hermetic".to_string(), ..ns(file) }
-    }
-
-    fn in_clearing(f: &str) -> bool {
-        f.starts_with("directing/clearing/")
-    }
-
-    /// NEGATIVE PROOF — Wren's #4234, exactly. The old count filtered on the
-    /// unit alone and returned 134 while the run had selected one hermetic
-    /// file; the two lines then read "134 ran" and "0 ran of 134".
-    #[test]
-    fn a_selection_that_names_no_needs_stack_test_counts_zero() {
-        let rows = vec![
-            ns("directing/clearing/tests/a.test.ts"),
-            ns("directing/clearing/tests/b.test.ts"),
-            hermetic("directing/clearing/tests/4223-clearing-render.test.ts"),
-        ];
-        let chosen: std::collections::BTreeSet<String> =
-            ["directing/clearing/tests/4223-clearing-render.test.ts".to_string()]
-                .into_iter()
-                .collect();
-        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 0);
-        // the unit still registers two — that is the number the new line names
-        let unit = rows
-            .iter()
-            .filter(|r| r.hermeticity == "needs-stack" && in_clearing(&r.file_path))
-            .count();
-        assert_eq!(unit, 2);
-    }
-
-    /// A selection that DOES name one counts exactly that one, not the unit.
-    #[test]
-    fn a_selection_that_names_one_counts_one() {
-        let rows = vec![
-            ns("directing/clearing/tests/a.test.ts"),
-            ns("directing/clearing/tests/b.test.ts"),
-        ];
-        let chosen: std::collections::BTreeSet<String> =
-            ["directing/clearing/tests/a.test.ts".to_string()].into_iter().collect();
-        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 1);
-    }
-
-    /// An empty selection is a full run, not "nothing selected".
-    #[test]
-    fn an_empty_selection_counts_the_unit() {
-        let rows = vec![
-            ns("directing/clearing/tests/a.test.ts"),
-            ns("directing/clearing/tests/b.test.ts"),
-        ];
-        let chosen = std::collections::BTreeSet::new();
-        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 2);
-    }
-
-    /// A file outside the run's units never counts, selected or not.
-    #[test]
-    fn a_file_outside_the_units_never_counts() {
-        let rows = vec![ns("platform/api/tests/z.test.ts")];
-        let chosen: std::collections::BTreeSet<String> =
-            ["platform/api/tests/z.test.ts".to_string()].into_iter().collect();
-        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 0);
-    }
+    use super::integration_report_none_selected;
 
     /// The none-selected line names the unit's count so the reader can tell
     /// "the diff covers none" from "the unit has none".
@@ -7588,7 +6461,6 @@ pub fn exercisers_of(
     out
 }
 
-
 /// Express-style route registrations in a source file, with each handler's
 /// extent: (first line, last line, route paths), 1-based. A registration is a
 /// line starting `app.|router.` + get/post/put/patch/delete/all, its path(s) the
@@ -7874,7 +6746,6 @@ mod own_build_4442 {
     }
 }
 
-
 // #4499 reopen 3 — found by writing the rule into the graph: a test that named
 // one plist exercised all 16 in its folder (`com.chorus.x.plist` imported as
 // `com`), and a test naming `roles/silas/` exercised `.sensitive-paths` there.
@@ -7909,16 +6780,11 @@ mod extension_4499 {
     }
 }
 
-
 /// #4531 — the env var every spawned suite reads to learn its lane, and its
 /// value: `nightly` or `card`. Timing checks run only when it says nightly.
 pub const LANE_ENV: &str = "WERK_TEST_LANE";
 pub fn lane_name(nightly: bool) -> &'static str {
     if nightly { "nightly" } else { "card" }
-}
-/// True only under the nightly lane; unset (a developer's shell) is not nightly.
-pub fn timing_checks_on() -> bool {
-    std::env::var(LANE_ENV).as_deref() == Ok("nightly")
 }
 
 #[cfg(test)]
