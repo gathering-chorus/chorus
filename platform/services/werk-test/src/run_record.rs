@@ -764,7 +764,7 @@ pub struct RunRecord {
     pub errors: Option<crate::why::ErrorCounts>,
 }
 
-/// `pipeline_run_body` plus the #4156 run record fields.
+/// The PipelineRun body (`pipeline_run_body_with`) plus the #4156 run record fields.
 pub fn pipeline_run_record_body(
     rows: &[SuiteRow],
     name: &str,

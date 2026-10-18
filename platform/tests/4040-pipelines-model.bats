@@ -127,7 +127,7 @@ sq() {
 # ── AC5: the daily runner emits a PipelineRun with metrics ──
 @test "AC5 nightly runner emits a PipelineRun row with metrics + forPipeline" {
   NS="$REPO/platform/services/werk-test/src/run_record.rs"   # #4145 — the runner owns the emit
-  grep -q 'pub fn pipeline_run_body' "$NS"
+  grep -q 'pub fn pipeline_run_record_body' "$NS"   # #4541 pass 1: the thin pipeline_run_body wrapper was dead (no caller); all_scope.rs:853 emits through this one
   grep -q 'forPipeline' "$NS"
   grep -q 'testsFailed' "$NS"
   grep -q 'runDurationMs' "$NS"
