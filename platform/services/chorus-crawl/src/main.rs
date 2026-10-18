@@ -1937,7 +1937,19 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
             Some(MessageRow { created_at: f.next()?, kind: f.next()?, from: f.next()?, status: f.next().unwrap_or("") })
         }).collect();
         let mut c = count_messages(&rows, &today);
-        fill_zero_days(&mut c, &["nudges", "alerts", "jeff-inputs", "messages-sent"], &today);
+        // sent vs kept in Buzz, by pulse's reader (the countKinds rule, #4592)
+        let reader = format!("{root}/platform/pulse/dist/buzz-day-counts.js");
+        let relay = std::env::var("PULSE_BUZZ_RELAY_URL").unwrap_or_else(|_| "ws://127.0.0.1:13000".into());
+        let relay_host = std::env::var("PULSE_BUZZ_RELAY_HOST").unwrap_or_else(|_| "192.168.86.242:3000".into());
+        match Command::new("node").args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
+            Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
+            Ok(o) => println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()),
+            Err(e) => println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"),
+        }
+        let kept_read = c.keys().any(|(_, m, _)| m == "messages-kept");
+        let mut metrics = vec!["nudges", "alerts", "jeff-inputs"];
+        if kept_read { metrics.extend(["messages-sent", "messages-kept"]); }
+        fill_zero_days(&mut c, &metrics, &today);
         c
     } else {
         let home = std::env::var("HOME").unwrap_or_default();

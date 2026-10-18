@@ -65,7 +65,7 @@ function frameText(data: WebSocket.RawData): string {
   return Buffer.from(data as ArrayBuffer).toString('utf8');
 }
 
-function signNote(signer: BuzzSigner, createdAt: number, kind: number, tags: string[][], content: string): BuzzNote {
+export function signNote(signer: BuzzSigner, createdAt: number, kind: number, tags: string[][], content: string): BuzzNote {
   const id = bytesToHex(sha256(utf8ToBytes(JSON.stringify([0, signer.pubkey, createdAt, kind, tags, content]))));
   return { id, pubkey: signer.pubkey, created_at: createdAt, kind, tags, content, sig: signer.sign(id) };
 }

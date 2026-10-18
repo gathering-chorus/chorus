@@ -68,8 +68,9 @@ pub struct MessageRow<'a> {
 }
 
 /// Messages per Boston day before `today`: nudges (a role sent it, also per
-/// role), alerts (system or pulse sent it), jeff-inputs, and messages-sent
-/// (delivered). Matches Kade's reference count (#4634 pair, 18:34).
+/// role), alerts (system or pulse sent it) and jeff-inputs. messages-sent and
+/// messages-kept come from pulse's Buzz reader (the countKinds rule), so the
+/// alert compares like with like (Kade, #4634).
 pub fn count_messages(rows: &[MessageRow], today: &str) -> Counts {
     let mut c = Counts::new();
     let mut add = |day: &str, metric: &str, role: Option<&str>| {
@@ -88,9 +89,6 @@ pub fn count_messages(rows: &[MessageRow], today: &str) -> Counts {
             }
             "jeff-input" => add(&day, "jeff-inputs", None),
             _ => {}
-        }
-        if r.status == "delivered" {
-            add(&day, "messages-sent", None);
         }
     }
     c
@@ -271,6 +269,22 @@ pub fn missing_days(counts: &Counts) -> Vec<String> {
 
 pub type ReadingRow = (String, Vec<(String, String)>);
 
+/// The Buzz reader's lines ({"day","sent","kept"}) as messages-sent and
+/// messages-kept counts. A line it can't read is skipped.
+pub fn buzz_counts(jsonl: &str) -> Counts {
+    let mut c = Counts::new();
+    for l in jsonl.lines() {
+        let num = |k: &str| -> Option<u64> {
+            let at = l.find(&format!("\"{k}\":"))? + k.len() + 3;
+            l[at..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
+        };
+        let (Some(day), Some(sent), Some(kept)) = (json_str(l, "day"), num("sent"), num("kept")) else { continue };
+        c.insert((day.to_string(), "messages-sent".into(), None), sent);
+        c.insert((day.to_string(), "messages-kept".into(), None), kept);
+    }
+    c
+}
+
 /// What a pass must write: readings not yet stored, readings whose value
 /// changed (a late-arriving line), and how many already match.
 pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>) -> (Vec<ReadingRow>, Vec<ReadingRow>, usize) {
@@ -326,7 +340,7 @@ mod tests {
         assert_eq!(get("nudges", Some("kade")), Some(1));
         assert_eq!(get("alerts", None), Some(1));
         assert_eq!(get("jeff-inputs", None), Some(1));
-        assert_eq!(get("messages-sent", None), Some(2));
+        assert_eq!(get("messages-sent", None), None, "sent comes from the Buzz reader, not here");
         assert!(c.keys().all(|(d, _, _)| d != "2026-10-18"), "today must be left to the next pass");
     }
 
@@ -443,5 +457,13 @@ mod tests {
         assert_eq!(r.0, "events-spine-write-age-2026-10-18");
         assert!(r.1.contains(&("readingValue".to_string(), "0.17".to_string())));
         assert!(r.1.contains(&("readingUnit".to_string(), "hours".to_string())));
+    }
+
+    #[test]
+    fn the_buzz_reader_lines_become_sent_and_kept() {
+        let c = buzz_counts("{\"day\":\"2026-10-17\",\"sent\":837,\"kept\":0}\nnot json\n");
+        assert_eq!(c.get(&("2026-10-17".into(), "messages-sent".into(), None)), Some(&837));
+        assert_eq!(c.get(&("2026-10-17".into(), "messages-kept".into(), None)), Some(&0));
+        assert_eq!(c.len(), 2);
     }
 }
