@@ -570,6 +570,42 @@ nav.top .n {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.msg .body pre, .message .message-text pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  background: var(--sunk, #161b22);
+  border: 1px solid var(--line2, #30363d);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.msg .body code, .message .message-text code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.msg .body pre code, .message .message-text pre code {
+  white-space: pre;
+}
+.msg .body ul, .message .message-text ul,
+.msg .body ol, .message .message-text ol {
+  margin: 4px 0 6px 18px;
+  padding-left: 0;
+}
+.msg .body li, .message .message-text li {
+  margin: 2px 0;
+  line-height: 1.4;
+}
+.msg .body a, .message .message-text a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg .body a.cid, .message .message-text a.cid {
+  text-decoration: none;
+}
 .msg .nm, .message-author {
   font-weight: 600;
   font-size: 13px;
@@ -887,6 +923,19 @@ tr.you td {
   .app-header {
     padding: 4px 10px;
   }
+  /* #4597 / #4617 — status dots sit beside title in app header without word clutter on narrow width */
+  .app-header .trust-strip .chip {
+    font-size: 0;
+  }
+  .app-header .trust-strip .chip .fail-source-name {
+    display: none;
+  }
+  .app-header .trust-strip .chip i {
+    margin-right: 0;
+  }
+  .app-header .trust-strip {
+    gap: 6px;
+  }
   /* #4575 — on a phone the sender line sits above the text, so the text gets the full width */
   .message { flex-direction: column; gap: 2px; }
   /* #4575 — iOS zooms the page when a field under 16px gets focus; that was the "resize" */
@@ -1001,9 +1050,16 @@ tr.you td {
   flex-shrink: 0;
   transition: border-color 0.15s ease;
   user-select: none;
+  text-decoration: none;
+  color: inherit;
 }
 .actor-tile:hover {
   border-color: var(--accent);
+}
+.actor-tile.on {
+  border-color: var(--accent);
+  background: var(--accentbg);
+  font-weight: 600;
 }
 .actor-tile-info {
   display: flex;

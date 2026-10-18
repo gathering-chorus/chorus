@@ -13,11 +13,13 @@ export interface DrawerCard {
   domain?: string;
   description?: string;
   acItems?: Array<{ text: string; checked: boolean }>;
+  comments?: Array<{ author?: string; text: string; time?: string }>;
 }
 
 export interface CardPayload {
   kind?: string;
   servedFrom?: string;
+  comments?: Array<{ author?: string; text?: string; body?: string; time?: string; created?: string }>;
   data?: {
     label?: string;
     title?: string;
@@ -29,6 +31,7 @@ export interface CardPayload {
     owner?: string;
     ac_items?: Array<{ text?: string; label?: string; checked?: boolean }>;
     acItems?: Array<{ text?: string; label?: string; checked?: boolean }>;
+    comments?: Array<{ author?: string; text?: string; body?: string; time?: string; created?: string }>;
   };
   links?: {
     assignee?: string;
@@ -70,6 +73,17 @@ function extractAcItems(data: CardPayload['data']): Array<{ text: string; checke
   return undefined;
 }
 
+function extractComments(json: CardPayload): Array<{ author?: string; text: string; time?: string }> | undefined {
+  const rawList = json.data?.comments ?? json.comments;
+  if (!Array.isArray(rawList)) return undefined;
+  const recent = rawList.slice(-3);
+  return recent.map((c) => ({
+    author: c.author,
+    text: String(c.text ?? c.body ?? ''),
+    time: c.time ?? c.created,
+  }));
+}
+
 function extractOwner(json: CardPayload): string | undefined {
   const data = json.data;
   const raw = json.links?.assignee ?? json.links?.ownedBy ?? data?.creator ?? data?.owner ?? json.owner;
@@ -90,6 +104,7 @@ export function toDrawerCard(cardId: number, json: CardPayload | null): DrawerCa
     domain: json.servedFrom ?? data.domain,
     description: data.description,
     acItems: extractAcItems(data),
+    comments: extractComments(json),
   };
 }
 

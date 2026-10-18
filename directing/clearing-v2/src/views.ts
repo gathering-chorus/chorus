@@ -316,14 +316,98 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
   return renderPageShell('Teammates', 'roles', content, sources);
 }
 
-function formatRoomText(raw: string): string {
-  return escapeHtml(raw)
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+function formatInlineHtml(text: string): string {
+  let escaped = escapeHtml(text);
+
+  // Preserve inline code first so its contents are not bolded or linked
+  const inlineCodes: string[] = [];
+  escaped = escaped.replace(/`([^`\n]+)`/g, (_match, code) => {
+    inlineCodes.push(`<code>${code}</code>`);
+    return `\x00CODE_${inlineCodes.length - 1}\x00`;
+  });
+
+  // Bold **...**
+  escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+
+  // URLs (http/https): clickable, open in new tab (AC2)
+  escaped = escaped.replace(/(https?:\/\/[^\s<>"']+)/g, (_match, url) => {
+    const m = url.match(/^(https?:\/\/[^\s<>"']+?)([.,;!?)]*)$/);
+    const cleanUrl = m ? m[1] : url;
+    const punct = m ? m[2] : '';
+    return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${cleanUrl}</a>${punct}`;
+  });
+
+  // #card refs
+  escaped = escaped.replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+
+  // Restore inline code
+  inlineCodes.forEach((code, i) => {
+    escaped = escaped.replace(`\x00CODE_${i}\x00`, code);
+  });
+
+  return escaped;
 }
 
-function renderRoomMessage(m: RoomsData['messages'][number]): string {
+export function formatRoomText(raw: string): string {
+  // 1. Extract code fences first so their contents are preserved literally (AC4)
+  const fences: string[] = [];
+  const textWithoutFences = raw.replace(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g, (_match, fence) => {
+    const m = fence.match(/^```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```$/);
+    const lang = m ? m[1] : '';
+    const code = m ? m[2].replace(/\n$/, '') : fence.slice(3, -3);
+    const langCls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
+    fences.push(`<pre><code${langCls}>${escapeHtml(code)}</code></pre>`);
+    return `\x00FENCE_${fences.length - 1}\x00`;
+  });
+
+  // 2. Format lines and list blocks
+  const lines = textWithoutFences.split('\n');
+  const output: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  for (const [i, line] of lines.entries()) {
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)$/);
+
+    if (bulletMatch) {
+      if (inOl) { output.push('</ol>'); inOl = false; }
+      if (!inUl) { output.push('<ul>'); inUl = true; }
+      output.push(`<li>${formatInlineHtml(bulletMatch[1])}</li>`);
+    } else if (numberedMatch) {
+      if (inUl) { output.push('</ul>'); inUl = false; }
+      if (!inOl) { output.push('<ol>'); inOl = true; }
+      output.push(`<li>${formatInlineHtml(numberedMatch[2])}</li>`);
+    } else {
+      if (inUl) { output.push('</ul>'); inUl = false; }
+      if (inOl) { output.push('</ol>'); inOl = false; }
+
+      if (line.includes('\x00FENCE_')) {
+        output.push(line);
+      } else {
+        if (i > 0 && output.length > 0 && !output[output.length - 1].endsWith('</ul>') && !output[output.length - 1].endsWith('</ol>')) {
+          output.push('<br>');
+        }
+        if (line.length > 0) {
+          output.push(formatInlineHtml(line));
+        }
+      }
+    }
+  }
+  if (inUl) output.push('</ul>');
+  if (inOl) output.push('</ol>');
+
+  let result = output.join('');
+
+  // Restore code fences
+  fences.forEach((fence, i) => {
+    result = result.replace(`\x00FENCE_${i}\x00`, fence);
+  });
+
+  return result;
+}
+
+export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
   const thinkingClass = isThinking ? ' msg-thinking' : '';
@@ -384,6 +468,11 @@ const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style=
         <div class="card-ac-list" id="drawer-card-ac"></div>
       </div>
 
+      <div id="drawer-card-comments-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
+        <div class="sec-t" style="margin-bottom:6px">Recent Comments</div>
+        <div class="card-comments-list" id="drawer-card-comments"></div>
+      </div>
+
       <div id="drawer-card-cws-container" style="margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
         <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
           <div class="sec-t">Pipeline State <span class="meta mono">/cws</span></div>
@@ -417,6 +506,8 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       var descEl = document.getElementById('drawer-card-desc');
       var acCont = document.getElementById('drawer-card-ac-container');
       var acEl = document.getElementById('drawer-card-ac');
+      var commentsCont = document.getElementById('drawer-card-comments-container');
+      var commentsEl = document.getElementById('drawer-card-comments');
       var cwsEl = document.getElementById('drawer-card-cws');
       var cwsMotion = document.getElementById('drawer-card-cws-motion');
       var cwsInd = document.getElementById('drawer-cws-indicator');
@@ -432,11 +523,13 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       if (descEl) descEl.textContent = '';
       if (acCont) acCont.style.display = 'none';
       if (acEl) acEl.innerHTML = '';
+      if (commentsCont) commentsCont.style.display = 'none';
+      if (commentsEl) commentsEl.innerHTML = '';
       if (cwsEl) cwsEl.textContent = 'Loading pipeline state...';
       if (cwsMotion) cwsMotion.style.display = 'none';
       if (cwsInd) cwsInd.innerHTML = '<span class="chip">reading pipeline...</span>';
 
-      // 1. Fetch card details first so title, owner, status, description, and AC display immediately
+      // 1. Fetch card details first so title, owner, status, description, AC, and comments display immediately
       try {
         var res = await fetch('/api/cards/' + id);
         if (String(id) === currentCardDrawerId) {
@@ -464,6 +557,18 @@ const ROOM_DRAWER_SCRIPT = `  <script>
                     '</div>';
                 }).join('');
                 acCont.style.display = 'block';
+              }
+
+              if (c.comments && c.comments.length > 0 && commentsEl && commentsCont) {
+                commentsEl.innerHTML = c.comments.slice(-3).map(function(item) {
+                  var authorText = item.author ? '<b>' + drawerEscape(item.author) + '</b>' : '<b>comment</b>';
+                  var timeText = item.time ? ' <span class="meta" style="font-size:11px">' + drawerEscape(item.time) + '</span>' : '';
+                  return '<div class="comment-item" style="margin:8px 0;padding:6px 8px;background:var(--bg-primary, rgba(0,0,0,0.03));border:1px solid var(--line2);border-radius:4px;font-size:12.5px;line-height:1.4">' +
+                    '<div style="margin-bottom:3px;font-size:11.5px">' + authorText + timeText + '</div>' +
+                    '<div style="white-space:pre-wrap">' + drawerEscape(item.text) + '</div>' +
+                    '</div>';
+                }).join('');
+                commentsCont.style.display = 'block';
               }
             }
           } else {
@@ -508,8 +613,9 @@ const ROOM_DRAWER_SCRIPT = `  <script>
             } else if (p.status === 'failed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">failed' + (p.failedStep ? ' at ' + drawerEscape(p.failedStep) : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
-            } else if (p.status === 'unmeasured') {
-              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">unmeasured' + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
+            } else if (p.status === 'unmeasured' || p.status === 'stale' || p.isStale) {
+              var staleLabel = (p.isStale || p.status === 'stale') ? 'stale' : 'unmeasured';
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">' + staleLabel + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
             } else if (p.status === 'landed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-ok">landed</span>';
@@ -636,13 +742,41 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     };
   });
 
+  const peopleRowHtml = `
+    <div class="actor-rail people-row" id="rooms-people-row">
+      <a class="actor-tile team-tile${room === 'team' ? ' on' : ''}" href="/rooms/team" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/team';return false;">
+        <span class="av a-team">#</span>
+        <div class="actor-tile-info">
+          <div class="actor-tile-name"><b>#team</b></div>
+          <div class="actor-tile-card">channel</div>
+        </div>
+      </a>
+      ${railActors.map(a => {
+        const andon = roleAndonLight(a);
+        const cardText = a.cards && a.cards.length > 0
+          ? a.cards.map(c => `#${c.id}`).join(', ')
+          : (a.card ? `#${a.card.id}` : 'no card');
+        const isActive = room.toLowerCase() === a.id.toLowerCase();
+        return `
+          <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
+            <span class="av a-${a.id}">${a.name.charAt(0)}</span>
+            <div class="actor-tile-info">
+              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${escapeHtml(a.name)}</b></div>
+              <div class="actor-tile-card">${escapeHtml(cardText)}</div>
+            </div>
+          </a>
+        `;
+      }).join('')}
+    </div>`;
+
   const content = `
   <div class="rooms-view">
+    ${peopleRowHtml}
     <div class="rooms">
       <main class="chat chat-container" style="flex:1;min-width:0">
         <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
           <div style="min-width:0;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
-            <select id="room-picker" class="room-picker" onchange="window.location.href='/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
+            <select id="room-picker" class="room-picker" onchange="window.location.href=(window.CLEARING_BASE || '') + '/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
               <optgroup label="Rooms">
                 ${data.channels.map(c => `<option value="${c}"${room === c ? ' selected' : ''}># ${c}</option>`).join('')}
               </optgroup>
@@ -720,7 +854,8 @@ ${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reache
   return renderPageShell('Messages today', 'counts', content, sources);
 }
 
-function escapeHtml(t: string): string {
+function escapeHtml(t: string | undefined): string {
+  if (!t) return '';
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
