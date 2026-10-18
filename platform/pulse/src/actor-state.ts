@@ -929,6 +929,21 @@ async function appendSpineTailActions(
   }
 }
 
+function resolveNodeStep(
+  nodes: Array<{ step: { name: string }; statusLabel: string }>,
+  runStatusLabel?: string
+): string {
+  const activeNode = nodes.find((n) => n.statusLabel === 'running') ||
+    nodes.find((n) => n.statusLabel === 'waiting') ||
+    nodes.find((n) => n.statusLabel === 'failed');
+  if (activeNode) {
+    const nodeName = activeNode.step.name.replace(/^skill-/, '').replace(/-pipeline$/, '');
+    return activeNode.statusLabel === 'failed' ? `failed at ${nodeName}` : nodeName;
+  }
+  if (runStatusLabel === 'succeeded') return 'landed';
+  return runStatusLabel || 'coding';
+}
+
 export async function fetchDaguCardSteps(
   daguBase: string,
   wipCards: WipCardFact[],
@@ -939,21 +954,36 @@ export async function fetchDaguCardSteps(
   try {
     const res = await fetch(`${daguBase}/api/v1/dag-runs?name=cicd`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) {
-      for (const c of wipCards) steps[c.cardId] = 'coding';
+      unmeasured.push({ source: 'dagu:runs', reason: `HTTP ${res.status}` });
+      for (const c of wipCards) steps[c.cardId] = 'unmeasured';
       return steps;
     }
-    const json = (await res.json()) as { dagRuns?: Array<{ params?: string; dagRunId: string; statusLabel?: string }> };
+    const json = (await res.json()) as {
+      dagRuns?: Array<{
+        params?: string;
+        dagRunId: string;
+        statusLabel?: string;
+        queuedAt?: string;
+        startedAt?: string;
+      }>;
+    };
     const dagRuns = json.dagRuns || [];
 
     await Promise.all(
       wipCards.map(async (card) => {
         // eslint-disable-next-line security/detect-non-literal-regexp
         const cardPattern = new RegExp(`(?:^|\\s)CARD="?${card.cardId}"?(?:\\s|$)`);
-        const matchingRun = dagRuns.find((r) => r.params && cardPattern.test(r.params));
-        if (!matchingRun) {
+        const matchingRuns = dagRuns.filter((r) => r.params && cardPattern.test(r.params));
+        if (matchingRuns.length === 0) {
           steps[card.cardId] = 'coding';
           return;
         }
+        matchingRuns.sort((a, b) => {
+          const tA = new Date(a.queuedAt || a.startedAt || 0).getTime();
+          const tB = new Date(b.queuedAt || b.startedAt || 0).getTime();
+          return tB - tA;
+        });
+        const matchingRun = matchingRuns[0];
         try {
           const detailRes = await fetch(`${daguBase}/api/v1/dags/cicd/dag-runs/${matchingRun.dagRunId}`, { signal: AbortSignal.timeout(1500) });
           if (detailRes.ok) {
@@ -964,25 +994,18 @@ export async function fetchDaguCardSteps(
               };
             };
             const nodes = detailJson.dagRun?.nodes || [];
-            const activeNode = nodes.find((n) => n.statusLabel === 'running') ||
-              nodes.find((n) => n.statusLabel === 'waiting') ||
-              nodes.find((n) => n.statusLabel === 'failed');
-            if (activeNode) {
-              steps[card.cardId] = activeNode.step.name.replace(/^skill-/, '').replace(/-pipeline$/, '');
-            } else {
-              steps[card.cardId] = matchingRun.statusLabel === 'succeeded' ? 'landed' : (matchingRun.statusLabel || 'coding');
-            }
+            steps[card.cardId] = resolveNodeStep(nodes, matchingRun.statusLabel);
           } else {
-            steps[card.cardId] = 'coding';
+            steps[card.cardId] = 'unmeasured';
           }
         } catch {
-          steps[card.cardId] = 'coding';
+          steps[card.cardId] = 'unmeasured';
         }
       })
     );
   } catch (e: unknown) {
     unmeasured.push({ source: 'dagu:runs', reason: e instanceof Error ? e.message : String(e) });
-    for (const c of wipCards) steps[c.cardId] = 'coding';
+    for (const c of wipCards) steps[c.cardId] = 'unmeasured';
   }
   return steps;
 }

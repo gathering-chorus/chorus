@@ -414,7 +414,7 @@ describe('Actor State - WIP Cards and Steps', () => {
         { cardId: 4595, title: TITLE_4595, owner: ROLE_ABBY }, // no step, cardSteps has it
       ],
       cardSteps: {
-        4595: 'werk-build',
+        4595: 'failed at werk-build',
       },
     };
 
@@ -422,7 +422,7 @@ describe('Actor State - WIP Cards and Steps', () => {
     const abby = states.find((s) => s.aboutPrincipal === P_ABBY);
     expect(abby?.cards).toHaveLength(2);
     expect(abby?.cards[0].step).toBe('werk-test');
-    expect(abby?.cards[1].step).toBe('werk-build');
+    expect(abby?.cards[1].step).toBe('failed at werk-build');
   });
 });
 
