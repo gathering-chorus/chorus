@@ -530,7 +530,15 @@ export function renderBoardPage(columns: BoardColumn[], openCard: number | null,
         ${c.ok
           ? (c.cards.length === 0
             ? '<div class="meta">0 cards</div>'
-            : c.cards.map((k) => `<div class="board-card" data-open-card="${k.id}" onclick="openCardDrawer('${k.id}');return false;"><a class="cid card-ref" href="#" onclick="openCardDrawer('${k.id}');return false;">#${k.id}</a> ${escapeHtml(k.title)}${k.owner ? ` <span class="meta">${escapeHtml(k.owner)}</span>` : ''}</div>`).join(''))
+            : c.cards.map((k) => `
+            <div class="board-card" data-open-card="${k.id}" onclick="openCardDrawer('${k.id}');return false;">
+              <div class="task-id"><a class="cid card-ref" href="#" onclick="openCardDrawer('${k.id}');return false;">#${k.id}</a></div>
+              <div class="board-card-title">${escapeHtml(k.title)}</div>
+              ${k.owner ? `
+                <div class="board-card-meta">
+                  <span>${escapeHtml(k.owner)}</span>
+                </div>` : ''}
+            </div>`).join(''))
           : renderUnmeasured('board-unmeasured', c.reason)}
       </section>`;
   const content = `
