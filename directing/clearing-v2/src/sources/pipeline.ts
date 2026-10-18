@@ -203,7 +203,8 @@ export async function fetchCardPipeline(
   return new Promise<CardPipelineStatus>((resolve) => {
     execFile('python3', [binPath, String(cardId)], { timeout: 10000, env: process.env }, (err, stdout, stderr) => {
       if (err) {
-        const isTimeout = (err as any).killed || (err as any).signal === 'SIGTERM' || err.message?.includes('timed out');
+        const execErr = err as { killed?: boolean; signal?: string; message?: string };
+        const isTimeout = Boolean(execErr.killed || execErr.signal === 'SIGTERM' || execErr.message?.includes('timed out'));
         const reason = isTimeout ? 'Timed out after 10s' : (err.message || stderr || 'Failed to read status');
         return resolve(buildUnmeasuredStatus(cardId, reason));
       }
