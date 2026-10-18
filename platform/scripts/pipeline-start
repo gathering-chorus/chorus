@@ -35,16 +35,25 @@ fi
 # (deploy-werk puts it there).
 installed="${CHORUS_BIN:-$HOME/.chorus/bin}"
 slot="$CHORUS_WERK_BASE/$role-bin"
-changed_verbs() {
-  git -C "$werk" diff --name-only origin/main...HEAD 2>/dev/null |
-    awk -F/ '$2=="services" && NF>3 {print $1"/services/"$3} $2=="products" && $4=="api" && NF>4 {print $1"/products/"$3"/api"}' |
+changed_verbs() { # the card's changed paths on stdin
+  awk -F/ '$2=="services" && NF>3 {print $1"/services/"$3} $2=="products" && $4=="api" && NF>4 {print $1"/products/"$3"/api"}' |
     sort -u | while read -r dir; do
       [ -f "$werk/$dir/Cargo.toml" ] || continue
       sed -n 's/^name *= *"\(.*\)".*/\1/p' "$werk/$dir/Cargo.toml"
     done
 }
 if [ -d "$slot" ]; then
-  mine=" $(changed_verbs | tr '\n' ' ') "
+  # #4602 — a werk another user owns (abby-normal's, uid 505) is "dubious
+  # ownership" to git: it exited 129 inside the old pipeline here and
+  # set -e ended the script before the enqueue, silently (Jeff 10-18 08:18).
+  # Trust the card's own werk and no other (the #4599 pattern), and say so
+  # when git still cannot read the diff.
+  if ! diff_names="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$werk" \
+        git -C "$werk" diff --name-only origin/main...HEAD 2>&1)"; then
+    echo "pipeline-start: git could not read #$card's diff in $werk: ${diff_names:-no message}; nothing was enqueued" >&2
+    exit 1
+  fi
+  mine=" $(changed_verbs <<<"$diff_names" | tr '\n' ' ') "
   for f in "$slot"/*; do
     name="$(basename "$f")"
     case "$name" in *.*) continue ;; esac
