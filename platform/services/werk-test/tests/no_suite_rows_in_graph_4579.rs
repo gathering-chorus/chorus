@@ -32,7 +32,7 @@ fn src_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
 
 #[test]
 fn werk_test_writes_no_suite_or_result_rows_to_the_graph() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let src = Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     src_files(&src, &mut files);
     // a guard whose target is gone must fail loudly, never pass on nothing
