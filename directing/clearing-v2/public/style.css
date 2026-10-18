@@ -463,9 +463,10 @@ nav.top .n {
 /* Rooms & Chat Layout */
 .rooms {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  min-width: 0;
   background: var(--frame);
 }
 .rside, .rooms-sidebar {
@@ -507,28 +508,35 @@ nav.top .n {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  max-width: 100%;
   flex: 1;
   background: var(--panel);
 }
 .chat-container {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
   flex: 1;
   overflow: hidden;
 }
 .messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px 0;
+  min-width: 0;
 }
 .msg, .message {
   display: flex;
   gap: 10px;
   padding: 8px 14px;
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 .msg:hover {
   background: var(--sunk);
@@ -538,6 +546,13 @@ nav.top .n {
   min-width: 0;
   font-size: 13.5px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.msg .body > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg .nm, .message-author {
   font-weight: 600;
@@ -823,6 +838,7 @@ tr.you td {
   .chat {
     flex: 1;
     min-height: 0;
+    min-width: 0;
   }
 }
 
@@ -854,7 +870,7 @@ tr.you td {
   /* #4575 — iOS zooms the page when a field under 16px gets focus; that was the "resize" */
   #composer-input { font-size: 16px; }
   /* #4575 — long words and links wrap inside the message, never past the screen edge */
-  .message-text, .msg .body > div { overflow-wrap: anywhere; }
+  .message-text, .msg .body, .msg .body > div { overflow-wrap: anywhere; word-break: break-word; }
   /* #4575 — a role's session list no longer stretches its row: one line, the full list on tap */
   .role-sessions { max-width: 9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* #4574 — on phone, board columns scroll sideways at 85vw with a peek of the next column */
@@ -903,6 +919,8 @@ tr.you td {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   height: calc(100vh - 85px);
   height: calc(100dvh - 85px);
 }
