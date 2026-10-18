@@ -617,42 +617,6 @@ const ROOM_DRAWER_SCRIPT = `  <script>
     }
   </script>`;
 
-function renderActorRailHtml(railActors: ActorRow[]): string {
-  return `
-    <div class="actor-rail" id="rooms-actor-rail">
-      ${railActors.map(a => {
-        const andon = roleAndonLight(a);
-        const cardText = a.cards && a.cards.length > 0
-          ? a.cards.map(c => `#${c.id}`).join(', ')
-          : (a.card ? `#${a.card.id}` : 'no card');
-        return `
-          <div class="actor-tile actor-tile-${a.id}" data-role="${a.id}" onclick="openRoleStream('${a.id}');return false;">
-            <span class="av a-${a.id}">${a.name.charAt(0)}</span>
-            <div class="actor-tile-info">
-              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${a.name}</b></div>
-              <div class="actor-tile-card">${escapeHtml(cardText)}</div>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>`;
-}
-
-function renderInlineNavHtml(data: RoomsData, room: string, railActors: ActorRow[]): string {
-  return `
-    <div class="rooms-nav-inline" id="rooms-nav-bar">
-      <span class="rooms-inline-group"><span class="rooms-nav-label">Rooms</span> ${data.channels.map(c => `<div class="r ${room === c ? 'on' : ''}"><a href="/rooms/${c}" style="text-decoration:none;color:inherit"># ${c}</a></div>`).join('')}</span>
-      <span class="sep">·</span>
-      <span class="rooms-inline-group"><span class="rooms-nav-label">Direct</span> ${data.directRoles.map(dr => {
-        const slug = dr.toLowerCase().replace(/\s+/g, '-');
-        const actor = railActors.find(a => a.id.toLowerCase() === slug || a.name.toLowerCase() === dr.toLowerCase());
-        const andon = roleAndonLight(actor);
-        const isActive = room === slug;
-        return `<div class="r ${isActive ? 'on' : ''}"><a href="/rooms/${slug}" style="text-decoration:none;color:inherit"><span class="andon-dot ${andon.cssClass}"></span>${dr}</a></div>`;
-      }).join('')}</span>
-    </div>`;
-}
-
 export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
   const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
   const isDirect = Boolean(directRoleMatch);
