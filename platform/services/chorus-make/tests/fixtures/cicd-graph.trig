@@ -31,30 +31,10 @@
   chorus:stepskill-cicd-demo-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-demo ; chorus:skillOrder 1 .
   chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up {caller} {card}" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-demo-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ; chorus:skillOrder 2 .
-  chorus:skill-werk-demo-validate a chorus:Skill ; rdfs:label "demo: validate (WIP, has AC)" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "validate ${CARD} ${ROLE}" .
-  chorus:stepskill-cicd-demo-validate a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-validate ; chorus:skillOrder 3 .
-  chorus:skill-werk-demo-gate-product a chorus:Skill ; rdfs:label "demo: gate product" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-gate ${CARD} ${ROLE} product" .
-  chorus:stepskill-cicd-demo-gate-product a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-gate-product ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-gate-code a chorus:Skill ; rdfs:label "demo: gate code" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-gate ${CARD} ${ROLE} code" .
-  chorus:stepskill-cicd-demo-gate-code a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-gate-code ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-gate-quality a chorus:Skill ; rdfs:label "demo: gate quality" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-gate ${CARD} ${ROLE} quality" .
-  chorus:stepskill-cicd-demo-gate-quality a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-gate-quality ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-gate-arch a chorus:Skill ; rdfs:label "demo: gate arch" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-gate ${CARD} ${ROLE} arch" .
-  chorus:stepskill-cicd-demo-gate-arch a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-gate-arch ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-gate-ops a chorus:Skill ; rdfs:label "demo: gate ops" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-gate ${CARD} ${ROLE} ops" .
-  chorus:stepskill-cicd-demo-gate-ops a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-gate-ops ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-review-1 a chorus:Skill ; rdfs:label "demo: peer review 1" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-review ${CARD} ${ROLE} 1" .
-  chorus:stepskill-cicd-demo-review-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-review-1 ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-review-2 a chorus:Skill ; rdfs:label "demo: peer review 2" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-review ${CARD} ${ROLE} 2" .
-  chorus:stepskill-cicd-demo-review-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-review-2 ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-review-3 a chorus:Skill ; rdfs:label "demo: peer review 3" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "run-review ${CARD} ${ROLE} 3" .
-  chorus:stepskill-cicd-demo-review-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-review-3 ; chorus:skillOrder 4 ; chorus:withArguments "parallel=true" .
-  chorus:skill-werk-demo-session-smoke a chorus:Skill ; rdfs:label "demo: each changed role's session signs in and makes one tool call" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "session-smoke ${CARD} ${ROLE}" .
-  chorus:stepskill-cicd-demo-session-smoke a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-session-smoke ; chorus:skillOrder 5 .
-  chorus:skill-werk-demo-announce a chorus:Skill ; rdfs:label "demo: announce (one ask per round)" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "announce ${CARD} ${ROLE}" .
-  chorus:stepskill-cicd-demo-announce a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-announce ; chorus:skillOrder 6 .
+  chorus:skill-werk-demo-pipeline a chorus:Skill ; rdfs:label "the demo: its own pipeline, called as one step" ; chorus:executor "pipeline" ; chorus:implementedBy "demo" .
+  chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo-pipeline ; chorus:skillOrder 3 .
   chorus:skill-werk-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
-  chorus:stepskill-cicd-demo-go a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-go ; chorus:skillOrder 7 .
+  chorus:stepskill-cicd-demo-go a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-go ; chorus:skillOrder 4 .
   chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
   chorus:stepskill-cicd-land-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-merge ; chorus:skillOrder 1 ; chorus:withArguments "atomic=true" .
   chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" ; chorus:arguments "{mode}" ; chorus:inputShape chorus:WerkSyncInput .
@@ -94,17 +74,7 @@
   chorus:skill-werk-review chorus:hasDomain chorus:code .
   chorus:skill-werk-deploy-demo chorus:hasDomain chorus:deploys .
   chorus:skill-werk-deploy-env-up chorus:hasDomain chorus:deploys .
-  chorus:skill-werk-demo-validate chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-gate-product chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-gate-code chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-gate-quality chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-gate-arch chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-gate-ops chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-review-1 chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-review-2 chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-review-3 chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-session-smoke chorus:hasDomain chorus:pipelines .
-  chorus:skill-werk-demo-announce chorus:hasDomain chorus:pipelines .
+  chorus:skill-werk-demo-pipeline chorus:hasDomain chorus:pipelines .
   chorus:skill-werk-go chorus:hasDomain chorus:cards .
   chorus:skill-werk-merge chorus:hasDomain chorus:version-control .
   chorus:skill-werk-sync chorus:hasDomain chorus:version-control .

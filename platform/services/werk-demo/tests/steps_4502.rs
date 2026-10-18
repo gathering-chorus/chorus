@@ -247,3 +247,15 @@ fn peer_roles_match_the_role_dirs_with_a_persona() {
     assert_ne!(source_roles(&t), want, "a fifth role must not match the four peers");
     let _ = fs::remove_dir_all(&t);
 }
+
+/// #4502 — the demo DAG can run alone ("more"): with no TRACE dagu sets
+/// CHORUS_TRACE_ID to "", which must mean a fresh trace, not an empty one.
+/// Negative proof: a real trace passed by cicd is kept as is.
+#[test]
+fn a_demo_run_alone_gets_its_own_trace_and_a_parent_trace_is_kept() {
+    let fresh = werk_demo::pick_trace(Some(String::new()));
+    assert!(!fresh.trim().is_empty(), "empty TRACE became an empty trace");
+    assert!(!werk_demo::pick_trace(Some("  ".into())).trim().is_empty());
+    assert!(!werk_demo::pick_trace(None).is_empty());
+    assert_eq!(werk_demo::pick_trace(Some("034iParent".into())), "034iParent");
+}

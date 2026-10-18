@@ -1154,6 +1154,14 @@ def fixture_4553():
         SUB_RUNS[("cicd", "p", "kid")] = [node("succeeded", "skill-werk-run"),
                                           node("failed", "skill-werk-verdict", "exit status 1\nverdict: RED — 2 types failed: unit, lint")]
         SUB_RUNS[("cicd", "p2", "none")] = []
+        def demo_child(rid, card, stopped, why):
+            """#4502 — a cicd run whose demo step called the demo child, which
+            stopped at `stopped` (None: the child names no stopped step)."""
+            kid = f"{rid}-demo"
+            SUB_RUNS[("cicd", rid, kid)] = [node("succeeded", "skill-werk-demo-validate")] + (
+                [node("failed", stopped, why)] if stopped else [])
+            return run(rid, "cicd", "failed", 0, [dict(node("failed", "skill-werk-demo-pipeline", "exit status 1"),
+                                                      children=[{"dagRunId": kid, "dagName": "demo"}])], card)
         never_ran = run("n", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("aborted", "skill-werk-review")], 160)
         all_ran = run("n2", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-test"), node("succeeded", "skill-werk-review")], 161)
         partial = run("q", "cicd", "partially_succeeded", 0, [node("failed", "skill-werk-test", "werk-test: REFUSED — x"), node("succeeded", "skill-werk-review")], 162)
@@ -1162,19 +1170,22 @@ def fixture_4553():
              "reopened" in line(150, [go], [landed], wip=True) and "landed" in line(150, [go], [landed])),
             ("a failed step names its reason",
              "REFUSED" in line(151, [refused], []) and "no reason in dagu's record" in line(151, [noise], [])),
-            # #4502 — the demo is steps: a stop names the demo step and the
-            # werk-demo line dagu kept. Negative proof: a gate stop never reads
-            # as the announce, and an announce stop never as a gate.
+            # #4502 — the demo is its own pipeline (Jeff 10-12 21:18), called
+            # from cicd as one step: a stop inside it names the demo step and the
+            # werk-demo line dagu kept, like a cicd-test child. Negative proofs:
+            # a gate stop never reads as the announce (and back), and a demo
+            # child that names no stopped step says so, never a guessed step.
             ("a demo stopped at a gate, review or smoke names that step and why",
-             (lambda g, a: "failed at demo-gate-code" in g and "could not run: no headless model" in g
-              and "failed at demo-announce" in a and "refused" in a
+             (lambda g, a: "demo-gate-code" in g and "could not run: no headless model" in g
+              and "demo-announce" in a and "refused" in a
               and "demo-announce" not in g and "demo-gate-code" not in a)(
-                 line(4502, [run("dg", "cicd", "failed", 0, [node("failed", "skill-werk-demo-gate-code",
-                      "exit status 1\nwerk-demo: gate code for #4502 could not run: no headless model on this box")], 4502)], []),
-                 line(4503, [run("da", "cicd", "failed", 0, [node("failed", "skill-werk-demo-announce",
-                      "exit status 1\nwerk-demo: announce #4503 refused — no result this round from: [review-silas]")], 4503)], []))
-             and "silas: session exited 2" in line(4504, [run("ds", "cicd", "failed", 0, [node("failed", "skill-werk-demo-session-smoke",
-                      "exit status 1\nwerk-demo: session-smoke #4504 failed — silas: session exited 2: hook refused Bash")], 4504)], [])),
+                 line(4502, [demo_child("dg", 4502, "skill-werk-demo-gate-code",
+                      "exit status 1\nwerk-demo: gate code for #4502 could not run: no headless model on this box")], []),
+                 line(4503, [demo_child("da", 4503, "skill-werk-demo-announce",
+                      "exit status 1\nwerk-demo: announce #4503 refused — no result this round from: [review-silas]")], []))
+             and "silas: session exited 2" in line(4504, [demo_child("ds", 4504, "skill-werk-demo-session-smoke",
+                      "exit status 1\nwerk-demo: session-smoke #4504 failed — silas: session exited 2: hook refused Bash")], [])
+             and NO_REASON in line(4505, [demo_child("dn", 4505, None, "")], [])),
             ("a land whose merge is on main reads landed",
              "landed on main" in line(152, *merge_fail(152)) and "landed on main" not in line(15, *merge_fail(15))),  # #15 is not #152 or #1520
             ("an aborted run after the go does not hide the land",

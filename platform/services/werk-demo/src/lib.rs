@@ -39,6 +39,19 @@ pub type R<T> = Result<T, String>;
 
 // --- pure helpers (unit-tested) ---
 
+
+/// #4502 — the run's trace: the pipeline's CHORUS_TRACE_ID, or a fresh one. A
+/// demo enqueued alone ("more", `dagu enqueue demo -- CARD= ROLE=`) passes no
+/// TRACE, and dagu sets the env to "" — empty is no trace, never the trace.
+fn run_trace() -> String {
+    pick_trace(env::var("CHORUS_TRACE_ID").ok())
+}
+
+/// Pure half of [`run_trace`]: a set, non-blank trace wins; else a fresh one.
+pub fn pick_trace(given: Option<String>) -> String {
+    given.filter(|t| !t.trim().is_empty()).unwrap_or_else(trace_id)
+}
+
 pub fn trace_id() -> String {
     let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     format!("{:x}-{:x}", ns, std::process::id())
@@ -818,7 +831,7 @@ fn hook_shim() -> String {
 pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, verdict: &str, note: &str) {
     let round = current_round(role, card);
     let pid = current_patch_id(role, card);
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     let n = note.replace('\\', " ").replace('"', "'").replace('\n', " ");
     jsonl(home, role, card, &trace, "demo.gather.replied",
           &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"verdict\":\"{}\",\"note\":\"{}\"",
@@ -998,7 +1011,7 @@ pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> 
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
     });
     let werk = format!("{}/{}-{}", werk_base, role, card);
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     let changed = match changed_paths(&werk) {
         Ok(c) => c,
         Err(why) => return Ok(DemoOutcome { message: format!("session-smoke #{} could not read the diff: {}", card, why), exit: 1 }),
@@ -1101,7 +1114,7 @@ pub fn step_outcome(what: &str, card: u64, recorded: Option<(String, String)>) -
 /// AC count (informational: the announce shows it, it never refuses, #3263) and
 /// the single gate-evidence comment + trace file /acp reads (#2910 / #2897).
 pub fn validate_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     jsonl(home, role, card, &trace, "demo.started", "");
     let card_s = card.to_string();
     let cj = run(&script_path(home, "cards"), &["view", &card_s, "--json"])
@@ -1151,7 +1164,7 @@ pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOu
             exit: 1,
         });
     }
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     emit_spine(home, "demo.gates.running", role, card, &trace);
     run_one_gate(home, role, card, gate, &round);
     Ok(step_outcome(&what, card, recorded(&read_witness(home))))
@@ -1180,7 +1193,7 @@ pub fn run_review_step(card: u64, role: &str, home: &Path, n: usize) -> R<DemoOu
             exit: 1,
         });
     }
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     emit_spine(home, "demo.reviews.running", role, card, &trace);
     run_one_review(home, role, card, peer, &round);
     Ok(step_outcome(&what, card, recorded(&read_witness(home))))
@@ -1209,7 +1222,7 @@ pub fn announce_missing(witness: &str, card: u64, role: &str, round: &str, patch
 /// surface (tests verdict, AC x/y, gates, reviews, the claim) and exits 0.
 /// Nothing waits or polls here.
 pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     let round = current_round(role, card);
     let patch = current_patch_id(role, card);
     let missing = announce_missing(&read_witness(home), card, role, &round, &patch);
@@ -1353,7 +1366,7 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 /// `werk-demo gate <card> <gate> <result>`. The witness is the same
 /// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
 fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str, round: &str) {
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
     // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
     let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
@@ -1665,7 +1678,7 @@ fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round:
         checks += 1;
         if memory_floor_verdict(swap, free, swap_floor, free_floor) {
             if deferred {
-                let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+                let trace = run_trace();
                 jsonl(home, role, card, &trace, "demo.memory.cleared",
                       &format!(",\"label\":\"{}\",\"round\":\"{}\",\"checks\":{}", label, round, checks));
             }
@@ -1673,7 +1686,7 @@ fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round:
         }
         if !deferred {
             deferred = true;
-            let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+            let trace = run_trace();
             jsonl(home, role, card, &trace, "demo.memory.deferred",
                   &format!(",\"label\":\"{}\",\"round\":\"{}\",\"swap_bytes\":{},\"free_pct\":{}",
                            label, round, swap.unwrap_or(0), free.unwrap_or(0)));
@@ -2128,7 +2141,7 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
 /// a red test is VISIBLE, not hidden; blocking-on-red is #3190's promotion, but the
 /// result existing at all is what makes "I didn't/can't test" unreachable for a go.
 fn record_test_result(home: &Path, role: &str, card: u64, result: &str, coverage: &str) {
-    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let trace = run_trace();
     // #4012 — stamp the CONTENT this verdict was measured against, so a later
     // round at the same patch can reuse it instead of re-running (and so a round
     // at DIFFERENT content cannot).
@@ -2263,7 +2276,7 @@ pub fn run_demo() -> R<DemoOutcome> {
             .next()
             .and_then(|s| s.parse().ok())
             .ok_or("usage: werk-demo go <card>")?;
-        let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+        let trace = run_trace();
         let round = current_round(role.trim(), card);
         let patch = current_patch_id(&role, card);
         jsonl(&home, role.trim(), card, &trace, "demo.go",

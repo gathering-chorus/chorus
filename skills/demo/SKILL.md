@@ -1,6 +1,6 @@
 ---
 name: demo
-description: The proving ceremony — the demo is dagu steps (validate, 5 gates + 3 peer reviews in parallel, session-smoke, announce), then Jeff's go (#4502).
+description: The proving ceremony — the demo is its own dagu pipeline (validate, 5 gates + 3 peer reviews in parallel, session-smoke, announce) that cicd calls as one step, then Jeff's go (#4502).
 user-invocable: true
 ---
 
@@ -12,14 +12,22 @@ user-invocable: true
 
 ## The flow (#4502, Jeff 2026-10-18 11:31 "that looks right")
 
-Each box is its own dagu step. /cws names the box a demo stopped at and why; that box
-can be retried alone.
+The demo is its own pipeline, `platform/pipelines/demo.yaml` (Jeff 2026-10-12 21:18: "the
+demo gets its own dagu pipeline (a demo DAG), and cicd calls it as one step"). Each box is
+its own dagu step inside it. /cws names the box a demo stopped at and why; that box can be
+retried alone. Jeff's go stays in cicd, after the demo call: dagu refuses a human task in a
+sub-DAG.
 
 ```
-validate ─► [gate-product, gate-code, gate-quality, gate-arch, gate-ops,
-             review-1, review-2, review-3]   (in parallel)
-         ─► session-smoke ─► announce ─► Jeff's go ─► land
+cicd:  … env-up ─► demo ─────────────────────────────────────────────► Jeff's go ─► land
+demo:  validate ─► [gate-product, gate-code, gate-quality, gate-arch, gate-ops,
+                    review-1, review-2, review-3]   (in parallel)
+                ─► session-smoke ─► announce
 ```
+
+On "more", the demo reruns alone against the card's deployed variant, with no rebuild:
+`dagu --config $CHORUS_HOME/platform/config/dagu.yaml enqueue demo -- CARD=<card> ROLE=<role> TRACE=`
+(an empty TRACE gets a fresh trace).
 
 | step | command | exit |
 |---|---|---|
