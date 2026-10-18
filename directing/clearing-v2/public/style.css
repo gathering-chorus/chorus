@@ -229,15 +229,20 @@ nav.top .n {
 /* Trust Strip */
 .strip, .trust-strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  padding: 6px 14px;
-  font: 11.5px "JetBrains Mono", monospace;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  gap: 6px 12px;
+  padding: 3px 12px;
+  font: 11px "JetBrains Mono", monospace;
   color: var(--muted);
   background: var(--sunk);
   border-bottom: 1px solid var(--line2);
   align-items: center;
+  min-height: 22px;
 }
+.strip::-webkit-scrollbar, .trust-strip::-webkit-scrollbar { display: none; }
 .strip span, .strip .chip {
   white-space: nowrap;
   display: inline-flex;
@@ -851,19 +856,25 @@ tr.you td {
   h2 { font-size: 15px; }
   .grid2 { grid-template-columns: 1fr; }
   .strip, .trust-strip {
-    font-size: 10.5px;
-    gap: 4px 10px;
-    padding: 6px 10px;
+    font-size: 10px;
+    gap: 8px;
+    padding: 2px 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    min-height: 20px;
   }
+  .strip::-webkit-scrollbar, .trust-strip::-webkit-scrollbar { display: none; }
   nav.top {
-    padding: 0 8px;
+    padding: 0 6px;
   }
   nav.top a {
-    padding: 8px 6px;
-    font-size: 12px;
+    padding: 6px 5px;
+    font-size: 11.5px;
   }
   .app-header {
-    padding: 6px 10px;
+    padding: 4px 10px;
   }
   /* #4575 — on a phone the sender line sits above the text, so the text gets the full width */
   .message { flex-direction: column; gap: 2px; }
@@ -906,7 +917,34 @@ tr.you td {
     padding: 12px;
   }
   .actor-rail {
-    padding: 6px 10px;
+    padding: 3px 8px;
+    gap: 6px;
+  }
+  .actor-tile {
+    padding: 2px 7px;
+    font-size: 11px;
+    gap: 5px;
+  }
+  .actor-tile .av {
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+  }
+  .actor-tile-name {
+    font-size: 11px;
+  }
+  .actor-tile-card {
+    font-size: 10px;
+  }
+  .rooms-nav-inline {
+    padding: 3px 8px;
+    gap: 4px 6px;
+    font-size: 11px;
+  }
+  .rooms-nav-inline .r {
+    padding: 2px 6px;
+    font-size: 11px;
   }
 }
 
