@@ -284,7 +284,7 @@ function registerWriteRoutes(ctx: RouteContext): void {
   // #3743 — resolveSenderIdentity: identity comes strictly from the verified cryptographic
   // event/session; the client-supplied `from` field and 'jeff' default are RETIRED.
   // (Ported from v1 server.ts:1700-1705 / sender-identity.ts — the exact hole Mark fell through in #3743).
-  app.post('/api/send', (req: Request, res: Response) => {
+  app.post('/api/send', async (req: Request, res: Response) => {
     const event: NostrEvent | undefined = req.body?.event || (req.body?.id && req.body?.sig ? req.body : undefined);
 
     const identity = resolveSenderIdentity(event, keys);
@@ -294,9 +294,16 @@ function registerWriteRoutes(ctx: RouteContext): void {
       return;
     }
 
-    relay.publish(event!);
+    // #4608 — the relay stores only notes signed by this connection's identity
+    // (the bridge), so the room stores Jeff's words as the bridge, author-tagged,
+    // with his own signed id so the copy is never shown twice. Delivery to the
+    // roles does not wait on Buzz; the answer says whether Buzz stored it.
     onInboundEvent(event!);
-    res.json({ ok: true, id: event!.id, from: identity.role });
+    const room = roomOf(event!);
+    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id]], event!.created_at);
+    const stored = copy ? await relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
+    if (!stored.ok) console.error(`[clearing-v2] ${identity.role}'s message ${event!.id.slice(0, 12)} was not stored in Buzz: ${stored.reason}`);
+    res.json({ ok: true, id: event!.id, from: identity.role, stored: stored.ok, ...(stored.ok ? {} : { reason: stored.reason }) });
   });
 
   // #3827 — Room key bind endpoint: identity comes strictly from the verified session cookie,
@@ -399,9 +406,12 @@ export function kindOf(event: { tags?: string[][] }): 'nudge' | 'alert' | undefi
 
 function toClearingMessage(event: NostrEvent, role: string, tick: boolean, signer?: string): ClearingMessage {
   const kind = kindOf(event);
+  // #4608 — the room's stored copy of a sender's note carries that note's id, so
+  // the copy and the original are one message (the router drops a seen id).
+  const signed = Array.isArray(event.tags) ? event.tags.find((t) => t[0] === 'signed')?.[1] : undefined;
   return {
     ...(kind ? { kind } : {}),
-    id: event.id,
+    id: signed || event.id,
     from: role,
     text: event.content,
     ts: new Date(event.created_at * 1000).toISOString(),
