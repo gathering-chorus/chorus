@@ -137,7 +137,7 @@ fn each_step_exits_by_what_it_recorded() {
     git(&werk, &["commit", "-q", "-m", "silas config"]);
     let smoke_stub = home.join("claude-smoke");
     write_exec(&smoke_stub, &format!(
-        "#!/bin/sh\nin=$(cat)\nif [ -f \"{}\" ]; then echo 'hook refused Bash' >&2; exit 2; fi\necho \"$in\" | grep -o 'smoke-[0-9]*-[a-z-]*' | head -1\n",
+        "#!/bin/sh\nin=$(cat)\nif [ -f \"{}\" ]; then echo 'hook refused Bash' >&2; exit 2; fi\nf=$(echo \"$in\" | sed -n 's/.*`cat \\([^`]*\\)`.*/\\1/p')\ncat \"$f\"\n",
         fail_flag.display()
     ));
     std::env::set_var("CHORUS_CLAUDE_BIN", &smoke_stub);
@@ -150,6 +150,15 @@ fn each_step_exits_by_what_it_recorded() {
     assert_eq!(bad.exit, 1, "{}", bad.message);
     assert!(bad.message.contains("silas: session exited 2: hook refused Bash"), "{}", bad.message);
     fs::remove_file(&fail_flag).unwrap();
+    // NEGATIVE PROOF: a session that answers without running the tool call
+    // (it guesses a smoke-looking token) does not pass — only the file's nonce does
+    let guesser = home.join("claude-guess");
+    write_exec(&guesser, "#!/bin/sh\ncat >/dev/null\necho smoke-4502-silas\n");
+    std::env::set_var("CHORUS_CLAUDE_BIN", &guesser);
+    let guessed = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(guessed.exit, 1, "{}", guessed.message);
+    assert!(guessed.message.contains("silas: the tool call did not come back"), "{}", guessed.message);
+    std::env::set_var("CHORUS_CLAUDE_BIN", &smoke_stub);
     // abby-normal's own files changed → named unmeasured (agy has no headless smoke), never a pass
     fs::create_dir_all(werk.join("roles/abby-normal")).unwrap();
     fs::write(werk.join("roles/abby-normal/AGENTS.md"), "# Abby\n").unwrap();

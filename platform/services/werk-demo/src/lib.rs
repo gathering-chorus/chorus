@@ -941,20 +941,26 @@ fn smoke_one(werk: &str, r: &str, card: u64) -> Result<(), String> {
     if !dir.is_dir() {
         return Err(format!("no roles/{} in the werk", r));
     }
-    let token = format!("smoke-{}-{}", card, r);
+    // the reply must carry a value only the tool call can read: a nonce in a
+    // file, so a model that answers without running Bash cannot pass
+    let nonce = format!("smoke-{}-{}-{}", card, r, SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    let nonce_file = env::temp_dir().join(format!("werk-demo-smoke-{}-{}-{}", card, r, std::process::id()));
+    fs::write(&nonce_file, &nonce).map_err(|e| format!("cannot write the smoke nonce: {}", e))?;
+    let cmd = format!("cat {}", nonce_file.display());
+    let token = nonce;
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
     let mut child = Command::new(&bin)
         .current_dir(&dir)
         .env("CHORUS_ROLE", r).env("ROLE", r).env("CHORUS_HEADLESS", "1")
         .args(["-p", "--model", &model, "--no-session-persistence", "--output-format", "text",
-               "--allowedTools", &format!("Bash(echo {})", token)])
+               "--allowedTools", &format!("Bash({})", cmd)])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("claude spawn failed: {}", e))?;
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("Run exactly one Bash command, `echo {}`, and reply with its output only.", token).as_bytes());
+        let _ = stdin.write_all(format!("Run exactly one Bash command, `{}`, and reply with its output only.", cmd).as_bytes());
     }
     let secs: u64 = env::var("CHORUS_SMOKE_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180);
     let start = Instant::now();
@@ -970,6 +976,7 @@ fn smoke_one(werk: &str, r: &str, card: u64) -> Result<(), String> {
             Err(e) => return Err(format!("wait failed: {}", e)),
         }
     };
+    let _ = fs::remove_file(&nonce_file);
     let mut out = String::new();
     let mut err = String::new();
     if let Some(mut o) = child.stdout.take() { let _ = o.read_to_string(&mut out); }
