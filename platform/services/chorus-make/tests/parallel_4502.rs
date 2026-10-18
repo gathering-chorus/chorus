@@ -67,7 +67,7 @@ fn negative_proof_distinct_orders_stay_the_linear_golden() {
     assert_eq!(out, fixture("fixtures/demo-golden.yaml"));
     let fan_in = |o: &str| o.lines().filter(|l| l.starts_with("    depends: [") && l.contains(", ")).count();
     assert_eq!(fan_in(&out), 1, "one fan-in: smoke waits for the 8 siblings:\n{out}");
-    let linear: Vec<_> = rows.into_iter().filter(|r| r.step != "gates").collect();
+    let linear: Vec<_> = rows.into_iter().filter(|r| !r.with_args.contains("parallel=true")).collect(); // drop the parallel group
     assert_eq!(fan_in(&chorus_make::generate_straight("demo", &pipe, &linear, &known).unwrap()), 0, "distinct orders: no fan-in");
     let cicd = generate("cicd", &parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap()).unwrap();
     assert_eq!(cicd, fixture("fixtures/cicd-golden.yaml"));
