@@ -385,7 +385,22 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
         }
         params.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true").map(String::from));
-        out.push_str(if enqueue { "    action: dag.enqueue\n    with:\n" } else { "    action: dag.run\n    with:\n" });
+        if enqueue {
+            // #4577 pair run 1 (10-18 07:43): dagu runs a dag.enqueue target
+            // as a sub-DAG and refuses it — "human task steps are not allowed
+            // in sub-DAGs: cicd". The hand-off is the CLI enqueue instead (the
+            // pair's red handler already enqueues this way), a top-level run.
+            out.push_str(&format!(
+                "    command: {}\n",
+                quote(&format!(
+                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
+                    r.implemented_by,
+                    params.join(" ")
+                ))
+            ));
+            return;
+        }
+        out.push_str("    action: dag.run\n    with:\n");
         out.push_str(&format!("      dag: {}\n", r.implemented_by));
         out.push_str(&format!("      params: {}\n", quote(&params.join(" "))));
         return;
