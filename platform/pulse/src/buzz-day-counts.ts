@@ -17,7 +17,7 @@ import WebSocket from 'ws';
 import { bridgeSignerFromHome, frameText, signNote } from './buzz-writer';
 import { countDays, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
 
-function readRows(db: string): DatedPulseRow[] {
+export function readRows(db: string): DatedPulseRow[] {
   const d = new Database(db, { readonly: true, fileMustExist: true });
   try {
     return d.prepare(`SELECT created_at, type, "from", "to", content FROM messages WHERE type IN ('nudge','jeff-input')`).all() as DatedPulseRow[];
@@ -54,17 +54,17 @@ function readNotes(url: string, host: string | undefined, since: number, timeout
   });
 }
 
-async function main(): Promise<number> {
-  const i = process.argv.indexOf('--db');
-  const db = i > 0 ? process.argv[i + 1] : path.join(__dirname, '..', 'messages.db');
-  const url = process.env.PULSE_BUZZ_RELAY_URL;
+export async function main(argv: string[] = process.argv, env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  const i = argv.indexOf('--db');
+  const db = i > 0 ? argv[i + 1] : path.join(__dirname, '..', 'messages.db');
+  const url = env.PULSE_BUZZ_RELAY_URL;
   if (!url) { process.stderr.write('buzz-day-counts: UNMEASURED — PULSE_BUZZ_RELAY_URL is not set\n'); return 3; }
   const rows = readRows(db);
   if (rows.length === 0) { process.stderr.write('buzz-day-counts: UNMEASURED — no messages in the store\n'); return 3; }
   const first = Math.min(...rows.map((r) => Date.parse(r.created_at.replace(' ', 'T') + 'Z')));
   let notes: RoomNote[];
   try {
-    notes = await readNotes(url, process.env.PULSE_BUZZ_RELAY_HOST, Math.floor(first / 1000) - 86400);
+    notes = await readNotes(url, env.PULSE_BUZZ_RELAY_HOST, Math.floor(first / 1000) - 86400);
   } catch (e) {
     process.stderr.write(`buzz-day-counts: UNMEASURED — ${(e as Error).message}\n`);
     return 3;
