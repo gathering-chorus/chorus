@@ -1,5 +1,6 @@
 // @domain: spine — placed by chorus-crawl's domain rules (#4645)
 pub mod jdi_detector;
+pub mod terminal_input;
 pub mod card_approval_responder;
 pub mod autonomy_guard;
 pub mod bedroom_nfs_guard;

@@ -368,10 +368,12 @@ function isRoleToRole(from: string, text: string): boolean {
 }
 
 /**
- * #4609 — does v1 publish this message to the Buzz room? Not what arrived from
- * the relay (that would loop, #3823), and not what pulse writes itself (nudges
- * and alerts since #4609: one writer, no doubles).
+ * #4628 — does v1 publish this message to the Buzz room? No, never. Every kind
+ * has one writer (Clearing input: v2; terminal input, nudges, alerts, land
+ * notices: pulse; replies: each role's own key), and on 10-19 every one of the
+ * day's 504 doubles had v1 as one of its two writers. v1 still shows the old
+ * room; it only stops writing. (#4609 had already taken nudges and alerts.)
  */
-export function publishesToRoom(msg: Pick<ChannelMessage, 'buzzInbound' | 'writtenByPulse'>): boolean {
-  return !msg.buzzInbound && !msg.writtenByPulse;
+export function publishesToRoom(_msg: Pick<ChannelMessage, 'buzzInbound' | 'writtenByPulse'>): boolean {
+  return false;
 }

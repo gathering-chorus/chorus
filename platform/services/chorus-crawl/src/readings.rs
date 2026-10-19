@@ -395,8 +395,8 @@ pub fn missing_days(counts: &Counts) -> Vec<String> {
 
 pub type ReadingRow = (String, Vec<(String, String)>);
 
-/// The Buzz reader's lines ({"day","sent","kept"}) as messages-sent and
-/// messages-kept counts. A line it can't read is skipped.
+/// The Buzz reader's lines ({"day","sent","kept","doubles"}) as messages-sent,
+/// messages-kept and doubles-<kind> counts. A line it can't read is skipped.
 pub fn buzz_counts(jsonl: &str) -> Counts {
     let mut c = Counts::new();
     for l in jsonl.lines() {
@@ -407,9 +407,25 @@ pub fn buzz_counts(jsonl: &str) -> Counts {
         let (Some(day), Some(sent), Some(kept)) = (json_str(l, "day"), num("sent"), num("kept")) else { continue };
         c.insert((day.to_string(), "messages-sent".into(), None), sent);
         c.insert((day.to_string(), "messages-kept".into(), None), kept);
+        // #4628 — doubles per kind ({"doubles":{"jeff":N,…}}), one reading each
+        if let Some(at) = l.find("\"doubles\":{") {
+            let obj = &l[at + 11..];
+            let obj = &obj[..obj.find('}').unwrap_or(obj.len())];
+            for kind in DOUBLE_KINDS {
+                let key = format!("\"{kind}\":");
+                let Some(k) = obj.find(&key) else { continue };
+                let n: String = obj[k + key.len()..].chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(n) = n.parse() {
+                    c.insert((day.to_string(), format!("doubles-{kind}"), None), n);
+                }
+            }
+        }
     }
     c
 }
+
+/// #4628 — the kinds the Buzz reader counts doubles for (pulse's DOUBLE_KINDS).
+pub const DOUBLE_KINDS: [&str; 5] = ["jeff", "reply", "nudge", "alert", "land"];
 
 /// What a pass must write: readings not yet stored, readings whose value
 /// changed (a late-arriving line), and how many already match.
@@ -789,6 +805,17 @@ mod tests {
         assert_eq!(r.0, "events-spine-write-age-2026-10-18");
         assert!(r.1.contains(&("readingValue".to_string(), "0.17".to_string())));
         assert!(r.1.contains(&("readingUnit".to_string(), "hours".to_string())));
+    }
+
+    #[test]
+    fn the_reader_doubles_become_one_reading_per_kind_and_a_line_without_them_writes_none() {
+        let c = buzz_counts("{\"day\":\"2026-10-18\",\"sent\":985,\"kept\":571,\"doubles\":{\"jeff\":103,\"reply\":530,\"nudge\":0,\"alert\":0,\"land\":0}}\n");
+        assert_eq!(c.get(&("2026-10-18".into(), "doubles-jeff".into(), None)), Some(&103));
+        assert_eq!(c.get(&("2026-10-18".into(), "doubles-reply".into(), None)), Some(&530));
+        assert_eq!(c.get(&("2026-10-18".into(), "doubles-land".into(), None)), Some(&0));
+        // negative proof: an older reader's line has no doubles; reading none must not invent zeros
+        let old = buzz_counts("{\"day\":\"2026-10-17\",\"sent\":837,\"kept\":0}\n");
+        assert!(old.keys().all(|(_, m, _)| !m.starts_with("doubles-")));
     }
 
     #[test]

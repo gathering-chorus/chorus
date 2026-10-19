@@ -14,8 +14,8 @@
  *
  * The relay stores only notes signed by the connection's own AUTH identity
  * (measured 10-18), so this connection AUTHs as the bridge and signs as the
- * bridge. Jeff input is not written here: Clearing v2 writes it once at the
- * source (#4608).
+ * bridge. Jeff input typed in Clearing is not written here: Clearing v2 writes
+ * it once at the source (#4608). What he types in a terminal is (#4628).
  */
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,11 @@ export interface BuzzNote {
 }
 
 /** One message pulse carries, as the room should show it. */
-export interface BuzzMessage { id: number; from: string; to: string; content: string }
+export interface BuzzMessage {
+  id: number; from: string; to: string; content: string;
+  /** #4628 — 'terminal': Jeff typed it in `to`'s terminal; 'land': a land notice, `to` the card's owner. Recorded as given, never framed. */
+  surface?: 'terminal' | 'land';
+}
 
 export interface BuzzWriterOptions {
   relayUrl: string;
@@ -91,8 +95,14 @@ export class BuzzWriter {
 
   /** Post one message. Never throws and never blocks the caller. */
   post(m: BuzzMessage): void {
-    const { text, kind } = roomText(m);
-    const tags = [['t', this.o.topic ?? 'team'], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
+    const topic = this.o.topic ?? 'team';
+    const { text, kind } = m.surface === 'terminal' ? { text: m.content, kind: 'jeff' }
+      : m.surface === 'land' ? { text: m.content, kind: 'land' } : roomText(m);
+    const tags = m.surface === 'terminal'
+      ? [['t', topic], ['author', 'jeff'], ['kind', kind], ['to', m.to], ['surface', 'terminal'], ['msg', `pulse-term-${m.id}`]]
+      : m.surface === 'land'
+        ? [['t', topic], ['author', m.from], ['kind', kind], ...(m.to ? [['owner', m.to]] : []), ['msg', `pulse-land-${m.id}`]]
+        : [['t', topic], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
     const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), 1, tags, text);
     if (!this.ws || !this.open) { this.miss(note, 'relay not connected'); return; }
     const timer = setTimeout(() => {

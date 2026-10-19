@@ -16,7 +16,7 @@ import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './sha
 import { ClearingMessage, NostrEvent } from './types';
 
 import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage, renderPeopleRow } from './views';
-import { byDay, fetchReadings } from './sources/readings';
+import { byDay, DOUBLE_COLUMNS, fetchReadings } from './sources/readings';
 import { fetchStreams } from './sources/streams';
 import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
@@ -158,7 +158,8 @@ function registerPageRoutes(ctx: RouteContext): void {
     const { pulseUrl } = getTestOverrides(req);
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     try {
-      res.type('html').send(renderCountsPage(byDay(await fetchReadings(ctx.readingsUrl)), {}, sources));
+      const readings = await fetchReadings(ctx.readingsUrl);
+      res.type('html').send(renderCountsPage(byDay(readings), {}, sources, byDay(readings, DOUBLE_COLUMNS)));
     } catch (e) {
       res.type('html').send(renderCountsPage([], { error: (e as Error).message }, sources));
     }
@@ -352,7 +353,7 @@ function registerWriteRoutes(ctx: RouteContext): void {
     // roles does not wait on Buzz; the answer says whether Buzz stored it.
     onInboundEvent(event!);
     const room = roomOf(event!);
-    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id]], event!.created_at);
+    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id], ['surface', 'clearing'], ['kind', 'jeff']], event!.created_at);
     const stored = copy ? await relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
     if (!stored.ok) console.error(`[clearing-v2] ${identity.role}'s message ${event!.id.slice(0, 12)} was not stored in Buzz: ${stored.reason}`);
     res.json({ ok: true, id: event!.id, from: identity.role, stored: stored.ok, ...(stored.ok ? {} : { reason: stored.reason }) });

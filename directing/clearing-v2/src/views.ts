@@ -2,7 +2,7 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
-import { DAY_COLUMNS, type DayCell, type DayRow } from './sources/readings';
+import { DAY_COLUMNS, DOUBLE_COLUMNS, type DayCell, type DayRow } from './sources/readings';
 import type { Streams } from './sources/streams';
 import { uploadNames } from './uploads';
 import fs from 'fs';
@@ -896,8 +896,19 @@ function redCell(c: DayCell, d: DayRow): boolean {
 }
 
 /** #4634 — messages and events by day since day 1, from the sensors' readings. */
-export function renderCountsPage(days: DayRow[], meta: { error?: string }, sources: TrustStripSource[]): string {
+export function renderCountsPage(days: DayRow[], meta: { error?: string }, sources: TrustStripSource[], doubles: DayRow[] = []): string {
   const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '<span class="meta">unmeasured</span>' : v}</td>`;
+  // #4628 — the doubles table goes first: under 200+ day rows Jeff would never reach it (Wren, 390 px)
+  const doublesHtml = doubles.length === 0
+      ? '<p class="meta">Doubles: unmeasured (the sensor has no doubles reading yet)</p>'
+      : `<h3 style="margin-top:16px">Doubles in Buzz <span class="meta">same author, same words, within 20 s</span></h3>
+    <table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Day</th>${DOUBLE_COLUMNS.map(([, , l]) => `<th>${l}</th>`).join('')}</tr></thead>
+      <tbody>
+${doubles.map((d) => `        <tr><td>${d.day.slice(5)}</td>${d.values.map((c) => cell(c.value, c.value !== null && c.value > 0 ? 'fail' : '')).join('')}</tr>`).join('\n')}
+      </tbody>
+    </table>
+    <p class="meta">Each kind of message has one writer, so any double is a second writer still in place.</p>`;
   const body = meta.error || days.length === 0
     ? `<div class="meta fail" style="padding:16px">Unmeasured: ${escapeHtml(meta.error || 'the sensors have written no readings yet')}</div>`
     : `<div style="overflow-x:auto"><table class="counts-table" style="width:100%;border-collapse:collapse">
@@ -908,6 +919,7 @@ ${days.map((d) => `        <tr><td>${d.day}</td>${d.values.map((c) => cell(c.val
     </table></div>
     <p class="meta" style="margin-top:12px">From the herald sensors (messages: pulse and Buzz; events: the spine). A day is counted once it is over.</p>`;
   const content = `<main class="page counts-page" style="padding:14px">
+    ${doublesHtml}
     <h2>Messages and events by day <span class="meta">Boston days</span></h2>
     ${body}
   </main>`;
