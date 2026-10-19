@@ -26,11 +26,20 @@ export const DAY_COLUMNS: Array<[string, string, string]> = [
   ['events', 'unreadable-lines', 'Unreadable lines'],
 ];
 
+/** #4628 — doubles in Buzz per kind, the sensor's doubles-<kind> readings: their own short table, so it reads on a phone. */
+export const DOUBLE_COLUMNS: Array<[string, string, string]> = [
+  ['messages', 'doubles-jeff', 'Yours'],
+  ['messages', 'doubles-reply', 'Replies'],
+  ['messages', 'doubles-nudge', 'Nudges'],
+  ['messages', 'doubles-alert', 'Alerts'],
+  ['messages', 'doubles-land', 'Lands'],
+];
+
 export interface DayCell { metric: string; value: number | null }
 export interface DayRow { day: string; values: DayCell[] }
 
 /** Team totals by day, newest first; a column with no reading is null (shown as unmeasured). */
-export function byDay(readings: Reading[]): DayRow[] {
+export function byDay(readings: Reading[], columns: Array<[string, string, string]> = DAY_COLUMNS): DayRow[] {
   const days = new Map<string, Map<string, number>>();
   for (const r of readings) {
     if (r.readingRole || !r.readingDay || !r.readingMetric || !r.readingOfSensor) continue;
@@ -41,9 +50,9 @@ export function byDay(readings: Reading[]): DayRow[] {
     days.set(day, m);
   }
   // a day with none of the table's metrics (today: only backup readings so far) is not a row
-  return [...days.keys()].sort().reverse().filter((day) => DAY_COLUMNS.some(([s, m]) => days.get(day)!.has(`${s}/${m}`))).map((day) => ({
+  return [...days.keys()].sort().reverse().filter((day) => columns.some(([s, m]) => days.get(day)!.has(`${s}/${m}`))).map((day) => ({
     day,
-    values: DAY_COLUMNS.map(([s, m]) => {
+    values: columns.map(([s, m]) => {
       const v = days.get(day)!.get(`${s}/${m}`);
       return { metric: m, value: v === undefined || Number.isNaN(v) ? null : v };
     }),
