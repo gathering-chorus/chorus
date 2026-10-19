@@ -733,6 +733,18 @@ mod plan_4173 {
         assert_eq!(counts(&actions).unchanged, 2);
     }
 
+    // #4568 — a land whose commit changed no tracked file is a delta over
+    // nothing: it writes nothing, and the graph it did not look at is kept.
+    // Measured 10-19 18:42: delta 5a62b6a21..5a62b6a21 posted=0 replaced=0 deleted=0.
+    #[test]
+    fn a_land_that_changes_no_tracked_file_writes_nothing() {
+        let graph = [g("a.rs", "aaa"), g("b.ts", "bbb")];
+        assert!(!writes_anything(&plan(&[], &graph, TreeRead::Scoped)));
+        assert!(matches!(scope_for(Some("abc"), "abc", true), Scope::Delta { .. }));
+        // NEGATIVE PROOF: the same empty view read as the whole tree deletes every row
+        assert_eq!(counts(&plan(&[], &graph, TreeRead::Complete)).deleted, 2);
+    }
+
     // NEGATIVE PROOF (#3734): the same check must still fire when there IS work,
     // or "writes nothing" would be true of a crawler that never writes at all.
     #[test]

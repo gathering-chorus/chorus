@@ -1831,6 +1831,19 @@ fn run_sensor(args: &[String]) -> i32 {
 
     // the record, when the store can hold it; never on a dry run (it writes nothing)
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    // #4568 — herald-run runs as its caller; the pass writes the Sensor owner's
+    // rows, so it runs only as that owner (a dry run writes nothing)
+    if !dry_run {
+        let caller = std::env::var("CHORUS_ROLE").unwrap_or_default();
+        let owner = collection_for(&api, "Sensor")
+            .ok()
+            .and_then(|sc| curl(&api, "GET", &format!("{sc}/{sensor}"), None, None).ok())
+            .and_then(|body| owned_by(&body));
+        if let Err(e) = owner_may_run(&sensor, &caller, owner.as_deref()) {
+            eprintln!("chorus-crawl sensor: {e}");
+            return 2;
+        }
+    }
     let record = if dry_run { None } else {
         let ident = declared_role(std::env::var("CHORUS_ROLE").ok()).and_then(|r| Identity::open(&home, &r));
         match (ident, collection_for(&api, "SensorRun")) {
@@ -2681,15 +2694,17 @@ fn main() {
     // What the graph already holds. Read BEFORE deciding anything — the walk is
     // idempotent by diff, not by luck.
     let started = std::time::Instant::now();
-    let ident: Option<std::cell::RefCell<Identity>> = if dry_run && !reconciling {
-        None
-    } else {
-        match Identity::open(&home, &role) {
-            Ok(i) => Some(std::cell::RefCell::new(i)),
-            Err(e) => {
-                eprintln!("chorus-crawl: {e} — refusing to write without an identity");
-                std::process::exit(2);
-            }
+    // #4568 — a dry run reads the graph too when it can sign in: token-less it
+    // read 0 rows and planned a full re-post of 6,771 files as "store reset"
+    let ident: Option<std::cell::RefCell<Identity>> = match Identity::open(&home, &role) {
+        Ok(i) => Some(std::cell::RefCell::new(i)),
+        Err(e) if dry_run && !reconciling => {
+            println!("chorus-crawl: dry run with no identity ({e}) — planning against an empty graph");
+            None
+        }
+        Err(e) => {
+            eprintln!("chorus-crawl: {e} — refusing to write without an identity");
+            std::process::exit(2);
         }
     };
     let token: String = match &ident {

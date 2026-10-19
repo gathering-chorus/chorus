@@ -995,26 +995,29 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     // #4318 — Jeff's note, line one: "prereq: all tests current + in graph".
     // The validate ran at 03:00 against a graph the crawler only refreshes at
     // 04:30, so any file changed during the day read as a gap (2026-09-26: 2
-    // log files). The run now crawls first — a full pass writes, then
-    // validates — so it checks a current graph. A run that writes no prod
-    // rows (a werk, #3722) validates only.
+    // log files). #4568 — each land's crawl now keeps the graph current, so
+    // every run validates only and writes nothing; a gap here means a land's
+    // crawl did not write.
     c.args(crawler_args(ctx.graph.enabled))
         .envs(crawler_env(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("WERK_TEST_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
+    // #4568 — what each land's crawl did since last night, read before this run appends
+    let crawl_log = env_or("CRAWL_WERK_TEST_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+    let lands = land_crawl_line(&std::fs::read_to_string(&crawl_log).unwrap_or_default());
     let (rc, out) = run_capped(c, Duration::from_secs(1200));
-    // #4185 — this is now the ONE full pass (the 04:30 job is retired), so its
-    // output joins the crawler's own log: crawler-stale and the nightly's
-    // TOTAL line read that file. Only a run that may write prod writes it.
+    // #4185 — the nightly's check joins the crawler's own log: crawler-stale
+    // and the nightly's TOTAL line read that file. Only a prod run writes it.
     if ctx.graph.enabled {
         let log = env_or("CRAWL_WERK_TEST_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
             use std::io::Write;
-            let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n{out}");
+            let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's read-only check, run by werk-test)\n{out}");
         }
     }
     let (status, summary) = crawler_validate_verdict(rc, &out);
+    let summary = format!("{summary} · {lands}");
     let row = SuiteRow::new("crawler-validate", path, "kade", status, &summary);
     if status != "pass" {
         ctx.write_fail_log(&row, &out);
@@ -1022,11 +1025,74 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     row
 }
 
+/// #4568 — the land crawls since the last nightly, against the ones before:
+/// each write pass logs `wrote=N failed=N · elapsed=Ns`, and a refused land
+/// crawl leaves a `chorus-runner call:` or `nothing ran` line. Ten days of
+/// refusals (10-17..10-19) were hidden behind the nightly's own write pass.
+pub fn land_crawl_line(log: &str) -> String {
+    let lines: Vec<&str> = log.lines().collect();
+    let cut = lines.iter().rposition(|l| l.starts_with("chorus-crawl: (the 03:00 nightly's")).map(|i| i + 1).unwrap_or(0);
+    let field = |l: &str, k: &str| -> Option<u64> {
+        let at = l.find(k)? + k.len();
+        l[at..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
+    };
+    let passes = |ls: &[&str]| -> Vec<(u64, u64, u64)> {
+        ls.iter()
+            .filter_map(|l| Some((field(l, "elapsed=")?, field(l, "wrote=").unwrap_or(0), field(l, "failed=").unwrap_or(0))))
+            .collect()
+    };
+    let now = passes(&lines[cut..]);
+    let refused = lines[cut..].iter().filter(|l| l.starts_with("chorus-runner call:") || l.contains("nothing ran")).count();
+    let mut before: Vec<u64> = passes(&lines[..cut]).into_iter().rev().take(20).map(|p| p.0).collect();
+    before.sort_unstable();
+    let median = before.get(before.len() / 2).map(|m| format!("median {m}s over the {} before", before.len())).unwrap_or_else(|| "no earlier pass".into());
+    let did = if now.is_empty() {
+        "no land crawl since last night".to_string()
+    } else {
+        format!(
+            "land crawls since last night: {} (wrote {}, failed {}, longest {}s; {median})",
+            now.len(),
+            now.iter().map(|p| p.1).sum::<u64>(),
+            now.iter().map(|p| p.2).sum::<u64>(),
+            now.iter().map(|p| p.0).max().unwrap_or(0)
+        )
+    };
+    if refused > 0 { format!("{did} · {refused} refused") } else { did }
+}
+
+#[cfg(test)]
+mod land_crawls_4568 {
+    use super::*;
+
+    #[test]
+    fn the_land_crawls_since_last_night_are_counted_against_the_ones_before() {
+        let log = "chorus-crawl: wrote=10 failed=0 · elapsed=40s rate=1/s\n\
+                   chorus-crawl: wrote=12 failed=0 · elapsed=60s rate=1/s\n\
+                   chorus-crawl: (the 03:00 nightly's read-only check, run by werk-test)\n\
+                   chorus-crawl: wrote=5 failed=1 · elapsed=30s rate=1/s\n\
+                   chorus-crawl: wrote=7 failed=0 · elapsed=90s rate=1/s\n";
+        assert_eq!(land_crawl_line(log), "land crawls since last night: 2 (wrote 12, failed 1, longest 90s; median 60s over the 2 before)");
+    }
+
+    /// NEGATIVE PROOF — 10-19: every land crawl refused reads as refused, never as a quiet day
+    #[test]
+    fn refused_land_crawls_are_named() {
+        let log = "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n\
+                   chorus-runner call: kade may not run herald-run: it runs as silas\n";
+        assert_eq!(land_crawl_line(log), "no land crawl since last night · 1 refused");
+        assert_eq!(land_crawl_line(""), "no land crawl since last night");
+    }
+}
+
 /// #4318 — the crawler's arguments for the nightly's first leg: a full pass
 /// (write, then validate) when the run may write the graph, validate-only
 /// when it may not.
-pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
-    if may_write { Vec::new() } else { vec!["--validate"] }
+/// #4568 (Jeff 10-16 "ok do that") — the nightly only checks that the store
+/// matches the code; each land's crawl writes what it changed. Until then the
+/// nightly's full write pass hid a land crawl refused on every land since
+/// 10-16, and re-read every store row each night.
+pub fn crawler_args(_may_write: bool) -> Vec<&'static str> {
+    vec!["--validate"]
 }
 
 /// #4185 — the write pass must be a FULL pass: the crawler prints its
@@ -1034,8 +1100,8 @@ pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
 /// watermark made it a delta (2026-09-30 08:33: "delta becf31089..9760be75a",
 /// no VALIDATE lines, the lane UNMEASURED). An empty watermark is the
 /// crawler's "full pass requested by the job", as the 04:30 job asks.
-pub fn crawler_env(may_write: bool) -> Vec<(&'static str, &'static str)> {
-    if may_write { vec![("CHORUS_CRAWL_WATERMARK", "")] } else { Vec::new() }
+pub fn crawler_env(_may_write: bool) -> Vec<(&'static str, &'static str)> {
+    Vec::new()
 }
 
 /// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
@@ -1230,12 +1296,11 @@ mod duration_growth_4645 {
 mod crawl_first_4318 {
     use super::*;
 
+    /// #4568 — the team run writes nothing: each land's crawl writes, the nightly checks
     #[test]
-    fn the_team_run_crawls_before_it_validates() {
-        assert!(crawler_args(true).is_empty(), "a full pass: write, then validate");
-        // #4185 — no args alone was a DELTA pass (the graph's watermark), which
-        // prints no VALIDATE lines; the empty watermark is what makes it full.
-        assert_eq!(crawler_env(true), vec![("CHORUS_CRAWL_WATERMARK", "")]);
+    fn the_team_run_only_validates() {
+        assert_eq!(crawler_args(true), vec!["--validate"]);
+        assert!(crawler_env(true).is_empty(), "--validate is always full; no watermark to override");
     }
 
     /// NEGATIVE PROOF — a run that may not write prod (a werk) never crawls.

@@ -9,7 +9,8 @@
 # What it reads — the crawler's own evidence, nothing else:
 #   CRAWL_LOG        ~/Library/Logs/Chorus/crawl-nightly.log (the 03:00 nightly's full pass and every on-land delta, #4185)
 #   .chorus-crawl-watermark  at CHORUS_ROOT — the commit the graph is known to match
-# Stale when: no log · the log has not been written in 26 h · the last pass held
+# Stale when: no log · the log has not been written in 26 h · the last land crawl
+# was refused (#4568) · the last pass held
 # its watermark ("watermark HELD" — deletes refused or a write failed) · no
 # watermark file at all. Seams CRAWL_LOG / CHORUS_ROOT exist so the live test can
 # hand the check a fixture (test-crawler-alerts-live.sh).
@@ -30,6 +31,10 @@ check: |
   NOW=$(date +%s); MT=$(stat -f %m "$LOG" 2>/dev/null || stat -c %Y "$LOG")
   AGE=$((NOW - MT))
   if [ "$AGE" -gt "$MAX_AGE_SEC" ]; then echo "stale:last-pass-${AGE}s-ago>${MAX_AGE_SEC}s"; exit 1; fi
+  # #4568 — a land's crawl that was refused (the runner or the sensor said no)
+  # leaves its refusal as the log's last line; the 03:00 pass hid 13 of them
+  LASTLINE=$(grep -v '^[[:space:]]*$' "$LOG" | tail -1)
+  case "$LASTLINE" in "chorus-runner call:"*|*"nothing ran"*) echo "refused:${LASTLINE}"; exit 1 ;; esac
   # the LAST pass = from the last "chorus-crawl: full|delta" header to the end
   LAST=$(awk '/^chorus-crawl: (full|delta)/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$LOG")
   if [ -z "$LAST" ]; then echo "no-pass-in-log"; exit 1; fi

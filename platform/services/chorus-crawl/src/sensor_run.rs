@@ -140,6 +140,53 @@ pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
     }
 }
 
+/// #4568 — a sensor writes its owner's rows, and the door lets only a row's
+/// owner update it, so a pass run as anyone else is refused row by row (or
+/// takes rows it should not). The run goes ahead only as the Sensor row's
+/// owner; a Sensor with no row yet is being created by its first run.
+pub fn owner_may_run(sensor: &str, caller: &str, owner: Option<&str>) -> Result<(), String> {
+    let bare = |s: &str| s.rsplit([':', '#']).next().unwrap_or(s).trim_start_matches("principal-").to_string();
+    match owner.map(bare) {
+        Some(o) if !o.is_empty() && o != bare(caller) => {
+            Err(format!("{sensor} is {o}'s sensor: it writes {o}'s rows, so it runs as {o}, not {} — nothing ran", bare(caller)))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The `ownedBy` link out of a door GET of one row.
+pub fn owned_by(body: &str) -> Option<String> {
+    let at = body.find("\"ownedBy\"")? + "\"ownedBy\"".len();
+    let rest = body[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    rest.find('"').map(|end| rest[..end].to_string())
+}
+
+#[cfg(test)]
+mod owner_4568 {
+    use super::*;
+
+    #[test]
+    fn the_owner_is_read_from_the_rows_links() {
+        let body = r#"{ "data": { "sensorPass": "files" }, "links": { "creator": "chorus:principal-kade", "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }"#;
+        assert_eq!(owned_by(body).as_deref(), Some("chorus:principal-kade"));
+        assert_eq!(owned_by(r#"{ "links": {} }"#), None);
+    }
+
+    #[test]
+    fn the_owner_runs_its_sensor_and_a_new_sensor_runs() {
+        assert!(owner_may_run("files", "kade", Some("chorus:principal-kade")).is_ok());
+        assert!(owner_may_run("files", "kade", None).is_ok());
+    }
+
+    /// NEGATIVE PROOF — 10-17..10-19: the files sensor run as silas would update kade's rows
+    #[test]
+    fn anyone_else_is_refused_by_name() {
+        let e = owner_may_run("files", "silas", Some("chorus:principal-kade")).unwrap_err();
+        assert!(e.contains("files is kade's sensor") && e.contains("not silas"), "{e}");
+        assert!(owner_may_run("files", "jeff", Some("https://jeffbridwell.com/chorus#principal-kade")).is_err());
+    }
+}
+
 #[cfg(test)]
 mod tests_4405 {
     use super::*;
