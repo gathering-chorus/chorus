@@ -337,33 +337,50 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
   });
 }
 
-// #4628 — what Jeff types in a role's terminal, posted by that role's
-// UserPromptSubmit hook. Record only: pulse writes it to Buzz once and delivers
-// nothing, since the role already has the words on screen. Until now only
-// Clearing v1's transcript tailer copied these (393 of Jeff's 469 messages on
-// 10-19), and it wrote every double that day. Same secret as /api/nudge; a hook
-// retry inside the dedup window is one note, and a Clearing message delivered
-// into the terminal is skipped (Clearing v2 already wrote it, #4608).
-const recentTerminal = new Map<string, number>();
-function registerTerminalInputRoutes(app: Express, store: MessageStore, buzz?: BuzzPoster): void {
-  app.post('/api/terminal-input', (req, res) => {
+// #4628 — one record-only route for what reaches Buzz through pulse without
+// being delivered: kind "jeff" is what Jeff typed in a role's terminal (posted
+// by that role's UserPromptSubmit hook; until 10-19 only Clearing v1's
+// transcript tailer copied it, 393 of his 469 messages that day, and it wrote
+// every double); kind "land" is the "Accepted #N — title" notice `cards done`
+// posts (until now only v1's spine tailer made it). Same secret as /api/nudge.
+// A repeat inside its window is one note; a Clearing message pulse delivered
+// into a terminal is skipped (Clearing v2 already wrote it, #4608).
+const recentRecords = new Map<string, number>();
+const LAND_WINDOW_MS = 10 * 60 * 1000; // the land emits its accept more than once (#4502)
+function registerRecordRoutes(app: Express, store: MessageStore, buzz?: BuzzPoster): void {
+  app.post('/api/record', (req, res) => {
     const secret = req.headers['x-chorus-pulse-secret'];
     if (!callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) {
-      return res.status(403).json({ error: 'not-canonical-caller', message: 'POST /api/terminal-input accepts only the hook, with the pulse secret.' });
+      return res.status(403).json({ error: 'not-canonical-caller', message: 'POST /api/record accepts only chorus callers with the pulse secret.' });
     }
-    const { to, content } = req.body ?? {};
-    if (typeof to !== 'string' || !to || typeof content !== 'string' || !content) {
-      return res.status(400).json({ error: 'to, content required' });
+    const b = req.body ?? {};
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+    if (b.kind === 'jeff') {
+      const to = str(b.to), content = str(b.content);
+      if (!to || !content) return res.status(400).json({ error: 'to, content required' });
+      if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentRecords, DEDUP_WINDOW_MS)) return res.json({ ok: true, deduped: true });
+      if (store.jeffInputSentRecently(to, content)) return res.json({ ok: true, deduped: 'clearing' });
+      const id = Date.now(); // unique across pulse restarts, unlike a counter
+      buzz?.post({ id, from: 'jeff', to, content, surface: 'terminal' });
+      log('info', 'record.jeff', { id, to, chars: content.length });
+      return res.json({ ok: true, id });
     }
-    if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentTerminal, DEDUP_WINDOW_MS)) {
-      return res.json({ ok: true, deduped: true });
+    if (b.kind === 'land') {
+      const card = Number(b.card);
+      if (!Number.isInteger(card) || card <= 0) return res.status(400).json({ error: 'card required' });
+      if (seenRecently(`land:${card}`, Date.now(), recentRecords, LAND_WINDOW_MS)) return res.json({ ok: true, deduped: true });
+      const title = str(b.title);
+      const accepter = str(b.accepter);
+      // #3743 — never a default to Jeff; a land with no accepter is itself a defect (Wren): loud, no note
+      if (!accepter) {
+        log('warn', 'record.land.no-accepter', { card });
+        return res.status(422).json({ error: 'no-accepter', message: `land of #${card} names no accepter; no note written` });
+      }
+      buzz?.post({ id: card, from: accepter, to: str(b.owner) ?? '', content: `Accepted #${card}${title ? ` — ${title}` : ''}`, surface: 'land' });
+      log('info', 'record.land', { card });
+      return res.json({ ok: true, id: card });
     }
-    // A Clearing message pulse delivered into this terminal; v2 already wrote it.
-    if (store.jeffInputSentRecently(to, content)) return res.json({ ok: true, deduped: 'clearing' });
-    const id = Date.now(); // unique across pulse restarts, unlike a counter
-    buzz?.post({ id, from: 'jeff', to, content, surface: 'terminal' });
-    log('info', 'terminal.input.recorded', { id, to, chars: content.length });
-    res.json({ ok: true, id });
+    return res.status(400).json({ error: 'kind must be jeff or land' });
   });
 }
 
@@ -442,7 +459,7 @@ export function createApp(
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics, worker, buzz);
   registerJeffInputRoutes(app, store, worker);
-  registerTerminalInputRoutes(app, store, buzz);
+  registerRecordRoutes(app, store, buzz);
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);

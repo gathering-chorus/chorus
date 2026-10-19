@@ -3,7 +3,7 @@
 //! Measured 2026-10-19: of Jeff's 469 messages in Buzz that day, 393 came only
 //! from Clearing v1's transcript tailer, which also wrote every one of the
 //! day's 110 doubles. The UserPromptSubmit hook sees each prompt as it is
-//! typed, so it posts the text to pulse (`/api/terminal-input`, record only)
+//! typed, so it posts the text to pulse (`/api/record`, kind jeff, record only)
 //! and v1's copy can go.
 //!
 //! Only what Jeff typed or pasted counts. A prompt can also be something the
@@ -97,9 +97,9 @@ pub fn record(role: &str, prompt: &str) {
     };
     let role = role.to_string();
     tokio::spawn(async move {
-        let url = std::env::var("CHORUS_PULSE_TERMINAL_URL")
-            .unwrap_or_else(|_| "http://localhost:3475/api/terminal-input".to_string());
-        let body = serde_json::json!({ "to": role, "content": text });
+        let url = std::env::var("CHORUS_PULSE_RECORD_URL")
+            .unwrap_or_else(|_| "http://localhost:3475/api/record".to_string());
+        let body = serde_json::json!({ "kind": "jeff", "to": role, "content": text });
         let r = role.clone();
         let sent = tokio::task::spawn_blocking(move || {
             ureq::post(&url)

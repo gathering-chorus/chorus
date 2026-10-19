@@ -20,7 +20,7 @@ import { BuzzWriter, type BuzzNote } from './buzz-writer';
 
 jest.mock('./peers', () => ({ fetchPeers: () => Promise.resolve(['abby-normal', 'jeff', 'kade', 'silas', 'wren']) }));
 
-const ROUTE = '/api/terminal-input';
+const ROUTE = '/api/record';
 const sk = new Uint8Array(32).fill(62);
 const bridge = { pubkey: bytesToHex(schnorr.getPublicKey(sk)), sign: (id: string) => bytesToHex(schnorr.sign(hexToBytes(id), sk)) };
 
@@ -61,7 +61,7 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     const relay = await stubRelay();
     const { app, writer, store } = await rig(relay);
     try {
-      const res = await request(app).post(ROUTE).send({ to: 'silas', content: 'ok router is in living room' });
+      const res = await request(app).post(ROUTE).send({ kind: 'jeff', to: 'silas', content: 'ok router is in living room' });
       expect(res.status).toBe(200);
       await until(() => relay.got.length > 0);
       expect(relay.got).toHaveLength(1);
@@ -78,8 +78,8 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     const relay = await stubRelay();
     const { app, writer } = await rig(relay);
     try {
-      await request(app).post(ROUTE).send({ to: 'wren', content: 'go' });
-      await request(app).post(ROUTE).send({ to: 'wren', content: 'go' });
+      await request(app).post(ROUTE).send({ kind: 'jeff', to: 'wren', content: 'go' });
+      await request(app).post(ROUTE).send({ kind: 'jeff', to: 'wren', content: 'go' });
       await until(() => relay.got.length > 0);
       await settle();
       expect(relay.got).toHaveLength(1);
@@ -93,9 +93,9 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     const { app, writer, store } = await rig(relay);
     try {
       store.sendJeffInput('wren', '@wren go');
-      const res = await request(app).post(ROUTE).send({ to: 'wren', content: '@wren go' });
+      const res = await request(app).post(ROUTE).send({ kind: 'jeff', to: 'wren', content: '@wren go' });
       expect(res.body.deduped).toBe('clearing');
-      await request(app).post(ROUTE).send({ to: 'kade', content: '@wren go' });
+      await request(app).post(ROUTE).send({ kind: 'jeff', to: 'kade', content: '@wren go' });
       await until(() => relay.got.length > 0);
       await settle();
       expect(relay.got.map((n) => n.tags.find((t) => t[0] === 'to')?.[1])).toEqual(['kade']);
@@ -109,11 +109,11 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     const relay = await stubRelay();
     const { app, writer } = await rig(relay);
     try {
-      const res = await request(app).post(ROUTE).send({ to: 'silas', content: 'spoofed' });
+      const res = await request(app).post(ROUTE).send({ kind: 'jeff', to: 'silas', content: 'spoofed' });
       expect(res.status).toBe(403);
       await settle();
       expect(relay.got).toHaveLength(0);
-      const ok = await request(app).post(ROUTE).set('X-Chorus-Pulse-Secret', 'secret-4628').send({ to: 'silas', content: 'typed' });
+      const ok = await request(app).post(ROUTE).set('X-Chorus-Pulse-Secret', 'secret-4628').send({ kind: 'jeff', to: 'silas', content: 'typed' });
       expect(ok.status).toBe(200);
       await until(() => relay.got.length > 0);
       expect(relay.got.map((n) => n.content)).toEqual(['typed']);
@@ -124,8 +124,8 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     const relay = await stubRelay();
     const { app, writer } = await rig(relay);
     try {
-      expect((await request(app).post(ROUTE).send({ content: 'x' })).status).toBe(400);
-      expect((await request(app).post(ROUTE).send({ to: 'silas' })).status).toBe(400);
+      expect((await request(app).post(ROUTE).send({ kind: 'jeff', content: 'x' })).status).toBe(400);
+      expect((await request(app).post(ROUTE).send({ kind: 'jeff', to: 'silas' })).status).toBe(400);
     } finally { writer.close(); await relay.close(); }
   });
 });

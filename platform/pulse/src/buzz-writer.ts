@@ -34,8 +34,8 @@ export interface BuzzNote {
 /** One message pulse carries, as the room should show it. */
 export interface BuzzMessage {
   id: number; from: string; to: string; content: string;
-  /** #4628 — 'terminal': Jeff typed it in `to`'s terminal; recorded as typed, never framed. */
-  surface?: 'terminal';
+  /** #4628 — 'terminal': Jeff typed it in `to`'s terminal; 'land': a land notice, `to` the card's owner. Recorded as given, never framed. */
+  surface?: 'terminal' | 'land';
 }
 
 export interface BuzzWriterOptions {
@@ -96,10 +96,13 @@ export class BuzzWriter {
   /** Post one message. Never throws and never blocks the caller. */
   post(m: BuzzMessage): void {
     const topic = this.o.topic ?? 'team';
-    const { text, kind } = m.surface === 'terminal' ? { text: m.content, kind: 'jeff' } : roomText(m);
+    const { text, kind } = m.surface === 'terminal' ? { text: m.content, kind: 'jeff' }
+      : m.surface === 'land' ? { text: m.content, kind: 'land' } : roomText(m);
     const tags = m.surface === 'terminal'
       ? [['t', topic], ['author', 'jeff'], ['kind', kind], ['to', m.to], ['surface', 'terminal'], ['msg', `pulse-term-${m.id}`]]
-      : [['t', topic], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
+      : m.surface === 'land'
+        ? [['t', topic], ['author', m.from], ['kind', kind], ...(m.to ? [['owner', m.to]] : []), ['msg', `pulse-land-${m.id}`]]
+        : [['t', topic], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
     const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), 1, tags, text);
     if (!this.ws || !this.open) { this.miss(note, 'relay not connected'); return; }
     const timer = setTimeout(() => {

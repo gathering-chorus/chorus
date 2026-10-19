@@ -39,6 +39,13 @@ describe('#4628 /counts shows doubles per kind', () => {
     expect(none).toContain('Doubles: unmeasured');
   });
 
+  test('the doubles table comes before the by-day table, so Jeff reaches it without scrolling 200 days (Wren 17:17)', () => {
+    const doubles = byDay([r('doubles-jeff', '2026-10-19', 1)], DOUBLE_COLUMNS);
+    const html = renderCountsPage(byDay([sent]), {}, [], doubles);
+    expect(html.indexOf('Doubles in Buzz')).toBeGreaterThan(-1);
+    expect(html.indexOf('Doubles in Buzz')).toBeLessThan(html.indexOf('Messages and events by day'));
+  });
+
   test('the doubles table is six short columns, so it fits a phone', () => {
     const doubles = byDay([r('doubles-jeff', '2026-10-19', 1)], DOUBLE_COLUMNS);
     const html = renderCountsPage(byDay([sent]), {}, [], doubles);

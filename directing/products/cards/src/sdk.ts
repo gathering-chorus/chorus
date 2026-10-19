@@ -873,6 +873,55 @@ export type FetchLike = (
   },
 ) => Promise<{ ok: boolean; status: number; text?: () => Promise<string> }>;
 
+/** #4628 — the pulse secret, read by the caller itself (env, then the 0600 file). */
+function pulseSecret(): string | undefined {
+  if (process.env.CHORUS_PULSE_SECRET) return process.env.CHORUS_PULSE_SECRET;
+  try {
+    const p = process.env.CHORUS_PULSE_SECRET_FILE || `${process.env.HOME}/.chorus/pulse-nudge.secret`;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, security/detect-non-literal-fs-filename -- fixed internal secret path
+    return (require('fs') as typeof import('fs')).readFileSync(p, 'utf8').trim() || undefined;
+  } catch { return undefined; }
+}
+
+/**
+ * #4628 — the land notice ("Accepted #N — title") reaches Buzz once, through
+ * pulse's record route. Until 10-19 only Clearing v1's spine tailer posted it,
+ * with no author. The accepter is whoever gave the go (ACCEPTER); pulse refuses
+ * a land that names none, and that refusal comes back here as a miss, loudly.
+ * Never throws: a land is not undone by a missing notice.
+ */
+export async function recordLand(args: {
+  card: number; title: string; owner: string; accepter: string | undefined;
+  secret?: string; pulseUrl?: string; fetchImpl?: FetchLike; timeoutMs?: number;
+}): Promise<{ recorded: boolean; error?: string }> {
+  const url = args.pulseUrl || process.env.CHORUS_PULSE_RECORD_URL || 'http://localhost:3475/api/record';
+  // #4131's rule: a test brings its own world. Under jest or a bats CLI test,
+  // `cards done` never writes a land note into live Buzz unless handed a pulse.
+  const testContext = !!(process.env.JEST_WORKER_ID || process.env.CARDS_BRIEFS_ROOT);
+  if (testContext && !args.fetchImpl && !args.pulseUrl && !process.env.CHORUS_PULSE_RECORD_URL) {
+    return { recorded: false, error: 'test context: no live pulse' };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fetchImpl: FetchLike | undefined = args.fetchImpl || ((globalThis as any).fetch as FetchLike | undefined);
+  if (!fetchImpl) return { recorded: false, error: 'no-fetch-impl' };
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), args.timeoutMs ?? 2000);
+  try {
+    const resp = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Chorus-Pulse-Secret': args.secret ?? pulseSecret() ?? '' },
+      body: JSON.stringify({ kind: 'land', card: args.card, title: args.title, owner: args.owner.toLowerCase(), accepter: args.accepter }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) return { recorded: false, error: `${resp.status} ${resp.text ? (await resp.text().catch(() => '')).slice(0, 200) : ''}`.trim() };
+    return { recorded: true };
+  } catch (err) {
+    return { recorded: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function sendCardApprovalNudge(args: {
   from: string;
   to: string;
@@ -1325,6 +1374,13 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
   emitSpineEvent('card.accepted', role, {
     card_id: String(index), title, board: client.boardName, hop: '1', source_service: 'board', dest_service: 'role-state', callStack: 'integration',
   });
+  // #4628 — the land notice reaches Buzz once, from pulse (no longer v1's spine tailer)
+  const accepter = process.env.ACCEPTER || process.env.DEPLOY_ROLE || undefined;
+  const land = await recordLand({ card: index, title, owner, accepter });
+  if (!land.recorded) {
+    console.error(`  (land notice not recorded: ${land.error})`);
+    emitSpineEvent('land.record.missed', role, { card_id: String(index), error: land.error ?? '' });
+  }
   autoRoleState('idle');
 
   // #2652 AC3 — single emit function in cards. Was emitChorusEvent (different
