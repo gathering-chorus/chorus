@@ -4,6 +4,23 @@ import type { BoardColumn } from './sources/board';
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
 import { DAY_COLUMNS, type DayCell, type DayRow } from './sources/readings';
 import type { Streams } from './sources/streams';
+import { uploadNames } from './uploads';
+import fs from 'fs';
+import path from 'path';
+
+/** #4635 — Cloudflare hands phones these files with a 4-hour cache (measured: max-age=14400),
+ *  so Jeff's iPhone kept the old page script and stylesheet: the photo button did nothing and
+ *  the icon words showed. Each URL carries the files' newest change time, so a new version is
+ *  a new URL and is fetched at once. */
+export const ASSET_VERSION = ((): string => {
+  const dir = path.join(__dirname, '../public');
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed names under this package's own public dir
+    return String(Math.floor(Math.max(...['app.js', 'style.css', 'room-key.js'].map((f) => fs.statSync(path.join(dir, f)).mtimeMs))));
+  } catch {
+    return String(Date.now());
+  }
+})();
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -40,6 +57,8 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
 const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
       <input type="text" id="composer-input" placeholder="Message #team..." autocomplete="off">
+      <label class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden>📷</label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
     </form>
     <div id="send-error" class="send-error" role="alert"></div>
@@ -60,7 +79,7 @@ export function renderPageShell(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title} · The Clearing v2</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=${ASSET_VERSION}">
   <script type="importmap">
   {
     "imports": {
@@ -73,7 +92,7 @@ export function renderPageShell(
   <script>
     window.CHORUS_WEBID = "https://id.lightlifeurbangardens.com/jeff/profile/card#me";
   </script>
-  <script type="module" src="/room-key.js"></script>
+  <script type="module" src="/room-key.js?v=${ASSET_VERSION}"></script>
 </head>
 <body>
   <header class="app-header">
@@ -88,7 +107,7 @@ export function renderPageShell(
   ${renderNav(activeNav, counts)}
   ${bodyContent}
   ${activeNav === 'rooms' ? '' : TEAM_COMPOSER}
-  <script src="/app.js"></script>
+  <script src="/app.js?v=${ASSET_VERSION}"></script>
 </body>
 </html>`;
 }
@@ -409,6 +428,13 @@ export function formatRoomText(raw: string): string {
   return result;
 }
 
+/** #4635 — a message that names an uploaded photo shows it, tap to open full size. */
+export function roomPhotos(text: string): string {
+  const names = uploadNames(text);
+  if (names.length === 0) return '';
+  return `<div class="msg-photos">${names.map((n) => `<a href="/uploads/${n}" target="_blank" rel="noopener"><img src="/uploads/${n}" alt="photo ${n}" loading="lazy"></a>`).join('')}</div>`;
+}
+
 export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
@@ -423,6 +449,7 @@ export function renderRoomMessage(m: RoomsData['messages'][number]): string {
         ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
         ${thinkingBadge}
         <div>${linkifiedText}</div>
+        ${roomPhotos(m.text)}
         ${m.threadCount ? `
           <div class="thread-container" style="margin-top:6px">
             <span class="thr">${m.threadCount} working replies${m.threadLast ? ` · last ${m.threadLast}` : ''}</span>
@@ -807,7 +834,9 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         <footer class="composer-bar">
           <form id="composer-form">
             <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-            <button type="submit" id="composer-send">Send</button>
+            <label class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden>📷</label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
+      <button type="submit" id="composer-send">Send</button>
           </form>
           <div id="send-error" class="send-error" role="alert"></div>
         </footer>
