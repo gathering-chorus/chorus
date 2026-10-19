@@ -353,7 +353,7 @@ function registerWriteRoutes(ctx: RouteContext): void {
     // roles does not wait on Buzz; the answer says whether Buzz stored it.
     onInboundEvent(event!);
     const room = roomOf(event!);
-    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id]], event!.created_at);
+    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id], ['surface', 'clearing']], event!.created_at);
     const stored = copy ? await relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
     if (!stored.ok) console.error(`[clearing-v2] ${identity.role}'s message ${event!.id.slice(0, 12)} was not stored in Buzz: ${stored.reason}`);
     res.json({ ok: true, id: event!.id, from: identity.role, stored: stored.ok, ...(stored.ok ? {} : { reason: stored.reason }) });
