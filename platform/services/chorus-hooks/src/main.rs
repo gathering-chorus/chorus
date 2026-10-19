@@ -1039,6 +1039,9 @@ async fn user_prompt_submit(
     // Context injection (#1838) — search Chorus + memory, inject before role thinks
     let context_result = hooks::context_inject::check(&input, &state).await;
 
+    // #4628 — what Jeff typed reaches Buzz once, through pulse. Spawned, 1 s cap.
+    hooks::terminal_input::record(input.role().as_str(), input.prompt.as_deref().unwrap_or(""));
+
     // JDI detector — fire-and-forget (#1598)
     let state_clone = state.clone();
     let input_clone = input.clone();

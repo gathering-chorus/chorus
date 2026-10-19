@@ -1,12 +1,13 @@
 // @domain: messages
 /**
  * #4634 — the messages sensor's Buzz reader. Prints one JSON line per Boston
- * day before today: {"day","sent","kept"} by the countKinds rule, read from
+ * day before today: {"day","sent","kept","doubles"} by the countKinds rule
+ * (doubles per kind by the #4646 rule, #4628), read from
  * pulse's message store (read-only) and the relay's #team room (as the
  * bridge). The sensor (chorus-crawl messages) turns these into SensorReadings;
  * Clearing v2's /counts reads those readings and derives nothing.
  *
- *   node dist/buzz-day-counts.js [--db <messages.db>]
+ *   node dist/buzz-day-counts.js [--db <messages.db>] [--today <YYYY-MM-DD>]
  * Env: PULSE_BUZZ_RELAY_URL, PULSE_BUZZ_RELAY_HOST (as the prod pulse plist).
  * Exit 3 = unmeasured (no relay, no key, no answer): print nothing, never 0.
  */
@@ -15,7 +16,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import WebSocket from 'ws';
 import { bridgeSignerFromHome, frameText, signNote } from './buzz-writer';
-import { countDays, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
+import { countDays, countDoubles, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
 
 export function readRows(db: string): DatedPulseRow[] {
   const d = new Database(db, { readonly: true, fileMustExist: true });
@@ -130,7 +131,13 @@ export async function main(argv: string[] = process.argv, env: NodeJS.ProcessEnv
     process.stderr.write(`buzz-day-counts: UNMEASURED — ${(e as Error).message}\n`);
     return 3;
   }
-  for (const d of countDays(rows, notes, bostonDay(Date.now()))) process.stdout.write(JSON.stringify(d) + '\n');
+  // --today <YYYY-MM-DD>: count the days before it (a check of today: pass tomorrow)
+  const t = argv.indexOf('--today');
+  const today = t > 0 && /^\d{4}-\d{2}-\d{2}$/.test(argv[t + 1] ?? '') ? argv[t + 1] : bostonDay(Date.now());
+  // #4628 — doubles per kind ride the same line as sent and kept
+  const doubles = new Map<string, Record<string, number>>();
+  for (const d of countDoubles(notes, today)) doubles.set(d.day, { ...(doubles.get(d.day) ?? {}), [d.kind]: d.doubles });
+  for (const d of countDays(rows, notes, today)) process.stdout.write(JSON.stringify({ ...d, doubles: doubles.get(d.day) ?? {} }) + '\n');
   return 0;
 }
 

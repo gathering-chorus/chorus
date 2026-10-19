@@ -144,3 +144,47 @@ export function countDays(rows: DatedPulseRow[], notes: RoomNote[], today: strin
     return { day, sent: kinds.reduce((a, k) => a + (k.sent || 0), 0), kept: kinds.reduce((a, k) => a + k.reached, 0) };
   });
 }
+
+/** #4628 — the kinds a doubles reading is kept for, one row per day each. */
+export const DOUBLE_KINDS = ['jeff', 'reply', 'nudge', 'alert', 'land'] as const;
+export type DoubleKind = (typeof DOUBLE_KINDS)[number];
+
+const tag = (n: RoomNote, k: string) => n.tags.find((t) => t[0] === k)?.[1];
+
+/** Which kind a room note is, from its tags (whichever writer posted it). */
+export function noteKind(n: RoomNote): DoubleKind {
+  const k = tag(n, 'kind');
+  if (k === 'nudge' || k === 'alert' || k === 'jeff') return k;
+  if (tag(n, 't') === 'reply' || tag(n, 'role')) return 'reply';
+  const author = tag(n, 'author');
+  if (author === 'jeff') return 'jeff';
+  if (!author || author === 'unattributed') return 'land';
+  return 'reply';
+}
+
+/** A role's reply header ("--- Silas | … ---"); its own key keeps it, v1's copy dropped it. */
+const words = (content: string) => content.replace(/^--- [^\n]* ---\s*/, '').trim();
+
+/**
+ * #4628 AC3 — doubles per Boston day per kind, for days before `today`. A
+ * double is the #4646 rule the room uses: same author, same words, within
+ * 20 s of an earlier note. Every kind gets a row for a day with notes, so 0 is
+ * a reading and not a silence.
+ */
+export function countDoubles(notes: RoomNote[], today: string, windowS = 20): Array<{ day: string; kind: DoubleKind; doubles: number }> {
+  const dated = notes.filter((n) => typeof n.created_at === 'number').sort((a, b) => (a.created_at as number) - (b.created_at as number));
+  const last = new Map<string, number>();
+  const counts = new Map<string, Map<DoubleKind, number>>();
+  for (const n of dated) {
+    const t = n.created_at as number;
+    const day = bostonDay(t * 1000);
+    if (day >= today) continue;
+    const row = counts.get(day) ?? new Map(DOUBLE_KINDS.map((k) => [k, 0]));
+    counts.set(day, row);
+    const key = `${tag(n, 'author') ?? tag(n, 'role') ?? ''}\u0000${words(n.content)}`;
+    const prev = last.get(key);
+    if (prev !== undefined && t - prev <= windowS) row.set(noteKind(n), (row.get(noteKind(n)) ?? 0) + 1);
+    last.set(key, t);
+  }
+  return [...counts.keys()].sort().flatMap((day) => DOUBLE_KINDS.map((kind) => ({ day, kind, doubles: counts.get(day)?.get(kind) ?? 0 })));
+}
