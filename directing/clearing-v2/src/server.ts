@@ -248,7 +248,7 @@ function registerReadApiRoutes(ctx: RouteContext): void {
   app.get('/api/rooms/:room/history', (req: Request, res: Response) => {
     const rawRoom = req.params.room;
     const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
-    const before = String(req.query.before || '');
+    const before = typeof req.query.before === 'string' ? req.query.before : '';
     const older = before ? dataService.getRoomHistory(room, before) : [];
     res.json({ count: older.length, html: older.map(renderRoomMessage).join('') });
   });
