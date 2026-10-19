@@ -18,7 +18,8 @@ What a day holds:
   buzz-<day>.sql.gz         pg_dump of the Buzz relay's Postgres on Bedroom
                             (room replies live only there)
   buzz-minio-<day>.tar.gz   the relay's attachments (Minio)
-  transcripts-<day>.tar.gz  session transcripts written that day
+  transcripts-<day>.tar.gz  every transcript line of that day, by its own time
+  nightly-suites-<day>.log.gz  the nightly suite log (the /nightly page's source)
   SHA256SUMS                one line per file
 
 Env (all have defaults): MEMORY_SPINE, MEMORY_MESSAGES_DB, MEMORY_BUZZ_PG_CMD,
@@ -49,6 +50,7 @@ BUZZ_PG_CMD = os.environ.get("MEMORY_BUZZ_PG_CMD", f"ssh -o ConnectTimeout=10 {B
 # the minio image has no tar; docker cp streams the folder as a tar
 BUZZ_MINIO_CMD = os.environ.get("MEMORY_BUZZ_MINIO_CMD", f"ssh -o ConnectTimeout=10 {BEDROOM} 'export PATH=$PATH:/usr/local/bin:/opt/homebrew/bin; docker cp buzz-prod-minio-1:/data -'")
 TRANSCRIPTS = os.environ.get("MEMORY_TRANSCRIPTS", f"{HOME}/.claude/projects")
+NIGHTLY_LOG = os.environ.get("MEMORY_NIGHTLY_LOG", f"{HOME}/Library/Logs/Chorus/nightly-suites.log")
 LOCAL = os.environ.get("MEMORY_LOCAL", f"{HOME}/Backups/chorus-memory")
 DRIVE = os.environ.get("MEMORY_DRIVE", "")
 REMOTE = os.environ.get("MEMORY_REMOTE", "Jeffs-Mac-mini.local:/Users/jeffbridwell/Backups/chorus-memory")
@@ -146,19 +148,45 @@ def dump_to_gz(cmd: str, out: str, what: str) -> list:
 
 
 def transcripts_of(day: str, out: str) -> int:
-    """Session transcripts last written on `day`, as one tar.gz."""
+    """Every transcript line of `day`, by the line's own timestamp (a line with
+    none goes with the line before), one tar member per session file. Picking
+    whole files by mtime missed long sessions written on later days (Wren)."""
+    import io
+    start = datetime.datetime.fromisoformat(day + "T00:00:00").replace(tzinfo=BOSTON).timestamp()
     n = 0
     with tarfile.open(out, "w:gz") as t:
         for root, _, files in os.walk(TRANSCRIPTS):
-            for name in files:
+            for name in sorted(files):
                 if not name.endswith(".jsonl"):
                     continue
                 p = os.path.join(root, name)
-                mday = datetime.datetime.fromtimestamp(os.path.getmtime(p), BOSTON).date().isoformat()
-                if mday == day:
-                    t.add(p, arcname=os.path.relpath(p, TRANSCRIPTS))
+                if os.path.getmtime(p) < start:
+                    continue  # last written before the day began: holds none of it
+                buf = io.BytesIO()
+                current = None
+                with open(p, "rb") as f:
+                    for line in f:
+                        d = line_day(line) or current
+                        current = d
+                        if d == day:
+                            buf.write(line)
+                if buf.tell():
+                    info = tarfile.TarInfo(os.path.relpath(p, TRANSCRIPTS))
+                    info.size = buf.tell()
+                    info.mtime = int(start)
+                    buf.seek(0)
+                    t.addfile(info, buf)
                     n += 1
     return n
+
+
+def file_snapshot(src: str, out: str) -> list:
+    """A whole-file copy, gzipped (the nightly suite log: the /nightly page's source)."""
+    if not os.path.exists(src):
+        return [f"{os.path.basename(src)}: not found at {src}"]
+    with open(src, "rb") as r, gzip.open(out, "wb", compresslevel=6) as g:
+        shutil.copyfileobj(r, g)
+    return []
 
 
 def sha256(path: str) -> str:
@@ -212,6 +240,7 @@ def main(argv: list) -> int:
         red += dump_to_gz(BUZZ_PG_CMD, os.path.join(folder, f"buzz-{day}.sql.gz"), "buzz postgres")
         red += dump_to_gz(BUZZ_MINIO_CMD, os.path.join(folder, f"buzz-minio-{day}.tar.gz"), "buzz minio")
         print(f"memory-backup {day}: transcripts {transcripts_of(day, os.path.join(folder, f'transcripts-{day}.tar.gz'))}")
+        red += file_snapshot(NIGHTLY_LOG, os.path.join(folder, f"nightly-suites-{day}.log.gz"))
         if red:
             # a day missing a piece is not written as kept: the next run tries again
             for r in red:

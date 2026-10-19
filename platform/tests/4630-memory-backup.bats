@@ -16,14 +16,20 @@ setup() {
     echo '{"event":"d","timestamp":"2026-10-19T00:10:00-0400"}'
   } > "$T/chorus.log"
   python3 -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("create table messages(x)"); c.execute("insert into messages values (1)"); c.commit()' "$T/messages.db"
-  echo '{}' > "$T/transcripts/p/s.jsonl"
-  touch -t 202610181200 "$T/transcripts/p/s.jsonl"
+  # a long session: started on 10-17, written into 10-19 (mtime today)
+  {
+    echo '{"type":"user","timestamp":"2026-10-17T20:00:00.000Z"}'
+    echo '{"type":"user","timestamp":"2026-10-18T15:00:00.000Z"}'
+    echo '{"type":"mode"}'
+    echo '{"type":"user","timestamp":"2026-10-19T15:00:00.000Z"}'
+  } > "$T/transcripts/p/s.jsonl"
+  echo 'RUN|complete|2026-10-18T05:06:38|suites=517' > "$T/nightly.log"
 }
 
 teardown() { rm -rf "$T"; }
 
 backup() {
-  run env MEMORY_SPINE="$T/chorus.log" MEMORY_MESSAGES_DB="$T/messages.db" MEMORY_TRANSCRIPTS="$T/transcripts" \
+  run env MEMORY_SPINE="$T/chorus.log" MEMORY_MESSAGES_DB="$T/messages.db" MEMORY_TRANSCRIPTS="$T/transcripts" MEMORY_NIGHTLY_LOG="$T/nightly.log" \
     MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="${DRIVE-$T/drive-home/My Drive/chorus-backups}" \
     MEMORY_BUZZ_PG_CMD="echo 'create table buzz'" MEMORY_BUZZ_MINIO_CMD="echo minio" \
     python3 "$ROOT/platform/scripts/memory-backup.py" "$@"
@@ -32,14 +38,19 @@ backup() {
 @test "a day is kept in three places with matching hashes, and its spine slice is only that day's lines" {
   backup 2026-10-18
   [ "$status" -eq 0 ] || return 1
-  [[ "$output" == *"OK — 5 files, 3 places"* ]] || return 1
+  [[ "$output" == *"OK — 6 files, 3 places"* ]] || return 1
   for place in "$T/local" "$T/bedroom" "$T/drive-home/My Drive/chorus-backups"; do
     (cd "$place/2026-10-18" && shasum -a 256 -c SHA256SUMS >/dev/null) || return 1
   done
   run bash -c "gunzip -c '$T/local/2026-10-18/spine-2026-10-18.jsonl.gz'"
   [ "${#lines[@]}" -eq 3 ] || return 1
   [[ "$output" == *'"b"'* && "$output" == *'"c"'* && "$output" == *"torn tail"* ]] || return 1
-  [[ "$output" != *'"a"'* && "$output" != *'"d"'* ]]
+  [[ "$output" != *'"a"'* && "$output" != *'"d"'* ]] || return 1
+  # the long session's 10-18 lines are kept though the file was last written on 10-19
+  run bash -c "tar -xzOf '$T/local/2026-10-18/transcripts-2026-10-18.tar.gz'"
+  [ "${#lines[@]}" -eq 2 ] || return 1
+  [[ "$output" == *'2026-10-18T15:00'* && "$output" == *'"mode"'* ]] || return 1
+  [[ "$output" != *'2026-10-17T20'* && "$output" != *'2026-10-19T15'* ]]
 }
 
 @test "negative proof: one changed byte in a copied slice turns the backup red" {
