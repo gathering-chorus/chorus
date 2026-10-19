@@ -331,8 +331,42 @@ function scrollRoomToNewest() {
   const stream = document.getElementById('messages-stream');
   if (stream) stream.scrollTop = stream.scrollHeight;
 }
+/** #4597 — Jeff 19:11: "i cant scroll up in message history". Near the top of the room,
+ *  fetch the page of messages just older than the oldest shown and put it above, keeping
+ *  the reader's place. Resolves to how many were added (0 = no older messages). */
+let loadingOlder = false;
+async function loadOlderMessages(fetchImpl) {
+  if (typeof document === 'undefined' || loadingOlder) return 0;
+  const stream = document.getElementById('messages-stream');
+  const first = stream && stream.querySelector('[id^="msg-"]');
+  const picker = document.getElementById('room-picker');
+  if (!stream || !first) return 0;
+  const room = (picker && picker.value) || 'team';
+  loadingOlder = true;
+  try {
+    const url = clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/history?before=' + encodeURIComponent(first.id.slice(4));
+    const res = await (fetchImpl || fetch)(url);
+    if (!res.ok) return 0;
+    const body = await res.json();
+    if (!body || !body.count) return 0;
+    const fromBottom = stream.scrollHeight - stream.scrollTop;
+    first.insertAdjacentHTML('beforebegin', body.html);
+    stream.scrollTop = stream.scrollHeight - fromBottom;
+    return body.count;
+  } finally {
+    loadingOlder = false;
+  }
+}
+function watchRoomScroll() {
+  if (typeof document === 'undefined') return;
+  const stream = document.getElementById('messages-stream');
+  if (stream && stream.addEventListener) {
+    stream.addEventListener('scroll', () => { if (stream.scrollTop < 80) loadOlderMessages(); });
+  }
+}
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
+  window.addEventListener('DOMContentLoaded', watchRoomScroll);
   window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
@@ -572,6 +606,7 @@ if (typeof module !== 'undefined' && module.exports) {
     appendLinkedText,
     updateTiles,
     scrollRoomToNewest,
+    loadOlderMessages,
     initStream,
     loadOrCreateRoomKey,
     signEvent,

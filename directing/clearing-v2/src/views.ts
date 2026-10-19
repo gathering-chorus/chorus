@@ -3,6 +3,7 @@ import type { BoardColumn } from './sources/board';
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
 import type { KindCount } from './sources/message-counts';
+import type { Streams } from './sources/streams';
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -27,6 +28,7 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
     <a href="/rooms/team" class="${on('rooms')}">Rooms</a>
     <a href="/board" class="${on('board')}">Board</a>
     <a href="/roles" class="${on('roles')}">Teammates</a>
+    <a href="/streams" class="${on('streams')}">Streams</a>
     <a href="/calendar" class="${on('calendar')}">Calendar</a>
     <a href="/plans" class="${on('plans')}">Plans</a>
     <a href="/alerts" class="${on('alerts')}">Alerts${countBadge(counts?.alerts)}</a>
@@ -852,6 +854,28 @@ ${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reache
     ${body}
   </main>`;
   return renderPageShell('Messages today', 'counts', content, sources);
+}
+
+/**
+ * #4597 — Jeff 16:25: "i really need a streams menu option too". One column per role,
+ * newest command first, refreshed every 5 seconds. An unreadable stream is named.
+ */
+export function renderStreamsPage(streams: Streams, sources: TrustStripSource[]): string {
+  const body = !streams.ok
+    ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
+    : streams.roles.length === 0
+      ? `<div class="meta" style="padding:16px">No commands in the stream yet.</div>`
+      : `<div class="streams-grid">${streams.roles.map((r) => `
+      <section class="stream-col">
+        <h3 class="who-${escapeHtml(r.role)}">${escapeHtml(r.role)}</h3>
+        ${r.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> ${escapeHtml(l.text)}</div>`).join('')}
+      </section>`).join('')}
+    </div>`;
+  const content = `<main class="page streams-page" id="streams-page">
+    ${body}
+  </main>
+  <script>setTimeout(function () { window.location.reload(); }, 5000);</script>`;
+  return renderPageShell('Streams', 'streams', content, sources);
 }
 
 function escapeHtml(t: string | undefined): string {
