@@ -40,3 +40,11 @@ run_runner() {
   grep -q "OK all-good" "$T/log" || return 1
   [ ! -f "$T/actions" ]
 }
+
+@test "a check with a multi-line python block runs under launchd's python 3.9: the YAML indent is stripped" {
+  rm "$T/rules/a.yml" "$T/rules/b.yml"
+  printf 'name: py-check\ncheck: |\n  /usr/bin/python3 -c '"'"'\n  import sys\n  print("ok")\n  '"'"'\n' > "$T/rules/p.yml"
+  run run_runner
+  [ "$status" -eq 0 ] || return 1
+  grep -q "OK py-check" "$T/log"
+}
