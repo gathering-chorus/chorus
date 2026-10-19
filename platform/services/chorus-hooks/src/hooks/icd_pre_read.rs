@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! ICD Pre-Read Hook (#1684) — ADVISORY ONLY (#3677 honest downgrade).
 //! Documented "block data card builds without reading domain context" while its
 //! fn returns unit and CANNOT block — one of ADR-056's three hollow modules.

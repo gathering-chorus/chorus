@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: athena
+// @domain: domains
 //! #4515 — `athena-deploy --card <n>` (Land: prod) and `athena-deploy staging
 //! --card <n>` (Deploy: staging). One card's model change, two targets, then the
 //! served check: every class the card declares must be in a route of

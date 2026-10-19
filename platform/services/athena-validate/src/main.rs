@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4645)
 //! athena-validate — the post-write conformance sweep over the live graph.
 //!
 //! #4167: Rust, like its three athena-* siblings. Jeff asked for this on

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! Chrome tab gate (#1775, DEC-090)
 //!
 //! PreToolUse on Bash: blocks role-initiated `open http` commands that would

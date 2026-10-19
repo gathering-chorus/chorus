@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: athena
+// @domain: domains
 //! #4515 — `athena-gen generate --card <n>`, the Make step of the v2 athena
 //! pipeline. The card's werk ($CHORUS_WERK_BASE/<role>-<n>) and its model change
 //! (model sources since it left main) decide which products are generated: every

@@ -80,24 +80,48 @@ fn chat_say_under_200ms() {
         .unwrap_or("").trim().to_string();
     assert!(!chat_id.is_empty(), "chat start must return an ID");
 
-    let t = Instant::now();
-    let out = Command::new("bash")
-        .arg(chat_script())
-        .args(["say", &chat_id, "silas", "perf timing test"])
-        .env("CHAT_DRY_RUN", "1")
-        .env("DEPLOY_ROLE", "silas")
-        .output()
-        .expect("chat say must run");
-    let elapsed = t.elapsed().as_millis();
+    let mut samples = Vec::new();
+    let mut all_ok = true;
+    for _ in 0..5 {
+        let t = Instant::now();
+        let out = Command::new("bash")
+            .arg(chat_script())
+            .args(["say", &chat_id, "silas", "perf timing test"])
+            .env("CHAT_DRY_RUN", "1")
+            .env("DEPLOY_ROLE", "silas")
+            .output()
+            .expect("chat say must run");
+        samples.push(t.elapsed().as_millis());
+        all_ok &= out.status.success();
+    }
 
     // Cleanup
     let _ = std::fs::remove_file(format!("/tmp/chorus-chat/{}.md", chat_id));
     let _ = std::fs::remove_file(format!("/tmp/chorus-chat/tick-{}", chat_id));
 
-    assert!(out.status.success(), "chat say must exit 0");
+    assert!(all_ok, "chat say must exit 0");
+    let elapsed = median_ms(samples.clone());
     assert!(elapsed < 200,
-        "chat.sh say took {}ms, budget 200ms (#2287)",
-        elapsed);
+        "chat.sh say took {}ms (median of {:?}), budget 200ms (#2287)",
+        elapsed, samples);
+}
+
+/// #4645 — one wall-clock sample measures the box as much as the code. On
+/// 2026-10-19 one `say` took 226ms on a loaded box (it passed the six nights
+/// before); measured at load 70 the same call ran 61-94ms with one 265ms spike.
+/// The median of five is over budget only when most runs are slow, so a red
+/// means `say` got slower, not that one run hit a busy moment.
+fn median_ms(mut samples: Vec<u128>) -> u128 {
+    samples.sort_unstable();
+    samples[samples.len() / 2]
+}
+
+#[test]
+fn median_ignores_two_spikes_but_not_three_slow_runs() {
+    // the 10-19 shape: mostly fast, a spike or two → under budget
+    assert!(median_ms(vec![80, 265, 85, 226, 90]) < 200);
+    // negative proof: three of five slow is a slower `say` → over budget
+    assert!(median_ms(vec![210, 80, 230, 90, 250]) >= 200);
 }
 
 /// Pulse assembly budget: 1500ms. Current baseline 628-761ms (#2172).

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! Nudge Blast Radius (#1658)
 //!
 //! PreToolUse hook on Bash when invoking nudge.sh.

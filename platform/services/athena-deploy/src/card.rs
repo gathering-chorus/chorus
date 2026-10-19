@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4645)
 //! #4515 — `athena-deploy --card <n>` (Land, prod) and `athena-deploy staging
 //! --card <n>` (Deploy, staging): one card's model change, two targets.
 //!

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 use crate::shared::state_paths::chorus_root;
 use crate::state::chorus_log;
 use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};

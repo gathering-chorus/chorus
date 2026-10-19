@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: werk
+// @domain: builds
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
     branch_name, card_from_subject, cdhash_divergences, chorus_bin_install_cmd,

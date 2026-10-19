@@ -1,5 +1,5 @@
 // @test-type: integration
-// @domain: werk
+// @domain: builds
 //! End-to-end (#3116, #4502): PATH-shim every external CLI (cards / werk-build /
 //! werk-deploy / curl / chorus-log / gh), prove the demo steps run as dagu calls
 //! them — validate (AC preflight + evidence + trace) → the gates and peer

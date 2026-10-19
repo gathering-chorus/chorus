@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 use crate::state::{append_log, chorus_log, AppState};
 use crate::types::{HookInput, HookResponse};
 use chrono::Utc;

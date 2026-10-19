@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! ICD Write Gate — Athena pattern (#1648)
 //!
 //! PostToolUse hook on writes to icd-instance-*.ttl or icd-ontology.ttl.
