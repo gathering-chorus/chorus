@@ -145,6 +145,14 @@ mod tests_4405 {
     use super::*;
 
     #[test]
+    fn the_spine_run_is_counted_only_from_a_tally_line_headed_spine() {
+        let head = crate::readings::reading_sensor("events", true);
+        let line = format!("{head}: create 0 · update 0 · unchanged 1\n");
+        assert!(tally("spine", &line).is_some(), "the spine check's own line counts its run");
+        assert!(tally("spine", "events: create 0 · update 0 · unchanged 1\n").is_none(), "a line headed events leaves the spine run uncounted");
+    }
+
+    #[test]
     fn every_pass_tally_line_reads_back() {
         let c = tally("code", "code:   x → y\ncode: create 0 · update 0 · delete 0 · unchanged 50\ncode: dry-run").unwrap();
         assert_eq!(c, Counts { create: 0, update: 0, delete: 0, unchanged: 50 });

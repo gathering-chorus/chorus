@@ -212,6 +212,23 @@ pub fn backup_stale(c: &Counts, day: &str, max_hours: u64) -> Option<u64> {
     c.get(&(day.to_string(), "backup-age".to_string(), None)).copied().filter(|h| *h > max_hours)
 }
 
+/// The sensor a pass writes its readings as. The 10-minute spine check runs
+/// the events pass with --age-only but records as `spine`, so it must also
+/// read back its stored rows as `spine`: reading them as `events` finds none,
+/// re-creates today's row and the door refuses it (409) on every run after the
+/// first (found writing real readings to staging, 2026-10-19).
+pub fn reading_sensor(which: &str, age_only: bool) -> &str {
+    if age_only { "spine" } else { which }
+}
+
+/// The door's filter for a pass's stored readings. An edge is filtered by the
+/// target's door name, kind prefix included (`sensor-messages`): a bare
+/// `messages` matches nothing, so every run after the first would re-create
+/// all its rows and be refused (409), measured on staging 2026-10-19.
+pub fn stored_readings_filter(which: &str, age_only: bool) -> String {
+    format!("readingOfSensor=sensor-{}", reading_sensor(which, age_only))
+}
+
 /// A single decimal reading (an age in hours), outside the day counts: the
 /// spine's write age is measured every few minutes and must keep its
 /// fraction, so 10 minutes reads 0.17 h, never 0 (Kade, #4634).
@@ -305,6 +322,18 @@ pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_spine_check_writes_and_reads_back_as_spine_and_the_day_passes_as_themselves() {
+        assert_eq!(stored_readings_filter("events", true), "readingOfSensor=sensor-spine");
+        assert_eq!(stored_readings_filter("messages", false), "readingOfSensor=sensor-messages");
+        assert_eq!(reading_sensor("events", true), "spine");
+        assert_eq!(reading_sensor("events", false), "events");
+        assert_eq!(reading_sensor("messages", false), "messages");
+        let r = decimal_reading(reading_sensor("events", true), "spine-write-age", "2026-10-19", 0.17, "spine-x");
+        assert!(r.0.starts_with("spine-spine-write-age-"), "{}", r.0);
+        assert!(r.1.contains(&("readingOfSensor".to_string(), reading_sensor("events", true).to_string())));
+    }
 
     #[test]
     fn utc_evening_is_the_same_boston_day_and_after_midnight_utc_is_the_day_before() {

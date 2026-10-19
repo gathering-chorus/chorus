@@ -27,6 +27,15 @@ describe('#4634 /counts presents the readings by day', () => {
     expect(days[0].values[col('nudges')].value).toBeNull();
   });
 
+  test('readings as the door serves them, sensor named with its kind prefix, still fill the row', () => {
+    // measured on staging 2026-10-19: the door answers readingOfSensor "sensor-messages", not "messages"
+    const days = byDay([r('sensor-messages', 'messages-sent', '2026-10-18', 985), r('sensor-events', 'events', '2026-10-18', 262222)]);
+    const col = (m: string) => DAY_COLUMNS.findIndex(([, metric]) => metric === m);
+    expect(days.map((d) => d.day)).toEqual(['2026-10-18']);
+    expect(days[0].values[col('messages-sent')].value).toBe(985);
+    expect(days[0].values[col('events')].value).toBe(262222);
+  });
+
   test('a day with none of the table\'s readings (today, backups only) is not shown as a row of unmeasured', () => {
     expect(byDay([r('messages', 'backup-age', '2026-10-18', 2), r('events', 'events', '2026-10-17', 5)]).map((d) => d.day)).toEqual(['2026-10-17']);
   });

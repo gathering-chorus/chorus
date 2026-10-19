@@ -29,7 +29,8 @@ readings() { # readings <sensor metric day value>... (each run stamped now, or R
 import json, sys, datetime
 out, ago, a = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
 stamp = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=ago)).strftime("%Y%m%dt%H%M%Sz")
-rows = [{"readingOfSensor": a[i], "readingMetric": a[i+1], "readingDay": a[i+2], "readingValue": a[i+3], "readingRun": f"{a[i]}-{stamp}"} for i in range(0, len(a), 4)]
+# door-shaped, as the door serves them: the edge targets carry their kind prefix
+rows = [{"readingOfSensor": f"sensor-{a[i]}", "readingMetric": a[i+1], "readingDay": a[i+2], "readingValue": a[i+3], "readingRun": f"sensor-run-{a[i]}-{stamp}"} for i in range(0, len(a), 4)]
 json.dump({"data": rows}, open(out, "w"))
 PY
 }
@@ -92,4 +93,24 @@ PY
   run env READINGS_URL="file://$T/missing.json" bash "$T/c.sh"
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == no-reading:* ]] || return 1
+}
+
+@test "the live path reads a door that pretty-prints, by day: sent and kept that differ fire" {
+  # the door answers JSON over many lines; the day-filtered query parses each answer whole
+  readings messages messages-sent "$YDAY" 985 messages messages-kept "$YDAY" 275
+  python3 -c 'import json,sys; p=sys.argv[1]; json.dump(json.load(open(p)), open(p, "w"), indent=2)' "$T/r.json"
+  PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+  (cd "$T" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1) &
+  SRV=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf -o /dev/null "http://127.0.0.1:$PORT/r.json" && break; sleep 0.3; done
+  python3 - "$ROOT/proving/domains/alerts/messages-not-kept.yml" > "$T/c.sh" <<'PY'
+import sys, re
+y = open(sys.argv[1]).read()
+m = re.search(r'^check: \|\n((?:  .*\n|\n)+)', y, re.M)
+print("\n".join(l[2:] for l in m.group(1).splitlines()))
+PY
+  run env -u READINGS_URL READINGS_BASE="http://127.0.0.1:$PORT/r.json" bash "$T/c.sh"
+  kill "$SRV" 2>/dev/null
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == "gap:sent-985-kept-275-on-$YDAY" ]] || return 1
 }

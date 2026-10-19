@@ -36,7 +36,8 @@ export function byDay(readings: Reading[]): DayRow[] {
     if (r.readingRole || !r.readingDay || !r.readingMetric || !r.readingOfSensor) continue;
     const day = String(r.readingDay).slice(0, 10);
     const m = days.get(day) || new Map<string, number>();
-    m.set(`${r.readingOfSensor}/${r.readingMetric}`, Number(r.readingValue));
+    // the door names the edge's target with its kind prefix (`sensor-messages`)
+    m.set(`${String(r.readingOfSensor).replace(/^sensor-/, '')}/${r.readingMetric}`, Number(r.readingValue));
     days.set(day, m);
   }
   // a day with none of the table's metrics (today: only backup readings so far) is not a row

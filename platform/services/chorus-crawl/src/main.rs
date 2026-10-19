@@ -1926,7 +1926,7 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
             Ok(t) => {
                 let age = std::time::SystemTime::now().duration_since(t).map(|d| d.as_secs_f64()).unwrap_or(0.0) / 3600.0;
                 println!("events: spine last written {age:.2} h ago");
-                vec![decimal_reading(if age_only { "spine" } else { "events" }, "spine-write-age", &today, age, &std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| "events-unrecorded".into()))]
+                vec![decimal_reading(reading_sensor(which, age_only), "spine-write-age", &today, age, &std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| "events-unrecorded".into()))]
             }
             Err(e) => { println!("events: UNMEASURED — cannot read {spine} ({e}); no readings written"); return 3; }
         }
@@ -2046,7 +2046,7 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         Err(e) if dry_run => { println!("{which}: the store has no SensorReading collection yet ({e}) — dry run compares against nothing"); String::new() }
         Err(e) => { println!("{which}: UNMEASURED — the store has no SensorReading collection ({e}); no readings written"); return 3; }
     };
-    let stored: std::collections::BTreeMap<String, String> = if coll.is_empty() { Default::default() } else { match fetch_rows_with(&api, Some(&token), "SensorReading", &format!("readingOfSensor={which}"), chorus_crawl::services::door_page_rows) {
+    let stored: std::collections::BTreeMap<String, String> = if coll.is_empty() { Default::default() } else { match fetch_rows_with(&api, Some(&token), "SensorReading", &stored_readings_filter(which, age_only), chorus_crawl::services::door_page_rows) {
         Ok(rows) => rows.into_iter().filter_map(|f| {
             let get = |k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
             Some((get("name")?, get("readingValue")?))
@@ -2054,7 +2054,9 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         Err(e) => { println!("{which}: UNMEASURED — cannot read stored readings ({e}); no readings written"); return 3; }
     } };
     let (create, update, unchanged) = plan_readings(desired, &stored);
-    println!("{which}: create {} · update {} · unchanged {}", create.len(), update.len(), unchanged);
+    // the tally line names the sensor the run belongs to: the spine check runs
+    // the events pass, and a line headed "events:" leaves the spine run uncounted (red)
+    println!("{}: create {} · update {} · unchanged {}", reading_sensor(which, age_only), create.len(), update.len(), unchanged);
     if dry_run {
         for (name, f) in create.iter().chain(update.iter()) {
             let v = f.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.as_str()).unwrap_or("");
