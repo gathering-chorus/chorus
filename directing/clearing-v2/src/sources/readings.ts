@@ -16,8 +16,8 @@ export interface Reading {
 
 /** The columns of the by-day table, in order: [sensor, metric, label]. */
 export const DAY_COLUMNS: Array<[string, string, string]> = [
-  ['messages', 'messages-sent', 'Sent'],
-  ['messages', 'messages-kept', 'Kept in Buzz'],
+  ['messages', 'messages-sent', 'In messages.db'],
+  ['messages', 'messages-kept', 'In Buzz'],
   ['messages', 'nudges', 'Nudges'],
   ['messages', 'jeff-inputs', 'Your messages'],
   ['messages', 'alerts', 'Alerts'],
