@@ -61,7 +61,9 @@ record() {
 
 pass()  { record "$1" "PASS" "$2"; }
 fail()  { record "$1" "FAIL" "$2"; }
-warn()  { record "$1" "WARN" "$2"; }
+# #4633 — a warning whose detail says "advisory" is recorded but never nudges.
+declare -a ADVISORY_NAMES=()
+warn()  { record "$1" "WARN" "$2"; case "$2" in *"(advisory"*) ADVISORY_NAMES+=("$1") ;; esac; }
 skip()  { record "$1" "SKIP" "$2"; }
 
 # ─── PIPELINE / VCS ──────────────────────────────────────────────────────────
@@ -101,36 +103,9 @@ fi
 # Red here is a red boot — ops' first task (DEC-022), the standing teeth.
 if curl -s --max-time 3 "http://localhost:3360/health" | grep -q '"ok": true'; then
   pass "owl-api-up" "generated Domain API answering on :3360"
-  # #4027 — #3561 renamed these to athena-make-* (2026-08-22); this block kept
-  # calling the owl-api-* names for six days, read bash's "No such file" as a
-  # failed check, and nudged "owl-api-drift owl-api-conformance" 600+ times
-  # about nothing. A guard whose target is gone must FAIL LOUD under its own
-  # name, never pass its absence off as the finding it exists to make.
-  # CHORUS_TESTS_DIR is the seam the negative proof uses (4027-*.bats).
-  TESTS_DIR="${CHORUS_TESTS_DIR:-${SCRIPTS}/../tests}"
-  DRIFT_SH="${TESTS_DIR}/athena-make-drift-check.sh"
-  CONF_SH="${TESTS_DIR}/athena-make-conformance.sh"
-  if [ ! -f "$DRIFT_SH" ] || [ ! -f "$CONF_SH" ]; then
-    fail "owl-api-checks-missing" "drift/conformance check script(s) absent under ${TESTS_DIR} (athena-make-drift-check.sh / athena-make-conformance.sh) — the monitor is broken, drift is UNKNOWN"
-  else
-    if drift_out=$(bash "$DRIFT_SH" 2>&1); then
-      pass "owl-api-drift" "generated artifacts match committed baselines"
-    else
-      # #3539 — ADVISORY: drift is the expected transient between a model-deploy and
-      # a baseline-regen (flagged 2026-06-19). It is NOT a release-blocker and must
-      # not hard-fail the gate for cards that touch zero owl-api surface. WARN so the
-      # signal stays visible without blocking the team (regen the baseline when worth it).
-      warn "owl-api-drift" "$(echo "$drift_out" | grep DRIFT | head -1) (advisory: regen baseline when worth it)"
-    fi
-    if conf_out=$(bash "$CONF_SH" 2>&1); then
-      pass "owl-api-conformance" "$(echo "$conf_out" | tail -1)"
-    else
-      # #3539 — ADVISORY: a generated-API conformance gap is an owl-api issue (Silas's
-      # lane), not a blocker for cards touching zero owl-api surface. WARN; the gap is
-      # tracked + fixed on its own owl-api card, not by blocking every unrelated verdict.
-      warn "owl-api-conformance" "$(echo "$conf_out" | grep FAIL | head -1) (advisory: owl-api gap, tracked separately)"
-    fi
-  fi
+  # #4633 — the drift and conformance checks that ran here were removed (Jeff
+  # 2026-10-18: "if its useless remove it"). Both tested a retired response shape
+  # ({count, items}) and a stale baseline, warned "advisory" and nudged since July.
 else
   fail "owl-api-up" "generated Domain API not answering on :3360 (launchctl kickstart gui/501/com.chorus.owl-api)"
 fi
@@ -442,9 +417,19 @@ fi
 # Clearing external reachability (from network perspective — bind check)
 # #3719 rider — probe /health, not / : the clearing stopped serving its root
 # path (404) while /health stays 200, and the / probe false-fired 2026-07-31.
-clearing_result=$(curl -s --max-time 5 "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+# #4579/#4633 (Kade, measured 10-18 19:52) — the check exists to catch a
+# 127.0.0.1-only bind. The Clearing answers the LAN with a 302 to its public
+# host by design, so that redirect proves the bind; a 302 anywhere else does
+# not. The address is this Mac's own LAN IP today (DHCP moves it: .36 went
+# stale), CHORUS_HOME_IP being the seam a test hands a stub.
+HOME_IP="${CHORUS_HOME_IP:-$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)}"
+clearing_probe=$(curl -s --max-time 5 "http://${HOME_IP}:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code} %{redirect_url}" 2>/dev/null || echo "000")
+clearing_result=${clearing_probe%% *}
+clearing_redirect=${clearing_probe#* }
 if [ "$clearing_result" = "200" ]; then
-  pass "clearing-external" "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/health → ${clearing_result}"
+  pass "clearing-external" "http://${HOME_IP}:${CLEARING_PORT}/health → ${clearing_result}"
+elif [ "$clearing_result" = "302" ] && [[ "$clearing_redirect" == https://clearing.lightlifeurbangardens.com/* ]]; then
+  pass "clearing-external" "http://${HOME_IP}:${CLEARING_PORT}/health → 302 to the public host (LAN-bound)"
 else
   # try localhost as fallback to distinguish "down" vs "not externally bound"
   local_result=$(curl -s --max-time 5 "http://localhost:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
@@ -736,42 +721,13 @@ WARNS_CSV=""
 [ "${#WARN_NAMES[@]}" -gt 0 ] && WARNS_CSV="$(IFS=,; echo "${WARN_NAMES[*]}")"
 ALERT_FIRING=""
 if [ -n "${FAILS_CSV}${WARNS_CSV}" ]; then
+  ADVISORY_CSV=""
+  [ "${#ADVISORY_NAMES[@]}" -gt 0 ] && ADVISORY_CSV="$(IFS=,; echo "${ADVISORY_NAMES[*]}")"
   ALERT_FIRING=$(curl -s -G "${LOKI_QUERY_URL}/loki/api/v1/query_range" \
     --data-urlencode 'query={appName="chorus-events"} |~ "chorus.health"' \
     --data-urlencode "limit=50" \
     --data-urlencode "start=$(( $(date +%s) - 86400 ))000000000" 2>/dev/null \
-  | python3 -c "
-import json,sys
-N=int(sys.argv[1])
-cur_fail=[x for x in sys.argv[2].split(',') if x]
-cur_warn=[x for x in sys.argv[3].split(',') if x]
-try:
-    d=json.load(sys.stdin); rows=[]
-    for s in d['data']['result']:
-        for v in s['values']: rows.append((int(v[0]), v[1]))
-    rows.sort(reverse=True)   # newest-first = prior runs (this run not emitted yet)
-    runs_fail=[]; runs_bad=[]
-    for ts,line in rows:
-        try: ev=json.loads(line)
-        except: continue
-        if ev.get('event')!='chorus.health': continue
-        f=set(x for x in (ev.get('failures') or '').split(',') if x)
-        w=set(x for x in (ev.get('warns') or '').split(',') if x)
-        runs_fail.append(f); runs_bad.append(f|w)
-    prior_fail = runs_fail[0] if runs_fail else set()
-    alert=set()
-    for c in cur_fail:                 # definitive down → immediate, once (on transition)
-        if c not in prior_fail: alert.add(c)
-    for c in cur_warn:                 # inconclusive → only once persistent N runs straight
-        streak=0
-        for bad in runs_bad:
-            if c in bad: streak+=1
-            else: break
-        if streak==N-1: alert.add(c)
-    print(' '.join(sorted(alert)))
-except Exception:
-    pass
-" "$STICKY_WARN_N" "$FAILS_CSV" "$WARNS_CSV")
+  | python3 "$(dirname "${BASH_SOURCE[0]}")/health-alert-firing.py" "$STICKY_WARN_N" "$FAILS_CSV" "$WARNS_CSV" "$ADVISORY_CSV")
 fi
 
 # emit spine event — CHORUS_HEALTH_NO_EMIT=1 mutes it (#4027): the negative-proof
