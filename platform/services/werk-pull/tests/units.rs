@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: werk
+// @domain: tests
 // Test-first (DEC-1674): these reference werk_pull lib functions that don't exist
 // yet — RED until src/lib.rs is written.
 use werk_pull::{branch_name, jsonl_line, parse_pull_args, trace_id, resolve_trace_in, spine_args};

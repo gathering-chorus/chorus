@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: athena
+// @domain: domains
 //! #4515 — `athena-validate --staging`, the athena pipeline's Validate step: it
 //! sweeps the staging dataset the Deploy step loaded, never prod. Two fake
 //! servers on loopback stand in for prod and staging; each records the paths it

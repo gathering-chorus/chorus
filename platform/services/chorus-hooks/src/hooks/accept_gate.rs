@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! Accept Gate (#1657, #1671, #2864)
 //!
 //! PreToolUse hook on Skill tool when skill="acp".

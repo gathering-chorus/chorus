@@ -1,5 +1,5 @@
 // @test-type: integration
-// @domain: werk
+// @domain: builds
 //! #4502 — each demo step is its own dagu step with an exit contract dagu can
 //! read: a gate or review that recorded a verdict exits 0 (it informs, Jeff's
 //! go decides, #3263); one that could not run exits non-zero and says why.

@@ -1,5 +1,5 @@
 // @test-type: unit — signal:api is fixture-data
-// @domain: athena
+// @domain: domains
 //! #4531 — the source-deleted refusal names a way to stage a retirement that
 //! exists. On 10-14 it named `athena-model retire-subject`, which athena-model
 //! does not have, so the person reading it had nothing to run.

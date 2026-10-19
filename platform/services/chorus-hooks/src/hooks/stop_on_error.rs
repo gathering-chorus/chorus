@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! Stop-on-error gate (#1841)
 //!
 //! PostToolUse hook that blocks the next tool call when the previous one errored.

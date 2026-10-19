@@ -1,3 +1,4 @@
+// @domain: security — placed by chorus-crawl's domain rules (#4645)
 mod hooks;
 mod hook_obs;
 mod session_cache;

@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: borg
+// @domain: code
 // #4456 card AC: each AC is met, not met or unmeasured with evidence; an AC
 // with no runnable check is unmeasured, never met; a known-false AC is not met.
 use borg_prove::*;

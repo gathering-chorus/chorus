@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: werk
+// @domain: builds
 //! #4474 reopen (Silas, 2026-10-11 15:09/15:10). werk.yml passed GO where
 //! werk-demo reads the role, so role=false: every v1 demo-ready nudge went to
 //! "false", and every in-run gate diffed chorus-werk/false-<card> — an empty

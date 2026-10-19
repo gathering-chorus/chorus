@@ -1,5 +1,5 @@
 // @test-type: unit — renders and runs the wrapper with /bin/sh in a temp dir, no live services.
-// @domain: werk
+// @domain: builds
 //! #4444 reopen 3 — a hyphenated role finds its werk bin slot. #4530 run 6 (14 Oct
 //! 19:24): werk-deploy read WERK_ABBY-NORMAL_BIN, found nothing, and rolled back a
 //! good install as "installed=None".

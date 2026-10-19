@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! NiFi Discipline Hook — enforce native processors, block bash wrappers (#1686)
 //!
 //! At demo/accept time for NiFi cards, query the NiFi API for the process group

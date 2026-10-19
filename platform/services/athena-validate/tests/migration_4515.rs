@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: athena
+// @domain: domains
 //! #4515 — `athena-validate migration`, the V1→V2 per-domain stage matrix ported
 //! from the retired MCP tool chorus_migration_readout (#3594). The load-bearing
 //! invariant is honesty: athena-make-run and v1-code-retired render as — on every

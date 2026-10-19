@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: werk
+// @domain: builds
 //! #4494 — build once: prod ships the binary the demo ran when the crate's
 //! inputs are the same in the card's werk and on main; otherwise it builds
 //! from main, so a change another card landed is never dropped (Silas,

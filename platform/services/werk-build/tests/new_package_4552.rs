@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4645)
 // #4552 — Clearing v2 landed (10-15 10:09) as a package canonical had never
 // installed. werk-build skipped any package without a canonical node_modules,
 // so every later card built it with no deps and died (#4538 runs 5, 6). It now

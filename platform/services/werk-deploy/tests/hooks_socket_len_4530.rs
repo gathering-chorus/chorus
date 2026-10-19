@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4645)
 //! #4530 — a demo hooks daemon must be able to bind its socket. macOS caps a
 //! unix socket path at 103 bytes; abby-normal-4530's was 105 and env-up timed
 //! out (run 14, 2026-10-15 06:41, "path must be shorter than SUN_LEN").
