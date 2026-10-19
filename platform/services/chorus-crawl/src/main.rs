@@ -2015,14 +2015,14 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
              std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| "/Users/jeffbridwell/Backups/library/CascadeProjects/CascadeProjects/chorus/platform/pulse/messages.db".into()))
         } else {
             (std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log")),
-             std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| "/Users/jeffbridwell/Backups/library/dot-chorus/.chorus/chorus.log".into()))
+             std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| chorus_crawl::readings::SPINE_SLICES.into()))
         };
         let store_bytes = std::fs::metadata(&src).ok().map(|m| m.len());
         let host = std::env::var("CHORUS_BACKUP_HOST").unwrap_or_else(|_| "192.168.86.242".into());
         let stat = if host == "local" {
-            sh("stat", &["-f", "%z %m", &copy], "/")
+            sh("sh", &["-c", &chorus_crawl::readings::copy_stat_cmd(&copy)], "/")
         } else {
-            sh("ssh", &["-o", "ConnectTimeout=8", "-o", "BatchMode=yes", &host, &format!("stat -f '%z %m' '{copy}'")], "/")
+            sh("ssh", &["-o", "ConnectTimeout=8", "-o", "BatchMode=yes", &host, &chorus_crawl::readings::copy_stat_cmd(&copy)], "/")
         };
         let copy_read = stat.ok().and_then(|t| {
             let mut p = t.split_whitespace();

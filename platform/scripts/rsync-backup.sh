@@ -4,8 +4,10 @@
 # Runs via LaunchAgent at 2am. Logs to ~/Library/Logs/Chorus/rsync-backup.log
 set -euo pipefail
 
-REMOTE="Jeffs-Mac-mini.local"
-DEST="/Users/jeffbridwell/Backups/library"
+REMOTE="${BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
+DEST="${BACKUP_DEST:-/Users/jeffbridwell/Backups/library}"
+RSYNC="${BACKUP_RSYNC:-rsync}"
+SSH="${BACKUP_SSH:-ssh}"
 LOG_TAG="rsync-backup"
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
@@ -13,7 +15,7 @@ CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"; }
 
 # Verify Bedroom is reachable
-if ! ssh -o ConnectTimeout=10 "$REMOTE" "true" 2>/dev/null; then
+if ! "$SSH" -o ConnectTimeout=10 "$REMOTE" "true" 2>/dev/null; then
   log "ERROR: Bedroom unreachable — backup skipped"
   "$CHORUS_LOG" ops.backup.failed silas reason="bedroom-unreachable" 2>/dev/null || true
   exit 1
@@ -36,19 +38,35 @@ backup() {
   # that fails TWICE is a real failure and still reports FAIL.
   local attempt rc=1
   for attempt in 1 2; do
-    if rsync -az --delete --timeout=300 \
+    # #4630 — the live spine (5 GB, written every second) is not mirrored: a
+    # copy of it never finished ("unexpected end of file", measured 10-19). Its
+    # record is memory-backup.py's dated daily slices.
+    # Capture rsync's own exit code. `rc=$?` read after an if with no
+    # else is the if's status, always 0, so two failed copies logged
+    # "RETRY (exit 0)" then "OK" every night from 10-13 while the spine copy
+    # on Bedroom stayed frozen at 4.40 GB.
+    rc=0
+    local out
+    out=$(nice -n 10 "$RSYNC" -az --delete --timeout=300 \
       --exclude='data/loki/' \
       --exclude='node_modules/' \
       --exclude='.git/objects/' \
       --exclude='target/release/' \
       --exclude='target/debug/' \
-      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1; then
-      rc=0; break
-    fi
-    rc=$?
+      --exclude='/.chorus/chorus.log' \
+      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1) || rc=$?
+    [ -n "$out" ] && printf '%s\n' "$out"
+    # 24 = files vanished during the copy (live session and identity files
+    # come and go); everything that still exists was copied
+    [ "$rc" = 24 ] && break
+    [ "$rc" = 0 ] && break
     [ "$attempt" = 1 ] && { log "RETRY: $name (rsync exit $rc — files changed under the copy?)"; sleep 15; }
   done
-  if [ "$rc" = 0 ]; then
+  if [ "$rc" = 24 ]; then
+    # vanished live files (sessions, identity headers) are named, never a plain OK
+    log "OK, $(printf '%s\n' "$out" | grep -c 'vanished') vanished: $name (rsync exit 24)"
+    SYNCED=$((SYNCED + 1))
+  elif [ "$rc" = 0 ]; then
     log "OK: $name"
     SYNCED=$((SYNCED + 1))
   else
