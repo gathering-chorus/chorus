@@ -198,6 +198,7 @@ function appendMessage(msg) {
 
   el.appendChild(header);
   el.appendChild(text);
+  appendPhotos(el, cleanText);
 
   container.appendChild(el);
   container.scrollTop = container.scrollHeight;
@@ -292,6 +293,110 @@ function appendBlocks(parent, text) {
 
 /** #4574/#4575/#4597 — #N card links, http(s) links, **bold**, lists, code fences and line breaks
  *  built from DOM nodes: the message text is never parsed as HTML, so a message cannot inject markup. */
+/** #4635 — names of uploaded photos a message mentions (same rule as the server's uploadNames). */
+function photoNames(text) {
+  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+\.(?:jpg|png|gif|heic))/g), (m) => m[1]);
+}
+
+function appendPhotos(el, text) {
+  const names = photoNames(text);
+  if (names.length === 0 || typeof document === 'undefined') return;
+  const box = document.createElement('div');
+  box.className = 'msg-photos';
+  for (const n of names) {
+    const a = document.createElement('a');
+    a.href = clearingBase() + '/uploads/' + n;
+    a.target = '_blank';
+    const img = document.createElement('img');
+    img.src = clearingBase() + '/uploads/' + n;
+    img.alt = 'photo ' + n;
+    a.appendChild(img);
+    box.appendChild(a);
+  }
+  el.appendChild(box);
+}
+
+/** #4635 — the composer's camera button: upload the photo, then put its path in the
+ *  message box so Jeff adds words and sends. Failure is named in the composer. */
+async function uploadPhoto(file, fetchImpl) {
+  if (!file) return { ok: false, reason: 'no photo chosen' };
+  const type = /\.hei[cf]$/i.test(file.name || '') ? 'image/heic' : (file.type || 'image/jpeg');
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/upload', { method: 'POST', headers: { 'Content-Type': type }, body: file });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) return { ok: false, reason: body.reason || body.detail || ('upload failed (' + res.status + ')') };
+    return { ok: true, path: body.path };
+  } catch (e) {
+    return { ok: false, reason: 'upload failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+}
+
+function watchPhotoButton() {
+  if (typeof document === 'undefined') return;
+  const picker = document.getElementById('composer-photo');
+  if (!picker || !picker.addEventListener) return;
+  picker.addEventListener('change', async () => {
+    const input = document.getElementById('composer-input');
+    const status = document.getElementById('send-error');
+    if (status) status.textContent = 'Uploading photo…';
+    const out = await uploadPhoto(picker.files && picker.files[0]);
+    if (status) status.textContent = out.ok ? '' : 'Photo not attached: ' + out.reason;
+    if (out.ok && input) input.value = (input.value ? input.value + ' ' : '') + '📷 ' + out.path + ' ';
+    picker.value = '';
+    if (input && input.focus) input.focus();
+  });
+}
+
+/** #4635 — send a recording to Library for words. Failure is named, never silent. */
+async function transcribeVoice(blob, fetchImpl) {
+  if (!blob || !blob.size) return { ok: false, reason: 'the recording was empty' };
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/voice', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) return { ok: false, reason: body.reason || body.detail || ('voice failed (' + res.status + ')') };
+    return { ok: true, transcript: body.transcript };
+  } catch (e) {
+    return { ok: false, reason: 'voice failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+}
+
+/** #4635 — tap the mic to record, tap again to stop; the words land in the message box. */
+function watchMicButton() {
+  if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
+  const mic = document.getElementById('composer-mic');
+  if (!mic || !mic.addEventListener) return;
+  let recorder = null;
+  let chunks = [];
+  const say = (t) => { const s = document.getElementById('send-error'); if (s) s.textContent = t; };
+  mic.addEventListener('click', async () => {
+    if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      say('Voice not available here: this browser cannot record (it needs https)');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Turning your voice into words…');
+        const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+        say(out.ok ? '' : 'Voice not added: ' + out.reason);
+        const input = document.getElementById('composer-input');
+        if (out.ok && input) { input.value = (input.value ? input.value + ' ' : '') + out.transcript; input.focus(); }
+      };
+      recorder.start();
+      mic.setAttribute('aria-pressed', 'true');
+      say('Recording… tap the mic again to stop');
+    } catch (e) {
+      say('Voice not available: ' + (e && e.message ? e.message : String(e)));
+    }
+  });
+}
+
 function appendLinkedText(parent, text) {
   const str = String(text);
   const parts = str.split(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g);
@@ -367,6 +472,8 @@ function watchRoomScroll() {
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
   window.addEventListener('DOMContentLoaded', watchRoomScroll);
+  window.addEventListener('DOMContentLoaded', watchPhotoButton);
+  window.addEventListener('DOMContentLoaded', watchMicButton);
   window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
@@ -607,6 +714,9 @@ if (typeof module !== 'undefined' && module.exports) {
     updateTiles,
     scrollRoomToNewest,
     loadOlderMessages,
+    uploadPhoto,
+    transcribeVoice,
+    photoNames,
     initStream,
     loadOrCreateRoomKey,
     signEvent,

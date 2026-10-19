@@ -17,6 +17,8 @@ import { ClearingMessage, NostrEvent } from './types';
 
 import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage } from './views';
 import { fetchStreams } from './sources/streams';
+import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
+import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { bostonMidnight, countKinds, fetchPulseToday, sentFromPulse } from './sources/message-counts';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
@@ -355,6 +357,21 @@ function registerWriteRoutes(ctx: RouteContext): void {
     }
     keys.set(outcome.pubkey, principal!.name);
     res.json({ ok: true, webid: outcome.webid, pubkey: outcome.pubkey, role: principal!.name });
+  });
+  // #4635 — photos from Jeff's phone; posting and viewing both need a signed-in session.
+  registerUploadRoutes(app, {
+    dir: DEFAULT_UPLOAD_DIR,
+    readOnly: ctx.readOnly,
+    readOnlyReason: READ_ONLY_REASON,
+    signedIn: (req) => sessionPrincipal(req, cookieKey)?.name || null,
+    notSignedIn: () => notSignedIn(ctx.signInUrl),
+  });
+  registerVoiceRoutes(app, {
+    dir: DEFAULT_VOICE_DIR,
+    readOnly: ctx.readOnly,
+    readOnlyReason: READ_ONLY_REASON,
+    signedIn: (req) => sessionPrincipal(req, cookieKey)?.name || null,
+    notSignedIn: () => notSignedIn(ctx.signInUrl),
   });
 }
 
