@@ -1267,6 +1267,44 @@ fn attach_debt_advisory(response: &mut HookResponse, advisory: Option<String>) {
     }
 }
 
+/// #3864/#3893 — a reply that stands: stamp reply.emitted with the cross-surface join
+/// key (Clearing answers with reply.rendered on the same hash; pulse fires
+/// reply.delivery.gap on a missing pair), then deliver it over Buzz (Jeff: "do not
+/// build a new custom delivery path" — the relay IS the path). Some(warning) means
+/// the delivery failed and must be LOUD on this role's own terminal.
+async fn emit_and_deliver_reply(role: &str, text: &str, input: &HookInput) -> Option<String> {
+    let hash = hooks::reply_delivery::content_hash(text);
+    let words = hooks::word_cap::count_words(text).to_string();
+    let session = input.session_id.as_deref().unwrap_or("");
+    crate::state::chorus_log(
+        "reply.emitted",
+        role,
+        &[
+            ("hash", hash.as_str()),
+            ("words", words.as_str()),
+            ("session", session),
+            ("surface", "claude-code"),
+        ],
+    )
+    .await;
+    hooks::buzz_reply::deliver_and_emit(role, text, &hash).await
+}
+
+/// #4644 — the continuation a stop gate caused ends with the rewritten reply, and
+/// that reply stands. #4429 lets it through every gate; before this it also skipped
+/// delivery, so every bounced-then-rewritten reply never reached the room (Wren's
+/// C4 answer, 10-18 18:33).
+async fn deliver_continuation_reply(raw: &serde_json::Value, input: &HookInput) -> HookResponse {
+    let role = input.role().as_str().to_string();
+    match hooks::reply_delivery::reply_text(raw) {
+        Some(text) => match emit_and_deliver_reply(&role, &text, input).await {
+            Some(warn) => HookResponse::warn_stderr(&warn),
+            None => HookResponse::allow(),
+        },
+        None => HookResponse::allow(),
+    }
+}
+
 async fn stop_hook(
     State(state): State<AppState>,
     Json(raw): Json<serde_json::Value>,
@@ -1280,7 +1318,7 @@ async fn stop_hook(
  // #4429: one bounce per turn. In a continuation a stop gate already caused, no gate blocks again.
  if raw.get("stop_hook_active").and_then(|v| v.as_bool()) == Some(true) {
  crate::state::chorus_log("stop.gate.yielded", input.role().as_str(), &[]).await;
- return Json(HookResponse::allow());
+ return Json(deliver_continuation_reply(&raw, &input).await);
  }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let mut response = hooks::autonomy_guard::check(&input, &state).await;
@@ -1399,29 +1437,8 @@ async fn stop_hook(
                 }
                 Ok(()) => hooks::word_cap::reset_refusals(&role),
             }
-            // #3864 — the reply STANDS (blocked turns returned above): stamp
-            // reply.emitted with the cross-surface join key. The transcript is
-            // Claude Code delivery; Clearing answers with reply.rendered on the
-            // same hash, and pulse fires reply.delivery.gap on a missing pair.
-            let hash = hooks::reply_delivery::content_hash(&text);
-            let words = hooks::word_cap::count_words(&text).to_string();
-            let session = input.session_id.as_deref().unwrap_or("");
-            crate::state::chorus_log(
-                "reply.emitted",
-                &role,
-                &[
-                    ("hash", hash.as_str()),
-                    ("words", words.as_str()),
-                    ("session", session),
-                    ("surface", "claude-code"),
-                ],
-            )
-            .await;
-            // #3893 — deliver the reply itself over Buzz (Jeff: "do not build
-            // a new custom delivery path" — the relay IS the path). All
-            // branching lives in buzz_reply::deliver_and_emit; Some(warning)
-            // means the failure must be LOUD on this role's own terminal.
-            if let Some(warn) = hooks::buzz_reply::deliver_and_emit(&role, &text, &hash).await {
+            // #3864 — the reply STANDS (blocked turns returned above).
+            if let Some(warn) = emit_and_deliver_reply(&role, &text, &input).await {
                 if response.exit_code == 0 && response.stderr.is_none() {
                     response = HookResponse::warn_stderr(&warn);
                 }
