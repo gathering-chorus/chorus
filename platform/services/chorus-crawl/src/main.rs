@@ -382,7 +382,7 @@ fn write(
 ) -> Result<String, String> {
     let token = ident.borrow_mut().bearer()?;
     match curl(api, method, path, body, Some(&token)) {
-        Err(e) if e.contains("HTTP 401") => {
+        Err(e) if chorus_crawl::readings::token_expired(&e) => {
             ident.borrow_mut().remint()?;
             let token = ident.borrow().token.clone();
             curl(api, method, path, body, Some(&token))

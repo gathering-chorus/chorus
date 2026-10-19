@@ -110,17 +110,93 @@ fn json_str<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
+/// Whether a door error means the bearer token must be reminted. An expired
+/// token can also come back inside a 422 from the model door (measured
+/// 2026-10-19: an hour-long pass lost one write to it), not only as a 401.
+pub fn token_expired(err: &str) -> bool {
+    err.contains("HTTP 401") || err.contains("identity-token-invalid")
+}
+
+/// Whether a line is one whole JSON value. std only (the crate's contract):
+/// a small validator, not a parser — it reads nothing out of the line.
+pub fn is_json(line: &str) -> bool {
+    fn ws(b: &[u8], mut i: usize) -> usize { while i < b.len() && matches!(b[i], b' ' | b'\t' | b'\r' | b'\n') { i += 1 } i }
+    fn value(b: &[u8], i: usize, depth: u32) -> Option<usize> {
+        if depth > 64 { return None }
+        let i = ws(b, i);
+        match *b.get(i)? {
+            b'{' => {
+                let mut i = ws(b, i + 1);
+                if b.get(i) == Some(&b'}') { return Some(i + 1) }
+                loop {
+                    if b.get(i) != Some(&b'"') { return None }
+                    i = ws(b, string(b, i)?);
+                    if b.get(i) != Some(&b':') { return None }
+                    i = ws(b, value(b, i + 1, depth + 1)?);
+                    match b.get(i)? { b',' => i = ws(b, i + 1), b'}' => return Some(i + 1), _ => return None }
+                }
+            }
+            b'[' => {
+                let mut i = ws(b, i + 1);
+                if b.get(i) == Some(&b']') { return Some(i + 1) }
+                loop {
+                    i = ws(b, value(b, i, depth + 1)?);
+                    match b.get(i)? { b',' => i += 1, b']' => return Some(i + 1), _ => return None }
+                }
+            }
+            b'"' => string(b, i),
+            b't' => b[i..].starts_with(b"true").then_some(i + 4),
+            b'f' => b[i..].starts_with(b"false").then_some(i + 5),
+            b'n' => b[i..].starts_with(b"null").then_some(i + 4),
+            _ => {
+                let mut j = i;
+                if b.get(j) == Some(&b'-') { j += 1 }
+                let digits = |mut j: usize| { let s = j; while j < b.len() && b[j].is_ascii_digit() { j += 1 } (j > s).then_some(j) };
+                j = digits(j)?;
+                if b.get(j) == Some(&b'.') { j = digits(j + 1)? }
+                if matches!(b.get(j), Some(b'e' | b'E')) { j += 1; if matches!(b.get(j), Some(b'+' | b'-')) { j += 1 } j = digits(j)? }
+                Some(j)
+            }
+        }
+    }
+    fn string(b: &[u8], mut i: usize) -> Option<usize> {
+        i += 1;
+        while i < b.len() {
+            match b[i] {
+                b'"' => return Some(i + 1),
+                b'\\' => i += 2,
+                c if c < 0x20 => return None,
+                _ => i += 1,
+            }
+        }
+        None
+    }
+    let b = line.as_bytes();
+    value(b, 0, 0).map(|i| ws(b, i) == b.len()).unwrap_or(false)
+}
+
 /// Spine lines per Boston day before `today`: every event, and each role's
-/// commands (agent.action — the streams). A line with no readable time is
-/// never counted on a guessed day; it is counted as `unreadable-lines` on the
-/// day of the last line that could be read, so a writer change shows up.
+/// commands (agent.action — the streams). A line that is not whole JSON (a
+/// torn or interleaved append) is `unreadable-lines`, never an event (Kade,
+/// #4634). It is dayed by the time it still carries, or else by the last day
+/// read; before any day is known it waits for the next readable line.
 pub fn count_events<S: AsRef<str>>(lines: impl Iterator<Item = S>, today: &str) -> Counts {
     let mut c = Counts::new();
     let mut last_day: Option<String> = None;
     let mut pending_unreadable = 0u64;
     for line in lines {
         let line = line.as_ref();
-        let Some(day) = json_str(line, "timestamp").and_then(boston_day) else {
+        let day = json_str(line, "timestamp").and_then(boston_day);
+        if !is_json(line) {
+            match day.or_else(|| last_day.clone()) {
+                Some(d) if d.as_str() < today => *c.entry((d, "unreadable-lines".into(), None)).or_insert(0) += 1,
+                Some(_) => {}
+                None => pending_unreadable += 1,
+            }
+            continue;
+        }
+        let Some(day) = day else {
+            // whole JSON with no readable time: still not an event on a guessed day
             match &last_day {
                 Some(d) if d.as_str() < today => *c.entry((d.clone(), "unreadable-lines".into(), None)).or_insert(0) += 1,
                 Some(_) => {}
@@ -388,6 +464,31 @@ mod tests {
         assert_eq!(get("events", None), Some(3));
         assert_eq!(get("commands", None), Some(2));
         assert_eq!(get("commands", Some("kade")), Some(1));
+    }
+
+    #[test]
+    fn an_expired_token_inside_a_422_is_reminted_like_a_401() {
+        assert!(token_expired("HTTP 401 unauthorized"));
+        assert!(token_expired(r#"HTTP 422 { "error": "validation", "message": "athena-model: identity-token-invalid: Expired" }"#));
+        assert!(!token_expired(r#"HTTP 422 { "error": "validation", "message": "off-model property" }"#));
+    }
+
+    #[test]
+    fn a_torn_line_that_still_carries_a_time_is_unreadable_on_its_day_never_an_event() {
+        let lines = [
+            r#"{"event":"agent.action","role":"silas","timestamp":"2026-10-17T14:00:00Z"}"#,
+            // two appends interleaved: the time is readable, the line is not JSON
+            r#"{"event":"membrane.violation","timestamp":"2026-10-17T14:00:01Z","x":{"event":"hook"#,
+            r#"cision","role":"kade"}"#,
+            r#"{"event":"hook.decision","timestamp":"2026-10-17T14:00:02Z","note":"a \"quoted\" [x]"}"#,
+        ];
+        let c = count_events(lines.iter().copied(), "2026-10-18");
+        let get = |m: &str| c.get(&("2026-10-17".to_string(), m.to_string(), None)).copied();
+        assert_eq!(get("events"), Some(2), "only whole lines are events");
+        assert_eq!(get("unreadable-lines"), Some(2), "the torn line by its own time, the tail by the last day");
+        assert!(is_json(r#"{"a":[1,-2.5e3,true,null,{"b":"c\\d"}]}"#));
+        assert!(!is_json(r#"{"a":1}{"b":2}"#), "two values on one line are a torn append");
+        assert!(!is_json(r#"{"a":"open"#));
     }
 
     #[test]
