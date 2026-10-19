@@ -9,6 +9,8 @@ written, in three places (Library, Bedroom, Google Drive), each file with its
 sha256, and checks every copy by hash. Anything short is red, never "OK".
 
   memory-backup.py [YYYY-MM-DD]     the day to keep (default: yesterday, Boston)
+  memory-backup.py --check [DAY]    is that day (default yesterday) kept in all
+                                    three places? red if not
   memory-backup.py --backfill FROM TO
                                     one-time: spine slices only for past days,
                                     read in one pass from the archive and the
@@ -281,7 +283,40 @@ def backfill(first: str, last: str) -> int:
     return 1 if red else 0
 
 
+def check(day: str) -> int:
+    """Is `day` kept in all three places? Red when its folder or SHA256SUMS is
+    missing anywhere, or a file's hash differs. Run by itself (by an alert or by
+    hand) it catches a day the nightly never wrote, which the run can't report."""
+    red = []
+    local = os.path.join(LOCAL, day)
+    if not os.path.exists(os.path.join(local, "SHA256SUMS")):
+        print(f"memory-backup check {day}: RED library: no kept folder")
+        return 1
+    want = sums_of(local)
+    red += [f"library: {b}" for b in verify(local, want)]
+    drive = drive_dir()
+    if not drive or not os.path.isdir(os.path.join(drive, day)):
+        red.append("drive: no kept folder")
+    else:
+        red += [f"drive: {b}" for b in verify(os.path.join(drive, day), want)]
+    if ":" in REMOTE:
+        host, rdir = REMOTE.split(":", 1)
+        r = remote_cmd(["ssh", "-o", "ConnectTimeout=10", host, f"cd '{rdir}/{day}' && shasum -a 256 *"])
+        got = {ln.split(None, 1)[1].strip(): ln.split(None, 1)[0] for ln in r.stdout.splitlines() if ln.strip()}
+        red += [f"bedroom: {n} {'missing' if n not in got else 'sha256 differs'}" for n, d in want.items() if got.get(n) != d]
+    elif not os.path.isdir(os.path.join(REMOTE, day)):
+        red.append("bedroom: no kept folder")
+    else:
+        red += [f"bedroom: {b}" for b in verify(os.path.join(REMOTE, day), want)]
+    for r in red:
+        print(f"memory-backup check {day}: RED {r}")
+    print(f"memory-backup check {day}: {'RED' if red else 'OK'}")
+    return 1 if red else 0
+
+
 def main(argv: list) -> int:
+    if len(argv) in (2, 3) and argv[1] == "--check":
+        return check(argv[2] if len(argv) == 3 else (datetime.datetime.now(BOSTON).date() - datetime.timedelta(days=1)).isoformat())
     if len(argv) == 4 and argv[1] == "--backfill":
         return backfill(argv[2], argv[3])
     if len(argv) > 2 or (len(argv) == 2 and not re.fullmatch(r"\d{4}-\d\d-\d\d", argv[1])):

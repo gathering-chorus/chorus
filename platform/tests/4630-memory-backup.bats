@@ -109,3 +109,15 @@ backup() {
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"not taken in by Google Drive (no item id)"* ]] || return 1
 }
+
+@test "negative proof: a day the nightly never wrote (yesterday absent) is red on check; a kept day is OK" {
+  backup 2026-10-18
+  [ "$status" -eq 0 ] || return 1
+  run env MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
+    python3 "$ROOT/platform/scripts/memory-backup.py" --check 2026-10-18
+  [ "$status" -eq 0 ] || return 1
+  run env MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
+    python3 "$ROOT/platform/scripts/memory-backup.py" --check 2026-10-19
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"RED library: no kept folder"* ]] || return 1
+}

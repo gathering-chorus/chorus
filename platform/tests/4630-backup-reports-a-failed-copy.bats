@@ -45,11 +45,11 @@ run_backup() {
   [[ "$output" == *"5 synced, 0 failed"* ]] || return 1
 }
 
-@test "negative proof: rsync says OK but the spine copy stayed behind its source (10-13), so the backup is red" {
-  fake_rsync 0
-  REMOTE_SIZE=4000 run_backup
-  [ "$status" -eq 1 ] || return 1
-  [[ "$output" == *"STALE: dot-chorus/.chorus/chorus.log copy is 4000 bytes, source was 5000"* ]] || return 1
-  [[ "$output" == *"FAIL: dot-chorus (copy is behind its source)"* ]] || return 1
+@test "the live spine is not mirrored, and vanished live files are named, never a plain OK" {
+  printf '#!/bin/sh\necho "$*" >> "%s/rsync-args"\necho "file has vanished: \"/x/a\""\necho "file has vanished: \"/x/b\""\nexit 24\n' "$T" > "$T/bin/rsync"; chmod +x "$T/bin/rsync"
+  run_backup
+  [ "$status" -eq 0 ] || return 1
+  grep -q -- "--exclude=/.chorus/chorus.log" "$T/rsync-args" || return 1
+  [[ "$output" == *"OK, 2 vanished: dot-chorus (rsync exit 24)"* ]] || return 1
   [[ "$output" != *"OK: dot-chorus"* ]] || return 1
 }

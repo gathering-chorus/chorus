@@ -27,14 +27,6 @@ SYNCED=0
 backup() {
   local src="$1"
   local name="$2"
-  shift 2
-  # #4630 AC3 — key files (relative to the source's parent) whose copy must end
-  # at least as big as the source was when the copy began; a copy that stayed
-  # behind (the spine froze at 4.40 GB from 10-13 while rsync said OK) is a FAIL.
-  local keys=("$@") key before=()
-  for key in ${keys[@]+"${keys[@]}"}; do
-    before+=("$(stat -f%z "$(dirname "$src")/$key" 2>/dev/null || echo 0)")
-  done
   if [ ! -e "$src" ]; then
     log "SKIP: $name ($src not found)"
     return
@@ -46,36 +38,39 @@ backup() {
   # that fails TWICE is a real failure and still reports FAIL.
   local attempt rc=1
   for attempt in 1 2; do
-    # #4630 — capture rsync's own exit code. `rc=$?` read after an if with no
+    # #4630 — the live spine (5 GB, written every second) is not mirrored: a
+    # copy of it never finished ("unexpected end of file", measured 10-19). Its
+    # record is memory-backup.py's dated daily slices.
+    # Capture rsync's own exit code. `rc=$?` read after an if with no
     # else is the if's status, always 0, so two failed copies logged
     # "RETRY (exit 0)" then "OK" every night from 10-13 while the spine copy
     # on Bedroom stayed frozen at 4.40 GB.
     rc=0
-    nice -n 10 "$RSYNC" -az --delete --timeout=300 \
+    local out
+    out=$(nice -n 10 "$RSYNC" -az --delete --timeout=300 \
       --exclude='data/loki/' \
       --exclude='node_modules/' \
       --exclude='.git/objects/' \
       --exclude='target/release/' \
       --exclude='target/debug/' \
-      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1 || rc=$?
+      --exclude='/.chorus/chorus.log' \
+      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1) || rc=$?
+    [ -n "$out" ] && printf '%s\n' "$out"
+    # 24 = files vanished during the copy (live session and identity files
+    # come and go); everything that still exists was copied
+    [ "$rc" = 24 ] && break
     [ "$rc" = 0 ] && break
     [ "$attempt" = 1 ] && { log "RETRY: $name (rsync exit $rc — files changed under the copy?)"; sleep 15; }
   done
-  if [ "$rc" = 0 ]; then
-    local i copied
-    for i in ${keys[@]+"${!keys[@]}"}; do
-      copied=$("$SSH" -o ConnectTimeout=10 "$REMOTE" "stat -f%z '${DEST}/${name}/${keys[$i]}'" 2>/dev/null || echo 0)
-      if [ "${copied:-0}" -lt "${before[$i]}" ]; then
-        log "STALE: $name/${keys[$i]} copy is ${copied:-0} bytes, source was ${before[$i]} when the copy began"
-        rc=97
-      fi
-    done
-  fi
-  if [ "$rc" = 0 ]; then
+  if [ "$rc" = 24 ]; then
+    # vanished live files (sessions, identity headers) are named, never a plain OK
+    log "OK, $(printf '%s\n' "$out" | grep -c 'vanished') vanished: $name (rsync exit 24)"
+    SYNCED=$((SYNCED + 1))
+  elif [ "$rc" = 0 ]; then
     log "OK: $name"
     SYNCED=$((SYNCED + 1))
   else
-    if [ "$rc" = 97 ]; then log "FAIL: $name (copy is behind its source)"; else log "FAIL: $name (rsync exit $rc after 2 attempts)"; fi
+    log "FAIL: $name (rsync exit $rc after 2 attempts)"
     FAILED=$((FAILED + 1))
   fi
 }
@@ -83,7 +78,7 @@ backup() {
 log "=== Backup starting ==="
 
 backup "$HOME/.claude"                          "dot-claude"
-backup "$HOME/.chorus"                          "dot-chorus"       ".chorus/chorus.log"
+backup "$HOME/.chorus"                          "dot-chorus"
 backup "$HOME/.ssh"                             "dot-ssh"
 backup "$HOME/CascadeProjects"                  "CascadeProjects"
 backup "$HOME/Library/LaunchAgents"             "LaunchAgents"
