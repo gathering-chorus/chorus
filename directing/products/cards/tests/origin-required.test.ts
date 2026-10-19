@@ -16,6 +16,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const CLI = path.join(__dirname, '..', 'dist', 'cli.js');
+// #4628 — these tests spawn the BUILT CLI. A werk the pipeline tests has no
+// dist, so they failed with "Cannot find module …/dist/cli.js" (#4538 on 10-15,
+// #4628 on 10-19) — a red about the box, not the product. Build it once if it is
+// missing; a build that fails says so, loudly, instead of a confusing toMatch.
+beforeAll(() => {
+  if (fs.existsSync(CLI)) return;
+  try {
+    execSync('npx tsc -p .', { cwd: path.join(__dirname, '..'), encoding: 'utf-8', timeout: 120000, stdio: 'pipe' });
+  } catch (e) {
+    throw new Error(`dist/cli.js is missing and building it failed — build first: ${(e as { stdout?: string }).stdout ?? e}`);
+  }
+  if (!fs.existsSync(CLI)) throw new Error('dist/cli.js is missing after `tsc -p .` — build first');
+}, 150000);
 // #4538 — the CLI reads Vikunja settings before it validates arguments, so in a
 // werk (no .env) it died with "No .env file found" and these validation tests
 // went red for a machine reason. They get an obviously fake token and a dead
