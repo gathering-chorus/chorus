@@ -10,7 +10,9 @@ FAIL=0
 test_pass() { echo "  PASS: $1"; ((PASS++)); }
 test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 
-RUNNER="/Users/jeffbridwell/CascadeProjects/chorus/proving/scripts/alert-runner.sh"
+# #4634 — the runner beside this test, so a card's werk tests its own change
+# (the canonical path tested main's copy, red until the fix it tests had landed)
+RUNNER="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/alert-runner.sh"
 RULES_DIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts"
 
 echo "=== Alert Runner Path Tests (#1837) ==="

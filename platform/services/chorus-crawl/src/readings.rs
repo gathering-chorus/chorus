@@ -51,7 +51,22 @@ pub fn boston_day(utc: &str) -> Option<String> {
     let (y, m, d): (i64, u32, u32) = (dp.next()?.parse().ok()?, dp.next()?.parse().ok()?, dp.next()?.parse().ok()?);
     let mut tp = time.split(':');
     let (hh, mm, ss): (i64, i64, i64) = (tp.next()?.parse().ok()?, tp.next()?.parse().ok()?, tp.next()?.parse().ok()?);
-    let secs = days_from_civil(y, m, d) * 86400 + hh * 3600 + mm * 60 + ss;
+    // #4634 — an explicit offset wins: the spine writes local time with an offset
+    // ("…T01:00:00-0400"); reading that as UTC put every line from 00:00 to 04:00
+    // Boston on the day before (23,738 of 10-18's lines, measured). No offset or
+    // Z means UTC, as pulse's created_at.
+    let rest = s.get(19..).unwrap_or("");
+    let rest = rest.trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+    let off_secs: i64 = match rest.as_bytes().first() {
+        Some(b'+') | Some(b'-') => {
+            let sign = if rest.starts_with('-') { -1 } else { 1 };
+            let digits: String = rest[1..].chars().filter(|c| c.is_ascii_digit()).collect();
+            let (oh, om): (i64, i64) = (digits.get(0..2)?.parse().ok()?, digits.get(2..4).unwrap_or("00").parse().ok()?);
+            sign * (oh * 3600 + om * 60)
+        }
+        _ => 0,
+    };
+    let secs = days_from_civil(y, m, d) * 86400 + hh * 3600 + mm * 60 + ss - off_secs;
     let dst_start = nth_sunday(y, 3, 2) * 86400 + 7 * 3600; // 2am EST = 07:00 UTC
     let dst_end = nth_sunday(y, 11, 1) * 86400 + 6 * 3600; // 2am EDT = 06:00 UTC
     let offset = if secs >= dst_start && secs < dst_end { 4 } else { 5 };
@@ -382,13 +397,21 @@ pub fn buzz_counts(jsonl: &str) -> Counts {
 
 /// What a pass must write: readings not yet stored, readings whose value
 /// changed (a late-arriving line), and how many already match.
+/// A reading whose every write matters, not only its value: the spine's write age.
+pub fn is_heartbeat(fields: &[(String, String)]) -> bool {
+    fields.iter().any(|(k, v)| k == "readingMetric" && v == "spine-write-age")
+}
+
 pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>) -> (Vec<ReadingRow>, Vec<ReadingRow>, usize) {
     let (mut create, mut update, mut unchanged) = (vec![], vec![], 0);
     for (name, fields) in desired {
         let value = fields.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.clone()).unwrap_or_default();
         match stored.get(&name) {
             None => create.push((name, fields)),
-            Some(v) if v.parse::<f64>().ok() == value.parse::<f64>().ok() => unchanged += 1,
+            // an age is a heartbeat: rewrite it every pass so its run (the alert's
+            // freshness stamp) moves even when the age itself reads 0.00 again —
+            // left unchanged, spine-not-growing aged a live sensor as stopped (#4634)
+            Some(v) if v.parse::<f64>().ok() == value.parse::<f64>().ok() && !is_heartbeat(&fields) => unchanged += 1,
             Some(_) => update.push((name, fields)),
         }
     }
@@ -409,6 +432,16 @@ mod tests {
         let r = decimal_reading(reading_sensor("events", true), "spine-write-age", "2026-10-19", 0.17, "spine-x");
         assert!(r.0.starts_with("spine-spine-write-age-"), "{}", r.0);
         assert!(r.1.contains(&("readingOfSensor".to_string(), reading_sensor("events", true).to_string())));
+    }
+
+    #[test]
+    fn a_local_time_with_its_offset_is_dated_by_that_offset_not_read_as_utc() {
+        // the spine's own form: 01:00 Boston on 10-18 is 10-18, not 10-17
+        assert_eq!(boston_day("2026-10-18T01:00:00.123-0400").as_deref(), Some("2026-10-18"));
+        assert_eq!(boston_day("2026-10-18T01:00:00-04:00").as_deref(), Some("2026-10-18"));
+        assert_eq!(boston_day("2026-10-18T23:59:59-0400").as_deref(), Some("2026-10-18"));
+        assert_eq!(boston_day("2026-10-18T05:00:00+0100").as_deref(), Some("2026-10-18")); // 00:00 Boston
+        assert_eq!(boston_day("2026-10-18T03:30:00Z").as_deref(), Some("2026-10-17")); // 23:30 the day before
     }
 
     #[test]
@@ -464,6 +497,23 @@ mod tests {
         assert_eq!(get("events", None), Some(3));
         assert_eq!(get("commands", None), Some(2));
         assert_eq!(get("commands", Some("kade")), Some(1));
+    }
+
+    #[test]
+    fn the_spine_age_is_rewritten_every_pass_so_its_run_stays_fresh_other_readings_only_on_change() {
+        let mut stored = BTreeMap::new();
+        stored.insert("spine-spine-write-age-2026-10-19".to_string(), "0.00".to_string());
+        stored.insert("events-events-2026-10-18".to_string(), "5".to_string());
+        let age = decimal_reading("spine", "spine-write-age", "2026-10-19", 0.0, "spine-20261019t192713z");
+        let mut c = Counts::new();
+        c.insert(("2026-10-18".into(), "events".into(), None), 5);
+        let mut desired = reading_rows("events", &c, "events-x");
+        desired.push(age);
+        let (create, update, unchanged) = plan_readings(desired, &stored);
+        assert!(create.is_empty());
+        assert_eq!(update.len(), 1, "the age is rewritten even at the same value");
+        assert_eq!(update[0].0, "spine-spine-write-age-2026-10-19");
+        assert_eq!(unchanged, 1, "a day count at the same value is left alone");
     }
 
     #[test]

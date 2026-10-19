@@ -14,7 +14,9 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-ALERT_DIR="${ALERT_RULES_DIR:-${CHORUS_ROOT}/proving/domains/alerts}"
+ALERT_DIR="${CHORUS_ROOT}/proving/domains/alerts"
+# the line above stays plain: alert-runner-paths.test.sh reads it with sed
+ALERT_DIR="${ALERT_RULES_DIR:-$ALERT_DIR}"
 ALERT_STATE_DIR="${ALERT_STATE_DIR:-/Users/jeffbridwell/Library/Logs/Gathering/alert-state}"
 LOG="${ALERT_LOG:-/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log}"
 COOLDOWN_SECONDS="${ALERT_COOLDOWN:-600}"  # 10 minutes default
@@ -30,8 +32,10 @@ run_check() {
   local name
   name=$(grep '^name:' "$rule_file" | head -1 | sed 's/name: *//')
 
+  # the block keeps YAML's 2-space indent unless stripped; an indented line in a
+  # multi-line python -c then reads as IndentationError (#4634, live 15:31)
   local check_script
-  check_script=$(awk '/^check: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
+  check_script=$(awk '/^check: \|/{found=1; next} /^[a-z]/{if(found) exit} found{sub(/^  /, ""); print}' "$rule_file")
 
   if [[ -z "$check_script" ]]; then
     log "SKIP $name — no check block"
@@ -89,7 +93,7 @@ run_check() {
   log "FIRE $name — $result (consecutive: $fail_count)"
 
   local action_script
-  action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
+  action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{sub(/^  /, ""); print}' "$rule_file")
 
   if [[ -n "$action_script" ]]; then
     # #3709 — HAND THE ACTION THE VERDICT. This was a bare `bash -c`: a fresh
