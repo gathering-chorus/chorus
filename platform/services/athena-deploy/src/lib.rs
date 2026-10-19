@@ -2857,9 +2857,9 @@ mod subject_closure_runs_4064 {
     #[test]
     fn the_empty_property_node_count_finds_an_emptied_node() {
         use super::{empty_property_nodes_sparql, empty_property_nodes_verdict};
-        let Ok(out) = Command::new("sh").args(["-c", "command -v sparql"]).output() else { return };
+        let out = Command::new("sh").args(["-c", "command -v sparql"]).output().expect("sh runs");
         let sparql = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if sparql.is_empty() { eprintln!("UNMEASURED: no Jena sparql CLI on this box"); return; }
+        assert!(!sparql.is_empty(), "UNMEASURED: no Jena sparql CLI on this box; this guard cannot run");
         let dir = std::env::temp_dir().join(format!("empty-4579-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let count = |trig: &str| -> u64 {
@@ -2891,9 +2891,10 @@ mod subject_closure_runs_4064 {
     /// node another named subject also reaches is shared, never the retired one's.
     #[test]
     fn retiring_a_shape_keeps_property_nodes_another_shape_shares() {
-        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("sh runs");
         let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        // #4579 — a guard that cannot run must not read green (#3734)
+        assert!(!update.is_empty(), "UNMEASURED: no Jena update CLI on this box; this guard cannot run");
         let dir = std::env::temp_dir().join(format!("closure-4579-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let data = dir.join("d.trig");
