@@ -41,8 +41,8 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
 const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
       <input type="text" id="composer-input" placeholder="Message #team..." autocomplete="off">
-      <label class="composer-photo" title="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden><span aria-hidden="true">📷</span><span class="sr-only">Attach a photo</span></label>
-      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-pressed="false"><span aria-hidden="true">🎤</span><span class="sr-only">Record voice</span></button>
+      <label class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden>📷</label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
     </form>
     <div id="send-error" class="send-error" role="alert"></div>
@@ -818,8 +818,8 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         <footer class="composer-bar">
           <form id="composer-form">
             <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-            <label class="composer-photo" title="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden><span aria-hidden="true">📷</span><span class="sr-only">Attach a photo</span></label>
-      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-pressed="false"><span aria-hidden="true">🎤</span><span class="sr-only">Record voice</span></button>
+            <label class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden>📷</label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
           </form>
           <div id="send-error" class="send-error" role="alert"></div>
