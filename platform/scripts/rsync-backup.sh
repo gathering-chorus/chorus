@@ -4,8 +4,9 @@
 # Runs via LaunchAgent at 2am. Logs to ~/Library/Logs/Chorus/rsync-backup.log
 set -euo pipefail
 
-REMOTE="Jeffs-Mac-mini.local"
-DEST="/Users/jeffbridwell/Backups/library"
+REMOTE="${BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
+DEST="${BACKUP_DEST:-/Users/jeffbridwell/Backups/library}"
+RSYNC="${BACKUP_RSYNC:-rsync}"
 LOG_TAG="rsync-backup"
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
@@ -36,16 +37,19 @@ backup() {
   # that fails TWICE is a real failure and still reports FAIL.
   local attempt rc=1
   for attempt in 1 2; do
-    if rsync -az --delete --timeout=300 \
+    # #4630 — capture rsync's own exit code. `rc=$?` read after an if with no
+    # else is the if's status, always 0, so two failed copies logged
+    # "RETRY (exit 0)" then "OK" every night from 10-13 while the spine copy
+    # on Bedroom stayed frozen at 4.40 GB.
+    rc=0
+    "$RSYNC" -az --delete --timeout=300 \
       --exclude='data/loki/' \
       --exclude='node_modules/' \
       --exclude='.git/objects/' \
       --exclude='target/release/' \
       --exclude='target/debug/' \
-      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1; then
-      rc=0; break
-    fi
-    rc=$?
+      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1 || rc=$?
+    [ "$rc" = 0 ] && break
     [ "$attempt" = 1 ] && { log "RETRY: $name (rsync exit $rc — files changed under the copy?)"; sleep 15; }
   done
   if [ "$rc" = 0 ]; then
