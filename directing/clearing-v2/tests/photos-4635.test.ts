@@ -131,3 +131,13 @@ describe('#4635 record voice', () => {
     expect(await transcribeVoice({ size: 0 })).toEqual({ ok: false, reason: 'the recording was empty' });
   });
 });
+
+describe('#4635 a new version reaches the phone at once', () => {
+  test('every page asks for the script and stylesheet by version, so a 4-hour cache cannot serve the old one', () => {
+    const { renderRoomsPage, ASSET_VERSION } = require('../src/views');
+    const html = renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, []);
+    expect(ASSET_VERSION).toMatch(/^\d{10,}$/);
+    for (const f of ['/style.css', '/app.js', '/room-key.js']) expect(html).toContain(`${f}?v=${ASSET_VERSION}`);
+    expect(html).not.toMatch(/(href|src)="\/(style\.css|app\.js)"/);
+  });
+});

@@ -5,6 +5,22 @@ import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './d
 import type { KindCount } from './sources/message-counts';
 import type { Streams } from './sources/streams';
 import { uploadNames } from './uploads';
+import fs from 'fs';
+import path from 'path';
+
+/** #4635 — Cloudflare hands phones these files with a 4-hour cache (measured: max-age=14400),
+ *  so Jeff's iPhone kept the old page script and stylesheet: the photo button did nothing and
+ *  the icon words showed. Each URL carries the files' newest change time, so a new version is
+ *  a new URL and is fetched at once. */
+export const ASSET_VERSION = ((): string => {
+  const dir = path.join(__dirname, '../public');
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed names under this package's own public dir
+    return String(Math.floor(Math.max(...['app.js', 'style.css', 'room-key.js'].map((f) => fs.statSync(path.join(dir, f)).mtimeMs))));
+  } catch {
+    return String(Date.now());
+  }
+})();
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -63,7 +79,7 @@ export function renderPageShell(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title} · The Clearing v2</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=${ASSET_VERSION}">
   <script type="importmap">
   {
     "imports": {
@@ -76,7 +92,7 @@ export function renderPageShell(
   <script>
     window.CHORUS_WEBID = "https://id.lightlifeurbangardens.com/jeff/profile/card#me";
   </script>
-  <script type="module" src="/room-key.js"></script>
+  <script type="module" src="/room-key.js?v=${ASSET_VERSION}"></script>
 </head>
 <body>
   <header class="app-header">
@@ -91,7 +107,7 @@ export function renderPageShell(
   ${renderNav(activeNav, counts)}
   ${bodyContent}
   ${activeNav === 'rooms' ? '' : TEAM_COMPOSER}
-  <script src="/app.js"></script>
+  <script src="/app.js?v=${ASSET_VERSION}"></script>
 </body>
 </html>`;
 }
