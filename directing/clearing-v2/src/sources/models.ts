@@ -88,6 +88,8 @@ export interface RoomsData {
     from: string;
     text: string;
     time: string;
+    /** #4646 — ISO time, so the page can tell a copy (seconds apart) from a repeat */
+    ts?: string;
     tick: boolean;
     cardId?: number;
     threadCount?: number;

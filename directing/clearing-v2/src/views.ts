@@ -435,13 +435,21 @@ export function roomPhotos(text: string): string {
   return `<div class="msg-photos">${names.map((n) => `<a href="/uploads/${n}" target="_blank" rel="noopener"><img src="/uploads/${n}" alt="photo ${n}" loading="lazy"></a>`).join('')}</div>`;
 }
 
+/** #4646 — a short fingerprint of a message's words; app.js computes the same one, so
+ *  the page can spot a second copy without carrying the whole text in an attribute. */
+export function bodyHash(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
   const thinkingClass = isThinking ? ' msg-thinking' : '';
   const thinkingBadge = isThinking ? '<span class="badge-thinking">thinking</span>' : '';
   return `
-    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
+    <div class="msg${thinkingClass}" id="msg-${m.id}" data-from="${escapeHtml(m.from)}" data-body="${bodyHash(String(m.text || '').trim())}" data-ts="${escapeHtml(String(m.ts || ''))}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
       <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
       <div class="body">
         <span class="nm who-${m.from}">${m.from}</span>
@@ -752,11 +760,8 @@ const ROOM_DRAWER_SCRIPT = `  <script>
     }
   </script>`;
 
-export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
-  const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
-  const isDirect = Boolean(directRoleMatch);
-  const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
-
+function railActorsFor(actors: ActorRow[] | undefined): ActorRow[] {
+  const data = { actors };
   const knownRoleSlugs = ['wren', 'silas', 'kade', 'abby-normal'];
   const railActors: ActorRow[] = knownRoleSlugs.map(roleId => {
     const found = (data.actors || []).find(a => a.id.toLowerCase() === roleId || a.name.toLowerCase().replace(/\s+/g, '-') === roleId);
@@ -771,7 +776,14 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
     };
   });
 
-  const peopleRowHtml = `
+  return railActors;
+}
+
+/** #4646 — the role tiles, drawn by the server; the page re-fetches them every few
+ *  seconds (Jeff 12:53: the Wren tile kept showing #4635 after it was Done). */
+export function renderPeopleRow(room: string, actors: ActorRow[] | undefined): string {
+  const railActors = railActorsFor(actors);
+  return `
     <div class="actor-rail people-row" id="rooms-people-row">
       <a class="actor-tile team-tile${room === 'team' ? ' on' : ''}" href="/rooms/team" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/team';return false;">
         <span class="av a-team">#</span>
@@ -797,6 +809,15 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         `;
       }).join('')}
     </div>`;
+}
+
+export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
+  const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
+  const isDirect = Boolean(directRoleMatch);
+  const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
+
+  const railActors = railActorsFor(data.actors);
+  const peopleRowHtml = renderPeopleRow(room, data.actors);
 
   const content = `
   <div class="rooms-view">
