@@ -19,7 +19,7 @@ async function cappedRelay(notes: Array<{ id: string; created_at: number }>, cap
   const wss = new WebSocketServer({ server });
   const reqs: unknown[] = [];
   wss.on('connection', (ws) => ws.on('message', (raw) => {
-    const f = JSON.parse(String(raw));
+    const f = JSON.parse((raw as Buffer).toString('utf8'));
     if (f[0] !== 'REQ') return;
     reqs.push(f[2]);
     // like the real relay after a burst: refuse this REQ once, asking for a pause
@@ -95,6 +95,8 @@ describe('#4634 the Buzz reader counts only what can be counted', () => {
     try {
       const got = await readNotes(relay.url, undefined, 0, 5000, () => ({ signer: null, reason: 'no key in a test' }) as never);
       expect(got).toHaveLength(7);
+      // every second holds fewer notes than a page: nothing can be lost, so nothing is said
+      expect(err.mock.calls.map((c) => String(c[0])).join('')).not.toContain('stepped past');
     } finally { await relay.close(); }
   });
 
@@ -107,6 +109,7 @@ describe('#4634 the Buzz reader counts only what can be counted', () => {
       const said = err.mock.calls.map((c) => String(c[0])).join('');
       expect(said).toContain('stepped past second 104');
       expect(said).toContain('not counted');
+      expect(said.match(/stepped past/g)).toHaveLength(1);
       expect(got.length).toBe(notes.length - 2);
     } finally { await relay.close(); }
   });
