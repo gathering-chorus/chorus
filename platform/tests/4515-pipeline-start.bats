@@ -13,6 +13,8 @@ setup() {
   W="$CHORUS_WERK_BASE/wren-4515"
   mkdir -p "$CHORUS_HOME" "$W/platform/pipelines"
   for p in cicd athena borg-prove; do touch "$W/platform/pipelines/$p.yaml"; done
+  # #4579 — cicd reads the card's diff (model changes start as athena), so the werk is a repo
+  git -C "$W" init -q && git -C "$W" config user.email t@t && git -C "$W" config user.name t && git -C "$W" add -A && git -C "$W" commit -qm base && git -C "$W" update-ref refs/remotes/origin/main HEAD
   export DAGU="$BATS_TEST_TMPDIR/dagu"
   printf '#!/bin/sh\necho "$@" > "%s/args"\n' "$BATS_TEST_TMPDIR" > "$DAGU"; chmod +x "$DAGU"
 }

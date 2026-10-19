@@ -15,6 +15,8 @@ setup() {
 }
 
 @test "a v2 run is handed to the scheduler, never run from this shell" {
+  # #4579 — cicd reads the card's diff (model changes start as athena), so the werk is a repo
+  git -C "$CHORUS_WERK_BASE/kade-4474" init -q && git -C "$CHORUS_WERK_BASE/kade-4474" config user.email t@t && git -C "$CHORUS_WERK_BASE/kade-4474" config user.name t && git -C "$CHORUS_WERK_BASE/kade-4474" add -A && git -C "$CHORUS_WERK_BASE/kade-4474" commit -qm base && git -C "$CHORUS_WERK_BASE/kade-4474" update-ref refs/remotes/origin/main HEAD
   run "$ROOT/platform/scripts/werk-v2" 4474 kade
   [ "$status" -eq 0 ]
   args="$(cat "$BATS_TEST_TMPDIR/args")"

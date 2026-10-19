@@ -42,7 +42,7 @@ changed_verbs() { # the card's changed paths on stdin
       sed -n 's/^name *= *"\(.*\)".*/\1/p' "$werk/$dir/Cargo.toml"
     done
 }
-if [ -d "$slot" ]; then
+if [ -d "$slot" ] || [ "$pipeline" = cicd ]; then
   # #4602 — a werk another user owns (abby-normal's, uid 505) is "dubious
   # ownership" to git: it exited 129 inside the old pipeline here and
   # set -e ended the script before the enqueue, silently (Jeff 10-18 08:18).
@@ -53,6 +53,21 @@ if [ -d "$slot" ]; then
     echo "pipeline-start: git could not read #$card's diff in $werk: ${diff_names:-no message}; nothing was enqueued" >&2
     exit 1
   fi
+fi
+
+# #4579 reopen 2 — a card that changes the model rehearses on staging first:
+# the athena pipeline (copy, deploy-seed, validate) runs it and hands off to
+# cicd itself. Started straight as cicd on 10-18, #4579's retirement emptied 77
+# shapes on prod with no rehearsal. dagu names the handing-off run in DAG_NAME.
+if [ "$pipeline" = cicd ] && [ "${DAG_NAME:-}" != athena ]; then
+  model="$(grep -E '\.ttl$|^designing/schemas/model-retirements\.jsonl$' <<<"$diff_names" | tr '\n' ' ' | sed 's/ $//' || true)"
+  if [ -n "$model" ]; then
+    echo "pipeline-start: #$card changes the model ($model); start it with chorus-athena so it rehearses on staging first; nothing was enqueued" >&2
+    exit 1
+  fi
+fi
+
+if [ -d "$slot" ]; then
   mine=" $(changed_verbs <<<"$diff_names" | tr '\n' ' ') "
   for f in "$slot"/*; do
     name="$(basename "$f")"
