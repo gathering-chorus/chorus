@@ -338,10 +338,16 @@ function watchPhotoButton() {
   picker.addEventListener('change', async () => {
     const input = document.getElementById('composer-input');
     const status = document.getElementById('send-error');
-    if (status) status.textContent = 'Uploading photo…';
-    const out = await uploadPhoto(picker.files && picker.files[0]);
-    if (status) status.textContent = out.ok ? '' : 'Photo not attached: ' + out.reason;
-    if (out.ok && input) input.value = (input.value ? input.value + ' ' : '') + '📷 ' + out.path + ' ';
+    const files = Array.from(picker.files || []);
+    const failed = [];
+    for (const [i, file] of files.entries()) {
+      if (status) status.textContent = 'Uploading photo ' + (i + 1) + ' of ' + files.length + '…';
+      const out = await uploadPhoto(file);
+      if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📷 ' + out.path + ' ';
+      if (!out.ok) failed.push(out.reason);
+    }
+    // #4635 — Jeff 12:22: "much easier if i can pick several at once"
+    if (status) status.textContent = failed.length ? failed.length + ' of ' + files.length + ' photos not attached: ' + failed[0] : '';
     picker.value = '';
     if (input && input.focus) input.focus();
   });
@@ -715,6 +721,7 @@ if (typeof module !== 'undefined' && module.exports) {
     scrollRoomToNewest,
     loadOlderMessages,
     uploadPhoto,
+    watchPhotoButton,
     transcribeVoice,
     photoNames,
     initStream,

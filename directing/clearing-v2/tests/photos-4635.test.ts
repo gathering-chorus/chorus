@@ -141,3 +141,28 @@ describe('#4635 a new version reaches the phone at once', () => {
     expect(html).not.toMatch(/(href|src)="\/(style\.css|app\.js)"/);
   });
 });
+
+describe('#4635 several photos at once', () => {
+  test('Jeff picks several photos and every one lands in the message box; a failed one is counted', async () => {
+    const { watchPhotoButton } = require('../public/app.js');
+    let onChange: () => Promise<void> = async () => {};
+    const picker = { files: [{ name: 'a.jpg', type: 'image/jpeg' }, { name: 'b.jpg', type: 'image/jpeg' }, { name: 'c.jpg', type: 'image/jpeg' }], value: 'x', addEventListener: (_e: string, f: () => Promise<void>) => { onChange = f; } };
+    const input = { value: '@silas', focus: () => {} };
+    const status = { textContent: '' };
+    (global as any).document = { getElementById: (id: string) => ({ 'composer-photo': picker, 'composer-input': input, 'send-error': status } as any)[id] || null };
+    let n = 0;
+    (global as any).fetch = async () => { n += 1; return n === 2
+      ? { ok: false, status: 500, json: async () => ({ reason: 'disk full' }) }
+      : { ok: true, status: 200, json: async () => ({ ok: true, path: `/x/clearing-v2-uploads/${n}.jpg` }) }; };
+    watchPhotoButton();
+    await onChange();
+    expect(input.value).toBe('@silas 📷 /x/clearing-v2-uploads/1.jpg 📷 /x/clearing-v2-uploads/3.jpg ');
+    expect(status.textContent).toBe('1 of 3 photos not attached: disk full');
+    delete (global as any).document; delete (global as any).fetch;
+  });
+
+  test('the photo picker allows several', () => {
+    const { renderRoomsPage } = require('../src/views');
+    expect(renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, [])).toContain('accept="image/*" multiple');
+  });
+});
