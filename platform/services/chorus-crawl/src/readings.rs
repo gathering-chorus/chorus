@@ -382,13 +382,21 @@ pub fn buzz_counts(jsonl: &str) -> Counts {
 
 /// What a pass must write: readings not yet stored, readings whose value
 /// changed (a late-arriving line), and how many already match.
+/// A reading whose every write matters, not only its value: the spine's write age.
+pub fn is_heartbeat(fields: &[(String, String)]) -> bool {
+    fields.iter().any(|(k, v)| k == "readingMetric" && v == "spine-write-age")
+}
+
 pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>) -> (Vec<ReadingRow>, Vec<ReadingRow>, usize) {
     let (mut create, mut update, mut unchanged) = (vec![], vec![], 0);
     for (name, fields) in desired {
         let value = fields.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.clone()).unwrap_or_default();
         match stored.get(&name) {
             None => create.push((name, fields)),
-            Some(v) if v.parse::<f64>().ok() == value.parse::<f64>().ok() => unchanged += 1,
+            // an age is a heartbeat: rewrite it every pass so its run (the alert's
+            // freshness stamp) moves even when the age itself reads 0.00 again —
+            // left unchanged, spine-not-growing aged a live sensor as stopped (#4634)
+            Some(v) if v.parse::<f64>().ok() == value.parse::<f64>().ok() && !is_heartbeat(&fields) => unchanged += 1,
             Some(_) => update.push((name, fields)),
         }
     }
@@ -464,6 +472,23 @@ mod tests {
         assert_eq!(get("events", None), Some(3));
         assert_eq!(get("commands", None), Some(2));
         assert_eq!(get("commands", Some("kade")), Some(1));
+    }
+
+    #[test]
+    fn the_spine_age_is_rewritten_every_pass_so_its_run_stays_fresh_other_readings_only_on_change() {
+        let mut stored = BTreeMap::new();
+        stored.insert("spine-spine-write-age-2026-10-19".to_string(), "0.00".to_string());
+        stored.insert("events-events-2026-10-18".to_string(), "5".to_string());
+        let age = decimal_reading("spine", "spine-write-age", "2026-10-19", 0.0, "spine-20261019t192713z");
+        let mut c = Counts::new();
+        c.insert(("2026-10-18".into(), "events".into(), None), 5);
+        let mut desired = reading_rows("events", &c, "events-x");
+        desired.push(age);
+        let (create, update, unchanged) = plan_readings(desired, &stored);
+        assert!(create.is_empty());
+        assert_eq!(update.len(), 1, "the age is rewritten even at the same value");
+        assert_eq!(update[0].0, "spine-spine-write-age-2026-10-19");
+        assert_eq!(unchanged, 1, "a day count at the same value is left alone");
     }
 
     #[test]
