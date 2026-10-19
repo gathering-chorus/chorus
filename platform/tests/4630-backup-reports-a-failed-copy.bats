@@ -9,8 +9,11 @@ setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   T="$(mktemp -d)"
   mkdir -p "$T/bin" "$T/home/.chorus" "$T/home/.claude" "$T/home/.ssh" "$T/home/CascadeProjects" "$T/home/Library/LaunchAgents"
-  printf '#!/bin/sh\nexit 0\n' > "$T/bin/ssh"
+  # fake Bedroom: answers the reachability probe, and reports each copy's size
+  # as REMOTE_SIZE (default: as big as the source, i.e. a good copy)
+  printf '#!/bin/sh\ncase "$*" in *stat*) echo "${REMOTE_SIZE:-999999999999}";; esac\nexit 0\n' > "$T/bin/ssh"
   chmod +x "$T/bin/ssh"
+  head -c 5000 /dev/zero > "$T/home/.chorus/chorus.log"
 }
 
 teardown() { rm -rf "$T"; }
@@ -21,7 +24,7 @@ fake_rsync() { # fake_rsync <exit>
 }
 
 run_backup() {
-  run env HOME="$T/home" PATH="$T/bin:$PATH" BACKUP_RSYNC="$T/bin/rsync" CHORUS_ROOT="$T/none" \
+  run env HOME="$T/home" PATH="$T/bin:$PATH" BACKUP_RSYNC="$T/bin/rsync" BACKUP_SSH="$T/bin/ssh" REMOTE_SIZE="${REMOTE_SIZE:-}" CHORUS_ROOT="$T/none" \
     bash -c 'sleep() { :; }; export -f sleep; bash "$0"' "$ROOT/platform/scripts/rsync-backup.sh"
 }
 
@@ -40,4 +43,13 @@ run_backup() {
   [ "$status" -eq 0 ] || return 1
   [[ "$output" == *"OK: dot-chorus"* ]] || return 1
   [[ "$output" == *"5 synced, 0 failed"* ]] || return 1
+}
+
+@test "negative proof: rsync says OK but the spine copy stayed behind its source (10-13), so the backup is red" {
+  fake_rsync 0
+  REMOTE_SIZE=4000 run_backup
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"STALE: dot-chorus/.chorus/chorus.log copy is 4000 bytes, source was 5000"* ]] || return 1
+  [[ "$output" == *"FAIL: dot-chorus (copy is behind its source)"* ]] || return 1
+  [[ "$output" != *"OK: dot-chorus"* ]] || return 1
 }

@@ -7,6 +7,7 @@ set -euo pipefail
 REMOTE="${BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 DEST="${BACKUP_DEST:-/Users/jeffbridwell/Backups/library}"
 RSYNC="${BACKUP_RSYNC:-rsync}"
+SSH="${BACKUP_SSH:-ssh}"
 LOG_TAG="rsync-backup"
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
@@ -14,7 +15,7 @@ CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"; }
 
 # Verify Bedroom is reachable
-if ! ssh -o ConnectTimeout=10 "$REMOTE" "true" 2>/dev/null; then
+if ! "$SSH" -o ConnectTimeout=10 "$REMOTE" "true" 2>/dev/null; then
   log "ERROR: Bedroom unreachable — backup skipped"
   "$CHORUS_LOG" ops.backup.failed silas reason="bedroom-unreachable" 2>/dev/null || true
   exit 1
@@ -26,6 +27,14 @@ SYNCED=0
 backup() {
   local src="$1"
   local name="$2"
+  shift 2
+  # #4630 AC3 — key files (relative to the source's parent) whose copy must end
+  # at least as big as the source was when the copy began; a copy that stayed
+  # behind (the spine froze at 4.40 GB from 10-13 while rsync said OK) is a FAIL.
+  local keys=("$@") key before=()
+  for key in ${keys[@]+"${keys[@]}"}; do
+    before+=("$(stat -f%z "$(dirname "$src")/$key" 2>/dev/null || echo 0)")
+  done
   if [ ! -e "$src" ]; then
     log "SKIP: $name ($src not found)"
     return
@@ -42,7 +51,7 @@ backup() {
     # "RETRY (exit 0)" then "OK" every night from 10-13 while the spine copy
     # on Bedroom stayed frozen at 4.40 GB.
     rc=0
-    "$RSYNC" -az --delete --timeout=300 \
+    nice -n 10 "$RSYNC" -az --delete --timeout=300 \
       --exclude='data/loki/' \
       --exclude='node_modules/' \
       --exclude='.git/objects/' \
@@ -53,10 +62,20 @@ backup() {
     [ "$attempt" = 1 ] && { log "RETRY: $name (rsync exit $rc — files changed under the copy?)"; sleep 15; }
   done
   if [ "$rc" = 0 ]; then
+    local i copied
+    for i in ${keys[@]+"${!keys[@]}"}; do
+      copied=$("$SSH" -o ConnectTimeout=10 "$REMOTE" "stat -f%z '${DEST}/${name}/${keys[$i]}'" 2>/dev/null || echo 0)
+      if [ "${copied:-0}" -lt "${before[$i]}" ]; then
+        log "STALE: $name/${keys[$i]} copy is ${copied:-0} bytes, source was ${before[$i]} when the copy began"
+        rc=97
+      fi
+    done
+  fi
+  if [ "$rc" = 0 ]; then
     log "OK: $name"
     SYNCED=$((SYNCED + 1))
   else
-    log "FAIL: $name (rsync exit $rc after 2 attempts)"
+    if [ "$rc" = 97 ]; then log "FAIL: $name (copy is behind its source)"; else log "FAIL: $name (rsync exit $rc after 2 attempts)"; fi
     FAILED=$((FAILED + 1))
   fi
 }
@@ -64,7 +83,7 @@ backup() {
 log "=== Backup starting ==="
 
 backup "$HOME/.claude"                          "dot-claude"
-backup "$HOME/.chorus"                          "dot-chorus"
+backup "$HOME/.chorus"                          "dot-chorus"       ".chorus/chorus.log"
 backup "$HOME/.ssh"                             "dot-ssh"
 backup "$HOME/CascadeProjects"                  "CascadeProjects"
 backup "$HOME/Library/LaunchAgents"             "LaunchAgents"
