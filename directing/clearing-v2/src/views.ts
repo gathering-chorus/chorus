@@ -4,6 +4,7 @@ import type { BoardColumn } from './sources/board';
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
 import type { KindCount } from './sources/message-counts';
 import type { Streams } from './sources/streams';
+import { uploadNames } from './uploads';
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -40,6 +41,8 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
 const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
       <input type="text" id="composer-input" placeholder="Message #team..." autocomplete="off">
+      <label class="composer-photo" title="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden><span aria-hidden="true">📷</span><span class="sr-only">Attach a photo</span></label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-pressed="false"><span aria-hidden="true">🎤</span><span class="sr-only">Record voice</span></button>
       <button type="submit" id="composer-send">Send</button>
     </form>
     <div id="send-error" class="send-error" role="alert"></div>
@@ -409,6 +412,13 @@ export function formatRoomText(raw: string): string {
   return result;
 }
 
+/** #4635 — a message that names an uploaded photo shows it, tap to open full size. */
+export function roomPhotos(text: string): string {
+  const names = uploadNames(text);
+  if (names.length === 0) return '';
+  return `<div class="msg-photos">${names.map((n) => `<a href="/uploads/${n}" target="_blank" rel="noopener"><img src="/uploads/${n}" alt="photo ${n}" loading="lazy"></a>`).join('')}</div>`;
+}
+
 export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
@@ -423,6 +433,7 @@ export function renderRoomMessage(m: RoomsData['messages'][number]): string {
         ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
         ${thinkingBadge}
         <div>${linkifiedText}</div>
+        ${roomPhotos(m.text)}
         ${m.threadCount ? `
           <div class="thread-container" style="margin-top:6px">
             <span class="thr">${m.threadCount} working replies${m.threadLast ? ` · last ${m.threadLast}` : ''}</span>
@@ -807,7 +818,9 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         <footer class="composer-bar">
           <form id="composer-form">
             <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-            <button type="submit" id="composer-send">Send</button>
+            <label class="composer-photo" title="Attach a photo"><input type="file" id="composer-photo" accept="image/*" hidden><span aria-hidden="true">📷</span><span class="sr-only">Attach a photo</span></label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-pressed="false"><span aria-hidden="true">🎤</span><span class="sr-only">Record voice</span></button>
+      <button type="submit" id="composer-send">Send</button>
           </form>
           <div id="send-error" class="send-error" role="alert"></div>
         </footer>
