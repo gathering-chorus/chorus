@@ -1,4 +1,8 @@
+// @domain: messages
 /**
+ * #4634 — moved here from Clearing v2 (#4592), so the messages sensor derives
+ * and v2 only presents: one rule, one copy (Kade, Wren 2026-10-18).
+ *
  * #4592 — today's count per message kind: how many were sent, how many reached
  * Buzz, and the gap. Jeff, 2026-10-17 17:42: "im really not clear what % of
  * messages are in buzz and what are going old path very fuzzy to me".
@@ -14,7 +18,8 @@
  * from each role's hooks straight to the relay), so the page says so rather
  * than guessing.
  */
-import type { NostrEvent } from '../types';
+/** The note fields the count reads. */
+export interface RoomNote { content: string; tags: string[][]; created_at?: number }
 
 export type MessageKind = 'jeff-input' | 'role-reply' | 'nudge-to-jeff' | 'nudge-between-roles' | 'system-alert';
 
@@ -80,7 +85,7 @@ export interface KindCount {
 }
 
 /** Sent vs reached, per kind, each sent message matched to a note by its text. */
-export function countKinds(sent: Sent[], notes: Pick<NostrEvent, 'content' | 'tags'>[]): KindCount[] {
+export function countKinds(sent: Sent[], notes: RoomNote[]): KindCount[] {
   const texts = new Map<string, number>();
   let replies = 0;
   for (const n of notes) {
@@ -107,14 +112,35 @@ export function bostonMidnight(now: Date = new Date()): number {
   return Math.floor(now.getTime() / 1000) - sinceMidnight;
 }
 
-/** Today's nudges and Jeff inputs from pulse (created_at is UTC "YYYY-MM-DD HH:MM:SS"). */
-export async function fetchPulseToday(pulseUrl: string, since: number, fetchFn: typeof fetch = fetch): Promise<PulseRow[]> {
-  const sinceUtc = new Date(since * 1000).toISOString().replace('T', ' ').slice(0, 19);
-  const rows: PulseRow[] = [];
-  for (const type of ['nudge', 'jeff-input']) {
-    const res = await fetchFn(`${pulseUrl}/api/messages?type=${type}&since=${encodeURIComponent(sinceUtc)}&limit=10000`);
-    if (!res.ok) throw new Error(`pulse answered ${res.status} for ${type}`);
-    rows.push(...(await res.json() as PulseRow[]));
+/** The Boston calendar day of a UTC instant. */
+export function bostonDay(ms: number): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+}
+
+/** A pulse row with its UTC created_at ("YYYY-MM-DD HH:MM:SS"). */
+export interface DatedPulseRow extends PulseRow { created_at: string }
+
+/**
+ * #4634 — per Boston day before `today`: how many messages should have reached
+ * Buzz (sent, by the countKinds rule) and how many did (kept). Role replies
+ * have no sent figure, so they are left out of both. Days with no message at
+ * all are not invented here; the sensor fills them with a measured 0.
+ */
+export function countDays(rows: DatedPulseRow[], notes: RoomNote[], today: string): Array<{ day: string; sent: number; kept: number }> {
+  const rowsByDay = new Map<string, PulseRow[]>();
+  for (const r of rows) {
+    const day = bostonDay(Date.parse(r.created_at.replace(' ', 'T') + 'Z'));
+    if (day >= today) continue;
+    rowsByDay.set(day, [...(rowsByDay.get(day) || []), r]);
   }
-  return rows;
+  const notesByDay = new Map<string, RoomNote[]>();
+  for (const n of notes) {
+    if (typeof n.created_at !== 'number') continue;
+    const day = bostonDay(n.created_at * 1000);
+    notesByDay.set(day, [...(notesByDay.get(day) || []), n]);
+  }
+  return [...rowsByDay.keys()].sort().map((day) => {
+    const kinds = countKinds(sentFromPulse(rowsByDay.get(day) || []), notesByDay.get(day) || []).filter((k) => k.sent !== null);
+    return { day, sent: kinds.reduce((a, k) => a + (k.sent || 0), 0), kept: kinds.reduce((a, k) => a + k.reached, 0) };
+  });
 }

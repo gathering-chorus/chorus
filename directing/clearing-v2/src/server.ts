@@ -16,10 +16,10 @@ import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './sha
 import { ClearingMessage, NostrEvent } from './types';
 
 import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage } from './views';
+import { byDay, fetchReadings } from './sources/readings';
 import { fetchStreams } from './sources/streams';
 import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
-import { bostonMidnight, countKinds, fetchPulseToday, sentFromPulse } from './sources/message-counts';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 
@@ -35,6 +35,7 @@ export interface ClearingV2Config {
   /** #4597 — the spine stream the Streams tab shows (the old Clearing's /api/stream). */
   streamUrl?: string;
   cardsUrl?: string;
+  readingsUrl?: string;
   alertsUrl?: string;
   port?: number;
   host?: string;
@@ -78,6 +79,8 @@ const BOARD_URL = process.env.BOARD_URL || activeConfig.boardUrl || 'http://loca
 const STREAM_URL = process.env.STREAM_URL || activeConfig.streamUrl || 'http://127.0.0.1:3470/api/stream';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
+/** #4634 — the herald sensors' readings, which /counts presents. */
+const READINGS_URL = process.env.READINGS_URL || activeConfig.readingsUrl || 'http://localhost:3360/v1/heralds/sensorreadings';
 /** #4625 — a demo v2 reads the real room and never writes it: no send, no pulse hand-off. */
 const READ_ONLY = process.env.CLEARING_V2_READONLY === '1';
 export const READ_ONLY_REASON = 'read-only demo: this Clearing does not send';
@@ -121,6 +124,8 @@ interface RouteContext {
   streamUrl: string;
   /** #4592 — the counts page reads pulse's message store. */
   pulseUrl: string;
+  /** #4634 — the herald sensors' readings, presented by /counts. */
+  readingsUrl: string;
   /** #4625 — refuse /api/send by name. */
   readOnly: boolean;
 }
@@ -148,17 +153,14 @@ function registerPageRoutes(ctx: RouteContext): void {
     res.type('html').send(renderRoomsPage('team', roomsData, sources));
   });
 
-  // #4592 — today's messages by kind: sent (pulse's message store) vs reached Buzz (the relay).
+  // #4634 — messages and events by day, from the herald sensors' readings; v2 derives nothing.
   app.get('/counts', async (req: Request, res: Response) => {
     const { pulseUrl } = getTestOverrides(req);
-    const since = bostonMidnight();
-    const day = new Date(since * 1000 + 12 * 3600 * 1000).toISOString().slice(0, 10);
     const sources = await dataService.getTrustStripSources({ pulseUrl });
     try {
-      const [rows, notes] = await Promise.all([fetchPulseToday(pulseUrl || ctx.pulseUrl, since), ctx.relay.fetchSince(since)]);
-      res.type('html').send(renderCountsPage(countKinds(sentFromPulse(rows), notes), { day }, sources));
+      res.type('html').send(renderCountsPage(byDay(await fetchReadings(ctx.readingsUrl)), {}, sources));
     } catch (e) {
-      res.type('html').send(renderCountsPage([], { day, error: (e as Error).message }, sources));
+      res.type('html').send(renderCountsPage([], { error: (e as Error).message }, sources));
     }
   });
 
@@ -398,11 +400,14 @@ export interface CreateAppOptions {
   relayHost?: string;
   signInUrl?: string;
   relaySigner?: RelaySigner | null;
+  /** #4634 — test seam: where /counts reads the sensors' readings. */
+  readingsUrl?: string;
   /** #4625 — defaults to CLEARING_V2_READONLY=1 (set by the demo env). */
   readOnly?: boolean;
 }
 
 interface ResolvedUrls {
+  readingsUrl: string;
   pulseUrl: string;
   relayUrl: string;
   rolesUrl: string;
@@ -419,6 +424,7 @@ function resolveUrls(options: CreateAppOptions = {}): ResolvedUrls {
     cardsUrl: options.cardsUrl || CARDS_URL,
     athenaCardUrl: options.athenaCardUrl,
     alertsUrl: options.alertsUrl || ALERTS_URL,
+    readingsUrl: options.readingsUrl || READINGS_URL,
   };
 }
 
@@ -602,6 +608,7 @@ export function createApp(options?: CreateAppOptions) {
     boardUrl: options?.boardUrl ?? BOARD_URL,
     streamUrl: STREAM_URL,
     pulseUrl: urls.pulseUrl,
+    readingsUrl: urls.readingsUrl,
     readOnly,
   });
 

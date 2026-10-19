@@ -7,7 +7,7 @@
 
 /// The passes the herald core has, by Sensor name. `files` is the default pass
 /// (no subcommand).
-pub const SENSORS: [&str; 5] = ["files", "code", "services", "stores", "infra"];
+pub const SENSORS: [&str; 8] = ["files", "code", "services", "stores", "infra", "messages", "events", "spine"];
 
 /// What each sensor is, as its Sensor row states it. The rows live in the
 /// store (#4432: rows are not replayed from files); a sensor writes its own
@@ -20,12 +20,16 @@ pub struct SensorDef {
     pub window_minutes: u32,
 }
 
-pub const SENSOR_DEFS: [SensorDef; 5] = [
+pub const SENSOR_DEFS: [SensorDef; 8] = [
     SensorDef { name: "files", reads: "git ls-files since the last watermark: files, tests, pages, endpoints, logs", writes: &["CodeFile", "Test", "Page", "Endpoint", "LogSource"], takes_target: false, window_minutes: 1440 },
     SensorDef { name: "code", reads: "Cargo.toml, package.json and Python build files in the target repository", writes: &["CodeUnit", "Repository"], takes_target: true, window_minutes: 1440 },
     SensorDef { name: "services", reads: "launchctl, ps and lsof on Library; ssh to Bedroom; deploy events on the spine", writes: &["ServiceInstance", "ScheduledJob"], takes_target: false, window_minutes: 60 },
     SensorDef { name: "stores", reads: "the store map, Fuseki datasets and the SQLite files under ~/.chorus", writes: &["PersistenceStore"], takes_target: false, window_minutes: 60 },
     SensorDef { name: "infra", reads: "df, scutil, sysctl and sw_vers on Library and Bedroom", writes: &["Machine", "Disk"], takes_target: false, window_minutes: 60 },
+    // #4634 — measuring-only sensors: they write SensorReadings, no rows of their own kind
+    SensorDef { name: "messages", reads: "pulse's messages.db, read-only: nudges, alerts, Jeff's input and deliveries per Boston day", writes: &[], takes_target: false, window_minutes: 1440 },
+    SensorDef { name: "spine", reads: "the spine's last-write time: hours since chorus.log was written, every 10 minutes", writes: &[], takes_target: false, window_minutes: 10 },
+    SensorDef { name: "events", reads: "the spine (chorus.log and its archive): events and each role's commands per Boston day", writes: &[], takes_target: false, window_minutes: 1440 },
 ];
 
 /// A Sensor row's fields, without its name. `sensorWrites` repeats, one per kind.
@@ -122,8 +126,14 @@ pub fn run_fields(sensor: &str, target: &str, started: &str, ended: Option<&str>
 
 /// Green only when the pass exited 0 AND counted. An exit 0 with no tally
 /// line is a pass that did not do what it says, and reads red.
+/// Exit 3 is a pass that could not read what it measures (#4634): the run
+/// says unmeasured, never green and never a 0.
+pub const UNMEASURED_EXIT: i32 = 3;
+
 pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
-    if exit == 0 && counts.is_some() {
+    if exit == UNMEASURED_EXIT {
+        "unmeasured"
+    } else if exit == 0 && counts.is_some() {
         "green"
     } else {
         "red"
@@ -133,6 +143,14 @@ pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
 #[cfg(test)]
 mod tests_4405 {
     use super::*;
+
+    #[test]
+    fn the_spine_run_is_counted_only_from_a_tally_line_headed_spine() {
+        let head = crate::readings::reading_sensor("events", true);
+        let line = format!("{head}: create 0 · update 0 · unchanged 1\n");
+        assert!(tally("spine", &line).is_some(), "the spine check's own line counts its run");
+        assert!(tally("spine", "events: create 0 · update 0 · unchanged 1\n").is_none(), "a line headed events leaves the spine run uncounted");
+    }
 
     #[test]
     fn every_pass_tally_line_reads_back() {
@@ -176,11 +194,40 @@ mod tests_4405 {
         assert!(!is_run_name("sensor-run-code-20261012t213005z", "code"), "a kind-prefixed name is a 422 at the door");
     }
 
+    /// #4634 — the runner refuses any sensor its input shape doesn't list, so the
+    /// sensors the 10-17 rename left calling a dead tool were joined by new
+    /// sensors the runner would refuse. The model's list and this one must match.
+    #[test]
+    fn the_runner_input_shape_lists_exactly_these_sensors() {
+        // runtime manifest dir, never env!(): a binary built in one werk must not read another's file (#4030)
+        let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+        let ttl = std::fs::read_to_string(format!("{dir}/../../../roles/wren/ontology/skills-4467.ttl")).expect("skills model readable");
+        let block = &ttl[ttl.find("chorus:HeraldRunInput").expect("HeraldRunInput present")..];
+        let line = block.lines().find(|l| l.contains("sh:name \"sensor\"")).expect("sensor property present");
+        let inside = &line[line.find("sh:in (").expect("an sh:in list") + 7..line.find(')').unwrap()];
+        let mut listed: Vec<&str> = inside.split('"').filter(|s| !s.trim().is_empty()).collect();
+        let mut ours: Vec<&str> = SENSORS.to_vec();
+        listed.sort();
+        ours.sort();
+        assert_eq!(listed, ours, "the runner would refuse a sensor crawl offers, or offer one crawl lacks");
+    }
+
+    #[test]
+    fn a_pass_that_cannot_read_its_store_is_unmeasured_not_green_or_red() {
+        assert_eq!(outcome(UNMEASURED_EXIT, None), "unmeasured");
+        let c = Counts { create: 1, update: 0, delete: 0, unchanged: 0 };
+        assert_eq!(outcome(0, Some(c)), "green");
+        assert_eq!(outcome(1, Some(c)), "red");
+    }
+
     #[test]
     fn every_sensor_has_one_row_definition() {
         for s in SENSORS {
             let f = sensor_fields(s).unwrap_or_else(|| panic!("{s} has no Sensor row"));
-            assert!(f.iter().any(|(k, _)| k == "sensorWrites"), "{s} writes nothing");
+            // #4634 — measuring sensors write readings only; every other sensor writes rows
+            let measuring = matches!(s, "messages" | "events" | "spine");
+            assert_eq!(f.iter().any(|(k, _)| k == "sensorWrites"), !measuring, "{s}: sensorWrites must be {}", if measuring { "absent" } else { "present" });
+            assert!(f.iter().any(|(k, v)| k == "sensorReads" && !v.is_empty()), "{s} says nothing about what it reads");
         }
         assert_eq!(SENSOR_DEFS.len(), SENSORS.len());
         // NEGATIVE PROOF: a name that is not a sensor has no row

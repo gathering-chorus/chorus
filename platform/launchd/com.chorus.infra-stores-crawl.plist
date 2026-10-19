@@ -16,7 +16,7 @@
          Sensor row reads stale after a day without one. -->
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas borg-tend-herald '{"role":"silas","sensor":"infra","wait":true}'; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas borg-tend-herald '{"role":"silas","sensor":"stores","wait":true}'; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas borg-tend-herald '{"role":"silas","sensor":"code","wait":true}'</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas herald-run '{"role":"silas","sensor":"infra","wait":true}'; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas herald-run '{"role":"silas","sensor":"stores","wait":true}'; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas herald-run '{"role":"silas","sensor":"code","wait":true}'</string>
   </array>
   <key>StartInterval</key><integer>3600</integer>
   <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/infra-stores-crawl.log</string>

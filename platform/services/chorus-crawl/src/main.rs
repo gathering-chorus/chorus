@@ -382,7 +382,7 @@ fn write(
 ) -> Result<String, String> {
     let token = ident.borrow_mut().bearer()?;
     match curl(api, method, path, body, Some(&token)) {
-        Err(e) if e.contains("HTTP 401") => {
+        Err(e) if chorus_crawl::readings::token_expired(&e) => {
             ident.borrow_mut().remint()?;
             let token = ident.borrow().token.clone();
             curl(api, method, path, body, Some(&token))
@@ -1813,7 +1813,12 @@ fn run_sensor(args: &[String]) -> i32 {
             bad => { eprintln!("chorus-crawl sensor: unknown arg {bad} — nothing ran"); return 2; }
         }
     }
-    let mut pass: Vec<String> = if sensor == "files" { vec![] } else { vec![sensor.clone()] };
+    // #4634 — the spine sensor is the events pass's 10-minute write-age check
+    let mut pass: Vec<String> = match sensor.as_str() {
+        "files" => vec![],
+        "spine" => vec!["events".to_string(), "--age-only".to_string()],
+        _ => vec![sensor.clone()],
+    };
     if let Some(t) = &target { pass.extend(["--target".to_string(), t.clone()]); }
     if dry_run { pass.push("--dry-run".to_string()); }
     let home = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
@@ -1864,7 +1869,7 @@ fn run_sensor(args: &[String]) -> i32 {
     println!("sensor {sensor}: run {name} on {what} started {started}");
 
     let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "chorus-crawl".into());
-    let out = Command::new(&exe).args(&pass).output();
+    let out = Command::new(&exe).args(&pass).env("CHORUS_SENSOR_RUN", &name).output();
     let (exit, text) = match out {
         Ok(o) => {
             let t = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
@@ -1891,6 +1896,195 @@ fn run_sensor(args: &[String]) -> i32 {
     }
     println!("sensor {sensor}: run {name} {result} at {ended}");
     if result == "green" { 0 } else if exit != 0 { exit } else { 1 }
+}
+
+/// #4634 — the messages and events sensors. Each pass counts every past
+/// Boston day from its source (so its first pass is the history), writes only
+/// new and changed readings, and reports unmeasured when it cannot read the
+/// source — never a zero. The readings name the SensorRun from
+/// CHORUS_SENSOR_RUN, which `sensor` sets for the pass it starts.
+fn run_readings(which: &str, args: &[String]) -> i32 {
+    use chorus_crawl::readings::*;
+    if let Some(bad) = args.iter().find(|a| !matches!(a.as_str(), "--dry-run" | "--age-only")) {
+        eprintln!("chorus-crawl {which}: unknown arg {bad} — nothing ran");
+        return 2;
+    }
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let age_only = args.iter().any(|a| a == "--age-only");
+    if age_only && which != "events" {
+        eprintln!("chorus-crawl {which}: --age-only is the events sensor's 10-minute check — nothing ran");
+        return 2;
+    }
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let today = boston_day(&chorus_crawl::iso_from_secs(now_secs())).unwrap_or_default();
+    // #4634 — every 10 minutes: how long since the spine was last written, in
+    // hours with its fraction. The full day count runs once a day.
+    let extra: Vec<ReadingRow> = if which == "events" {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let spine = std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log"));
+        match std::fs::metadata(&spine).and_then(|m| m.modified()) {
+            Ok(t) => {
+                let age = std::time::SystemTime::now().duration_since(t).map(|d| d.as_secs_f64()).unwrap_or(0.0) / 3600.0;
+                println!("events: spine last written {age:.2} h ago");
+                vec![decimal_reading(reading_sensor(which, age_only), "spine-write-age", &today, age, &std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| "events-unrecorded".into()))]
+            }
+            Err(e) => { println!("events: UNMEASURED — cannot read {spine} ({e}); no readings written"); return 3; }
+        }
+    } else { vec![] };
+    let mut counts = if age_only { Counts::new() } else if which == "messages" {
+        let db = std::env::var("CHORUS_PULSE_DB").unwrap_or_else(|_| format!("{root}/platform/pulse/messages.db"));
+        let out = match sh("sqlite3", &["-readonly", "-separator", "\u{1f}", &db, "select created_at, type, \"from\", delivery_status from messages"], "/") {
+            Ok(o) => o,
+            Err(e) => { println!("{which}: UNMEASURED — cannot read {db} ({e}); no readings written"); return 3; }
+        };
+        let rows: Vec<MessageRow> = out.lines().filter_map(|l| {
+            let mut f = l.split('\u{1f}');
+            Some(MessageRow { created_at: f.next()?, kind: f.next()?, from: f.next()?, status: f.next().unwrap_or("") })
+        }).collect();
+        let mut c = count_messages(&rows, &today);
+        // sent vs kept in Buzz, by pulse's reader (the countKinds rule, #4592)
+        let reader = format!("{root}/platform/pulse/dist/buzz-day-counts.js");
+        let relay = std::env::var("PULSE_BUZZ_RELAY_URL").unwrap_or_else(|_| "ws://127.0.0.1:13000".into());
+        let relay_host = std::env::var("PULSE_BUZZ_RELAY_HOST").unwrap_or_else(|_| "192.168.86.242:3000".into());
+        match Command::new("node").args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
+            Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
+            Ok(o) => println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()),
+            Err(e) => println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"),
+        }
+        let kept_read = c.keys().any(|(_, m, _)| m == "messages-kept");
+        let mut metrics = vec!["nudges", "alerts", "jeff-inputs"];
+        if kept_read { metrics.extend(["messages-sent", "messages-kept"]); }
+        fill_zero_days(&mut c, &metrics, &today);
+        c
+    } else {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let spine = std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log"));
+        let archives: Vec<String> = std::env::var("CHORUS_SPINE_ARCHIVES").map(|v| v.split(':').filter(|s| !s.is_empty()).map(String::from).collect())
+            .unwrap_or_else(|_| vec![format!("{home}/.chorus/chorus.log.archived-20260723.gz")]);
+        // streamed line by line: the spine is gigabytes, never read into memory whole
+        use std::io::BufRead;
+        let mut readers: Vec<Box<dyn BufRead>> = Vec::new();
+        for a in &archives {
+            match Command::new("gzip").args(["-dc", a]).stdout(std::process::Stdio::piped()).spawn() {
+                Ok(child) => readers.push(Box::new(std::io::BufReader::new(child.stdout.expect("piped stdout")))),
+                Err(e) => { println!("{which}: UNMEASURED — cannot read archive {a} ({e}); no readings written"); return 3; }
+            }
+        }
+        match std::fs::File::open(&spine) {
+            Ok(f) => readers.push(Box::new(std::io::BufReader::new(f))),
+            Err(e) => { println!("{which}: UNMEASURED — cannot read {spine} ({e}); no readings written"); return 3; }
+        }
+        let lines = readers.into_iter().flat_map(|r| r.split(b'\n').map_while(Result::ok).map(|b| String::from_utf8_lossy(&b).into_owned()));
+        let mut c = count_events(lines, &today);
+        fill_zero_days(&mut c, &["events", "commands", "unreadable-lines"], &today);
+        c
+    };
+    if counts.is_empty() && !age_only {
+        println!("{which}: UNMEASURED — the source held no countable day; no readings written");
+        return 3;
+    }
+    // #4634 AC1/2 — the store and its Bedroom copy: size, and the copy's age.
+    if !age_only
+    // Recorded for today (the day it was measured). An unreadable copy is
+    // unmeasured: no copy readings, and the pass says so.
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let (src, copy) = if which == "messages" {
+            (std::env::var("CHORUS_PULSE_DB").unwrap_or_else(|_| format!("{root}/platform/pulse/messages.db")),
+             std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| "/Users/jeffbridwell/Backups/library/CascadeProjects/CascadeProjects/chorus/platform/pulse/messages.db".into()))
+        } else {
+            (std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log")),
+             std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| "/Users/jeffbridwell/Backups/library/dot-chorus/.chorus/chorus.log".into()))
+        };
+        let store_bytes = std::fs::metadata(&src).ok().map(|m| m.len());
+        let host = std::env::var("CHORUS_BACKUP_HOST").unwrap_or_else(|_| "192.168.86.242".into());
+        let stat = if host == "local" {
+            sh("stat", &["-f", "%z %m", &copy], "/")
+        } else {
+            sh("ssh", &["-o", "ConnectTimeout=8", "-o", "BatchMode=yes", &host, &format!("stat -f '%z %m' '{copy}'")], "/")
+        };
+        let copy_read = stat.ok().and_then(|t| {
+            let mut p = t.split_whitespace();
+            Some((p.next()?.parse::<u64>().ok()?, p.next()?.parse::<u64>().ok()?))
+        });
+        if copy_read.is_none() {
+            println!("{which}: backup copy UNMEASURED — could not read {copy} on {host}");
+        }
+        let b = backup_readings(&today, store_bytes, copy_read, now_secs());
+        if let Some(h) = backup_stale(&b, &today, 24) {
+            println!("{which}: backup copy is {h} hours old (over 24)");
+        }
+        counts.extend(b);
+    }
+    if which == "events" {
+        let z = zero_days(&counts, "events");
+        if !z.is_empty() {
+            println!("events: {} day(s) with 0 events — a gap in the spine, not a quiet day: {}", z.len(), z.join(" "));
+        }
+    }
+    let gaps = missing_days(&counts);
+    if !gaps.is_empty() {
+        println!("{which}: {} day(s) with no reading: {}", gaps.len(), gaps.join(" "));
+    }
+    let run = std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| format!("{which}-unrecorded"));
+    let mut desired = reading_rows(which, &counts, &run);
+    desired.extend(extra);
+    counts.clear();
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("chorus-crawl {which}: {e}"); return 2; }
+    };
+    let ident = match Identity::open(&root, &role) {
+        Ok(i) => std::cell::RefCell::new(i),
+        Err(e) => { eprintln!("chorus-crawl {which}: {e}"); return 2; }
+    };
+    let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl {which}: {e}"); return 2; } };
+    let coll = match collection_for(&api, "SensorReading") {
+        Ok(c) => c,
+        // a dry run still shows what it would write, against an empty store
+        Err(e) if dry_run => { println!("{which}: the store has no SensorReading collection yet ({e}) — dry run compares against nothing"); String::new() }
+        Err(e) => { println!("{which}: UNMEASURED — the store has no SensorReading collection ({e}); no readings written"); return 3; }
+    };
+    let stored: std::collections::BTreeMap<String, String> = if coll.is_empty() { Default::default() } else { match fetch_rows_with(&api, Some(&token), "SensorReading", &stored_readings_filter(which, age_only), chorus_crawl::services::door_page_rows) {
+        Ok(rows) => rows.into_iter().filter_map(|f| {
+            let get = |k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            Some((get("name")?, get("readingValue")?))
+        }).collect(),
+        Err(e) => { println!("{which}: UNMEASURED — cannot read stored readings ({e}); no readings written"); return 3; }
+    } };
+    let (create, update, unchanged) = plan_readings(desired, &stored);
+    // the tally line names the sensor the run belongs to: the spine check runs
+    // the events pass, and a line headed "events:" leaves the spine run uncounted (red)
+    println!("{}: create {} · update {} · unchanged {}", reading_sensor(which, age_only), create.len(), update.len(), unchanged);
+    if dry_run {
+        for (name, f) in create.iter().chain(update.iter()) {
+            let v = f.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.as_str()).unwrap_or("");
+            println!("{which}: would write {name} = {v}");
+        }
+        println!("{which}: dry-run — NOTHING WRITTEN");
+        return 0;
+    }
+    let body = |r: &(String, Vec<(String, String)>)| {
+        let mut f = vec![("name".to_string(), r.0.clone())];
+        f.extend(r.1.iter().cloned());
+        fields_json(&f)
+    };
+    let mut failed = 0;
+    for chunk in create.chunks(200) {
+        let batch = format!("[{}]", chunk.iter().map(body).collect::<Vec<_>>().join(","));
+        if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&batch)) {
+            println!("{which}: {} readings NOT written ({e})", chunk.len());
+            failed += chunk.len();
+        }
+    }
+    for r in &update {
+        if let Err(e) = write(&ident, &api, "PATCH", &format!("{coll}/{}", r.0), Some(&fields_json(&r.1))) {
+            println!("{which}: {} NOT updated ({e})", r.0);
+            failed += 1;
+        }
+    }
+    if failed > 0 { 1 } else { 0 }
 }
 
 fn run_code(args: &[String]) -> i32 {
@@ -2314,6 +2508,10 @@ fn main() {
     // #4422 — `stores`: every place Chorus keeps data.
     if argv.get(1).map(String::as_str) == Some("stores") {
         std::process::exit(run_stores(&argv[2..]));
+    }
+    // #4634 — `messages` / `events`: counts per Boston day, as SensorReadings.
+    if let Some(which) = argv.get(1).filter(|a| matches!(a.as_str(), "messages" | "events")) {
+        std::process::exit(run_readings(which, &argv[2..]));
     }
     // #4485 — `infra`: machines and their disks.
     if argv.get(1).map(String::as_str) == Some("infra") {
