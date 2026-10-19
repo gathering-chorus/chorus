@@ -529,12 +529,37 @@ pub fn stated_intent_without_action(
 ///
 /// Returns 0 on any read/parse failure. Combined with an empty vocabulary that keeps
 /// the gate inert rather than blocking on bad data.
+///
+/// #4644 — reads only the tail it needs. Reading the whole file took 15.2s on Wren's
+/// 1.27 GB day-long transcript, past the Stop hook's 5s timeout, so the hook was
+/// killed every turn and the reply never reached the room. The current turn starts
+/// at the last real human message, which is nearly always in the last few MB; the
+/// window widens only when it is not.
 pub fn tool_calls_this_turn(transcript_path: &str) -> usize {
-    let Ok(content) = std::fs::read_to_string(transcript_path) else {
-        return 0;
-    };
+    tool_calls_this_turn_within(transcript_path, &[8 * 1024 * 1024, 64 * 1024 * 1024, u64::MAX])
+}
+
+/// `tool_calls_this_turn` with the read windows given — the seam the tests use.
+pub fn tool_calls_this_turn_within(transcript_path: &str, windows: &[u64]) -> usize {
+    for &w in windows {
+        let Ok(mut f) = std::fs::File::open(transcript_path) else {
+            return 0;
+        };
+        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+        let lines = crate::session_cache::tail_lines_within(&mut f, usize::MAX, w);
+        let (count, saw_human_turn) = count_turn_tool_calls(&lines);
+        if saw_human_turn || w >= len {
+            return count;
+        }
+    }
+    0
+}
+
+/// Tool calls after the last real human message in `lines`, and whether one was seen.
+fn count_turn_tool_calls(lines: &[String]) -> (usize, bool) {
     let mut count = 0usize;
-    for line in content.lines() {
+    let mut saw_human_turn = false;
+    for line in lines {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -558,6 +583,7 @@ pub fn tool_calls_this_turn(transcript_path: &str) -> usize {
             };
             if !carries_tool_result {
                 count = 0;
+                saw_human_turn = true;
             }
             continue;
         }
@@ -568,7 +594,7 @@ pub fn tool_calls_this_turn(transcript_path: &str) -> usize {
                 .count();
         }
     }
-    count
+    (count, saw_human_turn)
 }
 
 /// The refusal. Quotes the promise back so the role sees what it committed to.
@@ -997,6 +1023,39 @@ mod turn_counting_tests {
     #[test]
     fn unreadable_transcript_counts_zero() {
         assert_eq!(tool_calls_this_turn("/nonexistent/t.jsonl"), 0);
+    }
+
+    // #4644 — the turn's start can sit before the first window; widening finds it and
+    // the count matches a whole-file read.
+    #[test]
+    fn widens_until_the_human_turn_is_in_view() {
+        let (_d, p) = transcript(&[USER, DID, DID, DID, SAID]);
+        assert_eq!(tool_calls_this_turn_within(&p, &[64, u64::MAX]), 3);
+    }
+
+    // #4644 NEGATIVE PROOF — the window really bounds the read: with no wider window
+    // to fall back to, a human turn outside it is never seen, so the old turn's three
+    // calls are not counted. A whole-file read (the 15s bug) would return 0 here too
+    // only by luck of the reset; this file is shaped so it would return 3.
+    #[test]
+    fn a_bounded_window_never_reads_past_its_size() {
+        let (_d, p) = transcript(&[USER, DID, DID, DID, SAID, SAID, SAID, SAID]);
+        let tail_only = tool_calls_this_turn_within(&p, &[SAID.len() as u64 * 3]);
+        assert_eq!(tail_only, 0, "only the last few lines were read");
+        assert_eq!(tool_calls_this_turn_within(&p, &[u64::MAX]), 3, "the whole file holds 3");
+    }
+
+    /// #4644 AC1 measurement, run by hand against a real transcript:
+    /// `TRANSCRIPT=<path> cargo test -p chorus-hooks stop_read_time -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn stop_read_time_on_a_real_transcript() {
+        let p = std::env::var("TRANSCRIPT").expect("set TRANSCRIPT");
+        let t = std::time::Instant::now();
+        let n = tool_calls_this_turn(&p);
+        let ms = t.elapsed().as_millis();
+        println!("tool_calls_this_turn = {n} in {ms} ms");
+        assert!(ms < 1000, "took {ms} ms");
     }
 }
 
