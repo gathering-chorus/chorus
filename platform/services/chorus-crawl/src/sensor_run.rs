@@ -143,14 +143,17 @@ pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
 /// #4568 — a sensor writes its owner's rows, and the door lets only a row's
 /// owner update it, so a pass run as anyone else is refused row by row (or
 /// takes rows it should not). The run goes ahead only as the Sensor row's
-/// owner; a Sensor with no row yet is being created by its first run.
-pub fn owner_may_run(sensor: &str, caller: &str, owner: Option<&str>) -> Result<(), String> {
+/// owner. `row` is the door's answer for the Sensor row: None when it has no
+/// row yet (its first run creates it). A row with no owner refuses (Wren 10-19).
+pub fn owner_may_run(sensor: &str, caller: &str, row: Option<&str>) -> Result<(), String> {
     let bare = |s: &str| s.rsplit([':', '#']).next().unwrap_or(s).trim_start_matches("principal-").to_string();
-    match owner.map(bare) {
-        Some(o) if !o.is_empty() && o != bare(caller) => {
+    let Some(body) = row else { return Ok(()) };
+    match owned_by(body).map(|o| bare(&o)).filter(|o| !o.is_empty()) {
+        None => Err(format!("the {sensor} Sensor row has no owner, so nobody may run it — nothing ran")),
+        Some(o) if o != bare(caller) => {
             Err(format!("{sensor} is {o}'s sensor: it writes {o}'s rows, so it runs as {o}, not {} — nothing ran", bare(caller)))
         }
-        _ => Ok(()),
+        Some(_) => Ok(()),
     }
 }
 
@@ -172,18 +175,30 @@ mod owner_4568 {
         assert_eq!(owned_by(r#"{ "links": {} }"#), None);
     }
 
+    // the files row as the door served it 2026-10-19: the owner is in links, not data
+    const FILES: &str = r#"{ "kind": "Sensor", "data": { "sensorPass": "files", "takesTarget": "false" }, "links": { "creator": "chorus:principal-kade", "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }"#;
+
     #[test]
     fn the_owner_runs_its_sensor_and_a_new_sensor_runs() {
-        assert!(owner_may_run("files", "kade", Some("chorus:principal-kade")).is_ok());
-        assert!(owner_may_run("files", "kade", None).is_ok());
+        assert!(owner_may_run("files", "kade", Some(FILES)).is_ok());
+        assert!(owner_may_run("files", "kade", None).is_ok(), "no row yet: the first run creates it");
     }
 
     /// NEGATIVE PROOF — 10-17..10-19: the files sensor run as silas would update kade's rows
     #[test]
     fn anyone_else_is_refused_by_name() {
-        let e = owner_may_run("files", "silas", Some("chorus:principal-kade")).unwrap_err();
+        let e = owner_may_run("files", "silas", Some(FILES)).unwrap_err();
         assert!(e.contains("files is kade's sensor") && e.contains("not silas"), "{e}");
-        assert!(owner_may_run("files", "jeff", Some("https://jeffbridwell.com/chorus#principal-kade")).is_err());
+        assert!(owner_may_run("files", "jeff", Some(FILES)).is_err());
+    }
+
+    /// NEGATIVE PROOF (Wren 10-19) — a row with no owner refuses, never runs
+    #[test]
+    fn a_row_with_no_owner_refuses() {
+        let unowned = r#"{ "data": { "sensorPass": "files" }, "links": { "type": "chorus:Sensor" } }"#;
+        let e = owner_may_run("files", "kade", Some(unowned)).unwrap_err();
+        assert!(e.contains("has no owner"), "{e}");
+        assert!(owner_may_run("files", "kade", Some(r#"{ "links": { "ownedBy": "" } }"#)).is_err());
     }
 }
 

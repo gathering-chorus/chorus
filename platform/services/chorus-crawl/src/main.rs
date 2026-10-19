@@ -1835,11 +1835,19 @@ fn run_sensor(args: &[String]) -> i32 {
     // rows, so it runs only as that owner (a dry run writes nothing)
     if !dry_run {
         let caller = std::env::var("CHORUS_ROLE").unwrap_or_default();
-        let owner = collection_for(&api, "Sensor")
-            .ok()
-            .and_then(|sc| curl(&api, "GET", &format!("{sc}/{sensor}"), None, None).ok())
-            .and_then(|body| owned_by(&body));
-        if let Err(e) = owner_may_run(&sensor, &caller, owner.as_deref()) {
+        // no row yet (404) → its first run creates it; any other failed read refuses
+        let row = match collection_for(&api, "Sensor").and_then(|sc| match curl(&api, "GET", &format!("{sc}/{sensor}"), None, None) {
+            Ok(body) => Ok(Some(body)),
+            Err(e) if e.contains("HTTP 404") => Ok(None),
+            Err(e) => Err(e),
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("chorus-crawl sensor: cannot read the {sensor} Sensor row ({e}) — nothing ran");
+                return 2;
+            }
+        };
+        if let Err(e) = owner_may_run(&sensor, &caller, row.as_deref()) {
             eprintln!("chorus-crawl sensor: {e}");
             return 2;
         }
