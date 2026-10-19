@@ -2996,6 +2996,9 @@ fn main() {
         c.skipped,
         wrote_nothing(dry_run, reconciling)
     );
+    // #4568 — the files sensor's tally line: without it every files run read
+    // red (31 red, 0 green by 10-19), because a run with no tally is not green
+    println!("files: create {} · update {} · delete {} · unchanged {}", c.posted, c.replaced, c.deleted, c.unchanged);
     println!(
         "chorus-crawl: cases posted={} replaced={} unchanged={} to-delete={} · test files parsed={} declared={} inferred={} no-case={}{}",
         cc.posted, cc.replaced, cc.unchanged, cc.deleted,
@@ -3124,7 +3127,11 @@ fn main() {
             ("endpoint", endpoint_plan.iter().filter(|a| matches!(a, pages::RowAction::Delete { .. })).count(), endpoint_graph.len()),
         ] {
             if dels > 0 && (read != TreeRead::Complete || pages::leg_mass_delete_refused(dels, have)) {
-                eprintln!("chorus-crawl: {label} deletes REFUSED this run ({dels} of {have})");
+                // #4568 — a delta sees only what changed, so its absent rows are
+                // not deletes at all; only a whole-tree read can refuse a delete
+                if read == TreeRead::Complete {
+                    eprintln!("chorus-crawl: {label} deletes REFUSED this run ({dels} of {have})");
+                }
                 if label == "page" {
                     page_plan.retain(|a| !matches!(a, pages::RowAction::Delete { .. }));
                 } else {

@@ -226,6 +226,15 @@ mod tests_4405 {
         assert_eq!(i, Counts { create: 0, update: 2, delete: 0, unchanged: 31 });
     }
 
+    /// #4568 — the files pass now prints its tally; it was 31 red, 0 green
+    #[test]
+    fn a_files_pass_with_its_tally_is_green_and_without_it_red() {
+        let out = "chorus-crawl: posted=0 replaced=0 unchanged=0 deleted=0 skipped=0\nfiles: create 0 · update 0 · delete 0 · unchanged 0\n";
+        assert_eq!(outcome(0, tally("files", out)), "green");
+        // NEGATIVE PROOF: the pass's output before #4568, with no tally line
+        assert_eq!(outcome(0, tally("files", "chorus-crawl: posted=0 replaced=0 unchanged=0 deleted=0 skipped=0\n")), "red");
+    }
+
     #[test]
     fn negative_proof_a_pass_that_never_counted_is_red_not_zero() {
         assert_eq!(tally("code", "chorus-crawl code: no identity token\n"), None);
