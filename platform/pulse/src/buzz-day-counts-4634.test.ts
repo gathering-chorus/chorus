@@ -97,4 +97,17 @@ describe('#4634 the Buzz reader counts only what can be counted', () => {
       expect(got).toHaveLength(7);
     } finally { await relay.close(); }
   });
+
+  test('a second holding more notes than one relay page says so on stderr, never drops them quietly', async () => {
+    // five notes in second 104, three per page: two cannot be paged by time
+    const notes = [100, 101, 104, 104, 104, 104, 104, 106].map((t, i) => ({ id: `n${i}`, created_at: t }));
+    const relay = await cappedRelay(notes, 3);
+    try {
+      const got = await readNotes(relay.url, undefined, 0, 5000, () => ({ signer: null, reason: 'no key in a test' }) as never);
+      const said = err.mock.calls.map((c) => String(c[0])).join('');
+      expect(said).toContain('stepped past second 104');
+      expect(said).toContain('not counted');
+      expect(got.length).toBe(notes.length - 2);
+    } finally { await relay.close(); }
+  });
 });

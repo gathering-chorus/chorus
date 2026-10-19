@@ -84,6 +84,7 @@ export function readNotes(url: string, host: string | undefined, since: number, 
         if (fresh === 0) {
           // the page was the edge second again: step past it once (a second
           // holding more notes than the relay's cap cannot be paged by time)
+          process.stderr.write(`buzz-day-counts: stepped past second ${until}; if it held more notes than one relay page, the rest are not counted\n`);
           until = (until as number) - 1;
           stepped = true;
         } else {
