@@ -140,6 +140,68 @@ pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
     }
 }
 
+/// #4568 — a sensor writes its owner's rows, and the door lets only a row's
+/// owner update it, so a pass run as anyone else is refused row by row (or
+/// takes rows it should not). The run goes ahead only as the Sensor row's
+/// owner. `row` is the door's answer for the Sensor row: None when it has no
+/// row yet (its first run creates it). A row with no owner refuses (Wren 10-19).
+pub fn owner_may_run(sensor: &str, caller: &str, row: Option<&str>) -> Result<(), String> {
+    let bare = |s: &str| s.rsplit([':', '#']).next().unwrap_or(s).trim_start_matches("principal-").to_string();
+    let Some(body) = row else { return Ok(()) };
+    match owned_by(body).map(|o| bare(&o)).filter(|o| !o.is_empty()) {
+        None => Err(format!("the {sensor} Sensor row has no owner, so nobody may run it — nothing ran")),
+        Some(o) if o != bare(caller) => {
+            Err(format!("{sensor} is {o}'s sensor: it writes {o}'s rows, so it runs as {o}, not {} — nothing ran", bare(caller)))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
+/// The `ownedBy` link out of a door GET of one row.
+pub fn owned_by(body: &str) -> Option<String> {
+    let at = body.find("\"ownedBy\"")? + "\"ownedBy\"".len();
+    let rest = body[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    rest.find('"').map(|end| rest[..end].to_string())
+}
+
+#[cfg(test)]
+mod owner_4568 {
+    use super::*;
+
+    #[test]
+    fn the_owner_is_read_from_the_rows_links() {
+        let body = r#"{ "data": { "sensorPass": "files" }, "links": { "creator": "chorus:principal-kade", "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }"#;
+        assert_eq!(owned_by(body).as_deref(), Some("chorus:principal-kade"));
+        assert_eq!(owned_by(r#"{ "links": {} }"#), None);
+    }
+
+    // the files row as the door served it 2026-10-19: the owner is in links, not data
+    const FILES: &str = r#"{ "kind": "Sensor", "data": { "sensorPass": "files", "takesTarget": "false" }, "links": { "creator": "chorus:principal-kade", "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }"#;
+
+    #[test]
+    fn the_owner_runs_its_sensor_and_a_new_sensor_runs() {
+        assert!(owner_may_run("files", "kade", Some(FILES)).is_ok());
+        assert!(owner_may_run("files", "kade", None).is_ok(), "no row yet: the first run creates it");
+    }
+
+    /// NEGATIVE PROOF — 10-17..10-19: the files sensor run as silas would update kade's rows
+    #[test]
+    fn anyone_else_is_refused_by_name() {
+        let e = owner_may_run("files", "silas", Some(FILES)).unwrap_err();
+        assert!(e.contains("files is kade's sensor") && e.contains("not silas"), "{e}");
+        assert!(owner_may_run("files", "jeff", Some(FILES)).is_err());
+    }
+
+    /// NEGATIVE PROOF (Wren 10-19) — a row with no owner refuses, never runs
+    #[test]
+    fn a_row_with_no_owner_refuses() {
+        let unowned = r#"{ "data": { "sensorPass": "files" }, "links": { "type": "chorus:Sensor" } }"#;
+        let e = owner_may_run("files", "kade", Some(unowned)).unwrap_err();
+        assert!(e.contains("has no owner"), "{e}");
+        assert!(owner_may_run("files", "kade", Some(r#"{ "links": { "ownedBy": "" } }"#)).is_err());
+    }
+}
+
 #[cfg(test)]
 mod tests_4405 {
     use super::*;
@@ -162,6 +224,15 @@ mod tests_4405 {
         assert_eq!(st, Counts { create: 0, update: 1, delete: 2, unchanged: 9 });
         let i = tally("infra", "infra: create 0 · update 2 · unchanged 31").unwrap();
         assert_eq!(i, Counts { create: 0, update: 2, delete: 0, unchanged: 31 });
+    }
+
+    /// #4568 — the files pass now prints its tally; it was 31 red, 0 green
+    #[test]
+    fn a_files_pass_with_its_tally_is_green_and_without_it_red() {
+        let out = "chorus-crawl: posted=0 replaced=0 unchanged=0 deleted=0 skipped=0\nfiles: create 0 · update 0 · delete 0 · unchanged 0\n";
+        assert_eq!(outcome(0, tally("files", out)), "green");
+        // NEGATIVE PROOF: the pass's output before #4568, with no tally line
+        assert_eq!(outcome(0, tally("files", "chorus-crawl: posted=0 replaced=0 unchanged=0 deleted=0 skipped=0\n")), "red");
     }
 
     #[test]

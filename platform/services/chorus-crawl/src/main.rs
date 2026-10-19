@@ -1831,6 +1831,27 @@ fn run_sensor(args: &[String]) -> i32 {
 
     // the record, when the store can hold it; never on a dry run (it writes nothing)
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    // #4568 — herald-run runs as its caller; the pass writes the Sensor owner's
+    // rows, so it runs only as that owner (a dry run writes nothing)
+    if !dry_run {
+        let caller = std::env::var("CHORUS_ROLE").unwrap_or_default();
+        // no row yet (404) → its first run creates it; any other failed read refuses
+        let row = match collection_for(&api, "Sensor").and_then(|sc| match curl(&api, "GET", &format!("{sc}/{sensor}"), None, None) {
+            Ok(body) => Ok(Some(body)),
+            Err(e) if e.contains("HTTP 404") => Ok(None),
+            Err(e) => Err(e),
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("chorus-crawl sensor: cannot read the {sensor} Sensor row ({e}) — nothing ran");
+                return 2;
+            }
+        };
+        if let Err(e) = owner_may_run(&sensor, &caller, row.as_deref()) {
+            eprintln!("chorus-crawl sensor: {e}");
+            return 2;
+        }
+    }
     let record = if dry_run { None } else {
         let ident = declared_role(std::env::var("CHORUS_ROLE").ok()).and_then(|r| Identity::open(&home, &r));
         match (ident, collection_for(&api, "SensorRun")) {
@@ -2681,15 +2702,17 @@ fn main() {
     // What the graph already holds. Read BEFORE deciding anything — the walk is
     // idempotent by diff, not by luck.
     let started = std::time::Instant::now();
-    let ident: Option<std::cell::RefCell<Identity>> = if dry_run && !reconciling {
-        None
-    } else {
-        match Identity::open(&home, &role) {
-            Ok(i) => Some(std::cell::RefCell::new(i)),
-            Err(e) => {
-                eprintln!("chorus-crawl: {e} — refusing to write without an identity");
-                std::process::exit(2);
-            }
+    // #4568 — a dry run reads the graph too when it can sign in: token-less it
+    // read 0 rows and planned a full re-post of 6,771 files as "store reset"
+    let ident: Option<std::cell::RefCell<Identity>> = match Identity::open(&home, &role) {
+        Ok(i) => Some(std::cell::RefCell::new(i)),
+        Err(e) if dry_run && !reconciling => {
+            println!("chorus-crawl: dry run with no identity ({e}) — planning against an empty graph");
+            None
+        }
+        Err(e) => {
+            eprintln!("chorus-crawl: {e} — refusing to write without an identity");
+            std::process::exit(2);
         }
     };
     let token: String = match &ident {
@@ -2973,6 +2996,9 @@ fn main() {
         c.skipped,
         wrote_nothing(dry_run, reconciling)
     );
+    // #4568 — the files sensor's tally line: without it every files run read
+    // red (31 red, 0 green by 10-19), because a run with no tally is not green
+    println!("files: create {} · update {} · delete {} · unchanged {}", c.posted, c.replaced, c.deleted, c.unchanged);
     println!(
         "chorus-crawl: cases posted={} replaced={} unchanged={} to-delete={} · test files parsed={} declared={} inferred={} no-case={}{}",
         cc.posted, cc.replaced, cc.unchanged, cc.deleted,
@@ -3101,7 +3127,11 @@ fn main() {
             ("endpoint", endpoint_plan.iter().filter(|a| matches!(a, pages::RowAction::Delete { .. })).count(), endpoint_graph.len()),
         ] {
             if dels > 0 && (read != TreeRead::Complete || pages::leg_mass_delete_refused(dels, have)) {
-                eprintln!("chorus-crawl: {label} deletes REFUSED this run ({dels} of {have})");
+                // #4568 — a delta sees only what changed, so its absent rows are
+                // not deletes at all; only a whole-tree read can refuse a delete
+                if read == TreeRead::Complete {
+                    eprintln!("chorus-crawl: {label} deletes REFUSED this run ({dels} of {have})");
+                }
                 if label == "page" {
                     page_plan.retain(|a| !matches!(a, pages::RowAction::Delete { .. }));
                 } else {
