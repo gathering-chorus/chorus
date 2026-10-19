@@ -1,15 +1,13 @@
 // @test-type: unit — signal:api is fixture-data (in-process harness on an ephemeral port, no live :3340)
 // @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #4060 — the readout is SERVED, so the nudge, the page and any role read one
-// source. #4156 — that source is the graph rows the run wrote. Hermetic: the
-// in-process harness on an ephemeral port, and a stand-in store answering the
-// page's queries with the rows this log fixture's runs would have written.
-// WERK_TEST_LOG_PATH points at a file that does not exist: the routes must not
-// need it.
+// source. #4579 reopen — that source is the run log (nightly-suites.log), not
+// the graph (Jeff 10-18 19:10). Hermetic: the in-process harness on an
+// ephemeral port, NIGHTLY_LOG at this fixture, and FUSEKI_QUERY at a port no
+// store answers: the routes must not need the graph.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { graphFromLog, fakeStore } from './lib/nightly-graph-fixture';
 
 const LOG = [
   'RUN|start|2026-09-01T03:00:05|pid=1',
@@ -24,18 +22,16 @@ const LOG = [
 ].join('\n');
 
 let app: import('./lib/test-app').TestApp;
-let store: { url: string; close(): Promise<void> };
 beforeAll(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightly-4060-'));
-  // #4156 NEGATIVE PROOF — the log is renamed away; every route below still
-  // answers, from the graph
-  process.env.WERK_TEST_LOG_PATH = path.join(dir, 'nightly-suites.log.renamed-away');
-  store = await fakeStore(graphFromLog(LOG));
-  process.env.FUSEKI_QUERY = store.url;
+  process.env.NIGHTLY_LOG = path.join(dir, 'nightly-suites.log');
+  fs.writeFileSync(process.env.NIGHTLY_LOG, LOG);
+  // #4579 NEGATIVE PROOF — no store answers; every route below still answers, from the log
+  process.env.FUSEKI_QUERY = 'http://127.0.0.1:9/pods/query';
   const { startTestApp } = await import('./lib/test-app');
   app = await startTestApp();
 });
-afterAll(async () => { await app.close(); await store.close(); });
+afterAll(async () => { await app.close(); });
 
 describe('GET /api/chorus/nightly/runs', () => {
   it('lists every recorded run, newest first, with its verdict', async () => {
@@ -79,6 +75,16 @@ describe('GET /api/chorus/nightly/runs/:id', () => {
   it('NEGATIVE PROOF (#3734): an unknown run id is 404, never another run\'s numbers', async () => {
     const r = await fetch(`${app.baseUrl}/api/chorus/nightly/runs/2026-08-01T03:00:05`);
     expect(r.status).toBe(404);
+  });
+});
+
+describe('#4579 a log that cannot be read', () => {
+  it('NEGATIVE PROOF: the routes refuse with 503, never an empty green', async () => {
+    const keep = process.env.NIGHTLY_LOG;
+    process.env.NIGHTLY_LOG = '/nonexistent/nightly-suites.log';
+    try {
+      expect((await fetch(`${app.baseUrl}/api/chorus/nightly/runs`)).status).toBe(503);
+    } finally { process.env.NIGHTLY_LOG = keep; }
   });
 });
 

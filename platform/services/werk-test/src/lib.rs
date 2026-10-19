@@ -1657,55 +1657,6 @@ pub fn model_units(rows: &[TestRow], legacy: &[TestUnit]) -> Vec<TestUnit> {
     units
 }
 
-/// The TestSuiteRun instance a completed run posts back to the tests domain
-/// (#3634 write side): the graph's durable answer to "what ran, what failed".
-/// Name is unique per card+timestamp; the caller supplies verdict + counts.
-#[allow(clippy::too_many_arguments)]
-pub fn suite_run_payload(
-    card: &str,
-    role: &str,
-    trace: &str,
-    plan_source: &str,
-    checks_planned: usize,
-    checks_failed: usize,
-    duration_ms: u128,
-    verdict: &str,
-) -> String {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    // #3592 — the DAL refuses off-model properties, so the payload is EXACTLY
-    // the deployed TestSuiteRunShape: cardId + ts + result. The richer run
-    // context (role/trace/planSource/checks/duration) stays in the spine events
-    // this verb already emits (test.started/test.completed carry all of it);
-    // growing the shape is a model change, not a payload hack. Signature kept
-    // so call-sites/tests don't churn when the shape grows.
-    let _ = (role, trace, plan_source, checks_planned, checks_failed, duration_ms);
-    format!(
-        "{{\"name\":\"testsuiterun-{}-{}\",\"cardId\":\"{}\",\"ts\":\"{}\",\"result\":\"{}\"}}",
-        json_escape(card), ts, json_escape(card), ts, json_escape(verdict),
-    )
-}
-
-/// #3634 — the POST argv for the TestSuiteRun write-back, pure so the exact
-/// curl contract (auth header, content type, endpoint, fail-fast flags) is
-/// pinned by tests without a network.
-pub fn suite_run_post_args(endpoint: &str, token: &str, payload: &str) -> Vec<String> {
-    vec![
-        "-sf".into(), "--max-time".into(), "10".into(), "-X".into(), "POST".into(),
-        "-H".into(), format!("Authorization: Bearer {}", token),
-        "-H".into(), "Content-Type: application/json".into(),
-        // #3592 — #3573 scope enforcement: a scoped token may write only graphs
-        // its scope names, and the request must NAME the target graph. Test +
-        // TestResult + TestSuiteRun all resolve (via the tests domain\'s
-        // definesVocabulary) to urn:chorus:domains:tests; mint_token requests
-        // exactly that scope.
-        "-H".into(), "x-target-graph: urn:chorus:domains:tests".into(),
-        "-d".into(), payload.into(), endpoint.into(),
-    ]
-}
-
 /// #3634 gather hardening (silas): minimal JSON string escaper — quotes,
 /// backslashes, and control characters. The verb builds its payload by hand
 /// (zero-dep blueprint), so every string field passes through here.

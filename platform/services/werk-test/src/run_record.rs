@@ -798,33 +798,6 @@ pub fn pipeline_run_record_body(
     body
 }
 
-/// #4156 — one nightly suite row as a TestSuiteRun, written the moment the row
-/// lands. The name is lower-case because the store lowercases names on the way
-/// in and reads by the literal path (#4263: one capital = 201 then 404).
-pub fn suite_row_payload(run_ts: &str, order: usize, row: &SuiteRow, ts_ms: u128) -> String {
-    format!(
-        "{{\"name\":\"{}\",\"runTs\":\"{}\",\"suiteOrder\":\"{}\",\"suiteKind\":\"{}\",\"filePath\":\"{}\",\"suiteOwner\":\"{}\",\"result\":\"{}\",\"suiteSummary\":\"{}\",\"ts\":\"{}\"}}",
-        suite_row_name(run_ts, order),
-        crate::json_escape(run_ts),
-        order,
-        crate::json_escape(&row.kind),
-        crate::json_escape(&row.path),
-        crate::json_escape(&row.owner),
-        crate::json_escape(&row.status),
-        crate::json_escape(&row.summary),
-        ts_ms
-    )
-}
-
-/// #4416 — the payload with the suite's seconds, when the runner timed it.
-pub fn suite_row_payload_timed(run_ts: &str, order: usize, row: &SuiteRow, ts_ms: u128) -> String {
-    let body = suite_row_payload(run_ts, order, row, ts_ms);
-    match row.millis {
-        Some(ms) => format!("{},\"suiteSeconds\":\"{}\"}}", &body[..body.len() - 1], seconds(ms)),
-        None => body,
-    }
-}
-
 /// #4156 — does this run write its record to the graph? A werk-rooted run
 /// never writes the team's store (#3722); WERK_TEST_GRAPH_ROWS=0 turns it off
 /// anywhere. #4536 (Silas 08:04): no OWLAPI override — prod answers on :3360,
@@ -835,10 +808,6 @@ pub fn graph_rows_enabled(root: &str, flag: Option<&str>) -> bool {
         return false;
     }
     !root.contains("/chorus-werk/")
-}
-
-pub fn suite_row_name(run_ts: &str, order: usize) -> String {
-    format!("nightly-suite-{}-{}", run_ts.replace(':', "-").to_ascii_lowercase(), order)
 }
 
 /// #4007 — a unit's start or end mark from the runner child:
@@ -857,30 +826,6 @@ pub fn parse_unit_mark(line: &str) -> Option<(&'static str, String, u128)> {
         return None;
     }
     Some((edge, item.to_string(), ms.trim().parse().ok()?))
-}
-
-/// #4007 — the live row for a unit in flight. The item (a path, `crate#stem`)
-/// is not a safe name, so it is hashed; the row carries the item as filePath.
-pub fn live_row_name(run_ts: &str, item: &str) -> String {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for b in item.bytes() {
-        h = (h ^ b as u64).wrapping_mul(0x100000001b3);
-    }
-    format!("nightly-live-{}-{:016x}", run_ts.replace(':', "-").to_ascii_lowercase(), h)
-}
-
-/// #4007 — the live row: result `running` and no suiteOrder, so the readers of
-/// finished rows never count it. The unit's timeout rides in the summary so the
-/// page can call a unit past it wedged.
-pub fn live_row_payload(run_ts: &str, item: &str, started_ms: u128, timeout_secs: u64) -> String {
-    format!(
-        "{{\"name\":\"{}\",\"runTs\":\"{}\",\"suiteKind\":\"live\",\"filePath\":\"{}\",\"result\":\"running\",\"suiteSummary\":\"timeout={}s\",\"ts\":\"{}\"}}",
-        live_row_name(run_ts, item),
-        crate::json_escape(run_ts),
-        crate::json_escape(item),
-        timeout_secs,
-        started_ms
-    )
 }
 
 /// The per-row `test.suite.result` fields (`emit_suite_results`), with the
@@ -1540,25 +1485,6 @@ mod graph_record_4156 {
 
     fn row(status: &str, summary: &str) -> SuiteRow {
         SuiteRow::new("bats", "platform/tests/a.bats", "principal-kade", status, summary)
-    }
-
-    #[test]
-    fn a_suite_row_carries_everything_the_log_line_did() {
-        let p = suite_row_payload("2026-09-25T15:37:59", 7, &row("fail", "1 pass, 1 fail (\"x\" | y)"), 1790365000000);
-        for want in [
-            r#""name":"nightly-suite-2026-09-25t15-37-59-7""#,
-            r#""runTs":"2026-09-25T15:37:59""#,
-            r#""suiteOrder":"7""#,
-            r#""suiteKind":"bats""#,
-            r#""filePath":"platform/tests/a.bats""#,
-            r#""suiteOwner":"principal-kade""#,
-            r#""result":"fail""#,
-            r#""suiteSummary":"1 pass, 1 fail (\"x\" | y)""#,
-        ] {
-            assert!(p.contains(want), "missing {want} in {p}");
-        }
-        // the name is lower-case: the store lowercases on the way in
-        assert_eq!(suite_row_name("2026-09-25T15:37:59", 7), suite_row_name("2026-09-25T15:37:59", 7).to_ascii_lowercase());
     }
 
     #[test]

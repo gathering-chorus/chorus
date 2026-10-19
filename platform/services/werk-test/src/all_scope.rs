@@ -118,9 +118,6 @@ struct GraphRows {
     enabled: bool,
     run_ts: std::cell::RefCell<String>,
     order: std::cell::Cell<usize>,
-    token: std::cell::RefCell<Option<String>>,
-    written: std::cell::Cell<usize>,
-    failed: std::cell::Cell<usize>,
 }
 
 impl Ctx {
@@ -133,52 +130,25 @@ impl Ctx {
             Err(_) => false,
         }
     }
-    /// #4156 — one SUITE row: the log line, and the same row in the graph.
+    /// One SUITE row, to the run log. #4579 reopen — the graph no longer carries
+    /// suite rows (TestSuiteRun, Jeff 10-18 19:10); /nightly reads the log.
     fn record_row(&self, row: &SuiteRow) {
         self.append_log(&row.line());
         if let Some(t) = row.time_line() {
             self.append_log(&t);
         }
-        if !self.graph.enabled {
-            return;
-        }
-        let order = self.graph.order.get() + 1;
-        self.graph.order.set(order);
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-        let role = env_or("WERK_TEST_MINT_ROLE", "nightly");
-        let body = werk_test::run_record::suite_row_payload_timed(&self.graph.run_ts.borrow(), order, row, ts);
-        // #4416 — a store whose shape predates suiteSeconds refuses the field
-        // as off-model; the row still lands without it, never lost for a timing
-        let landed = self.post_graph("testsuiteruns", &role, &body, &self.graph.token)
-            || (row.millis.is_some()
-                && self.post_graph("testsuiteruns", &role, &werk_test::run_record::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts), &self.graph.token));
-        if landed {
-            self.graph.written.set(self.graph.written.get() + 1);
-        } else {
-            self.graph.failed.set(self.graph.failed.get() + 1);
-        }
     }
     /// #4007 — a unit started or ended. The log keeps both edges, so a run that
-    /// dies mid-lane names what was in flight; a start goes on the spine with
-    /// the run_id; the graph holds a live row while the unit runs, which the
-    /// /nightly page reads, and the end removes it.
+    /// dies mid-lane names what was in flight, and /nightly reads the open ones
+    /// from it; a start carries the unit's timeout so the page can call a hung
+    /// unit WEDGED (#4579 reopen: this was the graph's live row). A start goes
+    /// on the spine with the run_id.
     fn unit_mark(&self, edge: &str, item: &str, ms: u128) {
-        let tag = if edge == "start" { "SUITESTART" } else { "SUITEEND" };
-        self.append_log(&format!("{}|{}|{}", tag, item, ms));
         if edge == "start" {
+            self.append_log(&format!("SUITESTART|{}|{}|timeout={}s", item, ms, werk_test::unit_timeout().as_secs()));
             self.spine("test.suite.started", &[("unit".into(), item.into())]);
-        }
-        if !self.graph.enabled {
-            return;
-        }
-        let role = env_or("WERK_TEST_MINT_ROLE", "nightly");
-        let run_ts = self.graph.run_ts.borrow().clone();
-        if edge == "start" {
-            let body = werk_test::run_record::live_row_payload(&run_ts, item, ms, werk_test::unit_timeout().as_secs());
-            self.post_graph("testsuiteruns", &role, &body, &self.graph.token);
         } else {
-            let name = werk_test::run_record::live_row_name(&run_ts, item);
-            self.send_graph("DELETE", &format!("testsuiteruns/{}", name), &role, "", &self.graph.token);
+            self.append_log(&format!("SUITEEND|{}|{}", item, ms));
         }
     }
     /// POST one row through athena-make.
@@ -1395,14 +1365,14 @@ mod lanes_4278 {
         std::env::remove_var("WERK_TEST_RUNNER_CMD");
         let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
         assert!(log.contains("SUITESTART|a.bats|1000") && log.contains("SUITEEND|a.bats|2000"), "{log}");
-        assert!(log.contains("SUITESTART|b.bats|3000"), "the unit in flight is named: {log}");
+        assert!(log.contains("SUITESTART|b.bats|3000|timeout="), "the unit in flight is named, with its timeout (#4579): {log}");
         assert!(!log.contains("SUITEEND|b.bats"), "a unit that never ended reads ended: {log}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn unit_marks_parse_and_other_unit_lines_do_not() {
-        use werk_test::run_record::{live_row_name, live_row_payload, parse_unit_mark};
+        use werk_test::run_record::parse_unit_mark;
         assert_eq!(parse_unit_mark("nightly-unit-start|platform/tests/x.bats|1700"), Some(("start", "platform/tests/x.bats".into(), 1700)));
         assert_eq!(parse_unit_mark("nightly-unit-end|werk-test#units|9"), Some(("end", "werk-test#units".into(), 9)));
         // NEGATIVE PROOF: the time line and the result line are not marks
@@ -1412,11 +1382,6 @@ mod lanes_4278 {
         // what the runner child prints is what the parent reads
         let (edge, item, ms) = parse_unit_mark(&werk_test::unit_mark_line("start", "c.bats")).expect("round trip");
         assert!(edge == "start" && item == "c.bats" && ms > 1_700_000_000_000, "{ms}");
-        let a = live_row_name("2026-10-10T03:00:03", "a.bats");
-        assert!(a.starts_with("nightly-live-2026-10-10t03-00-03-"), "{a}");
-        assert_ne!(a, live_row_name("2026-10-10T03:00:03", "b.bats"), "two units share one live row");
-        let body = live_row_payload("2026-10-10T03:00:03", "a.bats", 5, 1200);
-        assert!(body.contains("\"result\":\"running\"") && body.contains("timeout=1200s") && !body.contains("suiteOrder"), "{body}");
     }
 
 }
