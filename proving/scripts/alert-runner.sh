@@ -14,9 +14,9 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-ALERT_DIR="${CHORUS_ROOT}/proving/domains/alerts"
-ALERT_STATE_DIR="/Users/jeffbridwell/Library/Logs/Gathering/alert-state"
-LOG="/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log"
+ALERT_DIR="${ALERT_RULES_DIR:-${CHORUS_ROOT}/proving/domains/alerts}"
+ALERT_STATE_DIR="${ALERT_STATE_DIR:-/Users/jeffbridwell/Library/Logs/Gathering/alert-state}"
+LOG="${ALERT_LOG:-/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log}"
 COOLDOWN_SECONDS="${ALERT_COOLDOWN:-600}"  # 10 minutes default
 CONSECUTIVE_THRESHOLD="${ALERT_THRESHOLD:-2}"  # require 2 failures before firing
 TIMESTAMP() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
@@ -47,8 +47,11 @@ run_check() {
   # prints "ok dir=... newest_age_h=...", ci-main-red prints nothing on green).
   # #3571 settled this for test suites: exit-code-is-verdict. Alerts never got it.
   # Output is now EVIDENCE carried into the message; it decides nothing.
-  local result rc
-  result=$(bash -c "$check_script" 2>&1); rc=$?
+  # #4634 — `|| rc=$?`, never `; rc=$?`: under set -e a failing check in a
+  # bare assignment killed the whole runner, so every cycle stopped at its
+  # first red rule and no rule after it ran (no WARN or FIRE logged after 07-30).
+  local result rc=0
+  result=$(bash -c "$check_script" 2>&1) || rc=$?
 
   if [[ $rc -eq 0 ]]; then
     log "OK $name${result:+ — $result}"
@@ -121,7 +124,9 @@ for rule in "$ALERT_DIR"/*.yml; do
     [[ "$name" == "$RULE_FILTER" ]] || continue
   fi
   # Skip manual-only rules unless explicitly requested via --rule
-  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//' | tr -d '"')
+  # a rule with no schedule line fails open (runs every cycle); without
+  # `|| true`, grep's miss under pipefail killed the runner (#4634)
+  schedule=$( { grep '^schedule:' "$rule" || true; } | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//' | tr -d '"')
   if [[ "$schedule" == "manual" ]] && [[ -z "$RULE_FILTER" ]]; then
     log "SKIP $name — manual schedule (use --rule $name to run)"
     continue

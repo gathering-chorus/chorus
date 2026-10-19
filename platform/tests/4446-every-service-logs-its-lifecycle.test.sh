@@ -96,6 +96,8 @@ com.chorus.context-cache-hourly	WRAP: inline bash -c in the plist
 com.chorus.context-cache-weekly	WRAP: inline bash -c in the plist
 com.chorus.index-artifacts	WRAP: inline bash -c in the plist
 com.chorus.perf-baseline	WRAP: inline bash -c in the plist
+com.chorus.memory-sensors	WRAP: inline sh -c in the plist (herald-run messages, events)
+com.chorus.spine-sensor	WRAP: inline sh -c in the plist (herald-run spine)
 T
 )}"
 

@@ -27,6 +27,12 @@ describe('#4634 /counts presents the readings by day', () => {
     expect(days[0].values[col('nudges')].value).toBeNull();
   });
 
+  test('the two message columns say where a message is, not that one was lost (Jeff 10-19)', () => {
+    const labels = DAY_COLUMNS.filter(([s]) => s === 'messages').map(([, , l]) => l);
+    expect(labels.slice(0, 2)).toEqual(['In messages.db', 'In Buzz']);
+    expect(labels.join(' ')).not.toMatch(/kept|sent/i);
+  });
+
   test('readings as the door serves them, sensor named with its kind prefix, still fill the row', () => {
     // measured on staging 2026-10-19: the door answers readingOfSensor "sensor-messages", not "messages"
     const days = byDay([r('sensor-messages', 'messages-sent', '2026-10-18', 985), r('sensor-events', 'events', '2026-10-18', 262222)]);
