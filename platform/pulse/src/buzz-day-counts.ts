@@ -26,29 +26,71 @@ export function readRows(db: string): DatedPulseRow[] {
   }
 }
 
-function readNotes(url: string, host: string | undefined, since: number, timeoutMs = 60000): Promise<RoomNote[]> {
-  const { signer, reason } = bridgeSignerFromHome(os.homedir());
-  if (!signer) return Promise.reject(new Error(reason || 'no bridge key'));
+/**
+ * Every #team note since `since`. The relay answers only its newest notes per
+ * request (measured 2026-10-19: 1,000), so one REQ silently drops older days
+ * and "kept" undercounts them. Page back with `until` = the oldest note seen;
+ * `until` is inclusive, so notes are deduped by id, and paging stops when a
+ * page brings no new id, so it can never loop (Kade).
+ */
+export function readNotes(url: string, host: string | undefined, since: number, timeoutMs = 60000, signerFor: () => ReturnType<typeof bridgeSignerFromHome> = () => bridgeSignerFromHome(os.homedir())): Promise<RoomNote[]> {
   return new Promise((resolve, reject) => {
     const ws = host ? new WebSocket(url, { headers: { Host: host } }) : new WebSocket(url);
-    const notes: RoomNote[] = [];
-    const timer = setTimeout(() => { ws.close(); reject(new Error(`relay sent no EOSE within ${timeoutMs}ms`)); }, timeoutMs);
-    const req = () => ws.send(JSON.stringify(['REQ', 'days', { kinds: [1], '#t': ['team', 'reply'], since, limit: 200000 }]));
+    const seen = new Map<string, RoomNote & { id?: string }>();
+    let until: number | undefined;
+    let page = 0;
+    let fresh = 0;
+    let authed = false;
+    let stepped = false;
+    // the wait is per page: a long history is many pages, each answered quickly
+    const expire = () => setTimeout(() => { ws.close(); reject(new Error(`relay sent no EOSE within ${timeoutMs}ms (page ${page})`)); }, timeoutMs);
+    let timer = expire();
+    const req = (again = false) => {
+      clearTimeout(timer);
+      timer = expire();
+      if (!again) { page += 1; fresh = 0; }
+      const filter: Record<string, unknown> = { kinds: [1], '#t': ['team', 'reply'], since, limit: 200000 };
+      if (until !== undefined) filter.until = until;
+      ws.send(JSON.stringify(['REQ', `days-${page}`, filter]));
+    };
     ws.on('open', () => setTimeout(req, 300));
     ws.on('error', (e) => { clearTimeout(timer); reject(e); });
     ws.on('message', (data) => {
       let f: unknown[];
       try { f = JSON.parse(frameText(data)) as unknown[]; } catch { return; }
-      if (f[0] === 'AUTH' && typeof f[1] === 'string') {
+      if (f[0] === 'AUTH' && typeof f[1] === 'string' && !authed) {
+        const { signer, reason } = signerFor();
+        if (!signer) { clearTimeout(timer); ws.close(); reject(new Error(reason || 'no bridge key')); return; }
+        authed = true;
         const relay = host ? `ws://${host}` : url;
         ws.send(JSON.stringify(['AUTH', signNote(signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', f[1]]], '')]));
         setTimeout(req, 300);
-      } else if (f[0] === 'EVENT' && f[1] === 'days') {
-        notes.push(f[2] as RoomNote);
-      } else if (f[0] === 'EOSE' && f[1] === 'days') {
-        clearTimeout(timer);
-        ws.close();
-        resolve(notes);
+      } else if (f[0] === 'CLOSED' && f[1] === `days-${page}` && /rate-limited/.test(String(f[2]))) {
+        // the relay allows a burst of REQs, then asks for a pause ("retry in 1s"): wait, ask for the same page again
+        const secs = Number(/retry in (\d+)s/.exec(String(f[2]))?.[1] || 1);
+        setTimeout(() => req(true), secs * 1000 + 100);
+      } else if (f[0] === 'EVENT' && f[1] === `days-${page}`) {
+        const n = f[2] as RoomNote & { id?: string };
+        const key = n.id || `${n.created_at}|${n.content}`;
+        if (!seen.has(key)) { seen.set(key, n); fresh += 1; }
+      } else if (f[0] === 'EOSE' && f[1] === `days-${page}`) {
+        ws.send(JSON.stringify(['CLOSE', `days-${page}`]));
+        if (fresh === 0 && (stepped || until === undefined)) {
+          clearTimeout(timer);
+          ws.close();
+          resolve([...seen.values()]);
+          return;
+        }
+        if (fresh === 0) {
+          // the page was the edge second again: step past it once (a second
+          // holding more notes than the relay's cap cannot be paged by time)
+          until = (until as number) - 1;
+          stepped = true;
+        } else {
+          until = [...seen.values()].reduce((m, n) => Math.min(m, n.created_at ?? since), Infinity);
+          stepped = false;
+        }
+        req();
       }
     });
   });
