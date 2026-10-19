@@ -337,6 +337,36 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
   });
 }
 
+// #4628 — what Jeff types in a role's terminal, posted by that role's
+// UserPromptSubmit hook. Record only: pulse writes it to Buzz once and delivers
+// nothing, since the role already has the words on screen. Until now only
+// Clearing v1's transcript tailer copied these (393 of Jeff's 469 messages on
+// 10-19), and it wrote every double that day. Same secret as /api/nudge; a hook
+// retry inside the dedup window is one note, and a Clearing message delivered
+// into the terminal is skipped (Clearing v2 already wrote it, #4608).
+const recentTerminal = new Map<string, number>();
+function registerTerminalInputRoutes(app: Express, store: MessageStore, buzz?: BuzzPoster): void {
+  app.post('/api/terminal-input', (req, res) => {
+    const secret = req.headers['x-chorus-pulse-secret'];
+    if (!callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) {
+      return res.status(403).json({ error: 'not-canonical-caller', message: 'POST /api/terminal-input accepts only the hook, with the pulse secret.' });
+    }
+    const { to, content } = req.body ?? {};
+    if (typeof to !== 'string' || !to || typeof content !== 'string' || !content) {
+      return res.status(400).json({ error: 'to, content required' });
+    }
+    if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentTerminal, DEDUP_WINDOW_MS)) {
+      return res.json({ ok: true, deduped: true });
+    }
+    // A Clearing message pulse delivered into this terminal; v2 already wrote it.
+    if (store.jeffInputSentRecently(to, content)) return res.json({ ok: true, deduped: 'clearing' });
+    const id = Date.now(); // unique across pulse restarts, unlike a counter
+    buzz?.post({ id, from: 'jeff', to, content, surface: 'terminal' });
+    log('info', 'terminal.input.recorded', { id, to, chars: content.length });
+    res.json({ ok: true, id });
+  });
+}
+
 function registerChatRoutes(app: Express, store: MessageStore): void {
   app.post('/api/chat/start', (req, res) => {
     const { roleA, roleB, topic } = req.body;
@@ -412,6 +442,7 @@ export function createApp(
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics, worker, buzz);
   registerJeffInputRoutes(app, store, worker);
+  registerTerminalInputRoutes(app, store, buzz);
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);

@@ -229,6 +229,15 @@ export class MessageStore {
   // stays RAW (no [nudge from] framing — that would strip Jeff's authority at
   // the receiving session), and type='jeff-input' keeps nudge queries/folds
   // from ever picking it up.
+  /** #4628 — whether these exact words came from Clearing to `to` in the last
+   *  `minutes`: a delivered Clearing message shows up in the terminal as a
+   *  prompt, and v2 already wrote it to Buzz, so the hook must not again. */
+  jeffInputSentRecently(to: string, content: string, minutes = 10): boolean {
+    return !!this.db.prepare(
+      'SELECT 1 FROM messages WHERE type = \'jeff-input\' AND "to" = ? AND content = ? AND created_at >= datetime(\'now\', ?) LIMIT 1'
+    ).get(to, content, `-${minutes} minutes`);
+  }
+
   sendJeffInput(to: string, content: string, traceId?: string): number {
     if (traceId) {
       const stmt = this.db.prepare(
