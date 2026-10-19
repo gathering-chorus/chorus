@@ -2051,12 +2051,48 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
     let mut desired = reading_rows(which, &counts, &run);
     desired.extend(extra);
     counts.clear();
+    write_readings(which, reading_sensor(which, age_only), &stored_readings_filter(which, age_only), desired, dry_run, &root)
+}
+
+/// #4647 — the sync sensor: the crawler's own read-only check, run against
+/// the graph, written as today's readings, one missing and one stale per
+/// crawled class. A check that could not measure writes nothing (exit 3).
+fn run_sync(args: &[String]) -> i32 {
+    use chorus_crawl::readings::*;
+    if let Some(bad) = args.iter().find(|a| a.as_str() != "--dry-run") {
+        eprintln!("chorus-crawl sync: unknown arg {bad} — nothing ran");
+        return 2;
+    }
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let today = boston_day(&chorus_crawl::iso_from_secs(now_secs())).unwrap_or_default();
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "chorus-crawl".into());
+    let out = match Command::new(&exe).arg("--validate").env("CHORUS_ROOT", &root).current_dir(&root).output() {
+        Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+        Err(e) => { println!("sync: UNMEASURED — could not run the check ({e}); no readings written"); return 3; }
+    };
+    let readings = match sync_readings(&out) {
+        Ok(r) => r,
+        Err(e) => { println!("sync: UNMEASURED — {e}; no readings written"); return 3; }
+    };
+    for (subject, metric, v) in readings.iter().filter(|(_, _, v)| *v > 0) {
+        println!("sync: {subject} {metric} {v}");
+    }
+    let run = std::env::var("CHORUS_SENSOR_RUN").unwrap_or_else(|_| "sync-unrecorded".into());
+    write_readings("sync", "sync", &stored_readings_filter("sync", false), sync_rows("sync", &readings, &today, &run), dry_run, &root)
+}
+
+/// The write half every reading sensor shares (#4647: the sync sensor is the
+/// second caller; before it this lived inside run_readings): sign in, read the
+/// stored readings, plan, print the tally line, write.
+fn write_readings(which: &str, tally: &str, filter: &str, desired: Vec<chorus_crawl::readings::ReadingRow>, dry_run: bool, root: &str) -> i32 {
+    use chorus_crawl::readings::*;
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
     let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
         Ok(r) => r,
         Err(e) => { eprintln!("chorus-crawl {which}: {e}"); return 2; }
     };
-    let ident = match Identity::open(&root, &role) {
+    let ident = match Identity::open(root, &role) {
         Ok(i) => std::cell::RefCell::new(i),
         Err(e) => { eprintln!("chorus-crawl {which}: {e}"); return 2; }
     };
@@ -2067,7 +2103,7 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         Err(e) if dry_run => { println!("{which}: the store has no SensorReading collection yet ({e}) — dry run compares against nothing"); String::new() }
         Err(e) => { println!("{which}: UNMEASURED — the store has no SensorReading collection ({e}); no readings written"); return 3; }
     };
-    let stored: std::collections::BTreeMap<String, String> = if coll.is_empty() { Default::default() } else { match fetch_rows_with(&api, Some(&token), "SensorReading", &stored_readings_filter(which, age_only), chorus_crawl::services::door_page_rows) {
+    let stored: std::collections::BTreeMap<String, String> = if coll.is_empty() { Default::default() } else { match fetch_rows_with(&api, Some(&token), "SensorReading", filter, chorus_crawl::services::door_page_rows) {
         Ok(rows) => rows.into_iter().filter_map(|f| {
             let get = |k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
             Some((get("name")?, get("readingValue")?))
@@ -2077,7 +2113,7 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
     let (create, update, unchanged) = plan_readings(desired, &stored);
     // the tally line names the sensor the run belongs to: the spine check runs
     // the events pass, and a line headed "events:" leaves the spine run uncounted (red)
-    println!("{}: create {} · update {} · unchanged {}", reading_sensor(which, age_only), create.len(), update.len(), unchanged);
+    println!("{}: create {} · update {} · unchanged {}", tally, create.len(), update.len(), unchanged);
     if dry_run {
         for (name, f) in create.iter().chain(update.iter()) {
             let v = f.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.as_str()).unwrap_or("");
@@ -2531,6 +2567,9 @@ fn main() {
         std::process::exit(run_stores(&argv[2..]));
     }
     // #4634 — `messages` / `events`: counts per Boston day, as SensorReadings.
+    if argv.get(1).map(String::as_str) == Some("sync") {
+        std::process::exit(run_sync(&argv[2..]));
+    }
     if let Some(which) = argv.get(1).filter(|a| matches!(a.as_str(), "messages" | "events")) {
         std::process::exit(run_readings(which, &argv[2..]));
     }

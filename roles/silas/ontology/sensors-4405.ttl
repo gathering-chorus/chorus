@@ -71,6 +71,8 @@ chorus:readingMetric a owl:DatatypeProperty ; rdfs:label "metric" ; rdfs:domain 
     rdfs:comment "What was counted, from a fixed list so a typo can't start a silent new series." .
 chorus:readingRole a owl:DatatypeProperty ; rdfs:label "role" ; rdfs:domain chorus:SensorReading ; rdfs:range xsd:string ;
     rdfs:comment "The role a per-role count is for (commands by kade). Absent for a team total." .
+chorus:readingSubject a owl:DatatypeProperty ; rdfs:label "subject" ; rdfs:domain chorus:SensorReading ; rdfs:range xsd:string ;
+    rdfs:comment "What a reading is about when one sensor measures several things (#4647: the crawled class the sync sensor compared, e.g. codefile). Absent when the metric alone says it. Never a role: that is readingRole." .
 chorus:readingValue a owl:DatatypeProperty ; rdfs:label "value" ; rdfs:domain chorus:SensorReading ; rdfs:range xsd:decimal ;
     rdfs:comment "The measured number." .
 chorus:readingUnit a owl:DatatypeProperty ; rdfs:label "unit" ; rdfs:domain chorus:SensorReading ; rdfs:range xsd:string ;
@@ -82,7 +84,7 @@ chorus:SensorShape a sh:NodeShape ;
     sh:targetClass chorus:Sensor ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:heralds" ;
     chorus:generatedBy "athena-model" ;
-    sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" "sync" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorReads ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorWrites ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:takesTarget ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
@@ -111,8 +113,9 @@ chorus:SensorReadingShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" ;
     sh:property [ sh:path chorus:readingOfSensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Sensor ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingDay ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:date ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:readingMetric ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "nudges" "jeff-inputs" "alerts" "messages-sent" "messages-kept" "events" "commands" "unreadable-lines" "spine-write-age" "backup-age" "backup-bytes" "store-bytes" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:readingMetric ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "nudges" "jeff-inputs" "alerts" "messages-sent" "messages-kept" "events" "commands" "unreadable-lines" "spine-write-age" "backup-age" "backup-bytes" "store-bytes" "missing" "stale" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingRole ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:readingSubject ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingUnit ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "count" "bytes" "hours" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingRun ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:SensorRun ; chorus:exposure chorus:public ] ;

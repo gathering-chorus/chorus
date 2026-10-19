@@ -7,7 +7,7 @@
 
 /// The passes the herald core has, by Sensor name. `files` is the default pass
 /// (no subcommand).
-pub const SENSORS: [&str; 8] = ["files", "code", "services", "stores", "infra", "messages", "events", "spine"];
+pub const SENSORS: [&str; 9] = ["files", "code", "services", "stores", "infra", "messages", "events", "spine", "sync"];
 
 /// What each sensor is, as its Sensor row states it. The rows live in the
 /// store (#4432: rows are not replayed from files); a sensor writes its own
@@ -20,7 +20,7 @@ pub struct SensorDef {
     pub window_minutes: u32,
 }
 
-pub const SENSOR_DEFS: [SensorDef; 8] = [
+pub const SENSOR_DEFS: [SensorDef; 9] = [
     SensorDef { name: "files", reads: "git ls-files since the last watermark: files, tests, pages, endpoints, logs", writes: &["CodeFile", "Test", "Page", "Endpoint", "LogSource"], takes_target: false, window_minutes: 1440 },
     SensorDef { name: "code", reads: "Cargo.toml, package.json and Python build files in the target repository", writes: &["CodeUnit", "Repository"], takes_target: true, window_minutes: 1440 },
     SensorDef { name: "services", reads: "launchctl, ps and lsof on Library; ssh to Bedroom; deploy events on the spine", writes: &["ServiceInstance", "ScheduledJob"], takes_target: false, window_minutes: 60 },
@@ -30,6 +30,8 @@ pub const SENSOR_DEFS: [SensorDef; 8] = [
     SensorDef { name: "messages", reads: "pulse's messages.db, read-only: nudges, alerts, Jeff's input and deliveries per Boston day", writes: &[], takes_target: false, window_minutes: 1440 },
     SensorDef { name: "spine", reads: "the spine's last-write time: hours since chorus.log was written, every 10 minutes", writes: &[], takes_target: false, window_minutes: 10 },
     SensorDef { name: "events", reads: "the spine (chorus.log and its archive): events and each role's commands per Boston day", writes: &[], takes_target: false, window_minutes: 1440 },
+    // #4647 — measuring-only: the crawler's read-only check, per crawled class, as readings
+    SensorDef { name: "sync", reads: "the crawler's read-only check: git against the graph for every crawled class", writes: &[], takes_target: false, window_minutes: 1440 },
 ];
 
 /// A Sensor row's fields, without its name. `sensorWrites` repeats, one per kind.
@@ -315,7 +317,7 @@ mod tests_4405 {
         for s in SENSORS {
             let f = sensor_fields(s).unwrap_or_else(|| panic!("{s} has no Sensor row"));
             // #4634 — measuring sensors write readings only; every other sensor writes rows
-            let measuring = matches!(s, "messages" | "events" | "spine");
+            let measuring = matches!(s, "messages" | "events" | "spine" | "sync");
             assert_eq!(f.iter().any(|(k, _)| k == "sensorWrites"), !measuring, "{s}: sensorWrites must be {}", if measuring { "absent" } else { "present" });
             assert!(f.iter().any(|(k, v)| k == "sensorReads" && !v.is_empty()), "{s} says nothing about what it reads");
         }
