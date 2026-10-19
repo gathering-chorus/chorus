@@ -15,7 +15,7 @@ import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
-import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage } from './views';
+import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage, renderPeopleRow } from './views';
 import { byDay, fetchReadings } from './sources/readings';
 import { fetchStreams } from './sources/streams';
 import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
@@ -247,6 +247,16 @@ function registerReadApiRoutes(ctx: RouteContext): void {
     res.json(router.getRecent(100));
   });
 
+  // #4646 — the role tiles, re-fetched by the page every few seconds so a card that
+  // closed stops showing (Jeff 12:53: "it shows 4635 wip and ur message says its done").
+  app.get('/api/rooms/:room/people', async (req: Request, res: Response) => {
+    const rawRoom = req.params.room;
+    const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
+    const { pulseUrl } = getTestOverrides(req);
+    const roles = await dataService.getRolesData({ pulseUrl });
+    res.json({ html: withBase(renderPeopleRow(room, roles.actors), String(res.locals.base || '')) });
+  });
+
   // #4597 — Jeff 19:11: "i cant scroll up in message history". The page of messages just
   // older than ?before=<id>, rendered as the room renders them, for the room to prepend.
   app.get('/api/rooms/:room/history', (req: Request, res: Response) => {
@@ -254,7 +264,8 @@ function registerReadApiRoutes(ctx: RouteContext): void {
     const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
     const before = typeof req.query.before === 'string' ? req.query.before : '';
     const older = before ? dataService.getRoomHistory(room, before) : [];
-    res.json({ count: older.length, html: older.map(renderRoomMessage).join('') });
+    // #4646 — the older page carries the same base path as the page (photo and room links)
+    res.json({ count: older.length, html: withBase(older.map(renderRoomMessage).join(''), String(res.locals.base || '')) });
   });
 
   // #4597 — Jeff 16:25: "i really need a streams menu option too". Each role's recent

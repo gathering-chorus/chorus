@@ -137,6 +137,18 @@ function stripPromptHeader(text) {
   return String(text || '').replace(/^---\s+[^|\n]+\|[^\n]+---\s*\n*/, '');
 }
 
+function toMs(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : Date.parse(v || ''); }
+
+/** #4646 — same fingerprint as views.ts bodyHash. */
+function bodyHash(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/** #4646 — a second copy of one message arrives within seconds of the first. */
+const COPY_WINDOW_MS = 20000;
+
 function appendMessage(msg) {
   const container = messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
   if (!msg || !msg.visible || !container) return;
@@ -147,6 +159,12 @@ function appendMessage(msg) {
   const cleanText = stripPromptHeader(msg.text || '');
   const bodyKey = cleanText.trim();
   const children = Array.isArray(container.children) ? container.children : Array.from(container.children || []);
+  // #4646 — the room merges a second copy of a message (same author, same words) and
+  // still pushes it live; the page already shows it, so it is not shown twice.
+  // Only a copy seconds apart is the same message; the same words a minute later are a repeat.
+  const at = typeof msg.ts === 'number' ? msg.ts : Date.parse(msg.ts || '');
+  if (children.some((c) => c && c.dataset && c.dataset.from === msg.from && (c.dataset.body === bodyKey || c.dataset.body === bodyHash(bodyKey))
+    && Math.abs(toMs(c.dataset.ts) - at) < COPY_WINDOW_MS)) return;
   // #4591 — only upgrade a placeholder bridge message if the incoming message has the same body;
   // do not drop distinct messages that happen to share identical text.
   const bridgePlaceholder = (bodyKey && msg.from !== 'bridge')
@@ -169,6 +187,7 @@ function appendMessage(msg) {
   if (!el.dataset) el.dataset = {};
   el.dataset.from = msg.from;
   el.dataset.body = bodyKey;
+  el.dataset.ts = msg.ts || '';
   if (msg.kind) el.dataset.kind = msg.kind; // #4592 — the team nudges toggle hides these
 
   const header = document.createElement('div');
@@ -468,6 +487,25 @@ async function loadOlderMessages(fetchImpl) {
     loadingOlder = false;
   }
 }
+/** #4646 — re-fetch the role tiles so a teammate's cards stay true while the page is open. */
+async function refreshPeopleRow(fetchImpl) {
+  if (typeof document === 'undefined') return false;
+  const row = document.getElementById('rooms-people-row');
+  const picker = document.getElementById('room-picker');
+  if (!row) return false;
+  const room = (picker && picker.value) || 'team';
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/people');
+    if (!res.ok) return false;
+    const body = await res.json();
+    if (!body || !body.html) return false;
+    row.outerHTML = body.html;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function watchRoomScroll() {
   if (typeof document === 'undefined') return;
   const stream = document.getElementById('messages-stream');
@@ -478,6 +516,7 @@ function watchRoomScroll() {
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
   window.addEventListener('DOMContentLoaded', watchRoomScroll);
+  window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
   window.addEventListener('DOMContentLoaded', watchPhotoButton);
   window.addEventListener('DOMContentLoaded', watchMicButton);
   window.addEventListener('load', scrollRoomToNewest);
@@ -720,6 +759,7 @@ if (typeof module !== 'undefined' && module.exports) {
     updateTiles,
     scrollRoomToNewest,
     loadOlderMessages,
+    refreshPeopleRow,
     uploadPhoto,
     watchPhotoButton,
     transcribeVoice,

@@ -67,6 +67,7 @@ function toRoomMessage(m: RecentMessage): RoomsData['messages'][number] {
     from: m.from,
     text: m.text,
     time: formatBostonTime(m.ts),
+    ts: m.ts,
     tick: Boolean(m.tick),
     cardId: cardMatch ? parseInt(cardMatch[1], 10) : undefined,
     threadCount: m.threadCount,
