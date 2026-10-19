@@ -202,7 +202,7 @@ async fn main() {
         .route("/pre-tool-use", post(pre_tool_use))
         .route("/post-tool-use", post(post_tool_use))
         .route("/user-prompt-submit", post(user_prompt_submit))
-        .route("/stop", post(stop_hook))
+        .route("/stop", post(stop_hook_bounded))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024)); // 16MB — tool_response can be large
     let app = routes.clone().with_state(state.clone());
     // #4432 — the same guards for agent principals on their own Mac account,
@@ -1302,6 +1302,28 @@ async fn deliver_continuation_reply(raw: &serde_json::Value, input: &HookInput) 
             None => HookResponse::allow(),
         },
         None => HookResponse::allow(),
+    }
+}
+
+/// #4644 — Claude Code kills the Stop hook at its timeout (5s in settings.json), and a
+/// killed hook leaves nothing behind: no reply delivery, no warning, no spine event.
+/// Finish inside a budget instead, and when the budget runs out say so on the role's
+/// own terminal and in the spine.
+const STOP_HOOK_BUDGET: std::time::Duration = std::time::Duration::from_millis(4000);
+
+async fn stop_hook_bounded(
+    state: State<AppState>,
+    raw: Json<serde_json::Value>,
+) -> Json<HookResponse> {
+    let role = serde_json::from_value::<HookInput>(raw.0.clone()).unwrap_or_default().role().as_str().to_string();
+    match tokio::time::timeout(STOP_HOOK_BUDGET, stop_hook(state, raw)).await {
+        Ok(resp) => resp,
+        Err(_) => {
+            crate::state::chorus_log("stop.hook.overrun", &role, &[("budget_ms", "4000")]).await;
+            Json(HookResponse::warn_stderr(
+                "Stop hook ran past its 4s budget and was cut short: this reply may not have reached the room (#4644).",
+            ))
+        }
     }
 }
 

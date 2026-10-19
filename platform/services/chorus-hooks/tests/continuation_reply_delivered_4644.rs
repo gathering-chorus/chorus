@@ -48,3 +48,15 @@ fn guard_catches_a_branch_that_drops_the_reply() {
                return Json(HookResponse::allow());\n }";
     assert!(continuation_delivers(old, "emit_and_deliver_reply").is_err());
 }
+
+/// #4644 AC2 — the Stop route runs inside a budget shorter than Claude Code's kill,
+/// and running out of it is said out loud, never a silent drop.
+#[test]
+fn the_stop_route_is_bounded_and_loud() {
+    let src = main_rs();
+    assert!(src.contains(".route(\"/stop\", post(stop_hook_bounded))"), "/stop must go through the budget");
+    let bounded = body_of(&src, "async fn stop_hook_bounded(");
+    assert!(bounded.contains("tokio::time::timeout(STOP_HOOK_BUDGET"), "no budget on the stop hook");
+    assert!(bounded.contains("\"stop.hook.overrun\"") && bounded.contains("warn_stderr"),
+        "an overrun must reach the spine and the role's terminal");
+}
