@@ -9,6 +9,10 @@ written, in three places (Library, Bedroom, Google Drive), each file with its
 sha256, and checks every copy by hash. Anything short is red, never "OK".
 
   memory-backup.py [YYYY-MM-DD]     the day to keep (default: yesterday, Boston)
+  memory-backup.py --backfill FROM TO
+                                    one-time: spine slices only for past days,
+                                    read in one pass from the archive and the
+                                    live log, to Library, Bedroom and Drive
 
 What a day holds:
   spine-<day>.jsonl.gz      that day's spine lines, cut by the event's own time
@@ -25,7 +29,7 @@ What a day holds:
 Env (all have defaults): MEMORY_SPINE, MEMORY_MESSAGES_DB, MEMORY_BUZZ_PG_CMD,
 MEMORY_BUZZ_MINIO_CMD (shell commands that write the dump to stdout),
 MEMORY_TRANSCRIPTS, MEMORY_LOCAL, MEMORY_DRIVE, MEMORY_REMOTE (host:dir, or a
-plain dir for tests), MEMORY_KEEP_DAYS (default 45).
+plain dir for tests), MEMORY_KEEP_DAYS (default 0: never prune).
 Exit 0 green · 1 red (a place is missing or a copy's hash differs) · 2 usage.
 """
 import datetime
@@ -43,6 +47,7 @@ import zoneinfo
 HOME = os.path.expanduser("~")
 BOSTON = zoneinfo.ZoneInfo("America/New_York")
 SPINE = os.environ.get("MEMORY_SPINE", f"{HOME}/.chorus/chorus.log")
+SPINE_ARCHIVES = [a for a in os.environ.get("MEMORY_SPINE_ARCHIVES", f"{HOME}/.chorus/chorus.log.archived-20260723.gz").split(":") if a]
 MESSAGES_DB = os.environ.get("MEMORY_MESSAGES_DB", f"{HOME}/CascadeProjects/chorus/platform/pulse/messages.db")
 BEDROOM = "Jeffs-Mac-mini.local"
 DOCKER = "export PATH=$PATH:/usr/local/bin:/opt/homebrew/bin; docker exec"
@@ -54,7 +59,10 @@ NIGHTLY_LOG = os.environ.get("MEMORY_NIGHTLY_LOG", f"{HOME}/Library/Logs/Chorus/
 LOCAL = os.environ.get("MEMORY_LOCAL", f"{HOME}/Backups/chorus-memory")
 DRIVE = os.environ.get("MEMORY_DRIVE", "")
 REMOTE = os.environ.get("MEMORY_REMOTE", "Jeffs-Mac-mini.local:/Users/jeffbridwell/Backups/chorus-memory")
-KEEP_DAYS = int(os.environ.get("MEMORY_KEEP_DAYS", "45"))
+# 0 = keep every day (Jeff, 10-19: messages and streams are the record; space is there)
+CHECK_DRIVE_IDS = os.environ.get("MEMORY_DRIVE_ITEM_ID", "auto")
+XATTR = os.environ.get("MEMORY_XATTR", "xattr")
+KEEP_DAYS = int(os.environ.get("MEMORY_KEEP_DAYS", "0"))
 
 TS = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:?\d\d)?"')
 
@@ -222,7 +230,60 @@ def remote_cmd(args: list) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=1800)
 
 
+def backfill(first: str, last: str) -> int:
+    """Spine slices for every day in [first, last] that has none yet: one pass over
+    each source, each day's lines into its own folder, then copied and checked."""
+    red, made = [], []
+    writers, current = {}, None
+    sources = SPINE_ARCHIVES + [SPINE]
+    for src in sources:
+        opener = gzip.open if src.endswith(".gz") else open
+        with opener(src, "rb") as f:
+            for line in f:
+                d = line_day(line) or current
+                current = d
+                if d is None or d < first or d > last:
+                    continue
+                folder = os.path.join(LOCAL, d)
+                if d not in writers:
+                    if os.path.exists(os.path.join(folder, "SHA256SUMS")):
+                        writers[d] = None  # already kept: never rewritten
+                        continue
+                    os.makedirs(folder, exist_ok=True)
+                    writers[d] = gzip.open(os.path.join(folder, f"spine-{d}.jsonl.gz"), "wb", compresslevel=6)
+                    made.append(d)
+                if writers[d]:
+                    writers[d].write(line)
+    for w in writers.values():
+        if w:
+            w.close()
+    drive = drive_dir()
+    for d in made:
+        folder = os.path.join(LOCAL, d)
+        name = f"spine-{d}.jsonl.gz"
+        with open(os.path.join(folder, "SHA256SUMS"), "w") as f:
+            f.write(f"{sha256(os.path.join(folder, name))}  {name}\n")
+        want = sums_of(folder)
+        if drive:
+            shutil.copytree(folder, os.path.join(drive, d), dirs_exist_ok=True)
+            red += [f"{d} drive: {b}" for b in verify(os.path.join(drive, d), want)]
+    if made and ":" in REMOTE:
+        host, rdir = REMOTE.split(":", 1)
+        r = remote_cmd(["nice", "-n", "10", "rsync", "-a", "--timeout=300"] + [os.path.join(LOCAL, d) for d in made] + [f"{host}:{rdir}/"])
+        if r.returncode:
+            red.append(f"bedroom: rsync exit {r.returncode}")
+    elif made:
+        for d in made:
+            shutil.copytree(os.path.join(LOCAL, d), os.path.join(REMOTE, d), dirs_exist_ok=True)
+    for r in red:
+        print(f"memory-backup backfill: RED {r}")
+    print(f"memory-backup backfill {first}..{last}: {len(made)} days written · {'RED' if red else 'OK'}")
+    return 1 if red else 0
+
+
 def main(argv: list) -> int:
+    if len(argv) == 4 and argv[1] == "--backfill":
+        return backfill(argv[2], argv[3])
     if len(argv) > 2 or (len(argv) == 2 and not re.fullmatch(r"\d{4}-\d\d-\d\d", argv[1])):
         print(__doc__.split("\n\n")[2])
         return 2
@@ -260,6 +321,15 @@ def main(argv: list) -> int:
     else:
         shutil.copytree(folder, os.path.join(drive, day), dirs_exist_ok=True)
         red += [f"drive: {b}" for b in verify(os.path.join(drive, day), want)]
+        # Drive stamps a file it has taken into its store with an item id; a file
+        # without one is only on Library's disk. (It shows registration, not that
+        # the upload finished.)
+        # a full Drive never takes a file in, so a missing id is how "no space" shows
+        if CHECK_DRIVE_IDS == "1" or (CHECK_DRIVE_IDS == "auto" and not DRIVE):
+            for name in want:
+                attrs = subprocess.run([XATTR, os.path.join(drive, day, name)], capture_output=True, text=True).stdout
+                if "com.google.drivefs.item-id" not in attrs:
+                    red.append(f"drive: {name} not taken in by Google Drive (no item id)")
 
     if ":" in REMOTE:
         host, rdir = REMOTE.split(":", 1)
@@ -276,8 +346,8 @@ def main(argv: list) -> int:
         shutil.copytree(folder, os.path.join(REMOTE, day), dirs_exist_ok=True)
         red += [f"bedroom: {b}" for b in verify(os.path.join(REMOTE, day), want)]
 
-    cutoff = (datetime.date.fromisoformat(day) - datetime.timedelta(days=KEEP_DAYS)).isoformat()
-    for old in sorted(os.listdir(LOCAL)):
+    cutoff = (datetime.date.fromisoformat(day) - datetime.timedelta(days=KEEP_DAYS)).isoformat() if KEEP_DAYS else ""
+    for old in sorted(os.listdir(LOCAL)) if cutoff else []:
         if re.fullmatch(r"\d{4}-\d\d-\d\d", old) and old < cutoff:
             shutil.rmtree(os.path.join(LOCAL, old))
 

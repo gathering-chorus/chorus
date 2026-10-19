@@ -85,3 +85,27 @@ backup() {
   [[ "$output" == *"buzz postgres: dump failed (exit 3)"* ]] || return 1
   [ ! -f "$T/local/2026-10-18/SHA256SUMS" ]
 }
+
+@test "backfill: past days come from the archive and the live log in one pass, one slice per day, a kept day is never rewritten" {
+  printf '%s\n' '{"e":1,"timestamp":"2026-07-21T10:00:00-0400"}' '{"e":2,"timestamp":"2026-07-22T10:00:00-0400"}' | gzip > "$T/archive.gz"
+  mkdir -p "$T/local/2026-10-17" && echo kept > "$T/local/2026-10-17/SHA256SUMS"
+  run env MEMORY_SPINE="$T/chorus.log" MEMORY_SPINE_ARCHIVES="$T/archive.gz" MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" \
+    MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
+    python3 "$ROOT/platform/scripts/memory-backup.py" --backfill 2026-07-01 2026-10-18
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"3 days written"* ]] || return 1
+  for d in 2026-07-21 2026-07-22 2026-10-18; do
+    (cd "$T/bedroom/$d" && shasum -a 256 -c SHA256SUMS >/dev/null) || return 1
+  done
+  [ "$(cat "$T/local/2026-10-17/SHA256SUMS")" = kept ]
+}
+
+@test "negative proof: Drive never takes the files in (full, or not syncing), so the copy is red" {
+  printf '#!/bin/sh\necho com.apple.provenance\n' > "$T/xattr"; chmod +x "$T/xattr"
+  run env MEMORY_SPINE="$T/chorus.log" MEMORY_MESSAGES_DB="$T/messages.db" MEMORY_TRANSCRIPTS="$T/transcripts" MEMORY_NIGHTLY_LOG="$T/nightly.log" \
+    MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
+    MEMORY_DRIVE_ITEM_ID=1 MEMORY_XATTR="$T/xattr" MEMORY_BUZZ_PG_CMD="echo x" MEMORY_BUZZ_MINIO_CMD="echo y" \
+    python3 "$ROOT/platform/scripts/memory-backup.py" 2026-10-18
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"not taken in by Google Drive (no item id)"* ]] || return 1
+}
