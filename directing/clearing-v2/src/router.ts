@@ -94,6 +94,17 @@ export class MessageRouter {
   }
 
   /**
+   * #4597 — the page of visible messages just older than `beforeId` in a room, oldest first,
+   * so scrolling up in the room loads history one page at a time. Unknown id → none.
+   */
+  getBefore(beforeId: string, limit: number, room = 'team'): ClearingMessage[] {
+    const inRoom = this.messages.filter((m) => m.visible && (m.room || 'team') === room);
+    const idx = inRoom.findIndex((m) => m.id === beforeId);
+    if (idx <= 0) return [];
+    return inRoom.slice(Math.max(0, idx - limit), idx);
+  }
+
+  /**
    * Extract @role mentions to generate Pulse nudge dispatch payloads.
    */
   extractNudges(msg: ClearingMessage): PulseNudgePayload[] {

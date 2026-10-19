@@ -1249,3 +1249,11 @@ tr.you td {
 .presence-working { color: var(--ok); font-weight: 600; }
 .presence-awake { color: var(--info); }
 .presence-quiet { color: var(--faint); }
+
+/* #4597 — the Streams tab: one column per role, newest command first */
+.streams-page { padding: 12px; }
+.streams-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.stream-col { border: 1px solid var(--line2); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.stream-col h3 { margin: 0 0 6px; font-size: 14px; text-transform: capitalize; }
+.stream-line { font-size: 12.5px; line-height: 1.4; padding: 3px 0; border-top: 1px solid var(--line2); overflow-wrap: anywhere; }
+.stream-line .tm { color: var(--meta); margin-right: 4px; }

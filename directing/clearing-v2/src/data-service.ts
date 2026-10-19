@@ -59,6 +59,23 @@ function firstSet(explicit: string | undefined, fromEnv: string | undefined, fal
  *  The room shows its newest messages, about one screen, not the last 100. */
 export const ROOM_PAGE_MESSAGES = 15;
 
+/** One router message as the room shows it (the first page and each older page alike). */
+function toRoomMessage(m: RecentMessage): RoomsData['messages'][number] {
+  const cardMatch = m.text.match(/#(\d+)/);
+  return {
+    id: m.id,
+    from: m.from,
+    text: m.text,
+    time: formatBostonTime(m.ts),
+    tick: Boolean(m.tick),
+    cardId: cardMatch ? parseInt(cardMatch[1], 10) : undefined,
+    threadCount: m.threadCount,
+    threadLast: m.threadLast,
+    type: m.type,
+    ...(m.kind ? { kind: m.kind } : {}),
+  };
+}
+
 export class DataService {
   private defaultRolesUrl: string;
   private defaultCardsUrl: string;
@@ -142,6 +159,11 @@ export class DataService {
    * roles door, and router messages.
    * NO fake seeds, NO hardcoded role names or channels, NO literal card/thread values.
    */
+  /** #4597 — the page of messages just older than `beforeId`, for scrolling up in a room. */
+  getRoomHistory(room: string, beforeId: string): RoomsData['messages'] {
+    return this.router.getBefore(beforeId, ROOM_PAGE_MESSAGES, room).map(toRoomMessage);
+  }
+
   async getRoomsData(room = 'team', options?: { rolesUrl?: string; pulseUrl?: string }): Promise<RoomsData> {
     const [directRoles, rolesData] = await Promise.all([
       fetchDirectRoles(options?.rolesUrl || this.defaultRolesUrl),
@@ -159,21 +181,7 @@ export class DataService {
     );
 
     const recent: RecentMessage[] = this.router.getRecent(ROOM_PAGE_MESSAGES, room);
-    const messages = recent.map((m) => {
-      const cardMatch = m.text.match(/#(\d+)/);
-      return {
-        id: m.id,
-        from: m.from,
-        text: m.text,
-        time: formatBostonTime(m.ts),
-        tick: Boolean(m.tick),
-        cardId: cardMatch ? parseInt(cardMatch[1], 10) : undefined,
-        threadCount: m.threadCount,
-        threadLast: m.threadLast,
-        type: m.type,
-        ...(m.kind ? { kind: m.kind } : {}),
-      };
-    });
+    const messages = recent.map(toRoomMessage);
 
     return {
       room,

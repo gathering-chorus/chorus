@@ -15,7 +15,8 @@ import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
-import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage } from './views';
+import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage } from './views';
+import { fetchStreams } from './sources/streams';
 import { bostonMidnight, countKinds, fetchPulseToday, sentFromPulse } from './sources/message-counts';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
@@ -29,6 +30,8 @@ export interface ClearingV2Config {
   pulseUrl?: string;
   rolesUrl?: string;
   boardUrl?: string;
+  /** #4597 — the spine stream the Streams tab shows (the old Clearing's /api/stream). */
+  streamUrl?: string;
   cardsUrl?: string;
   alertsUrl?: string;
   port?: number;
@@ -70,6 +73,7 @@ export function notSignedIn(signInUrl: string | undefined): { ok: false; error: 
 const PULSE_URL = process.env.PULSE_URL || activeConfig.pulseUrl || 'http://127.0.0.1:3475';
 const ROLES_URL = process.env.ROLES_URL || activeConfig.rolesUrl || 'http://localhost:3360/v1/roles/roles';
 const BOARD_URL = process.env.BOARD_URL || activeConfig.boardUrl || 'http://localhost:3340/api/chorus/context/board';
+const STREAM_URL = process.env.STREAM_URL || activeConfig.streamUrl || 'http://127.0.0.1:3470/api/stream';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
 /** #4625 — a demo v2 reads the real room and never writes it: no send, no pulse hand-off. */
@@ -112,6 +116,7 @@ interface RouteContext {
   cookieKey?: Buffer | null;
   signInUrl?: string;
   boardUrl: string;
+  streamUrl: string;
   /** #4592 — the counts page reads pulse's message store. */
   pulseUrl: string;
   /** #4625 — refuse /api/send by name. */
@@ -176,6 +181,13 @@ function registerPageRoutes(ctx: RouteContext): void {
     res.type('html').send(renderBoardPage(columns, Number.isInteger(card) && card > 0 ? card : null, sources, rolesData));
   });
 
+  // #4597 — the Streams tab: each role's recent commands, refreshed in place.
+  app.get('/streams', async (req: Request, res: Response) => {
+    const { pulseUrl } = getTestOverrides(req);
+    const [streams, sources] = await Promise.all([fetchStreams(ctx.streamUrl), dataService.getTrustStripSources({ pulseUrl })]);
+    res.type('html').send(renderStreamsPage(streams, sources));
+  });
+
   app.get('/roles', async (req: Request, res: Response) => {
     const { pulseUrl } = getTestOverrides(req);
     const [rolesData, sources] = await Promise.all([
@@ -229,6 +241,22 @@ function registerReadApiRoutes(ctx: RouteContext): void {
 
   app.get('/api/messages', (_req: Request, res: Response) => {
     res.json(router.getRecent(100));
+  });
+
+  // #4597 — Jeff 19:11: "i cant scroll up in message history". The page of messages just
+  // older than ?before=<id>, rendered as the room renders them, for the room to prepend.
+  app.get('/api/rooms/:room/history', (req: Request, res: Response) => {
+    const rawRoom = req.params.room;
+    const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
+    const before = typeof req.query.before === 'string' ? req.query.before : '';
+    const older = before ? dataService.getRoomHistory(room, before) : [];
+    res.json({ count: older.length, html: older.map(renderRoomMessage).join('') });
+  });
+
+  // #4597 — Jeff 16:25: "i really need a streams menu option too". Each role's recent
+  // commands, read from the spine stream the old Clearing already serves; this only shows it.
+  app.get('/api/streams', async (_req: Request, res: Response) => {
+    res.json(await fetchStreams(ctx.streamUrl));
   });
 
   app.get('/api/tiles', async (_req: Request, res: Response) => {
@@ -555,6 +583,7 @@ export function createApp(options?: CreateAppOptions) {
     cookieKey: options?.cookieKey,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
+    streamUrl: STREAM_URL,
     pulseUrl: urls.pulseUrl,
     readOnly,
   });
