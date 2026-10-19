@@ -1301,7 +1301,12 @@ async fn deliver_continuation_reply(raw: &serde_json::Value, input: &HookInput) 
             Some(warn) => HookResponse::warn_stderr(&warn),
             None => HookResponse::allow(),
         },
-        None => HookResponse::allow(),
+        None => {
+            // Review (abby-normal, round 2): never a silent allow — the spine says no
+            // reply text was found, so a missing room message has a trace.
+            crate::state::chorus_log("reply.text.missing", &role, &[("path", "continuation")]).await;
+            HookResponse::allow()
+        }
     }
 }
 
