@@ -15,8 +15,8 @@ import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
-import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderRoomMessage, renderStreamsPage, renderPeopleRow } from './views';
-import { byDay, DOUBLE_COLUMNS, fetchReadings } from './sources/readings';
+import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderSyncPage, renderRoomMessage, renderStreamsPage, renderPeopleRow } from './views';
+import { byDay, DOUBLE_COLUMNS, fetchReadings, syncByDay } from './sources/readings';
 import { fetchStreams } from './sources/streams';
 import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
@@ -162,6 +162,17 @@ function registerPageRoutes(ctx: RouteContext): void {
       res.type('html').send(renderCountsPage(byDay(readings), {}, sources, byDay(readings, DOUBLE_COLUMNS)));
     } catch (e) {
       res.type('html').send(renderCountsPage([], { error: (e as Error).message }, sources));
+    }
+  });
+
+  // #4647 — git vs graph by day, from the sync sensor's readings; v2 derives nothing.
+  app.get('/sync', async (req: Request, res: Response) => {
+    const { pulseUrl } = getTestOverrides(req);
+    const sources = await dataService.getTrustStripSources({ pulseUrl });
+    try {
+      res.type('html').send(renderSyncPage(syncByDay(await fetchReadings(ctx.readingsUrl)), {}, sources));
+    } catch (e) {
+      res.type('html').send(renderSyncPage([], { error: (e as Error).message }, sources));
     }
   });
 
