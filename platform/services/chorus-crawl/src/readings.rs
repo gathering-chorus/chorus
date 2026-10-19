@@ -291,6 +291,22 @@ pub fn backup_readings(day: &str, store_bytes: Option<u64>, copy: Option<(u64, u
     c
 }
 
+/// #4630 — where the spine's backup lives. The rsync mirror no longer copies
+/// the live spine (a copy of the growing 5 GB file never finished), so the
+/// copy to stat is the newest dated slice memory-backup wrote. A path with no
+/// `*` (messages.db's mirror, or a test's CHORUS_BACKUP_COPY) is stat'ed as is.
+pub const SPINE_SLICES: &str = "/Users/jeffbridwell/Backups/chorus-memory/*/spine-*.jsonl.gz";
+
+/// The shell line that reads a copy's size and mtime: the newest match when
+/// `copy` is a glob, the file itself when it is not.
+pub fn copy_stat_cmd(copy: &str) -> String {
+    if copy.contains('*') {
+        format!("stat -f '%z %m' \"$(ls -t {copy} | head -1)\"")
+    } else {
+        format!("stat -f '%z %m' '{copy}'")
+    }
+}
+
 /// Days a metric reads 0 although the source is never truly silent: the
 /// spine always has events, so events=0 is a gap in the record, not a quiet
 /// day (Kade, #4634: 04-26..05-03 read 0, the 05-04 loss).
@@ -624,6 +640,33 @@ mod tests {
         let unread = backup_readings("2026-10-18", Some(10), None, now);
         assert!(unread.get(&("2026-10-18".into(), "backup-age".into(), None)).is_none());
         assert!(unread.get(&("2026-10-18".into(), "backup-bytes".into(), None)).is_none());
+    }
+
+    #[test]
+    fn the_spine_copy_is_the_newest_dated_slice_not_the_retired_mirror() {
+        let cmd = copy_stat_cmd(SPINE_SLICES);
+        assert!(cmd.contains("ls -t /Users/jeffbridwell/Backups/chorus-memory/*/spine-*.jsonl.gz | head -1"), "{cmd}");
+        assert!(!SPINE_SLICES.contains("dot-chorus/.chorus/chorus.log"));
+        // negative proof: a plain path is stat'ed as is, never through ls -t
+        let plain = copy_stat_cmd("/x/messages.db");
+        assert_eq!(plain, "stat -f '%z %m' '/x/messages.db'");
+        assert_ne!(plain, cmd);
+    }
+
+    #[test]
+    fn the_newest_slice_command_reads_the_newest_file_in_a_real_shell() {
+        let d = std::env::temp_dir().join(format!("copy-stat-{}", std::process::id()));
+        for (day, bytes) in [("2026-10-17", 3), ("2026-10-18", 7)] {
+            std::fs::create_dir_all(d.join(day)).unwrap();
+            std::fs::write(d.join(day).join(format!("spine-{day}.jsonl.gz")), vec![0u8; bytes]).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        let out = std::process::Command::new("sh").arg("-c")
+            .arg(copy_stat_cmd(&format!("{}/*/spine-*.jsonl.gz", d.display()))).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&d);
+        // the 7-byte file is the newer one; the older 3-byte one must not be read
+        assert!(text.starts_with("7 "), "{text}");
     }
 
     #[test]
