@@ -59,13 +59,13 @@ const until = async (cond: () => boolean, ms = 3000) => {
 
 describe('#4609 pulse writes nudges and alerts to Buzz', () => {
   test('a nudge becomes one bridge note (author, kind, id tags) and delivery does not wait on the relay', async () => {
-    const relay = await stubRelay({ delayMs: 5000, accept: true });
+    const relay = await stubRelay({ delayMs: 2000, accept: true });
     const { app, writer } = await rig(relay);
     try {
       const t0 = Date.now();
       const res = await request(app).post(NUDGE).send({ from: 'kade', to: 'wren', content: 'ping' });
       expect(res.status).toBe(200);
-      expect(Date.now() - t0).toBeLessThan(1000); // the relay holds its OK for 5 s
+      expect(Date.now() - t0).toBeLessThan(1000); // the relay holds its OK for 2 s
       await until(() => relay.got.length > 0);
       expect(relay.got).toHaveLength(1);
       const note = relay.got[0];
@@ -73,7 +73,7 @@ describe('#4609 pulse writes nudges and alerts to Buzz', () => {
       expect(note.content).toBe('[nudge from kade → wren] ping');
       expect(note.tags).toEqual(expect.arrayContaining([['t', 'team'], ['author', 'kade'], ['kind', 'nudge'], ['msg', `pulse-${res.body.id}`]]));
     } finally { writer.close(); await relay.close(); }
-  }, 15000);
+  });
 
   test('a system alert is posted as an alert', async () => {
     const relay = await stubRelay({ delayMs: 0, accept: true });
