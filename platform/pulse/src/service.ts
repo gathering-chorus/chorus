@@ -347,40 +347,47 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
 // into a terminal is skipped (Clearing v2 already wrote it, #4608).
 const recentRecords = new Map<string, number>();
 const LAND_WINDOW_MS = 10 * 60 * 1000; // the land emits its accept more than once (#4502)
+type RecordResult = { status: number; body: Record<string, unknown> };
+const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+
+function recordJeff(b: Record<string, unknown>, store: MessageStore, buzz?: BuzzPoster): RecordResult {
+  const to = str(b.to), content = str(b.content);
+  if (!to || !content) return { status: 400, body: { error: 'to, content required' } };
+  if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentRecords, DEDUP_WINDOW_MS)) return { status: 200, body: { ok: true, deduped: true } };
+  if (store.jeffInputSentRecently(to, content)) return { status: 200, body: { ok: true, deduped: 'clearing' } };
+  const id = Date.now(); // unique across pulse restarts, unlike a counter
+  buzz?.post({ id, from: 'jeff', to, content, surface: 'terminal' });
+  log('info', 'record.jeff', { id, to, chars: content.length });
+  return { status: 200, body: { ok: true, id } };
+}
+
+function recordLand(b: Record<string, unknown>, buzz?: BuzzPoster): RecordResult {
+  const card = Number(b.card);
+  if (!Number.isInteger(card) || card <= 0) return { status: 400, body: { error: 'card required' } };
+  if (seenRecently(`land:${card}`, Date.now(), recentRecords, LAND_WINDOW_MS)) return { status: 200, body: { ok: true, deduped: true } };
+  const accepter = str(b.accepter);
+  // #3743 — never a default to Jeff; a land with no accepter is itself a defect (Wren): loud, no note
+  if (!accepter) {
+    log('warn', 'record.land.no-accepter', { card });
+    return { status: 422, body: { error: 'no-accepter', message: `land of #${card} names no accepter; no note written` } };
+  }
+  const title = str(b.title);
+  buzz?.post({ id: card, from: accepter, to: str(b.owner) ?? '', content: `Accepted #${card}${title ? ` — ${title}` : ''}`, surface: 'land' });
+  log('info', 'record.land', { card });
+  return { status: 200, body: { ok: true, id: card } };
+}
+
 function registerRecordRoutes(app: Express, store: MessageStore, buzz?: BuzzPoster): void {
   app.post('/api/record', (req, res) => {
     const secret = req.headers['x-chorus-pulse-secret'];
     if (!callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) {
       return res.status(403).json({ error: 'not-canonical-caller', message: 'POST /api/record accepts only chorus callers with the pulse secret.' });
     }
-    const b = req.body ?? {};
-    const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
-    if (b.kind === 'jeff') {
-      const to = str(b.to), content = str(b.content);
-      if (!to || !content) return res.status(400).json({ error: 'to, content required' });
-      if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentRecords, DEDUP_WINDOW_MS)) return res.json({ ok: true, deduped: true });
-      if (store.jeffInputSentRecently(to, content)) return res.json({ ok: true, deduped: 'clearing' });
-      const id = Date.now(); // unique across pulse restarts, unlike a counter
-      buzz?.post({ id, from: 'jeff', to, content, surface: 'terminal' });
-      log('info', 'record.jeff', { id, to, chars: content.length });
-      return res.json({ ok: true, id });
-    }
-    if (b.kind === 'land') {
-      const card = Number(b.card);
-      if (!Number.isInteger(card) || card <= 0) return res.status(400).json({ error: 'card required' });
-      if (seenRecently(`land:${card}`, Date.now(), recentRecords, LAND_WINDOW_MS)) return res.json({ ok: true, deduped: true });
-      const title = str(b.title);
-      const accepter = str(b.accepter);
-      // #3743 — never a default to Jeff; a land with no accepter is itself a defect (Wren): loud, no note
-      if (!accepter) {
-        log('warn', 'record.land.no-accepter', { card });
-        return res.status(422).json({ error: 'no-accepter', message: `land of #${card} names no accepter; no note written` });
-      }
-      buzz?.post({ id: card, from: accepter, to: str(b.owner) ?? '', content: `Accepted #${card}${title ? ` — ${title}` : ''}`, surface: 'land' });
-      log('info', 'record.land', { card });
-      return res.json({ ok: true, id: card });
-    }
-    return res.status(400).json({ error: 'kind must be jeff or land' });
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const r = b.kind === 'jeff' ? recordJeff(b, store, buzz)
+      : b.kind === 'land' ? recordLand(b, buzz)
+      : { status: 400, body: { error: 'kind must be jeff or land' } };
+    return res.status(r.status).json(r.body);
   });
 }
 

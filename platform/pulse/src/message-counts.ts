@@ -174,17 +174,17 @@ const words = (content: string) => content.replace(/^--- [^\n]* ---\s*/, '').tri
 export function countDoubles(notes: RoomNote[], today: string, windowS = 20): Array<{ day: string; kind: DoubleKind; doubles: number }> {
   const dated = notes.filter((n) => typeof n.created_at === 'number').sort((a, b) => (a.created_at as number) - (b.created_at as number));
   const last = new Map<string, number>();
-  const counts = new Map<string, Record<DoubleKind, number>>();
+  const counts = new Map<string, Map<DoubleKind, number>>();
   for (const n of dated) {
     const t = n.created_at as number;
     const day = bostonDay(t * 1000);
     if (day >= today) continue;
-    const row = counts.get(day) ?? Object.fromEntries(DOUBLE_KINDS.map((k) => [k, 0])) as Record<DoubleKind, number>;
+    const row = counts.get(day) ?? new Map(DOUBLE_KINDS.map((k) => [k, 0]));
     counts.set(day, row);
     const key = `${tag(n, 'author') ?? tag(n, 'role') ?? ''}\u0000${words(n.content)}`;
     const prev = last.get(key);
-    if (prev !== undefined && t - prev <= windowS) row[noteKind(n)] += 1;
+    if (prev !== undefined && t - prev <= windowS) row.set(noteKind(n), (row.get(noteKind(n)) ?? 0) + 1);
     last.set(key, t);
   }
-  return [...counts.keys()].sort().flatMap((day) => DOUBLE_KINDS.map((kind) => ({ day, kind, doubles: (counts.get(day) as Record<DoubleKind, number>)[kind] })));
+  return [...counts.keys()].sort().flatMap((day) => DOUBLE_KINDS.map((kind) => ({ day, kind, doubles: counts.get(day)?.get(kind) ?? 0 })));
 }

@@ -878,9 +878,23 @@ function pulseSecret(): string | undefined {
   if (process.env.CHORUS_PULSE_SECRET) return process.env.CHORUS_PULSE_SECRET;
   try {
     const p = process.env.CHORUS_PULSE_SECRET_FILE || `${process.env.HOME}/.chorus/pulse-nudge.secret`;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, security/detect-non-literal-fs-filename -- fixed internal secret path
-    return (require('fs') as typeof import('fs')).readFileSync(p, 'utf8').trim() || undefined;
+    return fs.readFileSync(p, 'utf8').trim() || undefined;
   } catch { return undefined; }
+}
+
+type LandArgs = {
+  card: number; title: string; owner: string; accepter: string | undefined;
+  secret?: string; pulseUrl?: string; fetchImpl?: FetchLike; timeoutMs?: number;
+};
+
+/** The fetch to post a land with, or why there is none. #4131's rule: a test
+ *  brings its own world — under jest or a bats CLI test, `cards done` never
+ *  writes a land note into live Buzz unless it was handed a pulse. */
+function landFetch(args: LandArgs): FetchLike | string {
+  const handed = args.fetchImpl || args.pulseUrl || process.env.CHORUS_PULSE_RECORD_URL;
+  if (!handed && (process.env.JEST_WORKER_ID || process.env.CARDS_BRIEFS_ROOT)) return 'test context: no live pulse';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return args.fetchImpl || ((globalThis as any).fetch as FetchLike | undefined) || 'no-fetch-impl';
 }
 
 /**
@@ -890,20 +904,10 @@ function pulseSecret(): string | undefined {
  * a land that names none, and that refusal comes back here as a miss, loudly.
  * Never throws: a land is not undone by a missing notice.
  */
-export async function recordLand(args: {
-  card: number; title: string; owner: string; accepter: string | undefined;
-  secret?: string; pulseUrl?: string; fetchImpl?: FetchLike; timeoutMs?: number;
-}): Promise<{ recorded: boolean; error?: string }> {
+export async function recordLand(args: LandArgs): Promise<{ recorded: boolean; error?: string }> {
+  const fetchImpl = landFetch(args);
+  if (typeof fetchImpl === 'string') return { recorded: false, error: fetchImpl };
   const url = args.pulseUrl || process.env.CHORUS_PULSE_RECORD_URL || 'http://localhost:3475/api/record';
-  // #4131's rule: a test brings its own world. Under jest or a bats CLI test,
-  // `cards done` never writes a land note into live Buzz unless handed a pulse.
-  const testContext = !!(process.env.JEST_WORKER_ID || process.env.CARDS_BRIEFS_ROOT);
-  if (testContext && !args.fetchImpl && !args.pulseUrl && !process.env.CHORUS_PULSE_RECORD_URL) {
-    return { recorded: false, error: 'test context: no live pulse' };
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fetchImpl: FetchLike | undefined = args.fetchImpl || ((globalThis as any).fetch as FetchLike | undefined);
-  if (!fetchImpl) return { recorded: false, error: 'no-fetch-impl' };
   const ctrl = new AbortController();
   const timeoutId = setTimeout(() => ctrl.abort(), args.timeoutMs ?? 2000);
   try {
@@ -913,8 +917,9 @@ export async function recordLand(args: {
       body: JSON.stringify({ kind: 'land', card: args.card, title: args.title, owner: args.owner.toLowerCase(), accepter: args.accepter }),
       signal: ctrl.signal,
     });
-    if (!resp.ok) return { recorded: false, error: `${resp.status} ${resp.text ? (await resp.text().catch(() => '')).slice(0, 200) : ''}`.trim() };
-    return { recorded: true };
+    if (resp.ok) return { recorded: true };
+    const body = resp.text ? await resp.text().catch(() => '') : '';
+    return { recorded: false, error: `${resp.status} ${body.slice(0, 200)}`.trim() };
   } catch (err) {
     return { recorded: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
