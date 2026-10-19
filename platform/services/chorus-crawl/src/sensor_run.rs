@@ -212,6 +212,25 @@ mod tests_4405 {
         assert_eq!(listed, ours, "the runner would refuse a sensor crawl offers, or offer one crawl lacks");
     }
 
+    /// #4634 reopen 1 — the runner does not read the model at call time: it
+    /// compiles athena-gen's tool_inputs.json in. The model listed the new
+    /// sensors but the compiled table did not, so every scheduled run was
+    /// refused (measured on prod 2026-10-19 14:07). The compiled list must match too.
+    #[test]
+    fn the_runner_compiled_input_table_lists_exactly_these_sensors() {
+        let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+        let json = std::fs::read_to_string(format!("{dir}/../chorus-runner/src/tool_inputs.json")).expect("runner input table readable");
+        let block = &json[json.find("\"HeraldRunInput\"").expect("HeraldRunInput in the runner table")..];
+        let sensor = &block[block.find("\"sensor\"").expect("sensor property present")..];
+        let list = &sensor[sensor.find("\"enum\"").expect("an enum")..];
+        let inside = &list[list.find('[').unwrap() + 1..list.find(']').unwrap()];
+        let mut listed: Vec<&str> = inside.split('"').map(str::trim).filter(|s| !s.is_empty() && *s != ",").collect();
+        let mut ours: Vec<&str> = SENSORS.to_vec();
+        listed.sort();
+        ours.sort();
+        assert_eq!(listed, ours, "the compiled runner refuses a sensor the LaunchAgents call: regenerate with athena-gen tool-inputs");
+    }
+
     #[test]
     fn a_pass_that_cannot_read_its_store_is_unmeasured_not_green_or_red() {
         assert_eq!(outcome(UNMEASURED_EXIT, None), "unmeasured");

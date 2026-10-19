@@ -267,7 +267,10 @@
           "code",
           "services",
           "stores",
-          "infra"
+          "infra",
+          "messages",
+          "events",
+          "spine"
         ],
         "type": "string"
       },
