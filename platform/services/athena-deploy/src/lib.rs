@@ -317,9 +317,13 @@ pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, Str
     let path = format!(
         "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>)+"
     );
+    // #4579 reopen 2 — a blank node another named subject also reaches (CoreShape's
+    // flattened property nodes, shared by every shape that uses it) is not this
+    // subject's to delete; deleting it emptied 77 shapes on 10-18.
     let body = format!(
         "GRAPH <{graph}> {{ {{ BIND(<{iri}> AS ?s) <{iri}> ?p ?o }} UNION \
-         {{ <{iri}> {path} ?s . FILTER(isBlank(?s)) ?s ?p ?o }} }}"
+         {{ <{iri}> {path} ?s . FILTER(isBlank(?s)) ?s ?p ?o \
+            FILTER NOT EXISTS {{ ?other {path} ?s . FILTER(isIRI(?other) && ?other != <{iri}>) }} }} }}"
     );
     (
         format!("SELECT (COUNT(*) AS ?n) WHERE {{ {body} }}"),
@@ -1094,6 +1098,26 @@ pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> Strin
     )
 }
 
+/// #4579 reopen 2 — how many shapes point at a property node with nothing in it.
+/// A retirement that reached shared CoreShape nodes left 77 on 10-18 and Actor
+/// lost its route; the deploy only found out from the route check, after.
+pub fn empty_property_nodes_sparql(graph: &str) -> String {
+    format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{graph}> {{ \
+         ?s sh:property ?b . FILTER(isBlank(?b)) FILTER NOT EXISTS {{ ?b ?p ?o }} }} }}"
+    )
+}
+
+/// The deploy goes on only at 0. A count the store did not give is a refusal,
+/// never a pass (#3734: a check that measured nothing cannot be green).
+pub fn empty_property_nodes_verdict(count: Option<u64>) -> Result<(), String> {
+    match count {
+        Some(0) => Ok(()),
+        Some(n) => Err(format!("empty-property-nodes:{n} shape(s) point at a property node with nothing in it (#4579)")),
+        None => Err("empty-property-nodes:unmeasured (the store did not answer the count)".into()),
+    }
+}
+
 fn csv_count(body: &str) -> Option<u64> {
     body.lines().nth(1).and_then(|l| l.trim().trim_matches('"').parse().ok())
 }
@@ -1607,6 +1631,12 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
             run_retirement(action, *n, &ctx)?;
         }
     }
+
+    // #4579 reopen 2 — after every write to the model, before anything restarts on it
+    let empties = curl(&["-s", "--data-urlencode", &format!("query={}", empty_property_nodes_sparql(&ontology)),
+        "-H", "Accept: text/csv", &query]).ok().and_then(|b| csv_count(&b));
+    empty_property_nodes_verdict(empties).map_err(|e| fail(&e))?;
+    println!("athena-deploy: 0 empty property nodes in <{ontology}>");
 
     // #3536 AC2 / #3731 — the SHACL report. Non-gating, three distinguishable
     // states, full deploys only (SHACL_REPORT=1 is the test seam).
@@ -2820,6 +2850,75 @@ mod subject_closure_runs_4064 {
         // NEGATIVE PROOF: the neighbour shape and its own property shape are untouched
         assert!(after.contains("KeptShape") && after.contains("x:k") && after.contains("minCount"),
             "the retirement reached a shape it does not own:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #4579 reopen 2 — the deploy refuses on any empty property node.
+    #[test]
+    fn the_empty_property_node_count_finds_an_emptied_node() {
+        use super::{empty_property_nodes_sparql, empty_property_nodes_verdict};
+        let out = Command::new("sh").args(["-c", "command -v sparql"]).output().expect("sh runs");
+        let sparql = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert!(!sparql.is_empty(), "UNMEASURED: no Jena sparql CLI on this box; this guard cannot run");
+        let dir = std::env::temp_dir().join(format!("empty-4579-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let count = |trig: &str| -> u64 {
+            let d = dir.join("d.trig");
+            std::fs::write(&d, trig).unwrap();
+            let q = dir.join("q.rq");
+            std::fs::write(&q, empty_property_nodes_sparql("urn:g")).unwrap();
+            let o = Command::new(&sparql).arg(format!("--data={}", d.display()))
+                .arg(format!("--query={}", q.display())).args(["--results", "csv"]).output().unwrap();
+            super::csv_count(&String::from_utf8_lossy(&o.stdout)).expect("a count")
+        };
+        let whole = r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> { x:A sh:property _:n . x:B sh:property _:n . _:n sh:path x:label . }"#;
+        assert_eq!(count(whole), 0);
+        assert!(empty_property_nodes_verdict(Some(0)).is_ok());
+        // NEGATIVE PROOF: the 10-18 state, the shared node emptied
+        let emptied = r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> { x:A sh:property _:n . x:B sh:property _:n . x:C sh:property [ sh:path x:c ] . }"#;
+        assert_eq!(count(emptied), 2);
+        assert!(empty_property_nodes_verdict(Some(2)).is_err());
+        // a store that did not answer refuses too
+        assert!(empty_property_nodes_verdict(None).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #4579 reopen 2 — athena-deploy's flatten points every CoreShape user at
+    /// the SAME property nodes. Retiring TestSuiteRunShape (10-18 20:06) deleted
+    /// them and left 77 shapes with empty nodes; Actor lost its route. A blank
+    /// node another named subject also reaches is shared, never the retired one's.
+    #[test]
+    fn retiring_a_shape_keeps_property_nodes_another_shape_shares() {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("sh runs");
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        // #4579 — a guard that cannot run must not read green (#3734)
+        assert!(!update.is_empty(), "UNMEASURED: no Jena update CLI on this box; this guard cannot run");
+        let dir = std::env::temp_dir().join(format!("closure-4579-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        // _:name is CoreShape's node, flattened onto both shapes; _:own is Gone's alone
+        std::fs::write(&data, r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> {
+  x:CoreShape a sh:NodeShape ; sh:property _:name .
+  _:name sh:path x:label ; sh:name "name" ; sh:in ( "n1" "n2" ) .
+  x:GoneShape a sh:NodeShape ; sh:targetClass x:Gone ; sh:property _:name , _:own .
+  _:own sh:path x:gonefield .
+  x:KeptShape a sh:NodeShape ; sh:targetClass x:Kept ; sh:property _:name .
+}"#).unwrap();
+        let (_, _, delete) = subject_retirement_sparql("https://x#GoneShape", "urn:g");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &delete).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(!after.contains("GoneShape") && !after.contains("x:gonefield"), "the retired shape's own nodes survived:\n{after}");
+        // NEGATIVE PROOF: the shared node keeps its content, nested list included
+        for kept in ["x:label", "\"name\"", "\"n1\"", "\"n2\""] {
+            assert!(after.contains(kept), "{kept} was deleted from a node another shape shares:\n{after}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
