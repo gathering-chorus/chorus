@@ -370,7 +370,6 @@ export interface CreateAppOptions {
   rolesUrl?: string;
   /** Accepted for older callers; unread since #4563 (roles, today and the strip read pulse). */
   boardUrl?: string;
-  streamUrl?: string;
   cardsUrl?: string;
   athenaCardUrl?: string;
   alertsUrl?: string;
@@ -584,7 +583,7 @@ export function createApp(options?: CreateAppOptions) {
     cookieKey: options?.cookieKey,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
-    streamUrl: options?.streamUrl ?? STREAM_URL,
+    streamUrl: STREAM_URL,
     pulseUrl: urls.pulseUrl,
     readOnly,
   });
