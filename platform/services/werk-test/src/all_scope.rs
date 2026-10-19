@@ -1128,13 +1128,102 @@ fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     }
 }
 
-fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
+fn leg_duration(ctx: &Ctx, secs: u64, holds: usize) -> SuiteRow {
     // #4277 — the budget is a regression guard, so it sits above the measured
     // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
     // (4033s, 4252s) and the first budget (3600s) went red on a normal night.
     let budget: u64 = env_or("WERK_TEST_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
-    let (status, summary) = duration_verdict_with_load(secs, budget, holds);
+    let (status, mut summary) = duration_verdict_with_load(secs, budget, holds);
+    if status == "fail" {
+        let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
+        summary = format!("{summary} · {}", grew_line(&suite_growth(&log, 7)));
+    }
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
+}
+
+/// #4645 — the duration red was red six nights running (6,642–11,329 s) and
+/// said only "over budget by N s", so nobody could act on it. A red now names
+/// the suites that grew most against their own median over the last `nights`
+/// runs: (suite, seconds tonight, median seconds before). Suites with fewer
+/// than 3 earlier timings, or that grew under 60 s, are left out.
+pub fn suite_growth(log: &str, nights: usize) -> Vec<(String, f64, f64)> {
+    let mut runs: Vec<std::collections::HashMap<String, f64>> = Vec::new();
+    for line in log.lines() {
+        if line.starts_with("RUN|start|") {
+            runs.push(std::collections::HashMap::new());
+        } else if let (Some(run), Some(rest)) = (runs.last_mut(), line.strip_prefix("SUITETIME|")) {
+            let mut f = rest.rsplitn(2, '|');
+            if let (Some(s), Some(name)) = (f.next().and_then(|s| s.parse::<f64>().ok()), f.next()) {
+                run.insert(name.to_string(), s);
+            }
+        }
+    }
+    let Some(now) = runs.pop() else { return Vec::new() };
+    let before: Vec<_> = runs.iter().rev().filter(|r| !r.is_empty()).take(nights).collect();
+    let mut grew: Vec<(String, f64, f64)> = now
+        .iter()
+        .filter_map(|(name, &s)| {
+            let mut past: Vec<f64> = before.iter().filter_map(|r| r.get(name).copied()).collect();
+            if past.len() < 3 {
+                return None;
+            }
+            past.sort_by(|a, b| a.total_cmp(b));
+            let median = past[past.len() / 2];
+            (s - median >= 60.0).then(|| (name.clone(), s, median))
+        })
+        .collect();
+    grew.sort_by(|a, b| (b.1 - b.2).total_cmp(&(a.1 - a.2)).then(a.0.cmp(&b.0)));
+    grew.truncate(3);
+    grew
+}
+
+fn grew_line(grew: &[(String, f64, f64)]) -> String {
+    if grew.is_empty() {
+        return "no suite grew 60 s or more against its median: the run is slow across the board".to_string();
+    }
+    let parts: Vec<String> = grew
+        .iter()
+        .map(|(n, s, m)| format!("{} {:.0}s (median {:.0}s)", n.rsplit('/').next().unwrap_or(n), s, m))
+        .collect();
+    format!("grew most: {}", parts.join(", "))
+}
+
+#[cfg(test)]
+mod duration_growth_4645 {
+    use super::*;
+
+    fn night(times: &[(&str, f64)]) -> String {
+        let mut s = String::from("RUN|start|2026-10-18T03:00:03|pid=1\n");
+        for (n, t) in times {
+            s.push_str(&format!("SUITETIME|bats|platform/tests/{n}|{t}\n"));
+        }
+        s
+    }
+
+    #[test]
+    fn a_suite_that_jumped_is_named_with_its_median() {
+        let mut log = String::new();
+        for _ in 0..4 {
+            log.push_str(&night(&[("a.bats", 100.0), ("b.bats", 50.0)]));
+        }
+        log.push_str(&night(&[("a.bats", 400.0), ("b.bats", 55.0)]));
+        let g = suite_growth(&log, 7);
+        assert_eq!(g, vec![("bats|platform/tests/a.bats".to_string(), 400.0, 100.0)]);
+        assert_eq!(grew_line(&g), "grew most: a.bats 400s (median 100s)");
+    }
+
+    /// NEGATIVE PROOF — steady times, or a suite with too little history, name nothing
+    #[test]
+    fn steady_suites_and_new_suites_are_not_named() {
+        let mut log = String::new();
+        for _ in 0..4 {
+            log.push_str(&night(&[("a.bats", 100.0)]));
+        }
+        log.push_str(&night(&[("a.bats", 130.0), ("new.bats", 900.0)]));
+        assert!(suite_growth(&log, 7).is_empty());
+        assert!(grew_line(&[]).contains("slow across the board"));
+        assert!(suite_growth("", 7).is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -1577,7 +1666,7 @@ pub fn step_all(
                 let began: u64 = first_of(&d, "clock").and_then(|v| v.parse().ok()).unwrap_or_else(epoch);
                 let holds = first_of(&d, "holds-queue").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0) + lane.gate_holds;
                 let t = Instant::now();
-                push(&ctx, timed(leg_duration(epoch().saturating_sub(began), holds), t), &mut rows);
+                push(&ctx, timed(leg_duration(&ctx, epoch().saturating_sub(began), holds), t), &mut rows);
             }
             d.put(&format!("suites-{}", side), &rows_lines(&rows))?;
             d.put(&format!("cases-{}", side), &cases_lines(&lane.cases))?;
