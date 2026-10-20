@@ -76,7 +76,16 @@ pub enum Plan {
 /// The secret is read by the daemon itself, never taken from the shim's env:
 /// the shim forwards only named env (Wren, 09-09), so a credential there would
 /// never arrive and every post would fail quietly.
-pub fn plan(prompt: &str, secret: Option<String>) -> Plan {
+///
+/// #4628 reopen 2 — only an interactive session types for Jeff. The demo smoke
+/// test runs headless `claude -p` sessions as real roles; CLAUDE_CODE_ENTRYPOINT
+/// is "cli" in an interactive pane and "sdk-cli" under -p (measured 10-19).
+/// The shim carries it in the hook JSON (env does not reach the daemon); an
+/// absent value is not Jeff either.
+pub fn plan(prompt: &str, entrypoint: Option<&str>, secret: Option<String>) -> Plan {
+    if entrypoint != Some("cli") {
+        return Plan::Skip;
+    }
     let Some(text) = typed_text(prompt) else { return Plan::Skip };
     match secret {
         Some(secret) => Plan::Post { text, secret },
@@ -85,8 +94,8 @@ pub fn plan(prompt: &str, secret: Option<String>) -> Plan {
 }
 
 /// Post the typed text for `role`'s pane. Fire and forget: spawned, 1 s cap.
-pub fn record(role: &str, prompt: &str) {
-    let (text, secret) = match plan(prompt, pulse_secret()) {
+pub fn record(role: &str, prompt: &str, entrypoint: Option<&str>) {
+    let (text, secret) = match plan(prompt, entrypoint, pulse_secret()) {
         Plan::Skip => return,
         Plan::Miss(why) => {
             let r = role.to_string();
@@ -125,10 +134,23 @@ mod tests {
 
     #[test]
     fn a_missing_secret_is_a_logged_miss_not_a_silent_failed_post() {
-        assert_eq!(plan("go", None), Plan::Miss("no pulse secret"));
-        assert_eq!(plan("go", Some("s".into())), Plan::Post { text: "go".into(), secret: "s".into() });
+        assert_eq!(plan("go", Some("cli"), None), Plan::Miss("no pulse secret"));
+        assert_eq!(plan("go", Some("cli"), Some("s".into())), Plan::Post { text: "go".into(), secret: "s".into() });
         // an injected prompt is skipped before the secret matters
-        assert_eq!(plan("[nudge from kade | x] hi", None), Plan::Skip);
+        assert_eq!(plan("[nudge from kade | x] hi", Some("cli"), None), Plan::Skip);
+    }
+
+    // NEGATIVE PROOF (#4628 reopen 2): measured 10-19 20:21 — the demo smoke test
+    // runs headless `claude -p` sessions AS real roles, so its prompt passed the
+    // role filter and posted as Jeff. Only an interactive session types for Jeff:
+    // CLAUDE_CODE_ENTRYPOINT is "cli" there and "sdk-cli" under -p (both measured).
+    #[test]
+    fn negative_proof_only_an_interactive_session_records_a_prompt() {
+        let smoke = "Run exactly one Bash command, cat /var/folders/x/T/werk-demo-smoke-4647-silas-83517, and reply with its output only.";
+        assert_eq!(plan(smoke, Some("sdk-cli"), Some("s".into())), Plan::Skip);
+        assert_eq!(plan(smoke, None, Some("s".into())), Plan::Skip, "an unknown entrypoint is not Jeff");
+        assert_eq!(plan("ok router is in living room", Some("cli"), Some("s".into())),
+            Plan::Post { text: "ok router is in living room".into(), secret: "s".into() });
     }
 
     #[test]

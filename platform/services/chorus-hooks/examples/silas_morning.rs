@@ -25,6 +25,7 @@ fn run_scenario(label: &str, role: &str, file_path: &str) {
         hook_type: None,
         deploy_role: None,
         card_type: None,
+        entrypoint: None,
         trace_id: None, tool_output_is_error: None,
     };
 

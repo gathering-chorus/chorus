@@ -114,7 +114,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -146,7 +146,7 @@ mod tests {
             cwd: Some("/Users/jeffbridwell/some/unknown/path".to_string()),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0);
@@ -168,7 +168,7 @@ mod tests {
             cwd: Some(format!("{}/roles/wren", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("wren".to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check_with_dir(&input, &state, dir.path().to_str().unwrap()).await;
         assert!(r.stdout.is_some(), "Edit should be blocked when session init not complete");
