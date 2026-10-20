@@ -1040,7 +1040,7 @@ async fn user_prompt_submit(
     let context_result = hooks::context_inject::check(&input, &state).await;
 
     // #4628 — what Jeff typed reaches Buzz once, through pulse. Spawned, 1 s cap.
-    hooks::terminal_input::record(input.role().as_str(), input.prompt.as_deref().unwrap_or(""));
+    hooks::terminal_input::record(input.role().as_str(), input.prompt.as_deref().unwrap_or(""), input.entrypoint.as_deref());
 
     // JDI detector — fire-and-forget (#1598)
     let state_clone = state.clone();
@@ -1501,7 +1501,7 @@ mod emit_guard_dispatch_3945 {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None,
             tool_output_is_error: None,
         }

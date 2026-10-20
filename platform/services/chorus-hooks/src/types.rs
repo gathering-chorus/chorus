@@ -109,6 +109,10 @@ pub struct HookInput {
     pub hook_type: Option<String>,
     /// Injected by shim from DEPLOY_ROLE env var (#1714)
     pub deploy_role: Option<String>,
+    /// #4628 reopen 2 — injected by the shim from CLAUDE_CODE_ENTRYPOINT: "cli"
+    /// for an interactive session, "sdk-cli" for headless `claude -p`.
+    #[serde(default)]
+    pub entrypoint: Option<String>,
     /// #4131 — injected by the shim from CHORUS_CARD_TYPE (fixture seam); the
     /// gates read it through `card_type_for_input` before asking the board.
     #[serde(default)]

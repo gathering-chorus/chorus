@@ -148,7 +148,7 @@ mod tests {
             cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         check(&input, &state).await;
     }
@@ -164,7 +164,7 @@ mod tests {
             cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         check(&input, &state).await;
     }

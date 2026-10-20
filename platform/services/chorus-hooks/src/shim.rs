@@ -135,6 +135,19 @@ fn check_canonical_in_process(input_json: &str) -> Option<String> {
 /// `trace` key. None / empty / unparseable input → returned unchanged (the
 /// daemon mints a per-dispatch fallback). Pure so the contract is testable
 /// without env or a socket.
+fn inject_entrypoint(input: String, entrypoint: Option<String>) -> String {
+    match entrypoint {
+        Some(e) if !e.is_empty() => match serde_json::from_str::<serde_json::Value>(&input) {
+            Ok(mut json) if json.is_object() => {
+                json["entrypoint"] = serde_json::Value::String(e);
+                json.to_string()
+            }
+            _ => input,
+        },
+        _ => input,
+    }
+}
+
 fn inject_trace_id(input: String, trace: Option<String>) -> String {
     match trace {
         Some(t) if !t.is_empty() => match serde_json::from_str::<serde_json::Value>(&input) {
@@ -150,6 +163,14 @@ fn inject_trace_id(input: String, trace: Option<String>) -> String {
 
 #[cfg(test)]
 mod inject_trace_id_tests {
+    #[test]
+    fn the_entrypoint_rides_the_hook_json_so_the_daemon_can_tell_headless_from_interactive() {
+        let out = super::inject_entrypoint(r#"{"prompt":"hi"}"#.to_string(), Some("sdk-cli".to_string()));
+        assert!(out.contains(r#""entrypoint":"sdk-cli""#), "{out}");
+        let input = r#"{"prompt":"hi"}"#.to_string();
+        assert_eq!(super::inject_entrypoint(input.clone(), None), input);
+    }
+
     use super::*;
 
     #[test]
@@ -557,6 +578,9 @@ fn main() -> ExitCode {
     // mints a per-dispatch fallback so the field is never empty. Pure transform
     // (inject_trace_id) so the propagation contract is unit-testable.
     let input = inject_trace_id(input, std::env::var("CHORUS_TRACE_ID").ok());
+    // #4628 reopen 2 — interactive or headless, for the terminal-input record:
+    // env does not cross the socket, so it rides the JSON like the trace.
+    let input = inject_entrypoint(input, std::env::var("CLAUDE_CODE_ENTRYPOINT").ok());
 
     log_debug(&format!("stdin={}bytes", input.len()));
 

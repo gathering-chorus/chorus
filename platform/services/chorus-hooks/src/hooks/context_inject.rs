@@ -1508,7 +1508,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("wren".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None,
             tool_output_is_error: None,
         };
