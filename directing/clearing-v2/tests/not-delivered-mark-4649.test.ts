@@ -8,7 +8,11 @@
  * failed; v2 broadcast a 'delivery' failure that the page never handled, and a reload
  * would have lost it anyway.
  */
-import { UndeliveredLog } from '../src/undelivered';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from '../src/undelivered';
+import { resolveUndeliveredFile } from '../src/server';
 // @ts-ignore — the page script is plain browser JS with a CommonJS export for tests
 import { markUndelivered } from '../public/app.js';
 
@@ -61,5 +65,31 @@ describe('#4649 the server remembers failures, so a reload or a second phone sti
     const log = new UndeliveredLog(2);
     log.record('a', 'wren'); log.record('b', 'wren'); log.record('c', 'wren');
     expect(Object.keys(log.all())).toEqual(['b', 'c']);
+  });
+});
+
+describe('#4649 the list survives a v2 restart (Silas 10-20 05:47)', () => {
+  test('a failure written by one v2 is shown by the next one, and the file is replaced atomically', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'undelivered-4649-'));
+    const file = path.join(dir, 'undelivered.json');
+    new UndeliveredLog(200, file).record('m9', 'silas');
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+    expect(new UndeliveredLog(200, file).all()).toEqual({ m9: ['silas'] });
+  });
+
+  test('NEGATIVE PROOF: with no file, a restart starts empty (the old in-memory behaviour)', () => {
+    new UndeliveredLog().record('m9', 'silas');
+    expect(new UndeliveredLog().all()).toEqual({});
+  });
+});
+
+describe('#4649 prod v2 keeps the list on disk; tests never touch ~/.chorus', () => {
+  test('prod start (no jest, no override) uses ~/.chorus/clearing-v2-undelivered.json', () => {
+    expect(resolveUndeliveredFile(undefined, {})).toBe(DEFAULT_UNDELIVERED_FILE);
+    expect(DEFAULT_UNDELIVERED_FILE).toMatch(/\.chorus\/clearing-v2-undelivered\.json$/);
+  });
+  test('NEGATIVE PROOF: under jest with no path given, nothing is persisted', () => {
+    expect(resolveUndeliveredFile(undefined, { JEST_WORKER_ID: '1' })).toBeUndefined();
+    expect(resolveUndeliveredFile('/tmp/x.json', { JEST_WORKER_ID: '1' })).toBe('/tmp/x.json');
   });
 });

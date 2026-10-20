@@ -22,7 +22,7 @@ import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
-import { UndeliveredLog } from './undelivered';
+import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from './undelivered';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
@@ -409,7 +409,17 @@ function registerRoutes(ctx: RouteContext): void {
   registerWriteRoutes(ctx);
 }
 
+/** #4649 — where failed hand-offs persist. Prod gets ~/.chorus by default, so a
+ *  restart keeps the marks; under jest nothing touches it unless a test passes a path. */
+export function resolveUndeliveredFile(explicit: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+  if (explicit) return explicit;
+  if (env.JEST_WORKER_ID) return undefined;
+  return env.CLEARING_V2_UNDELIVERED_FILE || DEFAULT_UNDELIVERED_FILE;
+}
+
 export interface CreateAppOptions {
+  /** #4649 — where failed hand-offs persist; tests pass a temp path (none by default under jest). */
+  undeliveredFile?: string;
   relayUrl?: string;
   pulseUrl?: string;
   rolesUrl?: string;
@@ -597,7 +607,7 @@ export function createApp(options?: CreateAppOptions) {
   // Track SSE clients
   const sseClients: Response[] = [];
   const broadcastSSE = makeBroadcaster(sseClients);
-  const undelivered = new UndeliveredLog();
+  const undelivered = new UndeliveredLog(200, resolveUndeliveredFile(options?.undeliveredFile, process.env));
 
   // relay is declared below; the handler only runs once the relay delivers events.
   const onInboundEvent = makeInboundHandler({

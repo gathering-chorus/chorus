@@ -549,7 +549,9 @@ function markUndelivered(id, roles) {
   if (!mark) {
     mark = document.createElement('div');
     mark.className = 'msg-undelivered';
-    msg.appendChild(mark);
+    // under the words, not beside them: .msg lays header and text out in a row
+    const text = msg.querySelector ? msg.querySelector('.message-text') : null;
+    (text || msg).appendChild(mark);
   }
   mark.textContent = `not delivered to ${roles.join(', ')}`;
 }
