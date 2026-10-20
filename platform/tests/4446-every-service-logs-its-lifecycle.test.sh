@@ -99,6 +99,7 @@ com.chorus.perf-baseline	WRAP: inline bash -c in the plist
 com.chorus.memory-backup	WRAP: service-run job, memory-backup.py (card 4630)
 com.chorus.memory-sensors	WRAP: inline sh -c in the plist (herald-run messages, events)
 com.chorus.spine-sensor	WRAP: inline sh -c in the plist (herald-run spine)
+com.chorus.sync-sensor	WRAP: service-run job, inline sh -c (herald-run sync, card 4647)
 T
 )}"
 
