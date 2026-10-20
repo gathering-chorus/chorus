@@ -1916,6 +1916,13 @@ fn run_sensor(args: &[String]) -> i32 {
         return if exit != 0 { exit } else { 1 };
     }
     println!("sensor {sensor}: run {name} {result} at {ended}");
+    // #4666 — the event the not-green alert reads (Loki job=chorus-operations)
+    if let Some(ev) = run_event_args(&sensor, &name, result, dry_run) {
+        let log = format!("{home}/platform/scripts/chorus-log");
+        if let Err(e) = Command::new(&log).args(&ev).output() {
+            println!("sensor {sensor}: run {name} event NOT emitted ({e}) — the alert cannot see this run");
+        }
+    }
     if result == "green" { 0 } else if exit != 0 { exit } else { 1 }
 }
 

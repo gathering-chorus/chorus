@@ -2031,6 +2031,29 @@ app.post('/api/chorus/alert', (req: Request, res: Response) => {
   });
 });
 
+// --- POST /api/alerts/grafana — Grafana's webhook contact point (#4666) ---
+// Until 10-20 Grafana sent every alert to receiver `empty`. A firing alert
+// whose rule names a `role` label becomes one ops nudge to that role (trigger
+// and values only); an unlabeled one is written to the spine as unrouted.
+import { routeGrafanaAlerts } from './handlers/grafana-alerts';
+app.post('/api/alerts/grafana', (req: Request, res: Response) => {
+  const scripts = path.join(CHORUS_ROOT, 'platform/scripts');
+  // ops-nudge refuses a caller with a role (#4532): the API is an ops caller
+  const env = { ...process.env };
+  delete env.CHORUS_ROLE;
+  const r = routeGrafanaAlerts(req.body || {}, {
+    nudge: (to, text) => {
+      execFile('bash', [path.join(scripts, 'ops-nudge'), to, text], { env }, (err) => {
+        if (err) console.error(`grafana alert to ${to} not delivered: ${err.message}`);
+      });
+    },
+    spine: (event, fields) => {
+      execFile('bash', [path.join(scripts, 'chorus-log'), event, 'system', ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)], { env }, () => {});
+    },
+  });
+  res.status(200).json(r);
+});
+
 // --- GET /api/chorus/voice-analytics ---
 
 import { fetchChorusVoiceAnalytics } from './handlers/chorus-voice-analytics';
