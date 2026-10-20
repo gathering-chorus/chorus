@@ -2,7 +2,7 @@
 // @domain: security
 // @card: #4652
 // @owner: wren
-//! #4652 — verify-install.sh is the check that Jeff's signer install is a real wall.
+//! #4652 — chorus-jeff-signer/verify-install.sh is the check that Jeff's signer install is a real wall.
 //! It must never read PASS for a wall that is not there (#3734: no vacuous pass).
 use std::process::Command;
 
