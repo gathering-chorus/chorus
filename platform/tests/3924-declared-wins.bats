@@ -60,7 +60,10 @@ cls() { printf '%s' "$2" > "$BATS_TEST_TMPDIR/$1"; "$BIN" --classify "$BATS_TEST
   # #4273 — chorus-crawl refuses to run with CHORUS_ROLE unset (#4178: it will
   # not write as an invented principal). The nightly plist runs it as kade;
   # this test only passed in shells that already exported a role.
-  run env CHORUS_ROOT="$PWD" CHORUS_ROLE=kade "$BIN" --dry-run
+  # #4661 — a full walk: with the stored watermark at HEAD a delta walks 0 test
+  # files and prints no no-case line, so the test read wherever the last crawl
+  # left the watermark (red in the 10-20 nightly). An empty watermark is a full walk.
+  run env CHORUS_ROOT="$PWD" CHORUS_ROLE=kade CHORUS_CRAWL_WATERMARK="" "$BIN" --dry-run
   [ "$status" -eq 0 ]
   has "cases posted="
   # files that yield no runnable case (#4106) are REPORTED on their own line, not silent

@@ -102,6 +102,27 @@ deny Policy" ] || return 1
   [ "$status" -eq 0 ] || return 1
 }
 
+# #4661 — the 10-20 nightly: AgentRuntime carries writeAuthority=deploy (#4220),
+# so the door refuses every session, while the graph's Append row still lists it.
+# A deploy-only class is written by the model deploy, not by any principal: not a
+# scope question, the same as door-managed.
+@test "verdict: a deploy-only class the rows append to is not a disagreement" {
+  printf 'append AgentRuntime\n' > "$T/plan"
+  printf 'AgentRuntime           NOT-PERM { "error": "deploy-only", "message": "x is written by the model deploy, not by a session" }\n' > "$T/out"
+  run python3 "$PLAN" verdict "$T/plan" "$T/out"
+  [ "$status" -eq 0 ] || return 1
+}
+
+# NEGATIVE PROOF (#4661): only the door's deploy-only answer is excused; any other
+# NOT-PERM on an appendable class is still red and names the class.
+@test "verdict: a NOT-PERM that is not deploy-only on an appendable class stays red" {
+  printf 'append Session\n' > "$T/plan"
+  printf 'Session                NOT-PERM { "error": "out-of-scope", "message": "x" }\n' > "$T/out"
+  run python3 "$PLAN" verdict "$T/plan" "$T/out"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"Session: rows append (own row)"* ]] || return 1
+}
+
 # NEGATIVE PROOF (2026-10-13): werk-test sets WERK_TEST_NIGHTLY=1 for card runs
 # too, and a card pipeline ran the prod suites. A werk tree must refuse.
 @test "prod gate: a card's werk refuses even with WERK_TEST_NIGHTLY=1" {

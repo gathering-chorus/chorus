@@ -326,7 +326,7 @@ pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str)
 pub fn clearing_v2_extra_env(role: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
     let door = format!("http://localhost:{}", env_port_for("athena-make", role)?);
     let api = format!("http://localhost:{}", env_port_for("chorus-api", role)?);
-    Ok(vec![
+    Ok([
         ("CLEARING_V2_READONLY".into(), "1".into()),
         ("HOST".into(), "0.0.0.0".into()),
         ("PULSE_URL".into(), format!("http://127.0.0.1:{}", env_port_for("pulse", role)?)),
@@ -335,10 +335,29 @@ pub fn clearing_v2_extra_env(role: &str, home: &str, path: &str) -> R<Vec<(Strin
         ("BOARD_URL".into(), format!("{}/api/chorus/context/board", api)),
         ("ALERTS_URL".into(), format!("{}/api/chorus/context/alerts", api)),
         ("BUZZ_RELAY_URL".into(), "ws://127.0.0.1:13000".into()),
-        ("BUZZ_RELAY_HOST_HEADER".into(), "192.168.86.242:3000".into()),
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
-    ])
+    ]
+    .into_iter()
+    // #4661 — the relay's Host comes from prod v2's own config (the one place it
+    // is set), never a pinned address here; with no config the demo room reads
+    // the relay as unreachable, loudly, rather than a guessed host
+    .chain(prod_v2_relay_host().map(|h| ("BUZZ_RELAY_HOST_HEADER".to_string(), h)))
+    .collect())
+}
+
+/// #4661 — `buzzRelayHost` from a Clearing v2 config's JSON text.
+pub fn relay_host_in_config(json: &str) -> Option<String> {
+    // a plain scan, as relay_url_in_plist does: this crate carries no JSON parser
+    let i = json.find("\"buzzRelayHost\"")? + "\"buzzRelayHost\"".len();
+    let rest = json[i..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let v = rest[..rest.find('"')?].trim();
+    (!v.is_empty()).then(|| v.to_string())
+}
+
+fn prod_v2_relay_host() -> Option<String> {
+    let root = std::env::var("CHORUS_HOME").ok()?;
+    relay_host_in_config(&std::fs::read_to_string(format!("{root}/directing/clearing-v2/clearing-v2.config.json")).ok()?)
 }
 
 /// #4625 — a demo v2 that could send, or hand Jeff's words to prod pulse.
@@ -1708,6 +1727,16 @@ mod clearing_v2_demo_4625 {
         assert_eq!(get("PULSE_URL"), format!("http://127.0.0.1:{}", env_port_for("pulse", "kade").unwrap()));
         assert!(get("ROLES_URL").contains(&format!(":{}/", env_port_for("athena-make", "kade").unwrap())), "{}", get("ROLES_URL"));
         assert_eq!(clearing_v2_env_prod_leak(&env), None);
+    }
+
+    /// #4661 — the relay host is read from v2's config, never pinned in code.
+    #[test]
+    fn the_relay_host_comes_from_the_v2_config() {
+        assert_eq!(relay_host_in_config(r#"{"buzzRelayHost":"relay.lan:3000"}"#).as_deref(), Some("relay.lan:3000"));
+        // NEGATIVE PROOF: no host in the config is None, never a guessed address
+        assert_eq!(relay_host_in_config(r#"{"buzzRelayUrl":"ws://x"}"#), None);
+        assert_eq!(relay_host_in_config(r#"{"buzzRelayHost":"  "}"#), None);
+        assert_eq!(relay_host_in_config("not json"), None);
     }
 
     /// NEGATIVE PROOF: the leak check refuses a v2 that could write or nudge prod.

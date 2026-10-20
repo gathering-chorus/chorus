@@ -85,6 +85,8 @@ def verdict(planned, results):
         got, detail = results.get(cls, ("MISSING", "the runner printed no line"))
         if "door-managed" in detail:
             continue  # no principal may write it, either way; not a scope question
+        if got == "NOT-PERM" and '"deploy-only"' in detail:
+            continue  # #4661 — written only by the model deploy (#4220): not a scope question either
         if want == "deny":
             if got == "NOT-PERM":
                 continue
