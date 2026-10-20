@@ -25,7 +25,8 @@ action: |
   # Observation only. My first draft appended "service checks failing right now
   # are likely SYMPTOMS, not faults" — an inference about OTHER checks that this
   # check never measured. The #3519 contract caught it, which is the contract
-  # doing its job on its own author. $STATUS already carries free_pct,
-  # swap_used_pct, the thresholds, and the largest resident process; the reader
+  # doing its job on its own author. $STATUS already carries the kernel's
+  # pressure level (#4651: it fires only at critical), free_pct, swap_used_pct
+  # and the largest resident process; the reader
   # draws the conclusion.
   "$OPS_NUDGE" silas "host-pressure: $STATUS" 2>/dev/null || true
