@@ -1966,11 +1966,15 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         // sent vs kept in Buzz, by pulse's reader (the countKinds rule, #4592)
         let reader = format!("{root}/platform/pulse/dist/buzz-day-counts.js");
         let relay = std::env::var("PULSE_BUZZ_RELAY_URL").unwrap_or_else(|_| "ws://127.0.0.1:13000".into());
-        let relay_host = std::env::var("PULSE_BUZZ_RELAY_HOST").unwrap_or_else(|_| "192.168.86.242:3000".into());
-        match Command::new("node").args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
-            Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
-            Ok(o) => println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()),
-            Err(e) => println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"),
+        // #4661 — no pinned LAN address: the relay's Host comes from pulse's own
+        // installed config (the one writer to Buzz), never a literal here
+        match buzz_relay_host() {
+            None => println!("{which}: messages-kept UNMEASURED — the relay host is unknown (PULSE_BUZZ_RELAY_HOST unset and not in com.chorus.pulse)"),
+            Some(relay_host) => match Command::new("node").args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
+                Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
+                Ok(o) => println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()),
+                Err(e) => println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"),
+            },
         }
         let kept_read = c.keys().any(|(_, m, _)| m == "messages-kept");
         let mut metrics = vec!["nudges", "alerts", "jeff-inputs"];
@@ -2018,7 +2022,8 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
              std::env::var("CHORUS_BACKUP_COPY").unwrap_or_else(|_| chorus_crawl::readings::SPINE_SLICES.into()))
         };
         let store_bytes = std::fs::metadata(&src).ok().map(|m| m.len());
-        let host = std::env::var("CHORUS_BACKUP_HOST").unwrap_or_else(|_| "192.168.86.242".into());
+        // #4661 — Bedroom by name (mDNS), not a pinned address that DHCP can move
+        let host = std::env::var("CHORUS_BACKUP_HOST").unwrap_or_else(|_| "Jeffs-Mac-mini.local".into());
         let stat = if host == "local" {
             sh("sh", &["-c", &chorus_crawl::readings::copy_stat_cmd(&copy)], "/")
         } else {
@@ -2541,6 +2546,20 @@ fn run_stores(args: &[String]) -> i32 {
         }
     }
     if !failed.is_empty() || short { 2 } else if !want.findings.is_empty() { 1 } else { 0 }
+}
+
+/// #4661 — the Buzz relay's Host header: PULSE_BUZZ_RELAY_HOST, else the value in
+/// pulse's installed LaunchAgent (pulse is the one writer to Buzz, so its config is
+/// the source). None when neither says, so the caller reads unmeasured.
+fn buzz_relay_host() -> Option<String> {
+    if let Ok(h) = std::env::var("PULSE_BUZZ_RELAY_HOST") {
+        if !h.is_empty() { return Some(h); }
+    }
+    let home = std::env::var("HOME").ok()?;
+    let plist = format!("{home}/Library/LaunchAgents/com.chorus.pulse.plist");
+    let out = Command::new("/usr/libexec/PlistBuddy").args(["-c", "Print :EnvironmentVariables:PULSE_BUZZ_RELAY_HOST", &plist]).output().ok()?;
+    let h = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !h.is_empty()).then_some(h)
 }
 
 fn main() {
