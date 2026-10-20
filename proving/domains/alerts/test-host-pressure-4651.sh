@@ -48,4 +48,8 @@ out=$(run abc 45 94); rc=$?
 out=$(bash "$CHECK" 2>&1)
 echo "$out" | grep -q "level=" && ok "live read carries a level: ${out%% largest=*}" || no "live read has no level: $out"
 
+# 6 — a PATH without /usr/sbin (the werk pipeline's) still reads the level
+out=$(env PATH=/usr/bin:/bin bash "$CHECK" 2>&1)
+echo "$out" | grep -q "level=" && ok "PATH without /usr/sbin still reads a level" || no "PATH without /usr/sbin: $out"
+
 echo; [ $FAIL -eq 0 ] && { echo PASS; exit 0; } || { echo RED; exit 1; }

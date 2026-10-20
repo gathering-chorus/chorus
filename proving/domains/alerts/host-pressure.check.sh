@@ -17,10 +17,13 @@ set -uo pipefail
 # cannot tell "busy" from "cannot serve" — the kernel's level can: 1 normal,
 # 2 warn, 4 critical. Free % and swap % stay in the observation for the reader.
 #
+# sysctl by full path: the werk pipeline's PATH has no /usr/sbin, and a bare
+# `sysctl` there read the level as empty (#4651 run 2).
+#
 # Seams for the test (test-host-pressure-4651.sh): HOST_PRESSURE_LEVEL_NOW,
 # HOST_PRESSURE_FREE_NOW, HOST_PRESSURE_SWAP_NOW replace the live reads when set.
 if [ -n "${HOST_PRESSURE_LEVEL_NOW+x}" ]; then level="$HOST_PRESSURE_LEVEL_NOW"
-else level=$(sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null); fi
+else level=$(/usr/sbin/sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null); fi
 case "$level" in
   1) level_name=normal ;; 2) level_name=warn ;; 4) level_name=critical ;;
   *) echo "host-pressure-unknown: kern.memorystatus_vm_pressure_level unreadable (${level:-empty})"; exit 0 ;;
@@ -33,7 +36,7 @@ else free_pct=$(memory_pressure 2>/dev/null | sed -nE 's/.*free percentage: *([0
 
 if [ -n "${HOST_PRESSURE_SWAP_NOW+x}" ]; then swap_pct="$HOST_PRESSURE_SWAP_NOW"
 else
-  read -r swap_total swap_used <<<"$(sysctl -n vm.swapusage 2>/dev/null \
+  read -r swap_total swap_used <<<"$(/usr/sbin/sysctl -n vm.swapusage 2>/dev/null \
     | sed -E 's/.*total = ([0-9.]+)M.*used = ([0-9.]+)M.*/\1 \2/')"
   swap_pct=$(python3 -c "print(int(100*$swap_used/$swap_total) if $swap_total>0 else 0)" 2>/dev/null || echo unknown)
 fi
