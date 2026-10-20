@@ -55,6 +55,8 @@ DAGU_DAG = os.environ.get("CWS_DAGU_DAG", "cicd")
 ATHENA_DAG = os.environ.get("CWS_ATHENA_DAG", "athena")
 # #4577 — a pair runs as its own pipeline; its run is where the card is while it pairs
 PAIR_DAG = os.environ.get("CWS_PAIR_DAG", "pair")
+# #4654 — a card's pull and its coding run as their own pipeline, ahead of athena or cicd
+CARD_DAG = os.environ.get("CWS_CARD_DAG", "card")
 # #4553 — main is the fact a land reached: the card's commit there after the land began
 GIT_DIR = os.environ.get("CWS_GIT_DIR", os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")))
 MAIN_REF = os.environ.get("CWS_MAIN_REF", "origin/main")
@@ -259,6 +261,13 @@ def hm(t):
     return datetime.fromtimestamp(t).strftime("%m-%d %H:%M")
 
 
+def board_owner(card, cards=None):
+    """#4654 — the card's owner from the board's WIP list, lower case; "?" only
+    when the board does not hold the card in WIP or cannot be read."""
+    cards = wip_cards() if cards is None else cards
+    return next((str(o).lower() for c, o in (cards or []) if str(c) == str(card)), "?")
+
+
 def card_detail(card, pin_status):
     logs = run_logs(card)
     runs = [run_summary(p) for p in logs]
@@ -283,12 +292,14 @@ def card_detail(card, pin_status):
             head = (f"#{card} [{pin_status.get('role', '?')}] {runs[-1]['result']}"
                     " (the pin still says running; the run's log has ended)")
     else:
-        head = f"#{card} [?] " + (runs[-1]["result"].split()[0] if runs else "no runs")
+        # #4654 — Jeff 10-20 10:30 "cws couldnt tell who has the card": a card
+        # with no run yet is still someone's; the board says whose
+        head = f"#{card} [{board_owner(card)}] " + (runs[-1]["result"].split()[0] if runs else "no runs")
     if v2 and runs:
         # #4494 reopen 2 — "run 3 · 14 runs" read as one count; the v1 runs are
         # the old pipeline's, listed first, and say so.
         head += f" · {len(runs)} old-pipeline run{'s' if len(runs) != 1 else ''}"
-    elif not v2:
+    elif not v2 and runs:
         head += f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
     print(head)
     lc = []
@@ -422,6 +433,27 @@ def pair_reads(listing, line):
             and free == 0 and held == 3)
 
 
+def card_reads(listing):
+    """#4654 fixture: dagu_runs finds the card run; negative proof: reading only
+    cicd, athena and pair (the names before #4654) finds nothing, and the card
+    run never refuses the cicd run it hands off to."""
+    global dagu_list
+    keep = dagu_list
+    dagu_list = lambda name, since: [dict(r, name=name) for r in listing() if r["name"] == name]
+    try:
+        found = dagu_runs(4654) or []
+        old = [r for r in found if r["name"] in (DAGU_DAG, ATHENA_DAG, PAIR_DAG)]
+        # the hand-off step runs while the cicd run it started begins
+        handing = [dict(r, statusLabel="running") for r in listing()] + [dict(listing()[0], name=DAGU_DAG, dagRunId="c1", statusLabel="running")]
+        dagu_list = lambda name, since: [dict(r, name=name) for r in handing if r["name"] == name]
+        import io, contextlib
+        with contextlib.redirect_stdout(io.StringIO()):
+            free = live_other(4654, "c1")
+    finally:
+        dagu_list = keep
+    return [r["name"] for r in found] == [CARD_DAG] and old == [] and free == 0
+
+
 def fixture_mode():
     with tempfile.TemporaryDirectory() as td:
         global RUNS_DIR
@@ -491,7 +523,7 @@ def dagu_runs(card, dag=None):
     # #4536 — a card's run starts on the athena pipeline (model) and hands off to
     # cicd; Jeff 10:31 "include athena in scope of cws". Read 13:10: #4536 had
     # 8 athena runs and /cws said "no runs". The card's runs are both halves.
-    names = [dag] if dag else [DAGU_DAG, ATHENA_DAG, PAIR_DAG]
+    names = [dag] if dag else [DAGU_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG]
     runs = []
     try:
         for name in names:
@@ -564,6 +596,11 @@ def dagu_go(card, run):
         nav = re.search(r"(?:^|\s)NAVIGATOR=\"?([\w-]+)", run.get("params") or "")
         cmd = f"{base} --input by={nav.group(1) if nav else 'NAVIGATOR'}"
         return f" · green: {cmd} --input decision=green · stop: {cmd} --input decision=stop"
+    if dag == CARD_DAG:
+        # #4654 — the card's role says its code is done; Jeff's go is not asked here
+        who = re.search(r"(?:^|\s)ROLE=\"?([\w-]+)", run.get("params") or "")
+        cmd = f"{base} --input by={who.group(1) if who else 'ROLE'}"
+        return f" · done: {cmd} --input decision=done · stop: {cmd} --input decision=stop"
     cmd = f"{base} --input accepter=jeff"
     # #4494 — a go can be a no: the land is skipped and the run ends
     return f" · go: {cmd} --input decision=go · no: {cmd} --input decision=no"
@@ -986,6 +1023,10 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
     paired = land is None and run.get("name") == PAIR_DAG
     if paired:
         pre, word = "pair: ", word.replace("pair-", "")
+    # #4654 — a card run reads as its step: "pull", then "coding · 42m" while the role builds
+    carded = land is None and run.get("name") == CARD_DAG
+    if carded:
+        word = word.replace("card-", "")
     if status == "queued":
         place = places.get(run.get("dagRunId"))
         where = f"{pre}waiting in line" + (f" ({ordinal(place)})" if place else "")
@@ -1006,11 +1047,15 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         if paired:
             nav = re.search(r"NAVIGATOR=\"?(\S+?)\"?(?:\s|$)", run.get("params") or "")
             where = f"pair: waiting for {nav.group(1) if nav else 'the navigator'}'s green"
+        if carded:
+            where = "coding"
     elif status == "succeeded" and not land and any(
             n.get("statusLabel") == "skipped" and n["step"]["name"] == f"{DAGU_DAG}-land" for n in nodes_of(run)):
         where = "rejected at the go"
     elif status == "succeeded" and paired:
         where = "pair: ended, handed to cicd"
+    elif status == "succeeded" and carded:
+        where = "coded, handed off"
     elif status == "succeeded":
         where = "landed" if land else "go given, land not queued"
         # #4186 reopen — the model half rides the card's own line
@@ -1160,7 +1205,8 @@ def live_other(card, me):
         n[r.get("dagRunId")] = count[name]
     # #4577 — a pair's run is not a build: its hand-off enqueues the card's
     # cicd run while the pair run is still running, and must not refuse it
-    other = [r for r in live_runs(runs) if r.get("dagRunId") != me and r.get("name") != PAIR_DAG
+    # #4654 — nor is the card run: its last step starts the card's athena or cicd run
+    other = [r for r in live_runs(runs) if r.get("dagRunId") != me and r.get("name") not in (PAIR_DAG, CARD_DAG)
              and r.get("statusLabel") in ("running", "queued")]
     if not other:
         return 0
@@ -1336,6 +1382,21 @@ def fixture_4553():
              pair_reads(lambda: [dict(run("pr", "pair", "waiting", 0, [node("succeeded", "skill-pair-start"), node("waiting", "skill-pair-green")], 4577),
                                       params="CARD=4577 ROLE=kade NAVIGATOR=silas")], line)
              and "waiting for your go" in line(4578, [run("w", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4578)], [])),
+            # #4654 — a card run waiting on its role reads "coding", and its hint is
+            # the role's done on the card dag. Negative proof: with the card dag out
+            # of the read (the pre-#4654 names), the same card has no run at all,
+            # and a cicd run at its go still offers Jeff's go, never a done.
+            ("a card run reads coding and offers its role's done",
+             (lambda r: "coding" in card_line(4654, "kade", [r], [], {}) and "waiting for your go" not in card_line(4654, "kade", [r], [], {})
+              and (lambda g: "complete card " in g and "--input by=kade --input decision=done" in g and "accepter=jeff" not in g)(dagu_go(4654, r)))(
+                 dict(run("cd", "card", "waiting", 0, [node("succeeded", "skill-werk-card-pull"), node("waiting", "skill-werk-code")], 4654),
+                      params="CARD=4654 ROLE=kade"))
+             and card_reads(lambda: [dict(run("cd", "card", "waiting", 0, [node("waiting", "skill-werk-code")], 4654), params="CARD=4654 ROLE=kade")])),
+            # #4654 — a WIP card with no run yet names its owner from the board;
+            # negative proof: a card the board does not hold in WIP still reads "?"
+            ("a card with no run yet names its owner from the board",
+             board_owner(4654, [(4654, "Kade"), (4628, "Silas")]) == "kade"
+             and board_owner(4699, [(4654, "Kade")]) == "?" and board_owner(4654, []) == "?"),
             # #4577 (Wren 07:37) — the pair's hint is the navigator's green on
             # the pair dag; negative proof: a cicd run still offers Jeff's go
             ("a pair's hint completes the pair step as its navigator",
