@@ -9,9 +9,13 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-fn bin() -> String {
-    // Cargo sets this for integration tests at run time as well as build time.
-    std::env::var("CARGO_BIN_EXE_chorus-jeff-signer").unwrap_or_else(|_| env!("CARGO_BIN_EXE_chorus-jeff-signer").to_string())
+fn bin() -> std::path::PathBuf {
+    // Run time, never compile time (the 4030 rule): this test runs from
+    // target/<profile>/deps/, and the binary it starts sits one level up.
+    let exe = std::env::current_exe().unwrap();
+    let bin = exe.parent().unwrap().parent().unwrap().join("chorus-jeff-signer");
+    assert!(bin.is_file(), "the signer binary is not built at {}", bin.display());
+    bin
 }
 
 fn run_with_key(mode: u32, contents: &str) -> (i32, String) {

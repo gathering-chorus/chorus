@@ -104,9 +104,12 @@ fn main() {
     drop(key);
     let mut wait = 1;
     loop {
+        let start = std::time::Instant::now();
         if let Err(e) = serve(&signer) {
             eprintln!("chorus-jeff-signer: {e}; reconnecting in {wait}s");
         }
+        // A connection that held for a minute was a good one: start the backoff over.
+        wait = if start.elapsed() > Duration::from_secs(60) { 1 } else { wait };
         std::thread::sleep(Duration::from_secs(wait));
         wait = (wait * 2).min(30);
     }
