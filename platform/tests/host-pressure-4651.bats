@@ -9,7 +9,7 @@
 
 setup() {
   # Named by its folder so werk-test sees this suite exercise the check (#4419).
-  CHECK="${BATS_TEST_DIRNAME}/../alerts/host-pressure.check.sh"
+  CHECK="${BATS_TEST_DIRNAME}/../../proving/domains/alerts/host-pressure.check.sh"
 }
 
 reading() { HOST_PRESSURE_LEVEL_NOW="$1" HOST_PRESSURE_FREE_NOW="$2" HOST_PRESSURE_SWAP_NOW="$3" bash "$CHECK"; }
