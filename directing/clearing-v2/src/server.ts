@@ -26,7 +26,7 @@ import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from './undelivered';
 import { HandoffLog, DEFAULT_HANDOFF_FILE } from './handoff-log';
 import { PublishResult } from './jeff-publisher';
-import { buildJeffPublisher, JeffSignerConfig } from './jeff-signer-config';
+import { buildJeffPublisher, JeffSignerConfig, signerClientPubkey } from './jeff-signer-config';
 import { UnsignedEvent } from './remote-signer';
 
 export interface ClearingV2Config {
@@ -752,6 +752,8 @@ if (require.main === module) {
     } else {
       console.log('Buzz relay not configured (trust strip shows rooms failed: relay not configured)');
     }
+    const signerClient = signerClientPubkey(activeConfig.jeffSigner);
+    if (signerClient) console.log(`Jeff's posts go through his signing service; the room's client key is ${signerClient}`);
 
     try {
       const { serviceLifecycle } = require('../../../platform/chorus-sdk/lifecycle/service-lifecycle');

@@ -6,7 +6,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { buildJeffPublisher, clientKey } from '../src/jeff-signer-config';
+import { buildJeffPublisher, clientKey, signerClientPubkey } from '../src/jeff-signer-config';
 import { JeffPublisher } from '../src/jeff-publisher';
 
 const A = 'a'.repeat(64), B = 'b'.repeat(64);
@@ -30,6 +30,15 @@ describe('#4652 the signing-service switch', () => {
   test('the client key is made once and reused, so the signer\'s allow-list stays valid', () => {
     const file = tmpFile();
     expect(clientKey(file)).toBe(clientKey(file));
+  });
+
+  test('the pubkey the signer must allow is the room client key\'s; none when the switch is off', () => {
+    const file = tmpFile();
+    const pk = signerClientPubkey({ bunkerPubkey: A, userPubkey: B, clientKeyFile: file });
+    expect(pk).toMatch(/^[0-9a-f]{64}$/);
+    expect(signerClientPubkey({ bunkerPubkey: A, userPubkey: B, clientKeyFile: file })).toBe(pk);
+    expect(signerClientPubkey(undefined)).toBeUndefined();
+    expect(signerClientPubkey({ bunkerPubkey: A })).toBeUndefined();
   });
 
   test('NEGATIVE PROOF: a half-filled config is refused, not half-used', () => {

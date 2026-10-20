@@ -36,6 +36,12 @@ export function clientKey(file: string): string {
   return k;
 }
 
+/** The room's client pubkey the signer must allow, or undefined when the switch is off. */
+export function signerClientPubkey(cfg: JeffSignerConfig | undefined): string | undefined {
+  if (!cfg?.bunkerPubkey || !cfg.userPubkey) return undefined;
+  return bytesToHex(schnorr.getPublicKey(hexToBytes(clientKey(cfg.clientKeyFile ?? DEFAULT_CLIENT_KEY_FILE))));
+}
+
 export function buildJeffPublisher(cfg: JeffSignerConfig | undefined, relayUrl: string, hostHeader?: string): JeffPublisher | undefined {
   if (!cfg || (!cfg.bunkerPubkey && !cfg.userPubkey)) return undefined;
   if (!HEX64.test(cfg.bunkerPubkey ?? '') || !HEX64.test(cfg.userPubkey ?? '') || !relayUrl) {
@@ -43,7 +49,6 @@ export function buildJeffPublisher(cfg: JeffSignerConfig | undefined, relayUrl: 
     return undefined;
   }
   const clientSecret = clientKey(cfg.clientKeyFile ?? DEFAULT_CLIENT_KEY_FILE);
-  console.log(`[clearing-v2] Jeff's posts go through his signing service; the room's client key is ${bytesToHex(schnorr.getPublicKey(hexToBytes(clientSecret)))}`);
   const transport = new RelaySignerTransport({ relayUrl, clientSecret, hostHeader });
   const signer = new RemoteSigner({ clientSecret, bunkerPubkey: cfg.bunkerPubkey!, userPubkey: cfg.userPubkey!, transport });
   return new JeffPublisher({ relayUrl, signer, hostHeader });
