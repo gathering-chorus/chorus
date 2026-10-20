@@ -31,7 +31,9 @@ async function postOnce(pulseUrl: string, to: string, content: string, fetchFn: 
   try {
     const res = await fetchFn(`${pulseUrl}/api/jeff-input`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Chorus-Clearing-Caller': '1' },
+      // #4649 — a fresh socket per hand-off: pulse hints keep-alive 5 s and fetch
+      // closes pooled sockets near that edge, so reuse races a close (Silas, 10-20).
+      headers: { 'Content-Type': 'application/json', 'X-Chorus-Clearing-Caller': '1', Connection: 'close' },
       body: JSON.stringify({ to, content }),
       signal: ctrl.signal,
     });

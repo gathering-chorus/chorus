@@ -79,3 +79,33 @@ test('real socket, negative proof: a 500 from pulse is not retried', async () =>
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test('every hand-off asks pulse for a fresh socket (Connection: close), so no pooled socket is reused', async () => {
+  const seen: Array<string | undefined> = [];
+  const server = http.createServer((req, res) => { seen.push(req.headers.connection); res.writeHead(202).end(); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    await deliverJeffInput(url, 'wren', 'one');
+    await deliverJeffInput(url, 'kade', 'two');
+    expect(seen).toEqual(['close', 'close']);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('AC4: two hand-offs 4.5 s apart (past the pooled-socket edge) both land with no retry needed', async () => {
+  let requests = 0;
+  const server = http.createServer((_req, res) => { requests += 1; res.writeHead(202, { 'Keep-Alive': 'timeout=5' }).end(); });
+  server.keepAliveTimeout = 5000;
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    expect(await deliverJeffInput(url, 'wren', 'first')).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 4500));
+    expect(await deliverJeffInput(url, 'silas', 'second')).toEqual({ ok: true });
+    expect(requests).toBe(2);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}, 10000);
