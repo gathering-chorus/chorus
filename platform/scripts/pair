@@ -107,7 +107,10 @@ end)
   done_n=$(grep -cE '^\s*- \[x\]' <<<"$view"); all_n=$(grep -cE '^\s*- \[[ x]\]' <<<"$view")
   summary="pair #$card ended: $driver drove, $nav navigated · $slices slices, $reviews reviews · AC $done_n of $all_n checked"
   if [ -f "$pf" ]; then
-    { echo; echo "## For Jeff"; echo "$summary"; grep -- '^- .* slice: ' "$pf"; } >> "$pf"
+    # #4663 — read the slices BEFORE appending: grep reading the file it was
+    # appending to never reached the end (#4652's end wrote 540 GB to /tmp)
+    slice_lines=$(grep -- '^- .* slice: ' "$pf")
+    { echo; echo "## For Jeff"; echo "$summary"; [ -n "$slice_lines" ] && printf '%s\n' "$slice_lines"; } >> "$pf"
   fi
   bash "$CARDS" comment "$card" "$summary" >/dev/null 2>&1 || say "card comment did not go out"
   rm -f "$REG/$card.json"

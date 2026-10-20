@@ -126,3 +126,30 @@ EOF
   head -1 "$PAIR_DIR/pair-4577.md" | grep -q '^# notes Wren kept'
   grep -q '^# Pair #4577 — kade drives, silas navigates' "$PAIR_DIR/pair-4577.md"
 }
+
+# #4663 — `pair end` grepped the pair file into itself: grep read what the same
+# block appended, never reached the end, and #4652's end wrote 540 GB to /tmp
+# (disk 97%, 2026-10-20 13:20). The end is bounded by a 10 MB file cap and a
+# 5 s watchdog here, so the old code fails fast instead of filling the disk.
+@test "end with 500 slices finishes within 5 s and appends exactly one copy of them (#4663)" {
+  bash "$PAIR" start 4663 kade silas >/dev/null
+  pf="$PAIR_DIR/pair-4663.md"
+  for i in $(seq 1 500); do echo "- 12:00 slice: piece $i" >> "$pf"; done
+  before=$(wc -l < "$pf")
+  # a watchdog: the end gets 5 s, then it is killed (a hang reads red, never a full disk)
+  # ulimit -f caps any file the end (and its children) writes at 10 MB, so a
+  # runaway grep dies on its own instead of outliving the watchdog's kill
+  ( ulimit -f 20480; bash "$PAIR" end 4663 kade silas > "$BATS_TEST_TMPDIR/end.out" 2>&1; echo $? > "$BATS_TEST_TMPDIR/end.rc" ) &
+  pid=$!
+  for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null
+    echo "pair end still running after 5 s; the file is $(wc -l < "$pf") lines"; return 1
+  fi
+  [ "$(cat "$BATS_TEST_TMPDIR/end.rc")" -eq 0 ] || { cat "$BATS_TEST_TMPDIR/end.out"; return 1; }
+  # the file grew by: a blank line, the heading, the summary, and the 500 slices once
+  after=$(wc -l < "$pf")
+  [ "$after" -eq $((before + 3 + 500)) ] || { echo "grew by $((after - before)), want 503"; return 1; }
+  [ "$(grep -c -- '^- .* slice: ' "$pf")" -eq 1000 ] || { echo "slice lines: $(grep -c -- '^- .* slice: ' "$pf"), want 1000 (500 + one copy)"; return 1; }
+  [ "$(grep -c '^## For Jeff' "$pf")" -eq 1 ] || return 1
+}
