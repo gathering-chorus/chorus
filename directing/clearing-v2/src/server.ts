@@ -126,6 +126,8 @@ interface RouteContext {
   /** #4649 — Jeff's messages that did not reach a role, sent to every new page. */
   undelivered: UndeliveredLog;
   relayUrl: string;
+  /** #4652 — the room's client key the signing service must allow; none when the switch is off. */
+  signerClientKey?: string;
   onInboundEvent: (event: NostrEvent) => void;
   keys: Map<string, string>;
   cookieKey?: Buffer | null;
@@ -250,7 +252,7 @@ function registerPageRoutes(ctx: RouteContext): void {
 }
 
 function registerReadApiRoutes(ctx: RouteContext): void {
-  const { app, router, tileService, dataService, relay, relayUrl } = ctx;
+  const { app, router, tileService, dataService, relay, relayUrl, signerClientKey } = ctx;
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({
@@ -261,6 +263,7 @@ function registerReadApiRoutes(ctx: RouteContext): void {
       port: PORT,
       relayConnected: relay.isConnected(),
       relayUrl,
+      signerClientKey: signerClientKey ?? null,
     });
   });
 
@@ -497,6 +500,8 @@ export interface CreateAppOptions {
   knownKeys?: Map<string, string>;
   /** #4652 — stores Jeff's Clearing posts as Jeff; absent = the room copy (#4608). */
   jeffPublisher?: JeffPostPublisher;
+  /** #4652 — the signer client key /health reports; defaults to the configured one. */
+  signerClientKey?: string;
   /** #4652 — the key registry to read when no knownKeys are given. */
   keysUrl?: string;
   /** #4652 — the wait between start-up reads of the registry (default 5 s). */
@@ -723,6 +728,7 @@ export function createApp(options?: CreateAppOptions) {
     sseClients,
     undelivered,
     relayUrl: urls.relayUrl,
+    signerClientKey: options?.signerClientKey ?? (process.env.JEST_WORKER_ID ? undefined : signerClientPubkey(activeConfig.jeffSigner)),
     onInboundEvent,
     keys,
     cookieKey: options?.cookieKey,
@@ -752,8 +758,6 @@ if (require.main === module) {
     } else {
       console.log('Buzz relay not configured (trust strip shows rooms failed: relay not configured)');
     }
-    const signerClient = signerClientPubkey(activeConfig.jeffSigner);
-    if (signerClient) console.log(`Jeff's posts go through his signing service; the room's client key is ${signerClient}`);
 
     try {
       const { serviceLifecycle } = require('../../../platform/chorus-sdk/lifecycle/service-lifecycle');
