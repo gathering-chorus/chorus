@@ -6,5 +6,9 @@
   "port": 3472,
   "host": "0.0.0.0",
   "buzzRelayHost": "192.168.86.242:3000",
-  "signInUrl": "https://chorus.lightlifeurbangardens.com/_auth/?next=https%3A%2F%2Flightlifeurbangardens.com%2Fclearing-v2%2F"
+  "signInUrl": "https://chorus.lightlifeurbangardens.com/_auth/?next=https%3A%2F%2Flightlifeurbangardens.com%2Fclearing-v2%2F",
+  "jeffSigner": {
+    "bunkerPubkey": "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a",
+    "userPubkey": "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a"
+  }
 }
