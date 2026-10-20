@@ -141,6 +141,11 @@ export class BuzzRelayClient {
     return this.topic;
   }
 
+  /** #4652 — the #team channel id this room posts into. */
+  getChannel(): string {
+    return this.channel;
+  }
+
   connect(): void {
     this.stopped = false;
     // a new socket starts unauthenticated: a reconnect must not inherit the last AUTH

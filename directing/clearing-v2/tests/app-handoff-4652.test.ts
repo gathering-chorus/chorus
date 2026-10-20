@@ -144,3 +144,32 @@ describe('#4652 reopen (Silas 09:13): two subscriptions, one room', () => {
     }
   });
 });
+
+describe('#4652 reopen 2: the echo of a Clearing post signed as Jeff is not handed off again', () => {
+  function clearingPost(content: string): NostrEvent {
+    const created_at = Math.floor(Date.now() / 1000);
+    const tags = [['h', CH], ['t', 'team'], ['surface', 'clearing'], ['signed', 'b'.repeat(64)]];
+    const id = buildEventId(serializeEvent(appPk, created_at, 9, tags, content));
+    return { id, pubkey: appPk, created_at, kind: 9, tags, content, sig: bytesToHex(schnorr.sign(hexToBytes(id), appSk)) };
+  }
+
+  test('a Jeff-signed post tagged surface=clearing comes back from the relay and reaches no one a second time', async () => {
+    const pulse = await stubPulse();
+    try {
+      const handler = makeInboundHandler({ router: new MessageRouter(), keys: new Map([[appPk, 'jeff']]), pulseUrl: pulse.url, broadcastSSE: () => undefined, isRelayConnected: () => true, handoffs: new HandoffLog(undefined, 0) });
+      handler(clearingPost('@silas typed in Clearing'));
+      await settle();
+      expect(pulse.got).toEqual([]);
+    } finally { await pulse.close(); }
+  });
+
+  test('NEGATIVE PROOF: the same words typed in the Buzz app (no surface tag) are handed off', async () => {
+    const pulse = await stubPulse();
+    try {
+      const handler = makeInboundHandler({ router: new MessageRouter(), keys: new Map([[appPk, 'jeff']]), pulseUrl: pulse.url, broadcastSSE: () => undefined, isRelayConnected: () => true, handoffs: new HandoffLog(undefined, 0) });
+      handler(appPost('@silas typed in the app'));
+      await settle();
+      expect(pulse.got.map((b) => JSON.parse(b).to)).toEqual(['silas']);
+    } finally { await pulse.close(); }
+  });
+});

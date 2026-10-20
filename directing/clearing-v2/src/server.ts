@@ -25,6 +25,8 @@ import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from './undelivered';
 import { HandoffLog, DEFAULT_HANDOFF_FILE } from './handoff-log';
+import { PublishResult } from './jeff-publisher';
+import { UnsignedEvent } from './remote-signer';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
@@ -133,7 +135,12 @@ interface RouteContext {
   readingsUrl: string;
   /** #4625 — refuse /api/send by name. */
   readOnly: boolean;
+  /** #4652 — stores Jeff's posts in Buzz as Jeff via his signing service; absent = the #4608 room copy. */
+  jeffPublisher?: JeffPostPublisher;
 }
+
+/** #4652 — anything that can store a post in Buzz signed as Jeff (JeffPublisher in prod). */
+export interface JeffPostPublisher { publish(unsigned: UnsignedEvent): Promise<PublishResult> }
 
 // Helper: test overrides only allowed via x-* headers in test mode, NEVER via URL query parameters
 function getTestOverrides(req: Request) {
@@ -343,8 +350,25 @@ function registerReadApiRoutes(ctx: RouteContext): void {
   });
 }
 
+/**
+ * #4652 — where Jeff's Clearing post is stored in Buzz. With his signing service set up,
+ * as Jeff himself, and never as a room copy (a failure is reported, Silas 11:56). Without
+ * it, #4608's copy signed by the room and author-tagged. Both carry his signed id, so the
+ * echo merges with what the room already shows.
+ */
+async function storeInBuzz(ctx: RouteContext, event: NostrEvent, role: string): Promise<{ ok: boolean; reason: string }> {
+  const room = roomOf(event);
+  const tags = [['t', room], ['room', room], ['author', role], ['signed', event.id], ['surface', 'clearing'], ['kind', 'jeff']];
+  if (ctx.jeffPublisher && role === 'jeff') {
+    const r = await ctx.jeffPublisher.publish({ kind: 9, created_at: event.created_at, tags: [['h', ctx.relay.getChannel()], ...tags], content: event.content });
+    return r.ok ? { ok: true, reason: '' } : { ok: false, reason: r.reason };
+  }
+  const copy = ctx.relay.signAsReader(event.content, tags, event.created_at);
+  return copy ? ctx.relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
+}
+
 function registerWriteRoutes(ctx: RouteContext): void {
-  const { app, relay, onInboundEvent, keys, cookieKey } = ctx;
+  const { app, onInboundEvent, keys, cookieKey } = ctx;
 
   // #3743 — resolveSenderIdentity: identity comes strictly from the verified cryptographic
   // event/session; the client-supplied `from` field and 'jeff' default are RETIRED.
@@ -368,9 +392,7 @@ function registerWriteRoutes(ctx: RouteContext): void {
     // with his own signed id so the copy is never shown twice. Delivery to the
     // roles does not wait on Buzz; the answer says whether Buzz stored it.
     onInboundEvent(event!);
-    const room = roomOf(event!);
-    const copy = relay.signAsReader(event!.content, [['t', room], ['room', room], ['author', identity.role], ['signed', event!.id], ['surface', 'clearing'], ['kind', 'jeff']], event!.created_at);
-    const stored = copy ? await relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
+    const stored = await storeInBuzz(ctx, event!, identity.role);
     if (!stored.ok) console.error(`[clearing-v2] ${identity.role}'s message ${event!.id.slice(0, 12)} was not stored in Buzz: ${stored.reason}`);
     res.json({ ok: true, id: event!.id, from: identity.role, stored: stored.ok, ...(stored.ok ? {} : { reason: stored.reason }) });
   });
@@ -463,6 +485,8 @@ export interface CreateAppOptions {
   alertsUrl?: string;
   runWerkStatus?: (cardId: number) => Promise<string>;
   knownKeys?: Map<string, string>;
+  /** #4652 — stores Jeff's Clearing posts as Jeff; absent = the room copy (#4608). */
+  jeffPublisher?: JeffPostPublisher;
   /** #4652 — the key registry to read when no knownKeys are given. */
   keysUrl?: string;
   /** #4652 — the wait between start-up reads of the registry (default 5 s). */
@@ -594,6 +618,9 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     // #4571/#4591 — only direct cryptographic sends from Jeff are Jeff input;
     // bridge-signed notes are transcript/room mirrors, never a second pulse injection.
     if (signerRole !== 'jeff' || deps.readOnly) return;
+    // #4652 — a post Jeff typed in Clearing was handed off at /api/send; its copy in
+    // Buzz, signed as Jeff, comes back here and must not reach the roles twice.
+    if (Array.isArray(event.tags) && event.tags.some((t) => t[0] === 'surface' && t[1] === 'clearing')) return;
     if (deps.handoffs && !deps.handoffs.claim(event.id, event.created_at)) return;
     for (const nudge of deps.router.extractNudges(msg)) {
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
@@ -695,6 +722,7 @@ export function createApp(options?: CreateAppOptions) {
     pulseUrl: urls.pulseUrl,
     readingsUrl: urls.readingsUrl,
     readOnly,
+    jeffPublisher: options?.jeffPublisher,
   });
 
   return { app, router, tileService, dataService, relay, keys, keysReady: known.ready, stopKeys: known.stop };
