@@ -217,9 +217,13 @@ export class BuzzRelayClient {
     return true;
   }
 
+  /** #4652 — one filter per subscription: Buzz routes live posts by channel and
+   *  registers a REQ that mixes filters under none (measured 10-20 09:12). */
   private subscribe(): void {
     if (!this.ws) return;
-    this.ws.send(JSON.stringify(['REQ', this.subId, ...this.filters({ limit: 200 })]));
+    const [channel, older] = this.filters({ limit: 200 });
+    this.ws.send(JSON.stringify(['REQ', this.subId, channel]));
+    this.ws.send(JSON.stringify(['REQ', `${this.subId}-kind1`, older]));
   }
 
   private flushBuffer(): void {
@@ -258,6 +262,11 @@ export class BuzzRelayClient {
    */
   fetchSince(since: number, timeoutMs = 10000): Promise<NostrEvent[]> {
     if (!this.ws || !this.isConnected()) return Promise.reject(new Error('relay not connected'));
+    // #4652 — one read per filter (a mixed REQ is not served), done when both end
+    return Promise.all(this.filters({ since, limit: 10000 }).map((f) => this.fetchOne(f, timeoutMs))).then((parts) => parts.flat());
+  }
+
+  private fetchOne(filter: object, timeoutMs: number): Promise<NostrEvent[]> {
     const id = `fetch-${++this.fetchSeq}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -266,7 +275,7 @@ export class BuzzRelayClient {
         reject(new Error(`relay sent no EOSE within ${timeoutMs}ms`));
       }, timeoutMs);
       this.fetches.set(id, { events: [], done: (events) => { clearTimeout(timer); resolve(events); } });
-      this.ws!.send(JSON.stringify(['REQ', id, ...this.filters({ since, limit: 10000 })]));
+      this.ws!.send(JSON.stringify(['REQ', id, filter]));
     });
   }
 

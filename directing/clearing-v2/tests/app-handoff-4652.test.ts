@@ -109,3 +109,38 @@ describe('#4652 prod v2 keeps the hand-off log on disk; tests never touch ~/.cho
     expect(resolveHandoffFile('/tmp/h.json', { JEST_WORKER_ID: '1' })).toBe('/tmp/h.json');
   });
 });
+
+describe('#4652 reopen (Silas 09:13): two subscriptions, one room', () => {
+  test('history from the two subscriptions, interleaved newest-first and oldest-first, renders oldest to newest', () => {
+    const router = new MessageRouter();
+    const handler = makeInboundHandler({ router, keys: new Map([[appPk, 'jeff']]), pulseUrl: 'http://127.0.0.1:9', broadcastSSE: () => undefined, isRelayConnected: () => true, readOnly: true });
+    const base = 1_800_000_000;
+    const nine = [5, 3, 1].map((n) => appPost(`nine ${n}`, base + n)); // one sub, newest first
+    const one = [2, 4, 6].map((n) => appPost(`one ${n}`, base + n)); // the other, oldest first
+    for (let i = 0; i < 3; i += 1) { handler(nine[i]); handler(one[i]); }
+    expect(router.getRecent(10).map((m) => m.text)).toEqual(['nine 1', 'one 2', 'nine 3', 'one 4', 'nine 5', 'one 6']);
+  });
+
+  // Silas guessed an unaddressed post goes nowhere; measured here, the room's rule for a
+  // #team message naming no one is "to everyone", the same as a Clearing message.
+  test("NEGATIVE PROOF: an unaddressed app post (Jeff's 13:09 hello) goes to each role once, and a replay sends nothing more", async () => {
+    const pulse = await stubPulse();
+    try {
+      const handoffs = new HandoffLog(undefined, 0);
+      const make = () => makeInboundHandler({
+        router: new MessageRouter(), keys: new Map([[appPk, 'jeff']]), pulseUrl: pulse.url,
+        broadcastSSE: () => undefined, isRelayConnected: () => true, handoffs,
+      });
+      const hello = appPost('hello');
+      make()(hello);
+      await settle();
+      const first = pulse.got.map((b) => JSON.parse(b).to).sort();
+      make()(hello);
+      await settle();
+      expect(first).toEqual(['abby-normal', 'kade', 'silas', 'wren']);
+      expect(pulse.got).toHaveLength(4);
+    } finally {
+      await pulse.close();
+    }
+  });
+});

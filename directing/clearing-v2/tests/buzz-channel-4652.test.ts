@@ -33,7 +33,7 @@ describe('#4652 v2 posts into the #team channel the Buzz app shows', () => {
     const client = new BuzzRelayClient({ relayUrl: 'ws://relay', wsFactory: () => ws, signer });
     client.connect();
     ws.triggerOpen();
-    expect(reqs(ws)[0].slice(2)).toEqual(expect.arrayContaining([
+    expect(reqs(ws).map((r) => r[2])).toEqual(expect.arrayContaining([
       expect.objectContaining({ kinds: [9], '#h': [TEAM_CHANNEL] }),
       expect.objectContaining({ kinds: [1], '#t': ['team', 'reply'] }),
     ]));
@@ -45,7 +45,7 @@ describe('#4652 v2 posts into the #team channel the Buzz app shows', () => {
     client.connect();
     ws.triggerOpen();
     void client.fetchSince(500).catch(() => undefined);
-    expect(reqs(ws).pop().slice(2)).toEqual(expect.arrayContaining([
+    expect(reqs(ws).slice(-2).map((r) => r[2])).toEqual(expect.arrayContaining([
       expect.objectContaining({ kinds: [9], '#h': [TEAM_CHANNEL], since: 500 }),
       expect.objectContaining({ kinds: [1], '#t': ['team', 'reply'], since: 500 }),
     ]));

@@ -30,12 +30,13 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
 
     expect(client.isConnected()).toBe(true);
     // Verified NIP-01 REQ subscription was sent
-    expect(mockWs.sentMessages.length).toBe(1);
+    // #4652 — two REQs, one filter each (Buzz serves no mixed REQ live)
+    expect(mockWs.sentMessages.length).toBe(2);
     const subFrame = JSON.parse(mockWs.sentMessages[0]);
     expect(subFrame[0]).toBe('REQ');
     // #4652 — the channel's kind 9 posts first, then the pre-switch kind 1 history
     expect(subFrame[2]).toMatchObject({ kinds: [9], '#h': [TEAM_CHANNEL], limit: 200 });
-    expect(subFrame[3]).toMatchObject({ kinds: [1], '#t': ['team', 'reply'], limit: 200 });
+    expect(JSON.parse(mockWs.sentMessages[1])[2]).toMatchObject({ kinds: [1], '#t': ['team', 'reply'], limit: 200 });
   });
 
   test('parses inbound EVENT frames and passes to onEvent handler', () => {
@@ -84,9 +85,9 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
     expect(client.isConnected()).toBe(true);
     // Buffer should be flushed
     expect(client.getBufferedCount()).toBe(0);
-    // Sent: 1 subscription REQ + 1 flushed EVENT
-    expect(mockWs.sentMessages.length).toBe(2);
-    const eventFrame = JSON.parse(mockWs.sentMessages[1]);
+    // Sent: 2 subscription REQs (#4652, one filter each) + 1 flushed EVENT
+    expect(mockWs.sentMessages.length).toBe(3);
+    const eventFrame = JSON.parse(mockWs.sentMessages[2]);
     expect(eventFrame[0]).toBe('EVENT');
     expect(eventFrame[1].id).toBe('ev-001');
   });
