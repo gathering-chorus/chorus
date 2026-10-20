@@ -18,6 +18,8 @@ write should be let in. This compares that with what the door actually does.
   verdict <plan.txt> <runner.out>
           reads the 4267 runner's lines for those classes and prints every class
           where the door disagrees with the rows. Exit 1 if any, 0 if none.
+          A NOT-PERM the door gives as door-managed or deploy-only (#4661) is
+          not a scope question: no principal writes those classes.
 
 Wren, 2026-10-13: take the expected denials from the Permission rows and let it
 go red; two sources disagreeing on who may write is the product bug.
