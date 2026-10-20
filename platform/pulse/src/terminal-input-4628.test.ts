@@ -18,7 +18,9 @@ import { createApp } from './service';
 import { MessageStore } from './store';
 import { BuzzWriter, type BuzzNote } from './buzz-writer';
 
-jest.mock('./peers', () => ({ fetchPeers: () => Promise.resolve(['abby-normal', 'jeff', 'kade', 'silas', 'wren']) }));
+const PEERS = ['abby-normal', 'jeff', 'kade', 'silas', 'wren'];
+let peersDown = false;
+jest.mock('./peers', () => ({ fetchPeers: () => (peersDown ? Promise.reject(new Error('the roles door answered HTTP 503')) : Promise.resolve(PEERS)) }));
 
 const ROUTE = '/api/record';
 const sk = new Uint8Array(32).fill(62);
@@ -100,6 +102,38 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
       await settle();
       expect(relay.got.map((n) => n.tags.find((t) => t[0] === 'to')?.[1])).toEqual(['kade']);
     } finally { writer.close(); await relay.close(); }
+  });
+
+  // NEGATIVE PROOF (reopen 1): measured 10-19 18:56 and 19:27 — a headless session
+  // with no role posted its JSON prompt as pane "unknown" and Buzz showed it as Jeff.
+  // Only a role pane the roles door lists records; Jeff himself is not a pane.
+  test('negative proof: a pane the roles door does not list, or jeff, is refused and writes nothing; a listed role pane records', async () => {
+    const relay = await stubRelay();
+    const { app, writer } = await rig(relay);
+    try {
+      const unknown = await request(app).post(ROUTE).send({ kind: 'jeff', to: 'unknown', content: '{"timestamp": "2026-10-19T22:56:26Z"}' });
+      expect(unknown.status).toBe(422);
+      expect(unknown.body.error).toBe('not-a-role-pane');
+      expect((await request(app).post(ROUTE).send({ kind: 'jeff', to: 'jeff', content: 'x' })).status).toBe(422);
+      const ok = await request(app).post(ROUTE).send({ kind: 'jeff', to: 'kade', content: 'typed in kade' });
+      expect(ok.status).toBe(200);
+      await until(() => relay.got.length > 0);
+      await settle();
+      expect(relay.got.map((n) => n.content)).toEqual(['typed in kade']);
+    } finally { writer.close(); await relay.close(); }
+  });
+
+  test('a roles door that does not answer keeps Jeff\'s words from a named pane, and still refuses unknown', async () => {
+    peersDown = true;
+    const relay = await stubRelay();
+    const { app, writer } = await rig(relay);
+    try {
+      expect((await request(app).post(ROUTE).send({ kind: 'jeff', to: 'silas', content: 'door down' })).status).toBe(200);
+      // but a pane that is never a role is refused even with the door down (Wren 20:06)
+      expect((await request(app).post(ROUTE).send({ kind: 'jeff', to: 'unknown', content: '{"timestamp": "x"}' })).status).toBe(422);
+      await until(() => relay.got.length > 0);
+      expect(relay.got.map((n) => n.content)).toEqual(['door down']);
+    } finally { peersDown = false; writer.close(); await relay.close(); }
   });
 
   // NEGATIVE PROOF: a caller without the pulse secret writes nothing.

@@ -350,9 +350,25 @@ const LAND_WINDOW_MS = 10 * 60 * 1000; // the land emits its accept more than on
 type RecordResult = { status: number; body: Record<string, unknown> };
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
-function recordJeff(b: Record<string, unknown>, store: MessageStore, buzz?: BuzzPoster): RecordResult {
+/** #4628 reopen 1 — the role panes the roles door lists (not Jeff, who is not a
+ *  pane). Measured 10-19: a headless session with no role posted its JSON prompt
+ *  as pane "unknown" (18:56, 19:27) and Buzz showed it as Jeff. A door that does
+ *  not answer keeps a named pane's words (the miss is logged), but never these. */
+const NEVER_A_PANE = new Set(['', 'unknown', 'jeff']);
+async function isRolePane(to: string): Promise<boolean> {
+  // never a role, whatever the door says — so a door that times out cannot let "unknown" back in (Wren)
+  if (NEVER_A_PANE.has(to)) return false;
+  try { return (await fetchPeers()).includes(to); }
+  catch (e) { log('warn', 'record.jeff.roles-door', { to, error: (e as Error).message }); return true; }
+}
+
+async function recordJeff(b: Record<string, unknown>, store: MessageStore, buzz?: BuzzPoster): Promise<RecordResult> {
   const to = str(b.to), content = str(b.content);
   if (!to || !content) return { status: 400, body: { error: 'to, content required' } };
+  if (!(await isRolePane(to))) {
+    log('warn', 'record.jeff.not-a-role-pane', { to, chars: content.length });
+    return { status: 422, body: { error: 'not-a-role-pane', message: `"${to}" is not a role the roles door lists; nothing recorded` } };
+  }
   if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentRecords, DEDUP_WINDOW_MS)) return { status: 200, body: { ok: true, deduped: true } };
   if (store.jeffInputSentRecently(to, content)) return { status: 200, body: { ok: true, deduped: 'clearing' } };
   const id = Date.now(); // unique across pulse restarts, unlike a counter
@@ -378,13 +394,13 @@ function recordLand(b: Record<string, unknown>, buzz?: BuzzPoster): RecordResult
 }
 
 function registerRecordRoutes(app: Express, store: MessageStore, buzz?: BuzzPoster): void {
-  app.post('/api/record', (req, res) => {
+  app.post('/api/record', async (req, res) => {
     const secret = req.headers['x-chorus-pulse-secret'];
     if (!callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) {
       return res.status(403).json({ error: 'not-canonical-caller', message: 'POST /api/record accepts only chorus callers with the pulse secret.' });
     }
     const b = (req.body ?? {}) as Record<string, unknown>;
-    const r = b.kind === 'jeff' ? recordJeff(b, store, buzz)
+    const r = b.kind === 'jeff' ? await recordJeff(b, store, buzz)
       : b.kind === 'land' ? recordLand(b, buzz)
       : { status: 400, body: { error: 'kind must be jeff or land' } };
     return res.status(r.status).json(r.body);
