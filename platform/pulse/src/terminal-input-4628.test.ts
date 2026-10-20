@@ -123,12 +123,14 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     } finally { writer.close(); await relay.close(); }
   });
 
-  test('a roles door that does not answer refuses nothing: Jeff\'s words are kept', async () => {
+  test('a roles door that does not answer keeps Jeff\'s words from a named pane, and still refuses unknown', async () => {
     peersDown = true;
     const relay = await stubRelay();
     const { app, writer } = await rig(relay);
     try {
       expect((await request(app).post(ROUTE).send({ kind: 'jeff', to: 'silas', content: 'door down' })).status).toBe(200);
+      // but a pane that is never a role is refused even with the door down (Wren 20:06)
+      expect((await request(app).post(ROUTE).send({ kind: 'jeff', to: 'unknown', content: '{"timestamp": "x"}' })).status).toBe(422);
       await until(() => relay.got.length > 0);
       expect(relay.got.map((n) => n.content)).toEqual(['door down']);
     } finally { peersDown = false; writer.close(); await relay.close(); }

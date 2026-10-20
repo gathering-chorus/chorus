@@ -353,9 +353,12 @@ const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 /** #4628 reopen 1 — the role panes the roles door lists (not Jeff, who is not a
  *  pane). Measured 10-19: a headless session with no role posted its JSON prompt
  *  as pane "unknown" (18:56, 19:27) and Buzz showed it as Jeff. A door that does
- *  not answer refuses nothing here: Jeff's words are kept, and the miss is logged. */
+ *  not answer keeps a named pane's words (the miss is logged), but never these. */
+const NEVER_A_PANE = new Set(['', 'unknown', 'jeff']);
 async function isRolePane(to: string): Promise<boolean> {
-  try { return to !== 'jeff' && (await fetchPeers()).includes(to); }
+  // never a role, whatever the door says — so a door that times out cannot let "unknown" back in (Wren)
+  if (NEVER_A_PANE.has(to)) return false;
+  try { return (await fetchPeers()).includes(to); }
   catch (e) { log('warn', 'record.jeff.roles-door', { to, error: (e as Error).message }); return true; }
 }
 
