@@ -609,8 +609,11 @@ pub fn target_class_in(name: &str, werk_root: &Path) -> R<TargetClass> {
             .unwrap_or_else(|| name.to_string());
         let svc = service_for_crate(name);
         // RustService iff a committed plist with that label exists in the repo.
+        // #4652 — a plist naming a UserName is a system daemon Jeff installs as
+        // root (chorus-jeff-signer); a role's deploy never kickstarts it.
         let has_plist = find_plists(werk_root).iter().any(|p| {
             p.file_stem().and_then(|s| s.to_str()).map(|st| st == svc).unwrap_or(false)
+                && !fs::read_to_string(p).is_ok_and(|b| b.contains("<key>UserName</key>"))
         });
         return if has_plist {
             Ok(TargetClass::RustService { svc, bin })

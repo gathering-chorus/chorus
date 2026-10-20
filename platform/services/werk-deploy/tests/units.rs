@@ -236,6 +236,30 @@ fn crate_binaries_with_service_flags_the_daemon_structurally() {
 }
 
 #[test]
+fn target_class_never_kickstarts_a_system_daemon_jeff_installs() {
+    // #4652 — c0bfa8a82's land kickstarted gui/501/com.chorus.jeff-signer and rolled
+    // back: that plist names a UserName, so it is a system daemon only Jeff installs.
+    let root = werk_fixture("sysdaemon");
+    let w = |rel: &str, body: &str| {
+        let p = root.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, body).unwrap();
+    };
+    w("platform/services/chorus-jeff-signer/Cargo.toml", "[package]\nname = \"chorus-jeff-signer\"\n");
+    w("platform/services/chorus-jeff-signer/src/main.rs", "fn main(){}");
+    w("platform/services/chorus-jeff-signer/com.chorus.jeff-signer.plist",
+        "<plist><dict><key>UserName</key><string>chorus-jeff-signer</string></dict></plist>");
+    match target_class_in("chorus-jeff-signer", &root).unwrap() {
+        TargetClass::CliVerb { bin } => assert_eq!(bin, "chorus-jeff-signer"),
+        other => panic!("a UserName plist must not make a RustService, got {:?}", other),
+    }
+    // NEGATIVE PROOF: the same plist without UserName is a gui agent, and still kickstarts.
+    w("platform/services/chorus-jeff-signer/com.chorus.jeff-signer.plist",
+        "<plist><dict><key>Label</key><string>com.chorus.jeff-signer</string></dict></plist>");
+    assert!(matches!(target_class_in("chorus-jeff-signer", &root).unwrap(), TargetClass::RustService { .. }));
+}
+
+#[test]
 fn target_class_resolves_rust_service_when_a_plist_exists() {
     // #3132 — RustService iff a committed `com.chorus.<svc>` plist exists in the repo.
     // The bin may differ from the crate name (chorus-hooks → chorus-hook-shim).
