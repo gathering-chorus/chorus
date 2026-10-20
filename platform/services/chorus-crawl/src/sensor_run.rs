@@ -132,6 +132,18 @@ pub fn run_fields(sensor: &str, target: &str, started: &str, ended: Option<&str>
 /// says unmeasured, never green and never a 0.
 pub const UNMEASURED_EXIT: i32 = 3;
 
+/// #4666 — a pass that wrote what it could but could not measure part of its
+/// job (10-20 04:45: messages-kept, the reader died) is not green: it exits
+/// unmeasured and names what. A failed write keeps its own exit.
+pub fn pass_exit(write_exit: i32, unmeasured: &[String]) -> i32 {
+    if write_exit == 0 && !unmeasured.is_empty() {
+        println!("unmeasured this pass: {}", unmeasured.join(", "));
+        UNMEASURED_EXIT
+    } else {
+        write_exit
+    }
+}
+
 pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
     if exit == UNMEASURED_EXIT {
         "unmeasured"
