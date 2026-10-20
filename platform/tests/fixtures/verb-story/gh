@@ -1,4 +1,5 @@
 #!/bin/sh
+# @domain: cicd — a stub for the verb story (platform/tests/3325-verb-story.bats)
 # #3325 — the stateful gh stub werk-merge's e2e uses (copied from
 # platform/services/werk-merge/tests/e2e.rs GH_SHIM): PRs live in $GH_STATE,
 # merges are real squash-merges into $ORIGIN. Every call is logged to $GH_LOG.
