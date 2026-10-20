@@ -189,7 +189,7 @@ chorus:Contract a owl:Class ;
 
 chorus:hasActor a owl:ObjectProperty ;
     rdfs:label "has actor" ;
-    rdfs:comment "A domain's BDD personas (#1899 completeness). The name predates #4662; it points at Persona." ;
+    rdfs:comment "A domain's BDD personas (#1899 completeness). The name predates #4662; it points at Persona. Renaming it to hasPersona changes the served field name, a drop the deploy audit refuses; it goes with the Teammate-as-Actor change." ;
     rdfs:domain chorus:Domain ;
     rdfs:range chorus:Persona .
 
@@ -205,12 +205,12 @@ chorus:hasContract a owl:ObjectProperty ;
 
 chorus:actorRole a owl:DatatypeProperty ;
     rdfs:label "actor role" ;
-    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662." ;
+    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662. Optional and not in PersonaShape; playsRole is the required field." ;
     rdfs:domain chorus:Persona .
 
 chorus:actorAction a owl:DatatypeProperty ;
     rdfs:label "actor action" ;
-    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662." ;
+    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662. Optional and not in PersonaShape; playsRole is the required field." ;
     rdfs:domain chorus:Persona .
 
 chorus:scenarioGiven a owl:DatatypeProperty ;

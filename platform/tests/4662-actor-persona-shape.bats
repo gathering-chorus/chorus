@@ -75,10 +75,12 @@ fixture() { printf '%s%s\n' "$PREFIX" "$1" > "$BATS_TEST_TMPDIR/$2.ttl"; echo "$
 }
 
 @test "Persona joins the tests vocabulary beside Actor; Actor keeps its home, so its route is not dropped" {
-  run grep -c 'chorus:QualityFinding , chorus:Actor , chorus:Persona ;' "$REPO/roles/kade/ontology/werk-domains.ttl"
-  [ "$output" -ge 1 ] || return 1
-  run grep -c 'definesVocabulary chorus:Actor' "$REPO/roles/kade/ontology/werk-domains.ttl"
-  [ "$output" -eq 0 ] || return 1
+  # Read the triples, not the Turtle text, so a reformat cannot make this pass or fail (Abby, Kade review).
+  nt=$(riot --output=nt "$REPO/roles/kade/ontology/werk-domains.ttl" 2>/dev/null)
+  V='<https://jeffbridwell.com/chorus#definesVocabulary>'
+  grep -qF "<https://jeffbridwell.com/chorus#tests> $V <https://jeffbridwell.com/chorus#Actor> ." <<<"$nt" || return 1
+  grep -qF "<https://jeffbridwell.com/chorus#tests> $V <https://jeffbridwell.com/chorus#Persona> ." <<<"$nt" || return 1
+  ! grep -qF "<https://jeffbridwell.com/chorus#roles> $V <https://jeffbridwell.com/chorus#Actor> ." <<<"$nt" || return 1
 }
 
 # AC 3 — nothing retired. The 10-18 retirement emptied CoreShape on 77 shapes;
