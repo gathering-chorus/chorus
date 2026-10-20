@@ -442,7 +442,7 @@ chorus:tests a chorus:Domain ;
     # #4540 — TestType: the test types in the order the run's one queue starts them
     # #4579 — TestResult retired (Jeff 10-17: "deprecate logging in the graph"):
     # a case's latest result lives on its Test row (#4536), each run's on Loki.
-    chorus:definesVocabulary chorus:Test , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Persona ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); #4662: the BDD scenario actor is Persona
+    chorus:definesVocabulary chorus:Test , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Actor , chorus:Persona ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); #4662: Persona added beside Actor
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
@@ -609,9 +609,11 @@ chorus:ScenarioVerifiedByShape a sh:NodeShape ;
     sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
 
 
-# #4662 (Jeff 2026-10-20 13:24) — the BDD scenario subject is Persona, homed in
-# tests; Actor now means whoever acts (homed in roles, beside Teammate). Both
-# carry required fields, so 4022 can walk them (it skipped Actor: no required field).
+# #4662 (Jeff 2026-10-20 13:24) — the BDD scenario subject is Persona; Actor now
+# means whoever acts. Both stay homed in tests for this card: moving Actor's home
+# to roles (beside Teammate) changes its served route, a drop the deploy audit
+# refuses, so that move rides with Teammate-as-Actor later. Both carry required
+# fields, so 4022 can walk them (it skipped Actor: no required field).
 chorus:PersonaShape a sh:NodeShape ;
     sh:targetClass chorus:Persona ; sh:node chorus:CoreShape ;
     sh:property chorus:PersonaShape-label ;
@@ -632,4 +634,3 @@ chorus:ActorShape-actorKind a sh:PropertyShape ;
     sh:path chorus:actorKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(person|agent|service)$" ;
     sh:message "actorKind is one of person / agent / service" .
-chorus:roles chorus:definesVocabulary chorus:Actor .

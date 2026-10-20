@@ -74,9 +74,23 @@ fixture() { printf '%s%s\n' "$PREFIX" "$1" > "$BATS_TEST_TMPDIR/$2.ttl"; echo "$
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
-@test "the BDD subject is Persona in the tests vocabulary, and Actor is homed in roles" {
-  run grep -c 'chorus:QualityFinding , chorus:Persona ;' "$REPO/roles/kade/ontology/werk-domains.ttl"
+@test "Persona joins the tests vocabulary beside Actor; Actor keeps its home, so its route is not dropped" {
+  run grep -c 'chorus:QualityFinding , chorus:Actor , chorus:Persona ;' "$REPO/roles/kade/ontology/werk-domains.ttl"
   [ "$output" -ge 1 ] || return 1
-  run grep -c '^chorus:roles chorus:definesVocabulary chorus:Actor \.' "$REPO/roles/kade/ontology/werk-domains.ttl"
-  [ "$output" -ge 1 ] || return 1
+  run grep -c 'definesVocabulary chorus:Actor' "$REPO/roles/kade/ontology/werk-domains.ttl"
+  [ "$output" -eq 0 ] || return 1
+}
+
+# AC 3 — nothing retired. The 10-18 retirement emptied CoreShape on 77 shapes;
+# this card must add no retirement line naming Actor or Persona.
+no_retirement() { ! grep -qE '"object_class": *"(Actor|Persona|ActorShape|PersonaShape)"' "$1"; }
+
+@test "the retirements ledger names neither Actor nor Persona" {
+  no_retirement "$REPO/designing/schemas/model-retirements.jsonl" || return 1
+}
+
+# NEGATIVE PROOF: a ledger that retires Actor's vocabulary line is caught.
+@test "negative proof: a retirement naming Actor is caught" {
+  printf '%s\n' '{"subject_domain": "tests", "predicate": "definesVocabulary", "object_class": "Actor", "status": "staged"}' > "$BATS_TEST_TMPDIR/ledger.jsonl"
+  ! no_retirement "$BATS_TEST_TMPDIR/ledger.jsonl" || return 1
 }
