@@ -1,0 +1,3 @@
+#!/bin/sh
+# #3325 — accept tears the demo env down through werk-deploy; the story records the call.
+echo "werk-deploy $*" >> "$SPINE"

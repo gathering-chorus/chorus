@@ -1,0 +1,3 @@
+#!/bin/sh
+# #3325 — the spine stub: every event a verb emits, one line each, in $SPINE.
+echo "$@" >> "$SPINE"

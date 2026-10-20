@@ -1,0 +1,114 @@
+#!/bin/sh
+# #3325 — the stateful gh stub werk-merge's e2e uses (copied from
+# platform/services/werk-merge/tests/e2e.rs GH_SHIM): PRs live in $GH_STATE,
+# merges are real squash-merges into $ORIGIN. Every call is logged to $GH_LOG.
+[ -n "$GH_LOG" ] && echo "$@" >> "$GH_LOG"
+# env: GH_STATE (dir), ORIGIN (origin repo), GH_FAKE_MERGE (optional)
+cmd="$1"; sub="$2"; shift 2 2>/dev/null
+case "$cmd" in
+pr)
+  case "$sub" in
+  list)
+    state=""; head=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --state) state="$2"; shift 2;;
+        --head)  head="$2";  shift 2;;
+        --json)  shift 2;;
+        *) shift;;
+      esac
+    done
+    # GH_LIST_LAG: emulate GitHub's list API lagging create — return [] for the
+    # first N list calls made AFTER a create (the #3269/#3266 false-red race).
+    if [ -n "$GH_LIST_LAG" ] && [ -f "$GH_STATE/created" ]; then
+      lagged=$(cat "$GH_STATE/lagged" 2>/dev/null || echo 0)
+      if [ "$lagged" -lt "$GH_LIST_LAG" ]; then
+        echo $((lagged+1)) > "$GH_STATE/lagged"
+        printf '[]'
+        exit 0
+      fi
+    fi
+    out="["; first=1
+    for f in "$GH_STATE"/pr-*; do
+      [ -e "$f" ] || continue
+      PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
+      [ "$PR_BRANCH" = "$head" ] || continue
+      [ "$PR_STATE" = "$state" ] || continue
+      # #3476 — an OPEN PR's headRefOid follows the branch (real GitHub updates it on
+      # push), so push-before-resolve makes the by-oid resolve find it. A MERGED PR's
+      # headRefOid is FROZEN at the merged sha (branch may be gone) — live tip would
+      # falsely match a new HEAD and break merged-PR idempotency. Live only for open.
+      if [ "$PR_STATE" = "open" ]; then
+        oid=$(git -C "$ORIGIN" rev-parse "refs/heads/$PR_BRANCH" 2>/dev/null || echo "$PR_HEAD")
+      else
+        oid="$PR_HEAD"
+      fi
+      [ $first -eq 1 ] || out="$out,"
+      out="$out{\"number\":$PR_NUM,\"headRefOid\":\"$oid\"}"
+      first=0
+    done
+    printf '%s]' "$out"
+    ;;
+  create)
+    head=""
+    while [ $# -gt 0 ]; do
+      case "$1" in --head) head="$2"; shift 2;; *) shift;; esac
+    done
+    # #3476 — real GitHub refuses a SECOND open PR for the same branch; the create
+    # fallback hitting this is the pr-create-fail the unpushed-commit case triggers.
+    for f in "$GH_STATE"/pr-*; do
+      [ -e "$f" ] || continue
+      PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
+      if [ "$PR_BRANCH" = "$head" ] && [ "$PR_STATE" = "open" ]; then
+        echo "a pull request for branch \"$head\" into branch \"main\" already exists" 1>&2
+        exit 1
+      fi
+    done
+    sha=$(git -C "$ORIGIN" rev-parse "refs/heads/$head")
+    n=$(cat "$GH_STATE/counter" 2>/dev/null || echo 100); n=$((n+1)); echo "$n" > "$GH_STATE/counter"
+    {
+      echo "PR_NUM=$n"
+      echo "PR_HEAD=$sha"
+      echo "PR_BRANCH=$head"
+      echo "PR_STATE=open"
+      echo "PR_MERGE="
+    } > "$GH_STATE/pr-$n"
+    : > "$GH_STATE/created"
+    echo "https://github.test/pr/$n"
+    ;;
+  merge)
+    num="$1"; f="$GH_STATE/pr-$num"
+    PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
+    if [ -n "$GH_FAKE_MERGE" ]; then
+      PR_MERGE=$(printf 'fake%s' "$num" | git hash-object --stdin)
+    else
+      git -C "$ORIGIN" checkout -q main
+      # #3325 — like GitHub, a PR that conflicts with main is not mergeable
+      if ! git -C "$ORIGIN" merge --squash "$PR_BRANCH" >/dev/null 2>&1; then
+        git -C "$ORIGIN" reset -q --hard main
+        echo "Pull request #$num is not mergeable: the merge commit cannot be cleanly created." >&2
+        exit 1
+      fi
+      git -C "$ORIGIN" -c user.name=gh -c user.email=gh@x commit -q -m "Squash merge #$num" >/dev/null 2>&1
+      PR_MERGE=$(git -C "$ORIGIN" rev-parse HEAD)
+    fi
+    {
+      echo "PR_NUM=$PR_NUM"
+      echo "PR_HEAD=$PR_HEAD"
+      echo "PR_BRANCH=$PR_BRANCH"
+      echo "PR_STATE=merged"
+      echo "PR_MERGE=$PR_MERGE"
+    } > "$f"
+    echo "merged"
+    ;;
+  view)
+    num="$1"
+    PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$GH_STATE/pr-$num"
+    up=$(printf '%s' "$PR_STATE" | tr 'a-z' 'A-Z')
+    printf '{"state":"%s","mergeCommit":{"oid":"%s"}}' "$up" "$PR_MERGE"
+    ;;
+  esac
+  ;;
+api) exit 0;;
+esac
+exit 0
