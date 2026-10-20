@@ -1968,9 +1968,12 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         let relay = std::env::var("PULSE_BUZZ_RELAY_URL").unwrap_or_else(|_| "ws://127.0.0.1:13000".into());
         // #4661 — no pinned LAN address: the relay's Host comes from pulse's own
         // installed config (the one writer to Buzz), never a literal here
+        // #4666 — the reader loads pulse's better-sqlite3, so it runs on pulse's node
+        let node = chorus_crawl::readings::pulse_node(std::env::var("PULSE_NODE").ok(), pulse_program());
         match buzz_relay_host() {
             None => println!("{which}: messages-kept UNMEASURED — the relay host is unknown (PULSE_BUZZ_RELAY_HOST unset and not in com.chorus.pulse)"),
-            Some(relay_host) => match Command::new("node").args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
+            Some(_) if node.is_empty() => println!("{which}: messages-kept UNMEASURED — pulse's node is unknown (PULSE_NODE unset and com.chorus.pulse names no node)"),
+            Some(relay_host) => match Command::new(&node).args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
                 Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
                 Ok(o) => println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()),
                 Err(e) => println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"),
@@ -2551,6 +2554,15 @@ fn run_stores(args: &[String]) -> i32 {
 /// #4661 — the Buzz relay's Host header: PULSE_BUZZ_RELAY_HOST, else the value in
 /// pulse's installed LaunchAgent (pulse is the one writer to Buzz, so its config is
 /// the source). None when neither says, so the caller reads unmeasured.
+/// #4666 — the program com.chorus.pulse runs (ProgramArguments[0]).
+fn pulse_program() -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    let plist = format!("{home}/Library/LaunchAgents/com.chorus.pulse.plist");
+    let out = Command::new("/usr/libexec/PlistBuddy").args(["-c", "Print :ProgramArguments:0", &plist]).output().ok()?;
+    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !p.is_empty()).then_some(p)
+}
+
 fn buzz_relay_host() -> Option<String> {
     if let Ok(h) = std::env::var("PULSE_BUZZ_RELAY_HOST") {
         if !h.is_empty() { return Some(h); }
