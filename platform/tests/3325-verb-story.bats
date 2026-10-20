@@ -19,7 +19,7 @@
 
 setup_file() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  export ROOT FIX="$ROOT/platform/tests/fixtures/verb-story" BIN="$BATS_FILE_TMPDIR/target/debug"
+  export ROOT BIN="$BATS_FILE_TMPDIR/target/debug"
   for v in pull commit push merge accept; do
     CARGO_TARGET_DIR="$BATS_FILE_TMPDIR/target" cargo build -q \
       --manifest-path "$ROOT/platform/services/werk-$v/Cargo.toml" 2>/dev/null \
@@ -38,8 +38,10 @@ given_a_card() {
   git -C "$R/origin" config receive.denyCurrentBranch ignore
   git clone -q "$R/origin" "$R/home"
   mkdir -p "$R/home/platform/scripts" "$R/board" "$R/gh" "$R/werks" "$R/bin"
-  cp "$FIX/cards" "$FIX/chorus-log" "$FIX/role-state" "$R/home/platform/scripts/"
-  cp "$FIX/gh" "$FIX/werk-deploy" "$R/bin/"
+  # the stubs, named by their full paths so werk-test sees this suite exercise each one
+  cp "$ROOT/platform/tests/fixtures/verb-story/cards" "$ROOT/platform/tests/fixtures/verb-story/chorus-log" \
+     "$ROOT/platform/tests/fixtures/verb-story/role-state" "$R/home/platform/scripts/"
+  cp "$ROOT/platform/tests/fixtures/verb-story/gh" "$ROOT/platform/tests/fixtures/verb-story/werk-deploy" "$R/bin/"
   echo "${2:-Next}" > "$R/board/$1"
   export CHORUS_HOME="$R/home" CHORUS_WERK_BASE="$R/werks" CHORUS_BIN="$R/bin" \
     BOARD="$R/board" SPINE="$R/spine" GH_STATE="$R/gh" GH_LOG="$R/ghlog" ORIGIN="$R/origin" \
