@@ -52,3 +52,8 @@ queues:
     # as a cicd-test sub-run and its hand-off is enqueued on werk.
     - name: pair
       max_concurrency: 4
+    # #4654 — a card's pull and its coding (made by chorus-make). A card run
+    # spends hours waiting on its role's "done", so every WIP card can hold
+    # one; its hand-off starts the card's athena or cicd run on their queues.
+    - name: card
+      max_concurrency: 8
