@@ -10,7 +10,8 @@ import { BuzzRelayClient, RelaySigner } from './relay-client';
 import { bridgeSigner } from './relay-signer';
 import { stripBase, withBase, injectBase } from './base-path';
 import { deliverJeffInput } from './jeff-input';
-import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity, loadKnownKeys } from './identity';
+import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
+import { RegistryKeys, DEFAULT_KEYS_URL } from './key-registry';
 import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
@@ -87,8 +88,8 @@ const READINGS_URL = process.env.READINGS_URL || activeConfig.readingsUrl || 'ht
 const READ_ONLY = process.env.CLEARING_V2_READONLY === '1';
 export const READ_ONLY_REASON = 'read-only demo: this Clearing does not send';
 
-// Known pubkeys map for role attribution (#4571: loaded from ~/.chorus/identity/<who>/nostr.json)
-const KNOWN_KEYS = loadKnownKeys();
+/** #4652 — the security graph's key registry: the only source of whose key is whose. */
+const KEYS_URL = process.env.CLEARING_V2_KEYS_URL || DEFAULT_KEYS_URL;
 
 export function shareSessionWebId(req: Request, keyBuffer?: Buffer | null): string | null {
   const raw = shareSessionFromHeader(req.headers.cookie);
@@ -418,6 +419,16 @@ export function resolveUndeliveredFile(explicit: string | undefined, env: NodeJS
   return env.CLEARING_V2_UNDELIVERED_FILE || DEFAULT_UNDELIVERED_FILE;
 }
 
+/** #4652 — the given keys, or an empty map the registry fills; until it answers, nobody is attributed. */
+function knownKeysFor(options: CreateAppOptions | undefined): Map<string, string> {
+  if (options?.knownKeys) return options.knownKeys;
+  const url = options?.keysUrl;
+  const keys = new Map<string, string>();
+  // under jest with no registry given, read nothing (tests never call the live door)
+  if (url || !process.env.JEST_WORKER_ID) void new RegistryKeys(keys, url ?? KEYS_URL).start();
+  return keys;
+}
+
 function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
   const file = resolveHandoffFile(options?.handoffFile, process.env);
   return file ? new HandoffLog(file) : undefined;
@@ -445,6 +456,8 @@ export interface CreateAppOptions {
   alertsUrl?: string;
   runWerkStatus?: (cardId: number) => Promise<string>;
   knownKeys?: Map<string, string>;
+  /** #4652 — the key registry to read when no knownKeys are given. */
+  keysUrl?: string;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
   /** #4571 — test seams: the relay's Host and reader key (null = no key), the sign-in door. */
@@ -618,7 +631,7 @@ export function createApp(options?: CreateAppOptions) {
   const router = new MessageRouter(500);
   const urls = resolveUrls(options);
   const tileService = new TileService(urls.pulseUrl);
-  const keys = options?.knownKeys || KNOWN_KEYS;
+  const keys = knownKeysFor(options);
   const relayConfigured = options?.relayConfigured ?? Boolean(urls.relayUrl);
   const readOnly = options?.readOnly ?? READ_ONLY;
 
