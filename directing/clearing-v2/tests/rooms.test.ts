@@ -218,7 +218,7 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
     expect(mockWs.sentMessages.length).toBe(1);
     const frame = JSON.parse(mockWs.sentMessages[0]);
     expect(frame[0]).toBe('REQ');
-    const filter = frame[2];
+    const filter = frame[3]; // #4652 — [2] is the channel's kind 9, [3] the kind 1 history
 
     // Must request limit for historical backfill
     expect(filter.limit).toBe(200);
