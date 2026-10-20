@@ -1269,3 +1269,7 @@ tr.you td {
 .msg-photos img { max-width: min(320px, 100%); max-height: 320px; border-radius: 6px; border: 1px solid var(--line2); }
 .composer-mic { min-width: 40px; font-size: 20px; background: none; border: 0; cursor: pointer; }
 .composer-mic[aria-pressed="true"] { background: var(--badbg, #f7e4df); border-radius: 6px; }
+
+/* #4649 — a message of Jeff's that did not reach its role */
+.msg.undelivered { border-left: 3px solid var(--bad); }
+.msg-undelivered { margin-top: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: var(--bad); background: var(--badbg); border-radius: 4px; display: inline-block; }

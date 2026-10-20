@@ -22,6 +22,7 @@ import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
+import { UndeliveredLog } from './undelivered';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
@@ -115,6 +116,8 @@ interface RouteContext {
   dataService: DataService;
   relay: BuzzRelayClient;
   sseClients: Response[];
+  /** #4649 — Jeff's messages that did not reach a role, sent to every new page. */
+  undelivered: UndeliveredLog;
   relayUrl: string;
   onInboundEvent: (event: NostrEvent) => void;
   keys: Map<string, string>;
@@ -329,7 +332,7 @@ function registerReadApiRoutes(ctx: RouteContext): void {
 
     ctx.sseClients.push(res);
 
-    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(ROOM_PAGE_MESSAGES), tiles: tileService.getTiles() })}\n\n`);
+    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(ROOM_PAGE_MESSAGES), tiles: tileService.getTiles(), undelivered: ctx.undelivered.all() })}\n\n`);
 
     req.on('close', () => {
       const idx = ctx.sseClients.indexOf(res);
@@ -514,6 +517,8 @@ interface InboundDeps {
   keys: Map<string, string>;
   pulseUrl: string;
   broadcastSSE: (type: string, data: unknown) => void;
+  /** #4649 — failed hand-offs, kept so a reload still shows "not delivered". */
+  undelivered?: UndeliveredLog;
   isRelayConnected: () => boolean;
   /** #4625 — a demo shows Jeff's notes and never hands them to pulse again. */
   readOnly?: boolean;
@@ -544,7 +549,8 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
         if (!r.ok) {
           console.error(`[clearing-v2] Jeff's message to ${nudge.to} was not handed off: ${r.reason}`);
-          deps.broadcastSSE('delivery', { to: nudge.to, ok: false, reason: r.reason, id: msg.id });
+          const roles = deps.undelivered ? deps.undelivered.record(msg.id, nudge.to) : [nudge.to];
+          deps.broadcastSSE('delivery', { to: nudge.to, ok: false, reason: r.reason, id: msg.id, roles });
         }
       });
     }
@@ -591,6 +597,7 @@ export function createApp(options?: CreateAppOptions) {
   // Track SSE clients
   const sseClients: Response[] = [];
   const broadcastSSE = makeBroadcaster(sseClients);
+  const undelivered = new UndeliveredLog();
 
   // relay is declared below; the handler only runs once the relay delivers events.
   const onInboundEvent = makeInboundHandler({
@@ -598,6 +605,7 @@ export function createApp(options?: CreateAppOptions) {
     keys,
     pulseUrl: urls.pulseUrl,
     broadcastSSE,
+    undelivered,
     isRelayConnected: () => relay.isConnected(),
     readOnly,
   });
@@ -623,6 +631,7 @@ export function createApp(options?: CreateAppOptions) {
     dataService,
     relay,
     sseClients,
+    undelivered,
     relayUrl: urls.relayUrl,
     onInboundEvent,
     keys,
