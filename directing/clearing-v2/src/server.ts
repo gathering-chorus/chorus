@@ -23,6 +23,7 @@ import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from './undelivered';
+import { HandoffLog, DEFAULT_HANDOFF_FILE } from './handoff-log';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
@@ -417,9 +418,23 @@ export function resolveUndeliveredFile(explicit: string | undefined, env: NodeJS
   return env.CLEARING_V2_UNDELIVERED_FILE || DEFAULT_UNDELIVERED_FILE;
 }
 
+function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
+  const file = resolveHandoffFile(options?.handoffFile, process.env);
+  return file ? new HandoffLog(file) : undefined;
+}
+
+/** #4652 — where the hand-off log lives; under jest with no path, nowhere (no log). */
+export function resolveHandoffFile(explicit: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+  if (explicit) return explicit;
+  if (env.JEST_WORKER_ID) return undefined;
+  return env.CLEARING_V2_HANDOFF_FILE || DEFAULT_HANDOFF_FILE;
+}
+
 export interface CreateAppOptions {
   /** #4649 — where failed hand-offs persist; tests pass a temp path (none by default under jest). */
   undeliveredFile?: string;
+  /** #4652 — the hand-off log's file; tests pass one to exercise it. */
+  handoffFile?: string;
   relayUrl?: string;
   pulseUrl?: string;
   rolesUrl?: string;
@@ -532,6 +547,8 @@ interface InboundDeps {
   isRelayConnected: () => boolean;
   /** #4625 — a demo shows Jeff's notes and never hands them to pulse again. */
   readOnly?: boolean;
+  /** #4652 — Jeff's Buzz app posts come back on every relay replay: hand each off once. */
+  handoffs?: HandoffLog;
 }
 
 /** Handles an incoming verified event from the Buzz relay: ingest, broadcast, forward nudges to Pulse. */
@@ -555,6 +572,7 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     // #4571/#4591 — only direct cryptographic sends from Jeff are Jeff input;
     // bridge-signed notes are transcript/room mirrors, never a second pulse injection.
     if (signerRole !== 'jeff' || deps.readOnly) return;
+    if (deps.handoffs && !deps.handoffs.claim(event.id, event.created_at)) return;
     for (const nudge of deps.router.extractNudges(msg)) {
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
         if (!r.ok) {
@@ -608,6 +626,7 @@ export function createApp(options?: CreateAppOptions) {
   const sseClients: Response[] = [];
   const broadcastSSE = makeBroadcaster(sseClients);
   const undelivered = new UndeliveredLog(200, resolveUndeliveredFile(options?.undeliveredFile, process.env));
+  const handoffs = makeHandoffLog(options);
 
   // relay is declared below; the handler only runs once the relay delivers events.
   const onInboundEvent = makeInboundHandler({
@@ -618,6 +637,7 @@ export function createApp(options?: CreateAppOptions) {
     undelivered,
     isRelayConnected: () => relay.isConnected(),
     readOnly,
+    handoffs,
   });
 
   const relay = makeRelay(urls.relayUrl, onInboundEvent, options);
