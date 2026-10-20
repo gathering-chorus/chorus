@@ -19,16 +19,18 @@ describe('#4592 the relay is asked for today, separately from the room', () => {
     relay.connect();
     ws.triggerOpen();
     const pending = relay.fetchSince(1000);
-    const req = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    // #4652 — one REQ per filter: the channel's kind 9, then the pre-switch kind 1 history
+    const [req, older] = ws.sentMessages.slice(-2).map((m) => JSON.parse(m));
     expect(req[0]).toBe('REQ');
     expect(req[2]).toEqual(expect.objectContaining({ since: 1000, kinds: [9] }));
-    expect(req[3]).toEqual(expect.objectContaining({ since: 1000, kinds: [1] })); // #4652 pre-switch history
+    expect(older[2]).toEqual(expect.objectContaining({ since: 1000, kinds: [1] }));
     ws.triggerMessage(JSON.stringify(['EVENT', req[1], ev('a')]));
     ws.triggerMessage(JSON.stringify(['EVENT', req[1], ev('b')]));
     ws.triggerMessage(JSON.stringify(['EOSE', req[1]]));
+    ws.triggerMessage(JSON.stringify(['EOSE', older[1]]));
     expect((await pending).map((e) => e.id)).toEqual(['a', 'b']);
     expect(roomGot).toEqual([]);
-    expect(JSON.parse(ws.sentMessages[ws.sentMessages.length - 1])).toEqual(['CLOSE', req[1]]);
+    expect(JSON.parse(ws.sentMessages[ws.sentMessages.length - 1])).toEqual(['CLOSE', older[1]]);
   });
 
   // NEGATIVE PROOF: a relay that never finishes is a refusal with a reason,
