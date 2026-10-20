@@ -128,6 +128,18 @@ fn json_str<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 /// Whether a door error means the bearer token must be reminted. An expired
 /// token can also come back inside a 422 from the model door (measured
 /// 2026-10-19: an hour-long pass lost one write to it), not only as a 401.
+/// #4666 — the node that runs pulse's reader: `PULSE_NODE` if set, else the node
+/// binary pulse itself runs (its plist's ProgramArguments[0]). Pulse's
+/// better-sqlite3 is built for that node; the runner's PATH found homebrew v23 at
+/// 04:45 on 10-20 and the reader died (NODE_MODULE_VERSION 115 vs 131). Empty
+/// means unknown — the caller reads that as unmeasured, never "first node on PATH".
+pub fn pulse_node(override_env: Option<String>, pulse_program: Option<String>) -> String {
+    if let Some(n) = override_env.filter(|n| !n.is_empty()) {
+        return n;
+    }
+    pulse_program.filter(|p| p.ends_with("/node")).unwrap_or_default()
+}
+
 pub fn token_expired(err: &str) -> bool {
     err.contains("HTTP 401") || err.contains("identity-token-invalid")
 }

@@ -1916,6 +1916,13 @@ fn run_sensor(args: &[String]) -> i32 {
         return if exit != 0 { exit } else { 1 };
     }
     println!("sensor {sensor}: run {name} {result} at {ended}");
+    // #4666 — the event the not-green alert reads (Loki job=chorus-operations)
+    if let Some(ev) = run_event_args(&sensor, &name, result, dry_run) {
+        let log = format!("{home}/platform/scripts/chorus-log");
+        if let Err(e) = Command::new(&log).args(&ev).output() {
+            println!("sensor {sensor}: run {name} event NOT emitted ({e}) — the alert cannot see this run");
+        }
+    }
     if result == "green" { 0 } else if exit != 0 { exit } else { 1 }
 }
 
@@ -1952,6 +1959,8 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
             Err(e) => { println!("events: UNMEASURED — cannot read {spine} ({e}); no readings written"); return 3; }
         }
     } else { vec![] };
+    // #4666 — what this pass could not measure; any of it means the run is not green
+    let mut unmeasured: Vec<String> = Vec::new();
     let mut counts = if age_only { Counts::new() } else if which == "messages" {
         let db = std::env::var("CHORUS_PULSE_DB").unwrap_or_else(|_| format!("{root}/platform/pulse/messages.db"));
         let out = match sh("sqlite3", &["-readonly", "-separator", "\u{1f}", &db, "select created_at, type, \"from\", delivery_status from messages"], "/") {
@@ -1968,12 +1977,15 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         let relay = std::env::var("PULSE_BUZZ_RELAY_URL").unwrap_or_else(|_| "ws://127.0.0.1:13000".into());
         // #4661 — no pinned LAN address: the relay's Host comes from pulse's own
         // installed config (the one writer to Buzz), never a literal here
+        // #4666 — the reader loads pulse's better-sqlite3, so it runs on pulse's node
+        let node = chorus_crawl::readings::pulse_node(std::env::var("PULSE_NODE").ok(), pulse_program());
         match buzz_relay_host() {
-            None => println!("{which}: messages-kept UNMEASURED — the relay host is unknown (PULSE_BUZZ_RELAY_HOST unset and not in com.chorus.pulse)"),
-            Some(relay_host) => match Command::new("node").args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
+            None => { println!("{which}: messages-kept UNMEASURED — the relay host is unknown (PULSE_BUZZ_RELAY_HOST unset and not in com.chorus.pulse)"); unmeasured.push("messages-kept".into()); }
+            Some(_) if node.is_empty() => { println!("{which}: messages-kept UNMEASURED — pulse's node is unknown (PULSE_NODE unset and com.chorus.pulse names no node)"); unmeasured.push("messages-kept".into()); }
+            Some(relay_host) => match Command::new(&node).args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
                 Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
-                Ok(o) => println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()),
-                Err(e) => println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"),
+                Ok(o) => { println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()); unmeasured.push("messages-kept".into()); }
+                Err(e) => { println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"); unmeasured.push("messages-kept".into()); }
             },
         }
         let kept_read = c.keys().any(|(_, m, _)| m == "messages-kept");
@@ -2035,6 +2047,7 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         });
         if copy_read.is_none() {
             println!("{which}: backup copy UNMEASURED — could not read {copy} on {host}");
+            unmeasured.push("backup-age".into());
         }
         let b = backup_readings(&today, store_bytes, copy_read, now_secs());
         if let Some(h) = backup_stale(&b, &today, 24) {
@@ -2056,7 +2069,8 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
     let mut desired = reading_rows(which, &counts, &run);
     desired.extend(extra);
     counts.clear();
-    write_readings(which, reading_sensor(which, age_only), &stored_readings_filter(which, age_only), desired, dry_run, &root)
+    let wrote = write_readings(which, reading_sensor(which, age_only), &stored_readings_filter(which, age_only), desired, dry_run, &root);
+    chorus_crawl::sensor_run::pass_exit(wrote, &unmeasured)
 }
 
 /// #4647 — the sync sensor: the crawler's own read-only check, run against
@@ -2551,6 +2565,15 @@ fn run_stores(args: &[String]) -> i32 {
 /// #4661 — the Buzz relay's Host header: PULSE_BUZZ_RELAY_HOST, else the value in
 /// pulse's installed LaunchAgent (pulse is the one writer to Buzz, so its config is
 /// the source). None when neither says, so the caller reads unmeasured.
+/// #4666 — the program com.chorus.pulse runs (ProgramArguments[0]).
+fn pulse_program() -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    let plist = format!("{home}/Library/LaunchAgents/com.chorus.pulse.plist");
+    let out = Command::new("/usr/libexec/PlistBuddy").args(["-c", "Print :ProgramArguments:0", &plist]).output().ok()?;
+    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !p.is_empty()).then_some(p)
+}
+
 fn buzz_relay_host() -> Option<String> {
     if let Ok(h) = std::env::var("PULSE_BUZZ_RELAY_HOST") {
         if !h.is_empty() { return Some(h); }

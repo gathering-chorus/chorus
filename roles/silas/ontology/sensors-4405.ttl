@@ -113,7 +113,7 @@ chorus:SensorReadingShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" ;
     sh:property [ sh:path chorus:readingOfSensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Sensor ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingDay ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:date ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:readingMetric ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "nudges" "jeff-inputs" "alerts" "messages-sent" "messages-kept" "events" "commands" "unreadable-lines" "spine-write-age" "backup-age" "backup-bytes" "store-bytes" "missing" "stale" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:readingMetric ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "nudges" "jeff-inputs" "alerts" "messages-sent" "messages-kept" "events" "commands" "unreadable-lines" "spine-write-age" "backup-age" "backup-bytes" "store-bytes" "missing" "stale" "doubles-jeff" "doubles-reply" "doubles-nudge" "doubles-alert" "doubles-land" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingRole ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingSubject ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; chorus:exposure chorus:public ] ;

@@ -132,6 +132,32 @@ pub fn run_fields(sensor: &str, target: &str, started: &str, ended: Option<&str>
 /// says unmeasured, never green and never a 0.
 pub const UNMEASURED_EXIT: i32 = 3;
 
+/// #4666 — the spine event a sensor run ends with: `sensor.run.ended`, the
+/// sensor, the run and its outcome. A Grafana rule fires on any outcome that
+/// is not green and nudges the Sensor's owner (the trigger and values only).
+/// Dry runs write nothing, so they emit nothing.
+pub fn run_event_args(sensor: &str, run: &str, outcome: &str, dry_run: bool) -> Option<Vec<String>> {
+    (!dry_run).then(|| vec![
+        "sensor.run.ended".to_string(),
+        "system".to_string(),
+        format!("sensor={sensor}"),
+        format!("run={run}"),
+        format!("outcome={outcome}"),
+    ])
+}
+
+/// #4666 — a pass that wrote what it could but could not measure part of its
+/// job (10-20 04:45: messages-kept, the reader died) is not green: it exits
+/// unmeasured and names what. A failed write keeps its own exit.
+pub fn pass_exit(write_exit: i32, unmeasured: &[String]) -> i32 {
+    if write_exit == 0 && !unmeasured.is_empty() {
+        println!("unmeasured this pass: {}", unmeasured.join(", "));
+        UNMEASURED_EXIT
+    } else {
+        write_exit
+    }
+}
+
 pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
     if exit == UNMEASURED_EXIT {
         "unmeasured"
