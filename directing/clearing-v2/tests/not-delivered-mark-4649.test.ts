@@ -93,3 +93,20 @@ describe('#4649 prod v2 keeps the list on disk; tests never touch ~/.chorus', ()
     expect(resolveUndeliveredFile('/tmp/x.json', { JEST_WORKER_ID: '1' })).toBe('/tmp/x.json');
   });
 });
+
+describe('#4649 the red border is styled on the class the page really renders (Wren 10-20 06:06)', () => {
+  // The first cut styled `.msg.undelivered`; the page renders `.message`, so the border
+  // never showed and the stand-in document above could not tell.
+  const css = fs.readFileSync(path.join(__dirname, '../public/style.css'), 'utf8');
+  const rendered = /el\.className = '([a-z-]+)';/.exec(fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8'))?.[1];
+  const hasBorder = (sheet: string, cls: string | undefined) => new RegExp(`\\.${cls}\\.undelivered\\s*\\{[^}]*border-left`).test(sheet);
+
+  test('the message class the page renders has an undelivered border rule', () => {
+    expect(rendered).toBe('message');
+    expect(hasBorder(css, rendered)).toBe(true);
+  });
+
+  test('NEGATIVE PROOF: the old .msg rule does not count as styling the rendered class', () => {
+    expect(hasBorder('.msg.undelivered { border-left: 3px solid red; }', rendered)).toBe(false);
+  });
+});
