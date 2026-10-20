@@ -2,7 +2,7 @@
 // @domain: messages
 // @card: #4652
 // @owner: wren
-// #4652 reopen 4 — prod clearing-v2.config.json turns the signing service on, so Jeff's
+// #4652 reopen 4 — prod clearing-v2/clearing-v2.config.json turns the signing service on, so Jeff's
 // Clearing posts are stored as Jeff. A half-filled or mistyped switch would silently keep
 // the room copy (buildJeffPublisher refuses it), so the committed file is checked here.
 import fs from 'fs';
