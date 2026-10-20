@@ -63,6 +63,20 @@ export class RegistryKeys {
     return ok;
   }
 
+  /**
+   * The first read at start-up, tried up to `tries` times `gapMs` apart before the
+   * room dials the relay (Silas 10-20 08:24: a 502 at start would otherwise label the
+   * whole replay unattributed until a restart). Resolves either way.
+   */
+  async startWithRetries(tries = 3, gapMs = 5000): Promise<boolean> {
+    for (let i = 0; i < tries; i += 1) {
+      if (this.timer) clearTimeout(this.timer);
+      if (await this.start()) return true;
+      if (i < tries - 1 && !this.stopped) await new Promise((r) => setTimeout(r, gapMs));
+    }
+    return false;
+  }
+
   stop(): void {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);

@@ -175,7 +175,7 @@ describe('#4652 the room reads the registry before it reads the relay (demo 08:0
   test('NEGATIVE PROOF: with the door down, keysReady still resolves (the room starts, nobody attributed)', async () => {
     const door = await serve((_req, res) => { res.writeHead(503).end(); });
     try {
-      const created = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', keysUrl: door.url });
+      const created = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', keysUrl: door.url, keysRetryGapMs: 50 });
       await created.keysReady;
       expect(resolveRole(created, appPk)).toBeNull();
       created.stopKeys();
@@ -188,3 +188,37 @@ describe('#4652 the room reads the registry before it reads the relay (demo 08:0
 function resolveRole(created: ReturnType<typeof createApp>, pubkey: string): string | null {
   return created.keys.get(pubkey) ?? null;
 }
+
+describe('#4652 a failed first read is retried before the relay is dialled (Silas 08:24)', () => {
+  test('a 502 then a 200: start-up retries and the keys are there before the room reads', async () => {
+    let calls = 0;
+    const door = await serve((_req, res) => {
+      calls += 1;
+      if (calls === 1) { res.writeHead(502).end(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [row('jeff', appPk)] }));
+    });
+    const keys = new Map<string, string>();
+    const registry = new RegistryKeys(keys, door.url);
+    try {
+      expect(await registry.startWithRetries(3, 50)).toBe(true);
+      expect(keys.get(appPk)).toBe('jeff');
+      expect(calls).toBe(2);
+    } finally {
+      registry.stop();
+      await door.close();
+    }
+  });
+
+  test('NEGATIVE PROOF: a door that never answers gives up after the tries, so the room still starts', async () => {
+    let calls = 0;
+    const door = await serve((_req, res) => { calls += 1; res.writeHead(502).end(); });
+    const registry = new RegistryKeys(new Map(), door.url);
+    try {
+      expect(await registry.startWithRetries(3, 50)).toBe(false);
+      expect(calls).toBe(3);
+    } finally {
+      registry.stop();
+      await door.close();
+    }
+  });
+});

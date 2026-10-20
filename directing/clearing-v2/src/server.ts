@@ -433,7 +433,7 @@ function knownKeysFor(options: CreateAppOptions | undefined): KnownKeys {
   // under jest with no registry given, read nothing (tests never call the live door)
   if (!url && process.env.JEST_WORKER_ID) return { keys, ready: Promise.resolve(), stop: () => undefined };
   const registry = new RegistryKeys(keys, url ?? KEYS_URL);
-  return { keys, ready: registry.start(), stop: () => registry.stop() };
+  return { keys, ready: registry.startWithRetries(3, options?.keysRetryGapMs), stop: () => registry.stop() };
 }
 
 function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
@@ -465,6 +465,8 @@ export interface CreateAppOptions {
   knownKeys?: Map<string, string>;
   /** #4652 — the key registry to read when no knownKeys are given. */
   keysUrl?: string;
+  /** #4652 — the wait between start-up reads of the registry (default 5 s). */
+  keysRetryGapMs?: number;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
   /** #4571 — test seams: the relay's Host and reader key (null = no key), the sign-in door. */
