@@ -471,6 +471,12 @@ function jeffPublisherFor(options: CreateAppOptions | undefined, relayUrl: strin
   return buildJeffPublisher(activeConfig.jeffSigner, relayUrl, options?.relayHost ?? (BUZZ_RELAY_HOST || undefined));
 }
 
+function signerClientKeyFor(options: CreateAppOptions | undefined): string | undefined {
+  if (options?.signerClientKey) return options.signerClientKey;
+  if (process.env.JEST_WORKER_ID) return undefined;
+  return signerClientPubkey(activeConfig.jeffSigner);
+}
+
 function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
   const file = resolveHandoffFile(options?.handoffFile, process.env);
   return file ? new HandoffLog(file) : undefined;
@@ -728,7 +734,7 @@ export function createApp(options?: CreateAppOptions) {
     sseClients,
     undelivered,
     relayUrl: urls.relayUrl,
-    signerClientKey: options?.signerClientKey ?? (process.env.JEST_WORKER_ID ? undefined : signerClientPubkey(activeConfig.jeffSigner)),
+    signerClientKey: signerClientKeyFor(options),
     onInboundEvent,
     keys,
     cookieKey: options?.cookieKey,
