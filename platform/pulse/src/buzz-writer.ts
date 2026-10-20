@@ -44,11 +44,21 @@ export interface BuzzWriterOptions {
   /** The relay's own address for the AUTH tag when dialled through a tunnel. */
   hostHeader?: string;
   topic?: string;
+  /** #4652 — the #team channel's id; default BUZZ_TEAM_CHANNEL, else #team on the relay. */
+  channel?: string;
   okTimeoutMs?: number;
   alertEveryMs?: number;
   /** Called for every miss; `alert` is true at most once per alert window. */
   onMiss: (note: BuzzNote, reason: string, alert: boolean) => void;
 }
+
+/**
+ * #4652 — the Buzz app's #team shows only channel messages: kind 9 with an `h`
+ * tag naming the channel's id (#team's, measured in the relay's tables 10-20).
+ * The kind 1 t=team notes pulse wrote before were stored and never shown.
+ */
+export const TEAM_CHANNEL_DEFAULT = '160e1f5d-6816-4c68-94b3-b5f1ade75565';
+const CHANNEL_MESSAGE = 9;
 
 /** Pulse stores a nudge with its delivery header; the room carries the words. */
 function body(content: string): string {
@@ -96,14 +106,15 @@ export class BuzzWriter {
   /** Post one message. Never throws and never blocks the caller. */
   post(m: BuzzMessage): void {
     const topic = this.o.topic ?? 'team';
+    const channel = this.o.channel ?? (process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT);
     const { text, kind } = m.surface === 'terminal' ? { text: m.content, kind: 'jeff' }
       : m.surface === 'land' ? { text: m.content, kind: 'land' } : roomText(m);
     const tags = m.surface === 'terminal'
-      ? [['t', topic], ['author', 'jeff'], ['kind', kind], ['to', m.to], ['surface', 'terminal'], ['msg', `pulse-term-${m.id}`]]
+      ? [['h', channel], ['t', topic], ['author', 'jeff'], ['kind', kind], ['to', m.to], ['surface', 'terminal'], ['msg', `pulse-term-${m.id}`]]
       : m.surface === 'land'
-        ? [['t', topic], ['author', m.from], ['kind', kind], ...(m.to ? [['owner', m.to]] : []), ['msg', `pulse-land-${m.id}`]]
-        : [['t', topic], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
-    const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), 1, tags, text);
+        ? [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ...(m.to ? [['owner', m.to]] : []), ['msg', `pulse-land-${m.id}`]]
+        : [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
+    const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), CHANNEL_MESSAGE, tags, text);
     if (!this.ws || !this.open) { this.miss(note, 'relay not connected'); return; }
     const timer = setTimeout(() => {
       this.pending.delete(note.id);

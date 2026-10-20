@@ -71,7 +71,7 @@ describe('#4609 pulse writes nudges and alerts to Buzz', () => {
       const note = relay.got[0];
       expect(note.pubkey).toBe(bridge.pubkey);
       expect(note.content).toBe('[nudge from kade → wren] ping');
-      expect(note.tags).toEqual(expect.arrayContaining([['t', 'team'], ['author', 'kade'], ['kind', 'nudge'], ['msg', `pulse-${res.body.id}`]]));
+      expect(note.tags).toEqual(expect.arrayContaining([['h', '160e1f5d-6816-4c68-94b3-b5f1ade75565'], ['author', 'kade'], ['kind', 'nudge'], ['msg', `pulse-${res.body.id}`]]));
     } finally { writer.close(); await relay.close(); }
   });
 

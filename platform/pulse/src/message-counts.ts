@@ -19,7 +19,7 @@
  * than guessing.
  */
 /** The note fields the count reads. */
-export interface RoomNote { content: string; tags: string[][]; created_at?: number }
+export interface RoomNote { content: string; tags: string[][]; created_at?: number; kind?: number }
 
 export type MessageKind = 'jeff-input' | 'role-reply' | 'nudge-to-jeff' | 'nudge-between-roles' | 'system-alert';
 
