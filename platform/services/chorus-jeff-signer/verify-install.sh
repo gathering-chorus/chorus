@@ -1,7 +1,10 @@
 #!/bin/bash
 # #4652 — read-only check that Jeff's signer install is a real wall. Run by a role
 # AFTER Jeff's step 4. Every line must read PASS; it never reads the key itself.
-U=chorus-jeff-signer; K=/Users/$U/.signer/key; B=/usr/local/libexec/chorus-jeff-signer; L=/Library/Logs/chorus-jeff-signer.log
+# The paths can be pointed elsewhere only so the test can prove each line reads FAIL
+# when the thing is absent (tests/verify_install_4652.rs); Jeff's run uses the defaults.
+U=${CHORUS_SIGNER_USER:-chorus-jeff-signer}; K=/Users/$U/.signer/key
+B=${CHORUS_SIGNER_BIN:-/usr/local/libexec/chorus-jeff-signer}; L=${CHORUS_SIGNER_LOG:-/Library/Logs/chorus-jeff-signer.log}
 ok=0; bad=0; check() { if eval "$2"; then echo "PASS $1"; ok=$((ok+1)); else echo "FAIL $1"; bad=$((bad+1)); fi; }
 check "the user exists"                          "id -u $U >/dev/null 2>&1"
 # Each refusal check first requires the thing to exist, so a missing install
