@@ -13,6 +13,9 @@ use serde_json::{json, Value};
 
 const SEC1: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 const SEC2: &str = "0000000000000000000000000000000000000000000000000000000000000002";
+/// #clearing — the only channel Jeff's key signs for (Jeff 2026-10-20 13:01).
+const CLEARING: &str = "03e2b251-240f-47fe-89b5-fe4e7ac648fb";
+/// #team — nudges, alerts and lands; never signed as Jeff.
 const TEAM: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
 const RELAY: &str = "ws://192.168.86.242:3000";
 
@@ -22,7 +25,7 @@ fn pubkey(sec: &str) -> String {
 }
 
 fn policy() -> Policy {
-    Policy { team_h: TEAM.into(), relay: RELAY.into() }
+    Policy { channel_h: CLEARING.into(), relay: RELAY.into() }
 }
 
 /// Jeff's signer is SEC1; Clearing v2's client key is SEC2.
@@ -153,8 +156,8 @@ fn the_key_file_takes_hex_or_nsec() {
 // ---------- the policy: what Jeff's key will sign ----------
 
 #[test]
-fn policy_signs_a_kind_9_in_team() {
-    assert!(policy().allows(&json!({"kind": 9, "tags": [["h", TEAM], ["t", "silas"]]})).is_ok());
+fn policy_signs_a_kind_9_in_clearing() {
+    assert!(policy().allows(&json!({"kind": 9, "tags": [["h", CLEARING], ["t", "silas"]]})).is_ok());
 }
 
 #[test]
@@ -167,11 +170,12 @@ fn policy_signs_an_auth_for_our_relay() {
 fn policy_refuses_everything_else() {
     let refused = [
         json!({"kind": 9, "tags": [["h", "another-channel"]]}),
+        json!({"kind": 9, "tags": [["h", TEAM]]}),
         json!({"kind": 9, "tags": []}),
-        json!({"kind": 9, "tags": [["h", TEAM], ["h", "another-channel"]]}),
-        json!({"kind": 1, "tags": [["h", TEAM]]}),
+        json!({"kind": 9, "tags": [["h", CLEARING], ["h", TEAM]]}),
+        json!({"kind": 1, "tags": [["h", CLEARING]]}),
         json!({"kind": 0, "tags": []}),
-        json!({"kind": 5, "tags": [["h", TEAM]]}),
+        json!({"kind": 5, "tags": [["h", CLEARING]]}),
         json!({"kind": 24242, "tags": [["t", "get"]]}),
         json!({"kind": 22242, "tags": [["relay", "wss://some-other-relay.example"], ["challenge", "abc"]]}),
         json!({"kind": 22242, "tags": [["challenge", "abc"]]}),
@@ -184,9 +188,9 @@ fn policy_refuses_everything_else() {
 // ---------- the handler: NIP-46 requests end to end ----------
 
 #[test]
-fn sign_event_for_team_returns_an_event_signed_by_jeff() {
+fn sign_event_for_clearing_returns_an_event_signed_by_jeff() {
     let s = signer();
-    let reply = s.handle(&request(SEC2, json!({"id": "r1", "method": "sign_event", "params": [unsigned(9, json!([["h", TEAM]]))]}))).unwrap();
+    let reply = s.handle(&request(SEC2, json!({"id": "r1", "method": "sign_event", "params": [unsigned(9, json!([["h", CLEARING]]))]}))).unwrap();
     let body = reply_body(&reply);
     assert_eq!(body["id"], "r1");
     let signed: Value = serde_json::from_str(body["result"].as_str().unwrap()).unwrap();
@@ -228,7 +232,7 @@ fn any_other_method_is_refused() {
 fn an_unknown_client_gets_no_answer() {
     let stranger = "0000000000000000000000000000000000000000000000000000000000000003";
     let s = signer();
-    assert!(s.handle(&request(stranger, json!({"id": "x", "method": "sign_event", "params": [unsigned(9, json!([["h", TEAM]]))]}))).is_none());
+    assert!(s.handle(&request(stranger, json!({"id": "x", "method": "sign_event", "params": [unsigned(9, json!([["h", CLEARING]]))]}))).is_none());
 }
 
 #[test]

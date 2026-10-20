@@ -95,22 +95,25 @@ pub fn next_seq(dir: &std::path::Path, role: &str) -> u64 {
     next
 }
 
-/// #4652 — the Buzz app's #team shows only channel messages: kind 9 with an `h`
-/// tag naming the channel's id (#team's, measured in the relay's tables 10-20).
-/// Replies went out as kind 1 t=reply, stored and never shown; t=reply stays,
-/// since Clearing v2 routes replies on it.
-pub const TEAM_CHANNEL_DEFAULT: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
+/// #4652 — the Buzz app shows only channel messages: kind 9 with an `h` tag
+/// naming the channel's id. Replies went out as kind 1 t=reply, stored and never
+/// shown; t=reply stays, since Clearing v2 routes replies on it.
+/// Jeff 2026-10-20 13:01 ("a"): a reply is what Jeff reads, so every reply goes
+/// to #clearing; nudges, alerts and lands stay in #team (pulse writes those).
+pub const CLEARING_CHANNEL_DEFAULT: &str = "03e2b251-240f-47fe-89b5-fe4e7ac648fb";
+/// #team, where replies went before 13:01. Named so a test can prove they no longer do.
+pub const TEAM_CHANNEL: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
 const CHANNEL_MESSAGE: u32 = 9;
 
-/// The #team channel's id: BUZZ_TEAM_CHANNEL (the daemon's env), else #team.
-pub fn team_channel() -> String {
-    std::env::var("BUZZ_TEAM_CHANNEL")
+/// The #clearing channel's id: BUZZ_CLEARING_CHANNEL (the daemon's env), else #clearing.
+pub fn clearing_channel() -> String {
+    std::env::var("BUZZ_CLEARING_CHANNEL")
         .ok()
         .filter(|c| !c.is_empty())
-        .unwrap_or_else(|| TEAM_CHANNEL_DEFAULT.to_string())
+        .unwrap_or_else(|| CLEARING_CHANNEL_DEFAULT.to_string())
 }
 
-/// Build + schnorr-sign a reply event (a #team channel message). Deterministic given inputs —
+/// Build + schnorr-sign a reply event (a #clearing channel message). Deterministic given inputs —
 /// the caller owns the clock (created_at is an argument, never read here).
 pub fn build_reply_event(
     key: &RoleKey,
@@ -172,7 +175,7 @@ fn build_reply_event_tags(
     seq: Option<u64>,
 ) -> Result<NostrEvent, String> {
     let mut tags = vec![
-        vec!["h".to_string(), team_channel()],
+        vec!["h".to_string(), clearing_channel()],
         vec!["t".to_string(), "reply".to_string()],
         vec!["role".to_string(), role.to_string()],
         vec!["hash".to_string(), content_hash.to_string()],

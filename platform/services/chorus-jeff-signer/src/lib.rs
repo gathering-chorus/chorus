@@ -5,7 +5,8 @@
 //! of which run as jeffbridwell — can read the key or swap the code that holds it.
 //!
 //! What it signs, and nothing else:
-//!   - kind 9 whose only `h` tag is #team (Clearing v2 posting as Jeff)
+//!   - kind 9 whose only `h` tag is #clearing (Clearing v2 posting as Jeff;
+//!     Jeff 2026-10-20 13:01: his posts go to #clearing, never #team)
 //!   - kind 22242 whose `relay` tag is our relay (the AUTH that lets that post in)
 //!
 //! Who it answers: the client keys it was started with. A request from any other
@@ -193,7 +194,7 @@ pub mod nip44 {
 
 /// What Jeff's key will sign.
 pub struct Policy {
-    pub team_h: String,
+    pub channel_h: String,
     pub relay: String,
 }
 
@@ -210,10 +211,10 @@ impl Policy {
         match kind {
             9 => {
                 let h = values("h");
-                if h.len() == 1 && h[0] == self.team_h {
+                if h.len() == 1 && h[0] == self.channel_h {
                     Ok(())
                 } else {
-                    Err(format!("refused: kind 9 must carry exactly one h tag, #team; got {h:?}"))
+                    Err(format!("refused: kind 9 must carry exactly one h tag, #clearing; got {h:?}"))
                 }
             }
             22242 => {

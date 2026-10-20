@@ -179,16 +179,19 @@ fn seq_corrupt_counter_restarts_instead_of_wedging() {
 // `h` tag naming the channel's id (#team's, measured in the relay's tables
 // 10-20). Replies went out as kind 1 t=reply, stored and never shown.
 #[test]
-fn reply_is_a_team_channel_message_keeping_its_reply_tags() {
+fn reply_is_a_clearing_channel_message_keeping_its_reply_tags() {
     let dir = tempfile::tempdir().unwrap();
     write_key(dir.path(), "kade", 0o600);
     let k = load_key(dir.path(), "kade").unwrap();
     let ev = build_reply_event_seq(&k, "kade", "t", "h", 1, 7).unwrap();
     assert_eq!(ev.kind, 9, "a kind 1 never shows in the app's #team");
-    assert!(ev.tags.iter().any(|t| t[0] == "h" && t[1] == TEAM_CHANNEL_DEFAULT), "{:?}", ev.tags);
+    assert!(ev.tags.iter().any(|t| t[0] == "h" && t[1] == CLEARING_CHANNEL_DEFAULT), "{:?}", ev.tags);
+    // NEGATIVE PROOF (Jeff 13:01 "a"): a reply never lands in #team, and carries one channel only.
+    assert!(!ev.tags.iter().any(|t| t[0] == "h" && t[1] == TEAM_CHANNEL), "a reply went to #team: {:?}", ev.tags);
+    assert_eq!(ev.tags.iter().filter(|t| t[0] == "h").count(), 1, "{:?}", ev.tags);
     assert!(ev.tags.iter().any(|t| t[0] == "t" && t[1] == "reply"), "v2 routes replies on t=reply: {:?}", ev.tags);
     assert!(ev.tags.iter().any(|t| t[0] == "role" && t[1] == "kade"), "{:?}", ev.tags);
-    assert_eq!(TEAM_CHANNEL_DEFAULT, "160e1f5d-6816-4c68-94b3-b5f1ade75565");
+    assert_eq!(CLEARING_CHANNEL_DEFAULT, "03e2b251-240f-47fe-89b5-fe4e7ac648fb");
 }
 
 #[test]

@@ -6,7 +6,7 @@
 //!   CHORUS_SIGNER_KEY_FILE  file holding Jeff's key, hex or nsec, mode 0600
 //!   CHORUS_SIGNER_RELAY     our relay, e.g. ws://192.168.86.242:3000
 //!   CHORUS_SIGNER_CLIENTS   comma-separated client pubkeys (Clearing v2's)
-//!   CHORUS_SIGNER_TEAM_H    the #team channel id
+//!   CHORUS_SIGNER_CHANNEL_H the #clearing channel id (the only channel it signs for)
 use chorus_jeff_signer::{nip19_secret, unix_now, Policy, Signer};
 use serde_json::{json, Value};
 use std::os::unix::fs::MetadataExt;
@@ -99,7 +99,7 @@ fn serve(signer: &Signer) -> Result<(), String> {
 fn main() {
     let key = read_key(&env("CHORUS_SIGNER_KEY_FILE"));
     let clients: Vec<String> = env("CHORUS_SIGNER_CLIENTS").split(',').map(str::to_string).collect();
-    let policy = Policy { team_h: env("CHORUS_SIGNER_TEAM_H"), relay: env("CHORUS_SIGNER_RELAY") };
+    let policy = Policy { channel_h: env("CHORUS_SIGNER_CHANNEL_H"), relay: env("CHORUS_SIGNER_RELAY") };
     let signer = Signer::new(&key, clients, policy).unwrap_or_else(|e| fail(&e));
     drop(key);
     let mut wait = 1;

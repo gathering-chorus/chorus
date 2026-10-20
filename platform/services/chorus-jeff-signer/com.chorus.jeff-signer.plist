@@ -11,7 +11,7 @@
   <dict>
     <key>CHORUS_SIGNER_KEY_FILE</key><string>/Users/chorus-jeff-signer/.signer/key</string>
     <key>CHORUS_SIGNER_RELAY</key><string>ws://192.168.86.242:3000</string>
-    <key>CHORUS_SIGNER_TEAM_H</key><string>160e1f5d-6816-4c68-94b3-b5f1ade75565</string>
+    <key>CHORUS_SIGNER_CHANNEL_H</key><string>03e2b251-240f-47fe-89b5-fe4e7ac648fb</string>
     <key>CHORUS_SIGNER_CLIENTS</key><string>CLEARING_V2_CLIENT_PUBKEY</string>
   </dict>
   <key>RunAtLoad</key><true/>
