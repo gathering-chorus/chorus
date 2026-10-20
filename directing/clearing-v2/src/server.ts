@@ -26,6 +26,7 @@ import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from './undelivered';
 import { HandoffLog, DEFAULT_HANDOFF_FILE } from './handoff-log';
 import { PublishResult } from './jeff-publisher';
+import { buildJeffPublisher, JeffSignerConfig } from './jeff-signer-config';
 import { UnsignedEvent } from './remote-signer';
 
 export interface ClearingV2Config {
@@ -44,6 +45,8 @@ export interface ClearingV2Config {
   alertsUrl?: string;
   port?: number;
   host?: string;
+  /** #4652 — Jeff's signing service; set, his Clearing posts are stored in Buzz as him. */
+  jeffSigner?: JeffSignerConfig;
 }
 
 export function loadConfig(explicitPath?: string): ClearingV2Config {
@@ -458,6 +461,13 @@ function knownKeysFor(options: CreateAppOptions | undefined): KnownKeys {
   return { keys, ready: registry.startWithRetries(3, options?.keysRetryGapMs), stop: () => registry.stop() };
 }
 
+/** #4652 — the given publisher, or one from the config's jeffSigner (never under jest). */
+function jeffPublisherFor(options: CreateAppOptions | undefined, relayUrl: string): JeffPostPublisher | undefined {
+  if (options?.jeffPublisher) return options.jeffPublisher;
+  if (process.env.JEST_WORKER_ID) return undefined;
+  return buildJeffPublisher(activeConfig.jeffSigner, relayUrl, options?.relayHost ?? (BUZZ_RELAY_HOST || undefined));
+}
+
 function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
   const file = resolveHandoffFile(options?.handoffFile, process.env);
   return file ? new HandoffLog(file) : undefined;
@@ -722,7 +732,7 @@ export function createApp(options?: CreateAppOptions) {
     pulseUrl: urls.pulseUrl,
     readingsUrl: urls.readingsUrl,
     readOnly,
-    jeffPublisher: options?.jeffPublisher,
+    jeffPublisher: jeffPublisherFor(options, urls.relayUrl),
   });
 
   return { app, router, tileService, dataService, relay, keys, keysReady: known.ready, stopKeys: known.stop };
