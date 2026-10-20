@@ -156,9 +156,28 @@ chorus:CollectionDomain a owl:Class ;
 # 2c2. DOMAIN COMPLETENESS — Actors, Scenarios, Contracts (#1899)
 # =============================================================================
 
+# #4662 (Jeff 2026-10-20 13:24) — "actor" means whoever acts, as Jeff, the spine
+# and pulse's actor-state already use it. The BDD subject this class used to name
+# is chorus:Persona now. Neither had rows, so nothing moved.
 chorus:Actor a owl:Class ;
     rdfs:label "Actor" ;
-    rdfs:comment "Someone acting in a test scenario (BDD): the subject of a Given/When/Then step. Not a team member; that is a Teammate. #4576." .
+    rdfs:comment "Whoever acts: a person, an agent or a service. Its actorKind says which. A Teammate is one kind of Actor on the team; a test scenario's subject is a Persona, not an Actor. #4662." .
+
+chorus:actorKind a owl:DatatypeProperty ;
+    rdfs:label "actor kind" ;
+    rdfs:comment "person, agent or service — the same three words as principalKind (#4348)." ;
+    rdfs:domain chorus:Actor ;
+    rdfs:range xsd:string .
+
+chorus:Persona a owl:Class ;
+    rdfs:label "Persona" ;
+    rdfs:comment "Someone acting in a test scenario (BDD): the subject of a Given/When/Then step, such as 'Jeff on his phone'. Not a team member and not an Actor. Was chorus:Actor until #4662." .
+
+chorus:playsRole a owl:DatatypeProperty ;
+    rdfs:label "plays role" ;
+    rdfs:comment "The part a Persona plays in a scenario, in words: Jeff, a peer role, an outsider." ;
+    rdfs:domain chorus:Persona ;
+    rdfs:range xsd:string .
 
 chorus:Scenario a owl:Class ;
     rdfs:label "Scenario" ;
@@ -170,8 +189,9 @@ chorus:Contract a owl:Class ;
 
 chorus:hasActor a owl:ObjectProperty ;
     rdfs:label "has actor" ;
+    rdfs:comment "A domain's BDD personas (#1899 completeness). The name predates #4662; it points at Persona. Renaming it to hasPersona changes the served field name, a drop the deploy audit refuses; it goes with the Teammate-as-Actor change." ;
     rdfs:domain chorus:Domain ;
-    rdfs:range chorus:Actor .
+    rdfs:range chorus:Persona .
 
 chorus:hasScenario a owl:ObjectProperty ;
     rdfs:label "has scenario" ;
@@ -185,11 +205,13 @@ chorus:hasContract a owl:ObjectProperty ;
 
 chorus:actorRole a owl:DatatypeProperty ;
     rdfs:label "actor role" ;
-    rdfs:domain chorus:Actor .
+    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662. Optional and not in PersonaShape; playsRole is the required field." ;
+    rdfs:domain chorus:Persona .
 
 chorus:actorAction a owl:DatatypeProperty ;
     rdfs:label "actor action" ;
-    rdfs:domain chorus:Actor .
+    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662. Optional and not in PersonaShape; playsRole is the required field." ;
+    rdfs:domain chorus:Persona .
 
 chorus:scenarioGiven a owl:DatatypeProperty ;
     rdfs:label "given" ;

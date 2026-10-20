@@ -442,7 +442,7 @@ chorus:tests a chorus:Domain ;
     # #4540 — TestType: the test types in the order the run's one queue starts them
     # #4579 — TestResult retired (Jeff 10-17: "deprecate logging in the graph"):
     # a case's latest result lives on its Test row (#4536), each run's on Loki.
-    chorus:definesVocabulary chorus:Test , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Actor ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); Actor = the BDD scenario actor
+    chorus:definesVocabulary chorus:Test , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Actor , chorus:Persona ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); #4662: Persona added beside Actor
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
@@ -609,6 +609,28 @@ chorus:ScenarioVerifiedByShape a sh:NodeShape ;
     sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
 
 
-# #4576 — Actor is the BDD scenario actor (Given/When/Then subject), homed in tests.
+# #4662 (Jeff 2026-10-20 13:24) — the BDD scenario subject is Persona; Actor now
+# means whoever acts. Both stay homed in tests for this card: moving Actor's home
+# to roles (beside Teammate) changes its served route, a drop the deploy audit
+# refuses, so that move rides with Teammate-as-Actor later. Both carry required
+# fields, so 4022 can walk them (it skipped Actor: no required field).
+chorus:PersonaShape a sh:NodeShape ;
+    sh:targetClass chorus:Persona ; sh:node chorus:CoreShape ;
+    sh:property chorus:PersonaShape-label ;
+    sh:property chorus:PersonaShape-playsRole .
+chorus:PersonaShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:PersonaShape-playsRole a sh:PropertyShape ;
+    sh:path chorus:playsRole ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:message "playsRole names the part the persona plays: Jeff, a peer role, an outsider" .
+
 chorus:ActorShape a sh:NodeShape ;
-    sh:targetClass chorus:Actor ; sh:node chorus:CoreShape .
+    sh:targetClass chorus:Actor ; sh:node chorus:CoreShape ;
+    sh:property chorus:ActorShape-label ;
+    sh:property chorus:ActorShape-actorKind .
+chorus:ActorShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:ActorShape-actorKind a sh:PropertyShape ;
+    sh:path chorus:actorKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(person|agent|service)$" ;
+    sh:message "actorKind is one of person / agent / service" .
