@@ -1,0 +1,50 @@
+# crawler-out-of-sync.yml — #4647. A crawled class in the graph has been out of
+# step with git for over an hour: files with no row, or rows out of date.
+#
+# Reads ONLY the sync sensor's SensorReadings (sensor → monitor → alert; only
+# sensors touch the world). The sync sensor reruns after every land crawl and
+# at 03:00, and a rerun replaces the day's readings, so a non-zero reading that
+# is still the newest an hour after its run means the land crawls did not
+# catch up. No reading, or a sensor that has not run in 26 hours, is its own
+# finding: a silent sensor must never read as in sync. READINGS_URL is the
+# test seam (a file:// fixture).
+#
+# alert-runner contract: stdout must equal literal "ok" for success.
+
+name: crawler-out-of-sync
+description: a crawled class has been out of step with git for over an hour, or the sync sensor has gone quiet
+severity: warning
+owner: kade
+schedule: "*/15 * * * *"
+
+check: |
+  if [ -n "$READINGS_URL" ]; then
+    BODY=$(curl -sf -m 20 "$READINGS_URL") || { echo "no-reading:readings-unreadable"; exit 1; }
+  else
+    BASE="${READINGS_BASE:-http://localhost:3360/v1/heralds/sensorreadings}"
+    T=$(TZ=America/New_York date +%F); Y=$(TZ=America/New_York date -v-1d +%F)
+    A=$(curl -sf -m 20 "$BASE?readingDay=$T&limit=1000") || { echo "no-reading:readings-unreadable"; exit 1; }
+    B=$(curl -sf -m 20 "$BASE?readingDay=$Y&limit=1000") || { echo "no-reading:readings-unreadable"; exit 1; }
+    BODY=$(A="$A" B="$B" python3 -c 'import json,os; print(json.dumps({"data": json.loads(os.environ["A"]).get("data", []) + json.loads(os.environ["B"]).get("data", [])}))')
+  fi
+  printf '%s' "$BODY" | python3 -c '
+  import json, sys, re, datetime
+  rows = [r for r in json.load(sys.stdin).get("data", []) if str(r.get("readingOfSensor", "")).removeprefix("sensor-") == "sync"]
+  if not rows: print("no-reading:sync"); sys.exit(1)
+  def taken(r):
+      m = re.search(r"(\d{8})t(\d{6})z", str(r.get("readingRun", "")))
+      return datetime.datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S").replace(tzinfo=datetime.timezone.utc) if m else None
+  stamped = [(taken(r), r) for r in rows]
+  if any(t is None for t, _ in stamped): print("no-reading:sync-run-unreadable"); sys.exit(1)
+  newest = max(t for t, _ in stamped)
+  latest = [r for t, r in stamped if t == newest]
+  age_h = (datetime.datetime.now(datetime.timezone.utc) - newest).total_seconds() / 3600
+  if age_h > 26: print(f"stale-reading:sync-sensor-last-ran-{age_h:.1f}h-ago>26h"); sys.exit(1)
+  off = sorted("%s-%s=%g" % (r.get("readingSubject", "?"), r.get("readingMetric"), float(r.get("readingValue"))) for r in latest if float(r.get("readingValue", 0)) > 0)
+  if off and age_h > 1: print(f"out-of-sync:{age_h:.1f}h:" + ",".join(off)); sys.exit(1)
+  print("ok")
+  '
+
+action: |
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" kade "crawler-out-of-sync: rule a crawled class out of step with git for over an hour, or the sync sensor quiet: $STATUS" 2>/dev/null || true

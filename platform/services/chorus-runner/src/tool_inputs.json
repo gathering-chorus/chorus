@@ -270,7 +270,8 @@
           "infra",
           "messages",
           "events",
-          "spine"
+          "spine",
+          "sync"
         ],
         "type": "string"
       },

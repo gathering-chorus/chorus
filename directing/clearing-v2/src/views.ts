@@ -2,7 +2,7 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
-import { DAY_COLUMNS, DOUBLE_COLUMNS, type DayCell, type DayRow } from './sources/readings';
+import { DAY_COLUMNS, DOUBLE_COLUMNS, type DayCell, type DayRow, type SyncDay } from './sources/readings';
 import type { Streams } from './sources/streams';
 import { uploadNames } from './uploads';
 import fs from 'fs';
@@ -919,11 +919,60 @@ ${days.map((d) => `        <tr><td>${d.day}</td>${d.values.map((c) => cell(c.val
     </table></div>
     <p class="meta" style="margin-top:12px">From the herald sensors (messages: pulse and Buzz; events: the spine). A day is counted once it is over.</p>`;
   const content = `<main class="page counts-page" style="padding:14px">
+    <p class="meta"><a href="/sync">Git vs graph by day</a> (the crawler's sync sensor)</p>
     ${doublesHtml}
     <h2>Messages and events by day <span class="meta">Boston days</span></h2>
     ${body}
   </main>`;
   return renderPageShell('Messages and events', 'counts', content, sources);
+}
+
+/**
+ * #4647 — git vs graph, from the sync sensor: per crawled class, files in git
+ * with no row (missing) and rows out of date (stale). Summary first, the
+ * newest day's classes worst first, then the history, at 390 px (Wren 18:39).
+ * A class or a day with no reading says unmeasured, never 0.
+ */
+export function renderSyncPage(days: SyncDay[], meta: { error?: string }, sources: TrustStripSource[]): string {
+  const num = (v: number | null) => `<td class="num ${v !== null && v > 0 ? 'fail' : ''}">${v === null ? '<span class="meta">unmeasured</span>' : v}</td>`;
+  let body: string;
+  if (meta.error || days.length === 0) {
+    body = `<div class="meta fail" style="padding:16px">Unmeasured: ${escapeHtml(meta.error || 'the sync sensor has written no readings yet')}</div>`;
+  } else {
+    const latest = days[0];
+    const unmeasured = latest.classes.filter((c) => c.missing === null || c.stale === null);
+    const off = latest.classes.filter((c) => (c.missing || 0) + (c.stale || 0) > 0);
+    const summary = unmeasured.length
+      ? `<p class="fail"><b>${latest.day}: unmeasured</b> for ${unmeasured.map((c) => escapeHtml(c.subject)).join(', ')}</p>`
+      : off.length
+        ? `<p class="fail"><b>${latest.day}: ${off.length} of ${latest.classes.length} classes out of sync</b>, ${off.reduce((n, c) => n + (c.missing || 0), 0)} missing, ${off.reduce((n, c) => n + (c.stale || 0), 0)} stale</p>`
+        : `<p><b>${latest.day}: all ${latest.classes.length} classes in sync</b></p>`;
+    const history = days.slice(1).map((d) => {
+      const bad = d.classes.filter((c) => c.missing === null || c.stale === null || (c.missing || 0) + (c.stale || 0) > 0);
+      return `        <tr><td>${d.day.slice(5)}</td><td class="${bad.length ? 'fail' : ''}">${bad.length ? bad.map((c) => escapeHtml(c.subject)).join(', ') : 'in sync'}</td></tr>`;
+    }).join('\n');
+    body = `${summary}
+    <table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Class</th><th>Missing</th><th>Stale</th></tr></thead>
+      <tbody>
+${latest.classes.map((c) => `        <tr><td>${escapeHtml(c.subject)}</td>${num(c.missing)}${num(c.stale)}</tr>`).join('\n')}
+      </tbody>
+    </table>
+    <p class="meta">Missing: files in git with no row in the graph. Stale: rows older than the file. The sensor runs after every land crawl and at 03:30.</p>${history ? `
+    <h3 style="margin-top:16px">Earlier days</h3>
+    <table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Day</th><th style="text-align:left">Out of sync</th></tr></thead>
+      <tbody>
+${history}
+      </tbody>
+    </table>` : ''}`;
+  }
+  const content = `<main class="page counts-page" style="padding:14px">
+    <h2>Git vs graph <span class="meta">Boston days</span></h2>
+    ${body}
+    <p class="meta" style="margin-top:12px"><a href="/counts">Messages and events by day</a></p>
+  </main>`;
+  return renderPageShell('Git vs graph', 'counts', content, sources);
 }
 
 /**

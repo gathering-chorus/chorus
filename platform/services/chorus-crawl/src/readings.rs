@@ -450,6 +450,112 @@ pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>
     (create, update, unchanged)
 }
 
+/// #4647 — what the crawler's read-only check printed, as today's sync
+/// readings: for each crawled class, how many files in git have no row
+/// (`missing`) and how many rows are out of date (`stale`). The class is the
+/// reading's subject (Silas 10-19: readingRole means a role, and /counts drops
+/// rows that carry one). A row the check could not measure, or a check that
+/// printed no rows at all, makes the whole run unmeasured (`Err`), never a zero.
+pub fn sync_readings(validate_out: &str) -> Result<Vec<(String, &'static str, u64)>, String> {
+    let mut out = Vec::new();
+    let mut unmeasured = Vec::new();
+    for line in validate_out.lines().filter(|l| l.starts_with("VALIDATE|")) {
+        let f: Vec<&str> = line.split('|').collect();
+        let class = f.get(2).copied().unwrap_or("");
+        let num = |k: &str| f.iter().find_map(|p| p.strip_prefix(k)).and_then(|v| v.parse::<u64>().ok());
+        match (f.last().copied(), num("missing="), num("stale=")) {
+            (Some("measured"), Some(m), Some(s)) => {
+                out.push((sync_subject(class), "missing", m));
+                out.push((sync_subject(class), "stale", s));
+            }
+            _ => unmeasured.push(class.to_string()),
+        }
+    }
+    if out.is_empty() && unmeasured.is_empty() {
+        return Err("the check printed no VALIDATE rows".into());
+    }
+    if !unmeasured.is_empty() {
+        return Err(format!("not measured: {}", unmeasured.join(", ")));
+    }
+    Ok(out)
+}
+
+/// The SensorReading rows for sync readings, named
+/// `<sensor>-<metric>-<subject>-<day>` so a rerun the same day replaces them.
+pub fn sync_rows(sensor: &str, readings: &[(String, &str, u64)], day: &str, run: &str) -> Vec<ReadingRow> {
+    readings
+        .iter()
+        .map(|(subject, metric, v)| {
+            (
+                format!("{sensor}-{metric}-{subject}-{day}"),
+                vec![
+                    ("readingOfSensor".to_string(), sensor.to_string()),
+                    ("readingDay".to_string(), day.to_string()),
+                    ("readingMetric".to_string(), metric.to_string()),
+                    ("readingSubject".to_string(), subject.clone()),
+                    ("readingValue".to_string(), v.to_string()),
+                    ("readingUnit".to_string(), "count".to_string()),
+                    ("readingRun".to_string(), run.to_string()),
+                ],
+            )
+        })
+        .collect()
+}
+
+/// A crawled class as a reading subject: "Test (declared domain)" → "test-declared-domain".
+pub fn sync_subject(class: &str) -> String {
+    let mut s = String::new();
+    for ch in class.chars() {
+        if ch.is_ascii_alphanumeric() {
+            s.push(ch.to_ascii_lowercase());
+        } else if !s.ends_with('-') && !s.is_empty() {
+            s.push('-');
+        }
+    }
+    s.trim_end_matches('-').to_string()
+}
+
+#[cfg(test)]
+mod sync_4647 {
+    use super::*;
+
+    // the 10-19 14:10 check on the card's tree, verbatim
+    const OUT: &str = "chorus-crawl: pass start\n\
+VALIDATE|code|CodeFile|tree=6753|graph=6749|missing=4|stale=61|measured\n\
+VALIDATE|tests|Test (files)|tree=1330|graph=1321|missing=3|stale=0|measured\n\
+VALIDATE|tests|Test (declared domain)|tree=1330|graph=1330|missing=0|stale=0|measured\n";
+
+    #[test]
+    fn each_crawled_class_gives_a_missing_and_a_stale_reading_named_by_subject() {
+        let r = sync_readings(OUT).unwrap();
+        assert_eq!(r.len(), 6);
+        let rows = sync_rows("sync", &r, "2026-10-19", "sync-20261019t1800z");
+        let row = |n: &str| rows.iter().find(|(name, _)| name == n).map(|(_, f)| f.clone()).unwrap_or_else(|| panic!("no row {n}"));
+        let get = |f: &[(String, String)], k: &str| f.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
+        let code = row("sync-missing-codefile-2026-10-19");
+        assert_eq!(get(&code, "readingValue"), "4");
+        assert_eq!(get(&code, "readingSubject"), "codefile");
+        assert!(code.iter().all(|(k, _)| k != "readingRole"), "the subject never rides readingRole");
+        assert_eq!(get(&row("sync-stale-codefile-2026-10-19"), "readingValue"), "61");
+        assert_eq!(get(&row("sync-missing-test-declared-domain-2026-10-19"), "readingValue"), "0", "a measured zero is a reading");
+    }
+
+    /// NEGATIVE PROOF — an unreadable store or a silent check is unmeasured, never zero
+    #[test]
+    fn an_unmeasured_row_or_no_rows_is_never_a_zero() {
+        let e = sync_readings("VALIDATE|logs|LogSource|tree=146|graph=?|missing=?|stale=?|unmeasured\n").unwrap_err();
+        assert!(e.contains("LogSource"), "{e}");
+        assert!(sync_readings(&format!("{OUT}VALIDATE|pages|Page|tree=21|graph=0|missing=0|stale=0|unmeasured\n")).is_err());
+        assert!(sync_readings("chorus-crawl: cannot read existing rows\n").is_err());
+    }
+
+    #[test]
+    fn subjects_read_as_words() {
+        assert_eq!(sync_subject("Test (declared domain)"), "test-declared-domain");
+        assert_eq!(sync_subject("Endpoint"), "endpoint");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

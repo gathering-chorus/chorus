@@ -28,11 +28,14 @@
          it as its owner (kade) and records a SensorRun. Background, not wait: a delta
          is seconds but the first pass after a long gap is not, and the tool's own wall
          is 10 minutes; the SensorRun row carries the outcome. -->
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh</string>
-    <string>kade</string>
-    <string>herald-run</string>
-    <string>{"role":"kade","sensor":"files"}</string>
+    <!-- #4647 — then the sync sensor reads the graph against git, so every land
+         leaves a fresh per-class reading; `wait` on files so sync reads the graph
+         the crawl just wrote. A refused or failed files run still lets sync measure. -->
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh kade herald-run '{"role":"kade","sensor":"files","wait":true}'; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh kade herald-run '{"role":"kade","sensor":"sync","wait":true}'</string>
   </array>
+
   <key>EnvironmentVariables</key>
   <dict>
     <key>CHORUS_ROLE</key>

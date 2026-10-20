@@ -113,7 +113,7 @@ chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
 chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
     rdfs:label "borg-tend-herald input" ;
     sh:property [ sh:path chorus:sensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ;
-                  sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" ) ; sh:name "sensor" ;
+                  sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" "sync" ) ; sh:name "sensor" ;
                   sh:description "Which sensor to run." ] ;
     sh:property [ sh:path chorus:target ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "target" ;
                   sh:description "Code sensor only: the repository root to look at. Defaults to chorus." ] ;

@@ -12,6 +12,8 @@ export interface Reading {
   readingMetric?: string;
   readingValue?: string | number;
   readingRole?: string;
+  /** #4647 — what a reading is about when one sensor measures several things (the sync sensor's crawled class). */
+  readingSubject?: string;
 }
 
 /** The columns of the by-day table, in order: [sensor, metric, label]. */
@@ -34,6 +36,35 @@ export const DOUBLE_COLUMNS: Array<[string, string, string]> = [
   ['messages', 'doubles-alert', 'Alerts'],
   ['messages', 'doubles-land', 'Lands'],
 ];
+
+/** #4647 — one crawled class on one day: files in git with no row, and rows out of date. null = unmeasured. */
+export interface SyncClass { subject: string; missing: number | null; stale: number | null }
+export interface SyncDay { day: string; classes: SyncClass[] }
+
+/**
+ * #4647 — the sync sensor's readings by day, newest first; within a day the
+ * worst class first (Wren: reach, don't look). v2 derives nothing: the sensor
+ * wrote missing and stale per class, this only arranges them.
+ */
+export function syncByDay(readings: Reading[]): SyncDay[] {
+  const days = new Map<string, Map<string, SyncClass>>();
+  for (const r of readings) {
+    if (String(r.readingOfSensor || '').replace(/^sensor-/, '') !== 'sync' || !r.readingDay || !r.readingSubject) continue;
+    if (r.readingMetric !== 'missing' && r.readingMetric !== 'stale') continue;
+    const day = String(r.readingDay).slice(0, 10);
+    const classes = days.get(day) || new Map<string, SyncClass>();
+    const c = classes.get(r.readingSubject) || { subject: r.readingSubject, missing: null, stale: null };
+    const v = Number(r.readingValue);
+    c[r.readingMetric] = Number.isNaN(v) ? null : v;
+    classes.set(r.readingSubject, c);
+    days.set(day, classes);
+  }
+  const weight = (c: SyncClass) => (c.missing === null || c.stale === null ? Infinity : c.missing + c.stale);
+  return [...days.keys()].sort().reverse().map((day) => ({
+    day,
+    classes: [...days.get(day)!.values()].sort((a, b) => weight(b) - weight(a) || a.subject.localeCompare(b.subject)),
+  }));
+}
 
 export interface DayCell { metric: string; value: number | null }
 export interface DayRow { day: string; values: DayCell[] }
