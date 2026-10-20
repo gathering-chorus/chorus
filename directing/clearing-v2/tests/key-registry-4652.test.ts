@@ -124,3 +124,25 @@ describe('#4652 the door down at start fails closed, then a retry loads the keys
     }
   });
 });
+
+describe('#4652 the registry is re-read, so a revoked key stops speaking (Silas 07:51)', () => {
+  test('NEGATIVE PROOF: a row removed from the registry is dropped on the next read; a session-bound key stays', async () => {
+    let rows = [row('jeff', appPk)];
+    const asked: string[] = [];
+    const door = await serve((req, res) => { asked.push(req.url || ''); res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: rows })); });
+    const keys = new Map<string, string>([['b0'.repeat(32), 'jeff']]); // bound by a signed-in session
+    const registry = new RegistryKeys(keys, door.url, 60000, 100);
+    try {
+      await registry.start();
+      expect(keys.get(appPk)).toBe('jeff');
+      rows = [];
+      await settle(400);
+      expect(keys.has(appPk)).toBe(false);
+      expect(keys.get('b0'.repeat(32))).toBe('jeff');
+      expect(asked[0]).toContain('limit=1000');
+    } finally {
+      registry.stop();
+      await door.close();
+    }
+  });
+});

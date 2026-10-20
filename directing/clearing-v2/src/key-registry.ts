@@ -27,37 +27,47 @@ export function keysFromRegistry(body: unknown): Map<string, string> {
 }
 
 /**
- * Fills a shared keys map from the registry. Until the first read succeeds the map
- * holds no registry keys, so no post is attributed to anyone and nothing is handed
- * off (fail closed); a failed read retries on a timer. Keys a signed-in session
- * binds (/api/room/bind) live in the same map and are left alone.
+ * Fills a shared keys map from the registry, and re-reads it so a revoked key stops
+ * speaking (Silas 10-20 07:51). Until the first read succeeds the map holds no
+ * registry keys, so no post is attributed and nothing is handed off (fail closed);
+ * a failed read retries sooner. Keys a signed-in session binds (/api/room/bind)
+ * share the map and are never dropped by a re-read.
  */
 export class RegistryKeys {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private fromRegistry = new Set<string>();
 
   constructor(
     private readonly keys: Map<string, string>,
     private readonly url: string = DEFAULT_KEYS_URL,
     private readonly retryMs = 60000,
+    private readonly refreshMs = 600000,
   ) {}
 
-  /** One read; resolves either way. False means the map is still empty of registry keys. */
+  /** One read, then the next one scheduled; resolves either way. False means this read failed. */
   async start(): Promise<boolean> {
+    let ok = false;
     try {
-      const res = await fetch(this.url, { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${this.url}${this.url.includes('?') ? '&' : '?'}limit=1000`, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) throw new Error(`key registry answered ${res.status}`);
-      for (const [pubkey, who] of keysFromRegistry(await res.json())) this.keys.set(pubkey, who);
-      return true;
+      this.replace(keysFromRegistry(await res.json()));
+      ok = true;
     } catch (e) {
-      console.error(`[clearing-v2] key registry not read, nobody is attributed yet: ${(e as Error).message}`);
-      if (!this.stopped) this.timer = setTimeout(() => { void this.start(); }, this.retryMs);
-      return false;
+      console.error(`[clearing-v2] key registry not read: ${(e as Error).message}`);
     }
+    if (!this.stopped) this.timer = setTimeout(() => { void this.start(); }, ok ? this.refreshMs : this.retryMs);
+    return ok;
   }
 
   stop(): void {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
+  }
+
+  private replace(next: Map<string, string>): void {
+    for (const pubkey of this.fromRegistry) if (!next.has(pubkey)) this.keys.delete(pubkey);
+    for (const [pubkey, who] of next) this.keys.set(pubkey, who);
+    this.fromRegistry = new Set(next.keys());
   }
 }
