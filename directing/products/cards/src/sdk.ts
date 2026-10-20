@@ -1442,16 +1442,11 @@ export async function demoCard(client: BoardClient, index: number): Promise<void
   const role = detectRole();
   let title = '';
   try {
-    const card = await client.view(index);
-    title = card.title;
-    // #2017: Auto-check AC items — replace - [ ] with - [x] before gates run.
-    // Roles forget to mark boxes; gate:product fails on unchecked boxes, not missing work.
-    if (card.description && card.description.includes('- [ ]')) {
-      const checked = card.description.replace(/- \[ \]/g, '- [x]');
-      await client.update(index, { description: checked });
-      const count = (card.description.match(/- \[ \]/g) || []).length;
-      console.log(`  Auto-checked ${count} AC item${count !== 1 ? 's' : ''} on #${index}`);
-    }
+    // #4660: a demo reads the card and never ticks its boxes. #2017's auto-check
+    // ticked every "- [ ]" before the gates ran, so gate:product passed on work
+    // nobody had shown (#4652's after-land checks, 10-20). The owner ticks a box
+    // when the evidence exists; an unticked box stays a red at the gate.
+    title = (await client.view(index)).title;
   } catch { /* best effort */ }
   emitSpineEvent('card.demo.started', role, {
     card_id: String(index), title, board: client.boardName,
