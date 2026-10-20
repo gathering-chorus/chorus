@@ -69,9 +69,15 @@ export class MockWebSocket implements WebSocketLike {
   }
 }
 
+/** #4652 — the relay's #team channel id. The Buzz app shows kind 9 posts tagged
+ *  h=<this id>; kind 1 notes tagged t=team never appear there (measured 10-19). */
+export const TEAM_CHANNEL = process.env.BUZZ_TEAM_CHANNEL || '160e1f5d-6816-4c68-94b3-b5f1ade75565';
+
 export interface BuzzRelayClientOptions {
   relayUrl: string;
   topic?: string;
+  /** #4652 — the channel the room posts into and reads (default TEAM_CHANNEL). */
+  channel?: string;
   wsFactory?: () => WebSocketLike;
   onEvent?: (event: NostrEvent) => void;
   subId?: string;
@@ -88,6 +94,7 @@ export interface BuzzRelayClientOptions {
 export class BuzzRelayClient {
   private relayUrl: string;
   private topic: string;
+  private channel: string;
   private wsFactory?: () => WebSocketLike;
   private onEventCallback?: (event: NostrEvent) => void;
   private subId: string;
@@ -111,6 +118,7 @@ export class BuzzRelayClient {
   constructor(options: BuzzRelayClientOptions) {
     this.relayUrl = options.relayUrl;
     this.topic = options.topic || 'team';
+    this.channel = options.channel || TEAM_CHANNEL;
     this.wsFactory = options.wsFactory;
     this.onEventCallback = options.onEvent;
     this.subId = options.subId || 'team-sub';
@@ -211,12 +219,7 @@ export class BuzzRelayClient {
 
   private subscribe(): void {
     if (!this.ws) return;
-    const filter = {
-      kinds: [1],
-      '#t': [this.topic, 'reply'],
-      limit: 200,
-    };
-    this.ws.send(JSON.stringify(['REQ', this.subId, filter]));
+    this.ws.send(JSON.stringify(['REQ', this.subId, ...this.filters({ limit: 200 })]));
   }
 
   private flushBuffer(): void {
@@ -263,8 +266,17 @@ export class BuzzRelayClient {
         reject(new Error(`relay sent no EOSE within ${timeoutMs}ms`));
       }, timeoutMs);
       this.fetches.set(id, { events: [], done: (events) => { clearTimeout(timer); resolve(events); } });
-      this.ws!.send(JSON.stringify(['REQ', id, { kinds: [1], '#t': [this.topic, 'reply'], since, limit: 10000 }]));
+      this.ws!.send(JSON.stringify(['REQ', id, ...this.filters({ since, limit: 10000 })]));
     });
+  }
+
+  /** #4652 — the channel's kind 9 posts, plus the kind 1 notes written before the
+   *  switch so the room's history stays. */
+  private filters(extra: { since?: number; limit: number }): object[] {
+    return [
+      { kinds: [9], '#h': [this.channel], ...extra },
+      { kinds: [1], '#t': [this.topic, 'reply'], ...extra },
+    ];
   }
 
   /** #4608 — the relay's OK for a publishConfirmed note. True when the frame was one. */
@@ -301,8 +313,10 @@ export class BuzzRelayClient {
    */
   signAsReader(content: string, tags: string[][], createdAt: number): NostrEvent | null {
     if (!this.signer) return null;
-    const id = buildEventId(serializeEvent(this.signer.pubkey, createdAt, 1, tags, content));
-    return { id, pubkey: this.signer.pubkey, created_at: createdAt, kind: 1, tags, content, sig: this.signer.sign(id) };
+    // #4652 — a kind 9 channel post, so the Buzz app's #team shows it.
+    const all = tags.some((t) => t[0] === 'h') ? tags : [['h', this.channel], ...tags];
+    const id = buildEventId(serializeEvent(this.signer.pubkey, createdAt, 9, all, content));
+    return { id, pubkey: this.signer.pubkey, created_at: createdAt, kind: 9, tags: all, content, sig: this.signer.sign(id) };
   }
 
   /** #4592 — EVENT/EOSE for a fetchSince subscription. True when the frame was one. */

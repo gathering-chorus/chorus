@@ -73,7 +73,7 @@ fn event_id_is_sha256_of_canonical_form_and_sig_verifies() {
     let k = load_key(dir.path(), "kade").unwrap();
     let ev = build_reply_event(&k, "kade", "the reply", "abc123", 1_786_800_000).unwrap();
     // id = sha256 of the NIP-01 canonical serialization
-    let ser = serde_json::json!([0, ev.pubkey, ev.created_at, 1, ev.tags, ev.content]).to_string();
+    let ser = serde_json::json!([0, ev.pubkey, ev.created_at, ev.kind, ev.tags, ev.content]).to_string();
     assert_eq!(ev.id, hexe(sha256::Hash::hash(ser.as_bytes()).as_ref()));
     // schnorr sig verifies against the x-only pubkey
     let secp = Secp256k1::new();
@@ -173,6 +173,22 @@ fn seq_corrupt_counter_restarts_instead_of_wedging() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("reply-seq-kade"), "not-a-number").unwrap();
     assert_eq!(next_seq(dir.path(), "kade"), 1);
+}
+
+// #4652 — the Buzz app's #team shows only channel messages: kind 9 with an
+// `h` tag naming the channel's id (#team's, measured in the relay's tables
+// 10-20). Replies went out as kind 1 t=reply, stored and never shown.
+#[test]
+fn reply_is_a_team_channel_message_keeping_its_reply_tags() {
+    let dir = tempfile::tempdir().unwrap();
+    write_key(dir.path(), "kade", 0o600);
+    let k = load_key(dir.path(), "kade").unwrap();
+    let ev = build_reply_event_seq(&k, "kade", "t", "h", 1, 7).unwrap();
+    assert_eq!(ev.kind, 9, "a kind 1 never shows in the app's #team");
+    assert!(ev.tags.iter().any(|t| t[0] == "h" && t[1] == TEAM_CHANNEL_DEFAULT), "{:?}", ev.tags);
+    assert!(ev.tags.iter().any(|t| t[0] == "t" && t[1] == "reply"), "v2 routes replies on t=reply: {:?}", ev.tags);
+    assert!(ev.tags.iter().any(|t| t[0] == "role" && t[1] == "kade"), "{:?}", ev.tags);
+    assert_eq!(TEAM_CHANNEL_DEFAULT, "160e1f5d-6816-4c68-94b3-b5f1ade75565");
 }
 
 #[test]

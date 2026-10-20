@@ -95,7 +95,22 @@ pub fn next_seq(dir: &std::path::Path, role: &str) -> u64 {
     next
 }
 
-/// Build + schnorr-sign a kind-1 reply event. Deterministic given inputs —
+/// #4652 — the Buzz app's #team shows only channel messages: kind 9 with an `h`
+/// tag naming the channel's id (#team's, measured in the relay's tables 10-20).
+/// Replies went out as kind 1 t=reply, stored and never shown; t=reply stays,
+/// since Clearing v2 routes replies on it.
+pub const TEAM_CHANNEL_DEFAULT: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
+const CHANNEL_MESSAGE: u32 = 9;
+
+/// The #team channel's id: BUZZ_TEAM_CHANNEL (the daemon's env), else #team.
+pub fn team_channel() -> String {
+    std::env::var("BUZZ_TEAM_CHANNEL")
+        .ok()
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| TEAM_CHANNEL_DEFAULT.to_string())
+}
+
+/// Build + schnorr-sign a reply event (a #team channel message). Deterministic given inputs —
 /// the caller owns the clock (created_at is an argument, never read here).
 pub fn build_reply_event(
     key: &RoleKey,
@@ -157,6 +172,7 @@ fn build_reply_event_tags(
     seq: Option<u64>,
 ) -> Result<NostrEvent, String> {
     let mut tags = vec![
+        vec!["h".to_string(), team_channel()],
         vec!["t".to_string(), "reply".to_string()],
         vec!["role".to_string(), role.to_string()],
         vec!["hash".to_string(), content_hash.to_string()],
@@ -165,7 +181,7 @@ fn build_reply_event_tags(
         tags.push(vec!["seq".to_string(), n.to_string()]);
     }
     // NIP-01 canonical serialization: [0, pubkey, created_at, kind, tags, content]
-    let ser = serde_json::json!([0, key.pubkey, created_at, 1, tags, text]).to_string();
+    let ser = serde_json::json!([0, key.pubkey, created_at, CHANNEL_MESSAGE, tags, text]).to_string();
     let digest = sha256::Hash::hash(ser.as_bytes());
     let id = hex_encode(digest.as_ref());
     let secp = Secp256k1::new();
@@ -179,7 +195,7 @@ fn build_reply_event_tags(
         id,
         pubkey: key.pubkey.clone(),
         created_at,
-        kind: 1,
+        kind: CHANNEL_MESSAGE,
         tags,
         content: text.to_string(),
         sig: hex_encode(sig.as_ref()),

@@ -21,7 +21,8 @@ describe('#4592 the relay is asked for today, separately from the room', () => {
     const pending = relay.fetchSince(1000);
     const req = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
     expect(req[0]).toBe('REQ');
-    expect(req[2]).toEqual(expect.objectContaining({ since: 1000, kinds: [1] }));
+    expect(req[2]).toEqual(expect.objectContaining({ since: 1000, kinds: [9] }));
+    expect(req[3]).toEqual(expect.objectContaining({ since: 1000, kinds: [1] })); // #4652 pre-switch history
     ws.triggerMessage(JSON.stringify(['EVENT', req[1], ev('a')]));
     ws.triggerMessage(JSON.stringify(['EVENT', req[1], ev('b')]));
     ws.triggerMessage(JSON.stringify(['EOSE', req[1]]));

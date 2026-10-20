@@ -10,7 +10,8 @@ import { BuzzRelayClient, RelaySigner } from './relay-client';
 import { bridgeSigner } from './relay-signer';
 import { stripBase, withBase, injectBase } from './base-path';
 import { deliverJeffInput } from './jeff-input';
-import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity, loadKnownKeys } from './identity';
+import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
+import { RegistryKeys, DEFAULT_KEYS_URL } from './key-registry';
 import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
@@ -23,6 +24,7 @@ import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
 import { UndeliveredLog, DEFAULT_UNDELIVERED_FILE } from './undelivered';
+import { HandoffLog, DEFAULT_HANDOFF_FILE } from './handoff-log';
 
 export interface ClearingV2Config {
   buzzRelayUrl?: string;
@@ -86,8 +88,8 @@ const READINGS_URL = process.env.READINGS_URL || activeConfig.readingsUrl || 'ht
 const READ_ONLY = process.env.CLEARING_V2_READONLY === '1';
 export const READ_ONLY_REASON = 'read-only demo: this Clearing does not send';
 
-// Known pubkeys map for role attribution (#4571: loaded from ~/.chorus/identity/<who>/nostr.json)
-const KNOWN_KEYS = loadKnownKeys();
+/** #4652 — the security graph's key registry: the only source of whose key is whose. */
+const KEYS_URL = process.env.CLEARING_V2_KEYS_URL || DEFAULT_KEYS_URL;
 
 export function shareSessionWebId(req: Request, keyBuffer?: Buffer | null): string | null {
   const raw = shareSessionFromHeader(req.headers.cookie);
@@ -417,9 +419,40 @@ export function resolveUndeliveredFile(explicit: string | undefined, env: NodeJS
   return env.CLEARING_V2_UNDELIVERED_FILE || DEFAULT_UNDELIVERED_FILE;
 }
 
+interface KnownKeys { keys: Map<string, string>; ready: Promise<unknown>; stop: () => void }
+
+/**
+ * #4652 — the given keys, or an empty map the registry fills. `ready` settles after
+ * the first registry read, whether or not it answered, so the relay is dialled only
+ * then: the relay's replay arriving first labelled 93 of 100 demo posts unattributed.
+ */
+function knownKeysFor(options: CreateAppOptions | undefined): KnownKeys {
+  if (options?.knownKeys) return { keys: options.knownKeys, ready: Promise.resolve(), stop: () => undefined };
+  const url = options?.keysUrl;
+  const keys = new Map<string, string>();
+  // under jest with no registry given, read nothing (tests never call the live door)
+  if (!url && process.env.JEST_WORKER_ID) return { keys, ready: Promise.resolve(), stop: () => undefined };
+  const registry = new RegistryKeys(keys, url ?? KEYS_URL);
+  return { keys, ready: registry.startWithRetries(3, options?.keysRetryGapMs), stop: () => registry.stop() };
+}
+
+function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
+  const file = resolveHandoffFile(options?.handoffFile, process.env);
+  return file ? new HandoffLog(file) : undefined;
+}
+
+/** #4652 — where the hand-off log lives; under jest with no path, nowhere (no log). */
+export function resolveHandoffFile(explicit: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+  if (explicit) return explicit;
+  if (env.JEST_WORKER_ID) return undefined;
+  return env.CLEARING_V2_HANDOFF_FILE || DEFAULT_HANDOFF_FILE;
+}
+
 export interface CreateAppOptions {
   /** #4649 — where failed hand-offs persist; tests pass a temp path (none by default under jest). */
   undeliveredFile?: string;
+  /** #4652 — the hand-off log's file; tests pass one to exercise it. */
+  handoffFile?: string;
   relayUrl?: string;
   pulseUrl?: string;
   rolesUrl?: string;
@@ -430,6 +463,10 @@ export interface CreateAppOptions {
   alertsUrl?: string;
   runWerkStatus?: (cardId: number) => Promise<string>;
   knownKeys?: Map<string, string>;
+  /** #4652 — the key registry to read when no knownKeys are given. */
+  keysUrl?: string;
+  /** #4652 — the wait between start-up reads of the registry (default 5 s). */
+  keysRetryGapMs?: number;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
   /** #4571 — test seams: the relay's Host and reader key (null = no key), the sign-in door. */
@@ -532,6 +569,8 @@ interface InboundDeps {
   isRelayConnected: () => boolean;
   /** #4625 — a demo shows Jeff's notes and never hands them to pulse again. */
   readOnly?: boolean;
+  /** #4652 — Jeff's Buzz app posts come back on every relay replay: hand each off once. */
+  handoffs?: HandoffLog;
 }
 
 /** Handles an incoming verified event from the Buzz relay: ingest, broadcast, forward nudges to Pulse. */
@@ -555,6 +594,7 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     // #4571/#4591 — only direct cryptographic sends from Jeff are Jeff input;
     // bridge-signed notes are transcript/room mirrors, never a second pulse injection.
     if (signerRole !== 'jeff' || deps.readOnly) return;
+    if (deps.handoffs && !deps.handoffs.claim(event.id, event.created_at)) return;
     for (const nudge of deps.router.extractNudges(msg)) {
       void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
         if (!r.ok) {
@@ -600,7 +640,8 @@ export function createApp(options?: CreateAppOptions) {
   const router = new MessageRouter(500);
   const urls = resolveUrls(options);
   const tileService = new TileService(urls.pulseUrl);
-  const keys = options?.knownKeys || KNOWN_KEYS;
+  const known = knownKeysFor(options);
+  const keys = known.keys;
   const relayConfigured = options?.relayConfigured ?? Boolean(urls.relayUrl);
   const readOnly = options?.readOnly ?? READ_ONLY;
 
@@ -608,6 +649,7 @@ export function createApp(options?: CreateAppOptions) {
   const sseClients: Response[] = [];
   const broadcastSSE = makeBroadcaster(sseClients);
   const undelivered = new UndeliveredLog(200, resolveUndeliveredFile(options?.undeliveredFile, process.env));
+  const handoffs = makeHandoffLog(options);
 
   // relay is declared below; the handler only runs once the relay delivers events.
   const onInboundEvent = makeInboundHandler({
@@ -618,6 +660,7 @@ export function createApp(options?: CreateAppOptions) {
     undelivered,
     isRelayConnected: () => relay.isConnected(),
     readOnly,
+    handoffs,
   });
 
   const relay = makeRelay(urls.relayUrl, onInboundEvent, options);
@@ -654,14 +697,14 @@ export function createApp(options?: CreateAppOptions) {
     readOnly,
   });
 
-  return { app, router, tileService, dataService, relay };
+  return { app, router, tileService, dataService, relay, keys, keysReady: known.ready, stopKeys: known.stop };
 }
 
 // Start standalone if executed directly
 if (require.main === module) {
-  const { app, relay } = createApp();
+  const { app, relay, keysReady } = createApp();
   if (BUZZ_RELAY_URL) {
-    relay.connect();
+    void keysReady.then(() => relay.connect());
   }
 
   app.listen(PORT, HOST, () => {
