@@ -6,7 +6,7 @@
 // kind 9 posts tagged h=<channel id>, and v2 wrote kind 1 notes tagged t=team, which
 // the app never shows. Measured 10-20 06:55: a kind 9 h=160e1f5d… post from a
 // non-member key is accepted and lands in #team.
-import { BuzzRelayClient, MockWebSocket, RelaySigner, TEAM_CHANNEL } from '../src/relay-client';
+import { BuzzRelayClient, MockWebSocket, RelaySigner, TEAM_CHANNEL, CLEARING_CHANNEL } from '../src/relay-client';
 
 const signer: RelaySigner = { pubkey: 'ab'.repeat(32), sign: () => 'cd'.repeat(64) };
 const isChannelPost = (e: { kind: number; tags: string[][] }) => e.kind === 9 && e.tags.some((t) => t[0] === 'h' && t[1] === TEAM_CHANNEL);
@@ -34,7 +34,7 @@ describe('#4652 v2 posts into the #team channel the Buzz app shows', () => {
     client.connect();
     ws.triggerOpen();
     expect(reqs(ws).map((r) => r[2])).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kinds: [9], '#h': [TEAM_CHANNEL] }),
+      expect.objectContaining({ kinds: [9], '#h': [TEAM_CHANNEL, CLEARING_CHANNEL] }),
       expect.objectContaining({ kinds: [1], '#t': ['team', 'reply'] }),
     ]));
   });
@@ -46,7 +46,7 @@ describe('#4652 v2 posts into the #team channel the Buzz app shows', () => {
     ws.triggerOpen();
     void client.fetchSince(500).catch(() => undefined);
     expect(reqs(ws).slice(-2).map((r) => r[2])).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kinds: [9], '#h': [TEAM_CHANNEL], since: 500 }),
+      expect.objectContaining({ kinds: [9], '#h': [TEAM_CHANNEL, CLEARING_CHANNEL], since: 500 }),
       expect.objectContaining({ kinds: [1], '#t': ['team', 'reply'], since: 500 }),
     ]));
   });

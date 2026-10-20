@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- #4652 — Jeff's remote signer. A LaunchDaemon so it runs as its own user,
+     chorus-jeff-signer, from a root-owned binary. Installed by Jeff, never by a role. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.jeff-signer</string>
+  <key>UserName</key><string>chorus-jeff-signer</string>
+  <key>ProgramArguments</key><array><string>/usr/local/libexec/chorus-jeff-signer</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_SIGNER_KEY_FILE</key><string>/Users/chorus-jeff-signer/.signer/key</string>
+    <key>CHORUS_SIGNER_RELAY</key><string>ws://192.168.86.242:3000</string>
+    <key>CHORUS_SIGNER_CHANNEL_H</key><string>03e2b251-240f-47fe-89b5-fe4e7ac648fb</string>
+    <key>CHORUS_SIGNER_CLIENTS</key><string>CLEARING_V2_CLIENT_PUBKEY</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>/Library/Logs/chorus-jeff-signer.log</string>
+</dict>
+</plist>
