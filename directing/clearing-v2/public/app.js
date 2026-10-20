@@ -538,6 +538,24 @@ function updateTiles(tiles) {
   }
 }
 
+// #4649 — a message of Jeff's that did not reach its role says so, instead of
+// looking sent. The server sends the list on connect and each new failure live.
+function markUndelivered(id, roles) {
+  if (typeof document === 'undefined' || !id || !Array.isArray(roles) || roles.length === 0) return;
+  const msg = document.getElementById(`msg-${id}`) || document.getElementById(id);
+  if (!msg) return;
+  if (msg.classList) msg.classList.add('undelivered');
+  let mark = msg.querySelector ? msg.querySelector('.msg-undelivered') : null;
+  if (!mark) {
+    mark = document.createElement('div');
+    mark.className = 'msg-undelivered';
+    // under the words, not beside them: .msg lays header and text out in a row
+    const text = msg.querySelector ? msg.querySelector('.message-text') : null;
+    (text || msg).appendChild(mark);
+  }
+  mark.textContent = `not delivered to ${roles.join(', ')}`;
+}
+
 // Setup EventSource for SSE live stream
 function initStream() {
   const evtSource = new EventSource(clearingBase() + '/api/events');
@@ -550,6 +568,7 @@ function initStream() {
         messagesContainer.innerHTML = '';
         data.messages.forEach(appendMessage);
       }
+      if (data.undelivered) Object.entries(data.undelivered).forEach(([id, roles]) => markUndelivered(id, roles));
       if (data.tiles) {
         updateTiles(data.tiles);
       }
@@ -566,6 +585,15 @@ function initStream() {
       appendMessage(msg);
     } catch (err) {
       console.error('Error parsing message event', err);
+    }
+  });
+
+  evtSource.addEventListener('delivery', (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d && d.ok === false) markUndelivered(d.id, d.roles || [d.to]);
+    } catch (err) {
+      console.error('Error parsing delivery event', err);
     }
   });
 
@@ -755,6 +783,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatAuthor,
     formatMessageTime,
     appendMessage,
+    markUndelivered,
     appendLinkedText,
     updateTiles,
     scrollRoomToNewest,
