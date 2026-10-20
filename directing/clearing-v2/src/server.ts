@@ -363,10 +363,10 @@ async function storeInBuzz(ctx: RouteContext, event: NostrEvent, role: string): 
   const room = roomOf(event);
   const tags = [['t', room], ['room', room], ['author', role], ['signed', event.id], ['surface', 'clearing'], ['kind', 'jeff']];
   if (ctx.jeffPublisher && role === 'jeff') {
-    const r = await ctx.jeffPublisher.publish({ kind: 9, created_at: event.created_at, tags: [['h', ctx.relay.getChannel()], ...tags], content: event.content });
+    const r = await ctx.jeffPublisher.publish({ kind: 9, created_at: event.created_at, tags: [['h', ctx.relay.getClearingChannel()], ...tags], content: event.content });
     return r.ok ? { ok: true, reason: '' } : { ok: false, reason: r.reason };
   }
-  const copy = ctx.relay.signAsReader(event.content, tags, event.created_at);
+  const copy = ctx.relay.signAsReader(event.content, [['h', ctx.relay.getClearingChannel()], ...tags], event.created_at);
   return copy ? ctx.relay.publishConfirmed(copy) : { ok: false, reason: 'no reader key' };
 }
 

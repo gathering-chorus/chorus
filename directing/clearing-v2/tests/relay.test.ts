@@ -3,7 +3,7 @@
 // @owner: abby-normal
 // @domain: messages
 
-import { BuzzRelayClient, MockWebSocket, TEAM_CHANNEL } from '../src/relay-client';
+import { BuzzRelayClient, MockWebSocket, TEAM_CHANNEL, CLEARING_CHANNEL } from '../src/relay-client';
 import { NostrEvent } from '../src/types';
 
 describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
@@ -35,7 +35,7 @@ describe('Clearing v2: Buzz Relay Client & Offline Resiliency', () => {
     const subFrame = JSON.parse(mockWs.sentMessages[0]);
     expect(subFrame[0]).toBe('REQ');
     // #4652 — the channel's kind 9 posts first, then the pre-switch kind 1 history
-    expect(subFrame[2]).toMatchObject({ kinds: [9], '#h': [TEAM_CHANNEL], limit: 200 });
+    expect(subFrame[2]).toMatchObject({ kinds: [9], '#h': [TEAM_CHANNEL, CLEARING_CHANNEL], limit: 200 });
     expect(JSON.parse(mockWs.sentMessages[1])[2]).toMatchObject({ kinds: [1], '#t': ['team', 'reply'], limit: 200 });
   });
 

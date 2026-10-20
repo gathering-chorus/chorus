@@ -10,7 +10,7 @@
  * channel, and a REQ that mixes filters is registered under none. So the room asks
  * with one filter per subscription.
  */
-import { BuzzRelayClient, MockWebSocket, RelaySigner, TEAM_CHANNEL } from '../src/relay-client';
+import { BuzzRelayClient, MockWebSocket, RelaySigner, TEAM_CHANNEL, CLEARING_CHANNEL } from '../src/relay-client';
 import { NostrEvent } from '../src/types';
 
 const signer: RelaySigner = { pubkey: 'ab'.repeat(32), sign: () => 'cd'.repeat(64) };
@@ -81,5 +81,27 @@ describe('#4652 the room gets live channel posts from Buzz', () => {
     pushLive(ws, post('b', 1, [['t', 'team']]));
     ws.triggerMessage(JSON.stringify(['EOSE', fetchSubs[1].id]));
     expect((await pending).map((e) => e.id).sort()).toEqual(['a', 'b']);
+  });
+
+  test('Jeff 13:01 (a): the room reads #team and #clearing in one subscription, so nothing is hidden in Clearing', () => {
+    const ws = new MockWebSocket();
+    const got: string[] = [];
+    const client = new BuzzRelayClient({ relayUrl: 'ws://relay', wsFactory: () => ws, signer, onEvent: (e) => got.push(e.id) });
+    client.connect();
+    ws.triggerOpen();
+    pushLive(ws, post('team-nudge', 9, [['h', TEAM_CHANNEL]]));
+    pushLive(ws, post('clearing-post', 9, [['h', CLEARING_CHANNEL]]));
+    expect(got).toEqual(['team-nudge', 'clearing-post']);
+    expect(CLEARING_CHANNEL).toBe('03e2b251-240f-47fe-89b5-fe4e7ac648fb');
+  });
+
+  test('NEGATIVE PROOF: a post in some other channel does not reach the room', () => {
+    const ws = new MockWebSocket();
+    const got: string[] = [];
+    const client = new BuzzRelayClient({ relayUrl: 'ws://relay', wsFactory: () => ws, signer, onEvent: (e) => got.push(e.id) });
+    client.connect();
+    ws.triggerOpen();
+    pushLive(ws, post('elsewhere', 9, [['h', 'not-our-channel']]));
+    expect(got).toEqual([]);
   });
 });

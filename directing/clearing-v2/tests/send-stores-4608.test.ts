@@ -87,7 +87,7 @@ describe('#4608 Jeff\'s v2 message is stored in Buzz', () => {
       const note = relay.stored[0];
       expect(note.pubkey).toBe(bridge.pubkey);
       expect(note.content).toBe('is the counts page right?');
-      expect(note.tags).toEqual(expect.arrayContaining([['t', 'team'], ['author', 'jeff'], ['signed', ev.id], ['surface', 'clearing'], ['kind', 'jeff']])); // #4628 where it was typed, and its kind
+      expect(note.tags).toEqual(expect.arrayContaining([['h', '03e2b251-240f-47fe-89b5-fe4e7ac648fb'], ['t', 'team'], ['author', 'jeff'], ['signed', ev.id], ['surface', 'clearing'], ['kind', 'jeff']])); // #4628 where it was typed, and its kind
     } finally { await v2.stop(); await relay.close(); }
   });
 

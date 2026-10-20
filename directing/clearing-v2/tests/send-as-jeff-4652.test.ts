@@ -70,7 +70,7 @@ describe('#4652 Jeff\'s Clearing post goes to Buzz as Jeff, never as a room copy
       expect(await v2.send(ev)).toEqual(expect.objectContaining({ ok: true, stored: true }));
       expect(pub.asked).toHaveLength(1);
       expect(pub.asked[0]).toEqual(expect.objectContaining({ kind: 9, content: '@kade hello from Clearing' }));
-      expect(pub.asked[0].tags).toEqual(expect.arrayContaining([['h', '160e1f5d-6816-4c68-94b3-b5f1ade75565'], ['t', 'team'], ['signed', ev.id], ['surface', 'clearing']]));
+      expect(pub.asked[0].tags).toEqual(expect.arrayContaining([['h', '03e2b251-240f-47fe-89b5-fe4e7ac648fb'], ['t', 'team'], ['signed', ev.id], ['surface', 'clearing']]));
       expect(relay.fromRoom).toEqual([]);
     } finally { await v2.stop(); await relay.close(); }
   });

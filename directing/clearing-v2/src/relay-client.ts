@@ -72,12 +72,17 @@ export class MockWebSocket implements WebSocketLike {
 /** #4652 — the relay's #team channel id. The Buzz app shows kind 9 posts tagged
  *  h=<this id>; kind 1 notes tagged t=team never appear there (measured 10-19). */
 export const TEAM_CHANNEL = process.env.BUZZ_TEAM_CHANNEL || '160e1f5d-6816-4c68-94b3-b5f1ade75565';
+/** #4652 — Jeff 10-20 13:01 (a): his Clearing posts and the replies to him live in
+ *  #clearing; nudges, alerts and lands stay in #team. The room reads both as one. */
+export const CLEARING_CHANNEL = process.env.BUZZ_CLEARING_CHANNEL || '03e2b251-240f-47fe-89b5-fe4e7ac648fb';
 
 export interface BuzzRelayClientOptions {
   relayUrl: string;
   topic?: string;
-  /** #4652 — the channel the room posts into and reads (default TEAM_CHANNEL). */
+  /** #4652 — the #team channel (default TEAM_CHANNEL). */
   channel?: string;
+  /** #4652 — the #clearing channel, where Jeff's Clearing posts go (default CLEARING_CHANNEL). */
+  clearingChannel?: string;
   wsFactory?: () => WebSocketLike;
   onEvent?: (event: NostrEvent) => void;
   subId?: string;
@@ -95,6 +100,7 @@ export class BuzzRelayClient {
   private relayUrl: string;
   private topic: string;
   private channel: string;
+  private clearingChannel: string;
   private wsFactory?: () => WebSocketLike;
   private onEventCallback?: (event: NostrEvent) => void;
   private subId: string;
@@ -119,6 +125,7 @@ export class BuzzRelayClient {
     this.relayUrl = options.relayUrl;
     this.topic = options.topic || 'team';
     this.channel = options.channel || TEAM_CHANNEL;
+    this.clearingChannel = options.clearingChannel || CLEARING_CHANNEL;
     this.wsFactory = options.wsFactory;
     this.onEventCallback = options.onEvent;
     this.subId = options.subId || 'team-sub';
@@ -141,9 +148,9 @@ export class BuzzRelayClient {
     return this.topic;
   }
 
-  /** #4652 — the #team channel id this room posts into. */
-  getChannel(): string {
-    return this.channel;
+  /** #4652 — the #clearing channel id, where Jeff's Clearing posts are stored. */
+  getClearingChannel(): string {
+    return this.clearingChannel;
   }
 
   connect(): void {
@@ -288,7 +295,7 @@ export class BuzzRelayClient {
    *  switch so the room's history stays. */
   private filters(extra: { since?: number; limit: number }): object[] {
     return [
-      { kinds: [9], '#h': [this.channel], ...extra },
+      { kinds: [9], '#h': [this.channel, this.clearingChannel], ...extra },
       { kinds: [1], '#t': [this.topic, 'reply'], ...extra },
     ];
   }
