@@ -1,0 +1,4 @@
+#!/bin/sh
+# @domain: cicd — a stub for the verb story (platform/tests/3325-verb-story.bats)
+# #3325 — the spine stub: every event a verb emits, one line each, in $SPINE.
+echo "$@" >> "$SPINE"

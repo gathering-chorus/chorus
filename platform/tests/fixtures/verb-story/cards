@@ -1,0 +1,13 @@
+#!/bin/sh
+# @domain: cicd — a stub for the verb story (platform/tests/3325-verb-story.bats)
+# #3325 — a stateful board stub: one file per card in $BOARD holding its status.
+# view --json → {"status":…,"owner":…}; move N STATUS; done N. Every call is logged.
+echo "$@" >> "$BOARD/calls"
+cmd="$1"; card="$2"
+case "$cmd" in
+  view)  [ -f "$BOARD/$card" ] || { echo "card #$card not found" >&2; exit 1; }
+         printf '{ "id": %s, "status": "%s", "owner": "%s" }\n' "$card" "$(cat "$BOARD/$card")" "${BOARD_OWNER:-Kade}" ;;
+  move)  [ -f "$BOARD/$card" ] || exit 1; echo "$3" > "$BOARD/$card" ;;
+  done)  [ -f "$BOARD/$card" ] || exit 1; echo Done > "$BOARD/$card" ;;
+  *)     exit 0 ;;
+esac

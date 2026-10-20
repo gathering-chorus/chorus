@@ -1,0 +1,4 @@
+#!/bin/sh
+# @domain: cicd — a stub for the verb story (platform/tests/3325-verb-story.bats)
+# #3325 — accept tears the demo env down through werk-deploy; the story records the call.
+echo "werk-deploy $*" >> "$SPINE"
