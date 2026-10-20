@@ -55,6 +55,9 @@ export interface Message {
   dead_lettered_at?: string;
 }
 
+/** Words with every run of whitespace as one space, ends trimmed. */
+const collapse = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
 export class MessageStore {
   private db: Database.Database;
 
@@ -229,13 +232,17 @@ export class MessageStore {
   // stays RAW (no [nudge from] framing — that would strip Jeff's authority at
   // the receiving session), and type='jeff-input' keeps nudge queries/folds
   // from ever picking it up.
-  /** #4628 — whether these exact words came from Clearing to `to` in the last
+  /** #4628 — whether these words came from Clearing to `to` in the last
    *  `minutes`: a delivered Clearing message shows up in the terminal as a
-   *  prompt, and v2 already wrote it to Buzz, so the hook must not again. */
+   *  prompt, and v2 already wrote it to Buzz, so the hook must not again.
+   *  Reopen 3: compared with whitespace collapsed — the terminal gave a
+   *  newline back as a space (10-20 14:18) and the exact match missed it. */
   jeffInputSentRecently(to: string, content: string, minutes = 10): boolean {
-    return !!this.db.prepare(
-      'SELECT 1 FROM messages WHERE type = \'jeff-input\' AND "to" = ? AND content = ? AND created_at >= datetime(\'now\', ?) LIMIT 1'
-    ).get(to, content, `-${minutes} minutes`);
+    const rows = this.db.prepare(
+      'SELECT content FROM messages WHERE type = \'jeff-input\' AND "to" = ? AND created_at >= datetime(\'now\', ?)'
+    ).all(to, `-${minutes} minutes`) as Array<{ content: string }>;
+    const words = collapse(content);
+    return rows.some((r) => collapse(r.content) === words);
   }
 
   sendJeffInput(to: string, content: string, traceId?: string): number {

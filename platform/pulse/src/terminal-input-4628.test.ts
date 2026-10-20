@@ -104,6 +104,23 @@ describe('#4628 pulse records what Jeff types in a terminal', () => {
     } finally { writer.close(); await relay.close(); }
   });
 
+  // NEGATIVE PROOF (reopen 3): measured 10-20 14:18 — Jeff's Buzz app post reached
+  // Wren's terminal with its newline turned into a space, the exact-text guard
+  // missed it, and #team showed it twice.
+  test('negative proof: a delivered message whose newline came back as a space is not recorded again; a line Jeff types still is', async () => {
+    const relay = await stubRelay();
+    const { app, writer, store } = await rig(relay);
+    try {
+      store.sendJeffInput('wren', '@wren is this a good ux for a2a messages\n![image](http://x/m.png)');
+      const res = await request(app).post(ROUTE).send({ kind: 'jeff', to: 'wren', content: '@wren is this a good ux for a2a messages ![image](http://x/m.png)' });
+      expect(res.body.deduped).toBe('clearing');
+      await request(app).post(ROUTE).send({ kind: 'jeff', to: 'wren', content: 'and one more thing' });
+      await until(() => relay.got.length > 0);
+      await settle();
+      expect(relay.got.map((n) => n.content)).toEqual(['and one more thing']);
+    } finally { writer.close(); await relay.close(); }
+  });
+
   // NEGATIVE PROOF (reopen 1): measured 10-19 18:56 and 19:27 — a headless session
   // with no role posted its JSON prompt as pane "unknown" and Buzz showed it as Jeff.
   // Only a role pane the roles door lists records; Jeff himself is not a pane.
