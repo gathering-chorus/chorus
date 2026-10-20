@@ -419,14 +419,21 @@ export function resolveUndeliveredFile(explicit: string | undefined, env: NodeJS
   return env.CLEARING_V2_UNDELIVERED_FILE || DEFAULT_UNDELIVERED_FILE;
 }
 
-/** #4652 — the given keys, or an empty map the registry fills; until it answers, nobody is attributed. */
-function knownKeysFor(options: CreateAppOptions | undefined): Map<string, string> {
-  if (options?.knownKeys) return options.knownKeys;
+interface KnownKeys { keys: Map<string, string>; ready: Promise<unknown>; stop: () => void }
+
+/**
+ * #4652 — the given keys, or an empty map the registry fills. `ready` settles after
+ * the first registry read, whether or not it answered, so the relay is dialled only
+ * then: the relay's replay arriving first labelled 93 of 100 demo posts unattributed.
+ */
+function knownKeysFor(options: CreateAppOptions | undefined): KnownKeys {
+  if (options?.knownKeys) return { keys: options.knownKeys, ready: Promise.resolve(), stop: () => undefined };
   const url = options?.keysUrl;
   const keys = new Map<string, string>();
   // under jest with no registry given, read nothing (tests never call the live door)
-  if (url || !process.env.JEST_WORKER_ID) void new RegistryKeys(keys, url ?? KEYS_URL).start();
-  return keys;
+  if (!url && process.env.JEST_WORKER_ID) return { keys, ready: Promise.resolve(), stop: () => undefined };
+  const registry = new RegistryKeys(keys, url ?? KEYS_URL);
+  return { keys, ready: registry.start(), stop: () => registry.stop() };
 }
 
 function makeHandoffLog(options: CreateAppOptions | undefined): HandoffLog | undefined {
@@ -631,7 +638,8 @@ export function createApp(options?: CreateAppOptions) {
   const router = new MessageRouter(500);
   const urls = resolveUrls(options);
   const tileService = new TileService(urls.pulseUrl);
-  const keys = knownKeysFor(options);
+  const known = knownKeysFor(options);
+  const keys = known.keys;
   const relayConfigured = options?.relayConfigured ?? Boolean(urls.relayUrl);
   const readOnly = options?.readOnly ?? READ_ONLY;
 
@@ -687,14 +695,14 @@ export function createApp(options?: CreateAppOptions) {
     readOnly,
   });
 
-  return { app, router, tileService, dataService, relay };
+  return { app, router, tileService, dataService, relay, keys, keysReady: known.ready, stopKeys: known.stop };
 }
 
 // Start standalone if executed directly
 if (require.main === module) {
-  const { app, relay } = createApp();
+  const { app, relay, keysReady } = createApp();
   if (BUZZ_RELAY_URL) {
-    relay.connect();
+    void keysReady.then(() => relay.connect());
   }
 
   app.listen(PORT, HOST, () => {

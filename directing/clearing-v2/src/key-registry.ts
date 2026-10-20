@@ -56,7 +56,10 @@ export class RegistryKeys {
     } catch (e) {
       console.error(`[clearing-v2] key registry not read: ${(e as Error).message}`);
     }
-    if (!this.stopped) this.timer = setTimeout(() => { void this.start(); }, ok ? this.refreshMs : this.retryMs);
+    if (!this.stopped) {
+      this.timer = setTimeout(() => { void this.start(); }, ok ? this.refreshMs : this.retryMs);
+      this.timer.unref(); // the re-read never keeps a process alive on its own
+    }
     return ok;
   }
 

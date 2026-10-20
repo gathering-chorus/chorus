@@ -17,7 +17,7 @@ import path from 'path';
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { keysFromRegistry, RegistryKeys, NOSTR_TYPE } from '../src/key-registry';
-import { makeInboundHandler } from '../src/server';
+import { makeInboundHandler, createApp } from '../src/server';
 import { MessageRouter } from '../src/router';
 import { serializeEvent, buildEventId } from '../src/identity';
 import { NostrEvent } from '../src/types';
@@ -79,7 +79,9 @@ describe('#4652 a local file never names anyone (Silas 07:44)', () => {
     process.env.HOME = home;
     try {
       const keys = new Map<string, string>();
-      await new RegistryKeys(keys, door.url).start();
+      const registry = new RegistryKeys(keys, door.url);
+      await registry.start();
+      registry.stop();
       const handler = makeInboundHandler({ router: new MessageRouter(), keys, pulseUrl: pulse.url, broadcastSSE: () => undefined, isRelayConnected: () => true });
       handler(post(staleSk, '@silas from the stale key'));
       handler(post(appSk, '@kade from the app'));
@@ -146,3 +148,43 @@ describe('#4652 the registry is re-read, so a revoked key stops speaking (Silas 
     }
   });
 });
+
+describe('#4652 the room reads the registry before it reads the relay (demo 08:08)', () => {
+  // Measured on demo round 747a61da: 93 of 100 replayed posts were labelled
+  // "unattributed", every one older than the room's start, because the relay's
+  // replay arrived before the registry answered.
+  test('keysReady resolves only once the registry has filled the keys', async () => {
+    let answer: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { answer = r; });
+    const door = await serve((_req, res) => { void gate.then(() => res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [row('jeff', appPk)] }))); });
+    try {
+      const created = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', keysUrl: door.url });
+      let ready = false;
+      void created.keysReady.then(() => { ready = true; });
+      await settle(200);
+      expect(ready).toBe(false);
+      answer();
+      await created.keysReady;
+      expect(resolveRole(created, appPk)).toBe('jeff');
+      created.stopKeys();
+    } finally {
+      await door.close();
+    }
+  });
+
+  test('NEGATIVE PROOF: with the door down, keysReady still resolves (the room starts, nobody attributed)', async () => {
+    const door = await serve((_req, res) => { res.writeHead(503).end(); });
+    try {
+      const created = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', keysUrl: door.url });
+      await created.keysReady;
+      expect(resolveRole(created, appPk)).toBeNull();
+      created.stopKeys();
+    } finally {
+      await door.close();
+    }
+  });
+});
+
+function resolveRole(created: ReturnType<typeof createApp>, pubkey: string): string | null {
+  return created.keys.get(pubkey) ?? null;
+}
