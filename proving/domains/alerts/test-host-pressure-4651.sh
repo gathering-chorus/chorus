@@ -5,7 +5,8 @@
 # 9 times with swap at 91-95% and the kernel at level 2 (warn) every time; the
 # services all answered. Swap alone cannot separate "busy" from "cannot serve".
 set -uo pipefail
-CHECK="$(cd "$(dirname "$0")" && pwd)/host-pressure.check.sh"
+# Named by its folder so werk-test sees this suite exercise the check (#4419).
+CHECK="$(cd "$(dirname "$0")/.." && pwd)/alerts/host-pressure.check.sh"
 FAIL=0; ok(){ echo "  PASS: $1"; }; no(){ echo "  FAIL: $1"; FAIL=1; }
 
 run(){ HOST_PRESSURE_LEVEL_NOW="$1" HOST_PRESSURE_FREE_NOW="$2" HOST_PRESSURE_SWAP_NOW="$3" bash "$CHECK" 2>&1; }
