@@ -4,7 +4,8 @@ queue: werk
 params:
   - CHUNK: ""
   - ROLE: ""
-  - CARD: ""
+  - NAVIGATOR: ""
+  - JEFF: ""
 env:
   - CHORUS_HOME: ${CHORUS_HOME}
   - CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}
@@ -29,6 +30,7 @@ steps:
   - name: skill-clearing-sequence
     description: "sequence next card in chunk"
     depends: [skill-clearing-prioritize]
+    output: CARD
     command: "${CHORUS_HOME}/platform/scripts/clearing-chunk sequence ${CHUNK}"
   - name: skill-clearing-plan-go
     description: "Jeff approval before pulling to WIP"
@@ -36,7 +38,7 @@ steps:
     id: skill_clearing_plan_go
     action: human.task
     with:
-      prompt: "Jeff approval before pulling to WIP for #${CARD}? (${ROLE} answers)"
+      prompt: "Jeff approval before pulling to WIP for #${CARD}? (${JEFF} answers)"
       form:
         type: object
         properties:
@@ -46,11 +48,11 @@ steps:
             type: string
             enum: [go, stop]
         required: [by, decision]
-  - name: skill-clearing-wip-cli
-    description: "promote card to WIP"
+  - name: skill-clearing-pull
+    description: "pull card to WIP and create werk"
     depends: [skill-clearing-plan-go]
-    command: "${CHORUS_HOME}/platform/scripts/cards move ${CARD} WIP"
+    command: "${CHORUS_HOME}/platform/scripts/werk-card pull ${CARD} ${ROLE}"
   - name: skill-clearing-pair
     description: "execute pair pipeline"
-    depends: [skill-clearing-wip-cli]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue pair -- CARD=${CARD} ROLE=${ROLE}"
+    depends: [skill-clearing-pull]
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue pair -- CARD=${CARD} ROLE=${ROLE} NAVIGATOR=${NAVIGATOR}"

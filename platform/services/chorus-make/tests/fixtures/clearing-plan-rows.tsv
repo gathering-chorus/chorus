@@ -2,7 +2,7 @@
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 chunk	1	1	skill-clearing-chunk	enforce active chunk cap	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	enforce ${CHUNK}			
 prioritize	2	1	skill-clearing-prioritize	prioritize chunk cards	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	prioritize ${CHUNK}			
-sequence	3	1	skill-clearing-sequence	sequence next card in chunk	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	sequence ${CHUNK}			
-plan-go	4	1	skill-clearing-plan-go	Jeff approval before pulling to WIP	human					by=ROLE choices=go|stop
-pull	5	1	skill-clearing-wip-cli	promote card to WIP	deterministic	${CHORUS_HOME}/platform/scripts/cards	move ${CARD} WIP			
-pair	6	1	skill-clearing-pair	execute pair pipeline	pipeline	pair				CARD=${CARD} ROLE=${ROLE} enqueue=true
+sequence	3	1	skill-clearing-sequence	sequence next card in chunk	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	sequence ${CHUNK}			output=CARD
+plan-go	4	1	skill-clearing-plan-go	Jeff approval before pulling to WIP	human					by=JEFF choices=go|stop
+pull	5	1	skill-clearing-pull	pull card to WIP and create werk	deterministic	${CHORUS_HOME}/platform/scripts/werk-card	pull ${CARD} ${ROLE}			
+pair	6	1	skill-clearing-pair	execute pair pipeline	pipeline	pair				NAVIGATOR=${NAVIGATOR} enqueue=true

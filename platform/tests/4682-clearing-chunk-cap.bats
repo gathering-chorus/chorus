@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: unit
+# @test-type: integration
 # @domain: board
 # 4682-clearing-chunk-cap.bats — tests for clearing-chunk active chunk limit enforcement (#4682)
 
