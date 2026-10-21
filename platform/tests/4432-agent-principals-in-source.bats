@@ -111,11 +111,16 @@ check_abby() {
 import os, subprocess, re, sys
 
 target_dir = sys.argv[1]
-allowed_radius = {
-    "chorus:clearing",
-    "chorus:cards",
-    "chorus:messages",
-}
+allowed_radius = {"chorus:clearing"}
+p_file = os.path.join(target_dir, "designing/data/product-instances.ttl")
+if os.path.exists(p_file):
+    with open(p_file) as fp:
+        p_text = fp.read()
+    m_clr = re.search(r'(?ms)^chorus:clearing a chorus:Product\s*;\s*(.*?)\.\s*$', p_text)
+    if m_clr:
+        m_dom = re.search(r'chorus:hasDomain\s+([^;]+);', m_clr.group(1))
+        if m_dom:
+            allowed_radius.update(d.strip() for d in m_dom.group(1).split(",") if d.strip())
 
 if os.path.exists(os.path.join(target_dir, ".git")):
     try:
