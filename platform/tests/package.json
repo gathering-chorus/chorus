@@ -8,7 +8,7 @@
     "test:gates": "cucumber-js --tags @gate"
   },
   "devDependencies": {
-    "@cucumber/cucumber": "^12.8.2",
+    "@cucumber/cucumber": "^13.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }
