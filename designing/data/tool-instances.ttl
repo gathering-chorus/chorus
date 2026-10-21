@@ -82,3 +82,11 @@ chorus:tool-borg a chorus:Tool ;   # #4324: chorus:borg is the Product row; one 
     chorus:vizLabel "decompose" ;
     chorus:color "#f87171" ;
     chorus:status "planned" .
+
+# #4091 — the tool edges, moved here from chorus.ttl with their rows.
+chorus:tool-look chorus:feeds chorus:Capturing .
+chorus:tool-listen chorus:feeds chorus:Capturing .
+chorus:tool-talk chorus:feeds chorus:Directing .
+chorus:tool-clearing chorus:feeds chorus:Directing .
+chorus:tool-clearing chorus:indexes chorus:tool-chorus .
+chorus:tool-chorus chorus:indexes chorus:gathering .

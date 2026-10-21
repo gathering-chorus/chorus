@@ -2706,16 +2706,13 @@ chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing 
 # INSTANCE DATA — Tool ↔ Vertebra Feeds
 # =============================================================================
 
-chorus:tool-look chorus:feeds chorus:Capturing .
-chorus:tool-listen chorus:feeds chorus:Capturing .
-chorus:tool-talk chorus:feeds chorus:Directing .
-chorus:tool-clearing chorus:feeds chorus:Directing .   # #3860 — tool edges follow the tool IRI
-chorus:tool-clearing chorus:indexes chorus:tool-chorus .
+# #4091: the tool edges (feeds, indexes) moved to designing/data/tool-instances.ttl with
+# their rows: an edge from a row belongs with the row, not in the schema graph,
+# where it read as an untyped instance once the rows were renamed tool-*.
 chorus:borg chorus:feeds chorus:Designing .
 chorus:borg chorus:decomposes chorus:gathering .
 
 # /chorus is the memory layer — it indexes everything, doesn't feed a specific vertebra
-chorus:tool-chorus chorus:indexes chorus:gathering .
 
 # /werk IS the spine — it orchestrates workflows through all vertebrae
 # (not a feed relationship — it's the container)
