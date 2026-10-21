@@ -26,92 +26,67 @@ PLAN = [("skills", "skills", SKILLS), ("skills", "stepskills", STEPSKILLS)]
 
 
 def bare(v):
-    return v.rsplit("#", 1)[-1].rsplit("/", 1)[-1] if isinstance(v, str) else v
+    """The door serves a reference with its minted prefix; the plan sends it bare."""
+    v = str(v).removeprefix("chorus:")
+    for p in ("pipeline-step-", "skill-", "principal-"):
+        v = " ".join(x.removeprefix(p) for x in str(v).split())
+    return str(v)
 
 
-def read_entity(type_name, name):
-    url = f"{DOOR}/{type_name}/{name}"
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+def get(path):
+    with urllib.request.urlopen(f"{DOOR}{path}", timeout=15) as r:
+        return json.load(r)
+
+
+def row(dom, cls, name):
     try:
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return json.loads(r.read())
+        r = get(f"/{dom}/{cls}/{name}")
+        # a single row serves its fields in data and its references in links
+        return {"name": name, **(r.get("links") or {}), **(r.get("data") or {})}
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
         raise
-    except Exception as e:
-        raise RuntimeError(f"could not reach door at {DOOR}: {e}") from e
 
 
-def diff(cur, want):
-    changes = {}
-    for k, v in want.items():
-        if k in ("name", "ownedBy"):
-            continue
-        c = bare(cur.get(k))
-        if str(c or "") != str(v or ""):
-            changes[k] = (c, v)
-    return changes
-
-
-def call_runner(domain, verb, args):
-    cmd = [RUNNER, "call", f"{domain}-{verb}"]
-    for k, v in args.items():
-        if v != "":
-            cmd.append(f"{k}={v}")
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        return False, res.stderr.strip() or res.stdout.strip()
-    return True, res.stdout.strip()
+def write(verb, dom, cls, w):
+    args = [RUNNER, "call", verb, f"domain={dom}", f"class={cls}"]
+    if verb == "athena-set":
+        args.append(f"id={w['name']}")
+        w = {k: v for k, v in w.items() if k != "name"}
+    try:
+        r = subprocess.run(args + [f"fields={json.dumps(w)}"], capture_output=True, text=True)
+    except OSError as e:
+        return False, [f"the runner did not run: {e}"]
+    ok = " → 201" if verb == "athena-add" else " → 200"
+    return r.returncode == 0 and ok in r.stdout + r.stderr, (r.stdout + r.stderr).strip().splitlines()[-1:]
 
 
 def main():
-    apply = "--apply" in sys.argv
-    try:
-        read_entity("skills", "probe-probe-never-there")
-    except RuntimeError as e:
-        sys.stderr.write(f"land-4682-rows: {e}\n")
-        return 2
-
-    actions = []
-    for domain, entity_type, items in PLAN:
-        for item in items:
-            name = item["name"]
-            cur = read_entity(entity_type, name)
-            if cur is None:
-                actions.append(("ADD", domain, entity_type, item, {}))
+    apply = "--apply" in sys.argv[1:]
+    counts, refused = {"ADD": 0, "CHANGE": 0, "SAME": 0}, 0
+    for dom, cls, rows in PLAN:
+        for w in rows:
+            try:
+                have = row(dom, cls, w["name"])
+            except Exception as e:
+                print(f"door unreadable at {DOOR}: {e} — no plan")
+                return 2
+            if have is None:
+                kind, detail, verb = "ADD", json.dumps(w, sort_keys=True), "athena-add"
             else:
-                d = diff(cur, item)
-                if d:
-                    actions.append(("CHANGE", domain, entity_type, item, d))
-                else:
-                    actions.append(("SAME", domain, entity_type, item, {}))
-
-    print(f"#4682 post-land row plan ({'APPLY' if apply else 'DRY RUN'} against {DOOR}):")
-    for act, domain, entity_type, item, d in actions:
-        name = item["name"]
-        if act == "SAME":
-            print(f"  SAME    {entity_type:<10} {name}")
-        elif act == "ADD":
-            print(f"  ADD     {entity_type:<10} {name}  {item.get('label', '')}")
-        elif act == "CHANGE":
-            diff_s = ", ".join(f"{k}: {was!r} -> {now!r}" for k, (was, now) in d.items())
-            print(f"  CHANGE  {entity_type:<10} {name}  ({diff_s})")
-
-    if not apply:
-        return 0
-
-    refused = False
-    for act, domain, entity_type, item, d in actions:
-        if act == "SAME":
-            continue
-        verb = f"{entity_type[:-1]}-add" if act == "ADD" else f"{entity_type[:-1]}-set"
-        ok, msg = call_runner(domain, verb, item)
-        if ok:
-            print(f"  applied {act} {item['name']}")
-        else:
-            print(f"  REFUSED {act} {item['name']}: {msg}")
-            refused = True
+                diff = {k: f"{have.get(k, '')!r} -> {v!r}" for k, v in w.items() if bare(have.get(k, "")) != bare(v)}
+                kind, detail, verb = ("SAME", "", None) if not diff else ("CHANGE", json.dumps(diff), "athena-set")
+            counts[kind] += 1
+            print(f"{kind:<6} {dom}/{cls}/{w['name']}  {detail}")
+            if apply and verb:
+                ok, why = write(verb, dom, cls, w)
+                if not ok:
+                    refused += 1
+                    print(f"  REFUSED {dom}/{cls}/{w['name']}: {why}")
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — {verb}")
     return 1 if refused else 0
 
 

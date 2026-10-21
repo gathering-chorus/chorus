@@ -75,3 +75,11 @@ setup() {
     [ "$status" -eq 0 ] || { echo "$f: $output"; return 1; }
   done
 }
+
+@test "clearing-plan.yaml and clearing-evaluate.yaml match what chorus-make generates (#4682)" {
+  KNOWN_CLEARING="$KNOWN,clearing-plan,clearing-evaluate"
+  run "$CM" check-straight clearing-plan "$F/clearing-plan-rows.tsv" "$F/clearing-plan-pipe.tsv" "$KNOWN_CLEARING" "$ROOT/platform/pipelines/clearing-plan.yaml"
+  [ "$status" -eq 0 ]
+  run "$CM" check-straight clearing-evaluate "$F/clearing-evaluate-rows.tsv" "$F/clearing-evaluate-pipe.tsv" "$KNOWN_CLEARING" "$ROOT/platform/pipelines/clearing-evaluate.yaml"
+  [ "$status" -eq 0 ]
+}
