@@ -1,5 +1,5 @@
 // @test-type: unit — pure: the AUTH relay address from its inputs; no relay.
-// @domain: clearing
+// @domain: messages
 // @card: #4657
 // @owner: silas
 /**
