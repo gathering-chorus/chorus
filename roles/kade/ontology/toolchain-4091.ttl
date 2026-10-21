@@ -38,7 +38,7 @@ chorus:hasOperation a owl:ObjectProperty ; rdfs:label "operation" ; rdfs:domain 
 chorus:hasSensor a owl:ObjectProperty ; rdfs:label "sensor" ; rdfs:domain chorus:Framework ; rdfs:range chorus:Sensor ;
     rdfs:comment "The sensor that measures the framework against what it wraps (drift, health)." .
 chorus:icdProvider a owl:DatatypeProperty ; rdfs:label "ICD provider" ; rdfs:domain chorus:Framework ; rdfs:range xsd:string ;
-    rdfs:comment "The ICD provider holding the framework's field maps (its pluggable model), by IRI in urn:gathering:icd, e.g. urn:gathering:icd/provider/grafana/alert-rules. A string, not a link: the ICD graph has its own namespace and loader." .
+    rdfs:comment "The ICD provider holding the framework's field maps (its pluggable model), by IRI, e.g. https://jeffbridwell.com/icd/provider/grafana/alert-rules (loaded into urn:gathering:icd/current). A string, not a link: the ICD graph has its own namespace and loader." .
 chorus:wraps a owl:DatatypeProperty ; rdfs:label "wraps" ; rdfs:domain chorus:Framework ; rdfs:range xsd:string ;
     rdfs:comment "The upstream tool the framework wraps, by name (Grafana OSS)." .
 
@@ -73,7 +73,7 @@ chorus:FrameworkShape-hasOperation a sh:PropertyShape ; sh:path chorus:hasOperat
 chorus:FrameworkShape-hasSensor a sh:PropertyShape ; sh:path chorus:hasSensor ; sh:minCount 1 ; sh:class chorus:Sensor ;
     sh:message "a Framework carries a Sensor; without one it is just a Tool" .
 chorus:FrameworkShape-icdProvider a sh:PropertyShape ; sh:path chorus:icdProvider ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-    sh:pattern "^urn:gathering:icd/provider/" ;
-    sh:message "icdProvider names the framework's ICD provider (urn:gathering:icd/provider/...)" .
+    sh:pattern "^https://jeffbridwell.com/icd/provider/" ;
+    sh:message "icdProvider names the framework's ICD provider (https://jeffbridwell.com/icd/provider/...)" .
 chorus:FrameworkShape-wraps a sh:PropertyShape ; sh:path chorus:wraps ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:message "wraps names the upstream tool the framework wraps" .

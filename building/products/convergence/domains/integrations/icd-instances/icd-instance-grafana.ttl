@@ -1,0 +1,229 @@
+@base <https://jeffbridwell.com/> .
+@prefix icd:   <urn:gathering:icd#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# ICD Instance — Alerts → Grafana alert rules (outbound)
+# Card #4091 AC2: the Grafana framework's pluggable model. The framework reads
+# these mappings to write a Grafana rule from an Alert row, so a changed mapping
+# changes what is written with no code change. The Alert rows are the source
+# (review 10-21); Grafana is the edge. sourceTable/sourceField name Grafana's
+# side, mapsTo names the canonical Alert field, as in the inbound ICDs.
+# =============================================================================
+
+<icd/domain/alerts> a icd:Domain ;
+    icd:domainName "Alerts" ;
+    icd:versionNumber "1" ;
+    icd:domainId "domain-alerts" ;
+    icd:domainMeta "1 provider: Grafana alert rules (outbound)\nAlert rows are the source; Grafana evaluates" ;
+    icd:hasProvider <icd/provider/grafana/alert-rules> .
+
+<icd/provider/grafana/alert-rules> a icd:Provider ;
+    icd:providerName "Grafana alert rules" ;
+    icd:providerMeta "Grafana OSS · provisioning API /api/v1/provisioning/alert-rules" ;
+    icd:direction "outbound" ;
+    icd:integrationPattern icd:RequestReply ;
+    icd:interfaceRole icd:SinkRole ;
+    icd:providerPurpose "Grafana is the one alert evaluator (Jeff 10-19). The framework writes each Alert row as a Grafana rule and stores the rule uid back on the row." ;
+    icd:providerScope "One rule per Alert row, through the alerts domain API (#4091 AC1); drift read by the grafana sync sensor (AC4)." ;
+    icd:hasMapping <icd/mapping/alerts/name> ;
+    icd:hasMapping <icd/mapping/alerts/label> ;
+    icd:hasMapping <icd/mapping/alerts/alertRoute> ;
+    icd:hasMapping <icd/mapping/alerts/hasDomain> ;
+    icd:hasMapping <icd/mapping/alerts/ownedBy> ;
+    icd:hasMapping <icd/mapping/alerts/metricQuery> ;
+    icd:hasMapping <icd/mapping/alerts/forDuration> ;
+    icd:hasMapping <icd/mapping/alerts/schedule> ;
+    icd:hasMapping <icd/mapping/alerts/contactPoint> ;
+    icd:hasMapping <icd/mapping/alerts/grafanaRuleUid> .
+
+<icd/field/alerts/name> a icd:CanonicalField ;
+    icd:fieldOrder 1 ;
+    icd:canonicalName "name" ;
+    icd:displayName "name" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "The rule's title is the Alert row's name" .
+
+<icd/mapping/alerts/name> a icd:FieldMapping ;
+    icd:mappingOrder 1 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "title" ;
+    icd:mapsTo <icd/field/alerts/name> ;
+    icd:mapsToName "name" ;
+    icd:confidence "direct" ;
+    icd:transform "String copy" ;
+    icd:transformType "copy" ;
+    icd:fieldDescription "The rule's title is the Alert row's name" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/label> a icd:CanonicalField ;
+    icd:fieldOrder 2 ;
+    icd:canonicalName "label" ;
+    icd:displayName "label" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "What the rule says when it fires" .
+
+<icd/mapping/alerts/label> a icd:FieldMapping ;
+    icd:mappingOrder 2 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "annotations.summary" ;
+    icd:mapsTo <icd/field/alerts/label> ;
+    icd:mapsToName "label" ;
+    icd:confidence "direct" ;
+    icd:transform "String copy" ;
+    icd:transformType "copy" ;
+    icd:fieldDescription "What the rule says when it fires" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/alertRoute> a icd:CanonicalField ;
+    icd:fieldOrder 3 ;
+    icd:canonicalName "alertRoute" ;
+    icd:displayName "alertRoute" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "Severity of the firing" .
+
+<icd/mapping/alerts/alertRoute> a icd:FieldMapping ;
+    icd:mappingOrder 3 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "labels.severity" ;
+    icd:mapsTo <icd/field/alerts/alertRoute> ;
+    icd:mapsToName "alertRoute" ;
+    icd:confidence "direct" ;
+    icd:transform "alertRoute → severity label" ;
+    icd:transformType "map" ;
+    icd:fieldDescription "Severity of the firing" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/hasDomain> a icd:CanonicalField ;
+    icd:fieldOrder 4 ;
+    icd:canonicalName "hasDomain" ;
+    icd:displayName "hasDomain" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "Where the rule lives and which domain it guards" .
+
+<icd/mapping/alerts/hasDomain> a icd:FieldMapping ;
+    icd:mappingOrder 4 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "folder" ;
+    icd:mapsTo <icd/field/alerts/hasDomain> ;
+    icd:mapsToName "hasDomain" ;
+    icd:confidence "direct" ;
+    icd:transform "Domain name → Grafana folder (and labels.domain)" ;
+    icd:transformType "map" ;
+    icd:fieldDescription "Where the rule lives and which domain it guards" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/ownedBy> a icd:CanonicalField ;
+    icd:fieldOrder 5 ;
+    icd:canonicalName "ownedBy" ;
+    icd:displayName "ownedBy" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "Who the firing nudges (chorus-api /api/alerts/grafana routes by this label)" .
+
+<icd/mapping/alerts/ownedBy> a icd:FieldMapping ;
+    icd:mappingOrder 5 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "labels.role" ;
+    icd:mapsTo <icd/field/alerts/ownedBy> ;
+    icd:mapsToName "ownedBy" ;
+    icd:confidence "direct" ;
+    icd:transform "principal-<role> → <role>" ;
+    icd:transformType "map" ;
+    icd:fieldDescription "Who the firing nudges (chorus-api /api/alerts/grafana routes by this label)" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/metricQuery> a icd:CanonicalField ;
+    icd:fieldOrder 6 ;
+    icd:canonicalName "metricQuery" ;
+    icd:displayName "metricQuery" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "What the rule evaluates" .
+
+<icd/mapping/alerts/metricQuery> a icd:FieldMapping ;
+    icd:mappingOrder 6 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "data[A].model.expr" ;
+    icd:mapsTo <icd/field/alerts/metricQuery> ;
+    icd:mapsToName "metricQuery" ;
+    icd:confidence "direct" ;
+    icd:transform "PromQL or LogQL copy" ;
+    icd:transformType "copy" ;
+    icd:fieldDescription "What the rule evaluates" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/forDuration> a icd:CanonicalField ;
+    icd:fieldOrder 7 ;
+    icd:canonicalName "forDuration" ;
+    icd:displayName "forDuration" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "How long the condition must hold before it fires" .
+
+<icd/mapping/alerts/forDuration> a icd:FieldMapping ;
+    icd:mappingOrder 7 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "for" ;
+    icd:mapsTo <icd/field/alerts/forDuration> ;
+    icd:mapsToName "forDuration" ;
+    icd:confidence "direct" ;
+    icd:transform "Duration copy (e.g. 5m)" ;
+    icd:transformType "copy" ;
+    icd:fieldDescription "How long the condition must hold before it fires" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/schedule> a icd:CanonicalField ;
+    icd:fieldOrder 8 ;
+    icd:canonicalName "schedule" ;
+    icd:displayName "schedule" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "How often the rule group is evaluated" .
+
+<icd/mapping/alerts/schedule> a icd:FieldMapping ;
+    icd:mappingOrder 8 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "group.interval" ;
+    icd:mapsTo <icd/field/alerts/schedule> ;
+    icd:mapsToName "schedule" ;
+    icd:confidence "direct" ;
+    icd:transform "schedule → evaluation interval" ;
+    icd:transformType "map" ;
+    icd:fieldDescription "How often the rule group is evaluated" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/contactPoint> a icd:CanonicalField ;
+    icd:fieldOrder 9 ;
+    icd:canonicalName "contactPoint" ;
+    icd:displayName "contactPoint" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "Where a firing goes; never a second path" .
+
+<icd/mapping/alerts/contactPoint> a icd:FieldMapping ;
+    icd:mappingOrder 9 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "notification.receiver" ;
+    icd:mapsTo <icd/field/alerts/contactPoint> ;
+    icd:mapsToName "contactPoint" ;
+    icd:confidence "direct" ;
+    icd:transform "always chorus-roles (pulse via the #4666 webhook)" ;
+    icd:transformType "constant" ;
+    icd:fieldDescription "Where a firing goes; never a second path" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+<icd/field/alerts/grafanaRuleUid> a icd:CanonicalField ;
+    icd:fieldOrder 10 ;
+    icd:canonicalName "grafanaRuleUid" ;
+    icd:displayName "grafanaRuleUid" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "Joins the Alert row to its Grafana rule" .
+
+<icd/mapping/alerts/grafanaRuleUid> a icd:FieldMapping ;
+    icd:mappingOrder 10 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "uid" ;
+    icd:mapsTo <icd/field/alerts/grafanaRuleUid> ;
+    icd:mapsToName "grafanaRuleUid" ;
+    icd:confidence "direct" ;
+    icd:transform "Written back from Grafana's answer" ;
+    icd:transformType "copy" ;
+    icd:fieldDescription "Joins the Alert row to its Grafana rule" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+

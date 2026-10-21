@@ -41,7 +41,7 @@ verdict() {
 
 fixture() { printf '%s%s\n' "$PREFIX" "$1" > "$BATS_TEST_TMPDIR/$2.ttl"; echo "$BATS_TEST_TMPDIR/$2.ttl"; }
 
-whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation chorus:grafana-alert-ops ; chorus:hasSensor chorus:grafana-sensor ; chorus:icdProvider \"urn:gathering:icd/provider/grafana/alert-rules\" ; chorus:wraps \"Grafana OSS\" ."; }
+whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation chorus:grafana-alert-ops ; chorus:hasSensor chorus:grafana-sensor ; chorus:icdProvider \"https://jeffbridwell.com/icd/provider/grafana/alert-rules\" ; chorus:wraps \"Grafana OSS\" ."; }
 
 @test "the three shapes are in the file, each with a required field" {
   for s in ToolShape ToolTypeShape FrameworkShape; do
@@ -107,4 +107,18 @@ whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation ch
   C='https://jeffbridwell.com/chorus#'
   grep -qF "<${C}Framework> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <${C}Tool> ." <<<"$nt" || return 1
   grep -qF "<${C}toolchain> <${C}definesVocabulary> <${C}Framework> ." <<<"$nt" || return 1
+}
+
+# NEGATIVE PROOF: an ICD provider that is not an ICD provider IRI is refused
+# (the first draft of this shape expected urn:gathering:icd/provider/, which no
+# provider uses: they live under the ICD files' @base).
+@test "a Framework whose ICD provider is not a provider IRI is refused" {
+  f=$(fixture "$(whole | sed 's|https://jeffbridwell.com/icd/provider/grafana/alert-rules|grafana|')" f7)
+  [ "$(verdict "$f")" = VIOLATES ] || return 1
+}
+
+@test "the Grafana ICD provider the Framework names exists in the ICD instances" {
+  nt=$(riot --output=nt "$REPO/building/products/convergence/domains/integrations/icd-instances/icd-instance-grafana.ttl" 2>/dev/null)
+  grep -qF '<https://jeffbridwell.com/icd/provider/grafana/alert-rules> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:gathering:icd#Provider> .' <<<"$nt" || return 1
+  [ "$(grep -cF '<urn:gathering:icd#fromProvider> <https://jeffbridwell.com/icd/provider/grafana/alert-rules>' <<<"$nt")" -eq 10 ] || return 1
 }
