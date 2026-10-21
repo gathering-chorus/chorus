@@ -429,7 +429,7 @@ fn curl(
         return Err(format!(
             "{method} {path} -> HTTP {} {}",
             code.trim(),
-            payload.chars().take(200).collect::<String>()
+            chorus_crawl::error_body(payload)
         ));
     }
     Ok(payload.to_string())

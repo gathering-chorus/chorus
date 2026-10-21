@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — memory-backup.py over fixture sources; the three places are temp dirs, Buzz dumps are echo commands
-# @domain: backups
+# @domain: persistence — backups are persistence; there is no backups domain (#4670)
 # #4630 — one dated folder per Boston day, sha256 per file, copied to Library,
 # Bedroom and Google Drive and checked by hash at each place. Short is red.
 

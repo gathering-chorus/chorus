@@ -1797,6 +1797,20 @@ where
     }
 }
 
+/// #4670 — the body a failed door call reports: its first 200 chars, plus the
+/// prefix clause the learner reads when the cut drops it. A long link value
+/// (`code-file-file-building-products-…-icd-instance-documents-ttl-…`) pushed
+/// "already starts with 'code-file-'" past char 200, so nothing was learned,
+/// the write never retried, and every crawl pass from 10-21 09:08 held its
+/// watermark (10-16 lost five files the same way).
+pub fn error_body(payload: &str) -> String {
+    let cut: String = payload.chars().take(200).collect();
+    match named_prefix(payload) {
+        Some(p) if named_prefix(&cut) != Some(p) => format!("{cut}… already starts with '{p}'"),
+        _ => cut,
+    }
+}
+
 /// The prefix a door refusal names, if any.
 pub fn named_prefix(err: &str) -> Option<&str> {
     let i = err.find("already starts with '")?;
