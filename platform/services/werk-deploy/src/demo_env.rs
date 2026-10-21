@@ -269,8 +269,14 @@ pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
 /// #4514 — the variant runner's environment: its door is the werk's own
 /// athena-make, and its Tasks live in the werk's demo store, never prod's
 /// ~/.chorus/runner-tasks.
-pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
-    Ok(vec![
+/// #4629 — with `staging`, the variant runner's nudge-send signs and publishes to the staging room.
+pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str, staging: Option<&(String, String)>) -> R<Vec<(String, String)>> {
+    let buzz: Vec<(String, String)> = staging.map(|(url, channel)| vec![
+        ("CHORUS_NUDGE_SIGNS".to_string(), "1".to_string()),
+        ("BUZZ_RELAY_URL".to_string(), url.clone()),
+        ("BUZZ_TEAM_CHANNEL".to_string(), channel.clone()),
+    ]).unwrap_or_default();
+    Ok(buzz.into_iter().chain(vec![
         ("CHORUS_DOOR".into(), format!("http://127.0.0.1:{}", env_port_for("athena-make", role)?)),
         // #4515 — the runner's http tools reach the werk's own chorus-api ({api})
         ("CHORUS_API_URL".into(), format!("http://127.0.0.1:{}", env_port_for("chorus-api", role)?)),
@@ -279,7 +285,7 @@ pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chor
         ("CHORUS_HOME".into(), chorus_home.to_string()),
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
-    ])
+    ]).collect())
 }
 
 /// #4398 — the env services a card's demo starts, given the files its diff
@@ -400,6 +406,11 @@ pub fn clearing_v2_env_prod_leak(env: &[(String, String)]) -> Option<String> {
     }
 }
 
+/// #4629 — the real Buzz room: the prod tunnel (:13000) or the prod relay's own host:port.
+pub fn relay_is_prod(url: &str, prod_host: Option<&str>) -> bool {
+    url.contains(":13000") || prod_host.is_some_and(|h| !h.is_empty() && url.contains(h))
+}
+
 /// #4398 — prod surfaces a variant pulse must never be handed.
 pub fn pulse_env_prod_leak(env: &[(String, String)], home: &str) -> Option<String> {
     let prod = [
@@ -413,7 +424,7 @@ pub fn pulse_env_prod_leak(env: &[(String, String)], home: &str) -> Option<Strin
         }
         // #4629 — a demo pulse reads and delivers from the staging room, never the real one
         // (the prod tunnel on :13000, or the prod relay's own host:port from the config)
-        if k == "PULSE_BUZZ_RELAY_URL" && (v.contains(":13000") || prod_v2_relay_host().is_some_and(|h| v.contains(h.as_str()))) {
+        if k == "PULSE_BUZZ_RELAY_URL" && relay_is_prod(v, prod_v2_relay_host().as_deref()) {
             return Some(format!("{k}={v} is the real Buzz room"));
         }
     }
@@ -1034,7 +1045,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let staging = fs::read_to_string(format!("{}/directing/clearing-v2/clearing-v2.config.json", werk_root.trim_end_matches('/')))
             .ok().and_then(|t| staging_buzz_in_config(&t));
         let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path, staging.as_ref())?;
-        let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path)?;
+        let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path, staging.as_ref())?;
         let clearing_v2_owned = clearing_v2_extra_env(role, &home_dir, &variant_path)?;
         if svc.name == "clearing-v2" {
             if let Some(leak) = clearing_v2_env_prod_leak(&clearing_v2_owned) {
@@ -1632,7 +1643,7 @@ mod services_for_diff_4398 {
     fn a_runner_change_gets_a_demo_runner_on_the_werks_door() {
         assert!(names(&["platform/services/chorus-runner/src/tasks.rs"]).contains(&"chorus-runner".to_string()));
         assert!(!names(&["platform/tests/x.bats"]).contains(&"chorus-runner".to_string()));
-        let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin").unwrap();
+        let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin", None).unwrap();
         let get = |k: &str| env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap();
         assert_eq!(get("CHORUS_DOOR"), format!("http://127.0.0.1:{}", env_port_for("athena-make", "wren").unwrap()));
         assert_eq!(get("CHORUS_API_URL"), format!("http://127.0.0.1:{}", env_port_for("chorus-api", "wren").unwrap()));
@@ -1676,6 +1687,26 @@ mod services_for_diff_4398 {
         assert_eq!(pulse_env_prod_leak(&env, "/Users/x"), None);
         let off = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", None).unwrap();
         assert!(off.iter().all(|(k, _)| !k.starts_with("PULSE_BUZZ")));
+    }
+
+    /// NEGATIVE PROOF (Kade 06:51): the prod relay's own host:port is the real room too; the staging port is not.
+    #[test]
+    fn the_prod_relay_host_is_the_real_room_and_the_staging_port_is_not() {
+        assert!(relay_is_prod("ws://relay.lan:3000", Some("relay.lan:3000")));
+        assert!(!relay_is_prod("ws://relay.lan:3010", Some("relay.lan:3000")));
+        assert!(!relay_is_prod("ws://relay.lan:3010", None));
+        assert!(!relay_is_prod("ws://relay.lan:3010", Some("")));
+    }
+
+    /// #4629 — a runner card's demo runner signs into the staging room; without it, no signing.
+    #[test]
+    fn the_variant_runner_signs_into_the_staging_room_only_when_given_one() {
+        let staging = ("ws://relay.lan:3010".to_string(), "chan-1".to_string());
+        let env = runner_extra_env("kade", "/w/.chorus-demo", "iss", "/c", "/Users/x", "/usr/bin", Some(&staging)).unwrap();
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        assert_eq!((get("CHORUS_NUDGE_SIGNS").as_deref(), get("BUZZ_RELAY_URL").as_deref()), (Some("1"), Some("ws://relay.lan:3010")));
+        let off = runner_extra_env("kade", "/w/.chorus-demo", "iss", "/c", "/Users/x", "/usr/bin", None).unwrap();
+        assert!(off.iter().all(|(k, _)| k != "CHORUS_NUDGE_SIGNS"));
     }
 
     /// NEGATIVE PROOF: a demo pulse pointed at the real room (the prod tunnel) is refused.
