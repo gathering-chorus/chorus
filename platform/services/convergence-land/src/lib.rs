@@ -135,7 +135,21 @@ pub fn rule(row: &Value, maps: &[Mapping], folder_uid: &str) -> Result<(Value, S
         return Err(format!("refused: the Alert row has no {} — a rule needs them", missing.join(", ")));
     }
     if interval.is_empty() { interval = "1m".into(); }
+    if r["data"][0]["datasourceUid"] == "loki" { loki_query(&mut r); }
     Ok((r, interval))
+}
+
+/// #4671 — a Loki query is not a Prometheus instant query: Grafana errors on it
+/// (#4091 AC8). A is a Loki instant query, B reduces it to its last value, and the
+/// threshold C reads B.
+fn loki_query(r: &mut Value) {
+    let a = &mut r["data"][0]["model"];
+    if let Some(m) = a.as_object_mut() { m.remove("instant"); }
+    a["queryType"] = json!("instant");
+    r["data"][1]["model"]["expression"] = json!("B");
+    let b = json!({"refId": "B", "datasourceUid": "__expr__", "relativeTimeRange": {"from": 900, "to": 0},
+                   "model": {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last"}});
+    if let Some(d) = r["data"].as_array_mut() { d.insert(1, b); }
 }
 
 /// A silence on the rule's uid label for `minutes`, from `now` (RFC 3339 UTC).
