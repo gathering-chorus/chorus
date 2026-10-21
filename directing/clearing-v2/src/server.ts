@@ -644,7 +644,8 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     if (Array.isArray(event.tags) && event.tags.some((t) => t[0] === 'surface' && t[1] === 'clearing')) return;
     if (deps.handoffs && !deps.handoffs.claim(event.id, event.created_at)) return;
     for (const nudge of deps.router.extractNudges(msg)) {
-      void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content).then((r) => {
+      // #4672 — one trace per role copy, so pulse's shadow can join his #clearing note to each row
+      void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content, undefined, `jeff-${event.id}-${nudge.to}`).then((r) => {
         if (!r.ok) {
           console.error(`[clearing-v2] Jeff's message to ${nudge.to} was not handed off: ${r.reason}`);
           const roles = deps.undelivered ? deps.undelivered.record(msg.id, nudge.to) : [nudge.to];

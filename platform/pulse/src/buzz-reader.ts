@@ -26,7 +26,23 @@ export interface ShadowVerdict {
 export interface ShadowStore {
   getMessageEnds(id: number): { from: string; to: string; type: string; content: string } | null;
   getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string; content: string } | null;
-  nudgeIdsBetween(from: string, to: string): number[];
+  deliveryIdsBetween(from: string, to: string): number[];
+  /** #4672 — the jeff-input rows one Jeff post was handed off as (trace jeff-<note id>-<role>). */
+  getJeffInputRows(noteId: string): Array<{ id: number; to: string; content: string }>;
+}
+
+/** #4672 — one sweep window's coverage: every delivery stored in it, and how many got a verdict. */
+export interface ShadowCoverage {
+  from: string;
+  to: string;
+  stored: number;
+  /** a room note named it (any verdict) */
+  judged: number;
+  /** a room note named it and the verdict was match */
+  matched: number;
+  missed: number;
+  /** matched / stored as a whole percent — a missed or refused row is never covered (Abby 10:17); null when nothing was stored */
+  pct: number | null;
 }
 
 /** A time as sqlite's datetime('now') writes it, UTC. */
@@ -51,6 +67,20 @@ export function noteWords(content: string): string {
   return content.replace(/^\[(nudge from [^\]→]+→ [^\]]+|alert → [^\]]+)\]\s*/, '');
 }
 
+/**
+ * #4672 — a Jeff post joins the rows Clearing v2 handed it off as, one per role:
+ * by its `signed` tag (Clearing's copy of his signed event) or else its own id
+ * (a post from the Buzz app). Each row is a match when the words are the same.
+ * [] when no row names it: a role reply or a room message is not a delivery.
+ */
+export function jeffVerdicts(note: BuzzNote, store: ShadowStore): Array<ShadowVerdict & { id: number }> {
+  const noteId = tag(note, 'signed') ?? note.id;
+  if (!/^[0-9a-f]{64}$/.test(noteId) || tag(note, 'surface') === 'terminal') return [];
+  return store.getJeffInputRows(noteId).map((row) => ({
+    msg: `pulse-${row.id}`, verdict: row.content === note.content ? 'match' : 'content-mismatch', id: row.id,
+  }));
+}
+
 export function shadowVerdict(note: BuzzNote, store: ShadowStore): ShadowVerdict & { id?: number } {
   const msg = tag(note, 'msg') ?? '';
   if (!DELIVERED_KINDS.has(tag(note, 'kind') ?? '') || tag(note, 'surface') === 'terminal') return { msg, verdict: 'not-a-delivery' };
@@ -70,9 +100,13 @@ export interface BuzzReaderOptions {
   signer: BuzzSigner;
   store: ShadowStore;
   channel: string;
+  /** #4672 — rooms read as well (#clearing, where Jeff's posts are). */
+  extraChannels?: string[];
   onVerdict: (v: ShadowVerdict) => void;
   /** #4629 S3 — a delivery note joined its row with the right key: the store id to deliver. */
   onMatch?: (id: number) => void;
+  /** #4672 — each sweep's coverage reading. */
+  onCoverage?: (c: ShadowCoverage) => void;
   /** #4629 AC4 — whose key signed a note; absent = no key check (S1 behaviour). */
   keys?: { check(pubkey: string, author: string | undefined, msg?: string): Promise<'ok' | 'wrong-key' | 'unverified'> };
   /** How long a recorded message may go without a room note before it counts as missed (default 10 min). */
@@ -94,15 +128,18 @@ export class BuzzReader {
   private readonly seen = new Set<string>();
   private readonly seenMsg = new Set<number>();
   private readonly reported = new Set<number>();
+  private readonly matched = new Set<number>();
   private readonly now: () => number;
   private readonly startedAt: number;
   private watermark: number;
+  private swept: number;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly o: BuzzReaderOptions) {
     this.now = o.now ?? Date.now;
     this.startedAt = this.now();
     this.watermark = Math.floor(this.startedAt / 1000) - 60;
+    this.swept = this.startedAt;
     const every = o.sweepEveryMs ?? 60_000;
     if (every > 0) { this.timer = setInterval(() => this.sweep(), every); this.timer.unref(); }
     this.connect();
@@ -118,15 +155,33 @@ export class BuzzReader {
     this.ws = null;
   }
 
-  /** Report each message recorded since start, older than the grace window, that no room note named. */
+  /**
+   * Report each message recorded since start, older than the grace window, that no
+   * room note named; then the coverage of the window since the last sweep (#4672).
+   */
   sweep(): void {
     const cutoff = this.now() - (this.o.graceMs ?? 600_000);
     if (cutoff <= this.startedAt) return;
-    for (const id of this.o.store.nudgeIdsBetween(sqliteUtc(this.startedAt), sqliteUtc(cutoff))) {
+    // only the window since the last sweep: every row before it was judged or reported then (#4672 review)
+    for (const id of this.o.store.deliveryIdsBetween(sqliteUtc(this.swept), sqliteUtc(cutoff))) {
       if (this.seenMsg.has(id) || this.reported.has(id)) continue;
       this.reported.add(id);
       this.o.onVerdict({ msg: `pulse-${id}`, verdict: 'missed' });
     }
+    this.reportCoverage(cutoff);
+  }
+
+  private reportCoverage(cutoff: number): void {
+    const from = sqliteUtc(this.swept), to = sqliteUtc(cutoff);
+    if (to <= from) return;
+    const ids = this.o.store.deliveryIdsBetween(from, to);
+    this.swept = cutoff;
+    const judged = ids.filter((id) => this.seenMsg.has(id)).length;
+    const matched = ids.filter((id) => this.matched.has(id)).length;
+    const missed = ids.filter((id) => this.reported.has(id)).length;
+    this.o.onCoverage?.({ from, to, stored: ids.length, judged, matched, missed, pct: ids.length ? Math.floor((matched / ids.length) * 100) : null });
+    // the window is closed: its ids are never read again, so the sets stay bounded (Silas's review)
+    for (const id of ids) { this.seenMsg.delete(id); this.reported.delete(id); this.matched.delete(id); }
   }
 
   private connect(): void {
@@ -143,7 +198,7 @@ export class BuzzReader {
   }
 
   private subscribe(): void {
-    this.ws?.send(JSON.stringify(['REQ', 'pulse-shadow', { kinds: [9], '#h': [this.o.channel], since: this.watermark }]));
+    this.ws?.send(JSON.stringify(['REQ', 'pulse-shadow', { kinds: [9], '#h': [this.o.channel, ...(this.o.extraChannels ?? [])], since: this.watermark }]));
   }
 
   private onFrame(raw: string): void {
@@ -165,6 +220,7 @@ export class BuzzReader {
     if (this.seen.has(note.id)) return;
     this.seen.add(note.id);
     if (typeof note.created_at === 'number') this.watermark = Math.max(this.watermark, note.created_at - 60);
+    if (await this.judgeJeff(note)) return;
     const { id, ...v } = shadowVerdict(note, this.o.store);
     if (v.verdict !== 'not-a-delivery' && this.o.keys) {
       const author = tag(note, 'author');
@@ -172,7 +228,24 @@ export class BuzzReader {
       if (k !== 'ok') { this.o.onVerdict({ msg: v.msg, verdict: k, ...(k === 'wrong-key' && author ? { author } : {}) }); return; }
     }
     if (id !== undefined) this.seenMsg.add(id);
+    if (id !== undefined && v.verdict === 'match') this.matched.add(id);
     this.o.onVerdict(v);
     if (id !== undefined && v.verdict === 'match') this.o.onMatch?.(id);
+  }
+
+  /** #4672 — a Jeff post: one verdict per role row, signed by Jeff's key (or Clearing's room copy of it). True when it was one. */
+  private async judgeJeff(note: BuzzNote): Promise<boolean> {
+    const rows = jeffVerdicts(note, this.o.store);
+    if (!rows.length) return false;
+    for (const { id, ...v } of rows) {
+      const k = this.o.keys ? await this.o.keys.check(note.pubkey, 'jeff', v.msg) : 'ok';
+      // judged only once the verdict is known, so a sweep during the key read never counts it half-done (Abby's review)
+      this.seenMsg.add(id);
+      if (k === 'ok' && v.verdict === 'match') this.matched.add(id);
+      this.o.onVerdict(k === 'ok' ? v : { msg: v.msg, verdict: k, ...(k === 'wrong-key' ? { author: 'jeff' } : {}) });
+      // no onMatch: Clearing v2 hands Jeff's rows to pulse and pulse delivers them; nothing is held for the
+      // room, so a match here releases nothing (Kade's review). If Jeff input is ever held, release it here.
+    }
+    return true;
   }
 }

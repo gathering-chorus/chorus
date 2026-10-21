@@ -58,6 +58,8 @@ export interface BuzzWriterOptions {
  * The kind 1 t=team notes pulse wrote before were stored and never shown.
  */
 export const TEAM_CHANNEL_DEFAULT = '160e1f5d-6816-4c68-94b3-b5f1ade75565';
+/** #4667/#4672 — the #clearing room, where Jeff's Clearing posts are stored. */
+export const CLEARING_CHANNEL_DEFAULT = '03e2b251-240f-47fe-89b5-fe4e7ac648fb';
 const CHANNEL_MESSAGE = 9;
 
 /** Pulse stores a nudge with its delivery header; the room carries the words. */
