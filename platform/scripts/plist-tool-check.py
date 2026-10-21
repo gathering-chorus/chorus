@@ -1,6 +1,6 @@
 """#4634 — every LaunchAgent that calls a runner tool names a tool that exists.
 
-The herald tool was renamed three times (herald_run, borg-tend-herald, herald-run)
+The herald tool was renamed three times (underscore, then borg-tend-herald, then herald-run)
 and the sensor agents kept calling a dead name from 10-17 to 10-18, exiting 2
 every run while nothing reported it. Usage:
     plist-tool-check.py <launchd-dir> <skills.json>
