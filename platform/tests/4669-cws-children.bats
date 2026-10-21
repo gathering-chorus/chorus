@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
-# @test-type: unit — fixture view text and fixture runs, no live board or dagu
+# @test-type: unit — fixture view JSON and fixture runs, no live board or dagu
 # @domain: cicd
 # @card: 4669 · owner: wren
 # What Jeff sees: `/cws <parent>` lists each child card with its board status
-# and its newest run, one line each (scripts/chorus-werk-status).
+# and its newest run, one line each (scripts/chorus-werk-status), read from
+# `cards view <id> --json` so a change to the printed view cannot empty it.
 
 REPO="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 CWS="$REPO/platform/scripts/chorus-werk-status"
@@ -19,31 +20,22 @@ exec(sys.argv[2])
 EOF
 }
 
-VIEW_PARENT='#4652 Jeff signs as Jeff
-  Status:   Done
-  Owner:    Wren
-  Priority: P2
-  Children (2):
-    #4667 [Done] messages sensor counts #clearing
-    #4670 [WIP] shadow reader reads #clearing
-  Desc:
-    ## Experience
-    - [x] #4699 [Done] a checkbox in the desc is not a child'
-
-@test "a parent's view gives its children with their status" {
-  run cws_py "print(cws.children_from_view('''$VIEW_PARENT'''))"
+@test "a parent's view --json gives its children with their status" {
+  run cws_py "print(cws.children_from_json('{\"index\": 4652, \"children\": [{\"index\": 4667, \"status\": \"Done\", \"title\": \"counts\"}, {\"index\": 4670, \"status\": \"WIP\", \"title\": \"reader\"}]}'))"
   echo "$output"
   [ "$status" -eq 0 ]
-  [ "$output" = "[('4667', 'Done', 'messages sensor counts #clearing'), ('4670', 'WIP', 'shadow reader reads #clearing')]" ]
+  [ "$output" = "[('4667', 'Done', 'counts'), ('4670', 'WIP', 'reader')]" ]
 }
 
-@test "negative proof: a card with no children gives none" {
-  run cws_py "print(cws.children_from_view('''#10 a loner
-  Status:   Later
-  Desc:
-    #4667 [Done] looks like a child but is desc text'''))"
-  echo "$output"
+@test "a card with no children gives none" {
+  run cws_py "print(cws.children_from_json('{\"index\": 10, \"children\": []}'))"
   [ "$output" = "[]" ]
+}
+
+@test "negative proof: output that is not a card reads unreadable (None), never 'no children'" {
+  run cws_py "print(cws.children_from_json('ERROR: No task #99999 on gathering board'), cws.children_from_json('[1]'))"
+  echo "$output"
+  [ "$output" = "None None" ]
 }
 
 @test "each child gets one line with its newest run" {

@@ -257,7 +257,13 @@ export class BoardClient {
    */
   familyOf(task: VikunjaTask, dbMap: Map<number, string>): { parent?: number; children: CardChild[] } {
     const related = task.related_tasks ?? {};
-    const indexOf = (t: VikunjaRelatedTask) => t.index ?? t.id;
+    // Vikunja returns the full related task, display index included (measured
+    // live on #2921 10-21). No fallback to the API id: that would print a
+    // wrong card number silently (Kade/Silas/Abby review, #4669 run 1).
+    const indexOf = (t: VikunjaRelatedTask): number => {
+      if (t.index === undefined) throw new Error(`related task (api id ${t.id}) of #${task.index} has no display index`);
+      return t.index;
+    };
     const parentTask = (related.parenttask ?? []).at(0);
     const children = (related.subtask ?? []).map((t) => ({
       index: indexOf(t),

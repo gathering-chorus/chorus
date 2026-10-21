@@ -150,6 +150,14 @@ describe('#4669 family from Vikunja relations', () => {
     ]);
   });
 
+  test('negative proof: a related task with no display index is refused, never shown as its api id', () => {
+    const task = {
+      id: 4682, index: 4652, title: 'p0', description: '', done: false, created: '', updated: '',
+      labels: null, project_id: 1, related_tasks: { subtask: [{ id: 4697, title: 'no index', done: false }] },
+    } as VikunjaTask;
+    expect(() => client.familyOf(task, new Map())).toThrow(/api id 4697/);
+  });
+
   test('a card with no relations has no family', () => {
     const task = { id: 1, index: 1, title: 't', description: '', done: false, created: '', updated: '', labels: null, project_id: 1 } as VikunjaTask;
     expect(client.familyOf(task, new Map())).toEqual({ parent: undefined, children: [] });
@@ -157,11 +165,11 @@ describe('#4669 family from Vikunja relations', () => {
 });
 
 describe('#4669 cards view shows the family', () => {
-  async function viewOf(task: BoardTask): Promise<string> {
+  async function viewOf(task: BoardTask, extra: string[] = []): Promise<string> {
     const mock = new MockClient([]);
     mock.tasks.set(task.index, task);
     const q = quiet();
-    try { await runCli(['node', 'cards', 'view', String(task.index)], () => mock as unknown as BoardClient); return q.text(); } finally { q.restore(); }
+    try { await runCli(['node', 'cards', 'view', String(task.index), ...extra], () => mock as unknown as BoardClient); return q.text(); } finally { q.restore(); }
   }
 
   test('a parent lists its children with status', async () => {
@@ -173,6 +181,13 @@ describe('#4669 cards view shows the family', () => {
   test('a child names its parent', async () => {
     const out = await viewOf(mk(4667, { parent: 4652 }));
     expect(out).toMatch(/Child of: #4652/);
+  });
+
+  test('view --json carries parent and children for /cws', async () => {
+    const out = await viewOf(mk(4652, { parent: 4600, children: [{ index: 4667, title: 'c', status: 'Done' }] }), ['--json']);
+    const j = JSON.parse(out);
+    expect(j.parent).toBe(4600);
+    expect(j.children).toEqual([{ index: 4667, title: 'c', status: 'Done' }]);
   });
 
   test('a card with no family prints neither line', async () => {

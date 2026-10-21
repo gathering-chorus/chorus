@@ -246,6 +246,9 @@ async function printViewJson(client: BoardClient, task: BoardTask, index: number
     domains: task.domains,
     created: task.created,
     updated: task.updated,
+    // #4669 — the family, for /cws's roll-up
+    ...(task.parent !== undefined ? { parent: task.parent } : {}),
+    children: task.children ?? [],
     comments: comments.map((c) => ({ author: c.author, text: c.text })),
   }, null, 2));
 }
