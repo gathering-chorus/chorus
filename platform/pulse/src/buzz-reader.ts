@@ -12,11 +12,18 @@ import { frameText, signNote, type BuzzNote, type BuzzSigner } from './buzz-writ
 
 export interface ShadowVerdict {
   msg: string;
-  verdict: 'match' | 'to-mismatch' | 'no-row' | 'no-msg-tag' | 'no-to-tag' | 'not-a-delivery';
+  /** missed: pulse recorded the message but no room note named it within the grace window (Silas 06:22). */
+  verdict: 'match' | 'to-mismatch' | 'no-row' | 'no-msg-tag' | 'no-to-tag' | 'not-a-delivery' | 'missed';
 }
 
 /** The store calls the shadow join needs. */
-export interface ShadowStore { getMessageEnds(id: number): { from: string; to: string; type: string } | null }
+export interface ShadowStore {
+  getMessageEnds(id: number): { from: string; to: string; type: string } | null;
+  nudgeIdsBetween(from: string, to: string): number[];
+}
+
+/** A time as sqlite's datetime('now') writes it, UTC. */
+export const sqliteUtc = (ms: number): string => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 
 const tag = (n: BuzzNote, name: string): string | undefined => n.tags.find((t) => t[0] === name)?.[1];
 
@@ -43,23 +50,58 @@ export interface BuzzReaderOptions {
   store: ShadowStore;
   channel: string;
   onVerdict: (v: ShadowVerdict) => void;
+  /** How long a recorded message may go without a room note before it counts as missed (default 10 min). */
+  graceMs?: number;
+  /** How often the missed sweep runs (default 60 s; 0 = only when sweep() is called). */
+  sweepEveryMs?: number;
+  now?: () => number;
 }
 
-/** Subscribes to kind 9 in one channel from now on and judges each note once. */
+/**
+ * Subscribes to kind 9 in one channel from now on and judges each note once.
+ * A reconnect resumes from the newest note seen (less a minute of overlap the
+ * seen-id set absorbs), and a sweep reports every message pulse recorded since
+ * start that no note named within the grace window (the reverse direction).
+ */
 export class BuzzReader {
   private ws: WebSocket | null = null;
   private closed = false;
   private readonly seen = new Set<string>();
-  private readonly since = Math.floor(Date.now() / 1000) - 60;
+  private readonly seenMsg = new Set<number>();
+  private readonly reported = new Set<number>();
+  private readonly now: () => number;
+  private readonly startedAt: number;
+  private watermark: number;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly o: BuzzReaderOptions) {
+    this.now = o.now ?? Date.now;
+    this.startedAt = this.now();
+    this.watermark = Math.floor(this.startedAt / 1000) - 60;
+    const every = o.sweepEveryMs ?? 60_000;
+    if (every > 0) { this.timer = setInterval(() => this.sweep(), every); this.timer.unref(); }
     this.connect();
   }
 
+  /** The subscription's since: the newest note seen, less a minute. */
+  since(): number { return this.watermark; }
+
   close(): void {
     this.closed = true;
+    if (this.timer) clearInterval(this.timer);
     this.ws?.terminate();
     this.ws = null;
+  }
+
+  /** Report each message recorded since start, older than the grace window, that no room note named. */
+  sweep(): void {
+    const cutoff = this.now() - (this.o.graceMs ?? 600_000);
+    if (cutoff <= this.startedAt) return;
+    for (const id of this.o.store.nudgeIdsBetween(sqliteUtc(this.startedAt), sqliteUtc(cutoff))) {
+      if (this.seenMsg.has(id) || this.reported.has(id)) continue;
+      this.reported.add(id);
+      this.o.onVerdict({ msg: `pulse-${id}`, verdict: 'missed' });
+    }
   }
 
   private connect(): void {
@@ -76,7 +118,7 @@ export class BuzzReader {
   }
 
   private subscribe(): void {
-    this.ws?.send(JSON.stringify(['REQ', 'pulse-shadow', { kinds: [9], '#h': [this.o.channel], since: this.since }]));
+    this.ws?.send(JSON.stringify(['REQ', 'pulse-shadow', { kinds: [9], '#h': [this.o.channel], since: this.watermark }]));
   }
 
   private onFrame(raw: string): void {
@@ -91,9 +133,16 @@ export class BuzzReader {
       return;
     }
     if (f[0] !== 'EVENT' || typeof f[2] !== 'object' || f[2] === null) return;
-    const note = f[2] as BuzzNote;
+    this.onNote(f[2] as BuzzNote);
+  }
+
+  private onNote(note: BuzzNote): void {
     if (this.seen.has(note.id)) return;
     this.seen.add(note.id);
-    this.o.onVerdict(shadowVerdict(note, this.o.store));
+    if (typeof note.created_at === 'number') this.watermark = Math.max(this.watermark, note.created_at - 60);
+    const v = shadowVerdict(note, this.o.store);
+    const id = /^pulse-(\d+)$/.exec(v.msg);
+    if (id) this.seenMsg.add(Number(id[1]));
+    this.o.onVerdict(v);
   }
 }

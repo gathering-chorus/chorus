@@ -811,10 +811,12 @@ if (require.main === module) {
 /** #4629 S1 — the shadow reader, or none unless PULSE_BUZZ_SHADOW=1 and the relay and principal-pulse's key are there. */
 function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | undefined {
   const relayUrl = process.env.PULSE_BUZZ_RELAY_URL;
-  if (process.env.PULSE_BUZZ_SHADOW !== '1' || !relayUrl) return undefined;
   const { signer, reason } = identitySignerFromHome(os.homedir(), 'pulse');
-  if (!signer) {
-    log('error', 'buzz.shadow.off', { reason });
+  const off = process.env.PULSE_BUZZ_SHADOW !== '1' ? 'PULSE_BUZZ_SHADOW is not 1' : !relayUrl ? 'PULSE_BUZZ_RELAY_URL not set' : !signer ? reason : undefined;
+  if (off || !relayUrl || !signer) {
+    // on the spine, so a day the shadow was off reads unmeasured, never green (Silas 06:22)
+    log('info', 'buzz.shadow.off', { reason: off });
+    void emit('buzz.shadow.off', { reason: off ?? '' });
     return undefined;
   }
   return new BuzzReader({

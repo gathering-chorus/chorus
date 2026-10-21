@@ -123,3 +123,64 @@ describe('#4629 S1 the reader signs in as principal-pulse, never as the bridge',
     expect(identitySignerFromHome(h, 'pulse').signer).toBeUndefined();
   });
 });
+
+describe('#4629 S1 the reader resumes from the newest note and reports the reverse: recorded but never in the room', () => {
+  const quietRelay = async (notes: BuzzNote[]) => {
+    const reqs: Array<Record<string, unknown>> = [];
+    const server = http.createServer();
+    const wss = new WebSocketServer({ server });
+    wss.on('connection', (ws) => ws.on('message', (raw) => {
+      const f = JSON.parse((raw as Buffer).toString('utf8'));
+      if (f[0] === 'REQ') { reqs.push(f[2]); for (const n of notes) ws.send(JSON.stringify(['EVENT', f[1], n])); }
+    }));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    return { url: `ws://127.0.0.1:${(server.address() as { port: number }).port}`, reqs,
+      close: () => new Promise<void>((res) => { for (const c of wss.clients) c.terminate(); wss.close(() => server.close(() => res())); }) };
+  };
+  const until = (f: () => boolean) => new Promise<void>((res) => { const t = setInterval(() => { if (f()) { clearInterval(t); res(); } }, 20); });
+
+  test('the watermark advances to the newest note seen, less a minute', async () => {
+    const store = tmpStore();
+    const n = signNote(reader, Math.floor(Date.now() / 1000) + 100, 9, [['h', TEAM], ['kind', 'reply']], 'r');
+    const relay = await quietRelay([n]);
+    const verdicts: ShadowVerdict[] = [];
+    const r = new BuzzReader({ relayUrl: relay.url, signer: reader, store, channel: TEAM, onVerdict: (v) => verdicts.push(v), sweepEveryMs: 0 });
+    try {
+      await until(() => verdicts.length > 0);
+      expect(r.since()).toBe(n.created_at - 60);
+    } finally { r.close(); await relay.close(); }
+  });
+
+  test('NEGATIVE PROOF: a message recorded after start with no room note is reported missed once grace passes, and only once', async () => {
+    let now = Date.now() - 5_000;
+    const store = tmpStore();
+    const relay = await quietRelay([]);
+    const verdicts: ShadowVerdict[] = [];
+    const r = new BuzzReader({ relayUrl: relay.url, signer: reader, store, channel: TEAM, onVerdict: (v) => verdicts.push(v), sweepEveryMs: 0, graceMs: 1_000, now: () => now });
+    try {
+      const id = store.sendNudge('kade', 'silas', 'never copied');
+      now += 1_000;          // inside the grace window: not missed yet
+      r.sweep();
+      expect(verdicts).toEqual([]);
+      now += 60_000;         // well past it
+      r.sweep(); r.sweep();
+      expect(verdicts).toEqual([{ msg: `pulse-${id}`, verdict: 'missed' }]);
+    } finally { r.close(); await relay.close(); }
+  });
+
+  test('a recorded message whose note arrived is never reported missed', async () => {
+    let now = Date.now() - 5_000;
+    const store = tmpStore();
+    const id = store.sendNudge('kade', 'silas', 'copied');
+    const n = note([['author', 'kade'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `pulse-${id}`]]);
+    const relay = await quietRelay([n]);
+    const verdicts: ShadowVerdict[] = [];
+    const r = new BuzzReader({ relayUrl: relay.url, signer: reader, store, channel: TEAM, onVerdict: (v) => verdicts.push(v), sweepEveryMs: 0, graceMs: 1_000, now: () => now - 10_000 });
+    try {
+      await until(() => verdicts.length > 0);
+      now += 120_000;
+      r.sweep();
+      expect(verdicts).toEqual([{ msg: `pulse-${id}`, verdict: 'match' }]);
+    } finally { r.close(); await relay.close(); }
+  });
+});

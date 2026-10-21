@@ -405,6 +405,11 @@ export class MessageStore {
     return (row as { from: string; to: string; type: string } | undefined) ?? null;
   }
 
+  /** #4629 — ids of the nudges and alerts recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the shadow's missed sweep. */
+  nudgeIdsBetween(from: string, to: string): number[] {
+    return (this.db.prepare('SELECT id FROM messages WHERE type = \'nudge\' AND created_at >= ? AND created_at < ? ORDER BY id').all(from, to) as Array<{ id: number }>).map((r) => r.id);
+  }
+
   getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null; delivery_session_id: string | null; inbox_claim_session: string | null } {
     const row = this.db.prepare(
       'SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id, delivery_session_id, inbox_claim_session FROM messages WHERE id = ?'
