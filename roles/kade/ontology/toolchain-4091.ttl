@@ -1,0 +1,85 @@
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix chorus:  <https://jeffbridwell.com/chorus#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+
+# #4091 AC5 — the framework, Jeff 2026-10-20 17:06: it exposes operations (MCP),
+# has a pluggable model other agents extend, carries a sensor feeding monitors and
+# alerts, and wraps a more complex thing. 17:15: the toolchain is the set of
+# frameworks. 17:16: a Tool row is also the dependency record (version, install,
+# upstream, license, where, what uses it). Wren 17:31: Framework is a subclass of
+# Tool and its shape REQUIRES the four parts, so a Tool without them is just a
+# Tool and nobody keeps a list. Tool and ToolType are chorus.ttl classes that
+# never had a shape; the toolchain domain already defines them.
+
+chorus:Framework a owl:Class ;
+    rdfs:subClassOf chorus:Tool ;
+    rdfs:label "Framework" ;
+    rdfs:comment "A Tool that exposes operations, carries a Sensor, has an ICD provider as its pluggable model, and wraps an upstream tool (Grafana, Fuseki/Jena, Vikunja, Loki, NiFi, dagu)." .
+
+chorus:toolchain chorus:definesVocabulary chorus:Framework .
+
+chorus:toolVersion a owl:DatatypeProperty ; rdfs:label "version" ; rdfs:domain chorus:Tool ; rdfs:range xsd:string ;
+    rdfs:comment "The installed version, as the tool reports it." .
+chorus:installPath a owl:DatatypeProperty ; rdfs:label "install path" ; rdfs:domain chorus:Tool ; rdfs:range xsd:string ;
+    rdfs:comment "Where it is installed (binary, app or config root)." .
+chorus:installMethod a owl:DatatypeProperty ; rdfs:label "install method" ; rdfs:domain chorus:Tool ; rdfs:range xsd:string ;
+    rdfs:comment "How it is installed: brew, cargo, npm, a LaunchAgent, by hand." .
+chorus:upstreamUrl a owl:DatatypeProperty ; rdfs:label "upstream" ; rdfs:domain chorus:Tool ; rdfs:range xsd:string ;
+    rdfs:comment "Where the tool comes from (project or release page)." .
+chorus:toolLicense a owl:DatatypeProperty ; rdfs:label "license" ; rdfs:domain chorus:Tool ; rdfs:range xsd:string ;
+    rdfs:comment "SPDX id, e.g. AGPL-3.0-only." .
+chorus:installedOn a owl:ObjectProperty ; rdfs:label "installed on" ; rdfs:domain chorus:Tool ; rdfs:range chorus:Machine .
+chorus:toolUsedBy a owl:ObjectProperty ; rdfs:label "used by" ; rdfs:domain chorus:Tool ; rdfs:range chorus:Service ;
+    rdfs:comment "The services that depend on it: the impact walk when the tool changes." .
+chorus:hasOperation a owl:ObjectProperty ; rdfs:label "operation" ; rdfs:domain chorus:Framework ; rdfs:range chorus:Skill ;
+    rdfs:comment "An operation the framework exposes to roles as an MCP tool through the runner." .
+chorus:hasSensor a owl:ObjectProperty ; rdfs:label "sensor" ; rdfs:domain chorus:Framework ; rdfs:range chorus:Sensor ;
+    rdfs:comment "The sensor that measures the framework against what it wraps (drift, health)." .
+chorus:icdProvider a owl:DatatypeProperty ; rdfs:label "ICD provider" ; rdfs:domain chorus:Framework ; rdfs:range xsd:string ;
+    rdfs:comment "The ICD provider holding the framework's field maps (its pluggable model), by IRI, e.g. https://jeffbridwell.com/icd/provider/grafana/alert-rules (loaded into urn:gathering:icd/current). A string, not a link: the ICD graph has its own namespace and loader." .
+chorus:wraps a owl:DatatypeProperty ; rdfs:label "wraps" ; rdfs:domain chorus:Framework ; rdfs:range xsd:string ;
+    rdfs:comment "The upstream tool the framework wraps, by name (Grafana OSS)." .
+
+chorus:ToolTypeShape a sh:NodeShape ;
+    sh:targetClass chorus:ToolType ; sh:node chorus:CoreShape ;
+    sh:property chorus:ToolTypeShape-label .
+chorus:ToolTypeShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+
+chorus:ToolShape a sh:NodeShape ;
+    sh:targetClass chorus:Tool ; sh:node chorus:CoreShape ;
+    sh:property chorus:ToolShape-label , chorus:ToolShape-ownedBy , chorus:ToolShape-toolType ,
+        chorus:ToolShape-toolVersion , chorus:ToolShape-installPath , chorus:ToolShape-installMethod ,
+        chorus:ToolShape-upstreamUrl , chorus:ToolShape-toolLicense , chorus:ToolShape-installedOn , chorus:ToolShape-toolUsedBy .
+chorus:ToolShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+# ownedBy is optional on a plain Tool: the 7 Tool rows already in prod (the
+# /chorus, /clearing, /listen... skills, 2026-09-26) carry none, and a required
+# field they lack would 422 their reads and patches (Silas 10-21). A Framework
+# requires it: its alerts route to its owner.
+chorus:ToolShape-ownedBy a sh:PropertyShape ; sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:ToolShape-toolType a sh:PropertyShape ; sh:path chorus:toolType ; sh:maxCount 1 ; sh:class chorus:ToolType .
+chorus:ToolShape-toolVersion a sh:PropertyShape ; sh:path chorus:toolVersion ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ToolShape-installPath a sh:PropertyShape ; sh:path chorus:installPath ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ToolShape-installMethod a sh:PropertyShape ; sh:path chorus:installMethod ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ToolShape-upstreamUrl a sh:PropertyShape ; sh:path chorus:upstreamUrl ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ToolShape-toolLicense a sh:PropertyShape ; sh:path chorus:toolLicense ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ToolShape-installedOn a sh:PropertyShape ; sh:path chorus:installedOn ; sh:class chorus:Machine .
+chorus:ToolShape-toolUsedBy a sh:PropertyShape ; sh:path chorus:toolUsedBy ; sh:class chorus:Service .
+
+chorus:FrameworkShape a sh:NodeShape ;
+    sh:targetClass chorus:Framework ; sh:node chorus:CoreShape ;
+    sh:property chorus:FrameworkShape-ownedBy , chorus:FrameworkShape-hasOperation , chorus:FrameworkShape-hasSensor ,
+        chorus:FrameworkShape-icdProvider , chorus:FrameworkShape-wraps .
+chorus:FrameworkShape-ownedBy a sh:PropertyShape ; sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ;
+    sh:message "a Framework has an owner: its sensor's alerts route to them" .
+chorus:FrameworkShape-hasOperation a sh:PropertyShape ; sh:path chorus:hasOperation ; sh:minCount 1 ; sh:class chorus:Skill ;
+    sh:message "a Framework exposes at least one operation (a Skill run as an MCP tool)" .
+chorus:FrameworkShape-hasSensor a sh:PropertyShape ; sh:path chorus:hasSensor ; sh:minCount 1 ; sh:class chorus:Sensor ;
+    sh:message "a Framework carries a Sensor; without one it is just a Tool" .
+chorus:FrameworkShape-icdProvider a sh:PropertyShape ; sh:path chorus:icdProvider ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^https://jeffbridwell.com/icd/provider/" ;
+    sh:message "icdProvider names the framework's ICD provider (https://jeffbridwell.com/icd/provider/...)" .
+chorus:FrameworkShape-wraps a sh:PropertyShape ; sh:path chorus:wraps ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:message "wraps names the upstream tool the framework wraps" .

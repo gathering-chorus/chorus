@@ -63,6 +63,10 @@ pub const V1_ROW: Check = Check {
   # check correctly has nothing to say.
   FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
   GRAPH ?g { ?s a ?c }
+  # #4091 — a ToolInput is a NodeShape (a tool's argument schema), so it is
+  # schema, not a row: it lives in the schema graph by design. Each new one
+  # read as a v1 row and turned a card's model land red.
+  FILTER NOT EXISTS { GRAPH ?g { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }
   FILTER(!STRSTARTS(STR(?c), "http://www.w3.org/2002/07/owl#")
       && !STRSTARTS(STR(?c), "http://www.w3.org/ns/shacl#")
       && !STRSTARTS(STR(?c), "http://www.w3.org/2000/01/rdf-schema#"))
@@ -177,6 +181,38 @@ mod tests {
             assert!(c.query.contains("SELECT"), "{} has no SELECT", c.id);
             assert!(!c.query.contains("LIMIT 20"), "{} still carries the bash sample limit", c.id);
         }
+    }
+
+    /// #4091 — run V1_ROW on a TriG fixture with Jena's arq (required, never skipped).
+    fn v1_rows(trig: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("av-v1row-{}-{}", std::process::id(), trig.len()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fx.trig"), trig).unwrap();
+        std::fs::write(dir.join("q.rq"), V1_ROW.query).unwrap();
+        let out = std::process::Command::new("arq")
+            .arg("--data").arg(dir.join("fx.trig")).arg("--query").arg(dir.join("q.rq")).arg("--results").arg("csv")
+            .output().expect("arq (Apache Jena) is required: brew install jena");
+        assert!(out.status.success(), "arq failed: {}", String::from_utf8_lossy(&out.stderr));
+        let body = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(body.starts_with("s,"), "the query did not run: {body:?}");
+        body
+    }
+
+    #[test]
+    fn a_tool_input_shape_in_the_schema_graph_is_not_a_v1_row() {
+        let body = v1_rows(r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+<urn:chorus:ontology> { c:ConvergenceLandAlertInput a sh:NodeShape , c:ToolInput . }"#);
+        assert!(!body.contains("ConvergenceLandAlertInput"), "{body}");
+    }
+
+    /// NEGATIVE PROOF: a real row in the schema graph is still caught.
+    #[test]
+    fn a_row_in_the_schema_graph_is_still_a_v1_row() {
+        let body = v1_rows(r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:ontology> { c:tool-x a c:Tool . }
+<urn:chorus:instances> { c:card-1 a c:Card . }"#);
+        assert!(body.contains("tool-x") && body.contains("card-1"), "{body}");
     }
 
     #[test]

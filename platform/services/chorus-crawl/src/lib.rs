@@ -3074,6 +3074,38 @@ fn jstr(s: &str) -> String {
 }
 
 /// Where the records are kept: `CHORUS_VALIDATE_DIR`, else ~/.chorus/crawler-validate.
+/// #4091 AC4 — the Grafana framework's sync reading as a validate row:
+/// `convergence-land sync` prints `measured tree=N graph=N` then `missing ..`
+/// and `stale ..` lines, or `unmeasured <why>`. Anything else (no binary, a
+/// crash, garbage) is unmeasured, never a clean zero.
+pub fn grafana_rule_row(out: &str) -> ValidateRow {
+    let mut row = ValidateRow {
+        domain: "alerts".to_string(),
+        class: "Grafana rule".to_string(),
+        tree: 0,
+        graph: 0,
+        missing: Vec::new(),
+        stale: Vec::new(),
+        excluded: Vec::new(),
+        measured: false,
+    };
+    let mut lines = out.lines();
+    let Some(head) = lines.next().and_then(|l| l.strip_prefix("measured ")) else { return row };
+    let num = |k: &str| head.split_whitespace().find_map(|w| w.strip_prefix(k)).and_then(|n| n.parse::<usize>().ok());
+    let (Some(tree), Some(graph)) = (num("tree="), num("graph=")) else { return row };
+    row.tree = tree;
+    row.graph = graph;
+    for l in lines {
+        if let Some(m) = l.strip_prefix("missing ") {
+            row.missing.push(m.to_string());
+        } else if let Some(m) = l.strip_prefix("stale ") {
+            row.stale.push(m.to_string());
+        }
+    }
+    row.measured = true;
+    row
+}
+
 pub fn validate_dir() -> String {
     std::env::var("CHORUS_VALIDATE_DIR").unwrap_or_else(|_| {
         format!(

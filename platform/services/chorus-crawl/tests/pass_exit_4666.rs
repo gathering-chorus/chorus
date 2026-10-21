@@ -32,7 +32,7 @@ use chorus_crawl::sensor_run::run_event_args;
 
 #[test]
 fn a_run_ends_with_an_event_naming_its_outcome() {
-    let ev = run_event_args("messages", "messages-20261021t084502z", "unmeasured", false).unwrap();
+    let ev = run_event_args("messages", "messages-20261021t084502z", "unmeasured", None, false).unwrap();
     assert_eq!(ev[0], "sensor.run.ended");
     assert!(ev.contains(&"outcome=unmeasured".to_string()), "{ev:?}");
     assert!(ev.contains(&"sensor=messages".to_string()), "{ev:?}");
@@ -41,5 +41,5 @@ fn a_run_ends_with_an_event_naming_its_outcome() {
 // NEGATIVE PROOF: a dry run writes nothing and must not page anyone.
 #[test]
 fn a_dry_run_emits_nothing() {
-    assert!(run_event_args("messages", "x", "red", true).is_none());
+    assert!(run_event_args("messages", "x", "red", None, true).is_none());
 }

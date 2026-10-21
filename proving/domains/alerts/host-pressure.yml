@@ -7,6 +7,13 @@
 # never answered. Freeing one 1.1GB runaway restored all of them. Four accusations
 # of innocent subsystems, zero mentions of memory.
 
+# #4091 AC3 (2026-10-21) — Grafana evaluates this now: rule host-pressure,
+# chorus_host_memory_pressure_level >= 4 for 5m, landed by convergence-land from
+# the host-pressure Alert row and routed to its owner through pulse. This file
+# keeps only the schedule that runs the check, which writes the gauges; the
+# check exits 0 at every level, so the action below never runs and nothing
+# pages twice.
+
 name: host-pressure
 description: Host cannot serve — memory exhausted; dependent service checks will fail as a symptom
 severity: critical

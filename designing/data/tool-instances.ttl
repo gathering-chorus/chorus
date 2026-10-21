@@ -8,6 +8,11 @@
 @prefix chorus:   <https://jeffbridwell.com/chorus#> .
 @prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
 
+# #4091 (Silas 10-21, option b): every Tool and ToolType IRI is kind-prefixed
+# (chorus:tool-look, chorus:tool-type-sense), as the door mints them. The bare
+# IRIs listed but 404'd on read, and chorus:Memory was both a ToolType row and
+# the memory domain's class. Fix the data, not the door.
+#
 # Tool instances — moved out of roles/silas/ontology/chorus.ttl on 2026-09-20 (#4216).
 #
 # Jeff, 2026-09-20: "this is an anti pattern for loading data."
@@ -22,42 +27,42 @@
 # classes, properties and shapes.
 
 
-chorus:look a chorus:Tool ;
+chorus:tool-look a chorus:Tool ;
     rdfs:label "/look" ;
     rdfs:comment "Screen capture — Jeff shows, Chorus sees." ;
-    chorus:toolType chorus:Sense ;
+    chorus:toolType chorus:tool-type-sense ;
     chorus:vizLabel "eyes" ;
     chorus:color "#22d3ee" ;
     chorus:status "live" .
 
-chorus:listen a chorus:Tool ;
+chorus:tool-listen a chorus:Tool ;
     rdfs:label "/listen" ;
     rdfs:comment "Voice transcription — speech to text via local whisper.cpp." ;
-    chorus:toolType chorus:Sense ;
+    chorus:toolType chorus:tool-type-sense ;
     chorus:vizLabel "ears" ;
     chorus:color "#22d3ee" ;
     chorus:status "live" .
 
-chorus:talk a chorus:Tool ;
+chorus:tool-talk a chorus:Tool ;
     rdfs:label "/talk" ;
     rdfs:comment "Voice output — text to speech." ;
-    chorus:toolType chorus:Sense ;
+    chorus:toolType chorus:tool-type-sense ;
     chorus:vizLabel "voice" ;
     chorus:color "#22d3ee" ;
     chorus:status "planned" .
 
-chorus:clearing-tool a chorus:Tool ;
+chorus:tool-clearing a chorus:Tool ;
     rdfs:label "/clearing" ;
     rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
-    chorus:toolType chorus:Interaction ;
+    chorus:toolType chorus:tool-type-interaction ;
     chorus:vizLabel "alignment" ;
     chorus:color "#e6edf3" ;
     chorus:status "live" .
 
-chorus:chorusTool a chorus:Tool ;
+chorus:tool-chorus a chorus:Tool ;
     rdfs:label "/chorus" ;
     rdfs:comment "Shared memory index — SQLite FTS5, 14k+ messages. Search, reconcile, remember." ;
-    chorus:toolType chorus:Memory ;
+    chorus:toolType chorus:tool-type-memory ;
     chorus:vizLabel "memory" ;
     chorus:color "#c084fc" ;
     chorus:status "live" .
@@ -65,7 +70,7 @@ chorus:chorusTool a chorus:Tool ;
 chorus:tool-werk a chorus:Tool ;   # #4324: chorus:werk is the Product row; one IRI, one kind
     rdfs:label "/werk" ;
     rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
-    chorus:toolType chorus:Orchestration ;
+    chorus:toolType chorus:tool-type-orchestration ;
     chorus:vizLabel "the spine" ;
     chorus:color "#fbbf24" ;
     chorus:status "live" .
@@ -73,7 +78,15 @@ chorus:tool-werk a chorus:Tool ;   # #4324: chorus:werk is the Product row; one 
 chorus:tool-borg a chorus:Tool ;   # #4324: chorus:borg is the Product row; one IRI, one kind
     rdfs:label "Borg" ;
     rdfs:comment "Codebase decomposition — structured assessment of code, architecture, tech debt." ;
-    chorus:toolType chorus:Analysis ;
+    chorus:toolType chorus:tool-type-analysis ;
     chorus:vizLabel "decompose" ;
     chorus:color "#f87171" ;
     chorus:status "planned" .
+
+# #4091 — the tool edges, moved here from chorus.ttl with their rows.
+chorus:tool-look chorus:feeds chorus:Capturing .
+chorus:tool-listen chorus:feeds chorus:Capturing .
+chorus:tool-talk chorus:feeds chorus:Directing .
+chorus:tool-clearing chorus:feeds chorus:Directing .
+chorus:tool-clearing chorus:indexes chorus:tool-chorus .
+chorus:tool-chorus chorus:indexes chorus:gathering .

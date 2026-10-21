@@ -46,9 +46,32 @@ obs="level=${level} (${level_name}; fires at 4 critical) free_pct=${free_pct:-un
 # Name the biggest resident process — on 2026-07-30 that one line WAS the fix.
 top=$(ps -Ao rss,pid,comm -m 2>/dev/null | sed -n '2p' | awk '{printf "%dMB pid=%s %s", $1/1024, $2, $3}')
 
+# #4091 AC3 — Grafana is the one evaluator (Jeff 10-19). This script measures
+# and writes the gauges node_exporter's textfile collector (:9102) scrapes; the
+# Grafana rule host-pressure (chorus_host_memory_pressure_level >= 4 for 5m)
+# fires into pulse. The script itself never fires, so nothing pages twice.
+# Atomic: write a temp file in the same directory, then mv, so a scrape never
+# reads half a file.
+PROM_DIR="${HOST_PRESSURE_PROM_DIR:-/Users/jeffbridwell/CascadeProjects/shared-observability/data/textfile_collector}"
+num() { case "$1" in ''|*[!0-9]*) echo "NaN" ;; *) echo "$1" ;; esac; }
+tmp=$(mktemp "$PROM_DIR/.host_pressure.prom.XXXXXX" 2>/dev/null) || { echo "host-pressure-unmeasured: cannot write to $PROM_DIR; ${obs}"; exit 0; }
+cat > "$tmp" <<PROM
+# HELP chorus_host_memory_pressure_level The kernel's memory-pressure level: 1 normal, 2 warn, 4 critical (#4651, #4091)
+# TYPE chorus_host_memory_pressure_level gauge
+chorus_host_memory_pressure_level ${level}
+# HELP chorus_host_memory_free_percent Free + inactive + speculative memory, percent (memory_pressure)
+# TYPE chorus_host_memory_free_percent gauge
+chorus_host_memory_free_percent $(num "${free_pct:-}")
+# HELP chorus_host_swap_used_percent Swap used, percent
+# TYPE chorus_host_swap_used_percent gauge
+chorus_host_swap_used_percent $(num "${swap_pct:-}")
+PROM
+chmod 644 "$tmp"
+mv -f "$tmp" "$PROM_DIR/host_pressure.prom"
+
 if [ "$level" -eq 4 ]; then
-  echo "host-under-pressure: ${obs} largest=${top}"
-  exit 1
+  echo "host-under-pressure: ${obs} largest=${top} (Grafana rule host-pressure fires; this script does not)"
+else
+  echo "ok: ${obs}"
 fi
-echo "ok: ${obs}"
 exit 0

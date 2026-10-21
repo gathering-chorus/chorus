@@ -1833,6 +1833,7 @@ fn run_sensor(args: &[String]) -> i32 {
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
     // #4568 — herald-run runs as its caller; the pass writes the Sensor owner's
     // rows, so it runs only as that owner (a dry run writes nothing)
+    let mut owner: Option<String> = None;
     if !dry_run {
         let caller = std::env::var("CHORUS_ROLE").unwrap_or_default();
         // no row yet (404) → its first run creates it; any other failed read refuses
@@ -1851,6 +1852,7 @@ fn run_sensor(args: &[String]) -> i32 {
             eprintln!("chorus-crawl sensor: {e}");
             return 2;
         }
+        owner = event_owner(row.as_deref(), &caller);
     }
     let record = if dry_run { None } else {
         let ident = declared_role(std::env::var("CHORUS_ROLE").ok()).and_then(|r| Identity::open(&home, &r));
@@ -1917,7 +1919,7 @@ fn run_sensor(args: &[String]) -> i32 {
     }
     println!("sensor {sensor}: run {name} {result} at {ended}");
     // #4666 — the event the not-green alert reads (Loki job=chorus-operations)
-    if let Some(ev) = run_event_args(&sensor, &name, result, dry_run) {
+    if let Some(ev) = run_event_args(&sensor, &name, result, owner.as_deref(), dry_run) {
         let log = format!("{home}/platform/scripts/chorus-log");
         if let Err(e) = Command::new(&log).args(&ev).output() {
             println!("sensor {sensor}: run {name} event NOT emitted ({e}) — the alert cannot see this run");
@@ -3999,6 +4001,18 @@ fn print_graph_vs_project(
             excluded: no_runner,
             measured: valid.is_some(),
         });
+    }
+    // #4091 AC4 — the Grafana framework: Alert rows against Grafana's rules
+    {
+        let bin = std::env::var("CONVERGENCE_LAND").unwrap_or_else(|_| "convergence-land".to_string());
+        let out = Command::new(&bin).arg("sync").output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_else(|e| format!("unmeasured cannot run {bin}: {e}"));
+        let row = chorus_crawl::grafana_rule_row(&out);
+        if !row.measured {
+            println!("chorus-crawl: reconcile grafana rules: UNMEASURED — {}", out.lines().next().unwrap_or("no output").trim_start_matches("unmeasured "));
+        }
+        fold_rows.push(row);
     }
     // #4214 — the folds, both directions. The classes shipped without this, so
     // for one afternoon nothing proved that every page on disk had a row or that

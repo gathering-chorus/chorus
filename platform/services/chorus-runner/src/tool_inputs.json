@@ -228,6 +228,41 @@
     ],
     "type": "object"
   },
+  "ConvergenceLandAlertInput": {
+    "additionalProperties": false,
+    "properties": {
+      "alert": {
+        "description": "The Alert row to land in Grafana as a rule (it must carry metricQuery and metricDatasource).",
+        "type": "string"
+      },
+      "dry_run": {
+        "description": "Print the rule it would write; touch nothing.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "alert"
+    ],
+    "type": "object"
+  },
+  "ConvergenceLandSilenceInput": {
+    "additionalProperties": false,
+    "properties": {
+      "alert": {
+        "description": "The landed Alert row to silence.",
+        "type": "string"
+      },
+      "minutes": {
+        "description": "How long, 1 to 10080 minutes.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "alert",
+      "minutes"
+    ],
+    "type": "object"
+  },
   "FlowReportInput": {
     "additionalProperties": false,
     "properties": {

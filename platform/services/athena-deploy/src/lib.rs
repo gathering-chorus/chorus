@@ -115,6 +115,8 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/silas/ontology/sensors-4405.ttl"), // #4405 reopen 4
             format!("{root}/roles/kade/ontology/domains-builds-decisions-rcas-4022.ttl"),
             format!("{root}/roles/silas/ontology/alerts-4085.ttl"),
+            format!("{root}/roles/kade/ontology/alerts-grafana-4091.ttl"), // #4091 Alert fields + ToolInputs
+            format!("{root}/roles/kade/ontology/toolchain-4091.ttl"), // #4091 Tool, ToolType, Framework
             format!("{root}/roles/wren/ontology/clearing-domains-3860.ttl"),
             format!("{root}/roles/wren/ontology/memory-4010.ttl"),
             format!("{root}/roles/wren/ontology/board-3654.ttl"),
@@ -2511,7 +2513,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 36, "the ontology set is 36 files (#4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 38, "the ontology set is 38 files (#4091 added alerts-grafana-4091.ttl and toolchain-4091.ttl; #4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
