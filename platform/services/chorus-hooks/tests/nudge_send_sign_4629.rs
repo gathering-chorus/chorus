@@ -133,6 +133,7 @@ fn the_sender_signs_its_own_note_and_pulse_is_told_not_to_copy_it() {
     assert_eq!(tag(&ev, "msg"), Some(format!("trace-{trace}").as_str()), "the note names the row pulse stores by trace");
     assert_eq!(ev["content"], "[nudge from wren → silas] hello from the room");
     assert!(spine.iter().any(|e| e.starts_with("buzz.publish.stored wren")));
+    assert!(!seen.lock().unwrap().iter().any(|l| l.contains("/api/buzz/release")), "NEGATIVE PROOF: a stored note releases nothing; pulse waits for it in the room");
 }
 
 #[test]
@@ -151,6 +152,10 @@ fn negative_proof_relay_down_still_sends_and_queues_the_signed_note_owner_only()
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].metadata().unwrap().permissions().mode() & 0o777, 0o600);
     assert!(spine.iter().any(|e| e.starts_with("buzz.publish.queued wren")));
+    // #4629 S3 — pulse holds a sender-signed nudge for its note; with the note queued, the sender releases it at once
+    let calls = seen.lock().unwrap().clone();
+    let trace = calls.iter().find(|l| l.contains("/api/nudge")).unwrap().split(r#""traceId":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+    assert!(calls.iter().any(|l| l.contains("/api/buzz/release") && l.contains(&trace)), "{calls:?}");
 }
 
 #[test]

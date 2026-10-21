@@ -178,10 +178,35 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
         Err(e) => return Err(format!("pulse did not answer: {e}")),
     };
     let room = match (&deps.buzz, signed) {
-        (Some(b), Some((key, ev))) => format!(" · Buzz: {}", publish_or_queue(b, from, &key, &ev, deps.spine)),
+        (Some(b), Some((key, ev))) => {
+            let line = publish_or_queue(b, from, &key, &ev, deps.spine);
+            // #4629 S3 — the note is not in the room, so pulse would wait for its fallback: release it now
+            if !line.starts_with("stored") {
+                release_held(deps, from, &trace);
+            }
+            format!(" · Buzz: {line}")
+        }
         _ => String::new(),
     };
     Ok(format!("nudge sent: {from} → {resolved} (trace={trace}){room}"))
+}
+
+/// #4629 S3 — tell pulse the note did not reach the room (POST /api/buzz/release {from, trace}),
+/// so a nudge pulse holds for its note is delivered at once. Best effort: pulse's 30 s fallback covers a miss.
+fn release_held(deps: &Deps, from: &str, trace: &str) {
+    let url = deps.pulse_url.replace("/api/nudge", "/api/buzz/release");
+    let mut req = ureq::post(&url).timeout(Duration::from_secs(3)).set("Content-Type", "application/json");
+    if let Some(s) = &deps.pulse_secret {
+        req = req.set("X-Chorus-Pulse-Secret", s);
+    }
+    if let Some(t) = &deps.identity_token {
+        req = req.set("Authorization", &format!("Bearer {t}"));
+    }
+    let outcome = match req.send_json(json!({ "from": from, "trace": trace })) {
+        Ok(_) => "asked".to_string(),
+        Err(e) => format!("failed: {e}"),
+    };
+    (deps.spine)("buzz.release.requested", from, &format!("trace={trace},outcome={outcome}"));
 }
 
 /// The room's text for a nudge, as pulse's bridge copy writes it (buzz-writer.ts roomText).
