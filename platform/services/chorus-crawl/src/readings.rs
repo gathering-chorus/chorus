@@ -407,6 +407,36 @@ pub fn missing_days(counts: &Counts) -> Vec<String> {
 
 pub type ReadingRow = (String, Vec<(String, String)>);
 
+/// #4671 — a sensor's newest-day readings as Prometheus gauges, so a Grafana rule
+/// can see them (the rows live in Fuseki, which Grafana cannot query; Kade 10-21
+/// 12:55: Prometheus, not Loki). Only the newest day the run counted, and no day
+/// label, so there is one series per (sensor, metric, subject) (Kade 12:59). The file
+/// holds what the last run wrote: a sensor that stops running leaves it as it was, and
+/// sensor-run-not-green is what notices that, not this gauge. A value that is not a
+/// finite number (unmeasured, NaN, inf) is left out, never written as 0.
+pub fn prom_lines(sensor: &str, rows: &[ReadingRow]) -> String {
+    let get = |f: &[(String, String)], k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+    let newest = rows.iter().filter_map(|(_, f)| get(f, "readingDay")).max();
+    let mut out = String::from("# TYPE chorus_sensor_reading gauge\n");
+    for (_, f) in rows {
+        let (Some(day), Some(metric), Some(value)) = (get(f, "readingDay"), get(f, "readingMetric"), get(f, "readingValue")) else { continue };
+        if Some(&day) != newest.as_ref() || !value.parse::<f64>().is_ok_and(f64::is_finite) { continue; }
+        let subject = get(f, "readingRole").unwrap_or_default();
+        out.push_str(&format!("chorus_sensor_reading{{sensor=\"{sensor}\",metric=\"{metric}\",subject=\"{subject}\"}} {value}\n"));
+    }
+    out
+}
+
+/// #4671 — the gauges into the node-exporter textfile collector: a temp file moved
+/// into place, so the collector never reads half a file.
+pub fn write_prom(dir: &std::path::Path, sensor: &str, rows: &[ReadingRow]) -> std::io::Result<std::path::PathBuf> {
+    let path = dir.join(format!("sensor_{sensor}.prom"));
+    let tmp = dir.join(format!("sensor_{sensor}.prom.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, prom_lines(sensor, rows))?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
 /// The Buzz reader's lines ({"day","sent","kept","doubles"}) as messages-sent,
 /// messages-kept and doubles-<kind> counts. A line it can't read is skipped.
 pub fn buzz_counts(jsonl: &str) -> Counts {

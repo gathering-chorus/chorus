@@ -2131,6 +2131,8 @@ fn write_readings(which: &str, tally: &str, filter: &str, desired: Vec<chorus_cr
         }).collect(),
         Err(e) => { println!("{which}: UNMEASURED — cannot read stored readings ({e}); no readings written"); return 3; }
     } };
+    // #4671 — the gauges a Grafana rule reads, from every desired reading (not only the changed ones)
+    let gauges = desired.clone();
     let (create, update, unchanged) = plan_readings(desired, &stored);
     // the tally line names the sensor the run belongs to: the spine check runs
     // the events pass, and a line headed "events:" leaves the spine run uncounted (red)
@@ -2161,6 +2163,13 @@ fn write_readings(which: &str, tally: &str, filter: &str, desired: Vec<chorus_cr
             println!("{which}: {} NOT updated ({e})", r.0);
             failed += 1;
         }
+    }
+    // #4671 — a reading no gauge carries is a reading no alert can see: say so, and the run is red
+    let prom_dir = std::env::var("CHORUS_SENSOR_PROM_DIR")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/shared-observability/data/textfile_collector", std::env::var("HOME").unwrap_or_default()));
+    match write_prom(std::path::Path::new(&prom_dir), which, &gauges) {
+        Ok(p) => println!("{which}: gauges written to {}", p.display()),
+        Err(e) => { println!("{which}: gauges NOT written to {prom_dir} ({e})"); failed += 1; }
     }
     if failed > 0 { 1 } else { 0 }
 }

@@ -135,7 +135,32 @@ pub fn rule(row: &Value, maps: &[Mapping], folder_uid: &str) -> Result<(Value, S
         return Err(format!("refused: the Alert row has no {} — a rule needs them", missing.join(", ")));
     }
     if interval.is_empty() { interval = "1m".into(); }
+    // the query step found by its refId, as loki_query does; "loki" is the provisioned uid (Abby, Kade: #4671 review)
+    let is_loki = r["data"].as_array().is_some_and(|d| d.iter().any(|s| s["refId"] == "A" && s["datasourceUid"] == "loki"));
+    if is_loki { loki_query(&mut r); }
     Ok((r, interval))
+}
+
+/// #4671 — a Loki query is not a Prometheus instant query: Grafana errors on it
+/// (#4091 AC8). A is a Loki instant query, B reduces it to its last value, and the
+/// threshold C reads B.
+fn loki_query(r: &mut Value) {
+    let b = json!({"refId": "B", "datasourceUid": "__expr__", "relativeTimeRange": {"from": 900, "to": 0},
+                   "model": {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last"}});
+    let Some(d) = r["data"].as_array_mut() else { return };
+    // each step found by its refId, not its position (Silas, Kade, Abby: #4671 review)
+    for step in d.iter_mut() {
+        match step["refId"].as_str() {
+            Some("A") => {
+                if let Some(m) = step["model"].as_object_mut() { m.remove("instant"); }
+                step["model"]["queryType"] = json!("instant");
+            }
+            Some("C") => { step["model"]["expression"] = json!("B"); }
+            _ => {}
+        }
+    }
+    let at = d.iter().position(|s| s["refId"] == "C").unwrap_or(d.len());
+    d.insert(at, b);
 }
 
 /// A silence on the rule's uid label for `minutes`, from `now` (RFC 3339 UTC).
