@@ -45,10 +45,7 @@ steps:
   - name: skill-pair-local-proof
     description: "local proof: the tests on the werk, scope diff"
     depends: [skill-pair-check]
-    action: dag.run
-    with:
-      dag: cicd-test
-      params: "CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff"
+    command: "${CHORUS_HOME}/platform/scripts/dagu-enqueue-wait cicd-test CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff"
   - name: skill-pair-hand-off
     description: "hand off: one cicd run"
     depends: [skill-pair-local-proof]

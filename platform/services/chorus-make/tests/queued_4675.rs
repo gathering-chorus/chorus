@@ -21,8 +21,9 @@ fn known() -> Vec<String> {
 
 fn rows_with(local_proof_args: &str) -> Vec<Row> {
     let base = fixture("pair-rows.tsv");
-    assert!(base.contains("cicd-test\t\t\t\tSCOPE=diff"), "fixture row moved");
-    parse_rows(&base.replace("cicd-test\t\t\t\tSCOPE=diff", &format!("cicd-test\t\t\t\t{local_proof_args}"))).expect("rows parse")
+    let row = "cicd-test\t\t\t\tSCOPE=diff queued=true";
+    assert!(base.contains(row), "fixture row moved");
+    parse_rows(&base.replace(row, &format!("cicd-test\t\t\t\t{local_proof_args}"))).expect("rows parse")
 }
 
 #[test]
