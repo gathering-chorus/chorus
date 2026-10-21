@@ -130,18 +130,35 @@ whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation ch
   [ "$(grep -cF '<urn:gathering:icd#fromProvider> <https://jeffbridwell.com/icd/provider/grafana/alert-rules>' <<<"$nt")" -eq 11 ] || return 1
 }
 
-# Silas 10-21: the 7 Tool + 5 ToolType rows already in prod (read from the store
-# 2026-10-21 into fixtures/4091/prod-tool-rows.ttl) must pass the new shapes, or
-# the door 422s their reads and patches. My first ToolShape required ownedBy and
-# failed all 7 Tools.
-@test "the Tool and ToolType rows already in prod conform" {
-  f="$REPO/platform/tests/fixtures/4091/prod-tool-rows.ttl"
-  [ "$(riot --output=nt "$f" 2>/dev/null | grep -c 'rdf-syntax-ns#type')" -eq 12 ] || return 1
-  [ "$(verdict "$f")" = CONFORMS ] || return 1
+# Silas 10-21: the 7 Tool + 5 ToolType rows (seeded from designing/data) must
+# pass the new shapes. My first ToolShape required ownedBy and failed all 7.
+# Then option (b): the 10 bare IRIs (chorus:listen, chorus:Sense...) listed but
+# 404'd on read, and chorus:Memory was both a ToolType row and a class. The
+# seeds now mint every row kind-prefixed, as the door reads them.
+SEEDS() { echo "$REPO/designing/data/tool-instances.ttl $REPO/designing/data/tool-type-instances.ttl"; }
+
+@test "the seeded Tool and ToolType rows conform" {
+  riot --output=ttl $(SEEDS) > "$BATS_TEST_TMPDIR/seeds.ttl" 2>/dev/null || return 1
+  [ "$(riot --output=nt "$BATS_TEST_TMPDIR/seeds.ttl" 2>/dev/null | grep -cE 'rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Tool(Type)?> ')" -eq 12 ] || return 1
+  [ "$(verdict "$BATS_TEST_TMPDIR/seeds.ttl")" = CONFORMS ] || return 1
 }
 
-# Silas 10-21, the 10-18 scar: a pathless property shape or a shared blank node
-# empties CoreShape on deploy. Every property shape here is named and has a path.
+# NEGATIVE PROOF: a bare Tool or ToolType IRI (the door cannot read it) is caught.
+bare_rows() { riot --output=nt "$@" 2>/dev/null | grep -E 'rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Tool(Type)?> ' | cut -d' ' -f1 | grep -vE '#tool-' || true; }
+
+@test "every seeded Tool and ToolType IRI is kind-prefixed (tool-, tool-type-)" {
+  [ -z "$(bare_rows $(SEEDS))" ] || { bare_rows $(SEEDS); return 1; }
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:listen a chorus:Tool .\n' > "$BATS_TEST_TMPDIR/bare.ttl"
+  [ -n "$(bare_rows "$BATS_TEST_TMPDIR/bare.ttl")" ] || return 1
+}
+
+@test "no ToolType shares an IRI with a class (chorus:Memory was both)" {
+  nt=$(riot --output=nt $(SEEDS) "$REPO"/roles/*/ontology/*.ttl 2>/dev/null)
+  for t in $(grep -F 'rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#ToolType> ' <<<"$nt" | cut -d' ' -f1); do
+    ! grep -qF "$t <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class>" <<<"$nt" || { echo "$t is a class"; return 1; }
+  done
+}
+
 @test "every property shape in the file is named and has a path; no blank nodes" {
   nt=$(riot --output=nt "$TTL" 2>/dev/null)
   ! grep -q '^_:' <<<"$nt" || return 1
