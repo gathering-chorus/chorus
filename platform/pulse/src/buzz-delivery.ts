@@ -19,20 +19,27 @@ export interface HeldStore {
   getMessageEndsByTrace(trace: string): { id: number } | null;
 }
 
+/** A released row, as the worker takes it. */
+export type DeliverableRow = { id: number };
+
 export type ReleaseCause = 'room' | 'publish-failed' | 'fallback';
 
-export interface BuzzDeliveryOptions {
+export interface BuzzDeliveryOptions<R extends DeliverableRow = DeliverableRow> {
   store: HeldStore;
+  /** the released row, ready for the worker; null when it went away or changed state */
+  rowFor: (id: number) => R | null;
   /** deliver one released row (the worker's enqueue) */
-  deliver: (id: number) => void;
+  deliver: (row: R) => void;
+  /** a released row that could not be delivered: never dropped silently (Kade 07:26) */
+  onLost: (id: number) => void;
   onRelease: (id: number, cause: ReleaseCause) => void;
   holdMs?: number;
   now?: () => number;
 }
 
-export class BuzzDelivery {
+export class BuzzDelivery<R extends DeliverableRow = DeliverableRow> {
   private readonly now: () => number;
-  constructor(private readonly o: BuzzDeliveryOptions) { this.now = o.now ?? Date.now; }
+  constructor(private readonly o: BuzzDeliveryOptions<R>) { this.now = o.now ?? Date.now; }
 
   hold(id: number): void { this.o.store.holdForBuzz(id); }
 
@@ -57,7 +64,8 @@ export class BuzzDelivery {
   private release(id: number, cause: ReleaseCause): boolean {
     if (!this.o.store.releaseBuzzHeld(id)) return false;
     this.o.onRelease(id, cause);
-    this.o.deliver(id);
+    const row = this.o.rowFor(id);
+    if (row) this.o.deliver(row); else this.o.onLost(id);
     return true;
   }
 }

@@ -41,8 +41,9 @@ import { BuzzDelivery } from './buzz-delivery';
 /** #4629 S3 — deliver sender-signed nudges from the room (off unless PULSE_BUZZ_DELIVER=1). */
 export const deliverFromBuzz = (): boolean => process.env.PULSE_BUZZ_DELIVER === '1';
 /** #4629 S3 — set at startup when delivering from Buzz; the release route and the reader use it. */
-let buzzDelivery: BuzzDelivery | undefined;
-export function setBuzzDelivery(d: BuzzDelivery | undefined): void { buzzDelivery = d; }
+type PendingRow = ReturnType<MessageStore['getPendingDeliveries']>[number];
+let buzzDelivery: BuzzDelivery<PendingRow> | undefined;
+export function setBuzzDelivery(d: BuzzDelivery<PendingRow> | undefined): void { buzzDelivery = d; }
 import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
 
 /** #4609 — what createApp needs from the Buzz writer: fire one post, no answer. */
@@ -236,10 +237,14 @@ async function nudgeCallerOk(headers: express.Request['headers'], from: unknown)
   return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
 }
 
-/** #2727 AC2: enqueue for async delivery via the worker (no-op if not wired, tests).
- *  #4629 S3 — a sender-signed nudge waits for its room note (or the fallback) instead. */
-function dispatchNudge(store: MessageStore, worker: DeliveryWorker | undefined, body: { buzz?: unknown } | undefined, row: Parameters<DeliveryWorker['enqueue']>[0]): void {
-  if (body?.buzz === 'sender' && deliverFromBuzz()) { store.holdForBuzz(Number(row.id)); return; }
+/** #4629 S3 — a sender-signed nudge, while pulse delivers from Buzz, waits for its room note. */
+function heldForRoom(body: { buzz?: unknown } | undefined): boolean {
+  return body?.buzz === 'sender' && deliverFromBuzz();
+}
+
+/** #2727 AC2: enqueue for async delivery via the worker (no-op if not wired, tests); a held nudge waits for its note. */
+function enqueueUnlessHeld(worker: DeliveryWorker | undefined, held: boolean, row: Parameters<DeliveryWorker['enqueue']>[0]): void {
+  if (held) return;
   worker?.enqueue(row).catch(() => { /* worker handles its own state */ });
 }
 
@@ -285,12 +290,13 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const pre = await admitNudge(req.body, from, to);
     if ('refused' in pre) return res.status(pre.status).json(pre.refused);
     const { nudgeClass, expects, targetSessionId } = pre;
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId);
+    const held = heldForRoom(req.body);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
     copyToBuzz(buzz, req.body, { id: Number(id), from, to, content: marked });
-    dispatchNudge(store, worker, req.body, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null });
+    enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
@@ -821,11 +827,13 @@ if (require.main === module) {
     const buzz = startBuzzWriter(store, worker, emitSpine);
     // #4629 S3 — deliver sender-signed nudges from the room: release by note, by failed publish, or after 30 s
     if (deliverFromBuzz()) {
-      const d = new BuzzDelivery({
+      const d = new BuzzDelivery<PendingRow>({
         store,
-        deliver: (id) => { const row = store.getPendingDeliveries().find((r) => r.id === id); if (row) void worker.enqueue(row); },
+        rowFor: (id) => store.getPendingDelivery(id),
+        deliver: (row) => { void worker.enqueue(row); },
+        onLost: (id) => { log('error', 'buzz.delivery.lost', { id }); void emitSpine('buzz.delivery.lost', { id: String(id) }); },
         onRelease: (id, cause) => {
-          log(cause === 'room' ? 'info' : 'error', 'buzz.delivery.released', { id, cause });
+          log(cause === 'room' ? 'info' : 'warn', 'buzz.delivery.released', { id, cause });
           void emitSpine(cause === 'fallback' ? 'buzz.delivery.fallback' : 'buzz.delivery.released', { id: String(id), cause });
         },
       });

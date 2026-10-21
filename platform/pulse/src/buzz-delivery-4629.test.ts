@@ -20,8 +20,9 @@ function harness(file: string, now: () => number) {
   const store = new MessageStore(file);
   const delivered: number[] = [];
   const causes: ReleaseCause[] = [];
-  const d = new BuzzDelivery({ store, deliver: (id) => delivered.push(id), onRelease: (_id, c) => causes.push(c), now });
-  return { store, d, delivered, causes };
+  const lost: number[] = [];
+  const d = new BuzzDelivery({ store, rowFor: (id) => store.getPendingDelivery(id), deliver: (row) => delivered.push(row.id), onLost: (id) => lost.push(id), onRelease: (_id, c) => causes.push(c), now });
+  return { store, d, delivered, causes, lost };
 }
 
 describe('#4629 S3 a held nudge is delivered exactly once', () => {
@@ -98,5 +99,36 @@ describe('#4629 S3 a held nudge is delivered exactly once', () => {
     expect(after.d.sweep()).toBe(0);
     expect(after.delivered).toEqual([id]);
     expect(after.causes).toEqual(['fallback']);
+  });
+});
+
+describe('#4629 S3 review fixes (abby, kade 07:26)', () => {
+  test('NEGATIVE PROOF: a held nudge is inserted held in one statement, so a worker scan right after the insert delivers nothing', () => {
+    const store = new MessageStore(dbFile());
+    const id = store.sendNudge('wren', 'silas', 'held at insert', TRACE, 'r2r', 'none', undefined, true);
+    expect(store.getPendingDeliveries().map((r) => r.id)).not.toContain(id);   // what scanAndRequeue reads
+    expect(store.getDeliveryRecord(id).delivery_status).toBe('queued');
+  });
+
+  test('NEGATIVE PROOF: a released row that is not deliverable is reported lost, never dropped silently', () => {
+    const lost: number[] = [];
+    const delivered: number[] = [];
+    const store = { holdForBuzz: () => undefined, releaseBuzzHeld: () => true, buzzHeldBefore: () => [], getMessageEndsByTrace: () => ({ id: 7 }) };
+    const d = new BuzzDelivery({ store, rowFor: () => null, deliver: (r) => delivered.push(r.id), onLost: (id) => lost.push(id), onRelease: () => undefined });
+    expect(d.publishFailed(TRACE)).toBe(true);
+    expect([delivered, lost]).toEqual([[], [7]]);
+  });
+
+  test('a store that already holds a duplicate trace starts without the unique index instead of crashing', () => {
+    const file = dbFile();
+    const first = new MessageStore(file);
+    (first as unknown as { db: { exec(sql: string): void } }).db.exec('DROP INDEX IF EXISTS idx_messages_nudge_trace_unique');
+    first.sendNudge('wren', 'silas', 'a', TRACE);
+    first.sendNudge('wren', 'kade', 'b', TRACE);
+    first.close();
+    const err = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    expect(() => new MessageStore(file)).not.toThrow();
+    expect(err.mock.calls.map((c) => String(c[0])).join('')).toContain('store.trace_index.skipped');
+    err.mockRestore();
   });
 });

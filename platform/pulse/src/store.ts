@@ -206,8 +206,13 @@ export class MessageStore {
     this.migrateAgentColumns(); // #4424
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
     // #4629 S2 — a sender-signed note names its nudge by trace (msg tag trace-<uuid>), so one nudge per trace.
-    // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows.
-    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_nudge_trace_unique ON messages(trace_id) WHERE type = 'nudge' AND trace_id IS NOT NULL AND trace_id <> ''");
+    // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows. A store that has duplicates keeps
+    // running without the index (logged), never crashes at start (Kade 07:26).
+    try {
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_nudge_trace_unique ON messages(trace_id) WHERE type = 'nudge' AND trace_id IS NOT NULL AND trace_id <> ''");
+    } catch (e) {
+      process.stderr.write(JSON.stringify({ level: 'warn', event: 'store.trace_index.skipped', reason: (e as Error).message }) + '\n');
+    }
   }
 
   // --- Nudges ---
@@ -220,14 +225,17 @@ export class MessageStore {
     nudgeClass: 'r2r' | 'a2r' = 'r2r',
     expects: 'none' | 'reply' | 'decision' | 'action' = 'none',
     targetSessionId?: string,
+    /** #4629 S3 — insert already held for its room note, in the same statement, so no worker scan can deliver it first */
+    heldForBuzz = false,
   ): number {
     // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, last_delivery_error) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null).lastInsertRowid);
+    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null,
+      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 'buzz-held' : null).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -327,6 +335,14 @@ export class MessageStore {
       'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ? AND delivery_session_id IS NULL AND COALESCE(last_delivery_error, \'\') <> \'buzz-held\''
     ).run(role);
     return r.changes;
+  }
+
+  /** #4629 S3 — one deliverable row by id (pending), for the release path; null when it is gone or not pending. */
+  getPendingDelivery(id: number): ReturnType<MessageStore['getPendingDeliveries']>[number] | null {
+    const row = this.db.prepare(
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id FROM messages WHERE id = ? AND delivery_status = \'pending\''
+    ).get(id);
+    return (row as ReturnType<MessageStore['getPendingDeliveries']>[number] | undefined) ?? null;
   }
 
   /** #4629 S3 — hold a sender-signed nudge until its room note arrives (pulse delivers from Buzz). */
