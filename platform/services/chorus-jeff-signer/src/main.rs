@@ -4,10 +4,11 @@
 //!
 //! Configuration comes from the LaunchDaemon's environment (names only here):
 //!   CHORUS_SIGNER_KEY_FILE  file holding Jeff's key, hex or nsec, mode 0600
-//!   CHORUS_SIGNER_RELAY     our relay, e.g. ws://192.168.86.242:3000
+//!   CHORUS_SIGNER_RELAY     our relay's own address (what each AUTH names)
+//!   CHORUS_SIGNER_DIAL      optional: where to connect when that differs (#4657)
 //!   CHORUS_SIGNER_CLIENTS   comma-separated client pubkeys (Clearing v2's)
 //!   CHORUS_SIGNER_CHANNEL_H the #clearing channel id (the only channel it signs for)
-use chorus_jeff_signer::{nip19_secret, unix_now, Policy, Signer};
+use chorus_jeff_signer::{dial_address, nip19_secret, unix_now, Policy, Signer};
 use serde_json::{json, Value};
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
@@ -43,8 +44,8 @@ fn unsafe_getuid() -> u32 {
     unsafe { getuid() }
 }
 
-fn serve(signer: &Signer) -> Result<(), String> {
-    let (mut ws, _) = tungstenite::connect(&signer.policy.relay).map_err(|e| format!("connect: {e}"))?;
+fn serve(signer: &Signer, dial: &str) -> Result<(), String> {
+    let (mut ws, _) = tungstenite::connect(dial).map_err(|e| format!("connect: {e}"))?;
     if let MaybeTlsStream::Plain(s) = ws.get_mut() {
         let _ = s.set_read_timeout(Some(Duration::from_secs(30)));
     }
@@ -53,7 +54,7 @@ fn serve(signer: &Signer) -> Result<(), String> {
     };
     // The relay closes a REQ sent before AUTH, so subscribe once AUTH is
     // accepted — or after a quiet read, for a relay that never asks.
-    eprintln!("chorus-jeff-signer: connected to {} as {}", signer.policy.relay, &signer.pubkey[..8]);
+    eprintln!("chorus-jeff-signer: connected to {dial} (AUTH names {}) as {}", signer.policy.relay, &signer.pubkey[..8]);
     let mut auth_id = String::new();
     let mut subscribed = false;
     loop {
@@ -100,12 +101,13 @@ fn main() {
     let key = read_key(&env("CHORUS_SIGNER_KEY_FILE"));
     let clients: Vec<String> = env("CHORUS_SIGNER_CLIENTS").split(',').map(str::to_string).collect();
     let policy = Policy { channel_h: env("CHORUS_SIGNER_CHANNEL_H"), relay: env("CHORUS_SIGNER_RELAY") };
+    let dial = dial_address(&policy.relay, std::env::var("CHORUS_SIGNER_DIAL").ok().as_deref());
     let signer = Signer::new(&key, clients, policy).unwrap_or_else(|e| fail(&e));
     drop(key);
     let mut wait = 1;
     loop {
         let start = std::time::Instant::now();
-        if let Err(e) = serve(&signer) {
+        if let Err(e) = serve(&signer, &dial) {
             eprintln!("chorus-jeff-signer: {e}; reconnecting in {wait}s");
         }
         // A connection that held for a minute was a good one: start the backoff over.

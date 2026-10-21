@@ -5,7 +5,7 @@
 // service signs the post and the AUTH answer as Jeff, then the post is sent and the
 // relay's OK read. Any failure means "not sent"; nothing goes out under the room's key.
 import { SignResult, UnsignedEvent } from './remote-signer';
-import { WebSocketLike } from './relay-client';
+import { authRelayFor, WebSocketLike } from './relay-client';
 import { NostrEvent } from './types';
 
 export interface EventSigner { signEvent(unsigned: UnsignedEvent): Promise<SignResult> }
@@ -32,8 +32,7 @@ export class JeffPublisher {
 
   /** The relay's own address for the AUTH tag; through the tunnel that is the Host it serves (as the room's AUTH does). */
   private authRelayUrl(): string {
-    if (!this.o.hostHeader) return this.o.relayUrl;
-    return `${this.o.relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${this.o.hostHeader}`;
+    return authRelayFor(this.o.relayUrl, this.o.hostHeader);
   }
 
   private open(): WebSocketLike {

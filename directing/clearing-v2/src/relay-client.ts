@@ -6,6 +6,18 @@ import { buildEventId, serializeEvent } from './identity';
 /** The room's reader key (Silas 2026-10-15 13:41: the bridge signer v1 registered,
  *  reads only, not a member). Key material stays outside the room: the caller
  *  injects a signer, never a key. */
+/**
+ * #4657 — the relay accepts one address in a NIP-42 AUTH (its RELAY_URL). When
+ * that is the public wss:// one, BUZZ_AUTH_RELAY_URL states it; unset keeps the
+ * old rule: the tunnel's Host (same scheme as the dial), or the dial address.
+ */
+export function authRelayFor(relayUrl: string, hostHeader?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const stated = (env.BUZZ_AUTH_RELAY_URL || '').trim();
+  if (stated) return stated;
+  if (!hostHeader) return relayUrl;
+  return `${relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${hostHeader}`;
+}
+
 export interface RelaySigner {
   pubkey: string;
   /** Schnorr signature (hex) over the 32-byte event id (hex). */
@@ -212,8 +224,7 @@ export class BuzzRelayClient {
   /** The relay's own address for the AUTH relay tag (v1 authRelayUrl): dialing through
    *  the tunnel, the relay only accepts a tag naming the Host it serves. */
   private authRelayTag(): string {
-    if (!this.hostHeader) return this.relayUrl;
-    return `${this.relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${this.hostHeader}`;
+    return authRelayFor(this.relayUrl, this.hostHeader);
   }
 
   getBufferedCount(): number {

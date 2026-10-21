@@ -91,7 +91,7 @@ export function publishEvent(deps: RelayConnDeps, ev: NostrEvent): Promise<Publi
       const { type, payload } = parseRelayMsg(String(raw));
       if (type === 'AUTH' && typeof payload[1] === 'string') {
         if (grace) clearTimeout(grace);
-        ws.send(authFrame(payload[1], deps.relayUrl, deps.signer, deps.nowSec()));
+        ws.send(authFrame(payload[1], (process.env.BUZZ_AUTH_RELAY_URL || '').trim() || deps.relayUrl, deps.signer, deps.nowSec())); // #4657
         sendEvent(); // in-order after the AUTH frame
       } else if (type === 'OK' && payload[1] === ev.id) {
         clearTimeout(timer);

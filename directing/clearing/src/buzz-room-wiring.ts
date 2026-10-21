@@ -106,7 +106,11 @@ export interface RoomWiringDeps {
  * before subscribing", forever. The tunnel fixed the dial and made the AUTH
  * statement false, which is the same mistake as the Host header one layer up.
  */
-export function authRelayUrl(dialUrl: string, hostHeader?: string): string {
+export function authRelayUrl(dialUrl: string, hostHeader?: string, env: NodeJS.ProcessEnv = process.env): string {
+  // #4657 — the relay accepts one address (its RELAY_URL); when that is the public
+  // wss:// one, BUZZ_AUTH_RELAY_URL states it, whatever this client dials.
+  const stated = (env.BUZZ_AUTH_RELAY_URL || '').trim();
+  if (stated) return stated;
   if (!hostHeader) return dialUrl;
   const scheme = dialUrl.startsWith('wss://') ? 'wss://' : 'ws://';
   return `${scheme}${hostHeader}`;

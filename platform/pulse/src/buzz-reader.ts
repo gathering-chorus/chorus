@@ -8,7 +8,7 @@
  * on a full day of 100% match (Silas, 10-21 06:16).
  */
 import WebSocket from 'ws';
-import { body, frameText, signNote, type BuzzNote, type BuzzSigner } from './buzz-writer';
+import { authRelayTag, body, frameText, signNote, type BuzzNote, type BuzzSigner } from './buzz-writer';
 
 export interface ShadowVerdict {
   msg: string;
@@ -205,7 +205,7 @@ export class BuzzReader {
     let f: unknown[];
     try { f = JSON.parse(raw) as unknown[]; } catch { return; }
     if (f[0] === 'AUTH' && typeof f[1] === 'string') {
-      const relay = this.o.hostHeader ? `ws://${this.o.hostHeader}` : this.o.relayUrl;
+      const relay = authRelayTag(this.o.relayUrl, this.o.hostHeader);
       const auth = signNote(this.o.signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', f[1]]], '');
       this.ws?.send(JSON.stringify(['AUTH', auth]));
       // a relay that answered the first REQ only after sign-in gets it again

@@ -81,6 +81,18 @@ export function frameText(data: WebSocket.RawData): string {
   return Buffer.from(data as ArrayBuffer).toString('utf8');
 }
 
+/**
+ * #4657 — the relay address a NIP-42 AUTH names. The relay accepts one address
+ * (its RELAY_URL), so once it is the public wss:// one, every client that dials
+ * a tunnel must still name it. BUZZ_AUTH_RELAY_URL states it; unset keeps the
+ * old rule (the tunnel's Host as ws://, or the dialed URL).
+ */
+export function authRelayTag(relayUrl: string, hostHeader?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const stated = (env.BUZZ_AUTH_RELAY_URL || '').trim();
+  if (stated) return stated;
+  return hostHeader ? `ws://${hostHeader}` : relayUrl;
+}
+
 export function signNote(signer: BuzzSigner, createdAt: number, kind: number, tags: string[][], content: string): BuzzNote {
   const id = bytesToHex(sha256(utf8ToBytes(JSON.stringify([0, signer.pubkey, createdAt, kind, tags, content]))));
   return { id, pubkey: signer.pubkey, created_at: createdAt, kind, tags, content, sig: signer.sign(id) };
@@ -161,7 +173,7 @@ export class BuzzWriter {
     try { f = JSON.parse(raw) as unknown[]; } catch { return; }
     if (f[0] === 'AUTH' && typeof f[1] === 'string') {
       // NIP-42: answer the challenge as the bridge, the identity this connection writes as
-      const relay = this.o.hostHeader ? `ws://${this.o.hostHeader}` : this.o.relayUrl;
+      const relay = authRelayTag(this.o.relayUrl, this.o.hostHeader);
       const auth = signNote(this.o.signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', f[1]]], '');
       this.ws?.send(JSON.stringify(['AUTH', auth]));
       return;

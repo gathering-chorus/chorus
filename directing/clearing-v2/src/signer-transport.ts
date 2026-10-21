@@ -5,7 +5,7 @@
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils';
 import { buildEventId, serializeEvent } from './identity';
-import { WebSocketLike } from './relay-client';
+import { authRelayFor, WebSocketLike } from './relay-client';
 import { SignerTransport } from './remote-signer';
 import { NostrEvent } from './types';
 
@@ -47,8 +47,7 @@ export class RelaySignerTransport implements SignerTransport {
   close(): void { try { this.ws?.close(); } catch { /* closed */ } this.ws = null; this.ready = null; }
 
   private authRelayUrl(): string {
-    if (!this.o.hostHeader) return this.o.relayUrl;
-    return `${this.o.relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${this.o.hostHeader}`;
+    return authRelayFor(this.o.relayUrl, this.o.hostHeader);
   }
 
   private connect(): Promise<void> {
