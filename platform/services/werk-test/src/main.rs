@@ -805,22 +805,25 @@ fn step_run(ctx: &Ctx, test_type: &str) -> Result<i32, String> {
                 // card that edits a nightly-only test binary does not run it
                 let kept = werk_test::only_bins_kept(&only, &ns_bins);
                 cargo_bins = (kept.clone(), ns_bins.clone());
-                let (ok, cases) = if !only.is_empty() && kept.is_empty() {
+                let (ok, cases, text) = if !only.is_empty() && kept.is_empty() {
                     println!("cargo-select: {} → {} changed test binar(y/ies), all nightly only or stack-down: not run", c, only.len());
                     nothing_selected = true;
-                    (true, Vec::new())
+                    (true, Vec::new(), String::new())
                 } else if only.is_empty() {
-                    run_cargo(&werk, c, &q_names, &ns_refs)
+                    run_cargo_sel(&werk, c, &q_names, &ns_refs, &[])
                 } else {
                     let only = kept;
                     println!("cargo-select: {} → only {} (no src change; the tests that changed run)", c, only.join(", "));
                     let only_refs: Vec<&str> = only.iter().map(|s| s.as_str()).collect();
-                    let (ok, cases, _) = run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs);
-                    (ok, cases)
+                    run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs)
                 };
                 let crate_dir = crate_dir(&werk, c);
-                for (path, result) in cases {
-                    match werk_test::match_cargo_case_path(&path, &crate_dir, &rows, &row_names) {
+                // #4685 — a new, not-yet-registered test file keeps its cases
+                let targets: Vec<String> = werk_test::parse_nextest_case_runs(&text).into_iter().map(|(_, t, _)| t).collect();
+                let on_disk = |fp: &str| Path::new(&werk).join(fp).is_file();
+                for (i, (path, result)) in cases.into_iter().enumerate() {
+                    let target = targets.get(i).map(String::as_str).unwrap_or("");
+                    match werk_test::resolve_cargo_case(&path, target, &crate_dir, &rows, &row_names, on_disk) {
                         Some(fp) => all_cases.push(CaseResult {
                             file_path: fp,
                             test_name: werk_test::nextest_bare_name(&path).to_string(),
@@ -1606,8 +1609,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             // #4454 reopen — the build target each case ran under, in case order
             let targets: Vec<String> = werk_test::parse_nextest_case_runs(&text).into_iter().map(|(_, t, _)| t).collect();
             let mut runs: Vec<(String, String)> = Vec::new();
+            // #4685 — a new, not-yet-registered test file keeps its cases
+            let on_disk = |fp: &str| Path::new(&cargo_root).join(fp).is_file();
             for (i, (path, result)) in cases.iter().enumerate() {
-                match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
+                let target = targets.get(i).map(String::as_str).unwrap_or("");
+                match werk_test::resolve_cargo_case(path, target, &crate_dir, &rows, &row_names, on_disk) {
                     Some(fp) => {
                         runs.push((targets.get(i).cloned().unwrap_or_default(), path.clone()));
                         let bare = werk_test::nextest_bare_name(path).to_string();
@@ -2520,12 +2526,6 @@ fn nextest_gate(werk: &str) -> &'static Result<(), String> {
             Err(e) => Err(format!("build did not start: {}", werk_test::did_not_start("cargo", &e))),
         }
     })
-}
-
-/// gate; an empty quarantine set leaves the invocation byte-identical.
-fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> (bool, Vec<(String, String)>) {
-    let (ok, cases, _) = run_cargo_sel(werk, name, quarantined, ns_bins, &[]);
-    (ok, cases)
 }
 
 /// #4160 — the nightly's staged cargo run: `only_bins` non-empty runs just
