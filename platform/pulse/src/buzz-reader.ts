@@ -162,7 +162,8 @@ export class BuzzReader {
   sweep(): void {
     const cutoff = this.now() - (this.o.graceMs ?? 600_000);
     if (cutoff <= this.startedAt) return;
-    for (const id of this.o.store.deliveryIdsBetween(sqliteUtc(this.startedAt), sqliteUtc(cutoff))) {
+    // only the window since the last sweep: every row before it was judged or reported then (#4672 review)
+    for (const id of this.o.store.deliveryIdsBetween(sqliteUtc(this.swept), sqliteUtc(cutoff))) {
       if (this.seenMsg.has(id) || this.reported.has(id)) continue;
       this.reported.add(id);
       this.o.onVerdict({ msg: `pulse-${id}`, verdict: 'missed' });
@@ -179,6 +180,8 @@ export class BuzzReader {
     const matched = ids.filter((id) => this.matched.has(id)).length;
     const missed = ids.filter((id) => this.reported.has(id)).length;
     this.o.onCoverage?.({ from, to, stored: ids.length, judged, matched, missed, pct: ids.length ? Math.floor((matched / ids.length) * 100) : null });
+    // the window is closed: its ids are never read again, so the sets stay bounded (Silas's review)
+    for (const id of ids) { this.seenMsg.delete(id); this.reported.delete(id); this.matched.delete(id); }
   }
 
   private connect(): void {
@@ -235,10 +238,13 @@ export class BuzzReader {
     const rows = jeffVerdicts(note, this.o.store);
     if (!rows.length) return false;
     for (const { id, ...v } of rows) {
-      this.seenMsg.add(id);
       const k = this.o.keys ? await this.o.keys.check(note.pubkey, 'jeff', v.msg) : 'ok';
+      // judged only once the verdict is known, so a sweep during the key read never counts it half-done (Abby's review)
+      this.seenMsg.add(id);
       if (k === 'ok' && v.verdict === 'match') this.matched.add(id);
       this.o.onVerdict(k === 'ok' ? v : { msg: v.msg, verdict: k, ...(k === 'wrong-key' ? { author: 'jeff' } : {}) });
+      // no onMatch: Clearing v2 hands Jeff's rows to pulse and pulse delivers them; nothing is held for the
+      // room, so a match here releases nothing (Kade's review). If Jeff input is ever held, release it here.
     }
     return true;
   }

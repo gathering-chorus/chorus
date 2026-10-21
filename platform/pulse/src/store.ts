@@ -450,7 +450,11 @@ export class MessageStore {
     return (row as { id: number; from: string; to: string; type: string; content: string } | undefined) ?? null;
   }
 
-  /** #4629/#4672 — ids of the nudges, alerts and Jeff's input recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the shadow's missed sweep. */
+  /**
+   * #4629/#4672 — ids of every delivery recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the
+   * shadow's missed sweep. Alerts are stored as type 'nudge' (from system): measured 10-21, the store
+   * holds only 'nudge' and 'jeff-input' since 10-14, so these two types are every delivery (Silas's review).
+   */
   deliveryIdsBetween(from: string, to: string): number[] {
     return (this.db.prepare('SELECT id FROM messages WHERE type IN (\'nudge\', \'jeff-input\') AND created_at >= ? AND created_at < ? ORDER BY id').all(from, to) as Array<{ id: number }>).map((r) => r.id);
   }
