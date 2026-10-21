@@ -39,6 +39,8 @@ impl Fx {
             .env("BORG_PROD_BASE", format!("file://{}", self.dir.join("prod").display()))
             .env("BORG_CHORUS_LOG", self.dir.join("chorus-log"))
             .env("BORG_CARDS", self.dir.join("cards"))
+            .env("BORG_RESULTS_DIR", self.dir.join("results"))
+            .env("DAG_RUN_ID", "run1")
             .output()
             .unwrap()
     }
@@ -100,6 +102,7 @@ fn adds(fx: &Fx) -> usize { fx.log("cards.log").lines().filter(|l| l.starts_with
 #[test]
 fn one_red_ac_files_exactly_one_child_under_the_parent_and_the_parent_is_held() {
     let fx = Fx::new("child", &format!("{}{}", row("ac-4683-1", "/ok.txt", "ok"), row("ac-4683-2", "/ok.txt", "nope")));
+    let _ = fx.run("prod");
     let r = fx.run("record");
     assert!(!r.status.success(), "the parent is held: accept must not run: {}", out(&r));
     assert_eq!(adds(&fx), 1, "{}", fx.log("cards.log"));
@@ -113,6 +116,7 @@ fn one_red_ac_files_exactly_one_child_under_the_parent_and_the_parent_is_held() 
 #[test]
 fn an_unmeasured_ac_files_a_child_too() {
     let fx = Fx::new("child-unmeasured", &row("ac-4683-1", "/missing.txt", "ok"));
+    let _ = fx.run("prod");
     let r = fx.run("record");
     assert!(!r.status.success(), "{}", out(&r));
     assert_eq!(adds(&fx), 1, "{}", fx.log("cards.log"));
@@ -121,6 +125,7 @@ fn an_unmeasured_ac_files_a_child_too() {
 #[test]
 fn negative_proof_a_rerun_does_not_file_a_second_child_for_the_same_ac() {
     let fx = Fx::new("rerun", &row("ac-4683-2", "/ok.txt", "nope"));
+    let _ = fx.run("prod");
     let _ = fx.run("record");
     let title = fx.log("cards.log").lines().find(|l| l.starts_with("DEPLOY_ROLE=borg-queen add ")).unwrap()
         .trim_start_matches("DEPLOY_ROLE=borg-queen add ").split(" --").next().unwrap().to_string();
@@ -134,8 +139,42 @@ fn negative_proof_a_rerun_does_not_file_a_second_child_for_the_same_ac() {
 fn negative_proof_a_parent_with_no_owner_refuses_rather_than_filing_an_orphan() {
     let fx = Fx::new("noowner", &row("ac-4683-2", "/ok.txt", "nope"));
     std::fs::write(fx.dir.join("view.txt"), "#4683 x\n  Status:   WIP\n").unwrap();
+    let _ = fx.run("prod");
     let r = fx.run("record");
     assert!(!r.status.success());
     assert_eq!(adds(&fx), 0, "{}", fx.log("cards.log"));
     assert!(out(&r).contains("#4683 has no owner"), "{}", out(&r));
+}
+
+// Silas + Wren at the demo: record judged a second measurement, so a check
+// that changed between the two steps filed the wrong children.
+#[test]
+fn negative_proof_record_judges_what_prod_measured_not_a_second_look() {
+    let fx = Fx::new("toctou", &row("ac-4683-2", "/ok.txt", "nope"));
+    let p = fx.run("prod");
+    assert!(!p.status.success());
+    // prod changes between the two steps: a second look would read met
+    std::fs::write(fx.dir.join("checks.tsv"), format!("{HEADER}{}", row("ac-4683-2", "/ok.txt", "ok"))).unwrap();
+    let r = fx.run("record");
+    assert!(!r.status.success(), "record must hold accept on prod's red: {}", out(&r));
+    assert!(fx.log("spine.log").contains("verdict=Not met"), "{}", fx.log("spine.log"));
+    assert_eq!(adds(&fx), 1, "{}", fx.log("cards.log"));
+}
+
+#[test]
+fn negative_proof_record_with_no_prod_results_records_nothing_and_holds_accept() {
+    let fx = Fx::new("noprod", &row("ac-4683-1", "/ok.txt", "ok"));
+    let r = fx.run("record");
+    assert!(!r.status.success(), "{}", out(&r));
+    assert!(out(&r).contains("prod's results are not readable"), "{}", out(&r));
+    assert!(fx.log("spine.log").is_empty() && fx.log("cards.log").is_empty());
+}
+
+#[test]
+fn results_round_trip_with_tabs_and_newlines_in_the_evidence() {
+    use borg_prove::*;
+    let c = Check { ac: "ac-1".into(), statement: "a\tb".into(), kind: "http".into(), target: "/x".into(), expect: "ok\\n".into() };
+    let r = vec![(c, Outcome::NotMet("line1\nline2\twith tab".into()))];
+    assert_eq!(results_from_tsv(&results_to_tsv(&r)).unwrap(), r);
+    assert!(results_from_tsv("garbage\n").is_err());
 }

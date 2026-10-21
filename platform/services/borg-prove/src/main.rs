@@ -90,6 +90,12 @@ fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     results
 }
 
+/// Where prod leaves its results for record: one file per card per run.
+fn results_path(card: u32) -> std::path::PathBuf {
+    let dir = env("BORG_RESULTS_DIR", &format!("{}/ops/borg-prove", env("CHORUS_HOME", "/tmp")));
+    std::path::PathBuf::from(dir).join(format!("{card}-{}.tsv", env("DAG_RUN_ID", "manual")))
+}
+
 /// #4683 — the verdict on the spine (prover borg-queen: the pipeline itself
 /// until Borg Queen is provisioned) and on the card, one line per AC.
 fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
@@ -172,18 +178,33 @@ fn main() {
             if v != "Proven" { exit(1) }
         }
         // #4683 — prod and record run inside cicd-land, before accept. prod
-        // shows the verdict (its step continues on failure, so record runs on
-        // the red path too); record writes it and is the gate: it fails on any
-        // verdict but Proven, so accept never runs after a red or an unmeasured
-        // AC. A card with no CardAC rows lands as before and says "unproven".
-        "prod" | "record" => {
+        // measures and writes its results (its step continues on failure, so
+        // record runs on the red path too); record judges those same results
+        // (it never measures again: Silas, Wren at the demo), writes the
+        // verdict and is the gate: it fails on any verdict but Proven, so
+        // accept never runs after a red or an unmeasured AC. A card with no
+        // CardAC rows lands as before and says "unproven".
+        "prod" => {
             let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
+            let path = results_path(card);
+            if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, results_to_tsv(&r))) {
+                eprintln!("#{card} prod: the results were not written to {}: {e}", path.display());
+                exit(1);
+            }
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
             let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} verify in prod: {v}");
-            if mode == "record" {
-                record(card, &role, v, &r);
-            }
+            if v != "Proven" && v != NO_ROWS { exit(1) }
+        }
+        "record" => {
+            let path = results_path(card);
+            let r = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| results_from_tsv(&t)).unwrap_or_else(|e| {
+                eprintln!("#{card} record: prod's results are not readable at {} ({e}): nothing recorded, accept held", path.display());
+                exit(1)
+            });
+            let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
+            println!("#{card} record: {v}");
+            record(card, &role, v, &r);
             if v != "Proven" && v != NO_ROWS { exit(1) }
         }
         "route" => {

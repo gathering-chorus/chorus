@@ -320,3 +320,44 @@ pub fn child_titles(view: &str) -> Vec<String> {
     }
     out
 }
+
+/// #4683 (Silas, Wren in the demo reviews) — record must judge what prod
+/// measured, not measure again: prod writes its results, record reads them.
+/// One row per AC, tab-separated, with tabs, newlines and backslashes escaped.
+pub fn results_to_tsv(results: &[(Check, Outcome)]) -> String {
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n");
+    let mut out = String::from("ac\tstatement\tkind\ttarget\texpect\toutcome\tevidence\n");
+    for (c, o) in results {
+        let f = [&c.ac, &c.statement, &c.kind, &c.target, &c.expect, o.word(), o.evidence()];
+        out.push_str(&f.iter().map(|x| esc(x)).collect::<Vec<_>>().join("\t"));
+        out.push('\n');
+    }
+    out
+}
+
+pub fn results_from_tsv(tsv: &str) -> Result<Vec<(Check, Outcome)>, String> {
+    let unesc = |s: &str| {
+        let (mut out, mut it) = (String::new(), s.chars());
+        while let Some(ch) = it.next() {
+            if ch != '\\' { out.push(ch); continue; }
+            match it.next() { Some('t') => out.push('\t'), Some('n') => out.push('\n'), Some(x) => out.push(x), None => {} }
+        }
+        out
+    };
+    let mut lines = tsv.lines();
+    if lines.next() != Some("ac\tstatement\tkind\ttarget\texpect\toutcome\tevidence") {
+        return Err("not a borg-prove results file".into());
+    }
+    lines.filter(|l| !l.is_empty()).map(|l| {
+        let f: Vec<String> = l.split('\t').map(unesc).collect();
+        if f.len() != 7 { return Err(format!("a results row has {} fields, not 7", f.len())); }
+        let c = Check { ac: f[0].clone(), statement: f[1].clone(), kind: f[2].clone(), target: f[3].clone(), expect: f[4].clone() };
+        let o = match f[5].as_str() {
+            "met" => Outcome::Met(f[6].clone()),
+            "not met" => Outcome::NotMet(f[6].clone()),
+            "unmeasured" => Outcome::Unmeasured(f[6].clone()),
+            w => return Err(format!("unknown outcome '{w}'")),
+        };
+        Ok((c, o))
+    }).collect()
+}
