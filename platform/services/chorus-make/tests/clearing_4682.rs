@@ -1,0 +1,81 @@
+// @test-type: unit
+// @domain: pipelines
+//! #4682 — clearing chunk lifecycle as Dagu pipelines generated from the graph:
+//! 1. clearing-plan: chunk -> prioritize -> sequence -> plan-go -> pull -> pair
+//! 2. clearing-evaluate: evaluate -> loop (re-enqueue clearing-plan)
+
+use chorus_make::{generate_straight, parse_pipe, parse_rows, Pipe, Row};
+
+fn fixture(name: &str) -> String {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    std::fs::read_to_string(format!("{dir}/tests/fixtures/{name}")).expect("fixture")
+}
+
+fn rows(name: &str) -> Vec<Row> {
+    parse_rows(&fixture(name)).expect("rows parse")
+}
+
+fn pipe(name: &str) -> Pipe {
+    parse_pipe(&fixture(name)).unwrap()
+}
+
+fn known() -> Vec<String> {
+    [
+        "cicd", "cicd-test", "nightly", "athena", "pair", "demo", "card",
+        "clearing-plan", "clearing-evaluate",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+#[test]
+fn the_clearing_plan_pipeline_enforces_chunk_before_cards() {
+    let y = generate_straight(
+        "clearing-plan",
+        &pipe("clearing-plan-pipe.tsv"),
+        &rows("clearing-plan-rows.tsv"),
+        &known(),
+    )
+    .unwrap();
+
+    let chunk = y.find("clearing-chunk enforce ${CHUNK}").expect("chunk enforce step");
+    let prio = y.find("clearing-chunk prioritize ${CHUNK}").expect("cards prioritize step");
+    let seq = y.find("clearing-chunk sequence ${CHUNK}").expect("cards sequence step");
+    let go = y.find("id: skill_clearing_plan_go").expect("human plan-go step");
+
+    assert!(chunk < prio, "clearing-chunk enforce runs before cards prioritize\n{y}");
+    assert!(prio < seq, "prioritize runs before sequence\n{y}");
+    assert!(seq < go, "sequence runs before plan-go\n{y}");
+    assert!(y.contains("queue: werk\n"), "{y}");
+}
+
+#[test]
+fn the_clearing_evaluate_pipeline_runs_gate_and_loops() {
+    let y = generate_straight(
+        "clearing-evaluate",
+        &pipe("clearing-evaluate-pipe.tsv"),
+        &rows("clearing-evaluate-rows.tsv"),
+        &known(),
+    )
+    .unwrap();
+
+    assert!(y.contains("id: skill_clearing_evaluate"), "evaluate human step present\n{y}");
+    assert!(y.contains("queue: werk-land\n"), "runs on werk-land queue\n{y}");
+}
+
+#[test]
+fn negative_proof_clearing_plan_without_chunk_cap_changes_pipeline() {
+    let p = pipe("clearing-plan-pipe.tsv");
+    let full = generate_straight("clearing-plan", &p, &rows("clearing-plan-rows.tsv"), &known()).unwrap();
+
+    // Remove the chunk enforce row
+    let filtered: Vec<Row> = rows("clearing-plan-rows.tsv")
+        .into_iter()
+        .filter(|r| r.step != "chunk")
+        .collect();
+    let without_chunk = generate_straight("clearing-plan", &p, &filtered, &known()).unwrap();
+
+    assert_ne!(full, without_chunk);
+    assert!(!without_chunk.contains("skill-clearing-chunk"));
+}

@@ -24,20 +24,20 @@ steps:
   - name: skill-clearing-chunk
     description: "enforce active chunk cap"
     command: "${CHORUS_HOME}/platform/scripts/clearing-chunk enforce ${CHUNK}"
-  - name: skill-clearing-prioritize-cli
+  - name: skill-clearing-prioritize
     description: "prioritize chunk cards"
     depends: [skill-clearing-chunk]
-    command: "${CHORUS_HOME}/platform/scripts/cards list --chunk ${CHUNK}"
-  - name: skill-clearing-sequence-cli
+    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk prioritize ${CHUNK}"
+  - name: skill-clearing-sequence
     description: "sequence next card in chunk"
-    depends: [skill-clearing-prioritize-cli]
-    command: "${CHORUS_HOME}/platform/scripts/cards sequence ${CHUNK}"
+    depends: [skill-clearing-prioritize]
+    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk sequence ${CHUNK}"
     continue_on:
       exit_code: [2]
       mark_success: true
   - name: skill-clearing-plan-go
     description: "Jeff approval before pulling to WIP"
-    depends: [skill-clearing-sequence-cli]
+    depends: [skill-clearing-sequence]
     id: skill_clearing_plan_go
     action: human.task
     with:

@@ -19,7 +19,7 @@ if [ -z "$CARDS" ]; then
 fi
 
 cmd="${1:-}"
-[ -n "$cmd" ] || { echo "usage: clearing-chunk enforce <chunk> | list" >&2; exit 2; }
+[ -n "$cmd" ] || { echo "usage: clearing-chunk enforce <chunk> | list | prioritize <chunk> | sequence <chunk>" >&2; exit 2; }
 
 fetch_active_chunks() {
   local listing
@@ -69,7 +69,82 @@ print(", ".join(sorted(active_chunks)))
   }
 }
 
+
+get_chunk_products() {
+  local chunk="$1"
+  local env_var="CHUNK_PRODUCTS_${chunk//-/_}"
+  if [ -n "${!env_var:-}" ]; then
+    echo "${!env_var}"
+    return 0
+  fi
+  case "$chunk" in
+    buzz) echo "clearing borg pulse loom" ;;
+    alerts-decisions) echo "borg loom" ;;
+    pulse) echo "pulse" ;;
+    clearing) echo "clearing" ;;
+    *) echo "$chunk" ;;
+  esac
+}
+
+get_matching_cards_in_order() {
+  local chunk="$1"
+  local prods
+  prods=$(get_chunk_products "$chunk")
+
+  local listing
+  if [ "${MOCK_BOARD_LISTING+set}" = "set" ]; then
+    listing="$MOCK_BOARD_LISTING"
+  else
+    listing=$("$CARDS" list 2>&1) || {
+      echo "FATAL: cards CLI failed while listing board: $listing" >&2
+      exit 1
+    }
+  fi
+
+  local card_ids
+  card_ids=$(echo "$listing" | awk '
+    /^(Next|Now|Later|WIP)(\s*\([0-9]+\))?:/ { in_open = 1; next }
+    /^[A-Za-z0-9_-]+(\s*\([0-9]+\))?:/ { in_open = 0 }
+    in_open && /^[[:space:]]+[0-9]+/ {
+      print $1
+    }
+  ')
+
+  for cid in $card_ids; do
+    local view
+    view=$("$CARDS" view "$cid" 2>&1 || true)
+    local seq=""
+    if [[ "$view" =~ sequence:([a-zA-Z0-9_-]+) ]]; then
+      seq="${BASH_REMATCH[1]}"
+    fi
+
+    for p in $prods; do
+      if [ "$seq" = "$p" ]; then
+        echo "$cid"
+        break
+      fi
+    done
+  done
+}
+
 case "$cmd" in
+prioritize)
+  chunk="${2:-}"
+  [ -n "$chunk" ] || { echo "usage: clearing-chunk prioritize <chunk>" >&2; exit 2; }
+  get_matching_cards_in_order "$chunk"
+  ;;
+sequence)
+  chunk="${2:-}"
+  [ -n "$chunk" ] || { echo "usage: clearing-chunk sequence <chunk>" >&2; exit 2; }
+  next_card=$(get_matching_cards_in_order "$chunk" | sed -n '1p')
+  if [ -n "$next_card" ]; then
+    echo "$next_card"
+    exit 0
+  else
+    echo "none" >&2
+    exit 1
+  fi
+  ;;
 enforce)
   chunk="${2:-}"
   [ -n "$chunk" ] || { echo "usage: clearing-chunk enforce <chunk>" >&2; exit 2; }
@@ -119,7 +194,7 @@ list)
   exit 0
   ;;
 *)
-  echo "usage: clearing-chunk enforce <chunk> | list" >&2
+  echo "usage: clearing-chunk enforce <chunk> | list | prioritize <chunk> | sequence <chunk>" >&2
   exit 2
   ;;
 esac

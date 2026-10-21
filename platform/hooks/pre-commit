@@ -140,14 +140,17 @@ fi
 # (a dev-setup gap must not block work); block only on a real ratchet verdict.
 if git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
   if command -v cargo >/dev/null 2>&1; then
-    if ! CHORUS_ROOT="$REPO" bash "$REPO/platform/scripts/clippy-ratchet.sh" >/tmp/clippy-ratchet-precommit.out 2>&1; then
+    clippy_out=$(mktemp)
+    if ! CHORUS_ROOT="$REPO" bash "$REPO/platform/scripts/clippy-ratchet.sh" >"$clippy_out" 2>&1; then
       echo "" >&2
       echo "📎 pre-commit BLOCKED: the clippy per-lint ratchet refused your staged Rust (#2532/#3710)." >&2
-      tail -12 /tmp/clippy-ratchet-precommit.out >&2
+      tail -12 "$clippy_out" >&2
       echo "   Counts may only DECREASE. Fix the lints, or regenerate the baseline only on a real drop:" >&2
       echo "   platform/scripts/clippy-ratchet.sh --regenerate" >&2
+      rm -f "$clippy_out"
       exit 1
     fi
+    rm -f "$clippy_out"
   else
     echo "pre-commit: cargo not found — clippy ratchet SKIPPED (dev-setup gap, not a pass)" >&2
   fi
