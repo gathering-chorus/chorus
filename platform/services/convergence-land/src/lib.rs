@@ -193,3 +193,13 @@ pub fn drift(want: &[(String, Value)], have: &[Value]) -> Drift {
     }
     d
 }
+
+/// #4091 reopen 2 — whether Grafana's folder listing (GET /api/folders) holds
+/// `uid`. Grafana 12 answers a GET of a folder that does not exist with 403
+/// "folders:read", not 404, so a folder is looked up in the listing it lets
+/// the token read. None: the listing is not a folder list (never "absent").
+pub fn folder_present(listing: &str, uid: &str) -> Option<bool> {
+    let v: Value = serde_json::from_str(listing).ok()?;
+    let a = v.as_array()?;
+    Some(a.iter().any(|f| f.get("uid").and_then(Value::as_str) == Some(uid)))
+}
