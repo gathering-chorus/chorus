@@ -91,12 +91,15 @@ fn land_alert(name: &str, dry_run: bool) -> Result<String, String> {
     }
     let (g, auth) = grafana_auth()?;
     let h = Some(auth.0.as_str());
-    let (c, _) = http("GET", &format!("{g}/api/folders/{folder}"), None, h, &[])?;
-    if c == 404 {
-        let (c, b) = http("POST", &format!("{g}/api/folders"), Some(&json!({"uid": folder, "title": format!("Chorus {domain}")})), h, &[])?;
-        if !ok(c) { return Err(format!("Grafana refused the folder {folder} ({c}): {b}")); }
-    } else if !ok(c) {
-        return Err(format!("Grafana folder {folder} unreadable ({c})"));
+    // reopen 2: a missing folder reads 403 on its own GET (Grafana 12), so look it up in the listing
+    let (c, b) = http("GET", &format!("{g}/api/folders?limit=1000"), None, h, &[])?;
+    match (ok(c), folder_present(&b, &folder)) {
+        (true, Some(true)) => {}
+        (true, Some(false)) => {
+            let (c, b) = http("POST", &format!("{g}/api/folders"), Some(&json!({"uid": folder, "title": format!("Chorus {domain}")})), h, &[])?;
+            if !ok(c) { return Err(format!("Grafana refused the folder {folder} ({c}): {b}")); }
+        }
+        _ => return Err(format!("Grafana folders unreadable ({c}) — nothing written")),
     }
     let uid = r["uid"].as_str().unwrap_or(name).to_string();
     // X-Disable-Provenance: the rule stays editable, so a hand edit is possible and the sync sensor (AC4) reads it stale

@@ -166,3 +166,18 @@ fn a_rule_no_row_claims_reads_stale() {
     let d = drift(&[], &[orphan]);
     assert_eq!(d.stale, vec!["gone-row (no Alert row claims it)".to_string()]);
 }
+
+// #4091 reopen 2 — Grafana 12 403s a GET of a missing folder; the listing decides.
+#[test]
+fn a_folder_is_found_in_the_listing() {
+    let l = r#"[{"uid":"sharedwithme","title":"Shared with me"},{"uid":"chorus-infrastructure","title":"Chorus infrastructure"}]"#;
+    assert_eq!(folder_present(l, "chorus-infrastructure"), Some(true));
+    assert_eq!(folder_present(l, "chorus-alerts"), Some(false));
+}
+
+// NEGATIVE PROOF: an error body (the 403 Grafana sends) is not read as "absent", so no folder is created blind.
+#[test]
+fn an_error_body_is_not_a_listing() {
+    assert_eq!(folder_present(r#"{"message":"Permissions needed: folders:read"}"#, "x"), None);
+    assert_eq!(folder_present("not json", "x"), None);
+}
