@@ -203,3 +203,24 @@ pub fn folder_present(listing: &str, uid: &str) -> Option<bool> {
     let a = v.as_array()?;
     Some(a.iter().any(|f| f.get("uid").and_then(Value::as_str) == Some(uid)))
 }
+
+/// A 0600 file holding one `Authorization:` header line for `curl -H @file`, so
+/// a token never rides argv; removed on drop. #4091 reopen 3: the name was the
+/// pid alone, so the second header in one run (Grafana's, still held, then the
+/// door's for the uid write-back) failed "File exists" after the rule landed.
+/// Each one now takes the next number of a per-process counter.
+pub struct HeaderFile(pub String);
+impl Drop for HeaderFile {
+    fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+}
+pub fn header_file(line: &str) -> Result<HeaderFile, String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::SeqCst);
+    let p = format!("{}/convergence-land-{}-{n}.h", std::env::temp_dir().display(), std::process::id());
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&p).map_err(|e| format!("header file: {e}"))?;
+    f.write_all(line.as_bytes()).map_err(|e| format!("header file: {e}"))?;
+    Ok(HeaderFile(p))
+}

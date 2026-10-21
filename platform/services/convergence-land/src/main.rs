@@ -32,19 +32,6 @@ fn http(method: &str, url: &str, body: Option<&Value>, header_file: Option<&str>
     Ok((code.trim().parse().unwrap_or(0), b.to_string()))
 }
 
-struct HeaderFile(String);
-impl Drop for HeaderFile {
-    fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
-}
-fn header_file(line: &str) -> Result<HeaderFile, String> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let p = format!("{}/convergence-land-{}.h", std::env::temp_dir().display(), std::process::id());
-    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&p).map_err(|e| format!("header file: {e}"))?;
-    f.write_all(line.as_bytes()).map_err(|e| format!("header file: {e}"))?;
-    Ok(HeaderFile(p))
-}
-
 fn grafana_auth() -> Result<(String, HeaderFile), String> {
     let url = env_or("GRAFANA_URL", "http://localhost:3100");
     loopback(&url)?;
@@ -99,7 +86,8 @@ fn land_alert(name: &str, dry_run: bool) -> Result<String, String> {
             let (c, b) = http("POST", &format!("{g}/api/folders"), Some(&json!({"uid": folder, "title": format!("Chorus {domain}")})), h, &[])?;
             if !ok(c) { return Err(format!("Grafana refused the folder {folder} ({c}): {b}")); }
         }
-        _ => return Err(format!("Grafana folders unreadable ({c}) — nothing written")),
+        (true, None) => return Err(format!("Grafana's folder listing is not a list ({c}) — nothing written")),
+        (false, _) => return Err(format!("Grafana folders unreadable ({c}) — nothing written")),
     }
     let uid = r["uid"].as_str().unwrap_or(name).to_string();
     // X-Disable-Provenance: the rule stays editable, so a hand edit is possible and the sync sensor (AC4) reads it stale
