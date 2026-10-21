@@ -52,7 +52,8 @@ chorus:ToolShape a sh:NodeShape ;
     sh:targetClass chorus:Tool ; sh:node chorus:CoreShape ;
     sh:property chorus:ToolShape-label , chorus:ToolShape-ownedBy , chorus:ToolShape-toolType ,
         chorus:ToolShape-toolVersion , chorus:ToolShape-installPath , chorus:ToolShape-installMethod ,
-        chorus:ToolShape-upstreamUrl , chorus:ToolShape-toolLicense , chorus:ToolShape-installedOn , chorus:ToolShape-toolUsedBy .
+        chorus:ToolShape-upstreamUrl , chorus:ToolShape-toolLicense , chorus:ToolShape-installedOn , chorus:ToolShape-toolUsedBy ,
+        chorus:ToolShape-color , chorus:ToolShape-vizLabel , chorus:ToolShape-status .
 chorus:ToolShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
 # ownedBy is optional on a plain Tool: the 7 Tool rows already in prod (the
 # /chorus, /clearing, /listen... skills, 2026-09-26) carry none, and a required
@@ -67,6 +68,13 @@ chorus:ToolShape-upstreamUrl a sh:PropertyShape ; sh:path chorus:upstreamUrl ; s
 chorus:ToolShape-toolLicense a sh:PropertyShape ; sh:path chorus:toolLicense ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:ToolShape-installedOn a sh:PropertyShape ; sh:path chorus:installedOn ; sh:class chorus:Machine .
 chorus:ToolShape-toolUsedBy a sh:PropertyShape ; sh:path chorus:toolUsedBy ; sh:class chorus:Service .
+# #4091 reopen 1 — the 7 Tool rows carry these three (chorus.ttl properties for
+# the viz: hex color, the label under the node, live/designed/planned). The
+# shape left them out, so the door refused every Tool row write: "off-model
+# property 'color' is not in the shape" (staging rehearsal, 08:26).
+chorus:ToolShape-color a sh:PropertyShape ; sh:path chorus:color ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^#[0-9a-fA-F]{6}$" .
+chorus:ToolShape-vizLabel a sh:PropertyShape ; sh:path chorus:vizLabel ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ToolShape-status a sh:PropertyShape ; sh:path chorus:status ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^(live|designed|planned)$" .
 
 chorus:FrameworkShape a sh:NodeShape ;
     sh:targetClass chorus:Framework ; sh:node chorus:CoreShape ;
