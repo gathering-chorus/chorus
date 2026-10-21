@@ -170,6 +170,11 @@ pub const PARALLEL: &str = "parallel=true";
 /// card's werk file (`dagu start <werk>/platform/pipelines/<dag>.yaml`) instead
 /// of `dag.run` by name, which an enqueued parent resolves on main only.
 pub const FROM_WERK: &str = "from=werk";
+/// #4675 — a pipeline row's withArguments marker: ENQUEUE the child on its own
+/// queue and wait for its verdict (`platform/scripts/dagu-enqueue-wait`), because
+/// a `dag.run` sub-run ignores its queue (#4494). Jeff 2026-10-21: one test run
+/// at a time on Library; the pair's local proof waits its turn behind cicd runs.
+pub const QUEUED: &str = "queued=true";
 pub const CARD_QUEUE: &str = "werk";
 pub const LAND_QUEUE: &str = "werk-land";
 
@@ -399,7 +404,7 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL && *p != FROM_WERK).map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED).map(String::from));
     (pairs, missing)
 }
 
@@ -419,6 +424,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         // child runs on its own queue as its own run, so it gets no TRACE
         let enqueue = r.with_args.split_whitespace().any(|p| p == "enqueue=true");
         let from_werk = r.with_args.split_whitespace().any(|p| p == FROM_WERK);
+        let queued = r.with_args.split_whitespace().any(|p| p == QUEUED);
         let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string()];
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
@@ -426,7 +432,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         params.extend(
             r.with_args
                 .split_whitespace()
-                .filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK)
+                .filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
                 .map(String::from),
         );
         if from_werk {
@@ -456,6 +462,17 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
                 "    command: {}\n",
                 quote(&format!(
                     "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
+                    r.implemented_by,
+                    params.join(" ")
+                ))
+            ));
+            return;
+        }
+        if queued {
+            out.push_str(&format!(
+                "    command: {}\n",
+                quote(&format!(
+                    "${{CHORUS_HOME}}/platform/scripts/dagu-enqueue-wait {} {}",
                     r.implemented_by,
                     params.join(" ")
                 ))

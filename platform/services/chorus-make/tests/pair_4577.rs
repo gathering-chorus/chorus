@@ -58,7 +58,9 @@ fn negative_proof_a_human_row_answered_by_a_param_the_pipeline_lacks_is_refused(
 fn the_hand_off_enqueues_cicd_and_the_local_proof_waits_for_cicd_test() {
     let y = generate_straight("pair", &pipe(), &rows(), &known()).unwrap();
     assert!(y.contains("    command: \"env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}\"\n"), "{y}");
-    assert!(y.contains("    action: dag.run\n    with:\n      dag: cicd-test\n      params: \"CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff\"\n"), "{y}");
+    // #4675 — the local proof waits its turn on cicd-test's queue, never a sub-run beside a cicd run.
+    assert!(y.contains("    command: \"${CHORUS_HOME}/platform/scripts/dagu-enqueue-wait cicd-test CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff\"\n"), "{y}");
+    assert!(!y.contains("dag: cicd-test\n"), "{y}");
 }
 
 /// #4577 pair run 1 (10-18 07:43): dagu ran the dag.enqueue hand-off as a
