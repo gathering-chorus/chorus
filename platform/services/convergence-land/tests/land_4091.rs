@@ -181,3 +181,21 @@ fn an_error_body_is_not_a_listing() {
     assert_eq!(folder_present(r#"{"message":"Permissions needed: folders:read"}"#, "x"), None);
     assert_eq!(folder_present("not json", "x"), None);
 }
+
+// #4091 reopen 3 — two header files held at once in one run (Grafana's, then the
+// door's for the write-back). NEGATIVE PROOF: on the pid-only name the second
+// failed "File exists" and the rule's uid was never written back.
+#[test]
+fn two_header_files_can_be_held_at_once_and_each_is_private_and_removed() {
+    use std::os::unix::fs::PermissionsExt;
+    let a = header_file("Authorization: Bearer a").unwrap();
+    let b = header_file("Authorization: Bearer b").unwrap();
+    assert_ne!(a.0, b.0);
+    for h in [&a, &b] {
+        assert_eq!(std::fs::metadata(&h.0).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+    let (pa, pb) = (a.0.clone(), b.0.clone());
+    drop(a);
+    drop(b);
+    assert!(!std::path::Path::new(&pa).exists() && !std::path::Path::new(&pb).exists());
+}
