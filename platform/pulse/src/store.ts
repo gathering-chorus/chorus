@@ -399,6 +399,12 @@ export class MessageStore {
     ).all() as ReturnType<MessageStore['getPendingDeliveries']>;
   }
 
+  /** #4629 — the sender and recipient of one message, for the Buzz shadow join; null when no such row. */
+  getMessageEnds(id: number): { from: string; to: string; type: string } | null {
+    const row = this.db.prepare('SELECT "from" as "from", "to" as "to", type FROM messages WHERE id = ?').get(id);
+    return (row as { from: string; to: string; type: string } | undefined) ?? null;
+  }
+
   getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null; delivery_session_id: string | null; inbox_claim_session: string | null } {
     const row = this.db.prepare(
       'SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id, delivery_session_id, inbox_claim_session FROM messages WHERE id = ?'

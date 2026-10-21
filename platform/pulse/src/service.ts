@@ -33,7 +33,8 @@ import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
-import { BuzzWriter, bridgeSignerFromHome, type BuzzMessage } from './buzz-writer';
+import { BuzzWriter, bridgeSignerFromHome, identitySignerFromHome, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
+import { BuzzReader } from './buzz-reader';
 import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
 
 /** #4609 — what createApp needs from the Buzz writer: fire one post, no answer. */
@@ -794,6 +795,8 @@ if (require.main === module) {
     // is configured (the prod plist): a demo or test pulse must never write the
     // team's room. A miss is logged every time and alerted to ops once per 10 min.
     const buzz = startBuzzWriter(store, worker, emitSpine);
+    // #4629 S1 — read the room in shadow (judge, never deliver) when PULSE_BUZZ_SHADOW=1
+    startBuzzShadow(store, emitSpine);
 
     const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz);
     app.listen(PORT, BIND_HOST, () => {
@@ -804,6 +807,29 @@ if (require.main === module) {
 }
 
 
+
+/** #4629 S1 — the shadow reader, or none unless PULSE_BUZZ_SHADOW=1 and the relay and principal-pulse's key are there. */
+function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | undefined {
+  const relayUrl = process.env.PULSE_BUZZ_RELAY_URL;
+  if (process.env.PULSE_BUZZ_SHADOW !== '1' || !relayUrl) return undefined;
+  const { signer, reason } = identitySignerFromHome(os.homedir(), 'pulse');
+  if (!signer) {
+    log('error', 'buzz.shadow.off', { reason });
+    return undefined;
+  }
+  return new BuzzReader({
+    relayUrl,
+    hostHeader: process.env.PULSE_BUZZ_RELAY_HOST || undefined,
+    signer,
+    store,
+    channel: process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT,
+    onVerdict: (v) => {
+      if (v.verdict === 'not-a-delivery') return;
+      log(v.verdict === 'match' ? 'info' : 'error', 'buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+      void emit('buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+    },
+  });
+}
 
 /** #4609 — the production Buzz writer, or none when PULSE_BUZZ_RELAY_URL is unset. */
 function startBuzzWriter(store: MessageStore, worker: DeliveryWorker | undefined, emit: EmitSpine): BuzzWriter | undefined {

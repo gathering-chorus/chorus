@@ -113,7 +113,8 @@ export class BuzzWriter {
       ? [['h', channel], ['t', topic], ['author', 'jeff'], ['kind', kind], ['to', m.to], ['surface', 'terminal'], ['msg', `pulse-term-${m.id}`]]
       : m.surface === 'land'
         ? [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ...(m.to ? [['owner', m.to]] : []), ['msg', `pulse-land-${m.id}`]]
-        : [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
+        // #4629 — the recipient rides as a tag so a reader of the room can deliver it, never parsed from the text
+        : [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ['to', m.to], ['msg', `pulse-${m.id}`]];
     const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), CHANNEL_MESSAGE, tags, text);
     if (!this.ws || !this.open) { this.miss(note, 'relay not connected'); return; }
     const timer = setTimeout(() => {
@@ -178,7 +179,12 @@ export class BuzzWriter {
  * the room with. The key stays in that file; callers get a signer, never the key.
  */
 export function bridgeSignerFromHome(home: string): { signer?: BuzzSigner; reason?: string } {
-  const file = path.join(home, '.chorus', 'identity', 'bridge', 'nostr.json');
+  return identitySignerFromHome(home, 'bridge');
+}
+
+/** #4629 — any principal's signer from ~/.chorus/identity/<who>/nostr.json (pulse reads the room as principal-pulse). */
+export function identitySignerFromHome(home: string, who: string): { signer?: BuzzSigner; reason?: string } {
+  const file = path.join(home, '.chorus', 'identity', who, 'nostr.json');
   let parsed: { seckey?: unknown; pubkey?: unknown };
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed filename under the caller's home
