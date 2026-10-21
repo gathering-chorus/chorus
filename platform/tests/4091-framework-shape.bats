@@ -90,8 +90,15 @@ whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation ch
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
-@test "a Tool with no owner is refused" {
-  f=$(fixture 'chorus:jq a chorus:Tool ; rdfs:label "jq" ; chorus:toolType chorus:observe .' t2)
+# the prod Tool rows (2026-09-26) carry no owner; a plain Tool must still conform
+@test "control: a plain Tool with no owner conforms, as the prod rows do" {
+  f=$(fixture 'chorus:listen a chorus:Tool ; rdfs:label "/listen" , "listen" ; chorus:toolType chorus:observe .' t2)
+  [ "$(verdict "$f")" = CONFORMS ] || return 1
+}
+
+@test "a Framework with no owner is refused" {
+  f=$(fixture "$(whole | sed 's/ chorus:ownedBy chorus:principal-kade ;//')" f8)
+  grep -q ownedBy "$f" && return 1
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
@@ -121,4 +128,24 @@ whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation ch
   nt=$(riot --output=nt "$REPO/building/products/convergence/domains/integrations/icd-instances/icd-instance-grafana.ttl" 2>/dev/null)
   grep -qF '<https://jeffbridwell.com/icd/provider/grafana/alert-rules> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:gathering:icd#Provider> .' <<<"$nt" || return 1
   [ "$(grep -cF '<urn:gathering:icd#fromProvider> <https://jeffbridwell.com/icd/provider/grafana/alert-rules>' <<<"$nt")" -eq 10 ] || return 1
+}
+
+# Silas 10-21: the 7 Tool + 5 ToolType rows already in prod (read from the store
+# 2026-10-21 into fixtures/4091/prod-tool-rows.ttl) must pass the new shapes, or
+# the door 422s their reads and patches. My first ToolShape required ownedBy and
+# failed all 7 Tools.
+@test "the Tool and ToolType rows already in prod conform" {
+  f="$REPO/platform/tests/fixtures/4091/prod-tool-rows.ttl"
+  [ "$(riot --output=nt "$f" 2>/dev/null | grep -c 'rdf-syntax-ns#type')" -eq 12 ] || return 1
+  [ "$(verdict "$f")" = CONFORMS ] || return 1
+}
+
+# Silas 10-21, the 10-18 scar: a pathless property shape or a shared blank node
+# empties CoreShape on deploy. Every property shape here is named and has a path.
+@test "every property shape in the file is named and has a path; no blank nodes" {
+  nt=$(riot --output=nt "$TTL" 2>/dev/null)
+  ! grep -q '^_:' <<<"$nt" || return 1
+  ps=$(grep -F '<http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#PropertyShape>' <<<"$nt" | cut -d' ' -f1 | sort -u)
+  [ "$(wc -l <<<"$ps")" -ge 15 ] || return 1
+  for s in $ps; do grep -qF "$s <http://www.w3.org/ns/shacl#path>" <<<"$nt" || { echo "no path: $s"; return 1; }; done
 }

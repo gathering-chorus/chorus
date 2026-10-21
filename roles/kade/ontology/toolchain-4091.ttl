@@ -54,7 +54,11 @@ chorus:ToolShape a sh:NodeShape ;
         chorus:ToolShape-toolVersion , chorus:ToolShape-installPath , chorus:ToolShape-installMethod ,
         chorus:ToolShape-upstreamUrl , chorus:ToolShape-toolLicense , chorus:ToolShape-installedOn , chorus:ToolShape-toolUsedBy .
 chorus:ToolShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
-chorus:ToolShape-ownedBy a sh:PropertyShape ; sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+# ownedBy is optional on a plain Tool: the 7 Tool rows already in prod (the
+# /chorus, /clearing, /listen... skills, 2026-09-26) carry none, and a required
+# field they lack would 422 their reads and patches (Silas 10-21). A Framework
+# requires it: its alerts route to its owner.
+chorus:ToolShape-ownedBy a sh:PropertyShape ; sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:ToolShape-toolType a sh:PropertyShape ; sh:path chorus:toolType ; sh:maxCount 1 ; sh:class chorus:ToolType .
 chorus:ToolShape-toolVersion a sh:PropertyShape ; sh:path chorus:toolVersion ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:ToolShape-installPath a sh:PropertyShape ; sh:path chorus:installPath ; sh:maxCount 1 ; sh:datatype xsd:string .
@@ -66,8 +70,10 @@ chorus:ToolShape-toolUsedBy a sh:PropertyShape ; sh:path chorus:toolUsedBy ; sh:
 
 chorus:FrameworkShape a sh:NodeShape ;
     sh:targetClass chorus:Framework ; sh:node chorus:CoreShape ;
-    sh:property chorus:FrameworkShape-hasOperation , chorus:FrameworkShape-hasSensor ,
+    sh:property chorus:FrameworkShape-ownedBy , chorus:FrameworkShape-hasOperation , chorus:FrameworkShape-hasSensor ,
         chorus:FrameworkShape-icdProvider , chorus:FrameworkShape-wraps .
+chorus:FrameworkShape-ownedBy a sh:PropertyShape ; sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ;
+    sh:message "a Framework has an owner: its sensor's alerts route to them" .
 chorus:FrameworkShape-hasOperation a sh:PropertyShape ; sh:path chorus:hasOperation ; sh:minCount 1 ; sh:class chorus:Skill ;
     sh:message "a Framework exposes at least one operation (a Skill run as an MCP tool)" .
 chorus:FrameworkShape-hasSensor a sh:PropertyShape ; sh:path chorus:hasSensor ; sh:minCount 1 ; sh:class chorus:Sensor ;
