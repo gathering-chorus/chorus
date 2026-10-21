@@ -233,11 +233,13 @@ def render_html(data, target_owner=None):
             elif "bedroom-log" in s or s.startswith("pipeline-zz"):
                 matched_prod = "borg"
             elif s.endswith(".yaml"):
-                # Heuristic mapping for pipeline YAML files
-                prefix = s.split("-")[0].replace(".yaml", "")
-                if any(p["product"] == prefix for p in data["products"]):
-                    matched_prod = prefix
-                elif prefix in ("cicd", "nightly"):
+                # Pipeline file mapping (matches NO_ROW attribution in inventory)
+                base = s.replace(".yaml", "")
+                if base == "nightly":
+                    matched_prod = "chorus"
+                elif any(p["product"] == base.split("-")[0] for p in data["products"]):
+                    matched_prod = base.split("-")[0]
+                elif base.startswith("cicd"):
                     matched_prod = "werk"
 
         if i["kind"] == "domain-two-products":
