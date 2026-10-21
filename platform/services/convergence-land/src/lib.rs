@@ -150,3 +150,46 @@ pub fn silence(rule_uid: &str, minutes: u64, starts: &str, ends: &str, by: &str)
     }))
 }
 
+
+/// #4091 AC4 — rows against rules. `want` is each landable Alert row (one with
+/// a metricQuery) and the rule its maps build; `have` is every rule Grafana
+/// holds in a chorus-* folder. Missing: a row with no rule. Stale: a rule that
+/// differs from what its row builds (a hand edit in Grafana), or a rule no row
+/// claims any more.
+#[derive(Debug, Default, PartialEq)]
+pub struct Drift {
+    pub tree: usize,
+    pub graph: usize,
+    pub missing: Vec<String>,
+    pub stale: Vec<String>,
+}
+
+const COMPARED: [&str; 8] = [
+    "/title", "/for", "/labels/role", "/labels/severity", "/labels/domain",
+    "/annotations/summary", "/data/0/model/expr", "/data/0/datasourceUid",
+];
+
+pub fn drift(want: &[(String, Value)], have: &[Value]) -> Drift {
+    let uid = |r: &Value| r.get("uid").and_then(Value::as_str).unwrap_or("").to_string();
+    let mut d = Drift { tree: want.len(), ..Default::default() };
+    for (name, built) in want {
+        match have.iter().find(|h| uid(h) == uid(built)) {
+            None => d.missing.push(name.clone()),
+            Some(h) => {
+                d.graph += 1;
+                let off: Vec<&str> = COMPARED.iter().copied()
+                    .filter(|p| built.pointer(p).filter(|v| !v.is_null()) != h.pointer(p).filter(|v| !v.is_null()))
+                    .collect();
+                if !off.is_empty() {
+                    d.stale.push(format!("{name} ({})", off.iter().map(|p| p.trim_start_matches('/')).collect::<Vec<_>>().join(", ")));
+                }
+            }
+        }
+    }
+    for h in have {
+        if !want.iter().any(|(_, b)| uid(b) == uid(h)) {
+            d.stale.push(format!("{} (no Alert row claims it)", uid(h)));
+        }
+    }
+    d
+}

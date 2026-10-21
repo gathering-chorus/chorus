@@ -3,6 +3,7 @@
 //!
 //!   convergence-land alert <alert-name> [--dry-run [true|false]]
 //!   convergence-land silence <alert-name> <minutes>
+//!   convergence-land sync        (AC4: rows against rules, read by the sync sensor)
 //!
 //! GRAFANA_URL (default http://localhost:3100, loopback only), CHORUS_DOOR
 //! (default http://localhost:3360/v1), CHORUS_ICD_QUERY (default the pods
@@ -159,6 +160,47 @@ fn land_silence(name: &str, minutes: &str) -> Result<String, String> {
     Ok(format!("silenced {name} (rule {uid}) for {m}m: {}", b.trim()))
 }
 
+/// AC4 — the grafana sync reading, as lines chorus-crawl's validate reads:
+/// `measured tree=N graph=N` (or `unmeasured <why>`), then `missing <row>` and
+/// `stale <rule (what)>` lines. Read-only. A store or Grafana it cannot read is
+/// unmeasured, never zero.
+fn sync() -> String {
+    match sync_drift() {
+        Ok(d) => {
+            let mut out = vec![format!("measured tree={} graph={}", d.tree, d.graph)];
+            out.extend(d.missing.iter().map(|m| format!("missing {m}")));
+            out.extend(d.stale.iter().map(|m| format!("stale {m}")));
+            out.join("\n")
+        }
+        Err(e) => format!("unmeasured {e}"),
+    }
+}
+
+fn sync_drift() -> Result<Drift, String> {
+    let door = env_or("CHORUS_DOOR", "http://localhost:3360/v1");
+    let (c, b) = http("GET", &format!("{door}/alerts/alerts?limit=1000"), None, None, &[])?;
+    if c != 200 { return Err(format!("Alert rows unreadable (door {c})")); }
+    let list: Value = serde_json::from_str(&b).map_err(|e| format!("Alert rows: {e}"))?;
+    let maps = icd_maps()?;
+    let mut want = Vec::new();
+    for r in list["data"].as_array().into_iter().flatten() {
+        if field(r, "metricQuery").is_none() { continue; }
+        let name = field(r, "name").unwrap_or_default();
+        let row = alert_row(&name)?;
+        let domain = field(&row, "hasDomain").unwrap_or_default();
+        let (built, _) = rule(&row, &maps, &format!("chorus-{domain}"))?;
+        want.push((name, built));
+    }
+    let (g, auth) = grafana_auth()?;
+    let (c, b) = http("GET", &format!("{g}/api/v1/provisioning/alert-rules"), None, Some(&auth.0), &[])?;
+    if c != 200 { return Err(format!("Grafana rules unreadable ({c})")); }
+    let rules: Value = serde_json::from_str(&b).map_err(|e| format!("Grafana rules: {e}"))?;
+    let have: Vec<Value> = rules.as_array().into_iter().flatten()
+        .filter(|r| r.get("folderUID").and_then(Value::as_str).is_some_and(|f| f.starts_with("chorus-")))
+        .cloned().collect();
+    Ok(drift(&want, &have))
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let r = match a.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
@@ -167,7 +209,8 @@ fn main() {
         ["alert", n, "--dry-run"] | ["alert", n, "--dry-run", "true"] => land_alert(n, true),
         ["alert", n, "--dry-run", "false"] => land_alert(n, false),
         ["silence", n, m] => land_silence(n, m),
-        _ => Err("usage: convergence-land alert <alert-name> [--dry-run] | silence <alert-name> <minutes>".into()),
+        ["sync"] => Ok(sync()),
+        _ => Err("usage: convergence-land alert <alert-name> [--dry-run] | silence <alert-name> <minutes> | sync".into()),
     };
     std::process::exit(match r {
         Ok(s) => { println!("{s}"); 0 }

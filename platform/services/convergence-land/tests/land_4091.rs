@@ -130,3 +130,39 @@ fn links_are_read_bare_and_data_wins() {
     assert_eq!(field(&row(), "name").as_deref(), Some("host-pressure"), "a single row's name is its id");
     assert_eq!(field(&row(), "nope"), None);
 }
+
+// #4091 AC4 — the grafana sync reading.
+fn built() -> Value { rule(&row(), &maps(), "chorus-infrastructure").unwrap().0 }
+
+#[test]
+fn a_rule_as_its_row_builds_it_is_in_sync() {
+    let d = drift(&[("host-pressure".into(), built())], &[built()]);
+    assert_eq!(d, Drift { tree: 1, graph: 1, missing: vec![], stale: vec![] });
+}
+
+// NEGATIVE PROOF (AC4): a row with no rule reads missing.
+#[test]
+fn a_row_with_no_rule_reads_missing() {
+    let d = drift(&[("host-pressure".into(), built())], &[]);
+    assert_eq!(d.missing, vec!["host-pressure".to_string()]);
+    assert_eq!(d.graph, 0);
+}
+
+// NEGATIVE PROOF (AC4): a rule changed by hand in Grafana reads stale, naming what changed.
+#[test]
+fn a_hand_edited_rule_reads_stale() {
+    let mut hand = built();
+    hand["data"][0]["model"]["expr"] = json!("chorus_host_pressure >= 2");
+    hand["for"] = json!("1m");
+    let d = drift(&[("host-pressure".into(), built())], &[hand]);
+    assert_eq!(d.stale.len(), 1);
+    assert!(d.stale[0].contains("data/0/model/expr") && d.stale[0].contains("for"), "{:?}", d.stale);
+}
+
+#[test]
+fn a_rule_no_row_claims_reads_stale() {
+    let mut orphan = built();
+    orphan["uid"] = json!("gone-row");
+    let d = drift(&[], &[orphan]);
+    assert_eq!(d.stale, vec!["gone-row (no Alert row claims it)".to_string()]);
+}

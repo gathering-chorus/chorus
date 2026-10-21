@@ -4002,6 +4002,18 @@ fn print_graph_vs_project(
             measured: valid.is_some(),
         });
     }
+    // #4091 AC4 — the Grafana framework: Alert rows against Grafana's rules
+    {
+        let bin = std::env::var("CONVERGENCE_LAND").unwrap_or_else(|_| "convergence-land".to_string());
+        let out = Command::new(&bin).arg("sync").output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_else(|e| format!("unmeasured cannot run {bin}: {e}"));
+        let row = chorus_crawl::grafana_rule_row(&out);
+        if !row.measured {
+            println!("chorus-crawl: reconcile grafana rules: UNMEASURED — {}", out.lines().next().unwrap_or("no output").trim_start_matches("unmeasured "));
+        }
+        fold_rows.push(row);
+    }
     // #4214 — the folds, both directions. The classes shipped without this, so
     // for one afternoon nothing proved that every page on disk had a row or that
     // every row still had a file. Jeff caught it by asking the obvious question.
