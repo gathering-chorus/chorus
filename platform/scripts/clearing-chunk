@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# clearing-chunk — enforce active chunk WIP limits and list active chunks (#4682)
+# @domain: board
+set -euo pipefail
+
+# Team WIP limit for active chunks (configurable via TEAM_WIP_LIMIT or CHORUS_CHUNK_WIP_LIMIT)
+LIMIT="${TEAM_WIP_LIMIT:-${CHORUS_CHUNK_WIP_LIMIT:-3}}"
+
+CARDS="${CARDS_CLI:-}"
+if [ -z "$CARDS" ]; then
+  if command -v cards &>/dev/null; then
+    CARDS="cards"
+  elif [ -x "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards" ]; then
+    CARDS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards"
+  else
+    echo "FATAL: cards CLI not found in PATH or platform/scripts/cards" >&2
+    exit 1
+  fi
+fi
+
+cmd="${1:-}"
+[ -n "$cmd" ] || { echo "usage: clearing-chunk enforce <chunk> | list" >&2; exit 2; }
+
+fetch_active_chunks() {
+  local listing
+  if [ "${MOCK_BOARD_LISTING+set}" = "set" ]; then
+    listing="$MOCK_BOARD_LISTING"
+  else
+    listing=$("$CARDS" list 2>&1) || {
+      echo "FATAL: failed to fetch board cards from cards CLI: $listing" >&2
+      return 1
+    }
+  fi
+
+  if [ -z "$listing" ]; then
+    echo "FATAL: empty board listing received" >&2
+    return 1
+  fi
+
+  python3 -c '
+import sys, re
+
+cards_out = sys.stdin.read()
+if not cards_out:
+    sys.exit(1)
+
+active_chunks = set()
+in_active_section = False
+
+for line in cards_out.splitlines():
+    # Detect section headers like "WIP (2):" or "Now (0):"
+    if re.match(r"^(WIP|Now)\s*\(\d+\):", line):
+        in_active_section = True
+        continue
+    elif re.match(r"^[A-Za-z0-9_-]+\s*\(\d+\):", line):
+        in_active_section = False
+        continue
+
+    if in_active_section:
+        # Match chunk:slug in brackets or anywhere in the line
+        chunks = re.findall(r"chunk:([a-z0-9-]+)", line)
+        for c in chunks:
+            active_chunks.add(c)
+
+print(", ".join(sorted(active_chunks)))
+' <<< "$listing" || {
+    echo "FATAL: failed to parse active chunks from board listing" >&2
+    return 1
+  }
+}
+
+case "$cmd" in
+enforce)
+  chunk="${2:-}"
+  [ -n "$chunk" ] || { echo "usage: clearing-chunk enforce <chunk>" >&2; exit 2; }
+  raw=$(fetch_active_chunks) || exit 1
+  if [ -n "$raw" ]; then
+    IFS=',' read -ra raw_parts <<< "$raw"
+    active=()
+    for item in "${raw_parts[@]}"; do
+      trimmed=$(echo "$item" | xargs)
+      [ -n "$trimmed" ] && active+=("$trimmed")
+    done
+  else
+    active=()
+  fi
+
+  # Check if chunk is already active
+  for a in "${active[@]}"; do
+    if [ "$a" = "$chunk" ]; then
+      echo "chunk '$chunk' is already active (${#active[@]}/$LIMIT active)"
+      exit 0
+    fi
+  done
+
+  # Check limit
+  if [ "${#active[@]}" -ge "$LIMIT" ]; then
+    active_str=$(IFS=', '; echo "${active[*]}")
+    echo "refused: active chunk limit reached ($LIMIT): $raw — cannot activate '$chunk'" >&2
+    exit 1
+  fi
+
+  echo "activated chunk '$chunk' ($(( ${#active[@]} + 1 ))/$LIMIT active)"
+  exit 0
+  ;;
+list)
+  raw=$(fetch_active_chunks) || exit 1
+  if [ -n "$raw" ]; then
+    IFS=',' read -ra raw_parts <<< "$raw"
+    active=()
+    for item in "${raw_parts[@]}"; do
+      trimmed=$(echo "$item" | xargs)
+      [ -n "$trimmed" ] && active+=("$trimmed")
+    done
+  else
+    active=()
+  fi
+  echo "Active chunks (${#active[@]}/$LIMIT): $raw"
+  exit 0
+  ;;
+*)
+  echo "usage: clearing-chunk enforce <chunk> | list" >&2
+  exit 2
+  ;;
+esac

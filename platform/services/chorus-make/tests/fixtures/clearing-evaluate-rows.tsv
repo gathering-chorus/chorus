@@ -1,0 +1,4 @@
+# #4682 fixture — clearing-evaluate pipeline
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+evaluate	1	1	skill-clearing-evaluate	post-land decision: resequence chunk or switch lane	human					by=ROLE choices=resequence|switch
+loop	2	1	skill-clearing-loop	re-enqueue clearing-plan for active chunk	pipeline	clearing-plan				CHUNK=${CHUNK} ROLE=${ROLE} enqueue=true
