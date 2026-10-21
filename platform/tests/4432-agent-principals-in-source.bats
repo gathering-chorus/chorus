@@ -106,14 +106,87 @@ PY
   printf "%s" "$output" | grep -qF "missing hat-engineering-lead"
 }
 
-@test "abby-normal owns nothing and holds no appointment (Jeff 2026-10-05)" {
-  hits=$(cd "$ROOT" && git grep -nE "(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal" -- '*.ttl' | wc -l | tr -d ' ')
-  echo "ownedBy/appointment references to abby-normal: $hits"
-  [ "$hits" -eq 0 ]
+check_abby() {
+  python3 - "$1" <<'PY'
+import os, subprocess, re, sys
+
+target_dir = sys.argv[1]
+allowed_radius = {
+    "chorus:clearing",
+    "chorus:pulse",
+    "chorus:chunk-pulse",
+    "chorus:chunk-clearing",
+    "chorus:cards",
+    "chorus:messages",
+    "chorus:spine",
 }
 
-@test "NEGATIVE PROOF: an ownedBy pointing at abby-normal is caught" {
-  printf 'chorus:x a chorus:Domain ;\n    chorus:ownedBy chorus:principal-abby-normal .\n' > "$BATS_TEST_TMPDIR/x.ttl"
-  run grep -cE "(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal" "$BATS_TEST_TMPDIR/x.ttl"
-  [ "$output" -eq 1 ]
+if os.path.exists(os.path.join(target_dir, ".git")):
+    try:
+        out = subprocess.check_output(
+            ["git", "grep", "-nE", r"(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal", "--", "*.ttl"],
+            cwd=target_dir
+        ).decode("utf-8")
+    except subprocess.CalledProcessError:
+        out = ""
+    lines = [l for l in out.splitlines() if l.strip()]
+    files_with_lines = []
+    for l in lines:
+        parts = l.split(":", 2)
+        files_with_lines.append((os.path.join(target_dir, parts[0]), int(parts[1])))
+else:
+    files_with_lines = []
+    for r, ds, fs in os.walk(target_dir):
+        for f in fs:
+            if f.endswith(".ttl"):
+                p = os.path.join(r, f)
+                with open(p, "r", errors="ignore") as fp:
+                    for idx, line in enumerate(fp, 1):
+                        if re.search(r'(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal', line):
+                            files_with_lines.append((p, idx))
+
+if not files_with_lines:
+    print("abby-normal owns nothing (expected Clearing / product-radius)")
+    sys.exit(1)
+
+bad = []
+for p, lno in files_with_lines:
+    with open(p, "r", errors="ignore") as fp:
+        flines = fp.readlines()
+    subj = None
+    for i in range(lno - 1, -1, -1):
+        l = flines[i].strip()
+        if i < lno - 1 and l.endswith("."):
+            break
+        m = re.match(r'^(chorus:[a-zA-Z0-9_-]+)\s+a\s+', l)
+        if m:
+            subj = m.group(1); break
+        m2 = re.match(r'^(chorus:[a-zA-Z0-9_-]+)\s+chorus:(ownedBy|appointee|appointedPrincipal|appointedRole)', l)
+        if m2:
+            subj = m2.group(1); break
+    if subj not in allowed_radius:
+        bad.append(f"outside Clearing product-radius: {subj} at {p}:{lno}")
+
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+
+print(f"ok ({len(files_with_lines)} references in Clearing product-radius)")
+sys.exit(0)
+PY
+}
+
+@test "abby-normal owns Clearing and its product-radius, nothing outside (Jeff 2026-10-21 18:16)" {
+  run check_abby "$ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "NEGATIVE PROOF: an ownedBy outside Clearing radius is caught" {
+  mkdir -p "$BATS_TEST_TMPDIR/repo"
+  printf 'chorus:x a chorus:Domain ;\n    chorus:ownedBy chorus:principal-abby-normal .\n' > "$BATS_TEST_TMPDIR/repo/x.ttl"
+  run check_abby "$BATS_TEST_TMPDIR/repo"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  printf "%s" "$output" | grep -qF "outside Clearing product-radius: chorus:x"
 }
