@@ -305,20 +305,18 @@ pub fn owner_of(view: &str) -> Option<String> {
     view.lines().find_map(|l| l.trim().strip_prefix("Owner:")).map(|o| o.trim().to_lowercase()).filter(|o| !o.is_empty())
 }
 
-/// Titles of the parent's children from `cards view` ("    #4700 [Later] title").
-pub fn child_titles(view: &str) -> Vec<String> {
-    let mut on = false;
-    let mut out = Vec::new();
-    for l in view.lines() {
-        let t = l.trim();
-        if t.starts_with("Children (") { on = true; continue; }
-        if !on { continue; }
-        match t.strip_prefix('#').and_then(|r| r.split_once("] ")) {
-            Some((_, title)) => out.push(title.to_string()),
-            None => break,
-        }
-    }
-    out
+/// Titles of the parent's children from `cards view` ("  Children (2):" then
+/// "    #4700 [Later] title" lines). None when the count the view states is not
+/// the count read (Silas, Abby at the demo): a format change must refuse,
+/// never silently file a second child.
+pub fn child_titles(view: &str) -> Option<Vec<String>> {
+    let mut lines = view.lines().map(str::trim);
+    let Some(head) = lines.by_ref().find(|t| t.starts_with("Children (")) else { return Some(Vec::new()) };
+    let n: usize = head.trim_start_matches("Children (").split(')').next()?.parse().ok()?;
+    let out: Vec<String> = lines.take(n)
+        .filter_map(|t| t.strip_prefix('#').and_then(|r| r.split_once("] ")).map(|(_, title)| title.to_string()))
+        .collect();
+    (out.len() == n).then_some(out)
 }
 
 /// #4683 (Silas, Wren in the demo reviews) — record must judge what prod

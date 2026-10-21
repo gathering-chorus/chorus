@@ -126,7 +126,10 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
         eprintln!("#{card} has no owner on the board: no child cards filed");
         exit(1);
     };
-    let have = child_titles(&view);
+    let Some(have) = child_titles(&view) else {
+        eprintln!("#{card}: its children could not be read from the board (the count it states is not the count read): no child cards filed");
+        exit(1);
+    };
     for (c, o) in reds {
         let title = child_title(card, c);
         if have.contains(&title) {

@@ -339,3 +339,10 @@ All 426 clearing tests pass. `server.ts` sits at 73.04% stmts / 56.72% branches 
 
 **Cost of deferral:** the API surface is undiscoverable from its own spec, and the ratchet is red so it no longer protects the endpoints that *are* documented.
 **Resolution:** annotate the 83 with real tags + summaries. Explicitly NOT auto-generating summaries to satisfy the ratchet — that is documentation theater and would make the check meaningless (see TD-024).
+
+### borg-prove results files are never trimmed (#4683, 2026-10-21)
+
+`borg-prove prod` writes `$CHORUS_HOME/ops/borg-prove/<card>-<run>.tsv` so `record` judges the same measurement (the TOCTOU fix from the demo reviews). One small file per land; nothing removes them (Silas, Abby at the #4683 demo).
+
+**Cost of deferral:** ~1 KB per land, so years before it matters; the folder is also the only record of what prod measured per run.
+**Resolution:** a trim older than N days in the same place the run logs rotate, once the folder is read by anything else.

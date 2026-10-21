@@ -178,3 +178,25 @@ fn results_round_trip_with_tabs_and_newlines_in_the_evidence() {
     assert_eq!(results_from_tsv(&results_to_tsv(&r)).unwrap(), r);
     assert!(results_from_tsv("garbage\n").is_err());
 }
+
+// Silas + Abby at the demo: the children parse stopped at the first line it
+// did not know, so a format change would silently file a second child.
+#[test]
+fn negative_proof_children_the_board_states_but_cannot_be_read_refuse_rather_than_duplicate() {
+    let fx = Fx::new("children-unread", &row("ac-4683-2", "/ok.txt", "nope"));
+    std::fs::write(fx.dir.join("view.txt"),
+        "#4683 x\n  Status:   WIP\n  Owner:    Kade\n  Children (2):\n    #4700 [Later] one\n    4701 Later two\n").unwrap();
+    let _ = fx.run("prod");
+    let r = fx.run("record");
+    assert!(!r.status.success());
+    assert_eq!(adds(&fx), 0, "{}", fx.log("cards.log"));
+    assert!(out(&r).contains("could not be read"), "{}", out(&r));
+}
+
+#[test]
+fn child_titles_reads_the_stated_children_and_none_is_an_empty_list() {
+    use borg_prove::child_titles;
+    assert_eq!(child_titles("#1 x\n  Owner: Kade\n"), Some(vec![]));
+    assert_eq!(child_titles("  Children (1):\n    #4700 [Later] a title\n  Comments (0):\n"), Some(vec!["a title".to_string()]));
+    assert_eq!(child_titles("  Children (2):\n    #4700 [Later] a\n"), None);
+}
