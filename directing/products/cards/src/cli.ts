@@ -298,6 +298,15 @@ async function printDomainRadius(domainTags: string[]): Promise<void> {
   }
 }
 
+/** #4669 — a child names its parent; a parent lists its children with status. */
+function printFamily(task: BoardTask): void {
+  if (task.parent !== undefined) console.log(`  Child of: #${task.parent}`);
+  const children = task.children ?? [];
+  if (!children.length) return;
+  console.log(`  Children (${children.length}):`);
+  for (const c of children) console.log(`    #${c.index} [${c.status}] ${c.title}`);
+}
+
 async function cmdView(client: BoardClient, args: string[]) {
   if (!args[0]) die('Usage: cards view <id> [--json] [--verbose|-v]');
   const jsonFlag = args.includes('--json');
@@ -311,6 +320,7 @@ async function cmdView(client: BoardClient, args: string[]) {
   console.log(`  Status:   ${task.status}`);
   console.log(`  Owner:    ${task.owner || 'unassigned'}`);
   console.log(`  Priority: ${task.priority || 'none'}`);
+  printFamily(task);
   if (task.description) console.log(`  Desc:\n${task.description.split('\n').map((l) => `    ${l}`).join('\n')}`);
   if (task.domains.length) console.log(`  Domains:  ${task.domains.join(', ')}`);
   console.log(`  Created:  ${task.created}`);
@@ -614,7 +624,8 @@ Commands:
   unblock <id>                   Unblock → Next
   mine [role]                    Show role's tasks
   now [role]                     Show role's cards in Now
-  view <id>                      Full task details
+  view <id>                      Full task details, with its parent and children (#4669)
+  set <id> key=value ...         Set fields; parent=<id> makes the card a child of <id>
   update <id> [--title T] [--desc D] [--domain D] [--chunk C] [--seq S] [--owner O]  Update task fields + metadata
   reassign <id> <role>            Change card owner (any role with an owner:<role> label)
   comment <id> "text"            Add a comment
@@ -644,6 +655,7 @@ Options:
   --domain D                     Domain label (gathering/infrastructure/...)
   --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app/sexuality/convergence/knowledge/ci/tests)
   --sequence S, --seq S          Sequence label (${Object.keys(LABELS.sequence).join('/')})
+  --parent ID                    File the card as a child of card ID (refused if ID does not exist)
   --desc D                       Description text (required — must include AC)
   --desc-file PATH               Read description from a file (avoids HEREDOC escaping)
   --desc -                       Read description from stdin

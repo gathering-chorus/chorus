@@ -6,7 +6,7 @@
 import * as https from 'http';
 import { execSync } from 'child_process';
 import { syncCardToGraph } from './graph-sync';
-import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';
+import { VikunjaTask, VikunjaBucket, VikunjaRelatedTask, BoardConfig, BoardTask, CardChild } from './types';
 import { LABELS, resolveBucket } from './config';
 import { fileTaskCache, cacheIdentity, TaskCache } from './task-cache';
 
@@ -243,7 +243,28 @@ export class BoardClient {
     const dbMap = this.fetchBucketMapFromDB();
     // #4139 — buckets are fetched only on the fallback path, as before
     const buckets = dbMap.has(task.id) ? [] : await this.fetchBuckets();
-    return this.parseTask(task, this.resolveStatus(task, dbMap, buckets));
+    const card = this.parseTask(task, this.resolveStatus(task, dbMap, buckets));
+    const { parent, children } = this.familyOf(task, dbMap);
+    if (parent !== undefined) card.parent = parent;
+    if (children.length) card.children = children;
+    return card;
+  }
+
+  /**
+   * #4669 — a card's family from Vikunja's own parenttask/subtask relation:
+   * the parent's display index, and each child with its board status (bucket
+   * map first, the done flag when the child is not in a bucket).
+   */
+  familyOf(task: VikunjaTask, dbMap: Map<number, string>): { parent?: number; children: CardChild[] } {
+    const related = task.related_tasks ?? {};
+    const indexOf = (t: VikunjaRelatedTask) => t.index ?? t.id;
+    const parentTask = (related.parenttask ?? []).at(0);
+    const children = (related.subtask ?? []).map((t) => ({
+      index: indexOf(t),
+      title: t.title ?? '',
+      status: dbMap.get(t.id) ?? (t.done ? 'Done' : 'Later'),
+    }));
+    return { parent: parentTask ? indexOf(parentTask) : undefined, children };
   }
 
   /**
