@@ -58,3 +58,4 @@ fn negative_proof_a_prometheus_row_builds_exactly_todays_rule() {
     assert_eq!(d[1]["refId"], "C");
     assert_eq!(d[1]["model"]["expression"], "A");
 }
+

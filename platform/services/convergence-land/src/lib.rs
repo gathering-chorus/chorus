@@ -135,7 +135,9 @@ pub fn rule(row: &Value, maps: &[Mapping], folder_uid: &str) -> Result<(Value, S
         return Err(format!("refused: the Alert row has no {} — a rule needs them", missing.join(", ")));
     }
     if interval.is_empty() { interval = "1m".into(); }
-    if r["data"][0]["datasourceUid"] == "loki" { loki_query(&mut r); }
+    // the query step found by its refId, as loki_query does; "loki" is the provisioned uid (Abby, Kade: #4671 review)
+    let is_loki = r["data"].as_array().is_some_and(|d| d.iter().any(|s| s["refId"] == "A" && s["datasourceUid"] == "loki"));
+    if is_loki { loki_query(&mut r); }
     Ok((r, interval))
 }
 

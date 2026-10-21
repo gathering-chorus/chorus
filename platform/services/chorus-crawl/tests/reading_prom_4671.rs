@@ -38,7 +38,9 @@ fn the_newest_days_readings_become_one_series_per_sensor_metric_and_subject() {
 
 #[test]
 fn negative_proof_a_value_that_is_not_a_number_is_left_out_not_written_as_zero() {
-    let rows = vec![row("messages", "messages-sent", "2026-10-20", "unmeasured", None)];
+    let rows = vec![row("messages", "messages-sent", "2026-10-20", "unmeasured", None),
+                    row("messages", "messages-kept", "2026-10-20", "NaN", None),
+                    row("messages", "doubles-nudge", "2026-10-20", "inf", None)];
     let text = prom_lines("messages", &rows);
     assert!(!text.contains("chorus_sensor_reading{"), "{text}");
 }
