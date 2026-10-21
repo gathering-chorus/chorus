@@ -45,7 +45,8 @@ test('a post to two roles is handed off twice, each with its own jeff-<id>-<role
     });
     const p = post('@kade @silas look');
     handler(p);
-    await new Promise((r) => setTimeout(r, 300));
+    // wait for both hand-offs, not a fixed sleep: under load 300 ms was not enough (#4672 pair run 4)
+    for (let i = 0; i < 100 && pulse.got.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
     expect(pulse.got.map((b) => [b.to, b.traceId]).sort()).toEqual([['kade', `jeff-${p.id}-kade`], ['silas', `jeff-${p.id}-silas`]]);
   } finally {
     await pulse.close();
