@@ -106,7 +106,7 @@ fn run(base: &str, buzz: Option<BuzzDeps>, msg: &str) -> (Result<String, String>
 }
 
 fn buzz(id: &Path, relay: &str, outbox: &Path) -> BuzzDeps {
-    BuzzDeps { identity_dir: id.into(), relay_url: relay.into(), tunnel: None, outbox_dir: outbox.into(), channel: "team-chan".into() }
+    BuzzDeps { identity_dir: id.into(), relay_url: Some(relay.into()), tunnel: None, outbox_dir: outbox.into(), channel: "team-chan".into() }
 }
 
 fn tag<'a>(ev: &'a serde_json::Value, name: &str) -> Option<&'a str> {
@@ -179,4 +179,47 @@ fn negative_proof_no_key_means_no_buzz_sender_claim_so_pulse_keeps_its_copy() {
     assert!(!post.contains("buzz"), "{post}");
     assert!(got.lock().unwrap().is_empty());
     assert!(spine.iter().any(|e| e.starts_with("buzz.sign.skipped wren")));
+}
+
+#[test]
+fn negative_proof_no_relay_address_means_no_signing_and_no_literal_fallback() {
+    let (base, seen) = http_stub();
+    let (id, outbox) = (temp("id"), temp("out"));
+    key_for(&id, "wren");
+    let mut b = buzz(&id, "unused", &outbox);
+    b.relay_url = None;
+    let (out, spine) = run(&base, Some(b), "no relay set");
+    assert!(!out.unwrap().contains("Buzz:"));
+    let post = seen.lock().unwrap().iter().find(|l| l.contains("/api/nudge")).cloned().unwrap();
+    assert!(!post.contains("buzz"), "pulse keeps its copy: {post}");
+    assert!(spine.iter().any(|e| e.starts_with("buzz.sign.skipped wren") && e.contains("BUZZ_RELAY_URL")));
+}
+
+#[test]
+fn a_flush_that_meets_a_down_relay_queues_the_new_note_without_trying_it() {
+    let (base, _) = http_stub();
+    let (id, outbox) = (temp("id"), temp("out"));
+    key_for(&id, "wren");
+    let dead = { let l = TcpListener::bind("127.0.0.1:0").unwrap(); format!("ws://{}", l.local_addr().unwrap()) };
+    run(&base, Some(buzz(&id, &dead, &outbox)), "first").0.unwrap();
+    let (out, spine) = run(&base, Some(buzz(&id, &dead, &outbox)), "second");
+    assert!(out.unwrap().contains("Buzz: queued"));
+    assert_eq!(std::fs::read_dir(outbox.join("wren")).unwrap().count(), 2, "both wait, oldest first next time");
+    assert_eq!(spine.iter().filter(|e| e.starts_with("buzz.publish.queued")).count(), 1);
+}
+
+#[test]
+fn negative_proof_an_unreadable_outbox_file_is_reported_not_skipped_silently() {
+    let (base, _) = http_stub();
+    let (relay, got) = relay_stub();
+    let (id, outbox) = (temp("id"), temp("out"));
+    key_for(&id, "wren");
+    let dir = outbox.join("wren");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("broken.json"), "not json").unwrap();
+    let (out, spine) = run(&base, Some(buzz(&id, &relay, &outbox)), "after a broken file");
+    assert!(out.unwrap().contains("Buzz: stored"));
+    assert!(spine.iter().any(|e| e.starts_with("buzz.outbox.unreadable wren") && e.contains("broken.json")));
+    assert!(dir.join("broken.json").exists(), "left for a person to look at");
+    assert_eq!(got.lock().unwrap().len(), 1);
 }

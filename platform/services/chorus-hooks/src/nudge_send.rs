@@ -30,7 +30,8 @@ pub const TEAM_CHANNEL_DEFAULT: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
 pub struct BuzzDeps {
     /// ~/.chorus/identity (the role's key, 0600, read by buzz_reply::load_key)
     pub identity_dir: PathBuf,
-    pub relay_url: String,
+    /// BUZZ_RELAY_URL; unset means the sender signs nothing (no literal address here: #3370)
+    pub relay_url: Option<String>,
     /// the LNP loopback tunnel, as the reply path uses
     pub tunnel: Option<String>,
     /// ~/.chorus/outbox; a role's queued notes live in <outbox>/<role>/ (0700)
@@ -74,7 +75,7 @@ impl Deps<'_> {
             spine,
             buzz: (std::env::var("CHORUS_NUDGE_SIGNS").as_deref() == Ok("1")).then(|| BuzzDeps {
                 identity_dir: PathBuf::from(&home).join(".chorus/identity"),
-                relay_url: env("BUZZ_RELAY_URL", "ws://192.168.86.242:3000"),
+                relay_url: std::env::var("BUZZ_RELAY_URL").ok().filter(|v| !v.is_empty()),
                 tunnel: std::env::var("BUZZ_RELAY_TUNNEL").ok().filter(|t| !t.is_empty()),
                 outbox_dir: PathBuf::from(&home).join(".chorus/outbox"),
                 channel: env("BUZZ_TEAM_CHANNEL", TEAM_CHANNEL_DEFAULT),
@@ -190,6 +191,9 @@ pub fn room_text(from: &str, to: &str, message: &str) -> String {
 
 /// #4629 S2 — the sender's own kind 9 note in #team, joined to pulse's row by msg=trace-<uuid>.
 pub fn sign_note(b: &BuzzDeps, from: &str, to: &str, message: &str, trace: &str) -> Result<(RoleKey, NostrEvent), String> {
+    if b.relay_url.is_none() {
+        return Err("BUZZ_RELAY_URL is not set".into());
+    }
     let key = load_key(&b.identity_dir, from)?;
     let tags = vec![
         vec!["h".to_string(), b.channel.clone()],
@@ -205,10 +209,15 @@ pub fn sign_note(b: &BuzzDeps, from: &str, to: &str, message: &str, trace: &str)
 }
 
 /// Flush this role's queued notes, then publish `ev`; a failure queues it. Returns the line the caller sees.
+/// A flush that meets a down relay queues `ev` without trying it, so a send waits one timeout, not two.
 fn publish_or_queue(b: &BuzzDeps, role: &str, key: &RoleKey, ev: &NostrEvent, spine: &dyn Fn(&str, &str, &str)) -> String {
-    let flushed = flush_outbox(b, role, key, spine);
-    match publish_authed(&b.relay_url, b.tunnel.as_deref(), key, ev) {
-        Ok(()) => {
+    let relay = b.relay_url.as_deref().unwrap_or_default();
+    let tried = match flush_outbox(b, role, key, spine) {
+        Ok(flushed) => publish_authed(relay, b.tunnel.as_deref(), key, ev).map(|()| flushed),
+        Err(e) => Err(e),
+    };
+    match tried {
+        Ok(flushed) => {
             spine("buzz.publish.stored", role, &format!("event={},flushed={flushed}", ev.id));
             "stored".to_string()
         }
@@ -241,18 +250,24 @@ fn queue(b: &BuzzDeps, role: &str, ev: &NostrEvent) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Publish this role's queued notes, oldest first; each one stored is removed. Returns how many went out.
-pub fn flush_outbox(b: &BuzzDeps, role: &str, key: &RoleKey, spine: &dyn Fn(&str, &str, &str)) -> usize {
-    let Ok(dir) = outbox_for(b, role) else { return 0 };
+/// Publish this role's queued notes, oldest first; each one stored is removed. Ok(how many went out);
+/// Err(the relay's answer) at the first publish that fails, the rest left queued. An unreadable file is
+/// reported (buzz.outbox.unreadable) and left in place, never skipped silently.
+pub fn flush_outbox(b: &BuzzDeps, role: &str, key: &RoleKey, spine: &dyn Fn(&str, &str, &str)) -> Result<usize, String> {
+    let Ok(dir) = outbox_for(b, role) else { return Ok(0) };
+    let relay = b.relay_url.as_deref().unwrap_or_default();
     let mut files: Vec<_> = std::fs::read_dir(&dir).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     files.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
     let mut sent = 0;
     for path in files {
-        let Some(ev) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<NostrEvent>(&t).ok()) else { continue };
-        if publish_authed(&b.relay_url, b.tunnel.as_deref(), key, &ev).is_err() { break; }
+        let Some(ev) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<NostrEvent>(&t).ok()) else {
+            spine("buzz.outbox.unreadable", role, &format!("file={}", path.display()));
+            continue;
+        };
+        publish_authed(relay, b.tunnel.as_deref(), key, &ev)?;
         let _ = std::fs::remove_file(&path);
         spine("buzz.publish.flushed", role, &format!("event={}", ev.id));
         sent += 1;
     }
-    sent
+    Ok(sent)
 }
