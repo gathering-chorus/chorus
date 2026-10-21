@@ -25,7 +25,7 @@ pub struct RoleKey {
     seckey: [u8; 32],
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NostrEvent {
     pub id: String,
     pub pubkey: String,
@@ -138,7 +138,8 @@ pub fn build_reply_event_seq(
 }
 
 /// Sign an arbitrary-kind event with the given tags (NIP-01 id + schnorr).
-fn sign_event(
+/// #4629 — public so nudge-send signs with the same code path (one signer).
+pub fn sign_event(
     key: &RoleKey,
     kind: u32,
     tags: Vec<Vec<String>>,

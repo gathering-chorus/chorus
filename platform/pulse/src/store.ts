@@ -205,6 +205,9 @@ export class MessageStore {
     this.migrateQueuedState(); // #3700
     this.migrateAgentColumns(); // #4424
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
+    // #4629 S2 — a sender-signed note names its nudge by trace (msg tag trace-<uuid>), so one nudge per trace.
+    // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows.
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_nudge_trace_unique ON messages(trace_id) WHERE type = 'nudge' AND trace_id IS NOT NULL AND trace_id <> ''");
   }
 
   // --- Nudges ---
@@ -403,6 +406,12 @@ export class MessageStore {
   getMessageEnds(id: number): { from: string; to: string; type: string } | null {
     const row = this.db.prepare('SELECT "from" as "from", "to" as "to", type FROM messages WHERE id = ?').get(id);
     return (row as { from: string; to: string; type: string } | undefined) ?? null;
+  }
+
+  /** #4629 S2 — the row a sender-signed note names by its trace (msg tag trace-<uuid>); null when none. */
+  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string } | null {
+    const row = this.db.prepare('SELECT id, "from" as "from", "to" as "to", type FROM messages WHERE trace_id = ? ORDER BY id LIMIT 1').get(trace);
+    return (row as { id: number; from: string; to: string; type: string } | undefined) ?? null;
   }
 
   /** #4629 — ids of the nudges and alerts recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the shadow's missed sweep. */

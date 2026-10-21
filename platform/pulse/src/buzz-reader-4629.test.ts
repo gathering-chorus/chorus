@@ -33,7 +33,7 @@ describe('#4629 S1 shadowVerdict joins a room note to the store by its msg tag',
     const store = tmpStore();
     const id = store.sendNudge('kade', 'silas', 'hi');
     expect(shadowVerdict(note([['author', 'kade'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `pulse-${id}`]]), store))
-      .toEqual<ShadowVerdict>({ msg: `pulse-${id}`, verdict: 'match' });
+      .toEqual({ msg: `pulse-${id}`, verdict: 'match', id });
   });
 
   test('NEGATIVE PROOF: the note names a different recipient than the row', () => {
@@ -182,5 +182,42 @@ describe('#4629 S1 the reader resumes from the newest note and reports the rever
       r.sweep();
       expect(verdicts).toEqual([{ msg: `pulse-${id}`, verdict: 'match' }]);
     } finally { r.close(); await relay.close(); }
+  });
+});
+
+describe('#4629 S2 a sender-signed note names its nudge by trace', () => {
+  const TRACE = '01a15dff-0cc1-72a0-8b94-e839b9400b91';
+
+  test('a trace-<uuid> note joins to the row stored with that trace', () => {
+    const store = tmpStore();
+    const id = store.sendNudge('wren', 'silas', 'hi', TRACE);
+    expect(shadowVerdict(note([['author', 'wren'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `trace-${TRACE}`]]), store))
+      .toEqual({ msg: `trace-${TRACE}`, verdict: 'match', id });
+  });
+
+  test('NEGATIVE PROOF: a trace no row carries is no-row, and a second nudge with the same trace is refused by the store', () => {
+    const store = tmpStore();
+    expect(shadowVerdict(note([['kind', 'nudge'], ['to', 'silas'], ['msg', `trace-${TRACE}`]]), store).verdict).toBe('no-row');
+    store.sendNudge('wren', 'silas', 'hi', TRACE);
+    expect(() => store.sendNudge('wren', 'kade', 'again', TRACE)).toThrow(/UNIQUE/);
+  });
+
+  test('NEGATIVE PROOF: a sender-signed nudge whose note never reached the room reads missed (pulse made no copy of it)', async () => {
+    let now = Date.now() - 5_000;
+    const store = tmpStore();
+    const server = http.createServer();
+    const wss = new WebSocketServer({ server });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const r = new BuzzReader({ relayUrl: `ws://127.0.0.1:${(server.address() as { port: number }).port}`, signer: reader, store, channel: TEAM, onVerdict: (v) => verdicts.push(v), sweepEveryMs: 0, graceMs: 1_000, now: () => now });
+    const verdicts: ShadowVerdict[] = [];
+    try {
+      const id = store.sendNudge('wren', 'silas', 'publish failed, never flushed', TRACE);
+      now += 120_000;
+      r.sweep();
+      expect(verdicts).toEqual([{ msg: `pulse-${id}`, verdict: 'missed' }]);
+    } finally {
+      r.close();
+      await new Promise<void>((res) => { for (const c of wss.clients) c.terminate(); wss.close(() => server.close(() => res())); });
+    }
   });
 });

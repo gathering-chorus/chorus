@@ -228,6 +228,11 @@ async function nudgeCallerOk(headers: express.Request['headers'], from: unknown)
   return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
 }
 
+/** #4629 S2 — a sender that signed its own note (buzz=sender) gets no bridge copy, so the room holds it once. */
+function copyToBuzz(buzz: BuzzPoster | undefined, body: { buzz?: unknown } | undefined, m: BuzzMessage): void {
+  if (body?.buzz !== 'sender') buzz?.post(m);
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker, buzz?: BuzzPoster): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -269,7 +274,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
-    buzz?.post({ id: Number(id), from, to, content: marked });
+    copyToBuzz(buzz, req.body, { id: Number(id), from, to, content: marked });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
     if (worker) {
       worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null }).catch(() => { /* worker handles its own state */ });

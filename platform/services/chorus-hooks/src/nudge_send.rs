@@ -16,9 +16,27 @@
 //!
 //! The sender is the runner's verified caller ({caller}), never an argument.
 
+use crate::hooks::buzz_reply::{load_key, publish_authed, sign_event, NostrEvent, RoleKey};
 use crate::hooks::word_cap::{check_cap, resolve_cap_for, CAP_KEY_NUDGE};
 use serde_json::{json, Value};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::time::Duration;
+
+/// #4629 S2 — the team channel's id (the same default pulse and Clearing use).
+pub const TEAM_CHANNEL_DEFAULT: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
+
+/// #4629 S2 — where the sender writes its own signed note: the room, or its outbox when the relay is down.
+pub struct BuzzDeps {
+    /// ~/.chorus/identity (the role's key, 0600, read by buzz_reply::load_key)
+    pub identity_dir: PathBuf,
+    pub relay_url: String,
+    /// the LNP loopback tunnel, as the reply path uses
+    pub tunnel: Option<String>,
+    /// ~/.chorus/outbox; a role's queued notes live in <outbox>/<role>/ (0700)
+    pub outbox_dir: PathBuf,
+    pub channel: String,
+}
 
 /// What a nudge-send needs from the world. Tests bring their own.
 pub struct Deps<'a> {
@@ -35,6 +53,8 @@ pub struct Deps<'a> {
     pub identity_token: Option<String>,
     /// writes one spine event: (event, role, payload)
     pub spine: &'a dyn Fn(&str, &str, &str),
+    /// #4629 S2 — set when the sender signs its own room note (CHORUS_NUDGE_SIGNS=1); None keeps pulse's bridge copy.
+    pub buzz: Option<BuzzDeps>,
 }
 
 impl Deps<'_> {
@@ -52,6 +72,13 @@ impl Deps<'_> {
             pulse_secret: secret,
             identity_token: std::env::var("CHORUS_IDENTITY_TOKEN").ok().filter(|t| !t.is_empty()),
             spine,
+            buzz: (std::env::var("CHORUS_NUDGE_SIGNS").as_deref() == Ok("1")).then(|| BuzzDeps {
+                identity_dir: PathBuf::from(&home).join(".chorus/identity"),
+                relay_url: env("BUZZ_RELAY_URL", "ws://192.168.86.242:3000"),
+                tunnel: std::env::var("BUZZ_RELAY_TUNNEL").ok().filter(|t| !t.is_empty()),
+                outbox_dir: PathBuf::from(&home).join(".chorus/outbox"),
+                channel: env("BUZZ_TEAM_CHANNEL", TEAM_CHANNEL_DEFAULT),
+            }),
         }
     }
 }
@@ -121,6 +148,11 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
     (deps.spine)("nudge.requested", from, &payload);
     (deps.spine)("nudge.emitted", from, &payload);
 
+    // #4629 S2 — sign first (the trace is the note's msg tag, the join key pulse stores as trace_id),
+    // then POST with buzz=sender so pulse makes no bridge copy, then publish or queue.
+    let signed = deps.buzz.as_ref().and_then(|b| sign_note(b, from, to, message, &trace).map_err(|e| {
+        (deps.spine)("buzz.sign.skipped", from, &format!("trace={trace},reason={e}"));
+    }).ok());
     let mut req = ureq::post(&deps.pulse_url)
         .timeout(Duration::from_secs(5))
         .set("Content-Type", "application/json")
@@ -132,7 +164,10 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
     if let Some(t) = &deps.identity_token {
         req = req.set("Authorization", &format!("Bearer {t}"));
     }
-    let body = json!({ "from": from, "to": to, "content": message, "traceId": trace, "expects": expects });
+    let mut body = json!({ "from": from, "to": to, "content": message, "traceId": trace, "expects": expects });
+    if signed.is_some() {
+        body["buzz"] = json!("sender");
+    }
     let resolved = match req.send_json(body) {
         Ok(resp) => resp.into_json::<Value>().ok().and_then(|b| b.get("resolved").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| to.to_string()),
         Err(ureq::Error::Status(code, resp)) => {
@@ -141,5 +176,83 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
         }
         Err(e) => return Err(format!("pulse did not answer: {e}")),
     };
-    Ok(format!("nudge sent: {from} → {resolved} (trace={trace})"))
+    let room = match (&deps.buzz, signed) {
+        (Some(b), Some((key, ev))) => format!(" · Buzz: {}", publish_or_queue(b, from, &key, &ev, deps.spine)),
+        _ => String::new(),
+    };
+    Ok(format!("nudge sent: {from} → {resolved} (trace={trace}){room}"))
+}
+
+/// The room's text for a nudge, as pulse's bridge copy writes it (buzz-writer.ts roomText).
+pub fn room_text(from: &str, to: &str, message: &str) -> String {
+    if to == "jeff" { message.to_string() } else { format!("[nudge from {from} → {to}] {message}") }
+}
+
+/// #4629 S2 — the sender's own kind 9 note in #team, joined to pulse's row by msg=trace-<uuid>.
+pub fn sign_note(b: &BuzzDeps, from: &str, to: &str, message: &str, trace: &str) -> Result<(RoleKey, NostrEvent), String> {
+    let key = load_key(&b.identity_dir, from)?;
+    let tags = vec![
+        vec!["h".to_string(), b.channel.clone()],
+        vec!["t".to_string(), "team".to_string()],
+        vec!["author".to_string(), from.to_string()],
+        vec!["kind".to_string(), "nudge".to_string()],
+        vec!["to".to_string(), to.to_string()],
+        vec!["msg".to_string(), format!("trace-{trace}")],
+    ];
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let ev = sign_event(&key, 9, tags, &room_text(from, to, message), now)?;
+    Ok((key, ev))
+}
+
+/// Flush this role's queued notes, then publish `ev`; a failure queues it. Returns the line the caller sees.
+fn publish_or_queue(b: &BuzzDeps, role: &str, key: &RoleKey, ev: &NostrEvent, spine: &dyn Fn(&str, &str, &str)) -> String {
+    let flushed = flush_outbox(b, role, key, spine);
+    match publish_authed(&b.relay_url, b.tunnel.as_deref(), key, ev) {
+        Ok(()) => {
+            spine("buzz.publish.stored", role, &format!("event={},flushed={flushed}", ev.id));
+            "stored".to_string()
+        }
+        Err(e) => match queue(b, role, ev) {
+            Ok(path) => {
+                spine("buzz.publish.queued", role, &format!("event={},reason={e}", ev.id));
+                format!("queued in {} (relay: {e})", path.display())
+            }
+            Err(q) => {
+                spine("buzz.publish.lost", role, &format!("event={},reason={e},queue={q}", ev.id));
+                format!("NOT stored and NOT queued (relay: {e}; outbox: {q})")
+            }
+        },
+    }
+}
+
+/// The role's outbox dir, created 0700.
+fn outbox_for(b: &BuzzDeps, role: &str) -> Result<PathBuf, String> {
+    let dir = b.outbox_dir.join(role);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("outbox dir: {e}"))?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("outbox dir mode: {e}"))?;
+    Ok(dir)
+}
+
+fn queue(b: &BuzzDeps, role: &str, ev: &NostrEvent) -> Result<PathBuf, String> {
+    let path = outbox_for(b, role)?.join(format!("{}.json", ev.id));
+    let body = serde_json::to_string(ev).map_err(|e| format!("encode: {e}"))?;
+    std::fs::write(&path, body).map_err(|e| format!("write: {e}"))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|e| format!("file mode: {e}"))?;
+    Ok(path)
+}
+
+/// Publish this role's queued notes, oldest first; each one stored is removed. Returns how many went out.
+pub fn flush_outbox(b: &BuzzDeps, role: &str, key: &RoleKey, spine: &dyn Fn(&str, &str, &str)) -> usize {
+    let Ok(dir) = outbox_for(b, role) else { return 0 };
+    let mut files: Vec<_> = std::fs::read_dir(&dir).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    files.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    let mut sent = 0;
+    for path in files {
+        let Some(ev) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<NostrEvent>(&t).ok()) else { continue };
+        if publish_authed(&b.relay_url, b.tunnel.as_deref(), key, &ev).is_err() { break; }
+        let _ = std::fs::remove_file(&path);
+        spine("buzz.publish.flushed", role, &format!("event={}", ev.id));
+        sent += 1;
+    }
+    sent
 }

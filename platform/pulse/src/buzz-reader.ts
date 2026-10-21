@@ -19,6 +19,7 @@ export interface ShadowVerdict {
 /** The store calls the shadow join needs. */
 export interface ShadowStore {
   getMessageEnds(id: number): { from: string; to: string; type: string } | null;
+  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string } | null;
   nudgeIdsBetween(from: string, to: string): number[];
 }
 
@@ -30,16 +31,24 @@ const tag = (n: BuzzNote, name: string): string | undefined => n.tags.find((t) =
 /** Kinds pulse delivers to a terminal; replies, land notices and terminal copies are not deliveries. */
 const DELIVERED_KINDS = new Set(['nudge', 'alert']);
 
-export function shadowVerdict(note: BuzzNote, store: ShadowStore): ShadowVerdict {
+/** The store row a note names: pulse-<id> on bridge copies, trace-<uuid> on sender-signed notes (#4629 S2). */
+function rowFor(msg: string, store: ShadowStore): { id: number; to: string } | null | undefined {
+  const byId = /^pulse-(\d+)$/.exec(msg);
+  if (byId) { const r = store.getMessageEnds(Number(byId[1])); return r ? { id: Number(byId[1]), to: r.to } : null; }
+  const byTrace = /^trace-([0-9a-f-]{36})$/.exec(msg);
+  if (byTrace) { const r = store.getMessageEndsByTrace(byTrace[1]); return r ? { id: r.id, to: r.to } : null; }
+  return undefined;
+}
+
+export function shadowVerdict(note: BuzzNote, store: ShadowStore): ShadowVerdict & { id?: number } {
   const msg = tag(note, 'msg') ?? '';
   if (!DELIVERED_KINDS.has(tag(note, 'kind') ?? '') || tag(note, 'surface') === 'terminal') return { msg, verdict: 'not-a-delivery' };
-  const m = /^pulse-(\d+)$/.exec(msg);
-  if (!m) return { msg, verdict: 'no-msg-tag' };
-  const row = store.getMessageEnds(Number(m[1]));
-  if (!row) return { msg, verdict: 'no-row' };
+  const row = rowFor(msg, store);
+  if (row === undefined) return { msg, verdict: 'no-msg-tag' };
+  if (row === null) return { msg, verdict: 'no-row' };
   const to = tag(note, 'to');
-  if (!to) return { msg, verdict: 'no-to-tag' };
-  return { msg, verdict: to === row.to ? 'match' : 'to-mismatch' };
+  if (!to) return { msg, verdict: 'no-to-tag', id: row.id };
+  return { msg, verdict: to === row.to ? 'match' : 'to-mismatch', id: row.id };
 }
 
 export interface BuzzReaderOptions {
@@ -140,9 +149,8 @@ export class BuzzReader {
     if (this.seen.has(note.id)) return;
     this.seen.add(note.id);
     if (typeof note.created_at === 'number') this.watermark = Math.max(this.watermark, note.created_at - 60);
-    const v = shadowVerdict(note, this.o.store);
-    const id = /^pulse-(\d+)$/.exec(v.msg);
-    if (id) this.seenMsg.add(Number(id[1]));
+    const { id, ...v } = shadowVerdict(note, this.o.store);
+    if (id !== undefined) this.seenMsg.add(id);
     this.o.onVerdict(v);
   }
 }

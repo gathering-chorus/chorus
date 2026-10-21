@@ -81,6 +81,7 @@ fn run_as(base: &str, a: &[&str], secret: Option<&str>, token: Option<&str>) -> 
         pulse_secret: secret.map(String::from),
         identity_token: token.map(String::from),
         spine: &write,
+        buzz: None,
     };
     let out = send(&args(a), &deps);
     let events = spine.lock().unwrap().clone();
