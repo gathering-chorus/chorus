@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — rsync-backup.sh with a fake rsync and a fake ssh in a temp dir; nothing leaves the machine
-# @domain: backups
+# @domain: persistence — backups are persistence; there is no backups domain (#4670)
 # #4630 — a copy that fails twice must report FAIL, never OK. The old retry read
 # `rc=$?` after an if with no else (always 0), so two failed rsyncs logged
 # "RETRY (exit 0)" then "OK" and the spine copy on Bedroom froze at 10-13.

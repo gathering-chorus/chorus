@@ -1,3 +1,4 @@
+// @domain: spine — as its chorus-hooks siblings (#4670)
 //! #4628 — what Jeff types in a role's terminal reaches Buzz once, through pulse.
 //!
 //! Measured 2026-10-19: of Jeff's 469 messages in Buzz that day, 393 came only
