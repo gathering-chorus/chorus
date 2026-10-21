@@ -274,6 +274,28 @@ pub const SURVIVES_THE_DOOR: Check = Check {
     query: "",
 };
 
+/// #4671 — alertFile is optional at the door (a Grafana-sourced Alert row has no
+/// yml), and the door cannot say "required only when the source is script" (it
+/// has no sh:or). So the sweep keeps both guarantees (Kade + Silas, 10-21 12:49):
+/// a script row with no alertFile, and any row with neither an alertFile nor a
+/// grafanaRuleUid — an alert nobody can trace to what fires it.
+pub const ALERT_PROVENANCE: Check = Check {
+    id: "alert-without-provenance",
+    question: "can every alert be traced to the file or the Grafana rule that fires it",
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT DISTINCT ?s ?why WHERE {
+  GRAPH ?g { ?s a c:Alert }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  FILTER(?g != <urn:chorus:ontology>)
+  FILTER NOT EXISTS { GRAPH ?g2 { ?s c:alertFile ?f } }
+  OPTIONAL { GRAPH ?g3 { ?s c:alertSource ?src } }
+  BIND(EXISTS { GRAPH ?g4 { ?s c:grafanaRuleUid ?u } } AS ?hasRule)
+  BIND(COALESCE(?src = "script", false) AS ?script)
+  FILTER(?script || !?hasRule)
+  BIND(IF(?script, "script-without-alertFile", "neither-alertFile-nor-grafanaRuleUid") AS ?why)
+}"##,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,7 +528,7 @@ mod tests {
     /// Both new checks select rows, not counts, and honour the graph scope.
     #[test]
     fn new_checks_select_rows_and_carry_the_scope_literal() {
-        for c in [&ALLOWED_VALUES, &PATTERN, &DOMAIN_CLAIMS_VOCABULARY] {
+        for c in [&ALLOWED_VALUES, &PATTERN, &DOMAIN_CLAIMS_VOCABULARY, &ALERT_PROVENANCE] {
             assert!(c.query.contains("SELECT DISTINCT ?s"), "{}", c.id);
             assert!(!c.query.contains("COUNT("), "{}", c.id);
             assert!(c.query.contains(r#"STRSTARTS(STR(?g), "urn:chorus:")"#), "{}", c.id);
@@ -616,5 +638,40 @@ mod tests {
             ],
             "{got:?}"
         );
+    }
+
+    /// #4671 — a Grafana row with a rule uid, and a script row with its file, are clean.
+    #[test]
+    fn alerts_traced_to_a_file_or_a_rule_are_clean() {
+        let fx = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:alerts> {
+  c:g a c:Alert ; c:alertSource "grafana" ; c:grafanaRuleUid "g" .
+  c:s a c:Alert ; c:alertSource "script" ; c:alertFile "chorus/proving/domains/alerts/s.yml" .
+}
+"##;
+        assert_eq!(run_on_fixture(&ALERT_PROVENANCE, "4671-clean", fx), vec![]);
+    }
+
+    /// NEGATIVE PROOF (#4671, Kade) — a script row with no alertFile is named,
+    /// even when it carries a rule uid.
+    #[test]
+    fn negative_proof_a_script_alert_without_its_file_is_named() {
+        let fx = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:alerts> { c:s a c:Alert ; c:alertSource "script" ; c:grafanaRuleUid "s" . }
+"##;
+        assert_eq!(run_on_fixture(&ALERT_PROVENANCE, "4671-script", fx), vec![("s".into(), "script-without-alertFile".into())]);
+    }
+
+    /// NEGATIVE PROOF (#4671, Silas) — an alert with neither a file nor a rule
+    /// uid is named, with or without a source.
+    #[test]
+    fn negative_proof_an_alert_with_neither_file_nor_rule_is_named() {
+        let fx = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:alerts> { c:g a c:Alert ; c:alertSource "grafana" . c:n a c:Alert . }
+"##;
+        let mut got = run_on_fixture(&ALERT_PROVENANCE, "4671-neither", fx);
+        got.sort();
+        assert_eq!(got, vec![("g".into(), "neither-alertFile-nor-grafanaRuleUid".into()),
+                             ("n".into(), "neither-alertFile-nor-grafanaRuleUid".into())]);
     }
 }
