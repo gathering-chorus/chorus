@@ -8,22 +8,24 @@
  * on a full day of 100% match (Silas, 10-21 06:16).
  */
 import WebSocket from 'ws';
-import { frameText, signNote, type BuzzNote, type BuzzSigner } from './buzz-writer';
+import { body, frameText, signNote, type BuzzNote, type BuzzSigner } from './buzz-writer';
 
 export interface ShadowVerdict {
   msg: string;
   /** missed: pulse recorded the message but no room note named it within the grace window (Silas 06:22). */
   verdict: 'match' | 'to-mismatch' | 'no-row' | 'no-msg-tag' | 'no-to-tag' | 'not-a-delivery' | 'missed'
     /** #4629 AC4 — signed by a key that is not the author's (refused), or no registry read yet (fail closed). */
-    | 'wrong-key' | 'unverified';
+    | 'wrong-key' | 'unverified'
+    /** #4629 S3 — the note's words differ from the row's: refused, so Buzz is the message and not only a gate (Silas 06:42) */
+    | 'content-mismatch';
   /** the author tag, on a wrong-key verdict, so the sender can be told */
   author?: string;
 }
 
 /** The store calls the shadow join needs. */
 export interface ShadowStore {
-  getMessageEnds(id: number): { from: string; to: string; type: string } | null;
-  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string } | null;
+  getMessageEnds(id: number): { from: string; to: string; type: string; content: string } | null;
+  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string; content: string } | null;
   nudgeIdsBetween(from: string, to: string): number[];
 }
 
@@ -36,12 +38,17 @@ const tag = (n: BuzzNote, name: string): string | undefined => n.tags.find((t) =
 const DELIVERED_KINDS = new Set(['nudge', 'alert']);
 
 /** The store row a note names: pulse-<id> on bridge copies, trace-<uuid> on sender-signed notes (#4629 S2). */
-function rowFor(msg: string, store: ShadowStore): { id: number; to: string } | null | undefined {
+function rowFor(msg: string, store: ShadowStore): { id: number; to: string; content: string } | null | undefined {
   const byId = /^pulse-(\d+)$/.exec(msg);
-  if (byId) { const r = store.getMessageEnds(Number(byId[1])); return r ? { id: Number(byId[1]), to: r.to } : null; }
+  if (byId) { const r = store.getMessageEnds(Number(byId[1])); return r ? { id: Number(byId[1]), to: r.to, content: r.content } : null; }
   const byTrace = /^trace-([0-9a-f-]{36})$/.exec(msg);
-  if (byTrace) { const r = store.getMessageEndsByTrace(byTrace[1]); return r ? { id: r.id, to: r.to } : null; }
+  if (byTrace) { const r = store.getMessageEndsByTrace(byTrace[1]); return r ? { id: r.id, to: r.to, content: r.content } : null; }
   return undefined;
+}
+
+/** The words a room note carries, without the room's "[nudge from x → y]" or "[alert → y]" lead. */
+export function noteWords(content: string): string {
+  return content.replace(/^\[(nudge from [^\]→]+→ [^\]]+|alert → [^\]]+)\]\s*/, '');
 }
 
 export function shadowVerdict(note: BuzzNote, store: ShadowStore): ShadowVerdict & { id?: number } {
@@ -52,7 +59,8 @@ export function shadowVerdict(note: BuzzNote, store: ShadowStore): ShadowVerdict
   if (row === null) return { msg, verdict: 'no-row' };
   const to = tag(note, 'to');
   if (!to) return { msg, verdict: 'no-to-tag', id: row.id };
-  return { msg, verdict: to === row.to ? 'match' : 'to-mismatch', id: row.id };
+  if (to !== row.to) return { msg, verdict: 'to-mismatch', id: row.id };
+  return { msg, verdict: noteWords(note.content) === body(row.content) ? 'match' : 'content-mismatch', id: row.id };
 }
 
 export interface BuzzReaderOptions {
@@ -63,6 +71,8 @@ export interface BuzzReaderOptions {
   store: ShadowStore;
   channel: string;
   onVerdict: (v: ShadowVerdict) => void;
+  /** #4629 S3 — a delivery note joined its row with the right key: the store id to deliver. */
+  onMatch?: (id: number) => void;
   /** #4629 AC4 — whose key signed a note; absent = no key check (S1 behaviour). */
   keys?: { check(pubkey: string, author: string | undefined, msg?: string): Promise<'ok' | 'wrong-key' | 'unverified'> };
   /** How long a recorded message may go without a room note before it counts as missed (default 10 min). */
@@ -163,5 +173,6 @@ export class BuzzReader {
     }
     if (id !== undefined) this.seenMsg.add(id);
     this.o.onVerdict(v);
+    if (id !== undefined && v.verdict === 'match') this.o.onMatch?.(id);
   }
 }

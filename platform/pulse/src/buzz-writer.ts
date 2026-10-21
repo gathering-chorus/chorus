@@ -61,7 +61,7 @@ export const TEAM_CHANNEL_DEFAULT = '160e1f5d-6816-4c68-94b3-b5f1ade75565';
 const CHANNEL_MESSAGE = 9;
 
 /** Pulse stores a nudge with its delivery header; the room carries the words. */
-function body(content: string): string {
+export function body(content: string): string {
   return content.replace(/^\[nudge from [^\]|]+\|[^\]]*\]\s*/, '');
 }
 

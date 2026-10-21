@@ -172,7 +172,7 @@ describe('#4629 S1 the reader resumes from the newest note and reports the rever
     let now = Date.now() - 5_000;
     const store = tmpStore();
     const id = store.sendNudge('kade', 'silas', 'copied');
-    const n = note([['author', 'kade'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `pulse-${id}`]]);
+    const n = note([['author', 'kade'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `pulse-${id}`]], '[nudge from kade → silas] copied');
     const relay = await quietRelay([n]);
     const verdicts: ShadowVerdict[] = [];
     const r = new BuzzReader({ relayUrl: relay.url, signer: reader, store, channel: TEAM, onVerdict: (v) => verdicts.push(v), sweepEveryMs: 0, graceMs: 1_000, now: () => now - 10_000 });
@@ -248,5 +248,19 @@ describe('#4629 AC4 the reader refuses a note under the wrong key and names the 
       r.close();
       await new Promise<void>((res) => { for (const c of wss.clients) c.terminate(); wss.close(() => server.close(() => res())); });
     }
+  });
+});
+
+describe('#4629 S3 delivering from the room means the room\'s words', () => {
+  test('a note whose words match the row (after the room and pulse headers) is a match', () => {
+    const store = tmpStore();
+    const id = store.sendNudge('wren', 'silas', '[nudge from wren | 2026-10-21 06:43 Boston] same words');
+    expect(shadowVerdict(note([['author', 'wren'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `pulse-${id}`]], '[nudge from wren → silas] same words'), store).verdict).toBe('match');
+  });
+
+  test('NEGATIVE PROOF: a note whose words differ from the row is refused, never delivered', () => {
+    const store = tmpStore();
+    const id = store.sendNudge('wren', 'silas', 'what pulse stored');
+    expect(shadowVerdict(note([['author', 'wren'], ['kind', 'nudge'], ['to', 'silas'], ['msg', `pulse-${id}`]], '[nudge from wren → silas] something else'), store).verdict).toBe('content-mismatch');
   });
 });

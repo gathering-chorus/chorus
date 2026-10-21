@@ -323,9 +323,25 @@ export class MessageStore {
     // #4424 — rows bound to an agent run are settled by its receipts or its
     // native inbox, never released by the tmux drain.
     const r = this.db.prepare(
-      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ? AND delivery_session_id IS NULL'
+      // #4629 S3 — a row held for its room note is released by the note (or the fallback), never by the drain
+      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ? AND delivery_session_id IS NULL AND COALESCE(last_delivery_error, \'\') <> \'buzz-held\''
     ).run(role);
     return r.changes;
+  }
+
+  /** #4629 S3 — hold a sender-signed nudge until its room note arrives (pulse delivers from Buzz). */
+  holdForBuzz(id: number): void {
+    this.db.prepare("UPDATE messages SET delivery_status='queued', last_delivery_error='buzz-held' WHERE id=? AND delivery_status='pending'").run(id);
+  }
+
+  /** #4629 S3 — release a held row for delivery. True only for the one caller that moved it: exactly once, across restarts. */
+  releaseBuzzHeld(id: number): boolean {
+    return this.db.prepare("UPDATE messages SET delivery_status='pending', last_delivery_error=NULL WHERE id=? AND delivery_status='queued' AND last_delivery_error='buzz-held'").run(id).changes === 1;
+  }
+
+  /** #4629 S3 — held rows recorded before `before` (sqlite UTC), for the deliver-anyway fallback. */
+  buzzHeldBefore(before: string): number[] {
+    return (this.db.prepare("SELECT id FROM messages WHERE delivery_status='queued' AND last_delivery_error='buzz-held' AND created_at < ? ORDER BY id").all(before) as Array<{ id: number }>).map((r) => r.id);
   }
 
   /** #4424 — admission is not delivery: keep the row queued, bound to its run. */
@@ -403,15 +419,15 @@ export class MessageStore {
   }
 
   /** #4629 — the sender and recipient of one message, for the Buzz shadow join; null when no such row. */
-  getMessageEnds(id: number): { from: string; to: string; type: string } | null {
-    const row = this.db.prepare('SELECT "from" as "from", "to" as "to", type FROM messages WHERE id = ?').get(id);
-    return (row as { from: string; to: string; type: string } | undefined) ?? null;
+  getMessageEnds(id: number): { from: string; to: string; type: string; content: string } | null {
+    const row = this.db.prepare('SELECT "from" as "from", "to" as "to", type, content FROM messages WHERE id = ?').get(id);
+    return (row as { from: string; to: string; type: string; content: string } | undefined) ?? null;
   }
 
   /** #4629 S2 — the row a sender-signed note names by its trace (msg tag trace-<uuid>); null when none. */
-  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string } | null {
-    const row = this.db.prepare('SELECT id, "from" as "from", "to" as "to", type FROM messages WHERE trace_id = ? ORDER BY id LIMIT 1').get(trace);
-    return (row as { id: number; from: string; to: string; type: string } | undefined) ?? null;
+  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string; content: string } | null {
+    const row = this.db.prepare('SELECT id, "from" as "from", "to" as "to", type, content FROM messages WHERE trace_id = ? ORDER BY id LIMIT 1').get(trace);
+    return (row as { id: number; from: string; to: string; type: string; content: string } | undefined) ?? null;
   }
 
   /** #4629 — ids of the nudges and alerts recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the shadow's missed sweep. */
