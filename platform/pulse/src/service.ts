@@ -35,6 +35,7 @@ import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
 import { BuzzWriter, bridgeSignerFromHome, identitySignerFromHome, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
 import { BuzzReader } from './buzz-reader';
+import { NoteKeys } from './note-keys';
 import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
 
 /** #4609 — what createApp needs from the Buzz writer: fire one post, no answer. */
@@ -813,6 +814,9 @@ if (require.main === module) {
 
 
 
+/** #4629 AC4 — the key registry pulse checks note signers against (graph-only, as Clearing v2). */
+const KEYS_URL = process.env.PULSE_KEYS_URL || 'http://localhost:3340/owl/v1/identity/keyregistryentries?limit=1000';
+
 /** #4629 S1 — the shadow reader, or none unless PULSE_BUZZ_SHADOW=1 and the relay and principal-pulse's key are there. */
 function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | undefined {
   const relayUrl = process.env.PULSE_BUZZ_RELAY_URL;
@@ -830,10 +834,13 @@ function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | und
     signer,
     store,
     channel: process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT,
+    keys: new NoteKeys(() => fetch(KEYS_URL, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())),
     onVerdict: (v) => {
       if (v.verdict === 'not-a-delivery') return;
       log(v.verdict === 'match' ? 'info' : 'error', 'buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
       void emit('buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+      // #4629 AC4 — the sender sees the refusal: buzz.note.refused names them (Silas 06:33)
+      if (v.verdict === 'wrong-key' && v.author) void emit('buzz.note.refused', { to: v.author, msg: v.msg, reason: 'signed by a key that is not yours in the key registry' });
     },
   });
 }

@@ -221,3 +221,32 @@ describe('#4629 S2 a sender-signed note names its nudge by trace', () => {
     }
   });
 });
+
+describe('#4629 AC4 the reader refuses a note under the wrong key and names the sender', () => {
+  test('NEGATIVE PROOF: a wrong-key note is refused with its author, and is still missed later (never delivered)', async () => {
+    let now = Date.now() - 5_000;
+    const store = tmpStore();
+    const id = store.sendNudge('wren', 'silas', 'forged', '01a15e09-bdaf-7bc0-b433-fea874ecce7a');
+    const forged = note([['author', 'wren'], ['kind', 'nudge'], ['to', 'silas'], ['msg', 'trace-01a15e09-bdaf-7bc0-b433-fea874ecce7a']]);
+    const server = http.createServer();
+    const wss = new WebSocketServer({ server });
+    wss.on('connection', (ws) => ws.on('message', (raw) => {
+      const f = JSON.parse((raw as Buffer).toString('utf8'));
+      if (f[0] === 'REQ') ws.send(JSON.stringify(['EVENT', f[1], forged]));
+    }));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const verdicts: ShadowVerdict[] = [];
+    const keys = { check: (pk: string, author: string | undefined) => Promise.resolve(pk === 'not-this-one' && author ? 'ok' as const : 'wrong-key' as const) };
+    const r = new BuzzReader({ relayUrl: `ws://127.0.0.1:${(server.address() as { port: number }).port}`, signer: reader, store, channel: TEAM, keys, onVerdict: (v) => verdicts.push(v), sweepEveryMs: 0, graceMs: 1_000, now: () => now });
+    try {
+      await new Promise<void>((res) => { const t = setInterval(() => { if (verdicts.length) { clearInterval(t); res(); } }, 20); });
+      expect(verdicts[0]).toEqual({ msg: 'trace-01a15e09-bdaf-7bc0-b433-fea874ecce7a', verdict: 'wrong-key', author: 'wren' });
+      now += 120_000;
+      r.sweep();
+      expect(verdicts[1]).toEqual({ msg: `pulse-${id}`, verdict: 'missed' });
+    } finally {
+      r.close();
+      await new Promise<void>((res) => { for (const c of wss.clients) c.terminate(); wss.close(() => server.close(() => res())); });
+    }
+  });
+});

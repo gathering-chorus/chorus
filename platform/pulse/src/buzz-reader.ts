@@ -13,7 +13,11 @@ import { frameText, signNote, type BuzzNote, type BuzzSigner } from './buzz-writ
 export interface ShadowVerdict {
   msg: string;
   /** missed: pulse recorded the message but no room note named it within the grace window (Silas 06:22). */
-  verdict: 'match' | 'to-mismatch' | 'no-row' | 'no-msg-tag' | 'no-to-tag' | 'not-a-delivery' | 'missed';
+  verdict: 'match' | 'to-mismatch' | 'no-row' | 'no-msg-tag' | 'no-to-tag' | 'not-a-delivery' | 'missed'
+    /** #4629 AC4 — signed by a key that is not the author's (refused), or no registry read yet (fail closed). */
+    | 'wrong-key' | 'unverified';
+  /** the author tag, on a wrong-key verdict, so the sender can be told */
+  author?: string;
 }
 
 /** The store calls the shadow join needs. */
@@ -59,6 +63,8 @@ export interface BuzzReaderOptions {
   store: ShadowStore;
   channel: string;
   onVerdict: (v: ShadowVerdict) => void;
+  /** #4629 AC4 — whose key signed a note; absent = no key check (S1 behaviour). */
+  keys?: { check(pubkey: string, author: string | undefined, msg?: string): Promise<'ok' | 'wrong-key' | 'unverified'> };
   /** How long a recorded message may go without a room note before it counts as missed (default 10 min). */
   graceMs?: number;
   /** How often the missed sweep runs (default 60 s; 0 = only when sweep() is called). */
@@ -142,14 +148,19 @@ export class BuzzReader {
       return;
     }
     if (f[0] !== 'EVENT' || typeof f[2] !== 'object' || f[2] === null) return;
-    this.onNote(f[2] as BuzzNote);
+    void this.onNote(f[2] as BuzzNote);
   }
 
-  private onNote(note: BuzzNote): void {
+  private async onNote(note: BuzzNote): Promise<void> {
     if (this.seen.has(note.id)) return;
     this.seen.add(note.id);
     if (typeof note.created_at === 'number') this.watermark = Math.max(this.watermark, note.created_at - 60);
     const { id, ...v } = shadowVerdict(note, this.o.store);
+    if (v.verdict !== 'not-a-delivery' && this.o.keys) {
+      const author = tag(note, 'author');
+      const k = await this.o.keys.check(note.pubkey, author, v.msg);
+      if (k !== 'ok') { this.o.onVerdict({ msg: v.msg, verdict: k, ...(k === 'wrong-key' && author ? { author } : {}) }); return; }
+    }
     if (id !== undefined) this.seenMsg.add(id);
     this.o.onVerdict(v);
   }
