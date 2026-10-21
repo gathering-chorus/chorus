@@ -68,8 +68,11 @@ export class NoteKeys {
   async refresh(): Promise<void> {
     try {
       const keys = keysFromRegistry(await this.fetchBody());
-      if (keys.size > 0) { this.keys = keys; this.readAt = this.now(); }
-    } catch { /* keep the last good read until it goes stale; none yet means unverified */ }
+      // an answer with no keys is not a reason to keep old ones: a registry emptied of rows
+      // revokes them all, so it reads unverified, never the stale set (abby review 07:43)
+      this.keys = keys.size > 0 ? keys : null;
+      this.readAt = this.now();
+    } catch { /* no answer: keep the last good read until it goes stale; none yet means unverified */ }
   }
 
   private current(): Map<string, string> | null {

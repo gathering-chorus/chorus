@@ -77,4 +77,15 @@ describe('#4629 AC4 NoteKeys reads the registry and fails closed', () => {
     expect(await k.check(WREN, 'wren', 'trace-x')).toBe('unverified');
     k.stop();
   });
+
+  test('NEGATIVE PROOF: a registry that answers with no keys revokes them all, never keeps the stale set', async () => {
+    let reg: unknown = REG;
+    const k = new NoteKeys(() => Promise.resolve(reg), { everyMs: 0 });
+    await k.refresh();
+    expect(await k.check(WREN, 'wren', 'trace-x')).toBe('ok');
+    reg = body();                                   // every row removed
+    await k.refresh();
+    expect(await k.check(WREN, 'wren', 'trace-x')).toBe('unverified');
+    k.stop();
+  });
 });

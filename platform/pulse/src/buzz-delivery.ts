@@ -13,7 +13,6 @@
 import { sqliteUtc } from './buzz-reader';
 
 export interface HeldStore {
-  holdForBuzz(id: number): void;
   releaseBuzzHeld(id: number): boolean;
   buzzHeldBefore(before: string): number[];
   getMessageEndsByTrace(trace: string): { id: number } | null;
@@ -40,8 +39,6 @@ export interface BuzzDeliveryOptions<R extends DeliverableRow = DeliverableRow> 
 export class BuzzDelivery<R extends DeliverableRow = DeliverableRow> {
   private readonly now: () => number;
   constructor(private readonly o: BuzzDeliveryOptions<R>) { this.now = o.now ?? Date.now; }
-
-  hold(id: number): void { this.o.store.holdForBuzz(id); }
 
   /** The row's room note arrived (already checked: right key, same words). */
   fromRoom(id: number): boolean { return this.release(id, 'room'); }

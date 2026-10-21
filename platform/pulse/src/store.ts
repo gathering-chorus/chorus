@@ -8,6 +8,9 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
+/** #4629 S3 — the one rule for a queued row a drain, scan or requeue may touch: never one held for its room note. */
+export const QUEUED_DELIVERABLE = "delivery_status='queued' AND buzz_hold=0";
+
 // #3615 — CHORUS_MESSAGES_DB is the messages-db world-seam (see
 // designing/schemas/membrane-surfaces.json). This module is the WRITE owner
 // of messages.db, so the membrane is enforced here: a test/build context that
@@ -204,6 +207,12 @@ export class MessageStore {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)');
     this.migrateQueuedState(); // #3700
     this.migrateAgentColumns(); // #4424
+    // #4629 S3 — a nudge held for its room note. A column, not a status: ADD COLUMN rewrites no row,
+    // where a new status would rebuild the table (prod messages.db, Silas 07:44). After the rebuild
+    // migrations above, so they never drop it.
+    if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'buzz_hold')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN buzz_hold INTEGER NOT NULL DEFAULT 0');
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
     // #4629 S2 — a sender-signed note names its nudge by trace (msg tag trace-<uuid>), so one nudge per trace.
     // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows. A store that has duplicates keeps
@@ -232,10 +241,10 @@ export class MessageStore {
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, last_delivery_error) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, buzz_hold) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null,
-      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 'buzz-held' : null).lastInsertRowid);
+      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 1 : 0).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -332,7 +341,7 @@ export class MessageStore {
     // native inbox, never released by the tmux drain.
     const r = this.db.prepare(
       // #4629 S3 — a row held for its room note is released by the note (or the fallback), never by the drain
-      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ? AND delivery_session_id IS NULL AND COALESCE(last_delivery_error, \'\') <> \'buzz-held\''
+      `UPDATE messages SET delivery_status = 'pending' WHERE ${QUEUED_DELIVERABLE} AND "to" = ? AND delivery_session_id IS NULL`
     ).run(role);
     return r.changes;
   }
@@ -345,19 +354,14 @@ export class MessageStore {
     return (row as ReturnType<MessageStore['getPendingDeliveries']>[number] | undefined) ?? null;
   }
 
-  /** #4629 S3 — hold a sender-signed nudge until its room note arrives (pulse delivers from Buzz). */
-  holdForBuzz(id: number): void {
-    this.db.prepare("UPDATE messages SET delivery_status='queued', last_delivery_error='buzz-held' WHERE id=? AND delivery_status='pending'").run(id);
-  }
-
   /** #4629 S3 — release a held row for delivery. True only for the one caller that moved it: exactly once, across restarts. */
   releaseBuzzHeld(id: number): boolean {
-    return this.db.prepare("UPDATE messages SET delivery_status='pending', last_delivery_error=NULL WHERE id=? AND delivery_status='queued' AND last_delivery_error='buzz-held'").run(id).changes === 1;
+    return this.db.prepare("UPDATE messages SET delivery_status='pending', buzz_hold=0 WHERE id=? AND delivery_status='queued' AND buzz_hold=1").run(id).changes === 1;
   }
 
   /** #4629 S3 — held rows recorded before `before` (sqlite UTC), for the deliver-anyway fallback. */
   buzzHeldBefore(before: string): number[] {
-    return (this.db.prepare("SELECT id FROM messages WHERE delivery_status='queued' AND last_delivery_error='buzz-held' AND created_at < ? ORDER BY id").all(before) as Array<{ id: number }>).map((r) => r.id);
+    return (this.db.prepare("SELECT id FROM messages WHERE delivery_status='queued' AND buzz_hold=1 AND created_at < ? ORDER BY id").all(before) as Array<{ id: number }>).map((r) => r.id);
   }
 
   /** #4424 — admission is not delivery: keep the row queued, bound to its run. */
@@ -370,7 +374,7 @@ export class MessageStore {
   /** #4424 — rows waiting on an agent run: retried when busy, settled by receipt otherwise. */
   getAgentQueued(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null; last_delivery_error: string }> {
     return this.db.prepare(`SELECT id, "from", "to", content, delivery_attempts, trace_id, type as kind, target_session_id, delivery_session_id, last_delivery_error
-      FROM messages WHERE delivery_status='queued' AND delivery_session_id IS NOT NULL ORDER BY id LIMIT 1000`).all() as ReturnType<MessageStore['getAgentQueued']>;
+      FROM messages WHERE ${QUEUED_DELIVERABLE} AND delivery_session_id IS NOT NULL ORDER BY id LIMIT 1000`).all() as ReturnType<MessageStore['getAgentQueued']>;
   }
 
   /** #4424 — a native hook claims its run's messages at a safe boundary. The
@@ -379,7 +383,7 @@ export class MessageStore {
     return this.db.transaction(() => {
       const rows = this.db.prepare(`SELECT id, "from", content, type as kind FROM messages
         WHERE "to"=? AND type IN ('nudge','jeff-input')
-        AND (delivery_status='pending' OR (delivery_status='queued' AND last_delivery_error IN ('agent-queued','supervisor-unavailable')))
+        AND (delivery_status='pending' OR (${QUEUED_DELIVERABLE} AND last_delivery_error IN ('agent-queued','supervisor-unavailable')))
         AND (target_session_id IS NULL OR target_session_id=?)
         AND (delivery_session_id IS NULL OR delivery_session_id=?)
         AND (inbox_claim_session IS NULL OR inbox_claim_session=?) ORDER BY id LIMIT ?`)
