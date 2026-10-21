@@ -409,8 +409,9 @@ pub type ReadingRow = (String, Vec<(String, String)>);
 
 /// #4671 — a sensor's newest-day readings as Prometheus gauges, so a Grafana rule
 /// can see them (the rows live in Fuseki, which Grafana cannot query; Kade 10-21
-/// 12:55: Prometheus, not Loki). Only the newest day, so a rule never reads an old
-/// one. A value that is not a number is left out, never written as 0.
+/// 12:55: Prometheus, not Loki). Only the newest day, and no day label, so there is
+/// one series per (sensor, metric, subject) and a rule never reads an old day (Kade
+/// 12:59). A value that is not a number is left out, never written as 0.
 pub fn prom_lines(sensor: &str, rows: &[ReadingRow]) -> String {
     let get = |f: &[(String, String)], k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let newest = rows.iter().filter_map(|(_, f)| get(f, "readingDay")).max();
@@ -419,7 +420,7 @@ pub fn prom_lines(sensor: &str, rows: &[ReadingRow]) -> String {
         let (Some(day), Some(metric), Some(value)) = (get(f, "readingDay"), get(f, "readingMetric"), get(f, "readingValue")) else { continue };
         if Some(&day) != newest.as_ref() || value.parse::<f64>().is_err() { continue; }
         let subject = get(f, "readingRole").unwrap_or_default();
-        out.push_str(&format!("chorus_sensor_reading{{sensor=\"{sensor}\",metric=\"{metric}\",subject=\"{subject}\",day=\"{day}\"}} {value}\n"));
+        out.push_str(&format!("chorus_sensor_reading{{sensor=\"{sensor}\",metric=\"{metric}\",subject=\"{subject}\"}} {value}\n"));
     }
     out
 }

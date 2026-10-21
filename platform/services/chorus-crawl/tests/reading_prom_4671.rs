@@ -20,7 +20,7 @@ fn row(sensor: &str, metric: &str, day: &str, v: &str, role: Option<&str>) -> Re
 }
 
 #[test]
-fn the_newest_days_readings_become_gauges_labelled_by_sensor_metric_and_subject() {
+fn the_newest_days_readings_become_one_series_per_sensor_metric_and_subject() {
     let rows = vec![
         row("messages", "messages-sent", "2026-10-19", "500", None),
         row("messages", "messages-sent", "2026-10-20", "696", None),
@@ -29,10 +29,11 @@ fn the_newest_days_readings_become_gauges_labelled_by_sensor_metric_and_subject(
     ];
     let text = prom_lines("messages", &rows);
     assert!(text.starts_with("# TYPE chorus_sensor_reading gauge\n"), "{text}");
-    assert!(text.contains("chorus_sensor_reading{sensor=\"messages\",metric=\"messages-sent\",subject=\"\",day=\"2026-10-20\"} 696\n"), "{text}");
-    assert!(text.contains("chorus_sensor_reading{sensor=\"messages\",metric=\"messages-kept\",subject=\"\",day=\"2026-10-20\"} 655\n"), "{text}");
-    assert!(text.contains("chorus_sensor_reading{sensor=\"messages\",metric=\"doubles-nudge\",subject=\"wren\",day=\"2026-10-20\"} 0\n"), "{text}");
-    assert!(!text.contains("2026-10-19"), "only the newest day is a gauge, so a rule never reads an old day: {text}");
+    assert!(text.contains("chorus_sensor_reading{sensor=\"messages\",metric=\"messages-sent\",subject=\"\"} 696\n"), "{text}");
+    assert!(text.contains("chorus_sensor_reading{sensor=\"messages\",metric=\"messages-kept\",subject=\"\"} 655\n"), "{text}");
+    assert!(text.contains("chorus_sensor_reading{sensor=\"messages\",metric=\"doubles-nudge\",subject=\"wren\"} 0\n"), "{text}");
+    assert!(!text.contains("} 500"), "only the newest day is a gauge, so a rule never reads an old day: {text}");
+    assert!(!text.contains("day="), "no day label, so the series count does not grow daily: {text}");
 }
 
 #[test]
