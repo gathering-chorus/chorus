@@ -10,7 +10,11 @@
 setup() {
   # Named by its folder so werk-test sees this suite exercise the check (#4419).
   CHECK="${BATS_TEST_DIRNAME}/../../proving/domains/alerts/host-pressure.check.sh"
+  # #4091: the check writes its gauges here, never into the live collector
+  export HOST_PRESSURE_PROM_DIR="$BATS_TEST_TMPDIR"
 }
+
+gauge() { sed -nE "s/^$1 (.*)/\1/p" "$BATS_TEST_TMPDIR/host_pressure.prom"; }
 
 reading() { HOST_PRESSURE_LEVEL_NOW="$1" HOST_PRESSURE_FREE_NOW="$2" HOST_PRESSURE_SWAP_NOW="$3" bash "$CHECK"; }
 
@@ -33,10 +37,34 @@ reading() { HOST_PRESSURE_LEVEL_NOW="$1" HOST_PRESSURE_FREE_NOW="$2" HOST_PRESSU
   done
 }
 
-@test "level 4 (critical) fires even at swap 40%, naming the condition" {
+# #4091 AC3: Grafana fires (chorus_host_memory_pressure_level >= 4); the script only measures.
+@test "level 4 (critical) is written as the gauge Grafana fires on, naming the condition" {
   run reading 4 30 40
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 0 ] || return 1
   [[ "$output" == host-under-pressure:* ]] || return 1
+  [ "$(gauge chorus_host_memory_pressure_level)" = 4 ] || return 1
+  [ "$(gauge chorus_host_swap_used_percent)" = 40 ] || return 1
+}
+
+# NEGATIVE PROOF: the script never fires itself, so nothing pages twice.
+@test "the script exits 0 at every level; only Grafana pages" {
+  for l in 1 2 4; do run reading $l 30 40; [ "$status" -eq 0 ] || return 1; done
+}
+
+@test "level 2 is written as 2, so the rule (>= 4) stays quiet" {
+  run reading 2 45 94
+  [ "$(gauge chorus_host_memory_pressure_level)" = 2 ] || return 1
+}
+
+# NEGATIVE PROOF: an unreadable reading is NaN, never a 0 that reads healthy.
+@test "an unknown free percent is written NaN, not 0" {
+  run reading 2 "" 40
+  [ "$(gauge chorus_host_memory_free_percent)" = NaN ] || return 1
+}
+
+@test "the file is written whole: no temp file is left behind" {
+  run reading 1 50 10
+  [ -z "$(ls -A "$BATS_TEST_TMPDIR" | grep '^\.host_pressure' || true)" ] || return 1
 }
 
 @test "the observation carries level, threshold, free and swap" {
