@@ -22,7 +22,12 @@ class H(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
         if self.path.endswith("/update"):
             open(d + "/updates", "a").write(body + "\n"); self.send_response(204); self.end_headers(); return
-        out = json.dumps({"results": {"bindings": [{"n": {"value": n}}]}}).encode()
+        q = urllib.parse.unquote_plus(body)
+        import os
+        done = os.path.exists(d + "/updates")
+        # the old-node count drops to 0 once an update was sent; CoreShape and empty-node counts never move
+        v = ("0" if done else n) if "isBlank" in q else ("2" if "CoreShape" in q else "0")
+        out = json.dumps({"results": {"bindings": [{"n": {"value": v}}]}}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(out)
 s = http.server.HTTPServer(("127.0.0.1", 0), H)
 open(d + "/port", "w").write(str(s.server_address[1])); s.serve_forever()
@@ -54,6 +59,16 @@ teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; true; }
   [ "$status" -eq 1 ]
   [[ "$output" == *"refused"* ]] || return 1
   [ ! -e "$STUB_DIR/updates" ]
+}
+
+@test "with --apply and exactly one old node, one path-scoped delete is sent and the after-checks pass" {
+  start_stub 1
+  run "$SCRIPT" "http://127.0.0.1:$PORT/ds" --apply
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"after:  old alertFile blank nodes=0"* ]] || return 1
+  [ "$(grep -c . "$STUB_DIR/updates")" -eq 1 ]
+  grep -q 'sh%3Apath\|sh:path' "$STUB_DIR/updates"
 }
 
 @test "the ttl names the alertFile property as optional and keeps no required blank node for it" {

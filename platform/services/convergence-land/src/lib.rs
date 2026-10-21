@@ -143,13 +143,22 @@ pub fn rule(row: &Value, maps: &[Mapping], folder_uid: &str) -> Result<(Value, S
 /// (#4091 AC8). A is a Loki instant query, B reduces it to its last value, and the
 /// threshold C reads B.
 fn loki_query(r: &mut Value) {
-    let a = &mut r["data"][0]["model"];
-    if let Some(m) = a.as_object_mut() { m.remove("instant"); }
-    a["queryType"] = json!("instant");
-    r["data"][1]["model"]["expression"] = json!("B");
     let b = json!({"refId": "B", "datasourceUid": "__expr__", "relativeTimeRange": {"from": 900, "to": 0},
                    "model": {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last"}});
-    if let Some(d) = r["data"].as_array_mut() { d.insert(1, b); }
+    let Some(d) = r["data"].as_array_mut() else { return };
+    // each step found by its refId, not its position (Silas, Kade, Abby: #4671 review)
+    for step in d.iter_mut() {
+        match step["refId"].as_str() {
+            Some("A") => {
+                if let Some(m) = step["model"].as_object_mut() { m.remove("instant"); }
+                step["model"]["queryType"] = json!("instant");
+            }
+            Some("C") => { step["model"]["expression"] = json!("B"); }
+            _ => {}
+        }
+    }
+    let at = d.iter().position(|s| s["refId"] == "C").unwrap_or(d.len());
+    d.insert(at, b);
 }
 
 /// A silence on the rule's uid label for `minutes`, from `now` (RFC 3339 UTC).
