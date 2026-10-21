@@ -268,6 +268,44 @@ def board_owner(card, cards=None):
     return next((str(o).lower() for c, o in (cards or []) if str(c) == str(card)), "?")
 
 
+def children_from_json(text):
+    """#4669 — the children `cards view <id> --json` gives, as (id, status,
+    title); [] for a card with none; None when the output is not a card. Structured, so a change to the view's
+    printed layout cannot silently empty the roll-up (Silas, #4669 run 1)."""
+    try:
+        card = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(card, dict):
+        return None
+    return [(str(c["index"]), c["status"], c["title"]) for c in card.get("children") or []]
+
+
+def child_lines(children, runs_of):
+    """#4669 — one line per child: its board status and its newest run.
+    `runs_of(id)` is dagu_runs (a fixture in the tests)."""
+    lines = []
+    for cid, status, title in children:
+        runs = runs_of(cid)
+        if runs is None:
+            run = "dagu unreadable"
+        elif not runs:
+            run = "no run yet"
+        else:
+            who = (re.search(r"ROLE=(\S+)", runs[0].get("params") or "") or [None, "?"])[1]
+            run = dagu_line(cid, who, runs).split(" v2 ", 1)[-1]
+        lines.append(f"  #{cid} [{status}] {title[:50]} — {run}")
+    return lines
+
+
+def card_children(card):
+    try:
+        out = subprocess.run([CARDS, "view", str(card), "--json"], capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return None
+    return children_from_json(out)
+
+
 def card_detail(card, pin_status):
     logs = run_logs(card)
     runs = [run_summary(p) for p in logs]
@@ -314,6 +352,13 @@ def card_detail(card, pin_status):
     for i, r in enumerate(runs, 1):
         fin = datetime.fromtimestamp(r["finish"]).strftime("%H:%M") if r["finish"] else "  -  "
         print(f"  {i:>3}  {hm(r['start'])}  {fin}   {r['result']:<22}  {r['why']}")
+    # #4669 — a parent ("patient 0") rolls up each child's newest run
+    children = card_children(card)
+    if children is None:
+        print("\n  children: unreadable (cards view --json gave no card)")
+    elif children:
+        print(f"\n  children ({len(children)})")
+        print("\n".join(child_lines(children, dagu_runs)))
     dagu_detail(card, v2)
 
 

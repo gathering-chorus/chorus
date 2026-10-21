@@ -566,9 +566,30 @@ type AddOpts = {
   type?: string; origin?: string;
   // #2652 AC2 — product sub-axis
   subproduct?: string;
+  // #4669 — file the card as a child of this card
+  parent?: string;
   // #3682 — run every gate (guest door included) but file nothing
   validateOnly?: boolean;
 };
+
+/**
+ * #4669 — a parent must be a card number that exists on this board. Returns
+ * the refusal line, or null. Checked before any write so a typo files nothing.
+ */
+async function parentRefusal(client: BoardClient, parent: string): Promise<string | null> {
+  if (!/^\d+$/.test(parent)) return `--parent "${parent}" is not a card number`;
+  try {
+    await client.view(Number(parent));
+    return null;
+  } catch {
+    return `parent #${parent} does not exist on the ${client.boardName} board`;
+  }
+}
+
+/** #4669 — link a card as a child through Vikunja's parenttask relation. */
+async function linkParent(client: BoardClient, index: number, parent: string): Promise<void> {
+  await client.addRelation(index, Number(parent), 'parenttask');
+}
 
 // #2652 AC2 — subproduct closed list. Athena models 7 subproducts today; doc
 // (cards-service-design.md) names 6 user-facing — Quality is intentionally
@@ -1122,6 +1143,8 @@ export async function addCard(
 
   const errors = await collectRequiredFieldErrors(opts);
   validateDescription(opts, title, client.boardName, errors);
+  const parentError = opts.parent ? await parentRefusal(client, opts.parent) : null;
+  if (parentError) errors.push(parentError);
   if (errors.length > 0) reportErrorsAndExit(errors, title, client.boardName);
 
   // #3682: --validate-only exercises every refuse-at-source gate above
@@ -1144,7 +1167,20 @@ export async function addCard(
     ...(opts.product ? { product: opts.product } : {}),
   });
 
+  // #4669 — tags first, so a failed link leaves a tagged card that only needs the link
   await applyPostAddTags(client, task, opts);
+
+  if (opts.parent) {
+    // Not best-effort: a child that silently lost its parent is the reopen this replaces.
+    try {
+      await linkParent(client, task.index, opts.parent);
+      console.log(`  Child of #${opts.parent}`);
+    } catch (err: unknown) {
+      console.error(`ERROR: #${task.index} was filed but not linked to parent #${opts.parent}: ${err instanceof Error ? err.message : err}`);
+      console.error(`  Link it with: cards set ${task.index} parent=${opts.parent}`);
+      process.exit(1);
+    }
+  }
   return task;
 }
 
@@ -1630,7 +1666,7 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
 // `product` (gathering|chorus portfolio) added so the taxonomy axes —
 // product / subproduct / domain — are settable on existing cards
 // per Jeff direction 2026-05-02 (board-wide attribute backfill).
-const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'subproduct', 'product']);
+const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'parent', 'subproduct', 'product']);
 // #3267: chunk removed from the static-map tag loop — it now routes through
 // applyLabelByName (auto-create), same as subproduct, so chunk is a
 // dynamic priority axis: a new priority is just a tag, no config.ts/enum edit.
@@ -1679,6 +1715,10 @@ async function applyTagChanges(client: BoardClient, index: number, pairs: Record
 }
 
 async function applyRelationPairs(client: BoardClient, index: number, pairs: Record<string, string>, changes: string[]): Promise<void> {
+  if (pairs.parent) {
+    await linkParent(client, index, pairs.parent);
+    changes.push(`parent=${pairs.parent}`);
+  }
   if (pairs.after) {
     for (const dep of pairs.after.split(',')) {
       const depId = parseInt(dep.trim(), 10);
@@ -1709,6 +1749,8 @@ async function printResultingCard(client: BoardClient, index: number, changes: s
 
 export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
   validateSetKeys(pairs);
+  const parentError = pairs.parent ? await parentRefusal(client, pairs.parent) : null;
+  if (parentError) throw new Error(parentError);
   const changes: string[] = [];
 
   // #2652 AC5 — capture before-state for per-field diff payload.
@@ -1780,7 +1822,7 @@ function buildFieldChanges(
       // Don't include full desc text in spine payload; just signal length delta.
       out.push({ field: 'description', old_value: '(omitted)', new_value: `(${value.length} chars)` });
     }
-    // 'after' / 'gates' relation pairs are not field-set; they emit relation events elsewhere.
+    // 'after' / 'gates' / 'parent' relation pairs are not field-set; they emit relation events elsewhere.
   }
   return out;
 }
