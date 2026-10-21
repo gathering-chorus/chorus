@@ -77,6 +77,12 @@ chorus:principal-bridge a chorus:Principal ;
     chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
+chorus:principal-pulse a chorus:Principal ;
+    rdfs:label "pulse (non-interactive Buzz reader principal, #4629)" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4629: pulse signs in to the relay as itself to read the room (S1 shadow), never as the bridge
+    chorus:canSignIn "false" .
+
 chorus:principal-chorus-sdk a chorus:Principal ;
     rdfs:label "chorus-sdk (service caller principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/chorus-sdk/profile/card#me" ;

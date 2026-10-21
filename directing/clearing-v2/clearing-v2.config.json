@@ -10,5 +10,7 @@
   "jeffSigner": {
     "bunkerPubkey": "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a",
     "userPubkey": "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a"
-  }
+  },
+  "stagingRelayPort": 3010,
+  "stagingTeamChannel": "0e3874f2-8636-4c7c-9f46-3536dda7439f"
 }

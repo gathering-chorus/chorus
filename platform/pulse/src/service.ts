@@ -33,7 +33,17 @@ import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
-import { BuzzWriter, bridgeSignerFromHome, type BuzzMessage } from './buzz-writer';
+import { BuzzWriter, bridgeSignerFromHome, identitySignerFromHome, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
+import { BuzzReader } from './buzz-reader';
+import { NoteKeys } from './note-keys';
+import { BuzzDelivery } from './buzz-delivery';
+
+/** #4629 S3 — deliver sender-signed nudges from the room (off unless PULSE_BUZZ_DELIVER=1). */
+export const deliverFromBuzz = (): boolean => process.env.PULSE_BUZZ_DELIVER === '1';
+/** #4629 S3 — set at startup when delivering from Buzz; the release route and the reader use it. */
+type PendingRow = ReturnType<MessageStore['getPendingDeliveries']>[number];
+let buzzDelivery: BuzzDelivery<PendingRow> | undefined;
+export function setBuzzDelivery(d: BuzzDelivery<PendingRow> | undefined): void { buzzDelivery = d; }
 import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
 
 /** #4609 — what createApp needs from the Buzz writer: fire one post, no answer. */
@@ -227,6 +237,22 @@ async function nudgeCallerOk(headers: express.Request['headers'], from: unknown)
   return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
 }
 
+/** #4629 S3 — a sender-signed nudge, while pulse delivers from Buzz, waits for its room note. */
+function heldForRoom(body: { buzz?: unknown } | undefined): boolean {
+  return body?.buzz === 'sender' && deliverFromBuzz();
+}
+
+/** #2727 AC2: enqueue for async delivery via the worker (no-op if not wired, tests); a held nudge waits for its note. */
+function enqueueUnlessHeld(worker: DeliveryWorker | undefined, held: boolean, row: Parameters<DeliveryWorker['enqueue']>[0]): void {
+  if (held) return;
+  worker?.enqueue(row).catch(() => { /* worker handles its own state */ });
+}
+
+/** #4629 S2 — a sender that signed its own note (buzz=sender) gets no bridge copy, so the room holds it once. */
+function copyToBuzz(buzz: BuzzPoster | undefined, body: { buzz?: unknown } | undefined, m: BuzzMessage): void {
+  if (body?.buzz !== 'sender') buzz?.post(m);
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker, buzz?: BuzzPoster): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -264,15 +290,13 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const pre = await admitNudge(req.body, from, to);
     if ('refused' in pre) return res.status(pre.status).json(pre.refused);
     const { nudgeClass, expects, targetSessionId } = pre;
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId);
+    const held = heldForRoom(req.body);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
-    buzz?.post({ id: Number(id), from, to, content: marked });
-    // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
-    if (worker) {
-      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null }).catch(() => { /* worker handles its own state */ });
-    }
+    copyToBuzz(buzz, req.body, { id: Number(id), from, to, content: marked });
+    enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
@@ -295,6 +319,13 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const released = store.drainQueued(role);
     if (released > 0) void worker?.scanAndRequeue();
     res.json({ ok: true, role, released });
+  });
+  // #4629 S3 — the sender's publish failed (its note waits in its outbox): deliver now, not after the fallback.
+  app.post('/api/buzz/release', async (req, res) => {
+    const { from, trace } = (req.body ?? {}) as { from?: unknown; trace?: unknown };
+    if (!(await nudgeCallerOk(req.headers, from))) { res.status(403).json({ error: 'unauthorized' }); return; }
+    if (typeof trace !== 'string' || !/^[0-9a-f-]{36}$/.test(trace)) { res.status(400).json({ error: 'trace required' }); return; }
+    res.json({ ok: true, released: buzzDelivery?.publishFailed(trace) ?? false });
   });
   // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
   // the spine fold (nudge.emitted minus nudge.surfaced) via
@@ -794,6 +825,24 @@ if (require.main === module) {
     // is configured (the prod plist): a demo or test pulse must never write the
     // team's room. A miss is logged every time and alerted to ops once per 10 min.
     const buzz = startBuzzWriter(store, worker, emitSpine);
+    // #4629 S3 — deliver sender-signed nudges from the room: release by note, by failed publish, or after 30 s
+    if (deliverFromBuzz()) {
+      const d = new BuzzDelivery<PendingRow>({
+        store,
+        rowFor: (id) => store.getPendingDelivery(id),
+        deliver: (row) => { void worker.enqueue(row); },
+        onLost: (id) => { log('error', 'buzz.delivery.lost', { id }); void emitSpine('buzz.delivery.lost', { id: String(id) }); },
+        onRelease: (id, cause) => {
+          log(cause === 'room' ? 'info' : 'warn', 'buzz.delivery.released', { id, cause });
+          void emitSpine(cause === 'fallback' ? 'buzz.delivery.fallback' : 'buzz.delivery.released', { id: String(id), cause });
+        },
+      });
+      setBuzzDelivery(d);
+      d.sweep(); // a restart mid-hold still delivers (Silas 06:42)
+      setInterval(() => d.sweep(), 10_000).unref();
+    }
+    // #4629 S1 — read the room in shadow (judge, never deliver) when PULSE_BUZZ_SHADOW=1
+    startBuzzShadow(store, emitSpine);
 
     const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz);
     app.listen(PORT, BIND_HOST, () => {
@@ -804,6 +853,38 @@ if (require.main === module) {
 }
 
 
+
+/** #4629 AC4 — the key registry pulse checks note signers against (graph-only, as Clearing v2). */
+const KEYS_URL = process.env.PULSE_KEYS_URL || 'http://localhost:3340/owl/v1/identity/keyregistryentries?limit=1000';
+
+/** #4629 S1 — the shadow reader, or none unless PULSE_BUZZ_SHADOW=1 and the relay and principal-pulse's key are there. */
+function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | undefined {
+  const relayUrl = process.env.PULSE_BUZZ_RELAY_URL;
+  const { signer, reason } = identitySignerFromHome(os.homedir(), 'pulse');
+  const off = process.env.PULSE_BUZZ_SHADOW !== '1' ? 'PULSE_BUZZ_SHADOW is not 1' : !relayUrl ? 'PULSE_BUZZ_RELAY_URL not set' : !signer ? reason : undefined;
+  if (off || !relayUrl || !signer) {
+    // on the spine, so a day the shadow was off reads unmeasured, never green (Silas 06:22)
+    log('info', 'buzz.shadow.off', { reason: off });
+    void emit('buzz.shadow.off', { reason: off ?? '' });
+    return undefined;
+  }
+  return new BuzzReader({
+    relayUrl,
+    hostHeader: process.env.PULSE_BUZZ_RELAY_HOST || undefined,
+    signer,
+    store,
+    channel: process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT,
+    keys: new NoteKeys(() => fetch(KEYS_URL, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())),
+    onMatch: (id) => { buzzDelivery?.fromRoom(id); },
+    onVerdict: (v) => {
+      if (v.verdict === 'not-a-delivery') return;
+      log(v.verdict === 'match' ? 'info' : 'error', 'buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+      void emit('buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+      // #4629 AC4 — the sender sees the refusal: buzz.note.refused names them (Silas 06:33)
+      if (v.verdict === 'wrong-key' && v.author) void emit('buzz.note.refused', { to: v.author, msg: v.msg, reason: 'signed by a key that is not yours in the key registry' });
+    },
+  });
+}
 
 /** #4609 — the production Buzz writer, or none when PULSE_BUZZ_RELAY_URL is unset. */
 function startBuzzWriter(store: MessageStore, worker: DeliveryWorker | undefined, emit: EmitSpine): BuzzWriter | undefined {
