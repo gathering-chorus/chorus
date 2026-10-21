@@ -48,6 +48,7 @@ fn the_clearing_plan_pipeline_enforces_chunk_before_cards() {
     assert!(prio < seq, "prioritize runs before sequence\n{y}");
     assert!(seq < go, "sequence runs before plan-go\n{y}");
     assert!(y.contains("queue: clearing\n"), "{y}");
+    assert!(y.contains("  - CARD: \"\"\n"), "CARD declared as param\n{y}");
     assert!(y.contains("output: CARD"), "sequence step captures CARD output\n{y}");
     assert!(y.contains("prompt: \"Jeff approval before pulling to WIP for #${CARD}? (${JEFF} answers)\""), "Jeff answers plan-go\n{y}");
     assert!(y.contains("clearing-chunk check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision}"), "plan-check validates Jeff\n{y}");

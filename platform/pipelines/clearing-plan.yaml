@@ -4,6 +4,7 @@ queue: clearing
 params:
   - CHUNK: ""
   - ROLE: ""
+  - CARD: ""
   - NAVIGATOR: ""
   - JEFF: ""
 env:

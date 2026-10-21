@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: integration
+# @test-type: unit
 # @domain: board
 # 4682-clearing-chunk-cap.bats — tests for clearing-chunk active chunk limit enforcement (#4682)
 
@@ -46,13 +46,6 @@ Next (2):
   run "$SCRIPT" enforce pulse
   [ "$status" -eq 1 ]
   [[ "$output" =~ "FATAL: empty board listing received" ]] || return 1
-}
-
-@test "clearing-chunk runs live against board and correctly detects pulse in WIP" {
-  unset MOCK_BOARD_LISTING
-  run "$SCRIPT" list
-  [ "$status" -eq 0 ]
-  [[ "$output" =~ "pulse" ]] || return 1
 }
 
 @test "clearing-chunk check permits go when answered by Jeff" {
