@@ -23,6 +23,11 @@ EOF
   printf '#!/usr/bin/env python3\nprint("failed at local-proof · verdict: RED")\n' > "$S/chorus-werk-status"
   printf '#!/usr/bin/env bash\necho "$*" >> %s/dagu\n' "$L" > "$BATS_TEST_TMPDIR/dagu"; chmod +x "$BATS_TEST_TMPDIR/dagu"
   export PAIR_DAGU="$BATS_TEST_TMPDIR/dagu" DAG_RUN_ID=run1
+  D="$BATS_TEST_TMPDIR/door/identity/principals"; mkdir -p "$D"
+  for r in kade:jeffbridwell silas:jeffbridwell wren:chorus-wren abby-normal:chorus-abby-normal; do
+    printf '{"data":{"hostAccount":"%s"}}' "${r#*:}" > "$D/${r%%:*}"
+  done
+  export PAIR_DOOR="file://$BATS_TEST_TMPDIR/door"
   unset CHORUS_ROLE
 }
 
@@ -152,4 +157,43 @@ EOF
   [ "$after" -eq $((before + 3 + 500)) ] || { echo "grew by $((after - before)), want 503"; return 1; }
   [ "$(grep -c -- '^- .* slice: ' "$pf")" -eq 1000 ] || { echo "slice lines: $(grep -c -- '^- .* slice: ' "$pf"), want 1000 (500 + one copy)"; return 1; }
   [ "$(grep -c '^## For Jeff' "$pf")" -eq 1 ] || return 1
+}
+
+# #4683 AC5 — the pair file is written by every member's macOS user and nobody
+# else (Abby runs as chorus-abby-normal; a 0644 file owned by jeffbridwell
+# silently dropped her appends), and an append that cannot write fails loudly.
+acl_users() { ls -le "$1" | sed -nE 's/^ *[0-9]+: user:([^ ]+) allow.*/\1/p' | sort | tr '\n' ' '; }
+
+@test "start: a member on her own account gets exactly one ACL entry; the file is owner-only (#4683)" {
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 0 ]
+  [ "$(stat -f '%Lp' "$PAIR_DIR/pair-4683.md")" = 600 ]
+  [ "$(acl_users "$PAIR_DIR/pair-4683.md")" = "chorus-abby-normal " ]
+  ls -le "$PAIR_DIR/pair-4683.md" | grep -q 'user:chorus-abby-normal allow .*append'
+}
+
+@test "negative proof: an outsider on her own account is not listed, and a rerun adds no second entry (#4683)" {
+  bash "$PAIR" start 4683 kade abby-normal
+  bash "$PAIR" start 4683 kade abby-normal
+  [ "$(acl_users "$PAIR_DIR/pair-4683.md")" = "chorus-abby-normal " ]
+  bash "$PAIR" start 4684 kade silas
+  [ -z "$(acl_users "$PAIR_DIR/pair-4684.md")" ]
+  [ "$(stat -f '%Lp' "$PAIR_DIR/pair-4684.md")" = 600 ]
+}
+
+@test "negative proof: review on a pair file it cannot write exits non-zero and logs nothing (#4683)" {
+  bash "$PAIR" start 4683 kade silas
+  chmod 444 "$PAIR_DIR/pair-4683.md"
+  run bash "$PAIR" review 4683 "next: AC 1"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"could not write"* ]] || return 1
+  ! grep -q '^pair.review' "$L/spine" || return 1
+}
+
+@test "negative proof: a member the door has no hostAccount for refuses the start (#4683)" {
+  rm "${PAIR_DOOR#file://}/identity/principals/silas"
+  run bash "$PAIR" start 4683 kade silas
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no hostAccount for silas"* ]] || return 1
+  [ ! -e "$CHORUS_HOME/ops/active-pairs/4683.json" ]
 }

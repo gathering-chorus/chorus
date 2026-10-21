@@ -35,7 +35,9 @@ fn skill_verbs_are_the_binaries_of_deterministic_rows() {
     // werk-deploy runs three skills (werk, env-up, canonical) but is one verb
     assert!(v.contains("werk-deploy") && v.contains("werk-sync"));
     assert!(!v.iter().any(|b| b.is_empty()), "the human go has no binary: {v:?}");
-    assert_eq!(v.len(), 10);
+    // #4683 — borg-prove runs two skills in the land (prod, record) and is one verb
+    assert!(v.contains("borg-prove"), "{v:?}");
+    assert_eq!(v.len(), 11);
 }
 
 // NEGATIVE PROOF, measured live 2026-10-09 14:49: MCP has pull and unpull with

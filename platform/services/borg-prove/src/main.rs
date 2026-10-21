@@ -90,6 +90,55 @@ fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     results
 }
 
+/// #4683 — the verdict on the spine (prover borg-queen: the pipeline itself
+/// until Borg Queen is provisioned) and on the card, one line per AC.
+fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
+    let log = env("BORG_CHORUS_LOG", &format!("{}/platform/scripts/chorus-log", env("CHORUS_HOME", "")));
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    let word = if v == NO_ROWS { "unproven" } else { v };
+    let spine = Command::new("bash").arg(&log)
+        .args(["borg.verdict", if role.is_empty() { "system" } else { role }, &format!("card={card}"), &format!("verdict={word}"), "prover=borg-queen"])
+        .status();
+    let mut text = format!("borg-prove in prod: {v} (prover borg-queen)");
+    for (c, o) in r {
+        text.push_str(&format!("\n{} {}: {}", c.ac, o.word(), o.evidence()));
+    }
+    let comment = Command::new("bash").arg(&cards).args(["comment", &card.to_string(), &text]).status();
+    if !matches!(spine, Ok(s) if s.success()) || !matches!(comment, Ok(s) if s.success()) {
+        eprintln!("#{card} record: the verdict was not written (spine {spine:?}, card {comment:?})");
+        exit(1);
+    }
+    let reds = reds(r);
+    if v == NO_ROWS || reds.is_empty() {
+        return;
+    }
+    // AC3 — one child per red AC, owned by the parent's owner, filed by
+    // borg-queen (not an agent role, so no bouncer); a rerun files none twice
+    let view = Command::new("bash").arg(&cards).args(["view", &card.to_string()]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    let Some(owner) = owner_of(&view) else {
+        eprintln!("#{card} has no owner on the board: no child cards filed");
+        exit(1);
+    };
+    let have = child_titles(&view);
+    for (c, o) in reds {
+        let title = child_title(card, c);
+        if have.contains(&title) {
+            println!("#{card} {}: child already filed", c.ac);
+            continue;
+        }
+        let added = Command::new("bash").arg(&cards)
+            .args(["add", &title, "--owner", &owner, "--parent", &card.to_string(), "--priority", "P2",
+                "--domain", "chorus", "--type", "fix", "--origin", "reactive", "--seq", "borg", "--desc", &child_desc(card, c, o)])
+            .env("DEPLOY_ROLE", "borg-queen")
+            .status();
+        if !matches!(added, Ok(s) if s.success()) {
+            eprintln!("#{card} {}: the child card was not filed ({added:?})", c.ac);
+            exit(1);
+        }
+    }
+}
+
 /// The step that failed in a dagu run, from `dagu status` ("├─name (…) [failed]").
 fn failed_step(dag: &str, run: &str) -> String {
     let cfg = env("DAGU_CONFIG", &format!("{}/platform/config/dagu.yaml", env("CHORUS_HOME", "")));
@@ -122,14 +171,21 @@ fn main() {
             println!("#{card} {mode}: {v}");
             if v != "Proven" { exit(1) }
         }
-        "prod" => {
+        // #4683 — prod and record run inside cicd-land, before accept. prod
+        // shows the verdict (its step continues on failure, so record runs on
+        // the red path too); record writes it and is the gate: it fails on any
+        // verdict but Proven, so accept never runs after a red or an unmeasured
+        // AC. A card with no CardAC rows lands as before and says "unproven".
+        "prod" | "record" => {
             let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
-            let v = verdict(&r);
+            let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} verify in prod: {v}");
-            if v != "Proven" { exit(1) }
+            if mode == "record" {
+                record(card, &role, v, &r);
+            }
+            if v != "Proven" && v != NO_ROWS { exit(1) }
         }
-        "record" => println!("#{card} record: not built yet (the verdict row is the next AC)"),
         "route" => {
             let (Some(_run), Some(routes)) = (a.get(3), a.get(4)) else {
                 eprintln!("usage: borg-prove route <card> <role> <dagu-run-id> <step=route,…>");

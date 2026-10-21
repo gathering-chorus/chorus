@@ -101,6 +101,10 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
+/// #4683 — a card with no CardAC rows has nothing to prove: it lands as
+/// before, and the record says so. Never "Proven".
+pub const NO_ROWS: &str = "unproven: no CardAC rows";
+
 /// The verdict over every AC: Proven only when every one is met; Not met when
 /// any is not met; Unproven when none failed but some could not be measured
 /// (an unmeasured AC is never a pass, and never a regression either).
@@ -272,4 +276,47 @@ pub fn latest_case_result(body: &str) -> Option<String> {
         }
     }
     best.map(|(_, r)| r.to_string())
+}
+
+/// #4683 AC3 — the ACs a red verdict files children for: every one not met
+/// or not measured.
+pub fn reds(results: &[(Check, Outcome)]) -> Vec<&(Check, Outcome)> {
+    results.iter().filter(|(_, o)| !matches!(o, Outcome::Met(_))).collect()
+}
+
+/// The child's title names the parent and the AC, so a rerun finds it.
+pub fn child_title(parent: u32, c: &Check) -> String {
+    let s: String = c.statement.split_whitespace().collect::<Vec<_>>().join(" ");
+    let s = if s.chars().count() > 80 { format!("{}…", s.chars().take(79).collect::<String>().trim_end()) } else { s };
+    format!("#{parent} {} not proven in prod: {s}", c.ac)
+}
+
+/// The child's description carries the card floor (Experience + AC) and
+/// borg-prove's evidence.
+pub fn child_desc(parent: u32, c: &Check, o: &Outcome) -> String {
+    format!(
+        "## Experience\nborg-prove checked #{parent} in prod after its land and {} {} ({} check on {}).\n\nEvidence: {}\n\n## AC\n- [ ] {}: {}\n- [ ] borg-prove reads it met in prod\n",
+        c.ac, o.word(), c.kind, c.target, o.evidence(), c.ac, c.statement
+    )
+}
+
+/// The parent's owner from `cards view` ("  Owner:    Kade"), lowercased.
+pub fn owner_of(view: &str) -> Option<String> {
+    view.lines().find_map(|l| l.trim().strip_prefix("Owner:")).map(|o| o.trim().to_lowercase()).filter(|o| !o.is_empty())
+}
+
+/// Titles of the parent's children from `cards view` ("    #4700 [Later] title").
+pub fn child_titles(view: &str) -> Vec<String> {
+    let mut on = false;
+    let mut out = Vec::new();
+    for l in view.lines() {
+        let t = l.trim();
+        if t.starts_with("Children (") { on = true; continue; }
+        if !on { continue; }
+        match t.strip_prefix('#').and_then(|r| r.split_once("] ")) {
+            Some((_, title)) => out.push(title.to_string()),
+            None => break,
+        }
+    }
+    out
 }

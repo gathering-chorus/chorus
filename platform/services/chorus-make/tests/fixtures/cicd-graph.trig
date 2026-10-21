@@ -42,7 +42,11 @@
   chorus:skill-werk-deploy-prod a chorus:Skill ; rdfs:label "werk-deploy-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "{card} {caller} --target canonical" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-land-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-deploy-prod ; chorus:skillOrder 3 .
   chorus:skill-werk-accept a chorus:Skill ; rdfs:label "werk-accept" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-accept" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
-  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 4 ; chorus:withArguments "atomic=true" .
+  chorus:skill-borg-verify-in-prod a chorus:Skill ; rdfs:label "borg-verify-in-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "prod ${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-verify-in-prod ; chorus:skillOrder 4 ; chorus:withArguments "continue_on=failure" .
+  chorus:skill-borg-record a chorus:Skill ; rdfs:label "borg-record" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "record ${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-land-5 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-record ; chorus:skillOrder 5 .
+  chorus:stepskill-cicd-land-6 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 6 ; chorus:withArguments "atomic=true" .
 }
 # #4465 AC7 — the walk: stream ← automates ← pipeline; pipeline step coversStep stream steps; skills name domains.
 <urn:chorus:domains:value-streams> {
@@ -80,4 +84,6 @@
   chorus:skill-werk-sync chorus:hasDomain chorus:version-control .
   chorus:skill-werk-deploy-prod chorus:hasDomain chorus:deploys .
   chorus:skill-werk-accept chorus:hasDomain chorus:version-control .
+  chorus:skill-borg-verify-in-prod chorus:hasDomain chorus:tests .
+  chorus:skill-borg-record chorus:hasDomain chorus:cards .
 }
