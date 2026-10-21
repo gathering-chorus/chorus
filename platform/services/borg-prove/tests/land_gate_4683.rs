@@ -200,3 +200,30 @@ fn child_titles_reads_the_stated_children_and_none_is_an_empty_list() {
     assert_eq!(child_titles("  Children (1):\n    #4700 [Later] a title\n  Comments (0):\n"), Some(vec!["a title".to_string()]));
     assert_eq!(child_titles("  Children (2):\n    #4700 [Later] a\n"), None);
 }
+
+// #4687 (Wren at #4683's demo) — a child that cannot be filed is named on the
+// parent, not only on stderr: Jeff reads the card, never the step log.
+#[test]
+fn a_child_card_that_cannot_be_filed_is_named_on_the_parent() {
+    let fx = Fx::new("child-refused", &row("ac-4683-2", "/ok.txt", "nope"));
+    // the board refuses the add: cards answers view, then exits 1 on add
+    let d = fx.dir.display().to_string();
+    std::fs::write(fx.dir.join("cards"), format!(
+        "#!/bin/sh\ncase \"$1\" in view) cat {d}/view.txt ;; add) exit 1 ;; *) echo \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {d}/cards.log ;; esac\n")).unwrap();
+    let _ = fx.run("prod");
+    let r = fx.run("record");
+    assert!(!r.status.success(), "{}", out(&r));
+    let log = fx.log("cards.log");
+    assert!(log.lines().any(|l| l.contains(" comment 4683 ") && l.contains("ac-4683-2") && l.contains("could not be filed")),
+        "the parent names the AC whose child was not filed: {log}");
+}
+
+#[test]
+fn negative_proof_a_parent_with_no_owner_says_so_on_the_parent() {
+    let fx = Fx::new("noowner-comment", &row("ac-4683-2", "/ok.txt", "nope"));
+    std::fs::write(fx.dir.join("view.txt"), "#4683 x\n  Status:   WIP\n").unwrap();
+    let _ = fx.run("prod");
+    let _ = fx.run("record");
+    let log = fx.log("cards.log");
+    assert!(log.lines().any(|l| l.contains(" comment 4683 ") && l.contains("no owner")), "{log}");
+}

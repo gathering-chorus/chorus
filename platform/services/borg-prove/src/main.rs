@@ -122,8 +122,14 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
     // borg-queen (not an agent role, so no bouncer); a rerun files none twice
     let view = Command::new("bash").arg(&cards).args(["view", &card.to_string()]).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    // #4687 (Wren) — a child that is not filed is said on the parent, where
+    // Jeff reads, not only on the step's stderr
+    let say_on_parent = |why: &str| {
+        eprintln!("#{card} {why}");
+        let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(), &format!("borg-prove: {why}")]).status();
+    };
     let Some(owner) = owner_of(&view) else {
-        eprintln!("#{card} has no owner on the board: no child cards filed");
+        say_on_parent(&format!("has no owner on the board: no child cards filed for {}", reds.iter().map(|(c, _)| c.ac.as_str()).collect::<Vec<_>>().join(", ")));
         exit(1);
     };
     let Some(have) = child_titles(&view) else {
@@ -142,7 +148,7 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
             .env("DEPLOY_ROLE", "borg-queen")
             .status();
         if !matches!(added, Ok(s) if s.success()) {
-            eprintln!("#{card} {}: the child card was not filed ({added:?})", c.ac);
+            say_on_parent(&format!("{}: its child card could not be filed (cards add: {added:?})", c.ac));
             exit(1);
         }
     }
