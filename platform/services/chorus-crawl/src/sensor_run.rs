@@ -136,14 +136,30 @@ pub const UNMEASURED_EXIT: i32 = 3;
 /// sensor, the run and its outcome. A Grafana rule fires on any outcome that
 /// is not green and nudges the Sensor's owner (the trigger and values only).
 /// Dry runs write nothing, so they emit nothing.
-pub fn run_event_args(sensor: &str, run: &str, outcome: &str, dry_run: bool) -> Option<Vec<String>> {
-    (!dry_run).then(|| vec![
-        "sensor.run.ended".to_string(),
-        "system".to_string(),
-        format!("sensor={sensor}"),
-        format!("run={run}"),
-        format!("outcome={outcome}"),
-    ])
+pub fn run_event_args(sensor: &str, run: &str, outcome: &str, owner: Option<&str>, dry_run: bool) -> Option<Vec<String>> {
+    (!dry_run).then(|| {
+        let mut ev = vec![
+            "sensor.run.ended".to_string(),
+            "system".to_string(),
+            format!("sensor={sensor}"),
+            format!("run={run}"),
+            format!("outcome={outcome}"),
+        ];
+        // #4091 AC8 — the Grafana rule routes by this; no owner, no field (unrouted)
+        ev.extend(owner.map(|o| format!("owner={o}")));
+        ev
+    })
+}
+
+/// #4091 AC8 — who a run's event routes to: the Sensor row's owner, bare
+/// (`chorus:principal-silas` → `silas`). With no row yet the first run creates
+/// it as the role that ran it, so that role is the owner. An empty owner is no one.
+pub fn event_owner(row: Option<&str>, caller: &str) -> Option<String> {
+    match row {
+        Some(body) => owned_by(body).map(|o| bare(&o)),
+        None => Some(caller.to_string()),
+    }
+    .filter(|o| !o.is_empty())
 }
 
 /// #4666 — a pass that wrote what it could but could not measure part of its
@@ -174,7 +190,6 @@ pub fn outcome(exit: i32, counts: Option<Counts>) -> &'static str {
 /// owner. `row` is the door's answer for the Sensor row: None when it has no
 /// row yet (its first run creates it). A row with no owner refuses (Wren 10-19).
 pub fn owner_may_run(sensor: &str, caller: &str, row: Option<&str>) -> Result<(), String> {
-    let bare = |s: &str| s.rsplit([':', '#']).next().unwrap_or(s).trim_start_matches("principal-").to_string();
     let Some(body) = row else { return Ok(()) };
     match owned_by(body).map(|o| bare(&o)).filter(|o| !o.is_empty()) {
         None => Err(format!("the {sensor} Sensor row has no owner, so nobody may run it — nothing ran")),
@@ -183,6 +198,11 @@ pub fn owner_may_run(sensor: &str, caller: &str, row: Option<&str>) -> Result<()
         }
         Some(_) => Ok(()),
     }
+}
+
+/// `chorus:principal-silas` → `silas`.
+fn bare(s: &str) -> String {
+    s.rsplit([':', '#']).next().unwrap_or(s).trim_start_matches("principal-").to_string()
 }
 
 /// The `ownedBy` link out of a door GET of one row.
