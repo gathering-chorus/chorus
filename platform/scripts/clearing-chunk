@@ -70,20 +70,46 @@ print(", ".join(sorted(active_chunks)))
 }
 
 
+SPARQL_ENDPOINT="${SPARQL_ENDPOINT:-http://localhost:3030/pods/query}"
+
 get_chunk_products() {
   local chunk="$1"
-  local env_var="CHUNK_PRODUCTS_${chunk//-/_}"
-  if [ -n "${!env_var:-}" ]; then
-    echo "${!env_var}"
-    return 0
+  local py_code='
+import json, os, sys, urllib.parse, urllib.request
+
+chunk = sys.argv[1]
+endpoint = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods/query")
+query = f"""
+PREFIX c: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT DISTINCT ?prod WHERE {{
+  GRAPH ?g {{
+    {{ ?chunk a c:Chunk ; c:slug "{chunk}" ; c:hasProduct ?p }}
+    UNION
+    {{ ?chunk a c:Chunk ; rdfs:label "{chunk}" ; c:hasProduct ?p }}
+  }}
+  BIND(REPLACE(STR(?p), "^.*#", "") AS ?prod)
+}}
+"""
+data = urllib.parse.urlencode({"query": query}).encode()
+req = urllib.request.Request(endpoint, data=data, headers={"Accept": "application/sparql-results+json"})
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        res = json.load(resp)
+        prods = [r["prod"]["value"].split("#")[-1] for r in res["results"]["bindings"] if "prod" in r]
+        if not prods:
+            sys.exit(2)
+        print(" ".join(sorted(prods)))
+except Exception as ex:
+    sys.exit(3)
+'
+  local out
+  if ! out=$(python3 -c "$py_code" "$chunk" 2>&1); then
+    echo "refused: chunk '$chunk' has no products linked in graph (hasProduct)" >&2
+    exit 1
   fi
-  case "$chunk" in
-    buzz) echo "clearing borg pulse loom" ;;
-    alerts-decisions) echo "borg loom" ;;
-    pulse) echo "pulse" ;;
-    clearing) echo "clearing" ;;
-    *) echo "$chunk" ;;
-  esac
+  echo "$out"
 }
 
 get_matching_cards_in_order() {
@@ -103,8 +129,8 @@ get_matching_cards_in_order() {
 
   local card_ids
   card_ids=$(echo "$listing" | awk '
-    /^(Next|Now|Later|WIP)(\s*\([0-9]+\))?:/ { in_open = 1; next }
-    /^[A-Za-z0-9_-]+(\s*\([0-9]+\))?:/ { in_open = 0 }
+    /^(Next|Now|Later|WIP)/ { in_open = 1; next }
+    /^[A-Za-z0-9_-]+:/ { in_open = 0 }
     in_open && /^[[:space:]]+[0-9]+/ {
       print $1
     }
