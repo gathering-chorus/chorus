@@ -404,7 +404,7 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && !p.starts_with("output=") && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED).map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED).map(String::from));
     (pairs, missing)
 }
 
@@ -413,8 +413,20 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(out, prev);
+    if let Some(cond) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("precondition=")) {
+        if let Some((condition, expected)) = cond.split_once('=') {
+            out.push_str(&format!(
+                "    preconditions:\n      - condition: \"{condition}\"\n        expected: \"{expected}\"\n"
+            ));
+        }
+    }
     if let Some(var) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("output=")) {
         out.push_str(&format!("    output: {var}\n"));
+    }
+    if let Some(code) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("continue_on_exit=")) {
+        out.push_str(&format!(
+            "    continue_on:\n      exit_code: [{code}]\n      mark_success: true\n"
+        ));
     }
     // #4540 — a pipeline step runs its child as a dagu sub-run (`dag.run`). The child gets
     // the card, the role and this run's trace (its own run id is another, so
@@ -435,7 +447,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         params.extend(
             r.with_args
                 .split_whitespace()
-                .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("output=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
+                .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
                 .map(String::from),
         );
         if from_werk {

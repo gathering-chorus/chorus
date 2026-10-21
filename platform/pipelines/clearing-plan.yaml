@@ -51,10 +51,16 @@ steps:
   - name: skill-clearing-plan-check
     description: "the plan-go came from Jeff"
     depends: [skill-clearing-plan-go]
+    continue_on:
+      exit_code: [2]
+      mark_success: true
     command: "${CHORUS_HOME}/platform/scripts/clearing-chunk check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision}"
   - name: skill-clearing-pull
     description: "pull card to WIP and create werk"
     depends: [skill-clearing-plan-check]
+    preconditions:
+      - condition: "${skill_clearing_plan_go.outputs.decision}"
+        expected: "go"
     command: "${CHORUS_HOME}/platform/scripts/werk-card pull ${CARD} ${ROLE}"
   - name: skill-clearing-pair
     description: "execute pair pipeline"

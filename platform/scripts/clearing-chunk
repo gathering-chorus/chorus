@@ -236,8 +236,8 @@ check)
       exit 0
       ;;
     stop)
-      echo "clearing-chunk: #$card: Jeff stopped the plan run" >&2
-      exit 1
+      echo "clearing-chunk: #$card: stopped by Jeff"
+      exit 2
       ;;
     *)
       echo "clearing-chunk: #$card: '$decision' is not go or stop" >&2

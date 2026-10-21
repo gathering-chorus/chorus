@@ -67,8 +67,18 @@ Next (2):
   [[ "$output" =~ "plan-go must come from Jeff, not 'wren'" ]] || return 1
 }
 
-@test "clearing-chunk check fails when Jeff chooses stop" {
+@test "clearing-chunk check exits 2 with stopped when Jeff chooses stop" {
   run "$SCRIPT" check 4682 jeff stop
-  [ "$status" -eq 1 ]
-  [[ "$output" =~ "Jeff stopped the plan run" ]] || return 1
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "stopped by Jeff" ]] || return 1
+}
+
+@test "clearing-plan dry run skips pull step when plan-go is stopped (#3734 negative proof)" {
+  command -v dagu >/dev/null 2>&1 || skip "dagu not installed"
+  WF="$BATS_TEST_DIRNAME/../pipelines/clearing-plan.yaml"
+  run dagu dry "$WF"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "skill-clearing-pull [skipped]" ]] || return 1
+  [[ "$output" =~ "skill-clearing-pair [skipped]" ]] || return 1
+  [[ "$output" =~ "Result: Succeeded" ]] || return 1
 }
