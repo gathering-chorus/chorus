@@ -136,15 +136,26 @@ export function kindOneByDay(notes: RoomNote[], today: string): Map<string, numb
   return out;
 }
 
+/** #4667 — #clearing, where Jeff's Clearing posts and role replies go since 10-20 15:31. */
+export const CLEARING_CHANNEL_DEFAULT = '03e2b251-240f-47fe-89b5-fe4e7ac648fb';
+
 /** #4652 — channel messages and the older kind 1 notes, one read per filter
- *  (paging by `until` across two filters would skip notes of one of them). */
+ *  (paging by `until` across two filters would skip notes of one of them).
+ *  #4667 — #team and #clearing both; a note in both counts once, by event id. */
 async function readBothKinds(url: string, env: NodeJS.ProcessEnv, since: number): Promise<RoomNote[]> {
-  const channel = env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT;
   const host = env.PULSE_BUZZ_RELAY_HOST;
-  return [
-    ...await readNotes(url, host, since, undefined, undefined, channelFilter(channel)),
-    ...await readNotes(url, host, since, undefined, undefined, KIND_ONE_FILTER),
+  const filters = [
+    channelFilter(env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT),
+    channelFilter(env.BUZZ_CLEARING_CHANNEL || CLEARING_CHANNEL_DEFAULT),
+    KIND_ONE_FILTER,
   ];
+  const byId = new Map<string, RoomNote>();
+  for (const f of filters) {
+    for (const n of await readNotes(url, host, since, undefined, undefined, f) as Array<RoomNote & { id?: string }>) {
+      byId.set(n.id || `${n.created_at}|${n.content}`, n);
+    }
+  }
+  return [...byId.values()];
 }
 
 export async function main(argv: string[] = process.argv, env: NodeJS.ProcessEnv = process.env): Promise<number> {
