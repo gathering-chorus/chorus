@@ -26,7 +26,10 @@ print(f"ws://{host}:{port} {chan}" if host and port and chan else "")
 PY
 )
 [ -n "${RELAY:-}" ] && [ -n "${CHANNEL:-}" ] || fail "no staging room in $CFG"
-case "$RELAY" in *:13000*) fail "refusing the real room ($RELAY)";; esac
+# allow-list, not deny-list (Silas 06:57): the staging relay's port only; the real room is
+# reachable on the tunnel (:13000) AND direct (<host>:3000), so anything else is refused
+STAGING_PORT=3010
+case "$RELAY" in *:"$STAGING_PORT") ;; *) fail "refusing the real room ($RELAY): only the staging port $STAGING_PORT is allowed";; esac
 
 PROBE="AC2 probe $(uuidgen | tr 'A-Z' 'a-z')"
 OUT=$(CHORUS_NUDGE_SIGNS=1 BUZZ_RELAY_URL="$RELAY" BUZZ_TEAM_CHANNEL="$CHANNEL" \

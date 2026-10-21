@@ -42,6 +42,13 @@ werk() {
   [[ "$output" == *"refusing the real room"* ]] || return 1
 }
 
+@test "NEGATIVE PROOF: the real room direct on its own port (:3000) is refused too" {
+  w=$(werk '{"buzzRelayHost":"relay.lan:3000","stagingRelayPort":3000,"stagingTeamChannel":"c"}')
+  run bash "$SCRIPT" "$w" http://127.0.0.1:9 http://127.0.0.1:9 http://127.0.0.1:9
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"refusing the real room"* ]] || return 1
+}
+
 @test "NEGATIVE PROOF: a note that did not reach the staging room fails AC2 (never passes via the fallback)" {
   w=$(werk '{"buzzRelayHost":"relay.lan:3000","stagingRelayPort":3010,"stagingTeamChannel":"c"}')
   run bash "$SCRIPT" "$w" http://127.0.0.1:9 http://127.0.0.1:9 http://127.0.0.1:9
