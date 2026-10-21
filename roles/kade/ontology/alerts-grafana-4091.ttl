@@ -1,0 +1,53 @@
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix chorus:  <https://jeffbridwell.com/chorus#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+
+# #4091 AC1/AC3 — what an Alert row needs so the Grafana framework can write it
+# as a Grafana rule (the field maps are icd-instance-grafana.ttl). All optional:
+# the 46 Alert rows in prod carry none of them, and a script alert never will.
+# Named property shapes added to AlertShape (alerts-4085.ttl's own are blank
+# nodes; these are not, so no deploy can confuse them — the 10-18 scar).
+
+chorus:metricQuery a owl:DatatypeProperty ; rdfs:label "metric query" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "The PromQL or LogQL the rule evaluates. The rule fires while it returns a value above 0, so put the threshold in the query (host_pressure >= 4)." .
+chorus:metricDatasource a owl:DatatypeProperty ; rdfs:label "datasource" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "The Grafana datasource uid the query runs against (loki, prometheus)." .
+chorus:forDuration a owl:DatatypeProperty ; rdfs:label "for" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "How long the condition must hold before it fires (5m)." .
+chorus:evalInterval a owl:DatatypeProperty ; rdfs:label "interval" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "How often the rule is evaluated (1m)." .
+chorus:grafanaRuleUid a owl:DatatypeProperty ; rdfs:label "Grafana rule uid" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "The uid of the Grafana rule this row was written as; written back by the framework. Joins the row to its rule for the sync sensor." .
+
+chorus:AlertShape sh:property chorus:AlertShape-metricQuery , chorus:AlertShape-metricDatasource ,
+    chorus:AlertShape-forDuration , chorus:AlertShape-evalInterval , chorus:AlertShape-grafanaRuleUid .
+chorus:AlertShape-metricQuery a sh:PropertyShape ; sh:path chorus:metricQuery ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:AlertShape-metricDatasource a sh:PropertyShape ; sh:path chorus:metricDatasource ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:AlertShape-forDuration a sh:PropertyShape ; sh:path chorus:forDuration ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^[0-9]+[smh]$" ; sh:message "forDuration is a Grafana duration: 30s, 5m, 1h" .
+chorus:AlertShape-evalInterval a sh:PropertyShape ; sh:path chorus:evalInterval ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^[0-9]+[smh]$" ; sh:message "evalInterval is a Grafana duration: 30s, 1m" .
+chorus:AlertShape-grafanaRuleUid a sh:PropertyShape ; sh:path chorus:grafanaRuleUid ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^[A-Za-z0-9_-]{1,40}$" ; sh:message "a Grafana uid: up to 40 letters, digits, - or _" .
+
+# #4091 AC1 — the framework's ops as runner MCP tools (inputs only; the Skill
+# rows convergence-land-alert and convergence-land-silence name these). Blank
+# property nodes, as every ToolInput is: athena-gen tool-inputs reads them.
+chorus:alertName a owl:DatatypeProperty ; rdfs:label "alert" ; rdfs:comment "The Alert row's name a convergence-land call lands or silences (#4091)." .
+chorus:silenceMinutes a owl:DatatypeProperty ; rdfs:label "minutes" ; rdfs:comment "How long a convergence-land silence lasts, 1 minute to 7 days (#4091)." .
+
+chorus:ConvergenceLandAlertInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "convergence-land-alert input" ;
+    sh:property [ sh:path chorus:alertName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "alert" ;
+                  sh:description "The Alert row to land in Grafana as a rule (it must carry metricQuery and metricDatasource)." ] ;
+    sh:property [ sh:path chorus:dryRun ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 2 ; sh:name "dry_run" ;
+                  sh:description "Print the rule it would write; touch nothing." ] .
+
+chorus:ConvergenceLandSilenceInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "convergence-land-silence input" ;
+    sh:property [ sh:path chorus:alertName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "alert" ;
+                  sh:description "The landed Alert row to silence." ] ;
+    sh:property [ sh:path chorus:silenceMinutes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:order 2 ; sh:name "minutes" ;
+                  sh:description "How long, 1 to 10080 minutes." ] .

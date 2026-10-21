@@ -127,7 +127,7 @@ whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation ch
 @test "the Grafana ICD provider the Framework names exists in the ICD instances" {
   nt=$(riot --output=nt "$REPO/building/products/convergence/domains/integrations/icd-instances/icd-instance-grafana.ttl" 2>/dev/null)
   grep -qF '<https://jeffbridwell.com/icd/provider/grafana/alert-rules> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:gathering:icd#Provider> .' <<<"$nt" || return 1
-  [ "$(grep -cF '<urn:gathering:icd#fromProvider> <https://jeffbridwell.com/icd/provider/grafana/alert-rules>' <<<"$nt")" -eq 10 ] || return 1
+  [ "$(grep -cF '<urn:gathering:icd#fromProvider> <https://jeffbridwell.com/icd/provider/grafana/alert-rules>' <<<"$nt")" -eq 11 ] || return 1
 }
 
 # Silas 10-21: the 7 Tool + 5 ToolType rows already in prod (read from the store

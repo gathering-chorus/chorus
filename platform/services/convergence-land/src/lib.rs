@@ -1,0 +1,152 @@
+//! #4091 AC1 — the pure half of convergence-land: the credential and loopback
+//! rules, the ICD field maps, and the Grafana rule and silence it writes. The
+//! I/O (door, graph, Grafana) is in main.rs, so every rule here is testable.
+use serde_json::{json, Value};
+
+/// The env var holding the Grafana service-account token (never its value).
+pub const TOKEN_ENV: &str = "GRAFANA_ALERTING_TOKEN";
+/// Where the token lives when the env var is unset: a 0600 file Jeff writes.
+pub const TOKEN_FILE: &str = ".chorus/credentials/grafana-alerting.token";
+/// The contact point every rule notifies: chorus-api's webhook (#4666).
+pub const RECEIVER: &str = "chorus-roles";
+
+/// The credential: the env var if set, else the file. Refuses naming both,
+/// never printing a value. `file` is the file's contents and its mode.
+pub fn credential(env: Option<String>, file: Option<(String, u32)>, home: &str) -> Result<String, String> {
+    if let Some(t) = env.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
+        return Ok(t);
+    }
+    let path = format!("{home}/{TOKEN_FILE}");
+    match file {
+        Some((_, mode)) if mode & 0o077 != 0 => Err(format!(
+            "refused: {path} is readable by others (mode {:o}); chmod 600 it", mode & 0o777
+        )),
+        Some((t, _)) if !t.trim().is_empty() => Ok(t.trim().to_string()),
+        _ => Err(format!(
+            "refused: no Grafana credential — set {TOKEN_ENV} or write the token to {path} (mode 600). Nothing was written."
+        )),
+    }
+}
+
+/// Grafana is reached on loopback only (ADR-012): anything else is refused.
+pub fn loopback(url: &str) -> Result<(), String> {
+    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")).unwrap_or("");
+    let host = if let Some(r) = rest.strip_prefix('[') {
+        r.split(']').next().unwrap_or("")
+    } else {
+        rest.split(['/', ':']).next().unwrap_or("")
+    };
+    match host {
+        "localhost" | "127.0.0.1" | "::1" => Ok(()),
+        _ => Err(format!("refused: Grafana at {url} is not loopback (localhost, 127.0.0.1, ::1)")),
+    }
+}
+
+/// One ICD field map: the Alert row's field → a place in the Grafana rule.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mapping {
+    pub field: String,
+    pub target: String,
+    pub kind: String,
+    pub transform: String,
+}
+
+/// The maps out of a SPARQL JSON result with ?field ?target ?kind ?transform.
+pub fn mappings(sparql: &Value) -> Vec<Mapping> {
+    let get = |b: &Value, k: &str| b.get(k).and_then(|v| v.get("value")).and_then(Value::as_str).unwrap_or("").to_string();
+    sparql.pointer("/results/bindings").and_then(Value::as_array).into_iter().flatten()
+        .map(|b| Mapping { field: get(b, "field"), target: get(b, "target"), kind: get(b, "kind"), transform: get(b, "transform") })
+        .filter(|m| !m.field.is_empty() && !m.target.is_empty())
+        .collect()
+}
+
+/// `chorus:principal-silas`, `principal-silas` or a WebID → `silas`.
+pub fn bare_role(s: &str) -> String {
+    s.rsplit([':', '#', '/']).next().unwrap_or(s).trim_start_matches("principal-").to_string()
+}
+
+/// One field of a door row: `data` first, then `links` (a link is an IRI such
+/// as `chorus:infrastructure`, so it is read bare: `infrastructure`).
+pub fn field(row: &Value, name: &str) -> Option<String> {
+    let first = |v: &Value| match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(a) => a.first().and_then(Value::as_str).map(str::to_string),
+        _ => None,
+    };
+    let data = row.get("data").unwrap_or(row);
+    let bare = |s: String| s.rsplit([':', '#']).next().map(str::to_string);
+    let s = match data.get(name).and_then(first) {
+        Some(s) => s,
+        // a single row's name is its id (chorus:host-pressure)
+        None if name == "name" => bare(first(row.get("id")?)?)?,
+        None => bare(first(row.pointer(&format!("/links/{name}"))?)?)?,
+    };
+    Some(s).filter(|s| !s.is_empty())
+}
+
+/// A Grafana rule (provisioning API shape) and the group interval, built only
+/// from the maps: a changed map changes what is written, with no code change.
+/// Refuses a row missing a field a map needs to make a working rule.
+pub fn rule(row: &Value, maps: &[Mapping], folder_uid: &str) -> Result<(Value, String), String> {
+    if maps.is_empty() {
+        return Err("refused: no Grafana ICD field maps in the graph (icd-instance-grafana.ttl not loaded?)".into());
+    }
+    let mut r = json!({
+        "orgID": 1, "folderUID": folder_uid, "condition": "C", "noDataState": "OK", "execErrState": "Alerting",
+        "labels": {}, "annotations": {}, "notification_settings": {},
+        "data": [
+            {"refId": "A", "relativeTimeRange": {"from": 900, "to": 0}, "model": {"refId": "A", "instant": true}},
+            {"refId": "C", "datasourceUid": "__expr__", "relativeTimeRange": {"from": 900, "to": 0},
+             "model": {"refId": "C", "type": "threshold", "expression": "A",
+                       "conditions": [{"evaluator": {"type": "gt", "params": [0]}}]}}
+        ]
+    });
+    let mut interval = String::new();
+    let mut missing = Vec::new();
+    for m in maps {
+        let value = if m.kind == "constant" {
+            Some(m.transform.clone())
+        } else {
+            field(row, &m.field).map(|v| if m.field == "ownedBy" { bare_role(&v) } else { v })
+        };
+        let Some(v) = value else {
+            if matches!(m.target.as_str(), "title" | "uid" | "data[A].model.expr" | "data[A].datasourceUid" | "labels.role") {
+                missing.push(m.field.clone());
+            }
+            continue;
+        };
+        match m.target.as_str() {
+            "group.interval" => interval = v,
+            "folder" => { r["labels"]["domain"] = json!(v); }
+            "data[A].model.expr" => { r["data"][0]["model"]["expr"] = json!(v); }
+            "data[A].datasourceUid" => { r["data"][0]["datasourceUid"] = json!(v); }
+            "notification.receiver" => { r["notification_settings"]["receiver"] = json!(v); }
+            t => {
+                let mut parts = t.splitn(2, '.');
+                let (a, b) = (parts.next().unwrap_or(""), parts.next());
+                match b {
+                    Some(b) => { r[a][b] = json!(v); }
+                    None => { r[a] = json!(v); }
+                }
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!("refused: the Alert row has no {} — a rule needs them", missing.join(", ")));
+    }
+    if interval.is_empty() { interval = "1m".into(); }
+    Ok((r, interval))
+}
+
+/// A silence on the rule's uid label for `minutes`, from `now` (RFC 3339 UTC).
+pub fn silence(rule_uid: &str, minutes: u64, starts: &str, ends: &str, by: &str) -> Result<Value, String> {
+    if minutes == 0 || minutes > 7 * 24 * 60 {
+        return Err(format!("refused: a silence is 1 minute to 7 days, not {minutes} minutes"));
+    }
+    Ok(json!({
+        "matchers": [{"name": "__alert_rule_uid__", "value": rule_uid, "isRegex": false, "isEqual": true}],
+        "startsAt": starts, "endsAt": ends, "createdBy": by,
+        "comment": format!("convergence-land silence by {by} for {minutes}m (#4091)")
+    }))
+}
+
