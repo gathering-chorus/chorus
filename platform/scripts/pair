@@ -41,6 +41,9 @@ host_account() {
 }
 share() {
   local pf=$1 r u; shift
+  # #4683 reopen 1 — only the owner can set a file's mode or ACL; a file
+  # another member started is hers to share (her start did), and ours to append
+  [ "$(stat -f %Su "$pf")" = "$(id -un)" ] || return 0
   chmod -N "$pf" 2>/dev/null; chmod 600 "$pf" || return 1
   for r in "$@"; do
     u=$(host_account "$r") && [ -n "$u" ] || { echo "pair: no hostAccount for $r on the door" >&2; return 1; }
@@ -64,6 +67,14 @@ start)
     die "#$card is not in WIP: pull it before pairing on it"
   fi
   pf=$(pairfile "$card")
+  # #4683 reopen 1 — #4682's start went red 4 times on a file Abby owned, and
+  # each red enqueued another run. A file we cannot write refuses here, naming
+  # its owner, and leaves a mark so the red handler does not retry it.
+  if [ -f "$pf" ] && [ ! -w "$pf" ]; then
+    owner=$(stat -f %Su "$pf")
+    mkdir -p "$REG"; echo "$pf is $owner's and $(id -un) cannot write it" > "$REG/$card.refused"
+    die "#$card: $pf belongs to $owner and $(id -un) cannot write it: $owner can share it, or remove it to start fresh"
+  fi
   if [ -f "$REG/$card.json" ] && [ -f "$pf" ]; then
     printf '\n## Back to slice %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$pf" || die "#$card: could not write $pf"
     say "#$card back to slice; waiting for $nav's green"
@@ -139,6 +150,14 @@ end)
 red)
   card="${1:-}"; driver="${2:-}"; nav="${3:-}"; run="${4:-}"
   why=$(python3 "$S/chorus-werk-status" --why pair "$run" 2>/dev/null || echo "run failed")
+  # #4683 reopen 1 — a refused start is not retried: another run would refuse
+  # the same way and wait for the same green (the 2 runs #4682 was left with)
+  if [ -f "$REG/$card.refused" ]; then
+    reason=$(cat "$REG/$card.refused"); rm -f "$REG/$card.refused"
+    for r in "$driver" "$nav"; do nudge "$r" "pair #$card start refused: $reason · no new run · dagu $run"; done
+    say "#$card start refused: no new run"
+    exit 0
+  fi
   if [ ! -f "$REG/$card.json" ]; then
     nudge "$driver" "pair #$card is over: $why · dagu $run"
     say "#$card is not paired: no new run"

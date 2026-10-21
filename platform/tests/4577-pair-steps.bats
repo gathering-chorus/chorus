@@ -197,3 +197,44 @@ acl_users() { ls -le "$1" | sed -nE 's/^ *[0-9]+: user:([^ ]+) allow.*/\1/p' | s
   [[ "$output" == *"no hostAccount for silas"* ]] || return 1
   [ ! -e "$CHORUS_HOME/ops/active-pairs/4683.json" ]
 }
+
+# #4683 reopen 1 — #4682's start went red 4 times: share() ran chmod on a pair
+# file Abby owned ("Operation not permitted"), and each red re-enqueued a run.
+other_owner() {  # the file reads as another member's: stat reports her, the rest is real
+  B="$BATS_TEST_TMPDIR/bin"; mkdir -p "$B"
+  printf '#!/bin/sh\n[ "$1 $2" = "-f %%Su" ] && { echo chorus-abby-normal; exit 0; }\nexec /usr/bin/stat "$@"\n' > "$B/stat"
+  chmod +x "$B/stat"; export PATH="$B:$PATH"
+}
+
+@test "start on a pair file another member owns leaves its mode alone and writes when it can (#4683 R1)" {
+  printf '# kept\n' > "$PAIR_DIR/pair-4683.md"; chmod 644 "$PAIR_DIR/pair-4683.md"
+  other_owner
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 0 ]
+  [ "$(/usr/bin/stat -f '%Lp' "$PAIR_DIR/pair-4683.md")" = 644 ]
+  grep -q '^# kept' "$PAIR_DIR/pair-4683.md"
+  grep -q '^## AC' "$PAIR_DIR/pair-4683.md"
+}
+
+@test "negative proof: a pair file another member owns that the caller cannot write refuses, naming the owner (#4683 R1, R2)" {
+  printf '# kept\n' > "$PAIR_DIR/pair-4683.md"; chmod 444 "$PAIR_DIR/pair-4683.md"
+  other_owner
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"chorus-abby-normal"* ]] || return 1
+  [ "$(/usr/bin/stat -f '%Lp' "$PAIR_DIR/pair-4683.md")" = 444 ]
+  [ ! -e "$CHORUS_HOME/ops/active-pairs/4683.json" ]
+}
+
+@test "negative proof: a red after a refused start enqueues no second run (#4683 R3)" {
+  printf '# kept\n' > "$PAIR_DIR/pair-4683.md"; chmod 444 "$PAIR_DIR/pair-4683.md"
+  other_owner
+  mkdir -p "$CHORUS_HOME/ops/active-pairs"
+  echo '{"card":"4683","navigator":"abby-normal","driver":"kade"}' > "$CHORUS_HOME/ops/active-pairs/4683.json"
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 1 ]
+  run bash "$PAIR" red 4683 kade abby-normal run1
+  [ "$status" -eq 0 ]
+  [ ! -e "$L/dagu" ] || ! grep -q 'enqueue pair' "$L/dagu" || return 1
+  grep -q '^kade|pair #4683 start refused' "$L/nudges"
+}
