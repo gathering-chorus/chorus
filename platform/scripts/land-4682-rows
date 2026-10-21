@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""#4682 — the store writes that put clearing-evaluate in the land, DRY RUN unless --apply.
+# @domain: pipelines
+
+Writes the clearing-evaluate Skill and StepSkill to the store:
+  Skill      clearing-evaluate  (pipeline clearing-evaluate, domain cards)
+  StepSkill  cicd-land-7        callsSkill clearing-evaluate, withArguments "continue_on=failure enqueue=true"
+"""
+import json, os, subprocess, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+OWNER = "principal-abby-normal"
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+
+SKILLS = [
+    {"name": "clearing-evaluate", "label": "post-land: evaluate chunk sequence or lane switch",
+     "executor": "pipeline", "implementedBy": "clearing-evaluate", "hasDomain": "cards",
+     "comment": "Evaluates chunk sequence or lane switch post-land; enqueues clearing-plan loop.",
+     "ownedBy": OWNER},
+]
+STEPSKILLS = [
+    {"name": "cicd-land-7", "label": "cicd land 7: clearing-evaluate", "callsSkill": "clearing-evaluate",
+     "forStep": "cicd-land", "skillOrder": "7", "withArguments": "continue_on=failure enqueue=true", "ownedBy": OWNER},
+]
+PLAN = [("skills", "skills", SKILLS), ("skills", "stepskills", STEPSKILLS)]
+
+
+def bare(v):
+    return v.rsplit("#", 1)[-1].rsplit("/", 1)[-1] if isinstance(v, str) else v
+
+
+def read_entity(type_name, name):
+    url = f"{DOOR}/{type_name}/{name}"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+    except Exception as e:
+        raise RuntimeError(f"could not reach door at {DOOR}: {e}") from e
+
+
+def diff(cur, want):
+    changes = {}
+    for k, v in want.items():
+        if k in ("name", "ownedBy"):
+            continue
+        c = bare(cur.get(k))
+        if str(c or "") != str(v or ""):
+            changes[k] = (c, v)
+    return changes
+
+
+def call_runner(domain, verb, args):
+    cmd = [RUNNER, "call", f"{domain}-{verb}"]
+    for k, v in args.items():
+        if v != "":
+            cmd.append(f"{k}={v}")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        return False, res.stderr.strip() or res.stdout.strip()
+    return True, res.stdout.strip()
+
+
+def main():
+    apply = "--apply" in sys.argv
+    try:
+        read_entity("skills", "probe-probe-never-there")
+    except RuntimeError as e:
+        sys.stderr.write(f"land-4682-rows: {e}\n")
+        return 2
+
+    actions = []
+    for domain, entity_type, items in PLAN:
+        for item in items:
+            name = item["name"]
+            cur = read_entity(entity_type, name)
+            if cur is None:
+                actions.append(("ADD", domain, entity_type, item, {}))
+            else:
+                d = diff(cur, item)
+                if d:
+                    actions.append(("CHANGE", domain, entity_type, item, d))
+                else:
+                    actions.append(("SAME", domain, entity_type, item, {}))
+
+    print(f"#4682 post-land row plan ({'APPLY' if apply else 'DRY RUN'} against {DOOR}):")
+    for act, domain, entity_type, item, d in actions:
+        name = item["name"]
+        if act == "SAME":
+            print(f"  SAME    {entity_type:<10} {name}")
+        elif act == "ADD":
+            print(f"  ADD     {entity_type:<10} {name}  {item.get('label', '')}")
+        elif act == "CHANGE":
+            diff_s = ", ".join(f"{k}: {was!r} -> {now!r}" for k, (was, now) in d.items())
+            print(f"  CHANGE  {entity_type:<10} {name}  ({diff_s})")
+
+    if not apply:
+        return 0
+
+    refused = False
+    for act, domain, entity_type, item, d in actions:
+        if act == "SAME":
+            continue
+        verb = f"{entity_type[:-1]}-add" if act == "ADD" else f"{entity_type[:-1]}-set"
+        ok, msg = call_runner(domain, verb, item)
+        if ok:
+            print(f"  applied {act} {item['name']}")
+        else:
+            print(f"  REFUSED {act} {item['name']}: {msg}")
+            refused = True
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

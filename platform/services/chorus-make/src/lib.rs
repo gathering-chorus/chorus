@@ -93,6 +93,13 @@ pub fn check(rows: &[Row]) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
     let mut names = std::collections::BTreeSet::new();
     for r in rows {
+        for arg in r.with_args.split_whitespace() {
+            if let Some(cond) = arg.strip_prefix("precondition=") {
+                if !cond.contains('=') {
+                    errs.push(format!("{}: precondition '{cond}' missing '=' separator (expected condition=value)", r.skill));
+                }
+            }
+        }
         match r.executor.as_str() {
             "deterministic" if r.implemented_by.is_empty() => errs.push(format!(
                 "{}: a deterministic skill needs implementedBy (the binary that runs it)", r.skill)),
@@ -444,21 +451,12 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
         }
-        for p in r
-            .with_args
-            .split_whitespace()
-            .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
-        {
-            if let Some((k, _)) = p.split_once('=') {
-                if let Some(pos) = params.iter().position(|existing| existing.starts_with(&format!("{k}="))) {
-                    params[pos] = p.to_string();
-                } else {
-                    params.push(p.to_string());
-                }
-            } else {
-                params.push(p.to_string());
-            }
-        }
+        params.extend(
+            r.with_args
+                .split_whitespace()
+                .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
+                .map(String::from),
+        );
         if from_werk {
             // #4502 (Jeff 13:56 "its a 4502 miss") — an ENQUEUED parent finds a
             // dag.run child by name in canonical's dags folder only (Silas

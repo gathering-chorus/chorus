@@ -88,3 +88,12 @@ fn negative_proof_clearing_plan_without_chunk_cap_changes_pipeline() {
     assert_ne!(full, without_chunk);
     assert!(!without_chunk.contains("skill-clearing-chunk"));
 }
+
+#[test]
+fn negative_proof_precondition_without_equals_separator_is_refused() {
+    let mut bad_rows = rows("clearing-plan-rows.tsv");
+    bad_rows[0].with_args = "precondition=malformed_without_equals".to_string();
+    let errs = chorus_make::check(&bad_rows);
+    assert!(!errs.is_empty(), "must fail check");
+    assert!(errs.iter().any(|e| e.contains("missing '=' separator")), "{errs:?}");
+}
