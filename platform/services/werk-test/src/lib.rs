@@ -1808,6 +1808,35 @@ pub fn match_cargo_case(
     }
 }
 
+/// #4685 — the file a cargo case ran from when no registered Test row names it.
+/// An integration-test target `<crate>::<stem>` is `<crate_dir>/tests/<stem>.rs`
+/// when that file exists. A lib or bin case (no `::`, or `::bin/…`), another
+/// crate's target, or a file that is not there stays None: never invented.
+pub fn unregistered_case_file(target: &str, crate_dir: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
+    let (krate, stem) = target.split_once("::")?;
+    let crate_name = crate_dir.rsplit('/').next().unwrap_or(crate_dir);
+    if krate != crate_name || stem.is_empty() || stem.contains('/') {
+        return None;
+    }
+    let fp = format!("{crate_dir}/tests/{stem}.rs");
+    exists(&fp).then_some(fp)
+}
+
+/// #4685 — the file a cargo case is stored under: the registered row that
+/// names it, else its own test file when it is a new, not-yet-registered one
+/// (a card's new tests are registered by the crawler only after the land, so
+/// dropping them left borg-prove nothing to measure the card's ACs with).
+pub fn resolve_cargo_case(
+    path: &str,
+    target: &str,
+    crate_dir: &str,
+    rows: &[TestRow],
+    names: &[String],
+    exists: impl Fn(&str) -> bool,
+) -> Option<String> {
+    match_cargo_case_path(path, crate_dir, rows, names).or_else(|| unregistered_case_file(target, crate_dir, exists))
+}
+
 /// #4063 — join a cargo case by its FULL nextest path. Unique bare name wins as
 /// before; when the bare name lives in several files of the crate, the module
 /// path decides: `hooks::log_first_gate::tests::x` names the file whose
