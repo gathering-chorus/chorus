@@ -450,9 +450,14 @@ export class MessageStore {
     return (row as { id: number; from: string; to: string; type: string; content: string } | undefined) ?? null;
   }
 
-  /** #4629 — ids of the nudges and alerts recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the shadow's missed sweep. */
-  nudgeIdsBetween(from: string, to: string): number[] {
-    return (this.db.prepare('SELECT id FROM messages WHERE type = \'nudge\' AND created_at >= ? AND created_at < ? ORDER BY id').all(from, to) as Array<{ id: number }>).map((r) => r.id);
+  /** #4629/#4672 — ids of the nudges, alerts and Jeff's input recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the shadow's missed sweep. */
+  deliveryIdsBetween(from: string, to: string): number[] {
+    return (this.db.prepare('SELECT id FROM messages WHERE type IN (\'nudge\', \'jeff-input\') AND created_at >= ? AND created_at < ? ORDER BY id').all(from, to) as Array<{ id: number }>).map((r) => r.id);
+  }
+
+  /** #4672 — the rows Clearing v2 handed one Jeff post off as: trace jeff-<note id>-<role>, one per role. */
+  getJeffInputRows(noteId: string): Array<{ id: number; to: string; content: string }> {
+    return this.db.prepare('SELECT id, "to" as "to", content FROM messages WHERE type = \'jeff-input\' AND trace_id GLOB ? ORDER BY id').all(`jeff-${noteId}-*`) as Array<{ id: number; to: string; content: string }>;
   }
 
   getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null; delivery_session_id: string | null; inbox_claim_session: string | null } {

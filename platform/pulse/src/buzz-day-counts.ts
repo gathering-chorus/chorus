@@ -15,7 +15,7 @@ import os from 'os';
 import path from 'path';
 import Database from 'better-sqlite3';
 import WebSocket from 'ws';
-import { bridgeSignerFromHome, frameText, signNote, TEAM_CHANNEL_DEFAULT } from './buzz-writer';
+import { bridgeSignerFromHome, frameText, signNote, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT } from './buzz-writer';
 import { countDays, countDoubles, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
 
 export function readRows(db: string): DatedPulseRow[] {
@@ -137,7 +137,7 @@ export function kindOneByDay(notes: RoomNote[], today: string): Map<string, numb
 }
 
 /** #4667 — #clearing, where Jeff's Clearing posts and role replies go since 10-20 15:31. */
-export const CLEARING_CHANNEL_DEFAULT = '03e2b251-240f-47fe-89b5-fe4e7ac648fb';
+export { CLEARING_CHANNEL_DEFAULT };
 
 /** #4652 — channel messages and the older kind 1 notes, one read per filter
  *  (paging by `until` across two filters would skip notes of one of them).

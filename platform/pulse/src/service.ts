@@ -33,7 +33,7 @@ import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
-import { BuzzWriter, bridgeSignerFromHome, identitySignerFromHome, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
+import { BuzzWriter, bridgeSignerFromHome, identitySignerFromHome, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
 import { BuzzReader } from './buzz-reader';
 import { NoteKeys } from './note-keys';
 import { BuzzDelivery } from './buzz-delivery';
@@ -874,6 +874,13 @@ function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | und
     signer,
     store,
     channel: process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT,
+    // #4672 — Jeff's Clearing posts are in #clearing; read it too, or his rows go unjudged
+    extraChannels: [process.env.BUZZ_CLEARING_CHANNEL || CLEARING_CHANNEL_DEFAULT],
+    // #4672 — a reading per sweep: stored, judged, matched, missed, matched/stored
+    onCoverage: (c) => {
+      log(c.pct === null || c.pct === 100 ? 'info' : 'error', 'buzz.shadow.coverage', { ...c });
+      void emit('buzz.shadow.coverage', { ...c });
+    },
     keys: new NoteKeys(() => fetch(KEYS_URL, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())),
     onMatch: (id) => { buzzDelivery?.fromRoom(id); },
     onVerdict: (v) => {
