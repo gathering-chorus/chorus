@@ -214,7 +214,7 @@ chorus:clearing a chorus:Product ;
     rdfs:label """The Clearing""" ;
     chorus:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
     rdfs:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
-    chorus:ownedBy chorus:principal-wren ;
+    chorus:ownedBy chorus:principal-abby-normal ;
     chorus:vision """One place where the team and the running system meet: the board, the messages and the record in a single room, readable at a glance from any device.""" ;
     chorus:valueProposition """The owner manages by glancing instead of relaying: tiles show who is building what, the stream shows decisions and demos as they happen, alerts surface without checking terminals.""" ;
     chorus:audience """The owner, watching the team work in real time; the roles, coordinating with one another; and guests observing a session.""" ;
