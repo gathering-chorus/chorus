@@ -35,7 +35,17 @@ steps:
     description: "werk-deploy-prod"
     depends: [skill-werk-sync]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-prod card=${CARD}"
+  - name: skill-borg-verify-in-prod
+    description: "borg-verify-in-prod"
+    depends: [skill-werk-deploy-prod]
+    command: "borg-prove prod ${CARD} ${ROLE}"
+    continue_on:
+      failure: true
+  - name: skill-borg-record
+    description: "borg-record"
+    depends: [skill-borg-verify-in-prod]
+    command: "borg-prove record ${CARD} ${ROLE}"
   - name: skill-werk-accept
     description: "werk-accept"
-    depends: [skill-werk-deploy-prod]
+    depends: [skill-borg-record]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-accept card=${CARD} atomic=true"

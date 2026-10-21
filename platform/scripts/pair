@@ -30,6 +30,24 @@ die() { echo "pair: $*" >&2; exit 1; }
 spine() { bash "$S/chorus-log" "$@" >/dev/null 2>&1 || true; }
 nudge() { env -u CHORUS_ROLE bash "$S/ops-nudge" "$1" "$2" >/dev/null 2>&1 || say "nudge to $1 did not go out"; }
 pairfile() { echo "$PAIR_DIR/pair-$1.md"; }
+PAIR_DOOR="${PAIR_DOOR:-http://localhost:3340/owl/v1}"
+# #4683 AC5 — the pair file is written by the pair's members and nobody else:
+# owner-only mode plus one ACL entry per member whose macOS user (the
+# Principal's hostAccount on the door) is not the owner. Abby runs as
+# chorus-abby-normal; a 0644 file owned by jeffbridwell silently lost her appends.
+host_account() {
+  curl -sf --max-time 5 "$PAIR_DOOR/identity/principals/$1" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["data"].get("hostAccount") or "")'
+}
+share() {
+  local pf=$1 r u; shift
+  chmod -N "$pf" 2>/dev/null; chmod 600 "$pf" || return 1
+  for r in "$@"; do
+    u=$(host_account "$r") && [ -n "$u" ] || { echo "pair: no hostAccount for $r on the door" >&2; return 1; }
+    [ "$u" != "$(stat -f %Su "$pf")" ] || continue
+    chmod +a "user:$u allow read,write,append" "$pf" || return 1
+  done
+}
 green_cmd() { # how the navigator answers this run's green
   echo "dagu --config $DAGU_CONFIG human-task complete pair --run-id ${DAG_RUN_ID:-RUN} --step skill_pair_green --input by=$2 --input decision=green"
 }
@@ -47,11 +65,11 @@ start)
   fi
   pf=$(pairfile "$card")
   if [ -f "$REG/$card.json" ] && [ -f "$pf" ]; then
-    printf '\n## Back to slice %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$pf"
+    printf '\n## Back to slice %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$pf" || die "#$card: could not write $pf"
     say "#$card back to slice; waiting for $nav's green"
   else
     # #4577 (Abby 3) — a pair file someone already keeps is added to, never overwritten
-    [ -f "$pf" ] && printf '\n---\n' >> "$pf"
+    if [ -f "$pf" ]; then printf '\n---\n' >> "$pf" || die "#$card: could not write $pf"; fi
     {
       echo "# Pair #$card — $driver drives, $nav navigates"
       echo
@@ -61,10 +79,11 @@ start)
       awk '/## AC/{f=1;next} /^\s*(##|Domains:)/{f=0} f' <<<"$view" | sed 's/^    //'
       echo
       echo "## Slice log"
-    } >> "$pf"
+    } >> "$pf" || die "#$card: could not write $pf"
     spine pair.started system "card=$card" "driver=$driver" "partner=$nav"
     say "#$card paired: $driver drives, $nav navigates; pair file $pf"
   fi
+  share "$pf" "$driver" "$nav" || die "#$card: could not share $pf with $driver and $nav"
   mkdir -p "$REG"
   printf '{"card":"%s","navigator":"%s","driver":"%s","last_seen_iso":"","last_active_epoch":"%s","last_level":"active"}' \
     "$card" "$nav" "$driver" "$(date +%s)" > "$REG/$card.json"
@@ -93,7 +112,7 @@ slice|review)
   [ -n "$card" ] && [ -n "$text" ] || die "usage: pair $cmd CARD \"text\""
   pf=$(pairfile "$card")
   [ -f "$pf" ] || die "#$card has no pair file: start the pair first"
-  printf -- '- %s %s: %s\n' "$(date '+%H:%M')" "$cmd" "$text" >> "$pf"
+  printf -- '- %s %s: %s\n' "$(date '+%H:%M')" "$cmd" "$text" >> "$pf" 2>/dev/null || die "#$card: could not write $pf: $cmd not logged"
   spine "pair.$cmd" system "card=$card" "text=$text"
   say "#$card $cmd logged"
   ;;

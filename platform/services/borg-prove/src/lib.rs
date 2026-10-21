@@ -101,6 +101,10 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
+/// #4683 — a card with no CardAC rows has nothing to prove: it lands as
+/// before, and the record says so. Never "Proven".
+pub const NO_ROWS: &str = "unproven: no CardAC rows";
+
 /// The verdict over every AC: Proven only when every one is met; Not met when
 /// any is not met; Unproven when none failed but some could not be measured
 /// (an unmeasured AC is never a pass, and never a regression either).
@@ -272,4 +276,86 @@ pub fn latest_case_result(body: &str) -> Option<String> {
         }
     }
     best.map(|(_, r)| r.to_string())
+}
+
+/// #4683 AC3 — the ACs a red verdict files children for: every one not met
+/// or not measured.
+pub fn reds(results: &[(Check, Outcome)]) -> Vec<&(Check, Outcome)> {
+    results.iter().filter(|(_, o)| !matches!(o, Outcome::Met(_))).collect()
+}
+
+/// The child's title names the parent and the AC, so a rerun finds it.
+pub fn child_title(parent: u32, c: &Check) -> String {
+    let s: String = c.statement.split_whitespace().collect::<Vec<_>>().join(" ");
+    let s = if s.chars().count() > 80 { format!("{}…", s.chars().take(79).collect::<String>().trim_end()) } else { s };
+    format!("#{parent} {} not proven in prod: {s}", c.ac)
+}
+
+/// The child's description carries the card floor (Experience + AC) and
+/// borg-prove's evidence.
+pub fn child_desc(parent: u32, c: &Check, o: &Outcome) -> String {
+    format!(
+        "## Experience\nborg-prove checked #{parent} in prod after its land and {} {} ({} check on {}).\n\nEvidence: {}\n\n## AC\n- [ ] {}: {}\n- [ ] borg-prove reads it met in prod\n",
+        c.ac, o.word(), c.kind, c.target, o.evidence(), c.ac, c.statement
+    )
+}
+
+/// The parent's owner from `cards view` ("  Owner:    Kade"), lowercased.
+pub fn owner_of(view: &str) -> Option<String> {
+    view.lines().find_map(|l| l.trim().strip_prefix("Owner:")).map(|o| o.trim().to_lowercase()).filter(|o| !o.is_empty())
+}
+
+/// Titles of the parent's children from `cards view` ("  Children (2):" then
+/// "    #4700 [Later] title" lines). None when the count the view states is not
+/// the count read (Silas, Abby at the demo): a format change must refuse,
+/// never silently file a second child.
+pub fn child_titles(view: &str) -> Option<Vec<String>> {
+    let mut lines = view.lines().map(str::trim);
+    let Some(head) = lines.by_ref().find(|t| t.starts_with("Children (")) else { return Some(Vec::new()) };
+    let n: usize = head.trim_start_matches("Children (").split(')').next()?.parse().ok()?;
+    let out: Vec<String> = lines.take(n)
+        .filter_map(|t| t.strip_prefix('#').and_then(|r| r.split_once("] ")).map(|(_, title)| title.to_string()))
+        .collect();
+    (out.len() == n).then_some(out)
+}
+
+/// #4683 (Silas, Wren in the demo reviews) — record must judge what prod
+/// measured, not measure again: prod writes its results, record reads them.
+/// One row per AC, tab-separated, with tabs, newlines and backslashes escaped.
+pub fn results_to_tsv(results: &[(Check, Outcome)]) -> String {
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n");
+    let mut out = String::from("ac\tstatement\tkind\ttarget\texpect\toutcome\tevidence\n");
+    for (c, o) in results {
+        let f = [&c.ac, &c.statement, &c.kind, &c.target, &c.expect, o.word(), o.evidence()];
+        out.push_str(&f.iter().map(|x| esc(x)).collect::<Vec<_>>().join("\t"));
+        out.push('\n');
+    }
+    out
+}
+
+pub fn results_from_tsv(tsv: &str) -> Result<Vec<(Check, Outcome)>, String> {
+    let unesc = |s: &str| {
+        let (mut out, mut it) = (String::new(), s.chars());
+        while let Some(ch) = it.next() {
+            if ch != '\\' { out.push(ch); continue; }
+            match it.next() { Some('t') => out.push('\t'), Some('n') => out.push('\n'), Some(x) => out.push(x), None => {} }
+        }
+        out
+    };
+    let mut lines = tsv.lines();
+    if lines.next() != Some("ac\tstatement\tkind\ttarget\texpect\toutcome\tevidence") {
+        return Err("not a borg-prove results file".into());
+    }
+    lines.filter(|l| !l.is_empty()).map(|l| {
+        let f: Vec<String> = l.split('\t').map(unesc).collect();
+        if f.len() != 7 { return Err(format!("a results row has {} fields, not 7", f.len())); }
+        let c = Check { ac: f[0].clone(), statement: f[1].clone(), kind: f[2].clone(), target: f[3].clone(), expect: f[4].clone() };
+        let o = match f[5].as_str() {
+            "met" => Outcome::Met(f[6].clone()),
+            "not met" => Outcome::NotMet(f[6].clone()),
+            "unmeasured" => Outcome::Unmeasured(f[6].clone()),
+            w => return Err(format!("unknown outcome '{w}'")),
+        };
+        Ok((c, o))
+    }).collect()
 }

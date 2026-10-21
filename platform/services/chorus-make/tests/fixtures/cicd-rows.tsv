@@ -2,6 +2,7 @@
 # and crawl-delta are inline bash in werk.yml today, not verbs, so they are not rows yet (design §5).
 # #4514 reopen 2: refreshed from the graph 2026-10-13 21:26 (inputShape, withArgs columns added).
 # #4540: the test step runs the cicd-test child pipeline (werk-test as steps), SCOPE=diff.
+# #4683: the land proves the card in prod (borg-prove prod, then record) before accept; record is the gate.
 # #4502: the demo step calls the demo pipeline (its own DAG, Jeff 10-12 21:18), then Jeff's go.
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 commit	1	1	skill-werk-commit	werk-commit	deterministic	werk-commit	{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]		WerkCommitInput	atomic=true
@@ -16,4 +17,6 @@ demo	4	4	skill-werk-go	Jeff's go	human
 land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
 land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	{mode}		WerkSyncInput	mode=ff
 land	5	3	skill-werk-deploy-prod	werk-deploy-prod	deterministic	werk-deploy	{card} {caller} --target canonical		WerkCardOnlyInput	
-land	5	4	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
+land	5	4	skill-borg-verify-in-prod	borg-verify-in-prod	deterministic	borg-prove	prod ${CARD} ${ROLE}			continue_on=failure
+land	5	5	skill-borg-record	borg-record	deterministic	borg-prove	record ${CARD} ${ROLE}			
+land	5	6	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
