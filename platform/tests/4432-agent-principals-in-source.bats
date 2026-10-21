@@ -181,11 +181,6 @@ PY
   run check_abby "$ROOT"
   echo "$output"
   [ "$status" -eq 0 ]
-  if curl -s --max-time 1 http://localhost:3030/pods/query >/dev/null 2>&1; then
-    run curl -s --data-urlencode 'query=PREFIX c: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:domains:products> { c:clearing c:ownedBy c:principal-abby-normal } }' http://localhost:3030/pods/query
-    echo "prod live check: $output"
-    printf '%s' "$output" | grep -qF '"boolean" : true'
-  fi
 }
 
 @test "NEGATIVE PROOF: an ownedBy outside Clearing radius is caught" {

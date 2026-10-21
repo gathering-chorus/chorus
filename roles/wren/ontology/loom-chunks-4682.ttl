@@ -31,7 +31,7 @@ chorus:chunk-pulse a chorus:Chunk ;
     rdfs:label "pulse" ;
     chorus:label "pulse" ;
     chorus:slug "pulse" ;
-    chorus:ownedBy chorus:principal-silas ; # PLACEHOLDER — held per Wren pending Jeff on pulse chunk
+    chorus:ownedBy chorus:principal-wren ;
     chorus:roleSequence 1 ;
     chorus:loomSequence 3 ;
     chorus:hasProduct chorus:pulse .
