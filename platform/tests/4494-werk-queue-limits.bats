@@ -30,3 +30,14 @@ limit() {
   run test "$(limit werk "$BATS_TEST_TMPDIR/dagu.yaml")" = 1
   [ "$status" -ne 0 ]
 }
+
+@test "clearing queue concurrency matches team active chunk limit (#4682)" {
+  [ "$(limit clearing "$CFG")" = 3 ]
+}
+
+@test "NEGATIVE PROOF: a config allowing four clearing runs fails the check (#4682)" {
+  awk '/- name: clearing$/ {f=1} f && /max_concurrency:/ {sub(/[0-9]+/, "4"); f=0} {print}' "$CFG" > "$BATS_TEST_TMPDIR/dagu-clearing.yaml"
+  [ "$(limit clearing "$BATS_TEST_TMPDIR/dagu-clearing.yaml")" = 4 ]
+  run test "$(limit clearing "$BATS_TEST_TMPDIR/dagu-clearing.yaml")" = 3
+  [ "$status" -ne 0 ]
+}

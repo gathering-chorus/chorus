@@ -60,3 +60,8 @@ queues:
     # one; its hand-off starts the card's athena or cicd run on their queues.
     - name: card
       max_concurrency: 8
+    # #4682 — clearing plans (made by chorus-make). A clearing-plan spends
+    # time waiting on Jeff's plan-go before pulling to WIP; max 3 matching the
+    # team active chunk limit. Any test run the loop starts goes through werk.
+    - name: clearing
+      max_concurrency: 3
