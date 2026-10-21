@@ -54,3 +54,21 @@ Next (2):
   [ "$status" -eq 0 ]
   [[ "$output" =~ "pulse" ]] || return 1
 }
+
+@test "clearing-chunk check permits go when answered by Jeff" {
+  run "$SCRIPT" check 4682 jeff go
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "plan approved by Jeff" ]] || return 1
+}
+
+@test "clearing-chunk check refuses when answered by non-Jeff role (#3734 negative proof)" {
+  run "$SCRIPT" check 4682 wren go
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "plan-go must come from Jeff, not 'wren'" ]] || return 1
+}
+
+@test "clearing-chunk check fails when Jeff chooses stop" {
+  run "$SCRIPT" check 4682 jeff stop
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "Jeff stopped the plan run" ]] || return 1
+}
