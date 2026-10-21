@@ -1167,6 +1167,9 @@ export async function addCard(
     ...(opts.product ? { product: opts.product } : {}),
   });
 
+  // #4669 — tags first, so a failed link leaves a tagged card that only needs the link
+  await applyPostAddTags(client, task, opts);
+
   if (opts.parent) {
     // Not best-effort: a child that silently lost its parent is the reopen this replaces.
     try {
@@ -1178,8 +1181,6 @@ export async function addCard(
       process.exit(1);
     }
   }
-
-  await applyPostAddTags(client, task, opts);
   return task;
 }
 

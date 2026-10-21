@@ -86,6 +86,17 @@ describe('#4669 cards add --parent', () => {
     expect(mock.calls).toContainEqual({ method: 'addRelation', args: [9000, 4652, 'parenttask'] });
   });
 
+  test('a failed link still leaves the card tagged (tags before the link)', async () => {
+    const mock = new MockClient([4652]);
+    mock.addRelation = async () => { throw new Error('vikunja 500'); };
+    const q = quiet();
+    try {
+      await expect(addCard(mock as unknown as BoardClient, 'fix the child', addOpts('4652'))).rejects.toThrow('process.exit(1)');
+      expect(q.text()).toMatch(/cards set 9000 parent=4652/);
+    } finally { q.restore(); }
+    expect(mock.calls.some((c) => c.method === 'tag')).toBe(true);
+  });
+
   test('no --parent, no relation', async () => {
     const mock = new MockClient([]);
     const q = quiet();
