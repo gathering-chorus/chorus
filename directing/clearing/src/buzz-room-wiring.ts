@@ -16,6 +16,7 @@ import WebSocket from 'ws';
 import type { ClearingMsg, NostrEvent, NostrSigner } from './buzz-bridge';
 import { buildRoomIdentity, inboundToClearing, publishToRoom, type RoomIdentity } from './buzz-room';
 import { registeredSigner } from './buzz-signer';
+import { authRelayUrl } from './buzz-relay';
 import { advanceCursor, defaultCursorPath, readCursor, roomFilter, writeCursor } from './room-replay';
 import { emptySeqState, holeMarker, holesFor, recordSeq, seqOf, type SeqState } from './room-sequence';
 
@@ -106,11 +107,7 @@ export interface RoomWiringDeps {
  * before subscribing", forever. The tunnel fixed the dial and made the AUTH
  * statement false, which is the same mistake as the Host header one layer up.
  */
-export function authRelayUrl(dialUrl: string, hostHeader?: string): string {
-  if (!hostHeader) return dialUrl;
-  const scheme = dialUrl.startsWith('wss://') ? 'wss://' : 'ws://';
-  return `${scheme}${hostHeader}`;
-}
+export { authRelayUrl } from './buzz-relay'; // #4657 — one rule, defined beside authFrame
 
 function buildAuthEvent(signer: NostrSigner, relayUrl: string, challenge: string): NostrEvent {
   const createdAt = Math.floor(Date.now() / 1000);

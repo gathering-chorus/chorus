@@ -192,6 +192,17 @@ pub mod nip44 {
     }
 }
 
+/// #4657 — where the signer connects. `CHORUS_SIGNER_RELAY` is the relay's own
+/// address, the one every AUTH names and the policy checks; once that is the
+/// public wss:// address (which this build cannot dial: no TLS), the daemon still
+/// connects on the LAN through `CHORUS_SIGNER_DIAL`. Unset or blank: the relay address.
+pub fn dial_address(relay: &str, dial: Option<&str>) -> String {
+    match dial.map(str::trim) {
+        Some(d) if !d.is_empty() => d.to_string(),
+        _ => relay.to_string(),
+    }
+}
+
 /// What Jeff's key will sign.
 pub struct Policy {
     pub channel_h: String,

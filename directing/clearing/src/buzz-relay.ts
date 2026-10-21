@@ -22,6 +22,20 @@ export function eventFrame(ev: NostrEvent): string {
 }
 
 /** Build a NIP-42 AUTH response: sign the relay's challenge as a kind:22242 event. */
+/**
+ * #3907/#4657 — the relay address a NIP-42 AUTH names: BUZZ_AUTH_RELAY_URL when set
+ * (the relay accepts only its RELAY_URL), else the tunnel's Host, else the dial address.
+ */
+export function authRelayUrl(dialUrl: string, hostHeader?: string, env: NodeJS.ProcessEnv = process.env): string {
+  // #4657 — the relay accepts one address (its RELAY_URL); when that is the public
+  // wss:// one, BUZZ_AUTH_RELAY_URL states it, whatever this client dials.
+  const stated = (env.BUZZ_AUTH_RELAY_URL || '').trim();
+  if (stated) return stated;
+  if (!hostHeader) return dialUrl;
+  const scheme = dialUrl.startsWith('wss://') ? 'wss://' : 'ws://';
+  return `${scheme}${hostHeader}`;
+}
+
 export function authFrame(challenge: string, relayUrl: string, signer: NostrSigner, nowSec: number): string {
   const tags = [['relay', relayUrl], ['challenge', challenge]];
   const serialized = JSON.stringify([0, signer.pubkey, nowSec, 22242, tags, '']);
@@ -91,7 +105,7 @@ export function publishEvent(deps: RelayConnDeps, ev: NostrEvent): Promise<Publi
       const { type, payload } = parseRelayMsg(String(raw));
       if (type === 'AUTH' && typeof payload[1] === 'string') {
         if (grace) clearTimeout(grace);
-        ws.send(authFrame(payload[1], deps.relayUrl, deps.signer, deps.nowSec()));
+        ws.send(authFrame(payload[1], authRelayUrl(deps.relayUrl), deps.signer, deps.nowSec()));
         sendEvent(); // in-order after the AUTH frame
       } else if (type === 'OK' && payload[1] === ev.id) {
         clearTimeout(timer);

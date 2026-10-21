@@ -15,7 +15,7 @@ import os from 'os';
 import path from 'path';
 import Database from 'better-sqlite3';
 import WebSocket from 'ws';
-import { bridgeSignerFromHome, frameText, signNote, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT } from './buzz-writer';
+import { authRelayTag, bridgeSignerFromHome, frameText, signNote, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT } from './buzz-writer';
 import { countDays, countDoubles, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
 
 export function readRows(db: string): DatedPulseRow[] {
@@ -72,7 +72,7 @@ export function readNotes(url: string, host: string | undefined, since: number, 
       const { signer, reason } = signerFor();
       if (!signer) { clearTimeout(timer); ws.close(); reject(new Error(reason || 'no bridge key')); return; }
       authed = true;
-      const relay = host ? `ws://${host}` : url;
+      const relay = authRelayTag(url, host);
       ws.send(JSON.stringify(['AUTH', signNote(signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', challenge]], '')]));
       setTimeout(req, 300);
     };

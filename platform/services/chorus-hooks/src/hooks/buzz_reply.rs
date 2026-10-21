@@ -206,6 +206,17 @@ fn build_reply_event_tags(
     })
 }
 
+/// #4657 — the relay address a NIP-42 AUTH names. The relay accepts only its
+/// RELAY_URL; once that is the public wss:// one, BUZZ_AUTH_RELAY_URL states it
+/// while this client still dials (and sends its Host to) the LAN/tunnel address.
+/// Unset or blank keeps the dial address, as before.
+pub fn auth_relay_tag(relay_url: &str, stated: Option<&str>) -> String {
+    match stated.map(str::trim) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => relay_url.to_string(),
+    }
+}
+
 /// Publish over the relay websocket; Ok only on the relay's ["OK", id, true].
 /// Blocking (tungstenite) — call from spawn_blocking.
 pub fn publish(relay_url: &str, event: &NostrEvent) -> Result<(), String> {
@@ -286,7 +297,7 @@ fn pump<S: std::io::Read + std::io::Write>(
                     continue; // one answer per connection; don't loop
                 }
                 let tags = vec![
-                    vec!["relay".to_string(), relay_url.to_string()],
+                    vec!["relay".to_string(), auth_relay_tag(relay_url, std::env::var("BUZZ_AUTH_RELAY_URL").ok().as_deref())],
                     vec!["challenge".to_string(), chal.to_string()],
                 ];
                 let auth_ev = sign_event(key, 22242, tags, "", event.created_at)?;

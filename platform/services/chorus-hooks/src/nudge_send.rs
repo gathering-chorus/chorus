@@ -17,6 +17,8 @@
 //! The sender is the runner's verified caller ({caller}), never an argument.
 
 use crate::hooks::buzz_reply::{load_key, publish_authed, sign_event, NostrEvent, RoleKey};
+/// #4657 — the AUTH relay tag rule signed nudges share with replies.
+pub use crate::hooks::buzz_reply::auth_relay_tag;
 use crate::hooks::word_cap::{check_cap, resolve_cap_for, CAP_KEY_NUDGE};
 use serde_json::{json, Value};
 use std::os::unix::fs::PermissionsExt;
