@@ -8,14 +8,20 @@ setup() {
   export SCRIPT="${BATS_TEST_DIRNAME}/../scripts/product-radius"
 }
 
+teardown() {
+  if [ -n "${STUB_PID:-}" ]; then
+    kill "$STUB_PID" 2>/dev/null || true
+  fi
+}
+
 @test "product-radius runs against local stub SPARQL endpoint without touching prod" {
-  # Start a lightweight local HTTP server acting as SPARQL stub
   cat << 'PYSTUB' > "$DIR/stub_server.py"
 import http.server, json, sys
 
 class SparqlHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
-        # Empty SPARQL query response
+        length = int(self.headers.get("Content-Length", 0))
+        _ = self.rfile.read(length)
         self.send_response(200)
         self.send_header("Content-Type", "application/sparql-results+json")
         self.end_headers()
@@ -34,21 +40,16 @@ PYSTUB
 
   python3 "$DIR/stub_server.py" "$DIR/port.txt" &
   STUB_PID=$!
-  trap "kill $STUB_PID 2>/dev/null || true" EXIT
 
-  # Wait for port file
-  for i in $(seq 1 20); do
+  for i in $(seq 1 30); do
     [ -s "$DIR/port.txt" ] && break
     sleep 0.1
   done
   PORT=$(cat "$DIR/port.txt")
 
-  # Verify product-radius respects SPARQL_ENDPOINT env var
   SPARQL_ENDPOINT="http://127.0.0.1:${PORT}/query" run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "Products: 0" ]] || return 1
-
-  kill "$STUB_PID" 2>/dev/null || true
 }
 
 @test "product-radius generates valid HTML report with --html" {
@@ -118,7 +119,6 @@ FIXTURE
 }
 
 @test "product-radius derives unmodeled yaml files and unlinked value streams" {
-  # Create a custom pipelines dir with an unmodeled yaml file
   mkdir -p "$DIR/pipelines"
   touch "$DIR/pipelines/rogue-pipeline.yaml"
 

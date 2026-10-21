@@ -7,12 +7,13 @@
 # buzz is cross-cutting infra underpinning all products (clearing, borg, pulse, loom).
 # alerts-decisions: borg + loom
 # pulse: pulse
+# Note: ownedBy values are placeholders awaiting Jeff's confirmation.
 
 chorus:chunk-buzz a chorus:Chunk ;
     rdfs:label "buzz" ;
     chorus:label "buzz" ;
     chorus:slug "buzz" ;
-    chorus:ownedBy chorus:principal-silas ;
+    chorus:ownedBy chorus:principal-silas ; # PLACEHOLDER
     chorus:roleSequence 1 ;
     chorus:loomSequence 1 ;
     chorus:hasProduct chorus:clearing, chorus:borg, chorus:pulse, chorus:loom .
@@ -21,7 +22,7 @@ chorus:chunk-alerts-decisions a chorus:Chunk ;
     rdfs:label "alerts-decisions" ;
     chorus:label "alerts-decisions" ;
     chorus:slug "alerts-decisions" ;
-    chorus:ownedBy chorus:principal-silas ;
+    chorus:ownedBy chorus:principal-silas ; # PLACEHOLDER
     chorus:roleSequence 2 ;
     chorus:loomSequence 2 ;
     chorus:hasProduct chorus:borg, chorus:loom .
@@ -30,7 +31,7 @@ chorus:chunk-pulse a chorus:Chunk ;
     rdfs:label "pulse" ;
     chorus:label "pulse" ;
     chorus:slug "pulse" ;
-    chorus:ownedBy chorus:principal-abby-normal ;
+    chorus:ownedBy chorus:principal-abby-normal ; # PLACEHOLDER
     chorus:roleSequence 1 ;
     chorus:loomSequence 3 ;
     chorus:hasProduct chorus:pulse .

@@ -159,14 +159,16 @@ if ! command -v gitleaks >/dev/null 2>&1; then
 fi
 # 'protect --staged' scans only what's being committed, against the config +
 # baseline. New finding (not in baseline, not allowlisted) => nonzero => block.
+out=$(mktemp)
 if ! gitleaks protect --staged \
       --config "$REPO/.gitleaks.toml" \
       --baseline-path "$REPO/.gitleaks-baseline.json" \
-      --redact --no-banner 2>"/tmp/gitleaks-precommit-chorus-abby-normal.out"; then
+      --redact --no-banner 2>"$out"; then
   echo "" >&2
   echo "🔒 pre-commit BLOCKED: a new secret was detected in your staged changes." >&2
-  echo "   Review /tmp/gitleaks-precommit-chorus-abby-normal.out (redacted)." >&2
+  echo "   Review $out (redacted)." >&2
   echo "   If it's a false positive: add the path to .gitleaks.toml [allowlist]." >&2
   echo "   If it's real: remove it, and rotate the credential. Never --no-verify a real hit." >&2
   exit 1
 fi
+rm -f "$out" 
