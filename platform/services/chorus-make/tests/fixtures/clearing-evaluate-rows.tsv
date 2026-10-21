@@ -1,4 +1,5 @@
 # #4682 fixture — clearing-evaluate pipeline
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
-evaluate	1	1	skill-clearing-evaluate	post-land decision: resequence chunk or switch lane	human					by=JEFF choices=resequence|switch
-loop	2	1	skill-clearing-loop	re-enqueue clearing-plan for active chunk	pipeline	clearing-plan				CHUNK=${CHUNK} ROLE=${ROLE} enqueue=true
+chunk-of	1	1	skill-clearing-chunk-of	resolve active chunk of card	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk chunk-of ${CARD}				output=CHUNK continue_on_exit=2
+evaluate	2	1	skill-clearing-evaluate	post-land decision: resequence chunk or switch lane	human					by=JEFF choices=resequence|switch precondition=${skill_clearing_chunk_of.exit_code}=0
+loop	3	1	skill-clearing-loop	re-enqueue clearing-plan for active chunk	pipeline	clearing-plan				CHUNK=${CHUNK} ROLE=${ROLE} enqueue=true

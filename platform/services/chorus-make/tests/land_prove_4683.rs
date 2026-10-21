@@ -42,7 +42,7 @@ fn accept_is_gated(yaml: &str) -> Result<(), String> {
 fn the_land_runs_merge_sync_deploy_prove_record_accept_in_order() {
     let names: Vec<String> = steps(&land()).into_iter().map(|(n, _, _)| n).collect();
     assert_eq!(names, ["skill-werk-merge", "skill-werk-sync", "skill-werk-deploy-prod",
-        "skill-borg-verify-in-prod", "skill-borg-record", "skill-werk-accept"]);
+        "skill-borg-verify-in-prod", "skill-borg-record", "skill-werk-accept", "skill-clearing-evaluate"]);
     let y = land();
     assert!(y.contains("command: \"borg-prove prod ${CARD} ${ROLE}\""), "{y}");
     assert!(y.contains("command: \"borg-prove record ${CARD} ${ROLE}\""), "{y}");

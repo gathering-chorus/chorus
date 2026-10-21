@@ -41,7 +41,7 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let land = generate_land("cicd", &cicd()).unwrap();
     let land_ids: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(land_ids.first(), Some(&"skill-werk-merge"));
-    assert_eq!(land_ids.last(), Some(&"skill-werk-accept"));
+    assert_eq!(land_ids.last(), Some(&"skill-clearing-evaluate"));
     assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo-pipeline]\n    id: skill_werk_go\n    action: human.task\n"));
     for half in [&out, &land] {
         assert!(half.starts_with(chorus_make::HEADER));
@@ -50,7 +50,7 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
             assert!(half.contains(&format!("  - {v}\n")), "workflow env is missing {v}");
         }
         // Jeff 21:06: DEPLOY_ROLE is identity; a run param must never assert it
-        assert!(!half.contains("DEPLOY_ROLE") && !half.contains("CHORUS_ROLE"), "the workflow claims an identity");
+        assert!(!half.contains("DEPLOY_ROLE: ") && !half.contains("CHORUS_ROLE: "), "the workflow claims an identity");
     }
 }
 

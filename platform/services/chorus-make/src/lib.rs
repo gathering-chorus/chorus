@@ -444,12 +444,21 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
         }
-        params.extend(
-            r.with_args
-                .split_whitespace()
-                .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
-                .map(String::from),
-        );
+        for p in r
+            .with_args
+            .split_whitespace()
+            .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
+        {
+            if let Some((k, _)) = p.split_once('=') {
+                if let Some(pos) = params.iter().position(|existing| existing.starts_with(&format!("{k}="))) {
+                    params[pos] = p.to_string();
+                } else {
+                    params.push(p.to_string());
+                }
+            } else {
+                params.push(p.to_string());
+            }
+        }
         if from_werk {
             // #4502 (Jeff 13:56 "its a 4502 miss") — an ENQUEUED parent finds a
             // dag.run child by name in canonical's dags folder only (Silas
@@ -481,6 +490,9 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
                     params.join(" ")
                 ))
             ));
+            if r.with_args.split_whitespace().any(|p| p == "continue_on=failure") {
+                out.push_str("    continue_on:\n      failure: true\n");
+            }
             return;
         }
         if queued {
@@ -767,6 +779,13 @@ fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String]) {
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(out, prev);
+    if let Some(cond) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("precondition=")) {
+        if let Some((condition, expected)) = cond.split_once('=') {
+            out.push_str(&format!(
+                "    preconditions:\n      - condition: \"{condition}\"\n        expected: \"{expected}\"\n"
+            ));
+        }
+    }
     out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
     out.push_str("    action: human.task\n    with:\n");
     out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? (${{{by}}} answers)", r.label))));

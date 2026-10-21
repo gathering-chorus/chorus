@@ -29,7 +29,8 @@ fn the_graph_read_gives_the_same_workflow_as_the_rows_file() {
     let from_graph = rows_from_sparql_tsv(&run("cicd")).expect("rows");
     // #4502 — the demo is its own pipeline (Jeff 10-12 21:18): cicd calls it as one row
     // #4683 — the land proves the card in prod (borg-prove prod, record) before accept
-    assert_eq!(from_graph.len(), 15);
+    // #4682 — the land evaluates chunk sequence or lane switch (clearing-evaluate)
+    assert_eq!(from_graph.len(), 16);
     let from_file = parse_rows(&std::fs::read_to_string(format!("{}/tests/fixtures/cicd-rows.tsv", dir())).unwrap()).unwrap();
     assert_eq!(generate("cicd", &from_graph).unwrap(), generate("cicd", &from_file).unwrap());
     assert_eq!(generate_land("cicd", &from_graph).unwrap(), generate_land("cicd", &from_file).unwrap());

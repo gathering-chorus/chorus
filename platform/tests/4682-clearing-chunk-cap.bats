@@ -82,3 +82,13 @@ Next (2):
   [[ "$output" =~ "skill-clearing-pair [skipped]" ]] || return 1
   [[ "$output" =~ "Result: Succeeded" ]] || return 1
 }
+
+@test "clearing-evaluate dry run skips evaluate step when card has no active chunk (#3734 negative proof)" {
+  command -v dagu >/dev/null 2>&1 || skip "dagu not installed"
+  WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
+  run dagu dry "$WF"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "skill-clearing-evaluate [skipped]" ]] || return 1
+  [[ "$output" =~ "skill-clearing-loop [skipped]" ]] || return 1
+  [[ "$output" =~ "Result: Succeeded" ]] || return 1
+}

@@ -2,9 +2,8 @@
 description: "werk v2 — pipeline clearing-evaluate, generated from the graph"
 queue: werk-land
 params:
-  - CHUNK: ""
-  - ROLE: ""
   - CARD: ""
+  - ROLE: ""
   - JEFF: ""
 env:
   - CHORUS_HOME: ${CHORUS_HOME}
@@ -20,8 +19,19 @@ handler_on:
   failure:
     command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} clearing-evaluate $(python3 ${CHORUS_HOME}/platform/scripts/chorus-werk-status --why ${DAG_NAME} ${DAG_RUN_ID} || echo failed) · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
+  - name: skill-clearing-chunk-of
+    description: "resolve active chunk of card"
+    output: CHUNK
+    continue_on:
+      exit_code: [2]
+      mark_success: true
+    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk chunk-of ${CARD}"
   - name: skill-clearing-evaluate
     description: "post-land decision: resequence chunk or switch lane"
+    depends: [skill-clearing-chunk-of]
+    preconditions:
+      - condition: "${skill_clearing_chunk_of.exit_code}"
+        expected: "0"
     id: skill_clearing_evaluate
     action: human.task
     with:
@@ -38,4 +48,4 @@ steps:
   - name: skill-clearing-loop
     description: "re-enqueue clearing-plan for active chunk"
     depends: [skill-clearing-evaluate]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-plan -- CHUNK=${CHUNK} ROLE=${ROLE}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-plan -- CARD=${CARD} ROLE=${ROLE} CHUNK=${CHUNK}"

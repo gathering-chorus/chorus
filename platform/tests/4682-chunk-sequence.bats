@@ -29,6 +29,15 @@ class SparqlHandler(http.server.BaseHTTPRequestHandler):
                 {"prod": {"value": "https://jeffbridwell.com/chorus#borg"}},
                 {"prod": {"value": "https://jeffbridwell.com/chorus#loom"}},
             ]
+        elif 'pulse' in q:
+            bindings = [
+                {"chunkSlug": {"value": "pulse"}},
+                {"prod": {"value": "https://jeffbridwell.com/chorus#pulse"}}
+            ]
+        elif 'borg' in q:
+            bindings = [
+                {"chunkSlug": {"value": "alerts-decisions"}}
+            ]
         # Any other chunk returns empty bindings (refused)
         res = {"results": {"bindings": bindings}}
         self.wfile.write(json.dumps(res).encode())
@@ -132,3 +141,48 @@ STUB_CARDS
   [ "$status" -ne 0 ]
   [[ "$output" =~ "refused: chunk 'unlinked-chunk' has no products linked in graph (hasProduct)" ]] || return 1
 }
+
+@test "clearing-chunk chunk-of returns active chunk for card in active chunk radius" {
+  cat << 'STUB_CARDS' > "$DIR/fake-cards"
+#!/usr/bin/env bash
+if [ "$1" = "view" ]; then
+  case "$2" in
+    102) echo "Domains: sequence:borg" ;;
+    104) echo "Domains: sequence:pulse" ;;
+  esac
+fi
+STUB_CARDS
+  chmod +x "$DIR/fake-cards"
+  export CARDS_CLI="$DIR/fake-cards"
+
+  run "$SCRIPT" chunk-of 102
+  [ "$status" -eq 0 ]
+  [ "$output" = "alerts-decisions" ]
+
+  run "$SCRIPT" chunk-of 104
+  [ "$status" -eq 0 ]
+  [ "$output" = "pulse" ]
+}
+
+@test "clearing-chunk chunk-of exits 2 and outputs none for card not in active chunk (#3734 negative proof)" {
+  cat << 'STUB_CARDS' > "$DIR/fake-cards"
+#!/usr/bin/env bash
+if [ "$1" = "view" ]; then
+  case "$2" in
+    999) echo "Domains: sequence:unlinked" ;;
+    998) echo "Domains: (no sequence)" ;;
+  esac
+fi
+STUB_CARDS
+  chmod +x "$DIR/fake-cards"
+  export CARDS_CLI="$DIR/fake-cards"
+
+  run "$SCRIPT" chunk-of 999
+  [ "$status" -eq 2 ]
+  [ "$output" = "none" ]
+
+  run "$SCRIPT" chunk-of 998
+  [ "$status" -eq 2 ]
+  [ "$output" = "none" ]
+}
+
