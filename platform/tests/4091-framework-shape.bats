@@ -166,3 +166,38 @@ bare_rows() { riot --output=nt "$@" 2>/dev/null | grep -E 'rdf-syntax-ns#type> <
   [ "$(wc -l <<<"$ps")" -ge 15 ] || return 1
   for s in $ps; do grep -qF "$s <http://www.w3.org/ns/shacl#path>" <<<"$nt" || { echo "no path: $s"; return 1; }; done
 }
+
+# #4091 reopen 1 — the door refuses a field its shape does not name ("off-model
+# property 'color'"), so every field a seeded row carries must be a path in its
+# shape. The edges feeds/indexes are not row fields (the door never took them).
+off_model() { # <seed files...> → "row predicate" lines whose predicate no Tool/ToolType/Core shape names
+  local paths nt
+  paths=$(riot --output=nt "$TTL" "$REPO"/roles/*/ontology/core-shape-4576.ttl 2>/dev/null | grep -F '<http://www.w3.org/ns/shacl#path>' | awk '{print $3}' | sort -u)
+  nt=$(riot --output=nt "$@" 2>/dev/null)
+  for s in $(grep -E 'rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Tool(Type)?> ' <<<"$nt" | cut -d' ' -f1); do
+    grep -F "$s " <<<"$nt" | awk '{print $2}' | sort -u | while read -r p; do
+      case "$p" in *rdf-syntax-ns#type\>|*rdf-schema#label\>|*rdf-schema#comment\>|*chorus#feeds\>|*chorus#indexes\>) continue ;; esac
+      grep -qxF "$p" <<<"$paths" || echo "$s $p"
+    done
+  done
+}
+
+@test "every field on a seeded Tool or ToolType row is in its shape, so the door takes it" {
+  out=$(off_model $(SEEDS))
+  [ -z "$out" ] || { echo "$out"; return 1; }
+}
+
+# NEGATIVE PROOF: the 08:26 refusal — a Tool carrying a field no shape names is caught.
+@test "a Tool row with an off-model field is caught" {
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:tool-x a chorus:Tool ; chorus:paintColour "red" .\n' > "$BATS_TEST_TMPDIR/off.ttl"
+  [ -n "$(off_model "$BATS_TEST_TMPDIR/off.ttl")" ] || return 1
+}
+
+@test "status is live, designed or planned; color is a hex color" {
+  f=$(fixture "chorus:jq a chorus:Tool ; $FW ; chorus:status \"retired\" ." st1)
+  [ "$(verdict "$f")" = VIOLATES ] || return 1
+  f=$(fixture "chorus:jq a chorus:Tool ; $FW ; chorus:color \"purple\" ." co1)
+  [ "$(verdict "$f")" = VIOLATES ] || return 1
+  f=$(fixture "chorus:jq a chorus:Tool ; $FW ; chorus:status \"live\" ; chorus:color \"#c084fc\" ; chorus:vizLabel \"memory\" ." ok1)
+  [ "$(verdict "$f")" = CONFORMS ] || return 1
+}
