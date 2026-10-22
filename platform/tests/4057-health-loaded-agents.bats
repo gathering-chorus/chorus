@@ -79,7 +79,7 @@ EOF
 # Run the script and hand back only the log-freshness lines. Other checks probe
 # the live box and are none of this file's business.
 freshness_lines() {
-  bash "$SCRIPT" 2>/dev/null | grep -E 'log-freshness|liveness:' || true
+  bash "$SCRIPT" 2>/dev/null | grep -E 'log-freshness|liveness:|crashed:' || true
 }
 
 @test "NEGATIVE PROOF: a LOADED agent whose log is stale is a FAILURE" {
@@ -201,4 +201,90 @@ d=json.load(open(sys.argv[1]))
 stale=[x for x in d["details"] if "daemonish" in x and "stale" in x]
 assert not stale, "persistent daemon judged on log staleness: %r" % stale
 PY
+}
+
+@test "NEGATIVE PROOF: a planted KeepAlive true daemon that is NOT running fails liveness" {
+  local log="$W/logs/com.chorus.dead-daemon.log"
+  touch "$log"
+  plist_persistent "com.chorus.dead-daemon" "$log"
+  # Daemon is loaded in launchd but not running (PID is -)
+  echo "- 0 com.chorus.dead-daemon" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" == *"com.chorus.dead-daemon is loaded but not running"* ]] || { echo "ASSERT FAILED: output was: $output"; return 1; }
+}
+
+@test "NEGATIVE PROOF: a non-persistent agent with KeepAlive false that is not running does NOT fail liveness" {
+  local log="$W/logs/com.chorus.oneshot.log"
+  echo "did work" > "$log"
+  cat > "$W/agents/com.chorus.oneshot.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.chorus.oneshot</string>
+  <key>StandardOutPath</key><string>/tmp/oneshot.log</string>
+  <key>KeepAlive</key><false/>
+</dict></plist>
+EOF
+  # In launchd: stopped with exit 0 (PID -)
+  echo "- 0 com.chorus.oneshot" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" != *"oneshot is loaded but not running"* ]] || { echo "ASSERT FAILED: output was: $output"; return 1; }
+}
+
+@test "NEGATIVE PROOF: a loaded agent that crash-looped (exit 127) is flagged as a failure" {
+  local log="$W/logs/com.chorus.crasher.log"
+  echo "died" > "$log"
+  plist_for "com.chorus.crasher" "$log"
+  # In launchd: PID - and exit status 127
+  echo "- 127 com.chorus.crasher" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" == *"crashed: com.chorus.crasher (exit 127)"* ]] || { echo "ASSERT FAILED: output was: $output"; return 1; }
+}
+
+
+@test "NEGATIVE PROOF: an interval agent whose log is older than 3x StartInterval fails staleness" {
+  local log="$W/logs/com.chorus.interval-stale.log"
+  echo "old" > "$log"
+  # 60s interval -> 3x is 180s. Set mtime to 300s ago.
+  touch -t $(date -v -300S "+%Y%m%d%H%M.%S" 2>/dev/null || date -d "-300 seconds" "+%Y%m%d%H%M.%S") "$log"
+  plist_for "com.chorus.interval-stale" "$log" 60
+  echo "com.chorus.interval-stale" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" == *"com.chorus.interval-stale.log is "* && "$output" == *"stale"* ]] || { echo "ASSERT FAILED: output: $output"; return 1; }
+}
+
+@test "an interval agent with a fresh 0-byte log produces no failure" {
+  local log="$W/logs/com.chorus.clean-probe.log"
+  : > "$log"
+  touch "$log"
+  plist_for "com.chorus.clean-probe" "$log" 120
+  echo "com.chorus.clean-probe" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" != *"clean-probe"* ]] || { echo "ASSERT FAILED: output: $output"; return 1; }
+}
+
+@test "an interval agent with a STALE 0-byte log and exit 0 produces no failure" {
+  local log="$W/logs/com.chorus.stale-silent.log"
+  : > "$log"
+  touch -t 202605010000 "$log"
+  plist_for "com.chorus.stale-silent" "$log" 120
+  echo "- 0 com.chorus.stale-silent" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" != *"stale-silent"* ]] || { echo "ASSERT FAILED: output: $output"; return 1; }
+}
+
+@test "NEGATIVE PROOF: an interval agent with a STALE 0-byte log and exit 127 fails" {
+  local log="$W/logs/com.chorus.stale-crashed.log"
+  : > "$log"
+  touch -t 202605010000 "$log"
+  plist_for "com.chorus.stale-crashed" "$log" 120
+  echo "- 127 com.chorus.stale-crashed" > "$W/loaded.txt"
+
+  run freshness_lines
+  [[ "$output" == *"crashed: com.chorus.stale-crashed (exit 127)"* ]] || { echo "ASSERT FAILED: output: $output"; return 1; }
 }

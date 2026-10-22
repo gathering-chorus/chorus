@@ -38,10 +38,14 @@ fn generated() -> Vec<(&'static str, String)> {
 
 /// rev-parse in `repo` as if another user owned it, under `env`.
 fn git_opens(repo: &std::path::Path, env: &[(String, String)]) -> Result<(), String> {
-    let out = Command::new("git").arg("-C").arg(repo).args(["rev-parse", "--git-dir"])
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo).args(["rev-parse", "--git-dir"])
         .env("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
-        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .output().expect("git runs");
+        .env_remove("GIT_CONFIG_COUNT")
+        .env_remove("GIT_CONFIG_KEY_0")
+        .env_remove("GIT_CONFIG_VALUE_0")
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    let out = cmd.output().expect("git runs");
     if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).into_owned()) }
 }
 

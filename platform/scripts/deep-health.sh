@@ -124,7 +124,7 @@ WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-de
 # Labels currently LOADED in launchd. Empty output is itself a finding.
 loaded_agent_labels() {
   if [ -n "$HEALTH_AGENT_LIST" ]; then
-    cat "$HEALTH_AGENT_LIST" 2>/dev/null || true
+    awk '{print ($NF ~ /^com\./ ? $NF : $1)}' "$HEALTH_AGENT_LIST" 2>/dev/null || true
   else
     launchctl list 2>/dev/null | awk 'NR>1 {print $3}' \
       | grep -E '^com\.(chorus|gathering)\.' || true
@@ -168,16 +168,33 @@ agent_interval_s() {
 agent_is_persistent() {
   local plist="$HEALTH_PLIST_DIR/$1.plist"
   [ -f "$plist" ] || return 1
-  /usr/libexec/PlistBuddy -c "Print :KeepAlive" "$plist" >/dev/null 2>&1 && return 0
+  local ka
+  ka=$(/usr/libexec/PlistBuddy -c "Print :KeepAlive" "$plist" 2>/dev/null || true)
+  if [ -n "$ka" ]; then
+    [ "$ka" != "false" ] && return 0
+    return 1
+  fi
   /usr/libexec/PlistBuddy -c "Print :StartInterval" "$plist" >/dev/null 2>&1 && return 1
   /usr/libexec/PlistBuddy -c "Print :StartCalendarInterval" "$plist" >/dev/null 2>&1 && return 1
-  return 0
+  return 1
 }
 
 # Is the label actually running right now? "-" in column 1 means loaded but not
 # running. #3369: a missing label must never be fatal under set -e.
 agent_pid() {
-  launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $1}' | head -1 || true
+  if [ -n "$HEALTH_AGENT_LIST" ]; then
+    awk -v l="$1" '$NF==l && NF>=3 {print $1}' "$HEALTH_AGENT_LIST" 2>/dev/null | head -1 || true
+  else
+    launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $1}' | head -1 || true
+  fi
+}
+
+agent_exit_code() {
+  if [ -n "$HEALTH_AGENT_LIST" ]; then
+    awk -v l="$1" '$NF==l && NF>=3 {print $2}' "$HEALTH_AGENT_LIST" 2>/dev/null | head -1 || true
+  else
+    launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $2}' | head -1 || true
+  fi
 }
 
 agent_stdout_path() {
@@ -226,6 +243,12 @@ while IFS= read -r label; do
     continue
   fi
 
+  # Check for crash / non-zero exit code (#4704)
+  _ec=$(agent_exit_code "$label")
+  if [ -n "$_ec" ] && [ "$_ec" != "-" ] && [ "$_ec" -ne 0 ] 2>/dev/null; then
+    FAILURES+=("crashed: $label (exit $_ec)")
+  fi
+
   # Persistent daemon: ask launchd whether it is alive, not whether it spoke.
   if agent_is_persistent "$label"; then
     _p=$(agent_pid "$label")
@@ -244,22 +267,26 @@ while IFS= read -r label; do
   size=$(stat -f %z "$log" 2>/dev/null || echo 0)
   mtime=$(stat -f %m "$log" 2>/dev/null || echo 0)
 
+  # For StartInterval jobs, judge by launchd exit 0; check age only if the log has content (#4704).
+  # If size is 0 and exit code was not non-zero, the job ran cleanly without emitting stdout noise.
+  if [ "$size" -eq 0 ]; then
+    continue
+  fi
+
   # Threshold: the agent's own cadence first, hand lists only as override.
-  # Two missed runs is the bar — one missed run is a slow box, two is a stop.
+  # Three missed intervals is the bar (#4704).
   interval_s=$(agent_interval_s "$label" || true)
   if [[ " $WEEKLY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_8D
   elif [[ " $DAILY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_25H
   elif [ -n "$interval_s" ] && [ "$interval_s" -gt 0 ] 2>/dev/null; then
-    threshold=$(( now - (interval_s * 2) - 3600 ))
+    threshold=$(( now - (interval_s * 3) ))
   else
     threshold=$STALE_2H
   fi
 
-  if [ "$size" -eq 0 ]; then
-    FAILURES+=("log-freshness: $name is 0 bytes — $label loaded but silent")
-  elif [ "$mtime" -lt "$threshold" ]; then
+  if [ "$mtime" -lt "$threshold" ]; then
     age_h=$(( (now - mtime) / 3600 ))
     FAILURES+=("log-freshness: $name is ${age_h}h stale — $label is loaded")
   fi
