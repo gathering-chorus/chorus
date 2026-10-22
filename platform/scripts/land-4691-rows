@@ -13,19 +13,21 @@ navigator's (Jeff 2026-10-22 08:34):
   Skill      borg-check           (borg-prove check: her signed verdict, the gate)
   StepSkill  cicd-land-5  borg-record -> borg-ask
   StepSkill  cicd-land-6  werk-accept -> borg-queen-proves, by=borg-queen choices=recorded|stop
-  StepSkill  cicd-land-7  borg-check (new; #4682's clearing-evaluate moves to 9)
+  StepSkill  cicd-land-7  clearing-evaluate -> borg-check
   StepSkill  cicd-land-8  werk-accept, atomic=true (new)
 
-cicd-land-9 (clearing-evaluate) is #4682's row, written with its Skill by
-land-4682-rows once #4693 lets the Skill shape take a pipeline executor; that
-script names order 9, not 7, after this one.
+  StepSkill  cicd-land-9  clearing-evaluate (moved from 7; continue_on=failure enqueue=true)
+
+Wren's rule (09:05): the card that lands second renumbers. #4693 writes
+clearing-evaluate at cicd-land-7 (what main has); #4691 lands after it, so this
+script adds it at 9 and changes 7 to borg-check. Its Skill row is #4693's.
 
 Each write prints ADD / CHANGE / SAME against the door. Nothing is written
 without --apply, and --apply is a prod write: only after Jeff's yes on the dry
 run. A staging rehearsal moves both doors (CHORUS_DOOR=http://127.0.0.1:3368
 OWL_URL=http://localhost:3368/v1); --apply refuses when the runner's door is not
-the one the plan read. Skills go first; 8 is added before 5-7 change, so accept is
-never missing from the land. Exit 0 = plan
+the one the plan read. Skills go first; 8 and 9 are added before 5-7 change, so
+accept and clearing-evaluate are never missing from the land. Exit 0 = plan
 printed (or applied); 1 = a write was refused; 2 = the door could not be read.
 """
 import json, os, subprocess, sys, urllib.error, urllib.parse, urllib.request
@@ -52,6 +54,8 @@ SKILLS = [
 STEPSKILLS = [
     {"name": "cicd-land-8", "label": "cicd land 8: werk-accept", "callsSkill": "werk-accept",
      "forStep": "cicd-land", "skillOrder": "8", "withArguments": "atomic=true", "ownedBy": OWNER},
+    {"name": "cicd-land-9", "label": "cicd land 9: clearing-evaluate", "callsSkill": "clearing-evaluate",
+     "forStep": "cicd-land", "skillOrder": "9", "withArguments": "continue_on=failure enqueue=true", "ownedBy": OWNER},
     {"name": "cicd-land-5", "label": "cicd land 5: borg-ask", "callsSkill": "borg-ask",
      "forStep": "cicd-land", "skillOrder": "5", "withArguments": "", "ownedBy": OWNER},
     {"name": "cicd-land-6", "label": "cicd land 6: borg-queen-proves", "callsSkill": "borg-queen-proves",

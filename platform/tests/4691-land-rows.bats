@@ -40,10 +40,10 @@ land5() {  # land 5 as the door serves it today: borg-record
   printf '{"data":{"label":"cicd land 5: borg-record","skillOrder":"5","withArguments":""},"links":{"callsSkill":"chorus:skill-borg-record","forStep":"chorus:pipeline-step-cicd-land","ownedBy":"chorus:principal-wren"}}' > "$D/skills_stepskills_cicd-land-5.json"
 }
 
-@test "an empty store plans all 7 rows and writes nothing" {
+@test "an empty store plans all 8 rows and writes nothing" {
   run python3 "$PLAN"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"plan: door writes 7 add, 0 change; 0 same — nothing written (dry run)"* ]] || return 1
+  [[ "$output" == *"plan: door writes 8 add, 0 change; 0 same — nothing written (dry run)"* ]] || return 1
   [[ "$output" == *'ADD    skills/skills/borg-queen-proves '*'"executor": "human"'* ]] || return 1
   [[ "$output" == *'ADD    skills/stepskills/cicd-land-6 '*'"withArguments": "by=borg-queen choices=recorded|stop"'* ]] || return 1
   [[ "$output" == *'ADD    skills/stepskills/cicd-land-7 '*'"callsSkill": "borg-check"'* ]] || return 1
@@ -55,7 +55,7 @@ land5() {  # land 5 as the door serves it today: borg-record
   run python3 "$PLAN"
   [[ "$output" == *"CHANGE skills/stepskills/cicd-land-5 "*"chorus:skill-borg-record' -> 'borg-ask'"* ]] || return 1
   ! printf '%s\n' "$output" | grep '^CHANGE skills/stepskills/cicd-land-5 ' | grep -q ownedBy || return 1
-  [[ "$output" == *"6 add, 1 change; 0 same"* ]] || return 1
+  [[ "$output" == *"7 add, 1 change; 0 same"* ]] || return 1
 }
 
 @test "negative proof: --apply refuses when the runner writes to another door than the plan read" {
@@ -75,6 +75,6 @@ land5() {  # land 5 as the door serves it today: borg-record
 @test "--apply with every write refused says REFUSED and exits 1, never applied" {
   run python3 "$PLAN" --apply
   [ "$status" -eq 1 ]
-  [[ "$output" == *"REFUSED 7 of 7"* ]] || return 1
+  [[ "$output" == *"REFUSED 8 of 8"* ]] || return 1
   [[ "$output" != *"applied"* ]] || return 1
 }
