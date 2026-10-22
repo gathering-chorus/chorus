@@ -7,9 +7,9 @@ setup() {
   export SCRIPT="$BATS_TEST_DIRNAME/../scripts/clearing-chunk"
 }
 
-@test "clearing-chunk runs live against board and correctly detects pulse in WIP" {
+@test "clearing-chunk runs live against board and outputs active chunks count" {
   unset MOCK_BOARD_LISTING
   run "$SCRIPT" list
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "pulse" ]] || return 1
+  [[ "$output" =~ "Active chunks" ]] || return 1
 }

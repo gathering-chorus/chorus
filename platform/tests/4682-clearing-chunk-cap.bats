@@ -78,7 +78,7 @@ Next (2):
 }
 
 @test "clearing-chunk check permits go when answered by Jeff" {
-  run "$SCRIPT" check 4682 jeff go
+  run "$SCRIPT" check 4682 jeff go wren abby-normal
   [ "$status" -eq 0 ]
   [[ "$output" =~ "plan approved by Jeff" ]] || return 1
 }
@@ -99,6 +99,32 @@ Next (2):
   run "$SCRIPT" check 4682 jeff go abby-normal abby-normal
   [ "$status" -eq 1 ]
   [[ "$output" =~ "navigator 'abby-normal' cannot be the driver 'abby-normal'" ]] || return 1
+}
+
+@test "negative proof: clearing-plan.yaml plan-check command refuses empty navigator (#4693 AC5 negative proof)" {
+  WF="$BATS_TEST_DIRNAME/../pipelines/clearing-plan.yaml"
+  export CHORUS_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+
+  run python3 -c '
+import json, subprocess, sys
+WF = "'"$WF"'"
+CHORUS_HOME = "'"$CHORUS_HOME"'"
+with open(WF) as f:
+    for line in f:
+        if "clearing-chunk check" in line:
+            cmd = json.loads(line.strip().removeprefix("command: "))
+            expanded = cmd.replace("${CHORUS_HOME}", CHORUS_HOME) \
+                          .replace("${CARD}", "4693") \
+                          .replace("${ROLE}", "abby-normal") \
+                          .replace("${skill_clearing_plan_go.outputs.by}", "jeff") \
+                          .replace("${skill_clearing_plan_go.outputs.decision}", "go") \
+                          .replace("${skill_clearing_plan_go.outputs.navigator}", "")
+            res = subprocess.run(["bash", "-c", expanded], capture_output=True, text=True)
+            print(res.stdout + res.stderr, end="")
+            sys.exit(res.returncode)
+'
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "navigator cannot be empty" ]] || return 1
 }
 
 @test "clearing-chunk check refuses when answered by non-Jeff role (#3734 negative proof)" {

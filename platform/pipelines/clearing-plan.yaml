@@ -57,7 +57,7 @@ steps:
     continue_on:
       exit_code: [2]
       mark_success: true
-    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision} ${skill_clearing_plan_go.outputs.navigator} ${ROLE}"
+    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk check \"${CARD}\" \"${skill_clearing_plan_go.outputs.by}\" \"${skill_clearing_plan_go.outputs.decision}\" \"${skill_clearing_plan_go.outputs.navigator}\" \"${ROLE}\""
   - name: skill-clearing-pull
     description: "pull card to WIP and create werk"
     depends: [skill-clearing-plan-check]

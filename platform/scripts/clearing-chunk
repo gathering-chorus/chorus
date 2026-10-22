@@ -308,17 +308,15 @@ check)
   fi
   case "$decision" in
     go)
-      if [ $# -ge 5 ]; then
-        if [ -z "$navigator" ]; then
-          echo "clearing-chunk: #$card: navigator cannot be empty" >&2
-          exit 1
-        fi
-        nav_norm=$(echo "$navigator" | tr '[:upper:]' '[:lower:]')
-        driver_norm=$(echo "$driver" | tr '[:upper:]' '[:lower:]')
-        if [ -n "$driver_norm" ] && [ "$nav_norm" = "$driver_norm" ]; then
-          echo "clearing-chunk: #$card: navigator '${navigator}' cannot be the driver '${driver}'" >&2
-          exit 1
-        fi
+      if [ -z "$navigator" ]; then
+        echo "clearing-chunk: #$card: navigator cannot be empty" >&2
+        exit 1
+      fi
+      nav_norm=$(echo "$navigator" | tr '[:upper:]' '[:lower:]')
+      driver_norm=$(echo "$driver" | tr '[:upper:]' '[:lower:]')
+      if [ -n "$driver_norm" ] && [ "$nav_norm" = "$driver_norm" ]; then
+        echo "clearing-chunk: #$card: navigator '${navigator}' cannot be the driver '${driver}'" >&2
+        exit 1
       fi
       echo "clearing-chunk: #$card plan approved by Jeff"
       exit 0
