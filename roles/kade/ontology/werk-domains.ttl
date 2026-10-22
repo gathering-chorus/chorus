@@ -448,7 +448,9 @@ chorus:tests a chorus:Domain ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
     chorus:hasDesignDoc "designing/docs/quality-service-design.html" .
 
-chorus:chorus chorus:hasDomain chorus:tests .
+# #4702 — tests has one home, werk (Jeff 2026-10-22 16:09: "werk eg werk-tests";
+# werk hasDomain tests is in designing/data/product-instances.ttl). The chorus
+# hasDomain tests edge that stood here gave it two homes; removed.
 
 chorus:hasRecordClass a owl:AnnotationProperty ;
     rdfs:label "has record class" ;
