@@ -964,9 +964,7 @@ pub fn drop_role_rows_sparql(ontology: &str) -> String {
 /// #4695 — the deploy transaction SPARQL: merge, domain rehoming, and role drops.
 /// #4338 — the ontology graph holds the model only: Domain rows go home.
 /// #4695 — Role rows are dropped from urn:chorus:ontology (roles live in
-/// urn:chorus:domains:roles and change through the door).
-/// DEPLOY_ROLE_DROP=0 disables the role drop — only so the negative proof can
-/// show that without the wiring, staged roles violate ontology.
+/// urn:chorus:domains:roles and change through the door). Always drops; no off-switch.
 pub fn deploy_transaction_sparql(
     staging: &str,
     ontology: &str,
@@ -980,7 +978,7 @@ pub fn deploy_transaction_sparql(
         is_card,
         retire_clause,
         bnodes,
-        env_or("DEPLOY_ROLE_DROP", "1") == "1",
+        true,
     )
 }
 
