@@ -12,7 +12,13 @@ Usage:
   shape-drift [SHAPE ...] [--json] [--check] [--from-fixture F] [--sparql-endpoint URL]
   shape-drift SHAPE --who FIELD     the rows carrying FIELD, with owners (live only)
 SHAPE defaults to ProductShape DomainShape. --check exits 2 when anything drifts.
-A fixture is {"shapes": {NAME: {"target", "paths", "ignored"}}, "rows": {CLASS: {PRED: N}}}.
+A fixture is {"shapes": {NAME: {"target", "paths", "ignored"}}, "rows": {CLASS: {PRED: N}},
+"exceptions": [{"row", "card", "status", "fields": {CLASS: [PRED]}}]}.
+
+Exceptions: a row whose fix is carded elsewhere is left out of the counts, and
+printed on every run with its card. Once that card is Done (or its status
+cannot be read) the exception excuses nothing and its fields count again, so
+an exception cannot outlive its card.
 """
 import argparse
 import json
@@ -25,6 +31,13 @@ DEFAULT_ENDPOINT = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods
 C = "https://jeffbridwell.com/chorus#"
 SHAPES_GRAPH = "urn:chorus:ontology"
 PFX = f"PREFIX c: <{C}> PREFIX sh: <http://www.w3.org/ns/shacl#> "
+# The board CLI from canonical (a werk has no node_modules); SHAPE_DRIFT_CARDS stubs it in tests.
+CARDS = os.environ.get("SHAPE_DRIFT_CARDS") or os.path.join(
+    os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/scripts/cards")
+# #4702 — spine is both a Product and a Domain row (the only pun, measured
+# 2026-10-22). Jeff 10-10: "spine is product name for events"; retiring the
+# Domain row moves ~1,780 crawler links, which is #4703.
+EXCEPTIONS = [{"row": "spine", "card": "4703"}]
 
 
 def sparql(endpoint, q):
@@ -33,9 +46,25 @@ def sparql(endpoint, q):
     return json.load(urllib.request.urlopen(req, timeout=30))["results"]["bindings"]
 
 
+def card_status(card):
+    """The card's board status, or "" when it cannot be read (then nothing is excused)."""
+    import subprocess
+    try:
+        out = subprocess.run([CARDS, "view", card], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for line in out.splitlines():
+        if line.strip().startswith("Status:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
 def fetch(endpoint, names):
     """Shape side and row side for each named shape, as the fixture format holds them."""
     shapes, rows = {}, {}
+    skip = " ".join(f"c:{e['row']}" for e in EXCEPTIONS)
+    not_in = f"FILTER(?s NOT IN ({', '.join(f'c:' + e['row'] for e in EXCEPTIONS)}))" if EXCEPTIONS else ""
+    excepted = {e["row"]: {} for e in EXCEPTIONS}
     for name in names:
         s = f"c:{name}"
         target = [b["t"]["value"].replace(C, "") for b in sparql(endpoint,
@@ -53,8 +82,13 @@ def fetch(endpoint, names):
         if cls not in rows:
             rows[cls] = {b["p"]["value"]: int(b["n"]["value"]) for b in sparql(endpoint,
                          f"SELECT ?p (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH ?t {{ ?s a c:{cls} }} "
-                         f"GRAPH ?g {{ ?s ?p ?o }} }} GROUP BY ?p")}
-    return {"shapes": shapes, "rows": rows}
+                         f"GRAPH ?g {{ ?s ?p ?o }} {not_in} }} GROUP BY ?p")}
+            if skip:
+                for b in sparql(endpoint, f"SELECT DISTINCT ?s ?p WHERE {{ VALUES ?s {{ {skip} }} "
+                                          f"GRAPH ?t {{ ?s a c:{cls} }} GRAPH ?g {{ ?s ?p ?o }} }}"):
+                    excepted[b["s"]["value"].replace(C, "")].setdefault(cls, []).append(b["p"]["value"])
+    exceptions = [dict(e, status=card_status(e["card"]), fields=excepted[e["row"]]) for e in EXCEPTIONS]
+    return {"shapes": shapes, "rows": rows, "exceptions": exceptions}
 
 
 def who(endpoint, cls, field):
@@ -65,12 +99,22 @@ def who(endpoint, cls, field):
                                       f"GRAPH ?g {{ ?s <{pred}> ?v }} OPTIONAL {{ GRAPH ?h {{ ?s c:ownedBy ?o }} }} }} ORDER BY ?s")]
 
 
+def live_exception(e):
+    """An exception excuses its row only while its card is open and readable."""
+    return bool(e.get("status")) and e["status"] != "Done"
+
+
 def drift(data):
-    """{shape: [(pred, rows carrying it)]} — fields neither a path nor ignored. Pure."""
+    """{shape: [(pred, rows carrying it)]} — fields neither a path nor ignored. Pure.
+    A lapsed exception's fields count again, one row each."""
     out = {}
     for name, sh in sorted(data["shapes"].items()):
         allowed = set(sh["paths"]) | set(sh["ignored"])
-        used = data["rows"].get(sh["target"], {})
+        used = dict(data["rows"].get(sh["target"], {}))
+        for e in data.get("exceptions", []):
+            if not live_exception(e):
+                for p in e.get("fields", {}).get(sh["target"], []):
+                    used[p] = used.get(p, 0) + 1
         out[name] = sorted(((p, n) for p, n in used.items() if p not in allowed), key=lambda x: (-x[1], x[0]))
     return out
 
@@ -98,7 +142,8 @@ def main():
         if missing:
             sys.stderr.write(f"no such shape in fixture: {', '.join(missing)}\n")
             sys.exit(1)
-        data = {"shapes": {s: data["shapes"][s] for s in args.shapes}, "rows": data["rows"]}
+        data = {"shapes": {s: data["shapes"][s] for s in args.shapes}, "rows": data["rows"],
+                "exceptions": data.get("exceptions", [])}
     else:
         try:
             data = fetch(args.sparql_endpoint, args.shapes)
@@ -115,6 +160,9 @@ def main():
     if args.json:
         print(json.dumps({k: [{"field": short(p), "rows": n} for p, n in v] for k, v in result.items()}, indent=2))
     else:
+        for e in data.get("exceptions", []):
+            state = "excused" if live_exception(e) else "NOT excused (card Done or unreadable)"
+            print(f"exception: {e['row']} — #{e['card']} ({e.get('status') or 'status unknown'}), {state}")
         for name, off in result.items():
             print(f"{name} ({data['shapes'][name]['target']}): {len(off)} field(s) off the shape")
             for p, n in off:

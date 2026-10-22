@@ -69,3 +69,46 @@ assert json.load(sys.stdin) == {"ProductShape": [{"field": "chorus:purpose", "ro
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"no such shape"* ]] || return 1
 }
+
+# Exceptions: the card status comes from a stubbed board CLI, never the real board.
+stub_board() {
+  mkdir -p "$DIR/bin"
+  printf '#!/bin/sh\n%s\n' "$1" > "$DIR/bin/cards"
+  chmod +x "$DIR/bin/cards"
+  export SHAPE_DRIFT_CARDS="$DIR/bin/cards"
+}
+
+@test "an open card's exception is printed with its card and excuses its row" {
+  plant 'd["exceptions"] = [{"row": "spine", "card": "4703", "status": "Later", "fields": {"Domain": ["https://jeffbridwell.com/chorus#vision"]}}]'
+  run "$SD" DomainShape --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"exception: spine — #4703 (Later), excused"* ]] || return 1
+}
+
+@test "negative proof: once the exception's card is Done, its row's fields count again" {
+  plant 'd["exceptions"] = [{"row": "spine", "card": "4703", "status": "Done", "fields": {"Domain": ["https://jeffbridwell.com/chorus#vision"]}}]'
+  run "$SD" DomainShape --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"NOT excused"* ]] || return 1
+  [[ "$output" == *"chorus:vision"* ]] || return 1
+}
+
+@test "negative proof: an unreadable card status excuses nothing" {
+  plant 'd["exceptions"] = [{"row": "spine", "card": "4703", "status": "", "fields": {"Domain": ["https://jeffbridwell.com/chorus#vision"]}}]'
+  run "$SD" DomainShape --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"status unknown"* ]] || return 1
+}
+
+@test "the live status read: a Done board and an unreachable board both stop excusing" {
+  stub_board 'echo "#4703 x"; echo "  Status:   Done"'
+  run python3 -c 'import importlib.machinery,sys; m=importlib.machinery.SourceFileLoader("sd", sys.argv[1]).load_module(); print(m.card_status("4703"), m.live_exception({"status": m.card_status("4703")}))' "$SD"
+  [ "$output" = "Done False" ] || { echo "$output"; return 1; }
+  stub_board 'exit 1'
+  run python3 -c 'import importlib.machinery,sys; m=importlib.machinery.SourceFileLoader("sd", sys.argv[1]).load_module(); print(repr(m.card_status("4703")), m.live_exception({"status": m.card_status("4703")}))' "$SD"
+  [ "$output" = "'' False" ] || { echo "$output"; return 1; }
+  stub_board 'echo "#4703 x"; echo "  Status:   Later"'
+  run python3 -c 'import importlib.machinery,sys; m=importlib.machinery.SourceFileLoader("sd", sys.argv[1]).load_module(); print(m.card_status("4703"), m.live_exception({"status": m.card_status("4703")}))' "$SD"
+  [ "$output" = "Later True" ] || { echo "$output"; return 1; }
+}
+
