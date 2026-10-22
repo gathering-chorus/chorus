@@ -28,3 +28,38 @@ export async function fetchPeers(
   if (!r.ok) throw new Error(`the roles door answered HTTP ${r.status} (${url})`);
   return peersFrom(await r.json());
 }
+
+/**
+ * #4692 — the roles door read the way a nudge reads it, on a timer. On 10-21
+ * from 21:46 to 05:53 the door answered curl but gave node and Rust clients
+ * its Discovery page, so every nudge was refused and nothing said so. This
+ * tick uses fetchPeers itself (pulse's own client path, not curl): a refused
+ * read is reported every tick until the door answers again.
+ */
+export async function rolesDoorTick(
+  doFetch?: FetchLike,
+  base?: string,
+): Promise<{ ok: true; peers: number } | { ok: false; error: string }> {
+  try {
+    return { ok: true, peers: (await fetchPeers(base, doFetch)).length };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export function startRolesDoorWatch(
+  onFail: (error: string) => Promise<void> | void,
+  intervalMs = 60_000,
+  doFetch?: FetchLike,
+): () => void {
+  const timer = setInterval(() => {
+    void (async () => {
+      const r = await rolesDoorTick(doFetch);
+      if (!r.ok) {
+        try { await onFail(r.error); } catch { /* a failed report never stops the watch */ }
+      }
+    })();
+  }, intervalMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
