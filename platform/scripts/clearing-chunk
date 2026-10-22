@@ -296,9 +296,9 @@ list)
   exit 0
   ;;
 check)
-  card="${2:-}"; by="${3:-}"; decision="${4:-}"
+  card="${2:-}"; by="${3:-}"; decision="${4:-}"; navigator="${5:-}"; driver="${6:-}"
   [ -n "$card" ] && [ -n "$by" ] && [ -n "$decision" ] || {
-    echo "usage: clearing-chunk check CARD BY DECISION" >&2
+    echo "usage: clearing-chunk check CARD BY DECISION [NAVIGATOR] [ROLE]" >&2
     exit 2
   }
   by_norm=$(echo "$by" | tr '[:upper:]' '[:lower:]')
@@ -308,6 +308,18 @@ check)
   fi
   case "$decision" in
     go)
+      if [ $# -ge 5 ]; then
+        if [ -z "$navigator" ]; then
+          echo "clearing-chunk: #$card: navigator cannot be empty" >&2
+          exit 1
+        fi
+        nav_norm=$(echo "$navigator" | tr '[:upper:]' '[:lower:]')
+        driver_norm=$(echo "$driver" | tr '[:upper:]' '[:lower:]')
+        if [ -n "$driver_norm" ] && [ "$nav_norm" = "$driver_norm" ]; then
+          echo "clearing-chunk: #$card: navigator '${navigator}' cannot be the driver '${driver}'" >&2
+          exit 1
+        fi
+      fi
       echo "clearing-chunk: #$card plan approved by Jeff"
       exit 0
       ;;

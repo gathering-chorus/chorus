@@ -83,6 +83,24 @@ Next (2):
   [[ "$output" =~ "plan approved by Jeff" ]] || return 1
 }
 
+@test "clearing-chunk check permits go when navigator is specified and differs from driver (#4693 AC5)" {
+  run "$SCRIPT" check 4682 jeff go wren abby-normal
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "plan approved by Jeff" ]] || return 1
+}
+
+@test "clearing-chunk check refuses when navigator is empty (#4693 AC5 negative proof)" {
+  run "$SCRIPT" check 4682 jeff go "" abby-normal
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "navigator cannot be empty" ]] || return 1
+}
+
+@test "clearing-chunk check refuses when navigator matches driver (#4693 AC5 negative proof)" {
+  run "$SCRIPT" check 4682 jeff go abby-normal abby-normal
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "navigator 'abby-normal' cannot be the driver 'abby-normal'" ]] || return 1
+}
+
 @test "clearing-chunk check refuses when answered by non-Jeff role (#3734 negative proof)" {
   run "$SCRIPT" check 4682 wren go
   [ "$status" -eq 1 ]

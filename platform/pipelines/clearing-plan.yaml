@@ -48,14 +48,16 @@ steps:
           decision:
             type: string
             enum: [go, stop]
-        required: [by, decision]
+          navigator:
+            type: string
+        required: [by, decision, navigator]
   - name: skill-clearing-plan-check
     description: "the plan-go came from Jeff"
     depends: [skill-clearing-plan-go]
     continue_on:
       exit_code: [2]
       mark_success: true
-    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision}"
+    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision} ${skill_clearing_plan_go.outputs.navigator} ${ROLE}"
   - name: skill-clearing-pull
     description: "pull card to WIP and create werk"
     depends: [skill-clearing-plan-check]
@@ -66,4 +68,4 @@ steps:
   - name: skill-clearing-pair
     description: "execute pair pipeline"
     depends: [skill-clearing-pull]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue pair -- CARD=${CARD} ROLE=${ROLE} NAVIGATOR=${NAVIGATOR} JEFF=${JEFF}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue pair -- CARD=${CARD} ROLE=${ROLE} NAVIGATOR=${skill_clearing_plan_go.outputs.navigator} JEFF=${JEFF}"

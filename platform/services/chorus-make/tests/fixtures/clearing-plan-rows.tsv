@@ -3,7 +3,7 @@ step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputSh
 chunk	1	1	skill-clearing-chunk	enforce active chunk cap	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	enforce ${CHUNK}			
 prioritize	2	1	skill-clearing-prioritize	prioritize chunk cards	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	prioritize ${CHUNK}			
 sequence	3	1	skill-clearing-sequence	sequence next card in chunk	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	sequence ${CHUNK}			output=CARD
-plan-go	4	1	skill-clearing-plan-go	Jeff approval before pulling to WIP	human					by=JEFF choices=go|stop
-plan-check	5	1	skill-clearing-plan-check	the plan-go came from Jeff	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision}			continue_on_exit=2
+plan-go	4	1	skill-clearing-plan-go	Jeff approval before pulling to WIP	human					by=JEFF choices=go|stop fields=navigator
+plan-check	5	1	skill-clearing-plan-check	the plan-go came from Jeff	deterministic	${CHORUS_HOME}/platform/scripts/clearing-chunk	check ${CARD} ${skill_clearing_plan_go.outputs.by} ${skill_clearing_plan_go.outputs.decision} ${skill_clearing_plan_go.outputs.navigator} ${ROLE}			continue_on_exit=2
 pull	6	1	skill-clearing-pull	pull card to WIP and create werk	deterministic	${CHORUS_HOME}/platform/scripts/werk-card	pull ${CARD} ${ROLE}			precondition=${skill_clearing_plan_go.outputs.decision}=go
-pair	7	1	skill-clearing-pair	execute pair pipeline	pipeline	pair				NAVIGATOR=${NAVIGATOR} JEFF=${JEFF} enqueue=true
+pair	7	1	skill-clearing-pair	execute pair pipeline	pipeline	pair				NAVIGATOR=${skill_clearing_plan_go.outputs.navigator} JEFF=${JEFF} enqueue=true
