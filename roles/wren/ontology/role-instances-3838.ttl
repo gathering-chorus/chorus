@@ -69,15 +69,6 @@ chorus:role-abby-normal a chorus:Role, chorus:AgentRole ;
     chorus:comment "Agent role on another LLM." ;
     chorus:rolePriority 4 .
 
-# #4691 — Borg Queen, minted live 2026-10-21 17:23 (Wren) with a label and a
-# comment only; in source now so a reseed keeps her. Same row as live.
-chorus:role-borg-queen a chorus:Role, chorus:AgentRole ;
-    chorus:roleKind "agent" ;
-    rdfs:label "role-borg-queen" ; chorus:label "role-borg-queen" ;
-    rdfs:comment "Prover: runs borg-prove after every land, files child cards on red (Jeff 2026-10-21 17:20 lets try to start borg queen)" ;
-    chorus:comment "Prover: runs borg-prove after every land, files child cards on red (Jeff 2026-10-21 17:20 lets try to start borg queen)" ;
-    chorus:rolePriority 5 .
-
 # #3860/#3985 — the nightly runs as its OWN role, not borrowed agent identity.
 # The write door resolves agent_id from holdsRole; principal-nightly had
 # identity + scope but no role, so every batch write 403'd and the test ledger
@@ -125,5 +116,3 @@ chorus:role-wren chorus:hasProperty chorus:prop-role-wren-nudge-word-cap .
 chorus:role-kade chorus:hasProperty chorus:prop-role-kade-nudge-word-cap .
 chorus:role-abby-normal chorus:hasProperty chorus:property-role-abby-normal-response-word-cap .
 chorus:role-abby-normal chorus:hasProperty chorus:property-role-abby-normal-nudge-word-cap .
-chorus:role-borg-queen chorus:hasProperty chorus:property-role-borg-queen-response-word-cap .
-chorus:role-borg-queen chorus:hasProperty chorus:property-role-borg-queen-nudge-word-cap .
