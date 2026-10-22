@@ -976,8 +976,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
         let hc = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
                         &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
                         "--data-binary", &up]).unwrap_or_default().trim().to_string();
-        let got = hats_held(name);
-        if got != 4 {
+        if let Err(got) = chorus_principal::wears_all_hats(&hats_held(name)) {
             eprintln!("chorus-principal: FAILED at step 3c (hats) — store answered HTTP {hc} but '{name}' wears {got} of 4 — rolling back");
             led.rollback(&css, &acct, &api, &token, &collection);
             return 1;
@@ -1533,18 +1532,18 @@ fn role_state(role: &str) -> Option<bool> {
 /// How many of the four hats this principal wears. Counted from the store,
 /// never assumed — the check that the appointments landed is the same question
 /// anyone else would ask of the graph.
-fn hats_held(name: &str) -> usize {
+/// The store's raw answer to "how many hats does this principal wear".
+fn hats_held(name: &str) -> String {
     let q = format!(
         "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE {{ \
          GRAPH ?g {{ c:principal-{name} c:wearsHat ?h }} }}"
     );
-    let body = curl(&[
+    curl(&[
         "-s", "--max-time", "30", "-G",
         &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
         "--data-urlencode", &format!("query={q}"),
         "-H", "Accept: application/sparql-results+json",
-    ]).unwrap_or_default();
-    between(&body, "\"value\":\"", "\"").and_then(|v| v.parse().ok()).unwrap_or(0)
+    ]).unwrap_or_default()
 }
 
 

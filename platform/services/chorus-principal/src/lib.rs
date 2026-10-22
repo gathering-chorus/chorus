@@ -1974,3 +1974,20 @@ pub fn run(args: &[String]) -> i32 {
         other => { eprintln!("chorus-principal: unknown verb '{}'", other); eprintln!("{}", USAGE); 2 }
     }
 }
+
+/// #4686 — a SPARQL COUNT answer read as JSON, not by needle. Step 3c matched
+/// `"value":"` and Fuseki answers `"value": "4"`, so every create read 0 of 4
+/// hats and rolled back. None: not a results document, or no number in it.
+pub fn sparql_count(body: &str, var: &str) -> Option<usize> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.pointer("/results/bindings/0")?.get(var)?.get("value")?.as_str()?.parse().ok()
+}
+
+/// #4686 — step 3c's verdict: Ok when the store's answer shows all four hats,
+/// Err(n) with the count it read otherwise (unreadable reads as 0).
+pub fn wears_all_hats(body: &str) -> Result<usize, usize> {
+    match sparql_count(body, "n").unwrap_or(0) {
+        4 => Ok(4),
+        n => Err(n),
+    }
+}
