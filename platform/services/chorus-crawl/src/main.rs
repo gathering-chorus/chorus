@@ -2165,11 +2165,12 @@ fn write_readings(which: &str, tally: &str, filter: &str, desired: Vec<chorus_cr
         }
     }
     // #4671 — a reading no gauge carries is a reading no alert can see: say so, and the run is red
-    let prom_dir = std::env::var("CHORUS_SENSOR_PROM_DIR")
-        .unwrap_or_else(|_| format!("{}/CascadeProjects/shared-observability/data/textfile_collector", std::env::var("HOME").unwrap_or_default()));
-    match write_prom(std::path::Path::new(&prom_dir), which, &gauges) {
-        Ok(p) => println!("{which}: gauges written to {}", p.display()),
-        Err(e) => { println!("{which}: gauges NOT written to {prom_dir} ({e})"); failed += 1; }
+    match prom_dir(std::env::var("CHORUS_SENSOR_PROM_DIR").ok(), std::env::var("HOME").ok()) {
+        Err(e) => { println!("{which}: gauges NOT written ({e})"); failed += 1; }
+        Ok(dir) => match write_prom(&dir, which, &gauges) {
+            Ok(p) => println!("{which}: gauges written to {}", p.display()),
+            Err(e) => { println!("{which}: gauges NOT written to {} ({e})", dir.display()); failed += 1; }
+        },
     }
     if failed > 0 { 1 } else { 0 }
 }
