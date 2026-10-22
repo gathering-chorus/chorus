@@ -36,8 +36,8 @@ def domain_tree(r):
         (1, f"services {rg.join([s.replace('service-', '') for s in r['services']])} · "
             f"pipelines {rg.join([p.replace('pipeline-', '') for p in r['pipelines']])} · "
             f"skills {rg.join([s.replace('skill-', '') for s in r['skills']])}"),
-        (1, f"layer        {r['layer'] or '—'}"),
-        (1, f"read by      {rg.join(r['readBy'])}"),
+        (1, f"platform     {r['platform']} · layer {r['layer'] or '—'}"),
+        (1, f"read by      {rg.join(r['readBy'] + [p + ' (composes)' for p in r['composedBy']])}"),
     ] + [(1, f"flag         {rg.KIND.get(k, k)}") for k in r["flags"]])
 
 

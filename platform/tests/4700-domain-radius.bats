@@ -27,7 +27,7 @@ setup() {
   "edges": {
     "hasDomain": [["pulse", "awareness"], ["clearing", "messages"],
                   ["skill-loom-gemba", "awareness"], ["skill-clearing-nudge", "messages"]],
-    "consumes": [["clearing", "awareness"], ["pulse", "messages"]],
+    "consumes": [["clearing", "awareness"]],
     "hosts": [["awareness", "service-pulse"]],
     "atStep": [["awareness", "value-stream-step-directing"], ["messages", "value-stream-step-directing"]],
     "inStream": [["value-stream-step-directing", "value-stream-chorus"]],
@@ -37,6 +37,8 @@ setup() {
     "callsSkill": [["cicd-1-nudge", "skill-clearing-nudge"]],
     "ownedBy": [["pulse", "principal-wren"], ["awareness", "principal-wren"],
                 ["clearing", "principal-abby-normal"], ["messages", "principal-wren"]],
+    "platform": [["awareness", "false"], ["messages", "true"], ["service-pulse", "false"]],
+    "composes": [["pulse", "messages"]],
     "inLayer": [["awareness", "layer-capability"], ["messages", "layer-foundation"]],
     "executor": [["skill-loom-gemba", "deterministic"], ["skill-clearing-nudge", "deterministic"]],
     "purpose": [["awareness", "what each actor is doing"], ["messages", "who said what to whom"]]
@@ -61,7 +63,7 @@ json.dump(g, open(sys.argv[3], "w"))
   expected='domain-radius awareness
 ├─ owner wren · product pulse · value stream chorus · step directing
 ├─ services pulse · pipelines — · skills loom-gemba
-├─ layer        capability
+├─ platform     no · layer capability
 └─ read by      clearing'
   [ "$output" = "$expected" ] || { echo "got:"; echo "$output"; return 1; }
 }
@@ -79,8 +81,8 @@ json.dump(g, open(sys.argv[3], "w"))
 ├─ owner wren · value stream chorus · step directing
 ├─ owns         awareness
 │  └─ services pulse · pipelines — · skills loom-gemba
-├─ consumes     messages (foundation)
-├─ uses tool    — (not modelled)
+├─ composes     messages
+├─ consumes     —
 └─ used by      clearing (via awareness)'
   [[ "$output" == "$expected"* ]] || { echo "got:"; echo "$output"; return 1; }
 }
@@ -126,7 +128,7 @@ json.dump(g, open(sys.argv[3], "w"))
   plant 'g["edges"]["inLayer"] = [e for e in g["edges"]["inLayer"] if e[0] != "awareness"]'
   run "$DR" awareness --from-fixture "$DIR/planted.json" --check
   [ "$status" -eq 2 ] || return 1
-  [[ "$output" == *"layer        —"* ]] || return 1
+  [[ "$output" == *"layer —"* ]] || return 1
   [[ "$output" == *"flag         no layer"* ]] || return 1
 }
 
@@ -167,6 +169,28 @@ import json, sys
 assert [p["product"] for p in json.load(sys.stdin)["products"]] == ["pulse"]' || return 1
   run "$PR" pulse --from-fixture "$DIR/planted.json"
   [[ "$output" == *"├─ parts        clearing"* ]] || return 1
+}
+
+@test "negative proof: a domain with no platform flag is flagged undecided" {
+  plant 'g["edges"]["platform"] = [e for e in g["edges"]["platform"] if e[0] != "awareness"]'
+  run "$DR" awareness --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"platform     undecided"* ]] || return 1
+  [[ "$output" == *"flag         platform flag not written (true or false)"* ]] || return 1
+}
+
+@test "negative proof: a product that consumes a platform domain is flagged" {
+  plant 'g["edges"]["consumes"].append(["pulse", "messages"])'
+  run "$PR" --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"consumes-platform: 1"* ]] || return 1
+}
+
+@test "domain-radius shows who composes a platform domain" {
+  run "$DR" messages --from-fixture "$DIR/clean.json"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"platform     yes · layer foundation"* ]] || return 1
+  [[ "$output" == *"read by      pulse (composes)"* ]] || return 1
 }
 
 @test "--html renders the same tree, and --json carries value stream and step" {

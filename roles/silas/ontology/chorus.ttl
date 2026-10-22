@@ -1905,6 +1905,12 @@ chorus:Layer a owl:Class ;
 chorus:inLayer a owl:ObjectProperty , owl:FunctionalProperty ;
     rdfs:label "in layer" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Layer ;
     rdfs:comment "The one layer a domain sits in (#4293). Required on every Domain once all rows carry it; until then minCount 0 on DomainShape and the ratchet is an AC of #4293." .
+# #4702 — Jeff 2026-10-22 16:02: "lets make it a flag these are high dependency
+# domains and services not a product per se". product-radius and domain-radius
+# read this flag instead of a hardcoded list.
+chorus:platform a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:label "platform" ; rdfs:range xsd:boolean ;
+    rdfs:comment "True when nearly every product depends on this domain or service, false when not (#4702, Jeff 2026-10-22). Written explicitly either way: absent means undecided, and product-radius / domain-radius flag it (platform-undecided). Optional on the shapes until every row carries it, then it ratchets to minCount 1, as inLayer does." .
 chorus:layerRank a owl:DatatypeProperty ;
     rdfs:label "layer rank" ; rdfs:domain chorus:Layer ; rdfs:range xsd:integer ;
     rdfs:comment "Order of layers, lowest first (foundation 0, build 1, capability 2). A dependsOn edge from a domain to a domain in a higher-ranked layer is refused." .
@@ -2111,6 +2117,7 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDesignDoc      ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path chorus:platform ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;   # #4702 — high-dependency flag; absent = undecided
     sh:property [ sh:path chorus:inLayer ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Layer ] ;   # #4293 — ratchets to minCount 1 once every domain row carries a layer
     sh:property [ sh:path chorus:hosts ; sh:minCount 0 ; sh:class chorus:Service ] ;   # #4293 — served, so a domain page shows the services it hosts
     sh:property [ sh:path chorus:dependsOn ; sh:minCount 0 ] ;   # #4293 — served; the range (Domain | Service | Skill) is typed by #4289
@@ -2131,6 +2138,7 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:property [ sh:path chorus:oidcClientId     ; sh:datatype xsd:string ] ;   # #4412 — the OIDC client id people sign in through, when this service is a sign-in surface
+    sh:property [ sh:path chorus:platform         ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;   # #4702 — high-dependency flag; absent = undecided. Public, or the tiered Service read withholds it (#4010)
     sh:property [ sh:path chorus:builtFrom        ; sh:class chorus:CodeUnit ] ;   # #4499 — the code units this service is built from (crawler-written)
     sh:targetClass chorus:Service ; sh:node chorus:CoreShape ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in

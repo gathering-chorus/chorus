@@ -16,6 +16,8 @@ Edges read (Silas + Wren, #4700 pair, measured 10-22):
   Pipeline automates ValueStream
   Domain  inLayer Layer             the domain's layer (16 of 64 on 10-22)
   Skill   executor "pipeline" + implementedBy <name>   the pipeline the skill runs
+  Domain|Service platform true|false   high-dependency flag (#4702); absent = undecided
+  Product composes Domain           builds on a domain homed elsewhere (#4702)
 Product → value stream is derived through its domains: Product hasValueStream
 has 0 rows.
 """
@@ -28,7 +30,7 @@ CLASSES = ["Product", "Domain", "Service", "Pipeline", "ValueStream",
            "ValueStreamStep", "Skill", "PipelineStep", "StepSkill"]
 PREDS = ["hasDomain", "consumes", "partOf", "hosts", "atStep", "inStream",
          "automates", "hasStep", "forStep", "callsSkill", "ownedBy", "executor",
-         "stageOrder", "purpose", "status", "pipelineStatus", "inLayer", "implementedBy"]
+         "stageOrder", "purpose", "status", "pipelineStatus", "inLayer", "implementedBy", "platform", "composes"]
 
 KIND = {
     "domain-no-purpose": "no purpose",
@@ -37,6 +39,8 @@ KIND = {
     "domain-under-non-product": "owned through a link from a non-Product",
     "domain-no-step": "no value-stream step",
     "domain-no-layer": "no layer",
+    "platform-undecided": "platform flag not written (true or false)",
+    "consumes-platform": "consumes a platform domain, which every product has implicitly",
     "valuestream-no-product": "no product's domain sits at a step in it",
     "skill-no-pipeline": "runs a pipeline that has no Pipeline row",
     "consumes-own-domain": "consumes a domain it owns",
@@ -117,6 +121,11 @@ def derive(g):
     def issue(kind, subject, text):
         issues.append({"kind": kind, "subject": subject, "text": text})
 
+    platform_of = {s: o for s, o in g.pairs("platform") if s in domains or s in services}
+    for x in sorted(domains | services):
+        if x not in platform_of:
+            issue("platform-undecided", x, "no platform true|false")
+
     owns = g.pairs("hasDomain", "Product")
     products_of = {}
     for p, d in owns:
@@ -151,6 +160,10 @@ def derive(g):
             issue("link-to-missing-domain", p, f"consumes {d}, which is not a Domain row")
         elif (p, d) in set(owns):
             issue("consumes-own-domain", p, f"consumes {d}, which it already owns")
+
+    for p, d in consumes:
+        if platform_of.get(d) == "true":
+            issue("consumes-platform", p, f"consumes {d}, a platform domain")
 
     skill_domains = g.pairs("hasDomain", "Skill")
     for sk, d in skill_domains:
@@ -227,12 +240,14 @@ def derive(g):
             "pipelines": sorted({pl for sk in sks for pl in pipes_of_skill.get(sk, ())}),
             "readBy": sorted(p for p, x in consumes if x == d),
             "layer": layer_of.get(d, "").replace("layer-", ""),
+            "platform": {"true": "yes", "false": "no"}.get(platform_of.get(d, ""), "undecided"),
+            "composedBy": sorted(p for p, x in g.pairs("composes", "Product") if x == d),
         }
     for d, row in by_domain.items():
         flags = {i["kind"] for i in issues if i["subject"] == d}
         flags |= {i["kind"] for i in issues if i["subject"] in row["skills"]}
         row["flags"] = sorted(flags)
-    return {"domains": by_domain, "issues": issues, "owns": owns, "consumes": consumes,
+    return {"domains": by_domain, "issues": issues, "platformOf": platform_of, "owns": owns, "consumes": consumes,
             "automates": automates, "pipeStatus": pipe_status}
 
 
