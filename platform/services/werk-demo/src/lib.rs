@@ -305,6 +305,13 @@ pub fn verdict_proven(witness: &str, card: u64, role: &str, round: &str, patch_i
 /// is added or removed without this list.
 pub const PEER_ROLES: [&str; 4] = ["wren", "silas", "kade", "abby-normal"];
 
+/// #4691 — the agent roles that prove the land instead of reviewing demos:
+/// borg-queen signs the verdict after deploy (cicd-land skill_borg_queen_proves),
+/// so she is not owed a review step and does not give one. Together with
+/// PEER_ROLES this is every role under designing/claudemd/roles/; the same
+/// drift test fails when a role dir is in neither list.
+pub const PROVER_ROLES: [&str; 1] = ["borg-queen"];
+
 /// The peer roles owed a review for this demo: every agent role but the
 /// demoer. Every builder gets the same count (3), so the pipeline's review
 /// steps are fixed: run-review 1..3. (jeff is the prover, not a peer.)

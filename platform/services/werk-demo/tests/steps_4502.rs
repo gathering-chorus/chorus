@@ -235,13 +235,18 @@ fn source_roles(dir: &Path) -> Vec<String> {
 fn peer_roles_match_the_role_dirs_with_a_persona() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let src = Path::new(&manifest).join("../../../designing/claudemd/roles");
-    let mut want: Vec<String> = werk_demo::PEER_ROLES.iter().map(|s| s.to_string()).collect();
+    let mut want: Vec<String> =
+        werk_demo::PEER_ROLES.iter().chain(werk_demo::PROVER_ROLES.iter()).map(|s| s.to_string()).collect();
     want.sort();
-    assert_eq!(source_roles(&src), want, "PEER_ROLES drifted from designing/claudemd/roles/*");
+    assert_eq!(source_roles(&src), want, "PEER_ROLES + PROVER_ROLES drifted from designing/claudemd/roles/*");
+    // #4691 — a prover is never owed a demo review
+    for r in werk_demo::PROVER_ROLES {
+        assert!(!werk_demo::gather_peers("kade").contains(&r), "{r} is a prover, not a peer");
+    }
 
     // negative proof: one more role source is a mismatch
     let t = std::env::temp_dir().join(format!("peers4502-{}", std::process::id()));
-    for r in werk_demo::PEER_ROLES.iter().chain(["newrole"].iter()) {
+    for r in werk_demo::PEER_ROLES.iter().chain(werk_demo::PROVER_ROLES.iter()).chain(["newrole"].iter()) {
         fs::create_dir_all(t.join(r)).unwrap();
     }
     assert_ne!(source_roles(&t), want, "a fifth role must not match the four peers");
