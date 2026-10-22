@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""#4691 — the store writes that make Borg Queen's proof the land's gate, DRY RUN unless --apply.
+# @domain: pipelines
+
+The cicd-land rows in chorus-make's fixture (cicd-rows.tsv, cicd-graph.trig)
+are what platform/pipelines/cicd-land.yaml is generated from; this writes the
+same rows to the store so `chorus-make graph cicd-land` gives the committed file.
+record leaves the land for her own session, the way a pair's green is its
+navigator's (Jeff 2026-10-22 08:34):
+
+  Skill      borg-ask             (borg-prove ask: nudges borg-queen)
+  Skill      borg-queen-proves    (human: her step, by=borg-queen)
+  Skill      borg-check           (borg-prove check: her signed verdict, the gate)
+  StepSkill  cicd-land-5  borg-record -> borg-ask
+  StepSkill  cicd-land-6  werk-accept -> borg-queen-proves, by=borg-queen choices=recorded|stop
+  StepSkill  cicd-land-7  borg-check (new; #4682's clearing-evaluate moves to 9)
+  StepSkill  cicd-land-8  werk-accept, atomic=true (new)
+
+cicd-land-9 (clearing-evaluate) is #4682's row, written with its Skill by
+land-4682-rows once #4693 lets the Skill shape take a pipeline executor; that
+script names order 9, not 7, after this one.
+
+Each write prints ADD / CHANGE / SAME against the door. Nothing is written
+without --apply, and --apply is a prod write: only after Jeff's yes on the dry
+run. A staging rehearsal moves both doors (CHORUS_DOOR=http://127.0.0.1:3368
+OWL_URL=http://localhost:3368/v1); --apply refuses when the runner's door is not
+the one the plan read. Skills go first; 8 is added before 5-7 change, so accept is
+never missing from the land. Exit 0 = plan
+printed (or applied); 1 = a write was refused; 2 = the door could not be read.
+"""
+import json, os, subprocess, sys, urllib.error, urllib.parse, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+# a row is owned by its writer, and kade has no Write on skills: whoever runs
+# --apply (Wren on #4683) owns the new rows
+OWNER = os.environ.get("ROWS_OWNER", f"principal-{os.environ.get('CHORUS_ROLE') or os.environ.get('ROLE') or 'kade'}")
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+
+SKILLS = [
+    {"name": "borg-ask", "label": "borg-ask", "executor": "deterministic",
+     "implementedBy": "borg-prove", "arguments": "ask ${CARD} ${ROLE}", "hasDomain": "cards",
+     "comment": "Nudges Borg Queen to prove the card in prod: record in her own session, then her step.",
+     "ownedBy": OWNER},
+    {"name": "borg-queen-proves", "label": "Borg Queen proves it in prod", "executor": "human", "hasDomain": "cards",
+     "comment": "Borg Queen's step in the land: she runs borg-prove record in her session, then completes it (#4691).",
+     "ownedBy": OWNER},
+    {"name": "borg-check", "label": "borg-check", "executor": "deterministic",
+     "implementedBy": "borg-prove", "arguments": "check ${CARD} ${skill_borg_queen_proves.outputs.by}", "hasDomain": "cards",
+     "comment": "The gate: accept runs only on a verdict Borg Queen signed and her Mac account wrote, Proven or unproven.",
+     "ownedBy": OWNER},
+]
+STEPSKILLS = [
+    {"name": "cicd-land-8", "label": "cicd land 8: werk-accept", "callsSkill": "werk-accept",
+     "forStep": "cicd-land", "skillOrder": "8", "withArguments": "atomic=true", "ownedBy": OWNER},
+    {"name": "cicd-land-5", "label": "cicd land 5: borg-ask", "callsSkill": "borg-ask",
+     "forStep": "cicd-land", "skillOrder": "5", "withArguments": "", "ownedBy": OWNER},
+    {"name": "cicd-land-6", "label": "cicd land 6: borg-queen-proves", "callsSkill": "borg-queen-proves",
+     "forStep": "cicd-land", "skillOrder": "6", "withArguments": "by=borg-queen choices=recorded|stop", "ownedBy": OWNER},
+    {"name": "cicd-land-7", "label": "cicd land 7: borg-check", "callsSkill": "borg-check",
+     "forStep": "cicd-land", "skillOrder": "7", "withArguments": "", "ownedBy": OWNER},
+]
+PLAN = [("skills", "skills", SKILLS), ("skills", "stepskills", STEPSKILLS)]
+
+
+def bare(v):
+    """The door serves a reference with its minted prefix; the plan sends it bare."""
+    v = str(v).removeprefix("chorus:")
+    for p in ("pipeline-step-", "skill-", "principal-"):
+        v = " ".join(x.removeprefix(p) for x in str(v).split())
+    return str(v)
+
+
+def get(path):
+    with urllib.request.urlopen(f"{DOOR}{path}", timeout=15) as r:
+        return json.load(r)
+
+
+def row(dom, cls, name):
+    try:
+        r = get(f"/{dom}/{cls}/{name}")
+        # a single row serves its fields in data and its references in links
+        return {"name": name, **(r.get("links") or {}), **(r.get("data") or {})}
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def door_of(url):
+    """host:port of a door URL, localhost and 127.0.0.1 alike (OWL_URL carries /v1, CHORUS_DOOR does not)."""
+    u = urllib.parse.urlsplit(url)
+    return ("127.0.0.1" if u.hostname in ("localhost", "127.0.0.1", "::1") else u.hostname, u.port or 80)
+
+
+WRITES_TO = os.environ.get("CHORUS_DOOR", "http://127.0.0.1:3360")
+
+
+def write(verb, dom, cls, w):
+    args = [RUNNER, "call", verb, f"domain={dom}", f"class={cls}"]
+    if verb == "athena-set":
+        args.append(f"id={w['name']}")
+        w = {k: v for k, v in w.items() if k not in ("name", "ownedBy")}  # a PATCH cannot carry ownedBy
+    try:
+        # `call athena-*` runs in this child and reads its door from CHORUS_DOOR:
+        # hand it the door the guard checked, so the check is the door written
+        r = subprocess.run(args + [f"fields={json.dumps(w)}"], capture_output=True, text=True, env={**os.environ, "CHORUS_DOOR": WRITES_TO})
+    except OSError as e:
+        return False, [f"the runner did not run: {e}"]
+    ok = " → 201" if verb == "athena-add" else " → 200"
+    return r.returncode == 0 and ok in r.stdout + r.stderr, (r.stdout + r.stderr).strip().splitlines()[-1:]
+
+
+def main():
+    apply = "--apply" in sys.argv[1:]
+    if apply and door_of(WRITES_TO) != door_of(DOOR):
+        print(f"REFUSED: the plan reads {DOOR} but the runner writes to {WRITES_TO}; set CHORUS_DOOR to the same door — nothing written")
+        return 1
+    counts, refused = {"ADD": 0, "CHANGE": 0, "SAME": 0}, 0
+    for dom, cls, rows in PLAN:
+        for w in rows:
+            try:
+                have = row(dom, cls, w["name"])
+            except Exception as e:
+                print(f"door unreadable at {DOOR}: {e} — no plan")
+                return 2
+            if have is None:
+                kind, detail, verb = "ADD", json.dumps(w, sort_keys=True), "athena-add"
+            else:
+                diff = {k: f"{have.get(k, '')!r} -> {v!r}" for k, v in w.items() if k != "ownedBy" and bare(have.get(k, "")) != bare(v)}
+                kind, detail, verb = ("SAME", "", None) if not diff else ("CHANGE", json.dumps(diff), "athena-set")
+            counts[kind] += 1
+            print(f"{kind:<6} {dom}/{cls}/{w['name']}  {detail}")
+            if apply and verb:
+                ok, why = write(verb, dom, cls, w)
+                if not ok:
+                    refused += 1
+                    print(f"  REFUSED {dom}/{cls}/{w['name']}: {why}")
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — {verb}")
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

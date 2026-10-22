@@ -64,11 +64,13 @@ fn cards_and_lands_run_on_their_own_queues() {
     assert!(card.contains("\nqueue: werk\n"), "{card}");
     assert!(land.contains("\nqueue: werk-land\n"), "{land}");
     let enq = card.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).expect("the card enqueues its land");
-    assert!(enq.contains("    action: dag.enqueue\n    with:\n      dag: cicd-land\n"), "{enq}");
+    // #4691 — by the CLI (a top-level run on its own queue): dagu refuses a
+    // human task in a dag.enqueue sub-DAG, and the land has Borg Queen's step
+    assert!(enq.contains("dagu.yaml enqueue cicd-land -- CARD=${CARD}"), "{enq}");
     // NEGATIVE PROOF: the land is never a call (dag.run would ignore its queue)
     // and never a file path, which dagu refuses. #4540: the card's test step
     // IS a dag.run (the cicd-test child); the land step still is not.
-    assert!(!enq.contains("dag.run") && !enq.contains(".yaml"), "{enq}");
+    assert!(!enq.contains("dag.run") && !enq.contains("dag.enqueue") && !enq.contains("pipelines/"), "{enq}");
 }
 
 #[test]
