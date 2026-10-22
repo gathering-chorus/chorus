@@ -175,3 +175,30 @@ TTL
   [[ "$output" == *"skill-borg-verify"* ]] || { echo "$output"; false; }
   [[ "$output" == *"forStreamStep"* ]] || false
 }
+
+@test "#4693 SkillShape accepts executor 'pipeline' and conforms" {
+  cat > "$T/good4693.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:skill-clearing-evaluate a chorus:Skill ;
+    rdfs:label "clearing-evaluate" ; rdfs:comment "Evaluates chunk sequence or lane switch." ;
+    chorus:executor "pipeline" ; chorus:implementedBy "clearing-evaluate" ;
+    chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+TTL
+  run report "$T/good4693.ttl"
+  [[ "$output" == *"sh:conforms  true"* ]] || { echo "$output"; false; }
+}
+
+@test "#4693 negative proof: executor outside sh:in like 'bogus' is refused" {
+  cat > "$T/bad4693.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:skill-bogus a chorus:Skill ;
+    rdfs:label "bogus-skill" ; rdfs:comment "Has an unlisted executor." ;
+    chorus:executor "bogus" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+TTL
+  run report "$T/bad4693.ttl"
+  [[ "$output" == *"sh:conforms  false"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"bogus"* ]] || false
+}
+
