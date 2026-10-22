@@ -498,7 +498,7 @@ fn onboarding_census() -> Option<usize> {
     let root = env_or("CHORUS_HOME", &format!("{}/CascadeProjects/chorus", env_or("HOME", "")));
     let table = chorus_principal::rows::runtime_table();
     let mut short = 0;
-    println!("ONBOARDING (platform/config/agent-onboarding-steps.tsv)");
+    println!("ONBOARDING (platform/services/chorus-principal/config/agent-onboarding-steps.tsv)");
     for b in &rows {
         let Some(principal) = bound(b, "s") else { continue };
         let name = principal.trim_start_matches("principal-").to_string();

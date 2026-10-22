@@ -2,7 +2,7 @@
 // @domain: identity
 //! #4691 — every agent principal on its own Mac account onboards the same way
 //! (Jeff 2026-10-22 08:35: "i dont need 2 or 3 snowflakes"). The steps are one
-//! list, platform/config/agent-onboarding-steps.tsv, read by census (and by
+//! list, platform/services/chorus-principal/config/agent-onboarding-steps.tsv, read by census (and by
 //! create, #4694). On 2026-10-22 census said "14 users, all complete" while
 //! Borg Queen lacked seven steps; these cases hold census to naming each one.
 use chorus_principal::onboarding::{gaps, steps, Facts};

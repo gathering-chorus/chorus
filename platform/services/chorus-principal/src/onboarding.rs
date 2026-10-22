@@ -1,9 +1,9 @@
-//! #4691 — the agent onboarding steps, one list (platform/config/agent-onboarding-steps.tsv),
+//! #4691 — the agent onboarding steps, one list (platform/services/chorus-principal/config/agent-onboarding-steps.tsv),
 //! and the census judgement over them: which steps a principal is missing.
 //! Pure: the facts are measured by the caller (main.rs census), so every step
 //! can be shown missing in a test.
 
-const STEPS: &str = include_str!("../../../config/agent-onboarding-steps.tsv");
+const STEPS: &str = include_str!("../config/agent-onboarding-steps.tsv");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
