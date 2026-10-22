@@ -14,7 +14,8 @@ ROOT="$BATS_TEST_DIRNAME/../.."
 SHAPES="$ROOT/roles/silas/ontology/chorus.ttl"
 
 setup() {
-  command -v shacl >/dev/null 2>&1 || skip "shacl (Jena) not installed"
+  # A missing validator must fail, never skip: a skipped negative proof reads green.
+  command -v shacl >/dev/null 2>&1 || { echo "shacl (Jena) not installed: cannot prove the platform rule" >&2; return 1; }
   T="$BATS_TEST_TMPDIR"
   cat > "$T/rows.ttl" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
@@ -55,5 +56,8 @@ refused() { grep -qx "chorus:$1 chorus:platform" "$T/results.txt"; }
 }
 
 @test "the Service read serves the flag (exposure public), or the door withholds it" {
-  grep 'sh:path chorus:platform' "$SHAPES" | grep -q 'chorus:exposure chorus:public' || return 1
+  # the ServiceShape block only: from its declaration to the next shape
+  awk '/^chorus:ServiceShape a sh:NodeShape/ {on=1} on && /^chorus:[A-Za-z]+Shape a sh:NodeShape/ && !/ServiceShape/ {on=0} on' "$SHAPES" > "$T/service-shape.ttl"
+  grep -q 'sh:path chorus:platform' "$T/service-shape.ttl" || { echo "ServiceShape has no platform property"; return 1; }
+  grep 'sh:path chorus:platform' "$T/service-shape.ttl" | grep -q 'chorus:exposure chorus:public' || return 1
 }
