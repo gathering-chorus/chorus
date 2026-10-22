@@ -48,12 +48,33 @@ Next (2):
   [[ "$output" =~ "FATAL: empty board listing received" ]] || return 1
 }
 
-@test "clearing-chunk enforce refuses (exit 1) when board listing has no WIP/Now header (#4693 AC4 negative proof)" {
-  export MOCK_BOARD_LISTING='Later (1):
+@test "clearing-chunk enforce refuses (exit 1) when board listing has no section headers (#4693 AC4 negative proof)" {
+  export MOCK_BOARD_LISTING='unparseable error output without headers
   1 x [chunk:buzz]'
   run "$SCRIPT" enforce buzz
   [ "$status" -eq 1 ]
   [[ "$output" =~ "FATAL: failed to parse active chunks from board listing" ]] || return 1
+}
+
+@test "clearing-chunk enforce permits chunk when WIP is omitted from idle board with Next/Later headers (#4693 AC4)" {
+  export MOCK_BOARD_LISTING='Next (2):
+  4680 x [chunk:foo]
+  4681 y [chunk:bar]
+Later (1):
+  4690 z [chunk:baz]'
+  run "$SCRIPT" enforce buzz
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "activated chunk 'buzz' (1/3 active)" ]] || return 1
+}
+
+@test "clearing-chunk enforce permits chunk when WIP is explicit 0 (#4693 AC4)" {
+  export MOCK_BOARD_LISTING='WIP (0):
+Next (2):
+  4680 x [chunk:foo]
+  4681 y [chunk:bar]'
+  run "$SCRIPT" enforce buzz
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "activated chunk 'buzz' (1/3 active)" ]] || return 1
 }
 
 @test "clearing-chunk check permits go when answered by Jeff" {
@@ -106,10 +127,51 @@ Next (2):
   grep -A 5 "skill-clearing-switch" "$WF" | grep -q 'expected: "switch"' || return 1
 }
 
+@test "clearing-chunk switch fails (exit 1) if chorus-log fails (#3734 negative proof)" {
+  _tmp=$(mktemp -d "${TMPDIR:-/tmp}/chunk-switch-neg.XXXXXX")
+  echo '#!/bin/sh' > "$_tmp/bad-log"
+  echo 'exit 1' >> "$_tmp/bad-log"
+  chmod +x "$_tmp/bad-log"
+  echo '#!/bin/sh' > "$_tmp/good-nudge"
+  echo 'exit 0' >> "$_tmp/good-nudge"
+  chmod +x "$_tmp/good-nudge"
+
+  export CHORUS_LOG_SCRIPT="$_tmp/bad-log"
+  export OPS_NUDGE_SCRIPT="$_tmp/good-nudge"
+
+  run "$SCRIPT" switch 4693 ops abby-normal jeff
+  rm -rf "$_tmp"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "FATAL: failed to emit clearing.chunk.switched to spine" ]] || return 1
+}
+
+@test "clearing-chunk switch fails (exit 1) if ops-nudge fails (#3734 negative proof)" {
+  _tmp=$(mktemp -d "${TMPDIR:-/tmp}/chunk-switch-neg.XXXXXX")
+  echo '#!/bin/sh' > "$_tmp/good-log"
+  echo 'exit 0' >> "$_tmp/good-log"
+  chmod +x "$_tmp/good-log"
+  echo '#!/bin/sh' > "$_tmp/bad-nudge"
+  echo 'exit 1' >> "$_tmp/bad-nudge"
+  chmod +x "$_tmp/bad-nudge"
+
+  export CHORUS_LOG_SCRIPT="$_tmp/good-log"
+  export OPS_NUDGE_SCRIPT="$_tmp/bad-nudge"
+
+  run "$SCRIPT" switch 4693 ops abby-normal jeff
+  rm -rf "$_tmp"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "FATAL: failed to nudge jeff for next chunk" ]] || return 1
+}
+
 @test "clearing-chunk switch emits clearing.chunk.switched on spine (#4693 AC3)" {
   _tmp=$(mktemp -d "${TMPDIR:-/tmp}/chunk-switch.XXXXXX")
   export CHORUS_LOG_FILE="$_tmp/chorus.log"
   touch "$CHORUS_LOG_FILE"
+  echo '#!/bin/sh' > "$_tmp/mock-nudge"
+  echo 'exit 0' >> "$_tmp/mock-nudge"
+  chmod +x "$_tmp/mock-nudge"
+  export OPS_NUDGE_SCRIPT="$_tmp/mock-nudge"
+  unset CHORUS_LOG_SCRIPT
 
   run "$SCRIPT" switch 4693 ops abby-normal jeff
   [ "$status" -eq 0 ]

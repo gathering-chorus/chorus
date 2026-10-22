@@ -46,16 +46,15 @@ if not cards_out:
 
 active_chunks = set()
 in_active_section = False
-saw_header = False
+saw_any_header = False
 
 for line in cards_out.splitlines():
-    # Detect section headers like "WIP (2):" or "Now (0):"
-    if re.match(r"^(WIP|Now)\s*\(\d+\):", line):
-        in_active_section = True
-        saw_header = True
-        continue
-    elif re.match(r"^[A-Za-z0-9_-]+\s*\(\d+\):", line):
-        in_active_section = False
+    # Any "Name (N):" header proves cards list parsed successfully
+    m = re.match(r"^([A-Za-z0-9_-]+)\s*\(\d+\):", line)
+    if m:
+        saw_any_header = True
+        section_name = m.group(1)
+        in_active_section = section_name in ("WIP", "Now")
         continue
 
     if in_active_section:
@@ -64,7 +63,7 @@ for line in cards_out.splitlines():
         for c in chunks:
             active_chunks.add(c)
 
-if not saw_header:
+if not saw_any_header:
     sys.exit(1)
 
 print(", ".join(sorted(active_chunks)))
@@ -330,14 +329,24 @@ switch)
   }
   reason="lane switch chosen by ${jeff}"
   root="${CHORUS_ROOT:-${CHORUS_HOME:-$HOME/CascadeProjects/chorus}}"
-  # 1. Emit clearing.chunk.switched to spine with reason
-  if [ -x "$root/platform/scripts/chorus-log" ]; then
-    "$root/platform/scripts/chorus-log" clearing.chunk.switched "$role" "card_id=$card" "chunk=$chunk" "reason=$reason" 2>/dev/null || true
+  chorus_log="${CHORUS_LOG_SCRIPT:-$root/platform/scripts/chorus-log}"
+  if [ ! -x "$chorus_log" ]; then
+    echo "FATAL: chorus-log not found or not executable at $chorus_log" >&2
+    exit 1
+  fi
+  if ! "$chorus_log" clearing.chunk.switched "$role" "card_id=$card" "chunk=$chunk" "reason=$reason"; then
+    echo "FATAL: failed to emit clearing.chunk.switched to spine" >&2
+    exit 1
   fi
 
-  # 2. Nudge Jeff to name the next chunk
-  if [ -x "$root/platform/scripts/ops-nudge" ]; then
-    env -u CHORUS_ROLE "$root/platform/scripts/ops-nudge" "$jeff" "clearing: #${card} lane switch from chunk '${chunk}' — please name next chunk" "$role" 2>/dev/null || true
+  ops_nudge="${OPS_NUDGE_SCRIPT:-$root/platform/scripts/ops-nudge}"
+  if [ ! -x "$ops_nudge" ]; then
+    echo "FATAL: ops-nudge not found or not executable at $ops_nudge" >&2
+    exit 1
+  fi
+  if ! env -u CHORUS_ROLE "$ops_nudge" "$jeff" "clearing: #${card} lane switch from chunk '${chunk}' — please name next chunk" "$role"; then
+    echo "FATAL: failed to nudge $jeff for next chunk" >&2
+    exit 1
   fi
 
   echo "clearing-chunk: #$card lane switch from chunk '$chunk' (reason: $reason)"
