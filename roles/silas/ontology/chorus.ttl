@@ -810,7 +810,7 @@ chorus:roles chorus:hosts chorus:service-loom .
 chorus:pulse a owl:Class ;
     rdfs:label "pulse" ;
     chorus:comment "Agent vital signs — heartbeats, declared role states, andon, nudge-delivery health." ;
-    chorus:purpose "Carry the team's vital signs — heartbeats, declared states, and delivery health — so liveness is observable, not assumed." ;
+    # #4702 — purpose removed: a Domain field on a Product; ProductShape is closed.
     chorus:ownedBy chorus:principal-wren ;   # #4175 — was role-silas; the store said role-wren and Silas ruled the store right 2026-09-14 ("coordination state, not observation"). Found by #4175's appointment check on its first real run.
     chorus:repoTarget "platform/pulse" .
     
@@ -2009,10 +2009,11 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:toBe            ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:notInScope      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:references      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:repoTarget      ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4702 — where the product's code lives (pulse: platform/pulse)
     # #4702 AC5 — closed: a field not on this shape (with its extensions in
     # product-design-4018.ttl and clearing-domains-3860.ttl), nor a door stamp, is refused.
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment chorus:label chorus:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
                              chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) .
 
 # --- #4481: one parent per row, no links across hierarchies (Jeff 2026-10-10, reviewed with Wren) ---
@@ -2138,7 +2139,7 @@ chorus:DomainShape a sh:NodeShape ;
     # #4702 AC5 — closed: a field not listed above, nor on CoreShape, nor a door stamp, is refused.
     # sh:closed does not follow sh:node, so CoreShape's paths and the stamps are named here.
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment chorus:label chorus:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
                              chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) ;
     sh:property [ sh:path chorus:inLayer ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Layer ] ;   # #4293 — ratchets to minCount 1 once every domain row carries a layer
     sh:property [ sh:path chorus:hosts ; sh:minCount 0 ; sh:class chorus:Service ] ;   # #4293 — served, so a domain page shows the services it hosts
@@ -2749,8 +2750,8 @@ chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing 
 # #4091: the tool edges (feeds, indexes) moved to designing/data/tool-instances.ttl with
 # their rows: an edge from a row belongs with the row, not in the schema graph,
 # where it read as an untyped instance once the rows were renamed tool-*.
-chorus:borg chorus:feeds chorus:Designing .
-chorus:borg chorus:decomposes chorus:gathering .
+# #4702 — borg feeds Designing and borg decomposes gathering removed (Silas 16:18):
+# off ProductShape, which is closed; backed up before the land.
 
 # /chorus is the memory layer — it indexes everything, doesn't feed a specific vertebra
 

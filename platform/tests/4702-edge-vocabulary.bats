@@ -65,3 +65,22 @@ refused() { grep -qx "chorus:$1 chorus:$2" "$T/results.txt"; }
 @test "negative proof: a domain built by a product, not a value stream, is refused" {
   refused d-builtby-product builtBy || { cat "$T/results.txt"; return 1; }
 }
+
+# AC5 — the closed shapes hold for the model's own rows, and refuse a planted field.
+closed_results() {
+  shacl validate --shapes "$SHAPES" --data "$1" 2>&1 |
+    awk '/sh:focusNode/ {f=$2} /sourceConstraintComponent/ {print f, $2}' | tr -d ';' | grep ClosedConstraint || true
+}
+
+@test "every Product and Domain row in the model source passes the closed shapes (CoreShape paths and stamps ignored)" {
+  run closed_results "$SHAPES"
+  [ -z "$output" ] || { echo "$output"; return 1; }
+}
+
+@test "negative proof: a model row with one unknown field is refused by the closed shape" {
+  { cat "$SHAPES"; printf '\nchorus:x-domain a chorus:Domain ; chorus:notAField "x" .\nchorus:x-product a chorus:Product ; chorus:notAField "x" .\n'; } > "$T/planted.ttl"
+  run closed_results "$T/planted.ttl"
+  [[ "$output" == *"chorus:x-domain sh:ClosedConstraintComponent"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"chorus:x-product sh:ClosedConstraintComponent"* ]] || return 1
+}
+
