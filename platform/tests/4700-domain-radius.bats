@@ -36,6 +36,8 @@ setup() {
     "callsSkill": [["cicd-1-nudge", "skill-clearing-nudge"]],
     "ownedBy": [["pulse", "principal-wren"], ["awareness", "principal-wren"],
                 ["clearing", "principal-abby-normal"], ["messages", "principal-wren"]],
+    "inLayer": [["awareness", "layer-capability"], ["messages", "layer-foundation"]],
+    "executor": [["skill-loom-gemba", "deterministic"], ["skill-clearing-nudge", "deterministic"]],
     "purpose": [["awareness", "what each actor is doing"], ["messages", "who said what to whom"]]
   }
 }
@@ -58,7 +60,7 @@ json.dump(g, open(sys.argv[3], "w"))
   expected='domain-radius awareness
 ├─ owner wren · product pulse · value stream chorus · step directing
 ├─ services pulse · pipelines — · skills loom-gemba
-├─ platform     not modelled
+├─ layer        capability
 └─ read by      clearing'
   [ "$output" = "$expected" ] || { echo "got:"; echo "$output"; return 1; }
 }
@@ -117,6 +119,25 @@ json.dump(g, open(sys.argv[3], "w"))
   run "$PR" --from-fixture "$DIR/planted.json" --check
   [ "$status" -eq 2 ]
   [[ "$output" == *"service-hosted-twice: 1"* ]] || return 1
+}
+
+@test "negative proof: a domain with no layer is flagged" {
+  plant 'g["edges"]["inLayer"] = [e for e in g["edges"]["inLayer"] if e[0] != "awareness"]'
+  run "$DR" awareness --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"layer        —"* ]] || return 1
+  [[ "$output" == *"flag         no layer"* ]] || return 1
+}
+
+@test "negative proof: a skill that runs a pipeline with no Pipeline row is flagged on its domain" {
+  plant 'g["edges"]["executor"] = [["skill-clearing-nudge", "pipeline"]]; g["edges"]["implementedBy"] = [["skill-clearing-nudge", "no-such-pipeline"]]'
+  run "$DR" messages --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"flag         runs a pipeline that has no Pipeline row"* ]] || return 1
+  # and the same skill pointed at a real Pipeline row is clean
+  plant 'g["edges"]["executor"] = [["skill-clearing-nudge", "pipeline"]]; g["edges"]["implementedBy"] = [["skill-clearing-nudge", "cicd"]]'
+  run "$DR" messages --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 0 ] || return 1
 }
 
 @test "--html renders the same tree, and --json carries value stream and step" {

@@ -14,6 +14,8 @@ Edges read (Silas + Wren, #4700 pair, measured 10-22):
   Skill   hasDomain Domain          skill's domain
   Pipeline hasStep PipelineStep; StepSkill forStep PipelineStep, callsSkill Skill
   Pipeline automates ValueStream
+  Domain  inLayer Layer             the domain's layer (16 of 64 on 10-22)
+  Skill   executor "pipeline" + implementedBy <name>   the pipeline the skill runs
 Product → value stream is derived through its domains: Product hasValueStream
 has 0 rows.
 """
@@ -26,7 +28,7 @@ CLASSES = ["Product", "Domain", "Service", "Pipeline", "ValueStream",
            "ValueStreamStep", "Skill", "PipelineStep", "StepSkill"]
 PREDS = ["hasDomain", "consumes", "partOf", "hosts", "atStep", "inStream",
          "automates", "hasStep", "forStep", "callsSkill", "ownedBy", "executor",
-         "stageOrder", "purpose", "status", "pipelineStatus"]
+         "stageOrder", "purpose", "status", "pipelineStatus", "inLayer", "implementedBy"]
 
 KIND = {
     "domain-no-purpose": "no purpose",
@@ -34,6 +36,8 @@ KIND = {
     "domain-two-products": "listed by two products",
     "domain-under-non-product": "owned through a link from a non-Product",
     "domain-no-step": "no value-stream step",
+    "domain-no-layer": "no layer",
+    "skill-no-pipeline": "runs a pipeline that has no Pipeline row",
     "consumes-own-domain": "consumes a domain it owns",
     "link-to-missing-domain": "links to a name that is not a Domain",
     "skill-missing-domain": "skill's domain is not a Domain",
@@ -152,6 +156,18 @@ def derive(g):
         if d not in domains:
             issue("skill-missing-domain", sk, f"hasDomain {d}, which is not a Domain row")
 
+    layer_of = g.first("inLayer", "Domain")
+    for d in sorted(domains):
+        if d not in layer_of:
+            issue("domain-no-layer", d, "no inLayer")
+
+    pipeline_names = {pl for pl in g.of("Pipeline")} | {pl.replace("pipeline-", "") for pl in g.of("Pipeline")}
+    impl = g.first("implementedBy", "Skill")
+    for sk, ex in g.pairs("executor", "Skill"):
+        if ex == "pipeline" and impl.get(sk, "") not in pipeline_names:
+            issue("skill-no-pipeline", sk,
+                  f"executor pipeline, implementedBy {impl.get(sk, '') or '(none)'}, which is not a Pipeline row")
+
     hosts = g.pairs("hosts", "Domain")
     hosted_by = {}
     for d, s in hosts:
@@ -199,10 +215,12 @@ def derive(g):
             "skills": sks,
             "pipelines": sorted({pl for sk in sks for pl in pipes_of_skill.get(sk, ())}),
             "readBy": sorted(p for p, x in consumes if x == d),
-            "platform": "not modelled",
+            "layer": layer_of.get(d, "").replace("layer-", ""),
         }
     for d, row in by_domain.items():
-        row["flags"] = sorted({i["kind"] for i in issues if i["subject"] == d})
+        flags = {i["kind"] for i in issues if i["subject"] == d}
+        flags |= {i["kind"] for i in issues if i["subject"] in row["skills"]}
+        row["flags"] = sorted(flags)
     return {"domains": by_domain, "issues": issues, "owns": owns, "consumes": consumes,
             "automates": automates, "pipeStatus": pipe_status}
 
