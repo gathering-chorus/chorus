@@ -926,6 +926,7 @@ pub fn merge_sparql(staging: &str, ontology: &str) -> String {
 /// predicates are left alone); then EVERY triple of every Domain subject leaves
 /// the ontology graph, the class axioms included. Pure.
 pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
+pub const ROLES_GRAPH: &str = "urn:chorus:domains:roles";
 const ONTOLOGY_DEFAULT: &str = "urn:chorus:ontology";
 pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, additive: bool) -> String {
     let c = "https://jeffbridwell.com/chorus#";
@@ -950,6 +951,56 @@ pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, a
         is_domain(staging), is_domain(ontology),
         dom = domains, stg = staging, ont = ontology,
     )
+}
+
+/// #4695 — a Role lives in urn:chorus:domains:roles and changes there through the
+/// door (#4432: rows live in the store). A role subject staged from a model file
+/// leaves the ontology graph and is written nowhere: never a row file over the store.
+pub fn drop_role_rows_sparql(ontology: &str) -> String {
+    let c = "https://jeffbridwell.com/chorus#";
+    format!("DELETE {{ GRAPH <{ontology}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ontology}> {{ ?s a <{c}Role> ; ?p ?o }} }}")
+}
+
+/// #4695 — the deploy transaction SPARQL: merge, domain rehoming, and role drops.
+/// #4338 — the ontology graph holds the model only: Domain rows go home.
+/// #4695 — Role rows are dropped from urn:chorus:ontology (roles live in
+/// urn:chorus:domains:roles and change through the door). Always drops; no off-switch.
+pub fn deploy_transaction_sparql(
+    staging: &str,
+    ontology: &str,
+    is_card: bool,
+    retire_clause: &str,
+    bnodes: &str,
+) -> String {
+    deploy_transaction_sparql_with_options(
+        staging,
+        ontology,
+        is_card,
+        retire_clause,
+        bnodes,
+        true,
+    )
+}
+
+pub fn deploy_transaction_sparql_with_options(
+    staging: &str,
+    ontology: &str,
+    is_card: bool,
+    retire_clause: &str,
+    bnodes: &str,
+    wire_role_drop: bool,
+) -> String {
+    let rehome_dom = if ontology == ONTOLOGY_DEFAULT {
+        format!(" ; {}", rehome_domain_rows_sparql(staging, ontology, DOMAINS_GRAPH, is_card))
+    } else {
+        String::new()
+    };
+    let drop_roles = if ontology == ONTOLOGY_DEFAULT && wire_role_drop {
+        format!(" ; {}", drop_role_rows_sparql(ontology))
+    } else {
+        String::new()
+    };
+    format!("{retire_clause}{bnodes}{}{rehome_dom}{drop_roles}", merge_sparql(staging, ontology))
 }
 
 fn ok_http(code: &str) -> bool {
@@ -1505,9 +1556,8 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     } else {
         String::new()
     };
-    // #4338 — the ontology graph holds the model only: Domain rows go home.
-    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH, plan.is_some())) } else { String::new() };
-    let sparql = format!("{retire_clause}{bnodes}{}{rehome}", merge_sparql(&staging, &ontology));
+    // #4338 / #4695 — merge, domain rehoming, and role drops in one transaction.
+    let sparql = deploy_transaction_sparql(&staging, &ontology, plan.is_some(), &retire_clause, &bnodes);
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
     if !ok_http(&mcode) {
@@ -1520,9 +1570,10 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     // query endpoint either. Ask how many staged subjects are ABSENT after the
     // merge, before staging is dropped, and refuse on an unanswered question
     // (#3726 single-request-truth, #3731 fail-closed).
+    let c = "https://jeffbridwell.com/chorus#";
     let vresp = curl(&["-s", "--data-urlencode",
         &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o }} \
-                  FILTER NOT EXISTS {{ {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{DOMAINS_GRAPH}> {{ ?s ?q ?r }} }} }} }}"),
+                  FILTER NOT EXISTS {{ {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{DOMAINS_GRAPH}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{staging}> {{ ?s a <{c}Role> }} }} }} }}"),
         "-H", "Accept: text/csv", &query]).unwrap_or_default();
     let verdict = verify_missing(&vresp);
     let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
@@ -3115,6 +3166,130 @@ mod rehome_card_4576 {
         let dom = block(&after, "urn:dom");
         assert!(!dom.contains("c:Session"), "the replace no longer replaces, so this proof cannot tell the two apart:\n{after}");
         assert!(dom.contains("c:Teammate"), "{after}");
+    }
+}
+
+/// #4695 — Role rows staged into staging leave the ontology graph entirely and
+/// are dropped from ontology rather than written to either graph (#4432).
+#[cfg(test)]
+mod drop_roles_4695 {
+    use super::{deploy_transaction_sparql, drop_role_rows_sparql};
+    use std::process::Command;
+
+    fn get_update_cli() -> String {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("update check");
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() {
+            panic!("UNMEASURED: no Jena update CLI on PATH (CLAUDE.md #3734)");
+        }
+        update
+    }
+
+    #[test]
+    fn a_role_leaves_the_ontology_graph_and_live_roles_are_preserved() {
+        let update = get_update_cli();
+        let dir = std::env::temp_dir().join(format!("drop-roles-4695-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:stg> { c:role-borg-queen a c:Role ; rdfs:label "Borg Queen" ; c:roleKind "agent" ; c:hasProperty c:prop-borg-queen .
+            c:Role a owl:Class ; rdfs:label "Role" . }
+<urn:chorus:ontology> { c:Role a owl:Class ; rdfs:label "Role" . }
+<urn:chorus:domains:roles> { c:role-kade a c:Role ; rdfs:label "Kade" ; c:doorWritten "true" . }
+"#).unwrap();
+        let q = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", true, "", "");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (ont, roles) = (block("urn:chorus:ontology"), block("urn:chorus:domains:roles"));
+        // ontology retains schema class and 0 role individuals
+        assert!(ont.contains("c:Role") && ont.contains("owl:Class"), "schema class lost from ontology:\n{after}");
+        assert!(!ont.contains("c:role-borg-queen"), "role stayed in ontology:\n{after}");
+        // roles domain is UNTOUCHED by deploy: kade retains door-written property, borg-queen is not written
+        assert!(roles.contains("c:role-kade") && roles.contains("c:doorWritten"), "live role lost door property:\n{after}");
+        assert!(!roles.contains("c:role-borg-queen"), "deploy must not write roles to roles domain (#4432):\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn negative_proof_wiring_omission_leaves_staged_role_in_ontology() {
+        // Negative proof (#3734): when the role drop wiring is omitted (wire_role_drop = false,
+        // simulating run_athena_deploy_plan stopping its call to drop_role_rows_sparql), the staged
+        // role is NOT dropped and remains in urn:chorus:ontology.
+        let update = get_update_cli();
+        let dir = std::env::temp_dir().join(format!("drop-roles-wiring-neg-4695-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:stg> { c:role-borg-queen a c:Role ; c:roleKind "agent" . }
+<urn:chorus:ontology> { }
+<urn:chorus:domains:roles> { }
+"#).unwrap();
+        // The deploy SPARQL wiring MUST contain the drop clause by default
+        let q_wired = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", true, "", "");
+        assert!(q_wired.contains(&drop_role_rows_sparql("urn:chorus:ontology")), "wiring must include role drop");
+
+        // With role drop omitted from the deploy transaction wiring
+        let q_unwired = super::deploy_transaction_sparql_with_options("urn:stg", "urn:chorus:ontology", true, "", "", false);
+        assert!(!q_unwired.contains("a <https://jeffbridwell.com/chorus#Role>"), "unwired transaction must omit role drop");
+
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q_unwired).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let i = after.find("<urn:chorus:ontology>").unwrap_or(0);
+        let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len());
+        let ont = after[i..j].to_string();
+        assert!(ont.contains("c:role-borg-queen"), "without wiring, role should remain in ontology");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn release_with_3838_roles_leaves_zero_roles_in_ontology_and_preserves_live_roles() {
+        let update = get_update_cli();
+        let dir = std::env::temp_dir().join(format!("drop-roles-3838-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:stg> {
+    c:role-jeff a c:Role ; rdfs:label "Jeff" .
+    c:role-wren a c:Role ; rdfs:label "Wren" .
+    c:role-silas a c:Role ; rdfs:label "Silas" .
+    c:role-kade a c:Role ; rdfs:label "Kade" .
+    c:role-abby-normal a c:Role ; rdfs:label "Abby Normal" .
+    c:role-nightly a c:Role ; rdfs:label "nightly" .
+    c:role-crawler a c:Role ; rdfs:label "crawler" .
+    c:Role a owl:Class ; rdfs:label "Role" .
+}
+<urn:chorus:ontology> {
+    c:Role a owl:Class ; rdfs:label "Role" .
+}
+<urn:chorus:domains:roles> {
+    c:role-abby-normal a c:Role ; rdfs:label "role-abby-normal" ; c:hasProperty c:prop-door-written .
+}
+"#).unwrap();
+        let q = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", false, "", "");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (ont, roles) = (block("urn:chorus:ontology"), block("urn:chorus:domains:roles"));
+        for r in &["role-jeff", "role-wren", "role-silas", "role-kade", "role-abby-normal", "role-nightly", "role-crawler"] {
+            assert!(!ont.contains(r), "{r} stayed in ontology:\n{after}");
+        }
+        // live role-abby-normal in roles domain must NOT be overwritten by 3838's rdfs:label "Abby Normal"
+        assert!(roles.contains("role-abby-normal") && roles.contains("prop-door-written"),
+            "live role-abby-normal door property overwritten:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
