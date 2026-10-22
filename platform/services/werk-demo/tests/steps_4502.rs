@@ -159,14 +159,23 @@ fn each_step_exits_by_what_it_recorded() {
     assert_eq!(guessed.exit, 1, "{}", guessed.message);
     assert!(guessed.message.contains("silas: the tool call did not come back"), "{}", guessed.message);
     std::env::set_var("CHORUS_CLAUDE_BIN", &smoke_stub);
-    // abby-normal's own files changed → named unmeasured (agy has no headless smoke), never a pass
+    // #4691 (Jeff 10-22, "2"): abby-normal's own files changed → named by-hand
+    // (agy has no headless smoke here), never counted among the smoked
     fs::create_dir_all(werk.join("roles/abby-normal")).unwrap();
     fs::write(werk.join("roles/abby-normal/AGENTS.md"), "# Abby\n").unwrap();
     git(&werk, &["add", "roles"]);
     git(&werk, &["commit", "-q", "-m", "abby persona"]);
     let abby = session_smoke_step(4502, "wren", &home).unwrap();
-    assert_eq!(abby.exit, 1, "{}", abby.message);
-    assert!(abby.message.contains("abby-normal: abby-normal runs on agy"), "{}", abby.message);
+    assert_eq!(abby.exit, 0, "{}", abby.message);
+    assert!(abby.message.contains("silas started from the werk build and made one tool call"), "{}", abby.message);
+    assert!(abby.message.contains("abby-normal: runs on agy, not smoked here; abby-normal checks the session by hand after the land"), "{}", abby.message);
+    assert!(!abby.message.contains("silas, abby-normal"), "abby-normal is never listed as smoked: {}", abby.message);
+    // NEGATIVE PROOF: a by-hand role never masks a Claude role that fails
+    fs::write(&fail_flag, "").unwrap();
+    let both = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(both.exit, 1, "{}", both.message);
+    assert!(both.message.contains("silas: session exited 2: hook refused Bash"), "{}", both.message);
+    fs::remove_file(&fail_flag).unwrap();
 }
 
 #[test]
@@ -176,6 +185,8 @@ fn smoke_roles_reads_which_sessions_a_diff_touches() {
     assert_eq!(smoke_roles(&v(&["roles/kade/.claude/settings.json"])), vec!["kade"]);
     assert_eq!(smoke_roles(&v(&["designing/claudemd/roles/silas/tone.md"])), vec!["silas"]);
     assert_eq!(smoke_roles(&v(&["designing/claudemd/roles/abby-normal/title.md"])), vec!["abby-normal"]);
+    // #4691: a prover's files are named too, not skipped
+    assert_eq!(smoke_roles(&v(&["roles/borg-queen/AGENTS.md"])), vec!["borg-queen"]);
     // shared session config touches every Claude role (abby-normal runs on agy)
     assert_eq!(smoke_roles(&v(&["platform/services/chorus-hooks/src/lib.rs"])), vec!["wren", "silas", "kade"]);
     assert_eq!(smoke_roles(&v(&["skills/demo/SKILL.md"])), vec!["wren", "silas", "kade"]);
