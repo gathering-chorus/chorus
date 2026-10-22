@@ -651,6 +651,25 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
                         return 2;
                     }
                 },
+                (None, _) => match agent_half(&css, name) {
+                    // #4686 — an agent's pod hangs off the service account, so
+                    // the proof is that account's own link, not a saved password.
+                    Ok(Some((acct, webid))) => {
+                        eprintln!("chorus-principal: '{name}' is HALF-PROVISIONED — the service account ({acct}) links {webid},");
+                        eprintln!("  and no row names it. Completing the missing half.");
+                        resume = Some((acct, webid));
+                    }
+                    Ok(None) => {
+                        eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
+                        eprintln!("  and the service account links no WebID under that pod name. nothing was written.");
+                        return 2;
+                    }
+                    Err(why) => {
+                        eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it;");
+                        eprintln!("  whether this tool made it is UNMEASURED ({why}). nothing was written.");
+                        return 2;
+                    }
+                },
                 _ => {
                     eprintln!("chorus-principal: REFUSED — the register already serves a profile card for '{name}' and no principal row names it");
                     eprintln!("  nothing was written. Either a rollback left the card behind, or someone made the pod");
@@ -976,9 +995,9 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
         let hc = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
                         &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
                         "--data-binary", &up]).unwrap_or_default().trim().to_string();
-        let got = hats_held(name);
-        if got != 4 {
-            eprintln!("chorus-principal: FAILED at step 3c (hats) — store answered HTTP {hc} but '{name}' wears {got} of 4 — rolling back");
+        if let Err(got) = chorus_principal::wears_all_hats(&hats_answer(name)) {
+            let wears = got.map_or("an unreadable count".to_string(), |n| format!("{n}"));
+            eprintln!("chorus-principal: FAILED at step 3c (hats) — store answered HTTP {hc} but '{name}' wears {wears} of {} — rolling back", chorus_principal::HATS);
             led.rollback(&css, &acct, &api, &token, &collection);
             return 1;
         }
@@ -1211,6 +1230,25 @@ fn css_login_person(css: &str, jar: &str, email: &str, password: &str) -> Option
     }
     ACCOUNT_TOKEN.with(|t| *t.borrow_mut() = token);
     Some((acct, webid))
+}
+
+/// #4686 — (service account id, WebID) when the service account links a pod
+/// named `name`: the half an agent create left when its rollback could not
+/// delete the pod. Ok(None): the account answered and links no such pod.
+/// Err: the account could not be read, so whether it does is UNMEASURED.
+fn agent_half(css: &str, name: &str) -> Result<Option<(String, String)>, &'static str> {
+    let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
+    let local = |u: &str| u.replacen(issuer.trim_end_matches('/'), css, 1);
+    let jar = jar_path();
+    let acct = css_login(css, &jar).ok_or("could not sign in to the service account")?;
+    let read = |u: &str| curl_css(None, &["-s", "--max-time", "20", "-b", &jar, "-H", "Accept: application/json", &local(u)]).unwrap_or_default();
+    let links_url = between(&read(&format!("{css}/.account/")), "\"webId\":\"", "\"")
+        .ok_or("the service account answered without its controls")?;
+    let links = read(&links_url);
+    if !links.contains("\"webIdLinks\"") {
+        return Err("the service account's WebID links did not answer");
+    }
+    Ok(chorus_principal::links::half_made_webid(&links, name).map(|w| (acct, w)))
 }
 
 /// Create a human's OWN CSS account: account → password login (email + a
@@ -1533,18 +1571,18 @@ fn role_state(role: &str) -> Option<bool> {
 /// How many of the four hats this principal wears. Counted from the store,
 /// never assumed — the check that the appointments landed is the same question
 /// anyone else would ask of the graph.
-fn hats_held(name: &str) -> usize {
+/// The store's raw answer to "how many hats does this principal wear".
+fn hats_answer(name: &str) -> String {
     let q = format!(
         "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE {{ \
          GRAPH ?g {{ c:principal-{name} c:wearsHat ?h }} }}"
     );
-    let body = curl(&[
+    curl(&[
         "-s", "--max-time", "30", "-G",
         &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
         "--data-urlencode", &format!("query={q}"),
         "-H", "Accept: application/sparql-results+json",
-    ]).unwrap_or_default();
-    between(&body, "\"value\":\"", "\"").and_then(|v| v.parse().ok()).unwrap_or(0)
+    ]).unwrap_or_default()
 }
 
 
