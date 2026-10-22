@@ -1539,7 +1539,7 @@ chorus:Property a owl:Class ;
 chorus:hasProperty a owl:ObjectProperty ;
     rdfs:label "has property" ;
     rdfs:comment "Attaches a config Property to any structural node it configures — uniform across the model. Effective value resolves by specificity (Service > Domain > Product > ValueStream/Step), nearest override wins. #3433." ;
-    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:Service ) ] ;
+    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:Service chorus:Role ) ] ;
     rdfs:range chorus:Property .
 
 chorus:propertyKey a owl:DatatypeProperty ;
