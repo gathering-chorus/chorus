@@ -128,7 +128,12 @@ chorus:ChunkShape a sh:NodeShape ;
   sh:property [ sh:path chorus:slug ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:immutable true ] ;
   sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
   sh:property [ sh:path chorus:roleSequence ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] ;
-  sh:property [ sh:path chorus:loomSequence ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] .
+  sh:property [ sh:path chorus:loomSequence ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] ;
+  sh:property chorus:ChunkShape-hasProduct .
+
+chorus:ChunkShape-hasProduct a sh:PropertyShape ;
+  sh:path chorus:hasProduct ;
+  sh:class chorus:Product .
 
 chorus:ChunkMembershipShape a sh:NodeShape ;
   sh:targetClass chorus:ChunkMembership ; sh:node chorus:CoreShape ;

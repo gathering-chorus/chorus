@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# clearing-chunk — enforce active chunk WIP limits and list active chunks (#4682)
+# @domain: board
+set -euo pipefail
+
+# Team WIP limit for active chunks (configurable via TEAM_WIP_LIMIT or CHORUS_CHUNK_WIP_LIMIT)
+LIMIT="${TEAM_WIP_LIMIT:-${CHORUS_CHUNK_WIP_LIMIT:-3}}"
+
+CARDS="${CARDS_CLI:-}"
+if [ -z "$CARDS" ]; then
+  if command -v cards &>/dev/null; then
+    CARDS="cards"
+  elif [ -x "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards" ]; then
+    CARDS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards"
+  else
+    echo "FATAL: cards CLI not found in PATH or platform/scripts/cards" >&2
+    exit 1
+  fi
+fi
+
+cmd="${1:-}"
+[ -n "$cmd" ] || { echo "usage: clearing-chunk enforce <chunk> | list | prioritize <chunk> | sequence <chunk> | check CARD BY DECISION | chunk-of CARD" >&2; exit 2; }
+
+fetch_active_chunks() {
+  local listing
+  if [ "${MOCK_BOARD_LISTING+set}" = "set" ]; then
+    listing="$MOCK_BOARD_LISTING"
+  else
+    listing=$("$CARDS" list 2>&1) || {
+      echo "FATAL: failed to fetch board cards from cards CLI: $listing" >&2
+      return 1
+    }
+  fi
+
+  if [ -z "$listing" ]; then
+    echo "FATAL: empty board listing received" >&2
+    return 1
+  fi
+
+  python3 -c '
+import sys, re
+
+cards_out = sys.stdin.read()
+if not cards_out:
+    sys.exit(1)
+
+active_chunks = set()
+in_active_section = False
+
+for line in cards_out.splitlines():
+    # Detect section headers like "WIP (2):" or "Now (0):"
+    if re.match(r"^(WIP|Now)\s*\(\d+\):", line):
+        in_active_section = True
+        continue
+    elif re.match(r"^[A-Za-z0-9_-]+\s*\(\d+\):", line):
+        in_active_section = False
+        continue
+
+    if in_active_section:
+        # Match chunk:slug in brackets or anywhere in the line
+        chunks = re.findall(r"chunk:([a-z0-9-]+)", line)
+        for c in chunks:
+            active_chunks.add(c)
+
+print(", ".join(sorted(active_chunks)))
+' <<< "$listing" || {
+    echo "FATAL: failed to parse active chunks from board listing" >&2
+    return 1
+  }
+}
+
+
+SPARQL_ENDPOINT="${SPARQL_ENDPOINT:-http://localhost:3030/pods/query}"
+
+get_chunk_products() {
+  local chunk="$1"
+  local py_code='
+import json, os, sys, urllib.parse, urllib.request
+
+chunk = sys.argv[1]
+endpoint = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods/query")
+query = f"""
+PREFIX c: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT DISTINCT ?prod WHERE {{
+  GRAPH ?g {{
+    {{ ?chunk a c:Chunk ; c:slug "{chunk}" ; c:hasProduct ?p }}
+    UNION
+    {{ ?chunk a c:Chunk ; rdfs:label "{chunk}" ; c:hasProduct ?p }}
+  }}
+  BIND(REPLACE(STR(?p), "^.*#", "") AS ?prod)
+}}
+"""
+data = urllib.parse.urlencode({"query": query}).encode()
+req = urllib.request.Request(endpoint, data=data, headers={"Accept": "application/sparql-results+json"})
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        res = json.load(resp)
+        prods = [r["prod"]["value"].split("#")[-1] for r in res["results"]["bindings"] if "prod" in r]
+        if not prods:
+            sys.exit(2)
+        print(" ".join(sorted(prods)))
+except Exception as ex:
+    sys.exit(3)
+'
+  local out
+  if ! out=$(python3 -c "$py_code" "$chunk" 2>&1); then
+    echo "refused: chunk '$chunk' has no products linked in graph (hasProduct)" >&2
+    exit 1
+  fi
+  echo "$out"
+}
+
+get_matching_cards_in_order() {
+  local chunk="$1"
+  local prods
+  prods=$(get_chunk_products "$chunk")
+
+  local listing
+  if [ "${MOCK_BOARD_LISTING+set}" = "set" ]; then
+    listing="$MOCK_BOARD_LISTING"
+  else
+    listing=$("$CARDS" list 2>&1) || {
+      echo "FATAL: cards CLI failed while listing board: $listing" >&2
+      exit 1
+    }
+  fi
+
+  local card_ids
+  card_ids=$(echo "$listing" | awk '
+    /^(Next|Now|Later|WIP)/ { in_open = 1; next }
+    /^[A-Za-z0-9_-]+:/ { in_open = 0 }
+    in_open && /^[[:space:]]+[0-9]+/ {
+      print $1
+    }
+  ')
+
+  for cid in $card_ids; do
+    local view
+    view=$("$CARDS" view "$cid" 2>&1 || true)
+    local seq=""
+    if [[ "$view" =~ sequence:([a-zA-Z0-9_-]+) ]]; then
+      seq="${BASH_REMATCH[1]}"
+    fi
+
+    for p in $prods; do
+      if [ "$seq" = "$p" ]; then
+        echo "$cid"
+        break
+      fi
+    done
+  done
+}
+
+
+
+chunk_of_card() {
+  local card="$1"
+  [ -n "$card" ] || { echo "none" >&2; exit 2; }
+
+  local view
+  view=$("$CARDS" view "$card" 2>&1 || true)
+  local seq=""
+  if [[ "$view" =~ sequence:([a-zA-Z0-9_-]+) ]]; then
+    seq="${BASH_REMATCH[1]}"
+  fi
+
+  if [ -z "$seq" ]; then
+    echo "none" >&2
+    exit 2
+  fi
+
+  # Query SPARQL endpoint to find which chunk hasProduct seq
+  local py_code='
+import json, os, sys, urllib.parse, urllib.request
+
+prod = sys.argv[1]
+endpoint = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods/query")
+query = f"""
+PREFIX c: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT DISTINCT ?chunkSlug WHERE {{
+  GRAPH ?g {{
+    ?chunk a c:Chunk ; c:hasProduct ?p .
+    OPTIONAL {{ ?chunk c:slug ?slug }}
+    OPTIONAL {{ ?chunk rdfs:label ?label }}
+  }}
+  FILTER(STRENDS(STR(?p), "#{prod}"))
+  BIND(COALESCE(?slug, ?label) AS ?chunkSlug)
+}}
+"""
+data = urllib.parse.urlencode({"query": query}).encode()
+req = urllib.request.Request(endpoint, data=data, headers={"Accept": "application/sparql-results+json"})
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        res = json.load(resp)
+        chunks = [r["chunkSlug"]["value"] for r in res["results"]["bindings"] if "chunkSlug" in r]
+        if not chunks:
+            sys.exit(2)
+        print(chunks[0])
+except Exception:
+    sys.exit(2)
+'
+  local chunk_found
+  if ! chunk_found=$(python3 -c "$py_code" "$seq" 2>/dev/null); then
+    echo "none" >&2
+    exit 2
+  fi
+
+  if [ -n "$chunk_found" ]; then
+    echo "$chunk_found"
+    exit 0
+  else
+    echo "none" >&2
+    exit 2
+  fi
+}
+
+case "$cmd" in
+chunk-of)
+  card="${2:-}"
+  [ -n "$card" ] || { echo "usage: clearing-chunk chunk-of CARD" >&2; exit 2; }
+  chunk_of_card "$card"
+  ;;
+prioritize)
+  chunk="${2:-}"
+  [ -n "$chunk" ] || { echo "usage: clearing-chunk prioritize <chunk>" >&2; exit 2; }
+  get_matching_cards_in_order "$chunk"
+  ;;
+sequence)
+  chunk="${2:-}"
+  [ -n "$chunk" ] || { echo "usage: clearing-chunk sequence <chunk>" >&2; exit 2; }
+  next_card=$(get_matching_cards_in_order "$chunk" | sed -n '1p')
+  if [ -n "$next_card" ]; then
+    echo "$next_card"
+    exit 0
+  else
+    echo "none" >&2
+    exit 1
+  fi
+  ;;
+enforce)
+  chunk="${2:-}"
+  [ -n "$chunk" ] || { echo "usage: clearing-chunk enforce <chunk>" >&2; exit 2; }
+  raw=$(fetch_active_chunks) || exit 1
+  if [ -n "$raw" ]; then
+    IFS=',' read -ra raw_parts <<< "$raw"
+    active=()
+    for item in "${raw_parts[@]}"; do
+      trimmed=$(echo "$item" | xargs)
+      [ -n "$trimmed" ] && active+=("$trimmed")
+    done
+  else
+    active=()
+  fi
+
+  # Check if chunk is already active
+  for a in "${active[@]}"; do
+    if [ "$a" = "$chunk" ]; then
+      echo "chunk '$chunk' is already active (${#active[@]}/$LIMIT active)"
+      exit 0
+    fi
+  done
+
+  # Check limit
+  if [ "${#active[@]}" -ge "$LIMIT" ]; then
+    active_str=$(IFS=', '; echo "${active[*]}")
+    echo "refused: active chunk limit reached ($LIMIT): $raw — cannot activate '$chunk'" >&2
+    exit 1
+  fi
+
+  echo "activated chunk '$chunk' ($(( ${#active[@]} + 1 ))/$LIMIT active)"
+  exit 0
+  ;;
+list)
+  raw=$(fetch_active_chunks) || exit 1
+  if [ -n "$raw" ]; then
+    IFS=',' read -ra raw_parts <<< "$raw"
+    active=()
+    for item in "${raw_parts[@]}"; do
+      trimmed=$(echo "$item" | xargs)
+      [ -n "$trimmed" ] && active+=("$trimmed")
+    done
+  else
+    active=()
+  fi
+  echo "Active chunks (${#active[@]}/$LIMIT): $raw"
+  exit 0
+  ;;
+check)
+  card="${2:-}"; by="${3:-}"; decision="${4:-}"
+  [ -n "$card" ] && [ -n "$by" ] && [ -n "$decision" ] || {
+    echo "usage: clearing-chunk check CARD BY DECISION" >&2
+    exit 2
+  }
+  by_norm=$(echo "$by" | tr '[:upper:]' '[:lower:]')
+  if [ "$by_norm" != "jeff" ]; then
+    echo "clearing-chunk: #$card: plan-go must come from Jeff, not '${by}'" >&2
+    exit 1
+  fi
+  case "$decision" in
+    go)
+      echo "clearing-chunk: #$card plan approved by Jeff"
+      exit 0
+      ;;
+    stop)
+      echo "clearing-chunk: #$card: stopped by Jeff"
+      exit 2
+      ;;
+    *)
+      echo "clearing-chunk: #$card: '$decision' is not go or stop" >&2
+      exit 1
+      ;;
+  esac
+  ;;
+*)
+  echo "usage: clearing-chunk enforce <chunk> | list | prioritize <chunk> | sequence <chunk> | check CARD BY DECISION" >&2
+  exit 2
+  ;;
+esac
+
+

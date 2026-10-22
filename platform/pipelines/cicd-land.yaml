@@ -49,3 +49,9 @@ steps:
     description: "werk-accept"
     depends: [skill-borg-record]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-accept card=${CARD} atomic=true"
+  - name: skill-clearing-evaluate
+    description: "post-land: evaluate chunk sequence or lane switch"
+    depends: [skill-werk-accept]
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-evaluate -- CARD=${CARD} ROLE=${ROLE}"
+    continue_on:
+      failure: true

@@ -41,6 +41,7 @@ jdi_detector	plumbing: logs "just do it"
 nudge_poll	plumbing: finds unread nudges for the injected context
 observer	plumbing: writes the rolling activity digest
 reply_delivery	plumbing: records the reply hash for delivery matching
+terminal_input	plumbing: posts Jeff'"'"'s terminal prompts to pulse, never refuses
 tool_telemetry	plumbing: logs every tool call
 '
 

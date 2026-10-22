@@ -1,0 +1,434 @@
+#!/usr/bin/env python3
+# product-radius — product graph inventory and cleanup report (#4682)
+# @domain: ontology
+"""Every product's domains, services, and pipelines with data issues.
+Usage:
+  product-radius [--owner ROLE] [--html [FILE]] [--json [FILE]] [--sparql-endpoint URL] [--check]
+"""
+import argparse
+import glob
+import html
+import json
+import os
+import sys
+import urllib.parse
+import urllib.request
+from collections import Counter
+
+# Configurable SPARQL endpoint via env or flag; default to prod Fuseki
+DEFAULT_ENDPOINT = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods/query")
+CHORUS_HOME = os.environ.get("CHORUS_HOME", os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+PIPELINES_DIR = os.environ.get("CHORUS_PIPELINES_DIR", os.path.join(CHORUS_HOME, "platform/pipelines"))
+
+C = "https://jeffbridwell.com/chorus#"
+PFX = f"PREFIX c: <{C}> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+
+KIND = {
+    "domain-no-purpose": "no purpose",
+    "consumes-own-domain": "consumes a domain it owns",
+    "link-to-missing-domain": "links to a name that is not a Domain",
+    "domain-two-products": "listed by two products",
+    "service-unhosted": "no domain hosts it",
+    "hosts-non-service": "hosts a machine, not a service",
+    "pipeline-no-stream": "automates no value stream",
+    "probe-row": "test probe left in prod",
+    "yaml-no-rows": "pipeline file with no Pipeline row",
+    "valuestream-no-product-link": "value stream has no graph link to a Product",
+}
+# Fallback map for grouping when no graph link exists (Wren: flag as gap)
+VS_PRODUCT_FALLBACK = {
+    "value-stream-werk": "werk",
+    "value-stream-athena": "athena",
+    "value-stream-clearing": "clearing",
+    "value-stream-proving": "borg",
+    "value-stream-operating": "borg",
+}
+ORDER = [
+    "chorus", "loom", "clearing", "pulse", "athena", "werk", "convergence",
+    "spine", "borg", "gathering", "wine-diary"
+]
+OWNER_ORDER = ["wren", "kade", "silas", "abby-normal", "jeff"]
+
+
+def run_sparql(q, endpoint=DEFAULT_ENDPOINT):
+    data = urllib.parse.urlencode({"query": PFX + q}).encode()
+    req = urllib.request.Request(endpoint, data=data, headers={"Accept": "application/sparql-results+json"})
+    rows = json.load(urllib.request.urlopen(req, timeout=30))["results"]["bindings"]
+    return [{k: v["value"].replace(C, "") for k, v in r.items()} for r in rows]
+
+
+def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_dir=PIPELINES_DIR):
+    if fixture_data is not None:
+        return fixture_data
+
+    def by_type(t):
+        return {r["s"] for r in run_sparql(
+            f"SELECT DISTINCT ?s WHERE {{ GRAPH ?g {{ ?s a c:{t} }} FILTER(STRSTARTS(STR(?s), STR(c:))) }}",
+            endpoint
+        )}
+
+    products = by_type("Product")
+    domains = by_type("Domain")
+    services = by_type("Service")
+    pipelines = by_type("Pipeline")
+    streams = by_type("ValueStream")
+
+    def pairs(pred, subj_type=None):
+        q = f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s c:{pred} ?o }} {'GRAPH ?t { ?s a c:' + subj_type + ' }' if subj_type else ''} }}"
+        return [(r["s"], r["o"]) for r in run_sparql(q, endpoint)]
+
+    def one(pred, t):
+        out = {}
+        for s, o in pairs(pred, t):
+            out.setdefault(s, o)
+        return out
+
+    has_domain = pairs("hasDomain", "Product")
+    consumes = pairs("consumes", "Product")
+    part_of = pairs("partOf", "Product")
+    hosts = pairs("hosts", "Domain")
+    automates = pairs("automates", "Pipeline")
+    vs_product_links = pairs("hasValueStream", "Product")
+
+    dom_owner = one("ownedBy", "Domain")
+    dom_status = one("status", "Domain")
+    dom_step = one("atStep", "Domain")
+    dom_purpose = one("purpose", "Domain")
+    svc_owner = one("ownedBy", "Service")
+    svc_status = one("status", "Service")
+    pipe_status = one("pipelineStatus", "Pipeline")
+    prod_owner = one("ownedBy", "Product")
+
+    issues = []
+    def issue(kind, subject, text):
+        issues.append({"kind": kind, "subject": subject, "text": text})
+
+    # Flag value streams without explicit graph link to a product
+    linked_streams = {vs for _, vs in vs_product_links}
+    for vs in sorted(streams):
+        if vs not in linked_streams:
+            issue("valuestream-no-product-link", vs, "value stream has no explicit hasValueStream link to a Product in graph")
+
+    owners_of = {}
+    for p, d in has_domain:
+        owners_of.setdefault(d, set()).add(p)
+
+    for d in sorted(domains):
+        n = len(owners_of.get(d, ()))
+        if n == 0:
+            issue("domain-no-product", d, "no product lists it (hasDomain)")
+        elif n > 1:
+            issue("domain-two-products", d, "listed by " + ", ".join(sorted(owners_of[d])))
+        if d not in dom_purpose:
+            issue("domain-no-purpose", d, "no purpose")
+
+    for p, d in has_domain:
+        if d not in domains:
+            issue("link-to-missing-domain", p, f"hasDomain {d}, which is not a Domain row")
+
+    for p, d in consumes:
+        if d not in domains:
+            issue("link-to-missing-domain", p, f"consumes {d}, which is not a Domain row")
+        elif (p, d) in set(has_domain):
+            issue("consumes-own-domain", p, f"consumes {d}, which it already owns")
+
+    hosted = {s for _, s in hosts}
+    for s in sorted(services):
+        if s not in hosted:
+            issue("service-unhosted", s, "no domain hosts it")
+    for d, s in hosts:
+        if s not in services:
+            issue("hosts-non-service", d, f"hosts {s}, which is not a Service row")
+
+    auto = dict(automates)
+    for p in sorted(pipelines):
+        if p.startswith("pipeline-zz") or "probe" in p:
+            issue("probe-row", p, f"test probe row left in prod (status {pipe_status.get(p, '')!r})")
+        elif p not in auto:
+            issue("pipeline-no-stream", p, "automates no value stream")
+
+    for p in sorted(products):
+        if not any(x == p for x, _ in has_domain) and not any(o == p for _, o in part_of):
+            issue("product-no-domains", p, "owns no domains and has no parts")
+
+    # Dynamic NO_ROW derivation: compare platform/pipelines/*.yaml with Pipeline labels
+    on_disk_yaml = []
+    if os.path.isdir(pipelines_dir):
+        for yf in glob.glob(os.path.join(pipelines_dir, "*.yaml")):
+            on_disk_yaml.append(os.path.basename(yf))
+
+    # Known pipeline labels in graph: both stripped and raw (e.g. "cicd" or "pipeline-cicd")
+    graph_pipe_labels = {p.replace("pipeline-", "") for p in pipelines} | set(pipelines)
+    for yf in sorted(on_disk_yaml):
+        base = yf[:-5] if yf.endswith(".yaml") else yf
+        if base not in graph_pipe_labels:
+            # Attribute to product via prefix heuristic or unplaced
+            issue("yaml-no-rows", yf, f"pipeline file {yf} exists on disk but has no matching Pipeline row in graph")
+
+    parts = {}
+    for s, o in part_of:
+        parts.setdefault(o, []).append(s)
+
+    vs_to_prod = dict((vs, p) for p, vs in vs_product_links)
+
+    def product_view(p):
+        doms = sorted(d for x, d in has_domain if x == p)
+        rows = []
+        for d in doms:
+            rows.append({
+                "domain": d,
+                "owner": dom_owner.get(d, "").replace("principal-", ""),
+                "status": dom_status.get(d, ""),
+                "step": dom_step.get(d, "").replace("value-stream-step-", ""),
+                "services": sorted(s for x, s in hosts if x == d),
+                "flags": sorted({i["kind"] for i in issues if i["subject"] == d})
+            })
+        pipes = sorted(
+            pp for pp, vs in automates
+            if vs_to_prod.get(vs, VS_PRODUCT_FALLBACK.get(vs)) == p
+        )
+        if p in ("borg", "clearing"):
+            pipes += sorted(pp for pp in pipelines if pp == "pipeline-" + p)
+        return {
+            "product": p,
+            "owner": prod_owner.get(p, "").replace("principal-", ""),
+            "parts": sorted(parts.get(p, [])),
+            "domains": rows,
+            "consumes": sorted(d for x, d in consumes if x == p),
+            "pipelines": [{"pipeline": x, "status": pipe_status.get(x, ""), "stream": auto.get(x, "")} for x in sorted(set(pipes))],
+            "flags": sorted({i["kind"] for i in issues if i["subject"] == p})
+        }
+
+    order = [p for p in ORDER if p in products] + sorted(products - set(ORDER))
+    return {
+        "counts": {
+            "products": len(products),
+            "domains": len(domains),
+            "services": len(services),
+            "pipelines": len(pipelines),
+            "valueStreams": len(streams),
+        },
+        "products": [product_view(p) for p in order],
+        "unplacedDomains": sorted(d for d in domains if d not in owners_of),
+        "services": [{"service": s, "owner": svc_owner.get(s, "").replace("principal-", ""),
+                      "hostedBy": sorted(d for d, x in hosts if x == s)} for s in sorted(services)],
+        "pipelines": [{"pipeline": p, "status": pipe_status.get(p, ""), "stream": auto.get(p, "")} for p in sorted(pipelines)],
+        "issues": issues,
+    }
+
+
+def render_html(data, target_owner=None):
+    e = html.escape
+    fixes = {}
+    for i in data["issues"]:
+        s = i["subject"]
+        matched_prod = None
+        for p in data["products"]:
+            if s == p["product"] or any(r["domain"] == s for r in p["domains"]) or any(x["pipeline"] == s for x in p["pipelines"]):
+                matched_prod = p["product"]
+                break
+        if not matched_prod:
+            if s.startswith("service-wine-diary"):
+                matched_prod = "wine-diary"
+            elif "bedroom-log" in s or s.startswith("pipeline-zz"):
+                matched_prod = "borg"
+            elif s.endswith(".yaml"):
+                # Pipeline file mapping (matches NO_ROW attribution in inventory)
+                base = s.replace(".yaml", "")
+                if base == "nightly":
+                    matched_prod = "chorus"
+                elif any(p["product"] == base.split("-")[0] for p in data["products"]):
+                    matched_prod = base.split("-")[0]
+                elif base.startswith("cicd"):
+                    matched_prod = "werk"
+
+        if i["kind"] == "domain-two-products":
+            for p2 in i["text"].replace("listed by ", "").split(", "):
+                fixes.setdefault(p2, []).append(i)
+        else:
+            fixes.setdefault(matched_prod or "unplaced", []).append(i)
+
+    owners = {}
+    for p in data["products"]:
+        if target_owner and p["owner"] != target_owner:
+            continue
+        owners.setdefault(p["owner"] or "unowned", []).append(p)
+
+    def chips(items, cls=""):
+        return "".join(f'<span class="chip {cls}">{e(x)}</span>' for x in items) or '<span class="none">none</span>'
+
+    def product_card(p):
+        prod_issues = fixes.get(p["product"], [])
+        rows = "".join(
+            f"<tr><td class='mono'>{e(r['domain'])}</td><td>{e(r['owner'])}</td><td>{e(r['status'] or '—')}</td><td>"
+            f"{', '.join(e(s.replace('service-', '')) for s in r['services']) or '—'}</td></tr>"
+            for r in p["domains"]
+        )
+        pipes = "".join(
+            f"<li><span class='mono'>{e(x['pipeline'].replace('pipeline-', ''))}</span> <span class='st'>{e(x['status'])}</span></li>"
+            for x in p["pipelines"]
+        ) or "<li class='none'>none linked</li>"
+        iss = "".join(
+            f"<li><span class='kind'>{e(KIND.get(i['kind'], i['kind']))}</span> <span class='mono'>{e(i['subject'])}</span>"
+            f"<span class='why'>{e(i['text'])}</span></li>"
+            for i in prod_issues
+        )
+        badge = f'<span class="count bad">{len(prod_issues)} to fix</span>' if prod_issues else '<span class="count ok">clean</span>'
+        return f"""
+<article class="product" id="{e(p['product'])}">
+  <header><h3>{e(p['product'])}</h3>{badge}</header>
+  {'<p class="parts">parts: ' + chips(p['parts']) + '</p>' if p['parts'] else ''}
+  {'<ul class="issues">' + iss + '</ul>' if iss else ''}
+  <details{' open' if len(p['domains']) <= 6 else ''}>
+    <summary>{len(p['domains'])} domains · {len(p['pipelines'])} pipelines · consumes {len(p['consumes'])}</summary>
+    <div class="scroll"><table><thead><tr><th>domain</th><th>owner</th><th>status</th><th>services</th></tr></thead><tbody>{rows}</tbody></table></div>
+    <p class="sub">pipelines</p><ul class="pipes">{pipes}</ul>
+    <p class="sub">consumes</p><p>{chips(p['consumes'])}</p>
+  </details>
+</article>"""
+
+    sections = []
+    for o in OWNER_ORDER + sorted(set(owners) - set(OWNER_ORDER)):
+        if o not in owners:
+            continue
+        ps = owners[o]
+        n = sum(len(fixes.get(p["product"], [])) for p in ps)
+        sections.append(f"""
+<section class="owner">
+  <h2>{e(o)} <span class="meta">{len(ps)} product{'s' if len(ps) != 1 else ''} · {n} to fix</span></h2>
+  <div class="grid">{''.join(product_card(p) for p in ps)}</div>
+</section>""")
+
+    c = data["counts"]
+    total = sum(len(fixes.get(p["product"], [])) for ps in owners.values() for p in ps)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Graph Cleanup by Owner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {{
+  --bg: #f6f7f4; --panel: #ffffff; --ink: #1d2320; --muted: #5d6862; --rule: #d9ded9;
+  --accent: #2f6f5e; --bad: #a23b2a; --bad-bg: #f7e6e2; --ok: #2f6f5e; --ok-bg: #e3f0eb; --chip: #eef1ee;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}}
+@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{
+  --bg: #141816; --panel: #1c211f; --ink: #e6ebe8; --muted: #9aa6a0; --rule: #2e3532;
+  --accent: #7cc4ad; --bad: #f08a76; --bad-bg: #3a2420; --ok: #7cc4ad; --ok-bg: #1f3029; --chip: #262d2a; color-scheme: dark }} }}
+body {{ background: var(--bg); color: var(--ink); font-family: var(--body); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; }}
+.wrap {{ max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }}
+h1, h2, h3 {{ font-family: var(--display); text-wrap: balance; margin: 0; }}
+h1 {{ font-size: 1.75rem; }} h2 {{ font-size: 1.2rem; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }}
+h3 {{ font-size: 1.02rem; }}
+.lede {{ max-width: 65ch; color: var(--muted); margin: 6px 0 0; }}
+.tally {{ display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--mono); font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }}
+.tally b {{ color: var(--ink); font-weight: 500; }}
+.meta {{ font-family: var(--mono); font-size: .78rem; color: var(--muted); font-weight: 400; }}
+.owner {{ display: grid; gap: 12px; border-top: 1px solid var(--rule); padding-top: 18px; }}
+.grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }}
+.product {{ background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; display: grid; gap: 10px; min-width: 0; align-content: start; }}
+.product header {{ display: flex; justify-content: space-between; align-items: center; gap: 8px; }}
+.count {{ font-family: var(--mono); font-size: .74rem; padding: 2px 8px; border-radius: 99px; }}
+.count.bad {{ background: var(--bad-bg); color: var(--bad); }} .count.ok {{ background: var(--ok-bg); color: var(--ok); }}
+.issues {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }}
+.issues li {{ border-left: 3px solid var(--bad); padding-left: 8px; font-size: .9rem; display: grid; }}
+.kind {{ font-family: var(--display); font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--bad); }}
+.why {{ color: var(--muted); font-size: .84rem; }}
+.mono {{ font-family: var(--mono); font-size: .82rem; overflow-wrap: anywhere; }}
+details summary {{ cursor: pointer; font-family: var(--mono); font-size: .8rem; color: var(--accent); }}
+details summary:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+.scroll {{ overflow-x: auto; margin-top: 8px; }}
+table {{ border-collapse: collapse; width: 100%; font-size: .82rem; }}
+th, td {{ text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }}
+th {{ font-family: var(--display); font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }}
+.sub {{ font-family: var(--display); font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 4px; }}
+.pipes {{ margin: 0; padding-left: 18px; font-size: .85rem; }} .st {{ color: var(--muted); font-size: .78rem; }}
+.chip {{ display: inline-block; background: var(--chip); font-family: var(--mono); font-size: .74rem; padding: 1px 6px; border-radius: 4px; margin: 0 4px 4px 0; }}
+.none {{ color: var(--muted); font-size: .82rem; }}
+.parts {{ margin: 0; font-size: .85rem; color: var(--muted); }}
+footer {{ color: var(--muted); font-size: .8rem; font-family: var(--mono); }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Graph Cleanup by Owner</h1>
+    <p class="lede">Every product with its domains, services and pipelines, read from the live graph. Each product owner fixes the red items on their own products, then presents the result.</p>
+  </header>
+  <div class="tally"><span><b>{c['products']}</b> products</span><span><b>{c['domains']}</b> domains</span><span><b>{c['services']}</b> services</span><span><b>{c['pipelines']}</b> pipeline rows</span><span><b>{total}</b> to fix</span></div>
+  {''.join(sections)}
+  <footer>Generated by product-radius (#4682) from store {e(DEFAULT_ENDPOINT)}.</footer>
+</div>
+</body>
+</html>
+"""
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Product radius graph inventory and HTML reporting")
+    ap.add_argument("--owner", help="Filter report to a specific owner (e.g. wren, kade, silas, abby-normal)")
+    ap.add_argument("--html", nargs="?", const="-", help="Output HTML to path or stdout ('-')")
+    ap.add_argument("--json", nargs="?", const="-", help="Output JSON to path or stdout ('-')")
+    ap.add_argument("--from-fixture", help="Path to pre-collected inventory JSON instead of querying SPARQL")
+    ap.add_argument("--sparql-endpoint", default=DEFAULT_ENDPOINT, help="SPARQL endpoint URL")
+    ap.add_argument("--check", action="store_true", help="Exit non-zero if issues exist for target owner / all")
+    args = ap.parse_args()
+
+    if args.from_fixture:
+        with open(args.from_fixture) as f:
+            data = json.load(f)
+    else:
+        try:
+            data = collect_inventory(endpoint=args.sparql_endpoint)
+        except Exception as ex:
+            sys.stderr.write(f"FATAL: SPARQL query failed against {args.sparql_endpoint}: {ex}\n")
+            sys.exit(1)
+
+    relevant_issues = data["issues"]
+    if args.owner:
+        owner_prods = {p["product"] for p in data["products"] if p["owner"] == args.owner}
+        owner_doms = {d["domain"] for p in data["products"] if p["owner"] == args.owner for d in p["domains"]}
+        relevant_issues = [
+            i for i in data["issues"]
+            if i["subject"] in owner_prods or i["subject"] in owner_doms
+        ]
+
+    if args.json:
+        payload = json.dumps(data, indent=2)
+        if args.json == "-":
+            sys.stdout.write(payload + "\n")
+        else:
+            with open(args.json, "w") as f:
+                f.write(payload + "\n")
+
+    if args.html:
+        html_out = render_html(data, target_owner=args.owner)
+        if args.html == "-":
+            sys.stdout.write(html_out + "\n")
+        else:
+            with open(args.html, "w") as f:
+                f.write(html_out + "\n")
+
+    if not args.html and not args.json:
+        c = data["counts"]
+        print(f"Products: {c['products']} | Domains: {c['domains']} | Services: {c['services']} | Pipelines: {c['pipelines']}")
+        counts = Counter(i["kind"] for i in relevant_issues)
+        if counts:
+            print(f"Issues ({len(relevant_issues)} total):")
+            for kind, cnt in sorted(counts.items()):
+                print(f"  {kind}: {cnt}")
+        else:
+            print("No issues found! Clean.")
+
+    if args.check and len(relevant_issues) > 0:
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()
