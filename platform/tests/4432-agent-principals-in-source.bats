@@ -72,6 +72,20 @@ PY
   [ "$status" -eq 0 ]
 }
 
+# #4691 — Borg Queen was minted live 2026-10-22 06:30 (create) and never in
+# source, Abby's #4432 gap again: her live row had no hostAccount, holdsRole or
+# agentRuntime, and a session cannot write a Principal (403 deploy-only).
+@test "borg-queen is one of them, on agy as her own Mac account (#4691)" {
+  b=$(python3 -c 'import re,sys; m=re.search(r"(?ms)^chorus:principal-borg-queen a .*?canSignIn \"false\" \.", open(sys.argv[1]).read()); print(m.group(0) if m else "")' "$PRINCIPALS")
+  [ -n "$b" ] || { echo "no principal-borg-queen block"; return 1; }
+  for want in 'holdsRole chorus:role-borg-queen' 'hostAccount "chorus-borg-queen"' 'agentRuntime chorus:runtime-agy' 'principalKind "agent"' 'webId "https://id.lightlifeurbangardens.com/borg-queen/profile/card#me"'; do
+    [[ "$b" == *"$want"* ]] || { echo "missing: $want"; return 1; }
+  done
+  run check
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
 @test "NEGATIVE PROOF: an agent principal with no roles-domain row fails" {
   python3 -c '
 import json, sys, urllib.request
