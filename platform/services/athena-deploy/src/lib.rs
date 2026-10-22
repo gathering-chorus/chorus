@@ -3209,6 +3209,46 @@ mod rehome_roles_4695 {
         assert!(ont.contains("c:role-borg-queen"), "without rehome, role should have stayed in ontology");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn release_with_3838_roles_leaves_zero_roles_in_ontology() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { return; }
+        let dir = std::env::temp_dir().join(format!("rehome-roles-3838-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:stg> {
+    c:role-jeff a c:Role ; rdfs:label "Jeff" .
+    c:role-wren a c:Role ; rdfs:label "Wren" .
+    c:role-silas a c:Role ; rdfs:label "Silas" .
+    c:role-kade a c:Role ; rdfs:label "Kade" .
+    c:role-abby-normal a c:Role ; rdfs:label "Abby Normal" .
+    c:role-nightly a c:Role ; rdfs:label "nightly" .
+    c:role-crawler a c:Role ; rdfs:label "crawler" .
+    c:Role a owl:Class ; rdfs:label "Role" .
+}
+<urn:ont> {
+    c:Role a owl:Class ; rdfs:label "Role" .
+}
+<urn:roles> { }
+"#).unwrap();
+        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_role_rows_sparql("urn:stg", "urn:ont", "urn:roles", true));
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (ont, roles) = (block("urn:ont"), block("urn:roles"));
+        for r in &["role-jeff", "role-wren", "role-silas", "role-kade", "role-abby-normal", "role-nightly", "role-crawler"] {
+            assert!(!ont.contains(r), "{r} stayed in ontology:\n{after}");
+            assert!(roles.contains(r), "{r} missing from roles domain:\n{after}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 /// #4576 — the creator-iri pass, run, not read: a slug that names a Principal

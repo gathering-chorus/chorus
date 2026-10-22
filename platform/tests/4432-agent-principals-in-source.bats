@@ -12,7 +12,7 @@
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   PRINCIPALS="${PRINCIPALS_TTL:-$ROOT/roles/silas/ontology/identity-principals-3613.ttl}"
-  ROLES_DOOR="${ROLES_DOOR:-${ATHENA_DOOR:-http://localhost:3360}/v1/roles/roles}"
+  ROLES_DOOR="${ROLES_DOOR:-$ROOT/platform/tests/fixtures/roles-domain.json}"
 }
 
 check() {
