@@ -793,7 +793,18 @@ fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String]) {
         "          decision:\n            type: string\n",
     ));
     out.push_str(&format!("            enum: [{}]\n", choices.join(", ")));
-    out.push_str("        required: [by, decision]\n");
+    let extra_fields: Vec<&str> = r
+        .with_args
+        .split_whitespace()
+        .find_map(|p| p.strip_prefix("fields="))
+        .map(|s| s.split(',').filter(|x| !x.is_empty()).collect())
+        .unwrap_or_default();
+    for f in &extra_fields {
+        out.push_str(&format!("          {f}:\n            type: string\n"));
+    }
+    let mut req = vec!["by", "decision"];
+    req.extend(extra_fields.iter().copied());
+    out.push_str(&format!("        required: [{}]\n", req.join(", ")));
 }
 
 /// The land half: every step after the go, on the land queue, one land at a time.
