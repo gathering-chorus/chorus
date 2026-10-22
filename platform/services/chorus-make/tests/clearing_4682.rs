@@ -73,7 +73,25 @@ fn the_clearing_evaluate_pipeline_runs_gate_and_loops() {
     assert!(y.contains("skill-clearing-chunk-of"), "chunk-of step present\n{y}");
     assert!(y.contains("preconditions:\n      - condition: \"$CHUNK\"\n        expected: \"re:.+\""), "evaluate gated on non-empty chunk\n{y}");
     assert!(y.contains("preconditions:\n      - condition: \"${skill_clearing_evaluate.outputs.decision}\"\n        expected: \"resequence\""), "loop gated on resequence decision\n{y}");
+    assert!(y.contains("skill-clearing-switch"), "switch step present\n{y}");
+    assert!(y.contains("preconditions:\n      - condition: \"${skill_clearing_evaluate.outputs.decision}\"\n        expected: \"switch\""), "switch gated on switch decision\n{y}");
+    assert!(y.contains("clearing-chunk switch ${CARD} ${CHUNK} ${ROLE} ${JEFF}"), "switch command runs clearing-chunk switch\n{y}");
     assert!(y.contains("NAVIGATOR=${NAVIGATOR} JEFF=${JEFF}"), "loop passes NAVIGATOR and JEFF\n{y}");
+}
+
+#[test]
+fn negative_proof_clearing_evaluate_without_switch_step_differs() {
+    let p = pipe("clearing-evaluate-pipe.tsv");
+    let full = generate_straight("clearing-evaluate", &p, &rows("clearing-evaluate-rows.tsv"), &known()).unwrap();
+
+    let filtered: Vec<Row> = rows("clearing-evaluate-rows.tsv")
+        .into_iter()
+        .filter(|r| r.skill != "skill-clearing-switch")
+        .collect();
+    let without_switch = generate_straight("clearing-evaluate", &p, &filtered, &known()).unwrap();
+
+    assert_ne!(full, without_switch);
+    assert!(!without_switch.contains("skill-clearing-switch"));
 }
 
 #[test]

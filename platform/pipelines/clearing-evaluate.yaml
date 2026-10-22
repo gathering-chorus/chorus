@@ -53,3 +53,10 @@ steps:
       - condition: "${skill_clearing_evaluate.outputs.decision}"
         expected: "resequence"
     command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-plan -- CARD=${CARD} ROLE=${ROLE} CHUNK=${CHUNK} NAVIGATOR=${NAVIGATOR} JEFF=${JEFF}"
+  - name: skill-clearing-switch
+    description: "switch chunk: emit spine event and nudge Jeff"
+    depends: [skill-clearing-evaluate]
+    preconditions:
+      - condition: "${skill_clearing_evaluate.outputs.decision}"
+        expected: "switch"
+    command: "${CHORUS_HOME}/platform/scripts/clearing-chunk switch ${CARD} ${CHUNK} ${ROLE} ${JEFF}"

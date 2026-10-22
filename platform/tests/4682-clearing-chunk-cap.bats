@@ -92,10 +92,39 @@ Next (2):
   [ "$status" -eq 0 ]
   [[ "$output" =~ "skill-clearing-evaluate [skipped]" ]] || return 1
   [[ "$output" =~ "skill-clearing-loop [skipped]" ]] || return 1
+  [[ "$output" =~ "skill-clearing-switch [skipped]" ]] || return 1
   [[ "$output" =~ "Result: Succeeded" ]] || return 1
 }
 
 @test "clearing-evaluate loop step has precondition gating on resequence decision" {
   WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
   grep -A 5 "skill-clearing-loop" "$WF" | grep -q 'expected: "resequence"' || return 1
+}
+
+@test "clearing-evaluate switch step has precondition gating on switch decision" {
+  WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
+  grep -A 5 "skill-clearing-switch" "$WF" | grep -q 'expected: "switch"' || return 1
+}
+
+@test "clearing-chunk switch emits clearing.chunk.switched on spine (#4693 AC3)" {
+  _tmp=$(mktemp -d "${TMPDIR:-/tmp}/chunk-switch.XXXXXX")
+  export CHORUS_LOG_FILE="$_tmp/chorus.log"
+  touch "$CHORUS_LOG_FILE"
+
+  run "$SCRIPT" switch 4693 ops abby-normal jeff
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "lane switch from chunk 'ops'" ]] || return 1
+
+  run python3 -c '
+import sys, json
+with open("'"$CHORUS_LOG_FILE"'") as f:
+    events = [json.loads(line) for line in f if line.strip()]
+sw = [e for e in events if e.get("event") == "clearing.chunk.switched"]
+assert len(sw) == 1, f"expected 1 switch event, got {len(sw)}"
+assert sw[0].get("chunk") == "ops"
+assert sw[0].get("card_id") == 4693
+assert "lane switch chosen by jeff" in sw[0].get("reason", "")
+'
+  rm -rf "$_tmp"
+  [ "$status" -eq 0 ]
 }
