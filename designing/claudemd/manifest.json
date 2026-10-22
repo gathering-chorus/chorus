@@ -579,6 +579,18 @@
       "SESSION_SYNC_STEP": "read `briefs/` and run `chorus-hook-shim boot-read abby-normal`; read state files as needed",
       "SEARCH_ORDER": "Chorus (`bash ~/.chorus/scripts/chorus-query.sh search \"<term>\"`) → codebase graph → filesystem (`rg`).",
       "CLOSE_TRIGGER_COMMAND": ""
+    },
+    "borg-queen": {
+      "ROLE_NAME": "Borg Queen",
+      "ROLE_LOWER": "borg-queen",
+      "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner borg-queen --priority P2 --parent <card>",
+      "BRIEF_ROUTING": "- For Wren: `../wren/briefs/`\n- For Silas: `../silas/briefs/`\n- For Kade: `../kade/briefs/`\n- For Abby: `../abby-normal/briefs/`\n- For Borg Queen (incoming): `briefs/` (this directory)",
+      "SESSION_START_FILES": "`briefs/`, `journal/`",
+      "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN",
+      "SESSION_CONTEXT_LINE": "Nothing injects session context into your runtime yet (#4691) — on first response read `briefs/` and run `chorus-hook-shim boot-read borg-queen`.",
+      "SESSION_SYNC_STEP": "read `briefs/` and run `chorus-hook-shim boot-read borg-queen`; read state files as needed",
+      "SEARCH_ORDER": "Chorus (`bash ~/.chorus/scripts/chorus-query.sh search \"<term>\"`) → codebase graph → filesystem (`rg`).",
+      "CLOSE_TRIGGER_COMMAND": ""
     }
   },
   "reference": {
@@ -688,6 +700,26 @@
       "output": "../../roles/abby-normal/AGENTS.md",
       "sections": [
         "roles/abby-normal/title.md",
+        "shared/chorus-prompt.md",
+        "shared/infrastructure-operations-core.md",
+        "shared/cross-machine-operations-core.md",
+        "shared/communication-discipline.md",
+        "shared/idle-awareness.md",
+        "shared/team-operating-model.md",
+        "shared/intellectual-honesty.md",
+        "shared/search-hierarchy.md",
+        "shared/domain-endpoints.md",
+        "shared/session-close-out-core.md",
+        "shared/error-handling-discipline.md",
+        "shared/tdd-discipline.md",
+        "shared/icd-gate.md",
+        "shared/worktree-convention.md"
+      ]
+    },
+    "borg-queen": {
+      "output": "../../roles/borg-queen/AGENTS.md",
+      "sections": [
+        "roles/borg-queen/title.md",
         "shared/chorus-prompt.md",
         "shared/infrastructure-operations-core.md",
         "shared/cross-machine-operations-core.md",

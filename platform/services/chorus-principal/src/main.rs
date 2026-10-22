@@ -446,9 +446,22 @@ fn cmd_census() -> i32 {
         println!("{:<22} {:<6} {}", name, st, webid);
     }
     println!();
-    if incomplete.is_empty() {
-        println!("census: {} users, all complete", rows.len());
+    // #4691 — the onboarding steps, for every agent principal on its own Mac
+    // account. A clean register said nothing about these: on 2026-10-22 this
+    // printed "all complete" while Borg Queen lacked seven of them.
+    let onboarding = onboarding_census();
+    if onboarding.is_none() {
+        eprintln!("chorus-principal: census could not read the onboarding facts — refusing to report them complete");
+        return 2;
+    }
+    let short = onboarding.unwrap_or(0);
+    if incomplete.is_empty() && short == 0 {
+        println!("census: {} users, all complete; every agent onboarded (Jeff's steps named above)", rows.len());
         return 0;
+    }
+    if incomplete.is_empty() {
+        println!("census: {} users have profile cards; {short} agent principal(s) missing onboarding steps", rows.len());
+        return 1;
     }
     println!(
         "census: {} of {} INCOMPLETE — a principal row exists for a pod the register does not have",
@@ -459,6 +472,71 @@ fn cmd_census() -> i32 {
         println!("  {n} — profile card {st}");
     }
     1
+}
+
+/// One SPARQL SELECT against the pods dataset, as JSON bindings.
+fn sparql(q: &str) -> Option<Vec<serde_json::Value>> {
+    let body = curl(&["-s", "--max-time", "40", "-G", &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
+        "--data-urlencode", &format!("query={q}"), "-H", "Accept: application/sparql-results+json"])?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    v["results"]["bindings"].as_array().cloned()
+}
+
+fn bound(b: &serde_json::Value, k: &str) -> Option<String> {
+    b.get(k).and_then(|x| x["value"].as_str()).map(|s| s.rsplit('#').next().unwrap_or(s).to_string())
+}
+
+/// #4691 — measure every onboarding step for each agent principal that runs
+/// on its own Mac account (hostAccount not the launcher's, or none yet), print
+/// its gaps, and return how many are short. None when the store cannot be read.
+fn onboarding_census() -> Option<usize> {
+    use chorus_principal::onboarding::{gaps, Facts};
+    let launcher = env_or("USER", "jeffbridwell");
+    let rows = sparql("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?s ?h ?r ?rt WHERE { GRAPH <urn:chorus:domains:security> \
+        { ?s a c:Principal ; c:principalKind \"agent\" . OPTIONAL { ?s c:hostAccount ?h } OPTIONAL { ?s c:holdsRole ?r } \
+        OPTIONAL { ?s c:agentRuntime ?rt } } }")?;
+    let root = env_or("CHORUS_HOME", &format!("{}/CascadeProjects/chorus", env_or("HOME", "")));
+    let table = chorus_principal::rows::runtime_table();
+    let mut short = 0;
+    println!("ONBOARDING (platform/services/chorus-principal/config/agent-onboarding-steps.tsv)");
+    for b in &rows {
+        let Some(principal) = bound(b, "s") else { continue };
+        let name = principal.trim_start_matches("principal-").to_string();
+        let host = bound(b, "h");
+        // a principal on the launcher's own account (the Claude roles) is not on this list
+        if host.as_deref() == Some(launcher.as_str()) { continue; }
+        // nothing on its own account and no account of that name: not an agent of this kind
+        let account = host.clone().unwrap_or_else(|| format!("chorus-{name}"));
+        let groups = Command::new("id").args(["-Gn", &account]).output().ok().filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
+        if host.is_none() && groups.is_none() { continue; }
+        let role = format!("role-{name}");
+        // roleKind, the field the store has: the AgentRole type is source-only (3838 never deploys)
+        let kinds = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?k WHERE {{ GRAPH ?g {{ c:{role} c:roleKind ?k }} }}"))?;
+        let caps = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?p WHERE {{ GRAPH ?g {{ c:{role} c:hasProperty ?p }} \
+            GRAPH ?h {{ ?p a c:Property ; c:propertyValue ?v }} FILTER(CONTAINS(STR(?p), \"word-cap\")) }}"))?;
+        let webid = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?w WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:{principal} c:webId ?w }} }}"))?;
+        let card = webid.first().and_then(|w| w.get("w")).and_then(|w| w["value"].as_str()).map(|w| status_of(w.split('#').next().unwrap_or(w))).unwrap_or_else(|| "000".into());
+        let f = Facts {
+            host_account: host,
+            holds_role: bound(b, "r"),
+            agent_runtime: bound(b, "rt"),
+            role_is_agent: kinds.iter().any(|k| bound(k, "k").as_deref() == Some("agent")),
+            word_caps: caps.len(),
+            in_group: groups.map(|g| g.split_whitespace().any(|x| x == "chorus")).unwrap_or(false),
+            runs_on: chorus_principal::rows::runtime_for(&table, &name).map(|(r, _)| r),
+            role_home: std::path::Path::new(&format!("{root}/roles/{name}/AGENTS.md")).is_file(),
+            webid_card: card,
+        };
+        let g = gaps(&f);
+        let missing: Vec<_> = g.iter().filter(|s| s.owner != "jeff").collect();
+        if !missing.is_empty() { short += 1; }
+        println!("  {name}: {}", if missing.is_empty() { "every create step done".to_string() } else { format!("{} step(s) missing", missing.len()) });
+        for s in &g {
+            println!("    {} {:<18} {}", if s.owner == "jeff" { "jeff" } else { "MISS" }, s.id, s.what);
+        }
+    }
+    Some(short)
 }
 
 /// What provisioning WOULD do, writing nothing.

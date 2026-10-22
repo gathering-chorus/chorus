@@ -62,6 +62,20 @@ chorus:principal-abby-normal a chorus:Principal ;
     chorus:agentRuntime chorus:runtime-agy ;
     chorus:canSignIn "false" .
 
+# #4691 — Borg Queen, the prover (borg-prove after every land). Minted live
+# 2026-10-22 06:30 by create, never in source (Abby's #4432 gap again): her
+# live row had no hostAccount, holdsRole or agentRuntime, and a session cannot
+# write a Principal (403 deploy-only). She runs as her own Mac account and on
+# Gemini, like Abby (Jeff 2026-10-22 07:31; values Silas 07:32).
+chorus:principal-borg-queen a chorus:Principal ;
+    rdfs:label "borg-queen (agent principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/borg-queen/profile/card#me" ;
+    chorus:holdsRole chorus:role-borg-queen ;
+    chorus:principalKind "agent" ;
+    chorus:hostAccount "chorus-borg-queen" ;
+    chorus:agentRuntime chorus:runtime-agy ;
+    chorus:canSignIn "false" .
+
 chorus:principal-kade a chorus:Principal ;
     rdfs:label "kade (agent principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/kade/profile/card#me" ;

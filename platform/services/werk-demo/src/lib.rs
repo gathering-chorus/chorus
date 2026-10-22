@@ -305,6 +305,13 @@ pub fn verdict_proven(witness: &str, card: u64, role: &str, round: &str, patch_i
 /// is added or removed without this list.
 pub const PEER_ROLES: [&str; 4] = ["wren", "silas", "kade", "abby-normal"];
 
+/// #4691 — the agent roles that prove the land instead of reviewing demos:
+/// borg-queen signs the verdict after deploy (cicd-land skill_borg_queen_proves),
+/// so she is not owed a review step and does not give one. Together with
+/// PEER_ROLES this is every role under designing/claudemd/roles/; the same
+/// drift test fails when a role dir is in neither list.
+pub const PROVER_ROLES: [&str; 1] = ["borg-queen"];
+
 /// The peer roles owed a review for this demo: every agent role but the
 /// demoer. Every builder gets the same count (3), so the pipeline's review
 /// steps are fixed: run-review 1..3. (jeff is the prover, not a peer.)
@@ -940,11 +947,13 @@ const SMOKE_CLAUDE_ROLES: [&str; 3] = ["wren", "silas", "kade"];
 
 /// #4502 — the roles whose session config the card's changed paths touch:
 /// roles/<r>/ or designing/claudemd/roles/<r>/ for that role, the shared
-/// paths above for every Claude role. Order: PEER_ROLES. Pure.
+/// paths above for every Claude role. Order: PEER_ROLES, then PROVER_ROLES
+/// (#4691: borg-queen's files are named too, never skipped). Pure.
 pub fn smoke_roles(changed: &[String]) -> Vec<&'static str> {
     let shared = changed.iter().any(|f| SMOKE_SHARED.iter().any(|p| f.starts_with(p)));
     PEER_ROLES
         .into_iter()
+        .chain(PROVER_ROLES)
         .filter(|r| {
             (shared && SMOKE_CLAUDE_ROLES.contains(r))
                 || changed.iter().any(|f| {
@@ -972,9 +981,6 @@ pub fn changed_paths(werk: &str) -> Result<Vec<String>, String> {
 /// loads that build's own .claude settings and hooks, asked for exactly one
 /// Bash call. Ok when the call's output comes back; Err names why not.
 fn smoke_one(werk: &str, r: &str, card: u64) -> Result<(), String> {
-    if !SMOKE_CLAUDE_ROLES.contains(&r) {
-        return Err(format!("{} runs on agy; this box has no headless agy smoke, so its session is unmeasured", r));
-    }
     let bin = claude_bin().ok_or("claude binary not resolvable")?;
     let dir = Path::new(werk).join("roles").join(r);
     if !dir.is_dir() {
@@ -1048,7 +1054,17 @@ pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> 
         return Ok(DemoOutcome { message: format!("session-smoke #{}: nothing to smoke: no role config in the diff", card), exit: 0 });
     }
     let mut failed = Vec::new();
+    let mut by_hand = Vec::new();
     for r in &roles {
+        // #4691 (Jeff 2026-10-22 16:12, "2"): an agy role is not smoked here (no
+        // headless agy smoke on this box); it is named, recorded by-hand, and that
+        // role checks its own session by hand after the land. Never a pass.
+        if !SMOKE_CLAUDE_ROLES.contains(r) {
+            jsonl(home, role, card, &trace, "demo.smoke.result",
+                  &format!(",\"smoked\":\"{}\",\"result\":\"by-hand\",\"why\":\"runs on agy: not smoked here\"", r));
+            by_hand.push(format!("{}: runs on agy, not smoked here; {} checks the session by hand after the land", r, r));
+            continue;
+        }
         let res = smoke_one(&werk, r, card);
         let (word, why) = match &res { Ok(()) => ("pass", String::new()), Err(e) => ("fail", e.clone()) };
         jsonl(home, role, card, &trace, "demo.smoke.result",
@@ -1056,8 +1072,12 @@ pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> 
         if let Err(e) = res { failed.push(format!("{}: {}", r, e)); }
     }
     emit_spine(home, "demo.smoke.recorded", role, card, &trace);
+    let smoked: Vec<&str> = roles.iter().copied().filter(|r| SMOKE_CLAUDE_ROLES.contains(r)).collect();
+    let mut parts = Vec::new();
+    if !smoked.is_empty() { parts.push(format!("{} started from the werk build and made one tool call", smoked.join(", "))); }
+    parts.extend(by_hand);
     if failed.is_empty() {
-        Ok(DemoOutcome { message: format!("session-smoke #{}: {} started from the werk build and made one tool call", card, roles.join(", ")), exit: 0 })
+        Ok(DemoOutcome { message: format!("session-smoke #{}: {}", card, parts.join(" · ")), exit: 0 })
     } else {
         Ok(DemoOutcome { message: format!("session-smoke #{} failed — {}", card, failed.join(" · ")), exit: 1 })
     }

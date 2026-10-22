@@ -132,6 +132,10 @@ calls() { [ -f "$R/$1.calls" ] && wc -l < "$R/$1.calls" | tr -d ' ' || echo 0; }
   #   - index-all-sources-deps.ts  a REAL `docker compose exec` — the Buzz
   #                        postgres read on Bedroom, which #3674 deliberately
   #                        runs on Bedroom's existing Docker Desktop.
+  #   - memory-backup.py   REAL `docker exec`/`docker cp` over ssh to Bedroom:
+  #                        the Buzz pg_dump and minio copy for the #4630
+  #                        messages backup, same Docker Desktop as above
+  #                        (Silas 2026-10-22 13:44).
   # A lock that is permanently red guards nothing, so the sanctioned exception is
   # named here explicitly. If the Buzz transport changes, delete the line and the
   # lock tightens again — that is the point of listing it rather than widening
@@ -149,7 +153,8 @@ calls() { [ -f "$R/$1.calls" ] && wc -l < "$R/$1.calls" | tr -d ' ' || echo 0; }
     grep -v 'regression-locks.bats' | \
     grep -v '\.test\.ts$' | \
     grep -v 'platform/api/src/handlers/doc-catalog\.ts$' | \
-    grep -v 'platform/api/src/index-all-sources-deps\.ts$' || true)
+    grep -v 'platform/api/src/index-all-sources-deps\.ts$' | \
+    grep -v 'platform/scripts/memory-backup\.py$' || true)
   if [ -n "$hits" ]; then
     echo "'docker' reintroduced in live code paths:" >&2
     echo "$hits" >&2

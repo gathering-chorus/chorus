@@ -1,6 +1,7 @@
 {
   "runsOn": {
-    "abby-normal": "agy"
+    "abby-normal": "agy",
+    "borg-queen": "agy"
   },
   "runtimes": {
     "agy": {

@@ -359,3 +359,23 @@ pub fn results_from_tsv(tsv: &str) -> Result<Vec<(Check, Outcome)>, String> {
         Ok((c, o))
     }).collect()
 }
+
+/// #4691 — accept runs only on Borg Queen's own proof: her step signed by
+/// borg-queen, and the run's verdict file written by her Mac account (the
+/// signature dagu cannot check, the file owner can), saying Proven or, for a
+/// card with no CardAC rows, unproven. Anything else holds the land, named.
+pub fn signed_verdict(by: &str, owner: Option<&str>, verdict: Option<&str>, queen_account: &str) -> Result<(), String> {
+    if by != "borg-queen" {
+        return Err(format!("signed by {by}, not borg-queen: accept held"));
+    }
+    let (Some(owner), Some(v)) = (owner, verdict) else {
+        return Err("no verdict recorded for this run: accept held".into());
+    };
+    if owner != queen_account {
+        return Err(format!("the verdict was written by {owner}, not {queen_account}: accept held"));
+    }
+    match v.trim() {
+        "Proven" | "unproven" => Ok(()),
+        other => Err(format!("verdict {other}: accept held")),
+    }
+}

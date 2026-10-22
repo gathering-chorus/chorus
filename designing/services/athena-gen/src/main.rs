@@ -123,6 +123,13 @@ fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
             unserved.join(", ")
         ));
     }
+    // #4691 — instance rows of existing classes, and no class or shape change:
+    // nothing to generate, and the seed step deploys the rows (Wren 08:36)
+    if products.is_empty() && t.classes.is_empty() && t.targets.is_empty() && !t.instances.is_empty() {
+        let names: Vec<String> = t.instances.iter().map(|s| athena_gen::card::card_scope::local_name(s)).collect();
+        println!("card #{}: {} instance row(s) only, nothing to generate; the seed step deploys them: {}", card.card, names.len(), names.join(", "));
+        return;
+    }
     if products.is_empty() {
         die(format!("card #{}: the card's model change touches no product — nothing to generate", card.card));
     }

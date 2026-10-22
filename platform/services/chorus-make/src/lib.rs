@@ -581,9 +581,15 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
             out.push_str(&format!(
                 "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
             ));
-            out.push_str("    action: dag.enqueue\n    with:\n");
-            out.push_str(&format!("      dag: {land}\n"));
-            out.push_str(&format!("      params: \"CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}\"\n"));
+            // #4691 — the CLI enqueue, a top-level run: dagu refuses a human task
+            // in a run it started as a sub-DAG (#4577 pair run 1, measured), and
+            // the land has Borg Queen's step
+            out.push_str(&format!(
+                "    command: {}\n",
+                quote(&format!(
+                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {land} -- CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}"
+                ))
+            ));
             return Ok(out);
         }
         for r in group.iter() {
@@ -786,7 +792,9 @@ fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String]) {
     }
     out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
     out.push_str("    action: human.task\n    with:\n");
-    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? (${{{by}}} answers)", r.label))));
+    // a param (NAVIGATOR) is read at run time; a role name (borg-queen) is the answerer itself
+    let who = if by.bytes().all(|b| b.is_ascii_uppercase() || b == b'_') { format!("${{{by}}}") } else { by.clone() };
+    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? ({who} answers)", r.label))));
     out.push_str(concat!(
         "      form:\n        type: object\n        properties:\n",
         "          by:\n            type: string\n",
@@ -818,10 +826,23 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
     };
     let mut out = String::new();
     preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
+    // #4691 — a human step after the go is a role's (Borg Queen proves the
+    // land the way a navigator greens a pair): it names who answers and how
+    let errs: Vec<String> = rows[go + 1..].iter().filter(|r| r.executor == "human")
+        .filter(|r| human_by(r).map_or(true, |(_, c)| c.len() < 2))
+        .map(|r| format!("{}: a human step in the land with no by= and choices= (who answers, and how)", r.skill))
+        .collect();
+    if !errs.is_empty() {
+        return Err(errs);
+    }
     let mut prev: Vec<String> = Vec::new();
     for group in groups(&rows[go + 1..]) {
         for r in group {
-            command_step(&mut out, &rows, r, &prev, false);
+            if r.executor == "human" {
+                role_task_step(&mut out, &rows, r, &prev);
+            } else {
+                command_step(&mut out, &rows, r, &prev, false);
+            }
         }
         prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }

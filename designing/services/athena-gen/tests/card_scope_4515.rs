@@ -118,6 +118,32 @@ fn negative_proof_a_change_that_touches_no_product_is_refused() {
     assert!(out.contains("card #9104: the card's model change touches no product"), "{out}");
 }
 
+/// #4691 — a card that only adds instance rows of existing classes (Borg
+/// Queen's principal and role) changes no class and no shape, so there is
+/// nothing to generate; the seed step deploys the rows. It passes, naming the
+/// rows, instead of failing the athena run (Wren 08:36). 9104 above (an untyped
+/// row) and 9111 (a shape no class names) still fail.
+#[test]
+fn a_card_that_only_adds_instance_rows_passes_and_names_them_for_seed() {
+    let (base, w) = werk("instances", "9112", &[("roles/wren/ontology/widgets.ttl",
+        format!("{P}{WIDGET}c:widget-one a c:Widget ; c:size 3 .\nc:widget-two a c:Widget ; c:size 4 .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9112"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("card #9112: 2 instance row(s) only, nothing to generate; the seed step deploys them: widget-one, widget-two"), "{out}");
+    assert!(!w.join("directing/products").exists(), "{out}");
+}
+
+/// NEGATIVE: an instance row beside a new class no product serves is still
+/// refused for the class; instance rows never excuse a class change.
+#[test]
+fn negative_proof_instance_rows_do_not_excuse_an_unserved_class() {
+    let (base, _) = werk("instances-orphan", "9113", &[("roles/wren/ontology/orphan.ttl",
+        format!("{P}c:Orphan a owl:Class .\nc:OrphanShape a sh:NodeShape ; sh:targetClass c:Orphan .\nc:orphan-one a c:Orphan .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9113"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("in no product's domain") && out.contains("Orphan"), "{out}");
+}
+
 #[test]
 fn negative_proof_a_card_with_no_model_change_or_no_werk_is_refused() {
     let (base, _) = werk("nomodel", "9105", &[("README", "x\n".into())]);
