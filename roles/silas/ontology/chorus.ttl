@@ -2008,7 +2008,12 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:asIs            ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:toBe            ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:notInScope      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:references      ; sh:minCount 0 ; sh:datatype xsd:string ] .
+    sh:property [ sh:path chorus:references      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
+    # #4702 AC5 — closed: a field not on this shape (with its extensions in
+    # product-design-4018.ttl and clearing-domains-3860.ttl), nor a door stamp, is refused.
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
+                             chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) .
 
 # --- #4481: one parent per row, no links across hierarchies (Jeff 2026-10-10, reviewed with Wren) ---
 # The chain is value stream -> step -> domain -> service -> running unit. Each row stores
@@ -2123,6 +2128,18 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:consumes ; sh:minCount 0 ; sh:or ( [ sh:class chorus:Domain ] [ sh:class chorus:Service ] ) ] ;   # #4702 — 49 Domain→Domain rows carried it with no shape
     sh:property [ sh:path chorus:builtBy ; sh:minCount 0 ; sh:class chorus:ValueStream ] ;   # #4702 — 16 rows, no shape
     sh:property [ sh:path chorus:runsOn ; sh:minCount 0 ; sh:class chorus:Machine ] ;   # #4702 — 7 rows, no shape
+    # #4702 AC5 — kept: fields live rows carry that the shape never listed (shape-drift, 2026-10-22).
+    sh:property [ sh:path chorus:repoTarget ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # 44 rows — where the domain's code lives
+    sh:property [ sh:path <urn:borg:ontology/usesEnvironment> ; sh:minCount 0 ; sh:nodeKind sh:IRI ] ;   # 9 rows — borg environments
+    sh:property [ sh:path chorus:hasRecordClass ; sh:minCount 0 ; sh:class owl:Class ] ;   # 3 rows — the record classes a domain's folds hold
+    sh:property [ sh:path chorus:contains ; sh:minCount 0 ; sh:nodeKind sh:IRI ] ;   # 2 rows — principles, roles hold typed instances
+    sh:property [ sh:path chorus:hasChild ; sh:minCount 0 ; sh:class chorus:Domain ] ;   # 1 row — pipelines hasChild cicd
+    sh:property [ sh:path chorus:hasProperty ; sh:minCount 0 ; sh:class chorus:Property ] ;   # 1 row — cards' gate property
+    # #4702 AC5 — closed: a field not listed above, nor on CoreShape, nor a door stamp, is refused.
+    # sh:closed does not follow sh:node, so CoreShape's paths and the stamps are named here.
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
+                             chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) ;
     sh:property [ sh:path chorus:inLayer ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Layer ] ;   # #4293 — ratchets to minCount 1 once every domain row carries a layer
     sh:property [ sh:path chorus:hosts ; sh:minCount 0 ; sh:class chorus:Service ] ;   # #4293 — served, so a domain page shows the services it hosts
     sh:property [ sh:path chorus:dependsOn ; sh:minCount 0 ] ;   # #4293 — served; the range (Domain | Service | Skill) is typed by #4289

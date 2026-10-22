@@ -11,10 +11,10 @@ setup() {
   cat > "$DIR/clean.json" << 'FIXTURE'
 {
   "shapes": {
-    "ProductShape": {"target": "Product",
+    "ProductShape": {"target": "Product", "closed": true,
       "paths": ["https://jeffbridwell.com/chorus#hasDomain", "http://www.w3.org/2000/01/rdf-schema#label"],
       "ignored": ["http://www.w3.org/1999/02/22-rdf-syntax-ns#type"]},
-    "DomainShape": {"target": "Domain",
+    "DomainShape": {"target": "Domain", "closed": true,
       "paths": ["https://jeffbridwell.com/chorus#atStep"], "ignored": []}
   },
   "rows": {
@@ -68,6 +68,21 @@ assert json.load(sys.stdin) == {"ProductShape": [{"field": "chorus:purpose", "ro
   run "$SD" NoSuchShape --from-fixture "$DIR/clean.json"
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"no such shape"* ]] || return 1
+}
+
+@test "by default every closed shape is checked, and an open shape is not" {
+  plant 'd["shapes"]["DomainShape"]["closed"] = False; d["rows"]["Domain"]["https://jeffbridwell.com/chorus#repoTarget"] = 44'
+  run "$SD" --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"ProductShape"* ]] || return 1
+  [[ "$output" != *"DomainShape"* ]] || return 1
+}
+
+@test "negative proof: with no closed shape at all, --check fails rather than reading clean" {
+  plant 'd["shapes"]["DomainShape"]["closed"] = False; d["shapes"]["ProductShape"]["closed"] = False'
+  run "$SD" --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"no closed shapes"* ]] || return 1
 }
 
 # Exceptions: the card status comes from a stubbed board CLI, never the real board.

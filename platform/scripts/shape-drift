@@ -11,7 +11,9 @@ of the shape's target class from every graph.
 Usage:
   shape-drift [SHAPE ...] [--json] [--check] [--from-fixture F] [--sparql-endpoint URL]
   shape-drift SHAPE --who FIELD     the rows carrying FIELD, with owners (live only)
-SHAPE defaults to ProductShape DomainShape. --check exits 2 when anything drifts.
+SHAPE defaults to every shape marked sh:closed true in the live graph: a closed
+shape is only as closed as this check makes it, since nothing else in the stack
+runs SHACL over the store (Silas, 2026-10-22). --check exits 2 when anything drifts.
 A fixture is {"shapes": {NAME: {"target", "paths", "ignored"}}, "rows": {CLASS: {PRED: N}},
 "exceptions": [{"row", "card", "status", "fields": {CLASS: [PRED]}}]}.
 
@@ -57,6 +59,12 @@ def card_status(card):
         if line.strip().startswith("Status:"):
             return line.split(":", 1)[1].strip()
     return ""
+
+
+def closed_shapes(endpoint):
+    """Every shape the live graph marks sh:closed true."""
+    return sorted(b["s"]["value"].replace(C, "") for b in sparql(endpoint,
+                  f"SELECT DISTINCT ?s WHERE {{ GRAPH <{SHAPES_GRAPH}> {{ ?s sh:closed true }} }}"))
 
 
 def fetch(endpoint, names):
@@ -127,7 +135,7 @@ def short(p):
 
 def main():
     ap = argparse.ArgumentParser(description="Fields on live rows that their shape does not list")
-    ap.add_argument("shapes", nargs="*", default=["ProductShape", "DomainShape"])
+    ap.add_argument("shapes", nargs="*", help="shapes to check (default: every sh:closed shape)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--check", action="store_true", help="exit 2 when any shape drifts")
     ap.add_argument("--who", help="list the rows (and owners) carrying this field, e.g. chorus:repoTarget")
@@ -138,6 +146,8 @@ def main():
     if args.from_fixture:
         with open(args.from_fixture) as f:
             data = json.load(f)
+        if not args.shapes:
+            args.shapes = sorted(n for n, sh in data["shapes"].items() if sh.get("closed"))
         missing = [s for s in args.shapes if s not in data["shapes"]]
         if missing:
             sys.stderr.write(f"no such shape in fixture: {', '.join(missing)}\n")
@@ -146,6 +156,8 @@ def main():
                 "exceptions": data.get("exceptions", [])}
     else:
         try:
+            if not args.shapes:
+                args.shapes = closed_shapes(args.sparql_endpoint)
             data = fetch(args.sparql_endpoint, args.shapes)
         except (OSError, ValueError) as ex:
             sys.stderr.write(f"FATAL: SPARQL query failed against {args.sparql_endpoint}: {ex}\n")
@@ -155,6 +167,9 @@ def main():
             for row, owner in who(args.sparql_endpoint, data["shapes"][name]["target"], args.who):
                 print(f"{name}  {row}  {owner.replace('principal-', '') or '—'}")
         return
+    if not args.shapes:
+        sys.stderr.write("no closed shapes to check (none marked sh:closed true)\n")
+        sys.exit(2 if args.check else 0)
     result = drift(data)
 
     if args.json:
