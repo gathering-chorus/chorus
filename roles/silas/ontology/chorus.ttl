@@ -2766,8 +2766,8 @@ chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing 
 # INSTANCE DATA — Product Feedback Loop
 # =============================================================================
 
-chorus:gathering chorus:outputOf chorus:Building, chorus:Proving .
-chorus:gathering chorus:inputTo chorus:Capturing .
+# #4702 — gathering outputOf Building, Proving and inputTo Capturing removed (Jeff
+# 2026-10-22 16:51, "yes, drop"): off ProductShape, which is closed; backed up.
 
 
 
