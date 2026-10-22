@@ -71,7 +71,9 @@ fn the_clearing_evaluate_pipeline_runs_gate_and_loops() {
     assert!(y.contains("id: skill_clearing_evaluate"), "evaluate human step present\n{y}");
     assert!(y.contains("queue: werk-land\n"), "runs on werk-land queue\n{y}");
     assert!(y.contains("skill-clearing-chunk-of"), "chunk-of step present\n{y}");
-    assert!(y.contains("preconditions:\n      - condition: \"${skill_clearing_chunk_of.exit_code}\"\n        expected: \"0\""), "evaluate gated on chunk-of exit 0\n{y}");
+    assert!(y.contains("preconditions:\n      - condition: \"$CHUNK\"\n        expected: \"re:.+\""), "evaluate gated on non-empty chunk\n{y}");
+    assert!(y.contains("preconditions:\n      - condition: \"${skill_clearing_evaluate.outputs.decision}\"\n        expected: \"resequence\""), "loop gated on resequence decision\n{y}");
+    assert!(y.contains("NAVIGATOR=${NAVIGATOR} JEFF=${JEFF}"), "loop passes NAVIGATOR and JEFF\n{y}");
 }
 
 #[test]

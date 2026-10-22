@@ -167,7 +167,7 @@ chunk_of_card() {
   fi
 
   if [ -z "$seq" ]; then
-    echo "none"
+    echo "none" >&2
     exit 2
   fi
 
@@ -205,7 +205,7 @@ except Exception:
 '
   local chunk_found
   if ! chunk_found=$(python3 -c "$py_code" "$seq" 2>/dev/null); then
-    echo "none"
+    echo "none" >&2
     exit 2
   fi
 
@@ -213,7 +213,7 @@ except Exception:
     echo "$chunk_found"
     exit 0
   else
-    echo "none"
+    echo "none" >&2
     exit 2
   fi
 }

@@ -20,4 +20,4 @@ land	5	3	skill-werk-deploy-prod	werk-deploy-prod	deterministic	werk-deploy	{card
 land	5	4	skill-borg-verify-in-prod	borg-verify-in-prod	deterministic	borg-prove	prod ${CARD} ${ROLE}			continue_on=failure
 land	5	5	skill-borg-record	borg-record	deterministic	borg-prove	record ${CARD} ${ROLE}			
 land	5	6	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
-land	5	7	skill-clearing-evaluate	post-land: evaluate chunk sequence or lane switch	pipeline	clearing-evaluate				continue_on=failure enqueue=true
+land	5	7	skill-clearing-evaluate	post-land: evaluate chunk sequence or lane switch	pipeline	clearing-evaluate				NAVIGATOR=${NAVIGATOR} JEFF=${JEFF} continue_on=failure enqueue=true

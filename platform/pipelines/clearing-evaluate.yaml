@@ -4,6 +4,7 @@ queue: werk-land
 params:
   - CARD: ""
   - ROLE: ""
+  - NAVIGATOR: ""
   - JEFF: ""
 env:
   - CHORUS_HOME: ${CHORUS_HOME}
@@ -30,8 +31,8 @@ steps:
     description: "post-land decision: resequence chunk or switch lane"
     depends: [skill-clearing-chunk-of]
     preconditions:
-      - condition: "${skill_clearing_chunk_of.exit_code}"
-        expected: "0"
+      - condition: "$CHUNK"
+        expected: "re:.+"
     id: skill_clearing_evaluate
     action: human.task
     with:
@@ -48,4 +49,7 @@ steps:
   - name: skill-clearing-loop
     description: "re-enqueue clearing-plan for active chunk"
     depends: [skill-clearing-evaluate]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-plan -- CARD=${CARD} ROLE=${ROLE} CHUNK=${CHUNK}"
+    preconditions:
+      - condition: "${skill_clearing_evaluate.outputs.decision}"
+        expected: "resequence"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-plan -- CARD=${CARD} ROLE=${ROLE} CHUNK=${CHUNK} NAVIGATOR=${NAVIGATOR} JEFF=${JEFF}"

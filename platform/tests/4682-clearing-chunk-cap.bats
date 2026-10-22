@@ -76,12 +76,18 @@ Next (2):
   [[ "$output" =~ "Result: Succeeded" ]] || return 1
 }
 
-@test "clearing-evaluate dry run skips evaluate step when card has no active chunk (#3734 negative proof)" {
+@test "clearing-evaluate real dagu run skips evaluate step when card has no active chunk (#3734 negative proof)" {
   command -v dagu >/dev/null 2>&1 || skip "dagu not installed"
   WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
-  run dagu dry "$WF"
+  export CHORUS_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  run dagu start "$WF" -- CARD=999999 ROLE=abby-normal NAVIGATOR=wren JEFF=jeff
   [ "$status" -eq 0 ]
   [[ "$output" =~ "skill-clearing-evaluate [skipped]" ]] || return 1
   [[ "$output" =~ "skill-clearing-loop [skipped]" ]] || return 1
   [[ "$output" =~ "Result: Succeeded" ]] || return 1
+}
+
+@test "clearing-evaluate loop step has precondition gating on resequence decision" {
+  WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
+  grep -A 5 "skill-clearing-loop" "$WF" | grep -q 'expected: "resequence"' || return 1
 }
