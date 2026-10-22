@@ -46,11 +46,13 @@ if not cards_out:
 
 active_chunks = set()
 in_active_section = False
+saw_header = False
 
 for line in cards_out.splitlines():
     # Detect section headers like "WIP (2):" or "Now (0):"
     if re.match(r"^(WIP|Now)\s*\(\d+\):", line):
         in_active_section = True
+        saw_header = True
         continue
     elif re.match(r"^[A-Za-z0-9_-]+\s*\(\d+\):", line):
         in_active_section = False
@@ -61,6 +63,9 @@ for line in cards_out.splitlines():
         chunks = re.findall(r"chunk:([a-z0-9-]+)", line)
         for c in chunks:
             active_chunks.add(c)
+
+if not saw_header:
+    sys.exit(1)
 
 print(", ".join(sorted(active_chunks)))
 ' <<< "$listing" || {
@@ -257,12 +262,14 @@ enforce)
   fi
 
   # Check if chunk is already active
-  for a in "${active[@]}"; do
-    if [ "$a" = "$chunk" ]; then
-      echo "chunk '$chunk' is already active (${#active[@]}/$LIMIT active)"
-      exit 0
-    fi
-  done
+  if [ "${#active[@]}" -gt 0 ]; then
+    for a in "${active[@]}"; do
+      if [ "$a" = "$chunk" ]; then
+        echo "chunk '$chunk' is already active (${#active[@]}/$LIMIT active)"
+        exit 0
+      fi
+    done
+  fi
 
   # Check limit
   if [ "${#active[@]}" -ge "$LIMIT" ]; then

@@ -48,6 +48,14 @@ Next (2):
   [[ "$output" =~ "FATAL: empty board listing received" ]] || return 1
 }
 
+@test "clearing-chunk enforce refuses (exit 1) when board listing has no WIP/Now header (#4693 AC4 negative proof)" {
+  export MOCK_BOARD_LISTING='Later (1):
+  1 x [chunk:buzz]'
+  run "$SCRIPT" enforce buzz
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "FATAL: failed to parse active chunks from board listing" ]] || return 1
+}
+
 @test "clearing-chunk check permits go when answered by Jeff" {
   run "$SCRIPT" check 4682 jeff go
   [ "$status" -eq 0 ]
