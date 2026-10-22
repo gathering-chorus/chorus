@@ -129,10 +129,10 @@ STUB
 unguarded_curls() {
   awk '{ if (buf == "") start = NR; buf = buf $0 }
        /\\$/ { sub(/\\$/, "", buf); next }
-       { if (buf ~ /=\$\(curl / && buf !~ /\|\|/) print start ":" buf; buf = "" }' "$1"
+       { if (buf ~ /=\$\((curl|ssh) / && buf !~ /\|\|/) print start ":" buf; buf = "" }' "$1"
 }
 
-@test "no curl assignment in deep-health is left without its own || guard" {
+@test "no curl or ssh assignment in deep-health is left without its own || guard" {
   found=$(unguarded_curls "$DEEP_HEALTH")
   [ -z "$found" ] || { echo "unguarded: $found"; return 1; }
 }
@@ -142,6 +142,19 @@ unguarded_curls() {
   found=$(unguarded_curls "$W/sample.sh")
   [[ "$found" == "4:bad="* ]] || { echo "got: $found"; return 1; }
   [[ "$found" != *"ok="* && "$found" != *"also="* ]] || return 1
+}
+
+@test "NEGATIVE PROOF: the guard check names an unguarded ssh assignment (#4692)" {
+  printf 'ok=$(ssh h "x") && rc=0 || rc=$?\nbad=$(ssh h "curl x" 2>/dev/null)\n' > "$W/sample.sh"
+  found=$(unguarded_curls "$W/sample.sh")
+  [[ "$found" == "2:bad="* ]] || { echo "got: $found"; return 1; }
+}
+
+@test "Bedroom's Loki probe timing out (rc 28) is a warning in the summary, never a death (#4692)" {
+  printf '#!/bin/sh\nexit 28\n' > "$W/bin/ssh"; chmod +x "$W/bin/ssh"
+  PATH="$W/bin:$PATH" run bash "$DEEP_HEALTH"
+  [[ "$output" != *"DIED before summary"* ]] || { echo "$output" | tail -5; return 1; }
+  grep -q 'loki-bedroom-slow' "$HEALTH_JSON_OUT" || { cat "$HEALTH_JSON_OUT"; return 1; }
 }
 
 @test "deep-health syntax is valid bash" {
