@@ -953,18 +953,12 @@ pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, a
     )
 }
 
-/// #4695 — a Role lives in the roles domain graph (urn:chorus:domains:roles)
-/// and nowhere else (AC1). Roles are maintained through the door; a model
-/// deploy drops any staged Role rows from urn:chorus:ontology rather than writing
-/// them to either graph (#4432 retired replaying row files over the store).
-pub fn drop_role_rows_sparql(ontology: &str, roles: &str) -> String {
+/// #4695 — a Role lives in urn:chorus:domains:roles and changes there through the
+/// door (#4432: rows live in the store). A role subject staged from a model file
+/// leaves the ontology graph and is written nowhere: never a row file over the store.
+pub fn drop_role_rows_sparql(ontology: &str) -> String {
     let c = "https://jeffbridwell.com/chorus#";
-    let is_role = |g: &str| format!("{{ GRAPH <{g}> {{ ?s a <{c}Role> }} }} UNION {{ GRAPH <{roles}> {{ ?s a <{c}Role> }} }}");
-    format!(
-        "DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s ?p ?o }} {} }}",
-        is_role(ontology),
-        ont = ontology,
-    )
+    format!("DELETE {{ GRAPH <{ontology}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ontology}> {{ ?s a <{c}Role> ; ?p ?o }} }}")
 }
 
 /// #4695 — the deploy transaction SPARQL: merge, domain rehoming, and role drops.
@@ -980,13 +974,31 @@ pub fn deploy_transaction_sparql(
     retire_clause: &str,
     bnodes: &str,
 ) -> String {
+    deploy_transaction_sparql_with_options(
+        staging,
+        ontology,
+        is_card,
+        retire_clause,
+        bnodes,
+        env_or("DEPLOY_ROLE_DROP", "1") == "1",
+    )
+}
+
+pub fn deploy_transaction_sparql_with_options(
+    staging: &str,
+    ontology: &str,
+    is_card: bool,
+    retire_clause: &str,
+    bnodes: &str,
+    wire_role_drop: bool,
+) -> String {
     let rehome_dom = if ontology == ONTOLOGY_DEFAULT {
         format!(" ; {}", rehome_domain_rows_sparql(staging, ontology, DOMAINS_GRAPH, is_card))
     } else {
         String::new()
     };
-    let drop_roles = if ontology == ONTOLOGY_DEFAULT && env_or("DEPLOY_ROLE_DROP", "1") == "1" {
-        format!(" ; {}", drop_role_rows_sparql(ontology, ROLES_GRAPH))
+    let drop_roles = if ontology == ONTOLOGY_DEFAULT && wire_role_drop {
+        format!(" ; {}", drop_role_rows_sparql(ontology))
     } else {
         String::new()
     };
@@ -3163,14 +3175,21 @@ mod rehome_card_4576 {
 /// are dropped from ontology rather than written to either graph (#4432).
 #[cfg(test)]
 mod drop_roles_4695 {
-    use super::deploy_transaction_sparql;
+    use super::{deploy_transaction_sparql, drop_role_rows_sparql};
     use std::process::Command;
+
+    fn get_update_cli() -> String {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("update check");
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() {
+            panic!("UNMEASURED: no Jena update CLI on PATH (CLAUDE.md #3734)");
+        }
+        update
+    }
 
     #[test]
     fn a_role_leaves_the_ontology_graph_and_live_roles_are_preserved() {
-        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("update check");
-        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert!(!update.is_empty(), "Jena update CLI required on PATH (#3734)");
+        let update = get_update_cli();
         let dir = std::env::temp_dir().join(format!("drop-roles-4695-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let data = dir.join("d.trig");
@@ -3200,12 +3219,10 @@ mod drop_roles_4695 {
 
     #[test]
     fn negative_proof_wiring_omission_leaves_staged_role_in_ontology() {
-        // Negative proof (#3734): when DEPLOY_ROLE_DROP=0 (simulating run_athena_deploy_plan
-        // stopping its call to drop_role_rows_sparql), the staged role is NOT dropped and
-        // remains in urn:chorus:ontology.
-        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("update check");
-        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert!(!update.is_empty(), "Jena update CLI required on PATH (#3734)");
+        // Negative proof (#3734): when the role drop wiring is omitted (wire_role_drop = false,
+        // simulating run_athena_deploy_plan stopping its call to drop_role_rows_sparql), the staged
+        // role is NOT dropped and remains in urn:chorus:ontology.
+        let update = get_update_cli();
         let dir = std::env::temp_dir().join(format!("drop-roles-wiring-neg-4695-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let data = dir.join("d.trig");
@@ -3214,10 +3231,12 @@ mod drop_roles_4695 {
 <urn:chorus:ontology> { }
 <urn:chorus:domains:roles> { }
 "#).unwrap();
-        // With role drop disabled in the deploy wiring
-        std::env::set_var("DEPLOY_ROLE_DROP", "0");
-        let q_unwired = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", true, "", "");
-        std::env::remove_var("DEPLOY_ROLE_DROP");
+        // The deploy SPARQL wiring MUST contain the drop clause by default
+        let q_wired = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", true, "", "");
+        assert!(q_wired.contains(&drop_role_rows_sparql("urn:chorus:ontology")), "wiring must include role drop");
+
+        // With role drop omitted from the deploy transaction wiring
+        let q_unwired = super::deploy_transaction_sparql_with_options("urn:stg", "urn:chorus:ontology", true, "", "", false);
         assert!(!q_unwired.contains("a <https://jeffbridwell.com/chorus#Role>"), "unwired transaction must omit role drop");
 
         let ru = dir.join("u.ru");
@@ -3235,9 +3254,7 @@ mod drop_roles_4695 {
 
     #[test]
     fn release_with_3838_roles_leaves_zero_roles_in_ontology_and_preserves_live_roles() {
-        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("update check");
-        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert!(!update.is_empty(), "Jena update CLI required on PATH (#3734)");
+        let update = get_update_cli();
         let dir = std::env::temp_dir().join(format!("drop-roles-3838-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let data = dir.join("d.trig");
