@@ -219,6 +219,10 @@ pub fn for_secs(d: &str) -> Option<u64> {
 fn same(p: &str, built: &Value, have: &Value) -> bool {
     let (b, h) = (built.pointer(p).filter(|v| !v.is_null()), have.pointer(p).filter(|v| !v.is_null()));
     if p == "/for" {
+        // absent on both sides is the same (Silas); unreadable text never is
+        if b.is_none() && h.is_none() {
+            return true;
+        }
         let s = |v: Option<&Value>| v.and_then(Value::as_str).and_then(for_secs);
         return matches!((s(b), s(h)), (Some(x), Some(y)) if x == y);
     }

@@ -42,3 +42,12 @@ fn negative_proof_a_different_wait_or_an_unreadable_one_stays_stale() {
     let d = drift(&want("a", "soon"), &[rule("a", "soon")]);
     assert_eq!(d.stale, vec!["a (for)".to_string()], "an unreadable wait never reads as a match, even against itself");
 }
+
+#[test]
+fn a_rule_with_no_for_on_either_side_is_not_stale_but_one_sided_is() {
+    let bare = |uid: &str| json!({"uid": uid, "title": "t", "labels": {"role": "kade"}});
+    let d = drift(&[("a".to_string(), bare("a"))], &[bare("a")]);
+    assert!(d.stale.is_empty(), "absent on both sides matched before #4690 and still does (Silas): {:?}", d.stale);
+    let d = drift(&[("a".to_string(), bare("a"))], &[rule("a", "0s")]);
+    assert_eq!(d.stale, vec!["a (for)".to_string()], "absent on one side only is a difference");
+}
