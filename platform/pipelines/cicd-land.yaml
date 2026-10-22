@@ -52,6 +52,6 @@ steps:
   - name: skill-clearing-evaluate
     description: "post-land: evaluate chunk sequence or lane switch"
     depends: [skill-werk-accept]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-evaluate -- CARD=${CARD} ROLE=${ROLE} NAVIGATOR=${NAVIGATOR} JEFF=${JEFF}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue clearing-evaluate -- CARD=${CARD} ROLE=${ROLE}"
     continue_on:
       failure: true
