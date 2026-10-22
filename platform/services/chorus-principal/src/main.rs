@@ -511,7 +511,8 @@ fn onboarding_census() -> Option<usize> {
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
         if host.is_none() && groups.is_none() { continue; }
         let role = format!("role-{name}");
-        let types = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?t WHERE {{ GRAPH ?g {{ c:{role} a ?t }} }}"))?;
+        // roleKind, the field the store has: the AgentRole type is source-only (3838 never deploys)
+        let kinds = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?k WHERE {{ GRAPH ?g {{ c:{role} c:roleKind ?k }} }}"))?;
         let caps = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?p WHERE {{ GRAPH ?g {{ c:{role} c:hasProperty ?p }} \
             GRAPH ?h {{ ?p a c:Property ; c:propertyValue ?v }} FILTER(CONTAINS(STR(?p), \"word-cap\")) }}"))?;
         let webid = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?w WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:{principal} c:webId ?w }} }}"))?;
@@ -520,7 +521,7 @@ fn onboarding_census() -> Option<usize> {
             host_account: host,
             holds_role: bound(b, "r"),
             agent_runtime: bound(b, "rt"),
-            role_is_agent: types.iter().any(|t| bound(t, "t").as_deref() == Some("AgentRole")),
+            role_is_agent: kinds.iter().any(|k| bound(k, "k").as_deref() == Some("agent")),
             word_caps: caps.len(),
             in_group: groups.map(|g| g.split_whitespace().any(|x| x == "chorus")).unwrap_or(false),
             runs_on: chorus_principal::rows::runtime_for(&table, &name).map(|(r, _)| r),

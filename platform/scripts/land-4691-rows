@@ -27,8 +27,9 @@ without --apply, and --apply is a prod write: only after Jeff's yes on the dry
 run. A staging rehearsal moves both doors (CHORUS_DOOR=http://127.0.0.1:3368
 OWL_URL=http://localhost:3368/v1); --apply refuses when the runner's door is not
 the one the plan read. Skills go first; 8 and 9 are added before 5-7 change, so
-accept and clearing-evaluate are never missing from the land. Exit 0 = plan
-printed (or applied); 1 = a write was refused; 2 = the door could not be read.
+accept and clearing-evaluate are never missing from the land. It refuses, dry run included, until cicd-land-7 is #4682's
+clearing-evaluate (Wren 09:08). Exit 0 = plan printed (or applied); 1 = a
+write was refused, or #4682's rows are not in; 2 = the door could not be read.
 """
 import json, os, subprocess, sys, urllib.error, urllib.parse, urllib.request
 
@@ -116,6 +117,18 @@ def write(verb, dom, cls, w):
 
 def main():
     apply = "--apply" in sys.argv[1:]
+    # Wren 09:08 — land-4682-rows writes clearing-evaluate at 7; run after this
+    # one it would clobber borg-check. So this runs only once 7 is #4682's
+    # clearing-evaluate (or already borg-check, a rerun): never before it
+    try:
+        seven = row("skills", "stepskills", "cicd-land-7")
+    except Exception as e:
+        print(f"door unreadable at {DOOR}: {e} — no plan")
+        return 2
+    seven_calls = bare((seven or {}).get("callsSkill", ""))
+    if seven_calls not in ("clearing-evaluate", "borg-check"):
+        print(f"REFUSED: cicd-land-7 calls {seven_calls or 'nothing (no row)'}; land-4682-rows must write clearing-evaluate there first, or it would overwrite borg-check — nothing written")
+        return 1
     if apply and door_of(WRITES_TO) != door_of(DOOR):
         print(f"REFUSED: the plan reads {DOOR} but the runner writes to {WRITES_TO}; set CHORUS_DOOR to the same door — nothing written")
         return 1

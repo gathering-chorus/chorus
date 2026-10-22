@@ -10,7 +10,7 @@
 principal-host	create	Principal row has hostAccount: the Mac account it runs as
 principal-role	create	Principal row has holdsRole: the Role it holds
 principal-runtime	create	Principal row has agentRuntime: the runtime its pane starts
-role-agent	create	the Role row is typed chorus:AgentRole
+role-agent	create	the Role row has roleKind agent (the store's word; the AgentRole type lives only in source, Wren 09:08)
 role-word-caps	create	the Role has both word-cap edges (response, nudge) to Property rows that exist
 account-group	create	the Mac account is in group chorus, so it can write the repo
 runtime-table	create	shared/agent_runtimes.json runsOn names it (until login reads agentRuntime from the door, #4694)
