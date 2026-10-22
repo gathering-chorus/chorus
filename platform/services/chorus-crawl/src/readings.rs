@@ -416,15 +416,61 @@ pub type ReadingRow = (String, Vec<(String, String)>);
 /// finite number (unmeasured, NaN, inf) is left out, never written as 0.
 pub fn prom_lines(sensor: &str, rows: &[ReadingRow]) -> String {
     let get = |f: &[(String, String)], k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    let newest = rows.iter().filter_map(|(_, f)| get(f, "readingDay")).max();
-    let mut out = String::from("# TYPE chorus_sensor_reading gauge\n");
+    // #4679 — each series keeps its own newest day: counts are written for the
+    // finished day and point-in-time metrics for today, so one newest day for the
+    // whole sensor dropped every count.
+    let mut newest: BTreeMap<(String, String), (String, String)> = BTreeMap::new();
     for (_, f) in rows {
         let (Some(day), Some(metric), Some(value)) = (get(f, "readingDay"), get(f, "readingMetric"), get(f, "readingValue")) else { continue };
-        if Some(&day) != newest.as_ref() || !value.parse::<f64>().is_ok_and(f64::is_finite) { continue; }
-        let subject = get(f, "readingRole").unwrap_or_default();
-        out.push_str(&format!("chorus_sensor_reading{{sensor=\"{sensor}\",metric=\"{metric}\",subject=\"{subject}\"}} {value}\n"));
+        if !value.parse::<f64>().is_ok_and(f64::is_finite) { continue; }
+        let key = (metric, get(f, "readingRole").unwrap_or_default());
+        if newest.get(&key).is_none_or(|(d, _)| day > *d) { newest.insert(key, (day, value)); }
     }
-    out
+    let latest = newest.values().filter_map(|(d, _)| civil_day(d)).max();
+    let sensor = prom_escape(sensor);
+    let mut out = String::from("# TYPE chorus_sensor_reading gauge\n");
+    let mut ages = String::from("# TYPE chorus_sensor_reading_age_days gauge\n");
+    for ((metric, subject), (day, value)) in &newest {
+        let labels = format!("sensor=\"{sensor}\",metric=\"{}\",subject=\"{}\"", prom_escape(metric), prom_escape(subject));
+        out.push_str(&format!("chorus_sensor_reading{{{labels}}} {value}\n"));
+        // How many days this series is behind the sensor's newest reading, so an
+        // old value can't pass as current (Kade 10-21 15:03).
+        if let (Some(l), Some(d)) = (latest, civil_day(day)) {
+            ages.push_str(&format!("chorus_sensor_reading_age_days{{{labels}}} {}\n", l - d));
+        }
+    }
+    out + &ages
+}
+
+/// #4679 — where the gauges go: CHORUS_SENSOR_PROM_DIR, else the textfile collector
+/// under HOME. Neither set, or a relative path, is an error, so the run goes red
+/// instead of writing somewhere no collector reads.
+pub fn prom_dir(env_dir: Option<String>, home: Option<String>) -> Result<std::path::PathBuf, String> {
+    let dir = match (env_dir.filter(|d| !d.is_empty()), home.filter(|h| !h.is_empty())) {
+        (Some(d), _) => std::path::PathBuf::from(d),
+        (None, Some(h)) => std::path::Path::new(&h).join("CascadeProjects/shared-observability/data/textfile_collector"),
+        (None, None) => return Err("neither CHORUS_SENSOR_PROM_DIR nor HOME is set".to_string()),
+    };
+    if dir.is_relative() { return Err(format!("gauge dir {} is relative", dir.display())); }
+    Ok(dir)
+}
+
+/// #4679 — a Prometheus label value with \, " and newline escaped.
+fn prom_escape(v: &str) -> String {
+    v.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+}
+
+/// Days since 1970-01-01 for a YYYY-MM-DD day (Hinnant's days_from_civil).
+fn civil_day(day: &str) -> Option<i64> {
+    let mut p = day.splitn(3, '-').map(|s| s.parse::<i64>().ok());
+    let (y, m, d) = (p.next()??, p.next()??, p.next()??);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) { return None; }
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146097 + doe - 719468)
 }
 
 /// #4671 — the gauges into the node-exporter textfile collector: a temp file moved
