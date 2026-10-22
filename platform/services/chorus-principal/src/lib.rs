@@ -1983,11 +1983,15 @@ pub fn sparql_count(body: &str, var: &str) -> Option<usize> {
     v.pointer("/results/bindings/0")?.get(var)?.get("value")?.as_str()?.parse().ok()
 }
 
-/// #4686 — step 3c's verdict: Ok when the store's answer shows all four hats,
-/// Err(n) with the count it read otherwise (unreadable reads as 0).
-pub fn wears_all_hats(body: &str) -> Result<usize, usize> {
-    match sparql_count(body, "n").unwrap_or(0) {
-        4 => Ok(4),
-        n => Err(n),
+/// The hats every principal wears (step 3c writes and reads back all of them).
+pub const HATS: usize = 4;
+
+/// #4686 — step 3c's verdict: Ok when the store's answer shows all HATS,
+/// Err(Some(n)) with the count it read otherwise, Err(None) when the answer
+/// is unreadable (never reported as "0 hats").
+pub fn wears_all_hats(body: &str) -> Result<usize, Option<usize>> {
+    match sparql_count(body, "n") {
+        Some(n) if n == HATS => Ok(n),
+        other => Err(other),
     }
 }
