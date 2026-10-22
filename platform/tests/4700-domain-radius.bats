@@ -79,7 +79,7 @@ json.dump(g, open(sys.argv[3], "w"))
 ├─ owner wren · value stream chorus · step directing
 ├─ owns         awareness
 │  └─ services pulse · pipelines — · skills loom-gemba
-├─ consumes     messages   [platform: not modelled]
+├─ consumes     messages (foundation)
 ├─ uses tool    — (not modelled)
 └─ used by      clearing (via awareness)'
   [[ "$output" == "$expected"* ]] || { echo "got:"; echo "$output"; return 1; }
@@ -139,6 +139,34 @@ json.dump(g, open(sys.argv[3], "w"))
   plant 'g["edges"]["executor"] = [["skill-clearing-nudge", "pipeline"]]; g["edges"]["implementedBy"] = [["skill-clearing-nudge", "cicd"]]'
   run "$DR" messages --from-fixture "$DIR/planted.json" --check
   [ "$status" -eq 0 ] || return 1
+}
+
+@test "negative proof: a value stream no product's domain reaches is flagged" {
+  plant 'g["types"]["ValueStream"].append("value-stream-orphan")'
+  run "$PR" --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"valuestream-no-product: 1"* ]] || return 1
+}
+
+@test "a link to a non-Domain name is flagged, never rendered as a domain" {
+  plant 'g["edges"]["hasDomain"].append(["pulse", "ghost"])'
+  run "$DR" --from-fixture "$DIR/planted.json"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" != *"domain-radius ghost"* ]] || return 1
+  run "$PR" --from-fixture "$DIR/planted.json" --check
+  [ "$status" -eq 2 ] || return 1
+  [[ "$output" == *"link-to-missing-domain: 1"* ]] || return 1
+}
+
+@test "named products filter --json and --html too, and parts get a row" {
+  plant 'g["edges"]["partOf"] = [["clearing", "pulse"]]'
+  run "$PR" pulse --from-fixture "$DIR/planted.json" --json -
+  [ "$status" -eq 0 ] || return 1
+  printf '%s' "$output" | python3 -c '
+import json, sys
+assert [p["product"] for p in json.load(sys.stdin)["products"]] == ["pulse"]' || return 1
+  run "$PR" pulse --from-fixture "$DIR/planted.json"
+  [[ "$output" == *"├─ parts        clearing"* ]] || return 1
 }
 
 @test "--html renders the same tree, and --json carries value stream and step" {

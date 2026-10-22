@@ -26,7 +26,7 @@ PIPELINES_DIR = os.environ.get("CHORUS_PIPELINES_DIR", os.path.join(CHORUS_HOME,
 C = "https://jeffbridwell.com/chorus#"
 PFX = f"PREFIX c: <{C}> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
 
-KIND = dict(rg.KIND, **{"valuestream-no-product-link": "value stream has no graph link to a Product"})
+KIND = rg.KIND
 # Fallback map for grouping when no graph link exists (Wren: flag as gap)
 VS_PRODUCT_FALLBACK = {
     "value-stream-werk": "werk",
@@ -106,6 +106,8 @@ def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_di
         owned = {r["domain"] for r in rows}
         pipes = {pl for r in rows for pl in r["pipelines"]}
         pipes |= {pl for pl, vs in automates.items() if VS_PRODUCT_FALLBACK.get(vs) == p}
+        # #4682's rule kept: a pipeline named for the product belongs to it.
+        pipes |= {pl for pl in pipelines if pl == "pipeline-" + p}
         return {
             "product": p,
             "owner": g.owner(p),
@@ -114,6 +116,7 @@ def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_di
             "steps": sorted({r["step"] for r in rows if r["step"]}),
             "domains": rows,
             "consumes": sorted(x for q, x in consumes if q == p),
+            "consumeLayers": {x: d["domains"].get(x, {}).get("layer", "") for q, x in consumes if q == p},
             "usedBy": sorted({f"{q} (via {x})" for q, x in consumes if x in owned and q != p}),
             "pipelines": [{"pipeline": x, "status": pipe_status.get(x, ""), "stream": automates.get(x, "")}
                           for x in sorted(pipes)],
@@ -152,7 +155,10 @@ def product_tree(p):
         lines.append((2, f"services {rg.join([s.replace('service-', '') for s in r['services']])} · "
                          f"pipelines {rg.join([x.replace('pipeline-', '') for x in r.get('pipelines', [])])} · "
                          f"skills {rg.join([s.replace('skill-', '') for s in r.get('skills', [])])}"))
-    lines.append((1, f"consumes     {rg.join(p['consumes'])}   [platform: not modelled]"))
+    if p.get("parts"):
+        lines.append((1, f"parts        {rg.join(p['parts'])}"))
+    layers = p.get("consumeLayers", {})
+    lines.append((1, "consumes     " + rg.join([f"{x} ({layers.get(x) or 'no layer'})" for x in p["consumes"]])))
     lines.append((1, "uses tool    — (not modelled)"))
     lines.append((1, f"used by      {rg.join(p.get('usedBy', []))}"))
     return rg.tree(lines)
@@ -334,6 +340,14 @@ def main():
             sys.stderr.write(f"FATAL: SPARQL query failed against {args.sparql_endpoint}: {ex}\n")
             sys.exit(1)
 
+    if args.products:
+        known = {p["product"] for p in data["products"]}
+        missing = [x for x in args.products if x not in known]
+        if missing:
+            sys.stderr.write(f"no such product: {', '.join(missing)}\n")
+            sys.exit(1)
+        data = dict(data, products=[p for p in data["products"] if p["product"] in args.products])
+
     relevant_issues = data["issues"]
     if args.owner:
         owner_prods = {p["product"] for p in data["products"] if p["owner"] == args.owner}
@@ -360,12 +374,7 @@ def main():
                 f.write(html_out + "\n")
 
     if not args.html and not args.json:
-        shown = [p for p in data["products"]
-                 if (not args.products or p["product"] in args.products)
-                 and (not args.owner or p["owner"] == args.owner)]
-        if args.products and not shown:
-            sys.stderr.write(f"no such product: {', '.join(args.products)}\n")
-            sys.exit(1)
+        shown = [p for p in data["products"] if not args.owner or p["owner"] == args.owner]
         for p in shown:
             print(product_tree(p) + "\n")
         c = data["counts"]

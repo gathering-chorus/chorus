@@ -37,6 +37,7 @@ KIND = {
     "domain-under-non-product": "owned through a link from a non-Product",
     "domain-no-step": "no value-stream step",
     "domain-no-layer": "no layer",
+    "valuestream-no-product": "no product's domain sits at a step in it",
     "skill-no-pipeline": "runs a pipeline that has no Pipeline row",
     "consumes-own-domain": "consumes a domain it owns",
     "link-to-missing-domain": "links to a name that is not a Domain",
@@ -201,7 +202,17 @@ def derive(g):
             issue("pipeline-no-stream", pl, "automates no value stream")
 
     by_domain = {}
-    for d in sorted(domains | {x for _, x in owns} | {x for _, x in skill_domains if x in domains}):
+    # Products reach a value stream only through their domains' steps
+    # (Product hasValueStream has 0 rows, 10-22), so a stream no owned domain
+    # sits in is unreachable from every product.
+    reached = {stream_of_step.get(step_of.get(d, ""), "") for _, d in owns}
+    for vs in sorted(g.of("ValueStream")):
+        if vs not in reached:
+            issue("valuestream-no-product", vs, "no product's domain has atStep to a step in this stream")
+
+    # Only typed Domain rows get a radius; a link to a non-Domain is flagged
+    # above (link-to-missing-domain, skill-missing-domain), never rendered.
+    for d in sorted(domains):
         sks = sorted(sk for sk, x in skill_domains if x == d)
         step = step_of.get(d, "")
         by_domain[d] = {
