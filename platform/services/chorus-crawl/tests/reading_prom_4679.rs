@@ -98,8 +98,15 @@ fn negative_proof_no_home_and_no_env_dir_is_an_error_not_a_guess() {
 }
 
 #[test]
-fn negative_proof_the_raw_form_of_those_labels_is_malformed() {
-    let raw = "chorus_sensor_reading{sensor=\"messages\",metric=\"m\",subject=\"we\"ird\nrole\"} 1\n";
-    assert!(raw.lines().count() > 1 || raw.matches('"').count() % 2 == 1,
-        "unescaped, the quote and newline break the exposition line, which is what escaping prevents");
+fn negative_proof_a_hostile_label_never_splits_or_unbalances_a_sample() {
+    // Kade's #4679 review: the old version asserted on a literal. This one runs prom_lines:
+    // with escaping removed, the newline starts a line that is not a sample, and the bare
+    // quote leaves an odd number of unescaped quotes.
+    let rows = vec![row("messages", "m\"x", "2026-10-21", "1", Some("a\nb\\"))];
+    let text = prom_lines("messages", &rows);
+    for line in text.lines() {
+        assert!(line.starts_with('#') || line.starts_with("chorus_sensor_reading"), "a label value split the line: {line:?}");
+        let unescaped = line.replace("\\\\", "").replace("\\\"", "").matches('"').count();
+        assert_eq!(unescaped % 2, 0, "unbalanced quotes: {line:?}");
+    }
 }
