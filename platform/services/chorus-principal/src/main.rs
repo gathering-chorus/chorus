@@ -654,14 +654,19 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
                 (None, _) => match agent_half(&css, name) {
                     // #4686 — an agent's pod hangs off the service account, so
                     // the proof is that account's own link, not a saved password.
-                    Some((acct, webid)) => {
+                    Ok(Some((acct, webid))) => {
                         eprintln!("chorus-principal: '{name}' is HALF-PROVISIONED — the service account ({acct}) links {webid},");
                         eprintln!("  and no row names it. Completing the missing half.");
                         resume = Some((acct, webid));
                     }
-                    None => {
+                    Ok(None) => {
                         eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
                         eprintln!("  and the service account links no WebID under that pod name. nothing was written.");
+                        return 2;
+                    }
+                    Err(why) => {
+                        eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it;");
+                        eprintln!("  whether this tool made it is UNMEASURED ({why}). nothing was written.");
                         return 2;
                     }
                 },
@@ -1229,16 +1234,21 @@ fn css_login_person(css: &str, jar: &str, email: &str, password: &str) -> Option
 
 /// #4686 — (service account id, WebID) when the service account links a pod
 /// named `name`: the half an agent create left when its rollback could not
-/// delete the pod. None when sign-in, the controls or the link are missing.
-fn agent_half(css: &str, name: &str) -> Option<(String, String)> {
+/// delete the pod. Ok(None): the account answered and links no such pod.
+/// Err: the account could not be read, so whether it does is UNMEASURED.
+fn agent_half(css: &str, name: &str) -> Result<Option<(String, String)>, &'static str> {
     let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
     let local = |u: &str| u.replacen(issuer.trim_end_matches('/'), css, 1);
     let jar = jar_path();
-    let acct = css_login(css, &jar)?;
+    let acct = css_login(css, &jar).ok_or("could not sign in to the service account")?;
     let read = |u: &str| curl_css(None, &["-s", "--max-time", "20", "-b", &jar, "-H", "Accept: application/json", &local(u)]).unwrap_or_default();
-    let links_url = between(&read(&format!("{css}/.account/")), "\"webId\":\"", "\"")?;
-    let webid = chorus_principal::links::half_made_webid(&read(&links_url), name)?;
-    Some((acct, webid))
+    let links_url = between(&read(&format!("{css}/.account/")), "\"webId\":\"", "\"")
+        .ok_or("the service account answered without its controls")?;
+    let links = read(&links_url);
+    if !links.contains("\"webIdLinks\"") {
+        return Err("the service account's WebID links did not answer");
+    }
+    Ok(chorus_principal::links::half_made_webid(&links, name).map(|w| (acct, w)))
 }
 
 /// Create a human's OWN CSS account: account → password login (email + a
