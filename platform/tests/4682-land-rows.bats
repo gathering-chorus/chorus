@@ -167,12 +167,12 @@ with open("'"$target"'", "w") as f:
   [[ "$output" =~ "sh:conforms  true" ]] || return 1
 }
 
-@test "negative proof: origin/main shape refuses land-4682-rows executor 'pipeline' (#4693 AC2 negative proof)" {
+@test "negative proof: pre-#4693 shape (c185fdd5a) refuses land-4682-rows executor 'pipeline' (#4693 AC2 negative proof)" {
   command -v shacl >/dev/null 2>&1 || skip "shacl (Jena) not installed"
   DATA="$BATS_TEST_TMPDIR/land-rows.ttl"
   generate_land_ttl "$DATA"
   OLD_SHAPE="$BATS_TEST_TMPDIR/old-shape.ttl"
-  git -C "$ROOT" show origin/main:roles/wren/ontology/skills-4467.ttl > "$OLD_SHAPE"
+  git -C "$ROOT" show c185fdd5a:roles/wren/ontology/skills-4467.ttl > "$OLD_SHAPE"
 
   run shacl validate --shapes "$OLD_SHAPE" --data "$DATA"
   [[ "$output" =~ "sh:conforms  false" ]] || return 1
