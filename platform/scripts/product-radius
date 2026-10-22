@@ -15,6 +15,9 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+import radius_graph as rg  # noqa: E402
+
 # Configurable SPARQL endpoint via env or flag; default to prod Fuseki
 DEFAULT_ENDPOINT = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods/query")
 CHORUS_HOME = os.environ.get("CHORUS_HOME", os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -23,18 +26,7 @@ PIPELINES_DIR = os.environ.get("CHORUS_PIPELINES_DIR", os.path.join(CHORUS_HOME,
 C = "https://jeffbridwell.com/chorus#"
 PFX = f"PREFIX c: <{C}> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
 
-KIND = {
-    "domain-no-purpose": "no purpose",
-    "consumes-own-domain": "consumes a domain it owns",
-    "link-to-missing-domain": "links to a name that is not a Domain",
-    "domain-two-products": "listed by two products",
-    "service-unhosted": "no domain hosts it",
-    "hosts-non-service": "hosts a machine, not a service",
-    "pipeline-no-stream": "automates no value stream",
-    "probe-row": "test probe left in prod",
-    "yaml-no-rows": "pipeline file with no Pipeline row",
-    "valuestream-no-product-link": "value stream has no graph link to a Product",
-}
+KIND = dict(rg.KIND, **{"valuestream-no-product-link": "value stream has no graph link to a Product"})
 # Fallback map for grouping when no graph link exists (Wren: flag as gap)
 VS_PRODUCT_FALLBACK = {
     "value-stream-werk": "werk",
@@ -58,94 +50,26 @@ def run_sparql(q, endpoint=DEFAULT_ENDPOINT):
 
 
 def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_dir=PIPELINES_DIR):
-    if fixture_data is not None:
+    """Inventory from a raw graph (#4700: the same edges domain-radius reads).
+
+    fixture_data may be a raw graph ({"types", "edges"}); then every flag is
+    computed. A legacy pre-computed inventory is passed through unchanged."""
+    if fixture_data is not None and not rg.is_raw(fixture_data):
         return fixture_data
+    raw = fixture_data if fixture_data is not None else rg.fetch_graph(endpoint)
+    g = rg.Graph(raw)
+    d = rg.derive(g)
+    issues = list(d["issues"])
+    products = g.of("Product")
+    has_domain, consumes = d["owns"], d["consumes"]
+    part_of = g.pairs("partOf", "Product")
+    automates = d["automates"]
+    pipe_status = d["pipeStatus"]
+    pipelines = g.of("Pipeline")
+    streams = g.of("ValueStream")
 
-    def by_type(t):
-        return {r["s"] for r in run_sparql(
-            f"SELECT DISTINCT ?s WHERE {{ GRAPH ?g {{ ?s a c:{t} }} FILTER(STRSTARTS(STR(?s), STR(c:))) }}",
-            endpoint
-        )}
-
-    products = by_type("Product")
-    domains = by_type("Domain")
-    services = by_type("Service")
-    pipelines = by_type("Pipeline")
-    streams = by_type("ValueStream")
-
-    def pairs(pred, subj_type=None):
-        q = f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s c:{pred} ?o }} {'GRAPH ?t { ?s a c:' + subj_type + ' }' if subj_type else ''} }}"
-        return [(r["s"], r["o"]) for r in run_sparql(q, endpoint)]
-
-    def one(pred, t):
-        out = {}
-        for s, o in pairs(pred, t):
-            out.setdefault(s, o)
-        return out
-
-    has_domain = pairs("hasDomain", "Product")
-    consumes = pairs("consumes", "Product")
-    part_of = pairs("partOf", "Product")
-    hosts = pairs("hosts", "Domain")
-    automates = pairs("automates", "Pipeline")
-    vs_product_links = pairs("hasValueStream", "Product")
-
-    dom_owner = one("ownedBy", "Domain")
-    dom_status = one("status", "Domain")
-    dom_step = one("atStep", "Domain")
-    dom_purpose = one("purpose", "Domain")
-    svc_owner = one("ownedBy", "Service")
-    svc_status = one("status", "Service")
-    pipe_status = one("pipelineStatus", "Pipeline")
-    prod_owner = one("ownedBy", "Product")
-
-    issues = []
     def issue(kind, subject, text):
         issues.append({"kind": kind, "subject": subject, "text": text})
-
-    # Flag value streams without explicit graph link to a product
-    linked_streams = {vs for _, vs in vs_product_links}
-    for vs in sorted(streams):
-        if vs not in linked_streams:
-            issue("valuestream-no-product-link", vs, "value stream has no explicit hasValueStream link to a Product in graph")
-
-    owners_of = {}
-    for p, d in has_domain:
-        owners_of.setdefault(d, set()).add(p)
-
-    for d in sorted(domains):
-        n = len(owners_of.get(d, ()))
-        if n == 0:
-            issue("domain-no-product", d, "no product lists it (hasDomain)")
-        elif n > 1:
-            issue("domain-two-products", d, "listed by " + ", ".join(sorted(owners_of[d])))
-        if d not in dom_purpose:
-            issue("domain-no-purpose", d, "no purpose")
-
-    for p, d in has_domain:
-        if d not in domains:
-            issue("link-to-missing-domain", p, f"hasDomain {d}, which is not a Domain row")
-
-    for p, d in consumes:
-        if d not in domains:
-            issue("link-to-missing-domain", p, f"consumes {d}, which is not a Domain row")
-        elif (p, d) in set(has_domain):
-            issue("consumes-own-domain", p, f"consumes {d}, which it already owns")
-
-    hosted = {s for _, s in hosts}
-    for s in sorted(services):
-        if s not in hosted:
-            issue("service-unhosted", s, "no domain hosts it")
-    for d, s in hosts:
-        if s not in services:
-            issue("hosts-non-service", d, f"hosts {s}, which is not a Service row")
-
-    auto = dict(automates)
-    for p in sorted(pipelines):
-        if p.startswith("pipeline-zz") or "probe" in p:
-            issue("probe-row", p, f"test probe row left in prod (status {pipe_status.get(p, '')!r})")
-        elif p not in auto:
-            issue("pipeline-no-stream", p, "automates no value stream")
 
     for p in sorted(products):
         if not any(x == p for x, _ in has_domain) and not any(o == p for _, o in part_of):
@@ -153,68 +77,85 @@ def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_di
 
     # Dynamic NO_ROW derivation: compare platform/pipelines/*.yaml with Pipeline labels
     on_disk_yaml = []
-    if os.path.isdir(pipelines_dir):
-        for yf in glob.glob(os.path.join(pipelines_dir, "*.yaml")):
-            on_disk_yaml.append(os.path.basename(yf))
-
-    # Known pipeline labels in graph: both stripped and raw (e.g. "cicd" or "pipeline-cicd")
+    if fixture_data is None and os.path.isdir(pipelines_dir):
+        on_disk_yaml = [os.path.basename(yf) for yf in glob.glob(os.path.join(pipelines_dir, "*.yaml"))]
     graph_pipe_labels = {p.replace("pipeline-", "") for p in pipelines} | set(pipelines)
     for yf in sorted(on_disk_yaml):
-        base = yf[:-5] if yf.endswith(".yaml") else yf
-        if base not in graph_pipe_labels:
-            # Attribute to product via prefix heuristic or unplaced
+        if yf[:-5] not in graph_pipe_labels:
             issue("yaml-no-rows", yf, f"pipeline file {yf} exists on disk but has no matching Pipeline row in graph")
 
     parts = {}
     for s, o in part_of:
         parts.setdefault(o, []).append(s)
 
-    vs_to_prod = dict((vs, p) for p, vs in vs_product_links)
-
     def product_view(p):
-        doms = sorted(d for x, d in has_domain if x == p)
         rows = []
-        for d in doms:
+        for dom in sorted(x for q, x in has_domain if q == p):
+            r = d["domains"].get(dom, {})
             rows.append({
-                "domain": d,
-                "owner": dom_owner.get(d, "").replace("principal-", ""),
-                "status": dom_status.get(d, ""),
-                "step": dom_step.get(d, "").replace("value-stream-step-", ""),
-                "services": sorted(s for x, s in hosts if x == d),
-                "flags": sorted({i["kind"] for i in issues if i["subject"] == d})
+                "domain": dom,
+                "owner": r.get("owner", ""),
+                "status": r.get("status", ""),
+                "step": r.get("step", "").replace("value-stream-step-", ""),
+                "valueStream": r.get("valueStream", ""),
+                "services": r.get("services", []),
+                "pipelines": r.get("pipelines", []),
+                "skills": r.get("skills", []),
+                "flags": sorted({i["kind"] for i in issues if i["subject"] == dom}),
             })
-        pipes = sorted(
-            pp for pp, vs in automates
-            if vs_to_prod.get(vs, VS_PRODUCT_FALLBACK.get(vs)) == p
-        )
-        if p in ("borg", "clearing"):
-            pipes += sorted(pp for pp in pipelines if pp == "pipeline-" + p)
+        owned = {r["domain"] for r in rows}
+        pipes = {pl for r in rows for pl in r["pipelines"]}
+        pipes |= {pl for pl, vs in automates.items() if VS_PRODUCT_FALLBACK.get(vs) == p}
         return {
             "product": p,
-            "owner": prod_owner.get(p, "").replace("principal-", ""),
+            "owner": g.owner(p),
             "parts": sorted(parts.get(p, [])),
+            "valueStreams": sorted({r["valueStream"] for r in rows if r["valueStream"]}),
+            "steps": sorted({r["step"] for r in rows if r["step"]}),
             "domains": rows,
-            "consumes": sorted(d for x, d in consumes if x == p),
-            "pipelines": [{"pipeline": x, "status": pipe_status.get(x, ""), "stream": auto.get(x, "")} for x in sorted(set(pipes))],
-            "flags": sorted({i["kind"] for i in issues if i["subject"] == p})
+            "consumes": sorted(x for q, x in consumes if q == p),
+            "usedBy": sorted({f"{q} (via {x})" for q, x in consumes if x in owned and q != p}),
+            "pipelines": [{"pipeline": x, "status": pipe_status.get(x, ""), "stream": automates.get(x, "")}
+                          for x in sorted(pipes)],
+            "flags": sorted({i["kind"] for i in issues if i["subject"] == p}),
         }
 
     order = [p for p in ORDER if p in products] + sorted(products - set(ORDER))
+    services = g.of("Service")
+    hosts = g.pairs("hosts", "Domain")
     return {
         "counts": {
             "products": len(products),
-            "domains": len(domains),
+            "domains": len(g.of("Domain")),
             "services": len(services),
             "pipelines": len(pipelines),
             "valueStreams": len(streams),
         },
         "products": [product_view(p) for p in order],
-        "unplacedDomains": sorted(d for d in domains if d not in owners_of),
-        "services": [{"service": s, "owner": svc_owner.get(s, "").replace("principal-", ""),
-                      "hostedBy": sorted(d for d, x in hosts if x == s)} for s in sorted(services)],
-        "pipelines": [{"pipeline": p, "status": pipe_status.get(p, ""), "stream": auto.get(p, "")} for p in sorted(pipelines)],
+        "unplacedDomains": sorted(x for x, r in d["domains"].items() if not r["products"]),
+        "services": [{"service": s, "owner": g.owner(s),
+                      "hostedBy": sorted(x for x, y in hosts if y == s)} for s in sorted(services)],
+        "pipelines": [{"pipeline": p, "status": pipe_status.get(p, ""), "stream": automates.get(p, "")}
+                      for p in sorted(pipelines)],
         "issues": issues,
     }
+
+
+def product_tree(p):
+    """The tree shape Jeff fixed on #4700 (10-22 11:44)."""
+    lines = [(0, f"product-radius {p['product']}"),
+             (1, f"owner {p['owner'] or '—'} · value stream "
+                 f"{rg.join([v.replace('value-stream-', '') for v in p.get('valueStreams', [])])} · "
+                 f"step {rg.join(p.get('steps', []))}")]
+    for r in p["domains"]:
+        lines.append((1, f"owns         {r['domain']}"))
+        lines.append((2, f"services {rg.join([s.replace('service-', '') for s in r['services']])} · "
+                         f"pipelines {rg.join([x.replace('pipeline-', '') for x in r.get('pipelines', [])])} · "
+                         f"skills {rg.join([s.replace('skill-', '') for s in r.get('skills', [])])}"))
+    lines.append((1, f"consumes     {rg.join(p['consumes'])}   [platform: not modelled]"))
+    lines.append((1, "uses tool    — (not modelled)"))
+    lines.append((1, f"used by      {rg.join(p.get('usedBy', []))}"))
+    return rg.tree(lines)
 
 
 def render_html(data, target_owner=None):
@@ -278,6 +219,7 @@ def render_html(data, target_owner=None):
 <article class="product" id="{e(p['product'])}">
   <header><h3>{e(p['product'])}</h3>{badge}</header>
   {'<p class="parts">parts: ' + chips(p['parts']) + '</p>' if p['parts'] else ''}
+  <pre class="tree">{e(product_tree(p))}</pre>
   {'<ul class="issues">' + iss + '</ul>' if iss else ''}
   <details{' open' if len(p['domains']) <= 6 else ''}>
     <summary>{len(p['domains'])} domains · {len(p['pipelines'])} pipelines · consumes {len(p['consumes'])}</summary>
@@ -352,6 +294,7 @@ th {{ font-family: var(--display); font-size: .68rem; text-transform: uppercase;
 .chip {{ display: inline-block; background: var(--chip); font-family: var(--mono); font-size: .74rem; padding: 1px 6px; border-radius: 4px; margin: 0 4px 4px 0; }}
 .none {{ color: var(--muted); font-size: .82rem; }}
 .parts {{ margin: 0; font-size: .85rem; color: var(--muted); }}
+.tree {{ margin: 0; font-family: var(--mono); font-size: .76rem; white-space: pre-wrap; overflow-wrap: anywhere; }}
 footer {{ color: var(--muted); font-size: .8rem; font-family: var(--mono); }}
 </style>
 </head>
@@ -375,14 +318,15 @@ def main():
     ap.add_argument("--owner", help="Filter report to a specific owner (e.g. wren, kade, silas, abby-normal)")
     ap.add_argument("--html", nargs="?", const="-", help="Output HTML to path or stdout ('-')")
     ap.add_argument("--json", nargs="?", const="-", help="Output JSON to path or stdout ('-')")
-    ap.add_argument("--from-fixture", help="Path to pre-collected inventory JSON instead of querying SPARQL")
+    ap.add_argument("products", nargs="*", help="Products to show as trees (default: all)")
+    ap.add_argument("--from-fixture", help="Raw graph JSON (radius_graph) or a pre-collected inventory, instead of querying SPARQL")
     ap.add_argument("--sparql-endpoint", default=DEFAULT_ENDPOINT, help="SPARQL endpoint URL")
     ap.add_argument("--check", action="store_true", help="Exit non-zero if issues exist for target owner / all")
     args = ap.parse_args()
 
     if args.from_fixture:
         with open(args.from_fixture) as f:
-            data = json.load(f)
+            data = collect_inventory(fixture_data=json.load(f))
     else:
         try:
             data = collect_inventory(endpoint=args.sparql_endpoint)
@@ -416,6 +360,14 @@ def main():
                 f.write(html_out + "\n")
 
     if not args.html and not args.json:
+        shown = [p for p in data["products"]
+                 if (not args.products or p["product"] in args.products)
+                 and (not args.owner or p["owner"] == args.owner)]
+        if args.products and not shown:
+            sys.stderr.write(f"no such product: {', '.join(args.products)}\n")
+            sys.exit(1)
+        for p in shown:
+            print(product_tree(p) + "\n")
         c = data["counts"]
         print(f"Products: {c['products']} | Domains: {c['domains']} | Services: {c['services']} | Pipelines: {c['pipelines']}")
         counts = Counter(i["kind"] for i in relevant_issues)
