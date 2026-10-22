@@ -21,8 +21,12 @@ handler_on:
   exit:
     command: "werk-test notify"
 steps:
+  - name: skill-nightly-validate
+    description: "validate whole RDF store"
+    command: "athena-validate --store-only"
   - name: skill-nightly-test
     description: "the tests, scope all"
+    depends: [skill-nightly-validate]
     action: dag.run
     with:
       dag: cicd-test
