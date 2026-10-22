@@ -273,9 +273,14 @@ done <<< "$_loaded_labels"
 # fetches /ready by that exact mDNS name in 60ms while this probe was failing.
 # Exit-code-is-verdict (#3571), applied here too.
 bedroom_loki=$(ssh -o ConnectTimeout=5 -o BatchMode=yes bedroom \
-  "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" 2>/dev/null)
-ssh_rc=$?
-if [ "$ssh_rc" -eq 255 ]; then
+  "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" 2>/dev/null) \
+  && ssh_rc=0 || ssh_rc=$?
+# #4692 — under set -e an unguarded rc 28 (curl's timeout, relayed by ssh)
+# killed the run here before its summary: "DIED before summary (exit 28 near
+# line 276)", six times on 10-22 while Bedroom reached Loki in 0.1 s.
+if [ "$ssh_rc" -eq 28 ]; then
+  WARNINGS+=("loki-bedroom-slow: Bedroom got no answer from Loki /ready within 3s (rc=28)")
+elif [ "$ssh_rc" -eq 255 ]; then
   # 255 is ssh's own transport failure — says nothing about Loki.
   WARNINGS+=("loki-bedroom-unknown: ssh to bedroom failed (rc=255) — Loki reachability NOT measured")
 elif [ "$ssh_rc" -ne 0 ]; then

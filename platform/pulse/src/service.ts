@@ -8,7 +8,7 @@
 
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
-import { fetchPeers } from './peers';
+import { fetchPeers, startRolesDoorWatch } from './peers';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
 import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
@@ -754,6 +754,13 @@ if (require.main === module) {
         });
       });
       process.stderr.write(JSON.stringify({ event: 'startup.replygap.watch', window_ms: 60000 }) + '\n');
+
+      // #4692 — the roles door read the way a nudge reads it, every minute;
+      // a refused read goes to the spine, and the roles-door-unreadable Alert
+      // row (Grafana framework) fires on it.
+      startRolesDoorWatch(async (error) => {
+        await emitSpine('roles-door.read.failed', { error });
+      });
 
       // #3879 — WIP-drift watch: an owner active while their WIP card sits
       // untouched for 4h gets nudged by the SYSTEM (Jeff only on the second
