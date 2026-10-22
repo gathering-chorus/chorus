@@ -60,6 +60,6 @@ export function startRolesDoorWatch(
       }
     })();
   }, intervalMs);
-  timer.unref?.();
+  timer.unref();
   return () => clearInterval(timer);
 }
