@@ -2012,6 +2012,8 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:repoTarget      ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4702 — where the product's code lives (pulse: platform/pulse)
     # #4702 AC5 — closed: a field not on this shape (with its extensions in
     # product-design-4018.ttl and clearing-domains-3860.ttl), nor a door stamp, is refused.
+    # chorus:label and chorus:comment duplicate rdfs:label and rdfs:comment (CoreShape
+    # serves them as name and description): a one-home miss, ignored here, not fixed.
     sh:closed true ;
     sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment chorus:label chorus:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
                              chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) .
@@ -2138,6 +2140,8 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:hasProperty ; sh:minCount 0 ; sh:class chorus:Property ] ;   # 1 row — cards' gate property
     # #4702 AC5 — closed: a field not listed above, nor on CoreShape, nor a door stamp, is refused.
     # sh:closed does not follow sh:node, so CoreShape's paths and the stamps are named here.
+    # chorus:label and chorus:comment duplicate rdfs:label and rdfs:comment (CoreShape
+    # serves them as name and description): a one-home miss, ignored here, not fixed.
     sh:closed true ;
     sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment chorus:label chorus:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
                              chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) ;
