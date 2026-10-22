@@ -2,8 +2,9 @@
 # @test-type: unit
 # @domain: ontology
 # 4700-domain-radius.bats — domain-radius, and product-radius's value stream + step,
-# on a raw-graph fixture so every flag is computed by scripts/domain-radius,
-# scripts/product-radius and lib/radius_graph, never planted in the fixture (#4700).
+# on a raw-graph fixture so every flag is computed, never planted in the fixture (#4700).
+# Exercises: platform/scripts/domain-radius, platform/scripts/product-radius,
+#            platform/scripts/lib/radius_graph.py
 
 setup() {
   export DIR="$BATS_TEST_TMPDIR"
