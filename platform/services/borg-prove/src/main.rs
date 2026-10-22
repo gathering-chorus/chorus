@@ -92,8 +92,13 @@ fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
 
 /// Where prod leaves its results for record: one file per card per run.
 fn results_path(card: u32) -> std::path::PathBuf {
+    run_file(card, "tsv")
+}
+
+/// #4691 — a land run's files: prod's results (.tsv) and her verdict (.verdict).
+fn run_file(card: u32, ext: &str) -> std::path::PathBuf {
     let dir = env("BORG_RESULTS_DIR", &format!("{}/ops/borg-prove", env("CHORUS_HOME", "/tmp")));
-    std::path::PathBuf::from(dir).join(format!("{card}-{}.tsv", env("DAG_RUN_ID", "manual")))
+    std::path::PathBuf::from(dir).join(format!("{card}-{}.{ext}", env("DAG_RUN_ID", "manual")))
 }
 
 /// #4683 — the verdict on the spine (prover borg-queen: the pipeline itself
@@ -214,7 +219,37 @@ fn main() {
             let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} record: {v}");
             record(card, &role, v, &r);
+            // #4691 — the verdict for check, written as whoever ran record:
+            // in the land that is Borg Queen's own session, her Mac account
+            let word = if v == NO_ROWS { "unproven" } else { v };
+            if let Err(e) = std::fs::write(run_file(card, "verdict"), format!("{word}\n")) {
+                eprintln!("#{card} record: the verdict file was not written: {e}");
+                exit(1);
+            }
             if v != "Proven" && v != NO_ROWS { exit(1) }
+        }
+        // #4691 — the land asks Borg Queen, then waits at her step (a human task,
+        // the way a pair waits for its navigator's green)
+        "ask" => {
+            let run = env("DAG_RUN_ID", "");
+            let cfg = env("DAGU_CONFIG", &format!("{}/platform/config/dagu.yaml", env("CHORUS_HOME", "")));
+            let text = format!("#{card} landed and is in prod; prove it. In your session:\n  DAG_RUN_ID={run} borg-prove record {card} {role}\nthen:\n  dagu --config {cfg} human-task complete cicd-land --run-id {run} --step skill_borg_queen_proves --input by=borg-queen --input decision=recorded");
+            let nudge = env("BORG_NUDGE", &format!("{}/platform/scripts/ops-nudge", env("CHORUS_HOME", "")));
+            if !matches!(Command::new(&nudge).args(["borg-queen", &text]).status(), Ok(s) if s.success()) {
+                eprintln!("#{card} ask: Borg Queen was not nudged ({nudge})");
+                exit(1);
+            }
+            println!("#{card} ask: Borg Queen nudged for run {run}");
+        }
+        "check" => {
+            let path = run_file(card, "verdict");
+            let owner = Command::new("stat").args(["-f", "%Su"]).arg(&path).output().ok()
+                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+            let v = std::fs::read_to_string(&path).ok();
+            match signed_verdict(&role, owner.as_deref(), v.as_deref(), &env("BORG_QUEEN_ACCOUNT", "chorus-borg-queen")) {
+                Ok(()) => println!("#{card} check: Borg Queen's verdict, {}", v.unwrap_or_default().trim()),
+                Err(e) => { eprintln!("#{card} check: {e}"); exit(1) }
+            }
         }
         "route" => {
             let (Some(_run), Some(routes)) = (a.get(3), a.get(4)) else {
