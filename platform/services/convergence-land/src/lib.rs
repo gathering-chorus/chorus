@@ -194,6 +194,41 @@ const COMPARED: [&str; 8] = [
     "/annotations/summary", "/data/0/model/expr", "/data/0/datasourceUid",
 ];
 
+/// #4690 — a Grafana duration ("0s", "5m", "1h30m") in seconds. Every part
+/// needs its unit; a bare number, an empty string or an unknown unit is None,
+/// so it never reads as the same wait as anything.
+pub fn for_secs(d: &str) -> Option<u64> {
+    if d.is_empty() {
+        return None;
+    }
+    let (mut total, mut num) = (0u64, String::new());
+    for ch in d.chars() {
+        if ch.is_ascii_digit() {
+            num.push(ch);
+            continue;
+        }
+        let n: u64 = num.parse().ok()?;
+        total += n * match ch { 's' => 1, 'm' => 60, 'h' => 3600, 'd' => 86400, _ => return None };
+        num.clear();
+    }
+    num.is_empty().then_some(total)
+}
+
+/// One compared field the same on both sides. `/for` by its value in seconds
+/// (#4690: rows hold "0m", Grafana answers "0s"); the rest as JSON.
+fn same(p: &str, built: &Value, have: &Value) -> bool {
+    let (b, h) = (built.pointer(p).filter(|v| !v.is_null()), have.pointer(p).filter(|v| !v.is_null()));
+    if p == "/for" {
+        // absent on both sides is the same (Silas); unreadable text never is
+        if b.is_none() && h.is_none() {
+            return true;
+        }
+        let s = |v: Option<&Value>| v.and_then(Value::as_str).and_then(for_secs);
+        return matches!((s(b), s(h)), (Some(x), Some(y)) if x == y);
+    }
+    b == h
+}
+
 pub fn drift(want: &[(String, Value)], have: &[Value]) -> Drift {
     let uid = |r: &Value| r.get("uid").and_then(Value::as_str).unwrap_or("").to_string();
     let mut d = Drift { tree: want.len(), ..Default::default() };
@@ -203,7 +238,7 @@ pub fn drift(want: &[(String, Value)], have: &[Value]) -> Drift {
             Some(h) => {
                 d.graph += 1;
                 let off: Vec<&str> = COMPARED.iter().copied()
-                    .filter(|p| built.pointer(p).filter(|v| !v.is_null()) != h.pointer(p).filter(|v| !v.is_null()))
+                    .filter(|p| !same(p, built, h))
                     .collect();
                 if !off.is_empty() {
                     d.stale.push(format!("{name} ({})", off.iter().map(|p| p.trim_start_matches('/')).collect::<Vec<_>>().join(", ")));
