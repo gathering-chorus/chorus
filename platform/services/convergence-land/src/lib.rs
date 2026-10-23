@@ -284,3 +284,37 @@ pub fn header_file(line: &str) -> Result<HeaderFile, String> {
     f.write_all(line.as_bytes()).map_err(|e| format!("header file: {e}"))?;
     Ok(HeaderFile(p))
 }
+
+/// #4714 — the structured event every convergence-land call ends with, as
+/// `chorus-log` args: `convergence.call <role> op= target= outcome= [counts=] [reason=]`.
+/// Before this the tool printed only text, so the 10-22/10-23 sync runs that
+/// could not measure left no reason anywhere. `outcome` is ok, unmeasured
+/// (a sync that printed `unmeasured <why>`) or refused (an Err); anything not
+/// ok always carries a non-empty reason.
+pub fn call_event(role: &str, args: &[String], result: &Result<String, String>) -> Vec<String> {
+    let op = args.first().cloned().unwrap_or_else(|| "none".into());
+    let mut ev = vec!["convergence.call".to_string(), if role.is_empty() { "system".into() } else { role.to_string() }, format!("op={op}")];
+    if let Some(t) = args.get(1) {
+        ev.push(format!("target={t}"));
+    }
+    let cap = |s: &str| -> String { let s = s.trim(); if s.is_empty() { "no reason given".into() } else { s.chars().take(400).collect() } };
+    match result {
+        Ok(s) => {
+            let head = s.lines().next().unwrap_or("");
+            if let Some(why) = head.strip_prefix("unmeasured") {
+                ev.push("outcome=unmeasured".into());
+                ev.push(format!("reason={}", cap(why)));
+            } else {
+                ev.push("outcome=ok".into());
+                if let Some(c) = head.strip_prefix("measured ") {
+                    ev.push(format!("counts={}", c.trim()));
+                }
+            }
+        }
+        Err(e) => {
+            ev.push("outcome=refused".into());
+            ev.push(format!("reason={}", cap(e)));
+        }
+    }
+    ev
+}

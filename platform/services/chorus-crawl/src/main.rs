@@ -1919,7 +1919,13 @@ fn run_sensor(args: &[String]) -> i32 {
     }
     println!("sensor {sensor}: run {name} {result} at {ended}");
     // #4666 — the event the not-green alert reads (Loki job=chorus-operations)
-    if let Some(ev) = run_event_args(&sensor, &name, result, owner.as_deref(), dry_run) {
+    let reason = chorus_crawl::sensor_run::run_reason(result, &text);
+    if let Some(r) = &reason {
+        println!("sensor {sensor}: run {name} {result} because: {r}");
+    }
+    if let Some(mut ev) = run_event_args(&sensor, &name, result, owner.as_deref(), dry_run) {
+        // #4714 — the reason rides the event, so Loki shows why, not only that
+        ev.extend(reason.map(|r| format!("reason={r}")));
         let log = format!("{home}/platform/scripts/chorus-log");
         if let Err(e) = Command::new(&log).args(&ev).output() {
             println!("sensor {sensor}: run {name} event NOT emitted ({e}) — the alert cannot see this run");
@@ -2094,7 +2100,13 @@ fn run_sync(args: &[String]) -> i32 {
     };
     let readings = match sync_readings(&out) {
         Ok(r) => r,
-        Err(e) => { println!("sync: UNMEASURED — {e}; no readings written"); return 3; }
+        Err(e) => {
+            // #4714 — the check said why on its own line; carry it, or the run ends with only "not measured: X"
+            let why: Vec<&str> = out.lines().map(str::trim).filter(|l| l.contains("UNMEASURED —")).collect();
+            let why = if why.is_empty() { String::new() } else { format!(" ({})", why.join("; ")) };
+            println!("sync: UNMEASURED — {e}{why}; no readings written");
+            return 3;
+        }
     };
     for (subject, metric, v) in readings.iter().filter(|(_, _, v)| *v > 0) {
         println!("sync: {subject} {metric} {v}");

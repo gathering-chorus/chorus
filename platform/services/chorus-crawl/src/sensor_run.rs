@@ -151,6 +151,24 @@ pub fn run_event_args(sensor: &str, run: &str, outcome: &str, owner: Option<&str
     })
 }
 
+/// #4714 — why a run is not green, for its `sensor.run.ended` event. The
+/// pass prints its reasons as `... UNMEASURED — <why>` lines; 10-22 and 10-23
+/// the sync runs went unmeasured and the event said nothing, so the alert fired
+/// for 29h with no cause. Green has no reason. Not green always has one: with no
+/// reason line printed, the pass's last line stands in, never an empty field.
+pub fn run_reason(result: &str, text: &str) -> Option<String> {
+    if result == "green" {
+        return None;
+    }
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| l.contains("UNMEASURED —") || l.starts_with("unmeasured this pass:")).collect();
+    let why = if lines.is_empty() {
+        text.lines().map(str::trim).filter(|l| !l.is_empty()).last().unwrap_or("the pass printed nothing").to_string()
+    } else {
+        lines.join("; ")
+    };
+    Some(why.chars().take(400).collect())
+}
+
 /// #4091 AC8 — who a run's event routes to: the Sensor row's owner, bare
 /// (`chorus:principal-silas` → `silas`). With no row yet the first run creates
 /// it as the role that ran it, so that role is the owner. An empty owner is no one.
