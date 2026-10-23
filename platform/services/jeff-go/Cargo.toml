@@ -1,0 +1,15 @@
+[package]
+name = "jeff-go"
+version = "0.1.0"
+edition = "2021"
+
+# #4707 AC1 — proves Jeff typed a go: a WebAuthn (passkey, Touch ID) assertion
+# bound to one card, one cicd run and one werk HEAD. Pure: no I/O in the lib.
+[dependencies]
+base64 = "0.22"
+p256 = { version = "0.13", features = ["ecdsa"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[lib]
+path = "src/lib.rs"
