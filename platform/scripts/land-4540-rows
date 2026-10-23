@@ -108,11 +108,19 @@ def want():
     skills += [
         {"name": "werk-test-pipeline", "label": "the tests: cicd-test, scope diff", "executor": "pipeline",
          "implementedBy": "cicd-test", "hasDomain": "tests", "ownedBy": OWNER, "runsAs": "caller"},
+        {"name": "nightly-validate", "label": "validate whole RDF store", "executor": "deterministic",
+         "implementedBy": "athena-validate", "arguments": "--store-only", "hasDomain": "athena",
+         "ownedBy": OWNER, "runsAs": "caller"},
         {"name": "nightly-test", "label": "the tests, scope all", "executor": "pipeline",
          "implementedBy": "cicd-test", "hasDomain": "tests", "ownedBy": OWNER, "runsAs": "caller"},
     ]
+    steps.append({"name": "nightly-validate", "label": "pipeline-step-nightly-validate", "executor": "deterministic",
+                  "stepOrder": "1", "coversStep": "value-stream-step-athena-validate", "_pipeline": "nightly"})
+    stepskills.append({"name": "nightly-validate-1", "label": "nightly validate 1: athena-validate --store-only",
+                       "callsSkill": "skill-nightly-validate", "forStep": "pipeline-step-nightly-validate",
+                       "skillOrder": "1", "withArguments": "continue_on=failure", "ownedBy": OWNER})
     steps.append({"name": "nightly-test", "label": "pipeline-step-nightly-test", "executor": "pipeline",
-                  "stepOrder": "1", "coversStep": "value-stream-step-test", "_pipeline": "nightly"})
+                  "stepOrder": "2", "coversStep": "value-stream-step-test", "_pipeline": "nightly"})
     stepskills.append({"name": "nightly-test-1", "label": "nightly test 1: cicd-test scope all",
                        "callsSkill": "skill-nightly-test", "forStep": "pipeline-step-nightly-test",
                        "skillOrder": "1", "withArguments": "SCOPE=all", "ownedBy": OWNER})
