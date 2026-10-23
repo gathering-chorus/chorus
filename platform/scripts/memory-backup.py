@@ -38,6 +38,7 @@ import datetime
 import gzip
 import hashlib
 import os
+import time
 import re
 import shutil
 import sqlite3
@@ -64,6 +65,9 @@ REMOTE = os.environ.get("MEMORY_REMOTE", "Jeffs-Mac-mini.local:/Users/jeffbridwe
 # 0 = keep every day (Jeff, 10-19: messages and streams are the record; space is there)
 CHECK_DRIVE_IDS = os.environ.get("MEMORY_DRIVE_ITEM_ID", "auto")
 XATTR = os.environ.get("MEMORY_XATTR", "xattr")
+# #4705 — Drive stamps the item id seconds to minutes after the copy; wait
+# this long for it before calling a file red (0 = check once, no wait)
+DRIVE_ID_WAIT = int(os.environ.get("MEMORY_DRIVE_ID_WAIT", "600"))
 KEEP_DAYS = int(os.environ.get("MEMORY_KEEP_DAYS", "0"))
 
 TS = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:?\d\d)?"')
@@ -361,10 +365,16 @@ def main(argv: list) -> int:
         # the upload finished.)
         # a full Drive never takes a file in, so a missing id is how "no space" shows
         if CHECK_DRIVE_IDS == "1" or (CHECK_DRIVE_IDS == "auto" and not DRIVE):
-            for name in want:
+            def no_id(name):
                 attrs = subprocess.run([XATTR, os.path.join(drive, day, name)], capture_output=True, text=True).stdout
-                if "com.google.drivefs.item-id" not in attrs:
-                    red.append(f"drive: {name} not taken in by Google Drive (no item id)")
+                return "com.google.drivefs.item-id" not in attrs
+            waiting = [n for n in want if no_id(n)]
+            deadline = time.monotonic() + DRIVE_ID_WAIT
+            while waiting and time.monotonic() < deadline:
+                time.sleep(min(15, max(0.0, deadline - time.monotonic())))
+                waiting = [n for n in waiting if no_id(n)]
+            for name in waiting:
+                red.append(f"drive: {name} not taken in by Google Drive (no item id after {DRIVE_ID_WAIT}s)")
 
     if ":" in REMOTE:
         host, rdir = REMOTE.split(":", 1)

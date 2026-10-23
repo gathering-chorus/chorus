@@ -47,7 +47,10 @@ backup() {
     # on Bedroom stayed frozen at 4.40 GB.
     rc=0
     local out
-    out=$(nice -n 10 "$RSYNC" -az --delete --timeout=300 \
+    # #4705 — --no-specials: werks hold live unix sockets (.chorus-demo/*/
+    # chorus-hooks.sock); Bedroom cannot create them ("mkstempsock: Invalid
+    # argument") and CascadeProjects failed exit 23 every night on them alone.
+    out=$(nice -n 10 "$RSYNC" -az --delete --no-specials --timeout=300 \
       --exclude='data/loki/' \
       --exclude='node_modules/' \
       --exclude='.git/objects/' \

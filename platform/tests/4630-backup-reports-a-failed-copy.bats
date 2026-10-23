@@ -37,6 +37,13 @@ run_backup() {
   [[ "$output" != *"OK: dot-chorus"* ]] || return 1
 }
 
+@test "#4705: sockets are skipped (--no-specials), so a werk's live .sock cannot fail the copy" {
+  printf '#!/bin/sh\necho "$*" >> "%s/rsync-args"\nexit 0\n' "$T" > "$T/bin/rsync"; chmod +x "$T/bin/rsync"
+  run_backup
+  [ "$status" -eq 0 ] || return 1
+  [ "$(grep -c -- '--no-specials' "$T/rsync-args")" -eq "$(wc -l < "$T/rsync-args")" ] || return 1
+}
+
 @test "a copy that works reports OK and the run is green" {
   fake_rsync 0
   run_backup
