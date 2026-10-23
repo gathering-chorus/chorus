@@ -2102,7 +2102,7 @@ fn run_sync(args: &[String]) -> i32 {
         Ok(r) => r,
         Err(e) => {
             // #4714 — the check said why on its own line; carry it, or the run ends with only "not measured: X"
-            let why: Vec<&str> = out.lines().map(str::trim).filter(|l| l.contains("UNMEASURED —")).collect();
+            let why = why_lines(&out, &e);
             let why = if why.is_empty() { String::new() } else { format!(" ({})", why.join("; ")) };
             println!("sync: UNMEASURED — {e}{why}; no readings written");
             return 3;
@@ -4026,7 +4026,7 @@ fn print_graph_vs_project(
     }
     // #4091 AC4 — the Grafana framework: Alert rows against Grafana's rules
     {
-        let bin = std::env::var("CONVERGENCE_LAND").unwrap_or_else(|_| "convergence-land".to_string());
+        let bin = chorus_crawl::convergence_land_bin(std::env::var("CONVERGENCE_LAND").ok(), &std::env::var("HOME").unwrap_or_default(), |p| std::path::Path::new(p).is_file());
         let out = Command::new(&bin).arg("sync").output()
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .unwrap_or_else(|e| format!("unmeasured cannot run {bin}: {e}"));

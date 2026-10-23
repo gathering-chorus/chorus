@@ -538,6 +538,21 @@ pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>
     (create, update, unchanged)
 }
 
+/// #4714 — the check's own why for each class a sync could not measure. The
+/// check prints `... <class words>: UNMEASURED — <why>` for many classes, some of
+/// which still measured; only the lines naming a class in `not measured: A, B`
+/// explain the run. 10-23 21:41Z the reason carried five unrelated test lines
+/// and the cap cut off the one that mattered (convergence-land not found).
+pub fn why_lines(out: &str, err: &str) -> Vec<String> {
+    let classes: Vec<String> = err.strip_prefix("not measured: ").unwrap_or("")
+        .split(", ").filter(|c| !c.is_empty())
+        .map(|c| c.split_whitespace().next().unwrap_or(c).to_lowercase()).collect();
+    out.lines().map(str::trim)
+        .filter(|l| l.contains("UNMEASURED —"))
+        .filter(|l| { let head = l.split("UNMEASURED —").next().unwrap_or("").to_lowercase(); classes.iter().any(|c| head.contains(c.as_str())) })
+        .map(str::to_string).collect()
+}
+
 /// #4647 — what the crawler's read-only check printed, as today's sync
 /// readings: for each crawled class, how many files in git have no row
 /// (`missing`) and how many rows are out of date (`stale`). The class is the
