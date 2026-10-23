@@ -53,6 +53,20 @@ run_backup() {
   [[ "$output" != *"OK: dot-chorus"* ]] || return 1
 }
 
+@test "#4705: openrsync's exit 23 for files that vanished mid-copy (ENOENT only) reads as vanished, not FAIL" {
+  printf '#!/bin/sh\necho "rsync(1): error: /h/.chorus/sessions/kade.turn.json: open (2) in /x: No such file or directory" >&2\nexit 23\n' > "$T/bin/rsync"; chmod +x "$T/bin/rsync"
+  run_backup
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"OK, 1 vanished: dot-chorus (rsync exit 24)"* ]] || return 1
+}
+
+@test "#4705 negative proof: one non-ENOENT error among the vanished ones keeps exit 23 and reads FAIL" {
+  printf '#!/bin/sh\necho "rsync(1): error: /h/a: open (2) in /x: No such file or directory" >&2\necho "rsync(1): error: /h/b: open (13) in /x: Permission denied" >&2\nexit 23\n' > "$T/bin/rsync"; chmod +x "$T/bin/rsync"
+  run_backup
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"FAIL: dot-chorus (rsync exit 23 after 2 attempts)"* ]] || return 1
+}
+
 @test "a copy that works reports OK and the run is green" {
   fake_rsync 0
   run_backup

@@ -59,6 +59,18 @@ backup() {
       --exclude='/.chorus/chorus.log' \
       -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1) || rc=$?
     [ -n "$out" ] && printf '%s\n' "$out"
+    # #4705 — macOS openrsync exits 23, not 24, when a file vanishes between the
+    # listing and the open ("open (2) … No such file or directory"); live session
+    # files do that all day. 23 whose every error is that one counts as 24.
+    # Any other error (permission, I/O) keeps 23 and reads FAIL.
+    if [ "$rc" = 23 ]; then
+      local errs
+      errs=$(printf '%s\n' "$out" | grep -E '^rsync(\([0-9]+\))?: error:' || true)
+      if [ -n "$errs" ] && ! printf '%s\n' "$errs" | grep -qvE ': open \(2\) in .*: No such file or directory$'; then
+        out="$(printf '%s\n' "$errs" | sed 's/^/vanished: /')"
+        rc=24
+      fi
+    fi
     # 24 = files vanished during the copy (live session and identity files
     # come and go); everything that still exists was copied
     [ "$rc" = 24 ] && break
