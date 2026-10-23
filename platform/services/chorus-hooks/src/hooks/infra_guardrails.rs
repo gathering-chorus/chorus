@@ -92,6 +92,28 @@ static SUDO_ROLE_SECURITY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bsudo\b[^\n]*\s-u\s+chorus-\w+[^\n]*\bsecurity\s").unwrap()
 });
 
+// #4707 — a land is Jeff's go and nothing else (DEC-048). On 10-23 at 06:03 an
+// agent enqueued cicd-land by raw curl and #4704 merged with accepter=jeff while
+// Jeff was away; at 19:17 the day before a bare werk-merge recorded "flow". The
+// go step is the only door: dagu itself enqueues cicd-land from it, and that
+// never passes through a tool call. Same rule for every actor and every model.
+// Defense in depth only: the signed go in werk-merge is the guard (#4707 AC1).
+static LAND_ENQUEUE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bdagu\b[^\n;&|]*\b(enqueue|start|retry|restart)\b[^\n;&|]*\bcicd-land\b").unwrap()
+});
+
+// Matched on the raw command: the URL is usually quoted, and quoted runs are
+// stripped before the command-position checks.
+static LAND_API_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(curl|wget|http)\b[^\n]*dags/cicd-land/(enqueue|start|retry)").unwrap()
+});
+
+static WERK_MERGE_CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(\bchorus-runner\s+call\s+werk-merge\b|(^|[\s;&|/])werk-merge\s+\d)").unwrap()
+});
+
+const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`; a stuck land goes to Jeff as one line, not a retry.";
+
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
@@ -105,6 +127,11 @@ fn team_repo_root() -> &'static str { chorus_root() }
 /// Blocks dangerous infra commands for all roles (#1714, #2020, #2119)
 /// All services are LaunchAgents — no container runtime, no Terraform-managed infra.
 pub async fn check(input: &HookInput) -> HookResponse {
+    // #4707 — the werk-merge MCP tool is the same door as the CLI.
+    if input.tool_name_str() == "mcp__chorus-api__werk-merge" {
+        log_guardrail("deny", "land-without-go").await;
+        return HookResponse::deny(&permission_deny_json(LAND_DENY));
+    }
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
     }
@@ -113,6 +140,12 @@ pub async fn check(input: &HookInput) -> HookResponse {
     let cwd = input.cwd.as_deref().unwrap_or("");
     if cmd.is_empty() {
         return HookResponse::allow();
+    }
+
+    // #4707 — before the heredoc/echo skips: a land wrapped in a heredoc is still a land.
+    if is_land_bypass(&cmd) {
+        log_guardrail("deny", "land-without-go").await;
+        return HookResponse::deny(&permission_deny_json(LAND_DENY));
     }
     tracing::trace!(hook = "infra_guardrails", phase = "receive", cmd_len = cmd.len(), "checking bash command");
 
@@ -290,6 +323,14 @@ pub async fn check(input: &HookInput) -> HookResponse {
     HookResponse::allow()
 }
 
+/// #4707 — a command that lands a card without the go step. Pure.
+fn is_land_bypass(cmd: &str) -> bool {
+    let positional = strip_quoted_runs(cmd);
+    LAND_ENQUEUE_RE.is_match(&positional)
+        || LAND_API_RE.is_match(cmd)
+        || WERK_MERGE_CALL_RE.is_match(&positional)
+}
+
 async fn log_guardrail(decision: &str, pattern: &str) {
     tracing::trace!(
         hook = "infra_guardrails",
@@ -381,6 +422,70 @@ mod tests {
             deploy_role: None,
             card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
+    }
+
+    // === #4707 — a land without Jeff's go is refused, for every actor ===
+
+    fn abby_bash(cmd: &str) -> HookInput {
+        let mut i = kade_bash(cmd);
+        i.cwd = Some(format!("{}/roles/abby-normal", chorus_root()));
+        i.deploy_role = Some("abby-normal".to_string());
+        i
+    }
+
+    fn denied_as_land(r: &HookResponse) -> bool {
+        r.stdout.as_deref().is_some_and(|o| o.contains("\"permissionDecision\":\"deny\"") && o.contains("#4707"))
+    }
+
+    #[tokio::test]
+    async fn test_4707_abbys_0603_curl_replayed_is_refused() {
+        let r = check(&abby_bash("curl -s -X POST 'http://localhost:8526/api/v1/dags/cicd-land/enqueue' -d '{\"params\":\"CARD=4704 ROLE=abby-normal\"}'")).await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_raw_dagu_enqueue_of_the_land_is_refused_for_claude_and_abby() {
+        for input in [
+            kade_bash("env -u CHORUS_ROLE dagu --config platform/config/dagu.yaml enqueue cicd-land -- CARD=4704 ROLE=kade"),
+            abby_bash("dagu --config platform/config/dagu.yaml enqueue cicd-land -- CARD=4704"),
+            silas_bash("dagu --config platform/config/dagu.yaml retry cicd-land --run-id 034x"),
+        ] {
+            let r = check(&input).await;
+            assert!(denied_as_land(&r), "{:?}", r.stdout);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_4707_direct_werk_merge_is_refused_cli_and_mcp() {
+        for cmd in ["ROLE=abby-normal ~/.chorus/bin/chorus-runner call werk-merge card=4704",
+                    "/Users/x/CascadeProjects/chorus-werk/wren-bin/werk-merge 4704 wren --atomic"] {
+            let r = check(&abby_bash(cmd)).await;
+            assert!(denied_as_land(&r), "{cmd}: {:?}", r.stdout);
+        }
+        let mut mcp = kade_bash("");
+        mcp.tool_name = Some("mcp__chorus-api__werk-merge".to_string());
+        mcp.tool_input = Some(json!({"card": "4704"}));
+        assert!(denied_as_land(&check(&mcp).await));
+    }
+
+    #[tokio::test]
+    async fn test_4707_a_land_inside_a_heredoc_is_still_refused() {
+        let r = check(&abby_bash("bash <<EOF\ndagu enqueue cicd-land -- CARD=4704\nEOF")).await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_negative_proof_the_sanctioned_paths_still_pass() {
+        for cmd in [
+            "env -u CHORUS_ROLE -u ROLE dagu --config platform/config/dagu.yaml enqueue cicd -- CARD=4707 ROLE=wren",
+            "env -u CHORUS_ROLE -u ROLE dagu --config platform/config/dagu.yaml enqueue pair -- CARD=4707 ROLE=wren NAVIGATOR=silas",
+            "dagu --config platform/config/dagu.yaml status cicd-land --run-id 034kthMf",
+            "grep -n werk-merge platform/pipelines/cicd-land.yaml",
+            "sed -n 1,40p platform/services/werk-merge/src/lib.rs",
+        ] {
+            let r = check(&kade_bash(cmd)).await;
+            assert!(r.stdout.is_none(), "{cmd} must pass: {:?}", r.stdout);
+        }
     }
 
     // === #4025 — restart of the LIVE daemon is refused; deploy + other agents pass ===
