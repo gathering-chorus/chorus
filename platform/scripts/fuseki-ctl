@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# fuseki-ctl (#4718) — the one lifecycle surface for Fuseki, shared infra for
+# both products. app-state.sh no longer starts or stops it.
+#
+#   fuseki-ctl status          launchd state + ping + config drift
+#   fuseki-ctl start           start if not running, wait for ping
+#   fuseki-ctl restart         kickstart -k, wait for ping, print the outage (blips the door)
+#   fuseki-ctl stop            stop it (both products lose the store)
+#   fuseki-ctl config-check    runtime server config == canonical (fuseki-config-deploy.sh --check)
+#   fuseki-ctl config-deploy   install the canonical server config (live on the next start)
+set -euo pipefail
+
+LABEL="${FUSEKI_LABEL:-com.gathering.fuseki}"
+URL="${FUSEKI_URL:-http://localhost:3030}"
+DOMAIN="gui/$(id -u)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAUNCHCTL="${FUSEKI_LAUNCHCTL:-launchctl}"
+PLIST="${FUSEKI_PLIST:-$HOME/Library/LaunchAgents/$LABEL.plist}"
+
+ping_ok() { curl -sf -o /dev/null --max-time 2 "$URL/\$/ping"; }
+wait_ping() { # wait_ping <seconds>: 0 once it answers
+  local i=0; while [ "$i" -lt "$1" ]; do ping_ok && return 0; sleep 1; i=$((i + 1)); done; return 1; }
+running() { "$LAUNCHCTL" print "$DOMAIN/$LABEL" 2>/dev/null | grep -q 'state = running'; }
+
+case "${1:-status}" in
+  status)
+    running && echo "fuseki-ctl: $LABEL running" || echo "fuseki-ctl: $LABEL not running"
+    ping_ok && echo "fuseki-ctl: $URL answers" || { echo "fuseki-ctl: $URL does not answer"; exit 1; }
+    "$SCRIPT_DIR/fuseki-config-deploy.sh" --check >/dev/null 2>&1 \
+      && echo "fuseki-ctl: server config matches canonical" \
+      || echo "fuseki-ctl: server config differs from canonical (fuseki-ctl config-check)"
+    ;;
+  start)
+    # KeepAlive: a loaded job runs; a booted-out one comes back by bootstrap
+    "$LAUNCHCTL" print "$DOMAIN/$LABEL" >/dev/null 2>&1 || "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST"
+    running || "$LAUNCHCTL" kickstart "$DOMAIN/$LABEL"
+    wait_ping 60 && echo "fuseki-ctl: up" || { echo "fuseki-ctl: not answering after 60 s" >&2; exit 1; }
+    ;;
+  restart)
+    t0=$(date +%s)
+    "$LAUNCHCTL" kickstart -k "$DOMAIN/$LABEL"
+    wait_ping 60 || { echo "fuseki-ctl: not answering 60 s after restart" >&2; exit 1; }
+    echo "fuseki-ctl: back after $(( $(date +%s) - t0 )) s"
+    ;;
+  stop)
+    # bootout, not kill: KeepAlive would bring a killed Fuseki straight back
+    "$LAUNCHCTL" bootout "$DOMAIN/$LABEL"
+    ;;
+  config-check)  exec "$SCRIPT_DIR/fuseki-config-deploy.sh" --check ;;
+  config-deploy) exec "$SCRIPT_DIR/fuseki-config-deploy.sh" ;;
+  *) sed -n '2,12p' "$0" >&2; exit 2 ;;
+esac

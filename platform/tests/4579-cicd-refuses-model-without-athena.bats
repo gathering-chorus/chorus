@@ -54,3 +54,19 @@ diff_is() { # the stand-in git answers the card's diff with these paths
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -f "$BATS_TEST_TMPDIR/args" ]
 }
+
+@test "#4718: a Fuseki server config or a test fixture is not a model change, so it starts as cicd" {
+  diff_is platform/scripts/launchagents-canonical/fuseki-config-server.ttl platform/tests/fixtures/x-good.ttl platform/scripts/fuseki-ctl
+  run "$ROOT/platform/scripts/werk-v2" 4579 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -e "$BATS_TEST_TMPDIR/args" ] || return 1
+}
+
+@test "#4718 negative proof: an ontology .ttl beside a Fuseki config is still refused" {
+  diff_is platform/scripts/launchagents-canonical/fuseki-config-server.ttl roles/kade/ontology/werk-domains.ttl
+  run "$ROOT/platform/scripts/werk-v2" 4579 kade
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"roles/kade/ontology/werk-domains.ttl"* ]] || return 1
+  [[ "$output" != *"fuseki-config-server.ttl"* ]] || return 1
+  [ ! -e "$BATS_TEST_TMPDIR/args" ] || return 1
+}
