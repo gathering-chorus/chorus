@@ -318,3 +318,19 @@ pub fn call_event(role: &str, args: &[String], result: &Result<String, String>) 
     }
     ev
 }
+
+/// #4714 — the graphs the ICD field maps are read from. Gathering's fuseki-sync
+/// PUT-replaces urn:gathering:icd/current on every restart (fuseki-sync.service.ts:691),
+/// which dropped the Grafana maps chorus-icd-load.sh had added there, so the sync
+/// check could not build a rule and the 03:30 run went unmeasured. One writer per
+/// graph (Silas, 10-23): the Grafana maps move to their own graph and this reads both.
+pub const ICD_GRAPHS: [&str; 2] = ["urn:gathering:icd/current", "urn:chorus:icd/grafana"];
+
+/// The ICD field-map query over every graph in ICD_GRAPHS.
+pub fn icd_query(provider: &str) -> String {
+    let graphs: Vec<String> = ICD_GRAPHS.iter().map(|g| format!("<{g}>")).collect();
+    format!(r#"PREFIX icd: <urn:gathering:icd#>
+SELECT ?field ?target ?kind ?transform WHERE {{ VALUES ?g {{ {} }} GRAPH ?g {{
+  ?m icd:fromProvider <{provider}> ; icd:mapsToName ?field ; icd:sourceField ?target .
+  OPTIONAL {{ ?m icd:transformType ?kind }} OPTIONAL {{ ?m icd:transform ?transform }} }} }}"#, graphs.join(" "))
+}

@@ -53,10 +53,7 @@ fn alert_row(name: &str) -> Result<Value, String> {
 }
 
 fn icd_maps() -> Result<Vec<Mapping>, String> {
-    let q = format!(r#"PREFIX icd: <urn:gathering:icd#>
-SELECT ?field ?target ?kind ?transform WHERE {{ GRAPH <urn:gathering:icd/current> {{
-  ?m icd:fromProvider <{PROVIDER}> ; icd:mapsToName ?field ; icd:sourceField ?target .
-  OPTIONAL {{ ?m icd:transformType ?kind }} OPTIONAL {{ ?m icd:transform ?transform }} }} }}"#);
+    let q = icd_query(PROVIDER);
     let url = env_or("CHORUS_ICD_QUERY", "http://localhost:3030/pods/query");
     let o = Command::new("curl").args(["-s", "-m", "20", "-H", "Accept: application/sparql-results+json", "--data-urlencode", &format!("query={q}"), &url])
         .output().map_err(|e| format!("curl: {e}"))?;
