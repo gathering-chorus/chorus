@@ -961,9 +961,6 @@ chorus:gathering chorus:hasDomain chorus:music, chorus:photos, chorus:books,
 
 # --- Product → Service consumption edges ---
 
-# observability-product consumes moved to borgProduct
-chorus:borg chorus:consumes chorus:infrastructure, chorus:logs-domain,
-                                   chorus:alerts, chorus:monitors, chorus:deploys-domain .
 
 # --- Product → Service provision edges ---
 
