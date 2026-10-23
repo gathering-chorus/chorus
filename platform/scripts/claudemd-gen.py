@@ -85,6 +85,13 @@ def validate_manifest(manifest, claudemd_dir, verbose=False):
                     if ph not in role_vars and ph not in injected:
                         errors.append(f"Role '{role_name}': {{{{{ph}}}}} in {section_path} has no variable definition")
 
+        # 10. #4707 — the protocol core reaches every role, whatever its model.
+        #     A rule only CLAUDE.md carries is a rule the other runtimes never
+        #     read (AGENTS.md had 0 mentions of Jeff's go on 2026-10-23).
+        for core in manifest.get("protocol_core", []):
+            if core not in sections:
+                errors.append(f"Role '{role_name}': protocol_core fragment missing from sections: {core}")
+
         # 9. Output directory exists
         if "output" in role_config:
             messages_dir = claudemd_dir  # #2150: paths are relative to claudemd_dir, not its parent
