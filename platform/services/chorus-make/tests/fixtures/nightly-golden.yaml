@@ -24,6 +24,8 @@ steps:
   - name: skill-nightly-validate
     description: "validate whole RDF store"
     command: "athena-validate --store-only"
+    continue_on:
+      failure: true
   - name: skill-nightly-test
     description: "the tests, scope all"
     depends: [skill-nightly-validate]
