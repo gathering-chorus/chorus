@@ -118,7 +118,7 @@ if [ -e "$f" ]; then echo com.google.drivefs.item-id; else touch "$f"; echo com.
 ' "$T" > "$T/xattr"; chmod +x "$T/xattr"
   run env MEMORY_SPINE="$T/chorus.log" MEMORY_MESSAGES_DB="$T/messages.db" MEMORY_TRANSCRIPTS="$T/transcripts" MEMORY_NIGHTLY_LOG="$T/nightly.log" \
     MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
-    MEMORY_DRIVE_ITEM_ID=1 MEMORY_DRIVE_ID_WAIT=30 MEMORY_XATTR="$T/xattr" MEMORY_BUZZ_PG_CMD="echo x" MEMORY_BUZZ_MINIO_CMD="echo y" \
+    MEMORY_DRIVE_ITEM_ID=1 MEMORY_DRIVE_ID_WAIT=2 MEMORY_XATTR="$T/xattr" MEMORY_BUZZ_PG_CMD="echo x" MEMORY_BUZZ_MINIO_CMD="echo y" \
     python3 "$ROOT/platform/scripts/memory-backup.py" 2026-10-18
   [ "$status" -eq 0 ] || return 1
   [[ "$output" != *"not taken in by Google Drive"* ]] || return 1

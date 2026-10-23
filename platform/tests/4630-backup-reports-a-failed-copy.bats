@@ -46,7 +46,7 @@ run_backup() {
 
 @test "#4705 negative proof: with --no-specials on, a real unreadable file (exit 23) still reads FAIL, never OK" {
   # rsync exits 23 only when it was given --no-specials: the socket skip cannot hide a real failure
-  printf '#!/bin/sh\ncase "$*" in *--no-specials*) echo "rsync: open \"secret\" failed: Permission denied (13)" >&2; exit 23;; esac\nexit 0\n' > "$T/bin/rsync"; chmod +x "$T/bin/rsync"
+  printf '#!/bin/sh\ncase "$*" in *--no-specials*) echo "rsync(1): error: /h/secret: open (13) in /x: Permission denied" >&2; exit 23;; esac\nexit 0\n' > "$T/bin/rsync"; chmod +x "$T/bin/rsync"
   run_backup
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"FAIL: dot-chorus (rsync exit 23 after 2 attempts)"* ]] || return 1
