@@ -11,6 +11,8 @@
 // Suppress dead_code crate-wide; the real clippy lints stay on.
 #![allow(dead_code)]
 
+// #4707 — lets a module compiled into both the lib and the bin name the lib the same way.
+extern crate self as chorus_hooks;
 pub mod agent_socket;
 pub mod runtime_tools;
 pub mod runtime_hook;
