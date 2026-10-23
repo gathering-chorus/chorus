@@ -3235,3 +3235,16 @@ pub fn domain_set<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
     v.dedup();
     v
 }
+
+/// #4714 — where the Grafana sync check finds convergence-land. The scheduled
+/// sync runs with a PATH that has no ~/.chorus/bin (the LaunchAgent's), so a bare
+/// "convergence-land" was not found and every 03:30 run since 10-22 went
+/// unmeasured ("cannot run convergence-land: No such file or directory",
+/// measured 10-23 21:41Z). CONVERGENCE_LAND wins; else the deployed shim; else PATH.
+pub fn convergence_land_bin(env: Option<String>, home: &str, exists: impl Fn(&str) -> bool) -> String {
+    if let Some(b) = env.filter(|b| !b.trim().is_empty()) {
+        return b;
+    }
+    let deployed = format!("{home}/.chorus/bin/convergence-land");
+    if exists(&deployed) { deployed } else { "convergence-land".to_string() }
+}
