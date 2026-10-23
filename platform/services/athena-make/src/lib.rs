@@ -2137,7 +2137,8 @@ fn dal_batch(graph: &str, deletes: &[(String, String, String)], inserts: &[(Stri
 /// Tab can't appear in a valid IRI/literal, so athena-make never assembles SPARQL — it
 /// splits into typed argv and hands them to the chorus-model `batch` CLI (slot-
 /// validation + structural single-graph). `graph` = the scope-validated x-target-graph.
-fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16, String) {
+/// #4715 — and the deploy-only check every single write runs (batch_deploy_refusal).
+pub fn handle_batch_checked(graph: &str, body: &str, caller_role: &str, token: &str, tables: &[RouteTable]) -> (u16, String) {
     if graph.trim().is_empty() {
         return write_resp("validation", "batch requires x-target-graph (no default graph, ever)");
     }
@@ -2163,6 +2164,11 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
     if deletes.is_empty() && inserts.is_empty() {
         return write_resp("validation", "batch: no DEL/INS lines");
     }
+    let all: Vec<(String, String, String)> = deletes.iter().chain(inserts.iter()).cloned().collect();
+    if let Some(why) = batch_deploy_refusal(&all, tables) {
+        emit_write_spine(caller_role, "batch", graph, "", "authz");
+        return write_resp("authz", &why);
+    }
     match dal_batch(graph, &deletes, &inserts, token) {
         Ok(_) => {
             emit_write_spine(caller_role, "batch", graph, "", "ok");
@@ -2173,6 +2179,46 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
             dal_err_resp(&e)
         }
     }
+}
+
+/// #4715 AC4 — the door's one writer. TDB2 takes one write transaction at a
+/// time, and the door ran a thread per connection, so concurrent writes reached
+/// Fuseki together and lost to "already in a transaction" (Abby). Every write the
+/// door serves now waits its turn here, so a burst is queued, not refused, and a
+/// multi-call write (PATCH) runs with no other door write between its calls.
+static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Run one write while holding the door's writer lock. A poisoned lock (a write
+/// that panicked) still serializes: the next write takes it over.
+pub fn with_write_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    f()
+}
+
+/// #4715 AC2 — /batch took raw triples with only a scope check, so a role with
+/// Write on a graph that also holds a deploy-only class (Principal, #4220) could
+/// INS or DEL that class's rows: the one check every single write runs was
+/// skipped. A batch line is refused when its subject is a deploy-only class's
+/// row (minted the same way entity_subject mints it) or it types something as
+/// one. The owner rule is already met: /batch requires a Write row on the graph,
+/// and a Write row opens every row on it for single writes too.
+pub fn batch_deploy_refusal(lines: &[(String, String, String)], tables: &[RouteTable]) -> Option<String> {
+    const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+    let strip = |x: &str| x.trim().trim_start_matches('<').trim_end_matches('>').to_string();
+    for t in tables.iter().filter(|t| deploy_only(&t.write_authority)) {
+        let local = t.class.rsplit('#').next().unwrap_or(&t.class);
+        let bare = matches!(local, "Product" | "Domain" | "Test" | "Principle" | "Machine" | "AgentRuntime");
+        let prefix = entity_subject(&t.class, "");
+        for (subj, pred, obj) in lines {
+            let (s, p, o) = (strip(subj), strip(pred), strip(obj));
+            let row_of_class = !bare && s.starts_with(&prefix) && s.len() > prefix.len();
+            let typed_as = p == RDF_TYPE && (o == t.class || o.rsplit('#').next() == Some(local));
+            if row_of_class || typed_as {
+                return Some(format!("<{}> is a {} row, which only the model deploy may write (writeAuthority deploy, #4220); a batch is no way around it", s, local));
+            }
+        }
+    }
+    None
 }
 
 /// #4517 — a create needs a Write row on the graph it lands in (Jeff 2026-10-13
@@ -2355,12 +2401,19 @@ fn partof_exists(entity: &str, instances_graph: &str) -> bool {
 }
 
 /// Does the entity exist at all? (create → 409 if it does; replace → 404 if it doesn't).
-fn entity_exists(class: &str, entity: &str, instances_graph: &str) -> bool {
+/// #4715 — a store that did not answer is an Err, never "does not exist": it was
+/// mapped to false, so a PUT/PATCH during a Fuseki outage answered 404 (#4708's class).
+pub fn entity_exists(class: &str, entity: &str, instances_graph: &str) -> R<bool> {
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
         g = instances_graph, s = entity_subject(class, entity)
     );
-    sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
+    sparql_json(&q).map(|b| !select_v(&b).is_empty())
+}
+
+/// #4715 — the write answer when the existence read itself failed: 503 with the reason.
+pub fn exists_unavailable(e: &str) -> (String, String) {
+    ("unavailable".to_string(), format!("the store did not answer the existence read, so nothing was written: {}", e))
 }
 
 /// The one prepared representation shared by single and batch create. At this
@@ -3619,8 +3672,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         // null removes the field, and every other triple — rdf:type, rdfs:subClassOf,
         // the links nobody named — stays exactly as it was.
         WriteOp::PatchEntity { name } => {
-            if !entity_exists(&table.class, name, &table.instances_graph) {
-                return write_resp("not-found", "entity does not exist; PATCH changes a row, it never creates one");
+            match entity_exists(&table.class, name, &table.instances_graph) {
+                Err(e) => { let (k, m) = exists_unavailable(&e); return write_resp(&k, &m); }
+                Ok(false) => return write_resp("not-found", "entity does not exist; PATCH changes a row, it never creates one"),
+                Ok(true) => {}
             }
             let values = match parse_patch_object(body) {
                 Ok(v) => v,
@@ -3719,8 +3774,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
-            if !entity_exists(&table.class, name, &table.instances_graph) {
-                return write_resp("not-found", "entity does not exist");
+            match entity_exists(&table.class, name, &table.instances_graph) {
+                Err(e) => { let (k, m) = exists_unavailable(&e); return write_resp(&k, &m); }
+                Ok(false) => return write_resp("not-found", "entity does not exist"),
+                Ok(true) => {}
             }
             // #3573 AC5 — closed-shape: reject an off-model property on replace too.
             if let Some(bad) = off_model_property(body, &table.fields) {
@@ -6415,7 +6472,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                             let landed_commit = header("x-landed-commit");
                             set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
-                            handle_create_linked(body_str, tables, &role, token, &landed_commit, &claims.scope)
+                            with_write_lock(|| handle_create_linked(body_str, tables, &role, token, &landed_commit, &claims.scope))
                         }
                     };
                     let resp = http_response_ct(status_line(code), &body, "application/json");
@@ -6453,7 +6510,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                     .principal_for(&claims.web_id, now_secs)
                                     .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                                handle_batch(&target_graph, body_str, &role, token)
+                                with_write_lock(|| handle_batch_checked(&target_graph, body_str, &role, token, tables))
                             }
                         }
                     };
@@ -6552,7 +6609,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // #4101 — the land names the commit that is changing the row
                                 let landed_commit = header("x-landed-commit");
                                 set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
-                                let (c, b) = handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope);
+                                let (c, b) = with_write_lock(|| handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope));
                                 // #4183 reopen 1 — a Permission row just changed: drop the cached
                                 // scopes so the grant (or revoke) holds on the very next write.
                                 if (200..300).contains(&c) && grants_changed(&table.class) {
