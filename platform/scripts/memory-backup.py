@@ -66,7 +66,8 @@ REMOTE = os.environ.get("MEMORY_REMOTE", "Jeffs-Mac-mini.local:/Users/jeffbridwe
 CHECK_DRIVE_IDS = os.environ.get("MEMORY_DRIVE_ITEM_ID", "auto")
 XATTR = os.environ.get("MEMORY_XATTR", "xattr")
 # #4705 — Drive stamps the item id seconds to minutes after the copy; wait
-# this long for it before calling a file red (0 = check once, no wait)
+# this long for it before calling a file red (0 = check once, no wait). A stamped
+# file ends the wait at once; only a Drive that never takes the file in costs it.
 DRIVE_ID_WAIT = int(os.environ.get("MEMORY_DRIVE_ID_WAIT", "600"))
 KEEP_DAYS = int(os.environ.get("MEMORY_KEEP_DAYS", "0"))
 
