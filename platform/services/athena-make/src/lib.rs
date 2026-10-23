@@ -3707,13 +3707,14 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                 }
             }
             // Keep the version being changed, as PUT does (#4102): no revision, no patch.
+            // #4715 AC1 — the revision, every field and the stamps go to the DAL as ONE
+            // `apply`, so the row changes whole or not at all. It ran one DAL process per
+            // field: a refusal at field 3 left fields 1-2 changed and the stamps unset.
             let same_change = same_change_as_current(&table.class, name, &graph, landed_commit);
+            let mut lines: Vec<String> = Vec::new();
             if !same_change {
                 match build_revision(table, name, caller_role) {
-                    Ok(rev) => if let Err(e) = dal_write_many(&prepared_create_ndjson(std::slice::from_ref(&rev)), token) {
-                        emit_write_spine(caller_role, "patch", name, "", "revision-fail");
-                        return write_resp("validation", &format!("could not keep the prior version as a revision, patch refused: {}", e));
-                    },
+                    Ok(rev) => lines.push(format!("{{\"revision\":{}}}", prepared_create_ndjson(std::slice::from_ref(&rev)).trim_end())),
                     Err(e) if e == "not-found" => {}
                     Err(e) => {
                         emit_write_spine(caller_role, "patch", name, "", "revision-fail");
@@ -3721,52 +3722,53 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                     }
                 }
             }
+            let q = |x: &str| format!("\"{}\"", json_escape(x));
             let mut changed: Vec<String> = Vec::new();
             for (k, vs) in &values {
                 let field = field_of(k);
                 let edge_class = field.as_deref().and_then(|f| f.split_once("|edge:")).map(|(_, c)| c.to_string());
-                let result = if let Some(class) = edge_class {
+                if let Some(class) = edge_class {
                     // A link field: remove what is no longer named, link what is new.
                     let tkind = kind_of_class(&class);
                     let pred = format!("{}{}", NS, k);
                     // Keep each stored value's full IRI: a wrong-kind value (c:Proving where
                     // value-stream-step-proving belongs) can only be removed by the IRI the store
                     // holds; the DAL unlink rebuilds <kind>-<name> and missed it (#4482).
-                    let current: Vec<(String, String)> = sparql_json(&format!(
-                        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{p}> ?o }} BIND(STR(?o) AS ?v) }}", g = graph, s = subject, p = pred))
-                        .map(|b| select_v(&b)).unwrap_or_default()
-                        .into_iter().map(|iri| (iri.rsplit('#').next().unwrap_or(&iri).to_string(), iri)).collect();
+                    let current: Vec<(String, String)> = match sparql_json(&format!(
+                        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{p}> ?o }} BIND(STR(?o) AS ?v) }}", g = graph, s = subject, p = pred)) {
+                        Ok(b) => select_v(&b).into_iter().map(|iri| (iri.rsplit('#').next().unwrap_or(&iri).to_string(), iri)).collect(),
+                        Err(e) => { let (t, m) = exists_unavailable(&e); return write_resp(&t, &m); }
+                    };
                     let want: Vec<String> = vs.iter().map(|v| v.rsplit(['#', ':']).next().unwrap_or(v).to_string()).collect();
                     let strip = |n: &str| n.strip_prefix(&format!("{}-", tkind)).unwrap_or(n).to_string();
-                    let gone: Vec<(String, String, String)> = current.iter()
-                        .filter(|(c, _)| !want.iter().any(|w| strip(w) == strip(c)))
-                        .map(|(_, iri)| (format!("<{}>", subject), format!("<{}>", pred), format!("<{}>", iri))).collect();
-                    let r: R<()> = if gone.is_empty() { Ok(()) } else { dal_batch(&graph, &gone, &[], token) };
-                    // #4499 reopen 4 — every new link in ONE DAL call: one process
-                    // per link cost ~0.45 s (22,675 exercises links ≈ 2.8 h). One
-                    // missing target still refuses them all, naming it.
+                    for (_, iri) in current.iter().filter(|(c, _)| !want.iter().any(|w| strip(w) == strip(c))) {
+                        lines.push(format!("{{\"del\":[{},{},{}]}}", q(&format!("<{}>", subject)), q(&format!("<{}>", pred)), q(&format!("<{}>", iri))));
+                    }
                     let new: Vec<String> = want.iter().filter(|w| !current.iter().any(|(c, _)| strip(c) == strip(w))).map(|w| strip(w)).collect();
-                    r.and_then(|_| if new.is_empty() { Ok(()) } else { dal_run(&link_args(&kind, name, &graph, k, &tkind, &new), token) })
+                    if !new.is_empty() {
+                        let edges: Vec<String> = new.iter().map(|t| format!("[{},{},{}]", q(k), q(&tkind), q(t))).collect();
+                        lines.push(format!("{{\"link\":[{}]}}", edges.join(",")));
+                    }
                 } else if vs.is_empty() {
                     // null: remove every value of this one predicate, nothing else.
-                    dal_batch(&graph, &[(format!("<{}>", subject), format!("<{}{}>", NS, k), "?o".to_string())], &[], token)
+                    lines.push(format!("{{\"del\":[{},{},{}]}}", q(&format!("<{}>", subject)), q(&format!("<{}{}>", NS, k)), q("?o")));
                 } else {
-                    dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
-                        "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, vs[0])], token)
-                };
-                if let Err(e) = result {
-                    emit_write_spine(caller_role, "patch", name, k, "error");
-                    return write_resp("validation", &format!("patch stopped at '{}' ({} field(s) already changed: {}): {}", k, changed.len(), changed.join(", "), e));
+                    lines.push(format!("{{\"set\":{{\"field\":{},\"value\":{}}}}}", q(k), q(&vs[0])));
                 }
                 changed.push(k.clone());
             }
-            // The stamps follow the change, as on PUT (#4101).
+            // The stamps follow the change, as on PUT (#4101) — inside the same update now.
             let prev = query_version(&table.class, name, &graph);
             let mut stamps = write_stamps(table, landed_commit);
             if !same_change { if let Some(v) = version_stamp(table, prev.as_deref()) { stamps.push(v); } }
             for (k, v) in stamps {
-                let _ = dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
-                    "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, v)], token);
+                lines.push(format!("{{\"set\":{{\"field\":{},\"value\":{}}}}}", q(&k), q(&v)));
+            }
+            let args: Vec<String> = ["apply", "--kind", &kind, "--name", name, "--graph", &graph].iter().map(|x| x.to_string()).collect();
+            if let Err(e) = dal_run_stdin(&args, token, &(lines.join("\n") + "\n")) {
+                emit_write_spine(caller_role, "patch", name, &changed.join(","), "error");
+                let (code, body) = dal_err_resp(&e);
+                return (code, body.replacen("\"message\": \"", "\"message\": \"patch refused, nothing was changed: ", 1));
             }
             emit_write_spine(caller_role, "patch", name, &changed.join(","), "ok");
             write_resp("ok", &format!("patched {}: {}", name, changed.join(", ")))

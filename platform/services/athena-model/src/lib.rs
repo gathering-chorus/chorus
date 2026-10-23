@@ -2542,6 +2542,115 @@ pub fn set_field(
     Ok(subject)
 }
 
+/// #4715 AC1 — a Store whose reads go to the real store and whose writes are
+/// held, not sent. Every governed verb (set_field, add_edges_keeping, batch,
+/// write_many) runs its own checks unchanged against it; `commit` then sends
+/// everything they would have written as ONE SPARQL update, so a patch of
+/// several fields lands whole or not at all. Before this the door ran one DAL
+/// process per field, and a failure at field 3 left fields 1-2 changed.
+pub struct DeferredStore<'a> {
+    inner: &'a dyn Store,
+    held: std::cell::RefCell<Vec<String>>,
+}
+
+impl<'a> DeferredStore<'a> {
+    pub fn new(inner: &'a dyn Store) -> Self {
+        DeferredStore { inner, held: std::cell::RefCell::new(Vec::new()) }
+    }
+    /// How many updates are held.
+    pub fn held(&self) -> usize {
+        self.held.borrow().len()
+    }
+    /// Send every held update as one request (one Fuseki transaction).
+    pub fn commit(&self) -> R<usize> {
+        let held = self.held.borrow();
+        if held.is_empty() {
+            return Err("apply: nothing to write".into());
+        }
+        self.inner.update(&held.join(" ;\n"))?;
+        Ok(held.len())
+    }
+}
+
+impl Store for DeferredStore<'_> {
+    fn ask(&self, sparql: &str) -> R<bool> { self.inner.ask(sparql) }
+    fn select_v(&self, sparql: &str) -> R<Vec<String>> { self.inner.select_v(sparql) }
+    fn update(&self, sparql: &str) -> R<()> {
+        self.held.borrow_mut().push(sparql.trim().trim_end_matches(';').to_string());
+        Ok(())
+    }
+}
+
+/// #4715 AC1 — one change inside an `apply`.
+#[derive(Debug, Clone)]
+pub enum ApplyOp {
+    /// one literal field (set_field's checks: datatype, sh:in, pattern, uniqueness)
+    Set { field: String, value: String },
+    /// new links (add_edges_keeping's checks: target exists, kind)
+    Link { edges: Vec<(String, String, String)> },
+    /// exact triples to remove or add on the row's graph (batch's slot checks)
+    Triples { deletes: Vec<(String, String, String)>, inserts: Vec<(String, String, String)> },
+}
+
+/// #4715 AC1 — apply a revision and every op to one row in ONE update. Any
+/// check that refuses refuses the whole apply, and nothing is written.
+pub fn apply(store: &dyn Store, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<usize> {
+    if ops.is_empty() {
+        return Err("apply: no change named".into());
+    }
+    let d = DeferredStore::new(store);
+    if let Some(r) = revision {
+        write_many(&d, std::slice::from_ref(r), id)?;
+    }
+    for op in ops {
+        match op {
+            ApplyOp::Set { field, value } => { set_field(&d, kind, name, field, value, Some(graph), id)?; }
+            ApplyOp::Link { edges } => { add_edges_keeping(&d, kind, name, edges, Some(graph), id, None)?; }
+            ApplyOp::Triples { deletes, inserts } => { batch(&d, graph, deletes, inserts, id)?; }
+        }
+    }
+    let n = d.commit()?;
+    witness("model.apply", &[("kind", kind), ("name", name), ("ops", ops.len().to_string().as_str()), ("updates", n.to_string().as_str())]);
+    Ok(n)
+}
+
+/// #4715 — parse `apply`'s stdin: one JSON object per line, one of
+/// {"set":{"field":..,"value":..}} · {"link":[[prop,kind,name],..]} ·
+/// {"del":[s,p,o]} · {"ins":[s,p,o]} · {"revision":<WriteReq>}. Every del/ins
+/// line joins one Triples op, kept in the order given.
+pub fn parse_apply_ndjson(input: &str) -> R<(Option<WriteReq>, Vec<ApplyOp>)> {
+    let mut revision = None;
+    let mut ops = Vec::new();
+    let (mut dels, mut inss) = (Vec::new(), Vec::new());
+    let triple = |v: &serde_json::Value| -> R<(String, String, String)> {
+        let a = v.as_array().filter(|a| a.len() == 3).ok_or("apply: a del/ins line needs [s,p,o]")?;
+        let s = |i: usize| a[i].as_str().map(str::to_string).ok_or("apply: s, p and o are strings".to_string());
+        Ok((s(0)?, s(1)?, s(2)?))
+    };
+    for (i, line) in input.lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
+        let v: serde_json::Value = serde_json::from_str(line).map_err(|e| format!("apply: line {} is not JSON: {}", i + 1, e))?;
+        if let Some(r) = v.get("revision") {
+            revision = parse_add_batch_ndjson(&r.to_string())?.into_iter().next();
+        } else if let Some(set) = v.get("set") {
+            let f = |k: &str| set.get(k).and_then(|x| x.as_str()).map(str::to_string).ok_or(format!("apply: line {} set needs {}", i + 1, k));
+            ops.push(ApplyOp::Set { field: f("field")?, value: f("value")? });
+        } else if let Some(l) = v.get("link").and_then(|l| l.as_array()) {
+            let edges = l.iter().map(|e| triple(e)).collect::<R<Vec<_>>>()?;
+            ops.push(ApplyOp::Link { edges });
+        } else if let Some(t) = v.get("del") {
+            dels.push(triple(t)?);
+        } else if let Some(t) = v.get("ins") {
+            inss.push(triple(t)?);
+        } else {
+            return Err(format!("apply: line {} names no set, link, del, ins or revision", i + 1));
+        }
+    }
+    if !dels.is_empty() || !inss.is_empty() {
+        ops.insert(0, ApplyOp::Triples { deletes: dels, inserts: inss });
+    }
+    Ok((revision, ops))
+}
+
 /// #3468 — DELETE an entity wholesale (governed). Fail-closed: refuses a subject
 /// that does not exist (so a typo can't be a silent no-op). Witnesses the delete.
 /// athena-make's DELETE delegates here instead of a raw SPARQL DELETE — one governed
