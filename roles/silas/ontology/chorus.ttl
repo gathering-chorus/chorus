@@ -935,9 +935,6 @@ chorus:video chorus:builtBy chorus:value-stream-gathering .
 # typed Product's definition above (one declaration site per product). Only edges
 # for products without inline lists (gathering, borgProduct) remain in this block.
 
-# Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
-chorus:observability chorus:hasDomain chorus:time .
-
 # (loom-policies, domains-domain, services-domain edges: on the product definitions above — #3603)
 
 # Borg has two domains: Observability and Heralds (DEC-2090)

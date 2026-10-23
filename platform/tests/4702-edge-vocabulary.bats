@@ -8,10 +8,12 @@
 # Silas 15:59, Jeff 16:03): hasDomain is a domain's one home; composes builds on a
 # domain homed elsewhere; consumes reads a domain or service. Declarations and
 # shapes live in roles/silas/ontology/chorus.ttl. Each rule ships with a row built
-# to break it.
+# to break it. Retired facts must be gone from roles/silas/ontology/chorus.ttl and
+# roles/wren/ontology/domains-wren-silas.ttl (Silas 2026-10-23 05:37).
 
 ROOT="$BATS_TEST_DIRNAME/../.."
 SHAPES="$ROOT/roles/silas/ontology/chorus.ttl"
+DOMAINS_WS="$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
 
 setup() {
   command -v shacl >/dev/null 2>&1 || { echo "shacl (Jena) not installed: cannot prove the edge rules" >&2; return 1; }
@@ -84,3 +86,25 @@ closed_results() {
   [[ "$output" == *"chorus:x-product sh:ClosedConstraintComponent"* ]] || return 1
 }
 
+
+# Retired facts, read as parsed triples so a comment or reformatting cannot hide one.
+# observability is borg's analog; time is a dependency (consumes), not a part.
+# deploys-supports-cicd: cicd is a pipeline instance composing the werk verbs (Jeff 10-22).
+has_triple() { riot --output=nt "$1" 2>/dev/null | grep -qF "$2"; }
+
+@test "retired: observability hasDomain time is gone from the model source, consumes time stays" {
+  ! has_triple "$SHAPES" "<https://jeffbridwell.com/chorus#observability> <https://jeffbridwell.com/chorus#hasDomain> <https://jeffbridwell.com/chorus#time>" || return 1
+  has_triple "$SHAPES" "<https://jeffbridwell.com/chorus#observability> <https://jeffbridwell.com/chorus#consumes> <https://jeffbridwell.com/chorus#time>" || return 1
+}
+
+@test "retired: deploys supports cicd is gone from the domain source" {
+  has_triple "$DOMAINS_WS" "<https://jeffbridwell.com/chorus#deploys> <http://www.w3.org/2000/01/rdf-schema#label>" || return 1
+  ! has_triple "$DOMAINS_WS" "<https://jeffbridwell.com/chorus#deploys> <https://jeffbridwell.com/chorus#supports> <https://jeffbridwell.com/chorus#cicd>" || return 1
+}
+
+@test "negative proof: the retired-fact check finds each triple when it is planted back" {
+  { cat "$SHAPES"; printf '\nchorus:observability chorus:hasDomain chorus:time .\n'; } > "$T/obs.ttl"
+  has_triple "$T/obs.ttl" "<https://jeffbridwell.com/chorus#observability> <https://jeffbridwell.com/chorus#hasDomain> <https://jeffbridwell.com/chorus#time>" || return 1
+  { cat "$DOMAINS_WS"; printf '\nchorus:deploys chorus:supports chorus:cicd .\n'; } > "$T/dep.ttl"
+  has_triple "$T/dep.ttl" "<https://jeffbridwell.com/chorus#deploys> <https://jeffbridwell.com/chorus#supports> <https://jeffbridwell.com/chorus#cicd>" || return 1
+}
