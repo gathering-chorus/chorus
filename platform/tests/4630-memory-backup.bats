@@ -104,10 +104,24 @@ backup() {
   printf '#!/bin/sh\necho com.apple.provenance\n' > "$T/xattr"; chmod +x "$T/xattr"
   run env MEMORY_SPINE="$T/chorus.log" MEMORY_MESSAGES_DB="$T/messages.db" MEMORY_TRANSCRIPTS="$T/transcripts" MEMORY_NIGHTLY_LOG="$T/nightly.log" \
     MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
-    MEMORY_DRIVE_ITEM_ID=1 MEMORY_XATTR="$T/xattr" MEMORY_BUZZ_PG_CMD="echo x" MEMORY_BUZZ_MINIO_CMD="echo y" \
+    MEMORY_DRIVE_ITEM_ID=1 MEMORY_DRIVE_ID_WAIT=1 MEMORY_XATTR="$T/xattr" MEMORY_BUZZ_PG_CMD="echo x" MEMORY_BUZZ_MINIO_CMD="echo y" \
     python3 "$ROOT/platform/scripts/memory-backup.py" 2026-10-18
   [ "$status" -eq 1 ] || return 1
-  [[ "$output" == *"not taken in by Google Drive (no item id)"* ]] || return 1
+  [[ "$output" == *"not taken in by Google Drive (no item id after 1s)"* ]] || return 1
+}
+
+@test "#4705: Drive stamps the id a moment after the copy, so the wait reads green, not red" {
+  # the first look at each file finds no id; every later look finds it
+  printf '#!/bin/sh
+f="%s/seen-$(basename "$1")"
+if [ -e "$f" ]; then echo com.google.drivefs.item-id; else touch "$f"; echo com.apple.provenance; fi
+' "$T" > "$T/xattr"; chmod +x "$T/xattr"
+  run env MEMORY_SPINE="$T/chorus.log" MEMORY_MESSAGES_DB="$T/messages.db" MEMORY_TRANSCRIPTS="$T/transcripts" MEMORY_NIGHTLY_LOG="$T/nightly.log" \
+    MEMORY_LOCAL="$T/local" MEMORY_REMOTE="$T/bedroom" MEMORY_DRIVE="$T/drive-home/My Drive/chorus-backups" \
+    MEMORY_DRIVE_ITEM_ID=1 MEMORY_DRIVE_ID_WAIT=2 MEMORY_XATTR="$T/xattr" MEMORY_BUZZ_PG_CMD="echo x" MEMORY_BUZZ_MINIO_CMD="echo y" \
+    python3 "$ROOT/platform/scripts/memory-backup.py" 2026-10-18
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" != *"not taken in by Google Drive"* ]] || return 1
 }
 
 @test "negative proof: a day the nightly never wrote (yesterday absent) is red on check; a kept day is OK" {
