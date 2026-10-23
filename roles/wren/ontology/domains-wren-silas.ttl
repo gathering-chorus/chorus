@@ -99,17 +99,7 @@ chorus:deploys a chorus:Domain ;
   chorus:purpose "Track how code reaches a running state — what shipped, where, the rollback path, and the invariance that proves a deploy is a deploy." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-reflecting ;
-  chorus:repoTarget "deploys" ;
-  # #3982 — the supports edge. Jeff: "deploys are one domain that supports
-  # cicd pipeline instance." Domain-supports-pipeline, NOT domain-peer: a
-  # pipeline instance consumes deploys the way it consumes tests and builds,
-  # each its own subject with its own owner.
-  #
-  # Points at the ExecutionPipeline instance, not chorus:Pipeline — that IRI
-  # is already the harvest/data concept (chorus.ttl:477, hasPipeline bound to
-  # Domain). Kade mints chorus:ExecutionPipeline and types cicd/werk/athena
-  # as instances in #3985; this edge resolves when that lands.
-  chorus:supports chorus:cicd .
+  chorus:repoTarget "deploys" .
   # FLAG: no chorus:Deploy vocab class yet — omitted, not faked.
 
 # #3982 — MINTED as chorus:deploys, 2026-08-22. Final name, one land.

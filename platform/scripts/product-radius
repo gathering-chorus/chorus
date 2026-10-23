@@ -117,6 +117,7 @@ def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_di
             "domains": rows,
             "consumes": sorted(x for q, x in consumes if q == p),
             "consumeLayers": {x: d["domains"].get(x, {}).get("layer", "") for q, x in consumes if q == p},
+            "composes": sorted(x for q, x in g.pairs("composes", "Product") if q == p),
             "usedBy": sorted({f"{q} (via {x})" for q, x in consumes if x in owned and q != p}),
             "pipelines": [{"pipeline": x, "status": pipe_status.get(x, ""), "stream": automates.get(x, "")}
                           for x in sorted(pipes)],
@@ -158,8 +159,8 @@ def product_tree(p):
     if p.get("parts"):
         lines.append((1, f"parts        {rg.join(p['parts'])}"))
     layers = p.get("consumeLayers", {})
+    lines.append((1, f"composes     {rg.join(p.get('composes', []))}"))
     lines.append((1, "consumes     " + rg.join([f"{x} ({layers.get(x) or 'no layer'})" for x in p["consumes"]])))
-    lines.append((1, "uses tool    — (not modelled)"))
     lines.append((1, f"used by      {rg.join(p.get('usedBy', []))}"))
     return rg.tree(lines)
 
