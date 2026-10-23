@@ -1,4 +1,4 @@
-# fuseki-config-server.ttl (#4718) — canonical copy of the Fuseki SERVER config.
+# fuseki-config-server.ttl.in (#4718; .in: a template for config.ttl, not a model .ttl) — canonical copy of the Fuseki SERVER config.
 #
 # DEPLOY TO: ~/.gathering/data/config.ttl (FUSEKI_BASE; the plist passes no
 # --config, so Fuseki reads this file plus configuration/*.ttl). Deployed by

@@ -9,7 +9,7 @@
 # runaway with the ceiling line removed is still running after the client quits.
 
 ROOT="$BATS_TEST_DIRNAME/../.."
-CANON="$ROOT/platform/scripts/launchagents-canonical/fuseki-config-server.ttl"
+CANON="$ROOT/platform/scripts/launchagents-canonical/fuseki-config-server.ttl.in"
 FUSEKI_HOME="${FUSEKI_HOME:-$HOME/.gathering/data/fuseki-5.1.0}"
 JAVA="${JAVA:-/opt/homebrew/opt/openjdk/bin/java}"
 # ten patterns over ten triples: 10^10 rows, never finishes on its own

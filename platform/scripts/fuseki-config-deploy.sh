@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CANONICAL="${FUSEKI_SERVER_CANONICAL:-$SCRIPT_DIR/launchagents-canonical/fuseki-config-server.ttl}"
+CANONICAL="${FUSEKI_SERVER_CANONICAL:-$SCRIPT_DIR/launchagents-canonical/fuseki-config-server.ttl.in}"
 RUNTIME="${FUSEKI_SERVER_RUNTIME:-$HOME/.gathering/data/config.ttl}"
 
 [ -r "$CANONICAL" ] || { echo "fuseki-config-deploy: canonical $CANONICAL missing" >&2; exit 2; }

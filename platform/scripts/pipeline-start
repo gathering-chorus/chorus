@@ -60,7 +60,17 @@ fi
 # cicd itself. Started straight as cicd on 10-18, #4579's retirement emptied 77
 # shapes on prod with no rehearsal. dagu names the handing-off run in DAG_NAME.
 if [ "$pipeline" = cicd ] && [ "${DAG_NAME:-}" != athena ]; then
-  model="$(grep -E '\.ttl$|^designing/schemas/model-retirements\.jsonl$' <<<"$diff_names" | tr '\n' ' ' | sed 's/ $//' || true)"
+  # #4718 — one rule for "model change": athena-deploy scope, which is
+  # shared/model_scope.rs, the rule athena-validate and the land use. A second
+  # rule here (any .ttl) sent a Fuseki config to athena, which then refused it as
+  # "no model change", so the card could start in neither pipeline.
+  athena_deploy="${ATHENA_DEPLOY:-$(command -v athena-deploy || echo "$HOME/.chorus/bin/athena-deploy")}"
+  if ! scope_out="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$werk" \
+        "$athena_deploy" scope "$werk" origin/main...HEAD 2>&1)"; then
+    echo "pipeline-start: athena-deploy scope could not read #$card's diff in $werk: ${scope_out:-no message}; nothing was enqueued" >&2
+    exit 1
+  fi
+  model="$(sed -n 's/^model|//p' <<<"$scope_out" | tr '\n' ' ' | sed 's/ $//' || true)"
   if [ -n "$model" ]; then
     echo "pipeline-start: #$card changes the model ($model); start it with chorus-athena so it rehearses on staging first; nothing was enqueued" >&2
     exit 1
