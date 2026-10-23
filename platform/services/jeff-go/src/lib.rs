@@ -246,6 +246,12 @@ mod tests {
     }
 
     #[test]
+    fn the_challenge_matches_the_go_page_byte_for_byte() {
+        // same vector as directing/clearing-v2/tests/go-passkey-4707.test.ts
+        assert_eq!(challenge(4707, "034ktQIUdeT16HznvkjFIn", "6e0a5fee94a5", "n-1"), "oX36ie-6fcYvZgJu7DR8Kc_LIkUg5M9wHK7NoHpjEH0");
+    }
+
+    #[test]
     fn the_challenge_binds_every_part() {
         let base = challenge(4707, "r", "h", "n");
         for other in [challenge(4708, "r", "h", "n"), challenge(4707, "r2", "h", "n"), challenge(4707, "r", "h2", "n"), challenge(4707, "r", "h", "n2")] {

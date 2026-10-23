@@ -1,5 +1,6 @@
 // @domain: messages
 
+import { readChallenge, renderGoPage, renderRegisterPage, assertionInput, goCommand, goChallengeDir, goDaguConfig, goRunner } from './go-passkey';
 import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import os from 'os';
@@ -337,6 +338,26 @@ function registerReadApiRoutes(ctx: RouteContext): void {
     }
     const pipeline = await dataService.getCardPipeline(cardId);
     res.json({ ok: true, pipeline });
+  });
+
+  // #4707 — Jeff's go, answered with his passkey (go-passkey.ts). The page and the
+  // relay only carry the assertion; werk-merge verifies it.
+  app.get('/passkey/register', (_req: Request, res: Response) => { res.type('html').send(renderRegisterPage()); });
+  app.get('/go/:card', (req: Request, res: Response) => {
+    const card = parseInt(String(req.params.card), 10);
+    const c = Number.isNaN(card) ? null : readChallenge(goChallengeDir(), card);
+    if (!c) { res.status(404).type('text').send(`No go is waiting for #${req.params.card}.`); return; }
+    res.type('html').send(renderGoPage(c, String(res.locals.base || '')));
+  });
+  app.post('/api/go/:card', (req: Request, res: Response) => {
+    const card = parseInt(String(req.params.card), 10);
+    const c = Number.isNaN(card) ? null : readChallenge(goChallengeDir(), card);
+    if (!c) { res.status(404).json({ ok: false, error: `no go is waiting for #${req.params.card}` }); return; }
+    const input = assertionInput(req.body);
+    if (!input) { res.status(400).json({ ok: false, error: 'malformed assertion' }); return; }
+    goRunner()(goCommand(goDaguConfig(), c, input)).then(
+      () => res.json({ ok: true, card, run: c.run_id }),
+      (e: Error) => res.status(502).json({ ok: false, error: `the go step did not take it: ${e.message}` }));
   });
 
   app.get('/api/events', (req: Request, res: Response) => {
