@@ -468,6 +468,36 @@ mod tests {
         assert!(denied_as_land(&check(&mcp).await));
     }
 
+    /// Abby's real path (agy): her native PreToolUse JSON, mapped by her
+    /// AgentRuntime row exactly as the runtime hook maps it, then this guard.
+    async fn through_agy(command: &str) -> HookResponse {
+        use crate::runtime_rows::{canonical, row_in, table, Moment};
+        let t = table();
+        let row = row_in(&t, "agy").expect("agy row in the generated table");
+        let cwd = format!("{}/roles/abby-normal", chorus_root());
+        let raw = json!({"conversationId": "c-4707", "toolCall": {"name": "run_command",
+            "args": {"CommandLine": command, "Cwd": cwd}}});
+        let mut v = canonical(row, Moment::BeforeTool, &raw).expect("agy maps run_command");
+        v["deploy_role"] = json!("abby-normal");
+        let input: HookInput = serde_json::from_value(v).expect("canonical JSON is a HookInput");
+        assert_eq!(input.tool_name_str(), "Bash", "agy run_command reaches the guard as Bash");
+        check(&input).await
+    }
+
+    #[tokio::test]
+    async fn test_4707_abbys_curl_through_her_agy_hook_path_is_refused() {
+        let r = through_agy("curl -s -X POST 'http://localhost:8526/api/v1/dags/cicd-land/enqueue' -d '{}'").await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+        let r = through_agy("dagu --config platform/config/dagu.yaml enqueue cicd-land -- CARD=4704").await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_negative_proof_agy_path_lets_the_sanctioned_enqueue_through() {
+        let r = through_agy("dagu --config platform/config/dagu.yaml enqueue cicd -- CARD=4707 ROLE=abby-normal").await;
+        assert!(r.stdout.is_none(), "{:?}", r.stdout);
+    }
+
     #[tokio::test]
     async fn test_4707_a_land_inside_a_heredoc_is_still_refused() {
         let r = check(&abby_bash("bash <<EOF\ndagu enqueue cicd-land -- CARD=4704\nEOF")).await;
