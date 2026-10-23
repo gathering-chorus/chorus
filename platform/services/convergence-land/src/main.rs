@@ -203,6 +203,12 @@ fn main() {
         ["sync"] => Ok(sync()),
         _ => Err("usage: convergence-land alert <alert-name> [--dry-run] | silence <alert-name> <minutes> | sync".into()),
     };
+    // #4714 — every call leaves a structured event, so a failed sync says why in Loki
+    let ev = call_event(&std::env::var("CHORUS_ROLE").unwrap_or_default(), &a, &r);
+    let log = format!("{}/platform/scripts/chorus-log", std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default())));
+    if let Err(e) = Command::new(&log).args(&ev).output() {
+        eprintln!("convergence-land: event NOT emitted ({e})");
+    }
     std::process::exit(match r {
         Ok(s) => { println!("{s}"); 0 }
         Err(e) => { eprintln!("convergence-land: {e}"); 1 }
