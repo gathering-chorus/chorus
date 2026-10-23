@@ -42,3 +42,23 @@ ctl() { run env PATH="$T/bin:$PATH" FUSEKI_LAUNCHCTL="$T/bin/launchctl" FUSEKI_P
   printf '\nservice_stop "$FUSEKI_LABEL"\n' >> "$T/app-state.sh"
   grep -qE 'service_(start|stop) "\$FUSEKI_LABEL"' "$T/app-state.sh"
 }
+
+# platform/scripts/fuseki-config-deploy.sh — the canonical server config, put in place
+deploy() { run env FUSEKI_SERVER_RUNTIME="$T/config.ttl" bash "$ROOT/platform/scripts/fuseki-config-deploy.sh" "$@"; }
+
+@test "config-deploy installs the canonical server config, keeping the old one beside it" {
+  echo "old" > "$T/config.ttl"
+  deploy
+  [ "$status" -eq 0 ] || return 1
+  cmp -s "$T/config.ttl" "$ROOT/platform/scripts/launchagents-canonical/fuseki-config-server.ttl.in" || return 1
+  [ "$(cat "$T"/config.ttl.pre-4718.*)" = old ] || return 1
+  deploy --check
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "negative proof: --check is red when the runtime config drifts from canonical" {
+  echo "drifted" > "$T/config.ttl"
+  deploy --check
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"differs from canonical"* ]] || return 1
+}
