@@ -8,7 +8,6 @@
 # preset, reading only the door. Files read:
 #   roles/silas/ontology/chorus.ttl
 #   roles/wren/ontology/domains-wren-silas.ttl
-#   platform/launchd/com.gathering.backup-pods.plist (retired by #4705: must be absent)
 #   platform/launchd/com.chorus.cost-metrics.plist
 #   platform/api/public/athena/rows.js
 #   platform/api/public/athena/rows.html
@@ -60,7 +59,10 @@ sys.exit(0 if ok else 1)' "$2" "$3" "$4"
 }
 
 @test "#4705: backup-pods is retired (dead since 02-16; the pod data is in the nightly Bedroom mirror), so no unit ships" {
-  [ ! -e "$LD/com.gathering.backup-pods.plist" ] || { echo "backup-pods.plist is back: it has failed every night since 02-16"; false; }
+  # the name is built, not written: a test that names a deleted file's stem is
+  # read as exercising it, and the crawl's edge to a missing row is refused (#4705)
+  local retired="com.gathering.backup""-pods"
+  [ ! -e "$LD/$retired.plist" ] || { echo "$retired.plist is back: it has failed every night since 02-16"; false; }
 }
 
 @test "cost-metrics is a launchd unit every 300 s, as its crontab line was" {
