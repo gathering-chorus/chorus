@@ -5,20 +5,11 @@
     <key>Label</key>
     <string>com.gathering.log-rotate</string>
     <key>ProgramArguments</key>
+    <!-- #4718 — copy-truncate lives in one tested script (gathering-log-rotate.sh);
+         this plist had drifted back to mv while the live job ran copy-truncate. -->
     <array>
         <string>/bin/bash</string>
-        <string>-c</string>
-        <string>
-LOG_DIR=/Users/jeffbridwell/Library/Logs/Gathering
-for LOG in fuseki.log gathering-app.log loki.log prometheus.log grafana.log; do
-  FILE="$LOG_DIR/$LOG"
-  if [ -f "$FILE" ] &amp;&amp; [ $(stat -f%z "$FILE" 2>/dev/null || echo 0) -gt 104857600 ]; then
-    mv "$FILE" "${FILE}.$(date +%Y%m%d)"
-    gzip "${FILE}.$(date +%Y%m%d)" 2>/dev/null
-    find "$LOG_DIR" -name "${LOG}.*" -mtime +7 -delete 2>/dev/null
-  fi
-done
-        </string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gathering-log-rotate.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>

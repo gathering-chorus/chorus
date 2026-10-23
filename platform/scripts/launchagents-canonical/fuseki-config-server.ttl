@@ -1,0 +1,22 @@
+# fuseki-config-server.ttl (#4718) — canonical copy of the Fuseki SERVER config.
+#
+# DEPLOY TO: ~/.gathering/data/config.ttl (FUSEKI_BASE; the plist passes no
+# --config, so Fuseki reads this file plus configuration/*.ttl). Deployed by
+# fuseki-config-deploy.sh, never by hand.
+#
+# Query ceiling (#4718). Fuseki has no cancel on client disconnect: on 10-22 at
+# 07:02 one unbounded CONSTRUCT ran 7+ minutes after its curl died, at 500% CPU,
+# the door hit its 16 in-flight cap and answered 502, and only a kickstart
+# cleared it. The heaviest real query measured on 10-23 (fuseki.log, 206k
+# requests) was 74 s, a store-wide type count; p99.9 was 0.9 s. 120 s keeps
+# that query with room and kills a runaway in two minutes, not never.
+# Queries only: updates and /$/backup tasks are not bounded by this.
+
+@prefix :        <#> .
+@prefix fuseki:  <http://jena.apache.org/fuseki#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ja:      <http://jena.hpl.hp.com/2005/11/Assembler#> .
+
+[] rdf:type fuseki:Server ;
+   ja:context [ ja:cxtName "arq:queryTimeout" ; ja:cxtValue "120000" ] .
