@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn the_challenge_matches_the_go_page_byte_for_byte() {
-        // same vector as directing/clearing-v2/tests/go-passkey-4707.test.ts
+        // a fixed vector the go page (#4710) must reproduce in its own language
         assert_eq!(challenge(4707, "034ktQIUdeT16HznvkjFIn", "6e0a5fee94a5", "n-1"), "oX36ie-6fcYvZgJu7DR8Kc_LIkUg5M9wHK7NoHpjEH0");
     }
 
