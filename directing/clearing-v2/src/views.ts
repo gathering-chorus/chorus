@@ -499,7 +499,9 @@ const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style=
         <button class="btn ghost drawer-close-btn" onclick="closeCardDrawer()" style="font-size:16px;padding:4px 8px;cursor:pointer">✕</button>
       </div>
       <h3 id="drawer-card-title" style="margin-top:10px">Loading card...</h3>
-      <div class="meta" id="drawer-card-meta" style="margin-top:6px"></div>
+      <div class="meta" id="drawer-card-meta" style="margin-top:6px;line-height:1.5"></div>
+      <div class="meta" id="drawer-card-domains" style="margin-top:4px;font-size:11.5px;color:var(--muted);display:none"></div>
+      <div class="meta" id="drawer-card-dates" style="margin-top:4px;font-size:11px;color:var(--faint);display:none"></div>
 
       <div id="drawer-card-desc-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
         <div class="sec-t" style="margin-bottom:6px">Description</div>
@@ -545,6 +547,8 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       var l = document.getElementById('drawer-card-link');
       var t = document.getElementById('drawer-card-title');
       var m = document.getElementById('drawer-card-meta');
+      var domEl = document.getElementById('drawer-card-domains');
+      var datesEl = document.getElementById('drawer-card-dates');
       var descCont = document.getElementById('drawer-card-desc-container');
       var descEl = document.getElementById('drawer-card-desc');
       var acCont = document.getElementById('drawer-card-ac-container');
@@ -562,6 +566,8 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       }
       if (t) t.textContent = 'Loading card #' + id + '...';
       if (m) m.textContent = '';
+      if (domEl) { domEl.textContent = ''; domEl.style.display = 'none'; }
+      if (datesEl) { datesEl.textContent = ''; datesEl.style.display = 'none'; }
       if (descCont) descCont.style.display = 'none';
       if (descEl) descEl.textContent = '';
       if (acCont) acCont.style.display = 'none';
@@ -586,6 +592,19 @@ const ROOM_DRAWER_SCRIPT = `  <script>
               if (c.status) metaParts.push('Status: ' + drawerEscape(c.status));
               if (c.priority) metaParts.push('Priority: ' + drawerEscape(c.priority));
               if (m) m.textContent = metaParts.join(' · ');
+
+              if (c.domain && domEl) {
+                domEl.textContent = 'Domains: ' + c.domain;
+                domEl.style.display = 'block';
+              }
+
+              if ((c.created || c.updated) && datesEl) {
+                var dateParts = [];
+                if (c.created) dateParts.push('Created: ' + drawerEscape(c.created));
+                if (c.updated) dateParts.push('Updated: ' + drawerEscape(c.updated));
+                datesEl.textContent = dateParts.join(' · ');
+                datesEl.style.display = 'block';
+              }
 
               if (c.description && descEl && descCont) {
                 descEl.textContent = c.description;
@@ -803,13 +822,14 @@ function railActorsFor(actors: ActorRow[] | undefined): ActorRow[] {
   return [...matched, ...extra].filter(isRoleLoggedIn);
 }
 
-/** #4639 / #4646 — compact role tiles for logged in roles: no #team tile, no avatar circles,
- *  no andon dot circles; role name + clickable card links in a single row without horizontal overflow. */
+/** #4639 / #4723 — compact role tiles for logged in roles: no #team tile, no avatar circles;
+ *  andon flasher dot beside name + clickable card links in a single row without horizontal overflow. */
 export function renderPeopleRow(room: string, actors: ActorRow[] | undefined): string {
   const railActors = railActorsFor(actors);
   return `
     <div class="actor-rail people-row" id="rooms-people-row">
       ${railActors.map(a => {
+        const andon = roleAndonLight(a);
         const cardHtml = a.cards && a.cards.length > 0
           ? a.cards.map(c => `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${c.id}');return false;">#${c.id}</span>`).join(' ')
           : (a.card ? `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${a.card.id}');return false;">#${a.card.id}</span>` : 'no card');
@@ -817,7 +837,7 @@ export function renderPeopleRow(room: string, actors: ActorRow[] | undefined): s
         return `
           <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
             <div class="actor-tile-info">
-              <div class="actor-tile-name"><b>${escapeHtml(a.name)}</b></div>
+              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${escapeHtml(a.name)}</b></div>
               <div class="actor-tile-card">${cardHtml}</div>
             </div>
           </a>

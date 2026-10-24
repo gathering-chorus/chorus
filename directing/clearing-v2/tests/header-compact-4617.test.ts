@@ -59,7 +59,7 @@ describe('#4597 Clearing v2: folded ACs (picker base, one people row, status dot
     expect(html).toContain('actor-tile-silas');
     expect(html).toContain('actor-tile-kade');
     expect(html).toContain('actor-tile-abby-normal');
-    expect(html).not.toContain('andon-dot');
+    expect(html).toContain('andon-dot');
     expect(html).toContain('#4590');
     expect(html).toContain('#4597');
 

@@ -11,6 +11,8 @@ export interface DrawerCard {
   status?: string;
   priority?: string;
   domain?: string;
+  created?: string;
+  updated?: string;
   description?: string;
   acItems?: Array<{ text: string; checked: boolean }>;
   comments?: Array<{ author?: string; text: string; time?: string }>;
@@ -30,6 +32,9 @@ export interface CardPayload {
     description?: string;
     creator?: string;
     owner?: string;
+    created?: string;
+    modified?: string;
+    updated?: string;
     ac_items?: Array<{ text?: string; label?: string; checked?: boolean }>;
     acItems?: Array<{ text?: string; label?: string; checked?: boolean }>;
     comments?: Array<{ author?: string; text?: string; body?: string; time?: string; created?: string }>;
@@ -87,7 +92,7 @@ function extractComments(json: CardPayload): Array<{ author?: string; text: stri
 
 function extractOwner(json: CardPayload): string | undefined {
   const data = json.data;
-  const raw = json.links?.assignee ?? json.links?.ownedBy ?? data?.creator ?? data?.owner ?? json.owner;
+  const raw = json.links?.assignee ?? json.links?.ownedBy ?? data?.owner ?? data?.creator ?? json.owner;
   return drawerOwner(raw);
 }
 
@@ -103,6 +108,8 @@ export function toDrawerCard(cardId: number, json: CardPayload | null): DrawerCa
     status: data.status,
     priority: data.priority,
     domain: json.servedFrom ?? data.domain ?? (Array.isArray(data.domains) ? data.domains.join(', ') : undefined),
+    created: data.created,
+    updated: data.modified ?? data.updated,
     description: data.description,
     acItems: extractAcItems(data),
     comments: extractComments(json),
