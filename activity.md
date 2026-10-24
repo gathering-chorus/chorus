@@ -1443,3 +1443,5 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [Abby Normal] → #4704: added skill-nightly-validate with continue_on=failure to land-4540-rows plan (00a38b12a); dry run & bats verified; held for cicd on Jeff's go → Silas, Kade, Jeff
 - [Abby Normal] → #4704 accepted (Done) via authorized cicd land on Jeff go (aa47e61a4): build, diff tests (10/10), demo gates (11/11), werk-merge (accepter=jeff), sync, and accept green. → All
 
+- [Abby Normal] → #4719: subtractive sweep pruned 8 dead log monitors & 5 ghost plists; /api/chorus/context/health dropped from 21 to 7 failures (all 7 genuine crashes); negative proof verified → Silas, Jeff
+- [Abby Normal] → #4719 landed (bb9a8e9f2, Done): subtractive sweep pruned 5 ghost plists & 8 dead log monitors; context/health failures dropped 21 → 3 → All
