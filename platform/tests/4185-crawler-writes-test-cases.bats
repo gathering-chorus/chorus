@@ -61,6 +61,12 @@ setup() {
   git -C "$FX" init -q && git -C "$FX" add -A && git -C "$FX" -c user.name=t -c user.email=t@t commit -q -m fixture
 
   export CHORUS_ROOT="$FX" CHORUS_OWL_API="$OWL_URL" CHORUS_ROLE=crawler CHORUS_IDENTITY_TOKEN="$TC"
+  # #4091 added a Grafana-rule reconcile; this fixture has no Grafana, so its
+  # sync answers "measured, nothing" and the reconcile is about test cases only
+  # (10-24: the fake HOME had no Grafana token, so every reconcile read UNMEASURED)
+  printf '#!/bin/sh\necho "measured tree=0 graph=0"\n' > "$BATS_TEST_TMPDIR/convergence-land"
+  chmod +x "$BATS_TEST_TMPDIR/convergence-land"
+  export CONVERGENCE_LAND="$BATS_TEST_TMPDIR/convergence-land"
   TESTS_COLL="$(collection Test)"; FILES_COLL="$(collection CodeFile)"
 }
 

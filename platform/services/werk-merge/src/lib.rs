@@ -426,6 +426,17 @@ pub fn merge_atomic(card: u64, role: &str, home: &Path, werk_base: &Path, accept
 
 /// The whole verb, all inputs explicit so it is testable against a real temp repo.
 /// `atomic` selects the standalone door; `accepter` is who authorized (ADR-037).
+/// #4710 — ask chorus-go (subprocess, like git and gh: this verb has no deps)
+/// whether Jeff's passkey signed this card's go for this round. A missing
+/// chorus-go refuses: a guard whose checker is gone must not pass.
+pub fn go_check(card: u64, round: &str) -> R<String> {
+    let bin = std::env::var("CHORUS_GO_BIN").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "chorus-go".to_string());
+    let out = std::process::Command::new(&bin).args(["check", &card.to_string(), round]).output()
+        .map_err(|e| format!("go-unsigned: cannot run {} to check Jeff's signed go ({}) — refusing to merge (#4710)", bin, e))?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)).trim().to_string();
+    if out.status.success() { Ok(text) } else { Err(format!("go-unsigned: {}", text)) }
+}
+
 fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: bool, accepter: Option<String>) -> R<String> {
     let trace = trace_id();
     // #3297 — approval gate up front (ADR-037): --atomic demands an accepter or refuses;
@@ -460,6 +471,15 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         emit_landed_trigger(home, role, card, &trace, &werk_s, &main_sha); // #3517 — self-heal: fire on idempotent no-op
         return Ok(main_sha);
     }
+
+    // #4710 — a go nobody's phone signed does not land. Borg Queen completed
+    // #4717's go step through dagu's API on 10-24 with `accepter=jeff` typed by
+    // her; the step cannot tell who answered it. chorus-go re-verifies the go
+    // Jeff's passkey signed for this card and this round (the werk HEAD). With
+    // no passkey registered it says so and the land goes on as before.
+    let go = go_check(card, &head_sha)
+        .map_err(|e| { jsonl(home, role, card, &trace, "merge.refused", &fail_extra("go-unsigned")); e })?;
+    jsonl(home, role, card, &trace, "merge.go.checked", &format!(",\"go\":\"{}\"", go.replace('"', "'")));
 
     // #3336 — CONTENT-VERIFY idempotency (the dropped-land-resume fix). The by-oid check
     // above is brittle: a SQUASH merge orphans the branch tip's oid, and GitHub may delete

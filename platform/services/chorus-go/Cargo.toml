@@ -1,0 +1,22 @@
+[package]
+name = "chorus-go"
+version = "0.1.0"
+edition = "2021"
+description = "#4710 — Jeff's go, signed by his phone's passkey. Serves the go page, verifies the WebAuthn assertion, records the signed go, and checks it at the land."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-go"
+path = "src/main.rs"
+
+[dependencies]
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+sha2 = "0.10"
+base64 = "0.22"
+serde_json = "1"
+getrandom = "0.2"
+
+[dev-dependencies]
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }

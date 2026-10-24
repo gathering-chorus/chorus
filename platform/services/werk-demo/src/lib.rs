@@ -904,6 +904,14 @@ pub fn announce_line(card: u64, round: &str, tally: &str, variant_url: &str, cle
     format!("Demo ready — #{} · round {} · {} · {} · clearing {} · go / no / more", card, round, tally, url, clearing)
 }
 
+/// #4710 — where Jeff signs this run's go with his phone. The run id is the
+/// cicd run's (the demo gets it as TRACE); the page asks the server for the round.
+pub fn go_link(card: u64, run: &str, role: &str) -> String {
+    let base = std::env::var("CHORUS_GO_ORIGIN").ok().filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://lightlifeurbangardens.com".to_string());
+    format!("{base}/go/?card={card}&run={run}&role={role}")
+}
+
 /// #4502 — true when this round already sent its one ask, or Jeff's go is in:
 /// either way the announce sends nothing (a re-present of the same round, or a
 /// retry after the go, is silent). Pure; keyed like every other witness read.
@@ -1414,7 +1422,8 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         let tally = format!("gates {} · reviews {}/{} · {} · AC {}/{}",
             if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
             test_summary.replace("tests: ", "tests "), checked, total);
-        announce_to_jeff(role, &trace, &announce_line(card, &round, &tally, &variant_url, &clearing_url));
+        announce_to_jeff(role, &trace, &format!("{} · sign: {}",
+            announce_line(card, &round, &tally, &variant_url, &clearing_url), go_link(card, &trace, role)));
         jsonl(home, role, card, &trace, "demo.announced",
               &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
     }
