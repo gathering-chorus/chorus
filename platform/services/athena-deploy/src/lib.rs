@@ -1039,13 +1039,26 @@ fn ok_http(code: &str) -> bool {
 /// verb then reported `staging-load-http-401` — true, and useless: a refusal that
 /// names the store's answer cannot name a missing credential.
 fn fuseki_auth() -> Vec<String> {
-    match fuseki_password() {
-        Some(pw) => {
-            let user = env_or("FUSEKI_ADMIN_USER", "admin");
-            vec!["-u".to_string(), format!("{user}:{pw}")]
-        }
+    match fuseki_login_in(std::path::Path::new(&fuseki_credential_file())) {
+        Some((user, pw)) => vec!["-u".to_string(), format!("{user}:{pw}")],
         None => Vec::new(),
     }
+}
+
+/// #4716 AC2 — who the deploy logs in to the store as. Its own `deploy` user
+/// once `fuseki-deploy.env` sits beside `shared` (minted by fuseki-shiro-deploy),
+/// so the store's log names the writer; until then the shared login, so a land
+/// before Jeff's shiro deploy still works.
+pub fn fuseki_login_in(shared: &std::path::Path) -> Option<(String, String)> {
+    let key_in = |file: &std::path::Path, key: &str| -> Option<String> {
+        std::fs::read_to_string(file).ok()?.lines()
+            .find_map(|l| l.trim().strip_prefix(&format!("{key}=")).map(|v| v.trim().trim_matches('"').to_string()))
+            .filter(|v| !v.is_empty())
+    };
+    if let Some(pw) = shared.parent().and_then(|d| key_in(&d.join("fuseki-deploy.env"), "FUSEKI_DEPLOY_PASSWORD")) {
+        return Some(("deploy".to_string(), pw));
+    }
+    fuseki_password_in(shared).map(|pw| (env_or("FUSEKI_ADMIN_USER", "admin"), pw))
 }
 
 /// #4533 — where the write credential lives when the environment has none:
@@ -1065,7 +1078,16 @@ pub fn fuseki_password() -> Option<String> {
             return Some(pw);
         }
     }
-    let body = std::fs::read_to_string(fuseki_credential_file()).ok()?;
+    fuseki_password_in(std::path::Path::new(&fuseki_credential_file()))
+}
+
+fn fuseki_password_in(file: &std::path::Path) -> Option<String> {
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            return Some(pw);
+        }
+    }
+    let body = std::fs::read_to_string(file).ok()?;
     body.lines()
         .find_map(|l| l.trim().strip_prefix("FUSEKI_ADMIN_PASSWORD="))
         .map(|v| v.trim().trim_matches('"').to_string())

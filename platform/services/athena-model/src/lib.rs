@@ -590,9 +590,7 @@ impl FusekiStore {
             "-H".into(), "Accept: application/sparql-results+json".into(),
             "--data-urlencode".into(), format!("{}@{}", data_param, body_file.display()),
         ];
-        if let Some(pw) = fuseki_admin_password() {
-            let user = std::env::var("FUSEKI_ADMIN_USER")
-                .unwrap_or_else(|_| "admin".to_string());
+        if let Some((user, pw)) = fuseki_login() {
             args.push("-u".into());
             args.push(format!("{}:{}", user, pw));
         }
@@ -714,8 +712,7 @@ impl FusekiStore {
     fn http(&self, extra: &[&str], path: &str) -> R<String> {
         let mut args: Vec<String> = vec!["-sf".into(), "--max-time".into(), "60".into()];
         args.extend(extra.iter().map(|a| a.to_string()));
-        if let Some(pw) = fuseki_admin_password() {
-            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+        if let Some((user, pw)) = fuseki_login() {
             args.push("-u".into());
             args.push(format!("{}:{}", user, pw));
         }
@@ -1538,8 +1535,7 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
         "--data-urlencode".into(),
         format!("query={}", sparql),
     ];
-    if let Some(pw) = fuseki_admin_password() {
-        let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+    if let Some((user, pw)) = fuseki_login() {
         args.push("-u".into());
         args.push(format!("{}:{}", user, pw));
     }
@@ -5505,6 +5501,30 @@ pub fn fuseki_admin_password() -> Option<String> {
         }
     }
     fuseki_admin_password_from_file(&fuseki_write_env_path())
+}
+
+/// #4716 AC2 — who the DAL logs in to the store as: its own `dal` user once
+/// `fuseki-dal.env` sits beside the shared credential file (minted by
+/// fuseki-shiro-deploy), so the store's log names the writer; until then the
+/// shared login, so nothing breaks before the shiro deploy.
+pub fn fuseki_login() -> Option<(String, String)> {
+    fuseki_login_in(&fuseki_write_env_path())
+}
+
+pub fn fuseki_login_in(shared: &std::path::Path) -> Option<(String, String)> {
+    let dal = shared.parent().map(|d| d.join("fuseki-dal.env"));
+    if let Some(pw) = dal.and_then(|f| std::fs::read_to_string(f).ok()).and_then(|b| {
+        b.lines()
+            .find_map(|l| l.trim().strip_prefix("FUSEKI_DAL_PASSWORD=").map(|v| v.trim().trim_matches('"').to_string()))
+            .filter(|v| !v.is_empty())
+    }) {
+        return Some(("dal".to_string(), pw));
+    }
+    let pw = match std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        Ok(pw) if !pw.is_empty() => Some(pw),
+        _ => fuseki_admin_password_from_file(shared),
+    }?;
+    Some((std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()), pw))
 }
 
 pub fn fuseki_write_env_path() -> std::path::PathBuf {
