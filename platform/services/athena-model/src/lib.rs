@@ -2680,10 +2680,13 @@ pub fn set_field(
         ),
         None => String::new(),
     };
-    store.update(&format!(
+    let update = format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> {v} . <{s}> <{d}modified> \"{m}\" }} }}{twin}",
         g = g, s = subject, ns = NS, p = prop, v = field_literal(value, shape.datatypes.get(prop).map(String::as_str)), d = DCT, m = esc(&now), twin = twin
-    ))?;
+    );
+    // #4717 (Wren, demo review) — a set outside `apply` is checked too
+    shacl::gate(store, &update, std::slice::from_ref(&subject))?;
+    store.update(&update)?;
     witness("model.set", &[("kind", kind), ("name", name), ("iri", subject.as_str()), ("field", prop), ("value", value)]);
     Ok(subject)
 }
@@ -2881,7 +2884,15 @@ pub fn delete_batch(store: &dyn Store, kind: &str, names: &[String], graph: Opti
 /// build_edge_update.
 /// #4102 — an edge op, with the revision that records it, in one update. With no
 /// revision the edge block is the whole statement, exactly as before.
-fn commit_edge_with_revision(store: &dyn Store, id: &Identity, revision: Option<&WriteReq>, edge_block: &str) -> R<()> {
+fn commit_edge_with_revision(store: &dyn Store, id: &Identity, revision: Option<&WriteReq>, edge_block: &str, subject: &str) -> R<()> {
+    // #4717 (Wren, demo review) — a link outside `apply` is checked too: the
+    // whole update is built held, checked, then sent as before
+    if store.shacl_enabled() {
+        let d = DeferredStore::new(store);
+        commit_edge_with_revision(&d, id, revision, edge_block, subject)?;
+        shacl::gate(store, &d.joined(), &[subject.to_string()])?;
+        return d.commit().map(|_| ());
+    }
     match revision {
         None => store.update(edge_block).map(|_| ()),
         Some(req) => {
@@ -2943,7 +2954,7 @@ pub fn add_edges_keeping(store: &dyn Store, kind: &str, name: &str, edges: &[(St
     assert_dal_writable(g)?; // #3356 AC4
     let body: String = triples.iter().map(|(p, t)| format!("<{s}> <{ns}{p}> <{t}> . ", s = subject, ns = NS, p = p, t = t)).collect();
     let edge_block = format!("INSERT DATA {{ GRAPH <{g}> {{ {body}}} }}", g = g, body = body);
-    commit_edge_with_revision(store, id, revision, &edge_block)?;
+    commit_edge_with_revision(store, id, revision, &edge_block, &subject)?;
     for (p, t) in &triples {
         witness("model.link", &[("subject", subject.as_str()), ("prop", p.as_str()), ("target", t.as_str())]);
     }
@@ -2970,7 +2981,7 @@ pub fn remove_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
     );
-    commit_edge_with_revision(store, id, revision, &edge_block)?;
+    commit_edge_with_revision(store, id, revision, &edge_block, &subject)?;
     witness("model.unlink", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
     Ok(subject)
 }
@@ -3211,6 +3222,13 @@ pub fn batch(
         }
         sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = graph, b = body));
     }
+    // #4717 (Wren, demo review) — a batch outside `apply` is checked too, for
+    // every row it touches
+    let mut rows: Vec<String> = deletes.iter().chain(inserts.iter())
+        .filter_map(|(s, _, _)| s.strip_prefix('<').and_then(|t| t.strip_suffix('>')).map(str::to_string)).collect();
+    rows.sort();
+    rows.dedup();
+    shacl::gate(store, &sparql, &rows)?;
     store.update(&sparql)?;
     let (nd, ni) = (deletes.len().to_string(), inserts.len().to_string());
     witness("model.batch", &[("graph", graph), ("deletes", nd.as_str()), ("inserts", ni.as_str())]);

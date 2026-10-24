@@ -45,6 +45,14 @@ fn a_write_is_pointed_at_the_scratch_and_the_ontology_is_left_alone() {
     assert_eq!(r, "DELETE { GRAPH <urn:s> { ?s ?p ?o } } INSERT { GRAPH  <urn:s> { ?s ?p 1 } } WHERE { GRAPH <urn:chorus:ontology> { ?c ?d ?e } GRAPH ?g { ?s ?p ?o } } ; # NOGRAPH <urn:x>");
 }
 
+/// NEGATIVE (Abby, demo review): `GRAPH <iri>` inside a string value is data
+/// and stays exactly as written.
+#[test]
+fn graph_text_inside_a_literal_is_not_rewritten() {
+    let w = "INSERT DATA { GRAPH <urn:g:a> { <urn:s> <urn:p> \"see GRAPH <urn:g:a> and \\\" GRAPH <urn:x>\" } }";
+    assert_eq!(rewrite_to_scratch(w, "urn:s"), "INSERT DATA { GRAPH <urn:s> { <urn:s> <urn:p> \"see GRAPH <urn:g:a> and \\\" GRAPH <urn:x>\" } }");
+}
+
 #[test]
 fn a_report_yields_every_violation_and_a_conforming_one_none() {
     let v = parse_report(&report(&[(ROW, "urn:p#a", "need 1"), (ROW, "urn:p#b", "not \\\"bool\\\""), (ROW, "urn:p#c", "bad class")])).unwrap();

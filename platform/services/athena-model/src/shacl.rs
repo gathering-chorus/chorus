@@ -41,6 +41,32 @@ pub fn scratch_name(now: u64) -> String {
 /// Every `GRAPH <g>` in `update` pointed at `scratch`, except the ontology's
 /// (shapes and class rows are read there, never written by a row write).
 pub fn rewrite_to_scratch(update: &str, scratch: &str) -> String {
+    // Abby 10-24 (demo review): a value that contains the text `GRAPH <x>` is a
+    // literal, not a graph; only the text outside string literals is rewritten
+    let mut out = String::with_capacity(update.len());
+    let mut code = String::new();
+    let mut chars = update.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            out.push_str(&rewrite_code(&std::mem::take(&mut code), scratch));
+            out.push(c);
+            while let Some(d) = chars.next() {
+                out.push(d);
+                if d == '\\' {
+                    if let Some(e) = chars.next() { out.push(e); }
+                } else if d == '"' {
+                    break;
+                }
+            }
+        } else {
+            code.push(c);
+        }
+    }
+    out.push_str(&rewrite_code(&code, scratch));
+    out
+}
+
+fn rewrite_code(update: &str, scratch: &str) -> String {
     let mut out = String::with_capacity(update.len());
     let mut rest = update;
     while let Some(i) = rest.find("GRAPH") {
