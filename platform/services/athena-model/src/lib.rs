@@ -861,12 +861,29 @@ pub fn parse_add_batch_ndjson(input: &str) -> R<Vec<WriteReq>> {
 /// Validation + serialization, pure (store only consulted for shapes/integrity
 /// by the caller). Produces the canonical Turtle for the subject.
 pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
+    to_turtle_typed(req, &BTreeMap::new())
+}
+
+/// #4713 — the literal for a field value: a boolean field (sh:datatype
+/// xsd:boolean) is written as a typed xsd:boolean, every other field as before.
+/// Before this every value went in as a plain string, so a boolean shape held
+/// "true"^^xsd:string and failed its own sh:datatype (14 rows on 10-23).
+pub fn field_literal(val: &str, xsd_local: Option<&str>) -> String {
+    match (xsd_local, val) {
+        (Some("boolean"), "true" | "1") => "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>".to_string(),
+        (Some("boolean"), "false" | "0") => "\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>".to_string(),
+        _ => format!("\"{}\"", esc(val)),
+    }
+}
+
+/// to_turtle with each field's sh:datatype in hand (`datatypes`: field local → xsd local).
+pub fn to_turtle_typed(req: &WriteReq, datatypes: &BTreeMap<String, String>) -> R<(String, String)> {
     let subject = mint(&req.kind, &req.name)?;
     let class = class_iri(&req.kind)?;
     let mut lines = vec![format!("<{}> a <{}>", subject, class)];
     for (prop, val) in &req.fields {
         check_property_local(prop)?;
-        lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+        lines.push(format!("    <{}{}> {}", NS, prop, field_literal(val, datatypes.get(prop).map(String::as_str))));
         if prop == "label" {
             lines.push(format!("    <{}> \"{}\"", RDFS_LABEL, esc(val))); // #4291 — the twin
         }
@@ -1787,6 +1804,10 @@ fn plan_writes<'a>(
     // #4358 — a field whose shape names a path outside chorus (rdfs:comment) is
     // also written there, so the row satisfies the shape it was checked against.
     for plan in plans.iter_mut() {
+        // #4713 — re-render with the shape's datatypes, so a boolean is a typed literal
+        let (_, typed) = to_turtle_typed(plan.req, &shapes[&plan.class].datatypes)
+            .map_err(|e| WritePlanError::for_req(plan.req, e))?;
+        plan.turtle = typed;
         let extra = declared_path_triples(&plan.subject, plan.req, &shapes[&plan.class]);
         plan.turtle.push_str(&extra);
     }
@@ -2535,8 +2556,8 @@ pub fn set_field(
         None => String::new(),
     };
     store.update(&format!(
-        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> \"{v}\" . <{s}> <{d}modified> \"{m}\" }} }}{twin}",
-        g = g, s = subject, ns = NS, p = prop, v = esc(value), d = DCT, m = esc(&now), twin = twin
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> {v} . <{s}> <{d}modified> \"{m}\" }} }}{twin}",
+        g = g, s = subject, ns = NS, p = prop, v = field_literal(value, shape.datatypes.get(prop).map(String::as_str)), d = DCT, m = esc(&now), twin = twin
     ))?;
     witness("model.set", &[("kind", kind), ("name", name), ("iri", subject.as_str()), ("field", prop), ("value", value)]);
     Ok(subject)
@@ -3960,6 +3981,8 @@ mod tests {
         proof_missing: bool,
         /// #4187 — the domain that definesVocabulary every kind (None = unclaimed)
         domain: Option<String>,
+        /// #4713 — the shape's `field|xsd` datatype rows
+        datatypes: Vec<String>,
         pub updates: std::cell::RefCell<Vec<String>>,
     }
     impl Store for StubStore {
@@ -3993,6 +4016,8 @@ mod tests {
                     .filter(|iri| sparql.contains(iri.as_str()))
                     .map(|iri| format!("{}|", iri))
                     .collect())
+            } else if sparql.contains("IF(BOUND(?dt)") {
+                Ok(self.datatypes.clone())
             } else if sparql.contains("sh:minCount") {
                 Ok(self.required.clone())
             } else if sparql.contains("uniqueWithin") {
@@ -4024,6 +4049,7 @@ mod tests {
             update_error: None,
             proof_missing: false,
             domain: Some("tests".into()),
+            datatypes: Vec::new(),
             updates: Default::default(),
         }
     }
@@ -4257,6 +4283,42 @@ mod tests {
         set_field(&store, "domain", "tests", "label", "Renamed", None, &tid()).unwrap();
         let u = store.updates.borrow().last().cloned().unwrap_or_default();
         assert!(u.contains(&format!("<{}label> \"Renamed\"", NS)) && u.contains(&format!("{} \"Renamed\"", rdfs)), "set: {u}");
+    }
+
+    /// #4713 — a boolean field is written as xsd:boolean, by add and by set, so the
+    /// row passes its own sh:datatype. Before this both wrote "true" as a plain string.
+    #[test]
+    fn a_boolean_field_is_written_as_xsd_boolean_by_add_and_set() {
+        let target = format!("{}value-stream-step-proving", NS);
+        let xbool = "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>";
+        let mut store = stub(&[target.as_str()], &[]);
+        store.datatypes = vec!["platform|boolean".into(), "comment|string".into()];
+        let mut req = WriteReq { kind: "domain".into(), name: "tests".into(), ..Default::default() };
+        req.fields.insert("platform".into(), "true".into());
+        req.fields.insert("comment".into(), "true".into());
+        write(&store, &req, &tid()).unwrap();
+        let u = store.updates.borrow()[0].clone();
+        assert!(u.contains(&format!("<{}platform> {}", NS, xbool)), "add: {u}");
+        assert!(u.contains(&format!("<{}comment> \"true\"", NS)), "a string field stays a plain string: {u}");
+        let subj = format!("{}tests", NS);
+        let mut store = stub(&[subj.as_str()], &[]);
+        store.datatypes = vec!["platform|boolean".into()];
+        set_field(&store, "domain", "tests", "platform", "1", None, &tid()).unwrap();
+        let u = store.updates.borrow().last().cloned().unwrap_or_default();
+        assert!(u.contains(&format!("<{}platform> {}", NS, xbool)), "set (1 → true): {u}");
+    }
+
+    /// #4713 NEGATIVE PROOF: a boolean on a field the shape types xsd:integer is
+    /// refused and nothing is written; typing does not loosen the datatype gate.
+    #[test]
+    fn a_boolean_on_an_integer_field_is_still_refused() {
+        let subj = format!("{}tests", NS);
+        let mut store = stub(&[subj.as_str()], &[]);
+        store.datatypes = vec!["writeCount|integer".into()];
+        let err = set_field(&store, "domain", "tests", "writeCount", "true", None, &tid()).unwrap_err();
+        assert!(err.starts_with("shape-violation"), "{err}");
+        assert!(store.updates.borrow().is_empty(), "a refused set writes nothing");
+        assert_eq!(field_literal("true", Some("integer")), "\"true\"", "only boolean fields are typed");
     }
 
     /// #4291 NEGATIVE PROOF: a Version whose shape requires writeCount is refused
