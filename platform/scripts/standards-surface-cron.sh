@@ -127,7 +127,8 @@ main() {
   else
     _gen_args=()
   fi
-  if bash "$GEN_SCRIPT" "${_gen_args[@]}" 2>&1; then
+  # #4722 — guarded: an empty array is "unbound" under set -u on bash 3.2
+  if bash "$GEN_SCRIPT" ${_gen_args[@]+"${_gen_args[@]}"} 2>&1; then
     log "Regeneration complete"
     mkdir -p "$(dirname "$STATE_FILE")"
     echo "$current_checksums" > "$STATE_FILE"

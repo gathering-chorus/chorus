@@ -29,6 +29,11 @@ never a count that left a graph out.
 import json, os, re, shutil, socket, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 from collections import Counter
 
+# #4446 — the census logs its own start, stop and failure.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+from service_lifecycle import service_lifecycle  # noqa: E402
+_lifecycle = service_lifecycle("com.chorus.shacl-census")
+
 HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROD = os.environ.get("FUSEKI_QUERY", "http://localhost:3030/pods/query")
@@ -194,4 +199,13 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # #4446 — only the launchd run is the service; a hand run (an after-land
+    # script) is a tool, and logs no lifecycle (as service_lifecycle_job in bash)
+    from service_lifecycle import launchd_label  # noqa: E402
+    as_service = bool(launchd_label())
+    if as_service:
+        _lifecycle.started()
+    rc = main()
+    if as_service:
+        _lifecycle.failed(f"exit {rc}", rc) if rc else _lifecycle.stopped("done")
+    sys.exit(rc)
