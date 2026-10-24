@@ -113,11 +113,79 @@ pub trait Engine: Send + Sync {
     fn as_embedded(&self) -> Option<&Embedded> {
         None
     }
+    /// #4716 — the door, when writes go through it instead of to the store.
+    fn as_door(&self) -> Option<&Door> {
+        None
+    }
+}
+
+/// #4716 — `store.kind = door`. Reads are SPARQL queries; every write is a
+/// change sent to the door's `/batch` under this service's own token, so the
+/// store's write password lives in the door alone.
+pub struct Door {
+    pub reads: Remote,
+    pub door: String,
+    pub token: String,
+}
+
+impl Engine for Door {
+    fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
+        self.reads.select(query)
+    }
+    fn update(&self, _update: &str) -> Result<(), String> {
+        Err("store: a door store sends no SPARQL update; writes go through the door".into())
+    }
+    fn as_door(&self) -> Option<&Door> {
+        Some(self)
+    }
+}
+
+impl Door {
+    /// One change to one graph, all of it or none of it (the door's batch).
+    pub fn batch(&self, graph: &str, lines: &[String]) -> Result<(), String> {
+        if self.token.trim().is_empty() {
+            return Err("store: no service token for the door; nothing written".into());
+        }
+        if lines.is_empty() {
+            return Ok(());
+        }
+        ureq::post(&format!("{}/batch", self.door.trim_end_matches('/')))
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .set("x-target-graph", graph)
+            .send_string(&lines.join("\n"))
+            .map(|_| ())
+            .map_err(|e| format!("store: the door refused the write: {e}"))
+    }
+}
+
+/// #4716 — the same change as `write_update`, as the door's batch lines
+/// (`DEL s p ?o` / `INS s p o`). The door takes no predicate wildcard, so a whole
+/// replace names the predicates the row has now (`existing`).
+pub fn write_lines(subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool, existing: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut del = |p: &str| {
+        let l = format!("DEL\t<{subject}>\t<{p}>\t?o");
+        if !out.contains(&l) { out.push(l); }
+    };
+    if whole {
+        existing.iter().for_each(|p| del(p));
+    } else {
+        fields.iter().for_each(|(k, _)| del(&format!("{NS}{k}")));
+    }
+    if let Some(t) = type_of {
+        out.push(format!("INS\t<{subject}>\t<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>\t<{NS}{t}>"));
+    }
+    for (k, cells) in fields {
+        for c in cells {
+            out.push(format!("INS\t<{subject}>\t<{NS}{k}>\t{}", term(c)));
+        }
+    }
+    out
 }
 
 pub struct Remote {
-    endpoint: String,
-    auth: Option<(String, String)>,
+    pub endpoint: String,
+    pub auth: Option<(String, String)>,
 }
 
 impl Engine for Remote {
@@ -193,6 +261,16 @@ impl Engine for Embedded {
 pub fn open_engine(s: &Settings) -> std::sync::Arc<dyn Engine> {
     match s.store_kind.as_str() {
         "sparql" => std::sync::Arc::new(Remote { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
+        "door" => {
+            // #4716 (Silas, demo review) — no token, no start: a door store that
+            // came up without one would refuse every write at run time instead
+            let token = std::env::var(&s.store_token_var).unwrap_or_default();
+            if token.trim().is_empty() {
+                eprintln!("{}: store kind 'door' needs a service token in ${}; refusing to start", crate::model::PRODUCT, s.store_token_var);
+                std::process::exit(2);
+            }
+            std::sync::Arc::new(Door { reads: Remote { endpoint: s.store_endpoint.clone(), auth: None }, door: s.store_door.clone(), token })
+        }
         "embedded" => match Embedded::open(&s.store_path) {
             Ok(e) => std::sync::Arc::new(e),
             Err(m) => {
@@ -201,7 +279,7 @@ pub fn open_engine(s: &Settings) -> std::sync::Arc<dyn Engine> {
             }
         },
         other => {
-            eprintln!("{}: store kind '{other}' is not one of sparql, embedded; refusing to start", crate::model::PRODUCT);
+            eprintln!("{}: store kind '{other}' is not one of sparql, embedded, door; refusing to start", crate::model::PRODUCT);
             std::process::exit(2);
         }
     }
@@ -313,6 +391,14 @@ impl Sparql {
     }
 }
 
+impl Sparql {
+    /// #4716 — the predicates a row has now, for a door write that replaces it whole.
+    fn predicates(&self, graph: &str, subject: &str) -> Result<Vec<String>, String> {
+        let rows = self.engine.select(&format!("SELECT DISTINCT ?p WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))?;
+        Ok(rows.iter().filter_map(|r| r.get("p").and_then(|v| v["value"].as_str()).map(String::from)).collect())
+    }
+}
+
 impl RowStore for Sparql {
     fn list(&self, class: &ClassDef, limit: usize, offset: usize) -> Result<(Vec<Row>, usize), String> {
         let count = self.select(&format!(
@@ -376,10 +462,18 @@ impl RowStore for Sparql {
     }
 
     fn write(&self, graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> Result<(), String> {
+        if let Some(d) = self.engine.as_door() {
+            let existing = if whole { self.predicates(graph, subject)? } else { Vec::new() };
+            return d.batch(graph, &write_lines(subject, type_of, fields, whole, &existing));
+        }
         self.engine.update(&write_update(graph, subject, type_of, fields, whole))
     }
 
     fn delete(&self, graph: &str, subject: &str) -> Result<(), String> {
+        if let Some(d) = self.engine.as_door() {
+            let existing = self.predicates(graph, subject)?;
+            return d.batch(graph, &write_lines(subject, None, &[], true, &existing));
+        }
         self.engine.update(&format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))
     }
 }

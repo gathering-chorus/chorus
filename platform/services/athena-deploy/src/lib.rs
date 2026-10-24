@@ -419,6 +419,13 @@ pub fn serve_check_answered(served_resp: &str) -> bool {
     served_resp.contains("\"served\"")
 }
 
+/// #4716 (Jeff 2026-10-24, option A) — the principal every model deploy writes
+/// and signs as. Never DEPLOY_ROLE or CHORUS_ROLE: those are typed strings, and
+/// "deploy" is one named writer the store can tell apart from the door.
+pub fn deploy_principal() -> &'static str {
+    "deploy"
+}
+
 /// #4080 — a bare run from INSIDE A WERK must not default to prod.
 ///
 /// On 2026-09-03 a hand run from a werk wrote the live ontology graph because
@@ -1247,9 +1254,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     let query = env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query");
     let update = env_or("FUSEKI_UPDATE", "http://localhost:3030/pods/update");
     let chorus_log = env_or("CHORUS_LOG", &format!("{root}/platform/scripts/chorus-log"));
-    let role = std::env::var("DEPLOY_ROLE")
-        .or_else(|_| std::env::var("CHORUS_ROLE"))
-        .unwrap_or_else(|_| "system".to_string());
+    let role = deploy_principal().to_string();
     // #4080 — refuse a bare werk run before anything else touches the store.
     let cwd = std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default();
     let in_werk = path_in_werk(&root) || path_in_werk(&cwd);

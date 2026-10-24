@@ -14,6 +14,10 @@ pub struct Settings {
     pub store_path: String,
     pub store_user_var: String,
     pub store_password_var: String,
+    /// #4716 — `store.kind = door`: the door every write goes through, and the NAME of
+    /// the env var holding this service's own token (never the store's password).
+    pub store_door: String,
+    pub store_token_var: String,
     pub identity_issuer: String,
     /// #4519 — the graphs the shared verifier reads this product's people from
     pub identity_graph_prefix: String,
@@ -74,6 +78,8 @@ pub fn load() -> Settings {
         store_path: value("store.path", &file),
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
+        store_door: optional("store.door", &file, "http://localhost:3360"),
+        store_token_var: optional("store.token_var", &file, ""),
         identity_issuer: value("identity.issuer", &file),
         identity_graph_prefix: value("identity.graph_prefix", &file),
         events_command: value("events.command", &file),

@@ -1162,6 +1162,19 @@ thread_local! {
     };
 }
 
+thread_local! {
+    /// #4716 — the principal `verify_identity` accepted this run. Set once, on
+    /// the only path that proves who is writing.
+    static VERIFIED_ROLE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// #4716 — who a witness event names: the VERIFIED identity, else
+/// "unattributed". DEPLOY_ROLE is never read: the door strips it and any
+/// caller can forge it (#3687), so it labelled ~11.6k writes a day as nobody.
+pub fn witness_role() -> String {
+    VERIFIED_ROLE.with(|r| r.borrow().clone()).unwrap_or_else(|| "unattributed".to_string())
+}
+
 /// Spine witness — every write and every refusal is logged via chorus-log
 /// (the crawler's zero-dep pattern). Best-effort: a logging failure goes to
 /// stderr but never changes the write's outcome.
@@ -1175,11 +1188,9 @@ fn witness(event: &str, kvs: &[(&str, &str)]) {
     {
         let root = std::env::var("CHORUS_ROOT")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-        // #3651 — NEVER mint a role identity as a default. An env-less caller logs
-        // as "unattributed"; the identity gate (verify_identity) has already refused
-        // its writes, so this only labels the refusal events themselves.
-        let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "unattributed".to_string());
-        let mut args: Vec<String> = vec![event.to_string(), role];
+        // #3651 — NEVER mint a role identity as a default: an unverified caller
+        // logs as "unattributed", which only ever labels its refusals.
+        let mut args: Vec<String> = vec![event.to_string(), witness_role()];
         for (k, v) in kvs {
             args.push(format!("{}={}", k, v)); // the crawler's exact arg shape
         }
@@ -1304,6 +1315,7 @@ pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
             claim, security_graph_with(store)
         ));
     }
+    VERIFIED_ROLE.with(|r| *r.borrow_mut() = Some(claim.to_string()));
     Ok(Identity(claim.to_string()))
 }
 
@@ -2715,14 +2727,18 @@ impl<'a> DeferredStore<'a> {
     pub fn joined(&self) -> String {
         self.held.borrow().join(" ;\n")
     }
-    /// Send every held update as one request (one Fuseki transaction).
-    pub fn commit(&self) -> R<usize> {
+    /// #4716 — the one update `commit` would send (refused when empty).
+    pub fn pending(&self) -> R<String> {
         let held = self.held.borrow();
         if held.is_empty() {
             return Err("apply: nothing to write".into());
         }
-        self.inner.update(&held.join(" ;\n"))?;
-        Ok(held.len())
+        Ok(held.join(" ;\n"))
+    }
+    /// Send every held update as one request (one Fuseki transaction).
+    pub fn commit(&self) -> R<usize> {
+        self.inner.update(&self.pending()?)?;
+        Ok(self.held())
     }
 }
 
@@ -2749,27 +2765,41 @@ pub enum ApplyOp {
 /// #4715 AC1 — apply a revision and every op to one row in ONE update. Any
 /// check that refuses refuses the whole apply, and nothing is written.
 pub fn apply(store: &dyn Store, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<usize> {
-    if ops.is_empty() {
-        return Err("apply: no change named".into());
-    }
     let d = DeferredStore::new(store);
-    if let Some(r) = revision {
-        write_many(&d, std::slice::from_ref(r), id)?;
-    }
-    for op in ops {
-        match op {
-            ApplyOp::Set { field, value } => { set_field(&d, kind, name, field, value, Some(graph), id)?; }
-            ApplyOp::Link { edges } => { add_edges_keeping(&d, kind, name, edges, Some(graph), id, None)?; }
-            ApplyOp::Triples { deletes, inserts } => { batch(&d, graph, deletes, inserts, id)?; }
-        }
-    }
-    // #4717 AC1 — the whole apply, checked by Jena's SHACL before it is sent
-    if d.held() > 0 {
-        shacl::gate(store, &d.joined(), &[mint(kind, name)?])?;
-    }
+    stage_apply(&d, kind, name, graph, revision, ops, id)?;
     let n = d.commit()?;
     witness("model.apply", &[("kind", kind), ("name", name), ("ops", ops.len().to_string().as_str()), ("updates", n.to_string().as_str())]);
     Ok(n)
+}
+
+/// #4716 — `apply --dry-run`: every check `apply` runs, then the one update it
+/// would send, returned instead of sent.
+pub fn apply_plan(store: &dyn Store, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<String> {
+    let d = DeferredStore::new(store);
+    stage_apply(&d, kind, name, graph, revision, ops, id)?;
+    d.pending()
+}
+
+fn stage_apply(d: &DeferredStore, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<()> {
+    if ops.is_empty() {
+        return Err("apply: no change named".into());
+    }
+    if let Some(r) = revision {
+        write_many(d, std::slice::from_ref(r), id)?;
+    }
+    for op in ops {
+        match op {
+            ApplyOp::Set { field, value } => { set_field(d, kind, name, field, value, Some(graph), id)?; }
+            ApplyOp::Link { edges } => { add_edges_keeping(d, kind, name, edges, Some(graph), id, None)?; }
+            ApplyOp::Triples { deletes, inserts } => { batch(d, graph, deletes, inserts, id)?; }
+        }
+    }
+    // #4717 AC1 — the whole apply, checked by Jena's SHACL before it is sent;
+    // in stage_apply so a dry run refuses exactly what apply refuses (#4716)
+    if d.held() > 0 {
+        shacl::gate(d.inner, &d.joined(), &[mint(kind, name)?])?;
+    }
+    Ok(())
 }
 
 /// #4715 — parse `apply`'s stdin: one JSON object per line, one of
