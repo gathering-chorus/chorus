@@ -31,6 +31,7 @@ const KADE: &str = "https://id.lightlifeurbangardens.com/kade/profile/card#me";
 #[test]
 fn a_verified_write_is_labelled_with_its_real_author() {
     let s = IdStore { webid: KADE };
+    assert_eq!(witness_role(), "unattributed", "nothing is verified before the token is");
     verify_identity_token("tok", &StubVerifier(Ok(KADE.into())), &s, 0).unwrap();
     assert_eq!(witness_role(), "kade");
 }
@@ -38,11 +39,17 @@ fn a_verified_write_is_labelled_with_its_real_author() {
 #[test]
 fn negative_proof_an_unverified_caller_stays_unattributed_even_with_a_forged_env() {
     // The env string is what #3687 stopped trusting: it must not label either.
-    std::env::set_var("DEPLOY_ROLE", "silas");
-    let s = IdStore { webid: KADE };
-    let e = verify_identity_token("forged", &StubVerifier(Err("bad signature".into())), &s, 0);
-    assert!(e.is_err());
-    assert_eq!(witness_role(), "unattributed");
+    // a fresh thread: VERIFIED_ROLE is per thread, so nothing another test
+    // verified can leak in and make this pass or fail for the wrong reason
+    std::thread::spawn(|| {
+        std::env::set_var("DEPLOY_ROLE", "silas");
+        let s = IdStore { webid: KADE };
+        let e = verify_identity_token("forged", &StubVerifier(Err("bad signature".into())), &s, 0);
+        assert!(e.is_err());
+        assert_eq!(witness_role(), "unattributed");
+    })
+    .join()
+    .expect("the negative proof ran");
 }
 
 /// src/main.rs — the TBox mint (`class`/`property`/`shape`) recorded "who" from

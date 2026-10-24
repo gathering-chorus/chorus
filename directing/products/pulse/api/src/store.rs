@@ -261,11 +261,16 @@ impl Engine for Embedded {
 pub fn open_engine(s: &Settings) -> std::sync::Arc<dyn Engine> {
     match s.store_kind.as_str() {
         "sparql" => std::sync::Arc::new(Remote { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
-        "door" => std::sync::Arc::new(Door {
-            reads: Remote { endpoint: s.store_endpoint.clone(), auth: None },
-            door: s.store_door.clone(),
-            token: std::env::var(&s.store_token_var).unwrap_or_default(),
-        }),
+        "door" => {
+            // #4716 (Silas, demo review) — no token, no start: a door store that
+            // came up without one would refuse every write at run time instead
+            let token = std::env::var(&s.store_token_var).unwrap_or_default();
+            if token.trim().is_empty() {
+                eprintln!("{}: store kind 'door' needs a service token in ${}; refusing to start", crate::model::PRODUCT, s.store_token_var);
+                std::process::exit(2);
+            }
+            std::sync::Arc::new(Door { reads: Remote { endpoint: s.store_endpoint.clone(), auth: None }, door: s.store_door.clone(), token })
+        }
         "embedded" => match Embedded::open(&s.store_path) {
             Ok(e) => std::sync::Arc::new(e),
             Err(m) => {
