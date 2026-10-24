@@ -96,3 +96,67 @@ describe('#4638 the live tree', () => {
     expect(JSON.stringify(s).length).toBeLessThan(JSON.stringify(t).length);
   });
 });
+
+describe('#4638 the tree over pulse (live wiring)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const request = require('supertest');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createApp } = require('./service');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { MessageStore } = require('./store');
+  const recent = (s: number) => new Date(Date.now() - s * 1000).toISOString();
+  const actorStates = () => ({
+    getActorStates: () => ({
+      derivedAt: new Date().toISOString(),
+      actors: [
+        { aboutPrincipal: 'principal-jeff', stream: [{ action: 'jeff.input.surfaced', timestamp: recent(1) }] },
+        { aboutPrincipal: 'principal-wren', stream: [{ action: 'agent.action', timestamp: recent(10) }, { action: 'agent.action', timestamp: recent(40) }] },
+        { aboutPrincipal: 'principal-silas', stream: [{ action: 'agent.action', timestamp: recent(600) }] },
+        { aboutPrincipal: 'principal-kade', stream: [] },
+      ],
+    }),
+  });
+
+  it('GET /api/tree joins a burst sent to two roles into one prompt, the shared line kept once', async () => {
+    const store = new MessageStore(':memory:');
+    store.sendJeffInput('wren', '@wren @silas pull 4638');
+    store.sendJeffInput('silas', '@wren @silas pull 4638');
+    store.sendJeffInput('wren', 'and pair');
+    const res = await request(createApp(store, undefined, undefined, actorStates())).get('/api/tree');
+    expect(res.status).toBe(200);
+    expect(res.body.prompts).toHaveLength(1);
+    expect(res.body.prompts[0].text).toBe('@wren @silas pull 4638\nand pair');
+    expect(res.body.prompts[0].to.sort()).toEqual(['silas', 'wren']);
+    expect(res.body.prompts[0].roles.map((r: { role: string; state: string }) => `${r.role}:${r.state}`)).toEqual(['silas:quiet', 'wren:moving']);
+  });
+
+  it('each role says moving or quiet from its newest action; a role with no action is not invented', async () => {
+    const store = new MessageStore(':memory:');
+    const res = await request(createApp(store, undefined, undefined, actorStates())).get('/api/tree');
+    const by = Object.fromEntries(res.body.roles.map((r: { role: string }) => [r.role, r]));
+    expect(by.wren.state).toBe('moving');
+    expect(by.wren.secondsSinceLastCall).toBeLessThan(20);
+    expect(by.silas.state).toBe('quiet');
+    expect(by.kade).toBeUndefined();
+  });
+
+  it("GET /api/tree/:role is that role's slice only", async () => {
+    const store = new MessageStore(':memory:');
+    store.sendJeffInput('silas', '@silas r u stuk');
+    const app = createApp(store, undefined, undefined, actorStates());
+    const wren = (await request(app).get('/api/tree/wren')).body;
+    const silas = (await request(app).get('/api/tree/silas')).body;
+    expect(wren.me.role).toBe('wren');
+    expect(wren.prompts).toEqual([]);
+    expect(silas.prompts.map((p: { text: string }) => p.text)).toEqual(['@silas r u stuk']);
+  });
+
+  it('negative proof: with no actor-state service the tree has no roles and refuses every line by name', async () => {
+    const store = new MessageStore(':memory:');
+    store.sendJeffInput('wren', 'hello');
+    const res = await request(createApp(store)).get('/api/tree');
+    expect(res.body.roles).toEqual([]);
+    expect(res.body.prompts).toEqual([]);
+    expect(res.body.refusedSenders).toEqual({ jeff: 1 });
+  });
+});

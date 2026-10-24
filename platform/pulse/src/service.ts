@@ -20,6 +20,7 @@ import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
+import { registerTreeRoutes } from './pulse-tree';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
 
@@ -549,6 +550,8 @@ export function createApp(
           }
     );
   });
+  // #4638 — the live tree: prompt → role → turn and card, derived once in pulse
+  registerTreeRoutes(app, store, actorStateService);
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {
     res.json(

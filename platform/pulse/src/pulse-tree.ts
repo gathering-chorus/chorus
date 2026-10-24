@@ -35,6 +35,8 @@ export interface TreeInput {
   turns: TurnFact[];
   runs: RunFact[];
   notes: NoteFact[];
+  /** each role's last tool call, from the actor-state stream, until turns carry their own */
+  lastCalls?: Record<string, string>;
   lastN?: number;
 }
 
@@ -60,7 +62,8 @@ export function joinPrompts(lines: LineFact[], actors: string[]): { prompts: Pro
     const cur = open.get(l.from);
     const prev = lastAt.get(l.from);
     if (cur && prev && secs(l.sentAt, prev) <= BURST_GAP_S) {
-      cur.text += '\n' + l.text;
+      // one line sent to two roles is stored once per role: same words, one line of the prompt
+      if (cur.text.split('\n').pop() !== l.text) cur.text += '\n' + l.text;
       cur.lines.push(l.id);
       for (const t of l.to) if (!cur.to.includes(t)) cur.to.push(t);
     } else {
@@ -74,8 +77,8 @@ export function joinPrompts(lines: LineFact[], actors: string[]): { prompts: Pro
   return { prompts, lineToPrompt, refused };
 }
 
-function roleState(turns: TurnFact[], now: string): { state: 'moving' | 'quiet'; secondsSinceLastCall: number } {
-  const last = turns.reduce((m, t) => (Date.parse(t.lastCallAt) > Date.parse(m) ? t.lastCallAt : m), '1970-01-01T00:00:00Z');
+function roleState(calls: string[], now: string): { state: 'moving' | 'quiet'; secondsSinceLastCall: number } {
+  const last = calls.reduce((m, c) => (Date.parse(c) > Date.parse(m) ? c : m), '1970-01-01T00:00:00Z');
   const s = secs(now, last);
   return { state: s < QUIET_AFTER_S ? 'moving' : 'quiet', secondsSinceLastCall: s };
 }
@@ -88,15 +91,19 @@ export function buildTree(input: TreeInput): Tree {
 
   const byRole = new Map<string, TurnFact[]>();
   for (const t of input.turns) byRole.set(t.role, [...(byRole.get(t.role) ?? []), t]);
-  const roles = [...byRole.entries()].map(([role, ts]) => ({ role, ...roleState(ts, input.now) })).sort((a, b) => a.role.localeCompare(b.role));
+  const lastCalls = input.lastCalls ?? {};
+  const roleNames = [...new Set([...byRole.keys(), ...Object.keys(lastCalls)])];
+  const roles = roleNames
+    .map(role => ({ role, ...roleState([...(byRole.get(role) ?? []).map(t => t.lastCallAt), ...(lastCalls[role] ? [lastCalls[role]] : [])], input.now) }))
+    .sort((a, b) => a.role.localeCompare(b.role));
   const stateOf = new Map(roles.map(r => [r.role, r]));
 
   const shown = prompts.slice(-(input.lastN ?? LAST_N_PROMPTS)).reverse();
   const nodes: PromptNode[] = shown.map(p => {
     const turns = input.turns.filter(t => promptOf(t.wokenByLine) === p.id);
     const runs = input.runs.filter(r => promptOf(r.startedByLine) === p.id);
-    const roleNames = [...new Set([...p.to.filter(r => byRole.has(r)), ...turns.map(t => t.role)])].sort();
-    const roleNodes: RoleNode[] = roleNames.map(role => {
+    const named = [...new Set([...p.to.filter(r => stateOf.has(r)), ...turns.map(t => t.role)])].sort();
+    const roleNodes: RoleNode[] = named.map(role => {
       const mine = turns.filter(t => t.role === role).sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
       const cards = [...new Set(mine.map(t => t.card).filter((c): c is number => c !== undefined))].map(card => ({
         card,
@@ -124,4 +131,48 @@ export function sliceFor(tree: Tree, role: string): { at: string; me?: Tree['rol
       return mine ? [{ id: p.id, by: p.by, to: p.to, at: p.at, text: p.text, lines: p.lines, mine }] : [];
     }),
   };
+}
+
+// --- live wiring ---------------------------------------------------------------
+
+type ActorStates = { derivedAt?: string; actors?: Array<{ aboutPrincipal?: string; stream?: Array<{ timestamp?: string }> }> };
+type LineStore = { queryMessages: (o: { type?: string; since?: string; limit?: number }) => Array<{ id: number; from: string; to: string; content: string; created_at: string }> };
+
+const role = (principal = '') => principal.replace(/^principal-/, '');
+/** pulse's store writes UTC without a zone ("2026-10-24 20:51:53") */
+const utc = (t: string) => (/[zZ]|[+-]\d\d:?\d\d$/.test(t) ? new Date(t).toISOString() : new Date(t.replace(' ', 'T') + 'Z').toISOString());
+
+/** The actors are whoever the roles door lists (via actor-state); a role's last call is its newest stream action. */
+export function factsFromActorState(states: unknown): { actors: string[]; lastCalls: Record<string, string> } {
+  const actors: string[] = [];
+  const lastCalls: Record<string, string> = {};
+  for (const a of (states as ActorStates)?.actors ?? []) {
+    const r = role(a.aboutPrincipal);
+    if (!r) continue;
+    actors.push(r);
+    const ts = (a.stream ?? []).map(x => x.timestamp).filter((x): x is string => !!x).map(utc);
+    if (ts.length) lastCalls[r] = ts.reduce((m, c) => (Date.parse(c) > Date.parse(m) ? c : m));
+  }
+  return { actors, lastCalls };
+}
+
+export function liveTree(store: LineStore, states: unknown, now = new Date().toISOString(), lastN = LAST_N_PROMPTS): Tree {
+  const since = new Date(Date.parse(now) - 6 * 3600_000).toISOString().replace('T', ' ').slice(0, 19);
+  const lines: LineFact[] = store.queryMessages({ type: 'jeff-input', since, limit: 500 }).map(m => ({
+    id: String(m.id), from: m.from, to: m.to ? [m.to] : [], text: m.content, sentAt: utc(m.created_at),
+  }));
+  const { actors, lastCalls } = factsFromActorState(states);
+  return buildTree({ now, actors, lines, turns: [], runs: [], notes: [], lastCalls, lastN });
+}
+
+/** GET /api/tree (whole tree), GET /api/tree/:role (one role's slice). Read-only. */
+export function registerTreeRoutes(
+  app: { get: (path: string, h: (req: { params: Record<string, string>; query: Record<string, unknown> }, res: { json: (b: unknown) => void }) => void) => void },
+  store: LineStore,
+  actorStateService?: { getActorStates: () => unknown },
+): void {
+  const n = (q: unknown) => Math.min(Math.max(parseInt(String(q ?? LAST_N_PROMPTS), 10) || LAST_N_PROMPTS, 1), 50);
+  const build = (q: unknown) => liveTree(store, actorStateService?.getActorStates(), new Date().toISOString(), n(q));
+  app.get('/api/tree', (req, res) => res.json(build(req.query.n)));
+  app.get('/api/tree/:role', (req, res) => res.json(sliceFor(build(req.query.n), req.params.role)));
 }
