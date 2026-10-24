@@ -26,8 +26,6 @@
     --silas: #58a6ff;
     --kade: #d29922;
     --jeff: #e6edf3;
-    --abby-normal: #a78bfa;
-    --borg-queen: #2dd4bf;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   /* Always show scrollbars — force visible on macOS */
@@ -297,8 +295,6 @@
   .msg-role.msg-from-wren .msg-bubble { background: rgba(63,185,80,0.10); }
   .msg-role.msg-from-silas .msg-bubble { background: rgba(88,166,255,0.10); }
   .msg-role.msg-from-kade .msg-bubble { background: rgba(210,153,34,0.10); }
-  .msg-role.msg-from-abby-normal .msg-bubble { background: rgba(167,139,250,0.10); }
-  .msg-role.msg-from-borg-queen .msg-bubble { background: rgba(45,212,191,0.10); }
   .msg-role .msg-bubble strong { font-size: 0.8rem; }
   .msg-role.msg-demo .msg-bubble, .msg-jeff.msg-demo .msg-bubble {
     background: #1a2e1a; border: 1px solid var(--green); border-left: 4px solid var(--green);
@@ -382,21 +378,6 @@
   }
   .input-field:focus { border-color: var(--accent); }
   .input-field::placeholder { color: var(--text-muted); }
-  .photo-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.75rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.2s;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .photo-btn:hover { border-color: var(--accent); color: var(--accent); }
   .mic-btn {
     background: transparent;
     border: 1px solid var(--border);
@@ -583,7 +564,6 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
     <textarea class="input-field" id="input" rows="1"
       placeholder="Type a message... (@ a role, or just type)"
       autocomplete="off"></textarea>
-    <button type="button" class="photo-btn" id="photo-btn" title="Attach a photo">📷<input type="file" id="photo-input" accept="image/*" multiple style="display:none"></button>
     <button class="mic-btn" id="mic-btn" title="Voice input (hold to talk)">🎙</button>
     <button class="send-btn" id="send-btn">Send</button>
   </div>
@@ -852,11 +832,6 @@ sendBtn.addEventListener('click', sendMessage);
 const isMobile = () => window.innerWidth <= 768;
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
-    if (e.metaKey || e.ctrlKey) {
-      e.preventDefault();
-      sendMessage();
-      return;
-    }
     if (isMobile()) {
       // Mobile: Enter = newline (default textarea behavior), send via button only
       return;
@@ -959,22 +934,25 @@ micBtn.addEventListener('click', async () => {
 });
 
 function renderTiles(tiles) {
-  tilesContainer.innerHTML = (tiles || []).filter(t => t.role !== 'team' && t.role !== '#team').map(t => {
+  tilesContainer.innerHTML = tiles.map(t => {
+    const stateColor = t.state === 'building' ? 'var(--green)' :
+                       t.state === 'directing' ? 'var(--green)' :
+                       t.state === 'blocked' ? 'var(--red)' :
+                       t.state === 'waiting' ? 'var(--orange)' :
+                       t.state === 'watching' ? 'var(--orange)' :
+                       t.state === 'observing' ? 'var(--accent)' :
+                       t.state === 'away' ? 'var(--text-muted)' :
+                       'var(--text-muted)';
     const action = t.lastAction ? t.lastAction.substring(0, 50) : '';
     const locked = selectedRoles.has(t.role);
-    const cardHtml = t.divergent
-      ? `<span class="card-id-link" data-card-id="${t.cardDeclared}">#${t.cardDeclared}</span><span class="card-arrow">→</span><span class="card-id-link" data-card-id="${t.cardInferred}">#${t.cardInferred}</span>`
-      : ((t.cards && t.cards.length > 0)
-        ? t.cards.map(c => `<span class="card-id-link" data-card-id="${c.replace('#','')}">${c.startsWith('#')?c:'#'+c}</span>`).join(' ')
-        : (t.card ? `<span class="card-id-link" data-card-id="${t.card.replace('#','')}">${t.card.startsWith('#')?t.card:'#'+t.card}</span>` : '—'));
     return `
       <div class="tile tile-${t.role}${locked ? ' tile-locked' : ''}${foldRole === t.role ? ' tile-folded' : ''}" onclick="toggleLock('${t.role}')">
         <div class="tile-top">
           <span class="tile-name">${t.role.charAt(0).toUpperCase() + t.role.slice(1)}${locked ? ' ◀' : ''}</span>
-          <span class="tile-card${t.divergent ? ' divergent' : ''}">${cardHtml}</span>
+          <span class="tile-card${t.divergent ? ' divergent' : ''}" title="${t.divergent ? 'declared: #' + t.cardDeclared + ' — inferred from activity: #' + t.cardInferred : ((t.cards && t.cards.length > 1) ? 'all WIP cards owned by ' + t.role : '')}">${t.divergent ? '#' + t.cardDeclared + '<span class="card-arrow">→</span>#' + t.cardInferred : ((t.cards && t.cards.length > 0) ? t.cards.join(' ') : (t.card || '—'))}</span>
         </div>
         <div class="tile-bottom">
-          <span class="tile-state">${t.state}</span>
+          <span class="tile-state"><span class="dot" style="background:${stateColor}"></span> ${t.state}</span>
           <span class="tile-age">${t.lastActionAge || ''}</span>
         </div>
         ${action ? `<div class="tile-action">${escapeHtml(action)}</div>` : ''}
@@ -1126,7 +1104,7 @@ function renderTranscript() {
 
 function buildMessageEl(msg, cls, isClosing) {
   const isJeff = msg.from === 'jeff';
-  const isRole = roomRoles.includes(msg.from) || (msg.from && !isJeff && msg.from !== 'guest' && !msg.from.startsWith('anon'));
+  const isRole = roomRoles.includes(msg.from);
   const isGuest = !isJeff && !isRole;
   const nodeClass = cls || ClearingTree.classifyNode(msg);
 
@@ -1169,10 +1147,9 @@ function buildMessageEl(msg, cls, isClosing) {
   }
 
   // Sender label — roles get colored name, guests get purple name, Jeff gets nothing
-  const fromName = msg.from === 'abby-normal' ? 'Abby Normal' : msg.from === 'borg-queen' ? 'Borg Queen' : (msg.from ? msg.from.charAt(0).toUpperCase() + msg.from.slice(1) : '');
   const sender = isJeff ? ''
-    : isGuest ? `<strong style="color:#d2a8ff">${fromName}</strong><br>`
-    : `<strong style="color:var(--${msg.from})">${fromName}</strong><br>`;
+    : isGuest ? `<strong style="color:#d2a8ff">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`
+    : `<strong style="color:var(--${msg.from})">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`;
 
   // #3746 — muting retired: the role filter PRUNES unselected roles' messages at the tree level.
 
@@ -1247,9 +1224,7 @@ function escapeHtml(text) {
 }
 
 function linkify(text) {
-  let s = text.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#58a6ff;text-decoration:underline;">$1</a>');
-  s = s.replace(/(^|[\s(])#(\d{3,5})\b/g, '$1<span class="card-id-link" data-card-id="$2" style="cursor:pointer;text-decoration:underline;color:var(--accent);">#$2</span>');
-  return s;
+  return text.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#58a6ff;text-decoration:underline;">$1</a>');
 }
 
 /** Lightweight markdown→HTML for message bubbles (#1720) */
@@ -1569,79 +1544,14 @@ async function loadFlow() {
 loadFlow();
 setInterval(loadFlow, 15000);
 
-// Card detail click handler (#1905, #4639)
+// Card detail click handler (#1905)
 const cardDetailCache = {};
-
-function openCardModal(cardId) {
-  let modal = document.getElementById('card-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'card-modal';
-    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-    modal.innerHTML = `
-      <div id="card-modal-content" style="background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:550px;width:100%;max-height:85vh;overflow-y:auto;padding:16px;color:#c9d1d9;font-family:inherit;position:relative;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
-        <button id="card-modal-close" style="position:absolute;top:12px;right:12px;background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;line-height:1;">✕</button>
-        <div id="card-modal-body"></div>
-      </div>
-    `;
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal || e.target.id === 'card-modal-close') modal.style.display = 'none';
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && modal.style.display !== 'none') modal.style.display = 'none';
-    });
-    document.body.appendChild(modal);
-  }
-  modal.style.display = 'flex';
-  const body = document.getElementById('card-modal-body');
-  body.innerHTML = '<div style="font-size:0.85rem;color:#8b949e;padding:16px 0;text-align:center;">Loading card #' + escapeHtml(cardId) + '...</div>';
-
-  function render(card) {
-    let h = '<div style="font-size:1rem;font-weight:700;color:#f0f6fc;margin-bottom:6px;padding-right:24px;">' + escapeHtml(card.title) + '</div>';
-    h += '<div style="font-size:0.8rem;color:#8b949e;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
-    h += '<span style="color:#58a6ff;font-weight:600;">#' + escapeHtml(card.id) + '</span>';
-    if (card.status) h += ' · <span style="background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:4px;">' + escapeHtml(card.status) + '</span>';
-    if (card.owner) h += ' · <span style="color:var(--' + escapeHtml(card.owner) + ', #a78bfa);font-weight:600;">' + escapeHtml(card.owner) + '</span>';
-    if (card.domains) h += ' · <span style="font-size:0.75rem;color:#8b949e;">' + escapeHtml(card.domains) + '</span>';
-    h += '</div>';
-
-    if (card.description) {
-      h += '<div style="margin-bottom:12px;font-size:0.8rem;line-height:1.5;color:#c9d1d9;white-space:pre-wrap;background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:6px;border-left:3px solid #58a6ff;">' + escapeHtml(card.description) + '</div>';
-    }
-
-    if (card.ac && card.ac.length > 0) {
-      h += '<div style="margin-top:12px;border-top:1px solid #30363d;padding-top:10px;">';
-      h += '<div style="font-size:0.8rem;font-weight:700;color:#f0f6fc;margin-bottom:6px;">Acceptance Criteria</div>';
-      for (const item of card.ac) {
-        const check = item.done ? '✓' : '○';
-        const color = item.done ? 'var(--green, #3fb950)' : 'var(--text-muted, #8b949e)';
-        const style = item.done ? 'text-decoration:line-through;color:#8b949e;' : 'color:#c9d1d9;';
-        h += '<div style="font-size:0.8rem;margin:3px 0;line-height:1.4;"><span style="color:' + color + ';font-weight:700;margin-right:6px;">' + check + '</span><span style="' + style + '">' + escapeHtml(item.text) + '</span></div>';
-      }
-      h += '</div>';
-    }
-    body.innerHTML = h;
-  }
-
-  if (cardDetailCache[cardId]) {
-    render(cardDetailCache[cardId]);
-    return;
-  }
-  fetch('/api/card/' + cardId)
-    .then(r => { if (!r.ok) throw new Error('Not found'); return r.json(); })
-    .then(data => { cardDetailCache[cardId] = data; render(data); })
-    .catch(err => { body.innerHTML = '<div style="font-size:0.85rem;color:var(--red);padding:12px 0;">Failed to load card #' + escapeHtml(cardId) + '</div>'; });
-}
-
 document.addEventListener('click', async (e) => {
   const link = e.target.closest('.card-id-link');
   if (!link) return;
   const cardId = link.getAttribute('data-card-id');
   const detailEl = document.getElementById('card-detail-' + cardId);
-  if (!detailEl) {
-    openCardModal(cardId);
-    return;
-  }
+  if (!detailEl) return;
 
   // Toggle
   if (detailEl.style.display !== 'none') {
