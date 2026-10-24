@@ -10,16 +10,20 @@
 //! violation, the scratch graph is gone after a refusal, the sweeper drops a
 //! stale one, and loading the shapes leaves the shared blank nodes as they were.
 use athena_model::shacl::{gate, sweep, SCRATCH_PREFIX, SCRATCH_TTL_SECS};
-use athena_model::{FusekiStore, Store};
+use athena_model::{field_literal, FusekiStore, Store};
 use std::process::{Child, Command};
 use std::sync::{Mutex, OnceLock};
 
 const C: &str = "https://jeffbridwell.com/chorus#";
 const ALERTS: &str = "urn:chorus:instances:alerts";
+const HERALDS: &str = "urn:chorus:domains:heralds";
+const SENSOR_TARGETS: &str = "<https://jeffbridwell.com/chorus#sensor-services> a <https://jeffbridwell.com/chorus#Sensor> .
+<https://jeffbridwell.com/chorus#principal-silas> a <https://jeffbridwell.com/chorus#Principal> .";
 
 struct Server { _child: Child, port: u16, _dir: std::path::PathBuf }
 impl Drop for Server {
-    fn drop(&mut self) { let _ = self._child.kill(); }
+    // removing its directory is the watcher's signal to stop the server
+    fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self._dir); let _ = self._child.wait(); }
 }
 
 fn jar() -> Option<std::path::PathBuf> {
@@ -41,8 +45,12 @@ fn boot(shacl: bool) -> Option<Server> {
          <#svc> a fuseki:Service ; fuseki:name \"t\" ;\n fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name \"query\" ] ;\n\
          fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name \"update\" ] ;\n {svc}\n fuseki:dataset [ a ja:MemoryDataset ] .\n")).ok()?;
     let java = std::env::var("JAVA").unwrap_or_else(|_| "/opt/homebrew/opt/openjdk/bin/java".into());
-    let child = Command::new(java).current_dir(&dir).env("FUSEKI_BASE", &dir).env("FUSEKI_HOME", jar.parent()?)
-        .args(["-Xmx256m", "-cp", jar.to_str()?, "org.apache.jena.fuseki.cmd.FusekiCmd", "--config=config.ttl", &format!("--port={port}")])
+    // The shared server lives in a static that is never dropped, so it must end
+    // with the test process itself: a watcher stops it once this pid is gone
+    // (10-24: seven test servers outlived their runs before this).
+    let watch = format!("\"$0\" -Xmx256m -cp \"$1\" org.apache.jena.fuseki.cmd.FusekiCmd --config=config.ttl --port={port} & J=$!; \
+        while kill -0 {me} 2>/dev/null && kill -0 $J 2>/dev/null && [ -e \"$2\" ]; do sleep 1; done; kill $J 2>/dev/null; wait $J", me = std::process::id());
+    let child = Command::new("sh").args(["-c", &watch, &java, jar.to_str()?, dir.join("config.ttl").to_str()?]).current_dir(&dir).env("FUSEKI_BASE", &dir).env("FUSEKI_HOME", jar.parent()?)
         .stdout(std::fs::File::create(dir.join("server.log")).ok()?).stderr(std::process::Stdio::null()).spawn().ok()?;
     for _ in 0..60 {
         if Command::new("curl").args(["-sf", "-o", "/dev/null", "--max-time", "1", &format!("http://127.0.0.1:{port}/$/ping")]).status().is_ok_and(|s| s.success()) {
@@ -60,6 +68,9 @@ fn server() -> Option<&'static Server> {
         let s = boot(true)?;
         let st = FusekiStore { endpoint: format!("http://127.0.0.1:{}/t", s.port) };
         st.update(&format!("INSERT DATA {{ GRAPH <urn:chorus:ontology> {{ {SHAPES} }} GRAPH <{ALERTS}> {{ {ROWS} }} GRAPH <urn:chorus:instances:platforms> {{ {TARGETS} }} }}")).ok()?;
+        // the live SensorRunShape (and the CoreShape it names), read 10-24 05:50
+        let sensor = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sensorrun-shape-4717.nt")).ok()?;
+        st.update(&format!("INSERT DATA {{ GRAPH <urn:chorus:ontology> {{ {sensor} }} GRAPH <{HERALDS}> {{ {SENSOR_TARGETS} }} }}")).ok()?;
         Some(s)
     }).as_ref()
 }
@@ -165,7 +176,7 @@ fn loading_the_shapes_leaves_the_shared_blank_nodes_unchanged() {
     assert!(shapes.contains("an alert needs an owner"), "{shapes}");
     let _ = gate(&st, &format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-a> <{C}muted> \"x\" }} }}"), &[format!("{C}alert-a")]);
     assert_eq!(count(), before);
-    assert_eq!(before, vec!["5".to_string()], "the fixture has 5 property blank nodes");
+    assert!(before[0].parse::<u32>().unwrap() >= 5, "the fixture's property blank nodes are counted: {before:?}");
 }
 
 /// NEGATIVE: SHACL switched on against a store with no SHACL service refuses
@@ -178,4 +189,50 @@ fn negative_proof_no_shacl_service_refuses_rather_than_passing() {
     let e = gate(&st, &format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-z> <{C}owner> \"x\" }} }}"), &[format!("{C}alert-z")]).unwrap_err();
     assert!(e.contains("shacl") && e.contains("HTTP failure"), "{e}");
     assert_eq!(scratch_graphs(&st), 0);
+}
+
+/// Wren 10-24: replay a real hourly sensor write (services, 06:38 run) with
+/// SHACL on. The run starts as a row with no counts; its end write sets the
+/// outcome, the end time and the four counts. Typed by the live shape, it
+/// passes; the same write with plain literals, as the DAL wrote it before
+/// #4717, is refused for every count.
+#[test]
+fn a_real_hourly_sensor_end_write_passes_typed_and_plain_literals_are_refused() {
+    let _l = lock();
+    let st = store(need_server!());
+    let run = format!("{C}sensor-run-services-20261024t063855z");
+    st.update(&format!("DELETE WHERE {{ GRAPH <{HERALDS}> {{ <{run}> ?p ?o }} }} ;\n\
+        INSERT DATA {{ GRAPH <{HERALDS}> {{ <{run}> a <{C}SensorRun> ; <{C}label> \"services-20261024t063855z\" ; \
+        <{C}requestedBy> <{C}principal-silas> ; <{C}ownedBy> <{C}principal-silas> ; <{C}startedAt> \"2026-10-24T06:38:55Z\" ; \
+        <{C}runOfSensor> <{C}sensor-services> ; <{C}runTarget> \"localhost\" ; <{C}sensorOutcome> \"running\" }} }}")).unwrap();
+    let dt = |f: &str| st.select_v(&format!("SELECT ?v WHERE {{ GRAPH <urn:chorus:ontology> {{ <{C}SensorRunShape> <http://www.w3.org/ns/shacl#property> ?b . ?b <http://www.w3.org/ns/shacl#path> <{C}{f}> ; <http://www.w3.org/ns/shacl#datatype> ?d BIND(STRAFTER(STR(?d), \"#\") AS ?v) }} }}")).unwrap().pop();
+    let end = |typed: bool| {
+        let lit = |f: &str, v: &str| if typed { field_literal(v, dt(f).as_deref()) } else { format!("\"{v}\"") };
+        format!("DELETE {{ GRAPH <{HERALDS}> {{ <{run}> <{C}sensorOutcome> ?o }} }} INSERT {{ GRAPH <{HERALDS}> {{ <{run}> <{C}sensorOutcome> \"red\" ; \
+            <{C}sensorEndedAt> {} ; <{C}plannedCreate> {} ; <{C}plannedUpdate> {} ; <{C}plannedDelete> {} ; <{C}plannedUnchanged> {} }} }} \
+            WHERE {{ GRAPH <{HERALDS}> {{ <{run}> <{C}sensorOutcome> ?o }} }}",
+            lit("sensorEndedAt", "2026-10-24T06:39:46Z"), lit("plannedCreate", "0"), lit("plannedUpdate", "38"), lit("plannedDelete", "0"), lit("plannedUnchanged", "87"))
+    };
+    let typed = end(true);
+    assert!(typed.contains("\"38\"^^<http://www.w3.org/2001/XMLSchema#integer>"), "the counts come out typed: {typed}");
+    gate(&st, &typed, &[run.clone()]).unwrap();
+    let e = gate(&st, &end(false), &[run.clone()]).unwrap_err();
+    assert!(e.starts_with("shape-violation: 4 violation(s)"), "{e}");
+    for f in ["plannedCreate", "plannedUpdate", "plannedDelete", "plannedUnchanged"] {
+        assert!(e.contains(&format!("{f}:")), "{f} missing: {e}");
+    }
+    assert_eq!(scratch_graphs(&st), 0);
+}
+
+/// Wren 10-24: an edit to a row that already breaks its shape passes when it
+/// breaks nothing new (the old breakage comes back as a warning); what it adds
+/// is refused, and only that.
+#[test]
+fn a_dirty_row_edit_passes_unless_it_adds_a_violation() {
+    let _l = lock();
+    let st = store(need_server!());
+    st.update(&format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-d> a <{C}Alert> ; <{C}owner> \"wren\" ; <{C}muted> \"maybe\" }} }}")).unwrap();
+    gate(&st, &format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-d> <{C}comment> \"noted\" }} }}"), &[format!("{C}alert-d")]).unwrap();
+    let e = gate(&st, &format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-d> <{C}platform> <{C}platform-nope> }} }}"), &[format!("{C}alert-d")]).unwrap_err();
+    assert_eq!(e, "shape-violation: 1 violation(s): platform: platform is a Platform");
 }

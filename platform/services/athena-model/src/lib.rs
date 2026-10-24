@@ -649,7 +649,19 @@ impl FusekiStore {
     }
     /// #4717 — POST the shapes to the dataset's SHACL service for `graph`.
     pub fn shacl_report(&self, graph: &str) -> R<String> {
-        let shapes = self.shapes_turtle()?;
+        // one read of the shapes per process: a gate checks before and after
+        static SHAPES: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
+        let shapes = {
+            let mut held = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
+            match held.as_ref().filter(|(e, _)| *e == self.endpoint) {
+                Some((_, t)) => t.clone(),
+                None => {
+                    let t = self.shapes_turtle()?;
+                    *held = Some((self.endpoint.clone(), t.clone()));
+                    t
+                }
+            }
+        };
         let file = std::env::temp_dir().join(format!("athena-model-shapes-{}.ttl", std::process::id()));
         std::fs::write(&file, shapes).map_err(|e| format!("shacl-shapes-file: {}", e))?;
         let enc: String = graph.bytes().map(|b| match b {
@@ -930,10 +942,23 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
 /// xsd:boolean) is written as a typed xsd:boolean, every other field as before.
 /// Before this every value went in as a plain string, so a boolean shape held
 /// "true"^^xsd:string and failed its own sh:datatype (14 rows on 10-23).
+///
+/// #4717 — and every other typed field the same way: a field whose shape says
+/// xsd:integer, decimal, double, float, dateTime or date is written with that
+/// datatype, so the store's SHACL check does not refuse what the DAL itself
+/// wrote (29% of sampled rows on 10-24 broke their own shapes this way, the
+/// hourly sensor-run counts among them). New writes only; old rows are not
+/// rewritten (Jeff 10-17). A string, or an unknown datatype, stays plain.
 pub fn field_literal(val: &str, xsd_local: Option<&str>) -> String {
+    const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
     match (xsd_local, val) {
-        (Some("boolean"), "true" | "1") => "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>".to_string(),
-        (Some("boolean"), "false" | "0") => "\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>".to_string(),
+        (Some("boolean"), "true" | "1") => format!("\"true\"^^<{XSD}boolean>"),
+        (Some("boolean"), "false" | "0") => format!("\"false\"^^<{XSD}boolean>"),
+        (Some(t @ ("integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
+            | "nonPositiveInteger" | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort"
+            | "decimal" | "double" | "float" | "dateTime" | "date")), v) if !v.is_empty() && datatype_ok(v, t) => {
+            format!("\"{}\"^^<{XSD}{t}>", esc(v))
+        }
         _ => format!("\"{}\"", esc(val)),
     }
 }
@@ -952,7 +977,7 @@ pub fn to_turtle_typed(req: &WriteReq, datatypes: &BTreeMap<String, String>) -> 
     }
     for (prop, val) in &req.more_values {
         check_property_local(prop)?;
-        lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+        lines.push(format!("    <{}{}> {}", NS, prop, field_literal(val, datatypes.get(prop).map(String::as_str))));
     }
     for (prop, tkind, tname) in &req.edges {
         check_property_local(prop)?;
@@ -4391,7 +4416,10 @@ mod tests {
         let err = set_field(&store, "domain", "tests", "writeCount", "true", None, &tid()).unwrap_err();
         assert!(err.starts_with("shape-violation"), "{err}");
         assert!(store.updates.borrow().is_empty(), "a refused set writes nothing");
-        assert_eq!(field_literal("true", Some("integer")), "\"true\"", "only boolean fields are typed");
+        assert_eq!(field_literal("true", Some("integer")), "\"true\"", "a value that is not an integer is never typed as one");
+        assert_eq!(field_literal("42", Some("integer")), "\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>", "#4717: an integer field is typed");
+        assert_eq!(field_literal("2026-10-24T09:00:00Z", Some("dateTime")), "\"2026-10-24T09:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>");
+        assert_eq!(field_literal("42", Some("string")), "\"42\"", "a string field stays plain");
     }
 
     /// #4291 NEGATIVE PROOF: a Version whose shape requires writeCount is refused

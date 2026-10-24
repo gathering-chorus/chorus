@@ -24,6 +24,7 @@ const RDFS_SUBCLASS: &str = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
 pub struct Violation {
     pub focus: String,
     pub path: String,
+    pub component: String,
     pub message: String,
 }
 
@@ -128,7 +129,7 @@ pub fn parse_report(nt: &str) -> R<Vec<Violation>> {
         .map(|r| {
             let f = by.get(r).cloned().unwrap_or_default();
             let get = |k: &str| f.get(k).cloned().unwrap_or_default();
-            Violation { focus: get("focusNode"), path: get("resultPath"), message: get("resultMessage") }
+            Violation { focus: get("focusNode"), path: get("resultPath"), component: get("sourceConstraintComponent"), message: get("resultMessage") }
         })
         .collect())
 }
@@ -153,8 +154,16 @@ pub fn sweep(store: &dyn Store, now: u64) -> R<usize> {
     Ok(stale.len())
 }
 
+fn describe(vs: &[Violation]) -> String {
+    vs.iter()
+        .map(|v| format!("{}: {}", v.path.rsplit(['#', '/']).next().unwrap_or(&v.path), v.message))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// Run `update` on a scratch copy of `subjects` and refuse it, with every
-/// violation, if Jena's SHACL check of the result names any of them. The real
+/// violation the write ADDS, if Jena's SHACL check of the result names any of
+/// them; violations the rows already had are returned as a warning. The real
 /// store is untouched either way. A store without SHACL passes everything.
 pub fn gate(store: &dyn Store, update: &str, subjects: &[String]) -> R<()> {
     if !store.shacl_enabled() || subjects.is_empty() {
@@ -164,40 +173,52 @@ pub fn gate(store: &dyn Store, update: &str, subjects: &[String]) -> R<()> {
     let _ = sweep(store, now);
     let scratch = scratch_name(now);
     let values = subjects.iter().map(|s| format!("<{s}>")).collect::<Vec<_>>().join(" ");
-    let checked = (|| -> R<Vec<Violation>> {
+    let wanted: BTreeSet<&str> = subjects.iter().map(String::as_str).collect();
+    // the rows they link to, and the class chain of every type, as the scratch holds them now
+    let targets = format!(
+        "INSERT {{ GRAPH <{scratch}> {{ ?t ?q ?w }} }} WHERE {{ VALUES ?x {{ {values} }} \
+         GRAPH <{scratch}> {{ ?x ?p ?t }} FILTER(isIRI(?t)) GRAPH ?g {{ ?t ?q ?w }} \
+         FILTER(?g != <{ONTOLOGY_GRAPH}> && !STRSTARTS(STR(?g), \"{SCRATCH_PREFIX}\")) }} ;\n\
+         INSERT {{ GRAPH <{scratch}> {{ ?a <{RDFS_SUBCLASS}> ?b }} }} WHERE {{ \
+         GRAPH <{scratch}> {{ ?n a ?c }} GRAPH <{ONTOLOGY_GRAPH}> {{ ?c <{RDFS_SUBCLASS}>* ?a . ?a <{RDFS_SUBCLASS}> ?b }} }}"
+    );
+    let report = || -> R<Vec<Violation>> {
+        Ok(parse_report(&store.shacl(&scratch)?)?.into_iter().filter(|v| wanted.contains(v.focus.as_str())).collect())
+    };
+    let checked = (|| -> R<(Vec<Violation>, Vec<Violation>)> {
         // the rows as they are, and what points at them (inverse paths)
         store.update(&format!(
             "INSERT {{ GRAPH <{scratch}> {{ ?s ?p ?o }} }} WHERE {{ VALUES ?x {{ {values} }} \
              {{ GRAPH ?g {{ ?x ?p ?o }} BIND(?x AS ?s) }} UNION {{ GRAPH ?g {{ ?s ?p ?x }} BIND(?x AS ?o) }} \
              FILTER(?g != <{ONTOLOGY_GRAPH}> && !STRSTARTS(STR(?g), \"{SCRATCH_PREFIX}\")) }}"
         ))?;
-        // the write itself, on the copy
+        store.update(&targets)?;
+        // what the rows already break (Wren 10-24: a dirty row's edit is refused
+        // only for what the edit adds; the rest goes back as a warning)
+        let before = report()?;
+        // the write itself, on the copy, then whatever it newly links to
         store.update(&rewrite_to_scratch(update, &scratch))?;
-        // the rows they link to after the write, and the class chain of every type
-        store.update(&format!(
-            "INSERT {{ GRAPH <{scratch}> {{ ?t ?q ?w }} }} WHERE {{ VALUES ?x {{ {values} }} \
-             GRAPH <{scratch}> {{ ?x ?p ?t }} FILTER(isIRI(?t)) GRAPH ?g {{ ?t ?q ?w }} \
-             FILTER(?g != <{ONTOLOGY_GRAPH}> && !STRSTARTS(STR(?g), \"{SCRATCH_PREFIX}\")) }} ;\n\
-             INSERT {{ GRAPH <{scratch}> {{ ?a <{RDFS_SUBCLASS}> ?b }} }} WHERE {{ \
-             GRAPH <{scratch}> {{ ?n a ?c }} GRAPH <{ONTOLOGY_GRAPH}> {{ ?c <{RDFS_SUBCLASS}>* ?a . ?a <{RDFS_SUBCLASS}> ?b }} }}"
-        ))?;
-        let wanted: BTreeSet<&str> = subjects.iter().map(String::as_str).collect();
-        Ok(parse_report(&store.shacl(&scratch)?)?.into_iter().filter(|v| wanted.contains(v.focus.as_str())).collect())
+        store.update(&targets)?;
+        Ok((before, report()?))
     })();
     let dropped = store.update(&format!("DROP SILENT GRAPH <{scratch}>"));
-    let violations = checked?;
+    let (before, after) = checked?;
     dropped?;
+    // one constraint broken on one path of one row; the message is left out, as
+    // Jena's names the value and an edit that keeps a row broken the same way
+    // (an sh:in outcome still not in the list) adds nothing
+    let key = |v: &Violation| (v.focus.clone(), v.path.clone(), v.component.clone());
+    let had: BTreeSet<_> = before.iter().map(key).collect();
+    let (kept, violations): (Vec<Violation>, Vec<Violation>) = after.into_iter().partition(|v| had.contains(&key(v)));
+    if !kept.is_empty() {
+        let w = describe(&kept);
+        eprintln!("shape-warning: {} violation(s) the row already had: {}", kept.len(), w);
+        witness("model.warned", &[("reason", "shape-violation-kept"), ("count", kept.len().to_string().as_str()), ("violations", w.as_str())]);
+    }
     if violations.is_empty() {
         return Ok(());
     }
-    let list = violations
-        .iter()
-        .map(|v| {
-            let path = v.path.rsplit(['#', '/']).next().unwrap_or(&v.path);
-            format!("{path}: {}", v.message)
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
+    let list = describe(&violations);
     witness("model.refused", &[("reason", "shape-violation"), ("count", violations.len().to_string().as_str()), ("violations", list.as_str())]);
     Err(format!("shape-violation: {} violation(s): {}", violations.len(), list))
 }
@@ -218,15 +239,20 @@ mod tests {
     }
 
     /// A store that records every update and answers SHACL with a canned report.
-    struct Shacl { report: R<String>, graphs: Vec<String>, updates: RefCell<Vec<String>> }
+    /// `reports` answer the before and after checks in turn; the last repeats.
+    struct Shacl { reports: RefCell<Vec<R<String>>>, graphs: Vec<String>, updates: RefCell<Vec<String>> }
     impl Store for Shacl {
         fn ask(&self, _: &str) -> R<bool> { Ok(false) }
         fn select_v(&self, _: &str) -> R<Vec<String>> { Ok(self.graphs.clone()) }
         fn update(&self, s: &str) -> R<()> { self.updates.borrow_mut().push(s.to_string()); Ok(()) }
         fn shacl_enabled(&self) -> bool { true }
-        fn shacl(&self, _: &str) -> R<String> { self.report.clone() }
+        fn shacl(&self, _: &str) -> R<String> {
+            let mut r = self.reports.borrow_mut();
+            if r.len() > 1 { r.remove(0) } else { r[0].clone() }
+        }
     }
-    fn store(report: R<String>) -> Shacl { Shacl { report, graphs: vec![], updates: RefCell::new(vec![]) } }
+    fn store(report: R<String>) -> Shacl { Shacl { reports: RefCell::new(vec![report]), graphs: vec![], updates: RefCell::new(vec![]) } }
+    fn store2(before: R<String>, after: R<String>) -> Shacl { Shacl { reports: RefCell::new(vec![before, after]), ..store(Ok(String::new())) } }
     const WRITE: &str = "INSERT DATA { GRAPH <urn:chorus:instances:alerts> { <https://jeffbridwell.com/chorus#alert-a> <https://jeffbridwell.com/chorus#platform> \"x\" } }";
 
     #[test]
@@ -254,12 +280,22 @@ mod tests {
 
     #[test]
     fn three_violations_refuse_the_write_with_all_three_and_nothing_is_written() {
-        let s = store(Ok(report(&[(ROW, "urn:p#a", "need 1"), (ROW, "urn:p#b", "need bool"), (ROW, "urn:p#c", "need Platform")])));
+        let s = store2(Ok(report(&[])), Ok(report(&[(ROW, "urn:p#a", "need 1"), (ROW, "urn:p#b", "need bool"), (ROW, "urn:p#c", "need Platform")])));
         let e = gate(&s, WRITE, &[ROW.to_string()]).unwrap_err();
         assert!(e.starts_with("shape-violation: 3 violation(s): a: need 1; b: need bool; c: need Platform"), "{e}");
         let u = s.updates.borrow();
         assert!(u.iter().all(|x| !x.contains("GRAPH <urn:chorus:instances:alerts>")), "the real graph was written: {u:?}");
         assert!(u.last().unwrap().starts_with(&format!("DROP SILENT GRAPH <{SCRATCH_PREFIX}")), "scratch not dropped: {u:?}");
+    }
+
+    /// Wren 10-24: an edit to a row that already breaks its shape, fixing
+    /// nothing and breaking nothing new, passes; what it adds is refused alone.
+    #[test]
+    fn a_dirty_row_is_refused_only_for_what_the_write_adds() {
+        let old = (ROW, "urn:p#rank", "rank is an integer");
+        assert!(gate(&store2(Ok(report(&[old])), Ok(report(&[old]))), WRITE, &[ROW.to_string()]).is_ok());
+        let e = gate(&store2(Ok(report(&[old])), Ok(report(&[old, (ROW, "urn:p#owner", "needs an owner")]))), WRITE, &[ROW.to_string()]).unwrap_err();
+        assert_eq!(e, "shape-violation: 1 violation(s): owner: needs an owner");
     }
 
     #[test]
