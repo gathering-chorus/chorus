@@ -60,7 +60,7 @@ function parseAcItems(description: string | undefined): Array<{ text: string; ch
 function extractAcItems(data: CardPayload['data']): Array<{ text: string; checked: boolean }> | undefined {
   if (!data) return undefined;
   const rawList = data.ac_items ?? data.acItems;
-  if (Array.isArray(rawList)) {
+  if (Array.isArray(rawList) && rawList.length > 0) {
     return rawList.map((item) => ({
       text: String(item.text ?? item.label ?? ''),
       checked: Boolean(item.checked),
@@ -101,7 +101,7 @@ export function toDrawerCard(cardId: number, json: CardPayload | null): DrawerCa
     owner: extractOwner(json),
     status: data.status,
     priority: data.priority,
-    domain: json.servedFrom ?? data.domain,
+    domain: json.servedFrom ?? data.domain ?? (Array.isArray((data as any).domains) ? (data as any).domains.join(', ') : undefined),
     description: data.description,
     acItems: extractAcItems(data),
     comments: extractComments(json),
@@ -110,7 +110,7 @@ export function toDrawerCard(cardId: number, json: CardPayload | null): DrawerCa
 
 async function fetchFromAthena(athenaUrl: string, cardId: number): Promise<DrawerCard | null> {
   try {
-    return await withTimeout(1500, async (signal) => {
+    return await withTimeout(5000, async (signal) => {
       const res = await fetch(`${athenaUrl}/${cardId}`, { signal });
       const r = await readJson<CardPayload | null>(res);
       return r.ok ? toDrawerCard(cardId, r.value) : null;
