@@ -168,6 +168,10 @@ pub struct Retirement {
     /// #4338 — merge this subject INTO `into`, within `graph`.
     pub merge_subject: String,
     pub into: String,
+    /// #4716 — one statement, retired alone (no subject or class widening)
+    pub triple_subject: String,
+    pub triple_predicate: String,
+    pub triple_object: String,
     pub status: String,
 }
 
@@ -191,6 +195,8 @@ pub enum RetireAction {
     /// #4338 — one duplicate folded into the real subject in one graph: every
     /// triple pointing at `from` points at `into`, then `from`'s own triples go.
     Merge { from: String, into: String, graph: String },
+    /// #4716 — exactly one statement `<s> <p> <o>` (IRIs), in `graph`.
+    Triple { s: String, p: String, o: String, graph: String },
 }
 
 /// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
@@ -231,6 +237,9 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
         retire_class: field("retire_class")?,
         merge_subject: field("merge_subject")?,
         into: field("into")?,
+        triple_subject: field("triple_subject")?,
+        triple_predicate: field("triple_predicate")?,
+        triple_object: field("triple_object")?,
         status: if status.is_empty() { "staged".into() } else { status },
     }))
 }
@@ -262,6 +271,13 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
         return RetireAction::Skip { status: r.status.clone(), target };
     }
     let graph = if r.graph.is_empty() { default_graph.to_string() } else { r.graph.clone() };
+    // #4716 — checked first: an entry that names any triple part is a triple
+    // retirement, never widened into the subject or class forms below
+    if !(r.triple_subject.is_empty() && r.triple_predicate.is_empty() && r.triple_object.is_empty()) {
+        return RetireAction::Triple {
+            s: r.triple_subject.clone(), p: r.triple_predicate.clone(), o: r.triple_object.clone(), graph,
+        };
+    }
     if !r.retire_graph.is_empty() {
         return RetireAction::WholeGraph { graph: r.retire_graph.clone() };
     }
@@ -2203,6 +2219,18 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 ctx, line, &label, &graph,
                 &format!("ASK {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
                 &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
+            )
+        }
+        RetireAction::Triple { s, p, o, graph } => {
+            let iri_ok = |x: &str| !x.is_empty() && x.contains(':') && !x.contains(['<', '>', '"', ' ', '{', '}', '\n']);
+            if !(iri_ok(s) && iri_ok(p) && iri_ok(o)) {
+                return Err(refuse("retirement-entry-empty".into()));
+            }
+            let label = format!("triple <{s}> <{p}> <{o}>");
+            ask_delete_verify(
+                ctx, line, &label, graph,
+                &format!("ASK {{ GRAPH <{graph}> {{ <{s}> <{p}> <{o}> }} }}"),
+                &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s}> <{p}> <{o}> }} }}"),
             )
         }
         RetireAction::Subject { iri, graph } => {
