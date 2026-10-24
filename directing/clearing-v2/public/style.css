@@ -26,6 +26,7 @@
   --kade: #7b4a86;
   --deb: #8a6a12;
   --abby-normal: #7b4a86;
+  --borg-queen: #0f766e;
   --callout: #c2562f;
   --code: #edf1ee;
 
@@ -65,6 +66,7 @@
     --kade: #c79ad2;
     --deb: #e0bd5a;
     --abby-normal: #c79ad2;
+    --borg-queen: #2dd4bf;
     --callout: #f08a60;
     --code: #202b27;
     color-scheme: dark;
@@ -105,6 +107,7 @@
   --kade: #c79ad2;
   --deb: #e0bd5a;
   --abby-normal: #c79ad2;
+  --borg-queen: #2dd4bf;
   --callout: #f08a60;
   --code: #202b27;
   color-scheme: dark;
@@ -427,12 +430,14 @@ nav.top .n {
 .a-kade { background: var(--kade); }
 .a-deb { background: var(--deb); }
 .a-abby-normal { background: var(--abby-normal); }
+.a-borg-queen { background: var(--borg-queen); }
 
-.who-wren { color: var(--wren); }
-.who-silas { color: var(--silas); }
-.who-kade { color: var(--kade); }
-.who-jeff { color: var(--jeff); }
-.who-abby-normal { color: var(--abby-normal); }
+.who-wren, .message-author.wren { color: var(--wren); }
+.who-silas, .message-author.silas { color: var(--silas); }
+.who-kade, .message-author.kade { color: var(--kade); }
+.who-jeff, .message-author.jeff { color: var(--jeff); }
+.who-abby-normal, .message-author.abby-normal { color: var(--abby-normal); }
+.who-borg-queen, .message-author.borg-queen { color: var(--borg-queen); }
 
 .dot {
   width: 8px;
@@ -654,9 +659,14 @@ nav.top .n {
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 13.5px;
+  font-family: inherit;
   background: var(--panel);
   color: var(--ink);
   outline: none;
+  resize: none;
+  min-height: 36px;
+  max-height: 120px;
+  line-height: 1.4;
 }
 #composer-input:focus {
   border-color: var(--accent);
@@ -979,13 +989,15 @@ tr.you td {
     padding: 12px;
   }
   .actor-rail {
-    padding: 3px 8px;
-    gap: 6px;
+    padding: 3px 6px;
+    gap: 4px;
   }
   .actor-tile {
-    padding: 2px 7px;
+    padding: 2px 5px;
     font-size: 11px;
-    gap: 5px;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
   }
   .actor-tile .av {
     width: 20px;
@@ -1028,8 +1040,8 @@ tr.you td {
 }
 .actor-rail {
   display: flex;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 6px 10px;
   background: var(--sunk);
   border-bottom: 1px solid var(--line2);
   overflow-x: auto;
@@ -1043,15 +1055,16 @@ tr.you td {
 .actor-tile {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: 6px;
+  padding: 4px 8px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 12px;
-  flex-shrink: 0;
+  font-size: 11.5px;
+  flex: 1;
+  min-width: 0;
   transition: border-color 0.15s ease;
   user-select: none;
   text-decoration: none;

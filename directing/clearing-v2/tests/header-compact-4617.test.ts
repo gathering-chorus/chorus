@@ -46,20 +46,20 @@ describe('#4597 Clearing v2: folded ACs (picker base, one people row, status dot
     expect(html).toContain('<option value="abby-normal">@ Abby Normal</option>');
   });
 
-  test('AC7: One people row on Rooms (#team + roles with lights and cards); tapping opens direct room; no separate DIRECT row', () => {
+  test('AC7: One people row on Rooms (roles with cards, #4639: no #team tile, no andon dots); tapping opens direct room; no separate DIRECT row', () => {
     const html = renderRoomsPage('team', mockRoomsData, mockSources);
 
-    // Positive proof: One people row is rendered with #team tile and role tiles
+    // Positive proof: One people row is rendered with role tiles
     expect(html).toContain('id="rooms-people-row"');
-    expect(html).toContain('team-tile');
-    expect(html).toContain("window.location.href=(window.CLEARING_BASE || '') + '/rooms/team'");
+    // #4639: no #team tile
+    expect(html).not.toContain('team-tile');
 
-    // Role tiles with andon lights and current cards
+    // Role tiles with current cards (#4639: no andon dots)
     expect(html).toContain('actor-tile-wren');
     expect(html).toContain('actor-tile-silas');
     expect(html).toContain('actor-tile-kade');
     expect(html).toContain('actor-tile-abby-normal');
-    expect(html).toContain('andon-dot');
+    expect(html).not.toContain('andon-dot');
     expect(html).toContain('#4590');
     expect(html).toContain('#4597');
 

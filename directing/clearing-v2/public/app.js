@@ -116,7 +116,9 @@ function signEvent(sk, content, options = {}) {
 }
 
 function formatAuthor(role) {
-  return role === 'abby-normal' ? 'Abby Normal' : role;
+  if (role === 'abby-normal') return 'Abby Normal';
+  if (role === 'borg-queen') return 'Borg Queen';
+  return role;
 }
 
 function formatMessageTime(ts) {
@@ -354,6 +356,14 @@ function watchPhotoButton() {
   if (typeof document === 'undefined') return;
   const picker = document.getElementById('composer-photo');
   if (!picker || !picker.addEventListener) return;
+  const label = document.querySelector ? document.querySelector('.composer-photo') : null;
+  if (label && label.addEventListener) {
+    label.addEventListener('click', (e) => {
+      if (e.target !== picker) {
+        picker.click();
+      }
+    });
+  }
   picker.addEventListener('change', async () => {
     const input = document.getElementById('composer-input');
     const status = document.getElementById('send-error');
@@ -519,6 +529,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
   window.addEventListener('DOMContentLoaded', watchPhotoButton);
   window.addEventListener('DOMContentLoaded', watchMicButton);
+  window.addEventListener('DOMContentLoaded', initComposerInput);
   window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
@@ -622,7 +633,10 @@ async function handleSendMessage(text, options = {}) {
   if (!cleanText) return;
 
   const savedText = cleanText;
-  if (inputEl) inputEl.value = '';
+  if (inputEl) {
+    inputEl.value = '';
+    if (inputEl.style) inputEl.style.height = 'auto';
+  }
 
   if (btnEl) {
     btnEl.textContent = 'Sending...';
@@ -744,12 +758,35 @@ function showSignInNeeded(statusEl, json) {
   statusEl.style.display = 'block';
 }
 
-// Form send handler
-if (composerForm && composerInput) {
-  composerForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await handleSendMessage(composerInput.value);
+// Form send handler & Enter for newline (CR) (#4639)
+function initComposerInput() {
+  if (typeof document === 'undefined') return;
+  const form = document.getElementById('composer-form');
+  const input = document.getElementById('composer-input');
+  if (!form || !input) return;
+
+  // Auto-resize textarea
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   });
+
+  // Enter = newline (default textarea behavior). Cmd+Enter or Ctrl+Enter = send!
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleSendMessage(input.value);
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await handleSendMessage(input.value);
+  });
+}
+
+if (typeof document !== 'undefined') {
+  initComposerInput();
 }
 
 function initTrustStripTooltips() {

@@ -110,7 +110,7 @@ describe('#4635 record voice', () => {
 
   test('a real recording becomes words on Library (ffmpeg + whisper-cli)', async () => {
     const aiff = path.join(DIR, 'say.aiff');
-    execFileSync('say', ['-o', aiff, 'the send button is too low']);
+    execFileSync('say', ['-v', 'Samantha', '-o', aiff, 'the send button is too low']);
     const text = await transcribe(fs.readFileSync(aiff), 'audio/aiff', DIR);
     expect(text.toLowerCase()).toContain('send button');
   }, 60000);

@@ -56,8 +56,8 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
  *  #team composer (Rooms has its own, per room); no @ goes to Wren, as in the room. */
 const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
-      <input type="text" id="composer-input" placeholder="Message #team..." autocomplete="off">
-      <label class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple hidden>📷</label>
+      <textarea id="composer-input" rows="1" placeholder="Message #team..." autocomplete="off"></textarea>
+      <label for="composer-photo" class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple class="sr-only">📷</label>
       <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
     </form>
@@ -443,6 +443,12 @@ export function bodyHash(text: string): string {
   return (h >>> 0).toString(36);
 }
 
+function formatAuthorName(role: string): string {
+  if (role === 'abby-normal') return 'Abby Normal';
+  if (role === 'borg-queen') return 'Borg Queen';
+  return role;
+}
+
 export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
@@ -452,7 +458,7 @@ export function renderRoomMessage(m: RoomsData['messages'][number]): string {
     <div class="msg${thinkingClass}" id="msg-${m.id}" data-from="${escapeHtml(m.from)}" data-body="${bodyHash(String(m.text || '').trim())}" data-ts="${escapeHtml(String(m.ts || ''))}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
       <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
       <div class="body">
-        <span class="nm who-${m.from}">${m.from}</span>
+        <span class="nm who-${m.from}">${formatAuthorName(m.from)}</span>
         <span class="tm">${m.time}</span>
         ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
         ${thinkingBadge}
@@ -760,11 +766,28 @@ const ROOM_DRAWER_SCRIPT = `  <script>
     }
   </script>`;
 
+/**
+ * #4639 — Jeff 10-24 04:59: "i dont need the circles for each name i dont need a team tile
+ * basically i need to see name and cards for all logged in roles".
+ * A role is logged in if its state is not offline/off, and if sessions are reported,
+ * at least one session is live (or not all marked "not live").
+ */
+export function isRoleLoggedIn(a: ActorRow): boolean {
+  const state = (a.state || '').toLowerCase();
+  if (state === 'offline' || state === 'off') return false;
+  if (a.sessions.length > 0) {
+    const hasLive = a.sessions.some(s => s.includes(' · live') || s === 'live');
+    const allNotLive = a.sessions.every(s => s.startsWith('+') || s.includes('not live'));
+    if (allNotLive && !hasLive) return false;
+  }
+  return true;
+}
+
 function railActorsFor(actors: ActorRow[] | undefined): ActorRow[] {
-  const data = { actors };
+  const list = actors || [];
   const knownRoleSlugs = ['wren', 'silas', 'kade', 'abby-normal'];
-  const railActors: ActorRow[] = knownRoleSlugs.map(roleId => {
-    const found = (data.actors || []).find(a => a.id.toLowerCase() === roleId || a.name.toLowerCase().replace(/\s+/g, '-') === roleId);
+  const matched = knownRoleSlugs.map(roleId => {
+    const found = list.find(a => a.id.toLowerCase() === roleId || a.name.toLowerCase().replace(/\s+/g, '-') === roleId);
     if (found) return found;
     return {
       id: roleId,
@@ -775,35 +798,27 @@ function railActorsFor(actors: ActorRow[] | undefined): ActorRow[] {
       stream: [],
     };
   });
-
-  return railActors;
+  const knownSet = new Set(knownRoleSlugs);
+  const extra = list.filter(a => !knownSet.has(a.id.toLowerCase()) && a.id.toLowerCase() !== 'jeff');
+  return [...matched, ...extra].filter(isRoleLoggedIn);
 }
 
-/** #4646 — the role tiles, drawn by the server; the page re-fetches them every few
- *  seconds (Jeff 12:53: the Wren tile kept showing #4635 after it was Done). */
+/** #4639 / #4646 — compact role tiles for logged in roles: no #team tile, no avatar circles,
+ *  no andon dot circles; role name + clickable card links in a single row without horizontal overflow. */
 export function renderPeopleRow(room: string, actors: ActorRow[] | undefined): string {
   const railActors = railActorsFor(actors);
   return `
     <div class="actor-rail people-row" id="rooms-people-row">
-      <a class="actor-tile team-tile${room === 'team' ? ' on' : ''}" href="/rooms/team" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/team';return false;">
-        <span class="av a-team">#</span>
-        <div class="actor-tile-info">
-          <div class="actor-tile-name"><b>#team</b></div>
-          <div class="actor-tile-card">channel</div>
-        </div>
-      </a>
       ${railActors.map(a => {
-        const andon = roleAndonLight(a);
-        const cardText = a.cards && a.cards.length > 0
-          ? a.cards.map(c => `#${c.id}`).join(', ')
-          : (a.card ? `#${a.card.id}` : 'no card');
+        const cardHtml = a.cards && a.cards.length > 0
+          ? a.cards.map(c => `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${c.id}');return false;">#${c.id}</span>`).join(' ')
+          : (a.card ? `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${a.card.id}');return false;">#${a.card.id}</span>` : 'no card');
         const isActive = room.toLowerCase() === a.id.toLowerCase();
         return `
           <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
-            <span class="av a-${a.id}">${a.name.charAt(0)}</span>
             <div class="actor-tile-info">
-              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${escapeHtml(a.name)}</b></div>
-              <div class="actor-tile-card">${escapeHtml(cardText)}</div>
+              <div class="actor-tile-name"><b>${escapeHtml(a.name)}</b></div>
+              <div class="actor-tile-card">${cardHtml}</div>
             </div>
           </a>
         `;
@@ -854,8 +869,8 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         </div>
         <footer class="composer-bar">
           <form id="composer-form">
-            <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-            <label class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple hidden>📷</label>
+            <textarea id="composer-input" rows="1" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off"></textarea>
+            <label for="composer-photo" class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple class="sr-only">📷</label>
       <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
           </form>

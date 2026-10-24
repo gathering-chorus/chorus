@@ -14,6 +14,11 @@ describe('Clearing v2 Frontend Helpers', () => {
     expect(router.getRecent(1)).toEqual([]);
   });
 
+  test('formatAuthor formats borg-queen with proper capitalization and styling support', () => {
+    expect(formatAuthor('borg-queen')).toBe('Borg Queen');
+    expect(formatAuthor('borg-queen')).not.toBe('borg-queen');
+  });
+
   test('formatAuthor preserves other role names', () => {
     const router = new MessageRouter();
     const author = formatAuthor('wren');
