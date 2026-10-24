@@ -992,11 +992,39 @@ pub fn field_literal(val: &str, xsd_local: Option<&str>) -> String {
         (Some("boolean"), "false" | "0") => format!("\"false\"^^<{XSD}boolean>"),
         (Some(t @ ("integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
             | "nonPositiveInteger" | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort"
-            | "decimal" | "double" | "float" | "dateTime" | "date")), v) if !v.is_empty() && datatype_ok(v, t) => {
+            | "double" | "float" | "dateTime" | "date")), v) if !v.is_empty() && datatype_ok(v, t) => {
             format!("\"{}\"^^<{XSD}{t}>", esc(v))
         }
+        (Some("decimal"), v) => match canonical_decimal(v) {
+            Some(c) => format!("\"{c}\"^^<{XSD}decimal>"),
+            None => format!("\"{}\"", esc(val)),
+        },
         _ => format!("\"{}\"", esc(val)),
     }
+}
+
+/// #4717 reopen — the one spelling of a decimal Jena can delete. TDB2 keeps a
+/// decimal written as "7" or "7.00" under that spelling, but reads it back as
+/// 7.0, so `DELETE WHERE { s p ?o }` misses it and every replace adds a value
+/// beside the old one (measured on Jena 5.1, 10-24: a sensor reading held both
+/// 7.0 and 8.0). So a decimal is always written canonical: no sign "+", no
+/// leading zeros, at least one digit after the point, no trailing zeros.
+/// Not a decimal lexical (1e5, NaN, "") → None.
+pub fn canonical_decimal(v: &str) -> Option<String> {
+    let (neg, body) = match v.as_bytes().first()? {
+        b'-' => (true, &v[1..]),
+        b'+' => (false, &v[1..]),
+        _ => (false, v),
+    };
+    let (int, frac) = body.split_once('.').unwrap_or((body, ""));
+    if int.is_empty() && frac.is_empty() { return None; }
+    if !int.bytes().chain(frac.bytes()).all(|b| b.is_ascii_digit()) { return None; }
+    let int = int.trim_start_matches('0');
+    let frac = frac.trim_end_matches('0');
+    let int = if int.is_empty() { "0" } else { int };
+    let frac = if frac.is_empty() { "0" } else { frac };
+    let zero = int == "0" && frac == "0";
+    Some(format!("{}{int}.{frac}", if neg && !zero { "-" } else { "" }))
 }
 
 /// to_turtle with each field's sh:datatype in hand (`datatypes`: field local → xsd local).
@@ -4504,6 +4532,21 @@ mod tests {
         assert_eq!(field_literal("42", Some("integer")), "\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>", "#4717: an integer field is typed");
         assert_eq!(field_literal("2026-10-24T09:00:00Z", Some("dateTime")), "\"2026-10-24T09:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>");
         assert_eq!(field_literal("42", Some("string")), "\"42\"", "a string field stays plain");
+    }
+
+    /// #4717 reopen: a decimal is written in the one spelling Jena can delete
+    /// ("7" or "7.00" survive a replace on TDB2 and the row stacks values).
+    #[test]
+    fn a_decimal_is_always_written_canonical() {
+        const D: &str = "^^<http://www.w3.org/2001/XMLSchema#decimal>";
+        for (v, c) in [("7", "7.0"), ("7.00", "7.0"), ("7.50", "7.5"), ("007.5", "7.5"), ("+7", "7.0"), ("-0.50", "-0.5"),
+            ("-0", "0.0"), ("0", "0.0"), (".5", "0.5"), ("5.", "5.0"), ("7.0", "7.0"), ("123456789012345678901234.5", "123456789012345678901234.5")] {
+            assert_eq!(field_literal(v, Some("decimal")), format!("\"{c}\"{D}"), "{v}");
+        }
+        for v in ["1e5", "NaN", "inf", "", ".", "-", "7.5.1", "7,5"] {
+            assert_eq!(canonical_decimal(v), None, "{v}");
+            assert_eq!(field_literal(v, Some("decimal")), format!("\"{}\"", esc(v)), "{v} is not a decimal, so it is not typed as one");
+        }
     }
 
     /// #4291 NEGATIVE PROOF: a Version whose shape requires writeCount is refused
