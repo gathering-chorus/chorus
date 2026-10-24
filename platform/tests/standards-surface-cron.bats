@@ -82,3 +82,20 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cat "$dir/gen-called")" = "args=0" ]
 }
+
+# #4722 NEGATIVE PROOF (#3734): the same run on the job with its expansion put
+# back unguarded must fail with bash 3.2's own error; else the test above could
+# be passing for a reason other than the guard.
+@test "#4722 NEGATIVE PROOF: the unguarded expansion exits non-zero on bash 3.2" {
+  local dir="${BATS_TEST_TMPDIR}/cron-4722-neg" root="${BATS_TEST_TMPDIR}/root-4722-neg"
+  mkdir -p "$dir/lib" "$root"
+  sed 's/\${_gen_args\[@\]+"\${_gen_args\[@\]}"}/"${_gen_args[@]}"/' "$SCRIPT" > "$dir/standards-surface-cron.sh"
+  grep -q '"\${_gen_args\[@\]}" 2>&1' "$dir/standards-surface-cron.sh"   # the fixture really is unguarded
+  cp "$(dirname "$SCRIPT")/lib/service-lifecycle.sh" "$dir/lib/"
+  printf '#!/bin/bash\nexit 0\n' > "$dir/generate-standards-surface.sh"
+  chmod +x "$dir/generate-standards-surface.sh"
+  run env -u STANDARDS_OUTPUT_DIR CHORUS_ROOT="$root" STANDARDS_STATE_FILE="$dir/state.json" \
+    /bin/bash "$dir/standards-surface-cron.sh" --force
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"_gen_args[@]: unbound variable"* ]] || return 1
+}
