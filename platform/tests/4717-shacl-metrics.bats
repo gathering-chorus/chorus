@@ -122,3 +122,18 @@ alerts() {  # n alerts with `bad` of them broken twice (no owner, muted "maybe")
   [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a2> <${C}muted> ?o } BIND(DATATYPE(?o) AS ?v) }")" = "<http://www.w3.org/2001/XMLSchema#string>" ]
   [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a1> <${C}owner> ?o } BIND(DATATYPE(?o) AS ?v) }")" = "<http://www.w3.org/2001/XMLSchema#string>" ]
 }
+
+# The two jobs: proving/config/launchagents/com.chorus.shacl-census.plist (nightly)
+# and proving/config/launchagents/com.chorus.shacl-bnodes.plist (hourly) run the
+# scripts in this repo, on the schedules the alert rules assume (26 h and 2 h).
+@test "the census plist runs shacl-census nightly and the blank-node plist runs shacl-bnodes hourly" {
+  LA="$ROOT/proving/config/launchagents"
+  for job in shacl-census shacl-bnodes; do
+    plutil -lint "$LA/com.chorus.$job.plist" >/dev/null || return 1
+    script=$(plutil -extract ProgramArguments.1 raw "$LA/com.chorus.$job.plist")
+    [ "$script" = "$HOME/CascadeProjects/chorus/platform/scripts/$job" ] || { echo "$job runs $script"; return 1; }
+    [ -x "$ROOT/platform/scripts/$job" ] || { echo "$job: no such script in the repo"; return 1; }
+  done
+  [ "$(plutil -extract StartCalendarInterval.Hour raw "$LA/com.chorus.shacl-census.plist")" = 4 ] || return 1
+  [ "$(plutil -extract StartInterval raw "$LA/com.chorus.shacl-bnodes.plist")" = 3600 ] || return 1
+}
