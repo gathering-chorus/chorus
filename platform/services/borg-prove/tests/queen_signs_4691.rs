@@ -73,7 +73,17 @@ fn ask_nudges_her_with_record_and_the_step_to_complete() {
     let n = d.join("nudge");
     std::fs::write(&n, format!("#!/bin/sh\necho \"$@\" >> {}/nudged\n", d.display())).unwrap();
     Command::new("chmod").args(["+x", n.to_str().unwrap()]).status().unwrap();
-    let o = Command::new(bin()).args(["ask", "4691", "kade"]).env("BORG_NUDGE", &n).env("DAG_RUN_ID", "run7").output().unwrap();
+    // #4707 — ask waits for the roles door first; this one is up
+    let door = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1/roles/roles?limit=1", door.local_addr().unwrap());
+    std::thread::spawn(move || for s in door.incoming().flatten() {
+        use std::io::{Read, Write};
+        let mut s = s;
+        let _ = s.read(&mut [0u8; 1024]);
+        let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    });
+    let o = Command::new(bin()).args(["ask", "4691", "kade"]).env("BORG_NUDGE", &n).env("DAG_RUN_ID", "run7")
+        .env("BORG_DOOR_URL", url).env("BORG_DOOR_WAIT", "5").output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let said = std::fs::read_to_string(d.join("nudged")).unwrap();
     assert!(said.starts_with("borg-queen "), "{said}");

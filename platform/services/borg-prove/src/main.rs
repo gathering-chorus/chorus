@@ -14,6 +14,18 @@ fn curl(args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// True once `url` answers 200, polling every 2s for up to `wait` seconds.
+fn door_answers(url: &str, wait: u64) -> bool {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(wait);
+    loop {
+        let code = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", url]).output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        if code == "200" { return true }
+        if std::time::Instant::now() >= until { return false }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+}
+
 /// The store needs its admin credential for reads of most graphs. It goes to
 /// curl on stdin (-K -), never on argv, and is never printed.
 fn sparql(query: &str, accept: &str) -> Option<String> {
@@ -235,6 +247,15 @@ fn main() {
             let cfg = env("DAGU_CONFIG", &format!("{}/platform/config/dagu.yaml", env("CHORUS_HOME", "")));
             let text = format!("#{card} landed and is in prod; prove it. In your session:\n  DAG_RUN_ID={run} borg-prove record {card} {role}\nthen:\n  dagu --config {cfg} human-task complete cicd-land --run-id {run} --step skill_borg_queen_proves --input by=borg-queen --input decision=recorded");
             let nudge = env("BORG_NUDGE", &format!("{}/platform/scripts/ops-nudge", env("CHORUS_HOME", "")));
+            // #4707 reopen — the nudge resolves borg-queen through the roles door,
+            // which werk-deploy-prod has just restarted: #4715's land failed here
+            // at 18:12 on 10-23 ("Connection refused"). Wait for the door, then ask once.
+            let door = env("BORG_DOOR_URL", "http://localhost:3360/v1/roles/roles?limit=1");
+            let wait: u64 = env("BORG_DOOR_WAIT", "180").parse().unwrap_or(180);
+            if !door_answers(&door, wait) {
+                eprintln!("#{card} ask: the roles door did not answer within {wait}s ({door}); Borg Queen was not nudged");
+                exit(1);
+            }
             if !matches!(Command::new(&nudge).args(["borg-queen", &text]).status(), Ok(s) if s.success()) {
                 eprintln!("#{card} ask: Borg Queen was not nudged ({nudge})");
                 exit(1);

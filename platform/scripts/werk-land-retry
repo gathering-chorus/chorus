@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""werk-land-retry <card> [--dry-run] — #4707 reopen: retry a card's stopped land
+on the go Jeff already gave, never on a new one.
+
+The hook refuses a raw `dagu retry cicd-land` for every actor (#4707 AC1), so a
+land that stopped after the go (on 10-23 #4715 stopped at borg-ask while the
+roles door restarted) had no way back but a new go. This verb retries it only
+when the go is on record:
+
+  1. the card's newest cicd-land run stopped (failed, partly done or aborted),
+  2. its params carry ACCEPTER=jeff,
+  3. a cicd run of the same card answered its go step with accepter=jeff,
+     decision=go, and that run's cicd-land step enqueued this very land run
+     (dagu prints the run id it enqueued; the step's stdout holds it),
+  4. no other land is running or queued (lands go one at a time).
+
+Then it retries the land from its stopped step, downstream, detached. A land
+that any actor enqueued by hand matches no go step and is refused.
+
+Read from dagu's own run files (data_dir/dag-runs), since the run API leaves
+out the go step's inputs. WLR_DATA, WLR_DAGU_BIN and WLR_LOG_DIR point it at a
+fixture.
+"""
+import glob, json, os, re, subprocess, sys
+
+HOME = os.path.expanduser("~")
+CHORUS_HOME = os.environ.get("CHORUS_HOME", f"{HOME}/CascadeProjects/chorus")
+DATA = os.environ.get("WLR_DATA", f"{HOME}/.chorus/dagu/data")
+DAGU_BIN = os.environ.get("WLR_DAGU_BIN", "dagu")
+DAGU_CONFIG = os.environ.get("WLR_DAGU_CONFIG", f"{CHORUS_HOME}/platform/config/dagu.yaml")
+LOG_DIR = os.environ.get("WLR_LOG_DIR", f"{HOME}/Library/Logs/Chorus/dagu")
+STOPPED = ("failed", "partially_succeeded", "aborted")
+# dagu's status numbers (2.18): what a run file holds when the label is absent
+LABELS = {0: "not_started", 1: "running", 2: "failed", 3: "aborted", 4: "succeeded", 5: "queued", 6: "partially_succeeded", 7: "waiting"}
+
+
+def label(x):
+    return x.get("statusLabel") or LABELS.get(x.get("status"), "?")
+
+
+def runs(dag):
+    """Every run of `dag` as dagu last wrote it: the newest attempt's last status line."""
+    out = []
+    for d in glob.glob(f"{DATA}/dag-runs/{dag}/dag-runs/*/*/*/dag-run_*"):
+        attempts = sorted(glob.glob(f"{d}/a_*/status.jsonl"))
+        if not attempts:
+            continue
+        try:
+            with open(attempts[-1]) as f:
+                lines = [l for l in f.read().splitlines() if l.strip()]
+            out.append(json.loads(lines[-1]))
+        except (OSError, ValueError, IndexError):
+            continue
+    return out
+
+
+def of_card(rs, card):
+    want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card)))
+    return sorted((r for r in rs if want.search(r.get("params") or "")),
+                  key=lambda r: r.get("queuedAt") or r.get("startedAt") or "", reverse=True)
+
+
+def node(run, name):
+    return next((n for n in run.get("nodes") or [] if n.get("step", {}).get("name") == name), None)
+
+
+def enqueued_id(n):
+    """The land run id a cicd-land step enqueued, from its stdout."""
+    try:
+        with open(n.get("stdout") or "") as f:
+            m = re.search(r'"run-id":"([^"]+)"', f.read())
+        return m.group(1) if m else None
+    except OSError:
+        return None
+
+
+def the_go(cicd_runs, land_id):
+    """The cicd run whose recorded go enqueued `land_id`, or None."""
+    for r in cicd_runs:
+        go, enq = node(r, "skill-werk-go"), node(r, "cicd-land")
+        if not go or not enq or label(enq) != "succeeded":
+            continue
+        said = go.get("humanTaskInput") or {}
+        if said.get("accepter") == "jeff" and said.get("decision") == "go" and enqueued_id(enq) == land_id:
+            return r
+    return None
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith("--")]
+    dry = "--dry-run" in argv
+    if len(args) != 1 or not args[0].isdigit():
+        print("usage: werk-land-retry <card> [--dry-run]", file=sys.stderr)
+        return 2
+    card = args[0]
+    all_lands = runs("cicd-land")
+    lands = of_card(all_lands, card)
+    if not lands:
+        print(f"werk-land-retry: REFUSED — #{card} has no land run to retry", file=sys.stderr)
+        return 1
+    land = lands[0]
+    lid, state = land.get("dagRunId"), label(land)
+    # #4540 — a run that reads succeeded with steps never run did not finish
+    if state == "succeeded" and any(label(n) in ("aborted", "not_started") for n in land.get("nodes") or []):
+        state = "aborted"
+    if state not in STOPPED:
+        print(f"werk-land-retry: REFUSED — #{card}'s land {lid} is {state}, not stopped", file=sys.stderr)
+        return 1
+    if not re.search(r"(?:^|\s)ACCEPTER=\"?jeff\"?(?:\s|$)", land.get("params") or ""):
+        print(f"werk-land-retry: REFUSED — #{card}'s land {lid} carries no ACCEPTER=jeff", file=sys.stderr)
+        return 1
+    go = the_go(of_card(runs("cicd"), card), lid)
+    if not go:
+        print(f"werk-land-retry: REFUSED — no recorded go enqueued #{card}'s land {lid}: "
+              "only a land started by Jeff's go step is retried. Bring the demo to Jeff (/cws "
+              f"{card}).", file=sys.stderr)
+        return 1
+    busy = [r for r in all_lands if r is not land and label(r) in ("running", "queued")]
+    if busy:
+        b = busy[0]
+        print(f"werk-land-retry: REFUSED — land {b.get('dagRunId')} ({b.get('params')}) is {label(b)}; "
+              "lands go one at a time, retry after it ends", file=sys.stderr)
+        return 1
+    step = next((n["step"]["name"] for n in land.get("nodes") or [] if label(n) in ("failed", "aborted", "not_started")), None)
+    cmd = [DAGU_BIN, "--config", DAGU_CONFIG, "retry", f"--run-id={lid}"]
+    cmd += [f"--step={step}", "--downstream"] if step else []
+    cmd += ["cicd-land"]
+    print(f"#{card} land {lid} stopped at {step or 'its start'}; the go is cicd run {go.get('dagRunId')} "
+          f"(accepter=jeff, decision=go)")
+    if dry:
+        print("dry run: " + " ".join(cmd))
+        return 0
+    os.makedirs(LOG_DIR, exist_ok=True)
+    log = f"{LOG_DIR}/werk-land-retry-{card}.log"
+    env = {k: v for k, v in os.environ.items() if k not in ("CHORUS_ROLE", "ROLE")}
+    with open(log, "a") as f:
+        subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, start_new_session=True)
+    print(f"retrying from {step or 'the start'}: {' '.join(cmd)} · log {log} · /cws {card}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
