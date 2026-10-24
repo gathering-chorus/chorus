@@ -1570,7 +1570,19 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
 /// scope-note / ADR-050): Fuseki answers "authenticated writer?", the DAL answers
 /// "which graph?". Applied at every mutation choke point (write/delete/edges/batch)
 /// so the guard can't be bypassed by picking a different verb.
+/// #3392 — the ICD graph: chorus owns it and kept gathering's name for its readers.
+pub const ICD_GRAPH: &str = "urn:gathering:icd/current";
+
 fn assert_dal_writable(graph: &str) -> R<()> {
+    // #4716 AC4 (Jeff 6/22) — no chorus write touches a gathering graph; the one
+    // exception is the ICD graph chorus owns under gathering's name (#3392).
+    if graph.starts_with("urn:gathering:") && graph != ICD_GRAPH {
+        witness("model.refused", &[("graph", graph), ("reason", "gathering-graph")]);
+        return Err(format!(
+            "gathering-graph: <{}> is gathering's — chorus writes never touch it (only <{}>, chorus-owned by #3392)",
+            graph, ICD_GRAPH
+        ));
+    }
     // #4183 — the security graph is no longer DBA-only by name: it opens for a
     // verified identity that holds an acl:Authorization row (mode Write) for
     // it, and for nobody else. Jeff, 2026-09-16: "isnt the deleting users an
@@ -4029,6 +4041,23 @@ mod tests {
         set_granted_write_graphs(vec!["urn:chorus:domains:tests".to_string()]);
         assert!(assert_dal_writable(&security_graph()).is_err());
         set_granted_write_graphs(vec![]);
+    }
+
+    // #4716 AC4 (Jeff 6/22, worded with Silas 10-24): no chorus write touches a
+    // gathering graph, except the ICD graph chorus owns (#3392).
+    #[test]
+    fn negative_proof_a_gathering_graph_is_refused_even_with_a_permission() {
+        set_granted_write_graphs(vec!["urn:gathering:photos".to_string()]);
+        for g in ["urn:gathering:photos", "urn:gathering:seeds/", "urn:gathering:icd/archive"] {
+            let e = assert_dal_writable(g).unwrap_err();
+            assert!(e.contains("gathering-graph"), "{g}: {e}");
+        }
+        set_granted_write_graphs(vec![]);
+    }
+
+    #[test]
+    fn the_icd_graph_chorus_owns_stays_writable() {
+        assert!(assert_dal_writable("urn:gathering:icd/current").is_ok());
     }
 
     #[test]

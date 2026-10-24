@@ -40,7 +40,23 @@ fn the_dry_run_shows_exactly_what_apply_then_sends() {
     let ops = [set("comment", "a"), set("status", "b")];
     let plan = apply_plan(&a, "test", "loom", G, None, &ops, &id).unwrap();
     apply(&b, "test", "loom", G, None, &ops, &id).unwrap();
-    assert_eq!(b.updates.borrow().as_slice(), &[plan]);
+    // the modified stamp is the clock at write time; the two may straddle a second
+    assert_eq!(b.updates.borrow().iter().map(|u| unstamp(u)).collect::<Vec<_>>(), vec![unstamp(&plan)]);
+}
+
+/// Every `"…Z"` timestamp literal replaced by `"T"`, so two runs compare on content.
+fn unstamp(u: &str) -> String {
+    let mut out = String::new();
+    let mut rest = u;
+    while let Some(i) = rest.find("\"20") {
+        let tail = &rest[i + 1..];
+        match tail.find('"') {
+            Some(j) if tail[..j].ends_with('Z') => { out.push_str(&rest[..i]); out.push_str("\"T\""); rest = &tail[j + 1..]; }
+            _ => { out.push_str(&rest[..i + 1]); rest = tail; }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 // negative proof: a dry run must refuse exactly what apply refuses, or a green
