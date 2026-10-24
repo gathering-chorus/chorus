@@ -44,3 +44,25 @@ fn negative_proof_an_unverified_caller_stays_unattributed_even_with_a_forged_env
     assert!(e.is_err());
     assert_eq!(witness_role(), "unattributed");
 }
+
+/// src/main.rs — the TBox mint (`class`/`property`/`shape`) recorded "who" from
+/// DEPLOY_ROLE in the vocabulary ledger. Now it asks for the verified identity
+/// first, as retire-claim does, so a typed role cannot sign a vocabulary bump.
+#[test]
+fn negative_proof_a_tbox_mint_signed_only_by_deploy_role_is_refused_and_writes_nothing() {
+    let dir = std::env::temp_dir().join(format!("attr-4716-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("probe.ttl");
+    std::fs::write(&file, "# untouched\n").unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_athena-model"))
+        .args(["class", "--name", "AttrProbe", "--file", file.to_str().unwrap()])
+        .env("DEPLOY_ROLE", "kade")
+        .env_remove("CHORUS_IDENTITY_TOKEN")
+        .env("CHORUS_FUSEKI", "http://127.0.0.1:1")
+        .output()
+        .expect("binary runs");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a DEPLOY_ROLE-only mint must refuse: {}", err);
+    assert!(err.contains("identity-token-required"), "refusal names the cause: {}", err);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "# untouched\n", "nothing appended");
+}

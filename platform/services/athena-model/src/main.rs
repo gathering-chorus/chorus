@@ -175,6 +175,13 @@ fn run() -> Result<String, String> {
             let file = get("--file").unwrap_or_default();
             let deploy_set = athena_model::adr::deploy_set_from_script();
             let dry = rest.iter().any(|a| a == "--dry-run");
+            // #4716 — identity FIRST, fail closed, as retire-claim: the ledger's
+            // "who" is the verified token, never a typed DEPLOY_ROLE.
+            let who = if dry {
+                "dry-run".to_string()
+            } else {
+                Identity::resolve(&FusekiStore::new())?.role().to_string()
+            };
 
             let (refusals, turtle) = match v {
                 "class" => {
@@ -313,7 +320,6 @@ fn run() -> Result<String, String> {
             // projection. Fail-loud: an unrecorded bump would be a hand-edit
             // wearing the pen's clothes.
             let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-            let who = std::env::var("DEPLOY_ROLE").or_else(|_| std::env::var("CHORUS_ROLE")).unwrap_or_else(|_| "system".to_string());
             let card = std::env::var("CHORUS_CARD").unwrap_or_default();
             let vv = athena_model::vocab_version::record(&root, v, &format!("{}:{}", v, file), &who, &card)?;
             Ok(format!("appended to {} (vocabVersion -> {}):
