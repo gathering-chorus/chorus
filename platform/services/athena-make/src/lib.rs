@@ -5231,6 +5231,11 @@ pub fn collection_page_query_filtered(graph: &str, class: &str, filter: &str, li
     )
 }
 
+/// #4728 — the datatypes athena-model's field_literal writes (#4717); a literal
+/// filter matches its value in each of them as well as plain.
+const TYPED_FILTER_DATATYPES: &[&str] = &["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+    "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"];
+
 /// Collection GET keys that page or shape the read rather than filter it.
 const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 
@@ -5241,7 +5246,8 @@ const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 ///
 /// `fields` is the caller's EXPOSED projection (name, is-edge), so a filter can
 /// only test a field the caller could already read. An edge matches the target's
-/// local name (the value the collection serves for it); a literal matches exactly.
+/// local name (the value the collection serves for it); a literal matches its
+/// text plain or in any datatype the DAL writes (#4728).
 /// Both bind a constant into the triple pattern, so the store answers from its
 /// index. An unknown key or an unsafe value is an error, never a silent "all rows".
 /// Returns the SPARQL patterns and the query-string to carry on `links.next`.
@@ -5266,7 +5272,19 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
             if value.is_empty() || value.chars().any(|c| c == '"' || c == '\\' || c.is_control()) {
                 return Err(format!("filter '{key}': value must be non-empty, with no quote, backslash or control character"));
             }
-            patterns.push_str(&format!(" . ?s <{NS}{key}> \"{value}\""));
+            // #4728 — since #4717 the DAL writes a literal with its shape's
+            // datatype ("2026-10-24"^^xsd:date, "42"^^xsd:integer), and the
+            // retype gave old rows the same; an exact plain-literal pattern then
+            // matched nothing (readingDay=<today> → 0 rows, every day-filtered
+            // alert "no-reading"). The value is matched as written and as each
+            // datatype the DAL types, still as constants, so the store keeps
+            // answering from its index.
+            let n = carried.len();
+            let terms: String = std::iter::once(format!("\"{value}\""))
+                .chain(TYPED_FILTER_DATATYPES.iter().map(|d| format!("\"{value}\"^^<http://www.w3.org/2001/XMLSchema#{d}>")))
+                .collect::<Vec<_>>()
+                .join(" ");
+            patterns.push_str(&format!(" . VALUES ?fv{n} {{ {terms} }} ?s <{NS}{key}> ?fv{n}"));
         }
         carried.push(kv);
     }
@@ -7250,7 +7268,12 @@ mod tests {
     #[test]
     fn a_filter_on_a_literal_matches_the_decoded_value() {
         let (p, _) = collection_filter("result=did%20not+run", &result_fields()).unwrap();
-        assert_eq!(p, format!(" . ?s <{NS}result> \"did not run\""));
+        // every datatype the DAL writes, in order (Wren/Kade 10-24: an exact
+        // assert, so a shortened list is caught)
+        let typed: String = ["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+            "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"]
+            .iter().map(|d| format!(" \"did not run\"^^<http://www.w3.org/2001/XMLSchema#{d}>")).collect();
+        assert_eq!(p, format!(" . VALUES ?fv0 {{ \"did not run\"{typed} }} ?s <{NS}result> ?fv0"));
     }
 
     #[test]
