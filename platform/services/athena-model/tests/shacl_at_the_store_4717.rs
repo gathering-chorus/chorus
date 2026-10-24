@@ -315,3 +315,34 @@ fn the_shapes_hash_is_the_same_for_the_same_graph() {
     }
     assert_eq!(a.len(), 64);
 }
+
+/// Wren 10-24 (#3734): the gate is wired into a set and a link outside `apply`,
+/// so each needs its own refusal. Both go through the real DAL verbs against
+/// real Jena: a severity above the shape's sh:maxInclusive (the DAL's own field
+/// checks pass it) and a runbook link to a row with no name (sh:node; machines stand in as runbooks). Each is
+/// refused and the row is unchanged; a good set and a good link land.
+#[test]
+fn a_bad_set_and_a_bad_link_outside_apply_are_refused_and_write_nothing() {
+    use athena_model::{add_edges_keeping, set_field, verify_identity};
+    let _l = lock();
+    let st = store(need_server!());
+    let sec = std::env::var("CHORUS_SECURITY_GRAPH").unwrap_or_else(|_| athena_model::SECURITY_GRAPH_DEFAULT.to_string());
+    st.update(&format!("INSERT DATA {{ GRAPH <{sec}> {{ <{C}principal-silas> a <{C}Principal> }} \
+        GRAPH <urn:chorus:ontology> {{ <{C}AlertShape> <http://www.w3.org/ns/shacl#property> <{C}SeverityRange> . \
+        <{C}SeverityRange> <http://www.w3.org/ns/shacl#path> <{C}severity> ; <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer> ; \
+        <http://www.w3.org/ns/shacl#maxInclusive> 5 ; <http://www.w3.org/ns/shacl#message> \"severity is 1 to 5\" }} \
+        GRAPH <{ALERTS}> {{ <{C}alert-h> a <{C}Alert> ; <{C}owner> \"silas\" }} \
+        GRAPH <urn:chorus:instances:platforms> {{ <{C}m1> a <{C}Machine> . <{C}m2> a <{C}Machine> ; <{C}name> \"library\" }} }}")).unwrap();
+    let id = verify_identity(Some("silas"), &st).unwrap();
+    let before = row(&st, "alert-h");
+    let e = set_field(&st, "alert", "h", "severity", "9", Some(ALERTS), &id).unwrap_err();
+    assert!(e.contains("severity: severity is 1 to 5"), "{e}");
+    assert_eq!(row(&st, "alert-h"), before, "a refused set wrote");
+    set_field(&st, "alert", "h", "severity", "3", Some(ALERTS), &id).unwrap();
+    let e = add_edges_keeping(&st, "alert", "h", &[("runbook".into(), "machine".into(), "m1".into())], Some(ALERTS), &id, None).unwrap_err();
+    assert!(e.contains("runbook: the runbook needs a name"), "{e}");
+    assert!(!row(&st, "alert-h").iter().any(|v| v.contains("runbook")), "a refused link wrote");
+    add_edges_keeping(&st, "alert", "h", &[("runbook".into(), "machine".into(), "m2".into())], Some(ALERTS), &id, None).unwrap();
+    assert!(row(&st, "alert-h").iter().any(|v| v.ends_with("#m2")));
+    assert_eq!(scratch_graphs(&st), 0);
+}
