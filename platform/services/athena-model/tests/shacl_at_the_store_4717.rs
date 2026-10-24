@@ -95,6 +95,8 @@ const TARGETS: &str = "<https://jeffbridwell.com/chorus#platform-p1> a <https://
 fn store(s: &Server) -> FusekiStore {
     std::env::set_var("ATHENA_SHACL", "1");
     std::env::set_var("ATHENA_SHACL_CACHE", s._dir.join("shacl-cache"));
+    // the gate's witness events go to this server's own log, never the live spine
+    std::env::set_var("CHORUS_LOG_FILE", s._dir.join("chorus.log"));
     FusekiStore { endpoint: format!("http://127.0.0.1:{}/t", s.port) }
 }
 fn scratch_graphs(st: &FusekiStore) -> usize {
@@ -278,21 +280,26 @@ fn a_same_count_shape_edit_applies_to_the_next_write() {
     assert!(e.contains("owner: an alert needs an owner"), "{e}");
 }
 
-/// Wren 10-24: a write holds the single-writer lock for its check; with the
-/// shapes cached the gate must stay well under the 0.4 s a full-shapes check took.
+/// Wren 10-24: a write holds the single-writer lock for its check, so the
+/// shapes must not be re-read on every write. Deterministic, not a stopwatch
+/// (cicd run 2, 10-24 09:34: a 250 ms bound failed at 650 ms under load): after
+/// the first write, five more send no shapes CONSTRUCT to the store at all.
 #[test]
-fn a_cached_check_is_fast() {
+fn a_cached_check_does_not_reread_the_shapes() {
     let _l = lock();
-    let st = store(need_server!());
+    let s = need_server!();
+    let st = store(s);
     let w = format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-g> a <{C}Alert> ; <{C}owner> \"kade\" }} }}");
     gate(&st, &w, &[format!("{C}alert-g")]).unwrap();
+    let reads = || std::fs::read_to_string(s._dir.join("server.log")).unwrap().matches("CONSTRUCT { ?n ?p ?o }").count();
+    let before = reads();
+    assert!(before >= 1, "the first write read the shapes");
     let t = std::time::Instant::now();
     for _ in 0..5 {
         gate(&st, &w, &[format!("{C}alert-g")]).unwrap();
     }
-    let each = t.elapsed() / 5;
-    assert!(each < std::time::Duration::from_millis(250), "a cached gate took {each:?}");
-    eprintln!("cached gate: {each:?} each");
+    assert_eq!(reads(), before, "a cached write re-read the shapes");
+    eprintln!("cached gate: {:?} each", t.elapsed() / 5);
 }
 
 /// Kade 10-24 (demo review): the shapes hash keys the cache, so the same graph
