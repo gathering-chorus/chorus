@@ -102,3 +102,23 @@ alerts() {  # n alerts with `bad` of them broken twice (no owner, muted "maybe")
   FUSEKI_QUERY="http://localhost:1/pods/query" run "$ROOT/platform/scripts/shacl-census"
   [ "$status" -ne 0 ] && [ ! -e "$TEXTFILE_DIR/athena_shacl.prom" ] && [ ! -e "$SHACL_CENSUS_STATE" ] || { echo "$output"; return 1; }
 }
+
+# AC6 — platform/scripts/shacl-retype: the datatype changes, the value never does
+@test "retype: a dry run counts and writes nothing; apply retypes what matches, backs it up, and leaves the rest" {
+  upd "INSERT DATA { GRAPH <urn:chorus:ontology> { <${C}AlertShape> <${SH}property> [ <${SH}path> <${C}rank> ; <${SH}datatype> <http://www.w3.org/2001/XMLSchema#integer> ] } }"
+  upd "INSERT DATA { GRAPH <urn:chorus:domains:alerts> { <${C}a1> a <${C}Alert> ; <${C}rank> \"38\" ; <${C}muted> \"true\" ; <${C}owner> \"7\" . <${C}a2> a <${C}Alert> ; <${C}rank> \"high\" ; <${C}muted> \"maybe\" } }"
+  export FUSEKI_UPDATE="http://localhost:$PORT/pods/update" SHACL_RETYPE_BACKUP="$T/backup.nt"
+  run "$ROOT/platform/scripts/shacl-retype"
+  [ "$status" -eq 0 ] && [[ "$output" == *"2 literal(s) can be retyped"* ]] && [[ "$output" == *"dry run, nothing written"* ]] || { echo "$output"; return 1; }
+  [ ! -e "$T/backup.nt" ]
+  run "$ROOT/platform/scripts/shacl-retype" --apply
+  [ "$status" -eq 0 ] && [[ "$output" == *"retyped 2 of 2; 0 left"* ]] || { echo "$output"; return 1; }
+  [ "$(grep -c . "$T/backup.nt")" = 2 ]
+  q() { curl -s --max-time 10 "localhost:$PORT/pods/query" -H 'Accept: text/tab-separated-values' --data-urlencode "query=$1" | sed -n 2p; }
+  [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a1> <${C}rank> ?o } BIND(DATATYPE(?o) AS ?v) }")" = "<http://www.w3.org/2001/XMLSchema#integer>" ]
+  [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a1> <${C}rank> ?o } BIND(STR(?o) AS ?v) }")" = '"38"' ]
+  # negative: what does not fit its datatype, and a string field, are untouched
+  [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a2> <${C}rank> ?o } BIND(DATATYPE(?o) AS ?v) }")" = "<http://www.w3.org/2001/XMLSchema#string>" ]
+  [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a2> <${C}muted> ?o } BIND(DATATYPE(?o) AS ?v) }")" = "<http://www.w3.org/2001/XMLSchema#string>" ]
+  [ "$(q "SELECT ?v WHERE { GRAPH ?g { <${C}a1> <${C}owner> ?o } BIND(DATATYPE(?o) AS ?v) }")" = "<http://www.w3.org/2001/XMLSchema#string>" ]
+}
