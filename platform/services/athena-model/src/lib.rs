@@ -2573,14 +2573,18 @@ impl<'a> DeferredStore<'a> {
     pub fn held(&self) -> usize {
         self.held.borrow().len()
     }
-    /// Send every held update as one request (one Fuseki transaction).
-    pub fn commit(&self) -> R<usize> {
+    /// The one update `commit` would send.
+    pub fn pending(&self) -> R<String> {
         let held = self.held.borrow();
         if held.is_empty() {
             return Err("apply: nothing to write".into());
         }
-        self.inner.update(&held.join(" ;\n"))?;
-        Ok(held.len())
+        Ok(held.join(" ;\n"))
+    }
+    /// Send every held update as one request (one Fuseki transaction).
+    pub fn commit(&self) -> R<usize> {
+        self.inner.update(&self.pending()?)?;
+        Ok(self.held())
     }
 }
 
@@ -2607,23 +2611,36 @@ pub enum ApplyOp {
 /// #4715 AC1 — apply a revision and every op to one row in ONE update. Any
 /// check that refuses refuses the whole apply, and nothing is written.
 pub fn apply(store: &dyn Store, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<usize> {
-    if ops.is_empty() {
-        return Err("apply: no change named".into());
-    }
     let d = DeferredStore::new(store);
-    if let Some(r) = revision {
-        write_many(&d, std::slice::from_ref(r), id)?;
-    }
-    for op in ops {
-        match op {
-            ApplyOp::Set { field, value } => { set_field(&d, kind, name, field, value, Some(graph), id)?; }
-            ApplyOp::Link { edges } => { add_edges_keeping(&d, kind, name, edges, Some(graph), id, None)?; }
-            ApplyOp::Triples { deletes, inserts } => { batch(&d, graph, deletes, inserts, id)?; }
-        }
-    }
+    stage_apply(&d, kind, name, graph, revision, ops, id)?;
     let n = d.commit()?;
     witness("model.apply", &[("kind", kind), ("name", name), ("ops", ops.len().to_string().as_str()), ("updates", n.to_string().as_str())]);
     Ok(n)
+}
+
+/// #4716 — `apply --dry-run`: every check `apply` runs, then the one update it
+/// would send, returned instead of sent.
+pub fn apply_plan(store: &dyn Store, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<String> {
+    let d = DeferredStore::new(store);
+    stage_apply(&d, kind, name, graph, revision, ops, id)?;
+    d.pending()
+}
+
+fn stage_apply(d: &DeferredStore, kind: &str, name: &str, graph: &str, revision: Option<&WriteReq>, ops: &[ApplyOp], id: &Identity) -> R<()> {
+    if ops.is_empty() {
+        return Err("apply: no change named".into());
+    }
+    if let Some(r) = revision {
+        write_many(d, std::slice::from_ref(r), id)?;
+    }
+    for op in ops {
+        match op {
+            ApplyOp::Set { field, value } => { set_field(d, kind, name, field, value, Some(graph), id)?; }
+            ApplyOp::Link { edges } => { add_edges_keeping(d, kind, name, edges, Some(graph), id, None)?; }
+            ApplyOp::Triples { deletes, inserts } => { batch(d, graph, deletes, inserts, id)?; }
+        }
+    }
+    Ok(())
 }
 
 /// #4715 — parse `apply`'s stdin: one JSON object per line, one of

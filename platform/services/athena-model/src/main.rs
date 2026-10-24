@@ -820,6 +820,10 @@ fn run() -> Result<String, String> {
             let (revision, ops) = parse_apply_ndjson(&input)?;
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?;
+            if args[1..].iter().any(|a| a == "--dry-run") {
+                let plan = athena_model::apply_plan(&store, &req.kind, &req.name, &graph, revision.as_ref(), &ops, &id)?;
+                return Ok(format!("# dry-run — nothing written; the one update apply would send:\n{}", plan));
+            }
             let n = apply(&store, &req.kind, &req.name, &graph, revision.as_ref(), &ops, &id)?;
             Ok(format!("apply: {} change(s) to {} in one update ({} statement(s))", ops.len(), req.name, n))
         }
