@@ -1,0 +1,97 @@
+#!/bin/bash
+# #4717 reopen — rewrite the store's decimals into the one spelling Jena can delete.
+#
+# Jena 5.1 (TDB2) keeps a decimal written as "7" or "7.00" under that spelling
+# but reads it back as 7.0, so `DELETE WHERE { s p ?o }` misses it and a replace
+# adds a value beside the old one (10-24: a sensor reading held 7.0 and 8.0, and
+# the crawler-out-of-sync check crashed on the list). shacl-retype and the DAL's
+# typed writes both stored decimals that way. The DAL now writes them canonical
+# (athena-model canonical_decimal); this fixes the ones already in the store.
+#
+# Found by asking for each decimal under its canonical spelling: a value the
+# store cannot find that way is one a replace cannot delete. The stored
+# spelling is not readable, so each is deleted under the spellings our writers
+# produce ("7", "7.00", "7.50" ...) and written once canonical. Only the
+# predicates a shape types xsd:decimal, only urn:chorus:domains:* graphs.
+#
+#   shacl-decimal-canon            dry run: count per predicate; writes nothing
+#   shacl-decimal-canon --apply    backs up the list (g s p value, TSV) to
+#                                  $SHACL_DECIMAL_BACKUP, rewrites, then counts
+#                                  again and fails unless none are left
+#
+#   FUSEKI_QUERY / FUSEKI_UPDATE  the store (default prod /pods)
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+Q="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+U="${FUSEKI_UPDATE:-${Q%/query}/update}"
+APPLY=0; [ "${1:-}" = "--apply" ] && APPLY=1
+BACKUP="${SHACL_DECIMAL_BACKUP:-$HOME/.chorus/backups/shacl-decimal-canon-$(date -u +%Y%m%dT%H%M%SZ)-$$.tsv}"
+[ -f "$HERE/fuseki-auth.sh" ] && source "$HERE/fuseki-auth.sh"
+A=("${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}")
+PRE='PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>'
+
+ask() { curl -sf --max-time 110 "${A[@]+"${A[@]}"}" -H "Accept: text/tab-separated-values" --data-urlencode "query=$1" "$Q"; }
+
+preds=$(ask "$PRE SELECT DISTINCT ?p WHERE { GRAPH <urn:chorus:ontology> { ?b sh:path ?p ; sh:datatype xsd:decimal FILTER(isIRI(?p)) } }") \
+  || { echo "shacl-decimal-canon: the store did not answer ($Q)" >&2; exit 1; }
+preds=$(printf '%s\n' "$preds" | sed 1d | grep . || true)
+
+# the decimals a replace cannot delete: g s p value (value as the store reads it)
+stuck() {
+  local p
+  for p in $preds; do
+    ask "$PRE SELECT ?g ?s ?p ?v WHERE { VALUES ?p { $p } GRAPH ?g { ?s ?p ?o }
+      FILTER(STRSTARTS(STR(?g), \"urn:chorus:domains:\") && isLiteral(?o) && DATATYPE(?o) = xsd:decimal)
+      BIND(STR(?o) AS ?v) BIND(STRDT(?v, xsd:decimal) AS ?c)
+      FILTER NOT EXISTS { GRAPH ?g { ?s ?p ?c } } }" | sed 1d \
+      || { echo "shacl-decimal-canon: the store did not answer for $p" >&2; return 1; }
+  done
+}
+
+list=$(stuck) || exit 1
+total=$(printf '%s\n' "$list" | grep -c . || true)
+for p in $preds; do
+  n=$(printf '%s\n' "$list" | awk -F'\t' -v p="$p" '$3 == p' | grep -c . || true)
+  echo "decimal	$n	${p##*#}" | tr -d '<>'
+done
+echo "shacl-decimal-canon: $total decimal(s) a replace cannot delete"
+[ "$APPLY" = 1 ] || { echo "shacl-decimal-canon: dry run, nothing written"; exit 0; }
+[ "$total" -gt 0 ] || exit 0
+
+mkdir -p "$(dirname "$BACKUP")"
+printf '%s\n' "$list" > "$BACKUP"
+echo "shacl-decimal-canon: backup $BACKUP ($total rows)"
+
+# one update per 100 values: delete every spelling our writers produce, write the canonical one
+work=$(mktemp -d)
+printf '%s\n' "$list" | python3 -I -c '
+import sys, os
+D = "<http://www.w3.org/2001/XMLSchema#decimal>"
+out = sys.argv[1]
+rows = [l.rstrip("\n").split("\t") for l in sys.stdin if l.strip()]
+def spellings(c):
+    i, f = c.split(".")
+    s = {f"{i}.{f}0", f"{i}.{f}00", f"{i}.{f}000"}
+    if f == "0":
+        s |= {i, f"+{i}" if not i.startswith("-") else i}
+    if i in ("0", "-0"):
+        s |= {f"{i[:-1]}.{f}", f"{i[:-1]}.{f}0"}
+    s.discard(c)
+    return sorted(s)
+for n in range(0, len(rows), 100):
+    dels, ins = [], []
+    for g, s, p, v in rows[n:n + 100]:
+        lit = v.strip("\"")
+        dels += [f"GRAPH {g} {{ {s} {p} \"{x}\"^^{D} }}" for x in spellings(lit)]
+        ins.append(f"GRAPH {g} {{ {s} {p} \"{lit}\"^^{D} }}")
+    with open(os.path.join(out, f"{n:08d}.ru"), "w") as fh:
+        fh.write("DELETE DATA { " + " ".join(dels) + " } ;\nINSERT DATA { " + " ".join(ins) + " }\n")
+' "$work" || { echo "shacl-decimal-canon: could not build the updates; nothing written" >&2; exit 1; }
+for f in "$work"/*.ru; do
+  curl -sf -o /dev/null --max-time 110 "${A[@]+"${A[@]}"}" --data-urlencode "update@$f" "$U" \
+    || { echo "shacl-decimal-canon: update $(basename "$f") failed; earlier ones are done, the list is in $BACKUP" >&2; exit 1; }
+done
+
+left=$(stuck | grep -c . || true)
+echo "shacl-decimal-canon: rewrote $((total - left)) of $total; $left left"
+[ "$left" -eq 0 ]

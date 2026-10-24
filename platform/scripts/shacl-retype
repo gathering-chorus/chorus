@@ -6,7 +6,9 @@
 # sh:datatype (13,099 literals on 10-24, the census's largest group). This
 # changes the datatype only, never the value: "38" becomes "38"^^xsd:integer.
 # A value that is not valid for its datatype ("maybe" on a boolean) is left
-# alone and stays counted. Only urn:chorus:domains:* graphs, only the
+# alone and stays counted. A decimal is written canonical ("7" becomes
+# "7.0" by adding 0.0: a cast alone keeps the spelling), the one spelling Jena
+# 5.1 can delete again (#4717 reopen). Only urn:chorus:domains:* graphs, only the
 # integer, decimal, double, boolean, dateTime and date datatypes.
 #
 #   shacl-retype            dry run: counts per datatype, class and field; writes nothing
@@ -32,7 +34,7 @@ where() {
       ?sh sh:targetClass ?c ; sh:property ?b . ?b sh:path ?p ; sh:datatype xsd:$d FILTER(isIRI(?p)) } } }
   GRAPH ?g { ?s a ?c ; ?p ?o }
   FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:") && isLiteral(?o) && DATATYPE(?o) = xsd:string)
-  BIND(xsd:$d(STR(?o)) AS ?t)
+  BIND(IF("$d" = "decimal", xsd:decimal(STR(?o)) + 0.0, xsd:$d(STR(?o))) AS ?t)
   FILTER(BOUND(?t))
 EOF
 }
