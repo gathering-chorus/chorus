@@ -346,3 +346,21 @@ fn a_bad_set_and_a_bad_link_outside_apply_are_refused_and_write_nothing() {
     assert!(row(&st, "alert-h").iter().any(|v| v.ends_with("#m2")));
     assert_eq!(scratch_graphs(&st), 0);
 }
+
+/// Kade 10-24 (review of gate): only edges a shape reads backwards are copied
+/// into the scratch, so a row with many inbound links stays cheap to check. An
+/// sh:inversePath constraint still sees its inbound edges: an alert that no
+/// incident points at is refused once the shape requires one.
+#[test]
+fn inverse_paths_still_see_their_inbound_edges() {
+    let _l = lock();
+    let st = store(need_server!());
+    let sh = "http://www.w3.org/ns/shacl#";
+    let shape = format!("<{C}AlertShape> <{sh}property> <{C}RaisedBy> . <{C}RaisedBy> <{sh}path> [ <{sh}inversePath> <{C}raises> ] ; <{sh}minCount> 1 ; <{sh}message> \"an incident raises it\" .");
+    st.update(&format!("INSERT DATA {{ GRAPH <urn:chorus:ontology> {{ {shape} }} GRAPH <urn:chorus:instances:incidents> {{ <{C}incident-1> <{C}raises> <{C}alert-i> }} }}")).unwrap();
+    let w = |a: &str| format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}{a}> a <{C}Alert> ; <{C}owner> \"kade\" }} }}");
+    gate(&st, &w("alert-i"), &[format!("{C}alert-i")]).unwrap();
+    let e = gate(&st, &w("alert-j"), &[format!("{C}alert-j")]).unwrap_err();
+    assert!(e.contains("an incident raises it"), "{e}");
+    st.update(&format!("DELETE WHERE {{ GRAPH <urn:chorus:ontology> {{ <{C}AlertShape> <{sh}property> <{C}RaisedBy> . <{C}RaisedBy> ?p ?o }} }}")).unwrap();
+}

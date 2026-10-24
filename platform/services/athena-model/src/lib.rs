@@ -663,7 +663,8 @@ impl FusekiStore {
     /// #4717 — the shapes for rows of `classes`: every shape targeting one of
     /// them or a superclass (or a class that is its own shape), followed through
     /// SHACL predicates only (property, node, and/or/xone/not, in, sparql,
-    /// qualified shapes, lists) so nested shapes come along. Jena parses a few
+    /// qualified shapes, complex paths, lists) so nested shapes and blank-node
+    /// paths come along; a missing path node makes Jena refuse the shapes. Jena parses a few
     /// hundred KB instead of the whole 727 KB graph. Kept on disk under the
     /// shapes graph's hash, so a shape edit is a new file and never stale.
     pub fn shapes_for(&self, classes: &[String]) -> R<String> {
@@ -683,7 +684,7 @@ impl FusekiStore {
         let q = format!("CONSTRUCT {{ ?n ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ VALUES ?c0 {{ {values} }} \
             ?c0 <http://www.w3.org/2000/01/rdf-schema#subClassOf>* ?c . \
             {{ ?root <{sh}targetClass> ?c }} UNION {{ BIND(?c AS ?root) ?root a <{sh}NodeShape> }} \
-            ?root (<{sh}property>|<{sh}node>|<{sh}and>|<{sh}or>|<{sh}xone>|<{sh}not>|<{sh}in>|<{sh}sparql>|<{sh}qualifiedValueShape>|<{sh}ignoredProperties>|<{rdf}first>|<{rdf}rest>)* ?n . \
+            ?root (<{sh}property>|<{sh}node>|<{sh}and>|<{sh}or>|<{sh}xone>|<{sh}not>|<{sh}in>|<{sh}sparql>|<{sh}qualifiedValueShape>|<{sh}ignoredProperties>|<{sh}path>|<{sh}inversePath>|<{sh}alternativePath>|<{sh}zeroOrMorePath>|<{sh}oneOrMorePath>|<{sh}zeroOrOnePath>|<{rdf}first>|<{rdf}rest>)* ?n . \
             ?n ?p ?o }} }}");
         let t = self.http(&["-H", "Accept: text/turtle", "--data-urlencode", &format!("query={q}")], "/query")?;
         if std::fs::create_dir_all(&dir).is_ok() {

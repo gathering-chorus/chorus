@@ -213,11 +213,14 @@ pub fn gate(store: &dyn Store, update: &str, subjects: &[String]) -> R<()> {
     let copy = format!(
         "INSERT DATA {{ GRAPH <{scratch}> {{ <{scratch}> a <urn:chorus:ShaclScratch> }} }} ;\n\
          INSERT {{ GRAPH <{scratch}> {{ ?s ?p ?o }} }} WHERE {{ VALUES ?x {{ {values} }} \
-         {{ GRAPH ?g {{ ?x ?p ?o }} BIND(?x AS ?s) }} UNION {{ GRAPH ?g {{ ?s ?p ?x }} BIND(?x AS ?o) }} \
+         {{ GRAPH ?g {{ ?x ?p ?o }} BIND(?x AS ?s) }} UNION \
+         {{ GRAPH <{ONTOLOGY_GRAPH}> {{ ?ib <{SH}inversePath> ?p }} GRAPH ?g {{ ?s ?p ?x }} BIND(?x AS ?o) }} \
          FILTER(?g != <{ONTOLOGY_GRAPH}> && !STRSTARTS(STR(?g), \"{SCRATCH_PREFIX}\")) }}"
     );
     let checked = (|| -> R<(Vec<Violation>, Vec<Violation>)> {
-        // the rows as they are, and what points at them (inverse paths); the
+        // the rows as they are, and what points at them through a predicate a
+        // shape reads backwards (sh:inversePath) — only those: Kade 10-24, a
+        // principal has 109,833 edges pointing at it on prod; the
         // write applied to the copy; then whatever the rows link to
         store.update(&copy)?;
         store.update(&rewrite_to_scratch(update, &scratch))?;
