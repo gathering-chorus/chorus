@@ -116,7 +116,9 @@ function signEvent(sk, content, options = {}) {
 }
 
 function formatAuthor(role) {
-  return role === 'abby-normal' ? 'Abby Normal' : role;
+  if (role === 'abby-normal') return 'Abby Normal';
+  if (role === 'borg-queen') return 'Borg Queen';
+  return role;
 }
 
 function formatMessageTime(ts) {

@@ -26,6 +26,7 @@
   --kade: #7b4a86;
   --deb: #8a6a12;
   --abby-normal: #7b4a86;
+  --borg-queen: #0f766e;
   --callout: #c2562f;
   --code: #edf1ee;
 
@@ -65,6 +66,7 @@
     --kade: #c79ad2;
     --deb: #e0bd5a;
     --abby-normal: #c79ad2;
+    --borg-queen: #2dd4bf;
     --callout: #f08a60;
     --code: #202b27;
     color-scheme: dark;
@@ -105,6 +107,7 @@
   --kade: #c79ad2;
   --deb: #e0bd5a;
   --abby-normal: #c79ad2;
+  --borg-queen: #2dd4bf;
   --callout: #f08a60;
   --code: #202b27;
   color-scheme: dark;
@@ -427,12 +430,14 @@ nav.top .n {
 .a-kade { background: var(--kade); }
 .a-deb { background: var(--deb); }
 .a-abby-normal { background: var(--abby-normal); }
+.a-borg-queen { background: var(--borg-queen); }
 
-.who-wren { color: var(--wren); }
-.who-silas { color: var(--silas); }
-.who-kade { color: var(--kade); }
-.who-jeff { color: var(--jeff); }
-.who-abby-normal { color: var(--abby-normal); }
+.who-wren, .message-author.wren { color: var(--wren); }
+.who-silas, .message-author.silas { color: var(--silas); }
+.who-kade, .message-author.kade { color: var(--kade); }
+.who-jeff, .message-author.jeff { color: var(--jeff); }
+.who-abby-normal, .message-author.abby-normal { color: var(--abby-normal); }
+.who-borg-queen, .message-author.borg-queen { color: var(--borg-queen); }
 
 .dot {
   width: 8px;

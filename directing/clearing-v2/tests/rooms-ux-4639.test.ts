@@ -182,5 +182,20 @@ describe('#4639 Clearing Rooms UX improvements', () => {
       const drawer = toDrawerCard(4640, cardWithoutAc);
       expect(drawer?.acItems).toBeUndefined();
     });
+
+    test('Borg Queen messages render with proper name capitalization and role style class', () => {
+      const { renderRoomMessage } = require('../src/views');
+      const html = renderRoomMessage({
+        id: 'msg-bq-1',
+        from: 'borg-queen',
+        text: 'Prover report: all 13 checks green.',
+        time: '06:05',
+      });
+      expect(html).toContain('who-borg-queen');
+      expect(html).toContain('>Borg Queen</span>');
+      expect(html).toContain('a-borg-queen');
+      // NEGATIVE PROOF: must not render raw uncapitalized slug without role style
+      expect(html).not.toContain('>borg-queen</span>');
+    });
   });
 });

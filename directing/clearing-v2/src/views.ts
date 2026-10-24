@@ -443,6 +443,12 @@ export function bodyHash(text: string): string {
   return (h >>> 0).toString(36);
 }
 
+function formatAuthorName(role: string): string {
+  if (role === 'abby-normal') return 'Abby Normal';
+  if (role === 'borg-queen') return 'Borg Queen';
+  return role;
+}
+
 export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
@@ -452,7 +458,7 @@ export function renderRoomMessage(m: RoomsData['messages'][number]): string {
     <div class="msg${thinkingClass}" id="msg-${m.id}" data-from="${escapeHtml(m.from)}" data-body="${bodyHash(String(m.text || '').trim())}" data-ts="${escapeHtml(String(m.ts || ''))}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
       <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
       <div class="body">
-        <span class="nm who-${m.from}">${m.from}</span>
+        <span class="nm who-${m.from}">${formatAuthorName(m.from)}</span>
         <span class="tm">${m.time}</span>
         ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
         ${thinkingBadge}

@@ -26,6 +26,8 @@
     --silas: #58a6ff;
     --kade: #d29922;
     --jeff: #e6edf3;
+    --abby-normal: #a78bfa;
+    --borg-queen: #2dd4bf;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   /* Always show scrollbars — force visible on macOS */
@@ -295,6 +297,8 @@
   .msg-role.msg-from-wren .msg-bubble { background: rgba(63,185,80,0.10); }
   .msg-role.msg-from-silas .msg-bubble { background: rgba(88,166,255,0.10); }
   .msg-role.msg-from-kade .msg-bubble { background: rgba(210,153,34,0.10); }
+  .msg-role.msg-from-abby-normal .msg-bubble { background: rgba(167,139,250,0.10); }
+  .msg-role.msg-from-borg-queen .msg-bubble { background: rgba(45,212,191,0.10); }
   .msg-role .msg-bubble strong { font-size: 0.8rem; }
   .msg-role.msg-demo .msg-bubble, .msg-jeff.msg-demo .msg-bubble {
     background: #1a2e1a; border: 1px solid var(--green); border-left: 4px solid var(--green);
@@ -583,7 +587,7 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
     <button class="mic-btn" id="mic-btn" title="Voice input (hold to talk)">🎙</button>
     <button class="send-btn" id="send-btn">Send</button>
   </div>
-  <div class="input-hint">@role to direct • no @ = Wren gets it • <span class="desktop-hint">Enter for newline • Cmd+Enter or Send to send</span><span class="mobile-hint">tap Send</span></div>
+  <div class="input-hint">@role to direct • no @ = Wren gets it • <span class="desktop-hint">Enter to send</span><span class="mobile-hint">tap Send</span></div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -845,35 +849,23 @@ function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
-
-// Photo attachment button (#4639)
-const photoBtn = document.getElementById('photo-btn');
-const photoInput = document.getElementById('photo-input');
-if (photoBtn && photoInput) {
-  photoBtn.addEventListener('click', (e) => {
-    if (e.target !== photoInput) photoInput.click();
-  });
-  photoInput.addEventListener('change', async () => {
-    const files = Array.from(photoInput.files || []);
-    for (const file of files) {
-      const uploadType = file.name?.match(/\.heic$/i) ? 'image/heic' : file.type;
-      const resp = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': uploadType }, body: file });
-      const data = await resp.json();
-      if (data.url) {
-        const existing = input.value.trim();
-        input.value = existing ? `${existing} [img:${data.url}]` : `[img:${data.url}]`;
-        input.focus();
-      }
-    }
-    photoInput.value = '';
-  });
-}
-
-// Enter = newline / carriage return (CR); Cmd+Enter / Ctrl+Enter = send (#4639)
+const isMobile = () => window.innerWidth <= 768;
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault();
-    sendMessage();
+  if (e.key === 'Enter') {
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      sendMessage();
+      return;
+    }
+    if (isMobile()) {
+      // Mobile: Enter = newline (default textarea behavior), send via button only
+      return;
+    }
+    // Desktop: Enter = send, Shift+Enter = newline
+    if (!e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   }
 });
 // Auto-resize textarea as content grows
@@ -1134,7 +1126,8 @@ function renderTranscript() {
 
 function buildMessageEl(msg, cls, isClosing) {
   const isJeff = msg.from === 'jeff';
-  const isRole = roomRoles.includes(msg.from);
+  const knownRoles = ['wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
+  const isRole = roomRoles.includes(msg.from) || knownRoles.includes(msg.from);
   const isGuest = !isJeff && !isRole;
   const nodeClass = cls || ClearingTree.classifyNode(msg);
 
@@ -1177,9 +1170,10 @@ function buildMessageEl(msg, cls, isClosing) {
   }
 
   // Sender label — roles get colored name, guests get purple name, Jeff gets nothing
+  const fromName = msg.from === 'abby-normal' ? 'Abby Normal' : msg.from === 'borg-queen' ? 'Borg Queen' : (msg.from ? msg.from.charAt(0).toUpperCase() + msg.from.slice(1) : '');
   const sender = isJeff ? ''
-    : isGuest ? `<strong style="color:#d2a8ff">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`
-    : `<strong style="color:var(--${msg.from})">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`;
+    : isGuest ? `<strong style="color:#d2a8ff">${fromName}</strong><br>`
+    : `<strong style="color:var(--${msg.from})">${fromName}</strong><br>`;
 
   // #3746 — muting retired: the role filter PRUNES unselected roles' messages at the tree level.
 
