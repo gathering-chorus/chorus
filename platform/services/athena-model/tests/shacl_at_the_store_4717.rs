@@ -69,7 +69,7 @@ fn server() -> Option<&'static Server> {
         let st = FusekiStore { endpoint: format!("http://127.0.0.1:{}/t", s.port) };
         st.update(&format!("INSERT DATA {{ GRAPH <urn:chorus:ontology> {{ {SHAPES} }} GRAPH <{ALERTS}> {{ {ROWS} }} GRAPH <urn:chorus:instances:platforms> {{ {TARGETS} }} }}")).ok()?;
         // the live SensorRunShape (and the CoreShape it names), read 10-24 05:50
-        let sensor = std::fs::read_to_string(format!("{}/tests/fixtures/sensorrun-shape-4717.nt", std::env::var("CARGO_MANIFEST_DIR").ok()?)).ok()?;
+        let sensor = std::fs::read_to_string(format!("{}/tests/fixtures/sensorrun-shape-4717.nt", std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR for tests; without it the shapes would not load"))).ok()?;
         st.update(&format!("INSERT DATA {{ GRAPH <urn:chorus:ontology> {{ {sensor} }} GRAPH <{HERALDS}> {{ {SENSOR_TARGETS} }} }}")).ok()?;
         Some(s)
     }).as_ref()

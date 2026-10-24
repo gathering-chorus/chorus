@@ -169,3 +169,20 @@ fn negative_proof_a_registration_link_works_once() {
     let _ = store.mint_register_token().unwrap();
     assert!(register(&store, "made-up", "cred-3", &phone.spki(), &cd, RP, ORIGIN).is_err());
 }
+
+/// Kade's review: a challenge is spent even when its answer fails, so a bad
+/// answer cannot be retried into a good one. Jeff's retry is a page reload,
+/// which asks for a fresh challenge, and that one works.
+#[test]
+fn a_failed_answer_spends_its_challenge_and_a_fresh_one_still_works() {
+    let (store, mut phone) = registered("retry");
+    let nonce = store.mint_challenge(4717, "run1", ROUND).unwrap();
+    let ch = go_challenge(4717, "run1", &format!("{ROUND}|go"), &nonce);
+    let (ad, cd, _) = phone.sign(&ch, RP, ORIGIN, 0x05);
+    let bad = b64url(b"not a signature");
+    assert!(accept(&store, &nonce, "go", &ad, &cd, &bad).is_err());
+    let (ad, cd, sig) = phone.sign(&ch, RP, ORIGIN, 0x05);
+    assert!(accept(&store, &nonce, "go", &ad, &cd, &sig).unwrap_err().contains("already used"), "the spent challenge stays spent");
+    decide(&store, &mut phone, 4717, ROUND, "go").unwrap();
+    assert_eq!(land_check(&store, 4717, ROUND).unwrap(), LandGo::Signed);
+}

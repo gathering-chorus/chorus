@@ -47,9 +47,12 @@ fn serve(store: &Store) {
     let addr = env_or("CHORUS_GO_ADDR", "127.0.0.1:3490");
     let listener = TcpListener::bind(&addr).unwrap_or_else(|e| { eprintln!("chorus-go: bind {addr}: {e}"); std::process::exit(1) });
     eprintln!("chorus-go: serving {addr} for {}", origin());
-    for stream in listener.incoming().flatten() {
-        if let Err(e) = handle(store, stream) { eprintln!("chorus-go: {e}"); }
-    }
+    // one thread per connection: a phone waiting on Face ID never holds up the next request
+    std::thread::scope(|scope| {
+        for stream in listener.incoming().flatten() {
+            scope.spawn(move || if let Err(e) = handle(store, stream) { eprintln!("chorus-go: {e}"); });
+        }
+    });
 }
 
 struct Req { method: String, path: String, query: String, body: Vec<u8> }
