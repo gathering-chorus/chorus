@@ -144,3 +144,15 @@ scope() { printf '#!/usr/bin/env bash\necho "$@" >> "%s/scoped"\n%s\n' "$T" "$1"
   old="chorus""_athena"
   ! grep -qE "$old|chorus-mcp-call" <(grep -v '^#' "$AL") || false
 }
+
+# #4710 AC4 — Borg Queen's bypass 2: a model must not deploy from a canonical
+# holding a commit GitHub's main does not
+@test "NEGATIVE PROOF: a canonical with a local-only commit deploys no model (#4710)" {
+  scope 'echo designing/model/policy.ttl'
+  git -C "$T/home" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "#77 (kade) local only, never pushed"
+  run "$AL" 77 kade
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"canonical holds 1 commit(s) that origin/main does not"* ]] || false
+  [[ "$output" == *"result=failed"* ]] || false
+  [ ! -e "$T/calls" ]
+}
