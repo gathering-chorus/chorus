@@ -65,3 +65,37 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
 @test "AC3: generation script exists (dependency)" {
   [ -x "$GEN_SCRIPT" ]
 }
+
+# #4722 — with no STANDARDS_OUTPUT_DIR the arg array is empty, and macOS's
+# /bin/bash 3.2 treats "${a[@]}" of an empty array as unbound under set -u: the
+# job exited 1 every day from 2026-10-23 05:30. Hermetic: the script runs from a
+# copy beside a stub generator, against an empty CHORUS_ROOT, on the system bash.
+@test "#4722: a forced run with no output dir completes on bash 3.2 and calls the generator with no args" {
+  local dir="${BATS_TEST_TMPDIR}/cron-4722" root="${BATS_TEST_TMPDIR}/root-4722"
+  mkdir -p "$dir/lib" "$root"
+  cp "$SCRIPT" "$dir/standards-surface-cron.sh"
+  cp "$(dirname "$SCRIPT")/lib/service-lifecycle.sh" "$dir/lib/"
+  printf '#!/bin/bash\necho "args=$#" > "%s/gen-called"\n' "$dir" > "$dir/generate-standards-surface.sh"
+  chmod +x "$dir/generate-standards-surface.sh"
+  run env -u STANDARDS_OUTPUT_DIR CHORUS_ROOT="$root" STANDARDS_STATE_FILE="$dir/state.json" \
+    /bin/bash "$dir/standards-surface-cron.sh" --force
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$dir/gen-called")" = "args=0" ]
+}
+
+# #4722 NEGATIVE PROOF (#3734): the same run on the job with its expansion put
+# back unguarded must fail with bash 3.2's own error; else the test above could
+# be passing for a reason other than the guard.
+@test "#4722 NEGATIVE PROOF: the unguarded expansion exits non-zero on bash 3.2" {
+  local dir="${BATS_TEST_TMPDIR}/cron-4722-neg" root="${BATS_TEST_TMPDIR}/root-4722-neg"
+  mkdir -p "$dir/lib" "$root"
+  sed 's/\${_gen_args\[@\]+"\${_gen_args\[@\]}"}/"${_gen_args[@]}"/' "$SCRIPT" > "$dir/standards-surface-cron.sh"
+  grep -q '"\${_gen_args\[@\]}" 2>&1' "$dir/standards-surface-cron.sh"   # the fixture really is unguarded
+  cp "$(dirname "$SCRIPT")/lib/service-lifecycle.sh" "$dir/lib/"
+  printf '#!/bin/bash\nexit 0\n' > "$dir/generate-standards-surface.sh"
+  chmod +x "$dir/generate-standards-surface.sh"
+  run env -u STANDARDS_OUTPUT_DIR CHORUS_ROOT="$root" STANDARDS_STATE_FILE="$dir/state.json" \
+    /bin/bash "$dir/standards-surface-cron.sh" --force
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"_gen_args[@]: unbound variable"* ]] || return 1
+}

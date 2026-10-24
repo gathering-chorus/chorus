@@ -50,6 +50,8 @@ com.chorus.bridge-subscriber-silas	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
 com.chorus.share-guard	platform/scripts/chorus-share-guard.py
 com.chorus.share-guard-path	platform/scripts/chorus-share-guard.py
+com.chorus.shacl-bnodes	platform/scripts/shacl-bnodes
+com.chorus.shacl-census	platform/scripts/shacl-census
 com.chorus.alert-delivery-test	platform/scripts/alert-delivery-test.sh
 com.chorus.alert-runner	proving/scripts/alert-runner.sh
 com.chorus.bedroom-health	platform/scripts/health-check-bedroom.sh

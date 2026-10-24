@@ -1721,9 +1721,15 @@ fn parse_json_object(body: &str, allow_null: bool) -> R<std::collections::BTreeM
                 return Err(format!("create property '{}': an empty list says nothing — omit the property instead", key));
             }
             items
+        } else if body[i..].starts_with("true") || body[i..].starts_with("false") {
+            // #4713 — a JSON boolean is its lexical form; the DAL types it from the
+            // field's sh:datatype (xsd:boolean); a non-boolean typed field still refuses it.
+            let lexical = if body[i..].starts_with("true") { "true" } else { "false" };
+            i += lexical.len();
+            vec![lexical.to_string()]
         } else {
             vec![string_at(body, &mut i)
-                .map_err(|e| format!("create property '{}' must be a JSON string or a list of strings ({})", key, e))?]
+                .map_err(|e| format!("create property '{}' must be a JSON string, a JSON boolean, or a list of strings ({})", key, e))?]
         };
         if out.insert(key.clone(), value).is_some() {
             return Err(format!("create property '{}' appears more than once", key));
@@ -3086,6 +3092,29 @@ mod unbounded_edges_4222 {
         let j = openapi_json(&t);
         assert!(j.contains("\"filePath\": { \"type\": \"string\" }"), "{j}");
         assert!(!j.contains("\"filePath\": { \"type\": \"array\""), "{j}");
+    }
+}
+
+#[cfg(test)]
+mod json_boolean_4713_tests {
+    use super::*;
+
+    /// #4713 — the door took only JSON strings, so PATCH {"platform": true} was a
+    /// 422 and the boolean had to go in as the string "true".
+    #[test]
+    fn a_json_boolean_reads_as_its_lexical_form_in_create_and_patch() {
+        let c = parse_create_object(r#"{"platform": true, "label": "x"}"#).unwrap();
+        assert_eq!(c["platform"], vec!["true".to_string()]);
+        let p = parse_patch_object(r#"{"platform":false}"#).unwrap();
+        assert_eq!(p["platform"], vec!["false".to_string()]);
+    }
+
+    /// NEGATIVE PROOF: a bare word that only starts like a boolean, or a number,
+    /// is still refused; the door does not guess.
+    #[test]
+    fn a_bare_word_or_number_is_still_refused() {
+        assert!(parse_create_object(r#"{"platform": truex}"#).is_err());
+        assert!(parse_create_object(r#"{"platform": 1}"#).is_err());
     }
 }
 
@@ -5202,6 +5231,11 @@ pub fn collection_page_query_filtered(graph: &str, class: &str, filter: &str, li
     )
 }
 
+/// #4728 — the datatypes athena-model's field_literal writes (#4717); a literal
+/// filter matches its value in each of them as well as plain.
+const TYPED_FILTER_DATATYPES: &[&str] = &["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+    "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"];
+
 /// Collection GET keys that page or shape the read rather than filter it.
 const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 
@@ -5212,7 +5246,8 @@ const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 ///
 /// `fields` is the caller's EXPOSED projection (name, is-edge), so a filter can
 /// only test a field the caller could already read. An edge matches the target's
-/// local name (the value the collection serves for it); a literal matches exactly.
+/// local name (the value the collection serves for it); a literal matches its
+/// text plain or in any datatype the DAL writes (#4728).
 /// Both bind a constant into the triple pattern, so the store answers from its
 /// index. An unknown key or an unsafe value is an error, never a silent "all rows".
 /// Returns the SPARQL patterns and the query-string to carry on `links.next`.
@@ -5237,7 +5272,19 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
             if value.is_empty() || value.chars().any(|c| c == '"' || c == '\\' || c.is_control()) {
                 return Err(format!("filter '{key}': value must be non-empty, with no quote, backslash or control character"));
             }
-            patterns.push_str(&format!(" . ?s <{NS}{key}> \"{value}\""));
+            // #4728 — since #4717 the DAL writes a literal with its shape's
+            // datatype ("2026-10-24"^^xsd:date, "42"^^xsd:integer), and the
+            // retype gave old rows the same; an exact plain-literal pattern then
+            // matched nothing (readingDay=<today> → 0 rows, every day-filtered
+            // alert "no-reading"). The value is matched as written and as each
+            // datatype the DAL types, still as constants, so the store keeps
+            // answering from its index.
+            let n = carried.len();
+            let terms: String = std::iter::once(format!("\"{value}\""))
+                .chain(TYPED_FILTER_DATATYPES.iter().map(|d| format!("\"{value}\"^^<http://www.w3.org/2001/XMLSchema#{d}>")))
+                .collect::<Vec<_>>()
+                .join(" ");
+            patterns.push_str(&format!(" . VALUES ?fv{n} {{ {terms} }} ?s <{NS}{key}> ?fv{n}"));
         }
         carried.push(kv);
     }
@@ -7221,7 +7268,12 @@ mod tests {
     #[test]
     fn a_filter_on_a_literal_matches_the_decoded_value() {
         let (p, _) = collection_filter("result=did%20not+run", &result_fields()).unwrap();
-        assert_eq!(p, format!(" . ?s <{NS}result> \"did not run\""));
+        // every datatype the DAL writes, in order (Wren/Kade 10-24: an exact
+        // assert, so a shortened list is caught)
+        let typed: String = ["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+            "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"]
+            .iter().map(|d| format!(" \"did not run\"^^<http://www.w3.org/2001/XMLSchema#{d}>")).collect();
+        assert_eq!(p, format!(" . VALUES ?fv0 {{ \"did not run\"{typed} }} ?s <{NS}result> ?fv0"));
     }
 
     #[test]

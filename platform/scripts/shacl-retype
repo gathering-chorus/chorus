@@ -1,0 +1,79 @@
+#!/bin/bash
+# #4717 AC6 — retype the store's untyped literals that already match their shape.
+#
+# Until #4717 the DAL wrote every value as a plain string, so a count of 38 on a
+# field whose shape says xsd:integer sat in the store as "38" and broke its own
+# sh:datatype (13,099 literals on 10-24, the census's largest group). This
+# changes the datatype only, never the value: "38" becomes "38"^^xsd:integer.
+# A value that is not valid for its datatype ("maybe" on a boolean) is left
+# alone and stays counted. Only urn:chorus:domains:* graphs, only the
+# integer, decimal, double, boolean, dateTime and date datatypes.
+#
+#   shacl-retype            dry run: counts per datatype, class and field; writes nothing
+#   shacl-retype --apply    backs up every literal it will change (N-Triples) to
+#                           $SHACL_RETYPE_BACKUP, then retypes; prod only on Jeff's yes
+#
+#   FUSEKI_QUERY / FUSEKI_UPDATE  the store (default prod /pods)
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+Q="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+U="${FUSEKI_UPDATE:-${Q%/query}/update}"
+APPLY=0; [ "${1:-}" = "--apply" ] && APPLY=1
+BACKUP="${SHACL_RETYPE_BACKUP:-$HOME/.chorus/backups/shacl-retype-$(date -u +%Y%m%dT%H%M%SZ).nt}"
+[ -f "$HERE/fuseki-auth.sh" ] && source "$HERE/fuseki-auth.sh"
+A=("${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}")
+PRE='PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>'
+
+# the literals of one datatype that can be retyped: ?g ?s ?p ?o ?t (?t the typed form)
+where() {
+  local d="$1"
+  cat <<EOF
+  { SELECT DISTINCT ?c ?p WHERE { GRAPH <urn:chorus:ontology> {
+      ?sh sh:targetClass ?c ; sh:property ?b . ?b sh:path ?p ; sh:datatype xsd:$d FILTER(isIRI(?p)) } } }
+  GRAPH ?g { ?s a ?c ; ?p ?o }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:") && isLiteral(?o) && DATATYPE(?o) = xsd:string)
+  BIND(xsd:$d(STR(?o)) AS ?t)
+  FILTER(BOUND(?t))
+EOF
+}
+
+ask() { curl -sf --max-time 110 "${A[@]+"${A[@]}"}" -H "Accept: $2" --data-urlencode "query=$1" "$Q"; }
+
+total=0
+for d in integer decimal double boolean dateTime date; do
+  rows=$(ask "$PRE SELECT ?c ?p (COUNT(*) AS ?n) WHERE { $(where "$d") } GROUP BY ?c ?p ORDER BY DESC(?n)" text/tab-separated-values) \
+    || { echo "shacl-retype: the store did not answer ($Q)" >&2; exit 1; }
+  while IFS=$'\t' read -r c p n; do
+    [ -z "$n" ] || [ "$n" = '?n' ] && continue
+    echo "$d	$n	${c##*#}	${p##*#}" | tr -d '<>'
+    total=$((total + n))
+  done <<<"$rows"
+done
+echo "shacl-retype: $total literal(s) can be retyped"
+[ "$APPLY" = 1 ] || { echo "shacl-retype: dry run, nothing written"; exit 0; }
+[ "$total" -gt 0 ] || exit 0
+
+mkdir -p "$(dirname "$BACKUP")"
+: > "$BACKUP"
+for d in integer decimal double boolean dateTime date; do
+  ask "$PRE CONSTRUCT { ?s ?p ?o } WHERE { $(where "$d") }" application/n-triples >> "$BACKUP" \
+    || { echo "shacl-retype: backup read failed for $d; nothing written" >&2; exit 1; }
+done
+# a row of two classes that share a field is counted once per class above; the
+# backup holds each literal once
+kept=$(grep -c . "$BACKUP")
+[ "$kept" -gt 0 ] && [ "$kept" -le "$total" ] || { echo "shacl-retype: backup holds $kept for $total; nothing written" >&2; exit 1; }
+echo "shacl-retype: backup $BACKUP ($kept triples)"
+for d in integer decimal double boolean dateTime date; do
+  # the graph is carried in the DELETE and the INSERT, so each literal changes in place
+  curl -sf -o /dev/null --max-time 110 "${A[@]+"${A[@]}"}" --data-urlencode \
+    "update=$PRE DELETE { GRAPH ?g { ?s ?p ?o } } INSERT { GRAPH ?g { ?s ?p ?t } } WHERE { $(where "$d") }" "$U" \
+    || { echo "shacl-retype: the $d update failed; earlier datatypes are done, restore from $BACKUP" >&2; exit 1; }
+done
+left=0
+for d in integer decimal double boolean dateTime date; do
+  n=$(ask "$PRE SELECT (COUNT(*) AS ?n) WHERE { $(where "$d") }" text/tab-separated-values | sed -n 2p)
+  left=$((left + ${n:-0}))
+done
+echo "shacl-retype: retyped $((total - left)) of $total; $left left"
+[ "$left" -eq 0 ]

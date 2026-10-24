@@ -524,6 +524,14 @@ pub trait Store {
     fn select_v(&self, sparql: &str) -> R<Vec<String>>;
     /// SPARQL UPDATE.
     fn update(&self, sparql: &str) -> R<()>;
+    /// #4717 — does this store validate writes against the shapes (Jena SHACL)?
+    fn shacl_enabled(&self) -> bool { false }
+    /// #4717 — the shapes that apply to rows of `classes` (and the shapes they
+    /// name), as the store holds them now (turtle).
+    fn shapes(&self, _classes: &[String]) -> R<String> { Err("shacl: this store has no shapes".into()) }
+    /// #4717 — the SHACL validation report (N-Triples) for one graph against
+    /// `shapes`.
+    fn shacl(&self, _graph: &str, _shapes: &str) -> R<String> { Err("shacl: this store has no SHACL service".into()) }
 }
 
 /// #4358 — the ?v values of a SPARQL-JSON SELECT result, JSON escapes decoded.
@@ -542,6 +550,8 @@ pub fn parse_select_v(body: &str) -> R<Vec<String>> {
         .filter_map(|row| row.pointer("/v/value").and_then(|v| v.as_str()).map(str::to_string))
         .collect())
 }
+
+pub mod shacl;
 
 pub struct FusekiStore {
     pub endpoint: String,
@@ -615,6 +625,106 @@ impl Store for FusekiStore {
     fn update(&self, sparql: &str) -> R<()> {
         self.curl("/update", "update", sparql)?;
         Ok(())
+    }
+    /// #4717 — on when ATHENA_SHACL=1: prod turns it on once the dataset has
+    /// its `fuseki:shacl` service (a store without one would refuse every write).
+    fn shacl_enabled(&self) -> bool {
+        std::env::var("ATHENA_SHACL").is_ok_and(|v| v == "1")
+    }
+    fn shapes(&self, classes: &[String]) -> R<String> {
+        self.shapes_for(classes)
+    }
+    fn shacl(&self, graph: &str, shapes: &str) -> R<String> {
+        self.shacl_report(graph, shapes)
+    }
+}
+
+impl FusekiStore {
+    /// #4717 — the shapes, as the store holds them now (urn:chorus:ontology).
+    /// Read by CONSTRUCT, never re-flattened (shared blank nodes stay as they are).
+    pub fn shapes_turtle(&self) -> R<String> {
+        self.http(&["-H", "Accept: text/turtle", "--data-urlencode",
+            &format!("query=CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} }}")], "/query")
+    }
+
+    /// #4717 — a hash of every triple in the shapes graph (blank nodes as `_`),
+    /// so any shape edit, a same-count one included, changes it. ~60 ms on prod.
+    pub fn shapes_hash(&self) -> R<String> {
+        // Kade 10-24 (demo review): GROUP_CONCAT has no order of its own, so the
+        // per-triple hashes are sorted first; the same graph always hashes the same
+        let q = format!("SELECT (SHA256(GROUP_CONCAT(?h; separator=\"\")) AS ?v) WHERE {{ {{ SELECT ?h WHERE {{ \
+            GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} \
+            BIND(MD5(CONCAT(IF(isBlank(?s),\"_\",STR(?s)), \" \", STR(?p), \" \", \
+            IF(isLiteral(?o), CONCAT(STR(?o), \"^\", STR(DATATYPE(?o))), IF(isBlank(?o), \"_\", STR(?o))))) AS ?h) }} ORDER BY ?h }} }}");
+        let v = self.select_v(&q)?.pop().filter(|h| h.len() == 64).ok_or("shacl: the shapes graph gave no hash")?;
+        Ok(v)
+    }
+
+    /// #4717 — the shapes for rows of `classes`: every shape targeting one of
+    /// them or a superclass (or a class that is its own shape), followed through
+    /// SHACL predicates only (property, node, and/or/xone/not, in, sparql,
+    /// qualified shapes, complex paths, lists) so nested shapes and blank-node
+    /// paths come along; a missing path node makes Jena refuse the shapes. Jena parses a few
+    /// hundred KB instead of the whole 727 KB graph. Kept on disk under the
+    /// shapes graph's hash, so a shape edit is a new file and never stale.
+    pub fn shapes_for(&self, classes: &[String]) -> R<String> {
+        let mut cs: Vec<&str> = classes.iter().map(String::as_str).collect();
+        cs.sort();
+        cs.dedup();
+        let fnv = cs.iter().flat_map(|c| c.bytes().chain(std::iter::once(b' '))).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+        let dir = std::env::var("ATHENA_SHACL_CACHE").map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".chorus/cache/shacl"));
+        let file = dir.join(format!("{}-{:016x}.ttl", self.shapes_hash()?, fnv));
+        if let Ok(t) = std::fs::read_to_string(&file) {
+            return Ok(t);
+        }
+        let values = cs.iter().map(|c| format!("<{c}>")).collect::<Vec<_>>().join(" ");
+        let sh = "http://www.w3.org/ns/shacl#";
+        let rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+        let q = format!("CONSTRUCT {{ ?n ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ VALUES ?c0 {{ {values} }} \
+            ?c0 <http://www.w3.org/2000/01/rdf-schema#subClassOf>* ?c . \
+            {{ ?root <{sh}targetClass> ?c }} UNION {{ BIND(?c AS ?root) ?root a <{sh}NodeShape> }} \
+            ?root (<{sh}property>|<{sh}node>|<{sh}and>|<{sh}or>|<{sh}xone>|<{sh}not>|<{sh}in>|<{sh}sparql>|<{sh}qualifiedValueShape>|<{sh}ignoredProperties>|<{sh}path>|<{sh}inversePath>|<{sh}alternativePath>|<{sh}zeroOrMorePath>|<{sh}oneOrMorePath>|<{sh}zeroOrOnePath>|<{rdf}first>|<{rdf}rest>)* ?n . \
+            ?n ?p ?o }} }}");
+        let t = self.http(&["-H", "Accept: text/turtle", "--data-urlencode", &format!("query={q}")], "/query")?;
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let tmp = file.with_extension(format!("tmp{}", std::process::id()));
+            if std::fs::write(&tmp, &t).is_ok() {
+                let _ = std::fs::rename(&tmp, &file);
+            }
+        }
+        Ok(t)
+    }
+
+    /// #4717 — POST the shapes to the dataset's SHACL service for `graph`.
+    pub fn shacl_report(&self, graph: &str, shapes: &str) -> R<String> {
+        let file = std::env::temp_dir().join(format!("athena-model-shapes-{}.ttl", std::process::id()));
+        std::fs::write(&file, shapes).map_err(|e| format!("shacl-shapes-file: {}", e))?;
+        let enc: String = graph.bytes().map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{:02X}", b),
+        }).collect();
+        let out = self.http(&["-H", "Content-Type: text/turtle", "-H", "Accept: application/n-triples",
+            "--data-binary", &format!("@{}", file.display())], &format!("/shacl?graph={enc}"));
+        let _ = std::fs::remove_file(&file);
+        out
+    }
+    /// curl to the dataset with the store's credential, for the bodies `curl` above
+    /// does not send (CONSTRUCT as turtle, SHACL).
+    fn http(&self, extra: &[&str], path: &str) -> R<String> {
+        let mut args: Vec<String> = vec!["-sf".into(), "--max-time".into(), "60".into()];
+        args.extend(extra.iter().map(|a| a.to_string()));
+        if let Some(pw) = fuseki_admin_password() {
+            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+            args.push("-u".into());
+            args.push(format!("{}:{}", user, pw));
+        }
+        args.push(format!("{}{}", self.endpoint, path));
+        let out = Command::new("curl").args(&args).output().map_err(|e| format!("curl-spawn: {}", e))?;
+        if !out.status.success() {
+            return Err(format!("fuseki{}: HTTP failure — {}", path.split('?').next().unwrap_or(path), String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
     }
 }
 
@@ -861,19 +971,49 @@ pub fn parse_add_batch_ndjson(input: &str) -> R<Vec<WriteReq>> {
 /// Validation + serialization, pure (store only consulted for shapes/integrity
 /// by the caller). Produces the canonical Turtle for the subject.
 pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
+    to_turtle_typed(req, &BTreeMap::new())
+}
+
+/// #4713 — the literal for a field value: a boolean field (sh:datatype
+/// xsd:boolean) is written as a typed xsd:boolean, every other field as before.
+/// Before this every value went in as a plain string, so a boolean shape held
+/// "true"^^xsd:string and failed its own sh:datatype (14 rows on 10-23).
+///
+/// #4717 — and every other typed field the same way: a field whose shape says
+/// xsd:integer, decimal, double, float, dateTime or date is written with that
+/// datatype, so the store's SHACL check does not refuse what the DAL itself
+/// wrote (29% of sampled rows on 10-24 broke their own shapes this way, the
+/// hourly sensor-run counts among them). New writes only; old rows are not
+/// rewritten (Jeff 10-17). A string, or an unknown datatype, stays plain.
+pub fn field_literal(val: &str, xsd_local: Option<&str>) -> String {
+    const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
+    match (xsd_local, val) {
+        (Some("boolean"), "true" | "1") => format!("\"true\"^^<{XSD}boolean>"),
+        (Some("boolean"), "false" | "0") => format!("\"false\"^^<{XSD}boolean>"),
+        (Some(t @ ("integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
+            | "nonPositiveInteger" | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort"
+            | "decimal" | "double" | "float" | "dateTime" | "date")), v) if !v.is_empty() && datatype_ok(v, t) => {
+            format!("\"{}\"^^<{XSD}{t}>", esc(v))
+        }
+        _ => format!("\"{}\"", esc(val)),
+    }
+}
+
+/// to_turtle with each field's sh:datatype in hand (`datatypes`: field local → xsd local).
+pub fn to_turtle_typed(req: &WriteReq, datatypes: &BTreeMap<String, String>) -> R<(String, String)> {
     let subject = mint(&req.kind, &req.name)?;
     let class = class_iri(&req.kind)?;
     let mut lines = vec![format!("<{}> a <{}>", subject, class)];
     for (prop, val) in &req.fields {
         check_property_local(prop)?;
-        lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+        lines.push(format!("    <{}{}> {}", NS, prop, field_literal(val, datatypes.get(prop).map(String::as_str))));
         if prop == "label" {
             lines.push(format!("    <{}> \"{}\"", RDFS_LABEL, esc(val))); // #4291 — the twin
         }
     }
     for (prop, val) in &req.more_values {
         check_property_local(prop)?;
-        lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+        lines.push(format!("    <{}{}> {}", NS, prop, field_literal(val, datatypes.get(prop).map(String::as_str))));
     }
     for (prop, tkind, tname) in &req.edges {
         check_property_local(prop)?;
@@ -1799,6 +1939,10 @@ fn plan_writes<'a>(
     // #4358 — a field whose shape names a path outside chorus (rdfs:comment) is
     // also written there, so the row satisfies the shape it was checked against.
     for plan in plans.iter_mut() {
+        // #4713 — re-render with the shape's datatypes, so a boolean is a typed literal
+        let (_, typed) = to_turtle_typed(plan.req, &shapes[&plan.class].datatypes)
+            .map_err(|e| WritePlanError::for_req(plan.req, e))?;
+        plan.turtle = typed;
         let extra = declared_path_triples(&plan.subject, plan.req, &shapes[&plan.class]);
         plan.turtle.push_str(&extra);
     }
@@ -2330,6 +2474,9 @@ fn commit_writes(
         sparql.push_str(" ;\n");
         sparql.push_str(extra);
     }
+    // #4717 AC1 — Jena checks the shapes on a scratch copy first; a refusal
+    // names every violation and nothing is written
+    shacl::gate(store, &sparql, &plans.iter().map(|p| p.subject.clone()).collect::<Vec<_>>())?;
     store.update(&sparql)?;
     if !replace_existing {
         prove_create_only_commit(store, plans, uniqueness_candidates, creator, &now)?;
@@ -2546,10 +2693,13 @@ pub fn set_field(
         ),
         None => String::new(),
     };
-    store.update(&format!(
-        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> \"{v}\" . <{s}> <{d}modified> \"{m}\" }} }}{twin}",
-        g = g, s = subject, ns = NS, p = prop, v = esc(value), d = DCT, m = esc(&now), twin = twin
-    ))?;
+    let update = format!(
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> {v} . <{s}> <{d}modified> \"{m}\" }} }}{twin}",
+        g = g, s = subject, ns = NS, p = prop, v = field_literal(value, shape.datatypes.get(prop).map(String::as_str)), d = DCT, m = esc(&now), twin = twin
+    );
+    // #4717 (Wren, demo review) — a set outside `apply` is checked too
+    shacl::gate(store, &update, std::slice::from_ref(&subject))?;
+    store.update(&update)?;
     witness("model.set", &[("kind", kind), ("name", name), ("iri", subject.as_str()), ("field", prop), ("value", value)]);
     Ok(subject)
 }
@@ -2573,7 +2723,11 @@ impl<'a> DeferredStore<'a> {
     pub fn held(&self) -> usize {
         self.held.borrow().len()
     }
-    /// The one update `commit` would send.
+    /// #4717 — every held update as the one request `commit` sends.
+    pub fn joined(&self) -> String {
+        self.held.borrow().join(" ;\n")
+    }
+    /// #4716 — the one update `commit` would send (refused when empty).
     pub fn pending(&self) -> R<String> {
         let held = self.held.borrow();
         if held.is_empty() {
@@ -2639,6 +2793,11 @@ fn stage_apply(d: &DeferredStore, kind: &str, name: &str, graph: &str, revision:
             ApplyOp::Link { edges } => { add_edges_keeping(d, kind, name, edges, Some(graph), id, None)?; }
             ApplyOp::Triples { deletes, inserts } => { batch(d, graph, deletes, inserts, id)?; }
         }
+    }
+    // #4717 AC1 — the whole apply, checked by Jena's SHACL before it is sent;
+    // in stage_apply so a dry run refuses exactly what apply refuses (#4716)
+    if d.held() > 0 {
+        shacl::gate(d.inner, &d.joined(), &[mint(kind, name)?])?;
     }
     Ok(())
 }
@@ -2756,7 +2915,15 @@ pub fn delete_batch(store: &dyn Store, kind: &str, names: &[String], graph: Opti
 /// build_edge_update.
 /// #4102 — an edge op, with the revision that records it, in one update. With no
 /// revision the edge block is the whole statement, exactly as before.
-fn commit_edge_with_revision(store: &dyn Store, id: &Identity, revision: Option<&WriteReq>, edge_block: &str) -> R<()> {
+fn commit_edge_with_revision(store: &dyn Store, id: &Identity, revision: Option<&WriteReq>, edge_block: &str, subject: &str) -> R<()> {
+    // #4717 (Wren, demo review) — a link outside `apply` is checked too: the
+    // whole update is built held, checked, then sent as before
+    if store.shacl_enabled() {
+        let d = DeferredStore::new(store);
+        commit_edge_with_revision(&d, id, revision, edge_block, subject)?;
+        shacl::gate(store, &d.joined(), &[subject.to_string()])?;
+        return d.commit().map(|_| ());
+    }
     match revision {
         None => store.update(edge_block).map(|_| ()),
         Some(req) => {
@@ -2818,7 +2985,7 @@ pub fn add_edges_keeping(store: &dyn Store, kind: &str, name: &str, edges: &[(St
     assert_dal_writable(g)?; // #3356 AC4
     let body: String = triples.iter().map(|(p, t)| format!("<{s}> <{ns}{p}> <{t}> . ", s = subject, ns = NS, p = p, t = t)).collect();
     let edge_block = format!("INSERT DATA {{ GRAPH <{g}> {{ {body}}} }}", g = g, body = body);
-    commit_edge_with_revision(store, id, revision, &edge_block)?;
+    commit_edge_with_revision(store, id, revision, &edge_block, &subject)?;
     for (p, t) in &triples {
         witness("model.link", &[("subject", subject.as_str()), ("prop", p.as_str()), ("target", t.as_str())]);
     }
@@ -2845,7 +3012,7 @@ pub fn remove_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
     );
-    commit_edge_with_revision(store, id, revision, &edge_block)?;
+    commit_edge_with_revision(store, id, revision, &edge_block, &subject)?;
     witness("model.unlink", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
     Ok(subject)
 }
@@ -3086,6 +3253,13 @@ pub fn batch(
         }
         sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = graph, b = body));
     }
+    // #4717 (Wren, demo review) — a batch outside `apply` is checked too, for
+    // every row it touches
+    let mut rows: Vec<String> = deletes.iter().chain(inserts.iter())
+        .filter_map(|(s, _, _)| s.strip_prefix('<').and_then(|t| t.strip_suffix('>')).map(str::to_string)).collect();
+    rows.sort();
+    rows.dedup();
+    shacl::gate(store, &sparql, &rows)?;
     store.update(&sparql)?;
     let (nd, ni) = (deletes.len().to_string(), inserts.len().to_string());
     witness("model.batch", &[("graph", graph), ("deletes", nd.as_str()), ("inserts", ni.as_str())]);
@@ -3989,6 +4163,8 @@ mod tests {
         proof_missing: bool,
         /// #4187 — the domain that definesVocabulary every kind (None = unclaimed)
         domain: Option<String>,
+        /// #4713 — the shape's `field|xsd` datatype rows
+        datatypes: Vec<String>,
         pub updates: std::cell::RefCell<Vec<String>>,
     }
     impl Store for StubStore {
@@ -4022,6 +4198,8 @@ mod tests {
                     .filter(|iri| sparql.contains(iri.as_str()))
                     .map(|iri| format!("{}|", iri))
                     .collect())
+            } else if sparql.contains("IF(BOUND(?dt)") {
+                Ok(self.datatypes.clone())
             } else if sparql.contains("sh:minCount") {
                 Ok(self.required.clone())
             } else if sparql.contains("uniqueWithin") {
@@ -4053,6 +4231,7 @@ mod tests {
             update_error: None,
             proof_missing: false,
             domain: Some("tests".into()),
+            datatypes: Vec::new(),
             updates: Default::default(),
         }
     }
@@ -4286,6 +4465,45 @@ mod tests {
         set_field(&store, "domain", "tests", "label", "Renamed", None, &tid()).unwrap();
         let u = store.updates.borrow().last().cloned().unwrap_or_default();
         assert!(u.contains(&format!("<{}label> \"Renamed\"", NS)) && u.contains(&format!("{} \"Renamed\"", rdfs)), "set: {u}");
+    }
+
+    /// #4713 — a boolean field is written as xsd:boolean, by add and by set, so the
+    /// row passes its own sh:datatype. Before this both wrote "true" as a plain string.
+    #[test]
+    fn a_boolean_field_is_written_as_xsd_boolean_by_add_and_set() {
+        let target = format!("{}value-stream-step-proving", NS);
+        let xbool = "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>";
+        let mut store = stub(&[target.as_str()], &[]);
+        store.datatypes = vec!["platform|boolean".into(), "comment|string".into()];
+        let mut req = WriteReq { kind: "domain".into(), name: "tests".into(), ..Default::default() };
+        req.fields.insert("platform".into(), "true".into());
+        req.fields.insert("comment".into(), "true".into());
+        write(&store, &req, &tid()).unwrap();
+        let u = store.updates.borrow()[0].clone();
+        assert!(u.contains(&format!("<{}platform> {}", NS, xbool)), "add: {u}");
+        assert!(u.contains(&format!("<{}comment> \"true\"", NS)), "a string field stays a plain string: {u}");
+        let subj = format!("{}tests", NS);
+        let mut store = stub(&[subj.as_str()], &[]);
+        store.datatypes = vec!["platform|boolean".into()];
+        set_field(&store, "domain", "tests", "platform", "1", None, &tid()).unwrap();
+        let u = store.updates.borrow().last().cloned().unwrap_or_default();
+        assert!(u.contains(&format!("<{}platform> {}", NS, xbool)), "set (1 → true): {u}");
+    }
+
+    /// #4713 NEGATIVE PROOF: a boolean on a field the shape types xsd:integer is
+    /// refused and nothing is written; typing does not loosen the datatype gate.
+    #[test]
+    fn a_boolean_on_an_integer_field_is_still_refused() {
+        let subj = format!("{}tests", NS);
+        let mut store = stub(&[subj.as_str()], &[]);
+        store.datatypes = vec!["writeCount|integer".into()];
+        let err = set_field(&store, "domain", "tests", "writeCount", "true", None, &tid()).unwrap_err();
+        assert!(err.starts_with("shape-violation"), "{err}");
+        assert!(store.updates.borrow().is_empty(), "a refused set writes nothing");
+        assert_eq!(field_literal("true", Some("integer")), "\"true\"", "a value that is not an integer is never typed as one");
+        assert_eq!(field_literal("42", Some("integer")), "\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>", "#4717: an integer field is typed");
+        assert_eq!(field_literal("2026-10-24T09:00:00Z", Some("dateTime")), "\"2026-10-24T09:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>");
+        assert_eq!(field_literal("42", Some("string")), "\"42\"", "a string field stays plain");
     }
 
     /// #4291 NEGATIVE PROOF: a Version whose shape requires writeCount is refused
