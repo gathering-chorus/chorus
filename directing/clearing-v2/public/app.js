@@ -354,7 +354,7 @@ function watchPhotoButton() {
   if (typeof document === 'undefined') return;
   const picker = document.getElementById('composer-photo');
   if (!picker || !picker.addEventListener) return;
-  const label = document.querySelector('.composer-photo');
+  const label = document.querySelector ? document.querySelector('.composer-photo') : null;
   if (label && label.addEventListener) {
     label.addEventListener('click', (e) => {
       if (e.target !== picker) {
