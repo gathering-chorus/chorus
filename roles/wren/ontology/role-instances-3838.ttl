@@ -86,11 +86,6 @@ chorus:role-crawler a chorus:Role ;
     chorus:roleKind "automation" ;
     chorus:comment "The code/tests walker identity — one crawler, one row shape (Jeff 2026-09-12). Least privilege: code and tests graphs only." .
 
-chorus:role-pulse a chorus:Role ;
-    rdfs:label "pulse" ; chorus:label "pulse" ;
-    chorus:roleKind "automation" ;
-    chorus:comment "pulse-api's own identity (#4716). Least privilege: writes the awareness and streams graphs only, through the door." .
-
 chorus:role-kade a chorus:Role, chorus:AgentRole ;
     chorus:roleKind "agent" ;
     rdfs:label "Kade" ; chorus:label "Kade" ;
