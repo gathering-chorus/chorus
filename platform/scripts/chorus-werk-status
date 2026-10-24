@@ -957,7 +957,12 @@ def retry_line(name, run_id, node, nodes=None, run=None):
     it, marks the parent's step succeeded, and leaves the parent's later steps
     aborted under a run that reads Succeeded (the #4540 trap). A second
     `retry --step <next parent step> --downstream` then runs them. So the
-    alone-retry is those two commands, in order."""
+    alone-retry is those two commands, in order.
+    #4707 reopen — a stopped land is retried on Jeff's recorded go by its verb;
+    the hook refuses a raw dagu retry of the land for every actor."""
+    if name == "cicd-land":
+        card = re.search(r"(?:^|\s)CARD=\"?(\d+)", (run or {}).get("params") or "")
+        return f"retry on Jeff's recorded go: platform/scripts/werk-land-retry {card.group(1) if card else '<card>'}"
     kids = child_runs(run or {"name": name, "dagRunId": run_id}, node)
     if not kids:
         return None
@@ -1394,6 +1399,12 @@ def fixture_4553():
             # #4540 — the retry offered for a child stop is the parent's step plus
             # downstream; negative proof: a step with no child offers none, and
             # with no step after it to go on to, no inner retry is offered
+            # #4707 reopen — a stopped land offers the verb that checks the go,
+            # never a raw dagu retry (the hook refuses that); a cicd step does not
+            ("a stopped land offers werk-land-retry, never a raw dagu retry",
+             retry_line("cicd-land", "L", node("failed", "skill-borg-ask"), None, {"params": "CARD=4715 ROLE=kade ACCEPTER=jeff"})
+             == "retry on Jeff's recorded go: platform/scripts/werk-land-retry 4715"
+             and retry_line("cicd", "x", node("failed", "skill-werk-build", "werk-build: error")) is None),
             ("a child stop offers the parent retry",
              (lambda r: r is not None and "--step=skill-werk-test --downstream cicd" in r and "--sub-run-id" not in r)(
                  retry_line("cicd", "p", child_stop["nodes"][0]))

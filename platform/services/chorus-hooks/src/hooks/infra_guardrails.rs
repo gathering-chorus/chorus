@@ -112,7 +112,7 @@ static WERK_MERGE_CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(\bchorus-runner\s+call\s+werk-merge\b|(^|[\s;&|/])werk-merge\s+\d)").unwrap()
 });
 
-const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`; a stuck land goes to Jeff as one line, not a retry.";
+const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`. A land that stopped after his go is retried on that go with `platform/scripts/werk-land-retry <card>` (#4707 reopen), never by hand.";
 
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
@@ -453,6 +453,19 @@ mod tests {
             let r = check(&input).await;
             assert!(denied_as_land(&r), "{:?}", r.stdout);
         }
+    }
+
+    /// #4707 reopen — the retry verb is the one way back for a land that stopped
+    /// after the go; it checks the recorded go itself, so the hook lets it through.
+    #[tokio::test]
+    async fn test_4707_the_land_retry_verb_passes_and_the_refusal_names_it() {
+        for input in [silas_bash("platform/scripts/werk-land-retry 4715"), abby_bash("platform/scripts/werk-land-retry 4715 --dry-run")] {
+            let r = check(&input).await;
+            assert!(r.stdout.is_none(), "{:?}", r.stdout);
+        }
+        let r = check(&silas_bash("dagu --config platform/config/dagu.yaml retry --run-id=034x --step=skill-borg-ask --downstream cicd-land")).await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+        assert!(r.stdout.as_deref().unwrap_or("").contains("werk-land-retry <card>"), "{:?}", r.stdout);
     }
 
     #[tokio::test]

@@ -4,5 +4,5 @@ A card reaches `main` one way: its cicd run stops at the demo, Jeff says go, and
 
 - Never enqueue, start or retry `cicd-land` yourself, by `dagu` or by a POST to `/dags/cicd-land`. Never call `werk-merge` directly, by CLI or by tool. The hooks refuse all of these for every actor.
 - Never record an accepter for Jeff. `accepter=jeff` typed by a role is not his go. On 2026-10-23 at 06:03 a role did exactly that and #4704 merged while he was away.
-- A land that fails or sticks goes to Jeff as one line (`/cws <card>`), not a retry.
+- A land that stopped after Jeff's go is retried on that go with `platform/scripts/werk-land-retry <card>`, which refuses unless his go step enqueued that very land. Anything else that fails or sticks goes to Jeff as one line (`/cws <card>`).
 - Waiting for the go is a declared state (`waiting`), not a reason to find another way in.
