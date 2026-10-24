@@ -182,24 +182,41 @@ pub fn gate(store: &dyn Store, update: &str, subjects: &[String]) -> R<()> {
          INSERT {{ GRAPH <{scratch}> {{ ?a <{RDFS_SUBCLASS}> ?b }} }} WHERE {{ \
          GRAPH <{scratch}> {{ ?n a ?c }} GRAPH <{ONTOLOGY_GRAPH}> {{ ?c <{RDFS_SUBCLASS}>* ?a . ?a <{RDFS_SUBCLASS}> ?b }} }}"
     );
-    let report = || -> R<Vec<Violation>> {
-        Ok(parse_report(&store.shacl(&scratch)?)?.into_iter().filter(|v| wanted.contains(v.focus.as_str())).collect())
-    };
+    // the marker keeps the graph in being when the rows do not exist yet (a new
+    // row's before-check): Jena answers 404 for a graph with no triples
+    let copy = format!(
+        "INSERT DATA {{ GRAPH <{scratch}> {{ <{scratch}> a <urn:chorus:ShaclScratch> }} }} ;\n\
+         INSERT {{ GRAPH <{scratch}> {{ ?s ?p ?o }} }} WHERE {{ VALUES ?x {{ {values} }} \
+         {{ GRAPH ?g {{ ?x ?p ?o }} BIND(?x AS ?s) }} UNION {{ GRAPH ?g {{ ?s ?p ?x }} BIND(?x AS ?o) }} \
+         FILTER(?g != <{ONTOLOGY_GRAPH}> && !STRSTARTS(STR(?g), \"{SCRATCH_PREFIX}\")) }}"
+    );
     let checked = (|| -> R<(Vec<Violation>, Vec<Violation>)> {
-        // the rows as they are, and what points at them (inverse paths)
-        store.update(&format!(
-            "INSERT {{ GRAPH <{scratch}> {{ ?s ?p ?o }} }} WHERE {{ VALUES ?x {{ {values} }} \
-             {{ GRAPH ?g {{ ?x ?p ?o }} BIND(?x AS ?s) }} UNION {{ GRAPH ?g {{ ?s ?p ?x }} BIND(?x AS ?o) }} \
-             FILTER(?g != <{ONTOLOGY_GRAPH}> && !STRSTARTS(STR(?g), \"{SCRATCH_PREFIX}\")) }}"
-        ))?;
-        store.update(&targets)?;
-        // what the rows already break (Wren 10-24: a dirty row's edit is refused
-        // only for what the edit adds; the rest goes back as a warning)
-        let before = report()?;
-        // the write itself, on the copy, then whatever it newly links to
+        // the rows as they are, and what points at them (inverse paths); the
+        // write applied to the copy; then whatever the rows link to
+        store.update(&copy)?;
         store.update(&rewrite_to_scratch(update, &scratch))?;
         store.update(&targets)?;
-        Ok((before, report()?))
+        // the shapes for the rows' classes after the write, read at this write
+        // (keyed on the shapes graph's hash, so a shape edit applies to the next
+        // write with no restart: AC3)
+        let classes = store.select_v(&format!(
+            "SELECT DISTINCT ?v WHERE {{ VALUES ?x {{ {values} }} GRAPH <{scratch}> {{ ?x a ?v }} FILTER(isIRI(?v)) }}"
+        ))?;
+        let shapes = store.shapes(&classes)?;
+        let report = || -> R<Vec<Violation>> {
+            Ok(parse_report(&store.shacl(&scratch, &shapes)?)?.into_iter().filter(|v| wanted.contains(v.focus.as_str())).collect())
+        };
+        let after = report()?;
+        if after.is_empty() {
+            return Ok((vec![], after));
+        }
+        // only a write that leaves a violation pays for the second check: the
+        // rows as they were (Wren 10-24: a dirty row's edit is refused only for
+        // what the edit adds; the rest goes back as a warning)
+        store.update(&format!("DROP SILENT GRAPH <{scratch}>"))?;
+        store.update(&copy)?;
+        store.update(&targets)?;
+        Ok((report()?, after))
     })();
     let dropped = store.update(&format!("DROP SILENT GRAPH <{scratch}>"));
     let (before, after) = checked?;
@@ -246,13 +263,15 @@ mod tests {
         fn select_v(&self, _: &str) -> R<Vec<String>> { Ok(self.graphs.clone()) }
         fn update(&self, s: &str) -> R<()> { self.updates.borrow_mut().push(s.to_string()); Ok(()) }
         fn shacl_enabled(&self) -> bool { true }
-        fn shacl(&self, _: &str) -> R<String> {
+        fn shapes(&self, _: &[String]) -> R<String> { Ok(String::new()) }
+        fn shacl(&self, _: &str, _: &str) -> R<String> {
             let mut r = self.reports.borrow_mut();
             if r.len() > 1 { r.remove(0) } else { r[0].clone() }
         }
     }
     fn store(report: R<String>) -> Shacl { Shacl { reports: RefCell::new(vec![report]), graphs: vec![], updates: RefCell::new(vec![]) } }
-    fn store2(before: R<String>, after: R<String>) -> Shacl { Shacl { reports: RefCell::new(vec![before, after]), ..store(Ok(String::new())) } }
+    /// the gate checks after the write first, and before it only when needed
+    fn store2(before: R<String>, after: R<String>) -> Shacl { Shacl { reports: RefCell::new(vec![after, before]), ..store(Ok(String::new())) } }
     const WRITE: &str = "INSERT DATA { GRAPH <urn:chorus:instances:alerts> { <https://jeffbridwell.com/chorus#alert-a> <https://jeffbridwell.com/chorus#platform> \"x\" } }";
 
     #[test]

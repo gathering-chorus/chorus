@@ -94,6 +94,7 @@ const TARGETS: &str = "<https://jeffbridwell.com/chorus#platform-p1> a <https://
 
 fn store(s: &Server) -> FusekiStore {
     std::env::set_var("ATHENA_SHACL", "1");
+    std::env::set_var("ATHENA_SHACL_CACHE", s._dir.join("shacl-cache"));
     FusekiStore { endpoint: format!("http://127.0.0.1:{}/t", s.port) }
 }
 fn scratch_graphs(st: &FusekiStore) -> usize {
@@ -235,4 +236,61 @@ fn a_dirty_row_edit_passes_unless_it_adds_a_violation() {
     gate(&st, &format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-d> <{C}comment> \"noted\" }} }}"), &[format!("{C}alert-d")]).unwrap();
     let e = gate(&st, &format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-d> <{C}platform> <{C}platform-nope> }} }}"), &[format!("{C}alert-d")]).unwrap_err();
     assert_eq!(e, "shape-violation: 1 violation(s): platform: platform is a Platform");
+}
+
+/// AC3 — a shape change takes effect on the next write, with no restart: the
+/// shapes are read at each write, never held past it. NEGATIVE: the same write
+/// passed before the shape was tightened.
+#[test]
+fn a_shape_change_applies_to_the_next_write_with_no_restart() {
+    let _l = lock();
+    let st = store(need_server!());
+    let w = format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-e> a <{C}Alert> ; <{C}owner> \"kade\" }} }}");
+    gate(&st, &w, &[format!("{C}alert-e")]).unwrap();
+    let tighten = format!("INSERT DATA {{ GRAPH <urn:chorus:ontology> {{ <{C}AlertShape> <http://www.w3.org/ns/shacl#property> <{C}SeverityProp> . \
+        <{C}SeverityProp> <http://www.w3.org/ns/shacl#path> <{C}severity> ; <http://www.w3.org/ns/shacl#minCount> 1 ; <http://www.w3.org/ns/shacl#message> \"an alert needs a severity\" }} }}");
+    st.update(&tighten).unwrap();
+    let e = gate(&st, &w, &[format!("{C}alert-e")]).unwrap_err();
+    assert!(e.contains("severity: an alert needs a severity"), "{e}");
+    st.update(&tighten.replace("INSERT DATA", "DELETE DATA")).unwrap();
+    gate(&st, &w, &[format!("{C}alert-e")]).unwrap();
+}
+
+/// Wren 10-24: an edit that keeps the shapes graph's triple count (minCount
+/// 1 → 2) must still reach the next write; the cache is keyed on a hash of
+/// every triple, never on a count or a version stamp.
+#[test]
+fn a_same_count_shape_edit_applies_to_the_next_write() {
+    let _l = lock();
+    let st = store(need_server!());
+    let w = format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-f> a <{C}Alert> ; <{C}owner> \"kade\" }} }}");
+    gate(&st, &w, &[format!("{C}alert-f")]).unwrap();
+    let count = || st.select_v("SELECT ?v WHERE { { SELECT (COUNT(*) AS ?v) WHERE { GRAPH <urn:chorus:ontology> { ?s ?p ?o } } } }").unwrap();
+    let n = count();
+    let set = |from: u32, to: u32| format!("DELETE {{ GRAPH <urn:chorus:ontology> {{ ?b <http://www.w3.org/ns/shacl#minCount> {from} }} }} \
+        INSERT {{ GRAPH <urn:chorus:ontology> {{ ?b <http://www.w3.org/ns/shacl#minCount> {to} }} }} \
+        WHERE {{ GRAPH <urn:chorus:ontology> {{ <{C}AlertShape> <http://www.w3.org/ns/shacl#property> ?b . ?b <http://www.w3.org/ns/shacl#path> <{C}owner> ; <http://www.w3.org/ns/shacl#minCount> {from} }} }}");
+    st.update(&set(1, 2)).unwrap();
+    assert_eq!(count(), n, "the edit keeps the triple count");
+    let e = gate(&st, &w, &[format!("{C}alert-f")]);
+    st.update(&set(2, 1)).unwrap();
+    let e = e.unwrap_err();
+    assert!(e.contains("owner: an alert needs an owner"), "{e}");
+}
+
+/// Wren 10-24: a write holds the single-writer lock for its check; with the
+/// shapes cached the gate must stay well under the 0.4 s a full-shapes check took.
+#[test]
+fn a_cached_check_is_fast() {
+    let _l = lock();
+    let st = store(need_server!());
+    let w = format!("INSERT DATA {{ GRAPH <{ALERTS}> {{ <{C}alert-g> a <{C}Alert> ; <{C}owner> \"kade\" }} }}");
+    gate(&st, &w, &[format!("{C}alert-g")]).unwrap();
+    let t = std::time::Instant::now();
+    for _ in 0..5 {
+        gate(&st, &w, &[format!("{C}alert-g")]).unwrap();
+    }
+    let each = t.elapsed() / 5;
+    assert!(each < std::time::Duration::from_millis(250), "a cached gate took {each:?}");
+    eprintln!("cached gate: {each:?} each");
 }

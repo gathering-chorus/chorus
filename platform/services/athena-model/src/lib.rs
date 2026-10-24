@@ -526,9 +526,12 @@ pub trait Store {
     fn update(&self, sparql: &str) -> R<()>;
     /// #4717 — does this store validate writes against the shapes (Jena SHACL)?
     fn shacl_enabled(&self) -> bool { false }
-    /// #4717 — the SHACL validation report (N-Triples) for one graph against the
-    /// model's shapes.
-    fn shacl(&self, _graph: &str) -> R<String> { Err("shacl: this store has no SHACL service".into()) }
+    /// #4717 — the shapes that apply to rows of `classes` (and the shapes they
+    /// name), as the store holds them now (turtle).
+    fn shapes(&self, _classes: &[String]) -> R<String> { Err("shacl: this store has no shapes".into()) }
+    /// #4717 — the SHACL validation report (N-Triples) for one graph against
+    /// `shapes`.
+    fn shacl(&self, _graph: &str, _shapes: &str) -> R<String> { Err("shacl: this store has no SHACL service".into()) }
 }
 
 /// #4358 — the ?v values of a SPARQL-JSON SELECT result, JSON escapes decoded.
@@ -628,40 +631,69 @@ impl Store for FusekiStore {
     fn shacl_enabled(&self) -> bool {
         std::env::var("ATHENA_SHACL").is_ok_and(|v| v == "1")
     }
-    fn shacl(&self, graph: &str) -> R<String> {
-        self.shacl_report(graph)
+    fn shapes(&self, classes: &[String]) -> R<String> {
+        self.shapes_for(classes)
+    }
+    fn shacl(&self, graph: &str, shapes: &str) -> R<String> {
+        self.shacl_report(graph, shapes)
     }
 }
 
 impl FusekiStore {
-    /// #4717 — the shapes, as the store holds them now (urn:chorus:ontology),
-    /// or the file ATHENA_SHAPES_FILE names when the door keeps a loaded copy.
+    /// #4717 — the shapes, as the store holds them now (urn:chorus:ontology).
+    /// Read by CONSTRUCT, never re-flattened (shared blank nodes stay as they are).
     pub fn shapes_turtle(&self) -> R<String> {
-        if let Ok(f) = std::env::var("ATHENA_SHAPES_FILE") {
-            if let Ok(t) = std::fs::read_to_string(&f) {
-                if !t.trim().is_empty() {
-                    return Ok(t);
-                }
-            }
-        }
         self.http(&["-H", "Accept: text/turtle", "--data-urlencode",
             &format!("query=CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} }}")], "/query")
     }
-    /// #4717 — POST the shapes to the dataset's SHACL service for `graph`.
-    pub fn shacl_report(&self, graph: &str) -> R<String> {
-        // one read of the shapes per process: a gate checks before and after
-        static SHAPES: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
-        let shapes = {
-            let mut held = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
-            match held.as_ref().filter(|(e, _)| *e == self.endpoint) {
-                Some((_, t)) => t.clone(),
-                None => {
-                    let t = self.shapes_turtle()?;
-                    *held = Some((self.endpoint.clone(), t.clone()));
-                    t
-                }
+
+    /// #4717 — a hash of every triple in the shapes graph (blank nodes as `_`),
+    /// so any shape edit, a same-count one included, changes it. ~60 ms on prod.
+    pub fn shapes_hash(&self) -> R<String> {
+        let q = format!("SELECT (SHA256(GROUP_CONCAT(MD5(CONCAT(IF(isBlank(?s),\"_\",STR(?s)), \" \", STR(?p), \" \", \
+            IF(isLiteral(?o), CONCAT(STR(?o), \"^\", STR(DATATYPE(?o))), IF(isBlank(?o), \"_\", STR(?o))))); separator=\"\")) AS ?v) \
+            WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} }}");
+        let v = self.select_v(&q)?.pop().filter(|h| h.len() == 64).ok_or("shacl: the shapes graph gave no hash")?;
+        Ok(v)
+    }
+
+    /// #4717 — the shapes for rows of `classes`: every shape targeting one of
+    /// them or a superclass (or a class that is its own shape), followed through
+    /// SHACL predicates only (property, node, and/or/xone/not, in, sparql,
+    /// qualified shapes, lists) so nested shapes come along. Jena parses a few
+    /// hundred KB instead of the whole 727 KB graph. Kept on disk under the
+    /// shapes graph's hash, so a shape edit is a new file and never stale.
+    pub fn shapes_for(&self, classes: &[String]) -> R<String> {
+        let mut cs: Vec<&str> = classes.iter().map(String::as_str).collect();
+        cs.sort();
+        cs.dedup();
+        let fnv = cs.iter().flat_map(|c| c.bytes().chain(std::iter::once(b' '))).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+        let dir = std::env::var("ATHENA_SHACL_CACHE").map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".chorus/cache/shacl"));
+        let file = dir.join(format!("{}-{:016x}.ttl", self.shapes_hash()?, fnv));
+        if let Ok(t) = std::fs::read_to_string(&file) {
+            return Ok(t);
+        }
+        let values = cs.iter().map(|c| format!("<{c}>")).collect::<Vec<_>>().join(" ");
+        let sh = "http://www.w3.org/ns/shacl#";
+        let rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+        let q = format!("CONSTRUCT {{ ?n ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ VALUES ?c0 {{ {values} }} \
+            ?c0 <http://www.w3.org/2000/01/rdf-schema#subClassOf>* ?c . \
+            {{ ?root <{sh}targetClass> ?c }} UNION {{ BIND(?c AS ?root) ?root a <{sh}NodeShape> }} \
+            ?root (<{sh}property>|<{sh}node>|<{sh}and>|<{sh}or>|<{sh}xone>|<{sh}not>|<{sh}in>|<{sh}sparql>|<{sh}qualifiedValueShape>|<{sh}ignoredProperties>|<{rdf}first>|<{rdf}rest>)* ?n . \
+            ?n ?p ?o }} }}");
+        let t = self.http(&["-H", "Accept: text/turtle", "--data-urlencode", &format!("query={q}")], "/query")?;
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let tmp = file.with_extension(format!("tmp{}", std::process::id()));
+            if std::fs::write(&tmp, &t).is_ok() {
+                let _ = std::fs::rename(&tmp, &file);
             }
-        };
+        }
+        Ok(t)
+    }
+
+    /// #4717 — POST the shapes to the dataset's SHACL service for `graph`.
+    pub fn shacl_report(&self, graph: &str, shapes: &str) -> R<String> {
         let file = std::env::temp_dir().join(format!("athena-model-shapes-{}.ttl", std::process::id()));
         std::fs::write(&file, shapes).map_err(|e| format!("shacl-shapes-file: {}", e))?;
         let enc: String = graph.bytes().map(|b| match b {
