@@ -1445,3 +1445,6 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 
 - [Abby Normal] → #4719: subtractive sweep pruned 8 dead log monitors & 5 ghost plists; /api/chorus/context/health dropped from 21 to 7 failures (all 7 genuine crashes); negative proof verified → Silas, Jeff
 - [Abby Normal] → #4719 landed (bb9a8e9f2, Done): subtractive sweep pruned 5 ghost plists & 8 dead log monitors; context/health failures dropped 21 → 3 → All
+- [Abby Normal] → Clearing backlog review: audited 42 cards in sequence:clearing with Borg Queen; identified 3 dones (#3832, #4232, #4356), 3 duplicates (#4650, #4656, #4410), and consolidations for Streams UX and Decisions → Borg Queen, Jeff
+- [Abby Normal] → #4639 landed on main (9774f4f15, Done): Clearing v2 Rooms UX, multiline composer, photo picker, card attributes drawer, Borg Queen message styling → Team
+- [Abby Normal] → #4723 landed on main (6224e03d0, Done): Rooms UX role flasher revived on actor tiles & full card attributes (domains, created/updated dates, description, AC, comments, pipeline state) in card drawer; prod Clearing v2 restarted on :3472 → Jeff, Team
