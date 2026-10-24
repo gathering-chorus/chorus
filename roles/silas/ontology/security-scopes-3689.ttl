@@ -112,13 +112,6 @@ chorus:principal-crawler
     chorus:hasScope "urn:chorus:domains:code"^^xsd:anyURI ,
                     "urn:chorus:domains:tests"^^xsd:anyURI .
 
-# #4716 — pulse-api: LEAST privilege, the two graphs its generated model writes
-# (awareness: heartbeats, readings, rolestates, waitingons; streams: stream
-# events), through the door under its own identity, never the store password.
-chorus:principal-pulse
-    chorus:hasScope "urn:chorus:domains:awareness"^^xsd:anyURI ,
-                    "urn:chorus:domains:streams"^^xsd:anyURI .
-
 # ---------------------------------------------------------------------------
 # #4058 — grants RULED by Jeff 2026-09-02 08:01 ("approved — deploy the grants").
 # Live in the werk store at env-up (demo); live in prod via SECURITY_SET at land.

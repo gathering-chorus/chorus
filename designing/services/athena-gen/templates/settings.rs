@@ -79,7 +79,9 @@ pub fn load() -> Settings {
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
         store_door: optional("store.door", &file, "http://localhost:3360"),
-        store_token_command: optional("store.token_command", &file, ""),
+        // #4716 — the product's own identity, minted by the shared cached script
+        store_token_command: optional("store.token_command", &file, &format!(
+            "{}/CascadeProjects/chorus/platform/scripts/chorus-identity-token {}", std::env::var("HOME").unwrap_or_default(), PRODUCT)),
         identity_issuer: value("identity.issuer", &file),
         identity_graph_prefix: value("identity.graph_prefix", &file),
         events_command: value("events.command", &file),

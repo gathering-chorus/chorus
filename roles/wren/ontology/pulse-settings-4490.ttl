@@ -16,7 +16,7 @@ chorus:property-pulse-server-bind a chorus:Property ;
 
 chorus:property-pulse-store-kind a chorus:Property ;
     rdfs:label "pulse-api: which store backend (sparql today; embedded next)" ;
-    chorus:propertyKey "store.kind" ; chorus:propertyValue "door" ;   # #4716: writes go through the door as principal-pulse
+    chorus:propertyKey "store.kind" ; chorus:propertyValue "sparql" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
 
 chorus:property-pulse-store-endpoint a chorus:Property ;
@@ -89,18 +89,4 @@ chorus:property-pulse-identity-graph-prefix a chorus:Property ;
 chorus:property-pulse-reads-public a chorus:Property ;
     rdfs:label "pulse-api: anyone may read without signing in" ;
     chorus:propertyKey "reads.public" ; chorus:propertyValue "true" ;
-    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
-
-# #4716 — pulse-api writes through the door under its own identity, never the
-# store password: where the door is, and the command that prints pulse's current
-# token (cached by chorus-identity-token, re-minted near expiry).
-chorus:property-pulse-store-door a chorus:Property ;
-    rdfs:label "pulse-api: the door every write goes through" ;
-    chorus:propertyKey "store.door" ; chorus:propertyValue "http://localhost:3360" ;
-    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
-
-chorus:property-pulse-store-token-command a chorus:Property ;
-    rdfs:label "pulse-api: the command that prints its own current identity token" ;
-    chorus:propertyKey "store.token_command" ;
-    chorus:propertyValue "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-identity-token pulse" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .

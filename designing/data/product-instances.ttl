@@ -420,7 +420,7 @@ Chorus · Pulse · rewritten for readers outside the team 2026-09-03""" ;
         chorus:property-pulse-store-password-var, chorus:property-pulse-identity-issuer,
         chorus:property-pulse-events-command, chorus:property-pulse-store-path, chorus:property-pulse-store-row,
         chorus:property-pulse-model-namespace, chorus:property-pulse-model-prefix, chorus:property-pulse-store-graph-prefix, chorus:property-pulse-reads-public,
-        chorus:property-pulse-identity-graph-prefix, chorus:property-pulse-store-door, chorus:property-pulse-store-token-command ;
+        chorus:property-pulse-identity-graph-prefix ;
     chorus:partOf chorus:chorus .
 
 chorus:spine a chorus:Product ;
