@@ -41,7 +41,8 @@ fn rows(port: u16, q: &str) -> Vec<String> {
 
 #[test]
 fn a_day_filter_finds_typed_and_plain_readings_and_the_old_pattern_does_not() {
-    let Some((mut child, port, dir)) = boot() else { eprintln!("skip: no Fuseki jar"); return; };
+    // #3734: a proof that cannot run is a failure, never a pass (Abby/Kade 10-24)
+    let (mut child, port, dir) = boot().expect("no scratch Fuseki: ~/.gathering/data/fuseki-5.1.0 and java are needed for this proof");
     let xsd = "http://www.w3.org/2001/XMLSchema#";
     let up = format!("INSERT DATA {{ GRAPH <{G}> {{ \
         <{C}r-typed> a <{C}SensorReading> ; <{C}readingDay> \"2026-10-24\"^^<{xsd}date> ; <{C}readingValue> \"4\"^^<{xsd}decimal> . \

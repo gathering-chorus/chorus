@@ -7268,8 +7268,12 @@ mod tests {
     #[test]
     fn a_filter_on_a_literal_matches_the_decoded_value() {
         let (p, _) = collection_filter("result=did%20not+run", &result_fields()).unwrap();
-        assert!(p.starts_with(" . VALUES ?fv0 { \"did not run\" \"did not run\"^^<http://www.w3.org/2001/XMLSchema#boolean>"), "{p}");
-        assert!(p.ends_with(&format!("}} ?s <{NS}result> ?fv0")), "{p}");
+        // every datatype the DAL writes, in order (Wren/Kade 10-24: an exact
+        // assert, so a shortened list is caught)
+        let typed: String = ["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+            "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"]
+            .iter().map(|d| format!(" \"did not run\"^^<http://www.w3.org/2001/XMLSchema#{d}>")).collect();
+        assert_eq!(p, format!(" . VALUES ?fv0 {{ \"did not run\"{typed} }} ?s <{NS}result> ?fv0"));
     }
 
     #[test]
