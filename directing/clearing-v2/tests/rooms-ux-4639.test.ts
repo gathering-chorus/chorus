@@ -84,13 +84,13 @@ describe('#4639 Clearing Rooms UX improvements', () => {
       expect(html).toContain('no card'); // Kade has no card
     });
 
-    test('renderPeopleRow drops circular avatars and andon dots', () => {
+    test('renderPeopleRow drops circular avatars and retains andon dot flasher (#4723)', () => {
       const html = renderPeopleRow('team', activeActors);
 
       // No circle avatar (<span class="av ...">)
       expect(html).not.toMatch(/<span class="av/);
-      // No circular andon dot (<span class="andon-dot ...">)
-      expect(html).not.toContain('andon-dot');
+      // Active andon dot flasher present (#4723)
+      expect(html).toContain('andon-dot');
     });
 
     test('NEGATIVE PROOF: non-logged-in actor (all sessions not live) is excluded from role tiles', () => {
