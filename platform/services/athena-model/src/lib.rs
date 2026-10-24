@@ -650,9 +650,12 @@ impl FusekiStore {
     /// #4717 — a hash of every triple in the shapes graph (blank nodes as `_`),
     /// so any shape edit, a same-count one included, changes it. ~60 ms on prod.
     pub fn shapes_hash(&self) -> R<String> {
-        let q = format!("SELECT (SHA256(GROUP_CONCAT(MD5(CONCAT(IF(isBlank(?s),\"_\",STR(?s)), \" \", STR(?p), \" \", \
-            IF(isLiteral(?o), CONCAT(STR(?o), \"^\", STR(DATATYPE(?o))), IF(isBlank(?o), \"_\", STR(?o))))); separator=\"\")) AS ?v) \
-            WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} }}");
+        // Kade 10-24 (demo review): GROUP_CONCAT has no order of its own, so the
+        // per-triple hashes are sorted first; the same graph always hashes the same
+        let q = format!("SELECT (SHA256(GROUP_CONCAT(?h; separator=\"\")) AS ?v) WHERE {{ {{ SELECT ?h WHERE {{ \
+            GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} \
+            BIND(MD5(CONCAT(IF(isBlank(?s),\"_\",STR(?s)), \" \", STR(?p), \" \", \
+            IF(isLiteral(?o), CONCAT(STR(?o), \"^\", STR(DATATYPE(?o))), IF(isBlank(?o), \"_\", STR(?o))))) AS ?h) }} ORDER BY ?h }} }}");
         let v = self.select_v(&q)?.pop().filter(|h| h.len() == 64).ok_or("shacl: the shapes graph gave no hash")?;
         Ok(v)
     }

@@ -294,3 +294,17 @@ fn a_cached_check_is_fast() {
     assert!(each < std::time::Duration::from_millis(250), "a cached gate took {each:?}");
     eprintln!("cached gate: {each:?} each");
 }
+
+/// Kade 10-24 (demo review): the shapes hash keys the cache, so the same graph
+/// must hash the same every time; a hash that wandered would make every write
+/// pay for a fresh shapes read.
+#[test]
+fn the_shapes_hash_is_the_same_for_the_same_graph() {
+    let _l = lock();
+    let st = store(need_server!());
+    let a = st.shapes_hash().unwrap();
+    for _ in 0..5 {
+        assert_eq!(st.shapes_hash().unwrap(), a);
+    }
+    assert_eq!(a.len(), 64);
+}
