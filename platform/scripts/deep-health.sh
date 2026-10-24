@@ -110,16 +110,24 @@ STALE_2H=$((now - 7200))
 STALE_25H=$((now - 90000))
 STALE_8D=$((now - 691200))
 
-# Skip: stderr-only logs, own log, agents that don't use stdout
-SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log harvest-exporter.log"
+# Skip: stderr-only logs, own log, agents that don't use stdout, or one-shot/event-driven/retired jobs (#4719)
+SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log harvest-exporter.log roles-up.log mcp-config-herald.log building-pipeline.log embed-worker.log log-sync.log infra-alert.log posture-capture.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Persistent daemons — silence is healthy when the process is alive.
 # Format: "logname:launchctl_label" — check PID via launchctl, skip mtime.
 LIVENESS_LOGS="chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
 # Daily jobs — 25h threshold instead of 2h
 DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log lance-maintain.log"
-# Weekly / multi-day jobs — 8 day threshold
-WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log"
+# Weekly / multi-day jobs — 8 day threshold (#4719: security-scan-weekly)
+WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log security-scan-weekly.log"
+
+# --- Deferred services (#3820, #4719) — off BY DECISION, not broken. -----------
+deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
+  case "$1" in
+    buzz-relay-http|*buzz*) echo "deferred per #3674 (Buzz-as-substrate is a chosen 'later', not now)" ;;
+    *) echo "" ;;
+  esac
+}
 
 # Labels currently LOADED in launchd. Empty output is itself a finding.
 loaded_agent_labels() {
@@ -211,6 +219,11 @@ fi
 while IFS= read -r label; do
   [ -n "$label" ] || continue
 
+  # Skip deferred agents (#3674, #4719)
+  if [ -n "$(deferred_reason "$label")" ]; then
+    continue
+  fi
+
   log=$(agent_stdout_path "$label") || {
     FAILURES+=("log-freshness: $label is loaded but its plist declares no StandardOutPath — it cannot be observed")
     continue
@@ -243,10 +256,13 @@ while IFS= read -r label; do
     continue
   fi
 
-  # Check for crash / non-zero exit code (#4704)
+  # Check for crash / non-zero exit code (#4704, #4719: only when not running)
   _ec=$(agent_exit_code "$label")
+  _pid=$(agent_pid "$label")
   if [ -n "$_ec" ] && [ "$_ec" != "-" ] && [ "$_ec" -ne 0 ] 2>/dev/null; then
-    FAILURES+=("crashed: $label (exit $_ec)")
+    if [ -z "$_pid" ] || [ "$_pid" = "-" ]; then
+      FAILURES+=("crashed: $label (exit $_ec)")
+    fi
   fi
 
   # Persistent daemon: ask launchd whether it is alive, not whether it spoke.
@@ -449,9 +465,12 @@ done
 # "should run". Retiring an agent = DELETE its plist, so on-disk-but-not-loaded
 # is always an anomaly. Catches the silent deaths (embed-worker, watchdog, ...)
 # that the curated CRITICAL_SERVICES list (#10) structurally cannot see.
+# #4719: Retired worktree LaunchAgents (#2640) and retired log-harvest.
+RETIRED_PLISTS="com.chorus.api.werk.abby-normal com.chorus.athena-make.werk.abby-normal com.chorus.clearing.werk.abby-normal com.chorus.hooks.werk.abby-normal com.chorus.log-harvest"
 for plist in "$HOME"/Library/LaunchAgents/com.chorus.*.plist; do
   [ -f "$plist" ] || continue
   label=$(basename "$plist" .plist)
+  [[ " $RETIRED_PLISTS " == *" $label "* ]] && continue
   if ! launchctl list "$label" >/dev/null 2>&1; then
     FAILURES+=("$label: plist on disk but NOT loaded — silent death (load it, or delete the plist if retired)")
   fi
@@ -538,15 +557,7 @@ fi
 # decision may be stale), never silent. The reason travels so the readout says
 # WHY it is muted, not just that it is.
 #
-# A case function, NOT declare -A: macOS /bin/bash is 3.2 (no associative
-# arrays) and this probe runs under launchd/cron in that shell — an assoc array
-# would break the whole health check, turning a mute into an outage.
-deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
-  case "$1" in
-    buzz-relay-http) echo "deferred per #3674 (Buzz-as-substrate is a chosen 'later', not now)" ;;
-    *) echo "" ;;
-  esac
-}
+
 
 # #4138 seams — HEALTH_ENDPOINTS_FILE replaces the list above (one url|name|desc
 # per line, empty file = probe nothing) so a test never touches a live port;
