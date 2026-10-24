@@ -56,7 +56,21 @@ fn door(token: &str) -> Sparql {
         reads: Remote { endpoint: "http://127.0.0.1:1".into(), auth: None },
         door: "http://127.0.0.1:1".into(),
         token: token.into(),
+        token_command: String::new(),
     }))
+}
+
+// negative proof: a token command that prints nothing must refuse like no token
+#[test]
+fn negative_proof_a_token_command_that_prints_nothing_writes_nothing() {
+    let s = Sparql::over(Box::new(Door {
+        reads: Remote { endpoint: "http://127.0.0.1:1".into(), auth: None },
+        door: "http://127.0.0.1:1".into(),
+        token: "stale-fixed-token".into(),
+        token_command: "true".into(),
+    }));
+    let e = s.write(G, &format!("{NS}thing-a"), None, &[("status".into(), lit("x"))], false).unwrap_err();
+    assert!(e.contains("no service token"), "{e}");
 }
 
 // negative proof: with no token, a door store must refuse before it sends anything.

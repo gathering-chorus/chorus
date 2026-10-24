@@ -93,6 +93,7 @@ chorus:principal-bridge a chorus:Principal ;
 
 chorus:principal-pulse a chorus:Principal ;
     rdfs:label "pulse (non-interactive Buzz reader principal, #4629)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/pulse/profile/card#me" ;   # #4716: seeded by Jeff 2026-10-24 17:00 (seed-css), so pulse-api writes through the door as itself
     chorus:principalKind "service" ;
     chorus:hostAccount "jeffbridwell" ;   # #4629: pulse signs in to the relay as itself to read the room (S1 shadow), never as the bridge
     chorus:canSignIn "false" .

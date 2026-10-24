@@ -18,12 +18,14 @@ pub const SETTINGS: &[(&str, &str)] = &[
     ("model.prefix", "chorus"),
     ("reads.public", "true"),
     ("server.bind", "127.0.0.1:3392"),
+    ("store.door", "http://localhost:3360"),
     ("store.endpoint", "http://localhost:3030/pods"),
     ("store.graph_prefix", "urn:chorus:domains:"),
-    ("store.kind", "sparql"),
+    ("store.kind", "door"),
     ("store.password_var", "FUSEKI_ADMIN_PASSWORD"),
     ("store.path", "/Users/jeffbridwell/.chorus/data/pulse-api"),
     ("store.row", "persistence-store-pods"),
+    ("store.token_command", "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-identity-token pulse"),
     ("store.user_var", "FUSEKI_ADMIN_USER"),
 ];
 
