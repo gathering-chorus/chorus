@@ -1126,8 +1126,7 @@ function renderTranscript() {
 
 function buildMessageEl(msg, cls, isClosing) {
   const isJeff = msg.from === 'jeff';
-  const knownRoles = ['wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
-  const isRole = roomRoles.includes(msg.from) || knownRoles.includes(msg.from);
+  const isRole = roomRoles.includes(msg.from) || (msg.from && !isJeff && msg.from !== 'guest' && !msg.from.startsWith('anon'));
   const isGuest = !isJeff && !isRole;
   const nodeClass = cls || ClearingTree.classifyNode(msg);
 
