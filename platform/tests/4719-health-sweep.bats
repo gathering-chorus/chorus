@@ -56,6 +56,7 @@ EOF
 
 @test "4719: negative proof - un-skipped agent with stale log fails loudly" {
   write_plist "com.chorus.real-agent" "$W/logs/real-agent.log"
+  echo "sample log line" > "$W/logs/real-agent.log"
   touch -t 202601010000 "$W/logs/real-agent.log"
   echo "5678 0 com.chorus.real-agent" > "$W/loaded.txt"
 
