@@ -1022,6 +1022,19 @@ thread_local! {
     };
 }
 
+thread_local! {
+    /// #4716 — the principal `verify_identity` accepted this run. Set once, on
+    /// the only path that proves who is writing.
+    static VERIFIED_ROLE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// #4716 — who a witness event names: the VERIFIED identity, else
+/// "unattributed". DEPLOY_ROLE is never read: the door strips it and any
+/// caller can forge it (#3687), so it labelled ~11.6k writes a day as nobody.
+pub fn witness_role() -> String {
+    VERIFIED_ROLE.with(|r| r.borrow().clone()).unwrap_or_else(|| "unattributed".to_string())
+}
+
 /// Spine witness — every write and every refusal is logged via chorus-log
 /// (the crawler's zero-dep pattern). Best-effort: a logging failure goes to
 /// stderr but never changes the write's outcome.
@@ -1035,11 +1048,9 @@ fn witness(event: &str, kvs: &[(&str, &str)]) {
     {
         let root = std::env::var("CHORUS_ROOT")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-        // #3651 — NEVER mint a role identity as a default. An env-less caller logs
-        // as "unattributed"; the identity gate (verify_identity) has already refused
-        // its writes, so this only labels the refusal events themselves.
-        let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "unattributed".to_string());
-        let mut args: Vec<String> = vec![event.to_string(), role];
+        // #3651 — NEVER mint a role identity as a default: an unverified caller
+        // logs as "unattributed", which only ever labels its refusals.
+        let mut args: Vec<String> = vec![event.to_string(), witness_role()];
         for (k, v) in kvs {
             args.push(format!("{}={}", k, v)); // the crawler's exact arg shape
         }
@@ -1164,6 +1175,7 @@ pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
             claim, security_graph_with(store)
         ));
     }
+    VERIFIED_ROLE.with(|r| *r.borrow_mut() = Some(claim.to_string()));
     Ok(Identity(claim.to_string()))
 }
 
