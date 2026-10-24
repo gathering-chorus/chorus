@@ -3337,6 +3337,19 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "merge.go.checked": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — #4710: chorus-go's answer on Jeff's passkey-signed go for this card's round (signed, or no passkey registered yet). A refused go is merge.refused with failureClass go-unsigned.",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key",
+        "go": "chorus-go check output"
+      }
+    },
     "merge.idempotent": {
       "producer": "version-control",
       "category": "fact",

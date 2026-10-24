@@ -95,6 +95,11 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
     std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-merge-mechanics");
     // ── stateful gh shim on PATH ───────────────────────────────────────────────
     let bin = tmp("bin");
+    // #4710 — these tests are about merge mechanics; the signed-go check answers "no passkey"
+    let go = bin.join("chorus-go");
+    fs::write(&go, "#!/bin/sh\necho 'chorus-go: no passkey registered'\n").unwrap();
+    { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&go, fs::Permissions::from_mode(0o755)).unwrap(); }
+    std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
     write_exec(&bin.join("gh"), GH_SHIM);
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
 
@@ -424,6 +429,11 @@ fn atomic_gate_orders_before_side_effects_and_pr_refusals_are_typed() {
     std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-atomic-mechanics");    // knob-wrapping gh shim: logs every call, fails/no-ops `pr create` on demand,
     // otherwise delegates to the stateful GH_SHIM (real squash into ORIGIN).
     let bin = tmp("bin2");
+    // #4710 — these tests are about merge mechanics; the signed-go check answers "no passkey"
+    let go = bin.join("chorus-go");
+    fs::write(&go, "#!/bin/sh\necho 'chorus-go: no passkey registered'\n").unwrap();
+    { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&go, fs::Permissions::from_mode(0o755)).unwrap(); }
+    std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
     write_exec(&bin.join("gh-real"), GH_SHIM);
     write_exec(&bin.join("gh"),
         "#!/bin/sh\necho \"$@\" >> \"$GH_CALLS\"\nif [ \"$1 $2\" = \"pr create\" ]; then\n  [ -n \"$GH_PR_CREATE_EXIT\" ] && exit \"$GH_PR_CREATE_EXIT\"\n  [ -n \"$GH_CREATE_NOOP\" ] && { echo noop; exit 0; }\nfi\nexec \"$(dirname \"$0\")/gh-real\" \"$@\"\n");
