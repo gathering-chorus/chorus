@@ -493,14 +493,50 @@ fn read_pulse_snapshot() -> Option<String> {
         // fetch and cite. This removes ~5 card-title lines (~300 bytes) per turn.
         out.push_str(&format!("  board.wip: {} cards → GET /api/chorus/context/board/wip\n", wip.len()));
     }
-    if let Some(roles) = v.pointer("/roles").and_then(|r| r.as_object()) {
-        for (role, data) in roles.iter().take(3) {
-            let state = data.get("state").and_then(|s| s.as_str()).unwrap_or("?");
-            let card = data.get("card").and_then(|c| c.as_i64()).map(|i| format!("#{}", i)).unwrap_or_default();
-            out.push_str(&format!("  role {}: state={} card={}\n", role, state, card));
-        }
-    }
+    // #4638 — the three "role X: state= card=" lines (the first three roles
+    // alphabetically, so never the whole team) gave way to the role's slice of
+    // the live tree, appended by the caller (query_tree_slice).
     if out.is_empty() { None } else { Some(out) }
+}
+
+/// #4638 — the role's slice of pulse's live tree (GET /api/tree/<role>):
+/// every role moving or quiet with seconds since its last call, then the
+/// prompts this role is in, newest first. A pulse that cannot be read says so
+/// by name; it never falls back to a guess.
+fn query_tree_slice(role: &str) -> String {
+    let base = std::env::var("CHORUS_PULSE_URL").unwrap_or_else(|_| "http://localhost:3475".to_string());
+    let url = format!("{}/api/tree/{}", base, role);
+    match ureq::get(&url).timeout(Duration::from_secs(2)).call() {
+        Ok(r) => match r.into_json::<serde_json::Value>() {
+            Ok(v) => format_tree_slice(&v),
+            Err(e) => format!("  tree: unmeasured (pulse /api/tree/{} unreadable: {})\n", role, e),
+        },
+        Err(e) => format!("  tree: unmeasured (pulse /api/tree/{} unreachable: {})\n", role, e),
+    }
+}
+
+/// Pure formatter for the tree slice: one team line, then at most 3 prompts of 120 chars.
+pub fn format_tree_slice(v: &serde_json::Value) -> String {
+    let at = v["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+    let mut out = String::new();
+    let team: Vec<String> = v["team"].as_array().map(|a| a.iter().map(|r| format!(
+        "{} {} {}s",
+        r["role"].as_str().unwrap_or("?"),
+        r["state"].as_str().unwrap_or("?"),
+        r["secondsSinceLastCall"].as_i64().unwrap_or(-1),
+    )).collect()).unwrap_or_default();
+    out.push_str(&format!("  team: {}\n", if team.is_empty() { "unmeasured (no roles in the tree)".to_string() } else { team.join(" · ") }));
+    for p in v["prompts"].as_array().map(|a| a.iter().take(3).collect::<Vec<_>>()).unwrap_or_default() {
+        let ago = match (at, p["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())) {
+            (Some(now), Some(t)) => format!("{}m ago", (now - t).num_minutes()),
+            _ => "?".to_string(),
+        };
+        let text: String = p["text"].as_str().unwrap_or("").replace('\n', " / ").chars().take(120).collect();
+        let by = p["by"].as_str().unwrap_or("?");
+        let cards: Vec<String> = p["mine"]["cards"].as_array().map(|a| a.iter().filter_map(|c| c["card"].as_i64()).map(|c| format!("#{}", c)).collect()).unwrap_or_default();
+        out.push_str(&format!("  prompt {} {}: \"{}\"{}\n", ago, by, text, if cards.is_empty() { String::new() } else { format!(" → {}", cards.join(" ")) }));
+    }
+    out
 }
 
 /// Read the last N spine events directly from chorus.log. The spine is the
@@ -1003,6 +1039,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         ("chorus-semantic", build_semantic_url(prompt, card_tag.as_deref()), true),
         ("memory", keywords.join(" "), legacy_memory),
         ("pulse", "snapshot".to_string(), true),
+        ("pulse-tree", format!("/api/tree/{}", role_name), true),
         ("spine", "recent-8".to_string(), true),
         ("athena", role_name.clone(), true),
         ("logs", "loki-errors-15m".to_string(), true),
@@ -1032,7 +1069,11 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
         let t_semantic = tokio::task::spawn_blocking(move || cached_query_chorus_semantic(&rs, &ps, tags.as_deref()));
         let t_memory = tokio::task::spawn_blocking(move || if legacy_memory { scan_memory(&kw2) } else { Vec::new() });
-        let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
+        let r4 = role_name.clone();
+        let t_pulse = tokio::task::spawn_blocking(move || {
+            let tree = query_tree_slice(&r4);
+            Some(read_pulse_snapshot().unwrap_or_default() + &tree)
+        });
         let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
         let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
         let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
@@ -1362,6 +1403,34 @@ mod tests {
             spine_events: 0, spine: &[], athena: None,
             log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
         }));
+    }
+
+        // #4638 — the turn-start slice of the live tree
+    #[test]
+    fn tree_slice_names_every_role_moving_or_quiet_and_my_prompts() {
+        let v = serde_json::json!({
+            "at": "2026-10-24T20:55:00Z",
+            "team": [{"role": "silas", "state": "quiet", "secondsSinceLastCall": 160},
+                     {"role": "wren", "state": "moving", "secondsSinceLastCall": 11}],
+            "prompts": [{"at": "2026-10-24T20:51:00Z", "by": "jeff", "text": "/pull 4638\ni spent all day",
+                         "mine": {"cards": [{"card": 4638}]}}]
+        });
+        let s = format_tree_slice(&v);
+        assert!(s.contains("team: silas quiet 160s · wren moving 11s"), "{s}");
+        assert!(s.contains("prompt 4m ago jeff: \"/pull 4638 / i spent all day\" → #4638"), "{s}");
+    }
+
+    #[test]
+    fn negative_proof_an_empty_tree_says_unmeasured_never_a_guess() {
+        let s = format_tree_slice(&serde_json::json!({"at": "2026-10-24T20:55:00Z", "team": [], "prompts": []}));
+        assert_eq!(s, "  team: unmeasured (no roles in the tree)\n");
+    }
+
+    #[test]
+    fn negative_proof_the_slice_is_capped_at_three_prompts() {
+        let p = serde_json::json!({"at": "2026-10-24T20:50:00Z", "by": "jeff", "text": "x", "mine": {"cards": []}});
+        let v = serde_json::json!({"at": "2026-10-24T20:55:00Z", "team": [], "prompts": [p, p, p, p, p]});
+        assert_eq!(format_tree_slice(&v).matches("prompt ").count(), 3);
     }
 
     #[test]

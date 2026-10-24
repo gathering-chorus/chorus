@@ -121,11 +121,12 @@ export function buildTree(input: TreeInput): Tree {
   return { at: input.now, prompts: nodes, roles, refusedSenders: refused };
 }
 
-/** One role's slice: its state and the prompts it is in, nothing of the other roles. */
-export function sliceFor(tree: Tree, role: string): { at: string; me?: Tree['roles'][number]; prompts: (Prompt & { mine: RoleNode })[] } {
+/** One role's slice: its state, every role's moving/quiet (one line each), and only the prompts it is in. */
+export function sliceFor(tree: Tree, role: string): { at: string; me?: Tree['roles'][number]; team: Tree['roles']; prompts: (Prompt & { mine: RoleNode })[] } {
   return {
     at: tree.at,
     me: tree.roles.find(r => r.role === role),
+    team: tree.roles,
     prompts: tree.prompts.flatMap(p => {
       const mine = p.roles.find(r => r.role === role);
       return mine ? [{ id: p.id, by: p.by, to: p.to, at: p.at, text: p.text, lines: p.lines, mine }] : [];

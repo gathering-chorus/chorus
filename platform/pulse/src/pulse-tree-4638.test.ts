@@ -1,5 +1,5 @@
 // @domain: awareness
-// @test-type: unit — buildTree / joinPrompts / sliceFor in platform/pulse/src/pulse-tree.ts over fact fixtures; no live services
+// @test-type: unit — buildTree / joinPrompts / sliceFor in platform/pulse/src/pulse-tree.ts over fact fixtures, and its routes in platform/pulse/src/service.ts over an in-memory store; no live services
 // @card: #4638
 // @owner: wren
 import { buildTree, joinPrompts, sliceFor, QUIET_AFTER_S, type TreeInput } from './pulse-tree';
