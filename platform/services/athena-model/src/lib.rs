@@ -524,6 +524,11 @@ pub trait Store {
     fn select_v(&self, sparql: &str) -> R<Vec<String>>;
     /// SPARQL UPDATE.
     fn update(&self, sparql: &str) -> R<()>;
+    /// #4717 — does this store validate writes against the shapes (Jena SHACL)?
+    fn shacl_enabled(&self) -> bool { false }
+    /// #4717 — the SHACL validation report (N-Triples) for one graph against the
+    /// model's shapes.
+    fn shacl(&self, _graph: &str) -> R<String> { Err("shacl: this store has no SHACL service".into()) }
 }
 
 /// #4358 — the ?v values of a SPARQL-JSON SELECT result, JSON escapes decoded.
@@ -542,6 +547,8 @@ pub fn parse_select_v(body: &str) -> R<Vec<String>> {
         .filter_map(|row| row.pointer("/v/value").and_then(|v| v.as_str()).map(str::to_string))
         .collect())
 }
+
+pub mod shacl;
 
 pub struct FusekiStore {
     pub endpoint: String,
@@ -615,6 +622,61 @@ impl Store for FusekiStore {
     fn update(&self, sparql: &str) -> R<()> {
         self.curl("/update", "update", sparql)?;
         Ok(())
+    }
+    /// #4717 — on when ATHENA_SHACL=1: prod turns it on once the dataset has
+    /// its `fuseki:shacl` service (a store without one would refuse every write).
+    fn shacl_enabled(&self) -> bool {
+        std::env::var("ATHENA_SHACL").is_ok_and(|v| v == "1")
+    }
+    fn shacl(&self, graph: &str) -> R<String> {
+        self.shacl_report(graph)
+    }
+}
+
+impl FusekiStore {
+    /// #4717 — the shapes, as the store holds them now (urn:chorus:ontology),
+    /// or the file ATHENA_SHAPES_FILE names when the door keeps a loaded copy.
+    pub fn shapes_turtle(&self) -> R<String> {
+        if let Ok(f) = std::env::var("ATHENA_SHAPES_FILE") {
+            if let Ok(t) = std::fs::read_to_string(&f) {
+                if !t.trim().is_empty() {
+                    return Ok(t);
+                }
+            }
+        }
+        self.http(&["-H", "Accept: text/turtle", "--data-urlencode",
+            &format!("query=CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY_GRAPH}> {{ ?s ?p ?o }} }}")], "/query")
+    }
+    /// #4717 — POST the shapes to the dataset's SHACL service for `graph`.
+    pub fn shacl_report(&self, graph: &str) -> R<String> {
+        let shapes = self.shapes_turtle()?;
+        let file = std::env::temp_dir().join(format!("athena-model-shapes-{}.ttl", std::process::id()));
+        std::fs::write(&file, shapes).map_err(|e| format!("shacl-shapes-file: {}", e))?;
+        let enc: String = graph.bytes().map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{:02X}", b),
+        }).collect();
+        let out = self.http(&["-H", "Content-Type: text/turtle", "-H", "Accept: application/n-triples",
+            "--data-binary", &format!("@{}", file.display())], &format!("/shacl?graph={enc}"));
+        let _ = std::fs::remove_file(&file);
+        out
+    }
+    /// curl to the dataset with the store's credential, for the bodies `curl` above
+    /// does not send (CONSTRUCT as turtle, SHACL).
+    fn http(&self, extra: &[&str], path: &str) -> R<String> {
+        let mut args: Vec<String> = vec!["-sf".into(), "--max-time".into(), "60".into()];
+        args.extend(extra.iter().map(|a| a.to_string()));
+        if let Some(pw) = fuseki_admin_password() {
+            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+            args.push("-u".into());
+            args.push(format!("{}:{}", user, pw));
+        }
+        args.push(format!("{}{}", self.endpoint, path));
+        let out = Command::new("curl").args(&args).output().map_err(|e| format!("curl-spawn: {}", e))?;
+        if !out.status.success() {
+            return Err(format!("fuseki{}: HTTP failure — {}", path.split('?').next().unwrap_or(path), String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
     }
 }
 
@@ -2339,6 +2401,9 @@ fn commit_writes(
         sparql.push_str(" ;\n");
         sparql.push_str(extra);
     }
+    // #4717 AC1 — Jena checks the shapes on a scratch copy first; a refusal
+    // names every violation and nothing is written
+    shacl::gate(store, &sparql, &plans.iter().map(|p| p.subject.clone()).collect::<Vec<_>>())?;
     store.update(&sparql)?;
     if !replace_existing {
         prove_create_only_commit(store, plans, uniqueness_candidates, creator, &now)?;
@@ -2582,6 +2647,10 @@ impl<'a> DeferredStore<'a> {
     pub fn held(&self) -> usize {
         self.held.borrow().len()
     }
+    /// #4717 — every held update as the one request `commit` sends.
+    pub fn joined(&self) -> String {
+        self.held.borrow().join(" ;\n")
+    }
     /// Send every held update as one request (one Fuseki transaction).
     pub fn commit(&self) -> R<usize> {
         let held = self.held.borrow();
@@ -2629,6 +2698,10 @@ pub fn apply(store: &dyn Store, kind: &str, name: &str, graph: &str, revision: O
             ApplyOp::Link { edges } => { add_edges_keeping(&d, kind, name, edges, Some(graph), id, None)?; }
             ApplyOp::Triples { deletes, inserts } => { batch(&d, graph, deletes, inserts, id)?; }
         }
+    }
+    // #4717 AC1 — the whole apply, checked by Jena's SHACL before it is sent
+    if d.held() > 0 {
+        shacl::gate(store, &d.joined(), &[mint(kind, name)?])?;
     }
     let n = d.commit()?;
     witness("model.apply", &[("kind", kind), ("name", name), ("ops", ops.len().to_string().as_str()), ("updates", n.to_string().as_str())]);
