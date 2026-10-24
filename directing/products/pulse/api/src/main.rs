@@ -9,6 +9,8 @@ mod rules;
 mod settings;
 mod store;
 #[cfg(test)]
+mod door_tests;
+#[cfg(test)]
 mod embedded_tests;
 #[cfg(test)]
 mod requirements_tests;
