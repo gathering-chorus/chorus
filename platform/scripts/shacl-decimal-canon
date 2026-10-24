@@ -17,7 +17,8 @@
 #   shacl-decimal-canon            dry run: count per predicate; writes nothing
 #   shacl-decimal-canon --apply    backs up the list (g s p value, TSV) to
 #                                  $SHACL_DECIMAL_BACKUP, rewrites, then counts
-#                                  again and fails unless none are left
+#                                  again and fails unless none are left and no
+#                                  row holds a value twice
 #
 #   FUSEKI_QUERY / FUSEKI_UPDATE  the store (default prod /pods)
 set -uo pipefail
@@ -92,6 +93,22 @@ for f in "$work"/*.ru; do
     || { echo "shacl-decimal-canon: update $(basename "$f") failed; earlier ones are done, the list is in $BACKUP" >&2; exit 1; }
 done
 
+# A spelling the list above missed is not found by `stuck` any more (its
+# canonical twin is now there), so count it the other way too: a value the
+# store reads back twice on one row is a stuck spelling beside its rewrite
+# (Abby's review, 10-24).
+twins() {
+  local p
+  for p in $preds; do
+    ask "$PRE SELECT ?g ?s ?v WHERE { VALUES ?p { $p } GRAPH ?g { ?s ?p ?o }
+      FILTER(STRSTARTS(STR(?g), \"urn:chorus:domains:\") && isLiteral(?o) && DATATYPE(?o) = xsd:decimal)
+      BIND(STR(?o) AS ?v) } GROUP BY ?g ?s ?v HAVING(COUNT(?o) > 1)" | sed 1d \
+      || { echo "shacl-decimal-canon: the store did not answer for $p" >&2; return 1; }
+  done
+}
 left=$(stuck | grep -c . || true)
-echo "shacl-decimal-canon: rewrote $((total - left)) of $total; $left left"
-[ "$left" -eq 0 ]
+dup=$(twins) || exit 1
+dups=$(printf '%s\n' "$dup" | grep -c . || true)
+echo "shacl-decimal-canon: rewrote $((total - left)) of $total; $left left; $dups kept beside their rewrite"
+[ "$dups" -eq 0 ] || printf '%s\n' "$dup" | head -5 >&2
+[ "$left" -eq 0 ] && [ "$dups" -eq 0 ]

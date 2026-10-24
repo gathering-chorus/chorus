@@ -80,11 +80,19 @@ replace_leaves() {
   reading a "\"7\"^^$D"; reading b "\"7.00\"^^$D"; reading c "\"7.50\"^^$D"; reading d "\"0.50\"^^$D"; reading e "\"-12.300\"^^$D"
   reading ok "\"7.5\"^^$D"
   run "$ROOT/platform/scripts/shacl-decimal-canon" --apply
-  [ "$status" -eq 0 ] && [[ "$output" == *"rewrote 5 of 5; 0 left"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 0 ] && [[ "$output" == *"rewrote 5 of 5; 0 left; 0 kept beside their rewrite"* ]] || { echo "$output"; return 1; }
   [ "$(grep -c . "$T/backup.tsv")" = 5 ]
   [ "$(q "SELECT ?v WHERE { GRAPH <$G> { <${C}r-c> <${C}readingValue> ?o } BIND(STR(?o) AS ?v) }")" = '"7.5"' ]
   [ "$(q "SELECT ?v WHERE { GRAPH <$G> { <${C}r-e> <${C}readingValue> ?o } BIND(STR(?o) AS ?v) }")" = '"-12.3"' ]
   for r in a b c d e ok; do [ "$(replace_leaves $r)" = 1 ] || { echo "r-$r kept its old value"; return 1; }; done
+}
+
+# Abby's review 10-24: a spelling the rewrite does not know stays beside its
+# canonical twin, and `stuck` can no longer see it; the apply must still fail
+@test "negative proof: a spelling the rewrite misses fails the apply instead of passing" {
+  reading a "\"7.000000\"^^$D"; reading b "\"7\"^^$D"
+  run "$ROOT/platform/scripts/shacl-decimal-canon" --apply
+  [ "$status" -eq 1 ] && [[ "$output" == *"1 kept beside their rewrite"* ]] || { echo "$output"; return 1; }
 }
 
 @test "negative proof: a store that does not answer writes nothing" {
