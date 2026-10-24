@@ -47,16 +47,20 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('TileService initializes known team roles with idle state', () => {
     const tileService = new TileService('http://127.0.0.1:9');
     const tiles = tileService.getTiles();
-    expect(tiles.length).toBe(5);
+    expect(tiles.length).toBe(6);
     const roles = tiles.map(t => t.role);
     expect(roles).toContain('abby-normal');
     expect(roles).toContain('wren');
     expect(roles).toContain('silas');
     expect(roles).toContain('kade');
     expect(roles).toContain('jeff');
+    expect(roles).toContain('borg-queen');
     const abbyTile = tiles.find(t => t.role === 'abby-normal');
     expect(abbyTile?.name).toBe('Abby Normal');
     expect(abbyTile?.state).toBe('idle');
+    const bqTile = tiles.find(t => t.role === 'borg-queen');
+    expect(bqTile?.name).toBe('Borg Queen');
+    expect(bqTile?.state).toBe('idle');
   });
 
   test('TileService updates tile state incrementally', () => {
@@ -72,7 +76,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
     const tileService = new TileService();
     tileService.updateTile('ghost-agent', { state: 'idle' });
     const tiles = tileService.getTiles();
-    expect(tiles.length).toBe(5);
+    expect(tiles.length).toBe(6);
     expect(tiles.find(t => t.role === 'ghost-agent')).toBeUndefined();
   });
 
@@ -338,11 +342,11 @@ describe('Clearing v2: Server App & Tile Service', () => {
       // no relay in this test, so the sent tick stays off: the tick means the relay
       // accepted it (rooms.feature:19), not that the server received it
       expect(recent[0].tick).toBe(false);
-      // #4592 — wait for the four hand-offs, not a fixed 30ms: on a busy box the
-      // fourth POST lands later and a timing assert reads as a product red.
-      for (let i = 0; i < 100 && jeffInputs.length < 4; i++) await new Promise((r) => setTimeout(r, 20));
-      expect(jeffInputs.length).toBe(4);
-      expect(new Set(jeffInputs.map((i: any) => i.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal']));
+      // #4592 — wait for the five hand-offs, not a fixed 30ms: on a busy box the
+      // fifth POST lands later and a timing assert reads as a product red (#4724 adds borg-queen).
+      for (let i = 0; i < 100 && jeffInputs.length < 5; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(jeffInputs.length).toBe(5);
+      expect(new Set(jeffInputs.map((i: any) => i.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal', 'borg-queen']));
       expect(jeffInputs.every((i: any) => i.content === 'Hello team from Jeff browser' && i.caller === '1')).toBe(true);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));

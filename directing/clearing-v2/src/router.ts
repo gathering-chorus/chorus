@@ -2,7 +2,7 @@
 
 import { ClearingMessage, PulseNudgePayload } from './types';
 
-const KNOWN_ROLES: Set<string> = new Set(['jeff', 'wren', 'silas', 'kade', 'abby-normal']);
+export const DEFAULT_KNOWN_ROLES = ['jeff', 'wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
 
 /** #4575 — strip the Chorus Prompt header ("--- Role | ... ---") so a role's signed reply
  *  and v1's bridge-signed mirror share one clean body and match as the same message. */
@@ -14,9 +14,23 @@ export class MessageRouter {
   private messages: ClearingMessage[] = [];
   private seenIds: Set<string> = new Set();
   private maxMessages: number;
+  private knownRoles: Set<string>;
 
-  constructor(maxMessages = 200) {
+  constructor(maxMessages = 200, knownRoles: Iterable<string> = DEFAULT_KNOWN_ROLES) {
     this.maxMessages = maxMessages;
+    this.knownRoles = new Set(Array.from(knownRoles).map((r) => r.toLowerCase()));
+  }
+
+  setKnownRoles(roles: Iterable<string>): void {
+    this.knownRoles = new Set(Array.from(roles).map((r) => r.toLowerCase()));
+  }
+
+  addKnownRole(role: string): void {
+    if (role) this.knownRoles.add(role.toLowerCase());
+  }
+
+  getKnownRoles(): string[] {
+    return Array.from(this.knownRoles);
   }
 
   private trimIfFull(): void {
@@ -117,7 +131,7 @@ export class MessageRouter {
 
     for (const match of matches) {
       const targetRole = match[1].toLowerCase();
-      if (KNOWN_ROLES.has(targetRole) && targetRole !== msg.from && !seenRoles.has(targetRole)) {
+      if (this.knownRoles.has(targetRole) && targetRole !== msg.from && !seenRoles.has(targetRole)) {
         seenRoles.add(targetRole);
         nudges.push({
           from: msg.from,
@@ -129,7 +143,7 @@ export class MessageRouter {
 
     // #4604: unaddressed Jeff input routes to every role as in v1 (#3833).
     if (nudges.length === 0 && msg.from === 'jeff') {
-      for (const role of KNOWN_ROLES) {
+      for (const role of this.knownRoles) {
         if (role !== 'jeff') {
           nudges.push({
             from: 'jeff',

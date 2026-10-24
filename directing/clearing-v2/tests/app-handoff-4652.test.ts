@@ -137,8 +137,8 @@ describe('#4652 reopen (Silas 09:13): two subscriptions, one room', () => {
       const first = pulse.got.map((b) => JSON.parse(b).to).sort();
       make()(hello);
       await settle();
-      expect(first).toEqual(['abby-normal', 'kade', 'silas', 'wren']);
-      expect(pulse.got).toHaveLength(4);
+      expect(first).toEqual(['abby-normal', 'borg-queen', 'kade', 'silas', 'wren']);
+      expect(pulse.got).toHaveLength(5);
     } finally {
       await pulse.close();
     }
