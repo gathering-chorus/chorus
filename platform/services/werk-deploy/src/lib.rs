@@ -1235,6 +1235,41 @@ fn live_main(root: &str) -> &'static str {
     live_main_flag(count("HEAD..origin/main"), count("origin/main..HEAD"))
 }
 
+/// #4710 AC4 — prod deploys only what GitHub's main holds. Borg Queen's bypass
+/// 2 (10-23): a prod deploy ran from LOCAL main, so a commit made on this Mac
+/// and never pushed could ship. The deploy now refuses when canonical holds a
+/// commit origin/main does not, or when origin/main holds no commit for this
+/// card. Pure half: `ahead` is origin/main..HEAD on canonical, `origin_subjects`
+/// the subjects of origin/main's recent commits.
+pub fn prod_source_verdict(ahead: u64, origin_subjects: &[&str], card: u64) -> R<()> {
+    if ahead > 0 {
+        return Err(format!(
+            "prod-source: canonical holds {} commit(s) that origin/main does not; a prod deploy ships only what GitHub's main holds (#4710)",
+            ahead
+        ));
+    }
+    if card == 0 || !origin_subjects.iter().any(|s| card_from_subject(s) == card) {
+        return Err(format!(
+            "prod-source: origin/main holds no merge commit for #{}; land it first (#4710)",
+            card
+        ));
+    }
+    Ok(())
+}
+
+/// #4710 AC4 — the thin shell: fetch, then ask canonical's git.
+pub fn prod_source_gate(root: &str, card: u64) -> R<()> {
+    run_env(Some(root), &[], "git", &["-C", root, "fetch", "-q", "origin", "main"])
+        .map_err(|e| format!("prod-source: cannot fetch origin/main, so cannot prove the deploy source: {}", e))?;
+    let ahead = run_env(Some(root), &[], "git", &["-C", root, "rev-list", "--count", "origin/main..HEAD"])
+        .ok().and_then(|s| s.trim().parse::<u64>().ok())
+        .ok_or_else(|| "prod-source: cannot count canonical against origin/main".to_string())?;
+    let log = run_env(Some(root), &[], "git", &["-C", root, "log", "-n", "200", "--format=%s", "origin/main"])
+        .map_err(|e| format!("prod-source: cannot read origin/main: {}", e))?;
+    let subjects: Vec<&str> = log.lines().collect();
+    prod_source_verdict(ahead, &subjects, card)
+}
+
 /// #3181 port — canonical build-source must be synced BEFORE building/installing.
 /// Fast-forward canonical to origin/main; REFUSE (don't force) when it can't ff
 /// cleanly (ahead/diverged/dirty). No-ops without git / origin/main (can't determine
@@ -1253,10 +1288,18 @@ pub fn canonical_ff_sync(root: &str) -> R<()> {
             .ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
     };
     let behind = count("HEAD..origin/main");
+    let ahead = count("origin/main..HEAD");
+    // #4710 AC4 — a canonical ahead of origin/main holds local-only commits;
+    // it used to pass here whenever it was not also behind.
+    if behind == 0 && ahead > 0 {
+        return Err(format!(
+            "canonical holds {} commit(s) that origin/main does not; prod builds only what GitHub's main holds. Run 'werk-sync recover'.",
+            ahead
+        ));
+    }
     if behind == 0 {
         return Ok(());
     }
-    let ahead = count("origin/main..HEAD");
     let dirty = run_env(Some(root), &[], "git", &["-C", root, "status", "--porcelain"])
         .map(|s| !s.trim().is_empty()).unwrap_or(false);
     if ahead > 0 || dirty {
@@ -2157,6 +2200,8 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
 }
 
 fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, landed_commit: Option<&str>) -> R<String> {
+    prod_source_gate(&canonical_root_path(home), card)
+        .map_err(|e| died(home, role, card, trace, "prod-source", e))?;
     let _ = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "fetch", "-q", "origin", "main"]);
     let base = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "merge-base", "origin/main", "HEAD"])
         .map(|s| s.trim().to_string())
