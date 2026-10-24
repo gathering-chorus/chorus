@@ -767,10 +767,9 @@ const ROOM_DRAWER_SCRIPT = `  <script>
  * at least one session is live (or not all marked "not live").
  */
 export function isRoleLoggedIn(a: ActorRow): boolean {
-  if (!a) return false;
   const state = (a.state || '').toLowerCase();
   if (state === 'offline' || state === 'off') return false;
-  if (a.sessions && a.sessions.length > 0) {
+  if (a.sessions.length > 0) {
     const hasLive = a.sessions.some(s => s.includes(' · live') || s === 'live');
     const allNotLive = a.sessions.every(s => s.startsWith('+') || s.includes('not live'));
     if (allNotLive && !hasLive) return false;

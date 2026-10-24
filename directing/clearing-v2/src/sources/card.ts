@@ -26,6 +26,7 @@ export interface CardPayload {
     status?: string;
     priority?: string;
     domain?: string;
+    domains?: string[];
     description?: string;
     creator?: string;
     owner?: string;
@@ -101,7 +102,7 @@ export function toDrawerCard(cardId: number, json: CardPayload | null): DrawerCa
     owner: extractOwner(json),
     status: data.status,
     priority: data.priority,
-    domain: json.servedFrom ?? data.domain ?? (Array.isArray((data as any).domains) ? (data as any).domains.join(', ') : undefined),
+    domain: json.servedFrom ?? data.domain ?? (Array.isArray(data.domains) ? data.domains.join(', ') : undefined),
     description: data.description,
     acItems: extractAcItems(data),
     comments: extractComments(json),
