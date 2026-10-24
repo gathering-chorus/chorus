@@ -29,6 +29,11 @@ never a count that left a graph out.
 import json, os, re, shutil, socket, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 from collections import Counter
 
+# #4446 — the census logs its own start, stop and failure.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+from service_lifecycle import service_lifecycle  # noqa: E402
+_lifecycle = service_lifecycle("com.chorus.shacl-census")
+
 HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROD = os.environ.get("FUSEKI_QUERY", "http://localhost:3030/pods/query")

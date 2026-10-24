@@ -13,6 +13,8 @@
 #   FUSEKI_QUERY  the store's query endpoint (default the prod /pods/query)
 #   TEXTFILE_DIR  where node-exporter reads *.prom
 set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.shacl-bnodes "$@"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 Q="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 DIR="${TEXTFILE_DIR:-$HOME/CascadeProjects/shared-observability/data/textfile_collector}"
