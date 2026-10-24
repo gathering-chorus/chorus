@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""shacl-census — #4717 AC4: how many rows in the store break their own shapes,
+by Jena's SHACL, as Prometheus gauges with a ratchet.
+
+The per-write gate refuses only what a write adds; the store already held
+violations on 10-24 (29% of a sample). This counts them all, nightly
+(com.chorus.shacl-census), without loading prod: every urn:chorus:domains:*
+graph is read (read-only, one bounded CONSTRUCT per graph) into a scratch
+in-memory Fuseki this script boots and stops, with the class chain from
+urn:chorus:ontology, and validated there against the live shapes. One data
+graph, so a link to a row in another graph still finds that row's type.
+
+Writes for node-exporter's textfile collector (:9102, already scraped):
+  athena_shacl_violations                 every validation result
+  athena_shacl_violating_rows             rows with one or more
+  athena_shacl_violations_baseline        the ratchet: the lowest count seen
+  athena_shacl_violations_by{component}   by SHACL constraint
+  athena_shacl_census_graphs{state}       graphs read / failed
+The baseline only goes down (Jeff 10-24 06:08); the rule alerts when the count
+rises above it, which at 0 is ">0". A graph that cannot be read fails the
+census: nothing is written, the file goes stale and the staleness rule fires,
+never a count that left a graph out.
+
+  FUSEKI_QUERY      prod query endpoint (default http://localhost:3030/pods/query)
+  TEXTFILE_DIR      node-exporter's textfile dir
+  SHACL_CENSUS_STATE  where the baseline is kept
+  FUSEKI_HOME, JAVA the Fuseki jar and java to boot the scratch with
+"""
+import json, os, re, shutil, socket, subprocess, sys, tempfile, time, urllib.parse, urllib.request
+from collections import Counter
+
+HOME = os.path.expanduser("~")
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROD = os.environ.get("FUSEKI_QUERY", "http://localhost:3030/pods/query")
+TEXTFILE = os.environ.get("TEXTFILE_DIR", f"{HOME}/CascadeProjects/shared-observability/data/textfile_collector")
+STATE = os.environ.get("SHACL_CENSUS_STATE", f"{HOME}/.chorus/state/shacl-census.json")
+FUSEKI_HOME = os.environ.get("FUSEKI_HOME", f"{HOME}/.gathering/data/fuseki-5.1.0")
+JAVA = os.environ.get("JAVA", "/opt/homebrew/opt/openjdk/bin/java")
+SH = "http://www.w3.org/ns/shacl#"
+ONTOLOGY = "urn:chorus:ontology"
+
+
+def auth():
+    """The store's credential as curl args, from the one door (fuseki-auth.sh); never printed."""
+    out = subprocess.run(["bash", "-c", f'source "{HERE}/fuseki-auth.sh" >/dev/null 2>&1; printf "%s\\n" "${{FUSEKI_AUTH[@]}}"'],
+                         capture_output=True, text=True).stdout.splitlines()
+    return [a for a in out if a]
+
+
+def curl(args, timeout=120):
+    r = subprocess.run(["curl", "-sf", "--max-time", str(timeout)] + args, capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"curl exit {r.returncode}: {r.stderr.decode(errors='replace').strip()[:200]}")
+    return r.stdout
+
+
+def prod(query, accept, cred):
+    return curl(cred + ["-H", f"Accept: {accept}", "--data-urlencode", f"query={query}", PROD])
+
+
+def boot(work):
+    port = socket.socket(); port.bind(("127.0.0.1", 0)); p = port.getsockname()[1]; port.close()
+    with open(f"{work}/config.ttl", "w") as f:
+        f.write(f"""@prefix fuseki: <http://jena.apache.org/fuseki#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ja: <http://jena.hpl.hp.com/2005/11/Assembler#> .
+[] rdf:type fuseki:Server ; fuseki:services ( <#svc> ) .
+<#svc> a fuseki:Service ; fuseki:name "c" ;
+  fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "query" ] ;
+  fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
+  fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ; fuseki:name "data" ] ;
+  fuseki:endpoint [ fuseki:operation fuseki:shacl ; fuseki:name "shacl" ] ;
+  fuseki:dataset [ a ja:MemoryDataset ] .
+""")
+    proc = subprocess.Popen([JAVA, f"-Xmx{os.environ.get('SHACL_CENSUS_HEAP', '3g')}", "-cp", f"{FUSEKI_HOME}/fuseki-server.jar",
+                             "org.apache.jena.fuseki.cmd.FusekiCmd", "--config=config.ttl", f"--port={p}"],
+                            cwd=work, env=dict(os.environ, FUSEKI_BASE=work, FUSEKI_HOME=FUSEKI_HOME),
+                            stdout=open(f"{work}/server.log", "w"), stderr=subprocess.STDOUT)
+    base = f"http://127.0.0.1:{p}/c"
+    for _ in range(80):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{p}/$/ping", timeout=1)
+            return proc, base
+        except Exception:
+            if proc.poll() is not None:
+                break
+            time.sleep(0.5)
+    proc.terminate()
+    raise RuntimeError("the scratch Fuseki did not start")
+
+
+def load(base, body):
+    r = subprocess.run(["curl", "-sf", "--max-time", "300", "-X", "POST", "-H", "Content-Type: application/n-triples",
+                        "--data-binary", "@-", f"{base}/data?graph=urn:census"], input=body, capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"scratch load failed: {r.stderr.decode(errors='replace')[:200]}")
+
+
+def tally(report):
+    """(results, rows, by component) from a validation report in N-Triples."""
+    by, results = {}, set()
+    pat = re.compile(r'^(\S+) <([^>]+)> (.+) \.$')
+    for line in report.decode(errors="replace").splitlines():
+        m = pat.match(line.strip())
+        if not m:
+            continue
+        s, p, o = m.groups()
+        if p == SH + "result":
+            results.add(o)
+        if p.startswith(SH):
+            by.setdefault(s, {})[p[len(SH):]] = o
+    if not any("conforms" in v for v in by.values()):
+        raise RuntimeError("the scratch answered no validation report")
+    comp, rows = Counter(), set()
+    for r in results:
+        f = by.get(r, {})
+        comp[f.get("sourceConstraintComponent", "?").rstrip(">").rsplit("#", 1)[-1]] += 1
+        rows.add(f.get("focusNode"))
+    return len(results), len(rows), comp
+
+
+def write_prom(count, rows, comp, baseline, graphs):
+    os.makedirs(TEXTFILE, exist_ok=True)
+    lines = [
+        "# HELP athena_shacl_violations SHACL validation results over every urn:chorus:domains graph, by Jena (#4717).",
+        "# TYPE athena_shacl_violations gauge", f"athena_shacl_violations {count}",
+        "# HELP athena_shacl_violating_rows Rows with one or more SHACL violations (#4717).",
+        "# TYPE athena_shacl_violating_rows gauge", f"athena_shacl_violating_rows {rows}",
+        "# HELP athena_shacl_violations_baseline The ratchet: the lowest violation count the census has seen; only goes down (Jeff 10-24).",
+        "# TYPE athena_shacl_violations_baseline gauge", f"athena_shacl_violations_baseline {baseline}",
+        "# HELP athena_shacl_violations_by SHACL validation results by constraint component (#4717).",
+        "# TYPE athena_shacl_violations_by gauge",
+    ] + [f'athena_shacl_violations_by{{component="{c}"}} {n}' for c, n in sorted(comp.items())] + [
+        "# HELP athena_shacl_census_graphs Graphs the census read (#4717).",
+        "# TYPE athena_shacl_census_graphs gauge", f'athena_shacl_census_graphs {graphs}',
+    ]
+    tmp = f"{TEXTFILE}/.athena_shacl.prom.{os.getpid()}"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, f"{TEXTFILE}/athena_shacl.prom")
+
+
+def ratchet(count):
+    try:
+        prev = json.load(open(STATE)).get("baseline")
+    except (OSError, ValueError):
+        prev = None
+    baseline = count if prev is None else min(prev, count)
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    tmp = f"{STATE}.{os.getpid()}"
+    json.dump({"baseline": baseline, "last": count, "at": int(time.time())}, open(tmp, "w"))
+    os.replace(tmp, STATE)
+    return baseline
+
+
+def main():
+    cred = auth()
+    graphs = [g for g in prod('SELECT ?g WHERE { GRAPH ?g { } FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:")) }',
+                              "text/tab-separated-values", cred).decode().split("\n")[1:] if g.strip()]
+    graphs = [g.strip().strip("<>") for g in graphs]
+    if not graphs:
+        print("shacl-census: no urn:chorus:domains graphs in the store", file=sys.stderr)
+        return 1
+    shapes = prod(f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{ONTOLOGY}> {{ ?s ?p ?o }} }}", "text/turtle", cred)
+    work = tempfile.mkdtemp(prefix="shacl-census-")
+    proc = None
+    try:
+        proc, base = boot(work)
+        load(base, prod(f"CONSTRUCT {{ ?a <http://www.w3.org/2000/01/rdf-schema#subClassOf> ?b }} WHERE {{ GRAPH <{ONTOLOGY}> "
+                        f"{{ ?a <http://www.w3.org/2000/01/rdf-schema#subClassOf> ?b }} }}", "application/n-triples", cred))
+        for g in graphs:
+            try:
+                load(base, prod(f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{g}> {{ ?s ?p ?o }} }}", "application/n-triples", cred))
+            except RuntimeError as e:
+                print(f"shacl-census: {g} was not read ({e}); nothing written", file=sys.stderr)
+                return 1
+        with open(f"{work}/shapes.ttl", "wb") as f:
+            f.write(shapes)
+        report = curl(["-X", "POST", "-H", "Content-Type: text/turtle", "-H", "Accept: application/n-triples",
+                       "--data-binary", f"@{work}/shapes.ttl", f"{base}/shacl?graph=urn:census"], timeout=1800)
+        count, rows, comp = tally(report)
+    finally:
+        if proc:
+            proc.terminate()
+            try:
+                proc.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        shutil.rmtree(work, ignore_errors=True)
+    baseline = ratchet(count)
+    write_prom(count, rows, comp, baseline, len(graphs))
+    print(f"shacl-census: {count} violation(s) on {rows} row(s) across {len(graphs)} graph(s); baseline {baseline}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

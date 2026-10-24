@@ -1,0 +1,38 @@
+#!/bin/bash
+# #4717 AC4 — the shapes graph's empty blank nodes, as a Prometheus gauge.
+#
+# On 10-18 a model land emptied CoreShape: 77 shapes pointed at shared blank
+# nodes that no longer carried any triples, and nothing noticed for hours. This
+# reads urn:chorus:ontology (10k triples, ~50 ms) and writes, for node-exporter's
+# textfile collector (:9102, already scraped):
+#   athena_shared_bnodes_empty  blank nodes two or more nodes point at, with no triples
+#   athena_empty_bnodes         every pointed-at blank node with no triples
+# Hourly (com.chorus.shacl-bnodes). A failed read writes nothing, so the file
+# goes stale and the staleness rule fires; never a 0 it did not measure.
+#
+#   FUSEKI_QUERY  the store's query endpoint (default the prod /pods/query)
+#   TEXTFILE_DIR  where node-exporter reads *.prom
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+Q="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+DIR="${TEXTFILE_DIR:-$HOME/CascadeProjects/shared-observability/data/textfile_collector}"
+[ -f "$HERE/fuseki-auth.sh" ] && source "$HERE/fuseki-auth.sh"
+SPARQL='SELECT ?v WHERE { { SELECT (CONCAT(STR(COUNT(?b)), " ", STR(SUM(IF(?refs > 1, 1, 0)))) AS ?v) WHERE {
+  { SELECT ?b (COUNT(DISTINCT ?x) AS ?refs) WHERE { GRAPH <urn:chorus:ontology> {
+      ?x ?p ?b FILTER(isBlank(?b)) FILTER NOT EXISTS { ?b ?q ?r } } } GROUP BY ?b } } } }'
+out=$(curl -sf --max-time 30 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: text/tab-separated-values' \
+  --data-urlencode "query=$SPARQL" "$Q") || { echo "shacl-bnodes: the store did not answer ($Q)" >&2; exit 1; }
+read -r empty shared <<<"$(printf '%s\n' "$out" | sed -n 2p | tr -d '"')"
+case "$empty$shared" in ''|*[!0-9]*) echo "shacl-bnodes: no count in the answer: $out" >&2; exit 1;; esac
+mkdir -p "$DIR"
+tmp="$DIR/.athena_shacl_bnodes.prom.$$"
+cat > "$tmp" <<EOF
+# HELP athena_shared_bnodes_empty Blank nodes in urn:chorus:ontology that two or more nodes point at and that carry no triples (#4717).
+# TYPE athena_shared_bnodes_empty gauge
+athena_shared_bnodes_empty $shared
+# HELP athena_empty_bnodes Pointed-at blank nodes in urn:chorus:ontology that carry no triples (#4717).
+# TYPE athena_empty_bnodes gauge
+athena_empty_bnodes $empty
+EOF
+mv "$tmp" "$DIR/athena_shacl_bnodes.prom"
+echo "shacl-bnodes: shared empty $shared, empty $empty"

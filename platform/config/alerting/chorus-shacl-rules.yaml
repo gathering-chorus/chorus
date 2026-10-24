@@ -1,0 +1,116 @@
+# #4717 AC4 — the store checks shapes (canonical here; deploy copies it to
+# shared-observability/config/grafana/provisioning/alerting/ after the census has written once): what the census and the blank-node gauge
+# count (chorus platform/scripts/shacl-census, shacl-bnodes; node-exporter
+# textfile on :9102). Each summary names the rule, the threshold and the values
+# (Jeff 10-24 06:03: no refIds in an alert).
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: shacl
+    folder: Chorus
+    interval: 5m
+    rules:
+      # Ratchet (Jeff 10-24 06:08): the baseline is the lowest count the census
+      # has seen and only goes down; the alert fires when the count rises above it.
+      - uid: shacl-violations-above-baseline
+        title: SHACL violations above baseline
+        condition: D
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(athena_shacl_violations)', instant: true, refId: A }
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(athena_shacl_violations_baseline)', instant: true, refId: B }
+          - refId: C
+            datasourceUid: __expr__
+            model: { type: math, expression: '$A - $B', refId: C }
+          - refId: D
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: C
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: D
+        noDataState: OK
+        execErrState: Alerting
+        for: 0m
+        annotations:
+          summary: 'store SHACL violations {{ $values.A.Value }}, baseline {{ $values.B.Value }} (alerts when the count is above the baseline)'
+        labels: { role: silas, domain: persistence, severity: warning, team: chorus }
+
+      # The 10-18 class: a land empties blank nodes that shapes share.
+      - uid: shacl-shared-bnodes-empty
+        title: Empty shared blank nodes in the shapes
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(athena_shared_bnodes_empty)', instant: true, refId: A }
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: B
+        noDataState: OK
+        execErrState: Alerting
+        for: 0m
+        annotations:
+          summary: 'empty shared blank nodes in urn:chorus:ontology: {{ $values.A.Value }} (alerts above 0)'
+        labels: { role: silas, domain: persistence, severity: critical, team: chorus }
+
+      # A census or gauge that stops running must not read as clean: the file's
+      # age, and a missing file (no data) alerts too.
+      - uid: shacl-census-stale
+        title: SHACL census not run
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(time() - node_textfile_mtime_seconds{file=~".*/athena_shacl\\.prom"}) / 3600', instant: true, refId: A }
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [26] }
+              refId: B
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 0m
+        annotations:
+          summary: 'SHACL census last wrote {{ $values.A.Value }} h ago (alerts over 26 h, or when it never wrote)'
+        labels: { role: silas, domain: persistence, severity: warning, team: chorus }
+
+      - uid: shacl-bnodes-stale
+        title: SHACL blank-node gauge not run
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(time() - node_textfile_mtime_seconds{file=~".*/athena_shacl_bnodes\\.prom"}) / 3600', instant: true, refId: A }
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [2] }
+              refId: B
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 0m
+        annotations:
+          summary: 'SHACL blank-node gauge last wrote {{ $values.A.Value }} h ago (alerts over 2 h, or when it never wrote)'
+        labels: { role: silas, domain: persistence, severity: warning, team: chorus }

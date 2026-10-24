@@ -27,7 +27,7 @@ describe('#4666 grafana alerts → role nudges', () => {
   test('a firing alert with a role label nudges that role with the trigger and values', () => {
     const s = sinks();
     const r = routeGrafanaAlerts({ alerts: [sensorRed] }, s.deps);
-    expect(s.nudges).toEqual([['silas', 'grafana: Sensor run not green — A=1']]);
+    expect(s.nudges).toEqual([['silas', 'grafana: Sensor run not green — domain sensors, value 1']]);
     expect(r.routed).toHaveLength(1);
   });
 
@@ -54,9 +54,23 @@ describe('#4666 grafana alerts → role nudges', () => {
     expect(r.routed).toEqual([]);
   });
 
-  test('the text carries no annotation prose, only the name and values', () => {
-    expect(alertText({ labels: { alertname: 'Disk' }, values: { A: 97 }, valueString: '[ var=A value=97 ]' })).toBe('grafana: Disk — A=97');
-    expect(alertText({ labels: { alertname: 'Disk' }, valueString: '[ var=A value=97 ]' })).toBe('grafana: Disk — [ var=A value=97 ]');
+  // #4717 (Jeff 10-24 06:03): the rule, the threshold and the values in words, never refIds
+  test('the text says the series and the query value, or the rule summary, never a refId', () => {
+    expect(alertText({ labels: { alertname: 'Disk', mount: '/' }, values: { A: 97, C: 1 } })).toBe('grafana: Disk — mount /, value 97');
+    expect(alertText({ labels: { alertname: 'Disk' }, valueString: "[ var='A' labels={} value=97 ], [ var='C' labels={} value=1 ]" })).toBe('grafana: Disk — value 97');
+    expect(alertText({ labels: { alertname: 'SHACL violations rose' }, annotations: { summary: 'violations 812, yesterday 790 (alerts when above yesterday)' }, values: { A: 812, C: 1 } }))
+      .toBe('grafana: SHACL violations rose — violations 812, yesterday 790 (alerts when above yesterday)');
+  });
+
+  // NEGATIVE PROOF: the shapes of tonight's payloads (A=1 B=1 C=1, A=2 C=1) carry no refId into the text
+  test('no refId reaches the nudge, whatever shape the payload has', () => {
+    for (const a of [
+      { labels: { alertname: 'Sensor run not green', role: 'silas', sensor: 'services', owner: 'silas' }, values: { A: 1, B: 1, C: 1 } },
+      { labels: { alertname: 'Messages lost in a day', role: 'wren' }, values: { A: 2, C: 1 } },
+      { labels: { alertname: 'x' }, valueString: "[ var='A' labels={} value=2 ], [ var='C' labels={} value=1 ]" },
+    ]) {
+      expect(alertText(a)).not.toMatch(/\b[A-Z]=/);
+    }
   });
 
   test('an empty payload routes nothing', () => {

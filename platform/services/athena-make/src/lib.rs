@@ -1721,9 +1721,15 @@ fn parse_json_object(body: &str, allow_null: bool) -> R<std::collections::BTreeM
                 return Err(format!("create property '{}': an empty list says nothing — omit the property instead", key));
             }
             items
+        } else if body[i..].starts_with("true") || body[i..].starts_with("false") {
+            // #4713 — a JSON boolean is its lexical form; the DAL types it from the
+            // field's sh:datatype (xsd:boolean); a non-boolean typed field still refuses it.
+            let lexical = if body[i..].starts_with("true") { "true" } else { "false" };
+            i += lexical.len();
+            vec![lexical.to_string()]
         } else {
             vec![string_at(body, &mut i)
-                .map_err(|e| format!("create property '{}' must be a JSON string or a list of strings ({})", key, e))?]
+                .map_err(|e| format!("create property '{}' must be a JSON string, a JSON boolean, or a list of strings ({})", key, e))?]
         };
         if out.insert(key.clone(), value).is_some() {
             return Err(format!("create property '{}' appears more than once", key));
@@ -3086,6 +3092,29 @@ mod unbounded_edges_4222 {
         let j = openapi_json(&t);
         assert!(j.contains("\"filePath\": { \"type\": \"string\" }"), "{j}");
         assert!(!j.contains("\"filePath\": { \"type\": \"array\""), "{j}");
+    }
+}
+
+#[cfg(test)]
+mod json_boolean_4713_tests {
+    use super::*;
+
+    /// #4713 — the door took only JSON strings, so PATCH {"platform": true} was a
+    /// 422 and the boolean had to go in as the string "true".
+    #[test]
+    fn a_json_boolean_reads_as_its_lexical_form_in_create_and_patch() {
+        let c = parse_create_object(r#"{"platform": true, "label": "x"}"#).unwrap();
+        assert_eq!(c["platform"], vec!["true".to_string()]);
+        let p = parse_patch_object(r#"{"platform":false}"#).unwrap();
+        assert_eq!(p["platform"], vec!["false".to_string()]);
+    }
+
+    /// NEGATIVE PROOF: a bare word that only starts like a boolean, or a number,
+    /// is still refused; the door does not guess.
+    #[test]
+    fn a_bare_word_or_number_is_still_refused() {
+        assert!(parse_create_object(r#"{"platform": truex}"#).is_err());
+        assert!(parse_create_object(r#"{"platform": 1}"#).is_err());
     }
 }
 
