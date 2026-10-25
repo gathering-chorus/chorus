@@ -51,11 +51,11 @@ chorus:Note a owl:Class ;
 # --- properties --------------------------------------------------------------
 
 chorus:inPrompt a owl:ObjectProperty ;
-    rdfs:label "in prompt" ; rdfs:range chorus:Prompt ;
+    rdfs:label "in prompt" ; rdfs:domain chorus:Message ; rdfs:range chorus:Prompt ;
     rdfs:comment "The prompt a message is one line of. Points up: the prompt is written first, each line of the burst points at it." .
 
 chorus:promptedBy a owl:ObjectProperty ;
-    rdfs:label "prompted by" ; rdfs:range chorus:Principal ;
+    rdfs:label "prompted by" ; rdfs:domain chorus:Prompt ; rdfs:range chorus:Principal ;
     rdfs:comment "The real actor who typed the prompt. Never unknown, bridge, pulse or system (#4637)." .
 
 chorus:promptedAt a owl:DatatypeProperty ;
@@ -67,27 +67,27 @@ chorus:promptText a owl:DatatypeProperty ;
     rdfs:comment "The burst joined in order, one line per message." .
 
 chorus:promptTo a owl:ObjectProperty ;
-    rdfs:label "prompt to" ; rdfs:range chorus:Principal ;
+    rdfs:label "prompt to" ; rdfs:domain chorus:Prompt ; rdfs:range chorus:Principal ;
     rdfs:comment "Each role the prompt names (an @-mention), or none for the room." .
 
 chorus:turnOf a owl:ObjectProperty ;
-    rdfs:label "turn of" ; rdfs:range chorus:SessionRun ;
+    rdfs:label "turn of" ; rdfs:domain chorus:Turn ; rdfs:range chorus:SessionRun ;
     rdfs:comment "The session run this turn ran in." .
 
 chorus:answersPrompt a owl:ObjectProperty ;
-    rdfs:label "answers prompt" ; rdfs:range chorus:Prompt ;
+    rdfs:label "answers prompt" ; rdfs:domain chorus:Turn ; rdfs:range chorus:Prompt ;
     rdfs:comment "The prompt this turn answers. Absent when a nudge or a pipeline woke the role." .
 
 chorus:startedByPrompt a owl:ObjectProperty ;
-    rdfs:label "started by prompt" ; rdfs:range chorus:Prompt ;
+    rdfs:label "started by prompt" ; rdfs:domain [ owl:unionOf ( chorus:PipelineRun chorus:StreamEvent ) ] ; rdfs:range chorus:Prompt ;
     rdfs:comment "The prompt a card action or pipeline run came from, so a run is reachable from the prompt that started it (#4638 AC 3, #4637)." .
 
 chorus:onCard a owl:ObjectProperty ;
-    rdfs:label "on card" ; rdfs:range chorus:Card ;
+    rdfs:label "on card" ; rdfs:domain [ owl:unionOf ( chorus:Turn chorus:Note ) ] ; rdfs:range chorus:Card ;
     rdfs:comment "The card a turn worked on or a note is about. Card is the carrier (Jeff 10-19 09:32)." .
 
 chorus:inTurn a owl:ObjectProperty ;
-    rdfs:label "in turn" ; rdfs:range chorus:Turn ;
+    rdfs:label "in turn" ; rdfs:domain [ owl:unionOf ( chorus:StreamEvent chorus:Note ) ] ; rdfs:range chorus:Turn ;
     rdfs:comment "The turn a stream event or note came from." .
 
 chorus:turnStartedAt a owl:DatatypeProperty ;

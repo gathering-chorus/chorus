@@ -119,3 +119,18 @@ focus() { printf '%s\n' "$1" | grep -A8 "focusNode.*$2" ; }
 @test "the tree file is in the model set athena-deploy loads" {
   grep -q 'roles/wren/ontology/pulse-tree-4638.ttl' "$ROOT/platform/services/athena-deploy/src/lib.rs"
 }
+
+# athena-validate's link-type-untyped (athena run 1, 10:46): every link type
+# says what it links from and to. Count the object properties missing either.
+untyped_links() {
+  awk '/a owl:ObjectProperty/{p=1; b=""} p{b=b $0} p&&/ \.$/{ if (b !~ /rdfs:domain/ || b !~ /rdfs:range/) n++; p=0 } END{print n+0}' "$1"
+}
+
+@test "every link type in the tree says what it links from and to" {
+  [ "$(untyped_links "$SHAPE")" -eq 0 ]
+}
+
+@test "negative proof: a link type with no from-type is counted" {
+  sed 's/rdfs:domain chorus:Message ; //' "$SHAPE" > "$BATS_TEST_TMPDIR/nodomain.ttl"
+  [ "$(untyped_links "$BATS_TEST_TMPDIR/nodomain.ttl")" -eq 1 ]
+}
