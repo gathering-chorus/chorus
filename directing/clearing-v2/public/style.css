@@ -1073,9 +1073,10 @@ tr.you td {
 .actor-tile:hover {
   border-color: var(--accent);
 }
-.actor-tile.on {
+.actor-tile.on, .actor-tile.selected, .actor-tile.active-filter {
   border-color: var(--accent);
   background: var(--accentbg);
+  box-shadow: 0 0 0 1px var(--accent);
   font-weight: 600;
 }
 .actor-tile-info {

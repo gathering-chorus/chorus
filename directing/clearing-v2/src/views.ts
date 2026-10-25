@@ -835,7 +835,7 @@ export function renderPeopleRow(room: string, actors: ActorRow[] | undefined): s
           : (a.card ? `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${a.card.id}');return false;">#${a.card.id}</span>` : 'no card');
         const isActive = room.toLowerCase() === a.id.toLowerCase();
         return `
-          <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
+          <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="if(typeof toggleActorFilter==='function'){return toggleActorFilter(event, '${a.id}');}window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
             <div class="actor-tile-info">
               <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${escapeHtml(a.name)}</b></div>
               <div class="actor-tile-card">${cardHtml}</div>
