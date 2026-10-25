@@ -12,6 +12,7 @@ fn pulse() -> Product {
         name: "pulse".into(),
         domains: vec![Domain {
             name: "awareness".into(),
+            composed: false,
             classes: vec![Class {
                 name: "RoleState".into(),
                 segment: "rolestates".into(),

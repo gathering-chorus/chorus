@@ -265,3 +265,18 @@ fn negative_proof_the_version_first_route_is_unknown() {
     assert_eq!(code, 404, "{out}");
     assert_eq!(out["error"], "unknown-route", "{out}");
 }
+
+// #4742 — the top level is a composition: a composed domain is read here, written only by its owner.
+#[test]
+fn a_write_to_a_composed_domain_is_refused_and_writes_nothing() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let owned = CLASSES.first().expect("a class");
+    let composed: &'static ClassDef = Box::leak(Box::new(ClassDef { composed: true, ..*owned }));
+    let body = json!({ "name": "cw" }).to_string();
+    let (code, out) = write(&ctx(&store), &caller("wren", &[]), "POST", composed, None, &body);
+    assert_eq!((code, out["error"].as_str()), (405, Some("composed")), "{out}");
+    assert!(store.0.lock().unwrap().is_empty(), "a refused write left a row");
+    // negative proof: the same write to the owned class is not refused as composed
+    let (code, out) = write(&ctx(&store), &caller("wren", &[]), "POST", owned, None, &body);
+    assert_ne!(out["error"].as_str(), Some("composed"), "{code} {out}");
+}

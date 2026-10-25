@@ -57,6 +57,10 @@ fn refused(r: rules::Refusal) -> (u16, Value) {
 /// A write, after the caller is known: shape check → owner or Permission → keep the
 /// displaced version → one atomic store write → event. Nothing is written on a refusal.
 pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+    // #4742 — a composed domain belongs to another product: this one reads it, its owner writes it
+    if class.composed {
+        return error(405, "composed", &format!("{} is composed here from its owner; write it through {}'s own door", class.domain, class.domain));
+    }
     let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
         match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
     };
