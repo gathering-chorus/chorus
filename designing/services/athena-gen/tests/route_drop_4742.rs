@@ -5,7 +5,7 @@
 //! model must not take its generated route with it silently. Regenerating over a crate
 //! names every route the old crate served and the new one would not; generate refuses
 //! unless each is named with --drop.
-use athena_gen::emit::{dropped_routes, routes};
+use athena_gen::emit::{dropped_routes, model_rs, old_routes, routes};
 use athena_gen::model::{Class, Domain, Product};
 
 fn product(classes: &[(&str, &str)]) -> Product {
@@ -54,4 +54,21 @@ fn negative_proof_a_class_that_left_the_model_is_named() {
 fn an_older_crate_is_read_too() {
     let old = OLD.replace(", composed: false", "");
     assert_eq!(dropped_routes(&old, &product(&[("awareness", "turns")])), ["/pulse/streams/events"]);
+}
+
+/// Kade + Abby review 10-25: the scanner reads the generator's own output, so it is proven on
+/// that output — a change to how model.rs is written breaks this test instead of emptying the guard.
+#[test]
+fn the_scanner_reads_what_the_generator_writes_today() {
+    let both = product(&[("awareness", "turns"), ("streams", "events")]);
+    let written = model_rs(&both, "1", &[]);
+    assert_eq!(old_routes(&written, "pulse"), routes(&both));
+    assert_eq!(dropped_routes(&written, &product(&[("awareness", "turns")])), ["/pulse/streams/events"]);
+}
+
+/// NEGATIVE PROOF (#3734: a guard whose target moved must fail loudly): a model.rs the
+/// scanner cannot read yields no routes, and generate refuses on that (see src/main).
+#[test]
+fn negative_proof_an_unreadable_model_rs_yields_no_routes() {
+    assert!(old_routes("pub const CLASSES: &[ClassDef] = &[ ClassDef { domain = awareness } ];", "pulse").is_empty());
 }

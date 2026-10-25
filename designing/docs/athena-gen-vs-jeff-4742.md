@@ -41,3 +41,8 @@ Open from Jeff 18:49: query and stream share one filter (actor × domain × time
 /v1/awareness/rolestates     404
 pulse-api 1.0.0 serving 15 classes on 127.0.0.1:3492
 ```
+
+## Demo reviews, round bb677164 (10-25 19:29)
+- Wren, Abby: no audit of `/v1` callers on :3392. Measured with `grep -rn 3392` over the repo, excluding target and node_modules: the only callers are `platform/tests/4490-pulse-parity.test.sh` (now root-aware) and pulse-api's own model.rs. `quartet-walk.sh` only mentions the port in a help line. Nothing else reads pulse-api.
+- Kade, Abby: `dropped_routes` scans the generator's own output and could go hollow if the format changed. Fixed: the scanner is now tested on what `model_rs()` writes, and changing the format makes that test fail (checked). generate also refuses a model.rs whose routes it cannot read, instead of treating it as "nothing dropped".
+- Still open: the follow/stream filter (Jeff 18:49), and #4713's after-land re-PATCH (its own card, in Later).

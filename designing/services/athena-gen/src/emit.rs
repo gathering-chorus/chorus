@@ -241,13 +241,18 @@ pub fn routes(p: &Product) -> Vec<String> {
 /// never dropped silently.
 pub fn dropped_routes(old_model_rs: &str, p: &Product) -> Vec<String> {
     let now = routes(p);
+    old_routes(old_model_rs, &p.name).into_iter().filter(|r| !now.contains(r)).collect()
+}
+
+/// The routes a generated model.rs serves, read from its ClassDef lines. Empty when the text
+/// holds none it can read; generate treats that as a refusal, never as "nothing dropped".
+pub fn old_routes(model_rs: &str, product: &str) -> Vec<String> {
     let quoted = |line: &str, key: &str| {
         let rest = &line[line.find(&format!("{key}: \""))? + key.len() + 3..];
         Some(rest[..rest.find('"')?].to_string())
     };
-    old_model_rs
+    model_rs
         .lines()
-        .filter_map(|l| Some(format!("/{}/{}/{}", p.name, quoted(l, "domain")?, quoted(l, "segment")?)))
-        .filter(|r| !now.contains(r))
+        .filter_map(|l| Some(format!("/{product}/{}/{}", quoted(l, "domain")?, quoted(l, "segment")?)))
         .collect()
 }

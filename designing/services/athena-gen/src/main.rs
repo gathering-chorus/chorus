@@ -44,6 +44,9 @@ fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Pa
     let p = athena_gen::model::product(store, product).unwrap_or_else(|e| die(e));
     // #4742 gap 8 (#4708) — a route the crate serves today leaves only when it is named
     if let Ok(old) = std::fs::read_to_string(out.join("src/model.rs")) {
+        if old.contains("ClassDef {") && athena_gen::emit::old_routes(&old, product).is_empty() {
+            die(format!("{product}: cannot read the routes the crate serves today from {}; the route-drop guard would be blind", out.join("src/model.rs").display()));
+        }
         let dropped: Vec<String> = athena_gen::emit::dropped_routes(&old, &p).into_iter().filter(|r| !drops.contains(r)).collect();
         if !dropped.is_empty() {
             die(format!("{product}: the model no longer serves {dropped:?}; if that is meant, name each with --drop <route>"));
