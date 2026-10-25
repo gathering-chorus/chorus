@@ -260,6 +260,11 @@ fn publish_answers_nip42_auth_challenge() {
         let tags = a[1]["tags"].as_array().unwrap();
         assert!(tags.iter().any(|t| t[0] == "challenge" && t[1] == "chal-123"), "{tags:?}");
         assert!(tags.iter().any(|t| t[0] == "relay"), "{tags:?}");
+        // #4737 NEGATIVE PROOF: the event below is stamped at t=1 (a note queued long ago);
+        // the sign-in must still be stamped now, inside the relay's ±60 s window
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let at = a[1]["created_at"].as_i64().unwrap();
+        assert!((now - at).abs() <= 60, "AUTH stamped {at}, now {now}: an old queued note could never flush");
         // then the EVENT again → accept it
         let second = ws.read().unwrap();
         let v2: serde_json::Value = serde_json::from_str(second.to_text().unwrap()).unwrap();
