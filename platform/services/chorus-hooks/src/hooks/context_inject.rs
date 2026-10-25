@@ -1071,10 +1071,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         let t_semantic = tokio::task::spawn_blocking(move || cached_query_chorus_semantic(&rs, &ps, tags.as_deref()));
         let t_memory = tokio::task::spawn_blocking(move || if legacy_memory { scan_memory(&kw2) } else { Vec::new() });
         let r4 = role_name.clone();
-        let t_pulse = tokio::task::spawn_blocking(move || {
-            let tree = query_tree_slice(&r4);
-            Some(read_pulse_snapshot().unwrap_or_default() + &tree)
-        });
+        // #4638 — the tree slice is its own task, concurrent with the snapshot read (Abby's review)
+        let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
+        let t_tree = tokio::task::spawn_blocking(move || query_tree_slice(&r4));
         let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
         let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
         let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
@@ -1082,7 +1081,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             t_chorus.await.unwrap_or_default(),
             t_semantic.await.unwrap_or_default(),
             t_memory.await.unwrap_or_default(),
-            t_pulse.await.unwrap_or_default(),
+            Some(t_pulse.await.unwrap_or_default().unwrap_or_default() + &t_tree.await.unwrap_or_default()),
             t_spine.await.unwrap_or_default(),
             t_athena.await.unwrap_or_default(),
             t_logs.await.unwrap_or_default(),

@@ -207,3 +207,27 @@ describe('#4638 turns and runs from the spine (#4637 AC4 events)', () => {
     expect(turns[1]).toMatchObject({ id: 'b', lastCallAt: '2026-10-24T20:07:30Z' });
   });
 });
+
+describe('#4638 demo review fixes (run 4: Kade, live log shape)', () => {
+  const { factsFromSpine } = require('./pulse-tree');
+  const line = (id: string, to: string, text: string, sentAt: string) => ({ id, from: 'jeff', to: [to], text, sentAt });
+
+  it('a run logged as the live spine writes it (card_id, a number) lands on its card', () => {
+    // shape copied from Loki 2026-10-25 09:18 (silas, #4735)
+    const { runs } = factsFromSpine([
+      { event: 'pipeline.run.started', role: 'silas', timestamp: '2026-10-25T09:18:21.718-0400', card_id: 4735, pipeline: 'cicd', run_id: '034m3t1xECjhLgYiCU8dqO', started_by: 'none' },
+    ]);
+    expect(runs[0]).toMatchObject({ id: '034m3t1xECjhLgYiCU8dqO', card: 4735, pipeline: 'cicd' });
+    expect(runs[0].startedByLine).toBeUndefined();
+  });
+
+  it('one line sent to two roles is one line of the prompt', () => {
+    const { prompts } = joinPrompts([line('a', 'wren', 'go', '2026-10-25T13:00:00Z'), line('b', 'silas', 'go', '2026-10-25T13:00:00Z')], ACTORS);
+    expect(prompts[0]).toMatchObject({ text: 'go', to: ['wren', 'silas'], lines: ['a', 'b'] });
+  });
+
+  it('negative proof: a real repeat to the same role inside a burst is kept, not folded away', () => {
+    const { prompts } = joinPrompts([line('a', 'wren', 'no', '2026-10-25T13:00:00Z'), line('b', 'wren', 'no', '2026-10-25T13:00:02Z')], ACTORS);
+    expect(prompts[0].text).toBe('no\nno');
+  });
+});

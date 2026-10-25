@@ -76,9 +76,10 @@ export function joinPrompts(lines: LineFact[], actors: string[]): { prompts: Pro
   return { prompts, lineToPrompt, refused: Object.fromEntries(refused) };
 }
 
-/** Add a line to an open prompt. One line sent to two roles is stored once per role: same words, one line of the prompt. */
+/** Add a line to an open prompt. One line sent to two roles is stored once per role: same words to a new role is one line of the prompt; a repeat to the same role is kept (Kade's review). */
 function joinLine(p: Prompt, l: LineFact): void {
-  if (p.text.split('\n').pop() !== l.text) p.text += '\n' + l.text;
+  const copy = p.text.split('\n').pop() === l.text && l.to.some(t => !p.to.includes(t));
+  if (!copy) p.text += '\n' + l.text;
   p.lines.push(l.id);
   for (const t of l.to) if (!p.to.includes(t)) p.to.push(t);
 }
@@ -249,7 +250,7 @@ function turnFrom(l: SpineLine, r: string): TurnFact {
 
 function runFrom(l: SpineLine): RunFact {
   return {
-    id: field(l.run_id) ?? 'unknown', card: Number(field(l.card)), pipeline: field(l.pipeline) ?? '',
+    id: field(l.run_id) ?? 'unknown', card: Number(field(l.card_id) ?? field(l.card)), pipeline: field(l.pipeline) ?? '',
     step: 'started', status: 'started',
     startedByLine: l.started_by === 'line' ? field(l.started_by_line) : undefined,
   };
