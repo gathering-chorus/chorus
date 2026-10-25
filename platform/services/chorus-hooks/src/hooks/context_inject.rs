@@ -1081,7 +1081,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             t_chorus.await.unwrap_or_default(),
             t_semantic.await.unwrap_or_default(),
             t_memory.await.unwrap_or_default(),
-            Some(t_pulse.await.unwrap_or_default().unwrap_or_default() + &t_tree.await.unwrap_or_default()),
+            Some(t_pulse.await.unwrap_or_default().unwrap_or_default() + &t_tree.await.unwrap_or_default()).filter(|s| !s.is_empty()),
             t_spine.await.unwrap_or_default(),
             t_athena.await.unwrap_or_default(),
             t_logs.await.unwrap_or_default(),

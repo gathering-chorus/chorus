@@ -78,6 +78,7 @@ export function joinPrompts(lines: LineFact[], actors: string[]): { prompts: Pro
 
 /** Add a line to an open prompt. One line sent to two roles is stored once per role: same words to a new role is one line of the prompt; a repeat to the same role is kept (Kade's review). */
 function joinLine(p: Prompt, l: LineFact): void {
+  // pulse stores a line sent to two roles once per role: same words, a role not yet on the prompt
   const copy = p.text.split('\n').pop() === l.text && l.to.some(t => !p.to.includes(t));
   if (!copy) p.text += '\n' + l.text;
   p.lines.push(l.id);
@@ -258,6 +259,7 @@ function runFrom(l: SpineLine): RunFact {
 
 /** A role's open turn closes at its own end or at the role's next turn. */
 function closeTurn(t: TurnFact | undefined, at: string): void {
+  // its last call is its close: a closed turn is never moving
   if (t && !t.endedAt) t.endedAt = t.lastCallAt = at;
 }
 
