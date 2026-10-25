@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+# @domain: observability
+"""log-archive (#4735) — move old logs out of promtail's reach without losing a byte.
+
+promtail tailed 20,564 files on 2026-10-25 (112% CPU, 982 MB), 20,218 of them
+dagu step logs kept forever under ~/Library/Logs/Chorus/dagu. Jeff, 08:06:
+"the log data is highly valuable be careful". So nothing here deletes: old
+files MOVE to an archive under ~/.chorus/log-archive (inside the nightly
+backup set, outside every promtail glob), and each move is proven by a
+manifest (path, size, sha256) written BEFORE the move and checked AFTER it.
+A file missing or changed in the archive fails the run, loudly.
+
+  log-archive dagu [--days N] [--apply]   runs whose last activity is older than N days (default 3)
+  log-archive chorus-log [--over BYTES] [--apply]
+                                          copy ~/.chorus/chorus.log to the archive, verify, then truncate in place
+                                          (--over: only when it is larger than BYTES)
+
+Dry run is the default: it prints what would move and changes nothing.
+chorus.log is truncated in place, never moved: a moved log keeps its writers
+appending to the moved inode, which is what blinded Fuseki and Loki on 10-20.
+"""
+import gzip, hashlib, json, os, re, shutil, sys, time
+
+HOME = os.path.expanduser("~")
+DAGU_LOGS = os.environ.get("LOG_ARCHIVE_DAGU_LOGS", f"{HOME}/Library/Logs/Chorus/dagu")
+DAGU_DATA = os.environ.get("LOG_ARCHIVE_DAGU_DATA", f"{HOME}/.chorus/dagu/data/dag-runs")
+ARCHIVE = os.environ.get("LOG_ARCHIVE_ROOT", f"{HOME}/.chorus/log-archive")
+CHORUS_LOG = os.environ.get("LOG_ARCHIVE_CHORUS_LOG", f"{HOME}/.chorus/chorus.log")
+RUN_ID = re.compile(r"^(?:dag-)?run_\d{8}[._]\d+.*?_([A-Za-z0-9]+)(?:\.log)?$")
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def files_under(path):
+    if os.path.isfile(path):
+        yield path
+        return
+    for d, _, names in os.walk(path):
+        for n in names:
+            yield os.path.join(d, n)
+
+
+def newest_mtime(path):
+    return max((os.path.getmtime(f) for f in files_under(path)), default=os.path.getmtime(path))
+
+
+def data_activity():
+    """run id → newest mtime of its dagu status dir: a run waiting at a human
+    task writes there, not to its logs, and must never be archived mid-wait."""
+    seen = {}
+    for d, dirs, _ in os.walk(DAGU_DATA):
+        for name in dirs:
+            m = RUN_ID.match(name)
+            if m:
+                seen[m.group(1)] = max(seen.get(m.group(1), 0), newest_mtime(os.path.join(d, name)))
+        dirs[:] = [x for x in dirs if not RUN_ID.match(x)]
+    return seen
+
+
+def units():
+    """Each run's log dir (or a loose run log): top-level run_* entries, and the
+    entries inside each DAG's dir."""
+    for top in sorted(os.listdir(DAGU_LOGS)):
+        p = os.path.join(DAGU_LOGS, top)
+        if os.path.isdir(p) and not RUN_ID.match(top):
+            for child in sorted(os.listdir(p)):
+                yield os.path.join(top, child)
+        else:
+            yield top
+
+
+def manifest_of(rels):
+    out = []
+    for rel in rels:
+        for f in files_under(os.path.join(DAGU_LOGS, rel)):
+            out.append({"path": os.path.relpath(f, DAGU_LOGS), "size": os.path.getsize(f), "sha256": sha256(f)})
+    return out
+
+
+def verify(manifest, root):
+    bad = []
+    for e in manifest:
+        p = os.path.join(root, e["path"])
+        if not os.path.isfile(p):
+            bad.append(f"missing {e['path']}")
+        elif os.path.getsize(p) != e["size"] or sha256(p) != e["sha256"]:
+            bad.append(f"changed {e['path']}")
+    return bad
+
+
+def dagu(days, apply):
+    cutoff = time.time() - days * 86400
+    activity = data_activity()
+    old = []
+    for rel in units():
+        m = RUN_ID.match(os.path.basename(rel))
+        last = max(newest_mtime(os.path.join(DAGU_LOGS, rel)), activity.get(m.group(1), 0) if m else 0)
+        if last < cutoff:
+            old.append(rel)
+    manifest = manifest_of(old)
+    total = sum(e["size"] for e in manifest)
+    print(f"log-archive dagu: {len(old)} run(s), {len(manifest)} file(s), {total} bytes older than {days} day(s)")
+    if not apply or not old:
+        print("dry run: nothing moved" if not apply else "nothing to move")
+        return 0
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    dest = os.path.join(ARCHIVE, "dagu")
+    os.makedirs(os.path.join(ARCHIVE, "manifests"), exist_ok=True)
+    mpath = os.path.join(ARCHIVE, "manifests", f"dagu-{stamp}.json")
+    with open(mpath, "w") as f:
+        json.dump({"from": DAGU_LOGS, "to": dest, "files": manifest}, f)
+    for rel in old:
+        target = os.path.join(dest, rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        if os.path.exists(target):  # a second run, or a twin: merge, never overwrite
+            for src in files_under(os.path.join(DAGU_LOGS, rel)):
+                t = os.path.join(dest, os.path.relpath(src, DAGU_LOGS))
+                os.makedirs(os.path.dirname(t), exist_ok=True)
+                if not os.path.exists(t):
+                    shutil.move(src, t)
+        else:
+            shutil.move(os.path.join(DAGU_LOGS, rel), target)
+    bad = verify(manifest, dest)
+    if bad:
+        print(f"LOG-ARCHIVE FAILED: {len(bad)} of {len(manifest)} file(s) not proven in the archive; manifest {mpath}", file=sys.stderr)
+        for b in bad[:20]:
+            print(f"  {b}", file=sys.stderr)
+        return 1
+    print(f"moved and verified {len(manifest)} file(s) ({total} bytes) → {dest}; manifest {mpath}")
+    return 0
+
+
+def chorus_log(apply, over=0):
+    size = os.path.getsize(CHORUS_LOG)
+    print(f"log-archive chorus-log: {CHORUS_LOG} is {size} bytes")
+    if size <= over:
+        print(f"under {over} bytes: left as is")
+        return 0
+    if not apply:
+        print("dry run: nothing copied or truncated")
+        return 0
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    os.makedirs(os.path.join(ARCHIVE, "chorus-log"), exist_ok=True)
+    out = os.path.join(ARCHIVE, "chorus-log", f"chorus.log.{stamp}.gz")
+    h = hashlib.sha256()
+    with open(CHORUS_LOG, "rb") as src, gzip.open(out, "wb") as dst:
+        while True:
+            chunk = src.read(1 << 20)
+            if not chunk:
+                break
+            dst.write(chunk)
+            h.update(chunk)
+        copied = src.tell()
+    check = hashlib.sha256()
+    n = 0
+    with gzip.open(out, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            check.update(chunk)
+            n += len(chunk)
+    if n != copied or check.hexdigest() != h.hexdigest():
+        print(f"LOG-ARCHIVE FAILED: {out} does not match what was read ({n} vs {copied} bytes); chorus.log left as is", file=sys.stderr)
+        return 1
+    # lines written after the copy finished: carry them over, then truncate at once
+    with open(CHORUS_LOG, "r+b") as f:
+        f.seek(copied)
+        tail = f.read()
+        f.truncate(0)
+    if tail:
+        with open(CHORUS_LOG, "ab") as f:
+            f.write(tail)
+    with open(os.path.join(ARCHIVE, "chorus-log", f"chorus.log.{stamp}.sha256"), "w") as f:
+        f.write(f"{h.hexdigest()}  {copied}\n")
+    print(f"copied and verified {copied} bytes → {out}; chorus.log truncated in place, {len(tail)} later byte(s) kept")
+    return 0
+
+
+def main(argv):
+    if not argv or argv[0] not in ("dagu", "chorus-log"):
+        print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
+        return 2
+    apply = "--apply" in argv
+    if argv[0] == "dagu":
+        days = float(argv[argv.index("--days") + 1]) if "--days" in argv else 3.0
+        return dagu(days, apply)
+    return chorus_log(apply, int(argv[argv.index("--over") + 1]) if "--over" in argv else 0)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
