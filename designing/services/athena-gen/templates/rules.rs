@@ -74,6 +74,9 @@ pub fn cells(store: &dyn RowStore, class: &ClassDef, body: &Map<String, Value>, 
             if !f.allowed.is_empty() && !f.allowed.contains(&val.as_str()) {
                 return Err(refuse(422, "not-allowed", format!("{k}: '{val}' is not one of {:?}", f.allowed)));
             }
+            let val = if f.datatype == "decimal" && !f.link {
+                canonical_decimal(&val).ok_or_else(|| refuse(422, "bad-value", format!("{k}: '{val}' is not a decimal")))?
+            } else { val };
             cs.push(if f.link { Cell::Link(link_iri(store, f, &val)?) } else { Cell::Literal(val, f.datatype) });
         }
         out.push((k.clone(), cs));
@@ -126,4 +129,25 @@ pub fn event(command: &str, caller: &str, op: &str, class: &ClassDef, name: &str
 
 pub fn subject(class: &ClassDef, name: &str) -> String {
     iri(class, name)
+}
+
+/// #4742 gap 7 (the door's #4717 rule, same spelling): the one spelling of a decimal Jena can
+/// delete. TDB2 keeps "7" or "7.00" as written but reads it back as 7.0, so a replace misses it
+/// and stacks a second value. No "+", no leading zeros, at least one digit after the point, no
+/// trailing zeros. Not a decimal lexical (1e5, NaN, "") → None.
+pub fn canonical_decimal(v: &str) -> Option<String> {
+    let (neg, body) = match v.as_bytes().first()? {
+        b'-' => (true, &v[1..]),
+        b'+' => (false, &v[1..]),
+        _ => (false, v),
+    };
+    let (int, frac) = body.split_once('.').unwrap_or((body, ""));
+    if int.is_empty() && frac.is_empty() { return None; }
+    if !int.bytes().chain(frac.bytes()).all(|b| b.is_ascii_digit()) { return None; }
+    let int = int.trim_start_matches('0');
+    let frac = frac.trim_end_matches('0');
+    let int = if int.is_empty() { "0" } else { int };
+    let frac = if frac.is_empty() { "0" } else { frac };
+    let zero = int == "0" && frac == "0";
+    Some(format!("{}{int}.{frac}", if neg && !zero { "-" } else { "" }))
 }
