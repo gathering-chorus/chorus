@@ -78,6 +78,21 @@ pub fn woken_by_line(prompt: &str, rows: &[Row], now: i64) -> Option<String> {
         .map(|r| r.id.clone())
 }
 
+/// The window's earliest time in the store's own spelling. Pulse compares
+/// `since` as text against `created_at` ("2026-10-25 13:23:30"), so an ISO
+/// "…T…Z" sorts after every row and the read came back empty on every turn
+/// (#4637 reopen, Wren 10-25 09:24).
+pub fn store_since(now: i64) -> String {
+    chrono::DateTime::from_timestamp(now - LINE_WINDOW_SECS, 0)
+        .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default()
+}
+
+/// The pulse read for this role's recent jeff-input rows.
+pub fn lines_url(base: &str, role: &str, now: i64) -> String {
+    format!("{base}?type=jeff-input&to={role}&since={}&limit=50", store_since(now).replace(' ', "%20"))
+}
+
 fn turn_file(role: &str) -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
     std::path::PathBuf::from(std::env::var("CHORUS_TURN_DIR").unwrap_or_else(|_| format!("{home}/.chorus/run")))
@@ -90,8 +105,7 @@ pub fn record(role: &str, session_id: &str, turn_id: &str, prompt: &str) {
     tokio::spawn(async move {
         let base = std::env::var("CHORUS_PULSE_MESSAGES_URL").unwrap_or_else(|_| "http://localhost:3475/api/messages".to_string());
         let now = chrono::Utc::now().timestamp();
-        let since = chrono::DateTime::from_timestamp(now - LINE_WINDOW_SECS, 0).map(|d| d.format("%Y-%m-%dT%H:%M:%SZ").to_string()).unwrap_or_default();
-        let url = format!("{base}?type=jeff-input&to={role}&since={since}&limit=50");
+        let url = lines_url(&base, &role, now);
         let read = tokio::task::spawn_blocking(move || {
             ureq::get(&url).timeout(std::time::Duration::from_secs(1)).call()
                 .map_err(|e| e.to_string())
@@ -163,6 +177,19 @@ mod tests {
         assert_eq!(woken_by_line("eyes on #4716", &rows, 1002), None, "'yes' inside a word");
         assert_eq!(woken_by_line("go", &rows, 1002).as_deref(), Some("7"));
         assert_eq!(woken_by_line("@silas r u there\nyes", &rows, 1002).as_deref(), Some("8"));
+    }
+
+    // NEGATIVE PROOF (reopen): compared the way pulse compares (as text), the
+    // window's start sorts before a row inside the window and after one outside
+    // it. The ISO spelling the land shipped sorts after both, and this goes red.
+    #[test]
+    fn negative_proof_since_sorts_like_the_store_rows() {
+        let now = chrono::NaiveDateTime::parse_from_str("2026-10-25 13:23:32", "%Y-%m-%d %H:%M:%S").unwrap().and_utc().timestamp();
+        let since = store_since(now);
+        assert_eq!(since, "2026-10-25 13:13:32");
+        assert!(since.as_str() <= "2026-10-25 13:23:30", "row 57943, delivered in the window, must be read");
+        assert!(since.as_str() > "2026-10-25 13:02:45", "a row from before the window must not");
+        assert!(lines_url("http://p/api/messages", "wren", now).contains("since=2026-10-25%2013:13:32&"));
     }
 
     #[test]
