@@ -105,3 +105,17 @@ print(sorted(b.split()[0] for b in la.verify(man, '$T/archive/dagu')))
   [[ "$output" == *"log-archive dagu --apply; r=\$?"* ]] || return 1
   [[ "$output" == *"exit \$r"* ]] || return 1
 }
+
+# review, run 1 (Abby + Kade): a run already in the archive must not leave its
+# files behind in the tailed dir. Same bytes: a proven duplicate; other bytes:
+# kept beside the archived copy under a stamped name. Nothing stays tailed.
+@test "a run already in the archive: same bytes leave no copy behind, other bytes are kept beside it" {
+  mkdir -p "$T/archive/dagu/cicd/dag-run_20261001_010101Z_OLDrun1/run_x"
+  echo "old step" > "$T/archive/dagu/cicd/dag-run_20261001_010101Z_OLDrun1/run_x/a.out"
+  echo "earlier copy, other bytes" > "$T/archive/dagu/cicd/dag-run_20261001_010101Z_OLDrun1/run_x/a.err"
+  run "$LA" dagu --apply
+  [ "$status" -eq 0 ] || return 1
+  [ ! -e "$T/logs/cicd/dag-run_20261001_010101Z_OLDrun1" ] || return 1
+  [ "$(cat "$T/archive/dagu/cicd/dag-run_20261001_010101Z_OLDrun1/run_x/a.err")" = "earlier copy, other bytes" ] || return 1
+  [ "$(cat "$T/archive/dagu/cicd/dag-run_20261001_010101Z_OLDrun1/run_x/"a.err.2*)" = "old err" ] || return 1
+}
