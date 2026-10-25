@@ -174,7 +174,11 @@ describe('#4736 Actor tiles 0..n multi-select in Clearing v2', () => {
       msgBorg.dataset.from = 'borg-queen';
       msgBorg.textContent = '@wren verifying prod now.';
 
-      mockContainer.children = [msgWren, msgKade, msgSilas, msgBorg];
+      const msgJeff = createMockElement('msg-5');
+      msgJeff.dataset.from = 'jeff';
+      msgJeff.textContent = 'How is the build status?';
+
+      mockContainer.children = [msgWren, msgKade, msgSilas, msgBorg, msgJeff];
 
       // Select wren and kade
       app.toggleActorFilter(null, 'wren');
@@ -184,8 +188,10 @@ describe('#4736 Actor tiles 0..n multi-select in Clearing v2', () => {
       expect(msgWren.style.display).toBe('');
       // msgKade (from kade) -> visible
       expect(msgKade.style.display).toBe('');
-      // msgBorg (mentions @wren) -> visible
-      expect(msgBorg.style.display).toBe('');
+      // msgJeff (from jeff to selected actors) -> visible (#4739: "only me and u")
+      expect(msgJeff.style.display).toBe('');
+      // msgBorg (from unselected third-party borg-queen) -> hidden (#4739)
+      expect(msgBorg.style.display).toBe('none');
       // msgSilas (from silas, no wren/kade mention) -> hidden
       expect(msgSilas.style.display).toBe('none');
     });

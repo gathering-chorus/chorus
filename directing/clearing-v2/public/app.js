@@ -221,11 +221,10 @@ function appendMessage(msg) {
   el.appendChild(text);
   appendPhotos(el, cleanText);
 
-  // #4732 / #4736: If actor filter(s) are active, check if incoming message matches any role or mentions any role
+  // #4732 / #4736 / #4739: If actor filter(s) are active, check if incoming message matches filter
   if (activeRoleFilters && activeRoleFilters.size > 0) {
     const fromRole = (msg.from || '').toLowerCase();
-    const filterRoles = Array.from(activeRoleFilters);
-    const matches = activeRoleFilters.has(fromRole) || filterRoles.some((r) => new RegExp('@' + r + '\\b', 'i').test(cleanText));
+    const matches = isMessageVisibleWithFilters(fromRole, cleanText);
     if (!matches) {
       if (el.style) el.style.display = 'none';
     }
@@ -507,6 +506,10 @@ async function loadOlderMessages(fetchImpl) {
     if (!body || !body.count) return 0;
     const fromBottom = stream.scrollHeight - stream.scrollTop;
     first.insertAdjacentHTML('beforebegin', body.html);
+    // #4739 — scrolling up in messages-stream applies the active role filter to all prepended history elements immediately
+    if (activeRoleFilters && activeRoleFilters.size > 0) {
+      applyRoleFilters();
+    }
     stream.scrollTop = stream.scrollHeight - fromBottom;
     return body.count;
   } finally {
@@ -611,6 +614,40 @@ function updateTileSelectionClasses() {
   }
 }
 
+// #4732 / #4736 / #4739: Filter matching logic for 1-on-1 and multi-actor dialogue ("only me and u")
+function isMessageVisibleWithFilters(from, content) {
+  if (!activeRoleFilters || activeRoleFilters.size === 0) return true;
+  const fromRole = String(from || '').trim().toLowerCase();
+  const text = String(content || '');
+
+  // 1. If message is from one of the selected roles ("u"), always visible
+  if (activeRoleFilters.has(fromRole)) return true;
+
+  // 2. If message is from Jeff ("me")
+  if (fromRole === 'jeff') {
+    const filterRoles = Array.from(activeRoleFilters);
+    // If Jeff explicitly mentions any selected role, visible
+    if (filterRoles.some((r) => new RegExp('@' + r + '\\b', 'i').test(text))) {
+      return true;
+    }
+    // Check if Jeff explicitly targeted an unselected role (e.g. "@kade ...", "@silas ...")
+    // Non-mention prompts or broadcast mentions (@team, @all, @everyone, @here) belong to dialogue
+    const mentions = (text.match(/(?:^|\s)@([a-zA-Z0-9_-]+)/g) || []).map((m) => m.trim().slice(1).toLowerCase());
+    if (mentions.length > 0) {
+      const isBroadcast = mentions.some((m) => ['team', 'all', 'everyone', 'here'].includes(m));
+      if (isBroadcast) return true;
+      // All mentions are other specific actors -> Jeff was exclusively talking to someone else
+      return false;
+    }
+    // Untargeted prompt from Jeff (e.g. "what is ur card status", "done") -> part of dialogue with selected actor
+    return true;
+  }
+
+  // 3. Third-party role (fromRole is neither Jeff nor a selected role)
+  // In 1-on-1 dialogue ("only me and u"), third-party chatter is hidden
+  return false;
+}
+
 function applyRoleFilters() {
   updateTileSelectionClasses();
 
@@ -621,7 +658,6 @@ function applyRoleFilters() {
         ? Array.from(container.children)
         : (container.querySelectorAll ? Array.from(container.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
       const filterRoles = Array.from(activeRoleFilters);
-      const filterRes = filterRoles.map((r) => new RegExp('@' + r + '\\b', 'i'));
       for (const el of Array.from(msgElements)) {
         if (!el || !el.style) continue;
         if (filterRoles.length === 0) {
@@ -629,7 +665,7 @@ function applyRoleFilters() {
         } else {
           const from = (el.dataset && el.dataset.from) ? el.dataset.from.toLowerCase() : '';
           const content = el.innerText || el.textContent || (el.dataset && el.dataset.body) || '';
-          const matches = activeRoleFilters.has(from) || filterRes.some((re) => re.test(content));
+          const matches = isMessageVisibleWithFilters(from, content);
           el.style.display = matches ? '' : 'none';
         }
       }
@@ -729,6 +765,8 @@ if (typeof window !== 'undefined') {
   window.setRoleFilters = setRoleFilters;
   window.getActiveRoleFilter = getActiveRoleFilter;
   window.getActiveRoleFilters = getActiveRoleFilters;
+  window.applyRoleFilters = applyRoleFilters;
+  window.isMessageVisibleWithFilters = isMessageVisibleWithFilters;
 }
 
 function updateTiles(tiles) {
@@ -1044,6 +1082,8 @@ if (typeof module !== 'undefined' && module.exports) {
     setRoleFilter,
     setRoleFilters,
     toggleActorFilter,
+    applyRoleFilters,
+    isMessageVisibleWithFilters,
     initTileFilters,
   };
 }
