@@ -221,8 +221,19 @@ function appendMessage(msg) {
   el.appendChild(text);
   appendPhotos(el, cleanText);
 
+  // #4732: If an actor filter is active, check if incoming message matches role or mentions role
+  if (activeRoleFilter) {
+    const fromRole = (msg.from || '').toLowerCase();
+    const mentionRe = new RegExp('@' + activeRoleFilter + '\\b', 'i');
+    if (fromRole !== activeRoleFilter && !mentionRe.test(cleanText)) {
+      if (el.style) el.style.display = 'none';
+    }
+  }
+
   container.appendChild(el);
-  container.scrollTop = container.scrollHeight;
+  if (!el.style || el.style.display !== 'none') {
+    container.scrollTop = container.scrollHeight;
+  }
 }
 
 function appendInlineText(parent, text) {
@@ -510,6 +521,8 @@ async function refreshPeopleRow(fetchImpl) {
     const body = await res.json();
     if (!body || !body.html) return false;
     row.outerHTML = body.html;
+    if (activeRoleFilter) updateTileSelectionClasses();
+    initTileFilters();
     return true;
   } catch {
     return false;
@@ -530,9 +543,156 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', watchPhotoButton);
   window.addEventListener('DOMContentLoaded', watchMicButton);
   window.addEventListener('DOMContentLoaded', initComposerInput);
+  window.addEventListener('DOMContentLoaded', initTileFilters);
   window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
+}
+
+// #4732: Actor tile stream filtering and composer targeting
+let activeRoleFilter = null;
+let defaultComposerPlaceholder = null;
+
+function getActiveRoleFilter() {
+  return activeRoleFilter;
+}
+
+function updateTileSelectionClasses() {
+  if (typeof document === 'undefined') return;
+  const actorTiles = document.querySelectorAll ? document.querySelectorAll('.actor-tile') : [];
+  for (const tile of Array.from(actorTiles)) {
+    const r = (tile.dataset && tile.dataset.role) ? tile.dataset.role.toLowerCase() : '';
+    const isSelected = Boolean(activeRoleFilter && r === activeRoleFilter);
+    if (tile.classList) {
+      if (isSelected) {
+        tile.classList.add('selected');
+        tile.classList.add('active-filter');
+      } else {
+        tile.classList.remove('selected');
+        tile.classList.remove('active-filter');
+      }
+    }
+  }
+
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont) {
+    const tiles = tilesCont.querySelectorAll ? tilesCont.querySelectorAll('.tile') : [];
+    for (const tile of Array.from(tiles)) {
+      const r = (tile.dataset && tile.dataset.role) ? tile.dataset.role.toLowerCase() : (tile.id ? tile.id.replace(/^tile-/, '').toLowerCase() : '');
+      const isSelected = Boolean(activeRoleFilter && r === activeRoleFilter);
+      if (tile.classList) {
+        if (isSelected) {
+          tile.classList.add('selected');
+          tile.classList.add('active-filter');
+        } else {
+          tile.classList.remove('selected');
+          tile.classList.remove('active-filter');
+        }
+      }
+    }
+  }
+}
+
+function setRoleFilter(role) {
+  const prevRole = activeRoleFilter;
+  activeRoleFilter = role ? String(role).trim().toLowerCase() : null;
+
+  updateTileSelectionClasses();
+
+  if (typeof document !== 'undefined') {
+    const container = document.getElementById('messages-stream');
+    if (container) {
+      const msgElements = (container.children && container.children.length > 0)
+        ? Array.from(container.children)
+        : (container.querySelectorAll ? Array.from(container.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
+      const filterRe = activeRoleFilter ? new RegExp('@' + activeRoleFilter + '\\b', 'i') : null;
+      for (const el of Array.from(msgElements)) {
+        if (!el || !el.style) continue;
+        if (!activeRoleFilter) {
+          el.style.display = '';
+        } else {
+          const from = (el.dataset && el.dataset.from) ? el.dataset.from.toLowerCase() : '';
+          const content = el.innerText || el.textContent || (el.dataset && el.dataset.body) || '';
+          const matches = (from === activeRoleFilter) || (filterRe && filterRe.test(content));
+          el.style.display = matches ? '' : 'none';
+        }
+      }
+    }
+
+    const input = document.getElementById('composer-input');
+    if (input) {
+      if (defaultComposerPlaceholder === null) {
+        defaultComposerPlaceholder = input.placeholder || 'Message #team...';
+      }
+      if (activeRoleFilter) {
+        input.placeholder = 'Message @' + activeRoleFilter + '...';
+        const currentVal = input.value || '';
+        if (!currentVal.trim() || currentVal.trim() === '@' + prevRole) {
+          input.value = '@' + activeRoleFilter + ' ';
+        }
+        if (input.focus) input.focus();
+      } else {
+        input.placeholder = defaultComposerPlaceholder || 'Message #team...';
+        if (prevRole && input.value && input.value.trim() === '@' + prevRole) {
+          input.value = '';
+        }
+      }
+    }
+  }
+}
+
+function toggleActorFilter(event, role) {
+  if (event) {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+  }
+  if (!role) {
+    setRoleFilter(null);
+    return false;
+  }
+  const cleanRole = String(role).trim().toLowerCase();
+  if (activeRoleFilter === cleanRole) {
+    setRoleFilter(null);
+  } else {
+    setRoleFilter(cleanRole);
+  }
+  return false;
+}
+
+function initTileFilters() {
+  if (typeof document === 'undefined') return;
+  const peopleRow = document.getElementById('rooms-people-row');
+  if (peopleRow && !peopleRow._filterBound && peopleRow.addEventListener) {
+    peopleRow._filterBound = true;
+    peopleRow.addEventListener('click', (e) => {
+      if (e.target && e.target.closest && e.target.closest('.card-ref')) return;
+      const tile = e.target && e.target.closest ? e.target.closest('.actor-tile') : null;
+      if (tile && tile.dataset && tile.dataset.role) {
+        e.preventDefault();
+        toggleActorFilter(e, tile.dataset.role);
+      }
+    });
+  }
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont && !tilesCont._filterBound && tilesCont.addEventListener) {
+    tilesCont._filterBound = true;
+    tilesCont.addEventListener('click', (e) => {
+      const tile = e.target && e.target.closest ? e.target.closest('.tile') : null;
+      if (tile) {
+        const role = (tile.dataset && tile.dataset.role) || (tile.id ? tile.id.replace(/^tile-/, '') : '');
+        if (role) {
+          e.preventDefault();
+          toggleActorFilter(e, role);
+        }
+      }
+    });
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.toggleActorFilter = toggleActorFilter;
+  window.setRoleFilter = setRoleFilter;
+  window.getActiveRoleFilter = getActiveRoleFilter;
 }
 
 function updateTiles(tiles) {
@@ -629,8 +789,13 @@ async function handleSendMessage(text, options = {}) {
   const btnEl = options.btnEl || (typeof document !== 'undefined' && composerForm ? composerForm.querySelector('button[type="submit"]') : null);
   const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
 
-  const cleanText = (text || '').trim();
+  let cleanText = (text || '').trim();
   if (!cleanText) return;
+
+  // #4732 — if actor tile is selected, automatically target that role without requiring thumb-typing @<role>
+  if (activeRoleFilter && !cleanText.startsWith('@')) {
+    cleanText = '@' + activeRoleFilter + ' ' + cleanText;
+  }
 
   const savedText = cleanText;
   if (inputEl) {
@@ -787,6 +952,7 @@ function initComposerInput() {
 
 if (typeof document !== 'undefined') {
   initComposerInput();
+  initTileFilters();
 }
 
 function initTrustStripTooltips() {
@@ -836,5 +1002,9 @@ if (typeof module !== 'undefined' && module.exports) {
     handleSendMessage,
     teamNudgesOn,
     setTeamNudges,
+    getActiveRoleFilter,
+    setRoleFilter,
+    toggleActorFilter,
+    initTileFilters,
   };
 }
