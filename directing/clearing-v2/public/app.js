@@ -221,11 +221,12 @@ function appendMessage(msg) {
   el.appendChild(text);
   appendPhotos(el, cleanText);
 
-  // #4732: If an actor filter is active, check if incoming message matches role or mentions role
-  if (activeRoleFilter) {
+  // #4732 / #4736: If actor filter(s) are active, check if incoming message matches any role or mentions any role
+  if (activeRoleFilters && activeRoleFilters.size > 0) {
     const fromRole = (msg.from || '').toLowerCase();
-    const mentionRe = new RegExp('@' + activeRoleFilter + '\\b', 'i');
-    if (fromRole !== activeRoleFilter && !mentionRe.test(cleanText)) {
+    const filterRoles = Array.from(activeRoleFilters);
+    const matches = activeRoleFilters.has(fromRole) || filterRoles.some((r) => new RegExp('@' + r + '\\b', 'i').test(cleanText));
+    if (!matches) {
       if (el.style) el.style.display = 'none';
     }
   }
@@ -525,7 +526,7 @@ async function refreshPeopleRow(fetchImpl) {
     const body = await res.json();
     if (!body || !body.html) return false;
     row.outerHTML = body.html;
-    if (activeRoleFilter) updateTileSelectionClasses();
+    if (activeRoleFilters && activeRoleFilters.size > 0) updateTileSelectionClasses();
     initTileFilters();
     return true;
   } catch {
@@ -553,12 +554,25 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('resize', fitChatToViewport);
 }
 
-// #4732: Actor tile stream filtering and composer targeting
-let activeRoleFilter = null;
+// #4732 / #4736: Actor tile 0..n stream filtering and composer targeting
+let activeRoleFilters = new Set();
 let defaultComposerPlaceholder = null;
 
+function getActiveRoleFilters() {
+  return Array.from(activeRoleFilters);
+}
+
 function getActiveRoleFilter() {
-  return activeRoleFilter;
+  if (activeRoleFilters.size === 0) return null;
+  if (activeRoleFilters.size === 1) return Array.from(activeRoleFilters)[0];
+  return Array.from(activeRoleFilters).join(',');
+}
+
+function isOnlyRoleMentions(str) {
+  const trimmed = String(str || '').trim();
+  if (!trimmed) return true;
+  const tokens = trimmed.split(/\s+/);
+  return tokens.length > 0 && tokens.every((tok) => tok.startsWith('@'));
 }
 
 function updateTileSelectionClasses() {
@@ -566,7 +580,7 @@ function updateTileSelectionClasses() {
   const actorTiles = document.querySelectorAll ? document.querySelectorAll('.actor-tile') : [];
   for (const tile of Array.from(actorTiles)) {
     const r = (tile.dataset && tile.dataset.role) ? tile.dataset.role.toLowerCase() : '';
-    const isSelected = Boolean(activeRoleFilter && r === activeRoleFilter);
+    const isSelected = Boolean(r && activeRoleFilters.has(r));
     if (tile.classList) {
       if (isSelected) {
         tile.classList.add('selected');
@@ -583,7 +597,7 @@ function updateTileSelectionClasses() {
     const tiles = tilesCont.querySelectorAll ? tilesCont.querySelectorAll('.tile') : [];
     for (const tile of Array.from(tiles)) {
       const r = (tile.dataset && tile.dataset.role) ? tile.dataset.role.toLowerCase() : (tile.id ? tile.id.replace(/^tile-/, '').toLowerCase() : '');
-      const isSelected = Boolean(activeRoleFilter && r === activeRoleFilter);
+      const isSelected = Boolean(r && activeRoleFilters.has(r));
       if (tile.classList) {
         if (isSelected) {
           tile.classList.add('selected');
@@ -597,10 +611,7 @@ function updateTileSelectionClasses() {
   }
 }
 
-function setRoleFilter(role) {
-  const prevRole = activeRoleFilter;
-  activeRoleFilter = role ? String(role).trim().toLowerCase() : null;
-
+function applyRoleFilters() {
   updateTileSelectionClasses();
 
   if (typeof document !== 'undefined') {
@@ -609,15 +620,16 @@ function setRoleFilter(role) {
       const msgElements = (container.children && container.children.length > 0)
         ? Array.from(container.children)
         : (container.querySelectorAll ? Array.from(container.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
-      const filterRe = activeRoleFilter ? new RegExp('@' + activeRoleFilter + '\\b', 'i') : null;
+      const filterRoles = Array.from(activeRoleFilters);
+      const filterRes = filterRoles.map((r) => new RegExp('@' + r + '\\b', 'i'));
       for (const el of Array.from(msgElements)) {
         if (!el || !el.style) continue;
-        if (!activeRoleFilter) {
+        if (filterRoles.length === 0) {
           el.style.display = '';
         } else {
           const from = (el.dataset && el.dataset.from) ? el.dataset.from.toLowerCase() : '';
           const content = el.innerText || el.textContent || (el.dataset && el.dataset.body) || '';
-          const matches = (from === activeRoleFilter) || (filterRe && filterRe.test(content));
+          const matches = activeRoleFilters.has(from) || filterRes.some((re) => re.test(content));
           el.style.display = matches ? '' : 'none';
         }
       }
@@ -628,21 +640,38 @@ function setRoleFilter(role) {
       if (defaultComposerPlaceholder === null) {
         defaultComposerPlaceholder = input.placeholder || 'Message #team...';
       }
-      if (activeRoleFilter) {
-        input.placeholder = 'Message @' + activeRoleFilter + '...';
-        const currentVal = input.value || '';
-        if (!currentVal.trim() || currentVal.trim() === '@' + prevRole) {
-          input.value = '@' + activeRoleFilter + ' ';
-        }
-        if (input.focus) input.focus();
-      } else {
+      const filterRoles = Array.from(activeRoleFilters);
+      if (filterRoles.length === 0) {
         input.placeholder = defaultComposerPlaceholder || 'Message #team...';
-        if (prevRole && input.value && input.value.trim() === '@' + prevRole) {
+        if (input.value && isOnlyRoleMentions(input.value)) {
           input.value = '';
         }
+      } else {
+        input.placeholder = 'Message @' + filterRoles.join(', @') + '...';
+        const currentVal = input.value || '';
+        if (!currentVal.trim() || isOnlyRoleMentions(currentVal)) {
+          input.value = filterRoles.map((r) => '@' + r).join(' ') + ' ';
+        }
+        if (input.focus) input.focus();
       }
     }
   }
+}
+
+function setRoleFilter(role) {
+  if (!role) {
+    activeRoleFilters.clear();
+  } else if (Array.isArray(role)) {
+    activeRoleFilters = new Set(role.map((r) => String(r).trim().toLowerCase()).filter(Boolean));
+  } else {
+    const parts = String(role).split(',').map((r) => r.trim().toLowerCase()).filter(Boolean);
+    activeRoleFilters = new Set(parts);
+  }
+  applyRoleFilters();
+}
+
+function setRoleFilters(roles) {
+  setRoleFilter(roles);
 }
 
 function toggleActorFilter(event, role) {
@@ -655,11 +684,12 @@ function toggleActorFilter(event, role) {
     return false;
   }
   const cleanRole = String(role).trim().toLowerCase();
-  if (activeRoleFilter === cleanRole) {
-    setRoleFilter(null);
+  if (activeRoleFilters.has(cleanRole)) {
+    activeRoleFilters.delete(cleanRole);
   } else {
-    setRoleFilter(cleanRole);
+    activeRoleFilters.add(cleanRole);
   }
+  applyRoleFilters();
   return false;
 }
 
@@ -696,7 +726,9 @@ function initTileFilters() {
 if (typeof window !== 'undefined') {
   window.toggleActorFilter = toggleActorFilter;
   window.setRoleFilter = setRoleFilter;
+  window.setRoleFilters = setRoleFilters;
   window.getActiveRoleFilter = getActiveRoleFilter;
+  window.getActiveRoleFilters = getActiveRoleFilters;
 }
 
 function updateTiles(tiles) {
@@ -796,9 +828,10 @@ async function handleSendMessage(text, options = {}) {
   let cleanText = (text || '').trim();
   if (!cleanText) return;
 
-  // #4732 — if actor tile is selected, automatically target that role without requiring thumb-typing @<role>
-  if (activeRoleFilter && !cleanText.startsWith('@')) {
-    cleanText = '@' + activeRoleFilter + ' ' + cleanText;
+  // #4732 / #4736 — if actor tile(s) are selected, automatically target those role(s) without requiring thumb-typing @<role>
+  const filterRoles = Array.from(activeRoleFilters);
+  if (filterRoles.length > 0 && !cleanText.startsWith('@')) {
+    cleanText = filterRoles.map((r) => '@' + r).join(' ') + ' ' + cleanText;
   }
 
   const savedText = cleanText;
@@ -1007,7 +1040,9 @@ if (typeof module !== 'undefined' && module.exports) {
     teamNudgesOn,
     setTeamNudges,
     getActiveRoleFilter,
+    getActiveRoleFilters,
     setRoleFilter,
+    setRoleFilters,
     toggleActorFilter,
     initTileFilters,
   };

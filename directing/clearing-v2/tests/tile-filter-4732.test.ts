@@ -152,8 +152,8 @@ describe('#4732 Actor tiles filter stream and target message sends in Clearing v
       expect(msg1.style.display).toBe('none');
       expect(msg2.style.display).toBe('none');
 
-      // Now tap 'wren'
-      app.toggleActorFilter(null, 'wren');
+      // Now switch filter to 'wren'
+      app.setRoleFilter('wren');
       expect(mockTiles.wren.classList.contains('selected')).toBe(true);
       expect(mockTiles.kade.classList.contains('selected')).toBe(false);
 
