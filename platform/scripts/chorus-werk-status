@@ -60,6 +60,8 @@ CARD_DAG = os.environ.get("CWS_CARD_DAG", "card")
 # #4553 — main is the fact a land reached: the card's commit there after the land began
 GIT_DIR = os.environ.get("CWS_GIT_DIR", os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")))
 MAIN_REF = os.environ.get("CWS_MAIN_REF", "origin/main")
+# the pipelines a card's one line follows; /cws <card> lists every pipeline's runs (#4734)
+LEAD_DAGS = (DAGU_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG)
 DAGU_CONFIG = os.environ.get("CWS_DAGU_CONFIG", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/config/dagu.yaml"))
 
 # act stage markers, in pipeline order — last one seen in the log wins
@@ -313,13 +315,16 @@ def card_detail(card, pin_status):
     end = runs[-1]["finish"] if runs and runs[-1]["result"] == "landed" else time.time()
     # the pin says where the pipeline is now (with its trust rules); the logs
     # say what every run did
-    v2 = dagu_runs(card)
+    # #4734 — one read of every pipeline: the line follows the lead ones, the table lists them all
+    every = dagu_runs(card, every=True)
+    # dagu unreadable is said once, never read a second time (Silas's review)
+    v2 = None if every is None else [r for r in every if r["name"] in LEAD_DAGS]
     if v2:
         # #4494 — a card with v2 runs opens with the same line the board view
         # shows, even when it also has old v1 runs: #4004 read "[?] landed · 18
         # runs" from its v1 pin while its v2 land was still running.
         head = card_line(card, (re.search(r"ROLE=(\S+)", v2[0].get("params") or "") or [None, "?"])[1],
-                         v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions(),
+                         v2, [r for r in every if r["name"] == f"{DAGU_DAG}-land"], queue_positions(),
                          wip=str(card) in {str(c) for c, _ in (wip_cards() or [])})
     elif pin_status:
         head = render(pin_status, pid_start_times(), time.time() * 1000)
@@ -359,7 +364,7 @@ def card_detail(card, pin_status):
     elif children:
         print(f"\n  children ({len(children)})")
         print("\n".join(child_lines(children, dagu_runs)))
-    dagu_detail(card, v2)
+    dagu_detail(card, v2, every)
 
 
 def classify(pin, pid_starts, now_ms):
@@ -499,6 +504,25 @@ def card_reads(listing):
     return [r["name"] for r in found] == [CARD_DAG] and old == [] and free == 0
 
 
+def every_reads(listing, names):
+    """#4734 fixture: dagu_runs and /cws <card> over a stubbed dagu holding the
+    pipelines `names`. Returns (pipelines read with every=True, pipelines the
+    old lead-only read finds, the card's table)."""
+    global dagu_list, dagu_dag_names
+    keep = dagu_list, dagu_dag_names
+    dagu_list = lambda name, since: [r for r in listing() if r["name"] == name]
+    dagu_dag_names = lambda: list(names)
+    try:
+        every, lead = dagu_runs(4734, every=True) or [], dagu_runs(4734) or []
+        import io, contextlib
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            dagu_detail(4734, [r for r in every if r["name"] in LEAD_DAGS], every)
+    finally:
+        dagu_list, dagu_dag_names = keep
+    return sorted({r["name"] for r in every}), sorted({r["name"] for r in lead}), out.getvalue()
+
+
 def fixture_mode():
     with tempfile.TemporaryDirectory() as td:
         global RUNS_DIR
@@ -560,19 +584,50 @@ def dagu_list(name, since):
     raise RuntimeError("dagu run list did not end after 100 pages")
 
 
-def dagu_runs(card, dag=None):
+def dagu_dag_names():
+    """#4734 — every pipeline dagu holds, read from dagu itself. Jeff 10-25
+    08:02: "all dagu flows tied to a card must list in cws output". The old
+    read named 5 pipelines; 12 take CARD, so borg-prove, demo, cicd-test and
+    the rest never showed. A new pipeline shows here with no change."""
+    names, page = [], 1
+    for _ in range(50):
+        d = dagu_get("/api/v1/dags", f"perPage=200&page={page}")
+        names += [(x.get("dag") or {}).get("name") or x.get("fileName") for x in d.get("dags") or []]
+        if not (d.get("pagination") or {}).get("hasNextPage"):
+            return [n for n in names if n]
+        page += 1
+    raise RuntimeError("dagu DAG list did not end after 50 pages")
+
+
+def every_dag_names():
+    """dagu's pipelines; a dagu that lists runs but not its DAGs falls back to
+    the lead pipelines and the land, the read before #4734."""
+    try:
+        return dagu_dag_names()
+    except Exception:
+        return list(LEAD_DAGS) + [f"{DAGU_DAG}-land"]
+
+
+def dagu_runs(card, dag=None, every=False):
     """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read.
+    #4734 — `every`: the card's runs in every pipeline dagu holds, not only the
+    pipelines the card's line follows (LEAD_DAGS).
     #4494 — `dag` names the land half (`cicd-land`), which runs on its own queue.
     #4494 — read from dagu's run list with a 30-day window: the per-workflow list
     stops at its 30 newest runs across every card, so a card's count came out short."""
     # #4536 — a card's run starts on the athena pipeline (model) and hands off to
     # cicd; Jeff 10:31 "include athena in scope of cws". Read 13:10: #4536 had
     # 8 athena runs and /cws said "no runs". The card's runs are both halves.
-    names = [dag] if dag else [DAGU_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG]
     runs = []
     try:
-        for name in names:
-            runs += [dict(r, name=r.get("name", name)) for r in dagu_list(name, time.time() - 30 * 86400)]
+        names = [dag] if dag else (every_dag_names() if every else list(LEAD_DAGS))
+        # #4734 (Silas's review) — the pipelines are read side by side: 13 reads
+        # one after another made a slow dagu stall /cws 13 times over
+        from concurrent.futures import ThreadPoolExecutor
+        since = time.time() - 30 * 86400
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for name, got in zip(names, pool.map(lambda n: dagu_list(n, since), names)):
+                runs += [dict(r, name=r.get("name", name)) for r in got]
     except Exception:
         return None
     # CARD=4474 must not match CARD=44740; name=cicd also matches cicd-land
@@ -616,11 +671,19 @@ def dagu_summary(run):
     return status, ""
 
 
+def family(run):
+    """The lead pipelines are one card run handed along; every other pipeline is its own."""
+    name = run.get("name", DAGU_DAG)
+    return "lead" if name in LEAD_DAGS else name
+
+
 def dagu_state(runs, i):
     """(result, step) for runs[i] (newest first). Only the newest run can be at
-    the go: an older run still waiting there is superseded, never live."""
+    the go: an older run still waiting there is superseded, never live.
+    #4734 — newest of its own family: a land waiting at its proof is not
+    superseded by a demo run that came after it."""
     status, step = dagu_summary(runs[i])
-    if status == "waiting" and i > 0:
+    if status == "waiting" and any(family(r) == family(runs[i]) for r in runs[:i]):
         return "superseded", step
     return status, step
 
@@ -1094,6 +1157,11 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         # commands buried the status. The line is the status; the commands
         # print once, under the v2 runs, on /cws <card>.
         where = "waiting for your go"
+        if land:
+            # #4734 (Wren 10:19) — #4735 and #4637 read "waiting for your go"
+            # while their lands waited at skill-borg-queen-proves: a land's
+            # wait is the land's step, the go is already given
+            where = f"land: waiting at {word}"
         if paired:
             nav = re.search(r"NAVIGATOR=\"?(\S+?)\"?(?:\s|$)", run.get("params") or "")
             where = f"pair: waiting for {nav.group(1) if nav else 'the navigator'}'s green"
@@ -1147,22 +1215,27 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
     return f"#{card} {role:<6} {where:<34} {when:>7} · {run_count(runs)}{many}{tests}{why}"
 
 
-def dagu_detail(card, runs):
+def dagu_detail(card, runs, every=None):
+    """`runs`: the lead pipelines' runs, for the header and the tests. `every`:
+    the card's runs in every pipeline, one table row each (#4734)."""
     if runs is None:
         print(f"\n  v2 (dagu): unreadable at {DAGU}")
         return
-    if not runs:
+    if not runs and not every:
         return
-    print("\n  " + dagu_line(card, "v2", runs).split("] ", 1)[1])
+    if runs:
+        print("\n  " + dagu_line(card, "v2", runs).split("] ", 1)[1])
     live = live_runs(runs)
     if len(live) > 1:
         # #4553 — two live runs of one card is a fault; say it before the table
         print(f"  {len(live)} runs live: " + ", ".join(f"{r.get('name', DAGU_DAG)} {r.get('dagRunId')}" for r in live))
-    print("  pipeline  run  start        finish  result      step")
-    n = len(runs)
+    rows = every or runs
+    w = max([8] + [len(r.get("name", DAGU_DAG)) for r in rows])
+    print(f"  {'pipeline':<{w}}  run  start        finish  result      step")
+    n = len(rows)
     count = {}
-    for i, r in enumerate(reversed(runs), 1):
-        status, step = dagu_state(runs, n - i)
+    for i, r in enumerate(reversed(rows), 1):
+        status, step = dagu_state(rows, n - i)
         name = r.get("name", DAGU_DAG)
         count[name] = count.get(name, 0) + 1
         st, fin = parse_ts(r.get("startedAt")), parse_ts(r.get("finishedAt"))
@@ -1174,11 +1247,21 @@ def dagu_detail(card, runs):
             why = "  — " + failed_reason(r, node)
             retry = retry_line(name, r.get("dagRunId"), node, nodes_of(r), r)
             if retry:
-                why += "\n" + " " * 42 + retry
-        print(f"  {name:<8}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
-    land = dagu_land_line(card, "v2")
-    if land:
-        print("  " + land.split("] ", 1)[1])
+                why += "\n" + " " * (34 + w) + retry
+        print(f"  {name:<{w}}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
+    # #4734 (Abby's review) — the land rows are in the table already; only the
+    # model half the table cannot show is added under it
+    landed = [r for r in rows if r.get("name") == f"{DAGU_DAG}-land"]
+    if landed:
+        model = athena_result(landed[0]) if dagu_summary(landed[0])[0] == "succeeded" else None
+        if model:
+            print(f"  athena {model} · land {landed[0].get('dagRunId', '?')}")
+    else:
+        land = dagu_land_line(card, "v2")
+        if land:
+            print("  " + land.split("] ", 1)[1])
+    if not runs:
+        return
     # #4453 — the newest run's tests, in the /wts shape
     st = run_began(runs[0])
     ev = run_test_events(runs[0].get("dagRunId", ""), st / 1000 if st else time.time() - 86400)
@@ -1453,6 +1536,29 @@ def fixture_4553():
             ("a card with no run yet names its owner from the board",
              board_owner(4654, [(4654, "Kade"), (4628, "Silas")]) == "kade"
              and board_owner(4699, [(4654, "Kade")]) == "?" and board_owner(4654, []) == "?"),
+            # #4734 — /cws <card> lists the card's runs in every pipeline dagu
+            # holds, and a pipeline no line of this tool names shows too.
+            # Negative proof: the old lead-only read finds only cicd, and
+            # another card's run (CARD=47340) and a run with no CARD never show.
+            ("every pipeline's runs of the card show, a new one included",
+             (lambda got: got[0] == ["borg-prove", "brand-new-pipeline", "cicd", "cicd-land"] and got[1] == ["cicd"]
+              and "borg-prove " in got[2] and "brand-new-pipeline" in got[2] and "nightly" not in got[2]
+              and got[2].count("cicd-land") == 1 and "v2 land" not in got[2])(
+                 every_reads(lambda: [run("c", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-go")], 4734),
+                                      run("bp", "borg-prove", "failed", 5, [node("failed", "skill-borg-check", "borg-check: unproven")], 4734),
+                                      run("nw", "brand-new-pipeline", "running", 7, [node("running", "skill-x")], 4734),
+                                      run("ld", "cicd-land", "failed", 8, [node("failed", "skill-borg-check", "borg-check: unproven")], 4734),
+                                      run("o", "borg-prove", "failed", 6, [node("failed", "skill-borg-check")], 47340),
+                                      dict(run("n", "nightly", "succeeded", 1, []), params="SCOPE=all")],
+                             ["cicd", "cicd-land", "borg-prove", "brand-new-pipeline", "nightly"]))),
+            # #4734 (Wren 10:19) — a land waiting at a step after the go reads
+            # the land's step. Negative proof: a cicd run at its go with no
+            # land still reads waiting for your go.
+            ("a land waiting at its proof reads the land's step, never the go",
+             (lambda l: "land: waiting at borg-queen-proves" in l and "waiting for your go" not in l)(
+                 line(4735, [go], [run("Lw", "cicd-land", "waiting", 6, [node("succeeded", "skill-werk-merge"),
+                                                                          node("waiting", "skill-borg-queen-proves")])]))
+             and "waiting for your go" in line(4736, [run("w", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4736)], [])),
             # #4577 (Wren 07:37) — the pair's hint is the navigator's green on
             # the pair dag; negative proof: a cicd run still offers Jeff's go
             ("a pair's hint completes the pair step as its navigator",
