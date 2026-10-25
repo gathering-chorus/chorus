@@ -118,7 +118,8 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
     let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
-    if parts.len() < 3 || parts[0] != API_VERSION {
+    // #4742 (Jeff 10-25): the product is the top-level route, each of its domains a child route
+    if parts.len() < 3 || parts[0] != PRODUCT {
         return error(404, "unknown-route", "not a route of this API");
     }
     let Some(class) = CLASSES.iter().find(|c| c.domain == parts[1] && c.segment == parts[2]) else {

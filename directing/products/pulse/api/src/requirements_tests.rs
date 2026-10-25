@@ -234,10 +234,34 @@ fn an_unsigned_read_of_a_private_product_is_refused() {
     let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
     let private = Ctx { store: &store, who, events: String::new(), reads_public: false };
     let c = CLASSES.first().expect("a class");
-    let (code, out) = crate::route(&private, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    let (code, out) = crate::route(&private, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
     assert_eq!(code, 401, "{out}");
     // negative proof: the same read on a public product answers
     let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
-    let (code, _) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    let (code, _) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
     assert_eq!(code, 200);
+}
+
+// #4742 — Jeff 10-25: "the top level route is /pulse and each associated domain is a child route".
+#[test]
+fn every_collection_answers_under_the_product_route() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
+    for c in CLASSES {
+        let (code, out) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
+        assert_eq!(code, 200, "/{}/{}/{}: {out}", crate::model::PRODUCT, c.domain, c.segment);
+    }
+}
+
+/// NEGATIVE PROOF: the old version-first route (/v1/<domain>/<collection>) is not a route of this API.
+#[test]
+fn negative_proof_the_version_first_route_is_unknown() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
+    let c = CLASSES.first().expect("a class");
+    let (code, out) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    assert_eq!(code, 404, "{out}");
+    assert_eq!(out["error"], "unknown-route", "{out}");
 }

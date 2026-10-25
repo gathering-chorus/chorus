@@ -55,7 +55,7 @@ curl -sf -m 5 "$V2/health" >/dev/null 2>&1 || { echo "UNMEASURED: pulse-api not 
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail=0
 for r in $ROUTES; do
-  curl -sf -m 30 "$V1/v1/$r?limit=1000" > "$T/a" && curl -sf -m 30 "$V2/v1/$r?limit=1000" > "$T/b" || { echo "FAIL $r: a route did not answer"; fail=1; continue; }
+  curl -sf -m 30 "$V1/v1/$r?limit=1000" > "$T/a" && curl -sf -m 30 "$V2/pulse/$r?limit=1000" > "$T/b" || { echo "FAIL $r: a route did not answer"; fail=1; continue; }
   if out=$(compare "$T/a" "$T/b"); then echo "PASS $r: $out"; else echo "FAIL $r:"; echo "$out"; fail=1; fi
 done
 exit $fail
