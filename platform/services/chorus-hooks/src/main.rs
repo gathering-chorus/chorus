@@ -1041,6 +1041,8 @@ async fn user_prompt_submit(
 
     // #4628 — what Jeff typed reaches Buzz once, through pulse. Spawned, 1 s cap.
     hooks::terminal_input::record(input.role().as_str(), input.prompt.as_deref().unwrap_or(""), input.entrypoint.as_deref());
+    // #4637 AC4 — the turn names the Jeff line that woke it (or none, by name)
+    hooks::turn_line::record(input.role().as_str(), session_id, &cycle_id, input.prompt.as_deref().unwrap_or(""));
 
     // JDI detector — fire-and-forget (#1598)
     let state_clone = state.clone();

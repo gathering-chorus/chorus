@@ -62,7 +62,7 @@ describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gat
     try {
       const res = await request(app)
         .post('/api/nudge')
-        .send({ from: 'k', to: 'w', content: 'hi' });
+        .send({ from: 'kade', to: 'wren', content: 'hi' });
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('not-canonical-caller');
       expect(res.body.message).toMatch(/clearing-nudge MCP/);
@@ -80,7 +80,7 @@ describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gat
       const res = await request(app)
         .post('/api/nudge')
         .set('X-Chorus-Pulse-Secret', 'test-secret-3485')
-        .send({ from: 'k', to: 'w', content: 'hi' });
+        .send({ from: 'kade', to: 'wren', content: 'hi' });
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
     } finally {
@@ -101,7 +101,7 @@ describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gat
       const res = await request(app)
         .post('/api/nudge')
         .set('X-Chorus-MCP-Caller', '1')
-        .send({ from: 'k', to: 'w', content: 'hi' });
+        .send({ from: 'kade', to: 'wren', content: 'hi' });
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('not-canonical-caller');
     } finally {
@@ -118,7 +118,7 @@ describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gat
     process.env.PULSE_ALLOW_DIRECT_POST = '1';
     const res = await request(app)
       .post('/api/nudge')
-      .send({ from: 'k', to: 'w', content: 'hi' });
+      .send({ from: 'kade', to: 'wren', content: 'hi' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
   });
@@ -140,7 +140,7 @@ describe('pulse service — nudges', () => {
     const { app } = fresh();
     const res = await request(app).post('/api/nudge').send({ from: 'kade' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/from, to, content required/);
+    expect(res.body.error).toMatch(/^to, content required$/);
   });
 
   // #2664: retirement assertion — GET /api/nudge/:role/pending is gone.
@@ -242,10 +242,41 @@ describe('pulse service — board events', () => {
   // #2632: /api/role-state tests retired alongside the endpoint.
 });
 
+// #4637 AC5 NEGATIVE PROOF — a message with no real author is refused by name and stored nowhere.
+describe('#4637 only real actors send', () => {
+  it('refuses a sender that is not an actor, and stores nothing', async () => {
+    const { app } = fresh();
+    const res = await request(app).post('/api/nudge').send({ from: 'k', to: 'wren', content: 'x' });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain("'k' is not an actor");
+    const rows = await request(app).get('/api/messages').query({ limit: 10 });
+    expect(rows.body.length).toBe(0);
+  });
+  it('stores a system alert as the owning role\'s alert, never a nudge from system', async () => {
+    const { app } = fresh();
+    const res = await request(app).post('/api/nudge').send({ from: 'system', to: 'kade', content: 'crawler-out-of-sync' });
+    expect(res.status).toBe(200);
+    const rows = await request(app).get('/api/messages').query({ limit: 10 });
+    expect(rows.body[0].from).toBe('kade');
+    expect(rows.body[0].content).toMatch(/^\[alert for kade · from system \| /);
+    expect(rows.body[0].nudge_class).toBe('a2r');
+    expect(rows.body[0].origin).toBe('library/alert');
+  });
+  it('a role nudge and a phone message each carry where they were written', async () => {
+    const { app } = fresh();
+    await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'n' });
+    await request(app).post('/api/jeff-input').set('X-Chorus-Clearing-Caller', '1').send({ to: 'silas', content: 'p', where: 'phone/clearing-v2' });
+    const rows = (await request(app).get('/api/messages').query({ limit: 10 })).body as Array<{ type: string; origin: string }>;
+    expect(rows.find((r) => r.type === 'nudge')?.origin).toBe('library/terminal');
+    expect(rows.find((r) => r.type === 'jeff-input')?.origin).toBe('phone/clearing-v2');
+    expect(rows.every((r) => typeof r.origin === 'string' && r.origin.includes('/'))).toBe(true);
+  });
+});
+
 describe('pulse service — queries and dead letter', () => {
   it('GET /api/messages returns filtered messages', async () => {
     const { app } = fresh();
-    await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'x' });
+    await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'x' });
     const res = await request(app).get('/api/messages').query({ type: 'nudge', limit: 10 });
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -413,12 +444,12 @@ describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
   it('trace_id without header falls back to body.traceId; without either, row.trace_id is null', async () => {
     expect(MessageStore.prototype.getDeliveryRecord).toBeDefined();
     const { app, store } = freshWithWorker([{ rc: 0, stderr: '' }]);
-    const r1 = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'a', traceId: 'body-trace' });
+    const r1 = await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'a', traceId: 'body-trace' });
     // #4515 — failed twice in the card lane with id=undefined and never here; the status and body name which refusal it was.
     expect({ status: r1.status, body: r1.body }).toMatchObject({ status: 200, body: { ok: true } });
     await waitForState(store, r1.body.id, 'delivered');
     expect(store.getDeliveryRecord(r1.body.id).trace_id).toBe('body-trace');
-    const r2 = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'b' });
+    const r2 = await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'b' });
     expect({ status: r2.status, body: r2.body }).toMatchObject({ status: 200, body: { ok: true } });
     await waitForState(store, r2.body.id, 'delivered');
     expect(store.getDeliveryRecord(r2.body.id).trace_id).toBeNull();

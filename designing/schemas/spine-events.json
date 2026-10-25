@@ -6436,6 +6436,49 @@
         "role": "Acting role",
         "trace_id": "Werk trace join key"
       }
+    },
+    "agent.turn.started": {
+      "producer": "chorus-hooks",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "hooks",
+      "description": "#4637 AC4 — a role's turn began (UserPromptSubmit). woken_by is line (a Jeff jeff-input row woke it: woken_by_line = that pulse row id), none (a nudge, a notification, the role itself) or unmeasured (pulse did not answer). Wren's #4638 tree maps woken_by_line to its prompt.",
+      "fields": {
+        "role": "Acting role",
+        "session_id": "First 8 of the session id",
+        "turn_id": "The prompt cycle id (#2231)",
+        "woken_by": "line | none | unmeasured",
+        "woken_by_line": "pulse jeff-input row id, when woken_by=line"
+      }
+    },
+    "turn.line.unmeasured": {
+      "producer": "chorus-hooks",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "hooks",
+      "description": "#4637 AC4 — the turn hook could not read pulse's jeff-input rows, so the turn's waking line is unmeasured (never guessed).",
+      "fields": {
+        "role": "Acting role",
+        "error": "Why the read failed"
+      }
+    },
+    "pipeline.run.started": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "#4637 AC4 — pipeline-start enqueued a run. started_by is line when the role's current turn was woken by a Jeff line (started_by_line = that pulse row id), else none.",
+      "fields": {
+        "role": "Starting role",
+        "card": "Card number",
+        "pipeline": "cicd, athena, borg-prove ...",
+        "run_id": "dagu run id",
+        "started_by": "line | none",
+        "started_by_line": "pulse jeff-input row id, when started_by=line"
+      }
     }
   }
 }

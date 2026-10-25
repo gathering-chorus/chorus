@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- #4710 — Jeff's go page (lightlifeurbangardens.com/go via the tunnel): his phone's passkey signs a card's go, and werk-merge lands only a signed one. Runs chorus-go; logs under ~/Library/Logs/Chorus (ADR-023, Promtail reads them). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.go</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-go</string>
+        <string>serve</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-go.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-go.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_HOME</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>CHORUS_WERK_BASE</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus-werk</string>
+        <key>CHORUS_GO_ADDR</key>
+        <string>127.0.0.1:3490</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
