@@ -58,7 +58,9 @@ export const TURN_FRESH_MS = 6 * 3600 * 1000;
  * action with no line is a fact, never a guess.
  */
 export function readTurnLine(role: string, dir = process.env.CHORUS_TURN_DIR || path.join(os.homedir(), '.chorus', 'run'), now = Date.now()): string | undefined {
+  if (!/^[a-z][a-z0-9-]*$/.test(role)) return undefined;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- the role is checked against [a-z0-9-] above; dir is ours
     const t = JSON.parse(fs.readFileSync(path.join(dir, `turn-${role}.json`), 'utf8'));
     const line = typeof t.woken_by_line === 'string' ? t.woken_by_line : undefined;
     const at = typeof t.at === 'number' ? t.at * 1000 : 0;

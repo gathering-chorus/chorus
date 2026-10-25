@@ -9,6 +9,26 @@ use std::process::Command;
 
 const PAGE: &str = include_str!("page.html");
 
+#[allow(dead_code)]
+mod service_lifecycle {
+    include!("../../shared/service_lifecycle.rs");
+}
+
+/// launchd's label; the prod name when run by hand.
+fn service_label() -> String {
+    service_lifecycle::launchd_label().unwrap_or_else(|| "com.chorus.go".to_string())
+}
+
+/// #4446 — every service logs its lifecycle, through chorus-log like athena-make.
+fn emit_lifecycle((event, fields): service_lifecycle::LifecycleEvent) {
+    let mut args = vec![format!("{}/platform/scripts/chorus-log", chorus_home()), event.to_string(), "system".to_string()];
+    args.extend(fields.into_iter().map(|(k, v)| format!("{k}={v}")));
+    if event == "service.failed" {
+        args.push("--level=error".to_string());
+    }
+    let _ = Command::new("bash").args(&args).output();
+}
+
 fn env_or(k: &str, d: &str) -> String {
     std::env::var(k).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| d.to_string())
 }
@@ -45,7 +65,17 @@ fn main() {
 
 fn serve(store: &Store) {
     let addr = env_or("CHORUS_GO_ADDR", "127.0.0.1:3490");
-    let listener = TcpListener::bind(&addr).unwrap_or_else(|e| { eprintln!("chorus-go: bind {addr}: {e}"); std::process::exit(1) });
+    let listener = TcpListener::bind(&addr).unwrap_or_else(|e| {
+        let why = format!("bind {addr}: {e}");
+        eprintln!("chorus-go: {why}");
+        emit_lifecycle(service_lifecycle::failed_event(&service_label(), std::process::id(), &why, 1));
+        std::process::exit(1)
+    });
+    let label = service_label();
+    let previous = service_lifecycle::previous_run(&label);
+    for e in service_lifecycle::start_events(&label, std::process::id(), &service_lifecycle::binary_version(), previous.as_ref()) {
+        emit_lifecycle(e);
+    }
     eprintln!("chorus-go: serving {addr} for {}", origin());
     // one thread per connection: a phone waiting on Face ID never holds up the next request
     std::thread::scope(|scope| {

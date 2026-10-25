@@ -3,7 +3,7 @@
 // @card: #4637
 // @owner: silas
 // #4637 AC1/AC2 — src/sender.ts: only real actors send; an alert is attributed to the role that owns it.
-import { attributeSender, markAlert } from './sender';
+import { attributeSender, markAlert, originFor } from './sender';
 
 const actors = ['abby-normal', 'borg-queen', 'kade', 'silas', 'wren'];
 
@@ -36,7 +36,6 @@ test('negative proof: no author, a bridge, or an alert with no owner is refused 
 });
 
 // #4637 AC3 — where every message was written
-import { originFor } from './sender';
 test('every message carries where: a caller that knows says so, else a named default', () => {
   expect(originFor('jeff-input', 'jeff', 'phone/clearing-v2')).toBe('phone/clearing-v2');
   expect(originFor('nudge', 'kade')).toBe('library/terminal');
