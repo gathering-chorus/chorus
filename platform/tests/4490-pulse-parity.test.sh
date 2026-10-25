@@ -52,10 +52,15 @@ if [ "${1:-}" = "--self-test" ]; then
 fi
 curl -sf -m 5 "$V1/health" >/dev/null 2>&1 || curl -sf -m 5 "$V1/" >/dev/null 2>&1 || { echo "UNMEASURED: today's door not reachable at $V1"; exit 0; }
 curl -sf -m 5 "$V2/health" >/dev/null 2>&1 || { echo "UNMEASURED: pulse-api not reachable at $V2"; exit 0; }
+# #4742 — the werk changes pulse-api's routes to /pulse/<domain>/…, but this reads the running
+# (prod) build, which keeps /v1/<domain>/… until the land deploys it. Parity is about the rows;
+# the route shape is proven by the crate's own tests. So read the root the running build serves.
+R2=pulse; curl -sf -m 10 "$V2/pulse/streams/events?limit=1" >/dev/null 2>&1 || R2=v1
+echo "pulse-api answers under /$R2"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail=0
 for r in $ROUTES; do
-  curl -sf -m 30 "$V1/v1/$r?limit=1000" > "$T/a" && curl -sf -m 30 "$V2/pulse/$r?limit=1000" > "$T/b" || { echo "FAIL $r: a route did not answer"; fail=1; continue; }
+  curl -sf -m 30 "$V1/v1/$r?limit=1000" > "$T/a" && curl -sf -m 30 "$V2/$R2/$r?limit=1000" > "$T/b" || { echo "FAIL $r: a route did not answer"; fail=1; continue; }
   if out=$(compare "$T/a" "$T/b"); then echo "PASS $r: $out"; else echo "FAIL $r:"; echo "$out"; fail=1; fi
 done
 exit $fail
