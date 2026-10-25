@@ -98,11 +98,8 @@ describe('#4638 the live tree', () => {
 });
 
 describe('#4638 the tree over pulse (live wiring)', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const request = require('supertest');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { createApp } = require('./service');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { MessageStore } = require('./store');
   const recent = (s: number) => new Date(Date.now() - s * 1000).toISOString();
   const actorStates = () => ({
@@ -162,7 +159,6 @@ describe('#4638 the tree over pulse (live wiring)', () => {
 });
 
 describe('#4638 turns and runs from the spine (#4637 AC4 events)', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { factsFromSpine, buildTree: bt } = require('./pulse-tree');
   const spine = [
     { event: 'agent.turn.started', role: 'wren', timestamp: '2026-10-24T16:41:04.000-04:00', session_id: 's1', turn_id: 't1', woken_by: 'line', woken_by_line: 'm2' },

@@ -52,29 +52,35 @@ const secs = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)
 /** Join each actor's lines into prompts; lines from non-actors are counted, not kept. */
 export function joinPrompts(lines: LineFact[], actors: string[]): { prompts: Prompt[]; lineToPrompt: Map<string, string>; refused: Record<string, number> } {
   const real = new Set(actors);
-  const refused: Record<string, number> = {};
+  const refused = new Map<string, number>();
   const prompts: Prompt[] = [];
   const lineToPrompt = new Map<string, string>();
   const open = new Map<string, Prompt>();
   const lastAt = new Map<string, string>();
   for (const l of [...lines].sort((a, b) => Date.parse(a.sentAt) - Date.parse(b.sentAt))) {
-    if (!real.has(l.from)) { refused[l.from || '(none)'] = (refused[l.from || '(none)'] ?? 0) + 1; continue; }
+    if (!real.has(l.from)) { const who = l.from || '(none)'; refused.set(who, (refused.get(who) ?? 0) + 1); continue; }
     const cur = open.get(l.from);
     const prev = lastAt.get(l.from);
+    let p: Prompt;
     if (cur && prev && secs(l.sentAt, prev) <= BURST_GAP_S) {
-      // one line sent to two roles is stored once per role: same words, one line of the prompt
-      if (cur.text.split('\n').pop() !== l.text) cur.text += '\n' + l.text;
-      cur.lines.push(l.id);
-      for (const t of l.to) if (!cur.to.includes(t)) cur.to.push(t);
+      joinLine(cur, l);
+      p = cur;
     } else {
-      const p: Prompt = { id: `prompt-${l.id}`, by: l.from, to: [...l.to], at: l.sentAt, text: l.text, lines: [l.id] };
+      p = { id: `prompt-${l.id}`, by: l.from, to: [...l.to], at: l.sentAt, text: l.text, lines: [l.id] };
       prompts.push(p);
       open.set(l.from, p);
     }
     lastAt.set(l.from, l.sentAt);
-    lineToPrompt.set(l.id, open.get(l.from)!.id);
+    lineToPrompt.set(l.id, p.id);
   }
-  return { prompts, lineToPrompt, refused };
+  return { prompts, lineToPrompt, refused: Object.fromEntries(refused) };
+}
+
+/** Add a line to an open prompt. One line sent to two roles is stored once per role: same words, one line of the prompt. */
+function joinLine(p: Prompt, l: LineFact): void {
+  if (p.text.split('\n').pop() !== l.text) p.text += '\n' + l.text;
+  p.lines.push(l.id);
+  for (const t of l.to) if (!p.to.includes(t)) p.to.push(t);
 }
 
 function roleState(calls: string[], now: string): { state: 'moving' | 'quiet'; secondsSinceLastCall: number } {
@@ -91,10 +97,11 @@ export function buildTree(input: TreeInput): Tree {
 
   const byRole = new Map<string, TurnFact[]>();
   for (const t of input.turns) byRole.set(t.role, [...(byRole.get(t.role) ?? []), t]);
-  const lastCalls = input.lastCalls ?? {};
-  const roleNames = [...new Set([...byRole.keys(), ...Object.keys(lastCalls)])];
+  const lastCalls = new Map(Object.entries(input.lastCalls ?? {}));
+  const roleNames = [...new Set([...byRole.keys(), ...lastCalls.keys()])];
+  const callsOf = (role: string) => [...(byRole.get(role) ?? []).map(t => t.lastCallAt), ...[lastCalls.get(role)].filter((c): c is string => !!c)];
   const roles = roleNames
-    .map(role => ({ role, ...roleState([...(byRole.get(role) ?? []).map(t => t.lastCallAt), ...(lastCalls[role] ? [lastCalls[role]] : [])], input.now) }))
+    .map(role => ({ role, ...roleState(callsOf(role), input.now) }))
     .sort((a, b) => a.role.localeCompare(b.role));
   const stateOf = new Map(roles.map(r => [r.role, r]));
 
@@ -148,15 +155,15 @@ const utc = (t: string) => (/[zZ]|[+-]\d\d:?\d\d$/.test(t) ? new Date(t).toISOSt
 /** The actors are whoever the roles door lists (via actor-state); a role's last call is its newest stream action. */
 export function factsFromActorState(states: unknown): { actors: string[]; lastCalls: Record<string, string> } {
   const actors: string[] = [];
-  const lastCalls: Record<string, string> = {};
-  for (const a of (states as ActorStates)?.actors ?? []) {
+  const lastCalls = new Map<string, string>();
+  for (const a of (states as ActorStates | undefined)?.actors ?? []) {
     const r = role(a.aboutPrincipal);
     if (!r) continue;
     actors.push(r);
     const ts = (a.stream ?? []).map(x => x.timestamp).filter((x): x is string => !!x).map(utc);
-    if (ts.length) lastCalls[r] = ts.reduce((m, c) => (Date.parse(c) > Date.parse(m) ? c : m));
+    if (ts.length) lastCalls.set(r, ts.reduce((m, c) => (Date.parse(c) > Date.parse(m) ? c : m)));
   }
-  return { actors, lastCalls };
+  return { actors, lastCalls: Object.fromEntries(lastCalls) };
 }
 
 export function liveTree(store: LineStore, states: unknown, now = new Date().toISOString(), lastN = LAST_N_PROMPTS, spine: SpineLine[] = []): Tree {
@@ -176,7 +183,7 @@ export function registerTreeRoutes(
   actorStateService?: { getActorStates: () => unknown },
   spine?: { get: () => SpineLine[] },
 ): void {
-  const n = (q: unknown) => Math.min(Math.max(parseInt(String(q ?? LAST_N_PROMPTS), 10) || LAST_N_PROMPTS, 1), 50);
+  const n = (q: unknown) => Math.min(Math.max((typeof q === 'string' ? parseInt(q, 10) : NaN) || LAST_N_PROMPTS, 1), 50);
   const build = (q: unknown) => liveTree(store, actorStateService?.getActorStates(), new Date().toISOString(), n(q), spine?.get() ?? []);
   app.get('/api/tree', (req, res) => res.json(build(req.query.n)));
   app.get('/api/tree/:role', (req, res) => res.json(sliceFor(build(req.query.n), req.params.role)));
@@ -193,38 +200,64 @@ export interface SpineLine { event?: string; role?: string; timestamp?: string; 
  * turn's last call is its end, or for a role's open turn the role's newest action.
  */
 export function factsFromSpine(lines: SpineLine[], lastCalls: Record<string, string> = {}): { turns: TurnFact[]; runs: RunFact[] } {
-  const ts = (l: SpineLine) => utc(String(l.timestamp ?? ''));
-  const sorted = lines.filter(l => l.timestamp && l.role).sort((a, b) => Date.parse(ts(a)) - Date.parse(ts(b)));
+  const sorted = lines.filter(l => l.timestamp && l.role).sort((a, b) => Date.parse(spineAt(a)) - Date.parse(spineAt(b)));
   const turns: TurnFact[] = [];
   const open = new Map<string, TurnFact>();
   const runs: RunFact[] = [];
   for (const l of sorted) {
-    const r = String(l.role);
+    const r = field(l.role) ?? '';
     if (l.event === 'agent.turn.started') {
-      const t: TurnFact = {
-        id: String(l.turn_id ?? `${r}-${ts(l)}`), role: r, run: String(l.session_id ?? ''),
-        startedAt: ts(l), lastCallAt: ts(l),
-        wokenByLine: l.woken_by === 'line' && l.woken_by_line ? String(l.woken_by_line) : undefined,
-      };
-      const prev = open.get(r);
-      if (prev && !prev.endedAt) prev.endedAt = prev.lastCallAt = t.startedAt;
+      const t = turnFrom(l, r);
+      closeTurn(open.get(r), t.startedAt);
       turns.push(t);
       open.set(r, t);
     } else if (l.event === 'agent.turn.ended') {
-      const t = open.get(r);
-      if (t && !t.endedAt) { t.endedAt = t.lastCallAt = ts(l); }
+      closeTurn(open.get(r), spineAt(l));
     } else if (l.event === 'pipeline.run.started') {
-      runs.push({
-        id: String(l.run_id ?? 'unknown'), card: Number(l.card), pipeline: String(l.pipeline ?? ''),
-        step: 'started', status: 'started',
-        startedByLine: l.started_by === 'line' && l.started_by_line ? String(l.started_by_line) : undefined,
-      });
-      const t = open.get(r);
-      if (t && !t.endedAt && t.card === undefined && Number.isFinite(Number(l.card))) t.card = Number(l.card);
+      const run = runFrom(l);
+      runs.push(run);
+      cardOnTurn(open.get(r), run.card);
     }
   }
-  for (const [r, t] of open) if (!t.endedAt && lastCalls[r] && Date.parse(lastCalls[r]) > Date.parse(t.lastCallAt)) t.lastCallAt = lastCalls[r];
+  const calls = new Map(Object.entries(lastCalls));
+  for (const [r, t] of open) lastCallOnTurn(t, calls.get(r));
   return { turns, runs };
+}
+
+/** A run's card lands on the open turn that started it, once. */
+function cardOnTurn(t: TurnFact | undefined, card: number): void {
+  if (t && !t.endedAt && t.card === undefined && Number.isFinite(card)) t.card = card;
+}
+
+/** An open turn's last call is the role's newest action, when that is later. */
+function lastCallOnTurn(t: TurnFact, last: string | undefined): void {
+  if (!t.endedAt && last && Date.parse(last) > Date.parse(t.lastCallAt)) t.lastCallAt = last;
+}
+
+/** A spine field as text; anything that is not a string or a number is absent. */
+const field = (v: unknown): string | undefined => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : undefined);
+const spineAt = (l: SpineLine) => utc(field(l.timestamp) ?? '');
+
+function turnFrom(l: SpineLine, r: string): TurnFact {
+  const at = spineAt(l);
+  return {
+    id: field(l.turn_id) ?? `${r}-${at}`, role: r, run: field(l.session_id) ?? '',
+    startedAt: at, lastCallAt: at,
+    wokenByLine: l.woken_by === 'line' ? field(l.woken_by_line) : undefined,
+  };
+}
+
+function runFrom(l: SpineLine): RunFact {
+  return {
+    id: field(l.run_id) ?? 'unknown', card: Number(field(l.card)), pipeline: field(l.pipeline) ?? '',
+    step: 'started', status: 'started',
+    startedByLine: l.started_by === 'line' ? field(l.started_by_line) : undefined,
+  };
+}
+
+/** A role's open turn closes at its own end or at the role's next turn. */
+function closeTurn(t: TurnFact | undefined, at: string): void {
+  if (t && !t.endedAt) t.endedAt = t.lastCallAt = at;
 }
 
 export const SPINE_TREE_QUERY = '{job="platform-chorus"} |~ `"event":"(agent\\.turn\\.(started|ended)|pipeline\\.run\\.started)"`';

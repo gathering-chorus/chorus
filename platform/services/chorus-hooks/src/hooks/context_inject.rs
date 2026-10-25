@@ -506,7 +506,8 @@ fn read_pulse_snapshot() -> Option<String> {
 fn query_tree_slice(role: &str) -> String {
     let base = std::env::var("CHORUS_PULSE_URL").unwrap_or_else(|_| "http://localhost:3475".to_string());
     let url = format!("{}/api/tree/{}", base, role);
-    match ureq::get(&url).timeout(Duration::from_secs(2)).call() {
+    // uncapped like every per-prompt context call (#3048); a failure still says so by name
+    match ureq::get(&url).call() {
         Ok(r) => match r.into_json::<serde_json::Value>() {
             Ok(v) => format_tree_slice(&v),
             Err(e) => format!("  tree: unmeasured (pulse /api/tree/{} unreadable: {})\n", role, e),
