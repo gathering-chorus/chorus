@@ -17,5 +17,16 @@ Measured 2026-10-25 18:2x–18:4x (Silas) on werk silas-4742 (origin/main at pul
 
 | 10 | 10-25 18:27 "the top level route is /pulse and each associated domain is a child route" | Routes are `/v1/<domain>/<collection>/<name>`: the version is the top level, the product is not in the path. Generated domains: `awareness` (heartbeats, notes, prompts, readings, rolestates, turns, waitingons) and `streams` (events). Measured. | **Top level is `/v1`, not `/pulse`.** Messages and cards (pulse's radius, Jeff 10-22) are not generated at all: they stay hand-built in platform/pulse (TS). |
 
+## Fixed in the generator (werk silas-4742)
+| Row | Fix | Proof |
+|---|---|---|
+| 10 | Routes are `/<product>/<domain>/<collection>` (c0ddc2e4) | `/v1/...` answers unknown-route; red when the old route is put back |
+| 1 | A product's child routes are the domains it owns **and composes** (product-radius); composed = read-only from the owner's graph, writes 405 `composed` (9f9d0443). Pulse now serves awareness, streams, alerts, cards, messages (15 routes). | compose_4742 (3), requirements_tests composed write |
+| 7 | Decimals written canonical, non-decimals refused (1919c719) | red on the old generator, green on the new |
+| 8 | generate refuses to drop a route the crate serves unless named `--drop <route>` (24ea510d) | route_drop_4742 (4) + live check on a scratch copy |
+| 3 | Repo launcher already defaults `PULSE_STORE_KIND=door`; the installed one (10-10) predates it. Resolves when the land's deploy-prod installs the launcher. | live check after land |
+
+Open from Jeff 18:49: query and stream share one filter (actor × domain × time, `follow`); the generated API pages only (`limit`/`offset`).
+
 ## Open question for Jeff
 "athena-gen is not building what i think it is" — rows 1, 3, 7, 8, 10. Jeff answered 18:27 with the route shape: `/pulse/<domain>/…`, each domain in the product's radius a child route.

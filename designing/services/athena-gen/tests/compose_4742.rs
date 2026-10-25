@@ -1,11 +1,11 @@
 // @domain: domains
 // @test-type: unit — model slice read from a TTL fixture; no store, no services
 //! #4742 — Jeff 10-25: "the top level route is /pulse and each associated domain is a
-//! Covers src/model (product reads composes), src/emit (ClassDef composed), templates/main (405 composed),
-//! templates/rules (canonical decimal), templates/requirements_tests.
 //! child route"; the children are the domains the product owns (hasDomain) and the
 //! domains it composes (composes), and the top level is a composition: a composed
 //! domain is served read-only from its owner's graph, never written through the product.
+//! Covers src/model (product reads composes), src/emit (ClassDef composed), templates/main (405 composed),
+//! templates/rules (canonical decimal), templates/requirements_tests.
 use athena_gen::model::{load, product};
 use std::path::PathBuf;
 
