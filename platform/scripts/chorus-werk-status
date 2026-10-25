@@ -1235,9 +1235,17 @@ def dagu_detail(card, runs, every=None):
             if retry:
                 why += "\n" + " " * (34 + w) + retry
         print(f"  {name:<{w}}  {count[name]:>3}  {start}  {end}   {status:<10}  {step}{why}")
-    land = dagu_land_line(card, "v2")
-    if land:
-        print("  " + land.split("] ", 1)[1])
+    # #4734 (Abby's review) — the land rows are in the table already; only the
+    # model half the table cannot show is added under it
+    landed = [r for r in rows if r.get("name") == f"{DAGU_DAG}-land"]
+    if landed:
+        model = athena_result(landed[0]) if dagu_summary(landed[0])[0] == "succeeded" else None
+        if model:
+            print(f"  athena {model} · land {landed[0].get('dagRunId', '?')}")
+    else:
+        land = dagu_land_line(card, "v2")
+        if land:
+            print("  " + land.split("] ", 1)[1])
     if not runs:
         return
     # #4453 — the newest run's tests, in the /wts shape
@@ -1519,14 +1527,16 @@ def fixture_4553():
             # Negative proof: the old lead-only read finds only cicd, and
             # another card's run (CARD=47340) and a run with no CARD never show.
             ("every pipeline's runs of the card show, a new one included",
-             (lambda got: got[0] == ["borg-prove", "brand-new-pipeline", "cicd"] and got[1] == ["cicd"]
-              and "borg-prove " in got[2] and "brand-new-pipeline" in got[2] and "nightly" not in got[2])(
+             (lambda got: got[0] == ["borg-prove", "brand-new-pipeline", "cicd", "cicd-land"] and got[1] == ["cicd"]
+              and "borg-prove " in got[2] and "brand-new-pipeline" in got[2] and "nightly" not in got[2]
+              and got[2].count("cicd-land") == 1 and "v2 land" not in got[2])(
                  every_reads(lambda: [run("c", "cicd", "succeeded", 0, [node("succeeded", "skill-werk-go")], 4734),
                                       run("bp", "borg-prove", "failed", 5, [node("failed", "skill-borg-check", "borg-check: unproven")], 4734),
                                       run("nw", "brand-new-pipeline", "running", 7, [node("running", "skill-x")], 4734),
+                                      run("ld", "cicd-land", "failed", 8, [node("failed", "skill-borg-check", "borg-check: unproven")], 4734),
                                       run("o", "borg-prove", "failed", 6, [node("failed", "skill-borg-check")], 47340),
                                       dict(run("n", "nightly", "succeeded", 1, []), params="SCOPE=all")],
-                             ["cicd", "borg-prove", "brand-new-pipeline", "nightly"]))),
+                             ["cicd", "cicd-land", "borg-prove", "brand-new-pipeline", "nightly"]))),
             # #4734 (Wren 10:19) — a land waiting at a step after the go reads
             # the land's step. Negative proof: a cicd run at its go with no
             # land still reads waiting for your go.
