@@ -272,7 +272,7 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
   });
 
   describe('AC3: Mobile viewport scrolling remains active and triggers older message backfill when filtered', () => {
-    test('scrolling up while filtered requests target countVisible() + 15 to allow continuous upward pagination', async () => {
+    test('scrolling up while filtered triggers watchRoomScroll backfill for older messages beyond initial 15', async () => {
       app.setRoleFilter('abby-normal');
       mockContainer.children = [];
       for (let i = 0; i < 15; i++) {
@@ -281,26 +281,29 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
         mockContainer.children.push(m);
       }
       app.applyRoleFilters();
+      mockContainer.scrollHeight = 1000;
+      mockContainer.clientHeight = 600;
 
-      const initialCount = app.countVisibleMessages(mockContainer);
-      expect(initialCount).toBe(15);
+      let scrollListener: Function | null = null;
+      mockContainer.addEventListener = jest.fn((evt: string, fn: any) => {
+        if (evt === 'scroll') scrollListener = fn;
+      });
 
-      // If called with default target 15, zero fetches would occur because initialCount >= 15
-      const mockFetchStale = jest.fn(async () => ({ ok: true, json: async () => ({ count: 5, html: '' }) }));
-      await app.backfillFilteredHistory(mockFetchStale, 15);
-      expect(mockFetchStale).not.toHaveBeenCalled(); // Red proof for fixed target 15
-
-      // When called with target countVisible() + 15 (as watchRoomScroll now does)
-      const mockFetchPaged = jest.fn(async () => ({
+      const mockFetch = jest.fn(async () => ({
         ok: true,
         json: async () => ({
-          count: 2,
-          html: '<div class="msg" id="msg-older-1" data-from="abby-normal">older 1</div>' +
-                '<div class="msg" id="msg-older-2" data-from="abby-normal">older 2</div>',
+          count: 1,
+          html: '<div class="msg" id="msg-older-1" data-from="abby-normal">older 1</div>',
         }),
       }));
-      await app.backfillFilteredHistory(mockFetchPaged, initialCount + 15);
-      expect(mockFetchPaged).toHaveBeenCalled();
+
+      app.watchRoomScroll(mockFetch);
+      expect(scrollListener).not.toBeNull();
+
+      mockContainer.scrollTop = 0;
+      await (scrollListener as any)();
+
+      expect(mockFetch).toHaveBeenCalled();
     });
   });
 

@@ -577,7 +577,7 @@ async function refreshPeopleRow(fetchImpl) {
   }
 }
 
-function watchRoomScroll() {
+function watchRoomScroll(fetchImpl) {
   if (typeof document === 'undefined') return;
   const stream = document.getElementById('messages-stream');
   if (stream && stream.addEventListener) {
@@ -585,9 +585,9 @@ function watchRoomScroll() {
       if (stream.scrollTop < 80) {
         if (activeRoleFilters && activeRoleFilters.size > 0) {
           const current = countVisibleMessages(stream);
-          backfillFilteredHistory(undefined, current + 15);
+          return backfillFilteredHistory(fetchImpl, current + 15);
         } else {
-          loadOlderMessages();
+          return loadOlderMessages(fetchImpl);
         }
       }
     });
@@ -1133,6 +1133,7 @@ if (typeof module !== 'undefined' && module.exports) {
     transcribeVoice,
     photoNames,
     initStream,
+    watchRoomScroll,
     countVisibleMessages,
     backfillFilteredHistory,
     loadOrCreateRoomKey,
