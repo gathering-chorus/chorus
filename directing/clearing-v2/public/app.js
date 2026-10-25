@@ -370,7 +370,11 @@ function watchPhotoButton() {
   const label = document.querySelector ? document.querySelector('.composer-photo') : null;
   if (label && label.addEventListener) {
     label.addEventListener('click', (e) => {
+      // In HTML, clicking a <label for="X"> natively activates input X.
+      // Calling picker.click() without preventing default causes multiple synthetic clicks
+      // in the same tick on mobile browsers, which immediately cancels the camera/photo sheet.
       if (e.target !== picker) {
+        e.preventDefault();
         picker.click();
       }
     });

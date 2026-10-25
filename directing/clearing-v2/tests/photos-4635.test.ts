@@ -165,4 +165,47 @@ describe('#4635 several photos at once', () => {
     const { renderRoomsPage } = require('../src/views');
     expect(renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, [])).toContain('accept="image/*" multiple');
   });
+
+  test('label click delegates to file picker cleanly with preventDefault to prevent iOS Safari double-trigger cancel', () => {
+    const { watchPhotoButton } = require('../public/app.js');
+    let pickerClicks = 0;
+    const picker = {
+      click: () => { pickerClicks += 1; },
+      addEventListener: () => {},
+    };
+    let labelClickHandler: ((e: any) => void) | null = null;
+    const label = {
+      addEventListener: (evt: string, handler: (e: any) => void) => {
+        if (evt === 'click') labelClickHandler = handler;
+      },
+    };
+    (global as any).document = {
+      getElementById: (id: string) => (id === 'composer-photo' ? picker : null),
+      querySelector: (sel: string) => (sel === '.composer-photo' ? label : null),
+    };
+    watchPhotoButton();
+
+    expect(typeof labelClickHandler).toBe('function');
+    let defaultPrevented = false;
+    const fakeEvent = {
+      target: label,
+      preventDefault: () => { defaultPrevented = true; },
+    };
+    labelClickHandler!(fakeEvent);
+
+    expect(defaultPrevented).toBe(true);
+    expect(pickerClicks).toBe(1);
+
+    // Negative proof: if target IS the picker, do NOT preventDefault or double call picker.click()
+    pickerClicks = 0;
+    defaultPrevented = false;
+    labelClickHandler!({
+      target: picker,
+      preventDefault: () => { defaultPrevented = true; },
+    });
+    expect(defaultPrevented).toBe(false);
+    expect(pickerClicks).toBe(0);
+
+    delete (global as any).document;
+  });
 });
