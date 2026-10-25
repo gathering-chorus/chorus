@@ -151,10 +151,7 @@ impl Door {
         if self.token_command.trim().is_empty() {
             return self.token.clone();
         }
-        std::process::Command::new("sh").args(["-c", &self.token_command]).output().ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default()
+        token_from_command(&self.token_command, TOKEN_WAIT)
     }
 
     pub fn batch(&self, graph: &str, lines: &[String]) -> Result<(), String> {
@@ -171,6 +168,42 @@ impl Door {
             .send_string(&lines.join("\n"))
             .map(|_| ())
             .map_err(|e| format!("store: the door refused the write: {e}"))
+    }
+}
+
+/// #4716 — how long a write waits for the token command. A hung command must
+/// not hang the write that asked: past this the write gets no token and refuses.
+pub const TOKEN_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// #4716 — the token a command prints, or "" when it fails, prints nothing, or
+/// is still running after `wait` (it is stopped, and the caller refuses).
+pub fn token_from_command(cmd: &str, wait: std::time::Duration) -> String {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let Ok(mut child) = Command::new("sh").args(["-c", cmd])
+        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+        return String::new();
+    };
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return String::new();
+                }
+                let mut out = String::new();
+                if let Some(mut so) = child.stdout.take() {
+                    let _ = so.read_to_string(&mut out);
+                }
+                return out.trim().to_string();
+            }
+            Ok(None) if start.elapsed() < wait => std::thread::sleep(std::time::Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return String::new();
+            }
+        }
     }
 }
 

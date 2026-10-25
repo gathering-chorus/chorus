@@ -3392,3 +3392,51 @@ mod creator_iri_4576 {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod run_retirement_triple_4716 {
+    use super::{run_retirement, RetireAction, StoreCtx};
+
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    /// A store nobody answers on: anything that gets past the entry check stops
+    /// at the pre-ask, so no test here can delete a thing.
+    fn dead_store() -> StoreCtx {
+        let dead = "http://127.0.0.1:1".to_string();
+        StoreCtx { gsp: dead.clone(), query: dead.clone(), update: dead, chorus_log: "true".into(), role: "kade".into() }
+    }
+    fn triple(s: &str, p: &str, o: &str) -> RetireAction {
+        RetireAction::Triple { s: s.into(), p: p.into(), o: o.into(), graph: "urn:chorus:ontology".into() }
+    }
+
+    // negative proof: run_retirement itself refuses a triple with an empty part,
+    // before it asks the store anything.
+    #[test]
+    fn negative_proof_run_retirement_refuses_a_triple_with_an_empty_iri() {
+        for a in [
+            triple(&format!("{C}chorus"), &format!("{C}hasDomain"), ""),
+            triple("", &format!("{C}hasDomain"), &format!("{C}tests")),
+            triple(&format!("{C}chorus"), "", &format!("{C}tests")),
+        ] {
+            let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+            assert!(e.contains("retirement-entry-empty"), "{e}");
+        }
+    }
+
+    // negative proof: a part that would break out of <...> in the SPARQL is refused too.
+    #[test]
+    fn negative_proof_run_retirement_refuses_a_part_that_is_not_an_iri() {
+        let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}x> . <{C}y"));
+        let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+        assert!(e.contains("retirement-entry-empty"), "{e}");
+    }
+
+    // the contrast: a whole triple passes the entry check and reaches the pre-ask,
+    // which a dead store leaves unanswered, so it refuses for that reason instead.
+    #[test]
+    fn a_whole_triple_passes_the_entry_check_and_stops_at_the_ask() {
+        let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}tests"));
+        let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+        assert!(e.contains("retirement-ask-unanswered"), "{e}");
+    }
+}

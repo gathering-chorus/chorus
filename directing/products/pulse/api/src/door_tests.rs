@@ -6,7 +6,7 @@
 
 use crate::model::NS;
 use crate::rules::Cell;
-use crate::store::{write_lines, write_update, Door, Embedded, Engine, Remote, RowStore, Sparql};
+use crate::store::{token_from_command, write_lines, write_update, Door, Embedded, Engine, Remote, RowStore, Sparql};
 
 const G: &str = "urn:test:door";
 
@@ -85,4 +85,19 @@ fn negative_proof_a_door_store_without_a_token_writes_nothing() {
 fn negative_proof_a_door_store_sends_no_sparql_update() {
     let e = door("tok").engine().update("INSERT DATA { <a> <b> <c> }").unwrap_err();
     assert!(e.contains("writes go through the door"), "{e}");
+}
+
+#[test]
+fn a_token_command_that_answers_gives_its_token() {
+    assert_eq!(token_from_command("echo tok-1", std::time::Duration::from_secs(5)), "tok-1");
+}
+
+// negative proof: a token command that hangs must not hang the write; past the
+// wait it gives no token, so the write refuses instead of waiting forever.
+#[test]
+fn negative_proof_a_hung_token_command_gives_no_token_in_time() {
+    let t = std::time::Instant::now();
+    let tok = token_from_command("sleep 5; echo late-token", std::time::Duration::from_millis(300));
+    assert_eq!(tok, "", "a hung command must give no token");
+    assert!(t.elapsed() < std::time::Duration::from_secs(3), "waited {:?}", t.elapsed());
 }
