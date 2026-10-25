@@ -305,6 +305,39 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
 
       expect(mockFetch).toHaveBeenCalled();
     });
+
+    test('watchRoomScroll called with Event-like object guards against non-function fetchImpl and falls back to global fetch', async () => {
+      app.setRoleFilter('abby-normal');
+      mockContainer.children = [];
+      const m = createMockElement('msg-scrolled-1');
+      m.dataset.from = 'abby-normal';
+      mockContainer.children.push(m);
+      app.applyRoleFilters();
+
+      let scrollListener: Function | null = null;
+      mockContainer.addEventListener = jest.fn((evt: string, fn: any) => {
+        if (evt === 'scroll') scrollListener = fn;
+      });
+
+      const mockGlobalFetch = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          count: 1,
+          html: '<div class="msg" id="msg-older-1" data-from="abby-normal">older 1</div>',
+        }),
+      }));
+      (global as any).fetch = mockGlobalFetch;
+
+      const dummyDomEvent = { type: 'DOMContentLoaded', target: (global as any).window };
+      app.watchRoomScroll(dummyDomEvent);
+      expect(scrollListener).not.toBeNull();
+
+      mockContainer.scrollTop = 0;
+      await (scrollListener as any)();
+
+      expect(mockGlobalFetch).toHaveBeenCalled();
+      delete (global as any).fetch;
+    });
   });
 
   describe('AC4: Rejoining at latest message when unfiltered', () => {

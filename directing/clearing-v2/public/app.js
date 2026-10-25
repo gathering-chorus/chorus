@@ -497,7 +497,7 @@ async function loadOlderMessages(fetchImpl) {
   const picker = document.getElementById('room-picker');
   if (!stream || !first) return 0;
   const room = (picker && picker.value) || 'team';
-  const fetchFn = fetchImpl || (typeof window !== 'undefined' && window._fetchImpl) || (typeof fetch !== 'undefined' ? fetch : null);
+  const fetchFn = (typeof fetchImpl === 'function' ? fetchImpl : null) || (typeof window !== 'undefined' && typeof window._fetchImpl === 'function' ? window._fetchImpl : null) || (typeof fetch === 'function' ? fetch : null);
   if (!fetchFn) return 0;
   loadingOlder = true;
   try {
@@ -536,7 +536,7 @@ async function backfillFilteredHistory(fetchImpl, targetVisible = 15) {
   if (!activeRoleFilters || activeRoleFilters.size === 0) return 0;
   const stream = document.getElementById('messages-stream');
   if (!stream) return 0;
-  const fetchFn = fetchImpl || (typeof window !== 'undefined' && window._fetchImpl) || (typeof fetch !== 'undefined' ? fetch : null);
+  const fetchFn = (typeof fetchImpl === 'function' ? fetchImpl : null) || (typeof window !== 'undefined' && typeof window._fetchImpl === 'function' ? window._fetchImpl : null) || (typeof fetch === 'function' ? fetch : null);
   if (!fetchFn) return 0;
 
   backfilling = true;
@@ -579,15 +579,16 @@ async function refreshPeopleRow(fetchImpl) {
 
 function watchRoomScroll(fetchImpl) {
   if (typeof document === 'undefined') return;
+  const fn = typeof fetchImpl === 'function' ? fetchImpl : undefined;
   const stream = document.getElementById('messages-stream');
   if (stream && stream.addEventListener) {
     stream.addEventListener('scroll', () => {
       if (stream.scrollTop < 80) {
         if (activeRoleFilters && activeRoleFilters.size > 0) {
           const current = countVisibleMessages(stream);
-          return backfillFilteredHistory(fetchImpl, current + 15);
+          return backfillFilteredHistory(fn, current + 15);
         } else {
-          return loadOlderMessages(fetchImpl);
+          return loadOlderMessages(fn);
         }
       }
     });
@@ -595,7 +596,7 @@ function watchRoomScroll(fetchImpl) {
 }
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
-  window.addEventListener('DOMContentLoaded', watchRoomScroll);
+  window.addEventListener('DOMContentLoaded', () => watchRoomScroll());
   window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
   window.addEventListener('DOMContentLoaded', watchPhotoButton);
   window.addEventListener('DOMContentLoaded', watchMicButton);
