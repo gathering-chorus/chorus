@@ -157,13 +157,14 @@ export function factsFromActorState(states: unknown): { actors: string[]; lastCa
   return { actors, lastCalls };
 }
 
-export function liveTree(store: LineStore, states: unknown, now = new Date().toISOString(), lastN = LAST_N_PROMPTS): Tree {
+export function liveTree(store: LineStore, states: unknown, now = new Date().toISOString(), lastN = LAST_N_PROMPTS, spine: SpineLine[] = []): Tree {
   const since = new Date(Date.parse(now) - 6 * 3600_000).toISOString().replace('T', ' ').slice(0, 19);
   const lines: LineFact[] = store.queryMessages({ type: 'jeff-input', since, limit: 500 }).map(m => ({
     id: String(m.id), from: m.from, to: m.to ? [m.to] : [], text: m.content, sentAt: utc(m.created_at),
   }));
   const { actors, lastCalls } = factsFromActorState(states);
-  return buildTree({ now, actors, lines, turns: [], runs: [], notes: [], lastCalls, lastN });
+  const { turns, runs } = factsFromSpine(spine, lastCalls);
+  return buildTree({ now, actors, lines, turns, runs, notes: [], lastCalls, lastN });
 }
 
 /** GET /api/tree (whole tree), GET /api/tree/:role (one role's slice). Read-only. */
@@ -171,9 +172,82 @@ export function registerTreeRoutes(
   app: { get: (path: string, h: (req: { params: Record<string, string>; query: Record<string, unknown> }, res: { json: (b: unknown) => void }) => void) => void },
   store: LineStore,
   actorStateService?: { getActorStates: () => unknown },
+  spine?: { get: () => SpineLine[] },
 ): void {
   const n = (q: unknown) => Math.min(Math.max(parseInt(String(q ?? LAST_N_PROMPTS), 10) || LAST_N_PROMPTS, 1), 50);
-  const build = (q: unknown) => liveTree(store, actorStateService?.getActorStates(), new Date().toISOString(), n(q));
+  const build = (q: unknown) => liveTree(store, actorStateService?.getActorStates(), new Date().toISOString(), n(q), spine?.get() ?? []);
   app.get('/api/tree', (req, res) => res.json(build(req.query.n)));
   app.get('/api/tree/:role', (req, res) => res.json(sliceFor(build(req.query.n), req.params.role)));
+}
+
+// --- turns and runs from the spine (#4637 AC4) -------------------------------
+
+/** One spine line as chorus-log writes it: event, role, timestamp, then its key=value fields. */
+export interface SpineLine { event?: string; role?: string; timestamp?: string; [k: string]: unknown }
+
+/**
+ * Turns from agent.turn.started (woken_by_line when a Jeff line woke it) closed by the
+ * role's next agent.turn.ended; runs from pipeline.run.started (started_by_line). A
+ * turn's last call is its end, or for a role's open turn the role's newest action.
+ */
+export function factsFromSpine(lines: SpineLine[], lastCalls: Record<string, string> = {}): { turns: TurnFact[]; runs: RunFact[] } {
+  const ts = (l: SpineLine) => utc(String(l.timestamp ?? ''));
+  const sorted = lines.filter(l => l.timestamp && l.role).sort((a, b) => Date.parse(ts(a)) - Date.parse(ts(b)));
+  const turns: TurnFact[] = [];
+  const open = new Map<string, TurnFact>();
+  const runs: RunFact[] = [];
+  for (const l of sorted) {
+    const r = String(l.role);
+    if (l.event === 'agent.turn.started') {
+      const t: TurnFact = {
+        id: String(l.turn_id ?? `${r}-${ts(l)}`), role: r, run: String(l.session_id ?? ''),
+        startedAt: ts(l), lastCallAt: ts(l),
+        wokenByLine: l.woken_by === 'line' && l.woken_by_line ? String(l.woken_by_line) : undefined,
+      };
+      const prev = open.get(r);
+      if (prev && !prev.endedAt) prev.endedAt = prev.lastCallAt = t.startedAt;
+      turns.push(t);
+      open.set(r, t);
+    } else if (l.event === 'agent.turn.ended') {
+      const t = open.get(r);
+      if (t && !t.endedAt) { t.endedAt = t.lastCallAt = ts(l); }
+    } else if (l.event === 'pipeline.run.started') {
+      runs.push({
+        id: String(l.run_id ?? 'unknown'), card: Number(l.card), pipeline: String(l.pipeline ?? ''),
+        step: 'started', status: 'started',
+        startedByLine: l.started_by === 'line' && l.started_by_line ? String(l.started_by_line) : undefined,
+      });
+      const t = open.get(r);
+      if (t && !t.endedAt && t.card === undefined && Number.isFinite(Number(l.card))) t.card = Number(l.card);
+    }
+  }
+  for (const [r, t] of open) if (!t.endedAt && lastCalls[r] && Date.parse(lastCalls[r]) > Date.parse(t.lastCallAt)) t.lastCallAt = lastCalls[r];
+  return { turns, runs };
+}
+
+export const SPINE_TREE_QUERY = '{job="platform-chorus"} |~ `"event":"(agent\\.turn\\.(started|ended)|pipeline\\.run\\.started)"`';
+
+/** Polls Loki every 30 s for the tree's spine lines; a failed read keeps the last lines and says why. */
+export class SpineTreeFacts {
+  private lines: SpineLine[] = [];
+  unmeasured?: string;
+  private timer?: NodeJS.Timeout;
+  constructor(private lokiBase = process.env.LOKI_URL || 'http://localhost:3102') {}
+  get(): SpineLine[] { return this.lines; }
+  async refresh(): Promise<void> {
+    const end = Date.now() * 1e6, start = end - 6 * 3600 * 1e9;
+    const url = `${this.lokiBase}/loki/api/v1/query_range?query=${encodeURIComponent(SPINE_TREE_QUERY)}&start=${start}&end=${end}&limit=2000&direction=forward`;
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) { this.unmeasured = `loki HTTP ${res.status}`; return; }
+      const body = (await res.json()) as { data?: { result?: Array<{ values?: Array<[string, string]> }> } };
+      const out: SpineLine[] = [];
+      for (const s of body.data?.result ?? []) for (const [, line] of s.values ?? []) { try { out.push(JSON.parse(line)); } catch { /* not a spine line */ } }
+      this.lines = out;
+      this.unmeasured = undefined;
+    } catch (e: unknown) {
+      this.unmeasured = `loki: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  start(): void { if (this.timer) return; void this.refresh(); this.timer = setInterval(() => void this.refresh(), 30_000); this.timer.unref(); }
 }

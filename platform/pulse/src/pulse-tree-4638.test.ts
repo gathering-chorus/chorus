@@ -160,3 +160,54 @@ describe('#4638 the tree over pulse (live wiring)', () => {
     expect(res.body.refusedSenders).toEqual({ jeff: 1 });
   });
 });
+
+describe('#4638 turns and runs from the spine (#4637 AC4 events)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { factsFromSpine, buildTree: bt } = require('./pulse-tree');
+  const spine = [
+    { event: 'agent.turn.started', role: 'wren', timestamp: '2026-10-24T16:41:04.000-04:00', session_id: 's1', turn_id: 't1', woken_by: 'line', woken_by_line: 'm2' },
+    { event: 'pipeline.run.started', role: 'wren', timestamp: '2026-10-24T16:45:00.000-04:00', card: '4638', pipeline: 'cicd', run_id: '034x', started_by: 'line', started_by_line: 'm2' },
+    { event: 'agent.turn.ended', role: 'wren', timestamp: '2026-10-24T16:46:00.000-04:00' },
+    { event: 'agent.turn.started', role: 'silas', timestamp: '2026-10-24T16:47:01.000-04:00', session_id: 's2', turn_id: 't2', woken_by: 'none' },
+  ];
+
+  it('a turn names the line that woke it, ends at its turn.ended, and carries the card its run was for', () => {
+    const { turns, runs } = factsFromSpine(spine);
+    const t1 = turns.find((t: { id: string }) => t.id === 't1');
+    expect(t1).toMatchObject({ role: 'wren', run: 's1', wokenByLine: 'm2', card: 4638, endedAt: '2026-10-24T20:46:00.000Z' });
+    expect(runs).toEqual([{ id: '034x', card: 4638, pipeline: 'cicd', step: 'started', status: 'started', startedByLine: 'm2' }]);
+  });
+
+  it('(Jeff 19 09:58) end to end: the prompt reaches the turn, the card and the run it started', () => {
+    const { turns, runs } = factsFromSpine(spine);
+    const t = bt({ now: '2026-10-24T20:50:00Z', actors: ['jeff', 'wren', 'silas'], notes: [], turns, runs,
+      lines: [{ id: 'm1', from: 'jeff', to: ['wren'], text: '/pull 4638', sentAt: '2026-10-24T20:41:00Z' },
+              { id: 'm2', from: 'jeff', to: ['wren'], text: 'i spent all day', sentAt: '2026-10-24T20:41:03Z' }] });
+    const p = t.prompts[0];
+    expect(p.runs.map((r: { id: string }) => r.id)).toEqual(['034x']);
+    expect(p.roles[0].cards[0]).toMatchObject({ card: 4638 });
+    expect(p.roles[0].cards[0].runs.map((r: { id: string }) => r.id)).toEqual(['034x']);
+  });
+
+  it('negative proof: a nudge-woken turn and a run with no line reach no prompt', () => {
+    const { turns, runs } = factsFromSpine([
+      ...spine.slice(3),
+      { event: 'pipeline.run.started', role: 'silas', timestamp: '2026-10-24T16:48:00.000-04:00', card: '4710', pipeline: 'cicd', run_id: '034y', started_by: 'none' },
+    ]);
+    expect(turns[0].wokenByLine).toBeUndefined();
+    expect(runs[0].startedByLine).toBeUndefined();
+    const t = bt({ now: '2026-10-24T20:50:00Z', actors: ['jeff', 'silas'], notes: [], turns, runs,
+      lines: [{ id: 'm3', from: 'jeff', to: ['silas'], text: '@silas r u stuk', sentAt: '2026-10-24T20:47:00Z' }] });
+    expect(t.prompts[0].runs).toEqual([]);
+    expect(t.prompts[0].roles[0].turns).toEqual([]);
+  });
+
+  it("an open turn's last call is the role's newest action; a new turn closes the role's previous one", () => {
+    const { turns } = factsFromSpine([
+      { event: 'agent.turn.started', role: 'kade', timestamp: '2026-10-24T20:00:00Z', turn_id: 'a' },
+      { event: 'agent.turn.started', role: 'kade', timestamp: '2026-10-24T20:05:00Z', turn_id: 'b' },
+    ], { kade: '2026-10-24T20:07:30Z' });
+    expect(turns[0]).toMatchObject({ id: 'a', endedAt: '2026-10-24T20:05:00.000Z' });
+    expect(turns[1]).toMatchObject({ id: 'b', lastCallAt: '2026-10-24T20:07:30Z' });
+  });
+});
