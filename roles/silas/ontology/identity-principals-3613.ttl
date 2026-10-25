@@ -93,8 +93,19 @@ chorus:principal-bridge a chorus:Principal ;
 
 chorus:principal-pulse a chorus:Principal ;
     rdfs:label "pulse (non-interactive Buzz reader principal, #4629)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/pulse/profile/card#me" ;
+    chorus:holdsRole chorus:role-pulse ;   # #4716: seeded by Jeff 2026-10-24 17:00 (seed-css), so pulse-api writes through the door as itself
     chorus:principalKind "service" ;
     chorus:hostAccount "jeffbridwell" ;   # #4629: pulse signs in to the relay as itself to read the room (S1 shadow), never as the bridge
+    chorus:canSignIn "false" .
+
+# #4716 (Jeff 2026-10-24 09:04, option A) — athena-deploy writes the ontology,
+# shapes and staging graphs as itself, never as a typed role. Its Fuseki user is
+# the store side of this row (AC2); the credential VALUE is never modeled.
+chorus:principal-deploy a chorus:Principal ;
+    rdfs:label "deploy (model deploy service principal, #4716)" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;
     chorus:canSignIn "false" .
 
 chorus:principal-chorus-sdk a chorus:Principal ;

@@ -168,6 +168,10 @@ pub struct Retirement {
     /// #4338 — merge this subject INTO `into`, within `graph`.
     pub merge_subject: String,
     pub into: String,
+    /// #4716 — one statement, retired alone (no subject or class widening)
+    pub triple_subject: String,
+    pub triple_predicate: String,
+    pub triple_object: String,
     pub status: String,
 }
 
@@ -191,6 +195,8 @@ pub enum RetireAction {
     /// #4338 — one duplicate folded into the real subject in one graph: every
     /// triple pointing at `from` points at `into`, then `from`'s own triples go.
     Merge { from: String, into: String, graph: String },
+    /// #4716 — exactly one statement `<s> <p> <o>` (IRIs), in `graph`.
+    Triple { s: String, p: String, o: String, graph: String },
 }
 
 /// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
@@ -231,6 +237,9 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
         retire_class: field("retire_class")?,
         merge_subject: field("merge_subject")?,
         into: field("into")?,
+        triple_subject: field("triple_subject")?,
+        triple_predicate: field("triple_predicate")?,
+        triple_object: field("triple_object")?,
         status: if status.is_empty() { "staged".into() } else { status },
     }))
 }
@@ -262,6 +271,13 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
         return RetireAction::Skip { status: r.status.clone(), target };
     }
     let graph = if r.graph.is_empty() { default_graph.to_string() } else { r.graph.clone() };
+    // #4716 — checked first: an entry that names any triple part is a triple
+    // retirement, never widened into the subject or class forms below
+    if !(r.triple_subject.is_empty() && r.triple_predicate.is_empty() && r.triple_object.is_empty()) {
+        return RetireAction::Triple {
+            s: r.triple_subject.clone(), p: r.triple_predicate.clone(), o: r.triple_object.clone(), graph,
+        };
+    }
     if !r.retire_graph.is_empty() {
         return RetireAction::WholeGraph { graph: r.retire_graph.clone() };
     }
@@ -1023,13 +1039,26 @@ fn ok_http(code: &str) -> bool {
 /// verb then reported `staging-load-http-401` — true, and useless: a refusal that
 /// names the store's answer cannot name a missing credential.
 fn fuseki_auth() -> Vec<String> {
-    match fuseki_password() {
-        Some(pw) => {
-            let user = env_or("FUSEKI_ADMIN_USER", "admin");
-            vec!["-u".to_string(), format!("{user}:{pw}")]
-        }
+    match fuseki_login_in(std::path::Path::new(&fuseki_credential_file())) {
+        Some((user, pw)) => vec!["-u".to_string(), format!("{user}:{pw}")],
         None => Vec::new(),
     }
+}
+
+/// #4716 AC2 — who the deploy logs in to the store as. Its own `deploy` user
+/// once `fuseki-deploy.env` sits beside `shared` (minted by fuseki-shiro-deploy),
+/// so the store's log names the writer; until then the shared login, so a land
+/// before Jeff's shiro deploy still works.
+pub fn fuseki_login_in(shared: &std::path::Path) -> Option<(String, String)> {
+    let key_in = |file: &std::path::Path, key: &str| -> Option<String> {
+        std::fs::read_to_string(file).ok()?.lines()
+            .find_map(|l| l.trim().strip_prefix(&format!("{key}=")).map(|v| v.trim().trim_matches('"').to_string()))
+            .filter(|v| !v.is_empty())
+    };
+    if let Some(pw) = shared.parent().and_then(|d| key_in(&d.join("fuseki-deploy.env"), "FUSEKI_DEPLOY_PASSWORD")) {
+        return Some(("deploy".to_string(), pw));
+    }
+    fuseki_password_in(shared).map(|pw| (env_or("FUSEKI_ADMIN_USER", "admin"), pw))
 }
 
 /// #4533 — where the write credential lives when the environment has none:
@@ -1049,7 +1078,16 @@ pub fn fuseki_password() -> Option<String> {
             return Some(pw);
         }
     }
-    let body = std::fs::read_to_string(fuseki_credential_file()).ok()?;
+    fuseki_password_in(std::path::Path::new(&fuseki_credential_file()))
+}
+
+fn fuseki_password_in(file: &std::path::Path) -> Option<String> {
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            return Some(pw);
+        }
+    }
+    let body = std::fs::read_to_string(file).ok()?;
     body.lines()
         .find_map(|l| l.trim().strip_prefix("FUSEKI_ADMIN_PASSWORD="))
         .map(|v| v.trim().trim_matches('"').to_string())
@@ -2205,6 +2243,18 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
             )
         }
+        RetireAction::Triple { s, p, o, graph } => {
+            let iri_ok = |x: &str| !x.is_empty() && x.contains(':') && !x.contains(['<', '>', '"', ' ', '{', '}', '\n']);
+            if !(iri_ok(s) && iri_ok(p) && iri_ok(o)) {
+                return Err(refuse("retirement-entry-empty".into()));
+            }
+            let label = format!("triple <{s}> <{p}> <{o}>");
+            ask_delete_verify(
+                ctx, line, &label, graph,
+                &format!("ASK {{ GRAPH <{graph}> {{ <{s}> <{p}> <{o}> }} }}"),
+                &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s}> <{p}> <{o}> }} }}"),
+            )
+        }
         RetireAction::Subject { iri, graph } => {
             let (count, construct, delete) = subject_retirement_sparql(iri, graph);
             guarded_delete(ctx, line, &format!("<{graph}> subject <{iri}>"), &count, &construct, &delete)
@@ -3340,5 +3390,53 @@ mod creator_iri_4576 {
         // the count cannot see a name with no Principal, so the pass loop ends
         assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod run_retirement_triple_4716 {
+    use super::{run_retirement, RetireAction, StoreCtx};
+
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    /// A store nobody answers on: anything that gets past the entry check stops
+    /// at the pre-ask, so no test here can delete a thing.
+    fn dead_store() -> StoreCtx {
+        let dead = "http://127.0.0.1:1".to_string();
+        StoreCtx { gsp: dead.clone(), query: dead.clone(), update: dead, chorus_log: "true".into(), role: "kade".into() }
+    }
+    fn triple(s: &str, p: &str, o: &str) -> RetireAction {
+        RetireAction::Triple { s: s.into(), p: p.into(), o: o.into(), graph: "urn:chorus:ontology".into() }
+    }
+
+    // negative proof: run_retirement itself refuses a triple with an empty part,
+    // before it asks the store anything.
+    #[test]
+    fn negative_proof_run_retirement_refuses_a_triple_with_an_empty_iri() {
+        for a in [
+            triple(&format!("{C}chorus"), &format!("{C}hasDomain"), ""),
+            triple("", &format!("{C}hasDomain"), &format!("{C}tests")),
+            triple(&format!("{C}chorus"), "", &format!("{C}tests")),
+        ] {
+            let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+            assert!(e.contains("retirement-entry-empty"), "{e}");
+        }
+    }
+
+    // negative proof: a part that would break out of <...> in the SPARQL is refused too.
+    #[test]
+    fn negative_proof_run_retirement_refuses_a_part_that_is_not_an_iri() {
+        let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}x> . <{C}y"));
+        let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+        assert!(e.contains("retirement-entry-empty"), "{e}");
+    }
+
+    // the contrast: a whole triple passes the entry check and reaches the pre-ask,
+    // which a dead store leaves unanswered, so it refuses for that reason instead.
+    #[test]
+    fn a_whole_triple_passes_the_entry_check_and_stops_at_the_ask() {
+        let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}tests"));
+        let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+        assert!(e.contains("retirement-ask-unanswered"), "{e}");
     }
 }

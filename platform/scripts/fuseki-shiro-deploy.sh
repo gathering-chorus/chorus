@@ -40,7 +40,25 @@ else
   echo "fuseki-shiro-deploy: no credential source — $CRED_ENV absent and GATHERING_APP_ENV not set/readable (bootstrap) — refusing (fail-closed)" >&2
   exit 1
 fi
-export FUSEKI_ADMIN_PASSWORD
+# #4716 AC2 — one credential file per writer beside the shared one, each 0600,
+# minted once from /dev/urandom and never shown. A second run (or two at once)
+# keeps the first file: it is created with noclobber, so the loser reads it.
+mint_cred() {  # mint_cred <file> <KEY> → prints the value
+  local f="$1" k="$2" v
+  if [ ! -s "$f" ]; then
+    v="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
+    ( umask 077; set -o noclobber; printf '%s=%s\n' "$k" "$v" > "$f" ) 2>/dev/null || true
+  fi
+  read_key "$f" "$k"
+}
+CRED_DIR="$(dirname "$CRED_ENV")"
+FUSEKI_DAL_PASSWORD="$(mint_cred "$CRED_DIR/fuseki-dal.env" FUSEKI_DAL_PASSWORD)"
+FUSEKI_DEPLOY_PASSWORD="$(mint_cred "$CRED_DIR/fuseki-deploy.env" FUSEKI_DEPLOY_PASSWORD)"
+export FUSEKI_ADMIN_PASSWORD FUSEKI_DAL_PASSWORD FUSEKI_DEPLOY_PASSWORD
+if [ -z "$FUSEKI_DAL_PASSWORD" ] || [ -z "$FUSEKI_DEPLOY_PASSWORD" ]; then
+  echo "fuseki-shiro-deploy: could not mint the dal/deploy credentials in $CRED_DIR — refusing (fail-closed)" >&2
+  exit 1
+fi
 if [ -z "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
   echo "fuseki-shiro-deploy: FUSEKI_ADMIN_PASSWORD not found in credential source — refusing (fail-closed)" >&2
   exit 1
@@ -68,7 +86,7 @@ render() {
   umask 077
   local dest="$1" tmp
   tmp="$(mktemp "$(dirname "$dest")/.shiro.XXXXXX")" || { echo "render: mktemp failed" >&2; return 1; }
-  if ! envsubst '${FUSEKI_ADMIN_PASSWORD}' < "$CANONICAL" > "$tmp"; then
+  if ! envsubst '${FUSEKI_ADMIN_PASSWORD} ${FUSEKI_DAL_PASSWORD} ${FUSEKI_DEPLOY_PASSWORD}' < "$CANONICAL" > "$tmp"; then
     rm -f "$tmp"; echo "render: substitution failed — live config left untouched" >&2; return 1
   fi
   chmod 600 "$tmp"
@@ -81,7 +99,7 @@ case "${1:-deploy}" in
     # no placeholder survives and (safety) no plaintext secret is printed.
     tmp="$(mktemp)"
     render "$tmp"
-    if grep -q 'FUSEKI_ADMIN_PASSWORD' "$tmp"; then
+    if grep -qE 'FUSEKI_(ADMIN|DAL|DEPLOY)_PASSWORD' "$tmp"; then
       echo "CHECK FAIL: placeholder survived substitution" >&2; rm -f "$tmp"; exit 1
     fi
     if grep -qE '^/\*\*/update = localhostFilter,authcBasic' "$tmp"; then

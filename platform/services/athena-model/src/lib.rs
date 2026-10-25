@@ -590,9 +590,7 @@ impl FusekiStore {
             "-H".into(), "Accept: application/sparql-results+json".into(),
             "--data-urlencode".into(), format!("{}@{}", data_param, body_file.display()),
         ];
-        if let Some(pw) = fuseki_admin_password() {
-            let user = std::env::var("FUSEKI_ADMIN_USER")
-                .unwrap_or_else(|_| "admin".to_string());
+        if let Some((user, pw)) = fuseki_login() {
             args.push("-u".into());
             args.push(format!("{}:{}", user, pw));
         }
@@ -714,8 +712,7 @@ impl FusekiStore {
     fn http(&self, extra: &[&str], path: &str) -> R<String> {
         let mut args: Vec<String> = vec!["-sf".into(), "--max-time".into(), "60".into()];
         args.extend(extra.iter().map(|a| a.to_string()));
-        if let Some(pw) = fuseki_admin_password() {
-            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+        if let Some((user, pw)) = fuseki_login() {
             args.push("-u".into());
             args.push(format!("{}:{}", user, pw));
         }
@@ -1538,8 +1535,7 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
         "--data-urlencode".into(),
         format!("query={}", sparql),
     ];
-    if let Some(pw) = fuseki_admin_password() {
-        let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+    if let Some((user, pw)) = fuseki_login() {
         args.push("-u".into());
         args.push(format!("{}:{}", user, pw));
     }
@@ -1570,7 +1566,19 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
 /// scope-note / ADR-050): Fuseki answers "authenticated writer?", the DAL answers
 /// "which graph?". Applied at every mutation choke point (write/delete/edges/batch)
 /// so the guard can't be bypassed by picking a different verb.
+/// #3392 — the ICD graph: chorus owns it and kept gathering's name for its readers.
+pub const ICD_GRAPH: &str = "urn:gathering:icd/current";
+
 fn assert_dal_writable(graph: &str) -> R<()> {
+    // #4716 AC4 (Jeff 6/22) — no chorus write touches a gathering graph; the one
+    // exception is the ICD graph chorus owns under gathering's name (#3392).
+    if graph.starts_with("urn:gathering:") && graph != ICD_GRAPH {
+        witness("model.refused", &[("graph", graph), ("reason", "gathering-graph")]);
+        return Err(format!(
+            "gathering-graph: <{}> is gathering's — chorus writes never touch it (only <{}>, chorus-owned by #3392)",
+            graph, ICD_GRAPH
+        ));
+    }
     // #4183 — the security graph is no longer DBA-only by name: it opens for a
     // verified identity that holds an acl:Authorization row (mode Write) for
     // it, and for nobody else. Jeff, 2026-09-16: "isnt the deleting users an
@@ -4031,6 +4039,23 @@ mod tests {
         set_granted_write_graphs(vec![]);
     }
 
+    // #4716 AC4 (Jeff 6/22, worded with Silas 10-24): no chorus write touches a
+    // gathering graph, except the ICD graph chorus owns (#3392).
+    #[test]
+    fn negative_proof_a_gathering_graph_is_refused_even_with_a_permission() {
+        set_granted_write_graphs(vec!["urn:gathering:photos".to_string()]);
+        for g in ["urn:gathering:photos", "urn:gathering:seeds/", "urn:gathering:icd/archive"] {
+            let e = assert_dal_writable(g).unwrap_err();
+            assert!(e.contains("gathering-graph"), "{g}: {e}");
+        }
+        set_granted_write_graphs(vec![]);
+    }
+
+    #[test]
+    fn the_icd_graph_chorus_owns_stays_writable() {
+        assert!(assert_dal_writable("urn:gathering:icd/current").is_ok());
+    }
+
     #[test]
     fn negative_proof_the_ontology_graph_stays_shut_even_with_every_permission() {
         set_granted_write_graphs(vec![security_graph(), ONTOLOGY_GRAPH.to_string()]);
@@ -5476,6 +5501,30 @@ pub fn fuseki_admin_password() -> Option<String> {
         }
     }
     fuseki_admin_password_from_file(&fuseki_write_env_path())
+}
+
+/// #4716 AC2 — who the DAL logs in to the store as: its own `dal` user once
+/// `fuseki-dal.env` sits beside the shared credential file (minted by
+/// fuseki-shiro-deploy), so the store's log names the writer; until then the
+/// shared login, so nothing breaks before the shiro deploy.
+pub fn fuseki_login() -> Option<(String, String)> {
+    fuseki_login_in(&fuseki_write_env_path())
+}
+
+pub fn fuseki_login_in(shared: &std::path::Path) -> Option<(String, String)> {
+    let dal = shared.parent().map(|d| d.join("fuseki-dal.env"));
+    if let Some(pw) = dal.and_then(|f| std::fs::read_to_string(f).ok()).and_then(|b| {
+        b.lines()
+            .find_map(|l| l.trim().strip_prefix("FUSEKI_DAL_PASSWORD=").map(|v| v.trim().trim_matches('"').to_string()))
+            .filter(|v| !v.is_empty())
+    }) {
+        return Some(("dal".to_string(), pw));
+    }
+    let pw = match std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        Ok(pw) if !pw.is_empty() => Some(pw),
+        _ => fuseki_admin_password_from_file(shared),
+    }?;
+    Some((std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()), pw))
 }
 
 pub fn fuseki_write_env_path() -> std::path::PathBuf {

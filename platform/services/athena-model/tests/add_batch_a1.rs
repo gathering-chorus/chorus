@@ -511,7 +511,7 @@ fn write_and_add_batch_refuse_off_realm_or_malformed_instance_graphs() {
         let single_err = write(&single_store, &single, &identity(&single_store))
             .expect_err("single write must reject an unsafe graph");
         assert!(
-            single_err.contains("graph-not-instance-home"),
+            single_err.contains("graph-not-instance-home") || (graph.starts_with("urn:gathering:") && single_err.contains("gathering-graph")), // #4716 AC4 refuses a gathering graph first
             "single graph refusal names the gate for {graph}: {single_err}"
         );
         assert!(single_store.updates.borrow().is_empty());
@@ -522,7 +522,7 @@ fn write_and_add_batch_refuse_off_realm_or_malformed_instance_graphs() {
         let batch_err = add_batch(&batch_store, &[batch], &identity(&batch_store))
             .expect_err("batch write must reject an unsafe graph");
         assert!(
-            batch_err.contains("graph-not-instance-home"),
+            batch_err.contains("graph-not-instance-home") || (graph.starts_with("urn:gathering:") && batch_err.contains("gathering-graph")), // #4716 AC4 refuses a gathering graph first
             "batch graph refusal names the gate for {graph}: {batch_err}"
         );
         assert!(batch_store.updates.borrow().is_empty());
