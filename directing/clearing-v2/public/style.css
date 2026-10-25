@@ -1043,7 +1043,7 @@ tr.you td {
   gap: 6px;
   padding: 6px 10px;
   background: var(--sunk);
-  border-bottom: 1px solid var(--line2);
+  border-top: 1px solid var(--line2);
   overflow-x: auto;
   align-items: center;
   scrollbar-width: none;

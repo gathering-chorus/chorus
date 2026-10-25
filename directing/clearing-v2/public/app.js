@@ -497,10 +497,12 @@ async function loadOlderMessages(fetchImpl) {
   const picker = document.getElementById('room-picker');
   if (!stream || !first) return 0;
   const room = (picker && picker.value) || 'team';
+  const fetchFn = (typeof fetchImpl === 'function' ? fetchImpl : null) || (typeof window !== 'undefined' && typeof window._fetchImpl === 'function' ? window._fetchImpl : null) || (typeof fetch === 'function' ? fetch : null);
+  if (!fetchFn) return 0;
   loadingOlder = true;
   try {
     const url = clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/history?before=' + encodeURIComponent(first.id.slice(4));
-    const res = await (fetchImpl || fetch)(url);
+    const res = await fetchFn(url);
     if (!res.ok) return 0;
     const body = await res.json();
     if (!body || !body.count) return 0;
@@ -508,14 +510,52 @@ async function loadOlderMessages(fetchImpl) {
     first.insertAdjacentHTML('beforebegin', body.html);
     // #4739 — scrolling up in messages-stream applies the active role filter to all prepended history elements immediately
     if (activeRoleFilters && activeRoleFilters.size > 0) {
-      applyRoleFilters();
+      applyRoleFilters({ skipBackfill: true });
     }
     stream.scrollTop = stream.scrollHeight - fromBottom;
     return body.count;
+  } catch {
+    return 0;
   } finally {
     loadingOlder = false;
   }
 }
+function countVisibleMessages(streamEl) {
+  const stream = streamEl || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
+  if (!stream) return 0;
+  const msgElements = (stream.children && stream.children.length > 0)
+    ? Array.from(stream.children)
+    : (stream.querySelectorAll ? Array.from(stream.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
+  return msgElements.filter((el) => el && el.style && el.style.display !== 'none').length;
+}
+
+// #4741: Auto-backfill older history when actor filter is active until visible viewport is filled
+let backfilling = false;
+async function backfillFilteredHistory(fetchImpl, targetVisible = 15) {
+  if (typeof document === 'undefined' || backfilling) return 0;
+  if (!activeRoleFilters || activeRoleFilters.size === 0) return 0;
+  const stream = document.getElementById('messages-stream');
+  if (!stream) return 0;
+  const fetchFn = (typeof fetchImpl === 'function' ? fetchImpl : null) || (typeof window !== 'undefined' && typeof window._fetchImpl === 'function' ? window._fetchImpl : null) || (typeof fetch === 'function' ? fetch : null);
+  if (!fetchFn) return 0;
+
+  backfilling = true;
+  let totalAdded = 0;
+  let safetyPages = 10;
+  try {
+    while (safetyPages-- > 0 && (countVisibleMessages(stream) < targetVisible || stream.scrollHeight <= stream.clientHeight)) {
+      const added = await loadOlderMessages(fetchFn);
+      if (!added || added === 0) break;
+      totalAdded += added;
+    }
+    return totalAdded;
+  } catch {
+    return totalAdded;
+  } finally {
+    backfilling = false;
+  }
+}
+
 /** #4646 — re-fetch the role tiles so a teammate's cards stay true while the page is open. */
 async function refreshPeopleRow(fetchImpl) {
   if (typeof document === 'undefined') return false;
@@ -537,16 +577,26 @@ async function refreshPeopleRow(fetchImpl) {
   }
 }
 
-function watchRoomScroll() {
+function watchRoomScroll(fetchImpl) {
   if (typeof document === 'undefined') return;
+  const fn = typeof fetchImpl === 'function' ? fetchImpl : undefined;
   const stream = document.getElementById('messages-stream');
   if (stream && stream.addEventListener) {
-    stream.addEventListener('scroll', () => { if (stream.scrollTop < 80) loadOlderMessages(); });
+    stream.addEventListener('scroll', () => {
+      if (stream.scrollTop < 80) {
+        if (activeRoleFilters && activeRoleFilters.size > 0) {
+          const current = countVisibleMessages(stream);
+          return backfillFilteredHistory(fn, current + 15);
+        } else {
+          return loadOlderMessages(fn);
+        }
+      }
+    });
   }
 }
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
-  window.addEventListener('DOMContentLoaded', watchRoomScroll);
+  window.addEventListener('DOMContentLoaded', () => watchRoomScroll());
   window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
   window.addEventListener('DOMContentLoaded', watchPhotoButton);
   window.addEventListener('DOMContentLoaded', watchMicButton);
@@ -648,16 +698,18 @@ function isMessageVisibleWithFilters(from, content) {
   return false;
 }
 
-function applyRoleFilters() {
+function applyRoleFilters(opts) {
+  const fetchImpl = (opts && typeof opts === 'function') ? opts : (opts && opts.fetchImpl);
+  const skipBackfill = Boolean(opts && opts.skipBackfill);
   updateTileSelectionClasses();
 
   if (typeof document !== 'undefined') {
     const container = document.getElementById('messages-stream');
+    const filterRoles = Array.from(activeRoleFilters);
     if (container) {
       const msgElements = (container.children && container.children.length > 0)
         ? Array.from(container.children)
         : (container.querySelectorAll ? Array.from(container.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
-      const filterRoles = Array.from(activeRoleFilters);
       for (const el of Array.from(msgElements)) {
         if (!el || !el.style) continue;
         if (filterRoles.length === 0) {
@@ -676,7 +728,6 @@ function applyRoleFilters() {
       if (defaultComposerPlaceholder === null) {
         defaultComposerPlaceholder = input.placeholder || 'Message #team...';
       }
-      const filterRoles = Array.from(activeRoleFilters);
       if (filterRoles.length === 0) {
         input.placeholder = defaultComposerPlaceholder || 'Message #team...';
         if (input.value && isOnlyRoleMentions(input.value)) {
@@ -691,10 +742,20 @@ function applyRoleFilters() {
         if (input.focus) input.focus();
       }
     }
+
+    // #4741: Unfiltering rejoins at latest message; filtering triggers auto-backfill
+    if (filterRoles.length === 0) {
+      scrollRoomToNewest();
+    } else if (!backfilling && !skipBackfill) {
+      const hasHttp = typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
+      if (hasHttp || fetchImpl || (typeof window !== 'undefined' && window._fetchImpl)) {
+        return backfillFilteredHistory(fetchImpl);
+      }
+    }
   }
 }
 
-function setRoleFilter(role) {
+function setRoleFilter(role, fetchImpl) {
   if (!role) {
     activeRoleFilters.clear();
   } else if (Array.isArray(role)) {
@@ -703,20 +764,20 @@ function setRoleFilter(role) {
     const parts = String(role).split(',').map((r) => r.trim().toLowerCase()).filter(Boolean);
     activeRoleFilters = new Set(parts);
   }
-  applyRoleFilters();
+  return applyRoleFilters(fetchImpl);
 }
 
-function setRoleFilters(roles) {
-  setRoleFilter(roles);
+function setRoleFilters(roles, fetchImpl) {
+  return setRoleFilter(roles, fetchImpl);
 }
 
-function toggleActorFilter(event, role) {
+function toggleActorFilter(event, role, fetchImpl) {
   if (event) {
     if (typeof event.preventDefault === 'function') event.preventDefault();
     if (typeof event.stopPropagation === 'function') event.stopPropagation();
   }
   if (!role) {
-    setRoleFilter(null);
+    setRoleFilter(null, fetchImpl);
     return false;
   }
   const cleanRole = String(role).trim().toLowerCase();
@@ -725,7 +786,7 @@ function toggleActorFilter(event, role) {
   } else {
     activeRoleFilters.add(cleanRole);
   }
-  applyRoleFilters();
+  applyRoleFilters(fetchImpl);
   return false;
 }
 
@@ -767,6 +828,7 @@ if (typeof window !== 'undefined') {
   window.getActiveRoleFilters = getActiveRoleFilters;
   window.applyRoleFilters = applyRoleFilters;
   window.isMessageVisibleWithFilters = isMessageVisibleWithFilters;
+  window.backfillFilteredHistory = backfillFilteredHistory;
 }
 
 function updateTiles(tiles) {
@@ -1072,6 +1134,9 @@ if (typeof module !== 'undefined' && module.exports) {
     transcribeVoice,
     photoNames,
     initStream,
+    watchRoomScroll,
+    countVisibleMessages,
+    backfillFilteredHistory,
     loadOrCreateRoomKey,
     signEvent,
     handleSendMessage,

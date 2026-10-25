@@ -856,7 +856,6 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
 
   const content = `
   <div class="rooms-view">
-    ${peopleRowHtml}
     <div class="rooms">
       <main class="chat chat-container" style="flex:1;min-width:0">
         <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
@@ -896,6 +895,7 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
           </form>
           <div id="send-error" class="send-error" role="alert"></div>
         </footer>
+        ${peopleRowHtml}
       </main>
       <aside class="stream-drawer" id="stream-drawer" style="display:none">
         <div class="stream-drawer-h">
