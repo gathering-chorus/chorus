@@ -1,0 +1,161 @@
+# #4638 — the nouns of pulse's live tree, modelled before the tree is built.
+#
+# Jeff, 2026-10-19 09:25–09:37: "conceptually i wanted this to be like a
+# antigravity or claude code session", "pipeline and verbs and notes are child
+# of card right? card is the carrier", "thoughts and streams are child of
+# turn", "if we do that then all of u have operational awareness in a tree".
+# Jeff, 2026-10-23 17:17–17:21: crawl (the DAL), walk (fix athena-gen, prove
+# pulse's product radius), run (generate the pulse API). #4638 is the spec for
+# the generated API, so its nouns are modelled first, not hand-coded in pulse.
+#
+#   prompt → role (moving/quiet, where) → turn (thoughts, streams)
+#                                       → card (pipeline, verbs, notes)
+#
+# Measured 2026-10-24 16:45 against the door (:3340/owl/v1): the radius had no
+# Prompt and no Turn. Message has sentInSession but nothing joins a burst of
+# Jeff's lines into one ask; StreamEvent has streamRole/streamTool/streamTs and
+# no turn; pipelines/runs has forPipeline and no card or prompt; verbruns is
+# empty. Nothing linked a run back to the prompt that started it (AC 3).
+#
+# EDGES POINT UP, the #4302 rule: a message points at its prompt, a turn at its
+# run and the prompt it answers, a stream event at its turn, a note at its turn.
+# Rows are written in the order things happen and never rewritten to add a child.
+#
+# Prompt is a record (a run keeps its prompt id for good). Turn and Note are
+# short-term memory (#4010): pulse's reading of what is happening now.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:awareness chorus:definesVocabulary chorus:Prompt , chorus:Turn , chorus:Note .
+
+# --- classes -----------------------------------------------------------------
+
+chorus:Prompt a owl:Class ;
+    rdfs:label "Prompt" ;
+    rdfs:comment "One ask from Jeff: the lines he sent within a few seconds of each other, joined, because a burst is one thought typed in pieces (Jeff 2026-10-23 14:56). Roles answer the prompt, never a fragment. Every turn, card action and run it started carries its id. #4638." .
+
+chorus:Turn a owl:Class ;
+    rdfs:label "Turn" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "One role's turn inside a session run: from the prompt (or nudge) that woke it to its reply. Thoughts and stream events hang off it. Moving or quiet is read from its last call. #4638." .
+
+chorus:Note a owl:Class ;
+    rdfs:label "Note" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "One line a role wrote while working: a slice, a review, a finding. It hangs off the card it is about; a note with no card stays on the turn that wrote it (#4638 Shape)." .
+
+# --- properties --------------------------------------------------------------
+
+chorus:inPrompt a owl:ObjectProperty ;
+    rdfs:label "in prompt" ; rdfs:domain chorus:Message ; rdfs:range chorus:Prompt ;
+    rdfs:comment "The prompt a message is one line of. Points up: the prompt is written first, each line of the burst points at it." .
+
+chorus:promptedBy a owl:ObjectProperty ;
+    rdfs:label "prompted by" ; rdfs:domain chorus:Prompt ; rdfs:range chorus:Principal ;
+    rdfs:comment "The real actor who typed the prompt. Never unknown, bridge, pulse or system (#4637)." .
+
+chorus:promptedAt a owl:DatatypeProperty ;
+    rdfs:label "prompted at" ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the first line of the burst was sent." .
+
+chorus:promptText a owl:DatatypeProperty ;
+    rdfs:label "prompt text" ; rdfs:range xsd:string ;
+    rdfs:comment "The burst joined in order, one line per message." .
+
+chorus:promptTo a owl:ObjectProperty ;
+    rdfs:label "prompt to" ; rdfs:domain chorus:Prompt ; rdfs:range chorus:Principal ;
+    rdfs:comment "Each role the prompt names (an @-mention), or none for the room." .
+
+chorus:turnOf a owl:ObjectProperty ;
+    rdfs:label "turn of" ; rdfs:domain chorus:Turn ; rdfs:range chorus:SessionRun ;
+    rdfs:comment "The session run this turn ran in." .
+
+chorus:answersPrompt a owl:ObjectProperty ;
+    rdfs:label "answers prompt" ; rdfs:domain chorus:Turn ; rdfs:range chorus:Prompt ;
+    rdfs:comment "The prompt this turn answers. Absent when a nudge or a pipeline woke the role." .
+
+chorus:startedByPrompt a owl:ObjectProperty ;
+    rdfs:label "started by prompt" ; rdfs:domain [ owl:unionOf ( chorus:PipelineRun chorus:StreamEvent ) ] ; rdfs:range chorus:Prompt ;
+    rdfs:comment "The prompt a card action or pipeline run came from, so a run is reachable from the prompt that started it (#4638 AC 3, #4637)." .
+
+chorus:onCard a owl:ObjectProperty ;
+    rdfs:label "on card" ; rdfs:domain [ owl:unionOf ( chorus:Turn chorus:Note ) ] ; rdfs:range chorus:Card ;
+    rdfs:comment "The card a turn worked on or a note is about. Card is the carrier (Jeff 10-19 09:32)." .
+
+chorus:inTurn a owl:ObjectProperty ;
+    rdfs:label "in turn" ; rdfs:domain [ owl:unionOf ( chorus:StreamEvent chorus:Note ) ] ; rdfs:range chorus:Turn ;
+    rdfs:comment "The turn a stream event or note came from." .
+
+chorus:turnStartedAt a owl:DatatypeProperty ;
+    rdfs:label "turn started at" ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the turn began." .
+
+chorus:turnEndedAt a owl:DatatypeProperty ;
+    rdfs:label "turn ended at" ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the role replied or stopped. Absent while the turn runs." .
+
+chorus:lastCallAt a owl:DatatypeProperty ;
+    rdfs:label "last call at" ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the role last made a tool call in this turn. Seconds since it decide moving or quiet (Jeff 10-19 09:26)." .
+
+chorus:noteText a owl:DatatypeProperty ;
+    rdfs:label "note text" ; rdfs:range xsd:string ;
+    rdfs:comment "The note, one line." .
+
+# --- shapes ------------------------------------------------------------------
+
+chorus:PromptShape a sh:NodeShape ;
+    sh:targetClass chorus:Prompt ; sh:node chorus:CoreShape ;
+    rdfs:comment "One ask from a real actor." ;
+    sh:property [ sh:path chorus:promptedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "prompted by" ; sh:description "Required. The real actor who typed it." ] ;
+    sh:property [ sh:path chorus:promptedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "prompted at" ; sh:description "Required. When the first line was sent." ] ;
+    sh:property [ sh:path chorus:promptText ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ;
+                  sh:name "text" ; sh:description "Required. The burst joined, never empty." ] ;
+    sh:property [ sh:path chorus:promptTo ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "to" ; sh:description "Optional. Each role it names." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:TurnShape a sh:NodeShape ;
+    sh:targetClass chorus:Turn ; sh:node chorus:CoreShape ;
+    rdfs:comment "One role's turn." ;
+    sh:property [ sh:path chorus:turnOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:SessionRun ;
+                  sh:name "run" ; sh:description "Required. The session run it ran in." ] ;
+    sh:property [ sh:path chorus:answersPrompt ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Prompt ;
+                  sh:name "answers" ; sh:description "Optional. The prompt it answers; absent when a nudge woke it." ] ;
+    sh:property [ sh:path chorus:onCard ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Card ;
+                  sh:name "card" ; sh:description "Optional. The card it worked on." ] ;
+    sh:property [ sh:path chorus:turnStartedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "started at" ; sh:description "Required. When it began." ] ;
+    sh:property [ sh:path chorus:turnEndedAt ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "ended at" ; sh:description "Optional. Absent while it runs." ] ;
+    sh:property [ sh:path chorus:lastCallAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "last call at" ; sh:description "Required. Its last tool call (its start, before the first); moving or quiet comes from it." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:NoteShape a sh:NodeShape ;
+    sh:targetClass chorus:Note ; sh:node chorus:CoreShape ;
+    rdfs:comment "One working note: always on its turn, on a card when it has one." ;
+    sh:property [ sh:path chorus:inTurn ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Turn ;
+                  sh:name "turn" ; sh:description "Required. The turn that wrote it; where it stays when there is no card." ] ;
+    sh:property [ sh:path chorus:onCard ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Card ;
+                  sh:name "card" ; sh:description "Optional. The card it is about." ] ;
+    sh:property [ sh:path chorus:noteText ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ;
+                  sh:name "text" ; sh:description "Required. The note, never empty." ] ;
+    sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "observed at" ; sh:description "Required. When it was written." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .

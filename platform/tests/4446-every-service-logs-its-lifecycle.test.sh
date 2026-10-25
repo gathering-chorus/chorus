@@ -46,6 +46,7 @@ com.chorus.pulse	platform/pulse/src/service.ts
 com.chorus.go	platform/services/chorus-go/src/main.rs
 com.chorus.clearing	directing/clearing/src/server.ts
 com.chorus.clearing-v2	GAP: #4525 side-by-side review on :3472 (Abby), installed by hand for the review; wire its lifecycle before it replaces com.chorus.clearing
+com.chorus.log-archive	GAP: #4735 daily archive job, lifecycle wiring owed by Silas (service-run on his next card; this row goes then)
 com.chorus.bridge-subscriber-kade	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-silas	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
