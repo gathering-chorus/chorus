@@ -993,11 +993,11 @@ tr.you td {
     gap: 4px;
   }
   .actor-tile {
-    padding: 2px 5px;
+    padding: 3px 7px;
     font-size: 11px;
-    gap: 4px;
-    flex: 1;
-    min-width: 0;
+    gap: 5px;
+    flex: 0 0 auto;
+    min-width: max-content;
   }
   .actor-tile .av {
     width: 20px;
@@ -1063,8 +1063,8 @@ tr.you td {
   cursor: pointer;
   white-space: nowrap;
   font-size: 11.5px;
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   transition: border-color 0.15s ease;
   user-select: none;
   text-decoration: none;
