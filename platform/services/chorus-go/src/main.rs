@@ -152,9 +152,7 @@ fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
 /// The round is the werk's HEAD: the commit the demo showed.
 fn round_of(role: &str, card: u64) -> Result<String, String> {
     let werk = format!("{}/{role}-{card}", werk_base());
-    let o = Command::new("git").args(["-C", &werk, "rev-parse", "HEAD"]).output().map_err(|e| e.to_string())?;
-    if !o.status.success() { return Err(format!("no werk for #{card} ({role})")); }
-    Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    chorus_go::werk_head(&werk).map_err(|_| format!("no werk for #{card} ({role})"))
 }
 
 fn title_of(card: u64) -> String {
