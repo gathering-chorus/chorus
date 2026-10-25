@@ -30,3 +30,14 @@ Open from Jeff 18:49: query and stream share one filter (actor × domain × time
 
 ## Open question for Jeff
 "athena-gen is not building what i think it is" — rows 1, 3, 7, 8, 10. Jeff answered 18:27 with the route shape: `/pulse/<domain>/…`, each domain in the product's radius a child route.
+
+## Live receipt (2026-10-25 19:3x, werk build on :3492, door kind, prod graph, read-only)
+```
+/pulse/awareness/rolestates  rows=1 first=wren
+/pulse/streams/events        rows=0
+/pulse/cards/cards           rows=3 first=3325
+/pulse/messages/messages     rows=3 first=src-40138
+/pulse/alerts/alerts         rows=3 first=security-network-exposed
+/v1/awareness/rolestates     404
+pulse-api 1.0.0 serving 15 classes on 127.0.0.1:3492
+```
