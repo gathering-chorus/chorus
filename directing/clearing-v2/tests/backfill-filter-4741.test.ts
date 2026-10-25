@@ -178,7 +178,7 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
   });
 
   describe('AC2: Auto-backfill older history when actor filter is active', () => {
-    test('backfillFilteredHistory pages older messages until target visible count is met', async () => {
+    test('backfillFilteredHistory pages older messages until target visible count is met or container overflows', async () => {
       const msg1 = createMockElement('msg-1');
       msg1.dataset.from = 'abby-normal';
       msg1.textContent = 'Initial 1';
@@ -188,6 +188,8 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
       msg2.textContent = 'Initial 2';
 
       mockContainer.children = [msg1, msg2];
+      mockContainer.scrollHeight = 1000;
+      mockContainer.clientHeight = 600;
 
       let pageCount = 0;
       const mockFetch = jest.fn(async (_url: string) => {
@@ -232,9 +234,77 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
       const visible = mockContainer.children.filter((c: any) => c.style.display !== 'none');
       expect(visible.length).toBeGreaterThanOrEqual(5);
     });
+
+    test('backfillFilteredHistory continues while scrollHeight <= clientHeight even if count threshold reached', async () => {
+      app.setRoleFilter('abby-normal');
+      mockContainer.children = [];
+      for (let i = 0; i < 5; i++) {
+        const m = createMockElement(`msg-fill-${i}`);
+        m.dataset.from = 'abby-normal';
+        mockContainer.children.push(m);
+      }
+      app.applyRoleFilters();
+
+      // Viewport is 600px, but content is only 400px (non-overflowing)
+      mockContainer.clientHeight = 600;
+      mockContainer.scrollHeight = 400;
+
+      let fetches = 0;
+      const mockFetchOverflow = jest.fn(async () => {
+        fetches++;
+        if (fetches === 1) {
+          mockContainer.scrollHeight = 800; // now overflows
+          return {
+            ok: true,
+            json: async () => ({
+              count: 2,
+              html: '<div class="msg" id="msg-extra-1" data-from="abby-normal">extra 1</div>',
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ count: 0, html: '' }) };
+      });
+
+      // Target is 5, which is already met, but scrollHeight <= clientHeight forces backfill until overflow
+      await app.backfillFilteredHistory(mockFetchOverflow, 5);
+      expect(mockFetchOverflow).toHaveBeenCalled();
+    });
   });
 
-  describe('AC3: Rejoining at latest message when unfiltered', () => {
+  describe('AC3: Mobile viewport scrolling remains active and triggers older message backfill when filtered', () => {
+    test('scrolling up while filtered requests target countVisible() + 15 to allow continuous upward pagination', async () => {
+      app.setRoleFilter('abby-normal');
+      mockContainer.children = [];
+      for (let i = 0; i < 15; i++) {
+        const m = createMockElement(`msg-scrolled-${i}`);
+        m.dataset.from = 'abby-normal';
+        mockContainer.children.push(m);
+      }
+      app.applyRoleFilters();
+
+      const initialCount = app.countVisibleMessages(mockContainer);
+      expect(initialCount).toBe(15);
+
+      // If called with default target 15, zero fetches would occur because initialCount >= 15
+      const mockFetchStale = jest.fn(async () => ({ ok: true, json: async () => ({ count: 5, html: '' }) }));
+      await app.backfillFilteredHistory(mockFetchStale, 15);
+      expect(mockFetchStale).not.toHaveBeenCalled(); // Red proof for fixed target 15
+
+      // When called with target countVisible() + 15 (as watchRoomScroll now does)
+      const mockFetchPaged = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          count: 2,
+          html: '<div class="msg" id="msg-older-1" data-from="abby-normal">older 1</div>' +
+                '<div class="msg" id="msg-older-2" data-from="abby-normal">older 2</div>',
+        }),
+      }));
+      await app.backfillFilteredHistory(mockFetchPaged, initialCount + 15);
+      expect(mockFetchPaged).toHaveBeenCalled();
+    });
+  });
+
+  describe('AC4: Rejoining at latest message when unfiltered', () => {
     test('clearing role filter scrolls stream to newest message', () => {
       mockContainer.scrollTop = 50;
       mockContainer.scrollHeight = 800;
@@ -246,7 +316,7 @@ describe('#4741 Clearing v2 history auto-backfill on actor filter and bottom act
     });
   });
 
-  describe('AC4: Negative proof (#3734)', () => {
+  describe('AC5: Negative proof (#3734)', () => {
     test('NEGATIVE PROOF: without auto-backfill, zero-match raw batch leaves visible dialogue starved', async () => {
       app.setRoleFilter('abby-normal');
       const msgInit = createMockElement('msg-init');

@@ -497,9 +497,9 @@ async function loadOlderMessages(fetchImpl) {
   const picker = document.getElementById('room-picker');
   if (!stream || !first) return 0;
   const room = (picker && picker.value) || 'team';
-  loadingOlder = true;
   const fetchFn = fetchImpl || (typeof window !== 'undefined' && window._fetchImpl) || (typeof fetch !== 'undefined' ? fetch : null);
   if (!fetchFn) return 0;
+  loadingOlder = true;
   try {
     const url = clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/history?before=' + encodeURIComponent(first.id.slice(4));
     const res = await fetchFn(url);
@@ -520,6 +520,15 @@ async function loadOlderMessages(fetchImpl) {
     loadingOlder = false;
   }
 }
+function countVisibleMessages(streamEl) {
+  const stream = streamEl || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
+  if (!stream) return 0;
+  const msgElements = (stream.children && stream.children.length > 0)
+    ? Array.from(stream.children)
+    : (stream.querySelectorAll ? Array.from(stream.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
+  return msgElements.filter((el) => el && el.style && el.style.display !== 'none').length;
+}
+
 // #4741: Auto-backfill older history when actor filter is active until visible viewport is filled
 let backfilling = false;
 async function backfillFilteredHistory(fetchImpl, targetVisible = 15) {
@@ -530,18 +539,11 @@ async function backfillFilteredHistory(fetchImpl, targetVisible = 15) {
   const fetchFn = fetchImpl || (typeof window !== 'undefined' && window._fetchImpl) || (typeof fetch !== 'undefined' ? fetch : null);
   if (!fetchFn) return 0;
 
-  const countVisible = () => {
-    const msgElements = (stream.children && stream.children.length > 0)
-      ? Array.from(stream.children)
-      : (stream.querySelectorAll ? Array.from(stream.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
-    return msgElements.filter((el) => el && el.style && el.style.display !== 'none').length;
-  };
-
   backfilling = true;
   let totalAdded = 0;
   let safetyPages = 10;
   try {
-    while (safetyPages-- > 0 && countVisible() < targetVisible) {
+    while (safetyPages-- > 0 && (countVisibleMessages(stream) < targetVisible || stream.scrollHeight <= stream.clientHeight)) {
       const added = await loadOlderMessages(fetchFn);
       if (!added || added === 0) break;
       totalAdded += added;
@@ -582,7 +584,8 @@ function watchRoomScroll() {
     stream.addEventListener('scroll', () => {
       if (stream.scrollTop < 80) {
         if (activeRoleFilters && activeRoleFilters.size > 0) {
-          backfillFilteredHistory();
+          const current = countVisibleMessages(stream);
+          backfillFilteredHistory(undefined, current + 15);
         } else {
           loadOlderMessages();
         }
@@ -1130,6 +1133,7 @@ if (typeof module !== 'undefined' && module.exports) {
     transcribeVoice,
     photoNames,
     initStream,
+    countVisibleMessages,
     backfillFilteredHistory,
     loadOrCreateRoomKey,
     signEvent,
