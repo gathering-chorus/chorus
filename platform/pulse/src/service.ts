@@ -282,15 +282,16 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
       return res.status(sender.status).json(sender.body);
     }
     const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
-    if (sender.kind === 'alert') req.body.class = 'a2r';
     const marked = sender.kind === 'alert' ? markAlert(sender.from, sender.source, content, tsBoston) : markNudge(sender.from, content);
     // the room copy keeps its source: a system alert still reads "[alert → role]" in Buzz (#4609)
     const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content) } : { from: sender.from, content: marked };
     const origin = originFor(sender.kind === 'alert' ? 'alert' : 'nudge', sender.from, req.body.where);
-    return storeNudge(req, res, sender.from, to, marked, traceId, forBuzz, origin, actors);
+    // an alert is a2r by what it is; the caller's body is read, never rewritten (review, run 5)
+    const body = sender.kind === 'alert' ? { ...req.body, class: 'a2r' } : req.body;
+    return storeNudge(body, res, sender.from, to, marked, traceId, forBuzz, origin, actors);
   });
 
-  async function storeNudge(req: express.Request, res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }, origin: string, peers: string[]) {
+  async function storeNudge(body: express.Request['body'], res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }, origin: string, peers: string[]) {
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
     if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
@@ -306,15 +307,15 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // answer refuses the nudge loudly rather than guessing who is a peer.
     // #4424 — an explicit target is accepted only when it is the recipient's
     // live agent run (Presence), never a session the sender names freely.
-    const pre = await admitNudge(req.body, from, to, peers);
+    const pre = await admitNudge(body, from, to, peers);
     if ('refused' in pre) return res.status(pre.status).json(pre.refused);
     const { nudgeClass, expects, targetSessionId } = pre;
-    const held = heldForRoom(req.body);
+    const held = heldForRoom(body);
     const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held, origin);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
-    copyToBuzz(buzz, req.body, { id: Number(id), from: forBuzz.from, to, content: forBuzz.content });
+    copyToBuzz(buzz, body, { id: Number(id), from: forBuzz.from, to, content: forBuzz.content });
     enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
