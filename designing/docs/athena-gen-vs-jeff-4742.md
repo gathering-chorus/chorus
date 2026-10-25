@@ -15,5 +15,7 @@ Measured 2026-10-25 18:2x–18:4x (Silas) on werk silas-4742 (origin/main at pul
 | 8 | 10-23 #4708 "a shape change 404'd /v1/domains" | That route loss happened in the door (athena-make route derivation from shapes). athena-gen builds routes from model classes; no test proves a model change cannot silently drop a class's route. Inferred. | **No guard: a class that falls out of the model drops its generated route without a red test.** |
 | 9 | 10-23 #4702 "retired facts re-added" | That was athena-deploy re-adding source facts, not athena-gen. | Not athena-gen's gap. |
 
+| 10 | 10-25 18:27 "the top level route is /pulse and each associated domain is a child route" | Routes are `/v1/<domain>/<collection>/<name>`: the version is the top level, the product is not in the path. Generated domains: `awareness` (heartbeats, notes, prompts, readings, rolestates, turns, waitingons) and `streams` (events). Measured. | **Top level is `/v1`, not `/pulse`.** Messages and cards (pulse's radius, Jeff 10-22) are not generated at all: they stay hand-built in platform/pulse (TS). |
+
 ## Open question for Jeff
-"athena-gen is not building what i think it is" — rows 1, 3, 7, 8 are the gaps measured so far. Row 1 may be the heart of it: is the expectation that **every** modelled domain gets a generated API (not just pulse), replacing the generic door?
+"athena-gen is not building what i think it is" — rows 1, 3, 7, 8, 10. Jeff answered 18:27 with the route shape: `/pulse/<domain>/…`, each domain in the product's radius a child route.
