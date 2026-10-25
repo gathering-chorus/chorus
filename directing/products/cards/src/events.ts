@@ -4,6 +4,8 @@
 // the `chorus-log` script that every werk-verb already shells. No competing emit path.
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 
 // Local type (was re-exported from chorus-sdk; only consumed via index.ts re-export).
 export type SpineEvent = {
@@ -34,13 +36,36 @@ export function spineArgs(
   event: string,
   role: string,
   extra: Record<string, string | number> = {},
+  turnLine?: string,
 ): string[] {
   const kv: string[] = [];
   for (const [k, v] of Object.entries(extra)) {
     const val = k === 'card_id' && typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : v;
     kv.push(`${k}=${val}`);
   }
+  // #4637 AC4 — a card action taken in a turn a Jeff line woke names that line
+  if (turnLine) kv.push(`started_by_line=${turnLine}`);
   return [event, role, ...kv, 'appName=cards', 'component=cli'];
+}
+
+/** A turn file older than this is not the current turn. */
+export const TURN_FRESH_MS = 6 * 3600 * 1000;
+
+/**
+ * #4637 AC4 — the Jeff line that woke the role's current turn, from the file
+ * chorus-hooks keeps (~/.chorus/run/turn-<role>.json, turn_line.rs). Undefined
+ * when the turn was a nudge's, the file is stale, or there is no file: a card
+ * action with no line is a fact, never a guess.
+ */
+export function readTurnLine(role: string, dir = process.env.CHORUS_TURN_DIR || path.join(os.homedir(), '.chorus', 'run'), now = Date.now()): string | undefined {
+  try {
+    const t = JSON.parse(fs.readFileSync(path.join(dir, `turn-${role}.json`), 'utf8'));
+    const line = typeof t.woken_by_line === 'string' ? t.woken_by_line : undefined;
+    const at = typeof t.at === 'number' ? t.at * 1000 : 0;
+    return line && now - at < TURN_FRESH_MS ? line : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function emitSpineEvent(
@@ -53,7 +78,7 @@ export function emitSpineEvent(
   // contract werk-verbs use. Best-effort + non-blocking: a spine-emit failure must
   // never break a card op (mirrors werk-verb jsonl/spine discipline).
   try {
-    execFile('bash', [CHORUS_LOG, ...spineArgs(event, role, extra)], () => {
+    execFile('bash', [CHORUS_LOG, ...spineArgs(event, role, extra, readTurnLine(role))], () => {
       /* best-effort; ignore exit/stderr */
     });
   } catch {
