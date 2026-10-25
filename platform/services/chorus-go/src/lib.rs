@@ -344,3 +344,28 @@ pub fn land_check(store: &Store, card: u64, round: &str) -> R<LandGo> {
     check_record(&pk, &rec, card, round).map_err(|e| format!("{e} (#4710)"))?;
     Ok(LandGo::Signed)
 }
+
+/// The commit a role's werk holds (the round a go is for). Abby's and Borg
+/// Queen's werks belong to their own Mac accounts, so git refuses them to this
+/// service ("dubious ownership") and the go page said "no werk" until Jeff
+/// added each werk to his global safe.directory (10-25: #4732, #4736, #4739).
+/// git ignores safe.directory given with `-c` (measured: the first cut failed
+/// its own test), so this one call reads a global config naming only this
+/// werk; Jeff's ~/.gitconfig is not touched.
+pub fn werk_head(werk: &str) -> Result<String, String> {
+    let cfg = std::env::temp_dir().join(format!("chorus-go-safe-{}-{}", std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+    // git compares the resolved path (/var → /private/var on macOS)
+    let real = fs::canonicalize(werk).map_err(|e| e.to_string())?;
+    fs::write(&cfg, format!("[safe]\n\tdirectory = {}\n", real.display())).map_err(|e| e.to_string())?;
+    let o = std::process::Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", &cfg)
+        .args(["-C", werk, "rev-parse", "HEAD"])
+        .output();
+    let _ = fs::remove_file(&cfg);
+    let o = o.map_err(|e| e.to_string())?;
+    if !o.status.success() {
+        return Err(String::from_utf8_lossy(&o.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+}

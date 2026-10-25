@@ -104,7 +104,9 @@ print(sorted(b.split()[0] for b in la.verify(man, '$T/archive/dagu')))
 @test "the daily job is a canonical LaunchAgent that applies both and keeps a failure's exit" {
   P="$ROOT/platform/scripts/launchagents-canonical/com.chorus.log-archive.plist"
   plutil -lint "$P"
-  run plutil -extract ProgramArguments.2 raw "$P"
+  [[ "$(plutil -extract ProgramArguments.0 raw "$P")" == */platform/scripts/service-run ]] || return 1
+  [ "$(plutil -extract ProgramArguments.1 raw "$P")" = "com.chorus.log-archive" ] || return 1
+  run plutil -extract ProgramArguments.5 raw "$P"
   [[ "$output" == *"log-archive dagu --apply; r=\$?"* ]] || return 1
   [[ "$output" == *"exit \$r"* ]] || return 1
 }

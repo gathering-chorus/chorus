@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- #4735 — daily at 04:30, after the 03:00 nightly and the 02:00 backup: dagu run logs older than 3 days move to ~/.chorus/log-archive (backed up nightly, outside promtail's globs), each move proven by a sha256 manifest; chorus.log is copied, verified and truncated in place once it passes 1 GB. Nothing is deleted. -->
+<!-- #4735 — daily at 04:30, after the 03:00 nightly and the 02:00 backup: dagu run logs older than 3 days move to ~/.chorus/log-archive (backed up nightly, outside promtail's globs), each move proven by a sha256 manifest; chorus.log is copied, verified and truncated in place once it passes 1 GB. Nothing is deleted. Runs through service-run (job), so its starts, stops and failures are logged like every other service (#4446). -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.chorus.log-archive</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+        <string>com.chorus.log-archive</string>
+        <string>job</string>
         <string>/bin/sh</string>
         <string>-c</string>
         <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive dagu --apply; r=$?; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive chorus-log --over 1073741824 --apply || r=$?; exit $r</string>
