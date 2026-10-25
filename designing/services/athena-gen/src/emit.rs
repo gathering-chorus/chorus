@@ -230,3 +230,24 @@ pub fn agent_runtimes_json(t: &crate::model::RuntimeTable) -> String {
     s.push('\n');
     s
 }
+
+/// #4742 — every route the product serves: `/<product>/<domain>/<collection>`.
+pub fn routes(p: &Product) -> Vec<String> {
+    p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment))).collect()
+}
+
+/// #4742 gap 8 (#4708) — the routes an already generated crate serves (read from its
+/// model.rs) that `p` would no longer serve. A class that falls out of the model is named,
+/// never dropped silently.
+pub fn dropped_routes(old_model_rs: &str, p: &Product) -> Vec<String> {
+    let now = routes(p);
+    let quoted = |line: &str, key: &str| {
+        let rest = &line[line.find(&format!("{key}: \""))? + key.len() + 3..];
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    old_model_rs
+        .lines()
+        .filter_map(|l| Some(format!("/{}/{}/{}", p.name, quoted(l, "domain")?, quoted(l, "segment")?)))
+        .filter(|r| !now.contains(r))
+        .collect()
+}
