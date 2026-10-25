@@ -219,7 +219,9 @@ d["dagRuns"][:0] = [
 json.dump(d, open(p, "w"))
 EOF2
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
-t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-prod · 1 land · dagu L1" "$out"
+# #4734 — the land is a row of the table, like every other pipeline's run
+t "the card's land shows on the land queue" "running     skill-werk-deploy-prod" "$out"
+t "…as a cicd-land row" "  cicd-land    1  " "$out"
 if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
 
 # #4494 — a go can be a no; the go line offers both, and a no reads "rejected"
@@ -337,7 +339,7 @@ EOF6
 echo '{"data":{"cards":[]}}' > "$TD/api3/api/chorus/context/board/wip"
 cws3() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d3" CWS_API="file://$TD/api3" "$CWS" "$@"; }
 t "a land whose model failed says so on the card's line" "#120 wren   landed · athena failed" "$(cws3 120)"
-t "…and in the land line" "v2 land succeeded · athena failed" "$(cws3 120)"
+t "…and under the land rows" "athena failed · land A120" "$(cws3 120)"
 out=$(cws3)
 t "board: a landed card whose model failed stays on the board" "#120 wren   landed · athena failed" "$out"
 if [[ "$out" == *"#121"* ]]; then echo "FAIL a land whose model deployed is on the board"; fails=$((fails+1)); fi

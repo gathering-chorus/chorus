@@ -317,14 +317,14 @@ def card_detail(card, pin_status):
     # say what every run did
     # #4734 — one read of every pipeline: the line follows the lead ones, the table lists them all
     every = dagu_runs(card, every=True)
-    v2 = dagu_runs(card) if every is None else [r for r in every if r["name"] in LEAD_DAGS]
+    # dagu unreadable is said once, never read a second time (Silas's review)
+    v2 = None if every is None else [r for r in every if r["name"] in LEAD_DAGS]
     if v2:
         # #4494 — a card with v2 runs opens with the same line the board view
         # shows, even when it also has old v1 runs: #4004 read "[?] landed · 18
         # runs" from its v1 pin while its v2 land was still running.
         head = card_line(card, (re.search(r"ROLE=(\S+)", v2[0].get("params") or "") or [None, "?"])[1],
-                         v2, [r for r in every if r["name"] == f"{DAGU_DAG}-land"] if every is not None
-                         else dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions(),
+                         v2, [r for r in every if r["name"] == f"{DAGU_DAG}-land"], queue_positions(),
                          wip=str(card) in {str(c) for c, _ in (wip_cards() or [])})
     elif pin_status:
         head = render(pin_status, pid_start_times(), time.time() * 1000)
@@ -599,6 +599,15 @@ def dagu_dag_names():
     raise RuntimeError("dagu DAG list did not end after 50 pages")
 
 
+def every_dag_names():
+    """dagu's pipelines; a dagu that lists runs but not its DAGs falls back to
+    the lead pipelines and the land, the read before #4734."""
+    try:
+        return dagu_dag_names()
+    except Exception:
+        return list(LEAD_DAGS) + [f"{DAGU_DAG}-land"]
+
+
 def dagu_runs(card, dag=None, every=False):
     """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read.
     #4734 — `every`: the card's runs in every pipeline dagu holds, not only the
@@ -611,9 +620,14 @@ def dagu_runs(card, dag=None, every=False):
     # 8 athena runs and /cws said "no runs". The card's runs are both halves.
     runs = []
     try:
-        names = [dag] if dag else (dagu_dag_names() if every else list(LEAD_DAGS))
-        for name in names:
-            runs += [dict(r, name=r.get("name", name)) for r in dagu_list(name, time.time() - 30 * 86400)]
+        names = [dag] if dag else (every_dag_names() if every else list(LEAD_DAGS))
+        # #4734 (Silas's review) — the pipelines are read side by side: 13 reads
+        # one after another made a slow dagu stall /cws 13 times over
+        from concurrent.futures import ThreadPoolExecutor
+        since = time.time() - 30 * 86400
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for name, got in zip(names, pool.map(lambda n: dagu_list(n, since), names)):
+                runs += [dict(r, name=r.get("name", name)) for r in got]
     except Exception:
         return None
     # CARD=4474 must not match CARD=44740; name=cicd also matches cicd-land
