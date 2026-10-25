@@ -46,3 +46,22 @@ export function markAlert(owner: string, source: string, content: string, tsBost
   const body = content.replace(/^\[nudge from [^\]]*\]\s*/, '');
   return `[alert for ${owner} · from ${source} | ${tsBoston} Boston] ${body}`;
 }
+
+/**
+ * #4637 AC3 — every message carries where it was written: a device (the
+ * Library machine, a phone, a desktop browser) and an app (Clearing v2, a
+ * terminal, Antigravity, VS Code, or an alert source). A caller that knows
+ * says so (`where`, e.g. Clearing v2 from the browser's user agent); a role's
+ * own nudge is written on the Library in its runtime's app. A value that is
+ * not of this shape is not trusted; the default is named, never blank.
+ */
+const WHERE = /^(library|bedroom|phone|desktop|unknown)\/(clearing|clearing-v2|terminal|antigravity|vscode|alert|pipeline)$/;
+/** Roles whose sessions run in Antigravity (the Gemini runtime), not a Claude terminal. */
+const ANTIGRAVITY_ROLES = new Set(['abby-normal', 'borg-queen']);
+
+export function originFor(kind: 'nudge' | 'alert' | 'jeff-input', from: string, where?: unknown): string {
+  if (typeof where === 'string' && WHERE.test(where)) return where;
+  if (kind === 'alert') return 'library/alert';
+  if (kind === 'jeff-input') return 'unknown/clearing';
+  return `library/${ANTIGRAVITY_ROLES.has(from) ? 'antigravity' : 'terminal'}`;
+}

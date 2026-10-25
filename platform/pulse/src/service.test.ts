@@ -260,6 +260,16 @@ describe('#4637 only real actors send', () => {
     expect(rows.body[0].from).toBe('kade');
     expect(rows.body[0].content).toMatch(/^\[alert for kade · from system \| /);
     expect(rows.body[0].nudge_class).toBe('a2r');
+    expect(rows.body[0].origin).toBe('library/alert');
+  });
+  it('a role nudge and a phone message each carry where they were written', async () => {
+    const { app } = fresh();
+    await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'n' });
+    await request(app).post('/api/jeff-input').set('X-Chorus-Clearing-Caller', '1').send({ to: 'silas', content: 'p', where: 'phone/clearing-v2' });
+    const rows = (await request(app).get('/api/messages').query({ limit: 10 })).body as Array<{ type: string; origin: string }>;
+    expect(rows.find((r) => r.type === 'nudge')?.origin).toBe('library/terminal');
+    expect(rows.find((r) => r.type === 'jeff-input')?.origin).toBe('phone/clearing-v2');
+    expect(rows.every((r) => typeof r.origin === 'string' && r.origin.includes('/'))).toBe(true);
   });
 });
 

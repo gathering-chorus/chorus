@@ -128,7 +128,7 @@ interface RouteContext {
   relayUrl: string;
   /** #4652 — the room's client key the signing service must allow; none when the switch is off. */
   signerClientKey?: string;
-  onInboundEvent: (event: NostrEvent) => void;
+  onInboundEvent: (event: NostrEvent, where?: string) => void;
   keys: Map<string, string>;
   cookieKey?: Buffer | null;
   signInUrl?: string;
@@ -397,7 +397,8 @@ function registerWriteRoutes(ctx: RouteContext): void {
     // (the bridge), so the room stores Jeff's words as the bridge, author-tagged,
     // with his own signed id so the copy is never shown twice. Delivery to the
     // roles does not wait on Buzz; the answer says whether Buzz stored it.
-    onInboundEvent(event!);
+    // #4637 AC3 — where Jeff wrote it: his phone or a desktop browser, in Clearing v2
+    onInboundEvent(event!, whereFrom(req.headers['user-agent']));
     const stored = await storeInBuzz(ctx, event!, identity.role);
     if (!stored.ok) console.error(`[clearing-v2] ${identity.role}'s message ${event!.id.slice(0, 12)} was not stored in Buzz: ${stored.reason}`);
     res.json({ ok: true, id: event!.id, from: identity.role, stored: stored.ok, ...(stored.ok ? {} : { reason: stored.reason }) });
@@ -618,9 +619,16 @@ interface InboundDeps {
   handoffs?: HandoffLog;
 }
 
+/** #4637 AC3 — the device a browser post came from, as pulse's where (device/app). */
+export function whereFrom(userAgent: unknown): string {
+  const ua = typeof userAgent === 'string' ? userAgent : '';
+  if (!ua) return 'unknown/clearing-v2';
+  return /iPhone|iPad|Android|Mobile/i.test(ua) ? 'phone/clearing-v2' : 'desktop/clearing-v2';
+}
+
 /** Handles an incoming verified event from the Buzz relay: ingest, broadcast, forward nudges to Pulse. */
-export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => void {
-  return (event: NostrEvent) => {
+export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent, where?: string) => void {
+  return (event: NostrEvent, where?: string) => {
     if (!verifyNostrEvent(event)) {
       return;
     }
@@ -645,7 +653,7 @@ export function makeInboundHandler(deps: InboundDeps): (event: NostrEvent) => vo
     if (deps.handoffs && !deps.handoffs.claim(event.id, event.created_at)) return;
     for (const nudge of deps.router.extractNudges(msg)) {
       // #4672 — one trace per role copy, so pulse's shadow can join his #clearing note to each row
-      void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content, undefined, `jeff-${event.id}-${nudge.to}`).then((r) => {
+      void deliverJeffInput(deps.pulseUrl, nudge.to, nudge.content, undefined, `jeff-${event.id}-${nudge.to}`, where).then((r) => {
         if (!r.ok) {
           console.error(`[clearing-v2] Jeff's message to ${nudge.to} was not handed off: ${r.reason}`);
           const roles = deps.undelivered ? deps.undelivered.record(msg.id, nudge.to) : [nudge.to];

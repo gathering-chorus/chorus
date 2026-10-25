@@ -9,7 +9,7 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { fetchPeers, startRolesDoorWatch } from './peers';
-import { attributeSender, markAlert } from './sender';
+import { attributeSender, markAlert, originFor } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
 import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
@@ -285,10 +285,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const marked = sender.kind === 'alert' ? markAlert(sender.from, sender.source, content, tsBoston) : markNudge(sender.from, content);
     // the room copy keeps its source: a system alert still reads "[alert → role]" in Buzz (#4609)
     const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content) } : { from: sender.from, content: marked };
-    return storeNudge(req, res, sender.from, to, marked, traceId, forBuzz);
+    const origin = originFor(sender.kind === 'alert' ? 'alert' : 'nudge', sender.from, req.body.where);
+    return storeNudge(req, res, sender.from, to, marked, traceId, forBuzz, origin);
   });
 
-  async function storeNudge(req: express.Request, res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }) {
+  async function storeNudge(req: express.Request, res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }, origin: string) {
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
     if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
@@ -309,6 +310,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const { nudgeClass, expects, targetSessionId } = pre;
     const held = heldForRoom(req.body);
     const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held);
+    store.setOrigin(Number(id), origin);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
@@ -377,6 +379,7 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
     const headerTrace = req.headers['x-chorus-trace-id'];
     const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
     const id = store.sendJeffInput(to, content, traceId);
+    store.setOrigin(id, originFor('jeff-input', 'jeff', req.body.where));
     log('info', 'jeff.input.stored', { id, to, chars: content.length, trace_id: traceId || undefined });
     if (worker) {
       worker.enqueue({ id, from: 'jeff', to, content, delivery_attempts: 0, trace_id: traceId || null, kind: 'jeff-input' }).catch(() => { /* worker handles its own state */ });

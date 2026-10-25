@@ -25,7 +25,7 @@ function describe(e: unknown): string {
   return code ? `${msg} (${code}${typeof causeMsg === 'string' ? `: ${causeMsg}` : ''})` : msg;
 }
 
-async function postOnce(pulseUrl: string, to: string, content: string, fetchFn: FetchLike, traceId?: string): Promise<Delivery & { retry?: boolean }> {
+async function postOnce(pulseUrl: string, to: string, content: string, fetchFn: FetchLike, traceId?: string, where?: string): Promise<Delivery & { retry?: boolean }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -35,7 +35,8 @@ async function postOnce(pulseUrl: string, to: string, content: string, fetchFn: 
       // closes pooled sockets near that edge, so reuse races a close (Silas, 10-20).
       headers: { 'Content-Type': 'application/json', 'X-Chorus-Clearing-Caller': '1', Connection: 'close' },
       // #4672 — jeff-<signed id>-<role>: pulse's Buzz shadow joins his note to this row by it
-      body: JSON.stringify(traceId ? { to, content, traceId } : { to, content }),
+      // #4637 AC3 — where he wrote it (device/app), when the caller knows
+      body: JSON.stringify({ to, content, ...(traceId ? { traceId } : {}), ...(where ? { where } : {}) }),
       signal: ctrl.signal,
     });
     if (!res.ok) return { ok: false, reason: `pulse ${res.status}: ${(await res.text().catch(() => '')).slice(0, 160)}` };
@@ -49,10 +50,10 @@ async function postOnce(pulseUrl: string, to: string, content: string, fetchFn: 
 }
 
 export async function deliverJeffInput(
-  pulseUrl: string, to: string, content: string, fetchFn: FetchLike = fetch as unknown as FetchLike, traceId?: string,
+  pulseUrl: string, to: string, content: string, fetchFn: FetchLike = fetch as unknown as FetchLike, traceId?: string, where?: string,
 ): Promise<Delivery> {
-  const first = await postOnce(pulseUrl, to, content, fetchFn, traceId);
+  const first = await postOnce(pulseUrl, to, content, fetchFn, traceId, where);
   if (first.ok || !first.retry) return first.ok ? { ok: true } : { ok: false, reason: first.reason };
-  const second = await postOnce(pulseUrl, to, content, fetchFn, traceId);
+  const second = await postOnce(pulseUrl, to, content, fetchFn, traceId, where);
   return second.ok ? { ok: true } : { ok: false, reason: `${second.reason}; first try: ${first.reason}` };
 }

@@ -34,3 +34,15 @@ test('negative proof: no author, a bridge, or an alert with no owner is refused 
   expect(r.kind).toBe('refused');
   if (r.kind === 'refused') expect(r.body.message).toContain('names no owning role');
 });
+
+// #4637 AC3 — where every message was written
+import { originFor } from './sender';
+test('every message carries where: a caller that knows says so, else a named default', () => {
+  expect(originFor('jeff-input', 'jeff', 'phone/clearing-v2')).toBe('phone/clearing-v2');
+  expect(originFor('nudge', 'kade')).toBe('library/terminal');
+  expect(originFor('nudge', 'abby-normal')).toBe('library/antigravity');
+  expect(originFor('alert', 'silas')).toBe('library/alert');
+  // NEGATIVE PROOF: a made-up where is not trusted, and no message is left without one
+  expect(originFor('jeff-input', 'jeff', 'moon/whatever')).toBe('unknown/clearing');
+  expect(originFor('jeff-input', 'jeff', '')).toBe('unknown/clearing');
+});

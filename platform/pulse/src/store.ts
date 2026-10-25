@@ -213,6 +213,10 @@ export class MessageStore {
     if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'buzz_hold')) {
       this.db.exec('ALTER TABLE messages ADD COLUMN buzz_hold INTEGER NOT NULL DEFAULT 0');
     }
+    // #4637 AC3 — where the message was written (device/app). ADD COLUMN rewrites no row.
+    if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'origin')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN origin TEXT');
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
     // #4629 S2 — a sender-signed note names its nudge by trace (msg tag trace-<uuid>), so one nudge per trace.
     // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows. A store that has duplicates keeps
@@ -276,6 +280,11 @@ export class MessageStore {
       'INSERT INTO messages (type, "from", "to", content) VALUES (\'jeff-input\', \'jeff\', ?, ?)'
     );
     return Number(stmt.run(to, content).lastInsertRowid);
+  }
+
+  /** #4637 AC3 — record where a stored message was written. */
+  setOrigin(id: number, origin: string): void {
+    this.db.prepare('UPDATE messages SET origin = ? WHERE id = ?').run(origin, id);
   }
 
   // #2727 AC1: delivery state surface. Worker drives transitions via
