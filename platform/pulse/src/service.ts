@@ -9,6 +9,7 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { fetchPeers, startRolesDoorWatch } from './peers';
+import { attributeSender, markAlert } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
 import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
@@ -269,9 +270,25 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
         message: 'POST /api/nudge accepts only MCP-server calls. Use the clearing-nudge MCP tool from a Claude session.',
       });
     }
-    if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
+    if (!to || !content) return res.status(400).json({ error: 'from, to, content required' });
     const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
-    const marked = markNudge(from, content);
+    // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
+    const actors = await peersOrRefusal(String(from ?? ''), to);
+    if (typeof actors === 'string') return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: actors });
+    const sender = attributeSender(from, to, req.body.owner, actors);
+    if (sender.kind === 'refused') {
+      log('warn', 'nudge.refused.not-an-actor', { from: String(from ?? ''), to, trace_id: traceId || undefined });
+      return res.status(sender.status).json(sender.body);
+    }
+    const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
+    if (sender.kind === 'alert') req.body.class = 'a2r';
+    const marked = sender.kind === 'alert' ? markAlert(sender.from, sender.source, content, tsBoston) : markNudge(sender.from, content);
+    // the room copy keeps its source: a system alert still reads "[alert → role]" in Buzz (#4609)
+    const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content) } : { from: sender.from, content: marked };
+    return storeNudge(req, res, sender.from, to, marked, traceId, forBuzz);
+  });
+
+  async function storeNudge(req: express.Request, res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }) {
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
     if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
@@ -295,7 +312,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
-    copyToBuzz(buzz, req.body, { id: Number(id), from, to, content: marked });
+    copyToBuzz(buzz, req.body, { id: Number(id), from: forBuzz.from, to, content: forBuzz.content });
     enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
@@ -305,7 +322,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const resolved = describeResolution(to, toRes);
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
     res.json({ ok: true, id, traceId, resolved });
-  });
+  }
 
   // #3700 — the drain: the target role's own turn-boundary hook (stop /
   // session-start) POSTs here after clear_busy; its queued rows go back to
