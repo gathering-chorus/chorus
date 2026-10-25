@@ -55,13 +55,15 @@ export function markAlert(owner: string, source: string, content: string, tsBost
  * own nudge is written on the Library in its runtime's app. A value that is
  * not of this shape is not trusted; the default is named, never blank.
  */
-const WHERE = /^(library|bedroom|phone|desktop|unknown)\/(clearing|clearing-v2|terminal|antigravity|vscode|alert|pipeline)$/;
+const WHERE = /^(library|bedroom|phone|desktop|unknown)\/(clearing|clearing-v2|terminal|antigravity|vscode|alert)$/;
 /** Roles whose sessions run in Antigravity (the Gemini runtime), not a Claude terminal. */
 const ANTIGRAVITY_ROLES = new Set(['abby-normal', 'borg-queen']);
 
 export function originFor(kind: 'nudge' | 'alert' | 'jeff-input', from: string, where?: unknown): string {
   if (typeof where === 'string' && WHERE.test(where)) return where;
   if (kind === 'alert') return 'library/alert';
+  // Clearing v2 names its own unknown device (unknown/clearing-v2); a jeff-input
+  // with no usable `where` came from a caller that said nothing, so only the app is guessed.
   if (kind === 'jeff-input') return 'unknown/clearing';
   return `library/${ANTIGRAVITY_ROLES.has(from) ? 'antigravity' : 'terminal'}`;
 }

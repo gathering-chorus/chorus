@@ -269,7 +269,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
         message: 'POST /api/nudge accepts only MCP-server calls. Use the clearing-nudge MCP tool from a Claude session.',
       });
     }
-    if (!to || !content) return res.status(400).json({ error: 'from, to, content required' });
+    if (!to || !content) return res.status(400).json({ error: 'to, content required' }); // no from is a 422 not-an-actor, below
     const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
     // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
     // The one roles-door read: #4432 already refused every nudge (503) when the

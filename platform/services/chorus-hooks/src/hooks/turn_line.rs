@@ -20,7 +20,9 @@
 use crate::state::chorus_log;
 use serde_json::Value;
 
-/// A line older than this did not wake this turn.
+/// A line older than this did not wake this turn. Ten minutes covers a line
+/// that queued behind a long turn (pulse delivers at idle); past that, a match
+/// is more likely a repeat of old words than the line that woke this prompt.
 pub const LINE_WINDOW_SECS: i64 = 600;
 
 /// A line shorter than this ("go", "yes", "fuc") must be a whole line of the
@@ -111,7 +113,12 @@ pub fn record(role: &str, session_id: &str, turn_id: &str, prompt: &str) {
         }
         chorus_log("agent.turn.started", &role, &kv).await;
         let body = serde_json::json!({ "turn_id": turn_id, "session_id": sid, "woken_by_line": if line.is_empty() { Value::Null } else { Value::String(line.clone()) }, "at": now });
-        let _ = std::fs::write(turn_file(&role), body.to_string());
+        // write then rename: pipeline-start never reads a half-written turn
+        let path = turn_file(&role);
+        let tmp = path.with_extension(format!("json.{}", std::process::id()));
+        if std::fs::write(&tmp, body.to_string()).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
     });
 }
 

@@ -140,7 +140,7 @@ describe('pulse service — nudges', () => {
     const { app } = fresh();
     const res = await request(app).post('/api/nudge').send({ from: 'kade' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/from, to, content required/);
+    expect(res.body.error).toMatch(/^to, content required$/);
   });
 
   // #2664: retirement assertion — GET /api/nudge/:role/pending is gone.

@@ -44,4 +44,5 @@ test('every message carries where: a caller that knows says so, else a named def
   // NEGATIVE PROOF: a made-up where is not trusted, and no message is left without one
   expect(originFor('jeff-input', 'jeff', 'moon/whatever')).toBe('unknown/clearing');
   expect(originFor('jeff-input', 'jeff', '')).toBe('unknown/clearing');
+  expect(originFor('nudge', 'kade', 'library/pipeline')).toBe('library/terminal'); // not an app
 });
