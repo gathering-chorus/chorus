@@ -208,13 +208,12 @@ async function refuseTarget(to: string, target: string | undefined): Promise<{ e
   return { error: 'target-not-live-run', message: `${target} is not ${to}'s live agent run` };
 }
 
-/** #4432 — everything that can refuse a nudge before it is stored: the roles
- *  door (503) and a target that isn't the recipient's live run (409, #4424). */
-async function admitNudge(body: { class?: unknown; expects?: unknown; target_session_id?: unknown }, from: string, to: string): Promise<
+/** #4432 — everything that can refuse a nudge before it is stored, after the
+ *  roles door (503, read once by the route, #4637): a target that isn't the
+ *  recipient's live run (409, #4424). */
+async function admitNudge(body: { class?: unknown; expects?: unknown; target_session_id?: unknown }, from: string, to: string, peers: string[]): Promise<
   { status: number; refused: object } | { nudgeClass: 'r2r' | 'a2r'; expects: 'none' | 'reply' | 'decision' | 'action'; targetSessionId: string | undefined }
 > {
-  const peers = await peersOrRefusal(from, to);
-  if (typeof peers === 'string') return { status: 503, refused: { error: 'roles door unreadable; nudge not stored', detail: peers } };
   const targetSessionId = typeof body.target_session_id === 'string' ? body.target_session_id : undefined;
   const refusal = await refuseTarget(to, targetSessionId);
   if (refusal) return { status: 409, refused: refusal };
@@ -273,6 +272,8 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     if (!to || !content) return res.status(400).json({ error: 'from, to, content required' });
     const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
     // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
+    // The one roles-door read: #4432 already refused every nudge (503) when the
+    // door is down; this read replaces that one, it adds no second dependency.
     const actors = await peersOrRefusal(String(from ?? ''), to);
     if (typeof actors === 'string') return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: actors });
     const sender = attributeSender(from, to, req.body.owner, actors);
@@ -286,10 +287,10 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // the room copy keeps its source: a system alert still reads "[alert → role]" in Buzz (#4609)
     const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content) } : { from: sender.from, content: marked };
     const origin = originFor(sender.kind === 'alert' ? 'alert' : 'nudge', sender.from, req.body.where);
-    return storeNudge(req, res, sender.from, to, marked, traceId, forBuzz, origin);
+    return storeNudge(req, res, sender.from, to, marked, traceId, forBuzz, origin, actors);
   });
 
-  async function storeNudge(req: express.Request, res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }, origin: string) {
+  async function storeNudge(req: express.Request, res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }, origin: string, peers: string[]) {
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
     if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
@@ -305,12 +306,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // answer refuses the nudge loudly rather than guessing who is a peer.
     // #4424 — an explicit target is accepted only when it is the recipient's
     // live agent run (Presence), never a session the sender names freely.
-    const pre = await admitNudge(req.body, from, to);
+    const pre = await admitNudge(req.body, from, to, peers);
     if ('refused' in pre) return res.status(pre.status).json(pre.refused);
     const { nudgeClass, expects, targetSessionId } = pre;
     const held = heldForRoom(req.body);
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held);
-    store.setOrigin(Number(id), origin);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held, origin);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
@@ -378,8 +378,7 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
     if (!to || !content) return res.status(400).json({ error: 'to, content required' });
     const headerTrace = req.headers['x-chorus-trace-id'];
     const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
-    const id = store.sendJeffInput(to, content, traceId);
-    store.setOrigin(id, originFor('jeff-input', 'jeff', req.body.where));
+    const id = store.sendJeffInput(to, content, traceId, originFor('jeff-input', 'jeff', req.body.where));
     log('info', 'jeff.input.stored', { id, to, chars: content.length, trace_id: traceId || undefined });
     if (worker) {
       worker.enqueue({ id, from: 'jeff', to, content, delivery_attempts: 0, trace_id: traceId || null, kind: 'jeff-input' }).catch(() => { /* worker handles its own state */ });

@@ -23,6 +23,18 @@ use serde_json::Value;
 /// A line older than this did not wake this turn.
 pub const LINE_WINDOW_SECS: i64 = 600;
 
+/// A line shorter than this ("go", "yes", "fuc") must be a whole line of the
+/// prompt: as a substring it is in half the prompts the window holds (review, run 3).
+pub const MIN_SUBSTRING_CHARS: usize = 12;
+
+/// Whether the typed prompt carries this line of Jeff's.
+fn carries(typed: &str, line: &str) -> bool {
+    if line.chars().count() >= MIN_SUBSTRING_CHARS {
+        return typed.contains(line);
+    }
+    typed.lines().any(|l| l.trim() == line)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
     pub id: String,
@@ -59,7 +71,7 @@ pub fn woken_by_line(prompt: &str, rows: &[Row], now: i64) -> Option<String> {
     let p = typed.as_str();
     rows.iter()
         .filter(|r| now - r.at <= LINE_WINDOW_SECS && r.at <= now + 5)
-        .filter(|r| p.contains(r.content.as_str()))
+        .filter(|r| carries(p, r.content.as_str()))
         .max_by_key(|r| (r.at, r.id.parse::<u64>().unwrap_or(0)))
         .map(|r| r.id.clone())
 }
@@ -133,6 +145,17 @@ mod tests {
             "a nudge that happens to contain 'go' is not Jeff's line");
         assert_eq!(woken_by_line("go", &rows, 1000 + LINE_WINDOW_SECS + 1), None, "a line older than the window");
         assert_eq!(woken_by_line("", &rows, 1001), None);
+    }
+
+    // NEGATIVE PROOF (review, run 3): a short line inside other words is not the
+    // line; the same short line as a whole line of the prompt is.
+    #[test]
+    fn negative_proof_a_short_line_must_be_a_whole_line() {
+        let rows = vec![row("7", "go", 1000), row("8", "yes", 1000)];
+        assert_eq!(woken_by_line("let's go over the plan", &rows, 1002), None, "'go' inside other words");
+        assert_eq!(woken_by_line("eyes on #4716", &rows, 1002), None, "'yes' inside a word");
+        assert_eq!(woken_by_line("go", &rows, 1002).as_deref(), Some("7"));
+        assert_eq!(woken_by_line("@silas r u there\nyes", &rows, 1002).as_deref(), Some("8"));
     }
 
     #[test]

@@ -240,15 +240,17 @@ export class MessageStore {
     targetSessionId?: string,
     /** #4629 S3 — insert already held for its room note, in the same statement, so no worker scan can deliver it first */
     heldForBuzz = false,
+    /** #4637 AC3 — where it was written, in the same INSERT: a row is never stored without it */
+    origin?: string,
   ): number {
     // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, buzz_hold) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, buzz_hold, origin) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null,
-      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 1 : 0).lastInsertRowid);
+      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 1 : 0, origin ?? null).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -269,22 +271,11 @@ export class MessageStore {
     return rows.some((r) => collapse(r.content) === words);
   }
 
-  sendJeffInput(to: string, content: string, traceId?: string): number {
-    if (traceId) {
-      const stmt = this.db.prepare(
-        'INSERT INTO messages (type, "from", "to", content, trace_id) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?)'
-      );
-      return Number(stmt.run(to, content, traceId).lastInsertRowid);
-    }
+  sendJeffInput(to: string, content: string, traceId?: string, origin?: string): number {
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content) VALUES (\'jeff-input\', \'jeff\', ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, origin) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?, ?)'
     );
-    return Number(stmt.run(to, content).lastInsertRowid);
-  }
-
-  /** #4637 AC3 — record where a stored message was written. */
-  setOrigin(id: number, origin: string): void {
-    this.db.prepare('UPDATE messages SET origin = ? WHERE id = ?').run(origin, id);
+    return Number(stmt.run(to, content, traceId || null, origin ?? null).lastInsertRowid);
   }
 
   // #2727 AC1: delivery state surface. Worker drives transitions via
