@@ -78,15 +78,18 @@ print(sorted(b.split()[0] for b in la.verify(man, '$T/archive/dagu')))
   [ "${lines[1]}" = "['changed', 'missing']" ]
 }
 
-@test "chorus.log is copied, verified and truncated in place; its inode is kept" {
+@test "chorus.log is renamed and archived whole; a write in flight is kept; the next write starts a fresh file" {
   printf 'line one\nline two\n' > "$T/chorus.log"
-  ino=$(stat -f %i "$T/chorus.log")
-  run "$LA" chorus-log --apply
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"copied and verified 18 bytes"* ]] || return 1
-  [ "$(stat -f %i "$T/chorus.log")" = "$ino" ]
-  [ ! -s "$T/chorus.log" ]
-  [ "$(gunzip -c "$T/archive/chorus-log/"chorus.log.*.gz)" = "$(printf 'line one\nline two')" ]
+  exec 9>>"$T/chorus.log"           # a writer that opened just before the rename
+  ( sleep 0.3; printf 'in flight\n' >&9 ) &
+  LOG_ARCHIVE_SETTLE_SECS=1 run "$LA" chorus-log --apply
+  wait; exec 9>&-
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"renamed, compressed and verified 28 bytes"* ]] || return 1
+  [ "$(gunzip -c "$T/archive/chorus-log/"chorus.log.*.gz)" = "$(printf 'line one\nline two\nin flight')" ] || return 1
+  [ -z "$(ls -A "$T" | grep rotating)" ] || return 1
+  printf 'next\n' >> "$T/chorus.log"
+  [ "$(cat "$T/chorus.log")" = "next" ] || return 1
 }
 
 @test "chorus.log under the --over size is left as is" {

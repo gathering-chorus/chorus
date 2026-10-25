@@ -12,12 +12,12 @@ A file missing or changed in the archive fails the run, loudly.
 
   log-archive dagu [--days N] [--apply]   runs whose last activity is older than N days (default 3)
   log-archive chorus-log [--over BYTES] [--apply]
-                                          copy ~/.chorus/chorus.log to the archive, verify, then truncate in place
+                                          rename ~/.chorus/chorus.log, compress it to the archive, verify, then remove the raw copy
                                           (--over: only when it is larger than BYTES)
 
 Dry run is the default: it prints what would move and changes nothing.
-chorus.log is truncated in place, never moved: a moved log keeps its writers
-appending to the moved inode, which is what blinded Fuseki and Loki on 10-20.
+chorus.log is renamed: no process holds it open to write (each write opens,
+appends, closes), unlike the Fuseki and Loki logs whose mv blinded them on 10-20.
 """
 import gzip, hashlib, json, os, re, shutil, sys, time
 
@@ -154,58 +154,45 @@ def dagu(days, apply):
 
 
 def chorus_log(apply, over=0):
+    """chorus.log has no long-lived writer (each chorus-log call opens, appends,
+    closes; on 10-25 only promtail held it, read-only), so it is renamed, not
+    truncated: every byte written before the rename is in the renamed file and
+    every byte after goes to a fresh chorus.log. No window loses a line (Wren's
+    review of copy-truncate, run 2). The renamed file is compressed, the archive
+    is verified against it by size and sha256, and only then is it removed. A
+    writer that still appended to it after the rename fails the run, raw kept."""
     size = os.path.getsize(CHORUS_LOG)
     print(f"log-archive chorus-log: {CHORUS_LOG} is {size} bytes")
     if size <= over:
         print(f"under {over} bytes: left as is")
         return 0
     if not apply:
-        print("dry run: nothing copied or truncated")
+        print("dry run: nothing renamed or compressed")
         return 0
     stamp = time.strftime("%Y%m%dT%H%M%S")
     os.makedirs(os.path.join(ARCHIVE, "chorus-log"), exist_ok=True)
+    raw = os.path.join(os.path.dirname(CHORUS_LOG), f".chorus.log.rotating.{stamp}")
+    os.rename(CHORUS_LOG, raw)  # same directory: atomic; the next write creates chorus.log
+    time.sleep(float(os.environ.get("LOG_ARCHIVE_SETTLE_SECS", "2")))  # a write already in flight lands in raw
     out = os.path.join(ARCHIVE, "chorus-log", f"chorus.log.{stamp}.gz")
-    h = hashlib.sha256()
-    with open(CHORUS_LOG, "rb") as src, gzip.open(out, "wb") as dst:
-        while True:
-            chunk = src.read(1 << 20)
-            if not chunk:
-                break
+    h, copied = hashlib.sha256(), 0
+    with open(raw, "rb") as src, gzip.open(out, "wb") as dst:
+        for chunk in iter(lambda: src.read(1 << 20), b""):
             dst.write(chunk)
             h.update(chunk)
-        copied = src.tell()
-    check = hashlib.sha256()
-    n = 0
-    with gzip.open(out, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            check.update(chunk)
-            n += len(chunk)
-    if n != copied or check.hexdigest() != h.hexdigest():
-        print(f"LOG-ARCHIVE FAILED: {out} does not match what was read ({n} vs {copied} bytes); chorus.log left as is", file=sys.stderr)
-        return 1
-    # lines written after the copy finished go to the archive too (a second gzip
-    # member), read and truncated in one open: the live file starts clean at the
-    # cut, so no writer's line lands out of order (review, run 1)
-    with open(CHORUS_LOG, "r+b") as f:
-        f.seek(copied)
-        tail = f.read()
-        f.truncate(0)
-    if tail:
-        with gzip.open(out, "ab") as dst:
-            dst.write(tail)
-        h.update(tail)
-        copied += len(tail)
+            copied += len(chunk)
     check, n = hashlib.sha256(), 0
     with gzip.open(out, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             check.update(chunk)
             n += len(chunk)
-    if n != copied or check.hexdigest() != h.hexdigest():
-        print(f"LOG-ARCHIVE FAILED: {out} holds {n} bytes, {copied} were cut from chorus.log", file=sys.stderr)
+    if n != copied or check.hexdigest() != h.hexdigest() or os.path.getsize(raw) != copied:
+        print(f"LOG-ARCHIVE FAILED: {out} holds {n} bytes, {raw} has {os.path.getsize(raw)}; {raw} kept", file=sys.stderr)
         return 1
     with open(os.path.join(ARCHIVE, "chorus-log", f"chorus.log.{stamp}.sha256"), "w") as f:
         f.write(f"{h.hexdigest()}  {copied}\n")
-    print(f"copied and verified {copied} bytes → {out}; chorus.log truncated in place ({len(tail)} byte(s) written during the copy are archived too)")
+    os.remove(raw)  # its bytes are in the archive, proven by size and sha256 above
+    print(f"renamed, compressed and verified {copied} bytes → {out}; writers now append to a fresh chorus.log")
     return 0
 
 def main(argv):
