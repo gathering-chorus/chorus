@@ -137,7 +137,9 @@ export function sliceFor(tree: Tree, role: string): { at: string; me?: Tree['rol
 // --- live wiring ---------------------------------------------------------------
 
 type ActorStates = { derivedAt?: string; actors?: Array<{ aboutPrincipal?: string; stream?: Array<{ timestamp?: string }> }> };
-type LineStore = { queryMessages: (o: { type?: string; since?: string; limit?: number }) => Array<{ id: number; from: string; to: string; content: string; created_at: string }> };
+/** store.queryMessages types its rows as Message (createdAt) but returns raw rows (created_at): read either. */
+type StoredLine = { id: number; from: string; to: string; content: string; created_at?: string; createdAt?: string };
+type LineStore = { queryMessages: (o: { type?: string; since?: string; limit?: number }) => StoredLine[] };
 
 const role = (principal = '') => principal.replace(/^principal-/, '');
 /** pulse's store writes UTC without a zone ("2026-10-24 20:51:53") */
@@ -160,7 +162,7 @@ export function factsFromActorState(states: unknown): { actors: string[]; lastCa
 export function liveTree(store: LineStore, states: unknown, now = new Date().toISOString(), lastN = LAST_N_PROMPTS, spine: SpineLine[] = []): Tree {
   const since = new Date(Date.parse(now) - 6 * 3600_000).toISOString().replace('T', ' ').slice(0, 19);
   const lines: LineFact[] = store.queryMessages({ type: 'jeff-input', since, limit: 500 }).map(m => ({
-    id: String(m.id), from: m.from, to: m.to ? [m.to] : [], text: m.content, sentAt: utc(m.created_at),
+    id: String(m.id), from: m.from, to: m.to ? [m.to] : [], text: m.content, sentAt: utc(m.created_at ?? m.createdAt ?? ''),
   }));
   const { actors, lastCalls } = factsFromActorState(states);
   const { turns, runs } = factsFromSpine(spine, lastCalls);
