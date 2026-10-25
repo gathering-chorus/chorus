@@ -92,5 +92,27 @@ if [ -d "$slot" ]; then
   done
 fi
 
-exec "${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
-  enqueue "$workflow" -- "CARD=$card" "ROLE=$role"
+rc=0
+out="$("${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
+  enqueue "$workflow" -- "CARD=$card" "ROLE=$role" 2>&1)" || rc=$?
+[ -n "$out" ] && printf '%s\n' "$out"
+
+# #4637 AC4 — the run names the Jeff line that started it. chorus-hooks keeps
+# the role's current turn in ~/.chorus/run/turn-<role>.json (turn_line.rs);
+# a run started in a turn a line woke carries that line, any other run says
+# started_by=none by name. Wren's #4638 tree joins the run to the prompt.
+if [ "$rc" -eq 0 ]; then
+  run_id="$(printf '%s' "$out" | grep -o '"run-id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+  turn="${CHORUS_TURN_DIR:-$HOME/.chorus/run}/turn-$role.json"
+  line="$(python3 -I -c 'import json,sys,time
+try:
+    t = json.load(open(sys.argv[1]))
+    l = t.get("woken_by_line")
+    print(l if l and time.time() - t.get("at", 0) < 6 * 3600 else "")
+except Exception:
+    print("")' "$turn" 2>/dev/null || true)"
+  kv=(card="$card" pipeline="$pipeline" run_id="${run_id:-unknown}")
+  if [ -n "$line" ]; then kv+=(started_by=line started_by_line="$line"); else kv+=(started_by=none); fi
+  "${CHORUS_LOG_BIN:-$CHORUS_HOME/platform/scripts/chorus-log}" pipeline.run.started "$role" "${kv[@]}" >/dev/null 2>&1 || true
+fi
+exit "$rc"

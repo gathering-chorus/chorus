@@ -69,3 +69,20 @@ setup() {
   [ "$status" -ne 0 ]
   [ ! -f "$BATS_TEST_TMPDIR/args" ]
 }
+
+# #4637 AC4 — the run names the Jeff line whose turn started it
+@test "a run started in a turn a Jeff line woke carries that line; any other run says none" {
+  printf '#!/bin/sh\necho "$@" > "%s/args"\necho '"'"'{"msg":"Enqueued dag-run","run-id":"034abc"}'"'"'\n' "$BATS_TEST_TMPDIR" > "$DAGU"; chmod +x "$DAGU"
+  export CHORUS_TURN_DIR="$BATS_TEST_TMPDIR/run" CHORUS_LOG_BIN="$BATS_TEST_TMPDIR/log"
+  mkdir -p "$CHORUS_TURN_DIR"
+  printf '#!/bin/sh\necho "$@" >> "%s/logged"\n' "$BATS_TEST_TMPDIR" > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"
+  printf '{"turn_id":"t1","woken_by_line":"57629","at":%s}' "$(date +%s)" > "$CHORUS_TURN_DIR/turn-wren.json"
+  run "$ROOT/platform/scripts/pipeline-start" cicd 4515 wren
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q "pipeline.run.started wren card=4515 pipeline=cicd run_id=034abc started_by=line started_by_line=57629" "$BATS_TEST_TMPDIR/logged" || { cat "$BATS_TEST_TMPDIR/logged"; return 1; }
+  # NEGATIVE PROOF: a turn no line woke (a nudge) gives the run no line
+  printf '{"turn_id":"t2","woken_by_line":null,"at":%s}' "$(date +%s)" > "$CHORUS_TURN_DIR/turn-wren.json"
+  run "$ROOT/platform/scripts/pipeline-start" cicd 4515 wren
+  tail -1 "$BATS_TEST_TMPDIR/logged" | grep -q "started_by=none" || { cat "$BATS_TEST_TMPDIR/logged"; return 1; }
+  ! tail -1 "$BATS_TEST_TMPDIR/logged" | grep -q "started_by_line" || return 1
+}
