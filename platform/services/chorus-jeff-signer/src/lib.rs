@@ -203,6 +203,22 @@ pub fn dial_address(relay: &str, dial: Option<&str>) -> String {
     }
 }
 
+/// #4737 — where the socket connects (host:port of the dial address) and the
+/// URL its handshake names. The relay virtual-hosts by Host header: after the
+/// public-name cutover it answers only to its public name, so the handshake
+/// names the relay (wss → ws: this build speaks no TLS, the bytes ride the LAN)
+/// while the TCP connection goes to the dial address.
+pub fn handshake(relay: &str, dial: Option<&str>) -> (String, String) {
+    let target = dial_address(relay, dial);
+    let hostport = |u: &str| {
+        let rest = u.split_once("://").map(|(_, r)| r).unwrap_or(u);
+        let hp = rest.split('/').next().unwrap_or(rest).to_string();
+        if hp.contains(':') { hp } else if u.starts_with("wss://") { format!("{hp}:443") } else { format!("{hp}:80") }
+    };
+    let url = match relay.strip_prefix("wss://") { Some(r) => format!("ws://{r}"), None => relay.to_string() };
+    (hostport(&target), url)
+}
+
 /// What Jeff's key will sign.
 pub struct Policy {
     pub channel_h: String,

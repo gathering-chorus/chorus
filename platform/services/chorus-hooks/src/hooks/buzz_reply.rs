@@ -300,7 +300,11 @@ fn pump<S: std::io::Read + std::io::Write>(
                     vec!["relay".to_string(), auth_relay_tag(relay_url, std::env::var("BUZZ_AUTH_RELAY_URL").ok().as_deref())],
                     vec!["challenge".to_string(), chal.to_string()],
                 ];
-                let auth_ev = sign_event(key, 22242, tags, "", event.created_at)?;
+                // stamped now, not with the event's time: the relay refuses a sign-in more than
+                // ±60 s off, so a note queued in the outbox during an outage could never flush
+                // (#4737, measured 10-25: 11 of Wren's notes stuck, "relay read: connection closed")
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(event.created_at);
+                let auth_ev = sign_event(key, 22242, tags, "", now)?;
                 ws.send(tungstenite::Message::Text(
                     serde_json::json!(["AUTH", auth_ev]).to_string(),
                 ))

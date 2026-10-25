@@ -8,11 +8,11 @@
 //!   CHORUS_SIGNER_DIAL      optional: where to connect when that differs (#4657)
 //!   CHORUS_SIGNER_CLIENTS   comma-separated client pubkeys (Clearing v2's)
 //!   CHORUS_SIGNER_CHANNEL_H the #clearing channel id (the only channel it signs for)
-use chorus_jeff_signer::{dial_address, nip19_secret, unix_now, Policy, Signer};
+use chorus_jeff_signer::{dial_address, handshake, nip19_secret, unix_now, Policy, Signer};
 use serde_json::{json, Value};
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
-use tungstenite::{stream::MaybeTlsStream, Message};
+use tungstenite::Message;
 
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| fail(&format!("{name} is not set")))
@@ -45,10 +45,11 @@ fn unsafe_getuid() -> u32 {
 }
 
 fn serve(signer: &Signer, dial: &str) -> Result<(), String> {
-    let (mut ws, _) = tungstenite::connect(dial).map_err(|e| format!("connect: {e}"))?;
-    if let MaybeTlsStream::Plain(s) = ws.get_mut() {
-        let _ = s.set_read_timeout(Some(Duration::from_secs(30)));
-    }
+    // #4737: connect to the dial address, but name the relay in the handshake (its Host)
+    let (addr, url) = handshake(&signer.policy.relay, Some(dial));
+    let stream = std::net::TcpStream::connect(&addr).map_err(|e| format!("connect {addr}: {e}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+    let (mut ws, _) = tungstenite::client(url.as_str(), stream).map_err(|e| format!("handshake: {e}"))?;
     let sub = || {
         Message::text(json!(["REQ", "jeff-signer", {"kinds": [24133], "#p": [signer.pubkey], "since": unix_now() - 10}]).to_string())
     };
