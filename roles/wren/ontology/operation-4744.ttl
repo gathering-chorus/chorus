@@ -1,0 +1,32 @@
+# #4744 — Operations: analytical capabilities a product serves that are a live
+# computation, not stored rows (Borg Queen's brief, Jeff 2026-10-26 09:15). athena-gen
+# routes each at /<product>/<homeDomain>/<operationPath> and compiles in the handler at
+# handlerPath (repo-relative, in the home domain's ADR-041 home). An operation homed in a
+# domain the product neither owns nor composes, or a handler not in the repo, is refused.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:Operation a owl:Class ;
+    rdfs:label "Operation" ;
+    rdfs:comment "A live computation a product serves over its domains' data, declared in the model and compiled in by athena-gen." .
+
+chorus:hasOperation a owl:ObjectProperty ;
+    rdfs:label "has operation" ; rdfs:domain chorus:Product ; rdfs:range chorus:Operation .
+chorus:homeDomain a owl:ObjectProperty ;
+    rdfs:label "home domain" ; rdfs:domain chorus:Operation ; rdfs:range chorus:Domain .
+chorus:operationPath a owl:DatatypeProperty ;
+    rdfs:label "operation path" ; rdfs:domain chorus:Operation ; rdfs:range xsd:string .
+chorus:handlerPath a owl:DatatypeProperty ;
+    rdfs:label "handler path" ; rdfs:domain chorus:Operation ; rdfs:range xsd:string .
+
+# The live tree (#4638): prompt → role → turn → card → run, for every role.
+chorus:tree a chorus:Operation ;
+    rdfs:label "tree" ;
+    rdfs:comment "The live tree (#4638): /<product>/awareness/tree, and /<product>/awareness/tree/<role> for one role's slice." ;
+    chorus:homeDomain chorus:awareness ;
+    chorus:operationPath "tree" ;
+    chorus:handlerPath "directing/domains/awareness/operations/tree.rs" .
+
+chorus:pulse chorus:hasOperation chorus:tree .

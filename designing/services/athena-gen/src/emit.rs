@@ -272,6 +272,10 @@ pub fn ops_rs(p: &Product, handler_paths: &[(String, String)]) -> String {
     for (name, path) in handler_paths {
         s.push_str(&format!("#[path = {}]\npub mod {};\n", lit(path), name.replace('-', "_")));
     }
+    // an operation generated with no handler path fails the crate's build by name, never routes to nothing
+    for o in p.operations.iter().filter(|o| !handler_paths.iter().any(|(n, _)| *n == o.name.replace('-', "_"))) {
+        s.push_str(&format!("compile_error!({});\n", lit(&format!("operation {} has no handler: generate with its handlerPath", o.name))));
+    }
     let pairs: Vec<String> = p.operations.iter().map(|o| format!("({}, {})", lit(&o.domain), lit(&o.segment))).collect();
     s.push_str(&format!("\n/// Is `/<product>/<domain>/<segment>` an operation?\npub fn has(domain: &str, segment: &str) -> bool {{\n    let ops: &[(&str, &str)] = &[{}];\n    ops.contains(&(domain, segment))\n}}\n", pairs.join(", ")));
     s.push_str("\n/// The operation served at `/<product>/<domain>/<segment>[/<rest>…]`, if any.\npub fn route(ctx: &crate::Ctx, domain: &str, segment: &str, rest: &[&str], query: &str) -> Option<(u16, Value)> {\n    match (domain, segment) {\n");

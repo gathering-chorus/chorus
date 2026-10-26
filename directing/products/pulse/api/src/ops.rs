@@ -3,16 +3,19 @@
 
 use serde_json::Value;
 
+#[path = "../../../../domains/awareness/operations/tree.rs"]
+pub mod tree;
 
 /// Is `/<product>/<domain>/<segment>` an operation?
 pub fn has(domain: &str, segment: &str) -> bool {
-    let ops: &[(&str, &str)] = &[];
+    let ops: &[(&str, &str)] = &[("awareness", "tree")];
     ops.contains(&(domain, segment))
 }
 
 /// The operation served at `/<product>/<domain>/<segment>[/<rest>…]`, if any.
 pub fn route(ctx: &crate::Ctx, domain: &str, segment: &str, rest: &[&str], query: &str) -> Option<(u16, Value)> {
     match (domain, segment) {
+        ("awareness", "tree") => Some(tree::run(ctx, rest, query)),
         _ => { let _ = (ctx, rest, query); None }
     }
 }

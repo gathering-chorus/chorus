@@ -68,6 +68,14 @@ fn negative_proof_a_missing_handler_is_refused_and_a_present_one_is_compiled_in(
     assert!(ops.contains("(\"awareness\", \"tree\") => Some(tree::run(ctx, rest, query))"), "{ops}");
 }
 
+/// NEGATIVE PROOF: an operation emitted with no handler path makes the crate fail to build, by name.
+#[test]
+fn negative_proof_an_operation_without_its_handler_does_not_build() {
+    let p = pulse(FIXTURE, "nohandler").unwrap();
+    let ops = ops_rs(&p, &[]);
+    assert!(ops.contains("compile_error!(\"operation tree has no handler"), "{ops}");
+}
+
 /// A product with no operation still gets an ops.rs that routes nothing.
 #[test]
 fn no_operation_routes_nothing() {
