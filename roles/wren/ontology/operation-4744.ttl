@@ -7,6 +7,7 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
 
 chorus:Operation a owl:Class ;
     rdfs:label "Operation" ;
@@ -21,9 +22,17 @@ chorus:operationPath a owl:DatatypeProperty ;
 chorus:handlerPath a owl:DatatypeProperty ;
     rdfs:label "handler path" ; rdfs:domain chorus:Operation ; rdfs:range xsd:string .
 
+chorus:OperationShape a sh:NodeShape ;
+    sh:targetClass chorus:Operation ; sh:node chorus:CoreShape ;
+    rdfs:comment "An Operation names its home domain, its route segment and its handler; athena-gen refuses one that misses any." ;
+    sh:property [ sh:path chorus:homeDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path chorus:operationPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:handlerPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
 # The live tree (#4638): prompt → role → turn → card → run, for every role.
 chorus:tree a chorus:Operation ;
-    rdfs:label "tree" ;
+    rdfs:label "tree" ; chorus:label "tree" ;
+    chorus:comment "The live tree (#4638), prompt to role to turn to card to run, read from the store." ;
     rdfs:comment "The live tree (#4638): /<product>/awareness/tree, and /<product>/awareness/tree/<role> for one role's slice." ;
     chorus:homeDomain chorus:awareness ;
     chorus:operationPath "tree" ;
