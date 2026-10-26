@@ -20,7 +20,6 @@ export interface AwarenessRows { prompts: Row[]; roleStates: Row[]; turns: Row[]
 export const rowName = (id: string) => id.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 const principal = (role: string) => `principal-${role}`;
 const iso = (t: string) => new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z');
-const short = (s: string) => (s.length > 80 ? s.slice(0, 79) + '…' : s);
 
 export function awarenessRows(input: {
   now: string;
@@ -33,7 +32,6 @@ export function awarenessRows(input: {
   const promptRows: Row[] = prompts.map(p => ({
     name: rowName(p.lines[0]),
     label: `prompt ${p.lines[0]} from ${p.by}`,
-    comment: short(p.text.split('\n')[0]),
     promptText: p.text,
     promptedAt: iso(p.at),
     promptedBy: principal(p.by),

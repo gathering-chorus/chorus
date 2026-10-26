@@ -4,6 +4,8 @@
  * #4744 slice 3c — the rows pulse writes so the tree lives in the store (awareness-rows.ts):
  * the same facts the tree is built from, shaped to the Prompt, RoleState and Turn fields.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { awarenessRows, rowName } from './awareness-rows';
 
 const now = '2026-10-26T10:00:00.000Z';
@@ -55,4 +57,32 @@ test('negative proof: no last call, no RoleState row', () => {
 test('row names keep only what the door accepts', () => {
   expect(rowName('wren-2026-10-26T09:50:10.000Z')).toBe('wren-2026-10-26t09-50-10-000z');
   expect(rowName('wren:t1')).toBe('wren-t1');
+});
+
+/**
+ * #4757 — every row pulse writes uses only fields its class has in the generated pulse API
+ * (its model.rs, written by athena-gen from the model). On 10-26 the Prompt rows carried a
+ * `comment` the Prompt shape does not have and pulse-api refused all of them as off-model.
+ */
+function fieldsOf(className: string): Set<string> {
+  const model = readFileSync(join(__dirname, '../../../directing/products/pulse/api/src/model.rs'), 'utf8');
+  const start = model.indexOf(`name: "${className}", kind:`);
+  if (start < 0) throw new Error(`pulse-api serves no ${className}`);
+  const block = model.slice(start, model.indexOf('\n    },', start));
+  // name, label and status are the door's own keys on every class (rules.rs)
+  return new Set(['name', 'label', 'status', ...[...block.matchAll(/FieldDef \{ name: "([A-Za-z]+)"/g)].map(m => m[1])]);
+}
+
+test('every Prompt, RoleState and Turn row uses only its class fields in the generated API', () => {
+  const r = rows();
+  for (const [cls, list] of [['Prompt', r.prompts], ['RoleState', r.roleStates], ['Turn', r.turns]] as const) {
+    const allowed = fieldsOf(cls);
+    expect(list.length).toBeGreaterThan(0);
+    for (const row of list) expect(Object.keys(row).filter(k => !allowed.has(k))).toEqual([]);
+  }
+});
+
+// NEGATIVE PROOF: a field the class does not have is caught (the 10-26 `comment` on Prompt)
+test('negative proof: an off-model field on a row is caught', () => {
+  expect(fieldsOf('Prompt').has('comment')).toBe(false);
 });
