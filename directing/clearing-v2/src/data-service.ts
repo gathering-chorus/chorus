@@ -3,7 +3,7 @@
 import { BuzzRelayClient } from './relay-client';
 import { MessageRouter } from './router';
 import { ClearingMessage, NostrEvent } from './types';
-import { toClearingMessage } from './server';
+import { toClearingMessage } from './converters';
 import { RolesData, TodayData, RoomsData, DoorRolesResponse, TrustStripSource, TodayCardItem } from './sources/models';
 import { fetchJson, failureReason } from './sources/http';
 import { formatBostonTime, formatBostonWhen, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
