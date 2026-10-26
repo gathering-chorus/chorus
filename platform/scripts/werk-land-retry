@@ -9,7 +9,8 @@ when the go is on record:
 
   1. the card's newest cicd-land run stopped (failed, partly done or aborted),
   2. its params carry ACCEPTER=jeff,
-  3. a cicd run of the same card answered its go step with accepter=jeff,
+  3. a go run of the same card (cicd-go since #4758; a cicd run from before
+     the split held its own go) answered its go step with accepter=jeff,
      decision=go, and that run's cicd-land step enqueued this very land run
      (dagu prints the run id it enqueued; the step's stdout holds it),
   4. no other land is running or queued (lands go one at a time).
@@ -75,7 +76,7 @@ def enqueued_id(n):
 
 
 def the_go(cicd_runs, land_id):
-    """The cicd run whose recorded go enqueued `land_id`, or None."""
+    """The go run (cicd-go, or a pre-#4758 cicd) whose recorded go enqueued `land_id`, or None."""
     for r in cicd_runs:
         go, enq = node(r, "skill-werk-go"), node(r, "cicd-land")
         if not go or not enq or label(enq) != "succeeded":
@@ -109,7 +110,8 @@ def main(argv):
     if not re.search(r"(?:^|\s)ACCEPTER=\"?jeff\"?(?:\s|$)", land.get("params") or ""):
         print(f"werk-land-retry: REFUSED — #{card}'s land {lid} carries no ACCEPTER=jeff", file=sys.stderr)
         return 1
-    go = the_go(of_card(runs("cicd"), card), lid)
+    # #4758 — the go waits in the go half; older runs held it in cicd itself
+    go = the_go(of_card(runs("cicd-go") + runs("cicd"), card), lid)
     if not go:
         print(f"werk-land-retry: REFUSED — no recorded go enqueued #{card}'s land {lid}: "
               "only a land started by Jeff's go step is retried. Bring the demo to Jeff (/cws "
@@ -125,7 +127,7 @@ def main(argv):
     cmd = [DAGU_BIN, "--config", DAGU_CONFIG, "retry", f"--run-id={lid}"]
     cmd += [f"--step={step}", "--downstream"] if step else []
     cmd += ["cicd-land"]
-    print(f"#{card} land {lid} stopped at {step or 'its start'}; the go is cicd run {go.get('dagRunId')} "
+    print(f"#{card} land {lid} stopped at {step or 'its start'}; the go is {go.get('name') or 'cicd'} run {go.get('dagRunId')} "
           f"(accepter=jeff, decision=go)")
     if dry:
         print("dry run: " + " ".join(cmd))

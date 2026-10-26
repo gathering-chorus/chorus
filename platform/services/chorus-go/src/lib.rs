@@ -191,6 +191,19 @@ pub fn short(sha: &str) -> &str {
     &sha[..sha.len().min(12)]
 }
 
+/// #4758 — where the go of a /go link's run waits. The link names the card
+/// half's run (cicd); its go waits in the go half, run `go-<run>` on cicd-go
+/// (chorus-make GO_RUN_PREFIX), because a go resumed on `werk` queued behind
+/// test runs. A link from before #4758 names a cicd run that still holds its
+/// own go: when dagu has no go-half run for it, the cicd run is the target.
+pub fn go_target(run: &str, go_half_status: &str) -> (&'static str, String) {
+    if go_half_status.trim().is_empty() {
+        ("cicd", run.to_string())
+    } else {
+        ("cicd-go", format!("go-{run}"))
+    }
+}
+
 /// #4753 — whether the go page may open on this run, from the first line of
 /// `dagu status cicd --run-id <run>` ("Waiting - <time>"). One go per card:
 /// a run cicd-supersede stopped reads Aborted and is refused before Jeff signs.

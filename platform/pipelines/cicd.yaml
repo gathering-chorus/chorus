@@ -55,27 +55,7 @@ steps:
     description: "the demo: its own pipeline, called as one step"
     depends: [skill-werk-deploy-env-up]
     command: "env -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml start ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/pipelines/demo.yaml -- CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID}"
-  - name: skill-werk-go
-    description: "Jeff's go"
+  - name: cicd-go
+    description: "enqueue Jeff's go on the werk-go queue"
     depends: [skill-werk-demo-pipeline]
-    id: skill_werk_go
-    action: human.task
-    with:
-      prompt: "Jeff's go for #${CARD}?"
-      form:
-        type: object
-        properties:
-          accepter:
-            type: string
-            enum: [jeff, wren, kade, silas]
-          decision:
-            type: string
-            enum: [go, no]
-        required: [accepter, decision]
-  - name: cicd-land
-    description: "enqueue the land on the werk-land queue"
-    depends: [skill-werk-go]
-    preconditions:
-      - condition: "${skill_werk_go.outputs.decision}"
-        expected: "go"
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd-land -- CARD=${CARD} ROLE=${ROLE} ACCEPTER=${skill_werk_go.outputs.accepter}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue --run-id go-${DAG_RUN_ID} cicd-go -- CARD=${CARD} ROLE=${ROLE} CICD_RUN=${DAG_RUN_ID}"

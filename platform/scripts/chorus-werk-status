@@ -60,8 +60,11 @@ CARD_DAG = os.environ.get("CWS_CARD_DAG", "card")
 # #4553 — main is the fact a land reached: the card's commit there after the land began
 GIT_DIR = os.environ.get("CWS_GIT_DIR", os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")))
 MAIN_REF = os.environ.get("CWS_MAIN_REF", "origin/main")
+# #4758 — Jeff's go waits in its own pipeline, `cicd-go` (run go-<cicd run>), on
+# a queue that holds no test runs: the card run hands along to it at the demo
+GO_DAG = os.environ.get("CWS_GO_DAG", f"{DAGU_DAG}-go")
 # the pipelines a card's one line follows; /cws <card> lists every pipeline's runs (#4734)
-LEAD_DAGS = (DAGU_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG)
+LEAD_DAGS = (DAGU_DAG, GO_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG)
 DAGU_CONFIG = os.environ.get("CWS_DAGU_CONFIG", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/config/dagu.yaml"))
 
 # act stage markers, in pipeline order — last one seen in the log wins
@@ -1093,11 +1096,13 @@ def live_runs(runs):
 def run_count(runs):
     """#4553 — "run N" names its pipeline. #4536 "run 13" was its first cicd
     run: twelve athena runs came first. The newest run's pipeline leads."""
-    name = runs[0].get("name", DAGU_DAG)
-    mine = sum(1 for r in runs if r.get("name", DAGU_DAG) == name)
+    # #4758 — a go run is its cicd run's other half: one count, named cicd
+    pipe = lambda r: DAGU_DAG if r.get("name", DAGU_DAG) == GO_DAG else r.get("name", DAGU_DAG)
+    name = pipe(runs[0])
+    mine = sum(1 for r in runs if pipe(r) == name and r.get("name", DAGU_DAG) != GO_DAG)
     other = {}
     for r in runs:
-        n = r.get("name", DAGU_DAG)
+        n = pipe(r)
         if n != name:
             other[n] = other.get(n, 0) + 1
     return f"{name} run {mine}" + "".join(f" · {n} {c} run{'s' if c != 1 else ''}" for n, c in sorted(other.items()))
@@ -1568,6 +1573,19 @@ def fixture_4553():
                                     params="CARD=4577 ROLE=kade NAVIGATOR=silas")))
              and (lambda g: "complete cicd " in g and "accepter=jeff" in g and "by=" not in g)(
                  dagu_go(4578, run("cg", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4578)))),
+            # #4758 — the go waits in cicd-go: the card's line reads waiting for
+            # your go, counted as its cicd run, and the go names cicd-go's run.
+            # Negative proof: a go run superseded by a newer cicd run is not the go.
+            ("a go waiting in cicd-go is the card's go, on cicd's run count",
+             (lambda l: "waiting for your go" in l and "cicd run 1" in l and "cicd-go" not in l.split(" · ")[1])(
+                 line(4758, [run("go-c1", "cicd-go", "waiting", 0, [node("waiting", "skill-werk-go")], 4758),
+                             run("c1", "cicd", "succeeded", 1, [node("succeeded", "cicd-go")], 4758)], []))
+             and "complete cicd-go --run-id go-c1 " in dagu_go(4758, run("go-c1", "cicd-go", "waiting", 0, [node("waiting", "skill-werk-go")], 4758))
+             and dagu_state([run("c2", "cicd", "running", 0, [node("running", "skill-werk-build")], 4759),
+                             run("go-c1", "cicd-go", "waiting", 1, [node("waiting", "skill-werk-go")], 4759)], 1)[0] == "superseded"
+             and "waiting for your go" not in line(4759, [run("c2", "cicd", "running", 0, [node("running", "skill-werk-build")], 4759),
+                                                         run("go-c1", "cicd-go", "waiting", 1, [node("waiting", "skill-werk-go")], 4759),
+                                                         run("c1", "cicd", "succeeded", 2, [node("succeeded", "cicd-go")], 4759)], [])),
         ]
         DAGU, GIT_DIR, MAIN_REF, LOKI = keep
     for name, ok in cases:

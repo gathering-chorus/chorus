@@ -65,6 +65,25 @@ go_given() {  # the 4715 shape: Jeff's go enqueued land L1, which stopped at bor
   [[ "$called" == *"retry --run-id=L1 --step=skill-borg-ask --downstream cicd-land" ]] || { echo "$called"; return 1; }
 }
 
+# #4758 — scripts/werk-land-retry: the go now waits in the go half, cicd-go
+# (run go-<cicd run>); the land it enqueued is retried on that go.
+@test "a land enqueued by a cicd-go go is retried on that go" {
+  run_file cicd-go go-C2 "CARD=4758 ROLE=silas CICD_RUN=C2" 4 "skill-werk-go=4,cicd-land=4" '{"accepter":"jeff","decision":"go"}' L2
+  run_file cicd-land L2 "CARD=4758 ROLE=silas ACCEPTER=jeff" 2 "$LAND_STOPPED"
+  run "$VERB" 4758 --dry-run
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"the go is cicd-go run go-C2 (accepter=jeff, decision=go)"* ]] || { echo "$output"; return 1; }
+}
+
+# NEGATIVE PROOF: a cicd-go run whose go was not Jeff's enqueues nothing retryable
+@test "negative proof: a cicd-go go answered by a role is refused" {
+  run_file cicd-go go-C3 "CARD=4758 ROLE=silas CICD_RUN=C3" 4 "skill-werk-go=4,cicd-land=4" '{"accepter":"silas","decision":"go"}' L3
+  run_file cicd-land L3 "CARD=4758 ROLE=silas ACCEPTER=jeff" 2 "$LAND_STOPPED"
+  run "$VERB" 4758 --dry-run
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"no recorded go"* ]] || { echo "$output"; return 1; }
+}
+
 @test "negative proof: a land enqueued by hand (no go step names it) is refused, dagu untouched" {
   go_given '{"accepter":"jeff","decision":"go"}' L0   # the go enqueued a different run
   run "$VERB" 4715

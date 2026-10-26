@@ -68,14 +68,18 @@ fn the_land_runs_merge_sync_deploy_prove_ask_her_step_check_accept_in_order() {
 /// with the CLI, a top-level run, the way the pair hands off to cicd.
 #[test]
 fn cicd_hands_off_the_land_as_a_top_level_run() {
-    let y = chorus_make::generate("cicd", &parse_rows(&fixture("tests/fixtures/cicd-rows.tsv")).unwrap()).unwrap();
-    let s = steps(&y);
+    let rows = parse_rows(&fixture("tests/fixtures/cicd-rows.tsv")).unwrap();
+    let y = chorus_make::generate("cicd", &rows).unwrap();
+    // #4758 — the go half hands the land off; the card half hands off the go
+    let g = chorus_make::generate_go("cicd", &rows).unwrap();
+    let s = steps(&g);
     let (_, deps, hand) = s.iter().find(|(n, _, _)| n == "cicd-land").expect("a cicd-land step");
     assert_eq!(deps, "[skill-werk-go]");
     assert!(hand.contains("enqueue cicd-land -- CARD=${CARD} ROLE=${ROLE} ACCEPTER=${skill_werk_go.outputs.accepter}"), "{hand}");
     assert!(hand.contains("expected: \"go\""), "the land runs on a go only: {hand}");
     assert!(!hand.contains("dag.enqueue"), "a dag.enqueue land is a sub-DAG, and her step would be refused: {hand}");
     assert_eq!(fixture("../../pipelines/cicd.yaml"), y, "the committed cicd is the generated one");
+    assert_eq!(fixture("../../pipelines/cicd-go.yaml"), g, "the committed cicd-go is the generated one");
 }
 
 #[test]

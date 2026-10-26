@@ -18,6 +18,9 @@ setup() {
   [ "$status" -eq 0 ]
   run "$CM" check borg-prove-land "$ROWS" "$ROOT/platform/pipelines/borg-prove-land.yaml"
   [ "$status" -eq 0 ]
+  # #4758 — the go half, on its own queue
+  run "$CM" check borg-prove-go "$ROWS" "$ROOT/platform/pipelines/borg-prove-go.yaml"
+  [ "$status" -eq 0 ]
 }
 
 @test "a failure routes through borg-prove with each step's onFail" {

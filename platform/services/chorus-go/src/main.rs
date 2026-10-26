@@ -167,7 +167,8 @@ fn info(store: &Store, card: &str, run: &str, role: &str) -> Result<Value, Strin
     let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
     // #4753 — one go per card: a superseded or answered run is refused before Jeff signs
     if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric()) { return Err("no run in the link".into()); }
-    go_run_open(&run_status(run))?;
+    let (dag, id) = go_run(run);
+    go_run_open(&run_status(dag, &id))?;
     let round = round_of(role, card)?;
     let nonce = store.mint_challenge(card, run, &round)?;
     Ok(json!({
@@ -177,12 +178,17 @@ fn info(store: &Store, card: &str, run: &str, role: &str) -> Result<Value, Strin
     }))
 }
 
-/// The first line of `dagu status cicd --run-id <run>`; empty when dagu cannot say.
-fn run_status(run: &str) -> String {
+/// #4758 — the dag and run that hold the go of the link's run (lib go_target).
+fn go_run(run: &str) -> (&'static str, String) {
+    go_target(run, &run_status("cicd-go", &format!("go-{run}")))
+}
+
+/// The first line of `dagu status <dag> --run-id <run>`; empty when dagu cannot say.
+fn run_status(dag: &str, run: &str) -> String {
     let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
     let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
     Command::new(&dagu)
-        .args(["--config", &cfg, "status", "cicd", "--run-id", run])
+        .args(["--config", &cfg, "status", dag, "--run-id", run])
         .env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output()
         .ok()
@@ -194,8 +200,9 @@ fn run_status(run: &str) -> String {
 fn complete_dagu(rec: &GoRecord) -> Result<String, String> {
     let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
     let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
+    let (dag, id) = go_run(&rec.run);
     let o = Command::new(&dagu)
-        .args(["--config", &cfg, "human-task", "complete", "cicd", "--run-id", &rec.run, "--step", "skill_werk_go",
+        .args(["--config", &cfg, "human-task", "complete", dag, "--run-id", &id, "--step", "skill_werk_go",
                "--input", "accepter=jeff", "--input", &format!("decision={}", rec.decision)])
         .env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output().map_err(|e| format!("dagu: {e}"))?;
