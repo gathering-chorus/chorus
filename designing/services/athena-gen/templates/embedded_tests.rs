@@ -223,6 +223,11 @@ fn the_product_root_is_the_header_the_model_marks() {
     for c in CLASSES.iter().filter(|c| c.fields.iter().any(|f| f.header)) {
         let want: Vec<&str> = c.fields.iter().filter(|f| f.header).map(|f| f.name).collect();
         assert_eq!(out["data"][format!("{}.{}", c.domain, c.segment)]["fields"], json!(want));
+        let line = &out["data"][format!("{}.{}", c.domain, c.segment)];
+        assert_eq!(line["stream"], json!(format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment)));
+        // the link resolves: the stream answers under the same product route
+        let (code, _) = crate::route(&ctx(&store), "GET", line["stream"].as_str().unwrap(), None, "");
+        assert_eq!(code, 200);
     }
 }
 

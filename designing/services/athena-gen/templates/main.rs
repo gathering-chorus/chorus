@@ -53,7 +53,9 @@ pub fn header(store: &dyn RowStore, viewer: Option<&str>) -> (u16, Value) {
             }
             Value::Object(o)
         }).collect();
-        data.insert(format!("{}.{}", c.domain, c.segment), json!({ "fields": fields, "rows": rows }));
+        // #4744 AC8 — each header line opens its domain's stream, where the same filter and search apply
+        let stream = format!("/{PRODUCT}/{}/{}", c.domain, c.segment);
+        data.insert(format!("{}.{}", c.domain, c.segment), json!({ "fields": fields, "rows": rows, "stream": stream }));
     }
     if data.is_empty() {
         return error(404, "unknown-route", "no domain of this product puts a field on its header");
