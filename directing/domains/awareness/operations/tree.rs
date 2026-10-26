@@ -295,12 +295,68 @@ pub fn slice_for(tree: &Value, role: &str) -> Value {
     Value::Object(m)
 }
 
-/// The handler athena-gen routes `/<product>/awareness/tree[/<role>]` to. Live inputs
-/// (Jeff's lines from the messages rows, actors, turns and runs from the spine) come in
-/// the next slice; until then the operation answers 503 and names what it is missing,
-/// never an empty tree that would read as "nobody did anything".
-pub fn run(_ctx: &crate::Ctx, _rest: &[&str], _query: &str) -> (u16, Value) {
-    (503, json!({ "error": "unmeasured", "message": "tree: live inputs (messages, actors, spine) are not wired yet (#4744 slice 3c)" }))
+/// The rows of one class the product serves, newest-bounded by `since` on `field` (all of them, up to 2,000).
+fn rows_of(ctx: &crate::Ctx, class: &str, field: &str, since: &str) -> Result<Vec<Value>, String> {
+    let c = crate::model::CLASSES.iter().find(|c| c.name == class)
+        .ok_or_else(|| format!("this product serves no {class} rows"))?;
+    let w = crate::store::Where { bounds: vec![(field.to_string(), ">", since.to_string())], ..Default::default() };
+    let (rows, _) = ctx.store.list_where(c, 2000, 0, None, &w)?;
+    Ok(rows.into_iter().map(Value::Object).collect())
+}
+
+fn local(v: &Value) -> String {
+    v.as_str().unwrap_or("").trim_start_matches("principal-").to_string()
+}
+
+/// The tree's input from the store: the Prompt, Turn and RoleState rows pulse writes (#4744
+/// slice 3c). A prompt row is already joined, so it enters as one line; a turn's prompt is
+/// the line that woke it. Runs are not rows yet, so a prompt shows no runs.
+pub fn input_from_rows(now: &str, prompts: &[Value], turns: &[Value], states: &[Value], last_n: usize) -> Value {
+    let lines: Vec<Value> = prompts.iter().map(|p| json!({
+        "id": p["name"], "from": local(&p["promptedBy"]),
+        "to": p["promptTo"].as_array().map(|a| a.iter().map(local).collect::<Vec<_>>()).unwrap_or_default(),
+        "text": p["promptText"], "sentAt": p["promptedAt"],
+    })).collect();
+    let turns: Vec<Value> = turns.iter().map(|t| {
+        let mut m = Map::new();
+        m.insert("id".into(), t["name"].clone());
+        m.insert("role".into(), json!(local(&t["turnOf"])));
+        m.insert("run".into(), json!(""));
+        m.insert("startedAt".into(), t["turnStartedAt"].clone());
+        m.insert("lastCallAt".into(), t["lastCallAt"].clone());
+        if let Some(e) = t["turnEndedAt"].as_str().filter(|e| !e.is_empty()) { m.insert("endedAt".into(), json!(e)); }
+        if let Some(c) = t["onCard"].as_str().and_then(|c| c.trim_start_matches("card-").parse::<i64>().ok()) { m.insert("card".into(), json!(c)); }
+        if let Some(p) = t["answersPrompt"].as_str().filter(|p| !p.is_empty()) { m.insert("wokenByLine".into(), json!(p.trim_start_matches("prompt-"))); }
+        Value::Object(m)
+    }).collect();
+    let mut actors: Vec<String> = states.iter().map(|s| local(&s["aboutPrincipal"])).collect();
+    for p in &lines {
+        // the sender of a prompt row was an actor when pulse wrote it
+        let by = p["from"].as_str().unwrap_or("").to_string();
+        if !by.is_empty() && !actors.contains(&by) { actors.push(by); }
+    }
+    let last_calls: Map<String, Value> = states.iter().map(|s| (local(&s["aboutPrincipal"]), s["observedAt"].clone())).collect();
+    json!({ "now": now, "actors": actors, "lines": lines, "turns": turns, "runs": [], "notes": [], "lastCalls": last_calls, "lastN": last_n })
+}
+
+/// `/<product>/awareness/tree` (the whole tree) and `/<product>/awareness/tree/<role>`
+/// (one role's slice), from the rows in the store. `n=` prompts, 1–50 (default 5).
+pub fn run(ctx: &crate::Ctx, rest: &[&str], query: &str) -> (u16, Value) {
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let (now, since) = (iso(now_ms), iso(now_ms - 6 * 3_600_000));
+    let n = query.split('&').find_map(|kv| kv.strip_prefix("n=")).and_then(|v| v.parse::<usize>().ok()).unwrap_or(LAST_N_PROMPTS).clamp(1, 50);
+    let read = || -> Result<Value, String> {
+        let prompts = rows_of(ctx, "Prompt", "promptedAt", &since)?;
+        let turns = rows_of(ctx, "Turn", "turnStartedAt", &since)?;
+        let states = rows_of(ctx, "RoleState", "observedAt", &since)?;
+        Ok(build_tree(&input_from_rows(&now, &prompts, &turns, &states, n)))
+    };
+    match (read(), rest) {
+        (Err(m), _) => (503, json!({ "error": "store", "message": format!("tree: {m}") })),
+        (Ok(tree), []) => (200, tree),
+        (Ok(tree), [role]) => (200, slice_for(&tree, role)),
+        (Ok(_), _) => (404, json!({ "error": "unknown-route", "message": "tree takes at most one role" })),
+    }
 }
 
 #[cfg(test)]
@@ -332,6 +388,23 @@ mod tests {
         let mut input = f["input"].clone();
         input["lines"][1]["sentAt"] = json!("2026-10-26T09:50:30.000Z");
         assert_ne!(build_tree(&input), f["tree"]);
+    }
+
+    /// The rows pulse writes (awareness-rows.ts) make the same tree as the facts they came from.
+    #[test]
+    fn rows_from_the_store_make_the_tree_their_facts_make() {
+        let prompts = vec![json!({ "name": "58226", "promptedBy": "principal-jeff", "promptTo": ["principal-wren"], "promptText": "pull 4744\nand pair", "promptedAt": "2026-10-26T09:50:00Z" })];
+        let turns = vec![json!({ "name": "wren-t1", "turnOf": "principal-wren", "turnStartedAt": "2026-10-26T09:50:10Z", "turnEndedAt": "2026-10-26T09:52:00Z", "lastCallAt": "2026-10-26T09:52:00Z", "onCard": "card-4744", "answersPrompt": "prompt-58226" })];
+        let states = vec![json!({ "aboutPrincipal": "principal-wren", "observedAt": "2026-10-26T09:59:30Z" })];
+        let tree = build_tree(&input_from_rows("2026-10-26T10:00:00.000Z", &prompts, &turns, &states, 5));
+        assert_eq!(tree["prompts"][0]["text"], json!("pull 4744\nand pair"));
+        assert_eq!(tree["prompts"][0]["roles"][0]["role"], json!("wren"));
+        assert_eq!(tree["prompts"][0]["roles"][0]["cards"][0]["card"], json!(4744));
+        assert_eq!(tree["roles"], json!([{ "role": "wren", "state": "moving", "secondsSinceLastCall": 30 }]));
+        // NEGATIVE PROOF: a turn whose prompt row is missing is not hung under any prompt
+        let orphan = vec![json!({ "name": "wren-t2", "turnOf": "principal-wren", "turnStartedAt": "2026-10-26T09:55:00Z", "lastCallAt": "2026-10-26T09:56:00Z", "answersPrompt": "prompt-99999" })];
+        let tree = build_tree(&input_from_rows("2026-10-26T10:00:00.000Z", &prompts, &orphan, &states, 5));
+        assert_eq!(tree["prompts"][0]["roles"][0]["turns"], json!([]));
     }
 
     #[test]
