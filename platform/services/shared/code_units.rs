@@ -114,7 +114,8 @@ pub fn join_repo(base: &str, rel: &str) -> Option<String> {
 /// handler in its domain's home, named by the generated src/ops.rs), as repo paths, with
 /// the files each of those pulls in by `include!`/`include_str!` (its fixtures). Shared
 /// files are shared_includes' job. A crate's sources are its src/*.rs, so a `#[path]`
-/// resolves from `<crate>/src`.
+/// resolves from `<crate>/src`; a `#[path]` in a nested module (src/a/b.rs) is not
+/// scanned and is missed (Kade's review, #4744) — the generated ops.rs sits in src/.
 pub fn outside_path_includes(crate_path: &str, sources: &[String], read: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
     let quoted = |line: &str, open: &str| -> Option<String> {
         let rest = &line[line.find(open)? + open.len()..];
@@ -125,11 +126,10 @@ pub fn outside_path_includes(crate_path: &str, sources: &[String], read: &dyn Fn
     for text in sources {
         for line in text.lines() {
             let Some(t) = quoted(line, "#[path = \"") else { continue };
-            if t.contains("shared/") {
-                continue;
-            }
             let Some(file) = join_repo(&format!("{crate_path}/src"), &t) else { continue };
-            if file.starts_with(&inside) || out.contains(&file) {
+            // shared files are shared_includes' (matched by where they resolve, Kade's review:
+            // an operations path that merely contains "shared/" is still ours)
+            if file.starts_with(&format!("{SHARED}/")) || file.starts_with(&inside) || out.contains(&file) {
                 continue;
             }
             let dir = file.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();

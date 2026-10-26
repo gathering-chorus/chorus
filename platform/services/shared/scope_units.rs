@@ -322,6 +322,11 @@ mod scope_refusal_4169 {
             "directing/domains/awareness/operations/tree.rs".to_string(),
         ]);
         assert_eq!(code_units::join_repo("a/b", "../../../c"), None);
+        // a path that only contains "shared/" is still an outside file; a real shared file is not
+        let src2 = vec!["#[path = \"../../../../domains/x/operations/shared/y.rs\"] mod y;\n#[path = \"../../../../../platform/services/shared/z.rs\"] mod z;".to_string()];
+        let none = |_: &str| None;
+        assert_eq!(code_units::outside_path_includes("directing/products/pulse/api", &src2, &none),
+                   vec!["directing/domains/x/operations/shared/y.rs".to_string()]);
     }
 
     #[test]
