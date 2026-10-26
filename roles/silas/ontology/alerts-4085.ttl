@@ -66,7 +66,7 @@ chorus:AlertShape a sh:NodeShape ;
     # Jeff 2026-09-03: no catch-all instances graph. Alert rows live in the
     # alerts domain's own graph, which is also where the harvester writes.
     chorus:instancesGraph "urn:chorus:domains:alerts" ;
-    sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path rdfs:label       ; chorus:inHeader true ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:alertSource ; sh:minCount 1 ; sh:in ( "grafana" "script" ) ] ;
     # #4671 — a named node, optional: a Grafana-sourced row has no yml. The old
     # minCount-1 blank node is deleted by path once (scripts/alertfile-optional-4671.sh);
