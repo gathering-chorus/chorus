@@ -73,6 +73,42 @@ fn error(code: u16, kind: &str, message: &str) -> (u16, Value) {
     (code, json!({ "error": kind, "message": message }))
 }
 
+/// #4744 — `%XX` and `+` in a query value, decoded; a malformed escape is kept as typed.
+fn decode(v: &str) -> String {
+    let b = v.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len() => match std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                Some(x) => { out.push(x); i += 2; }
+                None => out.push(b'%'),
+            },
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// #4744 AC8 — the filter a collection read carries: every query key but limit and offset
+/// names a field of the class (or is `q`, the text search). An unknown key is refused by name.
+fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)> {
+    let mut w = store::Where::default();
+    for kv in query.split('&').filter(|kv| !kv.is_empty()) {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        let (k, v) = (decode(k), decode(v));
+        match k.as_str() {
+            "limit" | "offset" => {}
+            "q" => w.q = Some(v),
+            f if f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f) => w.eq.push((k.clone(), v)),
+            f => return Err(error(400, "unknown-field", &format!("{} has no field '{f}'", class.name))),
+        }
+    }
+    Ok(w)
+}
+
 fn query_param(query: &str, key: &str) -> Option<usize> {
     query.split('&').find_map(|kv| kv.strip_prefix(&format!("{key}=")).and_then(|v| v.parse().ok()))
 }
@@ -206,7 +242,12 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         3 => {
             let limit = query_param(query, "limit").unwrap_or(100).min(1000);
             let offset = query_param(query, "offset").unwrap_or(0);
-            let page = match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) };
+            let w = match where_of(class, query) { Ok(w) => w, Err(e) => return e };
+            let page = if w != store::Where::default() {
+                store.list_where(class, limit, offset, viewer.as_deref(), &w)
+            } else {
+                match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) }
+            };
             match page {
                 Ok((rows, total)) => {
                     let mut e = envelope(class, path, json!(rows));

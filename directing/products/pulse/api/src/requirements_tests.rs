@@ -83,6 +83,10 @@ impl RowStore for Mem {
     fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String> {
         Ok(self.get(class, name)?.filter(|r| r.get("ownedBy").and_then(|v| v.as_str()).is_some_and(|v| viewer.ends_with(v))))
     }
+    // the filter itself is proven on the real SPARQL store (embedded_tests)
+    fn list_where(&self, class: &ClassDef, l: usize, o: usize, viewer: Option<&str>, _w: &crate::store::Where) -> Result<(Vec<Row>, usize), String> {
+        match viewer { Some(v) => self.list_seen_by(class, l, o, v), None => self.list(class, l, o) }
+    }
 }
 
 fn class_with_link() -> &'static ClassDef {

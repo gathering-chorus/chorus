@@ -225,3 +225,34 @@ fn the_product_root_is_the_header_the_model_marks() {
         assert_eq!(out["data"][format!("{}.{}", c.domain, c.segment)]["fields"], json!(want));
     }
 }
+
+/// #4744 AC8 (Jeff 10-26: "filter and search on any domain like a stream") — every
+/// collection takes the same filter (`<field>=<value>`) and text search (`q=`), run in the
+/// store before the page is cut, so the count is the count of matches.
+#[test]
+fn every_collection_filters_and_searches_in_the_store() {
+    let (c, f) = CLASSES.iter()
+        .find_map(|c| c.fields.iter().find(|f| !f.link && !f.many && f.datatype == "string" && f.allowed.is_empty()).map(|f| (c, f.name)))
+        .expect("a class with a free string field");
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    for (n, v) in [("r1", "alpha one"), ("r2", "beta two")] {
+        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
+    }
+    let ctx = ctx(&store);
+    let path = format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment);
+    let get = |q: &str| crate::route(&ctx, "GET", &format!("{path}?{q}"), None, "");
+    let names = |out: &Value| out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+
+    let (code, out) = get(&format!("{f}=alpha%20one"));
+    assert_eq!((code, out["count"].clone(), names(&out)), (200, json!(1), vec!["r1".to_string()]), "{out}");
+    let (code, out) = get("q=BETA");
+    assert_eq!((code, out["count"].clone(), names(&out)), (200, json!(1), vec!["r2".to_string()]), "{out}");
+    // NEGATIVE PROOF: a value no row holds answers zero, so the filter really runs
+    let (code, out) = get(&format!("{f}=gamma"));
+    assert_eq!((code, out["count"].clone()), (200, json!(0)), "{out}");
+    // a field the class does not have is refused by name, never answered empty
+    let (code, out) = get("nosuchfield=x");
+    assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
+    assert!(out["message"].as_str().unwrap().contains("nosuchfield"), "{out}");
+}

@@ -29,7 +29,40 @@ pub trait RowStore: Send + Sync {
     /// Read or Write Permission names for it (the row, its owner, or the whole graph).
     fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String>;
     /// One row by name if `viewer` may see it; None otherwise (never "exists, but not yours").
-    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;
+    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;    /// #4744 — a page of the rows that match `w` (and that `viewer` may see, when given),
+    /// with the count of all matches: the filter runs in the store, before the page is cut.
+    fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String>;
+}
+
+/// #4744 — one filter for every collection: each `eq` field holds the value (a literal
+/// equal to it, or a link whose name it is), and `q` is found in some literal of the row.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Where {
+    pub eq: Vec<(String, String)>,
+    pub q: Option<String>,
+}
+
+fn sparql_str(v: &str) -> String {
+    format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r"))
+}
+
+/// The graph pattern for `w`, over the row `?s` in `graph`.
+pub fn where_pattern(w: &Where, graph: &str) -> String {
+    let mut out = String::new();
+    for (i, (field, value)) in w.eq.iter().enumerate() {
+        let v = sparql_str(value);
+        out.push_str(&format!(
+            "GRAPH <{graph}> {{ ?s <{NS}{field}> ?w{i} }} \
+             FILTER(STR(?w{i}) = {v} || (isIRI(?w{i}) && (STRENDS(STR(?w{i}), CONCAT(\"#\", {v})) || STRENDS(STR(?w{i}), CONCAT(\"/\", {v}))))) "
+        ));
+    }
+    if let Some(q) = &w.q {
+        out.push_str(&format!(
+            "FILTER EXISTS {{ GRAPH <{graph}> {{ ?s ?qp ?qo }} FILTER(isLiteral(?qo) && CONTAINS(LCASE(STR(?qo)), LCASE({}))) }} ",
+            sparql_str(q)
+        ));
+    }
+    out
 }
 
 /// #4524 — the visibility filter, one pattern for list, count and get. `?s` is the row in
@@ -470,6 +503,17 @@ impl RowStore for Sparql {
 
     fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String> {
         let (g, c, f) = (class.graph, class.name, seen_by(viewer, class.graph));
+        let count = self.select(&format!("SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }}"))?;
+        let total = count.first().and_then(|r| r["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0);
+        let page = self.select(&format!("SELECT DISTINCT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} LIMIT {limit} OFFSET {offset}"))?;
+        let mut subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
+        subjects.sort();
+        Ok((self.rows(class, &subjects)?, total))
+    }
+
+    fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String> {
+        let (g, c) = (class.graph, class.name);
+        let f = format!("{} {}", viewer.map(|v| seen_by(v, g)).unwrap_or_default(), where_pattern(w, g));
         let count = self.select(&format!("SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }}"))?;
         let total = count.first().and_then(|r| r["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0);
         let page = self.select(&format!("SELECT DISTINCT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} LIMIT {limit} OFFSET {offset}"))?;
