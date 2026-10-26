@@ -15,8 +15,9 @@ describe('#4751 Clearing v2 smooth history scroll and mobile header compactness'
     expect(styleContent).toMatch(/\.msg[^{]*\{[^}]*contain-intrinsic-size:\s*auto\s+120px/);
   });
 
-  it('contains explicit sizing and aspect-ratio on msg photos to prevent prepend reflow jumps', () => {
+  it('contains explicit sizing and aspect-ratio on msg photos with object-fit: contain to prevent prepend reflow jumps without cropping', () => {
     expect(styleContent).toMatch(/\.msg-photos\s+img\s*\{[^}]*aspect-ratio/);
+    expect(styleContent).toMatch(/\.msg-photos\s+img\s*\{[^}]*object-fit:\s*contain/);
   });
 
   it('defaults relay-client fetchBefore limit to 15 rather than 50', async () => {
