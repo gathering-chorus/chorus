@@ -28,6 +28,7 @@ beforeAll(() => {
     throw new Error(`dist/cli.js is missing and building it failed — build first: ${(e as { stdout?: string }).stdout ?? e}`);
   }
   if (!fs.existsSync(CLI)) throw new Error('dist/cli.js is missing after `tsc -p .` — build first');
+  // slow-by-design: npx tsc -p . (cold dist build) measured 4.5 s typecheck on Library 10-26; a loaded nightly box runs it many times slower
 }, 150000);
 // #4538 — the CLI reads Vikunja settings before it validates arguments, so in a
 // werk (no .env) it died with "No .env file found" and these validation tests

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: ontology
+# @domain: domains
 # 4700-domain-radius.bats — domain-radius, and product-radius's value stream + step,
 # on a raw-graph fixture so every flag is computed, never planted in the fixture (#4700).
 # Exercises: platform/scripts/domain-radius, platform/scripts/product-radius,

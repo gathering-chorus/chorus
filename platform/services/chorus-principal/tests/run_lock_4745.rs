@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: identity
 // #4745 — 4328-session-live red: wren's one session had 3 live runs, written by
 // three processes in 600 ms that each read "no live run" before any saved one.
 // Covers platform/services/chorus-principal/src/lib.rs (run_lock, record_run).

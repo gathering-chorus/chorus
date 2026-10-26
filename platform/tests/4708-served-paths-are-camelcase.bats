@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: ontology
+# @domain: knowledge
 # @card: #4708
 # @owner: wren
 # #4708 — on 10-23 #4702 gave DomainShape a path <urn:borg:ontology/usesEnvironment>.

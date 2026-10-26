@@ -58,9 +58,9 @@ pub fn typed_text(prompt: &str) -> Option<String> {
 
 fn pulse_secret() -> Option<String> {
     std::env::var("CHORUS_PULSE_SECRET").ok().or_else(|| {
-        let p = std::env::var("CHORUS_PULSE_SECRET_FILE").unwrap_or_else(|_| {
-            format!("{}/.chorus/pulse-nudge.secret", std::env::var("HOME").unwrap_or_default())
-        });
+        // #4747 — the team's state dir, so a role on its own account finds it (#4535)
+        let p = std::env::var("CHORUS_PULSE_SECRET_FILE")
+            .unwrap_or_else(|_| format!("{}/pulse-nudge.secret", crate::shared::state_paths::chorus_state_dir()));
         std::fs::read_to_string(p).ok().map(|s| s.trim().to_string())
     })
     .filter(|s| !s.is_empty())

@@ -1,0 +1,6 @@
+#!/bin/sh
+# @domain: cicd — a stub for the verb story (platform/tests/3325-verb-story.bats)
+# #4747 — since #4710 werk-merge asks chorus-go for Jeff's passkey-signed go.
+# The story's lands stand for a signed go; the record says the merge asked.
+echo "chorus-go $*" >> "$SPINE"
+echo "chorus-go: signed go verified (verb-story stub)"

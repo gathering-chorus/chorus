@@ -51,6 +51,16 @@ rust:
   # #4465 reopen — chorus-make shipped 2026-10-09 with no floor (ratchet 20 -> 21);
   # same rule as #4270: the line coverage it has today, cargo llvm-cov 2026-10-11 07:40.
   platform/services/chorus-make: 74          # measured 74.67% (lib.rs 94.92%, main.rs 0%)
+  # #4747 — Jeff 2026-10-26 14:21: "80% on all thats our policy". Seven crates
+  # shipped with no floor (ratchet 20 -> 25). Each gets the policy, not today's
+  # number; measured cargo llvm-cov lines % 2026-10-26 13:10 beside it.
+  platform/services/athena-deploy: 80        # measured 61.33%
+  platform/services/athena-model: 80         # measured 80.02%
+  platform/services/borg-prove: 80           # measured 83.81%
+  platform/services/chorus-runner: 80        # measured 66.24%
+  platform/services/chorus-jeff-signer: 80   # measured 79.01%
+  platform/services/convergence-land: 80     # measured 53.83%
+  platform/services/chorus-go: 80            # measured 54.92%
 
 # When this file changes:
 # - The enforcing automation (run_coverage() in platform/scripts/nightly-suites.sh —
