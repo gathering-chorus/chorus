@@ -150,6 +150,12 @@ pub fn scope_unit_names(
             names.insert(f.clone());
             continue;
         }
+        // #4744 — a file a crate compiles in from outside itself by `#[path]` (an
+        // Operation handler, its fixtures) scopes to that crate, like a shared file
+        if !f.starts_with("platform/services/shared/") && edges.iter().any(|(p, _)| p == f) {
+            names.insert(f.clone());
+            continue;
+        }
         if f.starts_with("platform/services/shared/") {
             if edges.iter().any(|(p, _)| p == f) {
                 names.insert(f.clone());
@@ -289,6 +295,35 @@ mod scope_refusal_4169 {
     // #4538 — a shell suite outside any tests/ directory scopes to itself, by
     // the same rule the crawler uses. NEGATIVE PROOF: a plain script beside it
     // (not test-named) still refuses as unmapped.
+    #[test]
+    fn a_file_a_crate_compiles_in_by_path_scopes_to_that_crate_4744() {
+        let units = vec![u("pulse-api", "directing/products/pulse/api")];
+        let f = "directing/domains/awareness/operations/tree.rs".to_string();
+        let edges = vec![(f.clone(), "pulse-api".to_string())];
+        assert_eq!(scope_unit_names(&[f], &units, &edges, false), ScopeVerdict::Scoped(vec!["pulse-api".to_string()]));
+    }
+
+    /// NEGATIVE PROOF (Kade): a file under operations/ that no crate's `#[path]` names stays unclaimed.
+    #[test]
+    fn negative_proof_an_operations_file_no_crate_names_is_refused_4744() {
+        let units = vec![u("pulse-api", "directing/products/pulse/api")];
+        let f = "directing/domains/awareness/operations/orphan.rs".to_string();
+        let edges = vec![("directing/domains/awareness/operations/tree.rs".to_string(), "pulse-api".to_string())];
+        assert_eq!(scope_unit_names(&[f.clone()], &units, &edges, false), ScopeVerdict::Full(format!("unmapped:{f}")));
+    }
+
+    #[test]
+    fn a_crate_records_its_outside_path_files_and_their_fixtures_4744() {
+        let src = vec!["#[path = \"../../../../domains/awareness/operations/tree.rs\"]\npub mod tree;\n#[path = \"inner.rs\"] mod inner;".to_string()];
+        let read = |p: &str| (p == "directing/domains/awareness/operations/tree.rs")
+            .then(|| "const P: &str = include_str!(\"fixtures/tree-parity-4638.json\");".to_string());
+        assert_eq!(code_units::outside_path_includes("directing/products/pulse/api", &src, &read), vec![
+            "directing/domains/awareness/operations/fixtures/tree-parity-4638.json".to_string(),
+            "directing/domains/awareness/operations/tree.rs".to_string(),
+        ]);
+        assert_eq!(code_units::join_repo("a/b", "../../../c"), None);
+    }
+
     #[test]
     fn a_shell_suite_outside_tests_scopes_to_itself_4538() {
         let suite = "proving/fitness/test-run-fitness-ceiling.sh";
