@@ -543,7 +543,7 @@ nav.top .n {
   flex: 1;
   overflow: hidden;
 }
-.messages {
+.messages, #messages-stream {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -552,6 +552,7 @@ nav.top .n {
   gap: 2px;
   padding: 8px 0;
   min-width: 0;
+  overflow-anchor: auto;
 }
 .msg, .message {
   display: flex;

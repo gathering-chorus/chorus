@@ -2,6 +2,8 @@
 // @card: #4749
 // @domain: messages
 
+import { ClearingMessage } from '../src/types';
+
 const app = require('../public/app.js');
 
 function createMockElement(id: string, tag = 'div') {
