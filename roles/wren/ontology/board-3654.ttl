@@ -102,7 +102,7 @@ chorus:CardShape a sh:NodeShape ;
   # resolve_instances_graph falls through to urn:chorus:domains:<domain> from the
   # cards domain's definesVocabulary, which is the derivation ADR-051 asks for —
   # so read and write both follow the model instead of a hand-written override.
-  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path rdfs:label ; chorus:inHeader true ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   # #4116 — a card row carries its owner, like every other row the door writes.
   # The write door refuses a node whose ownedBy is absent (authz_allows is
   # fail-closed), so a row minted without one can never be written again by
@@ -113,9 +113,9 @@ chorus:CardShape a sh:NodeShape ;
   # #3102 — the row carries the board state, kept current by the cards package
   # and the reconcile pass (cards graph-sync). status is the kanban column;
   # assignee is the card's owner on the board (ownedBy is whoever wrote the row).
-  sh:property [ sh:path chorus:status ; sh:datatype xsd:string ;
+  sh:property [ sh:path chorus:status ; chorus:inHeader true ; sh:datatype xsd:string ;
                 sh:in ( "Later" "Next" "Now" "WIP" "Keep" "Blocked" "SWAT" "Harvesting" "Gathering" "Jeff Tickets" "Tech Debt" "Ops" "garden-observability" "Done" "Won't Do" ) ] ;
-  sh:property [ sh:path chorus:assignee ; sh:maxCount 1 ; sh:class chorus:Role ] ;
+  sh:property [ sh:path chorus:assignee ; chorus:inHeader true ; sh:maxCount 1 ; sh:class chorus:Role ] ;
   sh:property [ sh:path chorus:priority ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "P1" "P2" "P3" ) ] ;
   sh:property [ sh:path chorus:cardType ; sh:maxCount 1 ; sh:datatype xsd:string ;
                 sh:in ( "new" "enhance" "fix" "chore" "swat" "issue" ) ] .

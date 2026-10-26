@@ -200,3 +200,28 @@ fn sign_in_reads_this_store_not_a_remote_one() {
     let ids = chorus_oidc::oidc::resolve_principal_webids(&q).expect("the store answered");
     assert_eq!(ids, vec!["https://id.example/art#me".to_string()]);
 }
+
+/// #4744 — the product root serves exactly the fields the model marks c:inHeader, per
+/// collection; a product that marks none has no root route (both states asserted).
+#[test]
+fn the_product_root_is_the_header_the_model_marks() {
+    let store = Sparql::over(Box::new(seeded()));
+    let marked: Vec<String> = CLASSES.iter().filter(|c| c.fields.iter().any(|f| f.header))
+        .map(|c| format!("{}.{}", c.domain, c.segment)).collect();
+    let (code, out) = crate::header(&store, None);
+    if marked.is_empty() {
+        assert_eq!((code, out["error"].as_str()), (404, Some("unknown-route")), "{out}");
+        return;
+    }
+    assert_eq!(code, 200, "{out}");
+    assert_eq!(out["kind"], json!("Header"));
+    let mut got: Vec<String> = out["data"].as_object().unwrap().keys().cloned().collect();
+    got.sort();
+    let mut want = marked.clone();
+    want.sort();
+    assert_eq!(got, want);
+    for c in CLASSES.iter().filter(|c| c.fields.iter().any(|f| f.header)) {
+        let want: Vec<&str> = c.fields.iter().filter(|f| f.header).map(|f| f.name).collect();
+        assert_eq!(out["data"][format!("{}.{}", c.domain, c.segment)]["fields"], json!(want));
+    }
+}
