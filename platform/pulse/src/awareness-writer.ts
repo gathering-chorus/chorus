@@ -86,7 +86,7 @@ export function pulseCredential(root = process.env.CHORUS_HOME || path.resolve(_
     if (cached && Date.now() - cached.at < CRED_TTL_MS) return Promise.resolve(cached.value);
     return new Promise((resolve, reject) => {
       execFile(path.join(root, 'platform/scripts/chorus-identity-token'), ['pulse'], { timeout: 10_000 }, (err, out) => {
-        const value = String(out ?? '').trim();
+        const value = String(out).trim();
         if (err || !value) return reject(new Error(`identity script for pulse: ${err ? err.message.split('\n')[0] : 'empty output'}`));
         cached = { value, at: Date.now() };
         resolve(value);

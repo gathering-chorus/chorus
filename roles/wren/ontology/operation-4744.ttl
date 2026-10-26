@@ -12,8 +12,8 @@ chorus:Operation a owl:Class ;
     rdfs:label "Operation" ;
     rdfs:comment "A live computation a product serves over its domains' data, declared in the model and compiled in by athena-gen." .
 
-chorus:hasOperation a owl:ObjectProperty ;
-    rdfs:label "has operation" ; rdfs:domain chorus:Product ; rdfs:range chorus:Operation .
+chorus:servesOperation a owl:ObjectProperty ;
+    rdfs:label "serves operation" ; rdfs:domain chorus:Product ; rdfs:range chorus:Operation .
 chorus:homeDomain a owl:ObjectProperty ;
     rdfs:label "home domain" ; rdfs:domain chorus:Operation ; rdfs:range chorus:Domain .
 chorus:operationPath a owl:DatatypeProperty ;
@@ -29,4 +29,4 @@ chorus:tree a chorus:Operation ;
     chorus:operationPath "tree" ;
     chorus:handlerPath "directing/domains/awareness/operations/tree.rs" .
 
-chorus:pulse chorus:hasOperation chorus:tree .
+chorus:pulse chorus:servesOperation chorus:tree .

@@ -272,7 +272,7 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
     }
     // #4744 — an operation lives in one of the product's own domains, or it is refused by name
     for o in select(store, &format!(
-        "SELECT ?o ?d ?seg ?h WHERE {{ c:{name} c:hasOperation ?o . ?o c:homeDomain ?d ; c:operationPath ?seg ; c:handlerPath ?h }} ORDER BY ?o"))? {
+        "SELECT ?o ?d ?seg ?h WHERE {{ c:{name} c:servesOperation ?o . ?o c:homeDomain ?d ; c:operationPath ?seg ; c:handlerPath ?h }} ORDER BY ?o"))? {
         let (oname, d) = (o["o"].clone(), o["d"].clone());
         if !out.domains.iter().any(|x| x.name == d) {
             return Err(ModelError(format!("operation {oname} is homed in {d}, which {name} neither owns nor composes")));

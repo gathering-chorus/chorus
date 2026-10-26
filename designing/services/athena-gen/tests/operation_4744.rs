@@ -14,7 +14,7 @@ const FIXTURE: &str = r#"
 @prefix c: <https://jeffbridwell.com/chorus#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-c:pulse a c:Product ; c:hasDomain c:awareness ; c:hasProperty c:gp, c:ns ; c:hasOperation c:tree .
+c:pulse a c:Product ; c:hasDomain c:awareness ; c:hasProperty c:gp, c:ns ; c:servesOperation c:tree .
 c:gp c:propertyKey "store.graph_prefix" ; c:propertyValue "urn:chorus:domains:" .
 c:ns c:propertyKey "model.namespace" ; c:propertyValue "https://jeffbridwell.com/chorus#" .
 c:awareness c:definesVocabulary c:RoleState .
@@ -79,7 +79,7 @@ fn negative_proof_an_operation_without_its_handler_does_not_build() {
 /// A product with no operation still gets an ops.rs that routes nothing.
 #[test]
 fn no_operation_routes_nothing() {
-    let p = pulse(&FIXTURE.replace(" ; c:hasOperation c:tree", ""), "none").unwrap();
+    let p = pulse(&FIXTURE.replace(" ; c:servesOperation c:tree", ""), "none").unwrap();
     assert!(p.operations.is_empty());
     let ops = ops_rs(&p, &[]);
     assert!(!ops.contains("pub mod"), "{ops}");
