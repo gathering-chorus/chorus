@@ -1,0 +1,21 @@
+# #4738 — the live dependency chains that reach `infrastructure`, as they sat in
+# <urn:chorus:domains:domains> on 2026-10-25 21:36 (49 consumes + 17 dependsOn).
+# Pulse's domains are `spine` and `messages`. Neither touches infrastructure
+# directly: spine consumes security, security dependsOn infrastructure. A walk
+# that reads one hop, or one predicate, never sees Pulse in infrastructure's
+# blast radius.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:pipelines chorus:consumes chorus:infrastructure .
+chorus:security chorus:dependsOn chorus:infrastructure .
+chorus:time chorus:dependsOn chorus:infrastructure .
+chorus:logs chorus:dependsOn chorus:infrastructure .
+chorus:security chorus:consumes chorus:time .
+chorus:spine chorus:consumes chorus:security .
+chorus:messages chorus:consumes chorus:security .
+chorus:messages chorus:consumes chorus:time .
+chorus:identity chorus:dependsOn chorus:security .
+
+chorus:spine rdfs:label "spine" .
+chorus:messages rdfs:label "messages" .
