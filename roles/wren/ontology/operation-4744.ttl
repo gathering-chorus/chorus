@@ -39,3 +39,6 @@ chorus:tree a chorus:Operation ;
     chorus:handlerPath "directing/products/pulse/api/operations/tree.rs" .
 
 chorus:pulse chorus:servesOperation chorus:tree .
+
+# An Operation is part of a product's surface, like the product itself: the products domain defines it.
+chorus:products chorus:definesVocabulary chorus:Operation .
