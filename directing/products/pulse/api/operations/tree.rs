@@ -1,5 +1,7 @@
 // @domain: awareness
-//! #4744 — the live tree (#4638), as an Operation of the awareness domain: prompt → role
+//! #4744 — the live tree (#4638), as an Operation of the awareness domain. Homed in the
+//! pulse-api crate for now (the installed test runner places no file under directing/domains
+//! until the 47db14cf scope fix is live); its ADR-041 home is directing/domains/awareness/operations/: prompt → role
 //! (moving/quiet) → turn → card → run. Declared in the model (chorus:operation-tree),
 //! compiled into every product that owns or composes awareness by athena-gen; this file is
 //! the handler, ported from platform/pulse/src/pulse-tree.ts with the same answers

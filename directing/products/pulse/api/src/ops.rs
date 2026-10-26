@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-#[path = "../../../../domains/awareness/operations/tree.rs"]
+#[path = "../operations/tree.rs"]
 pub mod tree;
 
 /// Is `/<product>/<domain>/<segment>` an operation?

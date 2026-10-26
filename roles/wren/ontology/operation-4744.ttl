@@ -27,6 +27,6 @@ chorus:tree a chorus:Operation ;
     rdfs:comment "The live tree (#4638): /<product>/awareness/tree, and /<product>/awareness/tree/<role> for one role's slice." ;
     chorus:homeDomain chorus:awareness ;
     chorus:operationPath "tree" ;
-    chorus:handlerPath "directing/domains/awareness/operations/tree.rs" .
+    chorus:handlerPath "directing/products/pulse/api/operations/tree.rs" .
 
 chorus:pulse chorus:servesOperation chorus:tree .
