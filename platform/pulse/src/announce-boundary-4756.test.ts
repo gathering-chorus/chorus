@@ -2,6 +2,7 @@
 // @domain: messages
 // @card: #4756
 // @owner: silas
+/* eslint-disable sonarjs/no-duplicate-string -- the stored row's sender and recipient, verbatim */
 // #4756 — src/announce-boundary: an alert reaches its role's terminal. Since
 // #4637 an alert is stored from its owner, so the boundary read it as a
 // self-echo and dropped it (row 59465, 10-26 16:44: a pair renudge to
