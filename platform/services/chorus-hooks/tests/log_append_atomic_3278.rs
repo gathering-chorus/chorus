@@ -1,3 +1,4 @@
+// @domain: logs
 //! #3278 — chorus.log append atomicity (Mechanism 1 of the error-undercount card).
 //!
 //! RED on the two-write append (`write_all(line)` then `write_all("\n")`): under

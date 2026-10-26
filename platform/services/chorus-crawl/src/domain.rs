@@ -964,7 +964,8 @@ pub fn undeclared_tests(files: &[String], read: &dyn Fn(&str) -> Option<String>,
         .filter(|f| !f.contains("/fixtures/"))
         .map(|f| (f, read(f)))
         // #4747 — a .rs file with no #[test] holds no test, so it owes no header
-        .filter(|(f, c)| !f.ends_with(".rs") || c.as_deref().is_some_and(|c| c.contains("#[test]") || c.contains("#[tokio::test]")))
+        // (an unreadable file stays: it is named missing, never dropped)
+        .filter(|(f, c)| !f.ends_with(".rs") || c.as_deref().is_none_or(|c| c.contains("#[test]") || c.contains("#[tokio::test")))
         .collect();
     for (f, content) in &files {
         match content.as_deref().and_then(declared_domain) {
@@ -1212,6 +1213,13 @@ mod declared_domain_4334 {
         let one = |_: &str| Some("#[test]\nfn t() {}\n".to_string());
         let (n, missing, _) = undeclared_tests(&files, &one, &["cicd".to_string()]);
         assert_eq!((n, missing), (1, vec!["src/shacl.rs".to_string()]));
+        // Silas's review: a tokio test with arguments is still a test
+        let tokio = |_: &str| Some("#[tokio::test(flavor = \"multi_thread\")]\nasync fn t() {}\n".to_string());
+        let (n, missing, _) = undeclared_tests(&files, &tokio, &["cicd".to_string()]);
+        assert_eq!((n, missing.len()), (1, 1), "#[tokio::test(...)] owes a header");
+        // a file that cannot be read stays missing, never silently dropped
+        let (n, missing, _) = undeclared_tests(&files, &|_| None, &["cicd".to_string()]);
+        assert_eq!((n, missing.len()), (1, 1), "unreadable is missing, not skipped");
     }
 
     /// #4538 — node --test and package-less tests have no runner; jest ones do.
