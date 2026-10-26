@@ -34,12 +34,10 @@ export function cardStepRows(wip: CwsRow[], liveInStore: Row[]): Row[] {
   const now = new Set(rows.map(r => r.name));
   for (const old of liveInStore) {
     if (now.has(String(old.name))) continue;
-    const gone: Row = {};
-    for (const f of ['name', 'label', 'comment', 'cardId', 'aboutPrincipal', 'pipelineStep', 'stepSince', 'runOrdinal']) {
-      if (typeof old[f] === 'string' && old[f] !== '') gone[f] = old[f];
-    }
-    gone.stepLive = 'gone';
-    rows.push(gone);
+    const { name, label, comment, cardId, aboutPrincipal, pipelineStep, stepSince, runOrdinal } = old;
+    const kept = Object.entries({ name, label, comment, cardId, aboutPrincipal, pipelineStep, stepSince, runOrdinal })
+      .filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== '');
+    rows.push({ ...Object.fromEntries(kept), stepLive: 'gone' });
   }
   return rows;
 }
@@ -59,10 +57,11 @@ export async function readLiveSteps(base = process.env.PULSE_API_URL || 'http://
   const res = await fetch(`${base}/pulse/awareness/cardsteps?stepLive=live&limit=100`, { signal: AbortSignal.timeout(4000) });
   if (!res.ok) throw new Error(`cardsteps stream: HTTP ${res.status}`);
   const body = await res.json() as { data?: Array<Record<string, unknown>> };
-  const tail = (v: unknown) => (typeof v === 'string' ? v.replace(/^.*[#/]/, '') : '');
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const tail = (v: unknown) => text(v).replace(/^.*[#/]/, '');
   return (body.data ?? []).map(r => ({
-    name: tail(r.name), label: String(r.label ?? ''), comment: String(r.comment ?? ''), cardId: String(r.cardId ?? ''),
-    aboutPrincipal: tail(r.aboutPrincipal), pipelineStep: String(r.pipelineStep ?? ''),
-    stepSince: String(r.stepSince ?? ''), runOrdinal: String(r.runOrdinal ?? ''),
+    name: tail(r.name), label: text(r.label), comment: text(r.comment), cardId: text(r.cardId),
+    aboutPrincipal: tail(r.aboutPrincipal), pipelineStep: text(r.pipelineStep),
+    stepSince: text(r.stepSince), runOrdinal: text(r.runOrdinal),
   }));
 }
