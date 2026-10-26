@@ -58,6 +58,20 @@ fn a_held_lock_refuses_a_second_holder_until_it_is_dropped() {
     assert!(run_lock(&d, Duration::from_millis(200), Duration::from_secs(60)).is_some());
 }
 
+/// Kade's review: a slow holder that was taken over as stale must not, when it
+/// finally finishes, remove the lock its successor now holds.
+#[test]
+fn a_taken_over_holder_does_not_release_its_successors_lock() {
+    let d = scratch("successor");
+    let slow = run_lock(&d, Duration::from_millis(10), Duration::from_secs(60)).expect("slow");
+    std::thread::sleep(Duration::from_millis(1100));
+    let next = run_lock(&d, Duration::from_millis(100), Duration::from_secs(1)).expect("took over the stale lock");
+    drop(slow);
+    assert!(run_lock(&d, Duration::from_millis(200), Duration::from_secs(60)).is_none(), "the slow holder released its successor's lock");
+    drop(next);
+    assert!(run_lock(&d, Duration::from_millis(200), Duration::from_secs(60)).is_some());
+}
+
 #[test]
 fn a_dead_holders_lock_is_taken_over() {
     let d = scratch("stale");

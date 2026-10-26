@@ -1270,17 +1270,33 @@ fn ensure_conversation(ctx: &Ctx, role: &str, run: &str, conversation: &str) {
 /// #4745 — one role's run is recorded by one process at a time. Three hooks at
 /// one start each read "no live run" before any had saved one, and wrote three
 /// live runs in 600 ms (wren, 2026-10-25 15:21:51). A held lock older than
-/// `stale` is a dead holder's and is taken over.
-pub struct RunLock(PathBuf);
-impl Drop for RunLock { fn drop(&mut self) { let _ = fs::remove_dir(&self.0); } }
+/// `stale` is a dead holder's and is taken over. Each holder signs the lock
+/// with its own token and releases only a lock that still carries it, so a slow
+/// holder that was taken over never removes its successor's lock (Kade, #4745 review).
+pub struct RunLock { dir: PathBuf, token: String }
+impl Drop for RunLock {
+    fn drop(&mut self) {
+        let owner = self.dir.join("owner");
+        if fs::read_to_string(&owner).ok().as_deref() == Some(self.token.as_str()) {
+            let _ = fs::remove_file(&owner);
+            let _ = fs::remove_dir(&self.dir);
+        }
+    }
+}
+fn clear_lock(lock: &Path) { let _ = fs::remove_file(lock.join("owner")); let _ = fs::remove_dir(lock); }
 pub fn run_lock(dir: &Path, wait: Duration, stale: Duration) -> Option<RunLock> {
     let _ = fs::create_dir_all(dir);
     let lock = dir.join("run.lock");
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let token = format!("{}-{:x}-{}", std::process::id(), now_ms(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
     let until = std::time::Instant::now() + wait;
     loop {
-        if fs::create_dir(&lock).is_ok() { return Some(RunLock(lock)); }
+        if fs::create_dir(&lock).is_ok() {
+            if fs::write(lock.join("owner"), &token).is_ok() { return Some(RunLock { dir: lock, token }); }
+            clear_lock(&lock);
+        }
         let age = fs::metadata(&lock).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
-        if age.map(|a| a > stale).unwrap_or(false) { let _ = fs::remove_dir(&lock); continue; }
+        if age.map(|a| a > stale).unwrap_or(false) { clear_lock(&lock); continue; }
         if std::time::Instant::now() >= until { return None; }
         std::thread::sleep(Duration::from_millis(50));
     }
