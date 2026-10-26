@@ -241,6 +241,58 @@ SELECT ?target ?label ?relationship ?direction WHERE {
 }
 
 // --- blast-radius: inward impact walk (#2028) ---
+// #4738: dependents are the whole closure over consumes|dependsOn, not one hop.
+// A mixed chain counts (spine consumes security, security dependsOn
+// infrastructure), so the path alternates predicates. Rings are hop distance,
+// weighted by Fibonacci and capped at ring 6.
+
+const BLAST_RING_WEIGHTS = [1, 1, 2, 3, 5, 8];
+
+export interface BlastRing { ring: number; weight: number; domains: string[] }
+
+/** Breadth-first from the root over reversed edges (x dependsOn y → y hits x):
+ *  nearest hop, the edge that reached it, and the full path back to the root. */
+export function blastClosure(
+  root: string,
+  edges: Array<{ from: string; rel: string; to: string }>,
+): { hops: Map<string, number>; via: Map<string, string>; paths: Record<string, string[]>; rings: BlastRing[]; score: number } {
+  const dependents = new Map<string, Array<{ from: string; rel: string }>>();
+  for (const e of edges) {
+    if (!dependents.has(e.to)) dependents.set(e.to, []);
+    dependents.get(e.to)!.push({ from: e.from, rel: e.rel });
+  }
+  for (const list of dependents.values()) list.sort((a, b) => a.from.localeCompare(b.from) || a.rel.localeCompare(b.rel));
+  const hops = new Map<string, number>([[root, 0]]);
+  const parent = new Map<string, string>();
+  const via = new Map<string, string>();
+  const queue = [root];
+  while (queue.length) {
+    const y = queue.shift()!;
+    for (const { from, rel } of dependents.get(y) ?? []) {
+      if (hops.has(from)) continue;
+      hops.set(from, hops.get(y)! + 1);
+      parent.set(from, y);
+      via.set(from, rel);
+      queue.push(from);
+    }
+  }
+  hops.delete(root);
+  const paths: Record<string, string[]> = {};
+  const byRing = new Map<number, string[]>();
+  for (const [d, n] of hops) {
+    const path = [d];
+    while (path[path.length - 1] !== root) path.push(parent.get(path[path.length - 1])!);
+    paths[d] = path;
+    const ring = Math.min(n, BLAST_RING_WEIGHTS.length);
+    if (!byRing.has(ring)) byRing.set(ring, []);
+    byRing.get(ring)!.push(d);
+  }
+  const rings = [...byRing.keys()].sort((a, b) => a - b).map((ring) => ({
+    ring, weight: BLAST_RING_WEIGHTS[ring - 1], domains: byRing.get(ring)!.sort(),
+  }));
+  const score = rings.reduce((sum, r) => sum + r.weight * r.domains.length, 0);
+  return { hops, via, paths, rings, score };
+}
 
 export async function fetchDomainBlastRadius(
   deps: DomainFacetDeps,
@@ -250,16 +302,13 @@ export async function fetchDomainBlastRadius(
   const start = now();
   try {
     const sdId = domainName.toLowerCase();
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+    const ns = 'https://jeffbridwell.com/chorus#';
+    const sdUri = `${ns}${sdId}`;
+    const parentQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX borg: <urn:borg:ontology/>
 SELECT ?target ?label ?relationship ?direction WHERE {
   {
-    GRAPH <urn:chorus:domains:domains> {
-      { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("dependent" AS ?direction) }
-    }
-  } UNION {
     GRAPH <urn:chorus:ontology> {
       { ?target chorus:hasDomain <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("ownerProduct" AS ?relationship) BIND("parent" AS ?direction) }
       UNION { ?target chorus:contains <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) }
@@ -270,10 +319,22 @@ SELECT ?target ?label ?relationship ?direction WHERE {
     }
   }
 }`;
-    const result = await deps.sparql(query);
+    // Every edge inside the closure: x reaches the root, x → y is one step, y reaches the root.
+    const closureQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT DISTINCT ?x ?label ?rel ?y WHERE {
+  GRAPH <urn:chorus:domains:domains> {
+    ?x (chorus:consumes|chorus:dependsOn)+ <${sdUri}> .
+    ?x ?rel ?y .
+    FILTER(?rel IN (chorus:consumes, chorus:dependsOn) && ?x != <${sdUri}>)
+    ?y (chorus:consumes|chorus:dependsOn)* <${sdUri}> .
+    OPTIONAL { ?x rdfs:label ?label }
+  }
+}`;
+    const [parentResult, closureResult] = await Promise.all([deps.sparql(parentQuery), deps.sparql(closureQuery)]);
     const seen = new Set<string>();
-    const edges: Array<{ target: string; targetUri: string; relationship: string; direction: string }> = [];
-    for (const b of result.results.bindings) {
+    const edges: Array<{ target: string; targetUri: string; relationship: string; direction: string; hops?: number }> = [];
+    for (const b of parentResult.results.bindings) {
       const targetUri = b.target?.value || '';
       const relationship = b.relationship?.value || '';
       const key = `${targetUri}|${relationship}`;
@@ -287,14 +348,27 @@ SELECT ?target ?label ?relationship ?direction WHERE {
         });
       }
     }
+    const local = (uri: string) => (uri.startsWith(ns) ? uri.slice(ns.length) : uri);
+    const labels = new Map<string, string>();
+    const closureEdges: Array<{ from: string; rel: string; to: string }> = [];
+    for (const b of closureResult.results.bindings) {
+      if (!b.x?.value || !b.y?.value || !b.rel?.value) continue;
+      const from = local(b.x.value);
+      if (b.label?.value) labels.set(from, b.label.value);
+      closureEdges.push({ from, rel: local(b.rel.value), to: local(b.y.value) });
+    }
+    const closure = blastClosure(sdId, closureEdges);
+    for (const [d, n] of [...closure.hops].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))) {
+      edges.push({ target: labels.get(d) || d, targetUri: `${ns}${d}`, relationship: closure.via.get(d)!, direction: 'dependent', hops: n });
+    }
     return {
       status: 200,
-      body: deps.envelope('domain-blast-radius', { domain: sdId, edges }, now() - start, { count: edges.length }),
+      body: deps.envelope('domain-blast-radius', { domain: sdId, edges, rings: closure.rings, score: closure.score, paths: closure.paths }, now() - start, { count: edges.length, score: closure.score }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-blast-radius', { domain: domainName, edges: [] }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-blast-radius', { domain: domainName, edges: [], rings: [], score: 0, paths: {} }, now() - start, { count: 0 }),
     };
   }
 }
