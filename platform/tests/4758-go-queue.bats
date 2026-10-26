@@ -54,13 +54,20 @@ steps:
 EOF
   done
   PORT=$((18700 + RANDOM % 200)); CPORT=$((50200 + RANDOM % 200))
-  env -u CHORUS_ROLE -u ROLE dagu start-all --port "$PORT" --coordinator.port "$CPORT" > "$BATS_TEST_TMPDIR/sched.log" 2>&1 &
+  # 3>&- : a child holding bats' fd 3 keeps the test open after it ends
+  env -u CHORUS_ROLE -u ROLE dagu start-all --port "$PORT" --coordinator.port "$CPORT" > "$BATS_TEST_TMPDIR/sched.log" 2>&1 3>&- &
   SCHED=$!
   sleep 4
 }
 
+# The scratch scheduler is this test's own child. On the 10-26 18:21 pipeline
+# run it logged "Scheduler stopped" on TERM and never exited, and a bare
+# `wait` held the local proof (and the werk queue behind it) open: give it 5s.
 teardown() {
-  [ -n "${SCHED:-}" ] && kill "$SCHED" 2>/dev/null; wait "${SCHED:-}" 2>/dev/null || true
+  [ -n "${SCHED:-}" ] || return 0
+  kill "$SCHED" 2>/dev/null
+  for _ in $(seq 1 10); do kill -0 "$SCHED" 2>/dev/null || return 0; sleep 0.5; done
+  kill -9 "$SCHED" 2>/dev/null || true
 }
 
 D() { env -u CHORUS_ROLE -u ROLE dagu "$@"; }
