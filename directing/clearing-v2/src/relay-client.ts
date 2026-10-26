@@ -289,6 +289,29 @@ export class BuzzRelayClient {
     return Promise.all(this.filters({ since, limit: 10000 }).map((f) => this.fetchOne(f, timeoutMs))).then((parts) => parts.flat());
   }
 
+  /**
+   * #4749 — every note older than `until` (epoch seconds), as one read that ends
+   * at the relay's EOSE. Merges kind 9 and kind 1 filters, dedupes by id, drops
+   * any note matching anchorId, sorts descending by created_at, and slices to limit.
+   */
+  async fetchBefore(until: number, limit = 50, anchorId?: string, timeoutMs = 10000): Promise<NostrEvent[]> {
+    if (!this.ws || !this.isConnected()) return Promise.reject(new Error('relay not connected'));
+    const parts = await Promise.all(this.filters({ until, limit }).map((f) => this.fetchOne(f, timeoutMs)));
+    const all = parts.flat();
+    const seen = new Set<string>();
+    const deduped: NostrEvent[] = [];
+    for (const ev of all) {
+      if (!seen.has(ev.id)) {
+        seen.add(ev.id);
+        if (ev.id !== anchorId) {
+          deduped.push(ev);
+        }
+      }
+    }
+    deduped.sort((a, b) => b.created_at - a.created_at);
+    return deduped.slice(0, limit);
+  }
+
   private fetchOne(filter: object, timeoutMs: number): Promise<NostrEvent[]> {
     const id = `fetch-${++this.fetchSeq}`;
     return new Promise((resolve, reject) => {
@@ -304,7 +327,7 @@ export class BuzzRelayClient {
 
   /** #4652 — the channel's kind 9 posts, plus the kind 1 notes written before the
    *  switch so the room's history stays. */
-  private filters(extra: { since?: number; limit: number }): object[] {
+  private filters(extra: { since?: number; until?: number; limit: number }): object[] {
     return [
       { kinds: [9], '#h': [this.channel, this.clearingChannel], ...extra },
       { kinds: [1], '#t': [this.topic, 'reply'], ...extra },

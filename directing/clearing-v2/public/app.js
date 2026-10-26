@@ -221,8 +221,8 @@ function appendMessage(msg) {
   el.appendChild(text);
   appendPhotos(el, cleanText);
 
-  // #4732 / #4736 / #4739: If actor filter(s) are active, check if incoming message matches filter
-  if (activeRoleFilters && activeRoleFilters.size > 0) {
+  // #4732 / #4736 / #4739 / #4749: If actor filter(s) or search query are active, check if incoming message matches filter
+  if ((activeRoleFilters && activeRoleFilters.size > 0) || activeSearchQuery) {
     const fromRole = (msg.from || '').toLowerCase();
     const matches = isMessageVisibleWithFilters(fromRole, cleanText);
     if (!matches) {
@@ -501,13 +501,22 @@ async function loadOlderMessages(fetchImpl) {
   if (!fetchFn) return 0;
   loadingOlder = true;
   try {
-    const url = clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/history?before=' + encodeURIComponent(first.id.slice(4));
+    const rawTs = first.dataset && first.dataset.ts;
+    const anchorTs = rawTs ? Math.floor(toMs(rawTs) / 1000) : undefined;
+    let url = clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/history?before=' + encodeURIComponent(first.id.slice(4));
+    if (anchorTs) url += '&ts=' + anchorTs;
     const res = await fetchFn(url);
-    if (!res.ok) return 0;
+    if (!res.ok) {
+      const banner = document.getElementById('history-status') || document.getElementById('send-error');
+      if (banner) banner.textContent = "couldn't load older";
+      return 0;
+    }
     const body = await res.json();
     if (!body || !body.count) return 0;
     const fromBottom = stream.scrollHeight - stream.scrollTop;
     first.insertAdjacentHTML('beforebegin', body.html);
+    const banner = document.getElementById('history-status') || document.getElementById('send-error');
+    if (banner && banner.textContent === "couldn't load older") banner.textContent = '';
     // #4739 — scrolling up in messages-stream applies the active role filter to all prepended history elements immediately
     if (activeRoleFilters && activeRoleFilters.size > 0) {
       applyRoleFilters({ skipBackfill: true });
@@ -556,7 +565,7 @@ async function backfillFilteredHistory(fetchImpl, targetVisible = 15) {
   }
 }
 
-/** #4646 — re-fetch the role tiles so a teammate's cards stay true while the page is open. */
+/** #4646 / #4749 — re-fetch the role tiles and diff in-place per person to prevent outerHTML layout jitter. */
 async function refreshPeopleRow(fetchImpl) {
   if (typeof document === 'undefined') return false;
   const row = document.getElementById('rooms-people-row');
@@ -568,7 +577,56 @@ async function refreshPeopleRow(fetchImpl) {
     if (!res.ok) return false;
     const body = await res.json();
     if (!body || !body.html) return false;
-    row.outerHTML = body.html;
+
+    // If mock/simple row doesn't have child structure or querySelector, fall back to outerHTML
+    if (typeof row.querySelector !== 'function' || !row.children) {
+      if (row.outerHTML !== body.html) row.outerHTML = body.html;
+      return true;
+    }
+
+    // Diff in-place per actor tile to avoid destroying DOM nodes or jumping scroll position
+    let incomingTiles = [];
+    if (typeof DOMParser !== 'undefined') {
+      const doc = new DOMParser().parseFromString(body.html, 'text/html');
+      const tempContainer = doc.getElementById('rooms-people-row') || doc.body.firstElementChild;
+      if (tempContainer) incomingTiles = Array.from(tempContainer.querySelectorAll('.actor-tile'));
+    } else {
+      // Regex-based lightweight parsing for non-browser / node environments
+      const tileMatches = Array.from(body.html.matchAll(/<a[^>]*class="[^"]*actor-tile-([a-z0-9-]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi));
+      for (const m of tileMatches) {
+        const role = m[1];
+        const inner = m[2];
+        const andonMatch = inner.match(/class="([^"]*andon-[^"]*)"/i);
+        const cardMatch = inner.match(/<div class="actor-tile-card">([\s\S]*?)<\/div>/i);
+        incomingTiles.push({
+          role,
+          andonClass: andonMatch ? andonMatch[1] : undefined,
+          cardHtml: cardMatch ? cardMatch[1].trim() : undefined,
+        });
+      }
+    }
+
+    for (const incoming of incomingTiles) {
+      const role = incoming.role || (incoming.dataset && incoming.dataset.role);
+      if (!role) continue;
+      const existing = row.querySelector(`.actor-tile[data-role="${role}"], .actor-tile-${role}`);
+      if (existing) {
+        // Diff andon dot
+        const exAndon = existing.querySelector('.andon-dot');
+        const inAndonClass = incoming.andonClass || (incoming.querySelector && incoming.querySelector('.andon-dot')?.className);
+        if (exAndon && inAndonClass && exAndon.className !== inAndonClass) {
+          exAndon.className = inAndonClass;
+        }
+
+        // Diff card ref
+        const exCard = existing.querySelector('.actor-tile-card');
+        const inCardHtml = incoming.cardHtml !== undefined ? incoming.cardHtml : (incoming.querySelector && incoming.querySelector('.actor-tile-card')?.innerHTML);
+        if (exCard && inCardHtml !== undefined && exCard.innerHTML !== inCardHtml) {
+          exCard.innerHTML = inCardHtml;
+        }
+      }
+    }
+
     if (activeRoleFilters && activeRoleFilters.size > 0) updateTileSelectionClasses();
     initTileFilters();
     return true;
@@ -608,8 +666,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 }
 
 // #4732 / #4736: Actor tile 0..n stream filtering and composer targeting
+// #4749: Combined with in-memory message text search
 let activeRoleFilters = new Set();
+let activeSearchQuery = '';
 let defaultComposerPlaceholder = null;
+
+function getActiveSearchQuery() {
+  return activeSearchQuery;
+}
+
+function setSearchQuery(q) {
+  activeSearchQuery = String(q || '').trim().toLowerCase();
+  applyRoleFilters();
+  return activeSearchQuery;
+}
 
 function getActiveRoleFilters() {
   return Array.from(activeRoleFilters);
@@ -664,11 +734,17 @@ function updateTileSelectionClasses() {
   }
 }
 
-// #4732 / #4736 / #4739: Filter matching logic for 1-on-1 and multi-actor dialogue ("only me and u")
+// #4732 / #4736 / #4739 / #4749: Filter matching logic for 1-on-1 dialogue combined with search query
 function isMessageVisibleWithFilters(from, content) {
-  if (!activeRoleFilters || activeRoleFilters.size === 0) return true;
   const fromRole = String(from || '').trim().toLowerCase();
   const text = String(content || '');
+
+  // If search query is active, message MUST match search text
+  if (activeSearchQuery && !text.toLowerCase().includes(activeSearchQuery)) {
+    return false;
+  }
+
+  if (!activeRoleFilters || activeRoleFilters.size === 0) return true;
 
   // 1. If message is from one of the selected roles ("u"), always visible
   if (activeRoleFilters.has(fromRole)) return true;
@@ -712,14 +788,10 @@ function applyRoleFilters(opts) {
         : (container.querySelectorAll ? Array.from(container.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
       for (const el of Array.from(msgElements)) {
         if (!el || !el.style) continue;
-        if (filterRoles.length === 0) {
-          el.style.display = '';
-        } else {
-          const from = (el.dataset && el.dataset.from) ? el.dataset.from.toLowerCase() : '';
-          const content = el.innerText || el.textContent || (el.dataset && el.dataset.body) || '';
-          const matches = isMessageVisibleWithFilters(from, content);
-          el.style.display = matches ? '' : 'none';
-        }
+        const from = (el.dataset && el.dataset.from) ? el.dataset.from.toLowerCase() : '';
+        const content = el.innerText || el.textContent || (el.dataset && el.dataset.body) || '';
+        const matches = isMessageVisibleWithFilters(from, content);
+        el.style.display = matches ? '' : 'none';
       }
     }
 
@@ -826,6 +898,8 @@ if (typeof window !== 'undefined') {
   window.setRoleFilters = setRoleFilters;
   window.getActiveRoleFilter = getActiveRoleFilter;
   window.getActiveRoleFilters = getActiveRoleFilters;
+  window.getActiveSearchQuery = getActiveSearchQuery;
+  window.setSearchQuery = setSearchQuery;
   window.applyRoleFilters = applyRoleFilters;
   window.isMessageVisibleWithFilters = isMessageVisibleWithFilters;
   window.backfillFilteredHistory = backfillFilteredHistory;
@@ -864,23 +938,26 @@ function markUndelivered(id, roles) {
 }
 
 // Setup EventSource for SSE live stream
-function initStream() {
+function initStream(customContainer) {
+  const container = customContainer || messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
   const evtSource = new EventSource(clearingBase() + '/api/events');
 
   evtSource.addEventListener('init', (e) => {
     try {
       const data = JSON.parse(e.data);
       // #4574 — pages without a message list (Board, Roles) ignore the room's history
-      if (data.messages && messagesContainer) {
-        messagesContainer.innerHTML = '';
+      // #4749 — merge messages by ID into messagesContainer without wiping existing DOM or losing scrolled-back history
+      if (data.messages && container) {
         data.messages.forEach(appendMessage);
       }
       if (data.undelivered) Object.entries(data.undelivered).forEach(([id, roles]) => markUndelivered(id, roles));
       if (data.tiles) {
         updateTiles(data.tiles);
       }
-      relayIndicator.textContent = 'Connected (SSE)';
-      relayIndicator.className = 'relay-status connected';
+      if (relayIndicator) {
+        relayIndicator.textContent = 'Connected (SSE)';
+        relayIndicator.className = 'relay-status connected';
+      }
     } catch (err) {
       console.error('Error parsing init event', err);
     }
@@ -1144,6 +1221,8 @@ if (typeof module !== 'undefined' && module.exports) {
     setTeamNudges,
     getActiveRoleFilter,
     getActiveRoleFilters,
+    getActiveSearchQuery,
+    setSearchQuery,
     setRoleFilter,
     setRoleFilters,
     toggleActorFilter,

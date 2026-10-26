@@ -2,7 +2,8 @@
 
 import { BuzzRelayClient } from './relay-client';
 import { MessageRouter } from './router';
-import { ClearingMessage } from './types';
+import { ClearingMessage, NostrEvent } from './types';
+import { toClearingMessage } from './server';
 import { RolesData, TodayData, RoomsData, DoorRolesResponse, TrustStripSource, TodayCardItem } from './sources/models';
 import { fetchJson, failureReason } from './sources/http';
 import { formatBostonTime, formatBostonWhen, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
@@ -160,9 +161,59 @@ export class DataService {
    * roles door, and router messages.
    * NO fake seeds, NO hardcoded role names or channels, NO literal card/thread values.
    */
-  /** #4597 — the page of messages just older than `beforeId`, for scrolling up in a room. */
-  getRoomHistory(room: string, beforeId: string): RoomsData['messages'] {
-    return this.router.getBefore(beforeId, ROOM_PAGE_MESSAGES, room).map(toRoomMessage);
+  /** #4597 — the page of messages just older than `beforeId`, for scrolling up in a room.
+   *  #4749 — fall through to Buzz relay (for room channels) or pulse (for direct threads)
+   *  when the in-memory router buffer is exhausted. Read-through only: does NOT pollute router cache.
+   */
+  async getRoomHistory(room: string, beforeId: string, beforeTs?: number, options?: { pulseUrl?: string }): Promise<RoomsData['messages']> {
+    const fromBuffer = this.router.getBefore(beforeId, ROOM_PAGE_MESSAGES, room);
+    if (fromBuffer.length > 0) {
+      return fromBuffer.map(toRoomMessage);
+    }
+
+    if (!beforeTs) {
+      return [];
+    }
+
+    const roomLower = room.toLowerCase();
+    const isDirect = !['team', 'clearing'].includes(roomLower) && !roomLower.startsWith('#');
+
+    if (isDirect) {
+      // Direct thread: query Pulse GET /api/messages?before=<iso_ts>&pair=jeff,<role> (both directions)
+      const pulseUrl = options?.pulseUrl || this.defaultPulseUrl;
+      const isoBefore = new Date(beforeTs * 1000).toISOString();
+      const read = await fetchJson<Array<{ id: string; from: string; to?: string; text: string; created_at: string }>>(
+        `${pulseUrl}/api/messages?before=${encodeURIComponent(isoBefore)}&pair=jeff,${encodeURIComponent(roomLower)}&limit=${ROOM_PAGE_MESSAGES}`,
+        5000
+      );
+      if (!read.ok) {
+        throw new Error(failureReason(read, 'pulse unreadable'));
+      }
+      if (!Array.isArray(read.value)) return [];
+      return read.value.map((m) => toRoomMessage({
+        id: m.id,
+        from: m.from,
+        text: m.text,
+        ts: m.created_at,
+        type: m.from === 'jeff' ? 'jeff-input' : 'role-response',
+        room,
+        visible: true,
+        tick: false,
+      }));
+    }
+
+    // Room channel: query Buzz relay via fetchBefore(until, limit, anchorId)
+    const olderEvents: NostrEvent[] = await this.relay.fetchBefore(beforeTs, ROOM_PAGE_MESSAGES, beforeId);
+    // Pure conversion: toClearingMessage -> toRoomMessage without mutating router buffer
+    return olderEvents
+      .map((ev) => {
+        let role = 'unattributed';
+        const authorTag = (ev.tags || []).find((t) => t[0] === 'author');
+        if (authorTag && authorTag[1]) role = authorTag[1];
+        return toClearingMessage(ev, role, this.relay.isConnected());
+      })
+      .reverse() // fetchBefore returns newest-first; room history expects oldest-first
+      .map(toRoomMessage);
   }
 
   async getRoomsData(room = 'team', options?: { rolesUrl?: string; pulseUrl?: string }): Promise<RoomsData> {

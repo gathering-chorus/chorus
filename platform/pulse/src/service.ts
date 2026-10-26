@@ -504,11 +504,15 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   // chorus-hook-shim role-state subcommand → /tmp/claude-team-scan/.
 
   app.get('/api/messages', (req, res) => {
+    const pairQuery = req.query.pair as string | undefined;
+    const pair = pairQuery && pairQuery.includes(',') ? (pairQuery.split(',').map((s) => s.trim()) as [string, string]) : undefined;
     res.json(store.queryMessages({
       type: req.query.type as string | undefined,
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
+      pair,
       since: req.query.since as string | undefined,
+      before: req.query.before as string | undefined,
       trace: req.query.trace as string | undefined,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
     }));
