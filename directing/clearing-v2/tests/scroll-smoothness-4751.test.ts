@@ -39,10 +39,10 @@ describe('#4751 Clearing v2 smooth history scroll and mobile header compactness'
     expect(styleContent).toMatch(/\.messages[^{]*\{[^}]*overflow-anchor:\s*auto/);
   });
 
-  it('uses requestAnimationFrame for restoring scroll position after prepend in app.js', () => {
+  it('restores scroll position synchronously on prepend in app.js', () => {
     const appPath = path.join(__dirname, '../public/app.js');
     const appContent = fs.readFileSync(appPath, 'utf8');
-    expect(appContent).toMatch(/requestAnimationFrame\(restoreScroll\)/);
+    expect(appContent).toMatch(/stream\.scrollTop = newScrollTop/);
   });
 
   it('provides responsive mobile styles for chat-header-row so nudges and counts fit on narrow screens', () => {

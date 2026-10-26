@@ -521,17 +521,10 @@ async function loadOlderMessages(fetchImpl) {
     if (activeRoleFilters && activeRoleFilters.size > 0) {
       applyRoleFilters({ skipBackfill: true });
     }
-    // #4751 — preserve exact scroll position without fighting Safari touch inertia using rAF / overflow-anchor
-    const restoreScroll = () => {
-      const newScrollTop = stream.scrollHeight - fromBottom;
-      if (Math.abs(stream.scrollTop - newScrollTop) > 1) {
-        stream.scrollTop = newScrollTop;
-      }
-    };
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(restoreScroll);
-    } else {
-      restoreScroll();
+    // #4751 — synchronous scroll position restore with overflow-anchor to prevent fighting Safari touch inertia
+    const newScrollTop = stream.scrollHeight - fromBottom;
+    if (Math.abs(stream.scrollTop - newScrollTop) > 1) {
+      stream.scrollTop = newScrollTop;
     }
     return body.count;
   } catch {
