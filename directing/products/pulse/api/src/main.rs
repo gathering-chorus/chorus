@@ -57,6 +57,10 @@ fn refused(r: rules::Refusal) -> (u16, Value) {
 /// A write, after the caller is known: shape check → owner or Permission → keep the
 /// displaced version → one atomic store write → event. Nothing is written on a refusal.
 pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+    // #4742 — a composed domain belongs to another product: this one reads it, its owner writes it
+    if class.composed {
+        return error(405, "composed", &format!("{} is composed here from its owner; write it through {}'s own door", class.domain, class.domain));
+    }
     let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
         match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
     };
@@ -118,7 +122,8 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
     let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
-    if parts.len() < 3 || parts[0] != API_VERSION {
+    // #4742 (Jeff 10-25): the product is the top-level route, each of its domains a child route
+    if parts.len() < 3 || parts[0] != PRODUCT {
         return error(404, "unknown-route", "not a route of this API");
     }
     let Some(class) = CLASSES.iter().find(|c| c.domain == parts[1] && c.segment == parts[2]) else {

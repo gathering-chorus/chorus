@@ -234,10 +234,82 @@ fn an_unsigned_read_of_a_private_product_is_refused() {
     let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
     let private = Ctx { store: &store, who, events: String::new(), reads_public: false };
     let c = CLASSES.first().expect("a class");
-    let (code, out) = crate::route(&private, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    let (code, out) = crate::route(&private, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
     assert_eq!(code, 401, "{out}");
     // negative proof: the same read on a public product answers
     let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
-    let (code, _) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    let (code, _) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
     assert_eq!(code, 200);
+}
+
+// #4742 — Jeff 10-25: "the top level route is /pulse and each associated domain is a child route".
+#[test]
+fn every_collection_answers_under_the_product_route() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
+    for c in CLASSES {
+        let (code, out) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
+        assert_eq!(code, 200, "/{}/{}/{}: {out}", crate::model::PRODUCT, c.domain, c.segment);
+    }
+}
+
+/// NEGATIVE PROOF: the old version-first route (/v1/<domain>/<collection>) is not a route of this API.
+#[test]
+fn negative_proof_the_version_first_route_is_unknown() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
+    let c = CLASSES.first().expect("a class");
+    let (code, out) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    assert_eq!(code, 404, "{out}");
+    assert_eq!(out["error"], "unknown-route", "{out}");
+}
+
+// #4742 — the top level is a composition: a composed domain is read here, written only by its owner.
+#[test]
+fn a_write_to_a_composed_domain_is_refused_and_writes_nothing() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let owned = CLASSES.first().expect("a class");
+    let composed: &'static ClassDef = Box::leak(Box::new(ClassDef { composed: true, ..*owned }));
+    let body = json!({ "name": "cw" }).to_string();
+    let (code, out) = write(&ctx(&store), &caller("wren", &[]), "POST", composed, None, &body);
+    assert_eq!((code, out["error"].as_str()), (405, Some("composed")), "{out}");
+    assert!(store.0.lock().unwrap().is_empty(), "a refused write left a row");
+    // negative proof: the same write to the owned class is not refused as composed
+    let (code, out) = write(&ctx(&store), &caller("wren", &[]), "POST", owned, None, &body);
+    assert_ne!(out["error"].as_str(), Some("composed"), "{code} {out}");
+}
+
+// #4742 gap 7 (#4717 lesson): TDB2 keeps a decimal under the spelling it was written in but
+// reads it back canonical, so a replace of "7" misses it and stacks a second value.
+fn decimal_class() -> &'static ClassDef {
+    let owned = CLASSES.first().expect("a class");
+    let f: &'static [crate::model::FieldDef] = Box::leak(Box::new([crate::model::FieldDef {
+        name: "reading", link: false, datatype: "decimal", required: false, many: false, allowed: &[] }]));
+    Box::leak(Box::new(ClassDef { fields: f, composed: false, ..*owned }))
+}
+
+#[test]
+fn a_decimal_is_written_in_its_one_canonical_spelling() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    for (given, stored) in [("7", "7.0"), ("7.00", "7.0"), ("+007.50", "7.5"), ("-0", "0.0"), (".5", "0.5")] {
+        let body = json!({ "reading": given });
+        let cells = crate::rules::cells(&store, decimal_class(), body.as_object().unwrap(), false).ok().unwrap_or_else(|| panic!("{given} was refused"));
+        match &cells[0].1[..] {
+            [Cell::Literal(v, "decimal")] => assert_eq!(v, stored, "{given}"),
+            _ => panic!("{given}: not one decimal literal"),
+        }
+    }
+}
+
+/// NEGATIVE PROOF: a value that is not a decimal is refused, never written as given.
+#[test]
+fn negative_proof_a_non_decimal_is_refused() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    for bad in ["1e5", "seven", "", "-", "NaN"] {
+        let body = json!({ "reading": bad });
+        let got = crate::rules::cells(&store, decimal_class(), body.as_object().unwrap(), false);
+        assert!(got.is_err(), "'{bad}' was accepted");
+    }
 }

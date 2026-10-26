@@ -98,14 +98,14 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     s.push_str("];\n\n");
     s.push_str(
         "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
+         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
     for d in &p.domains {
         for c in &d.classes {
             s.push_str(&format!(
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph)
+                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {}, composed: {},\n        fields: &[\n",
+                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph), d.composed
             ));
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
@@ -229,4 +229,30 @@ pub fn agent_runtimes_json(t: &crate::model::RuntimeTable) -> String {
     let mut s = serde_json::to_string_pretty(&json!({ "runtimes": runtimes, "runsOn": t.runs_on })).unwrap_or_default();
     s.push('\n');
     s
+}
+
+/// #4742 — every route the product serves: `/<product>/<domain>/<collection>`.
+pub fn routes(p: &Product) -> Vec<String> {
+    p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment))).collect()
+}
+
+/// #4742 gap 8 (#4708) — the routes an already generated crate serves (read from its
+/// model.rs) that `p` would no longer serve. A class that falls out of the model is named,
+/// never dropped silently.
+pub fn dropped_routes(old_model_rs: &str, p: &Product) -> Vec<String> {
+    let now = routes(p);
+    old_routes(old_model_rs, &p.name).into_iter().filter(|r| !now.contains(r)).collect()
+}
+
+/// The routes a generated model.rs serves, read from its ClassDef lines. Empty when the text
+/// holds none it can read; generate treats that as a refusal, never as "nothing dropped".
+pub fn old_routes(model_rs: &str, product: &str) -> Vec<String> {
+    let quoted = |line: &str, key: &str| {
+        let rest = &line[line.find(&format!("{key}: \""))? + key.len() + 3..];
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    model_rs
+        .lines()
+        .filter_map(|l| Some(format!("/{product}/{}/{}", quoted(l, "domain")?, quoted(l, "segment")?)))
+        .collect()
 }
