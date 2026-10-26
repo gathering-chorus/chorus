@@ -29,7 +29,8 @@ pub trait RowStore: Send + Sync {
     /// Read or Write Permission names for it (the row, its owner, or the whole graph).
     fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String>;
     /// One row by name if `viewer` may see it; None otherwise (never "exists, but not yours").
-    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;    /// #4744 — a page of the rows that match `w` (and that `viewer` may see, when given),
+    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;
+    /// #4744 — a page of the rows that match `w` (and that `viewer` may see, when given),
     /// with the count of all matches: the filter runs in the store, before the page is cut.
     fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String>;
 }

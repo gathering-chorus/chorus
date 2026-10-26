@@ -253,6 +253,10 @@ pub fn routes(p: &Product) -> Vec<String> {
 /// #4744 — an operation's handler, as a path from the crate's `src/` (where `ops.rs` names
 /// it). A handler that is not in the repo is refused by name: nothing is generated around it.
 pub fn handler_path(root: &std::path::Path, out: &std::path::Path, op: &crate::model::Operation) -> Result<String, String> {
+    // a handler is a repo file: a path that climbs out of the repo is refused (Silas's review)
+    if op.handler.starts_with('/') || op.handler.split('/').any(|c| c == "..") {
+        return Err(format!("operation {} names handler {}, which is not a path inside the repo", op.name, op.handler));
+    }
     let h = root.join(&op.handler);
     if !h.is_file() {
         return Err(format!("operation {} names handler {}, which does not exist", op.name, op.handler));

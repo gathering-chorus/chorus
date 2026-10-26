@@ -286,6 +286,11 @@ fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
     assert_eq!(names(&format!("sort=-{f}&{f}.lt=2026-10-26T10:00:00Z&limit=1")), ["a"]);
     // NEGATIVE PROOF: a bound below every row leaves nothing, so the bound really runs
     assert!(names(&format!("{f}.lt=2026-01-01")).is_empty());
+    // a bound on a number would compare as text: refused by name (Kade's review)
+    if let Some((nc, nf)) = CLASSES.iter().find_map(|c| c.fields.iter().find(|f| !f.link && matches!(f.datatype, "integer" | "decimal")).map(|f| (c, f.name))) {
+        let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}?{nf}.lt=5", crate::model::PRODUCT, nc.domain, nc.segment), None, "");
+        assert_eq!((code, out["error"].as_str()), (400, Some("unordered-field")), "{out}");
+    }
     // sorting by a field the class does not have is refused by name
     let (code, out) = crate::route(&ctx, "GET", &format!("{path}?sort=-nosuch"), None, "");
     assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");

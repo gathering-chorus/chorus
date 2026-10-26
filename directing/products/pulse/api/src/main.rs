@@ -54,7 +54,7 @@ pub fn header(store: &dyn RowStore, viewer: Option<&str>) -> (u16, Value) {
         let page = if w == store::Where::default() {
             match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) }
         } else {
-            store.list_where(c, 10, 0, viewer, &w)
+            store.list_where(c, 100, 0, viewer, &w)
         };
         let rows = match page { Ok((rows, _)) => rows, Err(m) => return error(503, "store", &m) };
         let rows: Vec<Value> = rows.into_iter().map(|r| {
@@ -117,6 +117,11 @@ fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)>
         let unknown = |f: &str| error(400, "unknown-field", &format!("{} has no field '{f}'", class.name));
         if let Some((f, op)) = k.strip_suffix(".lt").map(|f| (f, "<")).or_else(|| k.strip_suffix(".gt").map(|f| (f, ">"))) {
             if !known(f) { return Err(unknown(f)); }
+            // a bound compares text, which orders ISO times and plain text, never numbers (Kade's review)
+            let datatype = class.fields.iter().find(|d| d.name == f).map_or("string", |d| d.datatype);
+            if !matches!(datatype, "string" | "dateTime" | "date") {
+                return Err(error(400, "unordered-field", &format!("{}.{f} is {datatype}: a bound needs a text or time field", class.name)));
+            }
             w.bounds.push((f.to_string(), op, v));
             continue;
         }

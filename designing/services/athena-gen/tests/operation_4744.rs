@@ -76,6 +76,16 @@ fn negative_proof_an_operation_without_its_handler_does_not_build() {
     assert!(ops.contains("compile_error!(\"operation tree has no handler"), "{ops}");
 }
 
+/// NEGATIVE PROOF (Silas's review): a handler path that climbs out of the repo is refused.
+#[test]
+fn negative_proof_a_handler_outside_the_repo_is_refused() {
+    let mut p = pulse(FIXTURE, "escape").unwrap();
+    let root = dir("repo-escape");
+    p.operations[0].handler = "../../etc/passwd".into();
+    let err = handler_path(&root, &root.join("api"), &p.operations[0]).unwrap_err();
+    assert!(err.contains("not a path inside the repo"), "{err}");
+}
+
 /// A product with no operation still gets an ops.rs that routes nothing.
 #[test]
 fn no_operation_routes_nothing() {
