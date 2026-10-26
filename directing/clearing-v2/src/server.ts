@@ -14,7 +14,8 @@ import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './
 import { RegistryKeys, DEFAULT_KEYS_URL } from './key-registry';
 import { decideBind } from './room-bind';
 import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
-import { ClearingMessage, NostrEvent } from './types';
+import { NostrEvent } from './types';
+import { roomOf, kindOf, toClearingMessage } from './converters';
 
 import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, renderCountsPage, renderSyncPage, renderRoomMessage, renderStreamsPage, renderPeopleRow } from './views';
 import { byDay, DOUBLE_COLUMNS, fetchReadings, syncByDay } from './sources/readings';
@@ -289,13 +290,20 @@ function registerReadApiRoutes(ctx: RouteContext): void {
 
   // #4597 — Jeff 19:11: "i cant scroll up in message history". The page of messages just
   // older than ?before=<id>, rendered as the room renders them, for the room to prepend.
-  app.get('/api/rooms/:room/history', (req: Request, res: Response) => {
+  // #4749 — fall through to Buzz relay or Pulse when anchor is older than buffer.
+  app.get('/api/rooms/:room/history', async (req: Request, res: Response) => {
     const rawRoom = req.params.room;
     const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
     const before = typeof req.query.before === 'string' ? req.query.before : '';
-    const older = before ? dataService.getRoomHistory(room, before) : [];
-    // #4646 — the older page carries the same base path as the page (photo and room links)
-    res.json({ count: older.length, html: withBase(older.map(renderRoomMessage).join(''), String(res.locals.base || '')) });
+    const beforeTs = typeof req.query.ts === 'string' ? parseInt(req.query.ts, 10) : undefined;
+    const { pulseUrl } = getTestOverrides(req);
+    try {
+      const older = before ? await dataService.getRoomHistory(room, before, beforeTs, { pulseUrl }) : [];
+      // #4646 — the older page carries the same base path as the page (photo and room links)
+      res.json({ ok: true, count: older.length, html: withBase(older.map(renderRoomMessage).join(''), String(res.locals.base || '')) });
+    } catch (e) {
+      res.status(502).json({ ok: false, count: 0, html: '', error: (e as Error).message });
+    }
   });
 
   // #4597 — Jeff 16:25: "i really need a streams menu option too". Each role's recent
@@ -570,40 +578,7 @@ function makeBroadcaster(sseClients: Response[]): (type: string, data: unknown) 
   };
 }
 
-function roomOf(event: NostrEvent): string {
-  // tags is typed required, but relay events are external input: guard at runtime.
-  const tags: unknown = event.tags;
-  const roomTag = Array.isArray(tags)
-    ? event.tags.find((t) => t[0] === 'room' || (t[0] === 't' && t[1] !== 'reply'))
-    : undefined;
-  return roomTag ? roomTag[1] : 'team';
-}
-
-/** #4592 — the note's kind tag (v1's buildNote), only the two kinds the room's toggle owns. */
-export function kindOf(event: { tags?: string[][] }): 'nudge' | 'alert' | undefined {
-  const v = (event.tags || []).find((t) => t[0] === 'kind')?.[1];
-  return v === 'nudge' || v === 'alert' ? v : undefined;
-}
-
-function toClearingMessage(event: NostrEvent, role: string, tick: boolean, signer?: string): ClearingMessage {
-  const kind = kindOf(event);
-  // #4608 — the room's stored copy of a sender's note carries that note's id, so
-  // the copy and the original are one message (the router drops a seen id).
-  const signed = Array.isArray(event.tags) ? event.tags.find((t) => t[0] === 'signed')?.[1] : undefined;
-  return {
-    ...(kind ? { kind } : {}),
-    id: signed || event.id,
-    from: role,
-    text: event.content,
-    ts: new Date(event.created_at * 1000).toISOString(),
-    type: role === 'jeff' ? 'jeff-input' : 'role-response',
-    visible: true,
-    pubkey: event.pubkey,
-    room: roomOf(event),
-    tick,
-    signer,
-  };
-}
+export { roomOf, kindOf, toClearingMessage };
 
 interface InboundDeps {
   router: MessageRouter;

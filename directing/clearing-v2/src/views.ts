@@ -871,6 +871,7 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
                 }).join('')}
               </optgroup>
             </select>
+            <input type="search" id="room-search-input" placeholder="Search loaded..." oninput="if(typeof setSearchQuery==='function')setSearchQuery(this.value);" style="font-size:11px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);width:110px">
           </div>
           <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
             <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
@@ -879,6 +880,7 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
             <span class="ex" style="font-size:10.5px">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
           </div>
         </div>
+        <div id="history-status" class="history-status" style="font-size:11.5px;text-align:center;color:var(--meta, #888);padding:4px 0" role="status"></div>
         <div class="messages" id="messages-stream">
           ${data.messages.length === 0 ? `
             <div class="empty-feed" style="padding:24px;color:var(--meta);text-align:center">
