@@ -41,10 +41,11 @@ given_a_card() {
   # the stubs, named by their full paths so werk-test sees this suite exercise each one
   cp "$ROOT/platform/tests/fixtures/verb-story/cards" "$ROOT/platform/tests/fixtures/verb-story/chorus-log" \
      "$ROOT/platform/tests/fixtures/verb-story/role-state" "$R/home/platform/scripts/"
-  cp "$ROOT/platform/tests/fixtures/verb-story/gh" "$ROOT/platform/tests/fixtures/verb-story/werk-deploy" "$R/bin/"
+  cp "$ROOT/platform/tests/fixtures/verb-story/gh" "$ROOT/platform/tests/fixtures/verb-story/werk-deploy" \
+     "$ROOT/platform/tests/fixtures/verb-story/chorus-go" "$R/bin/"
   echo "${2:-Next}" > "$R/board/$1"
   export CHORUS_HOME="$R/home" CHORUS_WERK_BASE="$R/werks" CHORUS_BIN="$R/bin" \
-    BOARD="$R/board" SPINE="$R/spine" GH_STATE="$R/gh" GH_LOG="$R/ghlog" ORIGIN="$R/origin" \
+    CHORUS_GO_BIN="$R/bin/chorus-go" BOARD="$R/board" SPINE="$R/spine" GH_STATE="$R/gh" GH_LOG="$R/ghlog" ORIGIN="$R/origin" \
     PATH="$R/bin:$PATH"
   unset DAG_RUN_ID CHORUS_TRACE_ID ROLE ACCEPTER DEPLOY_ROLE
   : > "$R/spine"
@@ -189,6 +190,21 @@ spine_in_order() {
   [ "$status" -ne 0 ] || return 1
   ! git -C "$R/origin" cat-file -e main:story.txt 2>/dev/null || { echo "main got the work"; return 1; }
   ! grep -q "^pr merge" "$GH_LOG" 2>/dev/null || return 1
+}
+
+# #4747 NEGATIVE PROOF: the story's chorus-go stub stands in for Jeff's signed
+# go; with no signed go (the real refusal text), the same land lands nothing.
+@test "refused at merge: no go signed by Jeff lands nothing on main" {
+  given_a_card 9010
+  "$BIN/werk-pull" 9010 kade >/dev/null
+  printf 'x\n' > "$R/werks/kade-9010/story.txt"
+  "$BIN/werk-commit" 9010 kade "add" --atomic >/dev/null || return 1
+  "$BIN/werk-push" 9010 kade >/dev/null || return 1
+  printf '#!/bin/sh\necho "chorus-go: refused: no go signed by the passkey"\nexit 1\n' > "$R/bin/chorus-go"
+  ACCEPTER=jeff run "$BIN/werk-merge" 9010 kade
+  [ "$status" -ne 0 ] || { echo "merged without a signed go"; return 1; }
+  [[ "$output" == *go-unsigned* ]] || { echo "$output"; return 1; }
+  ! git -C "$R/origin" cat-file -e main:story.txt 2>/dev/null || { echo "main got the work"; return 1; }
 }
 
 @test "refused at accept: only Jeff or Wren may accept, never the card's own role; nothing closes" {

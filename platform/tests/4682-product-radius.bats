@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: ontology
+# @domain: domains
 # 4682-product-radius.bats — test product-radius graph inventory and cleanup report (#4682)
 
 setup() {

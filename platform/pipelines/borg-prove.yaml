@@ -62,7 +62,4 @@ steps:
     preconditions:
       - condition: "${skill_werk_go.outputs.decision}"
         expected: "go"
-    action: dag.enqueue
-    with:
-      dag: borg-prove-land
-      params: "CARD=${CARD} ROLE=${ROLE} ACCEPTER=${skill_werk_go.outputs.accepter}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue borg-prove-land -- CARD=${CARD} ROLE=${ROLE} ACCEPTER=${skill_werk_go.outputs.accepter}"

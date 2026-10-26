@@ -959,9 +959,15 @@ pub fn undeclared_tests(files: &[String], read: &dyn Fn(&str) -> Option<String>,
     let mut unknown = Vec::new();
     // fixture DATA (a test's input, under a fixtures/ dir) is not a test: a
     // "no-headers" fixture must stay header-less or its test means nothing
-    let files: Vec<&String> = files.iter().filter(|f| !f.contains("/fixtures/")).collect();
-    for f in &files {
-        match read(f).as_deref().and_then(declared_domain) {
+    let files: Vec<(&String, Option<String>)> = files
+        .iter()
+        .filter(|f| !f.contains("/fixtures/"))
+        .map(|f| (f, read(f)))
+        // #4747 — a .rs file with no #[test] holds no test, so it owes no header
+        .filter(|(f, c)| !f.ends_with(".rs") || c.as_deref().is_some_and(|c| c.contains("#[test]") || c.contains("#[tokio::test]")))
+        .collect();
+    for (f, content) in &files {
+        match content.as_deref().and_then(declared_domain) {
             None => missing.push(f.to_string()),
             Some(d) if !valid.iter().any(|v| v == &d) => unknown.push(format!("{f} ({d})")),
             Some(_) => {}
@@ -1192,6 +1198,20 @@ mod declared_domain_4334 {
         assert_eq!((n, missing_f.len()), (1, 0), "fixture data is not a test file");
         assert_eq!(missing, vec!["b.bats".to_string(), "c.test.ts".to_string()]);
         assert!(unknown.is_empty());
+    }
+
+    /// #4747 — a .rs file with no #[test] holds no test (the files row already
+    /// excludes it as "contains no test"), so it owes no @domain header.
+    /// NEGATIVE PROOF: the same file with a #[test] and no header is named.
+    #[test]
+    fn a_rust_file_with_no_test_owes_no_domain_header() {
+        let files = vec!["src/shacl.rs".to_string()];
+        let none = |_: &str| Some("//! the store checks shapes\npub fn check() {}\n".to_string());
+        let (n, missing, _) = undeclared_tests(&files, &none, &["cicd".to_string()]);
+        assert_eq!((n, missing.len()), (0, 0), "no test, no header owed");
+        let one = |_: &str| Some("#[test]\nfn t() {}\n".to_string());
+        let (n, missing, _) = undeclared_tests(&files, &one, &["cicd".to_string()]);
+        assert_eq!((n, missing), (1, vec!["src/shacl.rs".to_string()]));
     }
 
     /// #4538 — node --test and package-less tests have no runner; jest ones do.

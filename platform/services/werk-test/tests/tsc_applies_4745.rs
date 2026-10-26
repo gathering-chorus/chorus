@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: tests
 // #4745 — #4745 run 1 read UNMEASURED at tsc:platform/apps/sexuality-player, a
 // JavaScript package (no tsconfig.json, no typescript) whose lockfile the card
 // bumped. Covers platform/services/werk-test/src/lib.rs (tsc_applies) and

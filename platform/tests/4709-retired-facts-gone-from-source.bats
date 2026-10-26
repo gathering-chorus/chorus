@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: ontology
+# @domain: knowledge
 # @card: #4709
 # @owner: wren
 # #4709 (child of #4702) — the 9 facts #4702 retired must be in no model source,

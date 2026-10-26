@@ -113,6 +113,7 @@ describe('#4635 record voice', () => {
     execFileSync('say', ['-v', 'Samantha', '-o', aiff, 'the send button is too low']);
     const text = await transcribe(fs.readFileSync(aiff), 'audio/aiff', DIR);
     expect(text.toLowerCase()).toContain('send button');
+    // slow-by-design: say + ffmpeg + whisper-cli measured 3.4 s warm on Library 10-26; a cold whisper model load is far slower
   }, 60000);
 
   test('NEGATIVE PROOF: not signed in cannot use voice; an empty recording is refused by name', async () => {

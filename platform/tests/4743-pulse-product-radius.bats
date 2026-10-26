@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: ontology
+# @domain: domains
 # @card: #4743
 # @owner: abby-normal
 # 4743-pulse-product-radius.bats — prove pulse's product radius (AC3)

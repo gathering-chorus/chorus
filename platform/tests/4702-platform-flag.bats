@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — validates TTL with Jena's shacl CLI; no store, no network.
-# @domain: ontology
+# @domain: knowledge
 # @card: #4702
 # @owner: wren
 #

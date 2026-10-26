@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: ontology
+# @domain: knowledge
 # 4702-shape-drift.bats — platform/scripts/shape-drift lists the fields live rows
 # carry that their shape neither lists nor ignores, so a shape is closed only
 # when it reads clean (#4702 AC5). Fixture in the tool's own format; no store.
