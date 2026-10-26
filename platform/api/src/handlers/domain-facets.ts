@@ -250,48 +250,94 @@ const BLAST_RING_WEIGHTS = [1, 1, 2, 3, 5, 8];
 
 export interface BlastRing { ring: number; weight: number; domains: string[] }
 
+type BlastEdge = { from: string; rel: string; to: string };
+
+function reverseAdjacency(edges: BlastEdge[]): Map<string, Array<{ from: string; rel: string }>> {
+  const dependents = new Map<string, Array<{ from: string; rel: string }>>();
+  for (const e of edges) {
+    const list = dependents.get(e.to) ?? [];
+    list.push({ from: e.from, rel: e.rel });
+    dependents.set(e.to, list);
+  }
+  for (const list of dependents.values()) list.sort((a, b) => a.from.localeCompare(b.from) || a.rel.localeCompare(b.rel));
+  return dependents;
+}
+
+function pathToRoot(d: string, root: string, parent: Map<string, string>): string[] {
+  const path = [d];
+  while (path[path.length - 1] !== root) path.push(parent.get(path[path.length - 1]) as string);
+  return path;
+}
+
+function ringsOf(hops: Map<string, number>): { rings: BlastRing[]; score: number } {
+  const byRing = new Map<number, string[]>();
+  for (const [d, n] of hops) {
+    const ring = Math.min(n, BLAST_RING_WEIGHTS.length);
+    byRing.set(ring, [...(byRing.get(ring) ?? []), d]);
+  }
+  const rings = [...byRing.keys()].sort((a, b) => a - b).map((ring) => ({
+    ring, weight: BLAST_RING_WEIGHTS[ring - 1], domains: (byRing.get(ring) as string[]).sort(),
+  }));
+  return { rings, score: rings.reduce((sum, r) => sum + r.weight * r.domains.length, 0) };
+}
+
 /** Breadth-first from the root over reversed edges (x dependsOn y → y hits x):
  *  nearest hop, the edge that reached it, and the full path back to the root. */
 export function blastClosure(
   root: string,
-  edges: Array<{ from: string; rel: string; to: string }>,
+  edges: BlastEdge[],
 ): { hops: Map<string, number>; via: Map<string, string>; paths: Record<string, string[]>; rings: BlastRing[]; score: number } {
-  const dependents = new Map<string, Array<{ from: string; rel: string }>>();
-  for (const e of edges) {
-    if (!dependents.has(e.to)) dependents.set(e.to, []);
-    dependents.get(e.to)!.push({ from: e.from, rel: e.rel });
-  }
-  for (const list of dependents.values()) list.sort((a, b) => a.from.localeCompare(b.from) || a.rel.localeCompare(b.rel));
+  const dependents = reverseAdjacency(edges);
   const hops = new Map<string, number>([[root, 0]]);
   const parent = new Map<string, string>();
   const via = new Map<string, string>();
   const queue = [root];
   while (queue.length) {
-    const y = queue.shift()!;
+    const y = queue.shift() as string;
     for (const { from, rel } of dependents.get(y) ?? []) {
       if (hops.has(from)) continue;
-      hops.set(from, hops.get(y)! + 1);
+      hops.set(from, (hops.get(y) as number) + 1);
       parent.set(from, y);
       via.set(from, rel);
       queue.push(from);
     }
   }
   hops.delete(root);
-  const paths: Record<string, string[]> = {};
-  const byRing = new Map<number, string[]>();
-  for (const [d, n] of hops) {
-    const path = [d];
-    while (path[path.length - 1] !== root) path.push(parent.get(path[path.length - 1])!);
-    paths[d] = path;
-    const ring = Math.min(n, BLAST_RING_WEIGHTS.length);
-    if (!byRing.has(ring)) byRing.set(ring, []);
-    byRing.get(ring)!.push(d);
+  const paths = Object.fromEntries([...hops.keys()].map((d) => [d, pathToRoot(d, root, parent)]));
+  return { hops, via, paths, ...ringsOf(hops) };
+}
+
+type BlastOut = { target: string; targetUri: string; relationship: string; direction: string; hops?: number };
+
+function parentEdges(result: SparqlResult): BlastOut[] {
+  const seen = new Set<string>();
+  const out: BlastOut[] = [];
+  for (const b of result.results.bindings) {
+    const targetUri = b.target?.value ?? '';
+    const relationship = b.relationship?.value ?? '';
+    const key = `${targetUri}|${relationship}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      target: b.label?.value || targetUri.split('#').pop() || '',
+      targetUri,
+      relationship,
+      direction: b.direction?.value ?? '',
+    });
   }
-  const rings = [...byRing.keys()].sort((a, b) => a - b).map((ring) => ({
-    ring, weight: BLAST_RING_WEIGHTS[ring - 1], domains: byRing.get(ring)!.sort(),
-  }));
-  const score = rings.reduce((sum, r) => sum + r.weight * r.domains.length, 0);
-  return { hops, via, paths, rings, score };
+  return out;
+}
+
+function closureEdgesOf(result: SparqlResult, local: (uri: string) => string): { edges: BlastEdge[]; labels: Map<string, string> } {
+  const labels = new Map<string, string>();
+  const edges: BlastEdge[] = [];
+  for (const b of result.results.bindings) {
+    if (!b.x?.value || !b.y?.value || !b.rel?.value) continue;
+    const from = local(b.x.value);
+    if (b.label?.value) labels.set(from, b.label.value);
+    edges.push({ from, rel: local(b.rel.value), to: local(b.y.value) });
+  }
+  return { edges, labels };
 }
 
 export async function fetchDomainBlastRadius(
@@ -332,34 +378,12 @@ SELECT DISTINCT ?x ?label ?rel ?y WHERE {
   }
 }`;
     const [parentResult, closureResult] = await Promise.all([deps.sparql(parentQuery), deps.sparql(closureQuery)]);
-    const seen = new Set<string>();
-    const edges: Array<{ target: string; targetUri: string; relationship: string; direction: string; hops?: number }> = [];
-    for (const b of parentResult.results.bindings) {
-      const targetUri = b.target?.value || '';
-      const relationship = b.relationship?.value || '';
-      const key = `${targetUri}|${relationship}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        edges.push({
-          target: b.label?.value || targetUri.split('#').pop() || '',
-          targetUri,
-          relationship,
-          direction: b.direction?.value || '',
-        });
-      }
-    }
+    const edges = parentEdges(parentResult);
     const local = (uri: string) => (uri.startsWith(ns) ? uri.slice(ns.length) : uri);
-    const labels = new Map<string, string>();
-    const closureEdges: Array<{ from: string; rel: string; to: string }> = [];
-    for (const b of closureResult.results.bindings) {
-      if (!b.x?.value || !b.y?.value || !b.rel?.value) continue;
-      const from = local(b.x.value);
-      if (b.label?.value) labels.set(from, b.label.value);
-      closureEdges.push({ from, rel: local(b.rel.value), to: local(b.y.value) });
-    }
+    const { edges: closureEdges, labels } = closureEdgesOf(closureResult, local);
     const closure = blastClosure(sdId, closureEdges);
-    for (const [d, n] of [...closure.hops].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))) {
-      edges.push({ target: labels.get(d) || d, targetUri: `${ns}${d}`, relationship: closure.via.get(d)!, direction: 'dependent', hops: n });
+    for (const [d, n] of [...closure.hops].sort((x, y) => x[1] - y[1] || x[0].localeCompare(y[0]))) {
+      edges.push({ target: labels.get(d) ?? d, targetUri: `${ns}${d}`, relationship: closure.via.get(d) as string, direction: 'dependent', hops: n });
     }
     return {
       status: 200,
