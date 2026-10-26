@@ -61,3 +61,34 @@ RUNS="[{'name': 'cicd', 'dagRunId': 'old', 'statusLabel': 'waiting', 'params': '
   [ "$status" -eq 0 ]
   [[ "$output" == *"dagu unreadable"* ]] || return 1
 }
+
+CWS="$REPO/platform/scripts/chorus-werk-status"
+cws_py() {
+  python3 - "$CWS" "$1" <<'PY'
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("cws", sys.argv[1])
+spec = importlib.util.spec_from_loader("cws", loader)
+cws = importlib.util.module_from_spec(spec)
+loader.exec_module(cws)
+exec(sys.argv[2])
+PY
+}
+
+# AC2 — /cws shows a stopped older run as superseded, never as failed or waiting.
+@test "/cws reads an aborted older cicd run as superseded" {
+  run cws_py "
+runs = [{'name': 'cicd', 'dagRunId': 'new', 'statusLabel': 'waiting', 'nodes': [{'step': {'name': 'skill-werk-go'}, 'statusLabel': 'waiting'}]},
+        {'name': 'cicd', 'dagRunId': 'old', 'statusLabel': 'aborted', 'nodes': [{'step': {'name': 'skill-werk-go'}, 'statusLabel': 'aborted'}]}]
+print(cws.dagu_state(runs, 1)[0], cws.dagu_state(runs, 0)[0])"
+  echo "$output"
+  [ "$output" = "superseded waiting" ] || return 1
+}
+
+# NEGATIVE PROOF: the newest run aborted (nothing newer) is not called superseded.
+@test "negative proof: an aborted newest run is not superseded" {
+  run cws_py "
+runs = [{'name': 'cicd', 'dagRunId': 'only', 'statusLabel': 'aborted', 'nodes': [{'step': {'name': 'skill-werk-build'}, 'statusLabel': 'aborted'}]}]
+print(cws.dagu_state(runs, 0)[0])"
+  echo "$output"
+  [ "$output" != "superseded" ] || return 1
+}

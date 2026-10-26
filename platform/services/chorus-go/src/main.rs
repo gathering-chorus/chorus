@@ -165,6 +165,9 @@ fn info(store: &Store, card: &str, run: &str, role: &str) -> Result<Value, Strin
     let card: u64 = card.parse().map_err(|_| "no card in the link".to_string())?;
     if !role.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') || role.is_empty() { return Err("no role in the link".into()); }
     let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
+    // #4753 — one go per card: a superseded or answered run is refused before Jeff signs
+    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric()) { return Err("no run in the link".into()); }
+    go_run_open(&run_status(run))?;
     let round = round_of(role, card)?;
     let nonce = store.mint_challenge(card, run, &round)?;
     Ok(json!({
@@ -172,6 +175,19 @@ fn info(store: &Store, card: &str, run: &str, role: &str) -> Result<Value, Strin
         "challengeGo": b64url(&go_challenge(card, run, &format!("{round}|go"), &nonce)),
         "challengeNo": b64url(&go_challenge(card, run, &format!("{round}|no"), &nonce)),
     }))
+}
+
+/// The first line of `dagu status cicd --run-id <run>`; empty when dagu cannot say.
+fn run_status(run: &str) -> String {
+    let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
+    let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
+    Command::new(&dagu)
+        .args(["--config", &cfg, "status", "cicd", "--run-id", run])
+        .env_remove("CHORUS_ROLE").env_remove("ROLE")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// Answer the run's go step with what Jeff's phone signed.
