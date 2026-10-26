@@ -184,6 +184,23 @@ pub const FROM_WERK: &str = "from=werk";
 pub const QUEUED: &str = "queued=true";
 pub const CARD_QUEUE: &str = "werk";
 pub const LAND_QUEUE: &str = "werk-land";
+/// #4758 — the go waits on its own wide queue. A run waiting at a human task
+/// frees its queue slot, and on resume re-queues on its own dag's queue: #4747,
+/// signed, then sat "2nd in line" 20 minutes on `werk` (max 1, #4675) behind
+/// two cards' test runs just to run the land enqueue. The go half holds no
+/// test, so it never waits behind one.
+pub const GO_QUEUE: &str = "werk-go";
+
+/// #4758 — the go half's DAG name, `<pipeline>-go`: Jeff's go and the land
+/// enqueue. The card half ends at the demo by enqueueing it BY NAME, with its
+/// own run id as CICD_RUN (the /go link names the card half's run).
+pub fn go_dag(pipeline: &str) -> String {
+    format!("{pipeline}-go")
+}
+
+/// #4758 — the go half's run id: `go-<card half's run id>`. Every reader of a
+/// /go link (which names the card half's run) finds the go by name, no lookup.
+pub const GO_RUN_PREFIX: &str = "go-";
 
 /// The land half's DAG name, `<pipeline>-land`. A card enqueues it BY NAME, so
 /// dagu runs main's copy (its dags_dir is canonical): a card never rewrites how
@@ -545,8 +562,9 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         return generate_go_less(pipeline, rows);
     }
     let rows = sorted(rows)?;
-    // the card half routes only the steps it runs: up to and including the go
-    let card_end = rows.iter().position(|r| r.executor == "human").map_or(rows.len(), |g| g + 1);
+    // the card half routes only the steps it runs: up to the go (#4758: the
+    // go half routes the go)
+    let card_end = rows.iter().position(|r| r.executor == "human").unwrap_or(rows.len());
     let mut out = String::new();
     preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes_in(&rows, &rows[..card_end]), None);
     let mut prev: Vec<String> = Vec::new();
@@ -554,43 +572,17 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     for (g, group) in grouped.iter().enumerate() {
         let before_a_human = grouped.get(g + 1).is_some_and(|n| n[0].executor == "human");
         let r = &group[0];
-        let id = dagu_name(&rows, r);
         if r.executor == "human" {
-            out.push_str(&format!("  - name: {id}\n"));
-            out.push_str(&format!("    description: {}\n", quote(&r.label)));
+            // #4758 — the card half ends here: it enqueues the go half on the
+            // go queue and succeeds. The go and the land enqueue run there.
+            let go = go_dag(pipeline);
+            out.push_str(&format!("  - name: {go}\n"));
+            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue {} on the {GO_QUEUE} queue", r.label))));
             depends_on(&mut out, &prev);
-            // dagu 2.18 refuses a human.task with no id, and an id takes no
-            // hyphens: the same row name, '-' as '_'.
-            let go = id.replace('-', "_");
-            out.push_str(&format!("    id: {go}\n"));
-            out.push_str("    action: human.task\n    with:\n");
-            out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
-            // the one who gives the go is the accepter (DEC-048): the form
-            // asks who, and the land half reads it as $ACCEPTER
-            out.push_str(concat!(
-                "      form:\n        type: object\n        properties:\n",
-                "          accepter:\n            type: string\n",
-            ));
-            out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
-            // #4494 — a go can be a no: a run waiting here could not be
-            // stopped, dequeued or deleted (dagu 2.18), so "no" is the way
-            // out — the land below is skipped and the run ends.
-            out.push_str("          decision:\n            type: string\n            enum: [go, no]\n");
-            out.push_str("        required: [accepter, decision]\n");
-            let land = land_dag(pipeline);
-            out.push_str(&format!("  - name: {land}\n"));
-            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
-            out.push_str(&format!("    depends: [{id}]\n"));
-            out.push_str(&format!(
-                "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
-            ));
-            // #4691 — the CLI enqueue, a top-level run: dagu refuses a human task
-            // in a run it started as a sub-DAG (#4577 pair run 1, measured), and
-            // the land has Borg Queen's step
             out.push_str(&format!(
                 "    command: {}\n",
                 quote(&format!(
-                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {land} -- CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}"
+                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue --run-id {GO_RUN_PREFIX}${{DAG_RUN_ID}} {go} -- CARD=${{CARD}} ROLE=${{ROLE}} CICD_RUN=${{DAG_RUN_ID}}"
                 ))
             ));
             return Ok(out);
@@ -601,6 +593,62 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
     Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()])
+}
+
+/// #4758 — the go half: Jeff's go, then one step that enqueues the land half
+/// on the land queue with the go's accepter. On its own wide queue, so a
+/// signed go resumes at once instead of behind the card queue's test runs.
+pub fn generate_go(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    if go_less(pipeline) {
+        return Err(vec![format!("pipeline {pipeline} is go-less: it has no go half")]);
+    }
+    let rows = sorted(rows)?;
+    let Some(g) = rows.iter().position(|r| r.executor == "human") else {
+        return Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()]);
+    };
+    let r = &rows[g];
+    let id = dagu_name(&rows, r);
+    let prev: Vec<String> = Vec::new();
+    let mut out = String::new();
+    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], "go", &fail_routes_in(&rows, &rows[g..=g]), None);
+    out.push_str(&format!("  - name: {id}\n"));
+    out.push_str(&format!("    description: {}\n", quote(&r.label)));
+    depends_on(&mut out, &prev);
+    // dagu 2.18 refuses a human.task with no id, and an id takes no
+    // hyphens: the same row name, '-' as '_'.
+    let go = id.replace('-', "_");
+    out.push_str(&format!("    id: {go}\n"));
+    out.push_str("    action: human.task\n    with:\n");
+    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
+    // the one who gives the go is the accepter (DEC-048): the form
+    // asks who, and the land half reads it as $ACCEPTER
+    out.push_str(concat!(
+        "      form:\n        type: object\n        properties:\n",
+        "          accepter:\n            type: string\n",
+    ));
+    out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
+    // #4494 — a go can be a no: a run waiting here could not be
+    // stopped, dequeued or deleted (dagu 2.18), so "no" is the way
+    // out — the land below is skipped and the run ends.
+    out.push_str("          decision:\n            type: string\n            enum: [go, no]\n");
+    out.push_str("        required: [accepter, decision]\n");
+    let land = land_dag(pipeline);
+    out.push_str(&format!("  - name: {land}\n"));
+    out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
+    out.push_str(&format!("    depends: [{id}]\n"));
+    out.push_str(&format!(
+        "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
+    ));
+    // #4691 — the CLI enqueue, a top-level run: dagu refuses a human task
+    // in a run it started as a sub-DAG (#4577 pair run 1, measured), and
+    // the land has Borg Queen's step
+    out.push_str(&format!(
+        "    command: {}\n",
+        quote(&format!(
+            "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {land} -- CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}"
+        ))
+    ));
+    Ok(out)
 }
 
 /// #4515 — a go-less pipeline (go_less): every step in order, no human step,
@@ -858,6 +906,9 @@ pub fn generate_named(name: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     if go_less(name) {
         return generate(name, rows);
     }
+    if let Some(pipeline) = name.strip_suffix("-go") {
+        return generate_go(pipeline, rows);
+    }
     match name.strip_suffix("-land") {
         Some(pipeline) => generate_land(pipeline, rows),
         None => generate(name, rows),
@@ -870,7 +921,7 @@ pub fn pipeline_of(name: &str) -> &str {
     if go_less(name) {
         return name;
     }
-    name.strip_suffix("-land").unwrap_or(name)
+    name.strip_suffix("-land").or_else(|| name.strip_suffix("-go")).unwrap_or(name)
 }
 
 /// The drift check: regenerate from the rows and compare with the file on

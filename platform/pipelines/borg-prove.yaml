@@ -19,7 +19,7 @@ env:
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   failure:
-    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-intake=value-stream-step-designing,skill-borg-verify=value-stream-step-build,skill-borg-stage=value-stream-step-build,skill-borg-review=value-stream-step-build,skill-werk-go=value-stream-step-borg-intake || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} run failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-intake=value-stream-step-designing,skill-borg-verify=value-stream-step-build,skill-borg-stage=value-stream-step-build,skill-borg-review=value-stream-step-build || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} run failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
   - name: skill-borg-intake
     description: "borg-intake"
@@ -39,27 +39,7 @@ steps:
     continue_on:
       exit_code: [2]
       mark_success: true
-  - name: skill-werk-go
-    description: "Jeff's go"
+  - name: borg-prove-go
+    description: "enqueue Jeff's go on the werk-go queue"
     depends: [skill-borg-review]
-    id: skill_werk_go
-    action: human.task
-    with:
-      prompt: "Jeff's go for #${CARD}?"
-      form:
-        type: object
-        properties:
-          accepter:
-            type: string
-            enum: [jeff, wren, kade, silas]
-          decision:
-            type: string
-            enum: [go, no]
-        required: [accepter, decision]
-  - name: borg-prove-land
-    description: "enqueue the land on the werk-land queue"
-    depends: [skill-werk-go]
-    preconditions:
-      - condition: "${skill_werk_go.outputs.decision}"
-        expected: "go"
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue borg-prove-land -- CARD=${CARD} ROLE=${ROLE} ACCEPTER=${skill_werk_go.outputs.accepter}"
+    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue --run-id go-${DAG_RUN_ID} borg-prove-go -- CARD=${CARD} ROLE=${ROLE} CICD_RUN=${DAG_RUN_ID}"

@@ -41,7 +41,8 @@ fn seven_siblings_each_wait_for_validate_and_announce_waits_for_all_seven() {
     }
     let all = SIBLINGS.join(", ");
     assert!(step(&out, "skill-demo-announce").contains(&format!("    depends: [{all}]\n")), "announce waits for all 7:\n{out}");
-    assert!(step(&out, "skill-werk-go").contains("    depends: [skill-demo-announce]\n"), "the go follows announce:\n{out}");
+    // #4758 — the card half ends by enqueueing the go half after announce
+    assert!(step(&out, "cicd-go").contains("    depends: [skill-demo-announce]\n"), "the go follows announce:\n{out}");
     assert_eq!(groups(&rows_sorted(&rows)).iter().map(|g| g.len()).collect::<Vec<_>>(), vec![1, 7, 1, 1]);
 }
 

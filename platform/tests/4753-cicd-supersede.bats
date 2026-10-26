@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: unit — fixture runs and stub dagu/chorus-log; no live dagu, no spine
 # @domain: cicd
-# @card: 4753 · owner: kade
+# @card: 4753 · owner: kade · #4758: the go waits in cicd-go (platform/scripts/cicd-supersede)
 # What Jeff sees: one go per card. When a card's new cicd run starts, its older
 # run waiting at his go is stopped, by name, with a card.run.superseded event —
 # never answered as Jeff (Jeff 10-26 12:11: "ask for go with dont go in fine print").
@@ -23,13 +23,14 @@ EOF
 RUNS="[{'name': 'cicd', 'dagRunId': 'old', 'statusLabel': 'waiting', 'params': 'CARD=4749 ROLE=abby-normal'},
        {'name': 'cicd', 'dagRunId': 'done', 'statusLabel': 'succeeded', 'params': 'CARD=4749 ROLE=abby-normal'},
        {'name': 'cicd', 'dagRunId': 'live', 'statusLabel': 'running', 'params': 'CARD=4749 ROLE=abby-normal'},
+       {'name': 'cicd-go', 'dagRunId': 'go-older', 'statusLabel': 'waiting', 'params': 'CARD=4749 ROLE=abby-normal CICD_RUN=older'},
        {'name': 'cicd-land', 'dagRunId': 'land', 'statusLabel': 'waiting', 'params': 'CARD=4749 ROLE=abby-normal'}]"
 
 @test "a card's cicd run waiting at the go is superseded; finished, running and land runs are not" {
   run sup_py "print(sup.superseded($RUNS))"
   echo "$output"
   [ "$status" -eq 0 ]
-  [ "$output" = "['old']" ]
+  [ "$output" = "[('cicd', 'old'), ('cicd-go', 'go-older')]" ]
 }
 
 @test "the older run is stopped and the stop is on the spine" {
@@ -42,7 +43,9 @@ RUNS="[{'name': 'cicd', 'dagRunId': 'old', 'statusLabel': 'waiting', 'params': '
   echo "$output"
   [ "$status" -eq 0 ]
   grep -q "stop cicd --run-id old" "$BATS_TEST_TMPDIR/dagu.calls"
-  [ "$(wc -l < "$BATS_TEST_TMPDIR/dagu.calls")" -eq 1 ]
+  # #4758 — a go half is stopped in its own dag, by its own run id
+  grep -q "stop cicd-go --run-id go-older" "$BATS_TEST_TMPDIR/dagu.calls"
+  [ "$(wc -l < "$BATS_TEST_TMPDIR/dagu.calls")" -eq 2 ]
   grep -q "card.run.superseded abby-normal card=4749 run_id=old" "$BATS_TEST_TMPDIR/log.calls"
 }
 
