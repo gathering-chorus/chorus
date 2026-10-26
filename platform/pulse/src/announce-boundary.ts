@@ -98,13 +98,29 @@ export class AnnounceState {
   windows: Map<string, WindowEntry> = new Map();
 }
 
+/** #4756 — an alert is stored under its owning role, its source in the
+ *  header (sender.ts markAlert, #4637): "[alert for wren · from system | …] body".
+ *  Read as from=to, every alert since 10-25 was a self-echo and reached no
+ *  terminal (1 self-echo on 10-22, 326 on 10-26): a pair renudge or a proves
+ *  ask never woke its role. */
+const ALERT_HEADER = /^\[alert for (\S+) · from \S+ \| [^\]]*\]\s*/;
+
+/** The sender and body the boundary judges: an alert is the machine lane and
+ *  its body (the header alone filled the 48-char signature, so any two alerts
+ *  to one role were one incident); anything else is as stored. */
+export function boundaryInput(from: string, content: string): { from: string; body: string } {
+  const h = ALERT_HEADER.exec(content);
+  return h && h[1] === from ? { from: 'system', body: content.slice(h[0].length) } : { from, body: content };
+}
+
 export function decide(
-  from: string,
+  storedFrom: string,
   to: string,
-  content: string,
+  stored: string,
   nowMs: number,
   state: AnnounceState,
 ): Decision {
+  const { from, body: content } = boundaryInput(storedFrom, stored);
   const { lane, cls } = classify(from, to, content);
 
   // 1) self-echo: a sender never receives its own send. Applies to all lanes.
