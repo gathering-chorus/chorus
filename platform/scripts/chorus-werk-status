@@ -683,7 +683,8 @@ def dagu_state(runs, i):
     #4734 — newest of its own family: a land waiting at its proof is not
     superseded by a demo run that came after it."""
     status, step = dagu_summary(runs[i])
-    if status == "waiting" and any(family(r) == family(runs[i]) for r in runs[:i]):
+    # #4753 — cicd-supersede stops that older run, so it reads aborted: still superseded
+    if status in ("waiting", "aborted") and any(family(r) == family(runs[i]) for r in runs[:i]):
         return "superseded", step
     return status, step
 

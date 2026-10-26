@@ -86,3 +86,17 @@ setup() {
   tail -1 "$BATS_TEST_TMPDIR/logged" | grep -q "started_by=none" || { cat "$BATS_TEST_TMPDIR/logged"; return 1; }
   ! tail -1 "$BATS_TEST_TMPDIR/logged" | grep -q "started_by_line" || return 1
 }
+
+# #4753 — one go per card: cicd supersedes the card's older waiting run before
+# it enqueues. NEGATIVE PROOF: athena never supersedes.
+@test "cicd supersedes the card's older run first; athena does not" {
+  export CICD_SUPERSEDE_BIN="$BATS_TEST_TMPDIR/sup"
+  printf '#!/bin/sh\necho "sup $@" >> "%s/order"\n' "$BATS_TEST_TMPDIR" > "$CICD_SUPERSEDE_BIN"; chmod +x "$CICD_SUPERSEDE_BIN"
+  printf '#!/bin/sh\necho "enqueue" >> "%s/order"\n' "$BATS_TEST_TMPDIR" > "$DAGU"
+  run "$ROOT/platform/scripts/pipeline-start" cicd 4515 wren
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/order")" = "$(printf 'sup 4515 wren\nenqueue')" ] || { cat "$BATS_TEST_TMPDIR/order"; return 1; }
+  rm -f "$BATS_TEST_TMPDIR/order"
+  run "$ROOT/platform/scripts/pipeline-start" athena 4515 wren
+  [ "$(cat "$BATS_TEST_TMPDIR/order")" = "enqueue" ] || { cat "$BATS_TEST_TMPDIR/order"; return 1; }
+}

@@ -191,6 +191,18 @@ pub fn short(sha: &str) -> &str {
     &sha[..sha.len().min(12)]
 }
 
+/// #4753 — whether the go page may open on this run, from the first line of
+/// `dagu status cicd --run-id <run>` ("Waiting - <time>"). One go per card:
+/// a run cicd-supersede stopped reads Aborted and is refused before Jeff signs.
+pub fn go_run_open(status_line: &str) -> Result<(), String> {
+    match status_line.split(" - ").next().unwrap_or("").trim() {
+        "Waiting" => Ok(()),
+        "Aborted" => Err("this run was superseded by a newer run of the card; open the newest go link".into()),
+        "" => Err("cannot read this run's state from dagu; nothing to sign".into()),
+        s => Err(format!("this run is {}, not waiting at the go: already answered or not there yet", s.to_lowercase())),
+    }
+}
+
 /// The go store: the passkey, outstanding challenges, and the signed gos.
 pub struct Store {
     pub dir: PathBuf,

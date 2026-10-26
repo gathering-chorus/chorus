@@ -92,6 +92,13 @@ if [ -d "$slot" ]; then
   done
 fi
 
+# #4753 — one go per card: the card's older cicd run still waiting at Jeff's
+# go is stopped (card.run.superseded), never answered as him.
+if [ "$pipeline" = cicd ]; then
+  "${CICD_SUPERSEDE_BIN:-$CHORUS_HOME/platform/scripts/cicd-supersede}" "$card" "$role" >&2 ||
+    echo "pipeline-start: could not supersede #$card's older runs; enqueueing anyway" >&2
+fi
+
 rc=0
 out="$("${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
   enqueue "$workflow" -- "CARD=$card" "ROLE=$role" 2>&1)" || rc=$?

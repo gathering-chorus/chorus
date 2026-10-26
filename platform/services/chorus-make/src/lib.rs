@@ -480,10 +480,13 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
             // as a sub-DAG and refuses it — "human task steps are not allowed
             // in sub-DAGs: cicd". The hand-off is the CLI enqueue instead (the
             // pair's red handler already enqueues this way), a top-level run.
+            // #4753 — one go per card: a new cicd run first supersedes the
+            // card's older run still waiting at the go (pipeline-start does the same).
+            let supersede = if r.implemented_by == "cicd" { "${CHORUS_HOME}/platform/scripts/cicd-supersede ${CARD} ${ROLE} && " } else { "" };
             out.push_str(&format!(
                 "    command: {}\n",
                 quote(&format!(
-                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
+                    "{supersede}env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
                     r.implemented_by,
                     params.join(" ")
                 ))

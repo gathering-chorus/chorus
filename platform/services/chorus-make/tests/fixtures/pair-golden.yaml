@@ -49,7 +49,7 @@ steps:
   - name: skill-pair-hand-off
     description: "hand off: one cicd run"
     depends: [skill-pair-local-proof]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}"
+    command: "${CHORUS_HOME}/platform/scripts/cicd-supersede ${CARD} ${ROLE} && env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}"
   - name: skill-pair-end
     description: "pair end: the For-Jeff summary, deregister"
     depends: [skill-pair-hand-off]
