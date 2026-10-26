@@ -521,7 +521,11 @@ async function loadOlderMessages(fetchImpl) {
     if (activeRoleFilters && activeRoleFilters.size > 0) {
       applyRoleFilters({ skipBackfill: true });
     }
-    stream.scrollTop = stream.scrollHeight - fromBottom;
+    // #4751 — synchronous scroll position restore with overflow-anchor to prevent fighting Safari touch inertia
+    const newScrollTop = stream.scrollHeight - fromBottom;
+    if (Math.abs(stream.scrollTop - newScrollTop) > 1) {
+      stream.scrollTop = newScrollTop;
+    }
     return body.count;
   } catch {
     return 0;
@@ -640,8 +644,12 @@ function watchRoomScroll(fetchImpl) {
   const fn = typeof fetchImpl === 'function' ? fetchImpl : undefined;
   const stream = document.getElementById('messages-stream');
   if (stream && stream.addEventListener) {
+    let scrollThrottled = false;
     stream.addEventListener('scroll', () => {
-      if (stream.scrollTop < 80) {
+      // #4751 — threshold with throttle to prevent rapid-fire requests fighting touch inertia
+      if (stream.scrollTop < 120 && !loadingOlder && !backfilling && !scrollThrottled) {
+        scrollThrottled = true;
+        setTimeout(() => { scrollThrottled = false; }, 150);
         if (activeRoleFilters && activeRoleFilters.size > 0) {
           const current = countVisibleMessages(stream);
           return backfillFilteredHistory(fn, current + 15);
@@ -649,7 +657,7 @@ function watchRoomScroll(fetchImpl) {
           return loadOlderMessages(fn);
         }
       }
-    });
+    }, { passive: true });
   }
 }
 if (typeof window !== 'undefined' && window.addEventListener) {

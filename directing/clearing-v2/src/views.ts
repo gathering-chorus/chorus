@@ -858,7 +858,7 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
   <div class="rooms-view">
     <div class="rooms">
       <main class="chat chat-container" style="flex:1;min-width:0">
-        <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
+        <div class="row chat-header-row">
           <div style="min-width:0;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
             <select id="room-picker" class="room-picker" onchange="window.location.href=(window.CLEARING_BASE || '') + '/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
               <optgroup label="Rooms">
@@ -871,9 +871,9 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
                 }).join('')}
               </optgroup>
             </select>
-            <input type="search" id="room-search-input" placeholder="Search loaded..." oninput="if(typeof setSearchQuery==='function')setSearchQuery(this.value);" style="font-size:11px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);width:110px">
+            <input type="search" id="room-search-input" placeholder="Search loaded..." oninput="if(typeof setSearchQuery==='function')setSearchQuery(this.value);" style="font-size:11px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);width:90px;max-width:110px;min-width:60px">
           </div>
-          <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
+          <div class="row header-controls-row" style="gap:8px;align-items:center;flex-shrink:0">
             <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
             <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges"> nudges</label>
             <a class="meta" href="/counts" style="font-size:11px">counts</a>

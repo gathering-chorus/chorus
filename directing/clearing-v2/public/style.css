@@ -543,7 +543,7 @@ nav.top .n {
   flex: 1;
   overflow: hidden;
 }
-.messages {
+.messages, #messages-stream {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -552,6 +552,7 @@ nav.top .n {
   gap: 2px;
   padding: 8px 0;
   min-width: 0;
+  overflow-anchor: auto;
 }
 .msg, .message {
   display: flex;
@@ -560,6 +561,8 @@ nav.top .n {
   position: relative;
   min-width: 0;
   max-width: 100%;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 .msg:hover {
   background: var(--sunk);
@@ -1280,10 +1283,35 @@ tr.you td {
 .composer-photo { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; cursor: pointer; font-size: 20px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .msg-photos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.msg-photos img { max-width: min(320px, 100%); max-height: 320px; border-radius: 6px; border: 1px solid var(--line2); }
+.msg-photos img { max-width: min(320px, 100%); max-height: 320px; aspect-ratio: 4 / 3; object-fit: contain; background: var(--sunk); border-radius: 6px; border: 1px solid var(--line2); display: block; }
 .composer-mic { min-width: 40px; font-size: 20px; background: none; border: 0; cursor: pointer; }
 .composer-mic[aria-pressed="true"] { background: var(--badbg, #f7e4df); border-radius: 6px; }
 
 /* #4649 — a message of Jeff's that did not reach its role */
 .message.undelivered { border-left: 3px solid var(--bad); }
 .msg-undelivered { margin-top: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: var(--bad); background: var(--badbg); border-radius: 4px; display: inline-block; }
+
+/* #4751 — responsive room header so Search loaded... does not clip nudges/counts on mobile */
+.chat-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line2);
+  min-width: 0;
+  gap: 6px;
+}
+@media (max-width: 600px) {
+  .chat-header-row {
+    flex-wrap: wrap !important;
+    padding: 4px 8px;
+    gap: 4px;
+  }
+  .chat-header-row #room-search-input {
+    width: 80px !important;
+    min-width: 60px;
+  }
+  .chat-header-row .room-picker {
+    font-size: 12px !important;
+  }
+}

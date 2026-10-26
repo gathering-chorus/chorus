@@ -294,7 +294,7 @@ export class BuzzRelayClient {
    * at the relay's EOSE. Merges kind 9 and kind 1 filters, dedupes by id, drops
    * any note matching anchorId, sorts descending by created_at, and slices to limit.
    */
-  async fetchBefore(until: number, limit = 50, anchorId?: string, timeoutMs = 10000): Promise<NostrEvent[]> {
+  async fetchBefore(until: number, limit = 15, anchorId?: string, timeoutMs = 10000): Promise<NostrEvent[]> {
     if (!this.ws || !this.isConnected()) return Promise.reject(new Error('relay not connected'));
     const parts = await Promise.all(this.filters({ until, limit }).map((f) => this.fetchOne(f, timeoutMs)));
     const all = parts.flat();
