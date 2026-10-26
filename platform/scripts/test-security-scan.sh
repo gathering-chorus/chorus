@@ -10,6 +10,8 @@
 #   SCA   — trivy fs over the repo: dependency CVEs (npm + cargo) + secrets + config.
 #           (trivy is already installed and covers osv-scanner's job; osv-scanner is
 #            the documented alternative — same SCA role.)
+#           The SCA leg is what exercises a lockfile-only bump such as #4745's
+#           platform/api/package-lock.json (body-parser, zod CVEs).
 #
 # Exits non-zero if EITHER leg reports a finding, so it can gate. FAIL-OPEN on a
 # missing tool (dev-setup gap) mirrors the gitleaks convention — SKIP, don't block.

@@ -1267,9 +1267,49 @@ fn ensure_conversation(ctx: &Ctx, role: &str, run: &str, conversation: &str) {
     ctx.spine(&["session.conversation.recorded", role, &format!("run={}", run), &format!("conversation={}", name)]);
 }
 
+/// #4745 — one role's run is recorded by one process at a time. Three hooks at
+/// one start each read "no live run" before any had saved one, and wrote three
+/// live runs in 600 ms (wren, 2026-10-25 15:21:51). A held lock older than
+/// `stale` is a dead holder's and is taken over. Each holder signs the lock
+/// with its own token and releases only a lock that still carries it, so a slow
+/// holder that was taken over never removes its successor's lock (Kade, #4745 review).
+pub struct RunLock { dir: PathBuf, token: String }
+impl Drop for RunLock {
+    fn drop(&mut self) {
+        let owner = self.dir.join("owner");
+        if fs::read_to_string(&owner).ok().as_deref() == Some(self.token.as_str()) {
+            let _ = fs::remove_file(&owner);
+            let _ = fs::remove_dir(&self.dir);
+        }
+    }
+}
+fn clear_lock(lock: &Path) { let _ = fs::remove_file(lock.join("owner")); let _ = fs::remove_dir(lock); }
+pub fn run_lock(dir: &Path, wait: Duration, stale: Duration) -> Option<RunLock> {
+    let _ = fs::create_dir_all(dir);
+    let lock = dir.join("run.lock");
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let token = format!("{}-{:x}-{}", std::process::id(), now_ms(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let until = std::time::Instant::now() + wait;
+    loop {
+        if fs::create_dir(&lock).is_ok() {
+            if fs::write(lock.join("owner"), &token).is_ok() { return Some(RunLock { dir: lock, token }); }
+            clear_lock(&lock);
+        }
+        let age = fs::metadata(&lock).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+        if age.map(|a| a > stale).unwrap_or(false) { clear_lock(&lock); continue; }
+        if std::time::Instant::now() >= until { return None; }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// A recorded login's run: the previous live run ends as a restart, then this
 /// run, its presence and its boot context are written.
 fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str) {
+    let dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let Some(_held) = run_lock(&dir, Duration::from_secs(20), Duration::from_secs(60)) else {
+        ctx.spine(&["session.row.failed", role, "kind=run", "why=another process is recording this role's run"]);
+        return;
+    };
     let previous = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r));
     if previous.is_some() { end_run(ctx, role, "restart"); }
     let started = iso_utc(now_ms() as u64 / 1000);

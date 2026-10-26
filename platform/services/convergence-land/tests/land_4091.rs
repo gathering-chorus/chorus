@@ -97,7 +97,7 @@ fn grafana_on_loopback_only() {
         assert!(loopback(ok).is_ok(), "{ok}");
     }
     // NEGATIVE PROOF (ADR-012)
-    for bad in ["http://192.168.86.23:3100", "https://grafana.example.com", "http://localhost.evil.com:3100", ""] {
+    for bad in ["http://10.20.30.40:3100", "https://grafana.example.com", "http://localhost.evil.com:3100", ""] {
         assert!(loopback(bad).is_err(), "{bad}");
     }
 }

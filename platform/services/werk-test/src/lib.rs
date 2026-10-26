@@ -3832,6 +3832,13 @@ thread_local! {
     static LANE_UNMEASURED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// #4745 — tsc applies to a package that has a tsconfig.json. A package with a
+/// test script but no TypeScript (platform/apps/sexuality-player: server.js, no
+/// typescript dep) has nothing to typecheck, so its tsc lane is not "unmeasured".
+pub fn tsc_applies(pkg_dir: &std::path::Path) -> bool {
+    pkg_dir.join("tsconfig.json").is_file()
+}
+
 /// Note why this lane could not measure. Returns true (not red) so a lane can
 /// `return werk_test::lane_unmeasured(…)`.
 pub fn lane_unmeasured(reason: impl Into<String>) -> bool {

@@ -9,12 +9,12 @@ use chorus_hooks::nudge_send::auth_relay_tag;
 
 #[test]
 fn a_stated_relay_address_is_the_tag() {
-    assert_eq!(auth_relay_tag("ws://192.168.86.242:3000", Some("wss://buzz.lightlifeurbangardens.com")), "wss://buzz.lightlifeurbangardens.com");
+    assert_eq!(auth_relay_tag("ws://relay.home.test:3000", Some("wss://buzz.lightlifeurbangardens.com")), "wss://buzz.lightlifeurbangardens.com");
 }
 
 // NEGATIVE PROOF: unset or blank keeps today's tag, so landing with it off changes nothing
 #[test]
 fn unset_or_blank_keeps_the_dial_address() {
-    assert_eq!(auth_relay_tag("ws://192.168.86.242:3000", None), "ws://192.168.86.242:3000");
-    assert_eq!(auth_relay_tag("ws://192.168.86.242:3000", Some("  ")), "ws://192.168.86.242:3000");
+    assert_eq!(auth_relay_tag("ws://relay.home.test:3000", None), "ws://relay.home.test:3000");
+    assert_eq!(auth_relay_tag("ws://relay.home.test:3000", Some("  ")), "ws://relay.home.test:3000");
 }

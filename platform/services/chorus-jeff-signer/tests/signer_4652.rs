@@ -17,7 +17,7 @@ const SEC2: &str = "000000000000000000000000000000000000000000000000000000000000
 const CLEARING: &str = "03e2b251-240f-47fe-89b5-fe4e7ac648fb";
 /// #team — nudges, alerts and lands; never signed as Jeff.
 const TEAM: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
-const RELAY: &str = "ws://192.168.86.242:3000";
+const RELAY: &str = "ws://relay.home.test:3000";
 
 fn pubkey(sec: &str) -> String {
     let sk = secp256k1::SecretKey::from_slice(&hex::decode(sec).unwrap()).unwrap();

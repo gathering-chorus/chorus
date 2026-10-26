@@ -11,12 +11,12 @@ use chorus_jeff_signer::dial_address;
 
 #[test]
 fn a_stated_dial_address_is_where_it_connects() {
-    assert_eq!(dial_address("wss://buzz.lightlifeurbangardens.com", Some("ws://192.168.86.242:3000")), "ws://192.168.86.242:3000");
+    assert_eq!(dial_address("wss://buzz.lightlifeurbangardens.com", Some("ws://relay.home.test:3000")), "ws://relay.home.test:3000");
 }
 
 // NEGATIVE PROOF: unset or blank keeps today's behaviour — it connects to the relay address
 #[test]
 fn unset_or_blank_dials_the_relay_address() {
-    assert_eq!(dial_address("ws://192.168.86.242:3000", None), "ws://192.168.86.242:3000");
-    assert_eq!(dial_address("ws://192.168.86.242:3000", Some(" ")), "ws://192.168.86.242:3000");
+    assert_eq!(dial_address("ws://relay.home.test:3000", None), "ws://relay.home.test:3000");
+    assert_eq!(dial_address("ws://relay.home.test:3000", Some(" ")), "ws://relay.home.test:3000");
 }

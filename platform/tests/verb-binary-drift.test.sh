@@ -12,7 +12,19 @@ set -u
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 SPINE="${VERB_DRIFT_SPINE:-$HOME/.chorus/chorus.log}"
 BIN_DIR="${VERB_DRIFT_BIN:-$HOME/.chorus/bin}"
+# #4745 — log-archive (#4735) moves the spine aside once it is big; a verb last
+# deployed before that has its binary.deployed only in the archive.
+ARCHIVE_DIR="${VERB_DRIFT_ARCHIVE:-$HOME/.chorus/log-archive/chorus-log}"
 PASS=0; FAIL=0
+
+deploy_events() {  # <spine> <archive dir> → binary.deployed lines, oldest first
+  local gz
+  for gz in "$2"/chorus.log.*.gz; do
+    [ -f "$gz" ] && gzip -dc "$gz" 2>/dev/null | LC_ALL=C grep -aF 'binary.deployed'
+  done
+  LC_ALL=C grep -aF 'binary.deployed' "$1" 2>/dev/null
+  return 0
+}
 
 # #4455 — a verb's source is its own crate plus the shared files it includes,
 # not the whole shared folder. Counting every shared file called 9 verbs drifted
@@ -34,7 +46,7 @@ DEPLOYS="$(mktemp)"
 # card's verbs into that role's own slot (target werk, #3101) and emits the same
 # event; reading those called the shared werk-build current at an unlanded
 # card's commit, when ~/.chorus/bin still ran a 10-03 build.
-LC_ALL=C grep -aF 'binary.deployed' "$SPINE" 2>/dev/null \
+deploy_events "$SPINE" "$ARCHIVE_DIR" \
   | LC_ALL=C grep -avE '"target":"werk"|target=werk([ ,"]|$)' > "$DEPLOYS" || true
 
 for bin in "$BIN_DIR"/werk-*; do
@@ -102,6 +114,22 @@ if git -C "$TF" diff --quiet "$C3" HEAD -- $(verb_sources "$TF" HEAD platform/se
   echo "FAIL: negative proof — an included shared file moved and read as no-drift"; FAIL=$((FAIL+1))
 else
   echo "PASS: negative proof — an included shared file moved reads as drift"; PASS=$((PASS+1))
+fi
+
+# #4745 — a deploy that is only in the archived spine is still found, newest
+# last; NEGATIVE PROOF: with no archive the same deploy is not found.
+mkdir -p "$TF/arch"; : > "$TF/live.log"
+echo '{"event":"binary.deployed","binary":"werk-x","commit":"aaa"}' | gzip > "$TF/arch/chorus.log.20260101T000000.gz"
+echo '{"event":"binary.deployed","binary":"werk-x","commit":"bbb"}' | gzip > "$TF/arch/chorus.log.20260201T000000.gz"
+if [ "$(deploy_events "$TF/live.log" "$TF/arch" | tail -1 | grep -o bbb)" = bbb ]; then
+  echo "PASS: a deploy only in the archived spine is found (newest last)"; PASS=$((PASS+1))
+else
+  echo "FAIL: a deploy only in the archived spine was not found"; FAIL=$((FAIL+1))
+fi
+if [ -z "$(deploy_events "$TF/live.log" "$TF/no-archive")" ]; then
+  echo "PASS: negative proof — no archive, no deploy found"; PASS=$((PASS+1))
+else
+  echo "FAIL: negative proof — a deploy was found with no spine and no archive"; FAIL=$((FAIL+1))
 fi
 
 echo "=== verb-binary-drift: $PASS passed, $FAIL failed ==="

@@ -2744,6 +2744,10 @@ fn quarantined_cases() -> Vec<Quarantined> {
 /// anti-pattern: honest-red beats lying-green).
 fn run_tsc(werk: &str, pkg: &str) -> bool {
     let pkg_dir = format!("{}/{}", werk, pkg);
+    if !werk_test::tsc_applies(Path::new(&pkg_dir)) {
+        eprintln!("-- tsc:{} has no tsconfig.json (JavaScript) — nothing to typecheck", pkg);
+        return true;
+    }
     if !ensure_ts_deps(werk, pkg) {
         // #4537 — deps the runner could not provide: UNMEASURED, not a red
         eprintln!("!! tsc:{} deps unavailable — UNMEASURED", pkg);
