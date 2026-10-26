@@ -561,8 +561,8 @@ export class MessageStore {
       if (opts.from) { sql += ' AND "from" = ?'; params.push(opts.from); }
       if (opts.to) { sql += ' AND "to" = ?'; params.push(opts.to); }
     }
-    if (opts.since) { sql += ' AND created_at >= ?'; params.push(opts.since); }
-    if (opts.before) { sql += ' AND created_at < ?'; params.push(opts.before); }
+    if (opts.since) { sql += ' AND created_at >= datetime(?)'; params.push(opts.since); }
+    if (opts.before) { sql += ' AND created_at < datetime(?)'; params.push(opts.before); }
     // #4339 — the prompt hook fetches a nudge's full words by the trace the
     // spine carried; the spine's own copy is a preview cut at the first quote.
     if (opts.trace) { sql += ' AND trace_id = ?'; params.push(opts.trace); }

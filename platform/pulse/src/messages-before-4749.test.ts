@@ -18,9 +18,9 @@ describe('#4749 GET /api/messages pagination with ?before', () => {
   test('returns only messages created strictly before the specified timestamp', async () => {
     const { app, store } = world();
     store.sendNudge('silas', 'wren', 'm1');
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 1100));
     const pivot = new Date().toISOString();
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 1100));
     store.sendNudge('silas', 'wren', 'm2');
     store.sendNudge('silas', 'wren', 'm3');
 
