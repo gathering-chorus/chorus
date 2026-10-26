@@ -20,7 +20,7 @@ import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
-import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
+import { SpineTreeFacts } from './pulse-tree';
 import { startAwarenessWriter } from './awareness-writer';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
@@ -531,7 +531,6 @@ export function createApp(
   changesOvernightService?: { getChanges: () => unknown },
   readingsService?: { getReadings: () => unknown },
   buzz?: BuzzPoster,
-  spineTreeFacts?: { get: () => import('./pulse-tree').SpineLine[] }
 ): Express {
   const app = express();
   app.use(express.json());
@@ -556,8 +555,7 @@ export function createApp(
           }
     );
   });
-  // #4638 — the live tree: prompt → role → turn and card, derived once in pulse
-  registerTreeRoutes(app, store, actorStateService, spineTreeFacts);
+  // #4757 — GET /api/tree retired: the tree is the generated pulse API's Operation (:3392)
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {
     res.json(
@@ -885,7 +883,7 @@ if (require.main === module) {
     spineTreeFacts.start();
     // #4744 — the tree's facts as awareness rows in the store (off unless PULSE_AWARENESS_WRITE=1)
     startAwarenessWriter(store, actorStateService, spineTreeFacts, emitSpine);
-    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz, spineTreeFacts);
+    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
       lifecycle.started();  // #4446 — round 1 imported the helper but never called it

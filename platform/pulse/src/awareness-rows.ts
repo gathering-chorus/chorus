@@ -14,13 +14,12 @@
 import { joinPrompts, factsFromSpine, QUIET_AFTER_S, type LineFact, type SpineLine } from './pulse-tree';
 
 export interface Row { [field: string]: string | string[] }
-export interface AwarenessRows { prompts: Row[]; roleStates: Row[]; turns: Row[] }
+export interface AwarenessRows { prompts: Row[]; roleStates: Row[]; turns: Row[]; cardSteps?: Row[] }
 
 /** A row name the door accepts: the id's own characters, lower case, anything else a dash. */
 export const rowName = (id: string) => id.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 const principal = (role: string) => `principal-${role}`;
 const iso = (t: string) => new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z');
-const short = (s: string) => (s.length > 80 ? s.slice(0, 79) + '…' : s);
 
 export function awarenessRows(input: {
   now: string;
@@ -33,7 +32,6 @@ export function awarenessRows(input: {
   const promptRows: Row[] = prompts.map(p => ({
     name: rowName(p.lines[0]),
     label: `prompt ${p.lines[0]} from ${p.by}`,
-    comment: short(p.text.split('\n')[0]),
     promptText: p.text,
     promptedAt: iso(p.at),
     promptedBy: principal(p.by),
@@ -68,7 +66,9 @@ export function awarenessRows(input: {
     if (!last) return []; // never seen acting: no row, rather than a made-up time
     const quietS = Math.round((Date.parse(input.now) - Date.parse(last)) / 1000);
     return [{
-      name: rowName(role),
+      // pulse owns its rows: a row named for the role alone can already exist, owned by that
+      // role (wren's from 10-10), and pulse may not replace it (#4757, measured 10-26)
+      name: rowName(`observed-${role}`),
       label: `${role} now`,
       comment: `last call ${quietS}s ago`,
       aboutPrincipal: principal(role),

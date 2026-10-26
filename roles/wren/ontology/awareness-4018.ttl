@@ -40,6 +40,14 @@ chorus:Reading a owl:Class ;
     rdfs:subClassOf chorus:ShortTermMemory ;
     rdfs:comment "One section of the pulse as last read from its producer, stamped with when. Its age is now minus that time; a consumer that cannot see the age is being lied to." .
 
+# #4757 (Jeff 10-26: "i have been asking for state for like 9 months") — where each WIP
+# card is in its pipeline now and since when. Read from chorus-werk-status --json, the
+# same lines /cws prints, so the header and /cws cannot disagree.
+chorus:CardStep a owl:Class ;
+    rdfs:label "Card step" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "One WIP card's place in its pipeline now: the step /cws names (build, waiting for your go, land: deploy-prod …) and when that step began. #4757." .
+
 chorus:WaitingOn a owl:Class ;
     rdfs:label "Waiting on" ;
     rdfs:subClassOf chorus:ShortTermMemory ;
@@ -50,6 +58,22 @@ chorus:WaitingOn a owl:Class ;
 chorus:aboutPrincipal a owl:ObjectProperty ;
     rdfs:label "about principal" ; rdfs:range chorus:Principal ;
     rdfs:comment "The principal this state or beat is about." .
+
+chorus:pipelineStep a owl:DatatypeProperty ;
+    rdfs:label "pipeline step" ; rdfs:range xsd:string ;
+    rdfs:comment "#4757: where the card is, in /cws's words." .
+
+chorus:stepSince a owl:DatatypeProperty ;
+    rdfs:label "step since" ; rdfs:range xsd:dateTime ;
+    rdfs:comment "#4757: when the card's current step began (a finished run: when it ended). The wait is now minus this." .
+
+chorus:runOrdinal a owl:DatatypeProperty ;
+    rdfs:label "run" ; rdfs:range xsd:string ;
+    rdfs:comment "#4757: which run of the card this is, as /cws names it (cicd run 2)." .
+
+chorus:stepLive a owl:DatatypeProperty ;
+    rdfs:label "step live" ; rdfs:range xsd:string ;
+    rdfs:comment "#4757: live while the card is in WIP, gone once it leaves; the header shows the live ones." .
 
 chorus:stateValue a owl:DatatypeProperty ;
     rdfs:label "state" ; rdfs:range xsd:string ;
@@ -126,13 +150,15 @@ chorus:RoleStateShape a sh:NodeShape ;
     rdfs:comment "One principal's state now." ;
     sh:property [ sh:path chorus:aboutPrincipal ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "principal" ; sh:description "Required. Whose state this is." ] ;
-    sh:property [ sh:path chorus:stateValue ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:property [ sh:path chorus:stateValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "building" "pairing" "waiting" "in-ceremony" "reviewing" "available" "away" "off" "unmeasured" ) ;
                   sh:name "state" ; sh:description "Required. One of building, pairing, waiting, in-ceremony, reviewing, available, away, off, unmeasured. available = alive with no card, not pairing, not waiting (Jeff 2026-10-16). When several apply: in-ceremony, pairing, reviewing, waiting, building, available, away, off." ] ;
-    sh:property [ sh:path chorus:stateSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    # #4757 — the header shows observed rows only: wren's declared row from 10-10 read as live
+    sh:property [ sh:path chorus:stateSource ; chorus:headerOnly "observed" ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "observed" ) ;
                   sh:name "source" ; sh:description "Required. observed: state is derived, never declared (#4560)." ] ;
-    sh:property [ sh:path chorus:activity ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    # #4757 — moving or quiet, from the role's last call, is what the header shows
+    sh:property [ sh:path chorus:activity ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "acting" "idle" "unmeasured" ) ;
                   sh:name "activity" ; sh:description "Required. acting, idle or unmeasured." ] ;
     sh:property [ sh:path chorus:pairRole ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "driver" "navigator" ) ;
@@ -187,6 +213,26 @@ chorus:ReadingShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:domains:awareness" ;
     chorus:generatedBy "athena-model" .
 
+chorus:CardStepShape a sh:NodeShape ;
+    sh:targetClass chorus:CardStep ; sh:node chorus:CoreShape ;
+    rdfs:comment "One WIP card's pipeline step and since when." ;
+    sh:property [ sh:path chorus:cardId ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "card" ; sh:description "Required. The card number." ] ;
+    sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "role" ; sh:description "Required. Whose run it is." ] ;
+    sh:property [ sh:path chorus:pipelineStep ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "step" ; sh:description "Required. The step, in /cws's words." ] ;
+    sh:property [ sh:path chorus:stepSince ; chorus:inHeader true ; chorus:headerNewest true ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "since" ; sh:description "When the step began; absent for a card with no run yet." ] ;
+    sh:property [ sh:path chorus:runOrdinal ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "run" ; sh:description "Which run of the card." ] ;
+    sh:property [ sh:path chorus:stepLive ; chorus:headerOnly "live" ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "live" "gone" ) ;
+                  sh:name "live" ; sh:description "Required. live while the card is in WIP; gone after." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
 chorus:WaitingOnShape a sh:NodeShape ;
     sh:targetClass chorus:WaitingOn ; sh:node chorus:CoreShape ;
     rdfs:comment "Who waits on whom or on which card, and why." ;
@@ -221,7 +267,7 @@ chorus:awareness a chorus:Domain ;
     chorus:atStep chorus:value-stream-step-directing ;
     chorus:repoTarget "platform/pulse" ;
     chorus:definesVocabulary chorus:RoleState , chorus:Heartbeat , chorus:Reading , chorus:WaitingOn ,
-        chorus:Prompt , chorus:Turn , chorus:Note .
+        chorus:Prompt , chorus:Turn , chorus:Note , chorus:CardStep .
 
 # #4744 (Jeff 10-26 09:22): "certain elements of the child domains are on the pulse
 # header as a composition from the domains". A shape property marked inHeader puts its

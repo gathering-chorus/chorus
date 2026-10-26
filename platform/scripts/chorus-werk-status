@@ -1108,7 +1108,7 @@ def run_count(runs):
     return f"{name} run {mine}" + "".join(f" · {n} {c} run{'s' if c != 1 else ''}" for n, c in sorted(other.items()))
 
 
-def card_line(card, role, runs, lands, places, now=None, wip=False):
+def card_line(card, role, runs, lands, places, now=None, wip=False, parts=None):
     """#4494 — one line per card: where it is now, for how long, which run.
     Jeff, 2026-10-10: "the cws output is confusing" — a dead v1 line, the build
     and its land on separate lines, and two different run counts for one card.
@@ -1202,7 +1202,8 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
     else:
         when = ""
     tests = ""
-    if land is None and status in ("running", "failed") and newest.get("dagRunId"):
+    # #4757 — `parts` (the --json read pulse's writer takes every minute) skips the Loki test read
+    if land is None and status in ("running", "failed") and newest.get("dagRunId") and parts is None:
         began = run_began(newest)
         ev = run_test_events(newest["dagRunId"], began / 1000 if began else now - 86400)
         tests = (" · " + tests_summary(tests_state(ev))) if ev else ""
@@ -1218,7 +1219,17 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         why = f" · {why}" if why else ""
     many = len(live_runs(runs))
     many = f" · {many} runs live" if many > 1 else ""
+    if parts is not None:
+        moving = status in ("queued", "running", "waiting")
+        stamp = since if moving and since else ended
+        parts.update(card=str(card), role=role, step=where.strip(), live=moving,
+                     since=iso_ms(stamp) if stamp else "", run=run_count(runs))
     return f"#{card} {role:<6} {where:<34} {when:>7} · {run_count(runs)}{many}{tests}{why}"
+
+
+def iso_ms(ms):
+    """Epoch milliseconds as UTC ISO seconds, the form a dateTime row field takes."""
+    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def dagu_detail(card, runs, every=None):
@@ -1565,6 +1576,16 @@ def fixture_4553():
                  line(4735, [go], [run("Lw", "cicd-land", "waiting", 6, [node("succeeded", "skill-werk-merge"),
                                                                           node("waiting", "skill-borg-queen-proves")])]))
              and "waiting for your go" in line(4736, [run("w", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4736)], [])),
+            # #4757 — the header's pipelines line is this tool's own line, never a second
+            # reading: --json carries the step the text line prints and when that step began.
+            # Negative proof: a run at its go and a finished run hand over different steps,
+            # and only the live one says live.
+            ("--json carries the line's own step and when it began",
+             (lambda w, d: w[0]["step"] == "waiting for your go" and w[0]["step"] in w[1] and w[0]["live"]
+              and w[0]["since"].endswith("Z") and w[0]["run"] == "cicd run 1"
+              and d[0]["step"] != w[0]["step"] and not d[0]["live"])(
+                 (lambda p: (p, card_line(4757, "wren", [run("w", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4757)], [], {}, parts=p)))({}),
+                 (lambda p: (p, card_line(4757, "wren", [run("f", "cicd", "failed", 0, [node("failed", "skill-werk-build", "werk-build: error")], 4757)], [], {}, parts=p)))({}))),
             # #4577 (Wren 07:37) — the pair's hint is the navigator's green on
             # the pair dag; negative proof: a cicd run still offers Jeff's go
             ("a pair's hint completes the pair step as its navigator",
@@ -1619,12 +1640,17 @@ def main():
     # #4341 — the no-arg view is every WIP card, one line each, not only the
     # running pipelines: a card waiting or failed is still where the work is.
     wip = wip_cards()
+    wip_cards_unread = wip is None
     if wip is None:
-        print("board unreadable — showing live runs only")
+        if "--json" not in args:
+            print("board unreadable — showing live runs only")
         wip = []
     pins = {str(p.get("card")): p for p in load_pins(role=role)}
     places = queue_positions()
     shown = 0
+    # #4757 — --json: one object per WIP card from the same lines, for pulse's header
+    as_json = "--json" in args
+    rows = []
     for cid, owner in wip:
         v2 = dagu_runs(cid)
         # #4494 reopen — the line names the role whose run it is (the newest
@@ -1636,7 +1662,13 @@ def main():
             continue
         pin = pins.get(str(cid))
         logs = run_logs(cid)
-        if v2:
+        if v2 and as_json:
+            parts = {}
+            card_line(cid, who, v2, dagu_runs(cid, f"{DAGU_DAG}-land"), places, wip=True, parts=parts)
+            rows.append(parts)
+        elif as_json:
+            rows.append({"card": str(cid), "role": who, "step": "no run yet", "live": False, "since": "", "run": ""})
+        elif v2:
             # #4494 — one line per card, from dagu, the one source of a v2 run
             print(card_line(cid, who, v2, dagu_runs(cid, f"{DAGU_DAG}-land"), places, wip=True))
         elif pin:
@@ -1648,6 +1680,10 @@ def main():
         else:
             print(f"#{cid} {who:<6} no run yet" + (" (dagu unreadable)" if v2 is None else ""))
         shown += 1
+    if as_json:
+        # an unreadable board is not an empty one: no rows, and a non-zero exit
+        print(json.dumps(rows))
+        sys.exit(2 if wip_cards_unread else 0)
     # #4186 reopen — a card that landed but whose model did not deploy stays on the board view
     for cid, who in athena_failed_lands({str(c) for c, _ in wip}):
         if role and who != role:

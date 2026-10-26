@@ -97,137 +97,21 @@ describe('#4638 the live tree', () => {
   });
 });
 
-describe('#4638 the tree over pulse (live wiring)', () => {
+// #4757 — the hand tree's route is retired in the same land as the header that replaces it
+describe('#4757 the hand tree is gone from pulse', () => {
   const request = require('supertest');
   const { createApp } = require('./service');
   const { MessageStore } = require('./store');
-  const recent = (s: number) => new Date(Date.now() - s * 1000).toISOString();
-  const actorStates = () => ({
-    getActorStates: () => ({
-      derivedAt: new Date().toISOString(),
-      actors: [
-        { aboutPrincipal: 'principal-jeff', stream: [{ action: 'jeff.input.surfaced', timestamp: recent(1) }] },
-        { aboutPrincipal: 'principal-wren', stream: [{ action: 'agent.action', timestamp: recent(10) }, { action: 'agent.action', timestamp: recent(40) }] },
-        { aboutPrincipal: 'principal-silas', stream: [{ action: 'agent.action', timestamp: recent(600) }] },
-        { aboutPrincipal: 'principal-kade', stream: [] },
-      ],
-    }),
+
+  it('GET /api/tree and /api/tree/:role answer 404', async () => {
+    const app = createApp(new MessageStore(':memory:'));
+    expect((await request(app).get('/api/tree')).status).toBe(404);
+    expect((await request(app).get('/api/tree/wren')).status).toBe(404);
   });
 
-  it('GET /api/tree joins a burst sent to two roles into one prompt, the shared line kept once', async () => {
-    const store = new MessageStore(':memory:');
-    store.sendJeffInput('wren', '@wren @silas pull 4638');
-    store.sendJeffInput('silas', '@wren @silas pull 4638');
-    store.sendJeffInput('wren', 'and pair');
-    const res = await request(createApp(store, undefined, undefined, actorStates())).get('/api/tree');
-    expect(res.status).toBe(200);
-    expect(res.body.prompts).toHaveLength(1);
-    expect(res.body.prompts[0].text).toBe('@wren @silas pull 4638\nand pair');
-    expect(res.body.prompts[0].to.sort()).toEqual(['silas', 'wren']);
-    expect(res.body.prompts[0].roles.map((r: { role: string; state: string }) => `${r.role}:${r.state}`)).toEqual(['silas:quiet', 'wren:moving']);
-  });
-
-  it('each role says moving or quiet from its newest action; a role with no action is not invented', async () => {
-    const store = new MessageStore(':memory:');
-    const res = await request(createApp(store, undefined, undefined, actorStates())).get('/api/tree');
-    const by = Object.fromEntries(res.body.roles.map((r: { role: string }) => [r.role, r]));
-    expect(by.wren.state).toBe('moving');
-    expect(by.wren.secondsSinceLastCall).toBeLessThan(20);
-    expect(by.silas.state).toBe('quiet');
-    expect(by.kade).toBeUndefined();
-  });
-
-  it("GET /api/tree/:role is that role's slice only", async () => {
-    const store = new MessageStore(':memory:');
-    store.sendJeffInput('silas', '@silas r u stuk');
-    const app = createApp(store, undefined, undefined, actorStates());
-    const wren = (await request(app).get('/api/tree/wren')).body;
-    const silas = (await request(app).get('/api/tree/silas')).body;
-    expect(wren.me.role).toBe('wren');
-    expect(wren.prompts).toEqual([]);
-    expect(silas.prompts.map((p: { text: string }) => p.text)).toEqual(['@silas r u stuk']);
-  });
-
-  it('negative proof: with no actor-state service the tree has no roles and refuses every line by name', async () => {
-    const store = new MessageStore(':memory:');
-    store.sendJeffInput('wren', 'hello');
-    const res = await request(createApp(store)).get('/api/tree');
-    expect(res.body.roles).toEqual([]);
-    expect(res.body.prompts).toEqual([]);
-    expect(res.body.refusedSenders).toEqual({ jeff: 1 });
-  });
-});
-
-describe('#4638 turns and runs from the spine (#4637 AC4 events)', () => {
-  const { factsFromSpine, buildTree: bt } = require('./pulse-tree');
-  const spine = [
-    { event: 'agent.turn.started', role: 'wren', timestamp: '2026-10-24T16:41:04.000-04:00', session_id: 's1', turn_id: 't1', woken_by: 'line', woken_by_line: 'm2' },
-    { event: 'pipeline.run.started', role: 'wren', timestamp: '2026-10-24T16:45:00.000-04:00', card: '4638', pipeline: 'cicd', run_id: '034x', started_by: 'line', started_by_line: 'm2' },
-    { event: 'agent.turn.ended', role: 'wren', timestamp: '2026-10-24T16:46:00.000-04:00' },
-    { event: 'agent.turn.started', role: 'silas', timestamp: '2026-10-24T16:47:01.000-04:00', session_id: 's2', turn_id: 't2', woken_by: 'none' },
-  ];
-
-  it('a turn names the line that woke it, ends at its turn.ended, and carries the card its run was for', () => {
-    const { turns, runs } = factsFromSpine(spine);
-    const t1 = turns.find((t: { id: string }) => t.id === 't1');
-    expect(t1).toMatchObject({ role: 'wren', run: 's1', wokenByLine: 'm2', card: 4638, endedAt: '2026-10-24T20:46:00.000Z' });
-    expect(runs).toEqual([{ id: '034x', card: 4638, pipeline: 'cicd', step: 'started', status: 'started', startedByLine: 'm2' }]);
-  });
-
-  it('(Jeff 19 09:58) end to end: the prompt reaches the turn, the card and the run it started', () => {
-    const { turns, runs } = factsFromSpine(spine);
-    const t = bt({ now: '2026-10-24T20:50:00Z', actors: ['jeff', 'wren', 'silas'], notes: [], turns, runs,
-      lines: [{ id: 'm1', from: 'jeff', to: ['wren'], text: '/pull 4638', sentAt: '2026-10-24T20:41:00Z' },
-              { id: 'm2', from: 'jeff', to: ['wren'], text: 'i spent all day', sentAt: '2026-10-24T20:41:03Z' }] });
-    const p = t.prompts[0];
-    expect(p.runs.map((r: { id: string }) => r.id)).toEqual(['034x']);
-    expect(p.roles[0].cards[0]).toMatchObject({ card: 4638 });
-    expect(p.roles[0].cards[0].runs.map((r: { id: string }) => r.id)).toEqual(['034x']);
-  });
-
-  it('negative proof: a nudge-woken turn and a run with no line reach no prompt', () => {
-    const { turns, runs } = factsFromSpine([
-      ...spine.slice(3),
-      { event: 'pipeline.run.started', role: 'silas', timestamp: '2026-10-24T16:48:00.000-04:00', card: '4710', pipeline: 'cicd', run_id: '034y', started_by: 'none' },
-    ]);
-    expect(turns[0].wokenByLine).toBeUndefined();
-    expect(runs[0].startedByLine).toBeUndefined();
-    const t = bt({ now: '2026-10-24T20:50:00Z', actors: ['jeff', 'silas'], notes: [], turns, runs,
-      lines: [{ id: 'm3', from: 'jeff', to: ['silas'], text: '@silas r u stuk', sentAt: '2026-10-24T20:47:00Z' }] });
-    expect(t.prompts[0].runs).toEqual([]);
-    expect(t.prompts[0].roles[0].turns).toEqual([]);
-  });
-
-  it("an open turn's last call is the role's newest action; a new turn closes the role's previous one", () => {
-    const { turns } = factsFromSpine([
-      { event: 'agent.turn.started', role: 'kade', timestamp: '2026-10-24T20:00:00Z', turn_id: 'a' },
-      { event: 'agent.turn.started', role: 'kade', timestamp: '2026-10-24T20:05:00Z', turn_id: 'b' },
-    ], { kade: '2026-10-24T20:07:30Z' });
-    expect(turns[0]).toMatchObject({ id: 'a', endedAt: '2026-10-24T20:05:00.000Z' });
-    expect(turns[1]).toMatchObject({ id: 'b', lastCallAt: '2026-10-24T20:07:30Z' });
-  });
-});
-
-describe('#4638 demo review fixes (run 4: Kade, live log shape)', () => {
-  const { factsFromSpine } = require('./pulse-tree');
-  const line = (id: string, to: string, text: string, sentAt: string) => ({ id, from: 'jeff', to: [to], text, sentAt });
-
-  it('a run logged as the live spine writes it (card_id, a number) lands on its card', () => {
-    // shape copied from Loki 2026-10-25 09:18 (silas, #4735)
-    const { runs } = factsFromSpine([
-      { event: 'pipeline.run.started', role: 'silas', timestamp: '2026-10-25T09:18:21.718-0400', card_id: 4735, pipeline: 'cicd', run_id: '034m3t1xECjhLgYiCU8dqO', started_by: 'none' },
-    ]);
-    expect(runs[0]).toMatchObject({ id: '034m3t1xECjhLgYiCU8dqO', card: 4735, pipeline: 'cicd' });
-    expect(runs[0].startedByLine).toBeUndefined();
-  });
-
-  it('one line sent to two roles is one line of the prompt', () => {
-    const { prompts } = joinPrompts([line('a', 'wren', 'go', '2026-10-25T13:00:00Z'), line('b', 'silas', 'go', '2026-10-25T13:00:00Z')], ACTORS);
-    expect(prompts[0]).toMatchObject({ text: 'go', to: ['wren', 'silas'], lines: ['a', 'b'] });
-  });
-
-  it('negative proof: a real repeat to the same role inside a burst is kept, not folded away', () => {
-    const { prompts } = joinPrompts([line('a', 'wren', 'no', '2026-10-25T13:00:00Z'), line('b', 'wren', 'no', '2026-10-25T13:00:02Z')], ACTORS);
-    expect(prompts[0].text).toBe('no\nno');
+  // NEGATIVE PROOF: a route pulse still serves answers, so the 404 above is the retirement, not a dead app
+  it('negative proof: a live pulse route still answers', async () => {
+    const app = createApp(new MessageStore(':memory:'));
+    expect((await request(app).get('/api/actor-state')).status).toBe(200);
   });
 });
