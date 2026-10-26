@@ -337,7 +337,14 @@ pub fn input_from_rows(now: &str, prompts: &[Value], turns: &[Value], states: &[
         let by = p["from"].as_str().unwrap_or("").to_string();
         if !by.is_empty() && !actors.contains(&by) { actors.push(by); }
     }
-    let last_calls: Map<String, Value> = states.iter().map(|s| (local(&s["aboutPrincipal"]), s["observedAt"].clone())).collect();
+    // a role can have more than one RoleState row (pulse's own, an older one): its newest wins
+    let mut last_calls: Map<String, Value> = Map::new();
+    for st in states {
+        let (who, at_) = (local(&st["aboutPrincipal"]), st["observedAt"].clone());
+        if last_calls.get(&who).map_or(true, |prev| at(&at_) > at(prev)) {
+            last_calls.insert(who, at_);
+        }
+    }
     json!({ "now": now, "actors": actors, "lines": lines, "turns": turns, "runs": [], "notes": [], "lastCalls": last_calls, "lastN": last_n })
 }
 
@@ -403,6 +410,10 @@ mod tests {
         assert_eq!(tree["prompts"][0]["roles"][0]["role"], json!("wren"));
         assert_eq!(tree["prompts"][0]["roles"][0]["cards"][0]["card"], json!(4744));
         assert_eq!(tree["roles"], json!([{ "role": "wren", "state": "moving", "secondsSinceLastCall": 30 }]));
+        // two rows for one role: the newest observedAt is its last call (#4757)
+        let two = vec![json!({ "aboutPrincipal": "principal-wren", "observedAt": "2026-10-10T21:42:58Z" }), states[0].clone()];
+        let tree2 = build_tree(&input_from_rows("2026-10-26T10:00:00.000Z", &prompts, &turns, &two, 5));
+        assert_eq!(tree2["roles"][0]["secondsSinceLastCall"], json!(30));
         // NEGATIVE PROOF: a turn whose prompt row is missing is not hung under any prompt
         let orphan = vec![json!({ "name": "wren-t2", "turnOf": "principal-wren", "turnStartedAt": "2026-10-26T09:55:00Z", "lastCallAt": "2026-10-26T09:56:00Z", "answersPrompt": "prompt-99999" })];
         let tree = build_tree(&input_from_rows("2026-10-26T10:00:00.000Z", &prompts, &orphan, &states, 5));

@@ -44,6 +44,8 @@ test('negative proof: a non-actor turn makes no row', () => {
 
 test('each actor with a last call gets one RoleState row: acting when it called within the quiet window', () => {
   const r = rows().roleStates;
+  // pulse's own row per role, never the role-named row a role may already own (#4757)
+  expect(r.map(x => x.name)).toEqual(['observed-wren', 'observed-silas']);
   expect(r.map(x => [x.aboutPrincipal, x.activity])).toEqual([['principal-wren', 'acting'], ['principal-silas', 'idle']]);
   // the declared state is not derived here, and the row says so instead of guessing
   expect(r.every(x => x.stateValue === 'unmeasured' && x.stateSource === 'observed')).toBe(true);
@@ -51,7 +53,7 @@ test('each actor with a last call gets one RoleState row: acting when it called 
 
 // NEGATIVE PROOF: an actor never seen acting gets no row, rather than a made-up time
 test('negative proof: no last call, no RoleState row', () => {
-  expect(rows().roleStates.map(x => x.name)).not.toContain('jeff');
+  expect(rows().roleStates.map(x => x.aboutPrincipal)).not.toContain('principal-jeff');
 });
 
 test('row names keep only what the door accepts', () => {

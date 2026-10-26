@@ -66,7 +66,9 @@ export function awarenessRows(input: {
     if (!last) return []; // never seen acting: no row, rather than a made-up time
     const quietS = Math.round((Date.parse(input.now) - Date.parse(last)) / 1000);
     return [{
-      name: rowName(role),
+      // pulse owns its rows: a row named for the role alone can already exist, owned by that
+      // role (wren's from 10-10), and pulse may not replace it (#4757, measured 10-26)
+      name: rowName(`observed-${role}`),
       label: `${role} now`,
       comment: `last call ${quietS}s ago`,
       aboutPrincipal: principal(role),
