@@ -187,3 +187,6 @@ platform/backups/graph-retirements/
 # chorus-crawl runtime state: names the commit a PARTICULAR store was walked to.
 # Committing it lets a watermark outlive the graph it describes (2026-09-14).
 .chorus-crawl-watermark
+
+# #4747 — llvm-cov raw profiles written beside a crate when its binary runs under coverage
+*.profraw
