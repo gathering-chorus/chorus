@@ -43,7 +43,11 @@ pub fn header(store: &dyn RowStore, viewer: Option<&str>) -> (u16, Value) {
         if fields.is_empty() {
             continue;
         }
-        let page = match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) };
+        // a glance: the newest rows when the model names the field that orders them (c:headerNewest)
+        let page = match c.fields.iter().find(|f| f.newest) {
+            Some(f) => store.list_where(c, 10, 0, viewer, &store::Where { sort: Some((f.name.to_string(), true)), ..Default::default() }),
+            None => match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) },
+        };
         let rows = match page { Ok((rows, _)) => rows, Err(m) => return error(503, "store", &m) };
         let rows: Vec<Value> = rows.into_iter().map(|r| {
             let mut o = serde_json::Map::new();
@@ -101,8 +105,20 @@ fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)>
     for kv in query.split('&').filter(|kv| !kv.is_empty()) {
         let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
         let (k, v) = (decode(k), decode(v));
+        let known = |f: &str| f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f);
+        let unknown = |f: &str| error(400, "unknown-field", &format!("{} has no field '{f}'", class.name));
+        if let Some((f, op)) = k.strip_suffix(".lt").map(|f| (f, "<")).or_else(|| k.strip_suffix(".gt").map(|f| (f, ">"))) {
+            if !known(f) { return Err(unknown(f)); }
+            w.bounds.push((f.to_string(), op, v));
+            continue;
+        }
         match k.as_str() {
             "limit" | "offset" => {}
+            "sort" => {
+                let (f, desc) = v.strip_prefix('-').map(|f| (f, true)).unwrap_or((v.as_str(), false));
+                if !known(f) { return Err(unknown(f)); }
+                w.sort = Some((f.to_string(), desc));
+            }
             "q" => w.q = Some(v),
             f if f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f) => w.eq.push((k.clone(), v)),
             f => return Err(error(400, "unknown-field", &format!("{} has no field '{f}'", class.name))),

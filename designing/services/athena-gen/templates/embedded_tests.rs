@@ -261,3 +261,52 @@ fn every_collection_filters_and_searches_in_the_store() {
     assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
     assert!(out["message"].as_str().unwrap().contains("nosuchfield"), "{out}");
 }
+
+/// #4744 (Kade, #4749 scroll-back; AC7 "the latest prompt") — a stream reads newest first
+/// (`sort=-<field>`) and pages back in time (`<field>.lt=<value>`), in the store.
+#[test]
+fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
+    let (c, f) = CLASSES.iter()
+        .find_map(|c| c.fields.iter().find(|f| !f.link && !f.many && f.datatype == "string" && f.allowed.is_empty()).map(|f| (c, f.name)))
+        .expect("a class with a free string field");
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    for (n, v) in [("a", "2026-10-26T09:00:00Z"), ("b", "2026-10-26T10:00:00Z"), ("c", "2026-10-26T08:00:00Z")] {
+        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
+    }
+    let ctx = ctx(&store);
+    let path = format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment);
+    let names = |q: &str| {
+        let (code, out) = crate::route(&ctx, "GET", &format!("{path}?{q}"), None, "");
+        assert_eq!(code, 200, "{out}");
+        out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+    };
+    assert_eq!(names(&format!("sort=-{f}")), ["b", "a", "c"]);
+    assert_eq!(names(&format!("sort={f}")), ["c", "a", "b"]);
+    assert_eq!(names(&format!("sort=-{f}&{f}.lt=2026-10-26T10:00:00Z&limit=1")), ["a"]);
+    // NEGATIVE PROOF: a bound below every row leaves nothing, so the bound really runs
+    assert!(names(&format!("{f}.lt=2026-01-01")).is_empty());
+    // sorting by a field the class does not have is refused by name
+    let (code, out) = crate::route(&ctx, "GET", &format!("{path}?sort=-nosuch"), None, "");
+    assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
+}
+
+/// #4744 AC7 — a header line whose class names a newest field (c:headerNewest) shows the
+/// newest row first, whatever order the store keeps; a product with none marks no order.
+#[test]
+fn the_header_shows_the_newest_rows_first_where_the_model_says_so() {
+    let Some((c, f)) = CLASSES.iter().find_map(|c| c.fields.iter().find(|f| f.newest && !f.link).map(|f| (c, f.name))) else {
+        assert!(CLASSES.iter().all(|c| c.fields.iter().all(|f| !f.newest)));
+        return;
+    };
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    for (n, v) in [("old", "2026-10-26T08:00:00Z"), ("new", "2026-10-26T10:00:00Z"), ("mid", "2026-10-26T09:00:00Z")] {
+        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
+    }
+    let (code, out) = crate::header(&store, None);
+    assert_eq!(code, 200, "{out}");
+    let rows = out["data"][format!("{}.{}", c.domain, c.segment)]["rows"].as_array().unwrap().clone();
+    let names: Vec<&str> = rows.iter().map(|r| r["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["new", "mid", "old"]);
+}

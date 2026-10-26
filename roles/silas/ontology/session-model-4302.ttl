@@ -606,7 +606,7 @@ chorus:MessageRecordShape-messageKind a sh:PropertyShape ;
     sh:path chorus:messageKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(nudge|chat|jeff-input|board-event|role-state)$" .
 chorus:MessageRecordShape-sentAt a sh:PropertyShape ;
-    sh:path chorus:sentAt ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+    sh:path chorus:sentAt ; chorus:inHeader true ; chorus:headerNewest true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageRecordShape-sourceId a sh:PropertyShape ;
     sh:path chorus:sourceId ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageShape-overChannel a sh:PropertyShape ;

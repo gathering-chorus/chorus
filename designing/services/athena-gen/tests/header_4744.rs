@@ -73,3 +73,14 @@ fn no_marked_field_means_no_root_route() {
     assert!(header(&p).is_empty());
     assert!(!routes(&p).contains(&"/pulse".to_string()));
 }
+
+/// The model names the field the header orders a class by (c:headerNewest); unmarked, none.
+#[test]
+fn the_model_names_the_field_the_header_shows_newest_first() {
+    let ttl = FIXTURE.replace("c:status ; sh:datatype xsd:string ; c:inHeader true", "c:status ; sh:datatype xsd:string ; c:inHeader true ; c:headerNewest true");
+    let p = pulse(&ttl, "newest");
+    let card = p.domains.iter().find(|d| d.name == "cards").unwrap();
+    assert!(card.classes[0].fields.iter().any(|f| f.name == "status" && f.newest));
+    let p = pulse(FIXTURE, "nonewest");
+    assert!(p.domains.iter().flat_map(|d| d.classes.iter().flat_map(|c| c.fields.iter())).all(|f| !f.newest));
+}

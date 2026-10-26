@@ -143,7 +143,7 @@ chorus:RoleStateShape a sh:NodeShape ;
                   sh:name "unmeasured sources" ; sh:description "Each source that could not be read, with its reason." ] ;
     sh:property [ sh:path chorus:currentCard ; chorus:inHeader true ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Card ;
                   sh:name "current card" ; sh:description "Optional. The card it is on." ] ;
-    sh:property [ sh:path chorus:observedAt ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+    sh:property [ sh:path chorus:observedAt ; chorus:inHeader true ; chorus:headerNewest true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
                   sh:name "observed at" ; sh:description "Required. When this was true; the age comes from it." ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ; sh:description "Required, set by the door." ] ;
@@ -230,4 +230,8 @@ chorus:awareness a chorus:Domain ;
 chorus:inHeader a owl:DatatypeProperty ;
     rdfs:label "in header" ;
     rdfs:comment "On a SHACL property shape: this field is shown on the product header." ;
+    rdfs:range xsd:boolean .
+chorus:headerNewest a owl:DatatypeProperty ;
+    rdfs:label "header newest" ;
+    rdfs:comment "#4744: on a SHACL property shape, the product header shows this class's rows newest first by this field." ;
     rdfs:range xsd:boolean .
