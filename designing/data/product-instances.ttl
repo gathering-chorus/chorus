@@ -378,9 +378,14 @@ chorus:pulse a chorus:Product ;
     chorus:gaps """No relation between roles, so who is blocked on whom cannot be answered; machine load is missing from the reading; some activity arrives without a known author; consumers do not yet read the age of what they are shown.""" ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
     chorus:hasDomain chorus:awareness, chorus:streams ;   # #4576: awareness to Loom is its own card (pulse-api serves it)   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
-    chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;   # #4709: streams is its own domain (hasDomain), not a consume
-    chorus:composes chorus:alerts, chorus:cards, chorus:messages ;   # #4702 (Jeff 10-22 16:03): pulse composes messages, like cards
-    chorus:consumesEvent chorus:eventtype-card-pulled ;
+    chorus:consumes chorus:alerts, chorus:cards, chorus:events, chorus:identity, chorus:logs, chorus:messages, chorus:metrics, chorus:monitors, chorus:persistence, chorus:pipelines, chorus:roles, chorus:security, chorus:services, chorus:spine ;
+    chorus:composes chorus:cards, chorus:messages ;   # #4702 (Jeff 10-22 16:03): pulse composes messages, like cards
+    chorus:consumesEvent chorus:eventtype-agent-turn-started, chorus:eventtype-agent-turn-ended,
+        chorus:eventtype-pipeline-run-started, chorus:eventtype-card-accepted,
+        chorus:eventtype-card-item-moved, chorus:eventtype-demo-presented,
+        chorus:eventtype-merge-approved, chorus:eventtype-jeff-input-surfaced,
+        chorus:eventtype-jeff-input-delivered, chorus:eventtype-nudge-surfaced,
+        chorus:eventtype-reply-rendered ;
     chorus:publishesPreAuth """true""" ;
     chorus:promise """You look once and know whether your team is working — without asking anyone, and without being lied to. That is the whole product. Its measure is not uptime or latency; it is how many times in a day the owner has to type "are you working?" The day this product was designed the answer was six, and each time the answer was already in the log.
 Who it is for: the owner, at a glance, on a phone, often away from the local network — the one consumer whose time is irreplaceable, so a reading they cannot reach is a reading that does not exist. The roles, for mutual observation: read a peer's state rather than message them to ask. Alerting, as a consumer and never an owner: alerts read the pulse; the pulse never decides what an alert may say.
