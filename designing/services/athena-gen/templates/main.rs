@@ -5,6 +5,7 @@
 
 mod auth;
 mod model;
+mod ops;
 mod rules;
 mod settings;
 mod store;
@@ -223,6 +224,18 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
                 error(code, kind, &format!("{e:?}"))
             }
         };
+    }
+    // #4744 — an operation (a live computation the model declares) answers under the same read rule
+    if parts.len() >= 3 && parts[0] == PRODUCT && method == "GET" && ops::has(parts[1], parts[2]) {
+        if !ctx.reads_public {
+            if let Err(e) = who.caller(authorization) {
+                let (code, kind) = auth::refusal(&e);
+                return error(code, kind, &format!("{e:?}"));
+            }
+        }
+        if let Some(r) = ops::route(ctx, parts[1], parts[2], &parts[3..], query) {
+            return r;
+        }
     }
     // #4742 (Jeff 10-25): the product is the top-level route, each of its domains a child route
     if parts.len() < 3 || parts[0] != PRODUCT {

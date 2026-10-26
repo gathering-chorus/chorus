@@ -65,6 +65,18 @@ pub struct Domain {
 pub struct Product {
     pub name: String,
     pub domains: Vec<Domain>,
+    /// #4744 — analytical operations (a live computation, not stored rows) the product serves
+    pub operations: Vec<Operation>,
+}
+
+/// #4744 — an Operation row: served at `/<product>/<domain>/<segment>`, computed by the
+/// handler at `handler` (repo-relative), homed in a domain the product owns or composes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Operation {
+    pub name: String,
+    pub domain: String,
+    pub segment: String,
+    pub handler: String,
 }
 
 #[derive(Debug)]
@@ -228,7 +240,7 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
     if owned.is_empty() {
         return Err(ModelError(format!("product '{name}' has no domains in the model (c:{name} a c:Product ; c:hasDomain …)")));
     }
-    let mut out = Product { name: name.to_string(), domains: Vec::new() };
+    let mut out = Product { name: name.to_string(), domains: Vec::new(), operations: Vec::new() };
     // #4519 — a class with no instancesGraph lives under the product's own graph
     // prefix, never a Chorus default
     let declared = settings(store, name)?;
@@ -255,6 +267,15 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
             domain.classes.push(class(store, &dname, iri, prefix.as_deref(), name)?);
         }
         out.domains.push(domain);
+    }
+    // #4744 — an operation lives in one of the product's own domains, or it is refused by name
+    for o in select(store, &format!(
+        "SELECT ?o ?d ?seg ?h WHERE {{ c:{name} c:hasOperation ?o . ?o c:homeDomain ?d ; c:operationPath ?seg ; c:handlerPath ?h }} ORDER BY ?o"))? {
+        let (oname, d) = (o["o"].clone(), o["d"].clone());
+        if !out.domains.iter().any(|x| x.name == d) {
+            return Err(ModelError(format!("operation {oname} is homed in {d}, which {name} neither owns nor composes")));
+        }
+        out.operations.push(Operation { name: oname, domain: d, segment: o["seg"].clone(), handler: o["h"].clone() });
     }
     Ok(out)
 }
