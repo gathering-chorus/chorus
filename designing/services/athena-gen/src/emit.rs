@@ -233,7 +233,20 @@ pub fn agent_runtimes_json(t: &crate::model::RuntimeTable) -> String {
 
 /// #4742 — every route the product serves: `/<product>/<domain>/<collection>`.
 pub fn routes(p: &Product) -> Vec<String> {
-    p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment))).collect()
+    // #4744 — the product root is its header, served only when some domain puts a field on it
+    let root = (!header(p).is_empty()).then(|| format!("/{}", p.name));
+    root.into_iter()
+        .chain(p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment))))
+        .collect()
+}
+
+/// #4744 — the product's header: `<domain>.<segment>.<field>` for every field marked
+/// `c:inHeader` in a domain the product owns or composes, in domain order.
+pub fn header(p: &Product) -> Vec<String> {
+    p.domains.iter()
+        .flat_map(|d| d.classes.iter().flat_map(move |c| c.fields.iter().filter(|f| f.header)
+            .map(move |f| format!("{}.{}.{}", d.name, c.segment, f.name))))
+        .collect()
 }
 
 /// #4742 gap 8 (#4708) — the routes an already generated crate serves (read from its
