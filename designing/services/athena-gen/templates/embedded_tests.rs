@@ -306,7 +306,12 @@ fn the_header_shows_the_newest_rows_first_where_the_model_says_so() {
     };
     let store = Sparql::over(Box::new(Embedded::memory()));
     for (n, v) in [("old", "2026-10-26T08:00:00Z"), ("new", "2026-10-26T10:00:00Z"), ("mid", "2026-10-26T09:00:00Z")] {
-        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        // #4757 — a class can also name the rows its header shows (c:headerOnly): each row
+        // holds that value, so the order is what is under test, not the filter
+        let mut cells = vec![(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        for g in c.fields.iter().filter(|g| g.header_only.is_some()) {
+            cells.push((g.name.to_string(), vec![crate::rules::Cell::Literal(g.header_only.unwrap_or_default().into(), "string")]));
+        }
         store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
     }
     let (code, out) = crate::header(&store, None);

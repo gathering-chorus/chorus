@@ -495,9 +495,9 @@ fn read_pulse_snapshot() -> Option<String> {
     if out.is_empty() { None } else { Some(out) }
 }
 
-/// #4638 — the role's slice of pulse's live tree (GET /api/tree/<role>):
-/// every role moving or quiet with seconds since its last call, then the
-/// prompts this role is in, newest first. A pulse that cannot be read says so
+/// #4638 — the role's slice of the tree (#4744: the generated pulse API's tree Operation):
+/// the prompts this role is in, newest first (#4757: each role's moving or quiet is on the
+/// header). A pulse that cannot be read says so
 /// by name; it never falls back to a guess.
 fn query_tree_slice(role: &str) -> String {
     // #4744 — the generated pulse API's tree Operation, read from the store; CHORUS_TREE_URL
@@ -531,6 +531,20 @@ fn query_pulse_header() -> String {
 
 /// One line per header collection: up to 5 rows, each its non-empty marked fields.
 pub fn format_pulse_header(v: &serde_json::Value) -> String {
+    format_pulse_header_at(v, chrono::Utc::now())
+}
+
+/// #4757 — a time on the header reads as how long ago ("9m"), the wait Jeff asked for, and a
+/// principal as its name; every other value is shown as the model holds it.
+fn header_value(x: &str, now: chrono::DateTime<chrono::Utc>) -> String {
+    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(x) {
+        let s = (now - t.with_timezone(&chrono::Utc)).num_seconds().max(0);
+        return if s < 60 { format!("{s}s") } else if s < 3600 { format!("{}m", s / 60) } else { format!("{}h{}m", s / 3600, s % 3600 / 60) };
+    }
+    x.strip_prefix("principal-").unwrap_or(x).chars().take(60).collect()
+}
+
+pub fn format_pulse_header_at(v: &serde_json::Value, now: chrono::DateTime<chrono::Utc>) -> String {
     let Some(data) = v["data"].as_object() else {
         return "  header: unmeasured (no data in the header)\n".to_string();
     };
@@ -538,7 +552,7 @@ pub fn format_pulse_header(v: &serde_json::Value) -> String {
     for (line, entry) in data {
         let fields: Vec<&str> = entry["fields"].as_array().map(|a| a.iter().filter_map(|f| f.as_str()).collect()).unwrap_or_default();
         let rows: Vec<String> = entry["rows"].as_array().map(|rows| rows.iter().take(5).map(|r| {
-            fields.iter().filter_map(|f| r[*f].as_str().filter(|x| !x.is_empty()).map(|x| x.chars().take(60).collect::<String>()))
+            fields.iter().filter_map(|f| r[*f].as_str().filter(|x| !x.is_empty()).map(|x| header_value(x, now)))
                 .collect::<Vec<_>>().join(" ")
         }).filter(|r| !r.is_empty()).collect()).unwrap_or_default();
         let shown = if rows.is_empty() { "none".to_string() } else { rows.join(" · ") };
@@ -547,17 +561,11 @@ pub fn format_pulse_header(v: &serde_json::Value) -> String {
     out
 }
 
-/// Pure formatter for the tree slice: one team line, then at most 3 prompts of 120 chars.
+/// Pure formatter for the tree slice: at most 3 prompts of 120 chars. #4757 — the team line
+/// left: each role's moving or quiet is the header's rolestates line, one place, not two.
 pub fn format_tree_slice(v: &serde_json::Value) -> String {
     let at = v["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
     let mut out = String::new();
-    let team: Vec<String> = v["team"].as_array().map(|a| a.iter().map(|r| format!(
-        "{} {} {}s",
-        r["role"].as_str().unwrap_or("?"),
-        r["state"].as_str().unwrap_or("?"),
-        r["secondsSinceLastCall"].as_i64().unwrap_or(-1),
-    )).collect()).unwrap_or_default();
-    out.push_str(&format!("  team: {}\n", if team.is_empty() { "unmeasured (no roles in the tree)".to_string() } else { team.join(" · ") }));
     for p in v["prompts"].as_array().map(|a| a.iter().take(3).collect::<Vec<_>>()).unwrap_or_default() {
         let ago = match (at, p["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())) {
             (Some(now), Some(t)) => format!("{}m ago", (now - t).num_minutes()),
@@ -1071,7 +1079,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         ("chorus-semantic", build_semantic_url(prompt, card_tag.as_deref()), true),
         ("memory", keywords.join(" "), legacy_memory),
         ("pulse", "snapshot".to_string(), true),
-        ("pulse-tree", format!("/api/tree/{}", role_name), true),
+        ("pulse-tree", format!("/pulse/awareness/tree/{}", role_name), true),
         ("spine", "recent-8".to_string(), true),
         ("athena", role_name.clone(), true),
         ("logs", "loki-errors-15m".to_string(), true),
@@ -1439,7 +1447,7 @@ mod tests {
 
         // #4638 — the turn-start slice of the live tree
     #[test]
-    fn tree_slice_names_every_role_moving_or_quiet_and_my_prompts() {
+    fn tree_slice_names_my_prompts_and_no_team_line() {
         let v = serde_json::json!({
             "at": "2026-10-24T20:55:00Z",
             "team": [{"role": "silas", "state": "quiet", "secondsSinceLastCall": 160},
@@ -1448,7 +1456,8 @@ mod tests {
                          "mine": {"cards": [{"card": 4638}]}}]
         });
         let s = format_tree_slice(&v);
-        assert!(s.contains("team: silas quiet 160s · wren moving 11s"), "{s}");
+        // #4757 — the team rides the header now; the slice never repeats it
+        assert!(!s.contains("team:"), "{s}");
         assert!(s.contains("prompt 4m ago jeff: \"/pull 4638 / i spent all day\" → #4638"), "{s}");
     }
 
@@ -1469,10 +1478,28 @@ mod tests {
         assert_eq!(format_pulse_header(&serde_json::json!({"error": "unknown-route"})), "  header: unmeasured (no data in the header)\n");
     }
 
+    // #4757 — each WIP card's step and how long it has waited; each role moving or quiet
     #[test]
-    fn negative_proof_an_empty_tree_says_unmeasured_never_a_guess() {
-        let s = format_tree_slice(&serde_json::json!({"at": "2026-10-24T20:55:00Z", "team": [], "prompts": []}));
-        assert_eq!(s, "  team: unmeasured (no roles in the tree)\n");
+    fn the_header_shows_each_card_step_and_wait_and_each_role_moving_or_quiet() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-26T22:40:00Z").unwrap().with_timezone(&chrono::Utc);
+        let v = serde_json::json!({"kind": "Header", "data": {
+            "awareness.cardsteps": {"fields": ["cardId", "pipelineStep", "stepSince"], "rows": [
+                {"name": "step-4747", "cardId": "4747", "pipelineStep": "land: borg-queen-proves", "stepSince": "2026-10-26T22:38:00Z"},
+                {"name": "step-4755", "cardId": "4755", "pipelineStep": "no run yet", "stepSince": ""}]},
+            "awareness.rolestates": {"fields": ["aboutPrincipal", "activity", "observedAt"], "rows": [
+                {"name": "observed-silas", "aboutPrincipal": "principal-silas", "activity": "acting", "observedAt": "2026-10-26T22:39:30Z"},
+                {"name": "observed-kade", "aboutPrincipal": "principal-kade", "activity": "idle", "observedAt": "2026-10-26T21:10:00Z"}]}}});
+        let s = format_pulse_header_at(&v, now);
+        assert!(s.contains("  awareness.cardsteps: 4747 land: borg-queen-proves 2m · 4755 no run yet\n"), "{s}");
+        assert!(s.contains("  awareness.rolestates: silas acting 30s · kade idle 1h30m\n"), "{s}");
+    }
+
+    // NEGATIVE PROOF: a value that is not a time is never turned into an age
+    #[test]
+    fn negative_proof_a_step_word_is_never_read_as_a_time() {
+        let now = chrono::Utc::now();
+        assert_eq!(header_value("waiting for your go", now), "waiting for your go");
+        assert_eq!(header_value("2026-10-26", now), "2026-10-26");
     }
 
     #[test]

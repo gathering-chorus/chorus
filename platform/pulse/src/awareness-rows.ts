@@ -14,7 +14,7 @@
 import { joinPrompts, factsFromSpine, QUIET_AFTER_S, type LineFact, type SpineLine } from './pulse-tree';
 
 export interface Row { [field: string]: string | string[] }
-export interface AwarenessRows { prompts: Row[]; roleStates: Row[]; turns: Row[] }
+export interface AwarenessRows { prompts: Row[]; roleStates: Row[]; turns: Row[]; cardSteps?: Row[] }
 
 /** A row name the door accepts: the id's own characters, lower case, anything else a dash. */
 export const rowName = (id: string) => id.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');

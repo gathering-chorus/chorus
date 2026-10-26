@@ -56,6 +56,20 @@ pub struct ClassDef {
 
 pub const CLASSES: &[ClassDef] = &[
     ClassDef {
+        domain: "awareness", name: "CardStep", kind: "card-step", plural: "cardsteps", segment: "cardsteps", graph: "urn:chorus:domains:awareness", composed: false,
+        fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
+            FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
+            FieldDef { name: "cardId", link: false, datatype: "string", required: true, many: false, allowed: &[], header: true, newest: false, header_only: None },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
+            FieldDef { name: "pipelineStep", link: false, datatype: "string", required: true, many: false, allowed: &[], header: true, newest: false, header_only: None },
+            FieldDef { name: "runOrdinal", link: false, datatype: "string", required: false, many: false, allowed: &[], header: false, newest: false, header_only: None },
+            FieldDef { name: "stepLive", link: false, datatype: "string", required: true, many: false, allowed: &["live", "gone"], header: false, newest: false, header_only: Some("live") },
+            FieldDef { name: "stepSince", link: false, datatype: "dateTime", required: false, many: false, allowed: &[], header: true, newest: true, header_only: None },
+        ],
+    },
+    ClassDef {
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness", composed: false,
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
@@ -109,14 +123,14 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
             FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[], header: true, newest: false, header_only: None },
-            FieldDef { name: "activity", link: false, datatype: "string", required: true, many: false, allowed: &["acting", "idle", "unmeasured"], header: false, newest: false, header_only: None },
+            FieldDef { name: "activity", link: false, datatype: "string", required: true, many: false, allowed: &["acting", "idle", "unmeasured"], header: true, newest: false, header_only: None },
             FieldDef { name: "currentCard", link: true, datatype: "", required: false, many: false, allowed: &[], header: true, newest: false, header_only: None },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[], header: true, newest: true, header_only: None },
             FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[], header: false, newest: false, header_only: None },
             FieldDef { name: "pairRole", link: false, datatype: "string", required: false, many: false, allowed: &["driver", "navigator"], header: false, newest: false, header_only: None },
             FieldDef { name: "pairedWith", link: true, datatype: "", required: false, many: false, allowed: &[], header: false, newest: false, header_only: None },
-            FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["observed"], header: false, newest: false, header_only: None },
-            FieldDef { name: "stateValue", link: false, datatype: "string", required: true, many: false, allowed: &["building", "pairing", "waiting", "in-ceremony", "reviewing", "available", "away", "off", "unmeasured"], header: true, newest: false, header_only: None },
+            FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["observed"], header: false, newest: false, header_only: Some("observed") },
+            FieldDef { name: "stateValue", link: false, datatype: "string", required: true, many: false, allowed: &["building", "pairing", "waiting", "in-ceremony", "reviewing", "available", "away", "off", "unmeasured"], header: false, newest: false, header_only: None },
             FieldDef { name: "unmeasuredSource", link: false, datatype: "string", required: false, many: false, allowed: &[], header: false, newest: false, header_only: None },
         ],
     },

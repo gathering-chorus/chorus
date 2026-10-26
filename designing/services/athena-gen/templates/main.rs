@@ -177,7 +177,9 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         _ => return error(405, "method", "this route takes GET and POST"),
     };
     let s = rules::subject(class, &name);
-    let prior = match ctx.store.get(class, &name) { Ok(p) => p, Err(m) => return error(503, "store", &m) };
+    // #4757 — every refusal past this point is on the spine: pulse's role-state replaces failed
+    // for an evening with nothing logged, because these 503s returned before any event
+    let prior = match ctx.store.get(class, &name) { Ok(p) => p, Err(m) => { rules::event(&ctx.events, &caller.principal, "read", class, &name, "store-error"); return error(503, "store", &m) } };
     let op = match method { "POST" => "create", "PUT" => "replace", "PATCH" => "patch", "DELETE" => "delete", _ => return error(405, "method", "unknown method") };
     if op == "create" && prior.is_some() { return error(409, "exists", &format!("{name} already exists; PATCH or PUT it")); }
     if op != "create" && prior.is_none() { return error(404, "not-found", &format!("no {} named {name}; a {op} never creates", class.name)); }
@@ -191,7 +193,7 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
     };
     if op == "patch" && cells.is_empty() { return error(422, "empty-patch", "the patch names no field"); }
     if matches!(op, "create" | "replace") {
-        if let Some(m) = rules::required_missing(class, &cells) { return error(422, "required", &format!("{m} is required")); }
+        if let Some(m) = rules::required_missing(class, &cells) { rules::event(&ctx.events, &caller.principal, op, class, &name, "required"); return error(422, "required", &format!("{m} is required")); }
         if rules::field(class, "ownedBy").is_some() {
             let owner = prior.as_ref().and_then(|r| r.get("ownedBy")).and_then(Value::as_str).map(String::from).unwrap_or_else(|| format!("principal-{}", caller.principal));
             cells.push(("ownedBy".into(), vec![rules::Cell::Link(format!("{}{owner}", model::NS))]));
@@ -199,9 +201,10 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         if !cells.iter().any(|(k, _)| k == "label") { cells.push(("label".into(), vec![rules::Cell::Literal(name.clone(), "string")])); }
     }
     if let Some(p) = &prior {
-        let n = match ctx.store.version_count(&format!("{}/{name}", class.plural)) { Ok(n) => n + 1, Err(m) => return error(503, "store", &m) };
+        let n = match ctx.store.version_count(&format!("{}/{name}", class.plural)) { Ok(n) => n + 1, Err(m) => { rules::event(&ctx.events, &caller.principal, op, class, &name, "version-error"); return error(503, "store", &m) } };
         let (vs, vcells) = rules::version_row(class, &name, p, n);
         if let Err(m) = ctx.store.write(&format!("{}provenance", model::GRAPH_PREFIX), &vs, Some("Version"), &vcells, true) {
+            rules::event(&ctx.events, &caller.principal, op, class, &name, "version-error");
             return error(503, "store", &format!("could not keep the prior version, nothing written: {m}"));
         }
     }
