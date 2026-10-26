@@ -97,7 +97,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     }
     s.push_str("];\n\n");
     s.push_str(
-        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n    /// #4744 — on the product header (c:inHeader)\n    pub header: bool,\n    /// #4744 — the header shows rows newest first by this field (c:headerNewest)\n    pub newest: bool,\n}\n\n\
+        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n    /// #4744 — on the product header (c:inHeader)\n    pub header: bool,\n    /// #4744 — the header shows rows newest first by this field (c:headerNewest)\n    pub newest: bool,\n    /// #4744 — the header shows only rows whose field holds this value (c:headerOnly)\n    pub header_only: Option<&'static str>,\n}\n\n\
          pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
@@ -110,7 +110,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
                 s.push_str(&format!(
-                    "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}], header: {}, newest: {} }},\n",
+                    "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}], header: {}, newest: {}, header_only: {} }},\n",
                     lit(&f.name),
                     matches!(f.kind, Kind::Link { .. }),
                     lit(match &f.kind { Kind::Literal { datatype } => datatype.as_str(), Kind::Link { .. } => "" }),
@@ -118,7 +118,8 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
                     f.many,
                     allowed.join(", "),
                     f.header,
-                    f.newest
+                    f.newest,
+                    f.header_only.as_ref().map_or_else(|| "None".to_string(), |v| format!("Some({})", lit(v)))
                 ));
             }
             s.push_str("        ],\n    },\n");

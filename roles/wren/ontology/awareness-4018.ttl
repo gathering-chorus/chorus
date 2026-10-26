@@ -235,3 +235,7 @@ chorus:headerNewest a owl:DatatypeProperty ;
     rdfs:label "header newest" ;
     rdfs:comment "#4744: on a SHACL property shape, the product header shows this class's rows newest first by this field." ;
     rdfs:range xsd:boolean .
+chorus:headerOnly a owl:DatatypeProperty ;
+    rdfs:label "header only" ;
+    rdfs:comment "#4744: on a SHACL property shape, the product header shows only rows whose field holds this value (the cards in WIP)." ;
+    rdfs:range xsd:string .

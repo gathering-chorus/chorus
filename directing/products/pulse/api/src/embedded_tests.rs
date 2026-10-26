@@ -310,3 +310,22 @@ fn the_header_shows_the_newest_rows_first_where_the_model_says_so() {
     let names: Vec<&str> = rows.iter().map(|r| r["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["new", "mid", "old"]);
 }
+
+/// #4744 — a header line shows only the rows the model names (c:headerOnly): the cards in
+/// WIP, never the whole board. Both states asserted for whichever class marks one.
+#[test]
+fn the_header_shows_only_the_rows_the_model_names() {
+    let Some((c, f, v)) = CLASSES.iter().find_map(|c| c.fields.iter().find_map(|f| f.header_only.map(|v| (c, f.name, v)))) else {
+        assert!(CLASSES.iter().all(|c| c.fields.iter().all(|f| f.header_only.is_none())));
+        return;
+    };
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    for (n, val) in [("in", v), ("out", "Done")] {
+        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(val.into(), "string")])];
+        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
+    }
+    let (code, out) = crate::header(&store, None);
+    assert_eq!(code, 200, "{out}");
+    let names: Vec<&str> = out["data"][format!("{}.{}", c.domain, c.segment)]["rows"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["in"]);
+}

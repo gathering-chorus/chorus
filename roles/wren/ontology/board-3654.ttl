@@ -113,7 +113,7 @@ chorus:CardShape a sh:NodeShape ;
   # #3102 — the row carries the board state, kept current by the cards package
   # and the reconcile pass (cards graph-sync). status is the kanban column;
   # assignee is the card's owner on the board (ownedBy is whoever wrote the row).
-  sh:property [ sh:path chorus:status ; chorus:inHeader true ; sh:datatype xsd:string ;
+  sh:property [ sh:path chorus:status ; chorus:inHeader true ; chorus:headerOnly "WIP" ; sh:datatype xsd:string ;
                 sh:in ( "Later" "Next" "Now" "WIP" "Keep" "Blocked" "SWAT" "Harvesting" "Gathering" "Jeff Tickets" "Tech Debt" "Ops" "garden-observability" "Done" "Won't Do" ) ] ;
   sh:property [ sh:path chorus:assignee ; chorus:inHeader true ; sh:maxCount 1 ; sh:class chorus:Role ] ;
   sh:property [ sh:path chorus:priority ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "P1" "P2" "P3" ) ] ;

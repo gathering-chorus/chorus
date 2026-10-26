@@ -84,3 +84,12 @@ fn the_model_names_the_field_the_header_shows_newest_first() {
     let p = pulse(FIXTURE, "nonewest");
     assert!(p.domains.iter().flat_map(|d| d.classes.iter().flat_map(|c| c.fields.iter())).all(|f| !f.newest));
 }
+
+/// The model names the value a header line keeps (c:headerOnly), e.g. the cards in WIP.
+#[test]
+fn the_model_names_the_rows_a_header_line_keeps() {
+    let ttl = FIXTURE.replace("c:status ; sh:datatype xsd:string ; c:inHeader true", "c:status ; sh:datatype xsd:string ; c:inHeader true ; c:headerOnly \"WIP\"");
+    let p = pulse(&ttl, "only");
+    let card = p.domains.iter().find(|d| d.name == "cards").unwrap();
+    assert_eq!(card.classes[0].fields.iter().find(|f| f.name == "status").unwrap().header_only.as_deref(), Some("WIP"));
+}

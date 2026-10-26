@@ -45,9 +45,16 @@ pub fn header(store: &dyn RowStore, viewer: Option<&str>) -> (u16, Value) {
             continue;
         }
         // a glance: the newest rows when the model names the field that orders them (c:headerNewest)
-        let page = match c.fields.iter().find(|f| f.newest) {
-            Some(f) => store.list_where(c, 10, 0, viewer, &store::Where { sort: Some((f.name.to_string(), true)), ..Default::default() }),
-            None => match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) },
+        // and only the rows the model names for it (c:headerOnly, e.g. the cards in WIP)
+        let w = store::Where {
+            eq: c.fields.iter().filter_map(|f| f.header_only.map(|v| (f.name.to_string(), v.to_string()))).collect(),
+            sort: c.fields.iter().find(|f| f.newest).map(|f| (f.name.to_string(), true)),
+            ..Default::default()
+        };
+        let page = if w == store::Where::default() {
+            match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) }
+        } else {
+            store.list_where(c, 10, 0, viewer, &w)
         };
         let rows = match page { Ok((rows, _)) => rows, Err(m) => return error(503, "store", &m) };
         let rows: Vec<Value> = rows.into_iter().map(|r| {

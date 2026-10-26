@@ -25,6 +25,7 @@ fn pulse() -> Product {
                     allowed: vec!["idle".into(), "building".into()],
                     header: false,
                     newest: false,
+                    header_only: None,
                 }],
             }],
         }],

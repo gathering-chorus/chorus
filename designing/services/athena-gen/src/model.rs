@@ -42,6 +42,8 @@ pub struct Field {
     pub header: bool,
     /// #4744 — `c:headerNewest true`: the header shows this class's rows newest first by this field.
     pub newest: bool,
+    /// #4744 — `c:headerOnly "<value>"`: the header shows only rows whose field holds this value (cards: WIP).
+    pub header_only: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,10 +296,10 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
     };
     let props = select_iri(store, &format!(
         "SELECT ?path (SAMPLE(?dt) AS ?datatype) (SAMPLE(?cl) AS ?class) (SAMPLE(?nk) AS ?nodeKind) \
-         (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) (MAX(?ih) AS ?inHeader) (MAX(?hn) AS ?headerNewest) WHERE {{ \
+         (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) (MAX(?ih) AS ?inHeader) (MAX(?hn) AS ?headerNewest) (SAMPLE(?ho) AS ?headerOnly) WHERE {{ \
            <{iri}> rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path . \
            OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} OPTIONAL {{ ?p sh:nodeKind ?nk }} \
-           OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} OPTIONAL {{ ?p c:inHeader ?ih }} OPTIONAL {{ ?p c:headerNewest ?hn }} \
+           OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} OPTIONAL {{ ?p c:inHeader ?ih }} OPTIONAL {{ ?p c:headerNewest ?hn }} OPTIONAL {{ ?p c:headerOnly ?ho }} \
          }} GROUP BY ?path ORDER BY ?path"))?;
     let mut fields = Vec::new();
     for p in props {
@@ -326,6 +328,7 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
             allowed,
             header: p.get("inHeader").is_some_and(|h| h == "true"),
             newest: p.get("headerNewest").is_some_and(|h| h == "true"),
+            header_only: p.get("headerOnly").cloned(),
         });
     }
     Ok(Class { segment: segment(domain, &name), name, graph, fields })
