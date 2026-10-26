@@ -43,6 +43,7 @@ observer	plumbing: writes the rolling activity digest
 reply_delivery	plumbing: records the reply hash for delivery matching
 terminal_input	plumbing: posts Jeff'"'"'s terminal prompts to pulse, never refuses
 tool_telemetry	plumbing: logs every tool call
+turn_line	plumbing: stamps the Jeff line that woke a turn on agent.turn.started (#4637), never refuses
 '
 
 check() { # $1 = hooks dir, $2 = policy ttl
