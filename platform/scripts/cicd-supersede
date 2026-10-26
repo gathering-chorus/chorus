@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""cicd-supersede <card> <role> — #4753: one go per card.
+
+Before a card's new cicd run is enqueued, every older cicd run of that card
+still waiting (at Jeff's go) is stopped by name and the stop is put on the
+spine as card.run.superseded. It is never answered as Jeff: a stop is not a
+go or a no (Jeff 10-26 12:11: "ask for go with dont go in fine print").
+
+The card's runs are read the way /cws reads them (chorus-werk-status). dagu
+unreadable stops nothing and says so.
+"""
+import os
+import re
+import subprocess
+import sys
+
+
+def superseded(runs, card=None):
+    """The cicd runs that wait (at the go): cicd-land and other runs are never touched."""
+    want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card))) if card else None
+    return [r.get("dagRunId") for r in runs
+            if r.get("name") == "cicd" and r.get("statusLabel") == "waiting"
+            and (want is None or want.search(r.get("params") or ""))]
+
+
+def supersede(card, role, runs):
+    if runs is None:
+        print(f"cicd-supersede: #{card}: dagu unreadable — nothing stopped")
+        return
+    home = os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus"))
+    dagu = os.environ.get("DAGU", "/opt/homebrew/bin/dagu")
+    log = os.environ.get("CHORUS_LOG_BIN", f"{home}/platform/scripts/chorus-log")
+    for run_id in superseded(runs, card):
+        stop = subprocess.run([dagu, "--config", f"{home}/platform/config/dagu.yaml", "stop", "cicd", "--run-id", run_id],
+                              capture_output=True, text=True)
+        how = "stopped" if stop.returncode == 0 else f"stop failed ({(stop.stderr or stop.stdout).strip()[:200]})"
+        print(f"cicd-supersede: #{card}: older run {run_id} waiting at the go — {how}")
+        subprocess.run([log, "card.run.superseded", role, f"card={card}", f"run_id={run_id}", f"result={how.split(' ')[0]}"],
+                       capture_output=True)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit("usage: cicd-supersede <card> <role>")
+    import importlib.machinery
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    loader = importlib.machinery.SourceFileLoader("cws", os.path.join(here, "chorus-werk-status"))
+    spec = importlib.util.spec_from_loader("cws", loader)
+    cws = importlib.util.module_from_spec(spec)
+    loader.exec_module(cws)
+    supersede(sys.argv[1], sys.argv[2], cws.dagu_runs(sys.argv[1], dag="cicd"))
