@@ -39,6 +39,7 @@ clean_fixture() {
       ["skill-loom-gemba", "awareness"]
     ],
     "composes": [
+      ["pulse", "alerts"],
       ["pulse", "cards"],
       ["pulse", "messages"]
     ],
@@ -114,7 +115,7 @@ FIXTURE
   [ "$status" -eq 0 ]
   [[ "$output" =~ "owns         awareness" ]] || return 1
   [[ "$output" =~ "owns         streams" ]] || return 1
-  [[ "$output" =~ "composes     cards, messages" ]] || return 1
+  [[ "$output" =~ "composes     alerts, cards, messages" ]] || return 1
   [[ "$output" =~ "consumes     alerts" ]] || return 1
   [[ "$output" =~ "persistence" ]] || return 1
   [[ "$output" =~ "identity" ]] || return 1
@@ -127,8 +128,6 @@ FIXTURE
   ! [[ "$output" =~ "knowledge" ]] || return 1
   ! [[ "$output" =~ "memory" ]] || return 1
   ! [[ "$output" =~ "tests" ]] || return 1
-  # And composes does not include alerts
-  ! [[ "$output" =~ "composes     alerts" ]] || return 1
 }
 
 @test "NEGATIVE PROOF (#3734): removing one hasDomain edge causes product radius check to fail" {
