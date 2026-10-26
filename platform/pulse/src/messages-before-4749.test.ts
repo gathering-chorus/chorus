@@ -17,12 +17,15 @@ function world() {
 describe('#4749 GET /api/messages pagination with ?before', () => {
   test('returns only messages created strictly before the specified timestamp', async () => {
     const { app, store } = world();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'silas\', \'wren\', \'m1\', \'2026-10-26 08:00:00\')').run();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'silas\', \'wren\', \'m2\', \'2026-10-26 08:05:00\')').run();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'silas\', \'wren\', \'m3\', \'2026-10-26 08:10:00\')').run();
+    store.sendNudge('silas', 'wren', 'm1');
+    await new Promise((r) => setTimeout(r, 20));
+    const pivot = new Date().toISOString();
+    await new Promise((r) => setTimeout(r, 20));
+    store.sendNudge('silas', 'wren', 'm2');
+    store.sendNudge('silas', 'wren', 'm3');
 
-    // Query before 08:05:00 should return only m1
-    const res = await request(app).get('/api/messages').query({ before: '2026-10-26 08:05:00' });
+    // Query before pivot should return only m1
+    const res = await request(app).get('/api/messages').query({ before: pivot });
     expect(res.status).toBe(200);
     const msgs = res.body as Array<{ content: string; created_at: string }>;
     expect(msgs).toHaveLength(1);
@@ -31,8 +34,8 @@ describe('#4749 GET /api/messages pagination with ?before', () => {
 
   test('NEGATIVE PROOF: without ?before, all messages are returned up to limit', async () => {
     const { app, store } = world();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'silas\', \'wren\', \'m1\', \'2026-10-26 08:00:00\')').run();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'silas\', \'wren\', \'m2\', \'2026-10-26 08:05:00\')').run();
+    store.sendNudge('silas', 'wren', 'm1');
+    store.sendNudge('silas', 'wren', 'm2');
 
     const res = await request(app).get('/api/messages');
     expect(res.status).toBe(200);
@@ -41,9 +44,9 @@ describe('#4749 GET /api/messages pagination with ?before', () => {
 
   test('queryMessages filters by pair in both directions', async () => {
     const { app, store } = world();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'jeff\', \'kade\', \'m1\', \'2026-10-26 08:00:00\')').run();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'kade\', \'jeff\', \'m2\', \'2026-10-26 08:05:00\')').run();
-    store.db.prepare('INSERT INTO messages (type, "from", "to", content, created_at) VALUES (\'nudge\', \'silas\', \'kade\', \'m3\', \'2026-10-26 08:10:00\')').run();
+    store.sendNudge('jeff', 'kade', 'm1');
+    store.sendNudge('kade', 'jeff', 'm2');
+    store.sendNudge('silas', 'kade', 'm3');
 
     const res = await request(app).get('/api/messages').query({ pair: 'jeff,kade' });
     expect(res.status).toBe(200);

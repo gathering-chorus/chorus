@@ -208,7 +208,7 @@ export class DataService {
     return olderEvents
       .map((ev) => {
         let role = 'unattributed';
-        const authorTag = (ev.tags || []).find((t) => t[0] === 'author');
+        const authorTag = ev.tags.find((t) => t[0] === 'author');
         if (authorTag && authorTag[1]) role = authorTag[1];
         return toClearingMessage(ev, role, this.relay.isConnected());
       })
