@@ -30,6 +30,52 @@ pub trait RowStore: Send + Sync {
     fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String>;
     /// One row by name if `viewer` may see it; None otherwise (never "exists, but not yours").
     fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;
+    /// #4744 — a page of the rows that match `w` (and that `viewer` may see, when given),
+    /// with the count of all matches: the filter runs in the store, before the page is cut.
+    fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String>;
+}
+
+/// #4744 — one filter for every collection: each `eq` field holds the value (a literal
+/// equal to it, or a link whose name it is), and `q` is found in some literal of the row.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Where {
+    pub eq: Vec<(String, String)>,
+    pub q: Option<String>,
+    /// `<field>.lt=` / `<field>.gt=`: the field's value compared as a string (ISO times sort as text)
+    pub bounds: Vec<(String, &'static str, String)>,
+    /// `sort=<field>` or `sort=-<field>` (newest first): (field, descending)
+    pub sort: Option<(String, bool)>,
+}
+
+fn sparql_str(v: &str) -> String {
+    format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r"))
+}
+
+/// The graph pattern for `w`, over the row `?s` in `graph`.
+pub fn where_pattern(w: &Where, graph: &str) -> String {
+    let mut out = String::new();
+    for (i, (field, value)) in w.eq.iter().enumerate() {
+        let v = sparql_str(value);
+        out.push_str(&format!(
+            "GRAPH <{graph}> {{ ?s <{NS}{field}> ?w{i} }} \
+             FILTER(STR(?w{i}) = {v} || (isIRI(?w{i}) && (STRENDS(STR(?w{i}), CONCAT(\"#\", {v})) || STRENDS(STR(?w{i}), CONCAT(\"/\", {v}))))) "
+        ));
+    }
+    for (i, (field, op, value)) in w.bounds.iter().enumerate() {
+        out.push_str(&format!(
+            "GRAPH <{graph}> {{ ?s <{NS}{field}> ?b{i} }} FILTER(STR(?b{i}) {op} {}) ", sparql_str(value)
+        ));
+    }
+    if let Some((field, _)) = &w.sort {
+        out.push_str(&format!("OPTIONAL {{ GRAPH <{graph}> {{ ?s <{NS}{field}> ?ord }} }} "));
+    }
+    if let Some(q) = &w.q {
+        out.push_str(&format!(
+            "FILTER EXISTS {{ GRAPH <{graph}> {{ ?s ?qp ?qo }} FILTER(isLiteral(?qo) && CONTAINS(LCASE(STR(?qo)), LCASE({}))) }} ",
+            sparql_str(q)
+        ));
+    }
+    out
 }
 
 /// #4524 — the visibility filter, one pattern for list, count and get. `?s` is the row in
@@ -476,6 +522,29 @@ impl RowStore for Sparql {
         let mut subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
         subjects.sort();
         Ok((self.rows(class, &subjects)?, total))
+    }
+
+    fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String> {
+        let (g, c) = (class.graph, class.name);
+        let f = format!("{} {}", viewer.map(|v| seen_by(v, g)).unwrap_or_default(), where_pattern(w, g));
+        let count = self.select(&format!("SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }}"))?;
+        let total = count.first().and_then(|r| r["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0);
+        // a sorted read keeps the store's order; an unsorted page is sorted by name, as list does
+        let order = match &w.sort { Some((_, true)) => "ORDER BY DESC(STR(?ord)) ?s", Some((_, false)) => "ORDER BY STR(?ord) ?s", None => "" };
+        let page = self.select(&format!("SELECT DISTINCT ?s ?ord WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} {order} LIMIT {limit} OFFSET {offset}"))?;
+        let mut subjects: Vec<String> = Vec::new();
+        for r in &page {
+            if let Some(s) = r["s"]["value"].as_str() {
+                if !subjects.iter().any(|x| x == s) { subjects.push(s.to_string()); }
+            }
+        }
+        if w.sort.is_none() { subjects.sort(); }
+        let mut rows = self.rows(class, &subjects)?;
+        if w.sort.is_some() {
+            let pos = |r: &Row| subjects.iter().position(|s| r.get("name").and_then(|n| n.as_str()).is_some_and(|n| *s == iri(class, n)));
+            rows.sort_by_key(|r| pos(r));
+        }
+        Ok((rows, total))
     }
 
     fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String> {

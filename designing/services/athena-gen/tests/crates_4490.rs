@@ -30,7 +30,13 @@ fn the_committed_pulse_api_is_what_the_generator_writes_today() {
     let p = athena_gen::model::product(&store, "pulse").unwrap();
     let mv = athena_gen::model::model_version(&store).unwrap();
     let settings = athena_gen::model::settings(&store, "pulse").unwrap();
-    for (path, text) in athena_gen::emit::crate_files(&p, &mv, &settings) {
+    // #4744 — the handlers resolve from where the committed crate sits
+    let out = root.join("directing/products/pulse/api");
+    let handlers: Vec<(String, String)> = p.operations.iter()
+        .map(|o| (o.name.replace('-', "_"), athena_gen::emit::handler_path(&root, &out, o).unwrap()))
+        .collect();
+    let oidc = athena_gen::emit::oidc_path(&root, &out).unwrap();
+    for (path, text) in athena_gen::emit::crate_files_ops(&p, &mv, &settings, &oidc, &handlers) {
         let committed = read(&format!("directing/products/pulse/api/{path}"));
         assert_eq!(committed, text, "directing/products/pulse/api/{path} differs from a fresh generate: run athena-gen generate --product pulse");
     }

@@ -5,6 +5,7 @@
 
 mod auth;
 mod model;
+mod ops;
 mod rules;
 mod settings;
 mod store;
@@ -34,8 +35,109 @@ fn envelope(class: &ClassDef, path: &str, data: Value) -> Value {
     })
 }
 
+/// #4744 — the product root: every field a domain puts on the header (c:inHeader), per
+/// collection, from the rows the caller may see. No class marks a field → no root route.
+pub fn header(store: &dyn RowStore, viewer: Option<&str>) -> (u16, Value) {
+    let mut data = serde_json::Map::new();
+    for c in CLASSES {
+        let fields: Vec<&str> = c.fields.iter().filter(|f| f.header).map(|f| f.name).collect();
+        if fields.is_empty() {
+            continue;
+        }
+        // a glance: the newest rows when the model names the field that orders them (c:headerNewest)
+        // and only the rows the model names for it (c:headerOnly, e.g. the cards in WIP)
+        let w = store::Where {
+            eq: c.fields.iter().filter_map(|f| f.header_only.map(|v| (f.name.to_string(), v.to_string()))).collect(),
+            sort: c.fields.iter().find(|f| f.newest).map(|f| (f.name.to_string(), true)),
+            ..Default::default()
+        };
+        let page = if w == store::Where::default() {
+            match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) }
+        } else {
+            store.list_where(c, 100, 0, viewer, &w)
+        };
+        let rows = match page { Ok((rows, _)) => rows, Err(m) => return error(503, "store", &m) };
+        let rows: Vec<Value> = rows.into_iter().map(|r| {
+            let mut o = serde_json::Map::new();
+            o.insert("name".into(), r.get("name").cloned().unwrap_or(Value::Null));
+            for f in &fields {
+                o.insert((*f).into(), r.get(*f).cloned().unwrap_or(Value::Null));
+            }
+            Value::Object(o)
+        }).collect();
+        // #4744 AC8 — each header line opens its domain's stream, where the same filter and search apply
+        let stream = format!("/{PRODUCT}/{}/{}", c.domain, c.segment);
+        data.insert(format!("{}.{}", c.domain, c.segment), json!({ "fields": fields, "rows": rows, "stream": stream }));
+    }
+    if data.is_empty() {
+        return error(404, "unknown-route", "no domain of this product puts a field on its header");
+    }
+    (200, json!({
+        "apiVersion": API_VERSION,
+        "product": PRODUCT,
+        "productVersion": CRATE_VERSION,
+        "modelVersion": MODEL_VERSION,
+        "kind": "Header",
+        "self": format!("/{PRODUCT}"),
+        "data": data,
+    }))
+}
+
 fn error(code: u16, kind: &str, message: &str) -> (u16, Value) {
     (code, json!({ "error": kind, "message": message }))
+}
+
+/// #4744 — `%XX` and `+` in a query value, decoded; a malformed escape is kept as typed.
+fn decode(v: &str) -> String {
+    let b = v.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len() => match std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                Some(x) => { out.push(x); i += 2; }
+                None => out.push(b'%'),
+            },
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// #4744 AC8 — the filter a collection read carries: every query key but limit and offset
+/// names a field of the class (or is `q`, the text search). An unknown key is refused by name.
+fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)> {
+    let mut w = store::Where::default();
+    for kv in query.split('&').filter(|kv| !kv.is_empty()) {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        let (k, v) = (decode(k), decode(v));
+        let known = |f: &str| f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f);
+        let unknown = |f: &str| error(400, "unknown-field", &format!("{} has no field '{f}'", class.name));
+        if let Some((f, op)) = k.strip_suffix(".lt").map(|f| (f, "<")).or_else(|| k.strip_suffix(".gt").map(|f| (f, ">"))) {
+            if !known(f) { return Err(unknown(f)); }
+            // a bound compares text, which orders ISO times and plain text, never numbers (Kade's review)
+            let datatype = class.fields.iter().find(|d| d.name == f).map_or("string", |d| d.datatype);
+            if !matches!(datatype, "string" | "dateTime" | "date") {
+                return Err(error(400, "unordered-field", &format!("{}.{f} is {datatype}: a bound needs a text or time field", class.name)));
+            }
+            w.bounds.push((f.to_string(), op, v));
+            continue;
+        }
+        match k.as_str() {
+            "limit" | "offset" => {}
+            "sort" => {
+                let (f, desc) = v.strip_prefix('-').map(|f| (f, true)).unwrap_or((v.as_str(), false));
+                if !known(f) { return Err(unknown(f)); }
+                w.sort = Some((f.to_string(), desc));
+            }
+            "q" => w.q = Some(v),
+            f if f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f) => w.eq.push((k.clone(), v)),
+            f => return Err(error(400, "unknown-field", &format!("{} has no field '{f}'", class.name))),
+        }
+    }
+    Ok(w)
 }
 
 fn query_param(query: &str, key: &str) -> Option<usize> {
@@ -122,6 +224,31 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
     let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+    // #4744 — the product root is its header, read under the same rule as every read
+    if parts == [PRODUCT] && method == "GET" {
+        if ctx.reads_public {
+            return header(store, None);
+        }
+        return match who.caller(authorization) {
+            Ok(c) => header(store, Some(&format!("{}principal-{}", model::NS, c.principal))),
+            Err(e) => {
+                let (code, kind) = auth::refusal(&e);
+                error(code, kind, &format!("{e:?}"))
+            }
+        };
+    }
+    // #4744 — an operation (a live computation the model declares) answers under the same read rule
+    if parts.len() >= 3 && parts[0] == PRODUCT && method == "GET" && ops::has(parts[1], parts[2]) {
+        if !ctx.reads_public {
+            if let Err(e) = who.caller(authorization) {
+                let (code, kind) = auth::refusal(&e);
+                return error(code, kind, &format!("{e:?}"));
+            }
+        }
+        if let Some(r) = ops::route(ctx, parts[1], parts[2], &parts[3..], query) {
+            return r;
+        }
+    }
     // #4742 (Jeff 10-25): the product is the top-level route, each of its domains a child route
     if parts.len() < 3 || parts[0] != PRODUCT {
         return error(404, "unknown-route", "not a route of this API");
@@ -158,7 +285,12 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         3 => {
             let limit = query_param(query, "limit").unwrap_or(100).min(1000);
             let offset = query_param(query, "offset").unwrap_or(0);
-            let page = match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) };
+            let w = match where_of(class, query) { Ok(w) => w, Err(e) => return e };
+            let page = if w != store::Where::default() {
+                store.list_where(class, limit, offset, viewer.as_deref(), &w)
+            } else {
+                match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) }
+            };
             match page {
                 Ok((rows, total)) => {
                     let mut e = envelope(class, path, json!(rows));

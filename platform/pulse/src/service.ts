@@ -21,6 +21,7 @@ import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
 import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
+import { startAwarenessWriter } from './awareness-writer';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
 
@@ -882,6 +883,8 @@ if (require.main === module) {
     // #4638 — the tree's turns and runs, read from the spine every 30 s
     const spineTreeFacts = new SpineTreeFacts();
     spineTreeFacts.start();
+    // #4744 — the tree's facts as awareness rows in the store (off unless PULSE_AWARENESS_WRITE=1)
+    startAwarenessWriter(store, actorStateService, spineTreeFacts, emitSpine);
     const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz, spineTreeFacts);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');

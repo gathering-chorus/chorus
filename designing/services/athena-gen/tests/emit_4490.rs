@@ -23,9 +23,13 @@ fn pulse() -> Product {
                     required: true,
                     many: false,
                     allowed: vec!["idle".into(), "building".into()],
+                    header: false,
+                    newest: false,
+                    header_only: None,
                 }],
             }],
         }],
+        operations: Vec::new(),
     }
 }
 
@@ -37,7 +41,7 @@ fn same_model_same_bytes() {
 #[test]
 fn the_crate_carries_the_product_its_routes_and_its_versions() {
     let files = crate_files(&pulse(), "1.30.0", &settings());
-    assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/door_tests.rs", "src/embedded_tests.rs", "src/main.rs", "src/model.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs", "tests/model.rs"]);
+    assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/door_tests.rs", "src/embedded_tests.rs", "src/main.rs", "src/model.rs", "src/ops.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs", "tests/model.rs"]);
     assert!(files["Cargo.toml"].contains("name = \"pulse-api\""));
     let m = &files["src/model.rs"];
     for want in ["PRODUCT: &str = \"pulse\"", "MODEL_VERSION: &str = \"1.30.0\"", "segment: \"rolestates\"",

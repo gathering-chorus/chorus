@@ -487,12 +487,8 @@ fn read_pulse_snapshot() -> Option<String> {
         let warns = v.pointer("/health/warning_count").and_then(|f| f.as_i64()).unwrap_or(0);
         out.push_str(&format!("  health: {} (failures={}, warnings={})\n", status, failures, warns));
     }
-    if let Some(wip) = v.pointer("/board/wip_cards").and_then(|c| c.as_array()) {
-        // #2234 Step 6 prototype: surface count + pull-pointer instead of inlining card titles.
-        // Full card detail is available at /api/chorus/context/board/wip — agents that need it
-        // fetch and cite. This removes ~5 card-title lines (~300 bytes) per turn.
-        out.push_str(&format!("  board.wip: {} cards → GET /api/chorus/context/board/wip\n", wip.len()));
-    }
+    // #4744 — the cards line left with #2234's count: the header (query_pulse_header) now
+    // carries each role's card, composed from the domains pulse composes.
     // #4638 — the three "role X: state= card=" lines (the first three roles
     // alphabetically, so never the whole team) gave way to the role's slice of
     // the live tree, appended by the caller (query_tree_slice).
@@ -504,16 +500,51 @@ fn read_pulse_snapshot() -> Option<String> {
 /// prompts this role is in, newest first. A pulse that cannot be read says so
 /// by name; it never falls back to a guess.
 fn query_tree_slice(role: &str) -> String {
-    let base = std::env::var("CHORUS_PULSE_URL").unwrap_or_else(|_| "http://localhost:3475".to_string());
-    let url = format!("{}/api/tree/{}", base, role);
+    // #4744 — the generated pulse API's tree Operation, read from the store; CHORUS_TREE_URL
+    // ({role} filled in) points elsewhere for a rollback, never a second implementation
+    let url = std::env::var("CHORUS_TREE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:3392/pulse/awareness/tree/{role}".to_string())
+        .replace("{role}", role);
     // uncapped like every per-prompt context call (#3048); a failure still says so by name
     match ureq::get(&url).call() {
         Ok(r) => match r.into_json::<serde_json::Value>() {
             Ok(v) => format_tree_slice(&v),
-            Err(e) => format!("  tree: unmeasured (pulse /api/tree/{} unreadable: {})\n", role, e),
+            Err(e) => format!("  tree: unmeasured ({} unreadable: {})\n", url, e),
         },
-        Err(e) => format!("  tree: unmeasured (pulse /api/tree/{} unreachable: {})\n", role, e),
+        Err(e) => format!("  tree: unmeasured ({} unreachable: {})\n", url, e),
     }
+}
+
+/// #4744 — pulse's header, composed in the model: each domain pulse owns or composes puts
+/// the fields it marks (c:inHeader) on it; this only renders them. A header that cannot be
+/// read says so by name.
+fn query_pulse_header() -> String {
+    let url = std::env::var("CHORUS_PULSE_HEADER_URL").unwrap_or_else(|_| "http://127.0.0.1:3392/pulse".to_string());
+    match ureq::get(&url).call() {
+        Ok(r) => match r.into_json::<serde_json::Value>() {
+            Ok(v) => format_pulse_header(&v),
+            Err(e) => format!("  header: unmeasured ({} unreadable: {})\n", url, e),
+        },
+        Err(e) => format!("  header: unmeasured ({} unreachable: {})\n", url, e),
+    }
+}
+
+/// One line per header collection: up to 5 rows, each its non-empty marked fields.
+pub fn format_pulse_header(v: &serde_json::Value) -> String {
+    let Some(data) = v["data"].as_object() else {
+        return "  header: unmeasured (no data in the header)\n".to_string();
+    };
+    let mut out = String::new();
+    for (line, entry) in data {
+        let fields: Vec<&str> = entry["fields"].as_array().map(|a| a.iter().filter_map(|f| f.as_str()).collect()).unwrap_or_default();
+        let rows: Vec<String> = entry["rows"].as_array().map(|rows| rows.iter().take(5).map(|r| {
+            fields.iter().filter_map(|f| r[*f].as_str().filter(|x| !x.is_empty()).map(|x| x.chars().take(60).collect::<String>()))
+                .collect::<Vec<_>>().join(" ")
+        }).filter(|r| !r.is_empty()).collect()).unwrap_or_default();
+        let shown = if rows.is_empty() { "none".to_string() } else { rows.join(" · ") };
+        out.push_str(&format!("  {}: {}\n", line, shown.chars().take(240).collect::<String>()));
+    }
+    out
 }
 
 /// Pure formatter for the tree slice: one team line, then at most 3 prompts of 120 chars.
@@ -1074,6 +1105,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         // #4638 — the tree slice is its own task, concurrent with the snapshot read (Abby's review)
         let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
         let t_tree = tokio::task::spawn_blocking(move || query_tree_slice(&r4));
+        let t_header = tokio::task::spawn_blocking(query_pulse_header);
         let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
         let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
         let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
@@ -1081,7 +1113,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             t_chorus.await.unwrap_or_default(),
             t_semantic.await.unwrap_or_default(),
             t_memory.await.unwrap_or_default(),
-            Some(t_pulse.await.unwrap_or_default().unwrap_or_default() + &t_tree.await.unwrap_or_default()).filter(|s| !s.is_empty()),
+            Some(t_pulse.await.unwrap_or_default().unwrap_or_default() + &t_header.await.unwrap_or_default() + &t_tree.await.unwrap_or_default()).filter(|s| !s.is_empty()),
             t_spine.await.unwrap_or_default(),
             t_athena.await.unwrap_or_default(),
             t_logs.await.unwrap_or_default(),
@@ -1418,6 +1450,23 @@ mod tests {
         let s = format_tree_slice(&v);
         assert!(s.contains("team: silas quiet 160s · wren moving 11s"), "{s}");
         assert!(s.contains("prompt 4m ago jeff: \"/pull 4638 / i spent all day\" → #4638"), "{s}");
+    }
+
+    // #4744 — the header renders what the model composes, nothing more
+    #[test]
+    fn the_header_renders_each_composed_line_with_its_marked_fields() {
+        let v = serde_json::json!({"kind": "Header", "data": {
+            "cards.cards": {"fields": ["assignee", "label", "status"], "rows": [
+                {"name": "4744", "assignee": "wren", "label": "Run: generate the pulse API", "status": "WIP"}]},
+            "messages.messages": {"fields": ["senderName", "messageBody", "sentAt"], "rows": []}}});
+        let s = format_pulse_header(&v);
+        assert!(s.contains("  cards.cards: wren Run: generate the pulse API WIP\n"), "{s}");
+        assert!(s.contains("  messages.messages: none\n"), "{s}");
+    }
+
+    #[test]
+    fn negative_proof_a_header_without_data_says_unmeasured() {
+        assert_eq!(format_pulse_header(&serde_json::json!({"error": "unknown-route"})), "  header: unmeasured (no data in the header)\n");
     }
 
     #[test]

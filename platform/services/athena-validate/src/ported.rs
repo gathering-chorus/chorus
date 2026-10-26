@@ -67,6 +67,12 @@ pub const V1_ROW: Check = Check {
   # schema, not a row: it lives in the schema graph by design. Each new one
   # read as a v1 row and turned a card's model land red.
   FILTER NOT EXISTS { GRAPH ?g { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }
+  # #4744 — an Operation (a product's live computation: route, home domain, handler) is
+  # a generator input like a ToolInput: athena-gen reads it from the model files, so it
+  # lives in the schema graph for now. DEBT (Kade's review): unlike a ToolInput it is a
+  # row, not schema; the fix is athena-gen reading Operation rows from their domain
+  # graph, then this exemption goes. Anywhere else it is still a row.
+  FILTER NOT EXISTS { FILTER(?g = <urn:chorus:ontology>) GRAPH ?g { ?s a <https://jeffbridwell.com/chorus#Operation> } }
   FILTER(!STRSTARTS(STR(?c), "http://www.w3.org/2002/07/owl#")
       && !STRSTARTS(STR(?c), "http://www.w3.org/ns/shacl#")
       && !STRSTARTS(STR(?c), "http://www.w3.org/2000/01/rdf-schema#"))
@@ -213,6 +219,21 @@ mod tests {
 <urn:chorus:ontology> { c:tool-x a c:Tool . }
 <urn:chorus:instances> { c:card-1 a c:Card . }"#);
         assert!(body.contains("tool-x") && body.contains("card-1"), "{body}");
+    }
+
+    #[test]
+    fn an_operation_in_the_schema_graph_is_not_a_v1_row_4744() {
+        let body = v1_rows(r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:ontology> { c:tree a c:Operation . }"#);
+        assert!(!body.contains("tree"), "{body}");
+    }
+
+    /// NEGATIVE PROOF: an Operation in the catch-all graph is still a v1 row.
+    #[test]
+    fn an_operation_in_the_catch_all_graph_is_still_a_v1_row_4744() {
+        let body = v1_rows(r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:instances> { c:stray a c:Operation . }"#);
+        assert!(body.contains("stray"), "{body}");
     }
 
     #[test]

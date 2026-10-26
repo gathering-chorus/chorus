@@ -64,7 +64,12 @@ fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Pa
         None => athena_gen::emit::oidc_path(root, out),
     }
     .unwrap_or_else(|e| die(e));
-    for (path, text) in athena_gen::emit::crate_files_with(&p, &mv, &settings, &oidc) {
+    // #4744 — every operation's handler is in the repo, or nothing is generated
+    let handlers: Vec<(String, String)> = p.operations.iter()
+        .map(|o| athena_gen::emit::handler_path(root, out, o).map(|h| (o.name.replace('-', "_"), h)))
+        .collect::<Result<_, _>>()
+        .unwrap_or_else(|e| die(e));
+    for (path, text) in athena_gen::emit::crate_files_ops(&p, &mv, &settings, &oidc, &handlers) {
         let f = out.join(&path);
         if let Some(dir) = f.parent() {
             std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));

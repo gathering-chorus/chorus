@@ -56,6 +56,9 @@ const until = async (cond: () => boolean, ms = 3000) => {
 const settle = () => new Promise((r) => setTimeout(r, 200));
 
 describe('#4628 pulse records what Jeff types in a terminal', () => {
+  // #4744 — each case polls up to 3 s (until) and settles 200 ms; under Library load 40 one
+  // case took 5005 ms against jest's 5000 ms default (run 034mhVPXEy3H5SNA1PeZZp)
+  jest.setTimeout(15000);
   beforeEach(() => { process.env.PULSE_ALLOW_DIRECT_POST = '1'; });
   afterEach(() => { delete process.env.PULSE_ALLOW_DIRECT_POST; });
 

@@ -97,7 +97,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     }
     s.push_str("];\n\n");
     s.push_str(
-        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
+        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n    /// #4744 — on the product header (c:inHeader)\n    pub header: bool,\n    /// #4744 — the header shows rows newest first by this field (c:headerNewest)\n    pub newest: bool,\n    /// #4744 — the header shows only rows whose field holds this value (c:headerOnly)\n    pub header_only: Option<&'static str>,\n}\n\n\
          pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
@@ -110,13 +110,16 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
                 s.push_str(&format!(
-                    "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}] }},\n",
+                    "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}], header: {}, newest: {}, header_only: {} }},\n",
                     lit(&f.name),
                     matches!(f.kind, Kind::Link { .. }),
                     lit(match &f.kind { Kind::Literal { datatype } => datatype.as_str(), Kind::Link { .. } => "" }),
                     f.required,
                     f.many,
-                    allowed.join(", ")
+                    allowed.join(", "),
+                    f.header,
+                    f.newest,
+                    f.header_only.as_ref().map_or_else(|| "None".to_string(), |v| format!("Some({})", lit(v)))
                 ));
             }
             s.push_str("        ],\n    },\n");
@@ -152,6 +155,11 @@ pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String
 
 /// The same, with the verifier's path worked out from where the crate is written.
 pub fn crate_files_with(p: &Product, model_version: &str, settings: &[(String, String)], oidc: &str) -> BTreeMap<String, String> {
+    crate_files_ops(p, model_version, settings, oidc, &[])
+}
+
+/// The same, with each operation's handler path (from `handler_path`).
+pub fn crate_files_ops(p: &Product, model_version: &str, settings: &[(String, String)], oidc: &str, handlers: &[(String, String)]) -> BTreeMap<String, String> {
     let domain = p.domains.first().map(|d| d.name.as_str()).unwrap_or("domains");
     let mut out = BTreeMap::new();
     out.insert("Cargo.toml".into(), cargo_toml(p, oidc));
@@ -165,6 +173,7 @@ pub fn crate_files_with(p: &Product, model_version: &str, settings: &[(String, S
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
+    out.insert("src/ops.rs".into(), format!("// @domain: {domain}\n{}", ops_rs(p, handlers)));
     out
 }
 
@@ -233,7 +242,62 @@ pub fn agent_runtimes_json(t: &crate::model::RuntimeTable) -> String {
 
 /// #4742 — every route the product serves: `/<product>/<domain>/<collection>`.
 pub fn routes(p: &Product) -> Vec<String> {
-    p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment))).collect()
+    // #4744 — the product root is its header, served only when some domain puts a field on it
+    let root = (!header(p).is_empty()).then(|| format!("/{}", p.name));
+    root.into_iter()
+        .chain(p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment))))
+        .chain(p.operations.iter().map(|o| format!("/{}/{}/{}", p.name, o.domain, o.segment)))
+        .collect()
+}
+
+/// #4744 — an operation's handler, as a path from the crate's `src/` (where `ops.rs` names
+/// it). A handler that is not in the repo is refused by name: nothing is generated around it.
+pub fn handler_path(root: &std::path::Path, out: &std::path::Path, op: &crate::model::Operation) -> Result<String, String> {
+    // a handler is a repo file: a path that climbs out of the repo is refused (Silas's review)
+    if op.handler.starts_with('/') || op.handler.split('/').any(|c| c == "..") {
+        return Err(format!("operation {} names handler {}, which is not a path inside the repo", op.name, op.handler));
+    }
+    let h = root.join(&op.handler);
+    if !h.is_file() {
+        return Err(format!("operation {} names handler {}, which does not exist", op.name, op.handler));
+    }
+    let h = std::fs::canonicalize(&h).map_err(|e| format!("handler: {e}"))?;
+    std::fs::create_dir_all(out.join("src")).map_err(|e| format!("out: {e}"))?;
+    let src = std::fs::canonicalize(out.join("src")).map_err(|e| format!("out: {e}"))?;
+    let (a, b): (Vec<_>, Vec<_>) = (src.components().collect(), h.components().collect());
+    let common = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let down: Vec<String> = b[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+    Ok(format!("{}{}", "../".repeat(a.len() - common), down.join("/")))
+}
+
+/// #4744 — `src/ops.rs`: one module per operation, from its handler's path, and the
+/// dispatch the product's routes call. Each handler is `pub fn run(ctx, rest, query)`.
+pub fn ops_rs(p: &Product, handler_paths: &[(String, String)]) -> String {
+    let mut s = String::from("//! The product's operations. Generated by athena-gen — DO NOT EDIT; change the model.\n\nuse serde_json::Value;\n\n");
+    for (name, path) in handler_paths {
+        s.push_str(&format!("#[path = {}]\npub mod {};\n", lit(path), name.replace('-', "_")));
+    }
+    // an operation generated with no handler path fails the crate's build by name, never routes to nothing
+    for o in p.operations.iter().filter(|o| !handler_paths.iter().any(|(n, _)| *n == o.name.replace('-', "_"))) {
+        s.push_str(&format!("compile_error!({});\n", lit(&format!("operation {} has no handler: generate with its handlerPath", o.name))));
+    }
+    let pairs: Vec<String> = p.operations.iter().map(|o| format!("({}, {})", lit(&o.domain), lit(&o.segment))).collect();
+    s.push_str(&format!("\n/// Is `/<product>/<domain>/<segment>` an operation?\npub fn has(domain: &str, segment: &str) -> bool {{\n    let ops: &[(&str, &str)] = &[{}];\n    ops.contains(&(domain, segment))\n}}\n", pairs.join(", ")));
+    s.push_str("\n/// The operation served at `/<product>/<domain>/<segment>[/<rest>…]`, if any.\npub fn route(ctx: &crate::Ctx, domain: &str, segment: &str, rest: &[&str], query: &str) -> Option<(u16, Value)> {\n    match (domain, segment) {\n");
+    for o in &p.operations {
+        s.push_str(&format!("        ({}, {}) => Some({}::run(ctx, rest, query)),\n", lit(&o.domain), lit(&o.segment), o.name.replace('-', "_")));
+    }
+    s.push_str("        _ => { let _ = (ctx, rest, query); None }\n    }\n}\n");
+    s
+}
+
+/// #4744 — the product's header: `<domain>.<segment>.<field>` for every field marked
+/// `c:inHeader` in a domain the product owns or composes, in domain order.
+pub fn header(p: &Product) -> Vec<String> {
+    p.domains.iter()
+        .flat_map(|d| d.classes.iter().flat_map(move |c| c.fields.iter().filter(|f| f.header)
+            .map(move |f| format!("{}.{}.{}", d.name, c.segment, f.name))))
+        .collect()
 }
 
 /// #4742 gap 8 (#4708) — the routes an already generated crate serves (read from its
