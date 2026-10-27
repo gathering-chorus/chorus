@@ -63,28 +63,6 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "awareness", name: "Note", kind: "note", plural: "notes", segment: "notes", graph: "urn:chorus:domains:awareness", composed: false,
-        fields: &[
-            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "inTurn", link: true, datatype: "", required: true, many: false, allowed: &[] },
-            FieldDef { name: "noteText", link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
-            FieldDef { name: "onCard", link: true, datatype: "", required: false, many: false, allowed: &[] },
-            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
-        ],
-    },
-    ClassDef {
-        domain: "awareness", name: "Prompt", kind: "prompt", plural: "prompts", segment: "prompts", graph: "urn:chorus:domains:awareness", composed: false,
-        fields: &[
-            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
-            FieldDef { name: "promptText", link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "promptTo", link: true, datatype: "", required: false, many: true, allowed: &[] },
-            FieldDef { name: "promptedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
-            FieldDef { name: "promptedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
-        ],
-    },
-    ClassDef {
         domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness", composed: false,
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -112,20 +90,6 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["observed"] },
             FieldDef { name: "stateValue", link: false, datatype: "string", required: true, many: false, allowed: &["building", "pairing", "waiting", "in-ceremony", "reviewing", "available", "away", "off", "unmeasured"] },
             FieldDef { name: "unmeasuredSource", link: false, datatype: "string", required: false, many: false, allowed: &[] },
-        ],
-    },
-    ClassDef {
-        domain: "awareness", name: "Turn", kind: "turn", plural: "turns", segment: "turns", graph: "urn:chorus:domains:awareness", composed: false,
-        fields: &[
-            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "answersPrompt", link: true, datatype: "", required: false, many: false, allowed: &[] },
-            FieldDef { name: "lastCallAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
-            FieldDef { name: "onCard", link: true, datatype: "", required: false, many: false, allowed: &[] },
-            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
-            FieldDef { name: "turnEndedAt", link: false, datatype: "dateTime", required: false, many: false, allowed: &[] },
-            FieldDef { name: "turnOf", link: true, datatype: "", required: true, many: false, allowed: &[] },
-            FieldDef { name: "turnStartedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
         ],
     },
     ClassDef {
