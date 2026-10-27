@@ -127,11 +127,13 @@ pub struct ToolSpec {
 /// #4515 (Jeff 2026-10-14) — rows are read and written with one family of
 /// tools named after the door's own URL shape, /v1/<domain>/<class>[/<id>]:
 /// (name, HTTP method, needs an id, carries fields, what it does).
-pub const ATHENA_TOOLS: [(&str, &str, bool, bool, &str); 4] = [
+pub const ATHENA_TOOLS: [(&str, &str, bool, bool, &str); 5] = [
     ("athena-get", "GET", true, false, "Get one row, by id, from a class the model door serves (GET /v1/<domain>/<class>/<id>)."),
     ("athena-list", "GET", false, false, "List rows of a class the model door serves (GET /v1/<domain>/<class>)."),
     ("athena-add", "POST", false, true, "Add a row to a class the model door serves, as the caller (POST /v1/<domain>/<class>)."),
     ("athena-set", "PATCH", true, true, "Change fields of one row, as the caller (PATCH /v1/<domain>/<class>/<id>)."),
+    // #4762 — a retired row leaves the store in the same change (Jeff 2026-10-27)
+    ("athena-delete", "DELETE", true, false, "Delete one row, as the caller; the door refuses a caller who does not own it (DELETE /v1/<domain>/<class>/<id>)."),
 ];
 
 /// The athena tools, over exactly the collections the door serves: the
@@ -167,6 +169,20 @@ pub fn athena_tools(collections: &[String]) -> Vec<ToolSpec> {
             }
         })
         .collect()
+}
+
+/// #4762 (Jeff 2026-10-27: "no more custom") — a tool runs only where the
+/// class's generated openapi.json (athena-gen, served by the door) declares its
+/// method: the collection path for list/add, `{name}` for get/set/delete. No
+/// readable spec is a refusal (502), never a pass.
+pub fn declared(spec: &str, tool: &str, collection: &str) -> Result<(), BadCall> {
+    let Some((_, method, needs_id, _, _)) = ATHENA_TOOLS.iter().find(|t| t.0 == tool) else {
+        return Err(BadCall { reason: format!("no such tool: {tool}"), status: 404 });
+    };
+    let v: Value = serde_json::from_str(spec).map_err(|e| BadCall { reason: format!("{tool}: the generated spec for {collection} is not readable: {e}"), status: 502 })?;
+    let path = if *needs_id { format!("{collection}/{{name}}") } else { collection.to_string() };
+    let ok = v.get("paths").and_then(|p| p.get(&path)).and_then(|ops| ops.get(method.to_lowercase())).is_some();
+    if ok { Ok(()) } else { Err(BadCall { reason: format!("{tool}: the generated API does not declare {method} {path}"), status: 405 }) }
 }
 
 pub fn is_athena_tool(name: &str) -> bool {

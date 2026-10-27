@@ -199,8 +199,8 @@ pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, t
     let config = format!(
         "url = \"{url}\"\nrequest = \"{method}\"\nsilent\nmax-time = {timeout_s}\nwrite-out = \"\\n%{{http_code}}\"\nheader = \"Content-Type: application/json\"\nheader = \"traceparent: {}\"\nheader = \"Authorization: Bearer {token}\"\n{}",
         crate::traceparent(trace),
-        // a GET carries its arguments in the route, never a body
-        if method == "GET" { String::new() } else { format!("data-binary = \"@{}\"\n", body_file.display()) }
+        // a GET or a DELETE (#4762) carries its arguments in the route, never a body
+        if method == "GET" || method == "DELETE" { String::new() } else { format!("data-binary = \"@{}\"\n", body_file.display()) }
     );
     let out = Command::new("curl")
         .args(["-K", "-"])
@@ -225,6 +225,28 @@ pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, t
     (ok, format!("{method} {url} → {code}\n{}", resp.chars().take(4000).collect::<String>()), if code == 0 { 502 } else { code })
 }
 
+/// #4762 review (Wren, Kade, Abby) — a class's generated spec, read once per
+/// minute per door and class, not on every call. Only a readable spec is kept.
+fn spec_for(base: &str, collection: &str) -> String {
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>> = OnceLock::new();
+    let key = format!("{base}{collection}");
+    let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
+    if let Some((at, spec)) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        if at.elapsed() < std::time::Duration::from_secs(60) {
+            return spec;
+        }
+    }
+    let spec = Command::new("curl").args(["-s", "--max-time", "10", &format!("{base}/v1{collection}/openapi.json")]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    if serde_json::from_str::<serde_json::Value>(&spec).is_ok() {
+        if let Ok(mut c) = cache.lock() {
+            c.insert(key, (std::time::Instant::now(), spec.clone()));
+        }
+    }
+    spec
+}
+
 /// #4515 (Jeff 2026-10-14) — one athena-get/-list/-add/-set call, made AS
 /// THE CALLER: the caller's own verified credential when the gate verified
 /// one, else a credential minted for the caller (stdio, the CLI) — never a
@@ -242,6 +264,12 @@ pub fn run_athena(base: &str, tool: &str, args: &serde_json::Map<String, serde_j
     let who = crate::skills::bare(caller);
     if who.is_empty() || who == "unverified" {
         return (false, format!("{tool} needs a verified caller"), 403);
+    }
+    // #4762 — the class's generated spec says which methods it allows
+    let collection: String = path.split(['/', '?']).filter(|s| !s.is_empty()).skip(1).take(2).fold(String::new(), |a, s| format!("{a}/{s}"));
+    let spec = spec_for(&base, &collection);
+    if let Err(b) = crate::declared(&spec, tool, &collection) {
+        return (false, b.reason, b.status);
     }
     let token = match caller_token.map(String::from).or_else(|| identity_token(who)) {
         Some(t) => t,
