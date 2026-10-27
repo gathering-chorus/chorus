@@ -495,15 +495,15 @@ fn read_pulse_snapshot() -> Option<String> {
     if out.is_empty() { None } else { Some(out) }
 }
 
-/// #4638 — the role's slice of the tree (#4744: the generated pulse API's tree Operation):
+/// #4638 — the role's slice of pulse's tree (GET :3475/api/tree/<role>):
 /// the prompts this role is in, newest first (#4757: each role's moving or quiet is on the
 /// header). A pulse that cannot be read says so
 /// by name; it never falls back to a guess.
 fn query_tree_slice(role: &str) -> String {
-    // #4744 — the generated pulse API's tree Operation, read from the store; CHORUS_TREE_URL
-    // ({role} filled in) points elsewhere for a rollback, never a second implementation
+    // #4757 — pulse's own tree (:3475), derived from its sources (messages, actor-state,
+    // spine); CHORUS_TREE_URL ({role} filled in) points elsewhere for a rollback
     let url = std::env::var("CHORUS_TREE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:3392/pulse/awareness/tree/{role}".to_string())
+        .unwrap_or_else(|_| "http://127.0.0.1:3475/api/tree/{role}".to_string())
         .replace("{role}", role);
     // uncapped like every per-prompt context call (#3048); a failure still says so by name
     match ureq::get(&url).call() {
@@ -515,11 +515,10 @@ fn query_tree_slice(role: &str) -> String {
     }
 }
 
-/// #4744 — pulse's header, composed in the model: each domain pulse owns or composes puts
-/// the fields it marks (c:inHeader) on it; this only renders them. A header that cannot be
-/// read says so by name.
+/// #4757 — pulse's header from pulse itself (:3475), read from its sources at request time.
+/// A header that cannot be read says so by name.
 fn query_pulse_header() -> String {
-    let url = std::env::var("CHORUS_PULSE_HEADER_URL").unwrap_or_else(|_| "http://127.0.0.1:3392/pulse".to_string());
+    let url = std::env::var("CHORUS_PULSE_HEADER_URL").unwrap_or_else(|_| "http://127.0.0.1:3475/pulse".to_string());
     match ureq::get(&url).call() {
         Ok(r) => match r.into_json::<serde_json::Value>() {
             Ok(v) => format_pulse_header(&v),
@@ -529,34 +528,40 @@ fn query_pulse_header() -> String {
     }
 }
 
-/// One line per header collection: up to 5 rows, each its non-empty marked fields.
+/// #4757 — pulse's header (GET :3475/pulse): each line read by pulse from the API that holds
+/// it — cards from /cws, roles from actor-state, messages, alerts. This only renders them; a
+/// line pulse could not read says so by name.
 pub fn format_pulse_header(v: &serde_json::Value) -> String {
-    format_pulse_header_at(v, chrono::Utc::now())
-}
-
-/// #4757 — a time on the header reads as how long ago ("9m"), the wait Jeff asked for, and a
-/// principal as its name; every other value is shown as the model holds it.
-fn header_value(x: &str, now: chrono::DateTime<chrono::Utc>) -> String {
-    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(x) {
-        let s = (now - t.with_timezone(&chrono::Utc)).num_seconds().max(0);
-        return if s < 60 { format!("{s}s") } else if s < 3600 { format!("{}m", s / 60) } else { format!("{}h{}m", s / 3600, s % 3600 / 60) };
-    }
-    x.strip_prefix("principal-").unwrap_or(x).chars().take(60).collect()
-}
-
-pub fn format_pulse_header_at(v: &serde_json::Value, now: chrono::DateTime<chrono::Utc>) -> String {
     let Some(data) = v["data"].as_object() else {
         return "  header: unmeasured (no data in the header)\n".to_string();
     };
+    let ago = |s: i64| if s < 60 { format!("{s}s") } else if s < 3600 { format!("{}m", s / 60) } else { format!("{}h{}m", s / 3600, s % 3600 / 60) };
+    let at = v["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+    let text = |r: &serde_json::Value, k: &str| r[k].as_str().unwrap_or("").to_string();
     let mut out = String::new();
-    for (line, entry) in data {
-        let fields: Vec<&str> = entry["fields"].as_array().map(|a| a.iter().filter_map(|f| f.as_str()).collect()).unwrap_or_default();
-        let rows: Vec<String> = entry["rows"].as_array().map(|rows| rows.iter().take(5).map(|r| {
-            fields.iter().filter_map(|f| r[*f].as_str().filter(|x| !x.is_empty()).map(|x| header_value(x, now)))
-                .collect::<Vec<_>>().join(" ")
-        }).filter(|r| !r.is_empty()).collect()).unwrap_or_default();
-        let shown = if rows.is_empty() { "none".to_string() } else { rows.join(" · ") };
-        out.push_str(&format!("  {}: {}\n", line, shown.chars().take(240).collect::<String>()));
+    for (name, entry) in data {
+        if let Some(why) = entry["unmeasured"].as_str() {
+            out.push_str(&format!("  {name}: unmeasured ({} — {why})\n", entry["source"].as_str().unwrap_or("?")));
+            continue;
+        }
+        let rows = entry["rows"].as_array().cloned().unwrap_or_default();
+        let shown: Vec<String> = rows.iter().take(8).map(|r| match name.as_str() {
+            "cards" => format!("#{} {} {}{}", text(r, "card"), text(r, "role"), text(r, "step"),
+                r["waitedSeconds"].as_i64().map(|s| format!(" {}", ago(s))).unwrap_or_default()),
+            "roles" => format!("{} {}{}", text(r, "role"), text(r, "state"),
+                r["secondsSinceLastCall"].as_i64().map(|s| format!(" {}", ago(s))).unwrap_or_default()),
+            "messages" => {
+                let when = match (at, chrono::DateTime::parse_from_rfc3339(&text(r, "sentAt").replace(' ', "T")).ok()
+                    .or_else(|| chrono::DateTime::parse_from_rfc3339(&format!("{}Z", text(r, "sentAt").replace(' ', "T"))).ok())) {
+                    (Some(n), Some(t)) => format!(" {}", ago((n - t).num_seconds().max(0))),
+                    _ => String::new(),
+                };
+                format!("{}{}: {}", text(r, "from"), when, text(r, "body").replace('\n', " / ").chars().take(60).collect::<String>())
+            }
+            _ => text(r, "name"),
+        }).collect();
+        let line = if shown.is_empty() { "none".to_string() } else { shown.join(" · ") };
+        out.push_str(&format!("  {name}: {}\n", line.chars().take(300).collect::<String>()));
     }
     out
 }
@@ -1079,7 +1084,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         ("chorus-semantic", build_semantic_url(prompt, card_tag.as_deref()), true),
         ("memory", keywords.join(" "), legacy_memory),
         ("pulse", "snapshot".to_string(), true),
-        ("pulse-tree", format!("/pulse/awareness/tree/{}", role_name), true),
+        ("pulse-tree", format!("/api/tree/{}", role_name), true),
         ("spine", "recent-8".to_string(), true),
         ("athena", role_name.clone(), true),
         ("logs", "loki-errors-15m".to_string(), true),
@@ -1461,45 +1466,36 @@ mod tests {
         assert!(s.contains("prompt 4m ago jeff: \"/pull 4638 / i spent all day\" → #4638"), "{s}");
     }
 
-    // #4744 — the header renders what the model composes, nothing more
+    // #4757 — the header pulse reads from its sources, in the shape Jeff agreed (20:07)
     #[test]
-    fn the_header_renders_each_composed_line_with_its_marked_fields() {
-        let v = serde_json::json!({"kind": "Header", "data": {
-            "cards.cards": {"fields": ["assignee", "label", "status"], "rows": [
-                {"name": "4744", "assignee": "wren", "label": "Run: generate the pulse API", "status": "WIP"}]},
-            "messages.messages": {"fields": ["senderName", "messageBody", "sentAt"], "rows": []}}});
+    fn the_header_renders_card_steps_roles_messages_and_alerts_from_pulse() {
+        let v = serde_json::json!({"kind": "Header", "at": "2026-10-27T00:07:00Z", "data": {
+            "cards": {"source": "/cws", "rows": [
+                {"card": "4747", "role": "kade", "step": "land: borg-queen-proves", "waitedSeconds": 120},
+                {"card": "4755", "role": "kade", "step": "no run yet", "waitedSeconds": null}]},
+            "roles": {"source": "/api/actor-state", "rows": [
+                {"role": "wren", "state": "moving", "secondsSinceLastCall": 4},
+                {"role": "jeff", "state": "quiet", "secondsSinceLastCall": 223}]},
+            "messages": {"source": "/api/messages", "rows": [
+                {"from": "jeff", "sentAt": "2026-10-27 00:04:00", "body": "i ask for a\nand get b and c"}]},
+            "alerts": {"source": "/pulse/alerts/alerts", "rows": [{"name": "app-down", "label": "x"}]}}});
         let s = format_pulse_header(&v);
-        assert!(s.contains("  cards.cards: wren Run: generate the pulse API WIP\n"), "{s}");
-        assert!(s.contains("  messages.messages: none\n"), "{s}");
+        assert!(s.contains("  cards: #4747 kade land: borg-queen-proves 2m · #4755 kade no run yet\n"), "{s}");
+        assert!(s.contains("  roles: wren moving 4s · jeff quiet 3m\n"), "{s}");
+        assert!(s.contains("  messages: jeff 3m: i ask for a / and get b and c\n"), "{s}");
+        assert!(s.contains("  alerts: app-down\n"), "{s}");
     }
 
+    // NEGATIVE PROOF: a line pulse could not read says unmeasured with its source, never rows
     #[test]
-    fn negative_proof_a_header_without_data_says_unmeasured() {
-        assert_eq!(format_pulse_header(&serde_json::json!({"error": "unknown-route"})), "  header: unmeasured (no data in the header)\n");
-    }
-
-    // #4757 — each WIP card's step and how long it has waited; each role moving or quiet
-    #[test]
-    fn the_header_shows_each_card_step_and_wait_and_each_role_moving_or_quiet() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-10-26T22:40:00Z").unwrap().with_timezone(&chrono::Utc);
+    fn negative_proof_an_unread_source_says_unmeasured_on_its_line() {
         let v = serde_json::json!({"kind": "Header", "data": {
-            "awareness.cardsteps": {"fields": ["cardId", "pipelineStep", "stepSince"], "rows": [
-                {"name": "step-4747", "cardId": "4747", "pipelineStep": "land: borg-queen-proves", "stepSince": "2026-10-26T22:38:00Z"},
-                {"name": "step-4755", "cardId": "4755", "pipelineStep": "no run yet", "stepSince": ""}]},
-            "awareness.rolestates": {"fields": ["aboutPrincipal", "activity", "observedAt"], "rows": [
-                {"name": "observed-silas", "aboutPrincipal": "principal-silas", "activity": "acting", "observedAt": "2026-10-26T22:39:30Z"},
-                {"name": "observed-kade", "aboutPrincipal": "principal-kade", "activity": "idle", "observedAt": "2026-10-26T21:10:00Z"}]}}});
-        let s = format_pulse_header_at(&v, now);
-        assert!(s.contains("  awareness.cardsteps: 4747 land: borg-queen-proves 2m · 4755 no run yet\n"), "{s}");
-        assert!(s.contains("  awareness.rolestates: silas acting 30s · kade idle 1h30m\n"), "{s}");
-    }
-
-    // NEGATIVE PROOF: a value that is not a time is never turned into an age
-    #[test]
-    fn negative_proof_a_step_word_is_never_read_as_a_time() {
-        let now = chrono::Utc::now();
-        assert_eq!(header_value("waiting for your go", now), "waiting for your go");
-        assert_eq!(header_value("2026-10-26", now), "2026-10-26");
+            "cards": {"source": "/cws", "unmeasured": "chorus-werk-status --json: exit 2"},
+            "roles": {"source": "/api/actor-state", "rows": []}}});
+        let s = format_pulse_header(&v);
+        assert!(s.contains("  cards: unmeasured (/cws — chorus-werk-status --json: exit 2)\n"), "{s}");
+        assert!(s.contains("  roles: none\n"), "{s}");
+        assert_eq!(format_pulse_header(&serde_json::json!({"error": "unknown-route"})), "  header: unmeasured (no data in the header)\n");
     }
 
     #[test]
