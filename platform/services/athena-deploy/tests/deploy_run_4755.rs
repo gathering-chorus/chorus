@@ -451,16 +451,17 @@ fn a_bare_run_inside_a_werk_with_no_store_named_is_refused() {
     // cwd is this crate, inside a werk; no FUSEKI_GSP. The target check exits
     // before any store call either way.
     let root = scratch("werk");
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_athena-deploy"))
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("HOME", &root)
         .env("ATHENA_DEPLOY_TARGET_CHECK_ONLY", "1")
         .envs(std::env::var("LLVM_PROFILE_FILE").map(|p| ("LLVM_PROFILE_FILE", p)))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(&manifest)
         .output()
         .unwrap();
-    let want = if env!("CARGO_MANIFEST_DIR").contains("/chorus-werk/") { 78 } else { 0 };
+    let want = if manifest.contains("/chorus-werk/") { 78 } else { 0 };
     assert_eq!(o.status.code(), Some(want), "{}", String::from_utf8_lossy(&o.stderr));
     let stub = Stub::start(Arc::new(healthy));
     let (code, out, _) = deploy(&stub, &root, &[], &[("ATHENA_DEPLOY_TARGET_CHECK_ONLY", "1")]);
