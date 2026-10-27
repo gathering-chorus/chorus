@@ -1,4 +1,4 @@
-// @test-type: integration — verifies room history fall-through to relay for rooms and pulse for direct threads
+// @test-type: integration — verifies room history fall-through to relay for rooms and the generated pulse messages route for direct threads (#4761)
 // @card: #4749
 // @domain: messages
 
@@ -14,11 +14,13 @@ describe('#4749 room history fall-through', () => {
   beforeAll(async () => {
     mockPulse = http.createServer((req, res) => {
       pulseRequests.push(req.url || '');
-      if (req.url?.startsWith('/api/messages')) {
+      // #4761 — the generated messages route, one read per direction
+      if (req.url?.startsWith('/pulse/messages/messages')) {
+        const fromJeff = req.url.includes('sentBy=principal-jeff');
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify([
-          { id: 'p_old_1', from: 'jeff', to: 'wren', text: 'direct message from pulse', created_at: '2026-10-26T08:00:00.000Z' }
-        ]));
+        res.end(JSON.stringify({ data: fromJeff
+          ? [{ sourceId: 'p_old_1', senderName: 'jeff', messageBody: 'direct message from pulse', sentAt: '2026-10-26T08:00:00Z' }]
+          : [{ sourceId: 'p_old_2', senderName: 'wren', messageBody: 'wren answers jeff', sentAt: '2026-10-26T08:01:00Z' }] }));
         return;
       }
       res.writeHead(404);
@@ -121,8 +123,8 @@ describe('#4749 room history fall-through', () => {
     }
   });
 
-  test('falls through to pulse GET /api/messages for direct thread when buffer is empty', async () => {
-    const { app, router, relay } = createApp({ relayUrl: '', pulseUrl: `http://127.0.0.1:${pulsePort}` });
+  test('falls through to the generated messages route for a direct thread, both directions', async () => {
+    const { app, router, relay } = createApp({ relayUrl: '', pulseApiUrl: `http://127.0.0.1:${pulsePort}` });
 
     const server = http.createServer(app);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
@@ -133,10 +135,12 @@ describe('#4749 room history fall-through', () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/rooms/wren/history?before=p_anchor&ts=1760700000`);
       expect(res.status).toBe(200);
       const data = await res.json() as any;
-      expect(data.count).toBe(1);
-      expect(data.html).toContain('direct message from pulse');
-
-      expect(pulseRequests.some((url) => url.includes('/api/messages') && (url.includes('pair=jeff%2Cwren') || url.includes('pair=jeff,wren')))).toBe(true);
+      expect(data.count).toBe(2);
+      // oldest first: Jeff's line, then Wren's answer
+      expect(data.html.indexOf('direct message from pulse')).toBeLessThan(data.html.indexOf('wren answers jeff'));
+      expect(pulseRequests.filter((url) => url.startsWith('/pulse/messages/messages'))).toHaveLength(2);
+      // NEGATIVE PROOF (#4761): the retired hand route is never asked
+      expect(pulseRequests.some((url) => url.startsWith('/api/messages'))).toBe(false);
       // Router buffer must remain unchanged
       expect(router.getRecent(100, 'wren')).toHaveLength(0);
     } finally {
@@ -165,7 +169,7 @@ describe('#4749 room history fall-through', () => {
 
   test('NEGATIVE PROOF: unreachable relay/pulse returns 502 error instead of false empty start of history', async () => {
     // Unreachable pulse
-    const { app, relay } = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:54321' });
+    const { app, relay } = createApp({ relayUrl: '', pulseApiUrl: 'http://127.0.0.1:54321' });
     const server = http.createServer(app);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
     const port = (server.address() as any).port;

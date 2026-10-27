@@ -6,7 +6,8 @@
 //! nothing joined the two. Wren's #4638 tree (pulse-tree.ts) reads
 //! `agent.turn.started` and maps `woken_by_line` to the prompt the line is in.
 //!
-//! On each prompt the hook asks pulse for that role's recent jeff-input rows
+//! On each prompt the hook reads that role's recent jeff-input rows from the
+//! generated messages route (#4761)
 //! and picks the newest whose text the prompt carries. A nudge, a task
 //! notification or Stop-hook feedback matches no row, so it has no line: a
 //! turn without a line is a fact, never a guess. The current turn is also
@@ -41,23 +42,22 @@ fn carries(typed: &str, line: &str) -> bool {
 pub struct Row {
     pub id: String,
     pub content: String,
-    /// seconds since the epoch the line reached the pane (delivered_at, else created_at)
+    /// seconds since the epoch the line was sent (sentAt)
     pub at: i64,
 }
 
-/// pulse rows → Row, skipping any without an id or text
+/// generated Message rows ({"data": [...]}) → Row, skipping any without an id or text.
+/// The id is pulse's own message id (sourceId), the one the tree joins on.
 pub fn rows_from(v: &Value) -> Vec<Row> {
-    let arr = v.as_array().cloned().unwrap_or_default();
+    let arr = v.get("data").and_then(Value::as_array).cloned().unwrap_or_default();
     arr.iter()
         .filter_map(|r| {
-            let id = r.get("id").map(|x| x.as_str().map(str::to_string).unwrap_or_else(|| x.to_string()))?;
-            let content = r.get("content")?.as_str()?.trim().to_string();
-            if id.is_empty() || id == "null" || content.is_empty() {
+            let id = r.get("sourceId")?.as_str()?.to_string();
+            let content = r.get("messageBody")?.as_str()?.trim().to_string();
+            if id.is_empty() || content.is_empty() {
                 return None;
             }
-            let when = r.get("delivered_at").and_then(Value::as_str).filter(|s| !s.is_empty() && *s != "None")
-                .or_else(|| r.get("created_at").and_then(Value::as_str))?;
-            let at = chrono::NaiveDateTime::parse_from_str(when, "%Y-%m-%d %H:%M:%S").ok()?.and_utc().timestamp();
+            let at = chrono::DateTime::parse_from_rfc3339(r.get("sentAt")?.as_str()?).ok()?.timestamp();
             Some(Row { id, content, at })
         })
         .collect()
@@ -78,19 +78,17 @@ pub fn woken_by_line(prompt: &str, rows: &[Row], now: i64) -> Option<String> {
         .map(|r| r.id.clone())
 }
 
-/// The window's earliest time in the store's own spelling. Pulse compares
-/// `since` as text against `created_at` ("2026-10-25 13:23:30"), so an ISO
-/// "…T…Z" sorts after every row and the read came back empty on every turn
-/// (#4637 reopen, Wren 10-25 09:24).
-pub fn store_since(now: i64) -> String {
+/// The window's earliest time, as the generated route's `sentAt.gt` reads it.
+pub fn window_start(now: i64) -> String {
     chrono::DateTime::from_timestamp(now - LINE_WINDOW_SECS, 0)
-        .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+        .map(|d| d.format("%Y-%m-%dT%H:%M:%SZ").to_string())
         .unwrap_or_default()
 }
 
-/// The pulse read for this role's recent jeff-input rows.
+/// #4761 — the read for this role's recent jeff-input rows, from the generated
+/// messages route (pulse's hand-written /api/messages is retired).
 pub fn lines_url(base: &str, role: &str, now: i64) -> String {
-    format!("{base}?type=jeff-input&to={role}&since={}&limit=50", store_since(now).replace(' ', "%20"))
+    format!("{base}?messageKind=jeff-input&sentTo=principal-{role}&sentAt.gt={}&sort=-sentAt&limit=50", window_start(now))
 }
 
 fn turn_file(role: &str) -> std::path::PathBuf {
@@ -103,7 +101,7 @@ fn turn_file(role: &str) -> std::path::PathBuf {
 pub fn record(role: &str, session_id: &str, turn_id: &str, prompt: &str) {
     let (role, session_id, turn_id, prompt) = (role.to_string(), session_id.to_string(), turn_id.to_string(), prompt.to_string());
     tokio::spawn(async move {
-        let base = std::env::var("CHORUS_PULSE_MESSAGES_URL").unwrap_or_else(|_| "http://localhost:3475/api/messages".to_string());
+        let base = std::env::var("CHORUS_PULSE_MESSAGES_URL").unwrap_or_else(|_| "http://localhost:3392/pulse/messages/messages".to_string());
         let now = chrono::Utc::now().timestamp();
         let url = lines_url(&base, &role, now);
         let read = tokio::task::spawn_blocking(move || {
@@ -179,30 +177,28 @@ mod tests {
         assert_eq!(woken_by_line("@silas r u there\nyes", &rows, 1002).as_deref(), Some("8"));
     }
 
-    // NEGATIVE PROOF (reopen): compared the way pulse compares (as text), the
-    // window's start sorts before a row inside the window and after one outside
-    // it. The ISO spelling the land shipped sorts after both, and this goes red.
     #[test]
-    fn negative_proof_since_sorts_like_the_store_rows() {
-        let now = chrono::NaiveDateTime::parse_from_str("2026-10-25 13:23:32", "%Y-%m-%d %H:%M:%S").unwrap().and_utc().timestamp();
-        let since = store_since(now);
-        assert_eq!(since, "2026-10-25 13:13:32");
-        assert!(since.as_str() <= "2026-10-25 13:23:30", "row 57943, delivered in the window, must be read");
-        assert!(since.as_str() > "2026-10-25 13:02:45", "a row from before the window must not");
-        assert!(lines_url("http://p/api/messages", "wren", now).contains("since=2026-10-25%2013:13:32&"));
+    fn the_read_is_the_generated_route_for_this_role_and_window() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-25T13:23:32Z").unwrap().timestamp();
+        assert_eq!(window_start(now), "2026-10-25T13:13:32Z");
+        assert_eq!(lines_url("http://p/pulse/messages/messages", "wren", now),
+            "http://p/pulse/messages/messages?messageKind=jeff-input&sentTo=principal-wren&sentAt.gt=2026-10-25T13:13:32Z&sort=-sentAt&limit=50");
     }
 
+    // NEGATIVE PROOF (#4761): the retired hand route's bare array, or a row
+    // without sourceId, reads as no rows — never a line from the wrong shape.
     #[test]
-    fn rows_parse_from_pulse_and_skip_empty_ones() {
-        let v: Value = serde_json::json!([
-            {"id": "57629", "content": "hi", "created_at": "2026-10-25 00:22:10", "delivered_at": "2026-10-25 00:22:11"},
-            {"id": "57630", "content": "  ", "created_at": "2026-10-25 00:22:10"},
-            {"id": 57631, "content": "num id", "created_at": "2026-10-25 00:23:00", "delivered_at": "None"}
-        ]);
+    fn negative_proof_old_shape_or_no_source_id_reads_no_rows() {
+        let old = serde_json::json!([{"id": "57629", "content": "hi", "created_at": "2026-10-25 00:22:10"}]);
+        assert!(rows_from(&old).is_empty(), "the old /api/messages array is not the generated envelope");
+        let v = serde_json::json!({"data": [
+            {"sourceId": "60022", "messageBody": "@wren /pair abby-normal 4761", "sentAt": "2026-10-27T09:45:55Z"},
+            {"messageBody": "no id", "sentAt": "2026-10-27T09:45:56Z"},
+            {"sourceId": "60023", "messageBody": "  ", "sentAt": "2026-10-27T09:45:57Z"}
+        ]});
         let r = rows_from(&v);
-        assert_eq!(r.len(), 2);
-        assert_eq!(r[0].id, "57629");
-        assert_eq!(r[1].id, "57631");
-        assert_eq!(r[0].at, chrono::NaiveDateTime::parse_from_str("2026-10-25 00:22:11", "%Y-%m-%d %H:%M:%S").unwrap().and_utc().timestamp());
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].id, "60022");
+        assert_eq!(r[0].at, chrono::DateTime::parse_from_rfc3339("2026-10-27T09:45:55Z").unwrap().timestamp());
     }
 }

@@ -20,7 +20,7 @@ import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
-import { cachedCards, readAlerts, registerHeaderRoute } from './pulse-header';
+import { cachedCards, readAlerts, readMessages, registerHeaderRoute } from './pulse-header';
 import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
@@ -504,20 +504,9 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   // codebase — no-competing-implementations applied. Source of truth:
   // chorus-hook-shim role-state subcommand → /tmp/claude-team-scan/.
 
-  app.get('/api/messages', (req, res) => {
-    const pairQuery = req.query.pair as string | undefined;
-    const pair = pairQuery && pairQuery.includes(',') ? (pairQuery.split(',').map((s) => s.trim()) as [string, string]) : undefined;
-    res.json(store.queryMessages({
-      type: req.query.type as string | undefined,
-      from: req.query.from as string | undefined,
-      to: req.query.to as string | undefined,
-      pair,
-      since: req.query.since as string | undefined,
-      before: req.query.before as string | undefined,
-      trace: req.query.trace as string | undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
-    }));
-  });
+  // #4761: GET /api/messages retired. Messages are read one way, from the
+  // generated pulse API (:3392/pulse/messages/messages); POST stays the writer.
+
   app.get('/api/stats', (_req, res) => {
     res.json(store.getStats());
   });
@@ -563,7 +552,7 @@ export function createApp(
   registerHeaderRoute(app, {
     cards: cachedCards(),
     actorState: () => actorStateService?.getActorStates(),
-    messages: () => store.queryMessages({ limit: 5 }),
+    messages: () => readMessages(),
     alerts: () => readAlerts(),
   });
   // #4563 — changes overnight derived once in pulse

@@ -189,6 +189,7 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "sentInSession", link: true, datatype: "", required: false, many: false, allowed: &[] },
             FieldDef { name: "sentTo", link: true, datatype: "", required: false, many: true, allowed: &[] },
             FieldDef { name: "sourceId", link: false, datatype: "string", required: false, many: false, allowed: &[] },
+            FieldDef { name: "trace", link: false, datatype: "string", required: false, many: false, allowed: &[] },
         ],
     },
     ClassDef {
@@ -205,6 +206,7 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "sentInSession", link: true, datatype: "", required: false, many: false, allowed: &[] },
             FieldDef { name: "sentTo", link: true, datatype: "", required: false, many: true, allowed: &[] },
             FieldDef { name: "sourceId", link: false, datatype: "string", required: false, many: false, allowed: &[] },
+            FieldDef { name: "trace", link: false, datatype: "string", required: false, many: false, allowed: &[] },
         ],
     },
 ];

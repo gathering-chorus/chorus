@@ -245,28 +245,27 @@ describe('pulse service — board events', () => {
 // #4637 AC5 NEGATIVE PROOF — a message with no real author is refused by name and stored nowhere.
 describe('#4637 only real actors send', () => {
   it('refuses a sender that is not an actor, and stores nothing', async () => {
-    const { app } = fresh();
+    const { app, store } = fresh();
     const res = await request(app).post('/api/nudge').send({ from: 'k', to: 'wren', content: 'x' });
     expect(res.status).toBe(422);
     expect(res.body.message).toContain("'k' is not an actor");
-    const rows = await request(app).get('/api/messages').query({ limit: 10 });
-    expect(rows.body.length).toBe(0);
+    expect(store.queryMessages({ limit: 10 })).toHaveLength(0);
   });
   it('stores a system alert as the owning role\'s alert, never a nudge from system', async () => {
-    const { app } = fresh();
+    const { app, store } = fresh();
     const res = await request(app).post('/api/nudge').send({ from: 'system', to: 'kade', content: 'crawler-out-of-sync' });
     expect(res.status).toBe(200);
-    const rows = await request(app).get('/api/messages').query({ limit: 10 });
-    expect(rows.body[0].from).toBe('kade');
-    expect(rows.body[0].content).toMatch(/^\[alert for kade · from system \| /);
-    expect(rows.body[0].nudge_class).toBe('a2r');
-    expect(rows.body[0].origin).toBe('library/alert');
+    const rows = store.queryMessages({ limit: 10 }) as unknown as Array<Record<string, string>>;
+    expect(rows[0].from).toBe('kade');
+    expect(rows[0].content).toMatch(/^\[alert for kade · from system \| /);
+    expect(rows[0].nudge_class).toBe('a2r');
+    expect(rows[0].origin).toBe('library/alert');
   });
   it('a role nudge and a phone message each carry where they were written', async () => {
-    const { app } = fresh();
+    const { app, store } = fresh();
     await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'n' });
     await request(app).post('/api/jeff-input').set('X-Chorus-Clearing-Caller', '1').send({ to: 'silas', content: 'p', where: 'phone/clearing-v2' });
-    const rows = (await request(app).get('/api/messages').query({ limit: 10 })).body as Array<{ type: string; origin: string }>;
+    const rows = store.queryMessages({ limit: 10 }) as unknown as Array<{ type: string; origin: string }>;
     expect(rows.find((r) => r.type === 'nudge')?.origin).toBe('library/terminal');
     expect(rows.find((r) => r.type === 'jeff-input')?.origin).toBe('phone/clearing-v2');
     expect(rows.every((r) => typeof r.origin === 'string' && r.origin.includes('/'))).toBe(true);
@@ -274,13 +273,13 @@ describe('#4637 only real actors send', () => {
 });
 
 describe('pulse service — queries and dead letter', () => {
-  it('GET /api/messages returns filtered messages', async () => {
-    const { app } = fresh();
+  // NEGATIVE PROOF (#4761): the hand-written read is gone; messages are read
+  // from the generated pulse API only. A stored nudge is not served here.
+  it('GET /api/messages is retired: 404 even with messages stored', async () => {
+    const { app, store } = fresh();
     await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'x' });
-    const res = await request(app).get('/api/messages').query({ type: 'nudge', limit: 10 });
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThan(0);
+    expect(store.queryMessages({ type: 'nudge', limit: 10 }).length).toBeGreaterThan(0);
+    expect((await request(app).get('/api/messages').query({ type: 'nudge' })).status).toBe(404);
   });
 
   it('GET /api/stats returns counter object', async () => {

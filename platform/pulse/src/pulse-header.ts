@@ -3,7 +3,7 @@
  *
  * Jeff 2026-10-26: "why are we writing prompts we already have messages api". Each line is
  * READ, at request time, from the API that already holds it — card steps from /cws, roles
- * from pulse's actor-state, messages from pulse's own store, alerts from the alerts stream.
+ * from pulse's actor-state, messages and alerts from the generated pulse API (#4761: one path).
  * Pulse stores nothing for the header. A source that cannot be read says so on its line.
  */
 import type { Express } from 'express';
@@ -17,7 +17,7 @@ type Read<T> = () => Promise<T>;
 export interface Sources {
   cards: Read<CwsRow[]>;
   actorState: () => unknown;
-  messages: () => Array<{ from: string; content: string; created_at?: string; createdAt?: string }>;
+  messages: Read<Array<{ senderName: string; messageBody: string; sentAt: string }>>;
   alerts: Read<Array<{ name: string; label?: string }>>;
 }
 
@@ -48,8 +48,8 @@ export async function composeHeader(src: Sources, now = new Date()): Promise<Hea
         return { role, state: s !== null && s < QUIET_AFTER_S ? 'moving' : 'quiet', secondsSinceLastCall: s };
       });
     }),
-    line('/api/messages', () => Promise.resolve(src.messages()), ms => ms.map(m => ({
-      from: m.from, sentAt: m.created_at ?? m.createdAt ?? '', body: m.content,
+    line('/pulse/messages/messages', src.messages, ms => ms.map(m => ({
+      from: m.senderName, sentAt: m.sentAt, body: m.messageBody,
     }))),
     line('/pulse/alerts/alerts', src.alerts, as => as.map(a => ({ name: a.name, label: a.label ?? '' }))),
   ]);
@@ -72,6 +72,15 @@ export async function readAlerts(base = process.env.PULSE_API_URL || 'http://127
   if (!res.ok) throw new Error(`alerts stream: HTTP ${res.status}`);
   const body = await res.json() as { data?: Array<{ name?: unknown; label?: unknown }> };
   return (body.data ?? []).map(a => ({ name: typeof a.name === 'string' ? a.name : '', label: typeof a.label === 'string' ? a.label : '' }));
+}
+
+/** #4761 — the newest messages, from the generated route (the hand-written /api/messages is retired). */
+export async function readMessages(base = process.env.PULSE_API_URL || 'http://127.0.0.1:3392'): Promise<Array<{ senderName: string; messageBody: string; sentAt: string }>> {
+  const res = await fetch(`${base}/pulse/messages/messages?sort=-sentAt&limit=5`, { signal: AbortSignal.timeout(4000) });
+  if (!res.ok) throw new Error(`messages: HTTP ${res.status}`);
+  const body = await res.json() as { data?: Array<{ senderName?: unknown; messageBody?: unknown; sentAt?: unknown }> };
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  return (body.data ?? []).map(m => ({ senderName: str(m.senderName), messageBody: str(m.messageBody), sentAt: str(m.sentAt) }));
 }
 
 export function registerHeaderRoute(app: Express, src: Sources): void {

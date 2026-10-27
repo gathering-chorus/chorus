@@ -574,6 +574,9 @@ chorus:sentAt a owl:DatatypeProperty ;
 chorus:sourceId a owl:DatatypeProperty ;
     rdfs:label "source id" ; rdfs:comment "The row id in the system the record was projected from (messages.db id). Makes the projection idempotent. #4340." ;
     rdfs:range xsd:string .
+chorus:trace a owl:DatatypeProperty ;
+    rdfs:label "trace" ; rdfs:comment "The trace id the message was sent under (messages.db trace_id): finds one nudge's whole words. #4761." ;
+    rdfs:domain chorus:Message ; rdfs:range xsd:string .
 chorus:reachableOver a owl:ObjectProperty ;
     rdfs:label "reachable over" ; rdfs:comment "A channel that reaches this presence. The address on it is the presence's own pane and tty (option A). #4340." ;
     rdfs:domain chorus:Presence ; rdfs:range chorus:Channel .
@@ -586,7 +589,7 @@ chorus:MessageRecordShape a sh:NodeShape ;
     sh:property chorus:MessageRecordShape-label , chorus:MessageRecordShape-ownedBy , chorus:MessageRecordShape-sentBy ,
                 chorus:MessageRecordShape-sentTo , chorus:MessageRecordShape-senderName , chorus:MessageRecordShape-sentInSession ,
                 chorus:MessageRecordShape-messageBody , chorus:MessageRecordShape-messageKind , chorus:MessageRecordShape-sentAt ,
-                chorus:MessageRecordShape-sourceId , chorus:MessageShape-overChannel ;
+                chorus:MessageRecordShape-sourceId , chorus:MessageShape-overChannel , chorus:MessageRecordShape-trace ;
     sh:sparql chorus:StampedByTheDal .
 
 chorus:MessageRecordShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
@@ -609,6 +612,8 @@ chorus:MessageRecordShape-sentAt a sh:PropertyShape ;
     sh:path chorus:sentAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageRecordShape-sourceId a sh:PropertyShape ;
     sh:path chorus:sourceId ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:MessageRecordShape-trace a sh:PropertyShape ;
+    sh:path chorus:trace ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageShape-overChannel a sh:PropertyShape ;
     sh:path chorus:overChannel ; sh:maxCount 1 ; sh:class chorus:Channel .
 

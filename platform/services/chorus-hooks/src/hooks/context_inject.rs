@@ -1476,7 +1476,7 @@ mod tests {
             "roles": {"source": "/api/actor-state", "rows": [
                 {"role": "wren", "state": "moving", "secondsSinceLastCall": 4},
                 {"role": "jeff", "state": "quiet", "secondsSinceLastCall": 223}]},
-            "messages": {"source": "/api/messages", "rows": [
+            "messages": {"source": "/pulse/messages/messages", "rows": [
                 {"from": "jeff", "sentAt": "2026-10-27 00:04:00", "body": "i ask for a\nand get b and c"}]},
             "alerts": {"source": "/pulse/alerts/alerts", "rows": [{"name": "app-down", "label": "x"}]}}});
         let s = format_pulse_header(&v);

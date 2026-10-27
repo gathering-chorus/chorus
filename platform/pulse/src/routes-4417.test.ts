@@ -57,22 +57,22 @@ describe('#4417 role-to-role chat', () => {
 
 describe('board events, the message query and the counts', () => {
   test('a board event is stored and found by type; missing fields → 400', async () => {
-    const { app } = world();
+    const { app, store } = world();
     expect((await request(app).post('/api/board-event').send({ from: 'cards' })).status).toBe(400);
     const r = await request(app).post('/api/board-event').send({ from: 'cards', content: '#4417 moved to WIP' });
     expect(r.status).toBe(200);
-    const all = (await request(app).get('/api/messages').query({ from: 'cards' })).body as Array<{ content: string }>;
+    const all = store.queryMessages({ from: 'cards' }) as Array<{ content: string }>;
     expect(all.map((m) => m.content)).toContain('#4417 moved to WIP');
   });
 
-  test('the query honours its filters and its limit', async () => {
-    const { app, store } = world();
+  test('the query honours its filters and its limit', () => {
+    const { store } = world();
     for (let i = 0; i < 5; i++) store.sendNudge('silas', 'wren', `n${i}`);
     store.sendNudge('kade', 'silas', 'other');
-    const toWren = (await request(app).get('/api/messages').query({ to: 'wren' })).body as Array<{ to: string }>;
+    const toWren = store.queryMessages({ to: 'wren' }) as Array<{ to: string }>;
     expect(toWren).toHaveLength(5);
     expect(toWren.every((m) => m.to === 'wren')).toBe(true);
-    expect((await request(app).get('/api/messages').query({ to: 'wren', limit: 2 })).body).toHaveLength(2);
+    expect(store.queryMessages({ to: 'wren', limit: 2 })).toHaveLength(2);
   });
 
   test('stats count what is stored', async () => {

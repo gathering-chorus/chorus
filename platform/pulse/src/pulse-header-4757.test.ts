@@ -18,7 +18,7 @@ const sources = (over: Partial<Sources> = {}): Sources => ({
     { aboutPrincipal: 'principal-wren', stream: [{ timestamp: ago(4) }] },
     { aboutPrincipal: 'principal-jeff', stream: [{ timestamp: ago(223) }] },
   ] }),
-  messages: () => [{ from: 'jeff', content: 'i ask for a and get b and c', created_at: ago(180) }],
+  messages: () => Promise.resolve([{ senderName: 'jeff', messageBody: 'i ask for a and get b and c', sentAt: ago(180) }]),
   alerts: () => Promise.resolve([{ name: 'app-down', label: 'Gathering app is not responding' }]),
   ...over,
 });
@@ -46,10 +46,13 @@ test('negative proof: an unreadable source is unmeasured, never stale rows', asy
   const h = await composeHeader(sources({
     cards: () => Promise.reject(new Error('chorus-werk-status --json: exit 2')),
     actorState: () => ({ actors: [] }),
+    messages: () => Promise.reject(new Error('messages: HTTP 404')),
   }), now);
   expect(h.data.cards).toEqual({ source: '/cws', unmeasured: 'chorus-werk-status --json: exit 2' });
   expect(h.data.roles).toEqual({ source: '/api/actor-state', unmeasured: 'actor-state lists no actors' });
-  expect(h.data.messages.rows).toHaveLength(1);
+  // #4761 — the generated messages route down reads unmeasured, never the old hand route
+  expect(h.data.messages).toEqual({ source: '/pulse/messages/messages', unmeasured: 'messages: HTTP 404' });
+  expect(h.data.alerts.rows).toHaveLength(1);
 });
 
 // NEGATIVE PROOF: a card that left WIP is gone from the next read; nothing is written or kept
