@@ -70,7 +70,7 @@ fn checks(card: u32) -> Vec<Check> {
     // #4760 — the AC is read from the card itself, never from a copy.
     // BORG_CARD_DESC: read the card's text from a file (a fixture); the probes
     // still go to the running system, read-only
-    let desc = std::env::var("BORG_CARD_DESC").ok().and_then(|p| std::fs::read_to_string(p).ok()).or_else(|| card_text(card));
+    let desc = std::env::var("BORG_CARD_DESC").ok().and_then(|p| std::fs::read_to_string(p).ok()).map(|t| desc_of(&t)).or_else(|| card_text(card));
     let Some(desc) = desc else {
         eprintln!("borg-prove: the board did not answer for #{card}");
         exit(1);
@@ -89,10 +89,17 @@ fn card_text(card: u32) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    let start = text.find("\n  Desc:").map(|i| i + 9).unwrap_or(0);
+    Some(desc_of(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// The description part of a `cards view` (between `  Desc:` and `  Domains:`);
+/// text without those markers (a bare description file) is returned whole, so
+/// both paths read AC lines the same way.
+fn desc_of(text: &str) -> String {
+    const DESC: &str = "\n  Desc:";
+    let start = text.find(DESC).map(|i| i + DESC.len()).unwrap_or(0);
     let end = text[start..].find("\n  Domains:").map(|i| start + i).unwrap_or(text.len());
-    Some(text[start..end].to_string())
+    text[start..end].to_string()
 }
 
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {

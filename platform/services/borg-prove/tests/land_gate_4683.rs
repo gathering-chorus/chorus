@@ -266,3 +266,18 @@ fn negative_proof_record_that_cannot_become_borg_queen_holds_accept() {
     assert!(out(&r).contains("accept held") && out(&r).contains("sudoers"), "{}", out(&r));
     assert!(fx.log("spine.log").is_empty(), "nothing recorded: {}", fx.log("spine.log"));
 }
+
+// #4760 review (Abby): a card text from a file reads AC the same way as the
+// board's view: a comment's checkbox after `  Domains:` is never an AC
+#[test]
+fn a_card_text_file_reads_ac_like_the_board_view() {
+    let fx = Fx::new("descfile", &row("ac-4683-1", "/ok.txt", "ok"));
+    let p = Command::new(env!("CARGO_BIN_EXE_borg-prove"))
+        .args(["prod", "4683", "kade"])
+        .env("BORG_CARD_DESC", fx.dir.join("view.txt"))
+        .env("BORG_PROD_BASE", format!("file://{}", fx.dir.join("prod").display()))
+        .env("BORG_RESULTS_DIR", fx.dir.join("results"))
+        .env("DAG_RUN_ID", "run9")
+        .output().unwrap();
+    assert!(p.status.success() && out(&p).contains("Proven"), "the comment's /nope.txt check was not read: {}", out(&p));
+}
