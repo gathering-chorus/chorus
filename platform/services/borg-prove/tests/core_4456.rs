@@ -63,16 +63,6 @@ fn a_failure_routes_to_reopen_before_the_land_and_a_ticket_in_operating() {
 }
 
 #[test]
-fn cardac_rows_read_from_the_store_answer_in_ac_order() {
-    let tsv = "?ac\t?statement\t?kind\t?target\t?expect\n<https://jeffbridwell.com/chorus#ac-4456-1>\t\"runs each check\"\t\"http\"\t\"/health\"\t\"ok\"\n<https://jeffbridwell.com/chorus#ac-4456-2>\t\"no check\"\t\"none\"\n";
-    let cs = checks_from_tsv(tsv).unwrap();
-    assert_eq!(cs.len(), 2);
-    assert_eq!((cs[0].ac.as_str(), cs[0].kind.as_str(), cs[1].kind.as_str(), cs[1].target.as_str()), ("ac-4456-1", "http", "none", ""));
-    assert!(checks_from_tsv("<html>").is_err());
-    assert!(checks_query(4456).contains("chorus:card-4456"));
-}
-
-#[test]
 fn the_failed_step_is_read_from_the_runs_status() {
     let st = "Running - x\n├─skill-borg-intake (1s) [success]\n├─skill-borg-stage (3s) [failed]\n└─skill-werk-go [none]\n";
     assert_eq!(failed_in_status(st), "skill-borg-stage");

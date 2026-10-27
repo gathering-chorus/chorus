@@ -362,6 +362,15 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         return Err(format!("card #{} is in '{}', not Next/Later", card, status));
     }
 
+    // #4760 — intake at pull: every AC line carries a check that can fail
+    // (`check: <kind> <target>`), read from the card itself by borg-prove. A
+    // card whose AC cannot be proven is refused here, before any build.
+    if let Err(e) = run(&script(home, "borg-prove-intake"), &[&card.to_string()]) {
+        jsonl(home, role, card, &trace, "pull.refused", &fail_extra("ac-unchecked"));
+        emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "ac-unchecked"), ("failureClass", failure_class("ac-unchecked"))]);
+        return Err(format!("card #{card}: an AC has no check (add `check: <http|sparql|test> <target>` to each AC line): {e}"));
+    }
+
     // #3842 — the card may declare a target repo; resolve it BEFORE any git
     // step, refusing typed (no silent fallback to chorus, per the card's #3734
     // risk note). Default: home, the chorus repo — behavior unchanged.

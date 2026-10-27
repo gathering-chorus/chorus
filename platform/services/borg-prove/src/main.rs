@@ -14,18 +14,6 @@ fn curl(args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// True once `url` answers 200, polling every 2s for up to `wait` seconds.
-fn door_answers(url: &str, wait: u64) -> bool {
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(wait);
-    loop {
-        let code = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", url]).output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
-        if code == "200" { return true }
-        if std::time::Instant::now() >= until { return false }
-        std::thread::sleep(std::time::Duration::from_secs(2));
-    }
-}
-
 /// The store needs its admin credential for reads of most graphs. It goes to
 /// curl on stdin (-K -), never on argv, and is never printed.
 fn sparql(query: &str, accept: &str) -> Option<String> {
@@ -79,17 +67,39 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
 }
 
 fn checks(card: u32) -> Vec<Check> {
-    // BORG_CHECKS_TSV: read the rows from a file (a fixture, or rows not yet in
-    // the store); the probes still go to the running system, read-only
-    let file = std::env::var("BORG_CHECKS_TSV").ok().and_then(|p| std::fs::read_to_string(p).ok());
-    let Some(tsv) = file.or_else(|| sparql(&checks_query(card), "text/tab-separated-values")) else {
-        eprintln!("borg-prove: the store did not answer for #{card}'s CardAC rows");
+    // #4760 — the AC is read from the card itself, never from a copy.
+    // BORG_CARD_DESC: read the card's text from a file (a fixture); the probes
+    // still go to the running system, read-only
+    let desc = std::env::var("BORG_CARD_DESC").ok().and_then(|p| std::fs::read_to_string(p).ok()).map(|t| desc_of(&t)).or_else(|| card_text(card));
+    let Some(desc) = desc else {
+        eprintln!("borg-prove: the board did not answer for #{card}");
         exit(1);
     };
-    checks_from_tsv(&tsv).unwrap_or_else(|e| {
-        eprintln!("borg-prove: {e}");
-        exit(1)
-    })
+    let cs = checks_from_card(card, &desc);
+    // a card written before AC lines carried checks has nothing to prove: it
+    // lands as before, unproven (intake at pull refuses new ones)
+    if cs.iter().all(|c| c.kind == "none") { Vec::new() } else { cs }
+}
+
+/// The card's description as the board holds it (`cards view`), cut before
+/// the board's own fields so a comment's checkbox is never read as an AC.
+fn card_text(card: u32) -> Option<String> {
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    let out = Command::new("bash").arg(&cards).args(["view", &card.to_string()]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(desc_of(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// The description part of a `cards view` (between `  Desc:` and `  Domains:`);
+/// text without those markers (a bare description file) is returned whole, so
+/// both paths read AC lines the same way.
+fn desc_of(text: &str) -> String {
+    const DESC: &str = "\n  Desc:";
+    let start = text.find(DESC).map(|i| i + DESC.len()).unwrap_or(0);
+    let end = text[start..].find("\n  Domains:").map(|i| start + i).unwrap_or(text.len());
+    text[start..end].to_string()
 }
 
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
@@ -209,7 +219,7 @@ fn main() {
         // (it never measures again: Silas, Wren at the demo), writes the
         // verdict and is the gate: it fails on any verdict but Proven, so
         // accept never runs after a red or an unmeasured AC. A card with no
-        // CardAC rows lands as before and says "unproven".
+        // AC check (#4760: on its AC lines) lands as before and says "unproven".
         "prod" => {
             let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
             let path = results_path(card);
@@ -223,6 +233,23 @@ fn main() {
             if v != "Proven" && v != NO_ROWS { exit(1) }
         }
         "record" => {
+            // #4760 — the land runs record; it hands itself to her account (her
+            // signature on the verdict file), carrying the run in its args
+            if let (Some(run), Some(home)) = (a.get(3), a.get(4)) {
+                std::env::set_var("DAG_RUN_ID", run);
+                std::env::set_var("CHORUS_HOME", home);
+            }
+            let queen = env("BORG_QUEEN_ACCOUNT", "chorus-borg-queen");
+            let me = Command::new("id").arg("-un").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+            let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "borg-prove".into());
+            if let Some(hop) = queen_hop(&me, &queen, &exe, &card.to_string(), &role, &env("DAG_RUN_ID", "manual"), &env("CHORUS_HOME", "")) {
+                let st = Command::new(env("BORG_SUDO", "sudo")).args(&hop).status();
+                match st {
+                    Ok(s) if s.success() => exit(0),
+                    Ok(s) => { eprintln!("#{card} record: as {queen} it ended {s} (a sudo refusal means the sudoers line is missing): accept held"); exit(1) }
+                    Err(e) => { eprintln!("#{card} record: could not run as {queen}: {e}: accept held"); exit(1) }
+                }
+            }
             let path = results_path(card);
             let r = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| results_from_tsv(&t)).unwrap_or_else(|e| {
                 eprintln!("#{card} record: prod's results are not readable at {} ({e}): nothing recorded, accept held", path.display());
@@ -239,38 +266,6 @@ fn main() {
                 exit(1);
             }
             if v != "Proven" && v != NO_ROWS { exit(1) }
-        }
-        // #4691 — the land asks Borg Queen, then waits at her step (a human task,
-        // the way a pair waits for its navigator's green)
-        "ask" => {
-            let run = env("DAG_RUN_ID", "");
-            let cfg = env("DAGU_CONFIG", &format!("{}/platform/config/dagu.yaml", env("CHORUS_HOME", "")));
-            let text = format!("#{card} landed and is in prod; prove it. In your session:\n  DAG_RUN_ID={run} borg-prove record {card} {role}\nthen:\n  dagu --config {cfg} human-task complete cicd-land --run-id {run} --step skill_borg_queen_proves --input by=borg-queen --input decision=recorded");
-            let nudge = env("BORG_NUDGE", &format!("{}/platform/scripts/ops-nudge", env("CHORUS_HOME", "")));
-            // #4707 reopen — the nudge resolves borg-queen through the roles door,
-            // which werk-deploy-prod has just restarted: #4715's land failed here
-            // at 18:12 on 10-23 ("Connection refused"). Wait for the door, then ask once.
-            let door = env("BORG_DOOR_URL", "http://localhost:3360/v1/roles/roles?limit=1");
-            let wait: u64 = env("BORG_DOOR_WAIT", "180").parse().unwrap_or(180);
-            if !door_answers(&door, wait) {
-                eprintln!("#{card} ask: the roles door did not answer within {wait}s ({door}); Borg Queen was not nudged");
-                exit(1);
-            }
-            if !matches!(Command::new(&nudge).args(["borg-queen", &text]).status(), Ok(s) if s.success()) {
-                eprintln!("#{card} ask: Borg Queen was not nudged ({nudge})");
-                exit(1);
-            }
-            println!("#{card} ask: Borg Queen nudged for run {run}");
-        }
-        "check" => {
-            let path = run_file(card, "verdict");
-            let owner = Command::new("stat").args(["-f", "%Su"]).arg(&path).output().ok()
-                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-            let v = std::fs::read_to_string(&path).ok();
-            match signed_verdict(&role, owner.as_deref(), v.as_deref(), &env("BORG_QUEEN_ACCOUNT", "chorus-borg-queen")) {
-                Ok(()) => println!("#{card} check: Borg Queen's verdict, {}", v.unwrap_or_default().trim()),
-                Err(e) => { eprintln!("#{card} check: {e}"); exit(1) }
-            }
         }
         "route" => {
             let (Some(_run), Some(routes)) = (a.get(3), a.get(4)) else {

@@ -36,8 +36,8 @@ fn the_werk_stream_walks_to_every_skill_and_its_domain() {
     let land: Vec<_> = w.rows.iter().filter(|r| r.stream_step == "merge").map(|r| r.skill.as_str()).collect();
     // #4683 — the land proves the card in prod before accept
     // #4682 — evaluate chunk sequence or switch lane after accept
-    // #4691 — the proof is Borg Queen's: ask, her step, check
-    assert_eq!(land, ["werk-merge", "werk-sync", "werk-deploy-prod", "borg-verify-in-prod", "borg-ask", "Borg Queen proves it in prod", "borg-check", "werk-accept", "post-land: evaluate chunk sequence or lane switch"]);
+    // #4760 — the land records Borg Queen's proof itself, as her account
+    assert_eq!(land, ["werk-merge", "werk-sync", "werk-deploy-prod", "borg-verify-in-prod", "borg-record", "werk-accept", "post-land: evaluate chunk sequence or lane switch"]);
     assert!(w.rows.iter().filter(|r| !r.skill.is_empty()).all(|r| !r.domain.is_empty()), "every skill names its domain");
     assert_eq!(walk_check(&w), Ok(()));
 }

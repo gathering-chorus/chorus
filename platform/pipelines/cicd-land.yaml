@@ -41,33 +41,13 @@ steps:
     command: "borg-prove prod ${CARD} ${ROLE}"
     continue_on:
       failure: true
-  - name: skill-borg-ask
-    description: "borg-ask"
+  - name: skill-borg-record
+    description: "borg-record"
     depends: [skill-borg-verify-in-prod]
-    command: "borg-prove ask ${CARD} ${ROLE}"
-  - name: skill-borg-queen-proves
-    description: "Borg Queen proves it in prod"
-    depends: [skill-borg-ask]
-    id: skill_borg_queen_proves
-    action: human.task
-    with:
-      prompt: "Borg Queen proves it in prod for #${CARD}? (borg-queen answers)"
-      form:
-        type: object
-        properties:
-          by:
-            type: string
-          decision:
-            type: string
-            enum: [recorded, stop]
-        required: [by, decision]
-  - name: skill-borg-check
-    description: "borg-check"
-    depends: [skill-borg-queen-proves]
-    command: "borg-prove check ${CARD} ${skill_borg_queen_proves.outputs.by}"
+    command: "borg-prove record ${CARD} ${ROLE}"
   - name: skill-werk-accept
     description: "werk-accept"
-    depends: [skill-borg-check]
+    depends: [skill-borg-record]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-accept card=${CARD} atomic=true"
   - name: skill-clearing-evaluate
     description: "post-land: evaluate chunk sequence or lane switch"
