@@ -299,7 +299,9 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
 
 /// #4064 — the count, backup and delete for retiring one subject, WITH the
 /// blank nodes only it reaches through SHACL structure (sh:property, the
-/// sh:or/and/xone/not lists, sh:in, rdf:first/rest). Retiring a shape by its
+/// sh:or/and/xone/not lists, sh:in, rdf:first/rest, and #4757 the property paths:
+/// sh:path and the inverse/alternative/zeroOrMore/oneOrMore/zeroOrOne paths, whose
+/// blank-node lists survived a shape's retirement on staging). Retiring a shape by its
 /// IRI alone left its property shapes behind as orphans — the deploy never
 /// removes a dropped sh:property block (2026-09-20, #4250), and a retirement
 /// that did the same would leave the ghosts it exists to clear.
@@ -333,7 +335,8 @@ pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, Str
     const SH: &str = "http://www.w3.org/ns/shacl#";
     const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     let path = format!(
-        "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>)+"
+        "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>\
+         |<{SH}path>|<{SH}inversePath>|<{SH}alternativePath>|<{SH}zeroOrMorePath>|<{SH}oneOrMorePath>|<{SH}zeroOrOnePath>)+"
     );
     // #4579 reopen 2 — a blank node another named subject also reaches (CoreShape's
     // flattened property nodes, shared by every shape that uses it) is not this
@@ -2940,7 +2943,8 @@ mod subject_closure_runs_4064 {
 <urn:g> {
   x:GoneShape a sh:NodeShape ; sh:targetClass x:Gone ;
     sh:property [ sh:path x:a ; sh:in ( "p" "q" ) ] ;
-    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] .
+    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] ;
+    sh:property [ sh:path ( x:seq1 [ sh:inversePath x:inv ] ) ; sh:minCount 1 ] .
   x:KeptShape a sh:NodeShape ; sh:targetClass x:Kept ;
     sh:property [ sh:path x:k ; sh:minCount 1 ] .
 }"#).unwrap();
@@ -2952,7 +2956,10 @@ mod subject_closure_runs_4064 {
         let after = String::from_utf8_lossy(&o.stdout).to_string();
         assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
         // the dump writes prefixed names (x:a), so the checks read them that way
-        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind"] {
+        // #4757 — a list path and the inverse path inside it go with the shape; the
+        // walk skipped sh:path, so these survived (negative proof: drop the path
+        // predicates from the walk and x:seq1 / x:inv stay in the dump)
+        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind", "x:seq1", "x:inv"] {
             assert!(!after.contains(gone), "{gone} survived the retirement:\n{after}");
         }
         // NEGATIVE PROOF: the neighbour shape and its own property shape are untouched
