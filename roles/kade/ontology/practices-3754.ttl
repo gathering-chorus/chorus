@@ -24,7 +24,13 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
+
+# #4757 (Kade ok) — PracticeShape's sh:path named it; declared nowhere until now.
+chorus:enactedBy a owl:DatatypeProperty ;
+    rdfs:label "enacted by" ; rdfs:range xsd:string ;
+    rdfs:comment "What enacts the practice (a hook, gate or verb), as a name; absent means declared but not enacted." .
 
 chorus:PracticeShape a sh:NodeShape ;
     sh:targetClass chorus:Practice ; sh:node chorus:CoreShape ;

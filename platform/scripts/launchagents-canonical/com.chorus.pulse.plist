@@ -12,8 +12,6 @@
 		<string>3475</string>
 		<key>PATH</key>
 		<string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-		<key>PULSE_AWARENESS_WRITE</key>
-		<string>1</string>
 		<key>PULSE_BUZZ_RELAY_HOST</key>
 		<string>buzz.lightlifeurbangardens.com</string>
 		<key>PULSE_BUZZ_RELAY_URL</key>

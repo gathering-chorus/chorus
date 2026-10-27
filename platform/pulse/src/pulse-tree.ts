@@ -4,7 +4,7 @@
  * Jeff 2026-10-19: prompt → role (moving/quiet, where) → turn (thoughts,
  * streams) and card (pipeline, verbs, notes). "if we do that then all of u
  * have operational awareness in a tree". The nouns are Prompt, Turn and Note
- * in roles/wren/ontology/pulse-tree-4638.ttl; this is the pure derivation
+ * once in roles/wren/ontology/pulse-tree-4638.ttl (retired by #4757: the tree is derived, never stored); this is the pure derivation
  * over them. Clearing only draws the result, and a role's turn-start context
  * is its slice of it.
  *
@@ -146,6 +146,9 @@ export function sliceFor(tree: Tree, role: string): { at: string; me?: Tree['rol
 // --- live wiring ---------------------------------------------------------------
 
 type ActorStates = { derivedAt?: string; actors?: Array<{ aboutPrincipal?: string; stream?: Array<{ timestamp?: string }> }> };
+/** store.queryMessages types its rows as Message (createdAt) but returns raw rows (created_at): read either. */
+type StoredLine = { id: number; from: string; to: string; content: string; created_at?: string; createdAt?: string };
+type LineStore = { queryMessages: (o: { type?: string; since?: string; limit?: number }) => StoredLine[] };
 
 const role = (principal = '') => principal.replace(/^principal-/, '');
 /** pulse's store writes UTC without a zone ("2026-10-24 20:51:53") */
@@ -163,6 +166,29 @@ export function factsFromActorState(states: unknown): { actors: string[]; lastCa
     if (ts.length) lastCalls.set(r, ts.reduce((m, c) => (Date.parse(c) > Date.parse(m) ? c : m)));
   }
   return { actors, lastCalls: Object.fromEntries(lastCalls) };
+}
+
+export function liveTree(store: LineStore, states: unknown, now = new Date().toISOString(), lastN = LAST_N_PROMPTS, spine: SpineLine[] = []): Tree {
+  const since = new Date(Date.parse(now) - 6 * 3600_000).toISOString().replace('T', ' ').slice(0, 19);
+  const lines: LineFact[] = store.queryMessages({ type: 'jeff-input', since, limit: 500 }).map(m => ({
+    id: String(m.id), from: m.from, to: m.to ? [m.to] : [], text: m.content, sentAt: utc(m.created_at ?? m.createdAt ?? ''),
+  }));
+  const { actors, lastCalls } = factsFromActorState(states);
+  const { turns, runs } = factsFromSpine(spine, lastCalls);
+  return buildTree({ now, actors, lines, turns, runs, notes: [], lastCalls, lastN });
+}
+
+/** GET /api/tree (whole tree), GET /api/tree/:role (one role's slice). Read-only. */
+export function registerTreeRoutes(
+  app: { get: (path: string, h: (req: { params: Record<string, string>; query: Record<string, unknown> }, res: { json: (b: unknown) => void }) => void) => void },
+  store: LineStore,
+  actorStateService?: { getActorStates: () => unknown },
+  spine?: { get: () => SpineLine[] },
+): void {
+  const n = (q: unknown) => Math.min(Math.max((typeof q === 'string' ? parseInt(q, 10) : NaN) || LAST_N_PROMPTS, 1), 50);
+  const build = (q: unknown) => liveTree(store, actorStateService?.getActorStates(), new Date().toISOString(), n(q), spine?.get() ?? []);
+  app.get('/api/tree', (req, res) => res.json(build(req.query.n)));
+  app.get('/api/tree/:role', (req, res) => res.json(sliceFor(build(req.query.n), req.params.role)));
 }
 
 // --- turns and runs from the spine (#4637 AC4) -------------------------------

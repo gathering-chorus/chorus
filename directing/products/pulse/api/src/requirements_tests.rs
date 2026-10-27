@@ -290,7 +290,7 @@ fn a_write_to_a_composed_domain_is_refused_and_writes_nothing() {
 fn decimal_class() -> &'static ClassDef {
     let owned = CLASSES.first().expect("a class");
     let f: &'static [crate::model::FieldDef] = Box::leak(Box::new([crate::model::FieldDef {
-        name: "reading", link: false, datatype: "decimal", required: false, many: false, allowed: &[], header: false, newest: false, header_only: None }]));
+        name: "reading", link: false, datatype: "decimal", required: false, many: false, allowed: &[] }]));
     Box::leak(Box::new(ClassDef { fields: f, composed: false, ..*owned }))
 }
 

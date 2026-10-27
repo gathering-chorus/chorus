@@ -30,15 +30,9 @@ chorus:OperationShape a sh:NodeShape ;
     sh:property [ sh:path chorus:handlerPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
 # The live tree (#4638): prompt → role → turn → card → run, for every role.
-chorus:tree a chorus:Operation ;
-    rdfs:label "tree" ; chorus:label "tree" ;
-    chorus:comment "The live tree (#4638), prompt to role to turn to card to run, read from the store." ;
-    rdfs:comment "The live tree (#4638): /<product>/awareness/tree, and /<product>/awareness/tree/<role> for one role's slice." ;
-    chorus:homeDomain chorus:awareness ;
-    chorus:operationPath "tree" ;
-    chorus:handlerPath "directing/products/pulse/api/operations/tree.rs" .
+# #4757 — the tree Operation retired: it read Prompt/Turn/RoleState rows pulse copied from
+# its sources; pulse serves its own tree from those sources (:3475/api/tree).
 
-chorus:pulse chorus:servesOperation chorus:tree .
 
 # An Operation is part of a product's surface, like the product itself: the products domain defines it.
 chorus:products chorus:definesVocabulary chorus:Operation .

@@ -143,7 +143,6 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/wren/ontology/awareness-4018.ttl"),
             format!("{root}/roles/wren/ontology/product-design-4018.ttl"),
             format!("{root}/roles/wren/ontology/pulse-settings-4490.ttl"),  // #4490: pulse-api's settings as Property rows
-            format!("{root}/roles/wren/ontology/pulse-tree-4638.ttl"),  // #4638: Prompt, Turn, Note — the live tree's nouns
             // #4576: the AgentRuntime class, its fields and shape. Outside the set, the
             // class never reached the store (prod: the shape and 0 triples of the class),
             // so identity's claim on it pointed at nothing a validator calls a class.
@@ -300,7 +299,10 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
 
 /// #4064 — the count, backup and delete for retiring one subject, WITH the
 /// blank nodes only it reaches through SHACL structure (sh:property, the
-/// sh:or/and/xone/not lists, sh:in, rdf:first/rest). Retiring a shape by its
+/// sh:or/and/xone/not lists, sh:in, rdf:first/rest, and #4757 the property paths:
+/// sh:path and the inverse/alternative/zeroOrMore/oneOrMore/zeroOrOne paths, and a
+/// property's rdfs:domain/range [ owl:unionOf ( … ) ] lists — both survived a retirement on
+/// staging, athena runs 4 and 8). Retiring a shape by its
 /// IRI alone left its property shapes behind as orphans — the deploy never
 /// removes a dropped sh:property block (2026-09-20, #4250), and a retirement
 /// that did the same would leave the ghosts it exists to clear.
@@ -333,9 +335,18 @@ pub fn subjects_from_answer(body: &str) -> Option<std::collections::BTreeSet<Str
 pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, String) {
     const SH: &str = "http://www.w3.org/ns/shacl#";
     const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-    let path = format!(
-        "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>)+"
+    const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
+    const OWL: &str = "http://www.w3.org/2002/07/owl#";
+    // #4757 — rdfs:domain/range are a FIRST hop only: a shape's sh:path lands on a property
+    // IRI, and a domain hop after it would walk into that property's own domain list (and
+    // the guard below would then see every shape naming the property as a second owner:
+    // athena run 10 kept onCard's Turn∪Note union because TurnShape "reached" it).
+    let structural = format!(
+        "<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>\
+         |<{SH}path>|<{SH}inversePath>|<{SH}alternativePath>|<{SH}zeroOrMorePath>|<{SH}oneOrMorePath>|<{SH}zeroOrOnePath>\
+         |<{OWL}unionOf>|<{OWL}intersectionOf>"
     );
+    let path = format!("(<{RDFS}domain>|<{RDFS}range>|{structural})/({structural})*");
     // #4579 reopen 2 — a blank node another named subject also reaches (CoreShape's
     // flattened property nodes, shared by every shape that uses it) is not this
     // subject's to delete; deleting it emptied 77 shapes on 10-18.
@@ -1718,6 +1729,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         // #3752 reopen 1 — one presence query per graph for every subject
         // retirement; only a subject still there goes through backup + delete.
         let gone = absent_subjects(&ctx, &actions);
+        let retiring = classes_retired(&actions);
         for (n, action) in &actions {
             if let RetireAction::Subject { iri, graph } = action {
                 if gone.contains(&(graph.clone(), iri.clone())) {
@@ -1725,7 +1737,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
                     continue;
                 }
             }
-            run_retirement(action, *n, &ctx)?;
+            run_retirement_with(action, *n, &ctx, &retiring)?;
         }
     }
 
@@ -2183,7 +2195,29 @@ fn absent_subjects(ctx: &StoreCtx, actions: &[(usize, RetireAction)]) -> std::co
 /// subject and class retirement get the backup rule the bash gives only to
 /// whole-graph — AC3, and subject retirement is the leg #4216's 226 rows went
 /// through with nothing written down.
+/// #4757 — the classes this deploy's file also retires, by local name: its rows
+/// (retire_class) or the class itself (retire_subject; Kade: Note has a claim and no rows).
+pub fn classes_retired(actions: &[(usize, RetireAction)]) -> std::collections::BTreeSet<String> {
+    actions.iter().filter_map(|(_, a)| match a {
+        RetireAction::Class { class, .. } => Some(class.rsplit('#').next().unwrap_or(class).to_string()),
+        RetireAction::Subject { iri, .. } => Some(iri.rsplit('#').next().unwrap_or(iri).to_string()),
+        _ => None,
+    }).collect()
+}
+
+/// #4757 — may a claim be retired while its class is served? Only when the same deploy
+/// retires the class itself: the door serves a class BECAUSE a domain claims it, so
+/// "unserve first" can never come true for a class whose claim and rows go together.
+/// A served claim with no class retirement beside it still refuses (#3752).
+pub fn served_claim_may_retire(class: &str, retiring: &std::collections::BTreeSet<String>) -> bool {
+    retiring.contains(class)
+}
+
 fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new())
+}
+
+fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>) -> Result<(), String> {
     let refuse = |reason: String| -> String {
         emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
             &[("reason", reason.clone()), ("line", line.to_string())]);
@@ -2222,7 +2256,9 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 return Ok(());
             }
             let route = route_for_class(class);
-            if route_is_served(&served, &route) {
+            if route_is_served(&served, &route) && served_claim_may_retire(class, retiring) {
+                println!("athena-deploy: claim {domain}->{class} retires while /{route} is served: this deploy retires the class too (#4757)");
+            } else if route_is_served(&served, &route) {
                 eprintln!(
                     "athena-deploy: RETIREMENT REFUSED — class {class} is SERVED at /{route} \
                      RIGHT NOW (surface came up since staging); unserve first (#3752)"
@@ -2620,7 +2656,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 39, "the ontology set is 39 files (#4638 added pulse-tree-4638.ttl; #4091 added alerts-grafana-4091.ttl and toolchain-4091.ttl; #4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 38, "the ontology set is 38 files (#4757 took out pulse-tree-4638.ttl, which #4638 added; #4091 added alerts-grafana-4091.ttl and toolchain-4091.ttl; #4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
@@ -2941,7 +2977,8 @@ mod subject_closure_runs_4064 {
 <urn:g> {
   x:GoneShape a sh:NodeShape ; sh:targetClass x:Gone ;
     sh:property [ sh:path x:a ; sh:in ( "p" "q" ) ] ;
-    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] .
+    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] ;
+    sh:property [ sh:path ( x:seq1 [ sh:inversePath x:inv ] ) ; sh:minCount 1 ] .
   x:KeptShape a sh:NodeShape ; sh:targetClass x:Kept ;
     sh:property [ sh:path x:k ; sh:minCount 1 ] .
 }"#).unwrap();
@@ -2953,7 +2990,28 @@ mod subject_closure_runs_4064 {
         let after = String::from_utf8_lossy(&o.stdout).to_string();
         assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
         // the dump writes prefixed names (x:a), so the checks read them that way
-        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind"] {
+        // #4757 — a retired property's rdfs:domain [ owl:unionOf ( … ) ] list goes with it
+        let data2 = dir.join("d2.trig");
+        std::fs::write(&data2, r#"@prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix x: <https://x#> .
+<urn:g> {
+  x:onCard rdfs:domain [ owl:unionOf ( x:Turn x:Note ) ] ; rdfs:range x:Card .
+  x:CardUseShape <http://www.w3.org/ns/shacl#property> [ <http://www.w3.org/ns/shacl#path> x:onCard ] .
+  x:kept rdfs:domain [ owl:unionOf ( x:Kept1 x:Kept2 ) ] .
+  x:KeptShape <http://www.w3.org/ns/shacl#property> [ <http://www.w3.org/ns/shacl#path> x:kept ] .
+}"#).unwrap();
+        let (_, _, del2) = subject_retirement_sparql("https://x#onCard", "urn:g");
+        let ru2 = dir.join("u2.ru");
+        std::fs::write(&ru2, &del2).unwrap();
+        let o2 = Command::new(&update).arg(format!("--data={}", data2.display()))
+            .arg(format!("--update={}", ru2.display())).arg("--dump").output().unwrap();
+        let after2 = String::from_utf8_lossy(&o2.stdout).to_string();
+        assert!(!after2.contains("x:Turn") && !after2.contains("x:Note"), "the union list survived:\n{after2}");
+        // NEGATIVE PROOF: another property's union list is not this retirement's
+        assert!(after2.contains("x:Kept1") && after2.contains("x:Kept2"), "a neighbour's list went:\n{after2}");
+        // #4757 — a list path and the inverse path inside it go with the shape; the
+        // walk skipped sh:path, so these survived (negative proof: drop the path
+        // predicates from the walk and x:seq1 / x:inv stay in the dump)
+        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind", "x:seq1", "x:inv"] {
             assert!(!after.contains(gone), "{gone} survived the retirement:\n{after}");
         }
         // NEGATIVE PROOF: the neighbour shape and its own property shape are untouched
@@ -3439,5 +3497,31 @@ mod run_retirement_triple_4716 {
         let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}tests"));
         let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
         assert!(e.contains("retirement-ask-unanswered"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod served_claim_4757 {
+    use super::{classes_retired, served_claim_may_retire, RetireAction};
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    fn class(n: &str) -> RetireAction { RetireAction::Class { class: format!("{C}{n}"), graph: "urn:chorus:domains:awareness".into() } }
+    fn subject(n: &str) -> RetireAction { RetireAction::Subject { iri: format!("{C}{n}"), graph: "urn:chorus:ontology".into() } }
+
+    /// The door serves a class because a domain claims it: a claim whose class this
+    /// deploy retires (rows or the class itself) may go while the route is still up.
+    #[test]
+    fn a_served_claim_retires_when_the_same_deploy_retires_its_class() {
+        let r = classes_retired(&[(1, class("Prompt")), (2, subject("Note")), (3, subject("PromptShape"))]);
+        assert!(served_claim_may_retire("Prompt", &r));
+        assert!(served_claim_may_retire("Note", &r));
+    }
+
+    /// NEGATIVE PROOF: a served claim with no retirement of its class beside it still refuses.
+    #[test]
+    fn negative_proof_a_served_claim_alone_still_refuses() {
+        let r = classes_retired(&[(1, class("Prompt"))]);
+        assert!(!served_claim_may_retire("Turn", &r));
+        assert!(!served_claim_may_retire("Turn", &classes_retired(&[])));
     }
 }
