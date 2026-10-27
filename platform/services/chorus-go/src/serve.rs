@@ -129,7 +129,9 @@ fn run_status(dag: &str, run: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Answer the run's go step with what Jeff's phone signed.
+/// Answer the run's go step with what Jeff's phone signed. `accepter=jeff` here is
+/// not a role typing Jeff's name (DEC-048): handle reaches this only after
+/// verify_assertion has checked Jeff's passkey signature over this round.
 fn complete_dagu(rec: &GoRecord) -> Result<String, String> {
     let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
     let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
