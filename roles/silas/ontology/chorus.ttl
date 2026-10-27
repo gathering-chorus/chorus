@@ -1819,6 +1819,10 @@ chorus:writeCount      a owl:DatatypeProperty ; rdfs:label "write count" ; rdfs:
     rdfs:comment "How many times a row has been written, stamped by the door (#4101). Renamed from chorus:version on #4211: a property called version, beside a class called Version, reads as the same thing and is not. It counts writes; Version holds what the row used to say." .
 chorus:contentHash     a owl:DatatypeProperty ; rdfs:label "content hash" ; rdfs:range xsd:string ;
     rdfs:comment "A hash of a row's content, stamped by the model deploy so an unchanged row is not rewritten. Named in ignoredProperties and written by athena-model, declared nowhere until #4757 (Silas ok, 2026-10-26)." .
+chorus:instancesGraph  a owl:DatatypeProperty ; rdfs:label "instances graph" ; rdfs:range xsd:string ;
+    rdfs:comment "The named graph that holds a domain's or shape's rows, as a string. DomainShape's sh:path named it; declared nowhere until #4757 (Silas ok, 2026-10-26)." .
+chorus:hasChild        a owl:ObjectProperty ; rdfs:label "has child" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Domain ;
+    rdfs:comment "The composition edge between domains (owns plus composes, Jeff 2026-10-25). DomainShape's sh:path named it; declared nowhere until #4757 (Silas ok, 2026-10-26)." .
 
 # --- #4102 Revision: the prior version of a row, kept by the door at every replace ---
 # Jeff, 2026-09-04: "at staples when we built athena we had a document level and field level
