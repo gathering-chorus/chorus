@@ -1,10 +1,10 @@
-//! borg-prove (#4456). The pure half: CardAC rows in, a result per AC out, and
+//! borg-prove (#4456). The pure half: a card's AC lines in (#4760), a result per AC out, and
 //! the route a failed step takes. main.rs does the I/O (store, HTTP, dagu).
 
-/// One acceptance criterion and the check that proves it (a CardAC row).
+/// One acceptance criterion and the check that proves it (one AC line of the card, #4760).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Check {
-    pub ac: String,        // the CardAC row's name, ac-<card>-<n> (e.g. ac-4456-2)
+    pub ac: String,        // ac-<card>-<n>, n = the AC's place on the card (e.g. ac-4456-2)
     pub statement: String, // the AC sentence as the card says it
     pub kind: String,      // checkKind: http | sparql | test | none
     pub target: String,    // checkTarget: a URL (http), an ASK query (sparql), a test name (test)
@@ -87,11 +87,59 @@ fn short(s: &str) -> String {
     if s.chars().count() > 160 { s.chars().take(160).collect::<String>() + "…" } else { s }
 }
 
+/// #4760 — the card's AC, read from the card itself (Jeff 2026-10-27: "so we
+/// dont need cardac"). Each `- [ ]` / `- [x]` line under `## AC` is one AC, in
+/// card order; its check rides at the end of the line:
+///   `check: http <path> [status|text]`  (expect defaults to 200)
+///   `check: sparql <ASK query> <true|false>`
+///   `check: test <test file or name>`   (expects the test's latest result, pass)
+/// A line with no `check:` is kind none: unmeasured, and refused at intake.
+pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
+    let mut in_ac = false;
+    let mut out = Vec::new();
+    for line in desc.lines() {
+        let t = line.trim();
+        if let Some(h) = t.strip_prefix("## ") {
+            in_ac = h.trim() == "AC";
+            continue;
+        }
+        let Some(body) = t.strip_prefix("- [ ] ").or_else(|| t.strip_prefix("- [x] ")).or_else(|| t.strip_prefix("- [X] ")) else { continue };
+        if !in_ac {
+            continue;
+        }
+        let (statement, check) = match body.rfind("check:") {
+            Some(i) => (body[..i].trim(), body[i + 6..].trim()),
+            None => (body.trim(), ""),
+        };
+        let (kind, rest) = check.split_once(char::is_whitespace).map(|(k, r)| (k, r.trim())).unwrap_or((check, ""));
+        let (target, expect) = match kind {
+            "test" => (rest.to_string(), "pass".to_string()),
+            "sparql" => match rest.rsplit_once(char::is_whitespace) {
+                Some((q, e)) if e == "true" || e == "false" => (q.trim().to_string(), e.to_string()),
+                _ => (rest.to_string(), String::new()),
+            },
+            "http" => match rest.split_once(char::is_whitespace) {
+                Some((u, e)) => (u.to_string(), e.trim().to_string()),
+                None => (rest.to_string(), "200".to_string()),
+            },
+            _ => (rest.to_string(), String::new()),
+        };
+        out.push(Check {
+            ac: format!("ac-{card}-{}", out.len() + 1),
+            statement: statement.to_string(),
+            kind: if kind.is_empty() { "none".into() } else { kind.to_string() },
+            target,
+            expect,
+        });
+    }
+    out
+}
+
 /// Intake (Proving step 1): a card is Rejected when it has no AC, or an AC
 /// has no runnable check. Every gap is named.
 pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if checks.is_empty() {
-        return Err(vec!["the card has no CardAC rows: every AC needs a check that can fail".into()]);
+        return Err(vec!["the card has no AC lines under ## AC: every AC needs a check that can fail".into()]);
     }
     let errs: Vec<String> = checks
         .iter()
@@ -101,9 +149,9 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
-/// #4683 — a card with no CardAC rows has nothing to prove: it lands as
+/// #4683 — a card with no AC check (#4760: on its AC lines) has nothing to prove: it lands as
 /// before, and the record says so. Never "Proven".
-pub const NO_ROWS: &str = "unproven: no CardAC rows";
+pub const NO_ROWS: &str = "unproven: no AC has a check";
 
 /// The verdict over every AC: Proven only when every one is met; Not met when
 /// any is not met; Unproven when none failed but some could not be measured
@@ -152,44 +200,6 @@ pub fn route_for(failed_step: &str, routes: &[(String, String)], role: &str) -> 
         }
         Some((_, to)) => Route::Reopen { step: to.clone() },
     }
-}
-
-/// A card's CardAC rows (Wren's shape, #4456): acFor · acIndex · acStatement ·
-/// checkKind · checkTarget · checkExpect, one row per AC, in AC order.
-pub const CHECKS_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
-SELECT ?ac ?statement ?kind ?target ?expect WHERE {
-  GRAPH ?g { ?ac a chorus:CardAC ; chorus:acFor chorus:card-{CARD} ; chorus:acIndex ?i .
-             OPTIONAL { ?ac chorus:acStatement ?statement }
-             OPTIONAL { ?ac chorus:checkKind ?kind }
-             OPTIONAL { ?ac chorus:checkTarget ?target }
-             OPTIONAL { ?ac chorus:checkExpect ?expect } }
-}
-ORDER BY xsd:integer(?i)
-"#;
-
-pub fn checks_query(card: u32) -> String {
-    format!("PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n{}", CHECKS_QUERY.replace("{CARD}", &card.to_string()))
-}
-
-/// CardAC rows from SPARQL TSV: ?ac ?statement ?kind ?target ?expect.
-pub fn checks_from_tsv(tsv: &str) -> Result<Vec<Check>, String> {
-    let mut lines = tsv.lines();
-    let header = lines.next().unwrap_or("");
-    if !header.starts_with("?ac") {
-        return Err(format!("not a CardAC result: header {header:?}"));
-    }
-    Ok(lines
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            let mut f: Vec<String> = l.split('\t').map(term).collect();
-            f.resize(5, String::new());
-            Check { ac: local(&f[0]), statement: f[1].clone(), kind: f[2].clone(), target: f[3].clone(), expect: f[4].clone() }
-        })
-        .collect())
-}
-
-fn local(s: &str) -> String {
-    s.rsplit(['#', '/']).next().unwrap_or(s).to_string()
 }
 
 fn term(t: &str) -> String {
@@ -295,9 +305,19 @@ pub fn child_title(parent: u32, c: &Check) -> String {
 /// borg-prove's evidence.
 pub fn child_desc(parent: u32, c: &Check, o: &Outcome) -> String {
     format!(
-        "## Experience\nborg-prove checked #{parent} in prod after its land and {} {} ({} check on {}).\n\nEvidence: {}\n\n## AC\n- [ ] {}: {}\n- [ ] borg-prove reads it met in prod\n",
-        c.ac, o.word(), c.kind, c.target, o.evidence(), c.ac, c.statement
+        "## Experience\nborg-prove checked #{parent} in prod after its land and {} {} ({} check on {}).\n\nEvidence: {}\n\n## AC\n- [ ] {}: {}  check: {}\n",
+        c.ac, o.word(), c.kind, c.target, o.evidence(), c.ac, c.statement, child_check(c)
     )
+}
+
+/// #4760 — the child's one AC is the parent's AC, carrying the parent's own
+/// check, so the child passes intake at pull and proves the same thing.
+fn child_check(c: &Check) -> String {
+    match c.kind.as_str() {
+        "test" => format!("test {}", c.target),
+        "http" | "sparql" => format!("{} {} {}", c.kind, c.target, c.expect).trim_end().to_string(),
+        _ => "none".into(),
+    }
 }
 
 /// The parent's owner from `cards view` ("  Owner:    Kade"), lowercased.
@@ -360,22 +380,13 @@ pub fn results_from_tsv(tsv: &str) -> Result<Vec<(Check, Outcome)>, String> {
     }).collect()
 }
 
-/// #4691 — accept runs only on Borg Queen's own proof: her step signed by
-/// borg-queen, and the run's verdict file written by her Mac account (the
-/// signature dagu cannot check, the file owner can), saying Proven or, for a
-/// card with no CardAC rows, unproven. Anything else holds the land, named.
-pub fn signed_verdict(by: &str, owner: Option<&str>, verdict: Option<&str>, queen_account: &str) -> Result<(), String> {
-    if by != "borg-queen" {
-        return Err(format!("signed by {by}, not borg-queen: accept held"));
+/// #4760 — the land runs `record` itself, so nobody waits on a human step,
+/// and the verdict file must still be written by her account. Run as anyone else, record hands itself to her through
+/// `sudo -n -u <queen>` with the run named in its args (sudo drops the env);
+/// run as her, it records. The sudoers line allows only `borg-prove record`.
+pub fn queen_hop(me: &str, queen: &str, exe: &str, card: &str, role: &str, run: &str, home: &str) -> Option<Vec<String>> {
+    if me == queen {
+        return None;
     }
-    let (Some(owner), Some(v)) = (owner, verdict) else {
-        return Err("no verdict recorded for this run: accept held".into());
-    };
-    if owner != queen_account {
-        return Err(format!("the verdict was written by {owner}, not {queen_account}: accept held"));
-    }
-    match v.trim() {
-        "Proven" | "unproven" => Ok(()),
-        other => Err(format!("verdict {other}: accept held")),
-    }
+    Some(["-n", "-u", queen, exe, "record", card, role, run, home].iter().map(|s| s.to_string()).collect())
 }

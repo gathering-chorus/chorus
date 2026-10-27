@@ -44,15 +44,11 @@
   chorus:skill-werk-accept a chorus:Skill ; rdfs:label "werk-accept" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-accept" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
   chorus:skill-borg-verify-in-prod a chorus:Skill ; rdfs:label "borg-verify-in-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "prod ${CARD} ${ROLE}" .
   chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-verify-in-prod ; chorus:skillOrder 4 ; chorus:withArguments "continue_on=failure" .
-  chorus:skill-borg-ask a chorus:Skill ; rdfs:label "borg-ask" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "ask ${CARD} ${ROLE}" .
-  chorus:stepskill-cicd-land-5 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-ask ; chorus:skillOrder 5 .
-  chorus:skill-borg-queen-proves a chorus:Skill ; rdfs:label "Borg Queen proves it in prod" ; chorus:executor "human" .
-  chorus:stepskill-cicd-land-6 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-queen-proves ; chorus:skillOrder 6 ; chorus:withArguments "by=borg-queen choices=recorded|stop" .
-  chorus:skill-borg-check a chorus:Skill ; rdfs:label "borg-check" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "check ${CARD} ${skill_borg_queen_proves.outputs.by}" .
-  chorus:stepskill-cicd-land-7 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-check ; chorus:skillOrder 7 .
-  chorus:stepskill-cicd-land-8 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 8 ; chorus:withArguments "atomic=true" .
+  chorus:skill-borg-record a chorus:Skill ; rdfs:label "borg-record" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "record ${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-land-5 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-record ; chorus:skillOrder 5 .
+  chorus:stepskill-cicd-land-6 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 6 ; chorus:withArguments "atomic=true" .
   chorus:skill-clearing-evaluate a chorus:Skill ; rdfs:label "post-land: evaluate chunk sequence or lane switch" ; chorus:executor "pipeline" ; chorus:implementedBy "clearing-evaluate" .
-  chorus:stepskill-cicd-land-9 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-clearing-evaluate ; chorus:skillOrder 9 ; chorus:withArguments "continue_on=failure enqueue=true" .
+  chorus:stepskill-cicd-land-7 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-clearing-evaluate ; chorus:skillOrder 7 ; chorus:withArguments "continue_on=failure enqueue=true" .
 }
 # #4465 AC7 — the walk: stream ← automates ← pipeline; pipeline step coversStep stream steps; skills name domains.
 <urn:chorus:domains:value-streams> {
@@ -91,8 +87,6 @@
   chorus:skill-werk-deploy-prod chorus:hasDomain chorus:deploys .
   chorus:skill-werk-accept chorus:hasDomain chorus:version-control .
   chorus:skill-borg-verify-in-prod chorus:hasDomain chorus:tests .
-  chorus:skill-borg-ask chorus:hasDomain chorus:cards .
-  chorus:skill-borg-queen-proves chorus:hasDomain chorus:cards .
-  chorus:skill-borg-check chorus:hasDomain chorus:cards .
+  chorus:skill-borg-record chorus:hasDomain chorus:cards .
   chorus:skill-clearing-evaluate chorus:hasDomain chorus:cards .
 }

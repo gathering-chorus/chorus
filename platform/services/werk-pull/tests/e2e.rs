@@ -94,6 +94,7 @@ fn e2e_pull_to_gh_diagram() {
         &scripts.join("cards"),
         "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-Next}\\\" }\" ;;\n move) exit \"${CARDS_MOVE_EXIT:-0}\" ;;\n *) exit 0 ;;\nesac\n",
     );
+    write_exec(&scripts.join("borg-prove-intake"), "#!/bin/sh\n[ \"${INTAKE_EXIT:-0}\" = 0 ] || { echo \"ac-4760-2: no runnable check\" >&2; exit 1; }\n");
     write_exec(&scripts.join("role-state"), "#!/bin/sh\nexit 0\n");
     let werk_base = tmp("werk");
 
@@ -164,6 +165,7 @@ fn refusals_are_typed_spined_and_gh_fail_restores_board_status() {
     write_exec(&scripts.join("cards"), &format!(
         "#!/bin/sh\ncase \"$1\" in\n view) [ \"${{CARDS_VIEW_EXIT:-0}}\" = 0 ] || exit \"$CARDS_VIEW_EXIT\"; echo \"{{ \\\"status\\\": \\\"${{CARDS_STATUS:-Next}}\\\" }}\" ;;\n move) echo \"$2 $3\" >> \"{}\"; exit 0 ;;\n *) exit 0 ;;\nesac\n",
         moves.display()));
+    write_exec(&scripts.join("borg-prove-intake"), "#!/bin/sh\n[ \"${INTAKE_EXIT:-0}\" = 0 ] || { echo \"ac-4760-2: no runnable check\" >&2; exit 1; }\n");
     write_exec(&scripts.join("role-state"), "#!/bin/sh\nexit 0\n");
     let cap = home.join("spine-capture.txt");
     write_exec(&scripts.join("chorus-log"), &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display()));
@@ -186,6 +188,15 @@ fn refusals_are_typed_spined_and_gh_fail_restores_board_status() {
     std::env::set_var("CARDS_STATUS", "Next");
     assert!(fs::read_to_string(&cap).unwrap_or_default().contains("reason=wrong-status"),
         "wrong-status reached the spine");
+
+    // ── #4760 ac-unchecked: an AC line with no check → typed refusal, spine'd,
+    // no werk made (intake at pull, before any build).
+    std::env::set_var("INTAKE_EXIT", "1");
+    let err = pull(9205, "kade", &home, &werk_base).expect_err("an unchecked AC must refuse");
+    std::env::set_var("INTAKE_EXIT", "0");
+    assert!(err.contains("an AC has no check") && err.contains("ac-4760-2"), "names the line: {err}");
+    assert!(!werk_base.join("kade-9205").exists(), "no werk created on refusal");
+    assert!(fs::read_to_string(&cap).unwrap_or_default().contains("reason=ac-unchecked"), "ac-unchecked reached the spine");
 
     // ── werk exists on the WRONG branch (the #2641 same-role-wrong-card class):
     // a stale dir at the card's werk slot must refuse, never silently reuse.
@@ -250,6 +261,7 @@ fn e2e_pull_into_declared_target_repo() {
         &scripts.join("cards"),
         "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"Next\\\", \\\"domains\\\": [\\\"repo:shared-security\\\"] }\" ;;\n *) exit 0 ;;\nesac\n",
     );
+    write_exec(&scripts.join("borg-prove-intake"), "#!/bin/sh\n[ \"${INTAKE_EXIT:-0}\" = 0 ] || { echo \"ac-4760-2: no runnable check\" >&2; exit 1; }\n");
     write_exec(&scripts.join("role-state"), "#!/bin/sh\nexit 0\n");
     std::env::remove_var("CARDS_STATUS");
     std::env::remove_var("CARDS_MOVE_EXIT");

@@ -19,8 +19,6 @@ land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	{card} {caller} [-
 land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	{mode}		WerkSyncInput	mode=ff
 land	5	3	skill-werk-deploy-prod	werk-deploy-prod	deterministic	werk-deploy	{card} {caller} --target canonical		WerkCardOnlyInput	
 land	5	4	skill-borg-verify-in-prod	borg-verify-in-prod	deterministic	borg-prove	prod ${CARD} ${ROLE}			continue_on=failure
-land	5	5	skill-borg-ask	borg-ask	deterministic	borg-prove	ask ${CARD} ${ROLE}			
-land	5	6	skill-borg-queen-proves	Borg Queen proves it in prod	human					by=borg-queen choices=recorded|stop
-land	5	7	skill-borg-check	borg-check	deterministic	borg-prove	check ${CARD} ${skill_borg_queen_proves.outputs.by}			
-land	5	8	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
-land	5	9	skill-clearing-evaluate	post-land: evaluate chunk sequence or lane switch	pipeline	clearing-evaluate				continue_on=failure enqueue=true
+land	5	5	skill-borg-record	borg-record	deterministic	borg-prove	record ${CARD} ${ROLE}			
+land	5	6	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
+land	5	7	skill-clearing-evaluate	post-land: evaluate chunk sequence or lane switch	pipeline	clearing-evaluate				continue_on=failure enqueue=true
