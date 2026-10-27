@@ -300,8 +300,9 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
 /// #4064 — the count, backup and delete for retiring one subject, WITH the
 /// blank nodes only it reaches through SHACL structure (sh:property, the
 /// sh:or/and/xone/not lists, sh:in, rdf:first/rest, and #4757 the property paths:
-/// sh:path and the inverse/alternative/zeroOrMore/oneOrMore/zeroOrOne paths, whose
-/// blank-node lists survived a shape's retirement on staging). Retiring a shape by its
+/// sh:path and the inverse/alternative/zeroOrMore/oneOrMore/zeroOrOne paths, and a
+/// property's rdfs:domain/range [ owl:unionOf ( … ) ] lists — both survived a retirement on
+/// staging, athena runs 4 and 8). Retiring a shape by its
 /// IRI alone left its property shapes behind as orphans — the deploy never
 /// removes a dropped sh:property block (2026-09-20, #4250), and a retirement
 /// that did the same would leave the ghosts it exists to clear.
@@ -334,9 +335,12 @@ pub fn subjects_from_answer(body: &str) -> Option<std::collections::BTreeSet<Str
 pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, String) {
     const SH: &str = "http://www.w3.org/ns/shacl#";
     const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+    const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
+    const OWL: &str = "http://www.w3.org/2002/07/owl#";
     let path = format!(
         "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>\
-         |<{SH}path>|<{SH}inversePath>|<{SH}alternativePath>|<{SH}zeroOrMorePath>|<{SH}oneOrMorePath>|<{SH}zeroOrOnePath>)+"
+         |<{SH}path>|<{SH}inversePath>|<{SH}alternativePath>|<{SH}zeroOrMorePath>|<{SH}oneOrMorePath>|<{SH}zeroOrOnePath>\
+         |<{RDFS}domain>|<{RDFS}range>|<{OWL}unionOf>|<{OWL}intersectionOf>)+"
     );
     // #4579 reopen 2 — a blank node another named subject also reaches (CoreShape's
     // flattened property nodes, shared by every shape that uses it) is not this
@@ -2981,6 +2985,22 @@ mod subject_closure_runs_4064 {
         let after = String::from_utf8_lossy(&o.stdout).to_string();
         assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
         // the dump writes prefixed names (x:a), so the checks read them that way
+        // #4757 — a retired property's rdfs:domain [ owl:unionOf ( … ) ] list goes with it
+        let data2 = dir.join("d2.trig");
+        std::fs::write(&data2, r#"@prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix x: <https://x#> .
+<urn:g> {
+  x:onCard rdfs:domain [ owl:unionOf ( x:Turn x:Note ) ] ; rdfs:range x:Card .
+  x:kept rdfs:domain [ owl:unionOf ( x:Kept1 x:Kept2 ) ] .
+}"#).unwrap();
+        let (_, _, del2) = subject_retirement_sparql("https://x#onCard", "urn:g");
+        let ru2 = dir.join("u2.ru");
+        std::fs::write(&ru2, &del2).unwrap();
+        let o2 = Command::new(&update).arg(format!("--data={}", data2.display()))
+            .arg(format!("--update={}", ru2.display())).arg("--dump").output().unwrap();
+        let after2 = String::from_utf8_lossy(&o2.stdout).to_string();
+        assert!(!after2.contains("x:Turn") && !after2.contains("x:Note"), "the union list survived:\n{after2}");
+        // NEGATIVE PROOF: another property's union list is not this retirement's
+        assert!(after2.contains("x:Kept1") && after2.contains("x:Kept2"), "a neighbour's list went:\n{after2}");
         // #4757 — a list path and the inverse path inside it go with the shape; the
         // walk skipped sh:path, so these survived (negative proof: drop the path
         // predicates from the walk and x:seq1 / x:inv stay in the dump)
