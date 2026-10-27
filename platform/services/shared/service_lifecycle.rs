@@ -332,6 +332,78 @@ mod tests {
         assert_eq!(failure_reason(4, "  \n\n"), "exited 4");
     }
 
+    // #4747 swarm (Silas) — the process-facing half: what a run appended to
+    // its stderr log, the binary's version, and the launchd reads, each with
+    // the state it must not confuse.
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("svc-lifecycle-4747-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_runs_reason_is_read_only_from_what_it_appended() {
+        let d = scratch("since");
+        let log = d.join("err.log");
+        std::fs::write(&log, "old run: boom\n").unwrap();
+        let mark = std::fs::metadata(&log).unwrap().len();
+        std::fs::write(&log, "old run: boom\nnew run: disk full\n").unwrap();
+        let since = appended_since(&Some(log.display().to_string()), mark);
+        assert_eq!(since, "new run: disk full\n");
+        assert_eq!(failure_reason(3, &since), "exited 3: new run: disk full");
+    }
+
+    /// NEGATIVE PROOF: a run that appended nothing never borrows the older
+    /// run's line, and a missing or unnamed log reads as nothing.
+    #[test]
+    fn negative_proof_nothing_appended_borrows_no_older_line() {
+        let d = scratch("nothing");
+        let log = d.join("err.log");
+        std::fs::write(&log, "old run: boom\n").unwrap();
+        let mark = std::fs::metadata(&log).unwrap().len();
+        let since = appended_since(&Some(log.display().to_string()), mark);
+        assert_eq!(failure_reason(3, &since), "exited 3");
+        assert_eq!(appended_since(&None, 0), "");
+        assert_eq!(appended_since(&Some(d.join("absent.log").display().to_string()), 0), "");
+    }
+
+    #[test]
+    fn the_version_is_twelve_hex_of_the_running_binary() {
+        let v = binary_version();
+        assert_eq!(v.len(), 12, "{v}");
+        assert!(v.chars().all(|c| c.is_ascii_hexdigit()), "{v}");
+    }
+
+    /// A label launchd has never loaded has no previous run: nothing to report,
+    /// and run_as_job under a parent that is not launchd returns at once.
+    #[test]
+    fn an_unknown_label_has_no_previous_run_and_a_job_off_launchd_runs_on() {
+        let label = format!("com.chorus.zz-no-such-label-4747-{}", std::process::id());
+        assert_eq!(previous_run(&label), None);
+        assert_eq!(stderr_path(&launchctl_print(&label)), None);
+        run_as_job(); // the test's parent is cargo, not launchd: it must return
+    }
+
+    #[test]
+    fn a_failure_goes_to_chorus_log_at_error_level_and_a_stop_does_not() {
+        let d = scratch("emit");
+        let scripts = d.join("platform/scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        let rec = d.join("args");
+        std::fs::write(scripts.join("chorus-log"), format!("printf '%s\\n' \"$@\" >> {}\n", rec.display())).unwrap();
+        let before = std::env::var("CHORUS_HOME").ok();
+        std::env::set_var("CHORUS_HOME", &d);
+        emit_via_chorus_log("service.failed", &[("service", "com.chorus.x".to_string())]);
+        let failed = std::fs::read_to_string(&rec).unwrap_or_default();
+        std::fs::remove_file(&rec).ok();
+        emit_via_chorus_log("service.stopped", &[("service", "com.chorus.x".to_string())]);
+        let stopped = std::fs::read_to_string(&rec).unwrap_or_default();
+        match before { Some(h) => std::env::set_var("CHORUS_HOME", h), None => std::env::remove_var("CHORUS_HOME") }
+        assert_eq!(failed.lines().collect::<Vec<_>>(), ["service.failed", "system", "service=com.chorus.x", "--level=error"]);
+        assert!(!stopped.contains("--level=error"), "{stopped}");
+    }
+
     #[test]
     fn reads_the_stderr_path_from_launchctl() {
         let p = "gui/501/com.chorus.alert-runner = {\n\tstdout path = /a.log\n\tstderr path = /b.log\n}";
