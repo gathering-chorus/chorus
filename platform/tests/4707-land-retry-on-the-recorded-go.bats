@@ -37,7 +37,14 @@ for pair in nodes.split(","):
         n["humanTaskInput"] = go
     if name == "cicd-land" and enq:
         out = f"{tmp}/{rid}-cicd-land.out"
-        open(out, "w").write(json.dumps({"msg": "Enqueued dag-run", "dag": "cicd-land", "run-id": enq}).replace(" ", "") + "\n")
+        line = json.dumps({"msg": "Enqueued dag-run", "dag": "cicd-land", "run-id": enq}).replace(" ", "") + "\n"
+        if os.environ.get("ENQ_ON") == "stderr":
+            # #4760 — dagu logs the enqueue on stderr; stdout stays empty
+            open(out, "w").write("")
+            open(out + ".err", "w").write(line)
+            n["stderr"] = out + ".err"
+        else:
+            open(out, "w").write(line)
         n["stdout"] = out
     ns.append(n)
 open(f"{d}/status.jsonl", "w").write(json.dumps({"name": dag, "dagRunId": rid, "params": params,
@@ -73,6 +80,16 @@ go_given() {  # the 4715 shape: Jeff's go enqueued land L1, which stopped at bor
   run "$VERB" 4758 --dry-run
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"the go is cicd-go run go-C2 (accepter=jeff, decision=go)"* ]] || { echo "$output"; return 1; }
+}
+
+# #4760 — scripts/werk-land-retry: dagu writes the enqueue line to stderr (10-27,
+# #4760's land); the go is still found there
+@test "a land whose go logged its enqueue on stderr is retried on that go" {
+  ENQ_ON=stderr run_file cicd-go go-C5 "CARD=4760 ROLE=silas CICD_RUN=C5" 4 "skill-werk-go=4,cicd-land=4" '{"accepter":"jeff","decision":"go"}' L5
+  run_file cicd-land L5 "CARD=4760 ROLE=silas ACCEPTER=jeff" 2 "$LAND_STOPPED"
+  run "$VERB" 4760 --dry-run
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"the go is cicd-go run go-C5"* ]] || { echo "$output"; return 1; }
 }
 
 # NEGATIVE PROOF: a cicd-go run whose go was not Jeff's enqueues nothing retryable

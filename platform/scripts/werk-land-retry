@@ -66,13 +66,17 @@ def node(run, name):
 
 
 def enqueued_id(n):
-    """The land run id a cicd-land step enqueued, from its stdout."""
-    try:
-        with open(n.get("stdout") or "") as f:
-            m = re.search(r'"run-id":"([^"]+)"', f.read())
-        return m.group(1) if m else None
-    except OSError:
-        return None
+    """The land run id a cicd-land step enqueued, from its output. dagu logs the
+    enqueue on stderr (measured 10-27 on cicd-go: stdout empty), so both are read."""
+    for k in ("stdout", "stderr"):
+        try:
+            with open(n.get(k) or "") as f:
+                m = re.search(r'"run-id":"([^"]+)"', f.read())
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+    return None
 
 
 def the_go(cicd_runs, land_id):
