@@ -220,5 +220,4 @@ chorus:awareness a chorus:Domain ;
     # One parent (Silas model-chain draft, 2026-10-10): the step is the parent; no partOf.
     chorus:atStep chorus:value-stream-step-directing ;
     chorus:repoTarget "platform/pulse" ;
-    chorus:definesVocabulary chorus:RoleState , chorus:Heartbeat , chorus:Reading , chorus:WaitingOn ,
-        chorus:Prompt , chorus:Turn , chorus:Note .
+    chorus:definesVocabulary chorus:RoleState , chorus:Heartbeat , chorus:Reading , chorus:WaitingOn .

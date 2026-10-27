@@ -143,7 +143,6 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/wren/ontology/awareness-4018.ttl"),
             format!("{root}/roles/wren/ontology/product-design-4018.ttl"),
             format!("{root}/roles/wren/ontology/pulse-settings-4490.ttl"),  // #4490: pulse-api's settings as Property rows
-            format!("{root}/roles/wren/ontology/pulse-tree-4638.ttl"),  // #4638: Prompt, Turn, Note — the live tree's nouns
             // #4576: the AgentRuntime class, its fields and shape. Outside the set, the
             // class never reached the store (prod: the shape and 0 triples of the class),
             // so identity's claim on it pointed at nothing a validator calls a class.
@@ -2620,7 +2619,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 39, "the ontology set is 39 files (#4638 added pulse-tree-4638.ttl; #4091 added alerts-grafana-4091.ttl and toolchain-4091.ttl; #4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 38, "the ontology set is 38 files (#4757 took out pulse-tree-4638.ttl, which #4638 added; #4091 added alerts-grafana-4091.ttl and toolchain-4091.ttl; #4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));

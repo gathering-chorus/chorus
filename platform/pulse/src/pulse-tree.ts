@@ -4,7 +4,7 @@
  * Jeff 2026-10-19: prompt → role (moving/quiet, where) → turn (thoughts,
  * streams) and card (pipeline, verbs, notes). "if we do that then all of u
  * have operational awareness in a tree". The nouns are Prompt, Turn and Note
- * in roles/wren/ontology/pulse-tree-4638.ttl; this is the pure derivation
+ * once in roles/wren/ontology/pulse-tree-4638.ttl (retired by #4757: the tree is derived, never stored); this is the pure derivation
  * over them. Clearing only draws the result, and a role's turn-start context
  * is its slice of it.
  *
