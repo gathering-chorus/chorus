@@ -337,11 +337,16 @@ pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, Str
     const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
     const OWL: &str = "http://www.w3.org/2002/07/owl#";
-    let path = format!(
-        "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>\
+    // #4757 — rdfs:domain/range are a FIRST hop only: a shape's sh:path lands on a property
+    // IRI, and a domain hop after it would walk into that property's own domain list (and
+    // the guard below would then see every shape naming the property as a second owner:
+    // athena run 10 kept onCard's Turn∪Note union because TurnShape "reached" it).
+    let structural = format!(
+        "<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>\
          |<{SH}path>|<{SH}inversePath>|<{SH}alternativePath>|<{SH}zeroOrMorePath>|<{SH}oneOrMorePath>|<{SH}zeroOrOnePath>\
-         |<{RDFS}domain>|<{RDFS}range>|<{OWL}unionOf>|<{OWL}intersectionOf>)+"
+         |<{OWL}unionOf>|<{OWL}intersectionOf>"
     );
+    let path = format!("(<{RDFS}domain>|<{RDFS}range>|{structural})/({structural})*");
     // #4579 reopen 2 — a blank node another named subject also reaches (CoreShape's
     // flattened property nodes, shared by every shape that uses it) is not this
     // subject's to delete; deleting it emptied 77 shapes on 10-18.
@@ -2990,7 +2995,9 @@ mod subject_closure_runs_4064 {
         std::fs::write(&data2, r#"@prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix x: <https://x#> .
 <urn:g> {
   x:onCard rdfs:domain [ owl:unionOf ( x:Turn x:Note ) ] ; rdfs:range x:Card .
+  x:CardUseShape <http://www.w3.org/ns/shacl#property> [ <http://www.w3.org/ns/shacl#path> x:onCard ] .
   x:kept rdfs:domain [ owl:unionOf ( x:Kept1 x:Kept2 ) ] .
+  x:KeptShape <http://www.w3.org/ns/shacl#property> [ <http://www.w3.org/ns/shacl#path> x:kept ] .
 }"#).unwrap();
         let (_, _, del2) = subject_retirement_sparql("https://x#onCard", "urn:g");
         let ru2 = dir.join("u2.ru");
