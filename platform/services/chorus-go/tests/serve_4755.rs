@@ -1,8 +1,8 @@
 // @test-type: unit — hermetic: the real chorus-go binary on a loopback port, a scratch go store, a software P-256 key for the phone and a fake dagu that only records its arguments; no real run is ever answered.
 // @domain: security
 // @card: #4755
-//! #4755 — src/main.rs, the process half of #4710: the subcommands, and the go
-//! page's HTTP routes end to end — register a phone, open a go for a waiting
+//! #4755 — src/main.rs and src/serve.rs, the process half of #4710: the
+//! subcommands, and the go page's HTTP routes end to end — register a phone, open a go for a waiting
 //! run, sign it, and see the go step answered as Jeff (on the fake dagu) and
 //! `check` read the signed go. Each refusal on the way is shown failing.
 use chorus_go::*;
@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 
 const RP: &str = "go.example.test";
 const ORIGIN: &str = "https://go.example.test";
@@ -105,27 +105,36 @@ impl World {
     fn dagu_log(&self) -> String { std::fs::read_to_string(self.root.join("dagu.log")).unwrap_or_default() }
 }
 
-/// The server, stopped when the test ends (the child is this test's own).
-struct Server { child: Child, addr: String }
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
+/// The go page's routes, served in process by `chorus_go::serve::handle` (the
+/// code `chorus-go serve` runs per connection) on a loopback port. `handle`
+/// reads its config from the environment, so a test holds ENV for as long as
+/// its server runs. The listener thread outlives the test harmlessly.
+static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct Server { addr: String, _env: std::sync::MutexGuard<'static, ()> }
 
 fn serve(w: &World) -> Server {
-    let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    let addr = format!("127.0.0.1:{port}");
-    // serve never returns and is killed here, so its lines are not in the
-    // coverage profile (continuous mode is refused on macOS: counters section
-    // not page-aligned); these are behaviour proofs, counted or not
-    let child = w.cmd(&["serve"]).env("CHORUS_GO_ADDR", &addr).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
-    for _ in 0..100 {
-        if TcpStream::connect(&addr).is_ok() { break; }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    let guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    for (k, v) in [
+        ("HOME", w.root.clone()),
+        ("CHORUS_HOME", w.root.join("home")),
+        ("CHORUS_WERK_BASE", w.root.join("werks")),
+        ("CHORUS_GO_DAGU", w.root.join("bin/dagu")),
+    ] {
+        std::env::set_var(k, v);
     }
-    Server { child, addr }
+    std::env::set_var("CHORUS_GO_RP_ID", RP);
+    std::env::set_var("CHORUS_GO_ORIGIN", ORIGIN);
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    let dir = w.root.join("go");
+    std::thread::spawn(move || {
+        let store = Store::open(&dir).unwrap();
+        for s in l.incoming().flatten() {
+            let _ = chorus_go::serve::handle(&store, s);
+        }
+    });
+    Server { addr, _env: guard }
 }
 
 fn http(addr: &str, method: &str, path: &str, body: &str) -> (u16, String) {
@@ -269,6 +278,19 @@ fn subcommands_refuse_what_they_cannot_do() {
     let (code, out, _) = w.run(&["register-link"]);
     assert_eq!(code, 0);
     assert!(out.starts_with(&format!("{ORIGIN}/go/register?token=")), "{out}");
+    // the binary's own serve answers the page (killed after: its lines are not
+    // profiled, the routes above are, through handle)
+    let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let at = format!("127.0.0.1:{port}");
+    let mut child = w.cmd(&["serve"]).env("CHORUS_GO_ADDR", &at).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    for _ in 0..100 {
+        if TcpStream::connect(&at).is_ok() { break; }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let (c, _) = http(&at, "GET", "/go/", "");
+    let _ = child.kill();
+    let _ = child.wait();
+    assert_eq!(c, 200);
     // a port already held: serve fails loud instead of hanging
     let held = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = held.local_addr().unwrap().to_string();

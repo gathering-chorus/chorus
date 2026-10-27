@@ -23,6 +23,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod serve;
+
 pub type R<T> = Result<T, String>;
 
 /// A challenge is good for this long after the page asked for it.
