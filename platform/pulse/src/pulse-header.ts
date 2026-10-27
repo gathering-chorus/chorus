@@ -41,8 +41,9 @@ export async function composeHeader(src: Sources, now = new Date()): Promise<Hea
     line('/api/actor-state', () => Promise.resolve(src.actorState()), states => {
       const { actors, lastCalls } = factsFromActorState(states);
       if (!actors.length) throw new Error('actor-state lists no actors');
+      const calls = new Map(Object.entries(lastCalls));
       return actors.map(role => {
-        const last = lastCalls[role];
+        const last = calls.get(role);
         const s = last ? Math.max(0, Math.round((now.getTime() - Date.parse(last)) / 1000)) : null;
         return { role, state: s !== null && s < QUIET_AFTER_S ? 'moving' : 'quiet', secondsSinceLastCall: s };
       });
