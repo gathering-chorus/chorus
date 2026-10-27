@@ -1720,6 +1720,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         // #3752 reopen 1 — one presence query per graph for every subject
         // retirement; only a subject still there goes through backup + delete.
         let gone = absent_subjects(&ctx, &actions);
+        let retiring = classes_retired(&actions);
         for (n, action) in &actions {
             if let RetireAction::Subject { iri, graph } = action {
                 if gone.contains(&(graph.clone(), iri.clone())) {
@@ -1727,7 +1728,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
                     continue;
                 }
             }
-            run_retirement(action, *n, &ctx)?;
+            run_retirement_with(action, *n, &ctx, &retiring)?;
         }
     }
 
@@ -2185,7 +2186,29 @@ fn absent_subjects(ctx: &StoreCtx, actions: &[(usize, RetireAction)]) -> std::co
 /// subject and class retirement get the backup rule the bash gives only to
 /// whole-graph — AC3, and subject retirement is the leg #4216's 226 rows went
 /// through with nothing written down.
+/// #4757 — the classes this deploy's file also retires, by local name: its rows
+/// (retire_class) or the class itself (retire_subject; Kade: Note has a claim and no rows).
+pub fn classes_retired(actions: &[(usize, RetireAction)]) -> std::collections::BTreeSet<String> {
+    actions.iter().filter_map(|(_, a)| match a {
+        RetireAction::Class { class, .. } => Some(class.rsplit('#').next().unwrap_or(class).to_string()),
+        RetireAction::Subject { iri, .. } => Some(iri.rsplit('#').next().unwrap_or(iri).to_string()),
+        _ => None,
+    }).collect()
+}
+
+/// #4757 — may a claim be retired while its class is served? Only when the same deploy
+/// retires the class itself: the door serves a class BECAUSE a domain claims it, so
+/// "unserve first" can never come true for a class whose claim and rows go together.
+/// A served claim with no class retirement beside it still refuses (#3752).
+pub fn served_claim_may_retire(class: &str, retiring: &std::collections::BTreeSet<String>) -> bool {
+    retiring.contains(class)
+}
+
 fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new())
+}
+
+fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>) -> Result<(), String> {
     let refuse = |reason: String| -> String {
         emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
             &[("reason", reason.clone()), ("line", line.to_string())]);
@@ -2224,7 +2247,9 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 return Ok(());
             }
             let route = route_for_class(class);
-            if route_is_served(&served, &route) {
+            if route_is_served(&served, &route) && served_claim_may_retire(class, retiring) {
+                println!("athena-deploy: claim {domain}->{class} retires while /{route} is served: this deploy retires the class too (#4757)");
+            } else if route_is_served(&served, &route) {
                 eprintln!(
                     "athena-deploy: RETIREMENT REFUSED — class {class} is SERVED at /{route} \
                      RIGHT NOW (surface came up since staging); unserve first (#3752)"
@@ -3445,5 +3470,31 @@ mod run_retirement_triple_4716 {
         let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}tests"));
         let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
         assert!(e.contains("retirement-ask-unanswered"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod served_claim_4757 {
+    use super::{classes_retired, served_claim_may_retire, RetireAction};
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    fn class(n: &str) -> RetireAction { RetireAction::Class { class: format!("{C}{n}"), graph: "urn:chorus:domains:awareness".into() } }
+    fn subject(n: &str) -> RetireAction { RetireAction::Subject { iri: format!("{C}{n}"), graph: "urn:chorus:ontology".into() } }
+
+    /// The door serves a class because a domain claims it: a claim whose class this
+    /// deploy retires (rows or the class itself) may go while the route is still up.
+    #[test]
+    fn a_served_claim_retires_when_the_same_deploy_retires_its_class() {
+        let r = classes_retired(&[(1, class("Prompt")), (2, subject("Note")), (3, subject("PromptShape"))]);
+        assert!(served_claim_may_retire("Prompt", &r));
+        assert!(served_claim_may_retire("Note", &r));
+    }
+
+    /// NEGATIVE PROOF: a served claim with no retirement of its class beside it still refuses.
+    #[test]
+    fn negative_proof_a_served_claim_alone_still_refuses() {
+        let r = classes_retired(&[(1, class("Prompt"))]);
+        assert!(!served_claim_may_retire("Turn", &r));
+        assert!(!served_claim_may_retire("Turn", &classes_retired(&[])));
     }
 }
