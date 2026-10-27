@@ -35,54 +35,6 @@ fn envelope(class: &ClassDef, path: &str, data: Value) -> Value {
     })
 }
 
-/// #4744 — the product root: every field a domain puts on the header (c:inHeader), per
-/// collection, from the rows the caller may see. No class marks a field → no root route.
-pub fn header(store: &dyn RowStore, viewer: Option<&str>) -> (u16, Value) {
-    let mut data = serde_json::Map::new();
-    for c in CLASSES {
-        let fields: Vec<&str> = c.fields.iter().filter(|f| f.header).map(|f| f.name).collect();
-        if fields.is_empty() {
-            continue;
-        }
-        // a glance: the newest rows when the model names the field that orders them (c:headerNewest)
-        // and only the rows the model names for it (c:headerOnly, e.g. the cards in WIP)
-        let w = store::Where {
-            eq: c.fields.iter().filter_map(|f| f.header_only.map(|v| (f.name.to_string(), v.to_string()))).collect(),
-            sort: c.fields.iter().find(|f| f.newest).map(|f| (f.name.to_string(), true)),
-            ..Default::default()
-        };
-        let page = if w == store::Where::default() {
-            match viewer { Some(v) => store.list_seen_by(c, 100, 0, v), None => store.list(c, 100, 0) }
-        } else {
-            store.list_where(c, 100, 0, viewer, &w)
-        };
-        let rows = match page { Ok((rows, _)) => rows, Err(m) => return error(503, "store", &m) };
-        let rows: Vec<Value> = rows.into_iter().map(|r| {
-            let mut o = serde_json::Map::new();
-            o.insert("name".into(), r.get("name").cloned().unwrap_or(Value::Null));
-            for f in &fields {
-                o.insert((*f).into(), r.get(*f).cloned().unwrap_or(Value::Null));
-            }
-            Value::Object(o)
-        }).collect();
-        // #4744 AC8 — each header line opens its domain's stream, where the same filter and search apply
-        let stream = format!("/{PRODUCT}/{}/{}", c.domain, c.segment);
-        data.insert(format!("{}.{}", c.domain, c.segment), json!({ "fields": fields, "rows": rows, "stream": stream }));
-    }
-    if data.is_empty() {
-        return error(404, "unknown-route", "no domain of this product puts a field on its header");
-    }
-    (200, json!({
-        "apiVersion": API_VERSION,
-        "product": PRODUCT,
-        "productVersion": CRATE_VERSION,
-        "modelVersion": MODEL_VERSION,
-        "kind": "Header",
-        "self": format!("/{PRODUCT}"),
-        "data": data,
-    }))
-}
-
 fn error(code: u16, kind: &str, message: &str) -> (u16, Value) {
     (code, json!({ "error": kind, "message": message }))
 }
@@ -227,19 +179,7 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
     let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
-    // #4744 — the product root is its header, read under the same rule as every read
-    if parts == [PRODUCT] && method == "GET" {
-        if ctx.reads_public {
-            return header(store, None);
-        }
-        return match who.caller(authorization) {
-            Ok(c) => header(store, Some(&format!("{}principal-{}", model::NS, c.principal))),
-            Err(e) => {
-                let (code, kind) = auth::refusal(&e);
-                error(code, kind, &format!("{e:?}"))
-            }
-        };
-    }
+    // #4757 — no root header here: pulse serves its header from its sources (:3475/pulse)
     // #4744 — an operation (a live computation the model declares) answers under the same read rule
     if parts.len() >= 3 && parts[0] == PRODUCT && method == "GET" && ops::has(parts[1], parts[2]) {
         if !ctx.reads_public {

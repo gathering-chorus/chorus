@@ -597,16 +597,16 @@ chorus:MessageRecordShape-sentBy a sh:PropertyShape ;
 chorus:MessageRecordShape-sentTo a sh:PropertyShape ;
     sh:path chorus:sentTo ; sh:class chorus:Principal .
 chorus:MessageRecordShape-senderName a sh:PropertyShape ;
-    sh:path chorus:senderName ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+    sh:path chorus:senderName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageRecordShape-sentInSession a sh:PropertyShape ;
     sh:path chorus:sentInSession ; sh:maxCount 1 ; sh:class chorus:Session .
 chorus:MessageRecordShape-messageBody a sh:PropertyShape ;
-    sh:path chorus:messageBody ; chorus:inHeader true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+    sh:path chorus:messageBody ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageRecordShape-messageKind a sh:PropertyShape ;
     sh:path chorus:messageKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(nudge|chat|jeff-input|board-event|role-state)$" .
 chorus:MessageRecordShape-sentAt a sh:PropertyShape ;
-    sh:path chorus:sentAt ; chorus:inHeader true ; chorus:headerNewest true ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+    sh:path chorus:sentAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageRecordShape-sourceId a sh:PropertyShape ;
     sh:path chorus:sourceId ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageShape-overChannel a sh:PropertyShape ;

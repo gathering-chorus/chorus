@@ -201,34 +201,13 @@ fn sign_in_reads_this_store_not_a_remote_one() {
     assert_eq!(ids, vec!["https://id.example/art#me".to_string()]);
 }
 
-/// #4744 — the product root serves exactly the fields the model marks c:inHeader, per
-/// collection; a product that marks none has no root route (both states asserted).
+/// #4757 — the root header is retired: GET /<product> is an unknown route, never a header.
 #[test]
-fn the_product_root_is_the_header_the_model_marks() {
+fn the_product_root_is_no_header() {
     let store = Sparql::over(Box::new(seeded()));
-    let marked: Vec<String> = CLASSES.iter().filter(|c| c.fields.iter().any(|f| f.header))
-        .map(|c| format!("{}.{}", c.domain, c.segment)).collect();
-    let (code, out) = crate::header(&store, None);
-    if marked.is_empty() {
-        assert_eq!((code, out["error"].as_str()), (404, Some("unknown-route")), "{out}");
-        return;
-    }
-    assert_eq!(code, 200, "{out}");
-    assert_eq!(out["kind"], json!("Header"));
-    let mut got: Vec<String> = out["data"].as_object().unwrap().keys().cloned().collect();
-    got.sort();
-    let mut want = marked.clone();
-    want.sort();
-    assert_eq!(got, want);
-    for c in CLASSES.iter().filter(|c| c.fields.iter().any(|f| f.header)) {
-        let want: Vec<&str> = c.fields.iter().filter(|f| f.header).map(|f| f.name).collect();
-        assert_eq!(out["data"][format!("{}.{}", c.domain, c.segment)]["fields"], json!(want));
-        let line = &out["data"][format!("{}.{}", c.domain, c.segment)];
-        assert_eq!(line["stream"], json!(format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment)));
-        // the link resolves: the stream answers under the same product route
-        let (code, _) = crate::route(&ctx(&store), "GET", line["stream"].as_str().unwrap(), None, "");
-        assert_eq!(code, 200);
-    }
+    let (code, out) = crate::route(&ctx(&store), "GET", &format!("/{}", crate::model::PRODUCT), None, "");
+    assert_eq!(code, 404, "{out}");
+    assert_ne!(out["kind"], json!("Header"), "{out}");
 }
 
 /// #4744 AC8 (Jeff 10-26: "filter and search on any domain like a stream") — every
@@ -296,46 +275,3 @@ fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
     assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
 }
 
-/// #4744 AC7 — a header line whose class names a newest field (c:headerNewest) shows the
-/// newest row first, whatever order the store keeps; a product with none marks no order.
-#[test]
-fn the_header_shows_the_newest_rows_first_where_the_model_says_so() {
-    let Some((c, f)) = CLASSES.iter().find_map(|c| c.fields.iter().find(|f| f.newest && !f.link).map(|f| (c, f.name))) else {
-        assert!(CLASSES.iter().all(|c| c.fields.iter().all(|f| !f.newest)));
-        return;
-    };
-    let store = Sparql::over(Box::new(Embedded::memory()));
-    for (n, v) in [("old", "2026-10-26T08:00:00Z"), ("new", "2026-10-26T10:00:00Z"), ("mid", "2026-10-26T09:00:00Z")] {
-        // #4757 — a class can also name the rows its header shows (c:headerOnly): each row
-        // holds that value, so the order is what is under test, not the filter
-        let mut cells = vec![(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
-        for g in c.fields.iter().filter(|g| g.header_only.is_some()) {
-            cells.push((g.name.to_string(), vec![crate::rules::Cell::Literal(g.header_only.unwrap_or_default().into(), "string")]));
-        }
-        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
-    }
-    let (code, out) = crate::header(&store, None);
-    assert_eq!(code, 200, "{out}");
-    let rows = out["data"][format!("{}.{}", c.domain, c.segment)]["rows"].as_array().unwrap().clone();
-    let names: Vec<&str> = rows.iter().map(|r| r["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["new", "mid", "old"]);
-}
-
-/// #4744 — a header line shows only the rows the model names (c:headerOnly): the cards in
-/// WIP, never the whole board. Both states asserted for whichever class marks one.
-#[test]
-fn the_header_shows_only_the_rows_the_model_names() {
-    let Some((c, f, v)) = CLASSES.iter().find_map(|c| c.fields.iter().find_map(|f| f.header_only.map(|v| (c, f.name, v)))) else {
-        assert!(CLASSES.iter().all(|c| c.fields.iter().all(|f| f.header_only.is_none())));
-        return;
-    };
-    let store = Sparql::over(Box::new(Embedded::memory()));
-    for (n, val) in [("in", v), ("out", "Done")] {
-        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(val.into(), "string")])];
-        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
-    }
-    let (code, out) = crate::header(&store, None);
-    assert_eq!(code, 200, "{out}");
-    let names: Vec<&str> = out["data"][format!("{}.{}", c.domain, c.segment)]["rows"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["in"]);
-}
