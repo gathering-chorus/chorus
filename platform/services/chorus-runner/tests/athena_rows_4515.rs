@@ -20,6 +20,8 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread::JoinHandle;
 
+const SPEC_ALL: &str = r#"{"paths":{"/cards/cards":{"get":{},"post":{}},"/cards/cards/{name}":{"get":{},"put":{},"patch":{},"delete":{}},"/decisions/adrs":{"get":{},"post":{}},"/decisions/adrs/{name}":{"get":{},"patch":{},"delete":{}}}}"#;
+
 fn cols() -> Vec<String> {
     vec!["/cards/cards".into(), "/decisions/adrs".into()]
 }
@@ -37,6 +39,7 @@ fn fake_door(status: &'static str, body: &'static str) -> (String, JoinHandle<St
         // a call that never comes fails the test, never hangs it
         l.set_nonblocking(true).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
         let mut s = loop {
             match l.accept() {
                 Ok((s, _)) => break s,
@@ -64,8 +67,16 @@ fn fake_door(status: &'static str, body: &'static str) -> (String, JoinHandle<St
                 break;
             }
         }
+        let text = String::from_utf8_lossy(&req).to_string();
+        // #4762 — the class's generated spec is read first; this door declares every method
+        if text.lines().next().is_some_and(|l| l.contains("/openapi.json ")) {
+            let spec = SPEC_ALL;
+            s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{spec}", spec.len()).as_bytes()).unwrap();
+            continue;
+        }
         s.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).unwrap();
-        String::from_utf8_lossy(&req).to_string()
+        return text;
+        }
     });
     (base, h)
 }

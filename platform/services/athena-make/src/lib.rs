@@ -1425,6 +1425,7 @@ pub fn write_routes(plural: &str) -> Vec<String> {
     let mut routes = vec![
         format!("POST /{}", plural),                  // create entity
         format!("PUT /{}/:name", plural),             // replace entity
+        format!("PATCH /{}/:name", plural),           // #4762 change fields (the door serves it: PatchEntity)
         format!("DELETE /{}/:name", plural),          // delete entity
         format!("POST /{}/:name/partof", plural),     // add partOf edge
         format!("DELETE /{}/:name/partof", plural),   // remove partOf edge
@@ -4053,6 +4054,9 @@ pub fn openapi_json(t: &RouteTable) -> String {
                 Some(format!("{{ \"$ref\": \"#/components/schemas/{}Create\" }}", class_short))
             } else if m == "put" && p.ends_with("/{name}") {
                 Some(format!("{{ \"$ref\": \"#/components/schemas/{}Replace\" }}", class_short))
+            } else if m == "patch" && p.ends_with("/{name}") {
+                // #4762 — a change carries only the fields it changes
+                Some("{ \"type\": \"object\", \"minProperties\": 1 }".to_string())
             } else if p.contains("/{name}/") {
                 Some("{ \"type\": \"object\", \"additionalProperties\": false, \"properties\": { \"target\": { \"type\": \"string\" } }, \"required\": [\"target\"] }".to_string())
             } else {
@@ -7740,6 +7744,7 @@ mod tests {
         t.routes.extend([
             "POST /domains".into(),
             "PUT /domains/:name".into(),
+            "PATCH /domains/:name".into(),
             "DELETE /domains/:name".into(),
             "POST /domains/:name/partof".into(),
             "DELETE /domains/:name/partof".into(),
@@ -7749,7 +7754,8 @@ mod tests {
             .lines()
             .find(|line| line.trim_start().starts_with("\"/domains/{name}\":"))
             .expect("entity path");
-        assert_eq!(entity_path.matches("\"requestBody\"").count(), 1, "DELETE has no body; PUT has one: {entity_path}");
+        assert_eq!(entity_path.matches("\"requestBody\"").count(), 2, "DELETE has no body; PUT and PATCH have one: {entity_path}");
+        assert!(entity_path.contains("\"patch\": {"), "#4762: PATCH is documented: {entity_path}");
         assert!(entity_path.contains("#/components/schemas/DomainReplace"), "PUT uses the replace schema: {entity_path}");
         assert!(entity_path.contains("\"delete\": { \"parameters\":"), "DELETE remains documented: {entity_path}");
 
@@ -7789,6 +7795,8 @@ mod tests {
         assert!(r.contains(&"POST /domains".to_string()), "create entity");
         assert!(r.contains(&"POST /domains/batch".to_string()), "#4158: every served class gets the batch route");
         assert!(r.contains(&"PUT /domains/:name".to_string()), "replace entity");
+        // #4762 — the door serves PATCH (parse_write PatchEntity); the generated route table says so
+        assert!(r.contains(&"PATCH /domains/:name".to_string()), "change fields of an entity");
         assert!(r.contains(&"DELETE /domains/:name".to_string()), "delete entity");
         // per-edge add/remove (mirrors the read edges)
         for edge in ["partof", "contains", "has-child"] {

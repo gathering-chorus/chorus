@@ -171,6 +171,20 @@ pub fn athena_tools(collections: &[String]) -> Vec<ToolSpec> {
         .collect()
 }
 
+/// #4762 (Jeff 2026-10-27: "no more custom") — a tool runs only where the
+/// class's generated openapi.json (athena-gen, served by the door) declares its
+/// method: the collection path for list/add, `{name}` for get/set/delete. No
+/// readable spec is a refusal (502), never a pass.
+pub fn declared(spec: &str, tool: &str, collection: &str) -> Result<(), BadCall> {
+    let Some((_, method, needs_id, _, _)) = ATHENA_TOOLS.iter().find(|t| t.0 == tool) else {
+        return Err(BadCall { reason: format!("no such tool: {tool}"), status: 404 });
+    };
+    let v: Value = serde_json::from_str(spec).map_err(|e| BadCall { reason: format!("{tool}: the generated spec for {collection} is not readable: {e}"), status: 502 })?;
+    let path = if *needs_id { format!("{collection}/{{name}}") } else { collection.to_string() };
+    let ok = v.get("paths").and_then(|p| p.get(&path)).and_then(|ops| ops.get(method.to_lowercase())).is_some();
+    if ok { Ok(()) } else { Err(BadCall { reason: format!("{tool}: the generated API does not declare {method} {path}"), status: 405 }) }
+}
+
 pub fn is_athena_tool(name: &str) -> bool {
     ATHENA_TOOLS.iter().any(|t| t.0 == name)
 }

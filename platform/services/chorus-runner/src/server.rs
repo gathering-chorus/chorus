@@ -243,6 +243,13 @@ pub fn run_athena(base: &str, tool: &str, args: &serde_json::Map<String, serde_j
     if who.is_empty() || who == "unverified" {
         return (false, format!("{tool} needs a verified caller"), 403);
     }
+    // #4762 — the class's generated spec says which methods it allows
+    let collection: String = path.split(['/', '?']).filter(|s| !s.is_empty()).skip(1).take(2).fold(String::new(), |a, s| format!("{a}/{s}"));
+    let spec = Command::new("curl").args(["-s", "--max-time", "10", &format!("{base}/v1{collection}/openapi.json")]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    if let Err(b) = crate::declared(&spec, tool, &collection) {
+        return (false, b.reason, b.status);
+    }
     let token = match caller_token.map(String::from).or_else(|| identity_token(who)) {
         Some(t) => t,
         None => return (false, format!("could not mint {who}'s identity to call the door as them"), 503),
