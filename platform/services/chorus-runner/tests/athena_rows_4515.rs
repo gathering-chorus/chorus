@@ -2,7 +2,8 @@
 // @domain: services
 //! #4515 (Jeff 2026-10-14) — rows are read and written with one family of
 //! tools named after the door's own URL shape: athena-get, athena-list,
-//! athena-add, athena-set over /v1/<domain>/<class>[/<id>]. Each call goes to
+//! athena-add, athena-set, and athena-delete (#4762: src/lib ATHENA_TOOLS, src/server
+//! run_http sends a DELETE with no body) over /v1/<domain>/<class>[/<id>]. Each call goes to
 //! the door as the caller, with the caller's own credential; a refusal from
 //! the door is a failed call carrying the door's message; a name that is not
 //! a plain domain, class or id never becomes a request. They replace
@@ -81,11 +82,13 @@ fn call(base: &str, tool: &str, a: Value) -> (bool, String, u16) {
 
 #[test]
 fn get_list_add_set_hit_the_right_method_and_path_as_the_caller() {
-    let cases: [(&str, Value, &str, Option<Value>); 4] = [
+    let cases: [(&str, Value, &str, Option<Value>); 5] = [
         ("athena-get", json!({"domain":"cards","class":"cards","id":"card-4515"}), "GET /v1/cards/cards/card-4515 ", None),
         ("athena-list", json!({"domain":"decisions","class":"adrs","limit":5}), "GET /v1/decisions/adrs?limit=5 ", None),
         ("athena-add", json!({"domain":"cards","class":"cards","fields":{"title":"x"}}), "POST /v1/cards/cards ", Some(json!({"title":"x"}))),
         ("athena-set", json!({"domain":"cards","class":"cards","id":"card-4515","fields":{"status":"done"}}), "PATCH /v1/cards/cards/card-4515 ", Some(json!({"status":"done"}))),
+        // #4762 — a retired row leaves through the same door, as the caller
+        ("athena-delete", json!({"domain":"cards","class":"cards","id":"card-4762"}), "DELETE /v1/cards/cards/card-4762 ", None),
     ];
     for (tool, a, line, body) in cases {
         let (base, h) = fake_door("200 OK", r#"{"ok":true}"#);
@@ -185,8 +188,30 @@ fn the_credential_stays_on_loopback_and_needs_a_caller() {
 async fn tools_list_offers_the_athena_tools_and_not_door_get_or_door_list() {
     let (status, body) = send(rpc("tools/list", r#"{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}"#, "2026-07-28", &good_token())).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    for t in ["athena-get", "athena-list", "athena-add", "athena-set"] {
+    for t in ["athena-get", "athena-list", "athena-add", "athena-set", "athena-delete"] {
         assert!(body.contains(&format!("\"{t}\"")), "{t} offered: {body}");
     }
     assert!(!body.contains("door_get") && !body.contains("door_list"), "{body}");
+}
+
+/// #4762 NEGATIVE PROOF: the door refuses a delete by a caller who does not
+/// own the row; the refusal is a failed call with the door's message.
+#[test]
+fn a_delete_the_door_refuses_is_a_failed_call_with_its_message() {
+    let (base, h) = fake_door("403 Forbidden", r#"{"error":"wren may not delete cards owned by silas"}"#);
+    let (ok, text, code) = call(&base, "athena-delete", json!({"domain":"cards","class":"cards","id":"card-4762"}));
+    let req = h.join().unwrap();
+    assert!(req.starts_with("DELETE /v1/cards/cards/card-4762 "), "{req}");
+    assert!(!ok && code == 403, "a refused delete is not success: {text}");
+    assert!(text.contains("may not delete"), "{text}");
+}
+
+/// #4762 NEGATIVE PROOF: a delete with no id never becomes a request (it
+/// would name the whole collection).
+#[test]
+fn a_delete_with_no_id_is_refused_before_any_request() {
+    let cols = vec!["/security/permissions".to_string()];
+    let a = json!({"domain":"security","class":"permissions"});
+    let bad = chorus_runner::athena_call("athena-delete", a.as_object().unwrap(), &cols).unwrap_err();
+    assert!(bad.reason.contains("id is required"), "{}", bad.reason);
 }

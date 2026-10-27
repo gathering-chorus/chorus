@@ -31,7 +31,7 @@ fn the_tool_enum_is_exactly_what_the_door_serves() {
     let cols = served_collections(DISCOVERY).unwrap();
     let tools = athena_tools(&cols);
     let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
-    assert_eq!(names, vec!["athena-get", "athena-list", "athena-add", "athena-set"]);
+    assert_eq!(names, vec!["athena-get", "athena-list", "athena-add", "athena-set", "athena-delete"]);
     for t in &tools {
         assert!(t.description.contains("/cards/cards, /code/files, /domains/domains"), "{}: {}", t.name, t.description);
     }
@@ -58,5 +58,7 @@ fn a_row_name_is_checked_before_it_reaches_the_door() {
     for evil in ["../security/credentials", "a b", "x?y=1", "", "Card-1", "-x", "a/b"] {
         assert!(athena_call("athena-get", &args(json!({"domain":"cards","class":"cards","id":evil})), &cols).is_err(), "{evil:?}");
     }
-    assert_eq!(athena_call("athena-delete", &args(json!({"domain":"cards","class":"cards"})), &cols).unwrap_err().status, 404);
+    // #4762: athena-delete is a tool now; one with no id is refused before the door
+    assert_eq!(athena_call("athena-delete", &args(json!({"domain":"cards","class":"cards"})), &cols).unwrap_err().status, 400);
+    assert_eq!(athena_call("athena-drop", &args(json!({"domain":"cards","class":"cards"})), &cols).unwrap_err().status, 404);
 }

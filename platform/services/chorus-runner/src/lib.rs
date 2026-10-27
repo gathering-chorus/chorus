@@ -127,11 +127,13 @@ pub struct ToolSpec {
 /// #4515 (Jeff 2026-10-14) — rows are read and written with one family of
 /// tools named after the door's own URL shape, /v1/<domain>/<class>[/<id>]:
 /// (name, HTTP method, needs an id, carries fields, what it does).
-pub const ATHENA_TOOLS: [(&str, &str, bool, bool, &str); 4] = [
+pub const ATHENA_TOOLS: [(&str, &str, bool, bool, &str); 5] = [
     ("athena-get", "GET", true, false, "Get one row, by id, from a class the model door serves (GET /v1/<domain>/<class>/<id>)."),
     ("athena-list", "GET", false, false, "List rows of a class the model door serves (GET /v1/<domain>/<class>)."),
     ("athena-add", "POST", false, true, "Add a row to a class the model door serves, as the caller (POST /v1/<domain>/<class>)."),
     ("athena-set", "PATCH", true, true, "Change fields of one row, as the caller (PATCH /v1/<domain>/<class>/<id>)."),
+    // #4762 — a retired row leaves the store in the same change (Jeff 2026-10-27)
+    ("athena-delete", "DELETE", true, false, "Delete one row, as the caller; the door refuses a caller who does not own it (DELETE /v1/<domain>/<class>/<id>)."),
 ];
 
 /// The athena tools, over exactly the collections the door serves: the
