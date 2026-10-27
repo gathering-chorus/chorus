@@ -21,6 +21,8 @@ pub struct Src {
     pub status: String,
     pub delivered_at: String,
     pub error: String,
+    /// messages.db trace_id (#4761): how one nudge's whole words are found
+    pub trace: String,
 }
 
 pub fn parse_rows(json_text: &str) -> Vec<Src> {
@@ -29,7 +31,7 @@ pub fn parse_rows(json_text: &str) -> Vec<Src> {
     v.as_array().map(|a| a.iter().filter_map(|r| Some(Src {
         id: r.get("id")?.as_u64()?,
         kind: s(r, "type"), from: s(r, "from"), to: s(r, "to"), content: s(r, "content"),
-        created_at: s(r, "created_at"), status: s(r, "delivery_status"), delivered_at: s(r, "delivered_at"), error: s(r, "last_delivery_error"),
+        created_at: s(r, "created_at"), status: s(r, "delivery_status"), delivered_at: s(r, "delivered_at"), error: s(r, "last_delivery_error"), trace: s(r, "trace_id"),
     })).collect()).unwrap_or_default()
 }
 
@@ -75,6 +77,7 @@ pub fn message_row(src: &Src, principals: &[String], session: Option<&str>) -> V
     if let Some(p) = principal_of(&src.from, principals) { v["sentBy"] = Value::String(p); }
     if let Some(p) = principal_of(&src.to, principals) { v["sentTo"] = Value::String(p); }
     if let Some(s) = session.filter(|s| !s.is_empty()) { v["sentInSession"] = Value::String(s.into()); }
+    if !src.trace.is_empty() { v["trace"] = Value::String(src.trace.clone()); }
     v
 }
 

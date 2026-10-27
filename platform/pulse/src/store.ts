@@ -549,23 +549,16 @@ export class MessageStore {
 
   // --- Queries ---
 
-  queryMessages(opts: { type?: string; from?: string; to?: string; pair?: [string, string]; since?: string; before?: string; trace?: string; limit?: number }): Message[] {
+  queryMessages(opts: { type?: string; from?: string; to?: string; since?: string; limit?: number }): Message[] {
     let sql = 'SELECT * FROM messages WHERE 1=1';
     const params: (string | number)[] = [];
 
     if (opts.type) { sql += ' AND type = ?'; params.push(opts.type); }
-    if (opts.pair) {
-      sql += ' AND (("from" = ? AND "to" = ?) OR ("from" = ? AND "to" = ?))';
-      params.push(opts.pair[0], opts.pair[1], opts.pair[1], opts.pair[0]);
-    } else {
-      if (opts.from) { sql += ' AND "from" = ?'; params.push(opts.from); }
-      if (opts.to) { sql += ' AND "to" = ?'; params.push(opts.to); }
-    }
+    if (opts.from) { sql += ' AND "from" = ?'; params.push(opts.from); }
+    if (opts.to) { sql += ' AND "to" = ?'; params.push(opts.to); }
     if (opts.since) { sql += ' AND created_at >= datetime(?)'; params.push(opts.since); }
-    if (opts.before) { sql += ' AND created_at < datetime(?)'; params.push(opts.before); }
-    // #4339 — the prompt hook fetches a nudge's full words by the trace the
-    // spine carried; the spine's own copy is a preview cut at the first quote.
-    if (opts.trace) { sql += ' AND trace_id = ?'; params.push(opts.trace); }
+    // #4761 — pair, before and trace served only the retired GET /api/messages;
+    // readers use the generated route's fields (sentBy/sentTo, sentAt.lt, trace).
 
     sql += ' ORDER BY created_at DESC';
     if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }

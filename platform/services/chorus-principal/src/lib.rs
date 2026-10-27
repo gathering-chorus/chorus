@@ -1487,7 +1487,7 @@ fn project_messages(ctx: &Ctx) -> i32 {
     let watermark = state.get("watermark").and_then(|w| w.as_u64()).unwrap_or(0);
     let open: Vec<u64> = state.get("open").and_then(|o| o.as_object()).map(|o| o.keys().filter_map(|k| k.parse().ok()).collect()).unwrap_or_default();
     let open_list = if open.is_empty() { "0".to_string() } else { open.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",") };
-    let q = format!("select id,type,\"from\",\"to\",content,created_at,delivery_status,delivered_at,last_delivery_error from messages where (id > {} and created_at >= '{}') or id in ({}) order by id limit 500", watermark, since, open_list);
+    let q = format!("select id,type,\"from\",\"to\",content,created_at,delivery_status,delivered_at,last_delivery_error,trace_id from messages where (id > {} and created_at >= '{}') or id in ({}) order by id limit 500", watermark, since, open_list);
     let out = sh(&sqlite, &["-json", &db, &q]).unwrap_or_default();
     let srcs = msgs::parse_rows(if out.trim().is_empty() { "[]" } else { &out });
     if srcs.is_empty() { println!("project-messages: nothing new"); return 0; }

@@ -5,7 +5,7 @@ use serde_json::json;
 
 fn src(kind: &str, from: &str, to: &str, content: &str, status: &str) -> Src {
     Src { id: 40158, kind: kind.into(), from: from.into(), to: to.into(), content: content.into(),
-          created_at: "2026-09-26 17:16:35".into(), status: status.into(), delivered_at: "2026-09-26 17:16:36".into(), error: String::new() }
+          created_at: "2026-09-26 17:16:35".into(), status: status.into(), delivered_at: "2026-09-26 17:16:36".into(), error: String::new(), trace: String::new() }
 }
 fn principals() -> Vec<String> { ["jeff", "kade", "silas", "wren", "bridge"].iter().map(|s| s.to_string()).collect() }
 
@@ -106,4 +106,16 @@ fn only_prompts_received_after_the_message_and_soon_after_can_be_it() {
     // negative proof: with no window every old prompt would be a candidate
     assert_eq!(received_for(&log, "2026-09-26T16:00:00Z", 100_000).len(), 3);
     assert_eq!(age_secs("2026-09-26T23:59:50Z", "2026-09-27T00:00:10Z"), Some(20));
+}
+
+/// #4761 — the trace a nudge was sent under rides on its Message row, so the
+/// nudge's whole words are found by `?trace=` on the generated route.
+#[test]
+fn a_message_carries_its_trace() {
+    let rows = parse_rows(r#"[{"id":1,"type":"nudge","from":"wren","to":"kade","content":"hi","created_at":"2026-10-27 09:52:00","trace_id":"01a17cc6"}]"#);
+    assert_eq!(rows[0].trace, "01a17cc6");
+    assert_eq!(message_row(&rows[0], &principals(), None)["trace"], "01a17cc6");
+    // NEGATIVE PROOF: a row with no trace writes no trace field, never an empty one
+    let none = message_row(&src("nudge", "wren", "kade", "hi", "delivered"), &principals(), None);
+    assert!(none.get("trace").is_none());
 }

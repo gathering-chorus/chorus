@@ -21,6 +21,7 @@ export { formatBostonTime, formatTodayHeader } from './sources/format';
 export interface DataServiceOptions {
   rolesUrl?: string;
   pulseUrl?: string;
+  pulseApiUrl?: string;
   cardsUrl?: string;
   athenaCardUrl?: string;
   alertsUrl?: string;
@@ -84,6 +85,7 @@ export class DataService {
   private defaultAthenaCardUrl: string;
   private defaultAlertsUrl: string;
   private defaultPulseUrl: string;
+  private defaultPulseApiUrl: string;
   private runWerkStatus?: (cardId: number) => Promise<string>;
   private relay: BuzzRelayClient;
   private router: MessageRouter;
@@ -95,6 +97,7 @@ export class DataService {
     this.defaultAthenaCardUrl = firstSet(options.athenaCardUrl, process.env.ATHENA_CARD_URL, 'http://localhost:3340/api/athena/card');
     this.defaultAlertsUrl = firstSet(options.alertsUrl, process.env.ALERTS_URL, 'http://localhost:3340/api/chorus/context/alerts');
     this.defaultPulseUrl = firstSet(options.pulseUrl, process.env.PULSE_URL, 'http://127.0.0.1:3475');
+    this.defaultPulseApiUrl = firstSet(options.pulseApiUrl, process.env.PULSE_API_URL, 'http://127.0.0.1:3392');
     this.runWerkStatus = options.runWerkStatus;
     this.relay = options.relay;
     this.router = options.router;
@@ -165,7 +168,7 @@ export class DataService {
    *  #4749 — fall through to Buzz relay (for room channels) or pulse (for direct threads)
    *  when the in-memory router buffer is exhausted. Read-through only: does NOT pollute router cache.
    */
-  async getRoomHistory(room: string, beforeId: string, beforeTs?: number, options?: { pulseUrl?: string }): Promise<RoomsData['messages']> {
+  async getRoomHistory(room: string, beforeId: string, beforeTs?: number, options?: { pulseApiUrl?: string }): Promise<RoomsData['messages']> {
     const fromBuffer = this.router.getBefore(beforeId, ROOM_PAGE_MESSAGES, room);
     if (fromBuffer.length > 0) {
       return fromBuffer.map(toRoomMessage);
@@ -179,23 +182,30 @@ export class DataService {
     const isDirect = !['team', 'clearing'].includes(roomLower) && !roomLower.startsWith('#');
 
     if (isDirect) {
-      // Direct thread: query Pulse GET /api/messages?before=<iso_ts>&pair=jeff,<role> (both directions)
-      const pulseUrl = options?.pulseUrl || this.defaultPulseUrl;
+      // #4761 — direct thread from the generated messages route: one read per direction
+      // (the route filters by field, with no OR), merged, newest page before the anchor.
+      const apiUrl = options?.pulseApiUrl || this.defaultPulseApiUrl;
       const isoBefore = new Date(beforeTs * 1000).toISOString();
-      const read = await fetchJson<Array<{ id: string; from: string; to?: string; text: string; created_at: string }>>(
-        `${pulseUrl}/api/messages?before=${encodeURIComponent(isoBefore)}&pair=jeff,${encodeURIComponent(roomLower)}&limit=${ROOM_PAGE_MESSAGES}`,
+      const one = (from: string, to: string) => fetchJson<{ data?: Array<{ sourceId: string; senderName: string; messageBody: string; sentAt: string }> }>(
+        `${apiUrl}/pulse/messages/messages?sentBy=principal-${encodeURIComponent(from)}&sentTo=principal-${encodeURIComponent(to)}` +
+          `&sentAt.lt=${encodeURIComponent(isoBefore)}&sort=-sentAt&limit=${ROOM_PAGE_MESSAGES}`,
         5000
       );
-      if (!read.ok) {
-        throw new Error(failureReason(read, 'pulse unreadable'));
+      const reads = await Promise.all([one('jeff', roomLower), one(roomLower, 'jeff')]);
+      const failed = reads.find((r) => !r.ok);
+      if (failed) {
+        throw new Error(failureReason(failed, 'pulse messages unreadable'));
       }
-      if (!Array.isArray(read.value)) return [];
-      return read.value.map((m) => toRoomMessage({
-        id: m.id,
-        from: m.from,
-        text: m.text,
-        ts: m.created_at,
-        type: m.from === 'jeff' ? 'jeff-input' : 'role-response',
+      const rows = reads.flatMap((r) => (r.ok && Array.isArray(r.value.data) ? r.value.data : []))
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+        .slice(0, ROOM_PAGE_MESSAGES)
+        .reverse(); // oldest-first, as room history renders
+      return rows.map((m) => toRoomMessage({
+        id: m.sourceId,
+        from: m.senderName,
+        text: m.messageBody,
+        ts: m.sentAt,
+        type: m.senderName === 'jeff' ? 'jeff-input' : 'role-response',
         room,
         visible: true,
         tick: false,

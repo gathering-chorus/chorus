@@ -154,6 +154,7 @@ function getTestOverrides(req: Request) {
   if (!isTest) return {};
   return {
     pulseUrl: req.headers['x-pulse-url'] as string | undefined,
+    pulseApiUrl: req.headers['x-pulse-api-url'] as string | undefined,
     rolesUrl: req.headers['x-roles-url'] as string | undefined,
     cardsUrl: req.headers['x-cards-url'] as string | undefined,
     athenaCardUrl: req.headers['x-athena-card-url'] as string | undefined,
@@ -296,9 +297,9 @@ function registerReadApiRoutes(ctx: RouteContext): void {
     const room = (Array.isArray(rawRoom) ? rawRoom[0] : rawRoom) || 'team';
     const before = typeof req.query.before === 'string' ? req.query.before : '';
     const beforeTs = typeof req.query.ts === 'string' ? parseInt(req.query.ts, 10) : undefined;
-    const { pulseUrl } = getTestOverrides(req);
+    const { pulseApiUrl } = getTestOverrides(req);
     try {
-      const older = before ? await dataService.getRoomHistory(room, before, beforeTs, { pulseUrl }) : [];
+      const older = before ? await dataService.getRoomHistory(room, before, beforeTs, { pulseApiUrl }) : [];
       // #4646 — the older page carries the same base path as the page (photo and room links)
       res.json({ ok: true, count: older.length, html: withBase(older.map(renderRoomMessage).join(''), String(res.locals.base || '')) });
     } catch (e) {
@@ -505,6 +506,8 @@ export interface CreateAppOptions {
   handoffFile?: string;
   relayUrl?: string;
   pulseUrl?: string;
+  /** #4761 — the generated pulse API (messages); default PULSE_API_URL or :3392. */
+  pulseApiUrl?: string;
   rolesUrl?: string;
   /** Accepted for older callers; unread since #4563 (roles, today and the strip read pulse). */
   boardUrl?: string;
@@ -703,6 +706,7 @@ export function createApp(options?: CreateAppOptions) {
     athenaCardUrl: urls.athenaCardUrl,
     alertsUrl: urls.alertsUrl,
     pulseUrl: urls.pulseUrl,
+    pulseApiUrl: options?.pulseApiUrl,
     runWerkStatus: options?.runWerkStatus,
     relay,
     router,
