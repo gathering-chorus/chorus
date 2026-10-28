@@ -218,6 +218,15 @@ fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json:
     }))
 }
 
+/// #4779 — Resolve the per-role CSS credential path (`cred.json`, never `key.json`).
+fn role_cred_path(id_dir: Option<&str>, home: &str, role: &str) -> std::path::PathBuf {
+    let base = id_dir
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(home).join(".chorus/identity"));
+    base.join(role).join("cred.json")
+}
+
 /// #4779 — Push the caller's own session turn authenticated by its verified CSS
 /// credential. Runs best-effort inside the role's own macOS user process.
 fn push_session_turn_best_effort(endpoint: &str, input: &str) {
@@ -232,17 +241,15 @@ fn push_session_turn_best_effort(endpoint: &str, input: &str) {
                 .as_deref()
                 .and_then(crate::shared::role::webid_of_token)
                 .and_then(|w| crate::shared::role::role_from_webid(&w))
-        });
+        })
+        .or_else(|| std::env::var("CHORUS_ROLE").ok().filter(|s| !s.trim().is_empty()));
     let Some(role) = role else {
         return;
     };
     let home = std::env::var("HOME").unwrap_or_default();
-    let key_path = std::path::Path::new(&home)
-        .join(".chorus/identity")
-        .join(&role)
-        .join("key.json");
+    let cred_path = role_cred_path(std::env::var("CHORUS_IDENTITY_DIR").ok().as_deref(), &home, &role);
     let explicit_url = std::env::var("CHORUS_SESSION_TURN_PUSH_URL").ok().filter(|s| !s.is_empty());
-    if !key_path.exists() && explicit_url.is_none() {
+    if !cred_path.exists() && explicit_url.is_none() {
         return;
     }
     let script = format!("{}/platform/scripts/chorus-identity-token", shared::state_paths::chorus_root());
@@ -326,6 +333,39 @@ mod inject_trace_id_tests {
         // Negative proofs: empty text or non-turn endpoint returns None
         assert!(build_session_turn_payload("user-prompt-submit", r#"{"prompt":"   "}"#).is_none());
         assert!(build_session_turn_payload("pre-tool-use", r#"{"prompt":"hi"}"#).is_none());
+
+        // #4779 reopen: per-role CSS credential file is cred.json (never key.json)
+        let p_home = role_cred_path(None, "/Users/chorus-kade", "kade");
+        assert_eq!(p_home.to_string_lossy(), "/Users/chorus-kade/.chorus/identity/kade/cred.json");
+        assert!(!p_home.to_string_lossy().ends_with("key.json"));
+        let p_override = role_cred_path(Some("/custom/id"), "/Users/chorus-kade", "silas");
+        assert_eq!(p_override.to_string_lossy(), "/custom/id/silas/cred.json");
+    }
+
+    #[test]
+    fn boot_read_url_and_channel_isolation_and_crisis_filter_4779() {
+        use crate::commands::context_cache::{boot_messages, boot_read_allowed, boot_read_url, own_messages};
+
+        // AC3: channel-scoped recent query without q=the hack
+        let url = boot_read_url("silas");
+        assert_eq!(url, "http://localhost:3340/api/chorus/search?channel=session:silas&order=recent&limit=30");
+        assert!(!url.contains("q=the"), "NEGATIVE: must not require q=the");
+
+        // AC4: negative proof — unindexed role refused, other roles' turns never leak
+        let door = vec!["abby-normal".to_string(), "borg-queen".to_string()];
+        assert!(boot_read_allowed("borg-queen", &door));
+        assert!(!boot_read_allowed("nobody", &door), "NEGATIVE: unlisted role refused");
+        let others = r#"{"results":[{"channel":"session:wren","content":"wren text"},{"channel":"session:kade","content":"kade text"}]}"#;
+        let none = own_messages(others, "abby-normal");
+        assert!(none.contains("No session messages are recorded for abby-normal"), "NEGATIVE: {none}");
+        assert!(!none.contains("wren text") && !none.contains("kade text"));
+
+        // AC5: historical turns replay and crisis/safety classifier exchanges (#4426) are filtered
+        let hist = r#"{"results":[{"channel":"session:silas","role":"silas","content":"10-27 session turn"},{"role":"silas","content":"10-27 role-tagged turn"},{"channel":"session:silas","role":"silas","content":"Call or text 988 to reach the Suicide & Crisis Lifeline"},{"channel":"session:kade","role":"kade","content":"kade turn"}]}"#;
+        let filtered = boot_messages(&own_messages(hist, "silas"));
+        assert!(filtered.contains("10-27 session turn") && filtered.contains("10-27 role-tagged turn"));
+        assert!(!filtered.contains("Suicide & Crisis Lifeline"), "NEGATIVE (#4426): crisis helpline turn must be filtered");
+        assert!(!filtered.contains("kade turn"), "NEGATIVE: cross-role turn must not leak");
     }
 }
 

@@ -489,18 +489,16 @@ pub fn boot_read_instruction(role: &str) -> String {
 }
 
 /// #4444 — may `name` boot-read? The three Claude roles always; any other
-/// name only when the roles door lists it (Abby: "usage: … <wren|silas|kade>"
-/// at 17:32 sent her grepping the repo). The name goes into a URL, so it must
+/// name only when the roles door lists it. The name goes into a URL, so it must
 /// be a plain slug first.
 pub fn boot_read_allowed(name: &str, door_roles: &[String]) -> bool {
-    let slug = !name.is_empty() && name.len() <= 40 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    let slug = !name.is_empty() && name.len() <= 40
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     slug && (matches!(name, "wren" | "silas" | "kade") || door_roles.iter().any(|r| r == name))
 }
 
-/// #4444 — only the role's own session messages. The search treats a channel
-/// it has never indexed as no filter at all (measured 17:39: channel
-/// session:abby-normal answered with Wren's and Kade's turns), so every result
-/// is checked here; a role with none gets one plain line, never someone else's.
+/// #4444 / #4779 — only the role's own session messages, excluding safety/crisis
+/// helpline responses (#4426) so they never re-trigger classifier stops on boot.
 pub fn own_messages(search_body: &str, role: &str) -> String {
     let want = format!("session:{role}");
     let Ok(mut v) = serde_json::from_str::<serde_json::Value>(search_body) else {
@@ -511,13 +509,23 @@ pub fn own_messages(search_body: &str, role: &str) -> String {
     };
     results.retain(|r| {
         let ch = r.get("channel").and_then(|c| c.as_str()).unwrap_or("");
-        ch == want.as_str()
-            || (ch.is_empty() && r.get("role").and_then(|ro| ro.as_str()) == Some(role))
+        let is_own = ch == want.as_str()
+            || (ch.is_empty() && r.get("role").and_then(|ro| ro.as_str()) == Some(role));
+        let text = r.get("content").and_then(|c| c.as_str()).unwrap_or("");
+        is_own && !text.contains("Suicide & Crisis Lifeline")
     });
     if results.is_empty() {
         return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
     }
     v.to_string()
+}
+
+/// #4779 — channel-scoped recent query URL for `boot-read <role>`. No `q=the` hack.
+pub fn boot_read_url(role: &str) -> String {
+    format!(
+        "http://localhost:3340/api/chorus/search?channel=session:{}&order=recent&limit=30",
+        role
+    )
 }
 
 fn door_role_names() -> Vec<String> {
@@ -527,14 +535,6 @@ fn door_role_names() -> Vec<String> {
     let rows = v.get("data").or_else(|| v.get("items")).cloned().unwrap_or(v);
     let rows = rows.as_array().cloned().or_else(|| rows.get("items").and_then(|i| i.as_array()).cloned()).unwrap_or_default();
     rows.iter().filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string)).collect()
-}
-
-/// #4779 — channel-scoped recent query URL for `boot-read <role>`. No `q=the` hack.
-pub fn boot_read_url(role: &str) -> String {
-    format!(
-        "http://localhost:3340/api/chorus/search?channel=session:{}&order=recent&limit=30",
-        role
-    )
 }
 
 /// `chorus-hook-shim boot-read <role>` — fetch the role's recent session
