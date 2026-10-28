@@ -155,11 +155,11 @@ pub async fn check(input: &HookInput, _state: &AppState) -> HookResponse {
         return HookResponse::allow();
     }
 
-    // Check benign commands — non-zero exit is expected
-    for pat in BENIGN_COMMANDS {
-        if cmd_first_line.contains(pat) {
-            return HookResponse::allow();
-        }
+    // Check benign commands — non-zero exit is expected (#2891/#4779: use
+    // token-aware is_benign_bash so a path like ".../borg-queen-4779/..."
+    // doesn't substring-match "rg" in BENIGN_COMMANDS).
+    if is_benign_bash(cmd_first_line) {
+        return HookResponse::allow();
     }
 
     // Also exempt if the command is in a conditional chain (|| or &&)
@@ -380,6 +380,18 @@ mod tests {
         );
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 2, "should block on missing script");
+    }
+
+    #[tokio::test]
+    async fn test_path_containing_rg_like_borg_queen_still_blocks_4779() {
+        let state = AppState::new();
+        let input = make_bash_input(
+            "bash /Users/jeffbridwell/CascadeProjects/chorus-werk/borg-queen-4779/platform/scripts/missing.sh",
+            "Exit code 127\nbash: No such file or directory",
+            "",
+        );
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "NEGATIVE: 'rg' inside 'borg-queen' path must not bypass stop_on_error");
     }
 
     #[tokio::test]
