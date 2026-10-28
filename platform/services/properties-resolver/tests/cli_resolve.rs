@@ -31,12 +31,12 @@ fn spawn_stub(handler: impl Fn(&str) -> (u16, String) + Send + 'static, requests
 fn resolve_fetches_effective_property_from_door_and_refuses_404() {
     let url = spawn_stub(
         |path| {
-            if path == "/v1/properties/properties/effective/role-borg-queen/response.word.cap" {
+            if path == "/effective/role-borg-queen/response.word.cap" {
                 (
                     200,
                     r#"{"node":"role-borg-queen","key":"response.word.cap","value":100,"valueType":"integer","winningScope":"https://jeffbridwell.com/chorus#role-borg-queen"}"#.to_string(),
                 )
-            } else if path == "/v1/properties/properties/effective/pulse/testType" {
+            } else if path == "/effective/pulse/testType" {
                 (
                     200,
                     r#"{"node":"pulse","key":"testType","value":"unit","valueType":"string","winningScope":"https://jeffbridwell.com/chorus#pulse"}"#.to_string(),

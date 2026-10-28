@@ -74,7 +74,7 @@ fn run_resolve(args: &[String]) -> Result<String, String> {
         }
     };
 
-    let path = format!("/v1/properties/properties/effective/{target_node}/{target_key}");
+    let path = format!("/effective/{target_node}/{target_key}");
     let (code, body) = http_get_door(&door_url(), &path)?;
     if code != 200 {
         return Err(format!("HTTP {code} for {path}: {body}"));
