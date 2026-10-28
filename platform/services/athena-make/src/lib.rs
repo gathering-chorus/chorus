@@ -4724,6 +4724,16 @@ pub fn build_scope_chain(rows: &[String]) -> R<Vec<ScopeNode>> {
     Ok(nodes)
 }
 
+/// #4774 — `/effective/:node/:key` is a cross-class route dispatched onto the
+/// Property table for its `instances_graph` (`urn:chorus:domains:properties`).
+/// `:node` is already the target scope individual's localname (`role-borg-queen`,
+/// `service-pulse`, `chorus`), never a Property row — passing `table.class`
+/// (`Property`) to `entity_subject` prefixed `property-` onto every node
+/// (`chorus:property-role-borg-queen`) and broke 100% of `/effective` reads.
+pub fn effective_node_subject(node: &str) -> String {
+    format!("{}{}", NS, node)
+}
+
 /// #3435 — the node-scoped effective-config fetch. Reads `urn:chorus:instances` LIVE
 /// via SPARQL — NO projection/mirror/sqlite store (the AC invariant; the query-builder
 /// test asserts the instances graph + hasProperty traversal so a projection swap goes
@@ -5513,7 +5523,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if !is_safe_key(key) {
             return (400, "{ \"error\": \"invalid key\" }".to_string());
         }
-        let q = effective_fetch_query(&entity_subject(&table.class, node), &table.instances_graph);
+        let q = effective_fetch_query(&effective_node_subject(node), &table.instances_graph);
         return match sparql_json(&q) {
             Ok(body) => {
                 let rows = select_v(&body);
@@ -8846,6 +8856,26 @@ mod dispatch_effective_3845 {
         );
         // and the genuinely-unknown path is still unknown, in the same model
         assert_eq!(dispatch_for("/nonsense", &t), Dispatch::NotFound);
+    }
+
+    /// #4774 — `/effective/:node/:key` dispatches to the Property table, so
+    /// `entity_subject(&table.class, node)` prefixed `property-` onto every
+    /// node (`chorus:property-role-borg-queen`). `effective_node_subject`
+    /// keeps the node's own localname (`chorus:role-borg-queen`).
+    /// NEGATIVE PROOF (#3734): `entity_subject` on the Property table still
+    /// produces the wrong `property-` prefix, proving the two are distinct.
+    #[test]
+    fn effective_node_subject_does_not_prefix_property_onto_target_node() {
+        let prop_class = "https://jeffbridwell.com/chorus#Property";
+        assert_eq!(
+            effective_node_subject("role-borg-queen"),
+            "https://jeffbridwell.com/chorus#role-borg-queen"
+        );
+        assert_eq!(
+            entity_subject(prop_class, "role-borg-queen"),
+            "https://jeffbridwell.com/chorus#property-role-borg-queen",
+            "negative proof: entity_subject(Property, ..) prefixes property-"
+        );
     }
 }
 

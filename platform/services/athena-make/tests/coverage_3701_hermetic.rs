@@ -355,6 +355,9 @@ fn rows_for(q: &str) -> Vec<String> {
         };
     }
     if q.contains("hasProperty") {
+        if !q.contains(&format!("<{NS}pulse>")) {
+            return vec![];
+        }
         // #3863 — rows now carry the OWNING scope and its class:
         // owner|ownerClass|propIri|key|valueType|value. Two scopes here, not
         // one, so this fixture exercises a real cascade: the Service's value
@@ -1299,8 +1302,10 @@ fn batch_route_is_gated_and_delegates_typed_slots() {
 #[test]
 fn effective_config_read_resolves_and_coerces() {
     let w = world();
-    let (c, b) = athena_make::handle("/effective/pulse/alert.threshold", &w.domain);
-    assert_eq!(c, 200, "{}", b);
+    let mut prop_table = w.domain.clone();
+    prop_table.class = "https://jeffbridwell.com/chorus#Property".into();
+    let (c, b) = athena_make::handle("/effective/pulse/alert.threshold", &prop_table);
+    assert_eq!(c, 200, "dispatched Property table must not prefix property- onto node IRI (#4774): {}", b);
     assert!(b.contains("\"value\":42"), "typed int, not a string: {}", b);
     assert!(b.contains("\"winningScope\""), "{}", b);
     // unset key → 404
