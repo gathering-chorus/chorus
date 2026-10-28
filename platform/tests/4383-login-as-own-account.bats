@@ -38,6 +38,8 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   test "$(stat -f %Lp "$d/wren/cred.json")" = "600"
   test "$(stat -f %Lp "$d/wren")" = "700"
   grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_IDENTITY_DIR='$d'"
+  grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_SESSIONS_DIR='$T/sessions'"
+  grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF ".chorus/secrets/claude.key"
 }
 
 @test "#4383 a launcher that cannot start the account refuses, naming it, and starts nothing" {

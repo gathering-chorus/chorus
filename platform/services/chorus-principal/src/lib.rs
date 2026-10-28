@@ -776,6 +776,27 @@ fn attach_to(ctx: &Ctx, role: &str) {
     else { let _ = Command::new(&ctx.tmux).args(["attach", "-t", &s]).status(); }
 }
 
+/// #4777 — the inner command run inside `sudo -n -u <acct> -H bash -c` when a
+/// principal runs as its own Mac account (#4383). Exports `CHORUS_SESSIONS_DIR`
+/// so `SessionStart` registers `<role>-<pid>.json` in the shared sessions
+/// directory read by `chorus-principal` and `nudge-health-check.sh`, and reads
+/// `CLAUDE_CODE_OAUTH_TOKEN` from `~/.chorus/secrets/claude.key` when present
+/// so `claude` never touches macOS Keychain.
+pub fn own_account_inner_cmd(
+    role_dir: &str,
+    root: &str,
+    own_dir: &str,
+    own_token: &str,
+    sessions_dir: &str,
+    role: &str,
+    cmd: &str,
+) -> String {
+    format!(
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && {}",
+        role_dir, root, own_dir, own_token, sessions_dir, role, cmd
+    )
+}
+
 /// `on <role>`: start it logged in, or, when it is already running, make sure
 /// THIS session is logged in and go to its window. Never a second copy.
 /// The shell line that starts `cmd` in the role's pane, as the role's own
@@ -803,7 +824,7 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
                     return Err((1, format!("could not hand {} its {}", acct, f)));
                 }
             }
-            let inner = format!("umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, own_dir, own, role, cmd);
+            let inner = own_account_inner_cmd(role_dir, &ctx.root, &own_dir, &own, &ctx.sessions_dir.to_string_lossy(), role, cmd);
             format!("{} -n -u {} -H bash -c \"{}\"", ctx.sudo, acct, inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$"))
         }
     };
@@ -2034,5 +2055,25 @@ pub fn wears_all_hats(body: &str) -> Result<usize, Option<usize>> {
     match sparql_count(body, "n") {
         Some(n) if n == HATS => Ok(n),
         other => Err(other),
+    }
+}
+
+#[cfg(test)]
+mod own_account_launch_tests_4777 {
+    use super::*;
+
+    #[test]
+    fn own_account_inner_cmd_exports_shared_sessions_dir_and_claude_key_hook() {
+        let cmd = own_account_inner_cmd(
+            "/repo/roles/silas",
+            "/repo",
+            "/Users/chorus-silas/.chorus/identity",
+            "/Users/chorus-silas/.chorus/identity/silas/token.cache",
+            "/Users/jeffbridwell/.chorus/sessions",
+            "silas",
+            "claude -c",
+        );
+        assert!(cmd.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{cmd}");
+        assert!(cmd.contains("CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\""), "{cmd}");
     }
 }
