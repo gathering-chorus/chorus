@@ -33,6 +33,30 @@ describe('resolveFromPresence (#4361)', () => {
     }
   });
 
+  // #4765 — AGY roles (borg-queen, abby-normal) resolve from their Presence rows
+  test('AGY roles (borg-queen, abby-normal) resolve from their Presence rows (#4765)', () => {
+    const agyRuns = [
+      { name: 'borg-queen-run-1', runEndedAt: '' },
+      { name: 'abby-normal-run-1', runEndedAt: '' },
+    ];
+    const agyPresences = [
+      { name: 'borg-queen-presence-1', presenceOf: 'session-run-borg-queen-run-1', pane: '%2', tty: '/dev/ttys008' },
+      { name: 'abby-normal-presence-1', presenceOf: 'session-run-abby-normal-run-1', pane: '%3', tty: '/dev/ttys009' },
+    ];
+    const bq = resolveFromPresence(agyPresences, agyRuns, 'borg-queen');
+    expect(bq.kind).toBe('resolved');
+    if (bq.kind === 'resolved') {
+      expect(bq.session.tmux).toBe('%2');
+      expect(bq.session.role).toBe('borg-queen');
+    }
+    const abby = resolveFromPresence(agyPresences, agyRuns, 'abby-normal');
+    expect(abby.kind).toBe('resolved');
+    if (abby.kind === 'resolved') {
+      expect(abby.session.tmux).toBe('%3');
+      expect(abby.session.role).toBe('abby-normal');
+    }
+  });
+
   // Negative proof (#3734): the ended run's %1 is listed first and must never
   // be chosen. Drop the runEndedAt check in presence-target.ts and this goes red.
   test('an ended run\'s Presence is never the target', () => {

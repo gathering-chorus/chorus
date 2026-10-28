@@ -17,8 +17,9 @@ lifecycle.started();
 process.on('uncaughtException', (e, origin) => { lifecycle.failed(`${origin}: ${e.message}`, 1); process.exit(1); });
 
 const role = process.argv[2];
-if (!role || !['wren', 'silas', 'kade'].includes(role)) {
-  lifecycle.refuse(`bad role '${role || ''}' — usage: bridge-subscriber.js <wren|silas|kade>`, 1);
+const VALID_ROLES = ['wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
+if (!role || !VALID_ROLES.includes(role)) {
+  lifecycle.refuse(`bad role '${role || ''}' — usage: bridge-subscriber.js <${VALID_ROLES.join('|')}>`, 1);
 }
 
 // Resolve socket.io-client from Bridge's node_modules (CHORUS_ROOT, not hardcoded — #1964)

@@ -328,6 +328,7 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
         "  - WERK_WREN_BIN: ${WERK_WREN_BIN}\n",
         "  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}\n",
         "  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}\n",
+        "  - WERK_BORG_QUEEN_BIN: ${CHORUS_WERK_BASE}/borg-queen-bin\n",
         "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
     ));
     out.push_str(GIT_TRUST);

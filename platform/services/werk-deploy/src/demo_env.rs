@@ -122,7 +122,7 @@ pub fn owl_upstream_for(role: &str) -> R<String> {
 /// The roles that get a demo copy, in port-slot order. #4458 — Abby
 /// (abby-normal) is the fourth: her ports are each service's base + 3.
 pub fn known_roles() -> &'static [&'static str] {
-    &["silas", "kade", "wren", "abby-normal"]
+    &["silas", "kade", "wren", "abby-normal", "borg-queen"]
 }
 
 /// The canonical service list for the demo env. #4515 — the old TS MCP server
@@ -1356,7 +1356,7 @@ mod tests {
 
     #[test]
     fn known_roles_lists_three_with_stable_order() {
-        assert_eq!(known_roles(), &["silas", "kade", "wren", "abby-normal"]);
+        assert_eq!(known_roles(), &["silas", "kade", "wren", "abby-normal", "borg-queen"]);
     }
 
     #[test]

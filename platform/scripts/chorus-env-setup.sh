@@ -165,7 +165,8 @@ export WERK_KADE_BIN="$CHORUS_WERK_BASE/kade-bin"
 export WERK_WREN_BIN="$CHORUS_WERK_BASE/wren-bin"
 export WERK_SILAS_BIN="$CHORUS_WERK_BASE/silas-bin"
 export WERK_ABBY_NORMAL_BIN="$CHORUS_WERK_BASE/abby-normal-bin"
-mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" "$WERK_ABBY_NORMAL_BIN" 2>/dev/null || true
+export WERK_BORG_QUEEN_BIN="$CHORUS_WERK_BASE/borg-queen-bin"
+mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" "$WERK_ABBY_NORMAL_BIN" "$WERK_BORG_QUEEN_BIN" 2>/dev/null || true
 
 # PATH-prefix only the CURRENT role's slot — that part IS session-scoped: a role
 # resolves its own in-flight build before canonical. A role-less daemon skips
@@ -176,6 +177,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
     wren)  __chorus_env_role_bin="$WERK_WREN_BIN"  ;;
     silas) __chorus_env_role_bin="$WERK_SILAS_BIN" ;;
     abby-normal) __chorus_env_role_bin="$WERK_ABBY_NORMAL_BIN" ;;
+    borg-queen) __chorus_env_role_bin="$WERK_BORG_QUEEN_BIN" ;;
     *)     __chorus_env_role_bin="" ;;
   esac
   if [ -n "$__chorus_env_role_bin" ]; then
