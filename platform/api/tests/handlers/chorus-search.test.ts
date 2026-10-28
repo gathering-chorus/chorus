@@ -222,4 +222,66 @@ describe('fetchSearch (#2189 /api/chorus/search)', () => {
     expect(b.results.every((x) => x.enriched === true)).toBe(true);
     db.close();
   });
+
+  test('#4779 channel + order=recent without q returns recent channel rows', async () => {
+    const db = seedDb();
+    const ins = db.prepare(
+      'INSERT INTO messages (source, channel, role, author, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    // Turn without the word "the" or "apple" — must still be returned by channel+order=recent
+    ins.run('claude', 'session:silas', 'jeff', 'user', 'refresh ontology now', '2026-10-28T15:00:00Z');
+    ins.run('claude', 'session:silas', 'silas', 'assistant', 'Done.', '2026-10-28T15:01:00Z');
+    const r = await fetchSearch(deps(db), {
+      channel: 'session:silas',
+      order: 'recent',
+      limit: '30',
+    });
+    expect(r.status).toBe(200);
+    const b = r.body as { results: Array<{ channel: string; content: string; author: string }> };
+    expect(b.results).toHaveLength(2);
+    expect(b.results[0].content).toBe('Done.');
+    expect(b.results[1].content).toBe('refresh ontology now');
+    expect(b.results.every((x) => x.channel === 'session:silas')).toBe(true);
+    db.close();
+  });
+
+  test('#4779 negative proof (#3734): 30 newer session:kade rows never appear in channel=session:silas', async () => {
+    const db = seedDb();
+    const ins = db.prepare(
+      'INSERT INTO messages (source, channel, role, author, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    ins.run('claude', 'session:silas', 'jeff', 'user', 'silas yesterday prompt', '2026-10-27T12:00:00Z');
+    ins.run('claude', 'session:silas', 'silas', 'assistant', 'silas yesterday reply', '2026-10-27T12:01:00Z');
+    for (let i = 0; i < 35; i++) {
+      ins.run(
+        'claude',
+        'session:kade',
+        'kade',
+        'assistant',
+        `the kade turn ${i}`,
+        `2026-10-28T16:${String(i % 60).padStart(2, '0')}:00Z`,
+      );
+    }
+    const r = await fetchSearch(deps(db), {
+      q: 'the',
+      channel: 'session:silas',
+      order: 'recent',
+      limit: '30',
+    });
+    expect(r.status).toBe(200);
+    const b = r.body as { results: Array<{ channel: string; role: string; content: string }> };
+    // Even with q='the' or without q, zero session:kade rows may leak into session:silas
+    expect(b.results.some((x) => x.channel === 'session:kade' || x.role === 'kade')).toBe(false);
+
+    const rRecent = await fetchSearch(deps(db), {
+      channel: 'session:silas',
+      order: 'recent',
+      limit: '30',
+    });
+    const bRecent = rRecent.body as { results: Array<{ channel: string; role: string; content: string }> };
+    expect(bRecent.results).toHaveLength(2);
+    expect(bRecent.results.every((x) => x.channel === 'session:silas')).toBe(true);
+    expect(bRecent.results.some((x) => x.channel === 'session:kade' || x.role === 'kade')).toBe(false);
+    db.close();
+  });
 });

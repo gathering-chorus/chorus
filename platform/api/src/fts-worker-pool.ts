@@ -20,6 +20,7 @@ export interface FtsQuery {
   fetchLimit: number;
   role?: string;
   mode: string;
+  channel?: string;
 }
 
 export interface FtsPoolOptions {
@@ -37,7 +38,14 @@ export function createFtsPool(opts: FtsPoolOptions): FtsPool {
     spawn: opts.spawn,
     timeoutMs: opts.timeoutMs,
     label: 'fts',
-    buildRequest: (id, q) => ({ id, q: q.q, fetchLimit: q.fetchLimit, role: q.role, mode: q.mode }),
+    buildRequest: (id, q) => ({
+      id,
+      q: q.q,
+      fetchLimit: q.fetchLimit,
+      role: q.role,
+      mode: q.mode,
+      channel: q.channel,
+    }),
   });
   return {
     runFtsAsync: (query) => pool.run(query),

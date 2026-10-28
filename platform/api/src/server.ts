@@ -1152,7 +1152,15 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         enrichHit,
         resolveSearchLimit,
         ...(ftsPool
-          ? { ftsSearch: (q: string, fetchLimit: number, role: string | undefined, mode: string) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode }) }
+          ? {
+              ftsSearch: (
+                q: string,
+                fetchLimit: number,
+                role: string | undefined,
+                mode: string,
+                channel?: string,
+              ) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode, channel }),
+            }
           : {}),
       },
       {
@@ -1160,6 +1168,8 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         limit: req.query.limit as string | undefined,
         role: req.query.role as string | undefined,
         mode: req.query.mode as string | undefined,
+        channel: req.query.channel as string | undefined,
+        order: req.query.order as string | undefined,
       },
     );
     res.status(r.status).json(r.body);
@@ -1283,6 +1293,37 @@ app.post('/api/chorus/identity/verify', async (req: Request, res: Response) => {
   });
   res.setHeader('Cache-Control', 'no-store');
   res.status(result.status).json(result.body);
+});
+
+// #4779 — Verified session turn push across macOS accounts and model runtimes.
+// Each role session pushes its own user + assistant turns authenticated by its
+// CSS ES256 credential; channel is derived from roleForWebId(webId), never from
+// folder names or cross-home file reads.
+import { handleSessionTurnPush, type SessionTurnPushBody } from './handlers/chorus-session-turn';
+app.post('/api/chorus/session/turns', async (req: Request, res: Response) => {
+  let db: Database.Database | null = null;
+  try {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('busy_timeout = 5000');
+    const d = await handleSessionTurnPush(
+      {
+        authorization: req.headers.authorization ?? '',
+        body: (req.body ?? {}) as SessionTurnPushBody,
+      },
+      {
+        db,
+        verify: verifyIdentity,
+        roleForWebId,
+      },
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(d.status).json(d.body);
+  } catch (err) {
+    res.status(500).json({ error: 'session-turn-write-failed', message: errMsg(err) });
+  } finally {
+    if (db) db.close();
+  }
 });
 
 app.get('/api/nudge/:role/pending', async (req: Request, res: Response) => {

@@ -76,7 +76,7 @@ pub fn resolve_role_from(
         .or_else(|| deploy_role.filter(|s| !s.is_empty()));
     match raw {
         None => Err(RoleUnresolved::NoEnv { cwd: cwd.to_string() }),
-        Some(v) if matches!(v.as_str(), "wren" | "silas" | "kade") => Ok(v),
+        Some(v) if matches!(v.as_str(), "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") => Ok(v),
         Some(v) => Err(RoleUnresolved::NotARole { value: v }),
     }
 }
@@ -117,7 +117,7 @@ pub fn resolve_role_with_ancestry(
         Err(no_env) => {
             for pid in ancestry {
                 if let Some(role) = session_role_of(*pid) {
-                    if matches!(role.as_str(), "wren" | "silas" | "kade") {
+                    if matches!(role.as_str(), "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") {
                         return Ok(ResolvedRole { role, inherited_from_pid: Some(*pid) });
                     }
                 }
@@ -275,7 +275,7 @@ pub fn inherited_role_from_ancestry() -> Option<String> {
 pub fn session_role_of_pid(pid: u32) -> Option<String> {
     let home = std::env::var("HOME").ok()?;
     let dir = std::path::Path::new(&home).join(".chorus").join("sessions");
-    for role in ["wren", "silas", "kade"] {
+    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
         if dir.join(format!("{role}-{pid}.json")).exists() {
             return Some(role.to_string());
         }
@@ -313,7 +313,7 @@ pub fn process_ancestry(start: u32, max_depth: usize) -> Vec<u32> {
 /// key on the login, not on a typed DEPLOY_ROLE. Pure: the caller supplies the
 /// token text, so the suite brings its own world (#3528).
 pub fn role_from_webid(webid: &str) -> Option<String> {
-    for role in ["wren", "silas", "kade"] {
+    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
         if webid.ends_with(&format!("/{role}/profile/card#me")) {
             return Some(role.to_string());
         }

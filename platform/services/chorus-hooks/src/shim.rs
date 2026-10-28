@@ -161,6 +161,110 @@ fn inject_trace_id(input: String, trace: Option<String>) -> String {
     }
 }
 
+/// #4779 — Read the assistant reply from the role's local transcript inside the
+/// shim (running as the role's own macOS user) when `prompt_response` is absent,
+/// so the daemon never needs cross-home read access and both Stop enforcement
+/// and session turn push receive the text.
+fn enrich_stop_prompt_response(input: String) -> String {
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) else {
+        return input;
+    };
+    let has_resp = json
+        .get("prompt_response")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.trim().is_empty());
+    if has_resp {
+        return input;
+    }
+    if let Some(tp) = json.get("transcript_path").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if let Some(reply) = chorus_hooks::last_assistant_text(tp) {
+            if !reply.trim().is_empty() {
+                json["prompt_response"] = serde_json::Value::String(reply);
+                return json.to_string();
+            }
+        }
+    }
+    input
+}
+
+/// #4779 — Pure builder for verified session turn push payload.
+fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json::Value> {
+    let json: serde_json::Value = serde_json::from_str(input).ok()?;
+    let (author, text) = match endpoint {
+        "user-prompt-submit" => ("user", json.get("prompt").and_then(|v| v.as_str())?.trim()),
+        "stop" => ("assistant", json.get("prompt_response").and_then(|v| v.as_str())?.trim()),
+        _ => return None,
+    };
+    if text.is_empty() {
+        return None;
+    }
+    let session_id = json
+        .get("chorus_session_id")
+        .or_else(|| json.get("session_id"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let source = json
+        .get("runtime")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("claude");
+    Some(serde_json::json!({
+        "source": source,
+        "session_id": session_id,
+        "turns": [{
+            "author": author,
+            "content": text,
+        }]
+    }))
+}
+
+/// #4779 — Push the caller's own session turn authenticated by its verified CSS
+/// credential. Runs best-effort inside the role's own macOS user process.
+fn push_session_turn_best_effort(endpoint: &str, input: &str) {
+    let Some(payload) = build_session_turn_payload(endpoint, input) else {
+        return;
+    };
+    let role = serde_json::from_str::<serde_json::Value>(input)
+        .ok()
+        .and_then(|v| v.get("deploy_role").and_then(|r| r.as_str()).map(str::to_string))
+        .or_else(|| {
+            crate::shared::role::session_token_from_env()
+                .as_deref()
+                .and_then(crate::shared::role::webid_of_token)
+                .and_then(|w| crate::shared::role::role_from_webid(&w))
+        });
+    let Some(role) = role else {
+        return;
+    };
+    let home = std::env::var("HOME").unwrap_or_default();
+    let key_path = std::path::Path::new(&home)
+        .join(".chorus/identity")
+        .join(&role)
+        .join("key.json");
+    let explicit_url = std::env::var("CHORUS_SESSION_TURN_PUSH_URL").ok().filter(|s| !s.is_empty());
+    if !key_path.exists() && explicit_url.is_none() {
+        return;
+    }
+    let script = format!("{}/platform/scripts/chorus-identity-token", shared::state_paths::chorus_root());
+    let cred = std::process::Command::new(&script)
+        .arg(&role)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(crate::shared::role::session_token_from_env);
+    let Some(cred) = cred else {
+        return;
+    };
+    let url = explicit_url.unwrap_or_else(|| "http://localhost:3340/api/chorus/session/turns".to_string());
+    let _ = ureq::post(&url)
+        .timeout(std::time::Duration::from_millis(1500))
+        .set("Authorization", &format!("Bearer {}", cred.trim()))
+        .send_json(payload);
+}
+
 #[cfg(test)]
 mod inject_trace_id_tests {
     #[test]
@@ -195,6 +299,33 @@ mod inject_trace_id_tests {
     fn unparseable_input_is_passed_through() {
         let bad = "not json".to_string();
         assert_eq!(inject_trace_id(bad.clone(), Some("t".to_string())), bad);
+    }
+
+    #[test]
+    fn session_turn_payload_builds_for_prompt_and_stop_only_4779() {
+        let p = build_session_turn_payload(
+            "user-prompt-submit",
+            r#"{"prompt":"check boot read","session_id":"s1","runtime":"antigravity"}"#,
+        )
+        .unwrap();
+        assert_eq!(p["source"], "antigravity");
+        assert_eq!(p["session_id"], "s1");
+        assert_eq!(p["turns"][0]["author"], "user");
+        assert_eq!(p["turns"][0]["content"], "check boot read");
+
+        let s = build_session_turn_payload(
+            "stop",
+            r#"{"prompt_response":"Boot read verified.","chorus_session_id":"s2"}"#,
+        )
+        .unwrap();
+        assert_eq!(s["source"], "claude");
+        assert_eq!(s["session_id"], "s2");
+        assert_eq!(s["turns"][0]["author"], "assistant");
+        assert_eq!(s["turns"][0]["content"], "Boot read verified.");
+
+        // Negative proofs: empty text or non-turn endpoint returns None
+        assert!(build_session_turn_payload("user-prompt-submit", r#"{"prompt":"   "}"#).is_none());
+        assert!(build_session_turn_payload("pre-tool-use", r#"{"prompt":"hi"}"#).is_none());
     }
 }
 
@@ -581,6 +712,14 @@ fn main() -> ExitCode {
     // #4628 reopen 2 — interactive or headless, for the terminal-input record:
     // env does not cross the socket, so it rides the JSON like the trace.
     let input = inject_entrypoint(input, std::env::var("CLAUDE_CODE_ENTRYPOINT").ok());
+    let input = if endpoint == "stop" {
+        enrich_stop_prompt_response(input)
+    } else {
+        input
+    };
+    if matches!(endpoint.as_str(), "user-prompt-submit" | "stop") {
+        push_session_turn_best_effort(&endpoint, &input);
+    }
 
     log_debug(&format!("stdin={}bytes", input.len()));
 
