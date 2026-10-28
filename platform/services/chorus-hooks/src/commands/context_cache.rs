@@ -509,7 +509,11 @@ pub fn own_messages(search_body: &str, role: &str) -> String {
     let Some(results) = v.get_mut("results").and_then(|r| r.as_array_mut()) else {
         return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
     };
-    results.retain(|r| r.get("channel").and_then(|c| c.as_str()) == Some(want.as_str()));
+    results.retain(|r| {
+        let ch = r.get("channel").and_then(|c| c.as_str()).unwrap_or("");
+        ch == want.as_str()
+            || (ch.is_empty() && r.get("role").and_then(|ro| ro.as_str()) == Some(role))
+    });
     if results.is_empty() {
         return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
     }
@@ -620,5 +624,19 @@ mod boot_read_tests_4426 {
             "http://localhost:3340/api/chorus/search?channel=session:silas&order=recent&limit=30"
         );
         assert!(!url.contains("q=the"), "NEGATIVE: boot_read_url must not require q=the: {url}");
+    }
+
+    #[test]
+    fn historical_turns_tagged_role_or_session_replay_and_keep_4426_guard_4779() {
+        let hist = r#"{"results":[{"channel":"session:silas","role":"silas","content":"10-27 session turn"},{"role":"silas","content":"10-27 role-tagged turn"},{"channel":"session:kade","role":"kade","content":"kade turn"}]}"#;
+        let filtered = boot_messages(&own_messages(hist, "silas"));
+        assert!(filtered.contains("10-27 session turn"), "{filtered}");
+        assert!(filtered.contains("10-27 role-tagged turn"), "{filtered}");
+        assert!(!filtered.contains("kade turn"), "NEGATIVE: kade turn must never appear: {filtered}");
+
+        let flagged_hist = r#"{"results":[{"channel":"session:silas","role":"silas","content":"Your response above was stopped by a safety classifier"},{"channel":"session:silas","role":"silas","content":"10-27 turn"}]}"#;
+        let blocked = boot_messages(&own_messages(flagged_hist, "silas"));
+        assert!(blocked.contains("not replayed"), "NEGATIVE (#4426): {blocked}");
+        assert!(!blocked.contains("10-27 turn"), "NEGATIVE (#4426): {blocked}");
     }
 }

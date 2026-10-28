@@ -156,6 +156,21 @@ async function tryHybridMode(
   } catch { return null; }
 }
 
+function resolveSearchMode(modeRaw: string | undefined, order: string | undefined): string {
+  if (modeRaw) return modeRaw.toLowerCase();
+  return order === 'recent' ? 'recency' : 'fts';
+}
+
+function buildFilterFields(
+  role: string | undefined,
+  channel: string | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (role) out.role_filter = role;
+  if (channel) out.channel_filter = channel;
+  return out;
+}
+
 export async function fetchSearch(
   deps: SearchDeps,
   { q: rawQ, limit: limitRaw, role, mode: modeRaw, channel, order }: SearchInput,
@@ -165,7 +180,7 @@ export async function fetchSearch(
 
   const { db, emitSearchEvent = () => {}, buildSearchMeta, enrichHit, resolveSearchLimit, now = Date.now } = deps;
   const { limit, explicit: limitExplicit } = resolveSearchLimit(limitRaw);
-  const mode = (modeRaw || (order === 'recent' ? 'recency' : 'fts')).toLowerCase();
+  const mode = resolveSearchMode(modeRaw, order);
   const searchStart = now();
   const fetchLimit = limit + 1;
 
@@ -183,8 +198,7 @@ export async function fetchSearch(
   const emit: EmitFn = (m, count, extra = {}) => emitSearchEvent({
     system: 'chorus-api', query: (q || `channel:${channel}`).slice(0, 200), mode: m,
     result_count: count, duration_ms: now() - searchStart, fts_ms: ftsMs,
-    ...(role ? { role_filter: role } : {}),
-    ...(channel ? { channel_filter: channel } : {}),
+    ...buildFilterFields(role, channel),
     ...extra,
   });
 
