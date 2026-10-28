@@ -29,9 +29,31 @@ export function runFtsQueryOnDb(
   fetchLimit: number,
   role: string | undefined,
   mode: string,
+  channel?: string,
 ): unknown[] {
   const ftsQuery = toFtsMatchQuery(q);
-  if (!ftsQuery) return []; // no word tokens — nothing to match, never scan
+  if (!ftsQuery) {
+    // #4779: channel-scoped recent read (e.g. boot-read `channel=session:<role>&order=recent`)
+    // uses idx_messages_channel without requiring a dummy `q=the` FTS token match.
+    if (!channel) return [];
+    const directParams: unknown[] = [channel];
+    const roleClause = role ? 'AND m.role = ?' : '';
+    if (role) directParams.push(role);
+    directParams.push(fetchLimit);
+    try {
+      return db.prepare(
+        `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
+                substr(m.content, 1, 200) as snippet
+         FROM messages m
+         WHERE m.channel = ?
+         ${roleClause}
+         ORDER BY m.timestamp DESC
+         LIMIT ?`,
+      ).all(...directParams);
+    } catch {
+      return [];
+    }
+  }
   // #3147 (Wren · search relevance) — AUTHORITY weight. Plain bm25 lets dense session
   // chatter outrank authoritative docs/decisions/memory (proven: "heidegger" returned 5×
   // "check the research" chatter, burying the Versammlung research doc + DEC-031). Penalize
@@ -47,8 +69,12 @@ export function runFtsQueryOnDb(
   const ftsOrderBy = mode === 'relevance' || mode === 'hybrid'
     ? authorityOrder
     : 'm.timestamp DESC';
-  const params: unknown[] = role ? [ftsQuery, role, fetchLimit] : [ftsQuery, fetchLimit];
+  const params: unknown[] = [ftsQuery];
   const roleFilter = role ? 'AND m.role = ?' : '';
+  if (role) params.push(role);
+  const channelFilter = channel ? 'AND m.channel = ?' : '';
+  if (channel) params.push(channel);
+  params.push(fetchLimit);
   try {
     return db.prepare(
       `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
@@ -57,6 +83,7 @@ export function runFtsQueryOnDb(
        JOIN messages m ON f.rowid = m.id
        WHERE messages_fts MATCH ?
        ${roleFilter}
+       ${channelFilter}
        ORDER BY ${ftsOrderBy}
        LIMIT ?`,
     ).all(...params);

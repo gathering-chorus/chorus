@@ -525,6 +525,14 @@ fn door_role_names() -> Vec<String> {
     rows.iter().filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string)).collect()
 }
 
+/// #4779 — channel-scoped recent query URL for `boot-read <role>`. No `q=the` hack.
+pub fn boot_read_url(role: &str) -> String {
+    format!(
+        "http://localhost:3340/api/chorus/search?channel=session:{}&order=recent&limit=30",
+        role
+    )
+}
+
 /// `chorus-hook-shim boot-read <role>` — fetch the role's recent session
 /// messages and print them through `boot_messages`.
 pub fn boot_read(args: &[String]) -> std::process::ExitCode {
@@ -534,7 +542,7 @@ pub fn boot_read(args: &[String]) -> std::process::ExitCode {
         eprintln!("usage: chorus-hook-shim boot-read <role>   (a role the roles door lists)");
         return std::process::ExitCode::from(2);
     };
-    let url = format!("http://localhost:3340/api/chorus/search?q=the&channel=session:{}&order=recent&limit=30", role);
+    let url = boot_read_url(role);
     match std::process::Command::new("curl").args(["-s", "--max-time", "20", &url]).output() {
         Ok(out) => {
             println!("{}", boot_messages(&own_messages(&String::from_utf8_lossy(&out.stdout), role)));
@@ -602,5 +610,15 @@ mod boot_read_tests_4426 {
         let text = boot_read_instruction("kade");
         assert!(text.contains("chorus-hook-shim boot-read kade"), "{text}");
         assert!(!text.contains("curl -s \"http://localhost:3340/api/chorus/search"), "{text}");
+    }
+
+    #[test]
+    fn boot_read_url_queries_channel_recent_without_q_the_hack_4779() {
+        let url = boot_read_url("silas");
+        assert_eq!(
+            url,
+            "http://localhost:3340/api/chorus/search?channel=session:silas&order=recent&limit=30"
+        );
+        assert!(!url.contains("q=the"), "NEGATIVE: boot_read_url must not require q=the: {url}");
     }
 }
