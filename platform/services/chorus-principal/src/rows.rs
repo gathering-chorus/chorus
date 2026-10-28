@@ -719,21 +719,25 @@ fn b64(bytes: &[u8]) -> String {
 
 /// The hooks file for a principal on this runtime: every one of our moments the
 /// row names, wired to the hook adapter under the row's native event name; the
-/// before-prompt moment also stamps the session seen. Only the named-hooks
-/// layout is rendered today; any other layout is refused by name.
+/// before-prompt moment also stamps the session seen. Supports `named-hooks`
+/// (`{"chorus": ...}`) and `claude-settings` (`{"hooks": ...}`, #4777); any
+/// other layout is refused by name.
 pub fn runtime_hooks_file(row: &Value, runtime: &str, role: &str, shim: &str, principal: &str) -> Result<Value, String> {
     let layout = rs(row, "runtimeHooksLayout").unwrap_or("");
-    if layout != "named-hooks" { return Err(format!("{runtime}: hooks layout {layout:?} is not rendered yet")); }
+    if layout != "named-hooks" && layout != "claude-settings" {
+        return Err(format!("{runtime}: hooks layout {layout:?} is not rendered yet"));
+    }
     let hook = |native: &str| json!({"type": "command", "command": format!("{shim} runtime-hook {runtime} {native}")});
     let mut events = serde_json::Map::new();
     for (ours, tool) in [("eventSessionStart", false), ("eventBeforePrompt", false), ("eventBeforeTool", true), ("eventAfterTool", true), ("eventOnStop", false)] {
         let Some(native) = rs(row, ours) else { continue };
         let mut handlers = vec![hook(native)];
         if ours == "eventBeforePrompt" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
-        let entry = if tool { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
+        let entry = if tool || layout == "claude-settings" { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
         events.insert(native.to_string(), entry);
     }
-    Ok(json!({ "chorus": Value::Object(events) }))
+    let top = if layout == "claude-settings" { "hooks" } else { "chorus" };
+    Ok(json!({ top: Value::Object(events) }))
 }
 
 /// The tools file: Chorus's tools through the runner, signed as the principal (#4515).
@@ -762,6 +766,11 @@ pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir
     if rs(row, "runtimeAuth") == Some("api-key") {
         let var = rs(row, "runtimeKeyEnv").filter(|v| v.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')).ok_or(format!("{runtime}: api-key sign-in needs runtimeKeyEnv"))?;
         parts.push(format!("{{ [ ! -f ~/.chorus/secrets/{binary}.key ] || export {var}=\"$(cat ~/.chorus/secrets/{binary}.key)\"; }}"));
+    } else if rs(row, "runtimeAuth") == Some("subscription") && binary == "claude" {
+        // #4777 — dedicated Mac role accounts running Claude Code read their
+        // long-lived setup-token from ~/.chorus/secrets/claude.key so Claude
+        // never calls /usr/bin/security against a locked login keychain.
+        parts.push("{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }".to_string());
     }
     // #4544 — variables the row says this runtime starts with (agy: SSH_CONNECTION,
     // so it keeps its token in a file, not a keychain her account cannot open).
@@ -780,4 +789,22 @@ pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir
     if args.iter().any(|a| a.contains('\'')) { return Err(format!("{runtime}: a launch argument holds a quote")); }
     parts.push(std::iter::once(format!("'{binary}'")).chain(args.iter().map(|a| format!("'{a}'"))).collect::<Vec<_>>().join(" "));
     Ok(parts.join(" && "))
+}
+
+#[cfg(test)]
+mod claude_settings_tests_4777 {
+    use super::*;
+
+    #[test]
+    fn claude_settings_layout_renders_hooks_and_refuses_unknown() {
+        let table = runtime_table();
+        let row = &table["runtimes"]["claude-code"];
+        let h = runtime_hooks_file(row, "claude-code", "silas", "/b/shim", "/b/principal").unwrap();
+        assert_eq!(h["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"], "/b/principal seen silas");
+        assert_eq!(h["hooks"]["PreToolUse"][0]["matcher"], "*");
+
+        let mut bad = row.clone();
+        bad["runtimeHooksLayout"] = json!("unknown-layout");
+        assert!(runtime_hooks_file(&bad, "claude-code", "silas", "/b/shim", "/b/principal").is_err());
+    }
 }
