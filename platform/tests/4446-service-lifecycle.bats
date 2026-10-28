@@ -19,6 +19,9 @@ BIN="$TREE/platform/services/chorus-hooks/target/release/chorus-hooks"
 setup() {
   [[ -x "$BIN" ]] || skip "release binary not built: $BIN"
   UIDN="$(id -u)"
+  if [[ "$BATS_TEST_DESCRIPTION" != *"bridge-subscriber"* && "$BATS_TEST_DESCRIPTION" != *"share-guard"* ]]; then
+    launchctl print "gui/$UIDN" >/dev/null 2>&1 || skip "gui/$UIDN domain not available"
+  fi
   LABEL="com.chorus.fixture-4446-$$-$BATS_TEST_NUMBER"
   FIXHOME="$(mktemp -d /tmp/h4446.XXXXXX)"
   SPINE="$FIXHOME/spine.log"
