@@ -2848,7 +2848,7 @@ pub fn slots_to_refresh_with(
     is_variant: &dyn Fn(&str, &str) -> bool,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    for role in ["wren", "silas", "kade"] {
+    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
         let slot = Path::new(werk_base).join(format!("{}-bin", role)).join(bin);
         if !slot.is_file() {
             continue;

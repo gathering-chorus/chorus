@@ -142,7 +142,7 @@ pub fn current_round(role: &str, card: u64) -> String {
 /// Resolve the round (HEAD short-12) from the CARD's werk, whichever role owns
 /// it. "round-unknown" only when no role has a werk for the card.
 pub fn round_for_card(werk_base: &str, card: u64) -> String {
-    for r in ["wren", "silas", "kade"] {
+    for r in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
         if let Some(sha) = git_short12(&format!("{}/{}-{}", werk_base, r, card)) {
             return sha;
         }
@@ -176,7 +176,7 @@ pub fn patch_id_for_card(werk_base: &str, role: &str, card: u64) -> String {
     if Path::new(&own).is_dir() {
         return git_patch_id(&own);
     }
-    for r in ["wren", "silas", "kade"] {
+    for r in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
         let werk = format!("{}/{}-{}", werk_base, r, card);
         if Path::new(&werk).is_dir() {
             return git_patch_id(&werk);
@@ -316,7 +316,7 @@ pub const PROVER_ROLES: [&str; 1] = ["borg-queen"];
 /// demoer. Every builder gets the same count (3), so the pipeline's review
 /// steps are fixed: run-review 1..3. (jeff is the prover, not a peer.)
 pub fn gather_peers(role: &str) -> Vec<&'static str> {
-    PEER_ROLES.into_iter().filter(|r| *r != role).collect()
+    PEER_ROLES.into_iter().filter(|r| *r != role).take(3).collect()
 }
 
 /// #4502 — a peer's persona: roles/<peer>/CLAUDE.md, else AGENTS.md (abby-normal).
@@ -886,7 +886,7 @@ pub fn clearing_link_refusal(changed: &[String], url: &str) -> Option<String> {
 /// (this crate takes no dependency on werk-deploy, ADR-032). A role with no
 /// slot gets the production port, as before.
 pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
-    match ["silas", "kade", "wren", "abby-normal"].iter().position(|r| *r == role) {
+    match ["silas", "kade", "wren", "abby-normal", "borg-queen"].iter().position(|r| *r == role) {
         Some(slot) => base + slot as u16,
         None => prod,
     }
