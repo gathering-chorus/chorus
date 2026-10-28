@@ -119,10 +119,92 @@ pub fn owl_upstream_for(role: &str) -> R<String> {
     Ok(format!("http://127.0.0.1:{}", athena.port_for(role)?))
 }
 
+/// The canonical port-slot order for known agent roles (#4458 / #4774).
+pub const FALLBACK_KNOWN_ROLES: [&str; 5] = [
+    "silas",
+    "kade",
+    "wren",
+    "abby-normal",
+    "borg-queen",
+];
+
+fn extract_json_str_field(obj: &str, field: &str) -> Option<String> {
+    let pat = format!("\"{field}\"");
+    let idx = obj.find(&pat)? + pat.len();
+    let rest = obj[idx..].trim_start().strip_prefix(':')?.trim_start();
+    let quoted = rest.strip_prefix('"')?;
+    let end = quoted.find('"')?;
+    Some(quoted[..end].to_string())
+}
+
+/// #4774 — pure parser for `/v1/roles/roles` JSON. Extracts `"roleKind": "agent"`
+/// role names, preserves `FALLBACK_KNOWN_ROLES` slot indices so existing per-role
+/// ports never shift, and appends any newly added agent roles in deterministic order.
+/// Returns `None` if no agent roles are present.
+pub fn roles_from_door_json(body: &str) -> Option<Vec<String>> {
+    let data_idx = body.find("\"data\"")?;
+    let mut rest = &body[data_idx..];
+    let mut found = Vec::new();
+    while let Some(open) = rest.find('{') {
+        let after_open = &rest[open + 1..];
+        let Some(close) = after_open.find('}') else {
+            break;
+        };
+        let obj = &after_open[..close];
+        if extract_json_str_field(obj, "roleKind").as_deref() == Some("agent") {
+            if let Some(name) = extract_json_str_field(obj, "name") {
+                if !name.is_empty() && !found.contains(&name) {
+                    found.push(name);
+                }
+            }
+        }
+        rest = &after_open[close + 1..];
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let mut ordered = Vec::with_capacity(found.len());
+    for slot_role in FALLBACK_KNOWN_ROLES {
+        if found.iter().any(|r| r == slot_role) {
+            ordered.push(slot_role.to_string());
+        }
+    }
+    let mut extras: Vec<String> = found
+        .into_iter()
+        .filter(|r| !FALLBACK_KNOWN_ROLES.contains(&r.as_str()))
+        .collect();
+    extras.sort();
+    ordered.extend(extras);
+    Some(ordered)
+}
+
+/// #4774 — query `{door_url}/v1/roles/roles?limit=500` with a short timeout and fall
+/// back to `FALLBACK_KNOWN_ROLES` when offline or hermetic.
+pub fn resolve_known_roles_from(door_url: &str) -> Vec<String> {
+    let url = format!("{}/v1/roles/roles?limit=500", door_url.trim_end_matches('/'));
+    if let Ok(body) = run_env(None, &[], "curl", &["-s", "-f", "--max-time", "2", &url]) {
+        if let Some(roles) = roles_from_door_json(&body) {
+            return roles;
+        }
+    }
+    FALLBACK_KNOWN_ROLES.iter().map(|s| s.to_string()).collect()
+}
+
 /// The roles that get a demo copy, in port-slot order. #4458 — Abby
 /// (abby-normal) is the fourth: her ports are each service's base + 3.
+/// #4774 — resolved dynamically from the roles graph (`:3360/v1/roles/roles`)
+/// with fallback to `FALLBACK_KNOWN_ROLES`.
 pub fn known_roles() -> &'static [&'static str] {
-    &["silas", "kade", "wren", "abby-normal", "borg-queen"]
+    static ROLES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    ROLES.get_or_init(|| {
+        let door = std::env::var("ATHENA_MAKE_URL")
+            .or_else(|_| std::env::var("CHORUS_DOOR"))
+            .unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+        resolve_known_roles_from(&door)
+            .into_iter()
+            .map(|s| -> &'static str { Box::leak(s.into_boxed_str()) })
+            .collect()
+    })
 }
 
 /// The canonical service list for the demo env. #4515 — the old TS MCP server
@@ -1357,6 +1439,38 @@ mod tests {
     #[test]
     fn known_roles_lists_three_with_stable_order() {
         assert_eq!(known_roles(), &["silas", "kade", "wren", "abby-normal", "borg-queen"]);
+    }
+
+    /// #4774 — dynamic role resolution from `/v1/roles/roles` preserves the 5
+    /// canonical port slots, appends any newly added agent role, and ignores
+    /// human/automation/probe rows.
+    #[test]
+    fn roles_from_door_json_preserves_slots_and_appends_new_agent_roles() {
+        let json = r#"{ "apiVersion": "v1", "kind": "Role", "data": [
+  { "name": "abby-normal", "roleKind": "agent" },
+  { "name": "borg-queen", "roleKind": "agent" },
+  { "name": "crawler", "roleKind": "automation" },
+  { "name": "danzek", "roleKind": "agent" },
+  { "name": "jeff", "roleKind": "human" },
+  { "name": "kade", "roleKind": "agent" },
+  { "name": "silas", "roleKind": "agent" },
+  { "name": "wren", "roleKind": "agent" }
+]}"#;
+        let got = roles_from_door_json(json).expect("must extract agent roles");
+        assert_eq!(
+            got,
+            vec!["silas", "kade", "wren", "abby-normal", "borg-queen", "danzek"]
+        );
+
+        // NEGATIVE PROOF (#3734): a payload with no agent roles returns None (never
+        // human/automation roles), and an unreachable door falls back to the 5 known roles.
+        let non_agent = r#"{ "data": [{ "name": "jeff", "roleKind": "human" }, { "name": "pulse", "roleKind": "automation" }] }"#;
+        assert_eq!(roles_from_door_json(non_agent), None);
+        assert_eq!(roles_from_door_json("not json"), None);
+        assert_eq!(
+            resolve_known_roles_from("http://127.0.0.1:9"),
+            vec!["silas", "kade", "wren", "abby-normal", "borg-queen"]
+        );
     }
 
     #[test]

@@ -133,6 +133,156 @@ pub fn decide_effective_value(
     Ok(None)
 }
 
+/// #4774 — map `(scope, name)` to the node local-name used by `/effective/:node/:key`.
+/// Roles carry the `role-` prefix (`role-borg-queen`), whereas services/domains/products
+/// use their bare local-name (`pulse`, `athena`, `chorus`).
+pub fn target_node_for_scope(scope: &str, name: &str) -> String {
+    if scope == "role" && !name.starts_with("role-") {
+        format!("role-{name}")
+    } else {
+        name.to_string()
+    }
+}
+
+/// #4774 — extract the `value` field (string, integer, or boolean) from an
+/// `/effective/:node/:key` 200 JSON payload. Returns `None` if an `"error"` key
+/// is present or `"value"` is absent.
+pub fn extract_effective_value_json(body: &str) -> Option<String> {
+    if body.contains("\"error\"") {
+        return None;
+    }
+    let marker = "\"value\":";
+    let start = body.find(marker)? + marker.len();
+    let rest = body[start..].trim_start();
+    if let Some(quoted) = rest.strip_prefix('"') {
+        let mut out = String::new();
+        let mut chars = quoted.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(escaped) = chars.next() {
+                    out.push(escaped);
+                }
+            } else if c == '"' {
+                return Some(out);
+            } else {
+                out.push(c);
+            }
+        }
+        None
+    } else {
+        let end = rest.find([',', '}', ' ', '\r', '\n']).unwrap_or(rest.len());
+        let raw = rest[..end].trim();
+        (!raw.is_empty()).then(|| raw.to_string())
+    }
+}
+
+/// Canonical port-slot order for known agent roles (#4458 / #4774).
+pub const CANONICAL_AGENT_SLOT_ORDER: [&str; 5] = [
+    "silas",
+    "kade",
+    "wren",
+    "abby-normal",
+    "borg-queen",
+];
+
+fn extract_json_str_field(obj: &str, field: &str) -> Option<String> {
+    let pat = format!("\"{field}\"");
+    let idx = obj.find(&pat)? + pat.len();
+    let rest = obj[idx..].trim_start().strip_prefix(':')?.trim_start();
+    let quoted = rest.strip_prefix('"')?;
+    let end = quoted.find('"')?;
+    Some(quoted[..end].to_string())
+}
+
+/// #4774 — extract `"roleKind": "agent"` role names from `/v1/roles/roles` JSON.
+/// Preserves `CANONICAL_AGENT_SLOT_ORDER` for existing roles so per-role port slots
+/// never shift, and appends any newly added agent roles in deterministic order.
+/// Returns `None` if zero agent roles are present.
+pub fn extract_agent_roles_json(body: &str) -> Option<Vec<String>> {
+    let data_idx = body.find("\"data\"")?;
+    let mut rest = &body[data_idx..];
+    let mut found = Vec::new();
+    while let Some(open) = rest.find('{') {
+        let after_open = &rest[open + 1..];
+        let Some(close) = after_open.find('}') else {
+            break;
+        };
+        let obj = &after_open[..close];
+        if extract_json_str_field(obj, "roleKind").as_deref() == Some("agent") {
+            if let Some(name) = extract_json_str_field(obj, "name") {
+                if !name.is_empty() && !found.contains(&name) {
+                    found.push(name);
+                }
+            }
+        }
+        rest = &after_open[close + 1..];
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let mut ordered = Vec::with_capacity(found.len());
+    for slot_role in CANONICAL_AGENT_SLOT_ORDER {
+        if found.iter().any(|r| r == slot_role) {
+            ordered.push(slot_role.to_string());
+        }
+    }
+    let mut extras: Vec<String> = found
+        .into_iter()
+        .filter(|r| !CANONICAL_AGENT_SLOT_ORDER.contains(&r.as_str()))
+        .collect();
+    extras.sort();
+    ordered.extend(extras);
+    Some(ordered)
+}
+
+/// #4774 — zero-dep HTTP GET against `athena-make` (`door_url`, e.g. `http://127.0.0.1:3360`).
+pub fn http_get_door(door_url: &str, path: &str) -> Result<(u16, String), String> {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    let stripped = door_url
+        .trim()
+        .strip_prefix("http://")
+        .unwrap_or(door_url.trim())
+        .trim_end_matches('/');
+    let host_port = if stripped.contains(':') {
+        stripped.to_string()
+    } else {
+        format!("{stripped}:80")
+    };
+    let addr: SocketAddr = host_port
+        .to_socket_addrs()
+        .map_err(|e| format!("resolve {host_port}: {e}"))?
+        .next()
+        .ok_or_else(|| format!("no address for {host_port}"))?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(3))
+        .map_err(|e| format!("connect {addr}: {e}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
+    let req = format!(
+        "GET {path} HTTP/1.1\r\nHost: {host_port}\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+    );
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("write {addr}: {e}"))?;
+    let mut raw = String::new();
+    stream
+        .read_to_string(&mut raw)
+        .map_err(|e| format!("read {addr}: {e}"))?;
+    let (head, body) = raw
+        .split_once("\r\n\r\n")
+        .or_else(|| raw.split_once("\n\n"))
+        .ok_or_else(|| "malformed HTTP response".to_string())?;
+    let status_line = head.lines().next().unwrap_or("");
+    let code: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| format!("invalid HTTP status line: {status_line}"))?;
+    Ok((code, body.to_string()))
+}
+
 #[cfg(test)]
 mod role_scope_3838 {
     use super::*;

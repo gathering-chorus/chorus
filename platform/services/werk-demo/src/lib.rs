@@ -139,10 +139,78 @@ pub fn current_round(role: &str, card: u64) -> String {
     round_for_card(&werk_base, card)
 }
 
+/// #4774 — canonical agent slot order for fallback and port-slot stability.
+pub const FALLBACK_AGENT_ROLES: [&str; 5] = [
+    "silas",
+    "kade",
+    "wren",
+    "abby-normal",
+    "borg-queen",
+];
+
+/// #4774 — pure parser for `/v1/roles/roles` JSON. Extracts `"roleKind": "agent"`
+/// role names in slot order and appends any newly added agent roles.
+pub fn roles_from_door_json(body: &str) -> Option<Vec<String>> {
+    let data_idx = body.find("\"data\"")?;
+    let mut rest = &body[data_idx..];
+    let mut found = Vec::new();
+    while let Some(open) = rest.find('{') {
+        let after_open = &rest[open + 1..];
+        let Some(close) = after_open.find('}') else {
+            break;
+        };
+        let obj = &after_open[..close];
+        if json_str_field(obj, "roleKind").as_deref() == Some("agent") {
+            if let Some(name) = json_str_field(obj, "name") {
+                if !name.is_empty() && !found.contains(&name) {
+                    found.push(name);
+                }
+            }
+        }
+        rest = &after_open[close + 1..];
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let mut ordered = Vec::with_capacity(found.len());
+    for slot_role in FALLBACK_AGENT_ROLES {
+        if found.iter().any(|r| r == slot_role) {
+            ordered.push(slot_role.to_string());
+        }
+    }
+    let mut extras: Vec<String> = found
+        .into_iter()
+        .filter(|r| !FALLBACK_AGENT_ROLES.contains(&r.as_str()))
+        .collect();
+    extras.sort();
+    ordered.extend(extras);
+    Some(ordered)
+}
+
+/// #4774 — agent roles resolved dynamically from `/v1/roles/roles` with fallback
+/// to `FALLBACK_AGENT_ROLES`.
+pub fn known_agent_roles() -> &'static [&'static str] {
+    static ROLES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    ROLES.get_or_init(|| {
+        let door = env::var("ATHENA_MAKE_URL")
+            .or_else(|_| env::var("CHORUS_DOOR"))
+            .unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+        let url = format!("{}/v1/roles/roles?limit=500", door.trim_end_matches('/'));
+        let resolved = run("curl", &["-s", "-f", "--max-time", "2", &url])
+            .ok()
+            .and_then(|body| roles_from_door_json(&body))
+            .unwrap_or_else(|| FALLBACK_AGENT_ROLES.iter().map(|s| s.to_string()).collect());
+        resolved
+            .into_iter()
+            .map(|s| -> &'static str { Box::leak(s.into_boxed_str()) })
+            .collect()
+    })
+}
+
 /// Resolve the round (HEAD short-12) from the CARD's werk, whichever role owns
 /// it. "round-unknown" only when no role has a werk for the card.
 pub fn round_for_card(werk_base: &str, card: u64) -> String {
-    for r in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+    for r in known_agent_roles() {
         if let Some(sha) = git_short12(&format!("{}/{}-{}", werk_base, r, card)) {
             return sha;
         }
@@ -176,7 +244,7 @@ pub fn patch_id_for_card(werk_base: &str, role: &str, card: u64) -> String {
     if Path::new(&own).is_dir() {
         return git_patch_id(&own);
     }
-    for r in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+    for r in known_agent_roles() {
         let werk = format!("{}/{}-{}", werk_base, r, card);
         if Path::new(&werk).is_dir() {
             return git_patch_id(&werk);
@@ -886,7 +954,7 @@ pub fn clearing_link_refusal(changed: &[String], url: &str) -> Option<String> {
 /// (this crate takes no dependency on werk-deploy, ADR-032). A role with no
 /// slot gets the production port, as before.
 pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
-    match ["silas", "kade", "wren", "abby-normal", "borg-queen"].iter().position(|r| *r == role) {
+    match known_agent_roles().iter().position(|r| *r == role) {
         Some(slot) => base + slot as u16,
         None => prod,
     }
