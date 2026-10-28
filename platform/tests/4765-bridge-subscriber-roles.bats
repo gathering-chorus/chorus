@@ -18,13 +18,31 @@ SCRIPT="$REPO/platform/scripts/bridge-subscriber.js"
 }
 
 @test "AC3: borg-queen is accepted as valid role" {
-  # Should not be refused with bad role error (exits past role check)
-  run node "$SCRIPT" borg-queen
-  [[ "$output" != *"bad role 'borg-queen'"* ]] || return 1
+  run node -e "
+    const cp = require('child_process');
+    const proc = cp.spawn('node', ['$SCRIPT', 'borg-queen']);
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d; });
+    setTimeout(() => {
+      proc.kill('SIGKILL');
+      if (stderr.includes('bad role')) process.exit(1);
+      process.exit(0);
+    }, 500);
+  "
+  [ "$status" -eq 0 ]
 }
 
 @test "AC3: abby-normal is accepted as valid role" {
-  # Should not be refused with bad role error (exits past role check)
-  run node "$SCRIPT" abby-normal
-  [[ "$output" != *"bad role 'abby-normal'"* ]] || return 1
+  run node -e "
+    const cp = require('child_process');
+    const proc = cp.spawn('node', ['$SCRIPT', 'abby-normal']);
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d; });
+    setTimeout(() => {
+      proc.kill('SIGKILL');
+      if (stderr.includes('bad role')) process.exit(1);
+      process.exit(0);
+    }, 500);
+  "
+  [ "$status" -eq 0 ]
 }
