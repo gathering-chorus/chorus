@@ -12,7 +12,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CHAT_DIR="/tmp/chorus-chat"
+CHAT_DIR="${CHAT_DIR:-/tmp/chorus-chat}"
 CHORUS_LOG="${SCRIPT_DIR}/chorus-log"
 MESSAGING_API="http://localhost:3475"
 # --dry-run: persist messages but skip nudge delivery (osascript inject)
