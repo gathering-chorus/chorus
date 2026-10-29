@@ -163,7 +163,17 @@ export function loadEnv(): { url: string; token: string } {
  *     a warning to stderr (so existing automation isn't immediately broken).
  *     The fallback is deprecated; future cards card retires it entirely.
  */
-const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff', 'abby-normal', 'automation']);
+const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff', 'abby-normal', 'borg-queen', 'automation']);
+const CWD_ROLE_PATTERNS: Array<[string, string]> = [
+  ['engineer', 'kade'],
+  ['roles/kade', 'kade'],
+  ['product-manager', 'wren'],
+  ['roles/wren', 'wren'],
+  ['architect', 'silas'],
+  ['roles/silas', 'silas'],
+  ['roles/abby-normal', 'abby-normal'],
+  ['roles/borg-queen', 'borg-queen'],
+];
 
 export function detectRole(): string {
   const env = (process.env.DEPLOY_ROLE || '').toLowerCase();
@@ -175,8 +185,6 @@ export function detectRole(): string {
     process.stderr.write('detectRole: DEPLOY_ROLE unset; falling back to cwd parse (deprecated)\n');
   }
   const cwd = process.cwd();
-  if (cwd.includes('engineer') || cwd.includes('roles/kade')) return 'kade';
-  if (cwd.includes('product-manager') || cwd.includes('roles/wren')) return 'wren';
-  if (cwd.includes('architect') || cwd.includes('roles/silas')) return 'silas';
-  return 'automation';
+  const matched = CWD_ROLE_PATTERNS.find(([needle]) => cwd.includes(needle));
+  return matched ? matched[1] : 'automation';
 }

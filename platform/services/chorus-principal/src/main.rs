@@ -1195,6 +1195,7 @@ fn place_credential(name: &str, id: &str, secret: &str, webid: &str, issuer: &st
     let body = cred_body(name, id, secret, webid, issuer, &acct);
     std::fs::write(&path, body).map_err(|e| format!("cannot write {path}: {e}"))?;
     // Owner and mode before anyone else can look: the secret is on disk now.
+    let _ = Command::new("chmod").args(["700", &dir]).status();
     let _ = Command::new("chmod").args(["600", &path]).status();
     let _ = Command::new("chown").args(["-R", &format!("{acct}:staff"), &format!("{home}/.chorus")]).status();
     // hostAccount is what chorus-identity-token checks (#4202): a credential

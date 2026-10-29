@@ -13,6 +13,7 @@
  * and in the spine (card.graph.sync_failed), and the reconcile pass repairs it.
  */
 import { execFileSync } from 'child_process';
+import * as os from 'os';
 import * as path from 'path';
 import { BoardTask } from './types';
 import { emitSpineEvent } from './events';
@@ -75,9 +76,39 @@ export function rowDiff(want: CardRow, have: CardRow | undefined): string[] {
   return pairs.filter(([, w, h]) => (w ?? '') !== (h ?? '')).map(([name]) => name);
 }
 
-/** The role this process writes as. Row ownership follows the writer (the door's rule). */
+/**
+ * #4780 AC2 — Resolve the credential role this process authenticates to the door with.
+ * A process running under a `chorus-<role>` Mac account ALWAYS signs as `<role>`,
+ * never as `'jeff'` even when `DEPLOY_ROLE=jeff` is set for a Jeff-authorized `/card`
+ * invocation. When not on a `chorus-<role>` account, `DEPLOY_ROLE=jeff` falls back to
+ * `CHORUS_ROLE` when set, and only returns `'jeff'` when `osUser === 'jeffbridwell'`
+ * with no `CHORUS_ROLE` (Slice 4 #4787 retires `DEPLOY_ROLE` guessing entirely).
+ * Defaults to `'automation'`, never a hardcoded peer role.
+ */
+function defaultOsUser(): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return '';
+  }
+}
+
+function resolveJeffDeploy(acct: string, chorusRole: string): string {
+  if (chorusRole && chorusRole !== 'jeff') return chorusRole;
+  return acct === 'jeffbridwell' ? 'jeff' : 'automation';
+}
+
+export function resolveWriterRole(osUser?: string): string {
+  const acct = osUser ?? defaultOsUser();
+  if (acct.startsWith('chorus-')) return acct.slice('chorus-'.length).toLowerCase();
+  const chorusRole = (process.env.CHORUS_ROLE ?? '').toLowerCase();
+  const deploy = (process.env.DEPLOY_ROLE ?? '').toLowerCase();
+  if (deploy === 'jeff') return resolveJeffDeploy(acct, chorusRole);
+  return deploy || chorusRole || 'automation';
+}
+
 function writerRole(): string {
-  return (process.env.DEPLOY_ROLE || process.env.CHORUS_ROLE || 'wren').toLowerCase();
+  return resolveWriterRole();
 }
 
 let cachedToken: { role: string; token: string; at: number } | null = null;
