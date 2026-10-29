@@ -556,6 +556,34 @@ fn wait_for_services(ctx: &Ctx, bound: u64, show: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// #4786 AC3 — the Mac account the role runs as, never the launcher's $USER.
+/// Checked in order: ctx.run_as, CHORUS_ROLE_ACCOUNT, the principal's own
+/// hostAccount from the identity door, current USER if it matches chorus-<role>,
+/// defaulting to chorus-<role>.
+fn role_host_account(ctx: &Ctx, role: &str) -> String {
+    if let Some(ref u) = ctx.run_as {
+        if !u.trim().is_empty() { return u.clone(); }
+    }
+    if let Ok(a) = env::var("CHORUS_ROLE_ACCOUNT") {
+        if !a.trim().is_empty() { return a; }
+    }
+    let cur_user = envd("USER", "");
+    if cur_user == format!("chorus-{}", role) {
+        return cur_user;
+    }
+    let url = format!("{}/v1/identity/principals/{}", ctx.api, role);
+    if let Ok(ans) = sh(&ctx.curl, &["-s", "--max-time", "2", &url]) {
+        if let Ok(v) = serde_json::from_str::<Value>(&ans) {
+            if let Some(acct) = v.get("data").and_then(|d| d.get("hostAccount")).and_then(|h| h.as_str()) {
+                if !acct.trim().is_empty() {
+                    return acct.to_string();
+                }
+            }
+        }
+    }
+    format!("chorus-{}", role)
+}
+
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
 /// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
@@ -588,7 +616,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         },
     };
     let token = token.unwrap_or_default();
-    let host_account = envd("USER", "unknown");
+    let host_account = role_host_account(ctx, role);
     let start_id = format!("{:x}", now_ms());
     let (session_name, body) = session_row(role, &login, &host_account, &start_id);
     // #4328 — the row says which role it acts as and when it started
@@ -1290,14 +1318,24 @@ fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool 
 
 /// End the role's saved run (and its presence) if it is still live.
 fn end_run(ctx: &Ctx, role: &str, reason: &str) {
-    let Some(run) = read_row(ctx, role, "run") else { return };
-    if run.get("runEndedAt").and_then(|e| e.as_str()).map(|e| !e.is_empty()).unwrap_or(false) { return; }
-    if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
-        if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
-            ctx.spine(&["session.run.ended", role, &format!("run={}", row_name(&ended)), &format!("reason={}", reason)]);
+    if let Some(run) = read_row(ctx, role, "run") {
+        if run.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() {
+            if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
+                if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
+                    ctx.spine(&["session.run.ended", role, &format!("run={}", row_name(&ended)), &format!("reason={}", reason)]);
+                }
+            }
         }
     }
-    if let Some(p) = read_row(ctx, role, "presence").and_then(rows::gone_presence) { put_row(ctx, role, "identity/presences", "presence", &p); }
+    if let Some(p) = read_row(ctx, role, "presence") {
+        if p.get("reachability").and_then(|r| r.as_str()) != Some("unreachable") {
+            if let Some(gone) = rows::gone_presence(p) {
+                if put_row(ctx, role, "identity/presences", "presence", &gone) {
+                    ctx.spine(&["session.presence.retired", role, &format!("presence={}", row_name(&gone)), &format!("reason={}", reason)]);
+                }
+            }
+        }
+    }
 }
 
 /// #4344 — the role's credential files as Credential rows. #4447: written by
@@ -1407,7 +1445,7 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
     let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
     ensure_conversation(ctx, role, &run, conversation);
-    let host_account = envd("USER", "unknown");
+    let host_account = role_host_account(ctx, role);
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
