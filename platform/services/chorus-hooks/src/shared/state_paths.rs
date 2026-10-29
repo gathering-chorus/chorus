@@ -127,10 +127,18 @@ pub fn hook_socket_durable() -> String {
 /// world-writable path this fix exists to abandon; better to refuse to start
 /// than to silently run the guard daemon's socket in a world-writable dir.
 pub fn hook_run_dir() -> String {
-    run_dir_from(
-        std::env::var("CHORUS_HOOKS_RUN_DIR").ok().as_deref(),
-        std::env::var("HOME").ok().as_deref(),
-    )
+    if let Some(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR").ok().filter(|s| !s.trim().is_empty()) {
+        return run_dir_from(Some(&dir), None);
+    }
+    // #4785 — under multi-account setup (ADR-065), caller may run as a non-host
+    // account (e.g. chorus-borg-queen, chorus-silas). The shared daemon socket lives
+    // under CHORUS_STATE_DIR/run-agents. If that socket exists, use it so callers
+    // on agent accounts automatically reach the shared daemon socket.
+    let shared_agents = format!("{}/run-agents", chorus_state_dir());
+    if std::path::Path::new(&shared_agents).join("chorus-hooks.sock").exists() {
+        return shared_agents;
+    }
+    run_dir_from(None, std::env::var("HOME").ok().as_deref())
 }
 
 /// The rule, pure so it is testable without touching the process environment.
@@ -151,14 +159,6 @@ pub fn run_dir_from(override_dir: Option<&str>, home: Option<&str>) -> String {
             "chorus-hooks: CHORUS_HOOKS_RUN_DIR must be an absolute path, got {dir:?}",
         );
         return dir.trim_end_matches('/').to_string();
-    }
-    // #4785 — under multi-account setup (ADR-065), caller may run as a non-host
-    // account (e.g. chorus-borg-queen, chorus-silas). The shared daemon socket lives
-    // under CHORUS_STATE_DIR/run-agents or the host's run-agents dir. If that exists,
-    // use it so callers on agent accounts automatically reach the shared daemon socket.
-    let shared_agents = format!("{}/run-agents", chorus_state_dir());
-    if std::path::Path::new(&shared_agents).join("chorus-hooks.sock").exists() {
-        return shared_agents;
     }
     let home = home.expect(
         "chorus-hooks: HOME unset — refusing to fall back to world-writable /tmp \

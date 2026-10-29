@@ -22,7 +22,7 @@ import assert from 'assert';
 
 setDefaultTimeout(30_000);
 
-const CHORUS_ROOT = '/Users/jeffbridwell/CascadeProjects/chorus';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
 const CARDS_CLI = `${CHORUS_ROOT}/platform/scripts/cards`;
 const CHORUS_LOG_BIN = `${CHORUS_ROOT}/platform/scripts/chorus-log`;
 // chorus-log writes to ~/.chorus/chorus.log post-#2728; platform/logs/chorus.log

@@ -5,10 +5,11 @@ import * as path from 'path';
 import * as os from 'os';
 import assert from 'assert';
 
-const HOOK_SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
+const HOOK_SHIM = `${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim`;
 const STATE_DIR = '/tmp/claude-team-scan';
-const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs';
-const HOME = process.env.HOME || '/Users/jeffbridwell';
+const BRIEFS_DIR = `${CHORUS_ROOT}/roles/wren/briefs`;
+const HOME = process.env.HOME || path.resolve(CHORUS_ROOT, '../../..');
 const TEST_CARD_ID = '99998';
 
 // #3598 — HERMETIC target paths. The steps used to edit ABSOLUTE CANONICAL paths
@@ -48,7 +49,7 @@ Before(function () {
     stateBackups: new Map(),
     targetFile: sandboxPath('platform/services/smoke-test.rs'),
     targetTool: 'Edit',
-    cwd: '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade',
+    cwd: `${CHORUS_ROOT}/roles/kade`,
   };
 
   // Backup AND clear ALL role state files for deterministic tests.
@@ -358,7 +359,7 @@ Given('they have not edited any test files', function () {
 Given('they have edited a test file', function () {
   // Session shows a test file was edited before production code
   ctx.sessionLines.push(
-    '{"type":"tool_use","name":"Edit","input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}',
+    `{"type":"tool_use","name":"Edit","input":{"file_path":"${CHORUS_ROOT}/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}`,
     '{"type":"tool_result","content":"File updated successfully"}'
   );
   writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
@@ -366,7 +367,7 @@ Given('they have edited a test file', function () {
 
 When('they try to edit a test file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature';
+  ctx.targetFile = `${CHORUS_ROOT}/platform/tests/features/gates/tdd.feature`;
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',

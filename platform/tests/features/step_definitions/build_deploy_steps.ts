@@ -25,7 +25,7 @@ import assert from 'assert';
 
 setDefaultTimeout(30_000);
 
-const CHORUS_ROOT = '/Users/jeffbridwell/CascadeProjects/chorus';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
 const CHORUS_LOG_BIN = `${CHORUS_ROOT}/platform/scripts/chorus-log`;
 const CHORUS_LOG_FILE = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
 const BIN_INSTALL = `${CHORUS_ROOT}/platform/scripts/chorus-bin-install`;
