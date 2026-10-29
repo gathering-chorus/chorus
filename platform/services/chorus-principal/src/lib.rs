@@ -797,6 +797,40 @@ pub fn own_account_inner_cmd(
     )
 }
 
+/// #4784 — Resolve a role's own project memory directory (`-roles-<role>/memory`),
+/// refusing any path that does not end with `/roles/<role>` or contains `..`.
+pub fn role_memory_source_dir(home: &str, role_dir: &str, role: &str) -> Option<PathBuf> {
+    let trimmed = role_dir.trim_end_matches('/');
+    if role.is_empty()
+        || trimmed.contains("..")
+        || !trimmed.ends_with(&format!("/roles/{role}"))
+    {
+        return None;
+    }
+    Some(projects_dir_for(home, trimmed).join("memory"))
+}
+
+/// #4784 — The memory directories handed to `<role>`'s macOS account on login:
+/// (1) the shared chorus memory set (`<root>/memory`, e.g. `-Users-jeffbridwell-CascadeProjects-chorus/memory`)
+/// and (2) the role's own project memory dir (`-roles-<role>/memory`), while
+/// refusing any other role's directory (`-roles-<other>/memory`).
+pub fn role_memory_handoff_dirs(
+    home: &str,
+    root: &str,
+    role_dir: &str,
+    role: &str,
+) -> Option<Vec<(PathBuf, String)>> {
+    let own_mem = role_memory_source_dir(home, role_dir, role)?;
+    let clean_root = root.trim_end_matches('/');
+    if clean_root.is_empty() || clean_root.contains("..") {
+        return None;
+    }
+    let shared_mem = projects_dir_for(home, clean_root).join("memory");
+    let shared_slug = clean_root.replace('/', "-");
+    let own_slug = role_dir.trim_end_matches('/').replace('/', "-");
+    Some(vec![(shared_mem, shared_slug), (own_mem, own_slug)])
+}
+
 /// `on <role>`: start it logged in, or, when it is already running, make sure
 /// THIS session is logged in and go to its window. Never a second copy.
 /// The shell line that starts `cmd` in the role's pane, as the role's own
@@ -811,7 +845,8 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
             // the principal's identity lives in its own home: its credentials
             // (and current token) are handed over at login, readable by it alone,
             // and every mint and renewal from then on happens as that account
-            let own_dir = format!("{}/{}/.chorus/identity", envd("AWAKE_ACCOUNT_HOMES", "/Users"), acct);
+            let homes = envd("AWAKE_ACCOUNT_HOMES", "/Users");
+            let own_dir = format!("{}/{}/.chorus/identity", homes, acct);
             let own = format!("{}/{}/token.cache", own_dir, role);
             for f in ["cred.json", "nostr.json", "token.cache"] {
                 let Ok(bytes) = fs::read(PathBuf::from(&ctx.identity_dir).join(role).join(f)) else { continue };
@@ -822,6 +857,40 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
                 if let Some(mut i) = child.stdin.take() { let _ = std::io::Write::write_all(&mut i, &bytes); }
                 if !child.wait().map(|s| s.success()).unwrap_or(false) {
                     return Err((1, format!("could not hand {} its {}", acct, f)));
+                }
+            }
+            // #4784 — hand the shared chorus memory set and the role's own memory/
+            // folder into the role account's ~/.claude/projects/<slug>/memory/
+            // (0700, non-clobbering via tar -k) so Claude auto-memory works.
+            if let Some(mem_dirs) = role_memory_handoff_dirs(&ctx.home, &ctx.root, role_dir, role) {
+                for (src_mem, slug) in mem_dirs {
+                    if !src_mem.is_dir() {
+                        continue;
+                    }
+                    let Ok(tar_out) = Command::new("tar")
+                        .args(["-cf", "-", "-C", &src_mem.to_string_lossy(), "."])
+                        .output()
+                    else {
+                        continue;
+                    };
+                    if !tar_out.status.success() || tar_out.stdout.is_empty() {
+                        continue;
+                    }
+                    let dest_mem = format!("{}/{}/.claude/projects/{}/memory", homes, acct, slug);
+                    let unpack = format!(
+                        "umask 077 && mkdir -p '{}' && tar -xkf - -C '{}' 2>/dev/null || true",
+                        dest_mem, dest_mem
+                    );
+                    if let Ok(mut child) = Command::new(&ctx.sudo)
+                        .args(["-n", "-u", acct, "-H", "sh", "-c", &unpack])
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                    {
+                        if let Some(mut i) = child.stdin.take() {
+                            let _ = std::io::Write::write_all(&mut i, &tar_out.stdout);
+                        }
+                        let _ = child.wait();
+                    }
                 }
             }
             let inner = own_account_inner_cmd(role_dir, &ctx.root, &own_dir, &own, &ctx.sessions_dir.to_string_lossy(), role, cmd);
@@ -2075,5 +2144,57 @@ mod own_account_launch_tests_4777 {
         );
         assert!(cmd.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{cmd}");
         assert!(cmd.contains("CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\""), "{cmd}");
+    }
+
+    #[test]
+    fn role_memory_dir_hands_only_own_role_memory_and_refuses_other_roles_4784() {
+        let own = role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas", "silas");
+        assert_eq!(
+            own.as_deref(),
+            Some(std::path::Path::new("/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-silas/memory"))
+        );
+
+        let dirs = role_memory_handoff_dirs(
+            "/Users/jeffbridwell",
+            "/Users/jeffbridwell/CascadeProjects/chorus",
+            "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas",
+            "silas",
+        )
+        .unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert_eq!(
+            dirs[0].0,
+            std::path::PathBuf::from("/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory")
+        );
+        assert_eq!(dirs[0].1, "-Users-jeffbridwell-CascadeProjects-chorus");
+        assert_eq!(
+            dirs[1].0,
+            std::path::PathBuf::from("/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-silas/memory")
+        );
+        assert_eq!(dirs[1].1, "-Users-jeffbridwell-CascadeProjects-chorus-roles-silas");
+
+        // Negative proofs (#3734): another role's dir, shared root dir as role_dir, or traversal is refused
+        assert!(
+            role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren", "silas").is_none(),
+            "NEGATIVE (#3734): silas must never receive wren's memory folder"
+        );
+        assert!(
+            role_memory_handoff_dirs(
+                "/Users/jeffbridwell",
+                "/Users/jeffbridwell/CascadeProjects/chorus",
+                "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren",
+                "silas"
+            )
+            .is_none(),
+            "NEGATIVE (#3734): handoff_dirs refuses another role's role_dir"
+        );
+        assert!(
+            role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus", "silas").is_none(),
+            "NEGATIVE (#3734): shared root as role_dir must be refused"
+        );
+        assert!(
+            role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/../kade", "silas").is_none(),
+            "NEGATIVE (#3734): path traversal must be refused"
+        );
     }
 }

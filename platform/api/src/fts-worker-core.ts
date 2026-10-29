@@ -13,6 +13,10 @@ export interface FtsRequest {
   role?: string;
   mode: string;
   channel?: string;
+  order?: string;
+  before?: string;
+  after?: string;
+  offset?: number;
 }
 
 export type FtsReply = { id: number; rows: unknown[] } | { id: number; error: string };
@@ -26,7 +30,12 @@ export function handleFtsMessage(db: Database.Database, msg: FtsRequest): FtsRep
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- msg arrives via worker IPC; typed but may be malformed, keep the guard
   const id = msg && typeof msg.id === 'number' ? msg.id : -1;
   try {
-    const rows = runFtsQueryOnDb(db, msg.q, msg.fetchLimit, msg.role, msg.mode, msg.channel);
+    const rows = runFtsQueryOnDb(db, msg.q, msg.fetchLimit, msg.role, msg.mode, msg.channel, {
+      order: msg.order,
+      before: msg.before,
+      after: msg.after,
+      offset: msg.offset,
+    });
     return { id, rows };
   } catch (e) {
     return { id, error: e instanceof Error ? e.message : String(e) };

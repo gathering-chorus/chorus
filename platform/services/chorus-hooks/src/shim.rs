@@ -198,6 +198,11 @@ fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json:
     if text.is_empty() {
         return None;
     }
+    if endpoint == "user-prompt-submit"
+        && (text.starts_with("[alert for ") || text.starts_with("[alert → "))
+    {
+        return None;
+    }
     let session_id = json
         .get("chorus_session_id")
         .or_else(|| json.get("session_id"))
@@ -333,6 +338,22 @@ mod inject_trace_id_tests {
         // Negative proofs: empty text or non-turn endpoint returns None
         assert!(build_session_turn_payload("user-prompt-submit", r#"{"prompt":"   "}"#).is_none());
         assert!(build_session_turn_payload("pre-tool-use", r#"{"prompt":"hi"}"#).is_none());
+        assert!(
+            build_session_turn_payload(
+                "user-prompt-submit",
+                r#"{"prompt":"[alert for silas · from system | 2026-10-29 03:38 Boston] deep-health: 5 failure(s)"}"#
+            )
+            .is_none(),
+            "NEGATIVE (#3734): system alerts injected into terminal must not be pushed as user dialogue turns"
+        );
+        assert!(
+            build_session_turn_payload(
+                "user-prompt-submit",
+                r#"{"prompt":"[alert → silas] sensor failed"}"#
+            )
+            .is_none(),
+            "NEGATIVE (#3734): arrow alerts must not be pushed as user dialogue turns"
+        );
 
         // #4779 reopen: per-role CSS credential file is cred.json (never key.json)
         let p_home = role_cred_path(None, "/Users/chorus-kade", "kade");

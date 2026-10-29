@@ -1159,7 +1159,8 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
                 role: string | undefined,
                 mode: string,
                 channel?: string,
-              ) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode, channel }),
+                opts?: import('./lib/fts-query').FtsFilterOptions,
+              ) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode, channel, ...opts }),
             }
           : {}),
       },
@@ -1170,6 +1171,13 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         mode: req.query.mode as string | undefined,
         channel: req.query.channel as string | undefined,
         order: req.query.order as string | undefined,
+        before: req.query.before as string | undefined,
+        until: req.query.until as string | undefined,
+        to: req.query.to as string | undefined,
+        after: req.query.after as string | undefined,
+        since: req.query.since as string | undefined,
+        from: req.query.from as string | undefined,
+        offset: req.query.offset as string | undefined,
       },
     );
     res.status(r.status).json(r.body);

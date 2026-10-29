@@ -6,6 +6,8 @@
  * In-memory SQLite with FTS5, stubs for semantic/sparql/merge/meta fns.
  * Covers each mode + fallback paths + limit + role filter + truncation.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { fetchSearch, type SearchDeps } from '../../src/handlers/chorus-search';
 
@@ -283,5 +285,65 @@ describe('fetchSearch (#2189 /api/chorus/search)', () => {
     expect(bRecent.results.every((x) => x.channel === 'session:silas')).toBe(true);
     expect(bRecent.results.some((x) => x.channel === 'session:kade' || x.role === 'kade')).toBe(false);
     db.close();
+  });
+
+  test('#4784 order=oldest, before/until, after/since, and offset page back to earliest 2026-01/02 turns with negative proof (#3734)', async () => {
+    const db = seedDb();
+    const ins = db.prepare(
+      'INSERT INTO messages (source, channel, role, author, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    ins.run('claude', 'session:kade', 'jeff', 'user', 'review this code base and summarize your findings', '2026-01-31T15:23:00Z');
+    ins.run('claude', 'session:kade', 'kade', 'assistant', 'february architecture review', '2026-02-26T10:00:00Z');
+    ins.run('claude', 'session:kade', 'kade', 'assistant', 'october recent turn', '2026-10-28T15:50:00Z');
+    ins.run('claude', 'session:silas', 'silas', 'assistant', 'silas earliest turn', '2026-01-15T09:00:00Z');
+
+    // 1. order=oldest on channel returns 2026-01-31 first
+    const rOldest = await fetchSearch(deps(db), {
+      channel: 'session:kade',
+      order: 'oldest',
+      limit: '2',
+    } as never);
+    expect(rOldest.status).toBe(200);
+    const bOldest = rOldest.body as { results: Array<{ content: string; timestamp: string; channel: string }> };
+    expect(bOldest.results).toHaveLength(2);
+    expect(bOldest.results[0].timestamp).toBe('2026-01-31T15:23:00Z');
+    expect(bOldest.results[1].timestamp).toBe('2026-02-26T10:00:00Z');
+    // Negative proof (#3734): even though silas has an older 2026-01-15 row, channel=session:kade never leaks it
+    expect(bOldest.results.some((x) => x.channel !== 'session:kade')).toBe(false);
+
+    // 2. before/until and after/since window + offset
+    const rWindow = await fetchSearch(deps(db), {
+      channel: 'session:kade',
+      order: 'oldest',
+      after: '2026-02-01T00:00:00Z',
+      before: '2026-10-01T00:00:00Z',
+      limit: '10',
+    } as never);
+    const bWindow = rWindow.body as { results: Array<{ content: string; timestamp: string }> };
+    expect(bWindow.results).toHaveLength(1);
+    expect(bWindow.results[0].timestamp).toBe('2026-02-26T10:00:00Z');
+
+    // 3. offset pages past the first row
+    const rOffset = await fetchSearch(deps(db), {
+      channel: 'session:kade',
+      order: 'oldest',
+      offset: '1',
+      limit: '1',
+    } as never);
+    const bOffset = rOffset.body as { results: Array<{ timestamp: string }> };
+    expect(bOffset.results).toHaveLength(1);
+    expect(bOffset.results[0].timestamp).toBe('2026-02-26T10:00:00Z');
+    db.close();
+  });
+
+  test('#4784 chorus-query.sh routes search, role, and tail through /api/chorus/search and guards local SQLite init (#3734)', () => {
+    const scriptPath = path.resolve(__dirname, '../../../scripts/chorus-query.sh');
+    const scriptText = fs.readFileSync(scriptPath, 'utf8');
+    expect(scriptText).toContain('if [ -n "${CHORUS_DB:-}" ] && [ ! -f "$DB_PATH" ]; then');
+    expect(scriptText).toContain('/api/chorus/search?q=${ENCODED_Q}');
+    expect(scriptText).toContain('/api/chorus/search?channel=session:${ENCODED_ROLE}&order=recent&limit=20');
+    expect(scriptText).toContain('/api/chorus/search?channel=session:${TAIL_ROLE}&order=recent&limit=${TAIL_LINES}');
+    // Negative proof (#3734): unconditional `if [ ! -f "$DB_PATH" ]; then` that created empty ~/.chorus/index.db is absent
+    expect(scriptText).not.toMatch(/^\s*if \[ ! -f "\$DB_PATH" \]; then/m);
   });
 });

@@ -21,6 +21,10 @@ export interface FtsQuery {
   role?: string;
   mode: string;
   channel?: string;
+  order?: string;
+  before?: string;
+  after?: string;
+  offset?: number;
 }
 
 export interface FtsPoolOptions {
@@ -45,6 +49,10 @@ export function createFtsPool(opts: FtsPoolOptions): FtsPool {
       role: q.role,
       mode: q.mode,
       channel: q.channel,
+      order: q.order,
+      before: q.before,
+      after: q.after,
+      offset: q.offset,
     }),
   });
   return {
