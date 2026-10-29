@@ -25,6 +25,34 @@ export interface FtsFilterOptions {
   offset?: number;
 }
 
+function appendWindowAndLimit(
+  clauses: string[],
+  params: unknown[],
+  fetchLimit: number,
+  opts?: FtsFilterOptions,
+): string {
+  if (opts?.before) {
+    clauses.push('AND m.timestamp < ?');
+    params.push(opts.before);
+  }
+  if (opts?.after) {
+    clauses.push('AND m.timestamp > ?');
+    params.push(opts.after);
+  }
+  params.push(fetchLimit);
+  const offsetVal = opts?.offset && opts.offset > 0 ? opts.offset : 0;
+  if (offsetVal > 0) params.push(offsetVal);
+  return offsetVal > 0 ? 'LIMIT ? OFFSET ?' : 'LIMIT ?';
+}
+
+function resolveFtsOrderBy(mode: string, order?: string): string {
+  if (order === 'oldest') return 'm.timestamp ASC';
+  if (mode === 'relevance' || mode === 'hybrid') {
+    return "bm25(messages_fts) + CASE m.source WHEN 'claude' THEN 8.0 WHEN 'clearing' THEN 8.0 WHEN 'slack' THEN 4.0 ELSE 0 END ASC";
+  }
+  return 'm.timestamp DESC';
+}
+
 /**
  * Run the FTS5 query against a better-sqlite3 connection. Synchronous (better-sqlite3
  * is sync) — on the 1.1GB index this is the multi-second event-loop blocker (#3079),
@@ -44,19 +72,8 @@ function runChannelRecentQuery(
     clauses.push('AND m.role = ?');
     directParams.push(role);
   }
-  if (opts?.before) {
-    clauses.push('AND m.timestamp < ?');
-    directParams.push(opts.before);
-  }
-  if (opts?.after) {
-    clauses.push('AND m.timestamp > ?');
-    directParams.push(opts.after);
-  }
-  directParams.push(fetchLimit);
-  const offsetVal = opts?.offset && opts.offset > 0 ? opts.offset : 0;
-  if (offsetVal > 0) directParams.push(offsetVal);
+  const limitClause = appendWindowAndLimit(clauses, directParams, fetchLimit, opts);
   const orderDir = opts?.order === 'oldest' ? 'ASC' : 'DESC';
-  const limitClause = offsetVal > 0 ? 'LIMIT ? OFFSET ?' : 'LIMIT ?';
   try {
     return db.prepare(
       `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
@@ -80,14 +97,7 @@ function buildFtsSqlAndParams(
   channel: string | undefined,
   opts?: FtsFilterOptions,
 ): { sql: string; params: unknown[] } {
-  const authorityOrder =
-    "bm25(messages_fts) + CASE m.source WHEN 'claude' THEN 8.0 WHEN 'clearing' THEN 8.0 WHEN 'slack' THEN 4.0 ELSE 0 END ASC";
-  const ftsOrderBy =
-    opts?.order === 'oldest'
-      ? 'm.timestamp ASC'
-      : mode === 'relevance' || mode === 'hybrid'
-        ? authorityOrder
-        : 'm.timestamp DESC';
+  const ftsOrderBy = resolveFtsOrderBy(mode, opts?.order);
   const params: unknown[] = [ftsQuery];
   const clauses: string[] = [];
   if (role) {
@@ -98,18 +108,7 @@ function buildFtsSqlAndParams(
     clauses.push('AND m.channel = ?');
     params.push(channel);
   }
-  if (opts?.before) {
-    clauses.push('AND m.timestamp < ?');
-    params.push(opts.before);
-  }
-  if (opts?.after) {
-    clauses.push('AND m.timestamp > ?');
-    params.push(opts.after);
-  }
-  params.push(fetchLimit);
-  const offsetVal = opts?.offset && opts.offset > 0 ? opts.offset : 0;
-  if (offsetVal > 0) params.push(offsetVal);
-  const limitClause = offsetVal > 0 ? 'LIMIT ? OFFSET ?' : 'LIMIT ?';
+  const limitClause = appendWindowAndLimit(clauses, params, fetchLimit, opts);
   const sql = `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
               snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
        FROM messages_fts f

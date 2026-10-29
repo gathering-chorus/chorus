@@ -179,24 +179,19 @@ function buildFilterFields(
   return out;
 }
 
+function buildFilterOpts(input: SearchInput): FtsFilterOptions {
+  const before = input.before || input.until || input.to;
+  const after = input.after || input.since || input.from;
+  const parsedOffset = input.offset ? parseInt(input.offset, 10) : 0;
+  const offset = parsedOffset > 0 ? parsedOffset : 0;
+  return { order: input.order, before, after, offset };
+}
+
 export async function fetchSearch(
   deps: SearchDeps,
-  {
-    q: rawQ,
-    limit: limitRaw,
-    role,
-    mode: modeRaw,
-    channel,
-    order,
-    before: rawBefore,
-    until,
-    to,
-    after: rawAfter,
-    since,
-    from,
-    offset: offsetRaw,
-  }: SearchInput,
+  input: SearchInput,
 ): Promise<SearchResult> {
+  const { q: rawQ, limit: limitRaw, role, mode: modeRaw, channel, order } = input;
   if (!rawQ && !channel) return { status: 400, body: { error: 'Missing required parameter: q' } };
   const q = rawQ ?? '';
 
@@ -205,10 +200,7 @@ export async function fetchSearch(
   const mode = resolveSearchMode(modeRaw, order);
   const searchStart = now();
   const fetchLimit = limit + 1;
-  const before = rawBefore || until || to;
-  const after = rawAfter || since || from;
-  const offset = offsetRaw ? Math.max(0, parseInt(offsetRaw, 10) || 0) : 0;
-  const filterOpts: FtsFilterOptions = { order, before, after, offset };
+  const filterOpts = buildFilterOpts(input);
 
   const format: FormatFn = (rawResults, resolvedMode, includeDb, extra = {}) => {
     const truncated = rawResults.length > limit;
