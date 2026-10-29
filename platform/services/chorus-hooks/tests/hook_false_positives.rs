@@ -29,14 +29,25 @@ fn hook_check(tool: &str, input: serde_json::Value) -> String {
     let world = std::env::temp_dir().join("hook-fp-world");
     let _ = std::fs::create_dir_all(&world);
     let w = |p: &str| world.join(p).to_string_lossy().into_owned();
-    let output = Command::new(SHIM)
-        .arg("pre-tool-use")
+    let mut cmd = Command::new(SHIM);
+    cmd.arg("pre-tool-use")
         .env("DEPLOY_ROLE", "silas")
         .env("CHORUS_LOG_FILE", w("chorus.log"))
         .env("CHORUS_SESSIONS_DIR", w("sessions"))
         .env("CHORUS_DB_PATH", w("index.db"))
         .env("CHORUS_LANCE_DIR", w("lance"))
-        .env("CHORUS_MESSAGES_DB", w("messages.db"))
+        .env("CHORUS_MESSAGES_DB", w("messages.db"));
+
+    if let Ok(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR") {
+        cmd.env("CHORUS_HOOKS_RUN_DIR", dir);
+    } else {
+        let sock_agents = "/Users/jeffbridwell/.chorus/run-agents/chorus-hooks.sock";
+        if std::path::Path::new(sock_agents).exists() {
+            cmd.env("CHORUS_HOOKS_RUN_DIR", "/Users/jeffbridwell/.chorus/run-agents");
+        }
+    }
+
+    let output = cmd
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
