@@ -5950,7 +5950,7 @@ pub fn node_test_plan(script: &str) -> Option<NodeTestPlan> {
     }
     let prog = toks.next()?.to_string();
     // keep flags, drop the glob (anything that is not a flag)
-    let mut args: Vec<String> = toks.filter(|t| t.starts_with('-')).map(str::to_string).collect();
+    let args: Vec<String> = toks.filter(|t| t.starts_with('-')).map(str::to_string).collect();
     if !args.iter().any(|a| a == "--test") {
         return None;
     }
@@ -5961,9 +5961,6 @@ pub fn node_test_plan(script: &str) -> Option<NodeTestPlan> {
             return None;
         }
         pre.push(words);
-    }
-    if !args.iter().any(|a| a.starts_with("--test-reporter")) {
-        args.push("--test-reporter=tap".to_string());
     }
     let (prog, args) = if prog == "tsx" {
         let mut v = vec!["--no-install".to_string(), "tsx".to_string()];

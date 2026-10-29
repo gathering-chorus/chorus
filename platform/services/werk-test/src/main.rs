@@ -3024,7 +3024,11 @@ cases to files; refusing to store package-level rows that can never cross-foot",
     }
     for rel in &files {
         let mut cmd = Command::new(&runner.prog);
-        cmd.args(&runner.args).arg(rel).current_dir(&pkg_dir);
+        cmd.args(&runner.args);
+        if !runner.args.iter().any(|a| a.starts_with("--test-reporter")) {
+            cmd.arg("--test-reporter=tap");
+        }
+        cmd.arg(rel).current_dir(&pkg_dir);
         cmd.envs(runner.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
         apply_suite_world(&mut cmd, werk);
