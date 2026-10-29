@@ -173,3 +173,19 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   out_has "FAIL: unregistered-intruder — delivery path refuses role (unknown role: unregistered-intruder)"
   out_has "NUDGE HEALTH: 1 role(s) have issues"
 }
+
+
+@test "NEGATIVE PROOF (#3734): unreadable roles door is UNMEASURED red, never silent fallback" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-door-down"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="http://127.0.0.1:9/unreachable-roles-door" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          bash "$HEALTH"
+  test "$status" -eq 2
+  out_has "UNMEASURED — roles door is unreadable"
+}

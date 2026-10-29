@@ -8,34 +8,44 @@ set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 CANARY_DIR="/tmp/nudge-canary"
-mkdir -p "$CANARY_DIR" 2>/dev/null || true
+# Fall back to user-scoped canary dir if shared health.log is unwritable
+[ -e "${CANARY_DIR}/health.log" ] && [ ! -w "${CANARY_DIR}/health.log" ] && CANARY_DIR="${CANARY_DIR}-${USER:-$(id -un)}"
+mkdir -p "$CANARY_DIR"
 
 log_canary() {
-  { echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') $*" >> "${CANARY_DIR}/health.log"; } 2>/dev/null || true
+  echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') $*" >> "${CANARY_DIR}/health.log"
 }
 
 PULSE_URL="${PULSE_URL:-http://localhost:3475}"
 MESSAGES_DB="${CHORUS_MESSAGES_DB:-${CHORUS_ROOT}/platform/pulse/messages.db}"
-SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-/Users/jeffbridwell/.chorus/sessions}"
+STATE_DIR="${CHORUS_STATE_DIR:-/Users/jeffbridwell/.chorus}"
+SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-${STATE_DIR}/sessions}"
 
-# Dynamic role discovery from roles door or fallback to canonical 5
-ROLES=(wren silas kade borg-queen abby-normal)
+# Dynamic role discovery from roles door (no hardcoded fallback)
 if [ -n "${ROLES_OVERRIDE:-}" ]; then
   read -ra ROLES <<< "$ROLES_OVERRIDE"
-elif [ -z "${CHORUS_SESSIONS_DIR:-}" ]; then
-  DOOR_ROLES=$(curl -s --max-time 2 "${API_BASE:-http://localhost:3340}/v1/roles/roles" 2>/dev/null | python3 -c '
-import json, sys
+else
+  ROLES_URL="${CHORUS_ROLES_URL:-http://localhost:3360/v1/roles/roles?limit=500}"
+  DOOR_ROLES=$(python3 -c '
+import json, sys, urllib.request
+url = sys.argv[1]
 try:
-    d = json.load(sys.stdin)
+    req = urllib.request.urlopen(url, timeout=2)
+    d = json.loads(req.read().decode())
     agents = [r["name"] for r in d.get("data", []) if r.get("roleKind") == "agent"]
     if agents:
-        print(" ".join(agents))
+        print(" ".join(sorted(agents)))
+        sys.exit(0)
 except Exception:
     pass
-' 2>/dev/null || true)
-  if [ -n "$DOOR_ROLES" ]; then
-    read -ra ROLES <<< "$DOOR_ROLES"
+sys.exit(1)
+' "$ROLES_URL" 2>/dev/null || true)
+
+  if [ -z "$DOOR_ROLES" ]; then
+    echo "UNMEASURED — roles door is unreadable ($ROLES_URL)"
+    exit 2
   fi
+  read -ra ROLES <<< "$DOOR_ROLES"
 fi
 
 FAILURES=0
@@ -84,7 +94,7 @@ elif [ -f "$MESSAGES_DB" ] && command -v sqlite3 >/dev/null 2>&1; then
     FROM messages
     WHERE type = 'nudge'
       AND delivery_status = 'failed'
-      AND created_at >= datetime('now', '-1 hour')
+      AND created_at >= datetime('now', '-24 hours')
     ORDER BY id DESC;
   " 2>/dev/null || true)
 fi
