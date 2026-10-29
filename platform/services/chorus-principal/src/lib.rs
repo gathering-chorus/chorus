@@ -556,32 +556,24 @@ fn wait_for_services(ctx: &Ctx, bound: u64, show: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// #4786 AC3 — the Mac account the role runs as, never the launcher's $USER.
-/// Checked in order: ctx.run_as, CHORUS_ROLE_ACCOUNT, the principal's own
-/// hostAccount from the identity door, current USER if it matches chorus-<role>,
-/// defaulting to chorus-<role>.
-fn role_host_account(ctx: &Ctx, role: &str) -> String {
-    if let Some(ref u) = ctx.run_as {
-        if !u.trim().is_empty() { return u.clone(); }
-    }
-    if let Ok(a) = env::var("CHORUS_ROLE_ACCOUNT") {
-        if !a.trim().is_empty() { return a; }
-    }
-    let cur_user = envd("USER", "");
-    if cur_user == format!("chorus-{}", role) {
-        return cur_user;
-    }
+/// #4786 AC3 — the Mac account the role runs as: read from the principal's
+/// own hostAccount at the identity door. Missing or unbound is refused loudly.
+fn role_host_account(ctx: &Ctx, role: &str) -> Result<String, String> {
     let url = format!("{}/v1/identity/principals/{}", ctx.api, role);
-    if let Ok(ans) = sh(&ctx.curl, &["-s", "--max-time", "2", &url]) {
-        if let Ok(v) = serde_json::from_str::<Value>(&ans) {
-            if let Some(acct) = v.get("data").and_then(|d| d.get("hostAccount")).and_then(|h| h.as_str()) {
-                if !acct.trim().is_empty() {
-                    return acct.to_string();
-                }
-            }
-        }
+    let ans = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url])
+        .map_err(|e| format!("curl {url} failed: {e}"))?;
+    let (body, code) = ans.trim_end().rsplit_once('\n').unwrap_or(("", ans.trim()));
+    if code.trim() != "200" {
+        return Err(format!("identity API answered HTTP {} for principal {role}", code.trim()));
     }
-    format!("chorus-{}", role)
+    let row: Value = serde_json::from_str(body)
+        .map_err(|e| format!("invalid JSON from {url}: {e}"))?;
+    let acct = row.get("data")
+        .and_then(|d| d.get("hostAccount"))
+        .and_then(|h| h.as_str())
+        .filter(|h| !h.trim().is_empty())
+        .ok_or_else(|| format!("principal {role} has no hostAccount bound in the identity door"))?;
+    Ok(acct.to_string())
 }
 
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
@@ -616,7 +608,13 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         },
     };
     let token = token.unwrap_or_default();
-    let host_account = role_host_account(ctx, role);
+    let host_account = match role_host_account(ctx, role) {
+        Ok(a) => a,
+        Err(why) => {
+            eprintln!("chorus-principal: REFUSED — {} for {}; nothing was started.", why, role);
+            return Err(());
+        }
+    };
     let start_id = format!("{:x}", now_ms());
     let (session_name, body) = session_row(role, &login, &host_account, &start_id);
     // #4328 — the row says which role it acts as and when it started
@@ -1445,7 +1443,14 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
     let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
     ensure_conversation(ctx, role, &run, conversation);
-    let host_account = role_host_account(ctx, role);
+    let host_account = match role_host_account(ctx, role) {
+        Ok(a) => a,
+        Err(why) => {
+            eprintln!("chorus-principal: the presence row for {} was not written ({})", role, why);
+            ctx.spine(&["session.row.failed", role, "kind=presence", &format!("why={}", why)]);
+            return;
+        }
+    };
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),

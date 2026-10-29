@@ -65,3 +65,25 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   test -z "$(printf '%s' "$p" | grep -F '"reachability":"reachable"' || true)"
   test -z "$(printf '%s' "$p" | grep -F '"reachability":"unknown"' || true)"
 }
+
+@test "NEGATIVE PROOF: CHORUS_ROLE_ACCOUNT=chorus-kade for silas -> still chorus-silas" {
+  export CHORUS_ROLE_ACCOUNT="chorus-kade"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+
+  s=$(body POST identity_sessions)
+  has "$s" '"hostAccount":"chorus-silas"'
+  test -z "$(printf '%s' "$s" | grep -F '"hostAccount":"chorus-kade"' || true)"
+
+  p=$(body POST identity_presences)
+  has "$p" '"hostAccount":"chorus-silas"'
+  test -z "$(printf '%s' "$p" | grep -F '"hostAccount":"chorus-kade"' || true)"
+}
+
+@test "NEGATIVE PROOF: principal with missing hostAccount in identity door is refused loudly" {
+  printf '{"data":{"principalKind":"agent"}}\n200\n' > "$T/principal-silas.json"
+  run "$SCRIPT" on silas
+  test "$status" -ne 0
+  out_has "REFUSED"
+  out_has "principal silas has no hostAccount bound in the identity door"
+}
