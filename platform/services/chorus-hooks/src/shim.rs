@@ -373,13 +373,9 @@ fn extract_backfill_turns(role: &str, path: &std::path::Path, content: &str) -> 
     turns
 }
 
-/// #4785 — `chorus-hook-shim session-backfill [role]`: push the caller's own `$HOME`
-/// session transcripts (Claude `.claude/projects/*/*.jsonl` + Antigravity
-/// `.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl`) to
-/// `POST /api/chorus/session/turns` authenticated by the caller's own CSS ES256 token.
-
+/// #4798 — Detached session turn push worker entry point.
 fn session_turn_push_worker_cmd(args: &[String]) -> ExitCode {
-    let Some(endpoint) = args.get(0) else {
+    let Some(endpoint) = args.first() else {
         return ExitCode::from(2);
     };
     let Some(input) = args.get(1) else {
@@ -400,6 +396,10 @@ fn spawn_detached_session_turn_push(endpoint: &str, input: &str) {
     }
 }
 
+/// #4785 — `chorus-hook-shim session-backfill [role]`: push the caller's own `$HOME`
+/// session transcripts (Claude `.claude/projects/*/*.jsonl` + Antigravity
+/// `.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl`) to
+/// `POST /api/chorus/session/turns` authenticated by the caller's own CSS ES256 token.
 fn session_backfill_cmd(args: &[String]) -> ExitCode {
     let home = std::env::var("HOME").unwrap_or_default();
     let role = args
