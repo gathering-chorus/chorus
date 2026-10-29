@@ -13,44 +13,6 @@ fn prod_is_unchanged_when_nothing_overrides_it() {
 }
 
 #[test]
-fn hook_run_dir_resolves_deterministic_fallback_when_env_unset() {
-    let prev_run_dir = std::env::var("CHORUS_HOOKS_RUN_DIR").ok();
-    let prev_home = std::env::var("HOME").ok();
-    let prev_state_dir = std::env::var("CHORUS_STATE_DIR").ok();
-
-    // 1. With explicit CHORUS_HOOKS_RUN_DIR
-    std::env::set_var("CHORUS_HOOKS_RUN_DIR", "/tmp/custom-run-dir");
-    assert_eq!(chorus_hooks::shared::state_paths::hook_run_dir(), "/tmp/custom-run-dir");
-
-    // 2. With CHORUS_STATE_DIR, resolves to state_dir/run-agents
-    std::env::remove_var("CHORUS_HOOKS_RUN_DIR");
-    std::env::set_var("CHORUS_STATE_DIR", "/tmp/custom-state-dir");
-    assert_eq!(chorus_hooks::shared::state_paths::hook_run_dir(), "/tmp/custom-state-dir/run-agents");
-
-    // 3. When both are unset, resolves to shared run-agents via chorus_state_dir
-    std::env::remove_var("CHORUS_HOOKS_RUN_DIR");
-    std::env::remove_var("CHORUS_STATE_DIR");
-    assert_eq!(
-        chorus_hooks::shared::state_paths::hook_run_dir(),
-        format!("{}/run-agents", chorus_hooks::shared::state_paths::chorus_state_dir().trim_end_matches('/'))
-    );
-
-    // Restore
-    match prev_run_dir {
-        Some(v) => std::env::set_var("CHORUS_HOOKS_RUN_DIR", v),
-        None => std::env::remove_var("CHORUS_HOOKS_RUN_DIR"),
-    }
-    match prev_home {
-        Some(v) => std::env::set_var("HOME", v),
-        None => std::env::remove_var("HOME"),
-    }
-    match prev_state_dir {
-        Some(v) => std::env::set_var("CHORUS_STATE_DIR", v),
-        None => std::env::remove_var("CHORUS_STATE_DIR"),
-    }
-}
-
-#[test]
 fn a_variant_gets_its_own_dir_and_therefore_its_own_socket_and_lock() {
     let d = run_dir_from(Some("/w/silas-4227/.chorus-demo/run"), Some("/Users/x"));
     assert_eq!(d, "/w/silas-4227/.chorus-demo/run");

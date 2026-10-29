@@ -57,20 +57,12 @@ fn chorus_log_file_prod() -> String {
 
 /// #4535 — the team's shared ~/.chorus. chorus-env-setup exports
 /// CHORUS_STATE_DIR as the canonical checkout owner's; a role on its own Mac
-/// account (Abby, Borg Queen) has its own HOME, and her spine events went to a private
-/// ~/.chorus/chorus.log that Loki never reads. When unset, resolves via CHORUS_BIN parent
-/// or canonical host default (/Users/jeffbridwell/.chorus).
+/// account (Abby) has its own HOME, and her spine events went to a private
+/// /Users/chorus-abby-normal/.chorus/chorus.log that Loki never reads.
 pub fn chorus_state_dir() -> String {
-    std::env::var("CHORUS_STATE_DIR")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| {
-            std::env::var("CHORUS_BIN")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-                .and_then(|bin| std::path::Path::new(&bin).parent().map(|p| p.to_string_lossy().into_owned()))
-        })
-        .unwrap_or_else(|| "/Users/jeffbridwell/.chorus".to_string())
+    std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        format!("{}/.chorus", std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()))
+    })
 }
 
 /// #3615 — WRITE resolution for the spine, membrane-guarded. Every spine
@@ -135,15 +127,10 @@ pub fn hook_socket_durable() -> String {
 /// world-writable path this fix exists to abandon; better to refuse to start
 /// than to silently run the guard daemon's socket in a world-writable dir.
 pub fn hook_run_dir() -> String {
-    if let Some(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR").ok().filter(|s| !s.trim().is_empty()) {
-        return run_dir_from(Some(&dir), None);
-    }
-    // #4785 — under multi-account setup (ADR-065), caller runs as a per-role
-    // account (e.g. chorus-borg-queen, chorus-silas). The shared daemon socket lives
-    // under CHORUS_STATE_DIR/run-agents (exported from env-setup / graph property, #4774).
-    // Defaulting to shared run-agents ensures the shim finds the live daemon instead
-    // of missing it in a private $HOME/.chorus/run.
-    format!("{}/run-agents", chorus_state_dir().trim_end_matches('/'))
+    run_dir_from(
+        std::env::var("CHORUS_HOOKS_RUN_DIR").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    )
 }
 
 /// The rule, pure so it is testable without touching the process environment.
