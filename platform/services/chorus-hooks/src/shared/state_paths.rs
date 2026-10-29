@@ -148,13 +148,38 @@ pub fn hook_run_dir() -> String {
     run_dir_from(None, std::env::var("HOME").ok().as_deref())
 }
 
-/// Resolve the state dir of whoever owns the canonical repository root (chorus_root()).
+/// Resolve the state dir of whoever owns the canonical repository root.
+/// If chorus_root() is a git worktree, inspect its `.git` file to resolve the
+/// root repository whose owner runs the shared host daemons.
 fn canonical_owner_state_dir() -> Option<String> {
     if std::env::var("CHORUS_TEST_FORCE_NO_SHARED_SOCKET").is_ok() {
         return None;
     }
     use std::os::unix::fs::MetadataExt;
-    let meta = std::fs::metadata(chorus_root()).ok()?;
+    let root = chorus_root();
+    let mut check_path = std::path::PathBuf::from(root);
+
+    // If root/.git is a file (git worktree pointer), trace back to the canonical repo
+    let git_pointer = check_path.join(".git");
+    if git_pointer.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&git_pointer) {
+            for line in content.lines() {
+                if let Some(gitdir) = line.strip_prefix("gitdir:") {
+                    let gitdir = gitdir.trim();
+                    if let Some(idx) = gitdir.find(".git") {
+                        let main_git = &gitdir[..idx + 4];
+                        let repo_dir = std::path::Path::new(main_git).parent().unwrap_or(std::path::Path::new(main_git));
+                        if repo_dir.exists() {
+                            check_path = repo_dir.to_path_buf();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let meta = std::fs::metadata(&check_path).ok()?;
     let uid = meta.uid();
     let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
     let mut buf = vec![0 as libc::c_char; 4096];
