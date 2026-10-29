@@ -7,8 +7,12 @@ load test_helper
 setup() {
   ROOT="$CHORUS_ROOT"
   ENV_SETUP="$ROOT/platform/scripts/chorus-env-setup.sh"
-  CANONICAL_GIT="$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null || echo "$ROOT/.git")"
-  CANONICAL="$(cd "$ROOT" && cd "$CANONICAL_GIT/.." && pwd -P)"
+  CANONICAL_GIT="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$CANONICAL_GIT" ] && [ -d "$CANONICAL_GIT" ]; then
+    CANONICAL="$(cd "$CANONICAL_GIT/.." && pwd -P)"
+  else
+    CANONICAL="$ROOT"
+  fi
 }
 
 @test "AC1: chorus-env-setup.sh and chorus-principal configure safe.directory=* and git status succeeds in canonical" {
