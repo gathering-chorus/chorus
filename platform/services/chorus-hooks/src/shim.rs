@@ -457,7 +457,7 @@ fn session_backfill_cmd(args: &[String]) -> ExitCode {
 
 /// #4779 — Push the caller's own session turn authenticated by its verified CSS
 /// credential. Runs best-effort inside the role's own macOS user process.
-fn push_session_turn_best_effort(endpoint: &str, input: &str) {
+pub fn push_session_turn_best_effort(endpoint: &str, input: &str) {
     let Some(payload) = build_session_turn_payload(endpoint, input) else {
         return;
     };
@@ -1017,7 +1017,11 @@ fn main() -> ExitCode {
         input
     };
     if matches!(endpoint.as_str(), "user-prompt-submit" | "stop") {
-        push_session_turn_best_effort(&endpoint, &input);
+        let ep = endpoint.clone();
+        let inp = input.clone();
+        std::thread::spawn(move || {
+            push_session_turn_best_effort(&ep, &inp);
+        });
     }
 
     log_debug(&format!("stdin={}bytes", input.len()));
