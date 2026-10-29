@@ -42,14 +42,16 @@ export CHORUS_ROOT="$__chorus_env_root"
 # events a day were written with no owner. The werk slot's owner is the segment
 # before the first "-" — the same rule from_werk_slot() applies (types.rs:48).
 case "$PWD" in
-  */roles/wren*)          export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
-  */roles/silas*)         export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
-  */roles/kade*)          export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
-  */roles/abby-normal*)   export CHORUS_ROLE=abby-normal DEPLOY_ROLE=abby-normal ;;  # #4458
-  */chorus-werk/wren-*)   export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
-  */chorus-werk/silas-*)  export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
-  */chorus-werk/kade-*)   export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
-  */chorus-werk/abby-normal-*) export CHORUS_ROLE=abby-normal DEPLOY_ROLE=abby-normal ;;
+  */roles/wren*)          export CHORUS_ROLE=wren  DEPLOY_ROLE="${DEPLOY_ROLE:-wren}"  ;;
+  */roles/silas*)         export CHORUS_ROLE=silas DEPLOY_ROLE="${DEPLOY_ROLE:-silas}" ;;
+  */roles/kade*)          export CHORUS_ROLE=kade  DEPLOY_ROLE="${DEPLOY_ROLE:-kade}"  ;;
+  */roles/abby-normal*)   export CHORUS_ROLE=abby-normal DEPLOY_ROLE="${DEPLOY_ROLE:-abby-normal}" ;;  # #4458
+  */roles/borg-queen*)    export CHORUS_ROLE=borg-queen  DEPLOY_ROLE="${DEPLOY_ROLE:-borg-queen}"  ;;  # #4780
+  */chorus-werk/wren-*)   export CHORUS_ROLE=wren  DEPLOY_ROLE="${DEPLOY_ROLE:-wren}"  ;;
+  */chorus-werk/silas-*)  export CHORUS_ROLE=silas DEPLOY_ROLE="${DEPLOY_ROLE:-silas}" ;;
+  */chorus-werk/kade-*)   export CHORUS_ROLE=kade  DEPLOY_ROLE="${DEPLOY_ROLE:-kade}"  ;;
+  */chorus-werk/abby-normal-*) export CHORUS_ROLE=abby-normal DEPLOY_ROLE="${DEPLOY_ROLE:-abby-normal}" ;;
+  */chorus-werk/borg-queen-*)  export CHORUS_ROLE=borg-queen  DEPLOY_ROLE="${DEPLOY_ROLE:-borg-queen}"  ;;
 esac
 export DEPLOY_ROLE
 
@@ -111,6 +113,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
       wren)  export WREN_WERK="$__chorus_env_werk_dir"   ;;
       silas) export SILAS_WERK="$__chorus_env_werk_dir"  ;;
       abby-normal) export ABBY_NORMAL_WERK="$__chorus_env_werk_dir" ;;
+      borg-queen)  export BORG_QUEEN_WERK="$__chorus_env_werk_dir"  ;;
     esac
   fi
   unset __chorus_env_werk_dir __chorus_env_werk_count

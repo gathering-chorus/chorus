@@ -13,6 +13,8 @@
  * and in the spine (card.graph.sync_failed), and the reconcile pass repairs it.
  */
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { BoardTask } from './types';
 import { emitSpineEvent } from './events';
@@ -75,9 +77,37 @@ export function rowDiff(want: CardRow, have: CardRow | undefined): string[] {
   return pairs.filter(([, w, h]) => (w ?? '') !== (h ?? '')).map(([name]) => name);
 }
 
-/** The role this process writes as. Row ownership follows the writer (the door's rule). */
+/**
+ * #4780 AC2 — Resolve the credential role this process authenticates to the door with.
+ * When `DEPLOY_ROLE=jeff` is used from a per-role Mac account (`chorus-<role>`) for
+ * Jeff-authorized `/card` runs, `/Users/chorus-<role>/.chorus/identity/jeff/cred.json`
+ * does not exist; fall back to the role account's own credential (`CHORUS_ROLE` or
+ * `chorus-<role>` OS username) if its `cred.json` exists in `CHORUS_IDENTITY_DIR`.
+ */
+function accountRoleFromOs(): string {
+  try {
+    const acct = process.env.CHORUS_TEST_OS_USER || os.userInfo().username;
+    return acct.startsWith('chorus-') ? acct.slice('chorus-'.length) : '';
+  } catch {
+    return '';
+  }
+}
+
+export function resolveWriterRole(): string {
+  const acctRole = accountRoleFromOs();
+  if (acctRole) return acctRole;
+  const home = process.env.HOME ? process.env.HOME : os.homedir();
+  const idDir = process.env.CHORUS_IDENTITY_DIR ? process.env.CHORUS_IDENTITY_DIR : path.join(home, '.chorus/identity');
+  const deploy = (process.env.DEPLOY_ROLE ? process.env.DEPLOY_ROLE : '').toLowerCase();
+  const chorusRole = (process.env.CHORUS_ROLE ? process.env.CHORUS_ROLE : '').toLowerCase();
+  const candidates = [deploy, chorusRole].filter(Boolean);
+  const withCred = candidates.find((r) => fs.existsSync(path.join(idDir, r, 'cred.json')));
+  if (withCred) return withCred;
+  return chorusRole ? chorusRole : 'wren';
+}
+
 function writerRole(): string {
-  return (process.env.DEPLOY_ROLE || process.env.CHORUS_ROLE || 'wren').toLowerCase();
+  return resolveWriterRole();
 }
 
 let cachedToken: { role: string; token: string; at: number } | null = null;
