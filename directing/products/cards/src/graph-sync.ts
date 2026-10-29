@@ -85,23 +85,26 @@ export function rowDiff(want: CardRow, have: CardRow | undefined): string[] {
  * with no `CHORUS_ROLE` (Slice 4 #4787 retires `DEPLOY_ROLE` guessing entirely).
  * Defaults to `'automation'`, never a hardcoded peer role.
  */
+function defaultOsUser(): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return '';
+  }
+}
+
+function resolveJeffDeploy(acct: string, chorusRole: string): string {
+  if (chorusRole && chorusRole !== 'jeff') return chorusRole;
+  return acct === 'jeffbridwell' ? 'jeff' : 'automation';
+}
+
 export function resolveWriterRole(osUser?: string): string {
-  const acct = osUser ?? (() => {
-    try { return os.userInfo().username; } catch { return ''; }
-  })();
-  if (acct.startsWith('chorus-')) {
-    const acctRole = acct.slice('chorus-'.length).toLowerCase();
-    if (acctRole) return acctRole;
-  }
-  const chorusRole = (process.env.CHORUS_ROLE ? process.env.CHORUS_ROLE : '').toLowerCase();
-  const deploy = (process.env.DEPLOY_ROLE ? process.env.DEPLOY_ROLE : '').toLowerCase();
-  if (deploy === 'jeff') {
-    if (chorusRole && chorusRole !== 'jeff') return chorusRole;
-    if (acct === 'jeffbridwell') return 'jeff';
-    return 'automation';
-  }
-  if (deploy) return deploy;
-  return chorusRole ? chorusRole : 'automation';
+  const acct = osUser ?? defaultOsUser();
+  if (acct.startsWith('chorus-')) return acct.slice('chorus-'.length).toLowerCase();
+  const chorusRole = (process.env.CHORUS_ROLE ?? '').toLowerCase();
+  const deploy = (process.env.DEPLOY_ROLE ?? '').toLowerCase();
+  if (deploy === 'jeff') return resolveJeffDeploy(acct, chorusRole);
+  return deploy || chorusRole || 'automation';
 }
 
 function writerRole(): string {
