@@ -391,7 +391,11 @@ pub async fn deliver_and_emit(role: &str, text: &str, content_hash: &str) -> Opt
 /// Blocking half: env + clock + key → signed event → relay accept.
 fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let identity_dir = std::path::PathBuf::from(home).join(".chorus/identity");
+    let identity_dir = std::env::var("CHORUS_IDENTITY_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(&home).join(".chorus/identity"));
     let relay = std::env::var("BUZZ_RELAY_URL")
         .unwrap_or_else(|_| "ws://192.168.86.242:3000".to_string());
     let tunnel = std::env::var("BUZZ_RELAY_TUNNEL").ok();
@@ -400,10 +404,11 @@ fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, S
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let key = load_key(&identity_dir, role)?;
-    let state_dir = std::path::PathBuf::from(
-        std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()),
-    )
-    .join(".chorus/state");
+    let state_dir = std::env::var("CHORUS_STATE_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(&home).join(".chorus/state"));
     let seq = next_seq(&state_dir, role);
     let ev = build_reply_event_seq(&key, role, text, content_hash, created_at, seq)?;
     publish_authed(&relay, tunnel.as_deref(), &key, &ev).map(|()| ev.id)

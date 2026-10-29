@@ -75,12 +75,30 @@ impl Deps<'_> {
             pulse_secret: secret,
             identity_token: std::env::var("CHORUS_IDENTITY_TOKEN").ok().filter(|t| !t.is_empty()),
             spine,
-            buzz: (std::env::var("CHORUS_NUDGE_SIGNS").as_deref() == Ok("1")).then(|| BuzzDeps {
-                identity_dir: PathBuf::from(&home).join(".chorus/identity"),
-                relay_url: std::env::var("BUZZ_RELAY_URL").ok().filter(|v| !v.is_empty()),
-                tunnel: std::env::var("BUZZ_RELAY_TUNNEL").ok().filter(|t| !t.is_empty()),
-                outbox_dir: PathBuf::from(&home).join(".chorus/outbox"),
-                channel: env("BUZZ_TEAM_CHANNEL", TEAM_CHANNEL_DEFAULT),
+            buzz: (std::env::var("CHORUS_NUDGE_SIGNS").as_deref() == Ok("1")).then(|| {
+                let identity_dir = std::env::var("CHORUS_IDENTITY_DIR")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from(&home).join(".chorus/identity"));
+                let outbox_dir = std::env::var("CHORUS_OUTBOX_DIR")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        std::env::var("CHORUS_STATE_DIR")
+                            .ok()
+                            .filter(|v| !v.is_empty())
+                            .map(|s| PathBuf::from(s).join("outbox"))
+                    })
+                    .unwrap_or_else(|| PathBuf::from(&home).join(".chorus/outbox"));
+                BuzzDeps {
+                    identity_dir,
+                    relay_url: std::env::var("BUZZ_RELAY_URL").ok().filter(|v| !v.is_empty()),
+                    tunnel: std::env::var("BUZZ_RELAY_TUNNEL").ok().filter(|t| !t.is_empty()),
+                    outbox_dir,
+                    channel: env("BUZZ_TEAM_CHANNEL", TEAM_CHANNEL_DEFAULT),
+                }
             }),
         }
     }
