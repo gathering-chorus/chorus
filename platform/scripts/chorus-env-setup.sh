@@ -270,7 +270,7 @@ chorus_verify_git_safe_dir() {
   return 1
 }
 
-export CHORUS_OUTBOX_DIR="${CHORUS_OUTBOX_DIR:-$HOME/.chorus/outbox}"
+export CHORUS_OUTBOX_DIR="${CHORUS_OUTBOX_DIR:-${CHORUS_STATE_DIR}/outbox}"
 
 chorus_verify_role_outbox() {
   local __dir="${1:-${CHORUS_OUTBOX_DIR}/${CHORUS_ROLE:-}}"
@@ -322,10 +322,6 @@ chorus_verify_role_skills() {
 case "${HOME:-}" in
   /Users/chorus-*)
     chorus_sync_role_skills "$HOME/.claude/skills" >/dev/null 2>&1 || true
-    if [ -n "${CHORUS_ROLE:-}" ]; then
-      mkdir -p "$HOME/.chorus/outbox/${CHORUS_ROLE}" 2>/dev/null || true
-      chmod 700 "$HOME/.chorus/outbox" "$HOME/.chorus/outbox/${CHORUS_ROLE}" 2>/dev/null || true
-    fi
     ;;
 esac
 

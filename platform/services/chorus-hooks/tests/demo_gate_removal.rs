@@ -42,11 +42,6 @@ fn hook_shim_allows_cards_done_without_hook_gate() {
     }
     if let Ok(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR") {
         cmd.env("CHORUS_HOOKS_RUN_DIR", dir);
-    } else {
-        let sock = chorus_hooks::shared::state_paths::hook_socket_durable();
-        if std::path::Path::new(&sock).exists() {
-            cmd.env("CHORUS_HOOKS_RUN_DIR", chorus_hooks::shared::state_paths::hook_run_dir());
-        }
     }
 
     let output = cmd
