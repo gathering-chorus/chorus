@@ -7,8 +7,12 @@ load test_helper
 setup() {
   ROOT="$CHORUS_ROOT"
   ENV_SETUP="$ROOT/platform/scripts/chorus-env-setup.sh"
-  CANONICAL_GIT="$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null || echo "$ROOT/.git")"
-  CANONICAL="$(cd "$ROOT" && cd "$CANONICAL_GIT/.." && pwd -P)"
+  CANONICAL_GIT="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$CANONICAL_GIT" ] && [ -d "$CANONICAL_GIT" ]; then
+    CANONICAL="$(cd "$CANONICAL_GIT/.." && pwd -P)"
+  else
+    CANONICAL="$ROOT"
+  fi
 }
 
 @test "AC1: chorus-env-setup.sh and chorus-principal configure safe.directory=* and git status succeeds in canonical" {
@@ -99,13 +103,22 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"2026-10-23"* ]] || return 1
 
-  # Idempotency check: re-pushing the same source_id turn under borg-queen's token inserts 0 duplicate rows
-  local token
-  token="$("$ROOT/platform/scripts/chorus-identity-token" borg-queen)"
+  # Idempotency check: re-pushing the same source_id turn under caller's token inserts 0 duplicate rows
+  local role token
+  role="${CHORUS_ROLE:-}"
+  if [ -z "$role" ]; then
+    local me
+    me="$(id -un 2>/dev/null || whoami)"
+    case "$me" in
+      chorus-*) role="${me#chorus-}" ;;
+      *) role="borg-queen" ;;
+    esac
+  fi
+  token="$("$ROOT/platform/scripts/chorus-identity-token" "$role")"
   run curl -sf -X POST "http://localhost:3340/api/chorus/session/turns" \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
-    -d '{"role":"borg-queen","source":"antigravity","session_id":"c20fed59-2575-431e-92d5-33b4939ba2e4","turns":[{"author":"user","content":"<USER_REQUEST>\nhi borg-queen welcome!\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-10-23T09:04:23-04:00.\n</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Gemini 4 Argon (Medium). No need to comment on this change if the user doesn'\''t ask about it. If reporting what model you are, please use a human readable name instead of the exact string.\n</USER_SETTINGS_CHANGE>","timestamp":"2026-10-23T13:04:23Z","source":"antigravity","source_id":"antigravity:c20fed59-2575-431e-92d5-33b4939ba2e4:step0","session_id":"c20fed59-2575-431e-92d5-33b4939ba2e4"}]}'
+    -d "{\"role\":\"$role\",\"source\":\"antigravity\",\"session_id\":\"c20fed59-2575-431e-92d5-33b4939ba2e4\",\"turns\":[{\"author\":\"user\",\"content\":\"<USER_REQUEST>\\nhi $role welcome!\\n</USER_REQUEST>\",\"timestamp\":\"2026-10-23T13:04:23Z\",\"source\":\"antigravity\",\"source_id\":\"antigravity:c20fed59-2575-431e-92d5-33b4939ba2e4:step0\",\"session_id\":\"c20fed59-2575-431e-92d5-33b4939ba2e4\"}]}"
   echo "$output"
   [ "$status" -eq 0 ]
   [[ "$output" == *'"inserted":0'* ]] || return 1
@@ -126,13 +139,23 @@ PY
   echo "$output"
   [ "$status" -eq 0 ]
 
-  # Negative proof (#4779, #3734): borg-queen's token pushing a turn claiming role=wren is refused with HTTP 403
-  local token http_code
-  token="$("$ROOT/platform/scripts/chorus-identity-token" borg-queen)"
+  # Negative proof (#4779, #3734): caller's token pushing a turn claiming a different role is refused with HTTP 403
+  local role token other_role http_code
+  role="${CHORUS_ROLE:-}"
+  if [ -z "$role" ]; then
+    local me
+    me="$(id -un 2>/dev/null || whoami)"
+    case "$me" in
+      chorus-*) role="${me#chorus-}" ;;
+      *) role="borg-queen" ;;
+    esac
+  fi
+  [ "$role" = "wren" ] && other_role="silas" || other_role="wren"
+  token="$("$ROOT/platform/scripts/chorus-identity-token" "$role")"
   http_code="$(curl -s -o "$BATS_TEST_TMPDIR/refusal.json" -w "%{http_code}" -X POST "http://localhost:3340/api/chorus/session/turns" \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
-    -d '{"role":"wren","source":"antigravity","session_id":"neg-test","turns":[{"author":"assistant","content":"forged turn"}]}')"
+    -d "{\"role\":\"$other_role\",\"source\":\"antigravity\",\"session_id\":\"neg-test\",\"turns\":[{\"author\":\"assistant\",\"content\":\"forged turn\"}]}")"
   echo "http_code=$http_code body=$(cat "$BATS_TEST_TMPDIR/refusal.json")"
   [ "$http_code" = "403" ] || [ "$http_code" = "401" ]
   grep -Eq 'not-your-lane|authn-missing' "$BATS_TEST_TMPDIR/refusal.json"

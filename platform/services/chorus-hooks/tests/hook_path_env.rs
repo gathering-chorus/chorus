@@ -15,8 +15,8 @@ fn home() -> String {
 
 fn full_path() -> String {
     format!(
-        "{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-        home()
+        "{}/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        chorus_root()
     )
 }
 
@@ -48,7 +48,7 @@ fn accept_gate_cards_view_passes_with_path() {
     // fall back to a runnable client rather than reporting a PATH bug.
     let candidates = [
         format!("{}/platform/scripts/cards", chorus_root()),
-        format!("{}/CascadeProjects/chorus/platform/scripts/cards", home()),
+        format!("{}/platform/scripts/cards", chorus_root()),
     ];
     let mut last_err = String::new();
     for cards in &candidates {

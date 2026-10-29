@@ -117,9 +117,11 @@ mod tests {
         let now = Utc::now().with_timezone(&offset);
         let human = now.format("%Y-%m-%d %H:%M").to_string();
 
-        fs::write(CLOCK_FILE, &human).expect("should write clock file");
+        let test_clock = std::env::temp_dir().join(format!("wall-clock-test-{}.txt", std::process::id()));
+        fs::write(&test_clock, &human).expect("should write clock file");
 
-        let read_back = fs::read_to_string(CLOCK_FILE).expect("should read clock file");
+        let read_back = fs::read_to_string(&test_clock).expect("should read clock file");
+        let _ = fs::remove_file(&test_clock);
         assert_eq!(read_back, human);
     }
 }

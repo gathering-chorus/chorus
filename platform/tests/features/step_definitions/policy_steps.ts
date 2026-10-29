@@ -7,8 +7,10 @@ import * as path from 'path';
 // policy page documents the contract, decisions are referenced.
 // Runtime enforcement is via conversation gates (Silas's domain).
 
-const MEMORY_DIR = '/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory';
-const POLICY_PAGE = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/artifacts/domain-policy.html';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
+const HOME = process.env.HOME || path.resolve(CHORUS_ROOT, '../../..');
+const MEMORY_DIR = `${HOME}/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory`;
+const POLICY_PAGE = `${CHORUS_ROOT}/roles/wren/artifacts/domain-policy.html`;
 
 let lastContext = '';
 let violationDetected = false;

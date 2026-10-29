@@ -3500,6 +3500,9 @@ pub fn ensure_agent_installed(
     let src = Path::new(canonical_root).join("platform/scripts/launchagents-canonical").join(format!("{}.plist", label));
     if !src.is_file() { return Ok(AgentInstall::Missing(src)); }
     let dst = agents_dir.join(format!("{}.plist", label));
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     fs::copy(&src, &dst).map_err(|e| format!("install {} → {}: {}", src.display(), dst.display(), e))?;
     bootstrap(&dst)?;
     Ok(AgentInstall::Installed)
@@ -3535,6 +3538,16 @@ fn kickstart_prod(label: &str) -> R<String> {
 }
 
 fn uid() -> u32 {
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn getuid() -> u32;
+        }
+        let u = unsafe { getuid() };
+        if u != 0 {
+            return u;
+        }
+    }
     // best-effort: $UID or 501 default (the install host).
     env::var("UID").ok().and_then(|s| s.parse().ok()).unwrap_or(501)
 }

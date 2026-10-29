@@ -139,6 +139,16 @@ fn tools_path(base: &Path, with: &[&str]) -> String {
         let src = real(name);
         assert!(src.is_file(), "the fixture needs {} on this box", name);
         let _ = std::os::unix::fs::symlink(&src, tools.join(name));
+        if *name == "cargo" {
+            let nextest = real("cargo-nextest");
+            if nextest.is_file() {
+                let _ = std::os::unix::fs::symlink(&nextest, tools.join("cargo-nextest"));
+            }
+            let rustc = real("rustc");
+            if rustc.is_file() {
+                let _ = std::os::unix::fs::symlink(&rustc, tools.join("rustc"));
+            }
+        }
     }
     let stub = stub_path(base);
     let stub_dir = stub.split(':').next().unwrap().to_string();

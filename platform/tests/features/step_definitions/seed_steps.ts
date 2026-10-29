@@ -1,13 +1,16 @@
 import { Given, When, Then, Before, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as crypto from 'crypto';
 import assert from 'assert';
 
 const APP_URL = 'http://localhost:3000';
 const FUSEKI_URL = 'http://localhost:3030';
 
-const ENV_FILE = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
+const PERSONAL_SITE = process.env.PERSONAL_SITE || path.resolve(CHORUS_ROOT, '../jeff-bridwell-personal-site');
+const ENV_FILE = `${PERSONAL_SITE}/.env`;
 let TWILIO_AUTH_TOKEN = '';
 let ALLOWED_PHONE = '';
 let TWILIO_WEBHOOK_URL = APP_URL;
@@ -188,7 +191,7 @@ const CHORUS_API = 'http://localhost:3340';
 let mediaResponse: { status: number; contentType: string } = { status: 0, contentType: '' };
 
 Given('a photo seed exists with media file {string}', function (filename: string) {
-  const mediaDir = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/pods/jeff/capture/media';
+  const mediaDir = `${PERSONAL_SITE}/data/pods/jeff/capture/media`;
   assert.ok(fs.existsSync(`${mediaDir}/${filename}`), `Media file ${filename} must exist on disk`);
 });
 

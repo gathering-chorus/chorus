@@ -25,9 +25,14 @@ fn hook_check_with_role(tool: &str, input: serde_json::Value, role: &str) -> Str
         "cwd": format!("{}/roles/{}", chorus_root(), role)
     });
 
+    let hooks_run_dir = std::env::var("CHORUS_HOOKS_RUN_DIR").unwrap_or_else(|_| {
+        format!("{}/run-agents", chorus_hooks::shared::state_paths::chorus_state_dir().trim_end_matches('/'))
+    });
+
     let output = Command::new(SHIM)
         .arg("pre-tool-use")
         .env("DEPLOY_ROLE", role)
+        .env("CHORUS_HOOKS_RUN_DIR", hooks_run_dir)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

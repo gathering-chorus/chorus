@@ -143,6 +143,7 @@ fi
 # Prepend to PATH so signed installs override target/release builds.
 # Idempotent: re-sourcing does not duplicate the entry.
 export CHORUS_BIN="$CHORUS_STATE_DIR/bin"
+export CHORUS_HOOKS_RUN_DIR="${CHORUS_HOOKS_RUN_DIR:-$CHORUS_STATE_DIR/run-agents}"
 case ":$PATH:" in
   *":$CHORUS_BIN:"*) ;;  # already present, no-op
   *) export PATH="$CHORUS_BIN:$PATH" ;;

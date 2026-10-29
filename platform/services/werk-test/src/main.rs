@@ -2430,6 +2430,20 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
             cmd.env(k, v);
         }
     }
+    // #4785 — werk-test runner env: export CHORUS_STATE_DIR (same source as sessions, #4535)
+    // and CHORUS_HOOKS_RUN_DIR so child test suites reach the shared daemon socket under run-agents/.
+    let state_dir = std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| {
+        let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+        if let Some(user) = home.strip_prefix("/Users/").and_then(|rest| rest.split('/').next()) {
+            format!("/Users/{user}/.chorus")
+        } else {
+            format!("{}/.chorus", std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()))
+        }
+    });
+    cmd.env("CHORUS_STATE_DIR", &state_dir);
+    let hooks_run_dir = std::env::var("CHORUS_HOOKS_RUN_DIR").ok().filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("{state_dir}/run-agents"));
+    cmd.env("CHORUS_HOOKS_RUN_DIR", &hooks_run_dir);
     cmd.env("CHORUS_TEST_EVENTS", test_events_path(werk));
 }
 
@@ -3010,7 +3024,11 @@ cases to files; refusing to store package-level rows that can never cross-foot",
     }
     for rel in &files {
         let mut cmd = Command::new(&runner.prog);
-        cmd.args(&runner.args).arg(rel).current_dir(&pkg_dir);
+        cmd.args(&runner.args);
+        if !runner.args.iter().any(|a| a.starts_with("--test-reporter")) {
+            cmd.arg("--test-reporter=tap");
+        }
+        cmd.arg(rel).current_dir(&pkg_dir);
         cmd.envs(runner.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
         apply_suite_world(&mut cmd, werk);
@@ -3888,6 +3906,25 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         apply_suite_world(&mut cmd2, "/tmp/other-werk");
         let root2 = cmd2.get_envs().find(|(k, _)| *k == "CHORUS_ROOT").and_then(|(_, v)| v);
         assert_eq!(root2, Some(std::ffi::OsStr::new("/tmp/other-werk")));
+    }
+
+    /// #4785 — werk-test runner exports CHORUS_STATE_DIR and CHORUS_HOOKS_RUN_DIR
+    #[test]
+    fn every_suite_child_inherits_state_dir_4785() {
+        let mut cmd = Command::new("true");
+        apply_suite_world(&mut cmd, "/tmp/some-werk");
+        let state = cmd.get_envs().find(|(k, _)| *k == "CHORUS_STATE_DIR").and_then(|(_, v)| v);
+        assert!(state.is_some(), "CHORUS_STATE_DIR must be exported");
+        let hooks = cmd.get_envs().find(|(k, _)| *k == "CHORUS_HOOKS_RUN_DIR").and_then(|(_, v)| v);
+        assert!(hooks.is_some(), "CHORUS_HOOKS_RUN_DIR must be exported");
+
+        // NEGATIVE PROOF — explicit override in parent is preserved
+        let mut cmd2 = Command::new("true");
+        std::env::set_var("CHORUS_HOOKS_RUN_DIR", "/custom/run-agents");
+        apply_suite_world(&mut cmd2, "/tmp/some-werk");
+        std::env::remove_var("CHORUS_HOOKS_RUN_DIR");
+        let hooks2 = cmd2.get_envs().find(|(k, _)| *k == "CHORUS_HOOKS_RUN_DIR").and_then(|(_, v)| v);
+        assert_eq!(hooks2, Some(std::ffi::OsStr::new("/custom/run-agents")));
     }
 
     /// NEGATIVE PROOF — the same suite run with the live nudge path fails, so
