@@ -152,6 +152,14 @@ pub fn run_dir_from(override_dir: Option<&str>, home: Option<&str>) -> String {
         );
         return dir.trim_end_matches('/').to_string();
     }
+    // #4785 — under multi-account setup (ADR-065), caller may run as a non-host
+    // account (e.g. chorus-borg-queen, chorus-silas). The shared daemon socket lives
+    // under CHORUS_STATE_DIR/run-agents or the host's run-agents dir. If that exists,
+    // use it so callers on agent accounts automatically reach the shared daemon socket.
+    let shared_agents = format!("{}/run-agents", chorus_state_dir());
+    if std::path::Path::new(&shared_agents).join("chorus-hooks.sock").exists() {
+        return shared_agents;
+    }
     let home = home.expect(
         "chorus-hooks: HOME unset — refusing to fall back to world-writable /tmp \
          for the control socket/pidfile (#3631). Set HOME in the LaunchAgent env.",
