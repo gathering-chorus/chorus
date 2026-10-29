@@ -511,11 +511,21 @@ pub fn own_messages(search_body: &str, role: &str) -> String {
         let ch = r.get("channel").and_then(|c| c.as_str()).unwrap_or("");
         let is_own = ch == want.as_str()
             || (ch.is_empty() && r.get("role").and_then(|ro| ro.as_str()) == Some(role));
-        let text = r.get("content").and_then(|c| c.as_str()).unwrap_or("");
-        is_own && !text.contains("Suicide & Crisis Lifeline")
+        let text = r.get("content").and_then(|c| c.as_str()).unwrap_or("").trim_start();
+        let is_system_alert = text.starts_with("[alert for ") || text.starts_with("[alert → ");
+        is_own && !text.contains("Suicide & Crisis Lifeline") && !is_system_alert
     });
     if results.is_empty() {
         return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
+    }
+    if v.get("_meta")
+        .and_then(|m| m.get("newest_result_age_s"))
+        .and_then(|a| a.as_u64())
+        .is_some_and(|age| age > 3600)
+    {
+        if let Some(meta) = v.get_mut("_meta").and_then(|m| m.as_object_mut()) {
+            meta.insert("stale".to_string(), serde_json::Value::Bool(true));
+        }
     }
     v.to_string()
 }
@@ -638,5 +648,16 @@ mod boot_read_tests_4426 {
         let blocked = boot_messages(&own_messages(flagged_hist, "silas"));
         assert!(blocked.contains("not replayed"), "NEGATIVE (#4426): {blocked}");
         assert!(!blocked.contains("10-27 turn"), "NEGATIVE (#4426): {blocked}");
+    }
+
+    #[test]
+    fn own_messages_filters_system_alerts_and_marks_stale_past_threshold_4784() {
+        let flooded = r#"{"_meta":{"newest_result_age_s":9914,"stale":false},"results":[{"channel":"session:silas","author":"user","content":"[alert for silas · from system | 2026-10-29 03:38 Boston] deep-health: 5 failure(s)"},{"channel":"session:silas","author":"user","content":"[alert → silas] grafana: SHACL violations"},{"channel":"session:silas","author":"user","content":"@silas real question"},{"channel":"session:silas","author":"assistant","content":"--- Silas | 2026-10-29 03:39 Boston --- real answer"}]}"#;
+        let out = own_messages(flooded, "silas");
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let results = parsed["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2, "NEGATIVE (#3734): system alerts must not crowd boot-read: {out}");
+        assert!(!out.contains("[alert for silas") && !out.contains("[alert → silas"), "NEGATIVE (#3734): {out}");
+        assert_eq!(parsed["_meta"]["stale"], serde_json::Value::Bool(true), "NEGATIVE (#3734): 9914s old must report stale:true: {out}");
     }
 }

@@ -21,7 +21,7 @@
  * The injection is fine for one or two consumers; don't propagate further.
  */
 import type Database from 'better-sqlite3';
-import { toFtsMatchQuery, runFtsQueryOnDb } from '../lib/fts-query';
+import { toFtsMatchQuery, runFtsQueryOnDb, type FtsFilterOptions } from '../lib/fts-query';
 
 export type SemanticSearchFn = (
   query: string,
@@ -70,6 +70,7 @@ export interface SearchDeps {
     role: string | undefined,
     mode: string,
     channel?: string,
+    opts?: FtsFilterOptions,
   ) => Promise<unknown[]>;
   now?: () => number;
 }
@@ -81,6 +82,13 @@ export interface SearchInput {
   mode?: string;
   channel?: string;
   order?: string;
+  before?: string;
+  until?: string;
+  to?: string;
+  after?: string;
+  since?: string;
+  from?: string;
+  offset?: string;
 }
 
 export interface SearchResult {
@@ -173,7 +181,21 @@ function buildFilterFields(
 
 export async function fetchSearch(
   deps: SearchDeps,
-  { q: rawQ, limit: limitRaw, role, mode: modeRaw, channel, order }: SearchInput,
+  {
+    q: rawQ,
+    limit: limitRaw,
+    role,
+    mode: modeRaw,
+    channel,
+    order,
+    before: rawBefore,
+    until,
+    to,
+    after: rawAfter,
+    since,
+    from,
+    offset: offsetRaw,
+  }: SearchInput,
 ): Promise<SearchResult> {
   if (!rawQ && !channel) return { status: 400, body: { error: 'Missing required parameter: q' } };
   const q = rawQ ?? '';
@@ -183,6 +205,10 @@ export async function fetchSearch(
   const mode = resolveSearchMode(modeRaw, order);
   const searchStart = now();
   const fetchLimit = limit + 1;
+  const before = rawBefore || until || to;
+  const after = rawAfter || since || from;
+  const offset = offsetRaw ? Math.max(0, parseInt(offsetRaw, 10) || 0) : 0;
+  const filterOpts: FtsFilterOptions = { order, before, after, offset };
 
   const format: FormatFn = (rawResults, resolvedMode, includeDb, extra = {}) => {
     const truncated = rawResults.length > limit;
@@ -208,8 +234,8 @@ export async function fetchSearch(
 
   const ftsStart = now();
   const ftsResults = deps.ftsSearch
-    ? await deps.ftsSearch(q, fetchLimit, role, mode, channel)
-    : runFtsQueryOnDb(db, q, fetchLimit, role, mode, channel);
+    ? await deps.ftsSearch(q, fetchLimit, role, mode, channel, filterOpts)
+    : runFtsQueryOnDb(db, q, fetchLimit, role, mode, channel, filterOpts);
   ftsMs = now() - ftsStart;
 
   if (mode === 'unified') {

@@ -18,6 +18,13 @@ export function toFtsMatchQuery(raw: string): string {
     .join(' ');
 }
 
+export interface FtsFilterOptions {
+  order?: string;
+  before?: string;
+  after?: string;
+  offset?: number;
+}
+
 /**
  * Run the FTS5 query against a better-sqlite3 connection. Synchronous (better-sqlite3
  * is sync) — on the 1.1GB index this is the multi-second event-loop blocker (#3079),
@@ -28,21 +35,37 @@ function runChannelRecentQuery(
   channel: string,
   fetchLimit: number,
   role: string | undefined,
+  opts?: FtsFilterOptions,
 ): unknown[] {
   const sessionRole = channel.startsWith('session:') ? channel.slice('session:'.length) : '';
   const directParams: unknown[] = [channel, sessionRole];
-  if (role) directParams.push(role);
+  const clauses: string[] = [];
+  if (role) {
+    clauses.push('AND m.role = ?');
+    directParams.push(role);
+  }
+  if (opts?.before) {
+    clauses.push('AND m.timestamp < ?');
+    directParams.push(opts.before);
+  }
+  if (opts?.after) {
+    clauses.push('AND m.timestamp > ?');
+    directParams.push(opts.after);
+  }
   directParams.push(fetchLimit);
-  const roleClause = role ? 'AND m.role = ?' : '';
+  const offsetVal = opts?.offset && opts.offset > 0 ? opts.offset : 0;
+  if (offsetVal > 0) directParams.push(offsetVal);
+  const orderDir = opts?.order === 'oldest' ? 'ASC' : 'DESC';
+  const limitClause = offsetVal > 0 ? 'LIMIT ? OFFSET ?' : 'LIMIT ?';
   try {
     return db.prepare(
       `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
               substr(m.content, 1, 200) as snippet
        FROM messages m
        WHERE (m.channel = ? OR (m.channel IS NULL AND m.role = ?))
-       ${roleClause}
-       ORDER BY m.timestamp DESC
-       LIMIT ?`,
+       ${clauses.join('\n       ')}
+       ORDER BY m.timestamp ${orderDir}
+       ${limitClause}`,
     ).all(...directParams);
   } catch {
     return [];
@@ -55,10 +78,16 @@ function buildFtsSqlAndParams(
   role: string | undefined,
   mode: string,
   channel: string | undefined,
+  opts?: FtsFilterOptions,
 ): { sql: string; params: unknown[] } {
   const authorityOrder =
     "bm25(messages_fts) + CASE m.source WHEN 'claude' THEN 8.0 WHEN 'clearing' THEN 8.0 WHEN 'slack' THEN 4.0 ELSE 0 END ASC";
-  const ftsOrderBy = mode === 'relevance' || mode === 'hybrid' ? authorityOrder : 'm.timestamp DESC';
+  const ftsOrderBy =
+    opts?.order === 'oldest'
+      ? 'm.timestamp ASC'
+      : mode === 'relevance' || mode === 'hybrid'
+        ? authorityOrder
+        : 'm.timestamp DESC';
   const params: unknown[] = [ftsQuery];
   const clauses: string[] = [];
   if (role) {
@@ -69,7 +98,18 @@ function buildFtsSqlAndParams(
     clauses.push('AND m.channel = ?');
     params.push(channel);
   }
+  if (opts?.before) {
+    clauses.push('AND m.timestamp < ?');
+    params.push(opts.before);
+  }
+  if (opts?.after) {
+    clauses.push('AND m.timestamp > ?');
+    params.push(opts.after);
+  }
   params.push(fetchLimit);
+  const offsetVal = opts?.offset && opts.offset > 0 ? opts.offset : 0;
+  if (offsetVal > 0) params.push(offsetVal);
+  const limitClause = offsetVal > 0 ? 'LIMIT ? OFFSET ?' : 'LIMIT ?';
   const sql = `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
               snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
        FROM messages_fts f
@@ -77,7 +117,7 @@ function buildFtsSqlAndParams(
        WHERE messages_fts MATCH ?
        ${clauses.join('\n       ')}
        ORDER BY ${ftsOrderBy}
-       LIMIT ?`;
+       ${limitClause}`;
   return { sql, params };
 }
 
@@ -88,12 +128,13 @@ export function runFtsQueryOnDb(
   role: string | undefined,
   mode: string,
   channel?: string,
+  opts?: FtsFilterOptions,
 ): unknown[] {
   const ftsQuery = toFtsMatchQuery(q);
   if (!ftsQuery) {
-    return channel ? runChannelRecentQuery(db, channel, fetchLimit, role) : [];
+    return channel ? runChannelRecentQuery(db, channel, fetchLimit, role, opts) : [];
   }
-  const { sql, params } = buildFtsSqlAndParams(ftsQuery, fetchLimit, role, mode, channel);
+  const { sql, params } = buildFtsSqlAndParams(ftsQuery, fetchLimit, role, mode, channel, opts);
   try {
     return db.prepare(sql).all(...params);
   } catch {
