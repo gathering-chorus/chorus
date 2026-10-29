@@ -792,7 +792,7 @@ pub fn own_account_inner_cmd(
     cmd: &str,
 ) -> String {
     format!(
-        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && {}",
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && {}",
         role_dir, root, own_dir, own_token, sessions_dir, role, cmd
     )
 }
@@ -2143,6 +2143,9 @@ mod own_account_launch_tests_4777 {
             "claude -c",
         );
         assert!(cmd.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{cmd}");
+        assert!(cmd.contains("CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\""), "{cmd}");
+        assert!(cmd.contains("GIT_CONFIG_KEY_0='safe.directory'"), "{cmd}");
+        assert!(cmd.contains("ENABLE_CLAUDEAI_MCP_SERVERS='false'"), "{cmd}");
         assert!(cmd.contains("CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\""), "{cmd}");
     }
 

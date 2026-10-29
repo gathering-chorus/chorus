@@ -110,9 +110,9 @@ check_writer_not_jeff_for_agent() {
 }
 
 @test "AC2: cards resolveWriterRole resolves OS role, CHORUS_ROLE env fallback, and automation default" {
-  run env DEPLOY_ROLE=jeff CHORUS_ROLE=wren \
+  run env ROOT="$ROOT" DEPLOY_ROLE=jeff CHORUS_ROLE=wren \
     "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
-      import { resolveWriterRole } from "./directing/products/cards/src/graph-sync";
+      const { resolveWriterRole } = require(process.env.ROOT + "/directing/products/cards/src/graph-sync");
       const fromOs = resolveWriterRole("chorus-wren");
       const fromEnv = resolveWriterRole("shared-host");
       delete process.env.DEPLOY_ROLE;
@@ -126,9 +126,9 @@ check_writer_not_jeff_for_agent() {
 }
 
 @test "AC2 NEGATIVE PROOF: from chorus-silas with DEPLOY_ROLE=jeff, writer is silas and a jeff writer is caught (#3734)" {
-  run env DEPLOY_ROLE=jeff CHORUS_ROLE="" \
+  run env ROOT="$ROOT" DEPLOY_ROLE=jeff CHORUS_ROLE="" \
     "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
-      import { resolveWriterRole } from "./directing/products/cards/src/graph-sync";
+      const { resolveWriterRole } = require(process.env.ROOT + "/directing/products/cards/src/graph-sync");
       console.log(resolveWriterRole("chorus-silas"));
     '
   echo "$output"
@@ -146,9 +146,9 @@ check_writer_not_jeff_for_agent() {
 }
 
 @test "AC2: detectRole recognizes borg-queen in VALID_ROLES" {
-  run env DEPLOY_ROLE=borg-queen \
+  run env ROOT="$ROOT" DEPLOY_ROLE=borg-queen \
     "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
-      import { detectRole } from "./directing/products/cards/src/config";
+      const { detectRole } = require(process.env.ROOT + "/directing/products/cards/src/config");
       console.log(detectRole());
     '
   echo "$output"

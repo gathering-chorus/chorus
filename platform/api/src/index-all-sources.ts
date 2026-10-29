@@ -108,13 +108,24 @@ function indexSpine(_ctx: IndexCtx): string {
   return 'spine NOT indexed — telemetry lives in Loki (#3136)';
 }
 
+const ALL_ROLES = ['wren', 'silas', 'kade', 'abby-normal', 'borg-queen'] as const;
+
+export function mapSessionRole(dirOrPath: string): string {
+  if (dirOrPath.includes('roles-wren') || dirOrPath.includes('roles/wren') || dirOrPath.includes('chorus-wren') || dirOrPath.includes('product-manager')) return 'wren';
+  if (dirOrPath.includes('roles-silas') || dirOrPath.includes('roles/silas') || dirOrPath.includes('chorus-silas') || dirOrPath.includes('architect')) return 'silas';
+  if (dirOrPath.includes('roles-kade') || dirOrPath.includes('roles/kade') || dirOrPath.includes('chorus-kade') || dirOrPath.includes('engineer') || dirOrPath.includes('jeff-bridwell-personal-site')) return 'kade';
+  if (dirOrPath.includes('roles-abby-normal') || dirOrPath.includes('roles/abby-normal') || dirOrPath.includes('chorus-abby-normal')) return 'abby-normal';
+  if (dirOrPath.includes('roles-borg-queen') || dirOrPath.includes('roles/borg-queen') || dirOrPath.includes('chorus-borg-queen')) return 'borg-queen';
+  return 'jeff';
+}
+
 function indexRoleDir(
   ctx: IndexCtx,
   opts: { subpath: string; source: string; channelPrefix: string; fileFilter?: (f: string) => boolean; useMtime?: boolean },
 ): number {
   let indexed = 0;
   const filter = opts.fileFilter ?? ((f: string) => f.endsWith('.md') && !f.startsWith('.'));
-  for (const role of ['wren', 'silas', 'kade']) {
+  for (const role of ALL_ROLES) {
     const dir = ctx.path.join(ctx.repoRoot, `roles/${role}/${opts.subpath}`);
     if (!ctx.fs.existsSync(dir)) continue;
     for (const file of ctx.fs.readdirSync(dir).filter(filter)) {
@@ -191,7 +202,7 @@ function indexMemory(ctx: IndexCtx): string | void {
 
 function indexState(ctx: IndexCtx): string {
   let indexed = 0;
-  for (const role of ['wren', 'silas', 'kade']) {
+  for (const role of ALL_ROLES) {
     const nsPath = ctx.path.join(ctx.repoRoot, `roles/${role}/next-session.md`);
     if (!ctx.fs.existsSync(nsPath)) continue;
     const content = String(ctx.fs.readFileSync(nsPath, 'utf-8'));
@@ -200,6 +211,65 @@ function indexState(ctx: IndexCtx): string {
   }
   ctx.updateWatermark.run!('artifact:state', ctx.now, ctx.now);
   return `${indexed} state files indexed`;
+}
+
+// #4785 — Index per-role Claude & Antigravity (.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/transcript.jsonl)
+// session transcripts across all 5 role accounts when readable on disk.
+function indexRoleSessions(ctx: IndexCtx): string | void {
+  let indexed = 0;
+  const homes = [
+    ctx.homedir(),
+    ...ALL_ROLES.map((r) => `/Users/chorus-${r}`),
+  ];
+  for (const home of homes) {
+    const brainDir = ctx.path.join(home, '.gemini/antigravity-cli/brain');
+    if (!ctx.fs.existsSync(brainDir)) continue;
+    const role = mapSessionRole(home);
+    for (const convId of ctx.fs.readdirSync(brainDir)) {
+      if (!convId || convId === 'transcript' || convId === 'transcript_full' || convId.startsWith('.')) continue;
+      const logPath = ctx.path.join(brainDir, convId, '.system_generated/logs/transcript.jsonl');
+      if (!ctx.fs.existsSync(logPath)) continue;
+      const raw = String(ctx.fs.readFileSync(logPath, 'utf-8'));
+      let lineNum = 0;
+      for (const line of raw.split('\n')) {
+        lineNum++;
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const rec = JSON.parse(trimmed) as {
+            step_index?: number;
+            type?: string;
+            content?: string;
+            created_at?: string;
+          };
+          if (rec.type !== 'USER_INPUT' && rec.type !== 'PLANNER_RESPONSE') continue;
+          const content = (rec.content ?? '').trim();
+          if (content.length < 10) continue;
+          if (rec.type === 'USER_INPUT' && (content.startsWith('[alert for ') || content.startsWith('[alert → '))) continue;
+          const author = rec.type === 'USER_INPUT' ? 'user' : 'assistant';
+          const msgRole = rec.type === 'USER_INPUT' ? 'jeff' : role;
+          const stepId = typeof rec.step_index === 'number' ? `step${rec.step_index}` : `line${lineNum}`;
+          const ts = rec.created_at || ctx.now;
+          ctx.insert.run!(
+            'antigravity',
+            `antigravity:${convId}:${stepId}`,
+            `session:${role}`,
+            msgRole,
+            author,
+            content.length > 5000 ? `${content.slice(0, 5000)}... [truncated]` : content,
+            ts,
+          );
+          indexed++;
+        } catch {
+          // skip malformed line
+        }
+      }
+    }
+  }
+  if (indexed > 0) {
+    ctx.updateWatermark.run!('sessions:antigravity', ctx.now, ctx.now);
+    return `${indexed} antigravity turns indexed`;
+  }
 }
 
 function indexClearing(ctx: IndexCtx): string | void {
@@ -441,6 +511,7 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
     runSource('clearing', results, () => indexClearing(ctx));
     runSource('journal', results, () => indexJournal(ctx));
     runSource('stories', results, () => indexStories(ctx));
+    runSource('antigravity-sessions', results, () => indexRoleSessions(ctx));
     const docList = deps.listDocs ? deps.listDocs() : [];
     runSource('docs', results, () => indexDocsFrom(ctx, docList));
 

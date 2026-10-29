@@ -251,5 +251,78 @@ fi
 export FUSEKI_BACKUP_REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 export FUSEKI_BACKUP_DEST="${FUSEKI_BACKUP_DEST:-/Volumes/VideosNew/backups/library/fuseki}"
 
+# --- #4785: per-role account workspace parity (git, outbox, skills, MCP) -----
+if [ -z "${GIT_CONFIG_COUNT:-}" ]; then
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0=safe.directory
+  export GIT_CONFIG_VALUE_0='*'
+fi
+
+chorus_verify_git_safe_dir() {
+  if [ "${GIT_CONFIG_KEY_0:-}" = "safe.directory" ] && [ "${GIT_CONFIG_VALUE_0:-}" = "*" ]; then
+    return 0
+  fi
+  if git config --get-all safe.directory 2>/dev/null | grep -Fxq '*'; then
+    return 0
+  fi
+  echo "chorus_verify_git_safe_dir: missing safe.directory=*" >&2
+  return 1
+}
+
+export CHORUS_OUTBOX_DIR="${CHORUS_OUTBOX_DIR:-${CHORUS_STATE_DIR}/outbox}"
+
+chorus_verify_role_outbox() {
+  local __dir="${1:-${CHORUS_OUTBOX_DIR}/${CHORUS_ROLE:-}}"
+  if [ -z "$__dir" ] || [ ! -d "$__dir" ] || [ ! -r "$__dir" ] || [ ! -w "$__dir" ] || ! ls "$__dir" >/dev/null 2>&1; then
+    echo "chorus_verify_role_outbox: unreadable outbox directory: $__dir" >&2
+    return 1
+  fi
+  return 0
+}
+
+export ENABLE_CLAUDEAI_MCP_SERVERS="${ENABLE_CLAUDEAI_MCP_SERVERS:-false}"
+
+chorus_sync_role_skills() {
+  local __target="${1:-$HOME/.claude/skills}"
+  local __src_root="${2:-${CHORUS_HOME:-$CHORUS_ROOT}}"
+  [ -d "$__src_root/skills" ] || __src_root="$CHORUS_ROOT"
+  mkdir -p "$__target" 2>/dev/null || return 1
+  local __skill_dir __name
+  for __skill_dir in "$__src_root"/skills/*/; do
+    [ -d "$__skill_dir" ] || continue
+    if [ -f "${__skill_dir}SKILL.md" ] || [ -f "${__skill_dir}skill.md" ]; then
+      __name="$(basename "$__skill_dir")"
+      [ -e "$__target/$__name" ] || ln -s "${__skill_dir%/}" "$__target/$__name" 2>/dev/null || true
+    fi
+  done
+  return 0
+}
+
+chorus_verify_role_skills() {
+  local __target="${1:-$HOME/.claude/skills}"
+  if [ ! -d "$__target" ]; then
+    echo "chorus_verify_role_skills: missing target directory: $__target" >&2
+    return 1
+  fi
+  local __skill_dir __name __missing=0
+  for __skill_dir in "$CHORUS_ROOT"/skills/*/; do
+    [ -d "$__skill_dir" ] || continue
+    if [ -f "${__skill_dir}SKILL.md" ] || [ -f "${__skill_dir}skill.md" ]; then
+      __name="$(basename "$__skill_dir")"
+      if [ ! -f "$__target/$__name/SKILL.md" ] && [ ! -f "$__target/$__name/skill.md" ]; then
+        echo "chorus_verify_role_skills: missing skill: $__name in $__target" >&2
+        __missing=1
+      fi
+    fi
+  done
+  return "$__missing"
+}
+
+case "${HOME:-}" in
+  /Users/chorus-*)
+    chorus_sync_role_skills "$HOME/.claude/skills" >/dev/null 2>&1 || true
+    ;;
+esac
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root

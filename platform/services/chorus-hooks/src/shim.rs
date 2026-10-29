@@ -187,7 +187,29 @@ fn enrich_stop_prompt_response(input: String) -> String {
     input
 }
 
-/// #4779 — Pure builder for verified session turn push payload.
+/// #4785 — Extract the conversation UUID from an Antigravity transcript path
+/// (`.../.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/transcript.jsonl`),
+/// refusing literal `"transcript"` / `"transcript_full"` file stems so turns never
+/// collide on `session_id = "transcript"`.
+fn antigravity_session_id(path: &str) -> Option<String> {
+    let p = std::path::Path::new(path.trim());
+    let stem = p.file_stem()?.to_str()?;
+    if path.contains(".system_generated/logs/") || stem == "transcript" || stem == "transcript_full" {
+        let logs = p.parent()?;
+        let sys = logs.parent()?;
+        let conv = sys.parent()?.file_name()?.to_str()?;
+        if !conv.is_empty() && conv != "transcript" && conv != "transcript_full" && conv != ".system_generated" && conv != "logs" {
+            return Some(conv.to_string());
+        }
+        return None;
+    }
+    if !stem.is_empty() && stem != "transcript" && stem != "transcript_full" {
+        return Some(stem.to_string());
+    }
+    None
+}
+
+/// #4779 / #4785 — Pure builder for verified session turn push payload.
 fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json::Value> {
     let json: serde_json::Value = serde_json::from_str(input).ok()?;
     let (author, text) = match endpoint {
@@ -207,7 +229,14 @@ fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json:
         .get("chorus_session_id")
         .or_else(|| json.get("session_id"))
         .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty());
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != "transcript" && *s != "transcript_full")
+        .map(str::to_string)
+        .or_else(|| {
+            json.get("transcript_path")
+                .and_then(|v| v.as_str())
+                .and_then(antigravity_session_id)
+        });
     let source = json
         .get("runtime")
         .and_then(|v| v.as_str())
@@ -361,6 +390,16 @@ mod inject_trace_id_tests {
         assert!(!p_home.to_string_lossy().ends_with("key.json"));
         let p_override = role_cred_path(Some("/custom/id"), "/Users/chorus-kade", "silas");
         assert_eq!(p_override.to_string_lossy(), "/custom/id/silas/cred.json");
+
+        // #4785: Antigravity transcript_path extracts parent conversation UUID, never "transcript"
+        let ag = build_session_turn_payload(
+            "stop",
+            r#"{"prompt_response":"Done.","session_id":"transcript","transcript_path":"/Users/chorus-borg-queen/.gemini/antigravity-cli/brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl","runtime":"antigravity"}"#,
+        )
+        .unwrap();
+        assert_eq!(ag["session_id"], "c20fed59-2575-431e-92d5-33b4939ba2e4");
+        assert_ne!(ag["session_id"], "transcript", "NEGATIVE (#3734): session_id must never be literal 'transcript'");
+        assert!(antigravity_session_id("/tmp/transcript.jsonl").is_none(), "NEGATIVE (#3734): bare transcript.jsonl without brain parent dir returns None");
     }
 
     #[test]
