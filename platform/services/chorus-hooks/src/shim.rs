@@ -576,7 +576,7 @@ mod inject_trace_id_tests {
         // #4785: Antigravity transcript_path extracts parent conversation UUID, never "transcript"
         let ag = build_session_turn_payload(
             "stop",
-            r#"{"prompt_response":"Done.","session_id":"transcript","transcript_path":"/Users/chorus-borg-queen/.gemini/antigravity-cli/brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl","runtime":"antigravity"}"#,
+            r#"{"prompt_response":"Done.","session_id":"transcript","transcript_path":"/tmp/test-brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl","runtime":"antigravity"}"#,
         )
         .unwrap();
         assert_eq!(ag["session_id"], "c20fed59-2575-431e-92d5-33b4939ba2e4");
@@ -584,7 +584,7 @@ mod inject_trace_id_tests {
         assert!(antigravity_session_id("/tmp/transcript.jsonl").is_none(), "NEGATIVE (#3734): bare transcript.jsonl without brain parent dir returns None");
 
         // #4785: extract_backfill_turns produces deterministic <role>:<session_id>:<turn_idx> source_id (idempotent on rerun)
-        let ag_path = std::path::Path::new("/Users/chorus-borg-queen/.gemini/antigravity-cli/brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl");
+        let ag_path = std::path::Path::new("/tmp/test-brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl");
         let ag_content = concat!(
             r#"{"step_index":0,"type":"USER_INPUT","content":"hi borg-queen welcome!","created_at":"2026-10-23T13:04:23Z"}"#, "\n",
             r#"{"step_index":1,"type":"PLANNER_RESPONSE","content":"--- Borg Queen | 2026-10-23 09:04 Boston ---","created_at":"2026-10-23T13:04:30Z"}"#, "\n"
