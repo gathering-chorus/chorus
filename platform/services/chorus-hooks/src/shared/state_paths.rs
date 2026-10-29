@@ -132,39 +132,13 @@ pub fn hook_run_dir() -> String {
     }
     // #4785 — under multi-account setup (ADR-065), caller may run as a non-host
     // account (e.g. chorus-borg-queen, chorus-silas). The shared daemon socket lives
-    // under CHORUS_STATE_DIR/run-agents or the canonical repo owner's ~/.chorus/run-agents.
-    // If that socket exists, use it so callers on agent accounts automatically reach the
-    // shared daemon socket even when CHORUS_HOOKS_RUN_DIR is unset.
+    // under CHORUS_STATE_DIR/run-agents. If that socket exists, use it so callers
+    // on agent accounts automatically reach the shared daemon socket.
     let shared_agents = format!("{}/run-agents", chorus_state_dir());
     if std::path::Path::new(&shared_agents).join("chorus-hooks.sock").exists() {
         return shared_agents;
     }
-    if let Some(owner_state) = canonical_owner_state_dir() {
-        let owner_agents = format!("{}/run-agents", owner_state);
-        if std::path::Path::new(&owner_agents).join("chorus-hooks.sock").exists() {
-            return owner_agents;
-        }
-    }
     run_dir_from(None, std::env::var("HOME").ok().as_deref())
-}
-
-/// Resolve the state dir of whoever owns the canonical repository root (chorus_root()).
-fn canonical_owner_state_dir() -> Option<String> {
-    if std::env::var("CHORUS_TEST_FORCE_NO_SHARED_SOCKET").is_ok() {
-        return None;
-    }
-    use std::os::unix::fs::MetadataExt;
-    let meta = std::fs::metadata(chorus_root()).ok()?;
-    let uid = meta.uid();
-    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
-    let mut buf = vec![0 as libc::c_char; 4096];
-    let mut out: *mut libc::passwd = std::ptr::null_mut();
-    let rc = unsafe { libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut out) };
-    if rc != 0 || out.is_null() || pwd.pw_dir.is_null() {
-        return None;
-    }
-    let home = unsafe { std::ffi::CStr::from_ptr(pwd.pw_dir) }.to_string_lossy().into_owned();
-    Some(format!("{}/.chorus", home))
 }
 
 /// The rule, pure so it is testable without touching the process environment.

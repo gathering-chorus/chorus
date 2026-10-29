@@ -24,13 +24,11 @@ fn hook_run_dir_resolves_deterministic_fallback_when_env_unset() {
 
     // 2. Without socket and without override, falls back to home/.chorus/run
     std::env::remove_var("CHORUS_HOOKS_RUN_DIR");
-    std::env::set_var("CHORUS_TEST_FORCE_NO_SHARED_SOCKET", "1");
     std::env::set_var("CHORUS_STATE_DIR", "/tmp/nonexistent-state-dir-for-test");
     std::env::set_var("HOME", "/Users/testuser");
     assert_eq!(chorus_hooks::shared::state_paths::hook_run_dir(), "/Users/testuser/.chorus/run");
 
     // Restore
-    std::env::remove_var("CHORUS_TEST_FORCE_NO_SHARED_SOCKET");
     match prev_run_dir {
         Some(v) => std::env::set_var("CHORUS_HOOKS_RUN_DIR", v),
         None => std::env::remove_var("CHORUS_HOOKS_RUN_DIR"),
