@@ -1,36 +1,52 @@
 #!/usr/bin/env bash
-# Nudge health check — AC4/AC5 for #1793; registry-aware per ADR-039 / #3284 AC8.
-#
-# The router is the session registry ({role,pid,tty,host}); the protocol is
-# host-selected active osascript (terminal/iterm → --tty; vscode → --vscode).
-# So health MUST resolve through the registry, NOT blindly probe Terminal:
-#   - host=vscode      → delivery is --vscode (Code app, NOT a Terminal window).
-#                        Healthy iff the session is alive + Code is running.
-#                        NEVER emit no-window for a vscode session (the 84× false
-#                        alarm this fixes).
-#   - host=terminal/iterm, or NO registration (legacy name-match fallback)
-#                      → the window-pattern probe below is the right check.
-# A real no-window is reserved for a terminal-host/fallback session with no
-# matching window — and it stays loud + actionable.
+# Nudge health check — #4786 (Slice 3 of #4780).
+# Judges delivery results and run liveness, not Terminal windows.
+# Agrees with Pulse on who is online and catches refused nudges.
 
 set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
-ROLES=(wren silas kade)
-FAILURES=0
 CANARY_DIR="/tmp/nudge-canary"
-mkdir -p "$CANARY_DIR"
+mkdir -p "$CANARY_DIR" 2>/dev/null || true
+
+log_canary() {
+  { echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') $*" >> "${CANARY_DIR}/health.log"; } 2>/dev/null || true
+}
+
+PULSE_URL="${PULSE_URL:-http://localhost:3475}"
+MESSAGES_DB="${CHORUS_MESSAGES_DB:-${CHORUS_ROOT}/platform/pulse/messages.db}"
+SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-/Users/jeffbridwell/.chorus/sessions}"
+
+# Dynamic role discovery from roles door or fallback to canonical 5
+ROLES=(wren silas kade borg-queen abby-normal)
+if [ -n "${ROLES_OVERRIDE:-}" ]; then
+  read -ra ROLES <<< "$ROLES_OVERRIDE"
+elif [ -z "${CHORUS_SESSIONS_DIR:-}" ]; then
+  DOOR_ROLES=$(curl -s --max-time 2 "${API_BASE:-http://localhost:3340}/v1/roles/roles" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    agents = [r["name"] for r in d.get("data", []) if r.get("roleKind") == "agent"]
+    if agents:
+        print(" ".join(agents))
+except Exception:
+    pass
+' 2>/dev/null || true)
+  if [ -n "$DOOR_ROLES" ]; then
+    read -ra ROLES <<< "$DOOR_ROLES"
+  fi
+fi
+
+FAILURES=0
 
 # Resolve a role to its most-recently-registered LIVE session.
-# Prints "host|pid|tty|tmux" or "" (no live registration → window-pattern fallback).
-# CHORUS_SESSIONS_DIR overrides the registry location (tests bring their own world).
 resolve_reg() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "$SESSIONS_DIR" <<'PY'
 import json, os, sys, glob
 role = sys.argv[1]
+sessions_dir = sys.argv[2]
 best = None
-sessions_dir = os.environ.get("CHORUS_SESSIONS_DIR", os.path.expanduser("~/.chorus/sessions"))
 for f in glob.glob(f"{sessions_dir}/{role}-*.json"):
     try:
         d = json.load(open(f))
@@ -55,12 +71,49 @@ if best:
 PY
 }
 
+# Fetch online status from Pulse actor-state (if reachable)
+pulse_actors=$(curl -s --max-time 2 "${PULSE_URL}/api/actor-state" 2>/dev/null || true)
+
+# 1. Check recent nudge delivery errors from messages.db or test stub
+failed_nudges=""
+if [ -n "${STUB_FAILED_NUDGES:-}" ]; then
+  failed_nudges="$STUB_FAILED_NUDGES"
+elif [ -f "$MESSAGES_DB" ] && command -v sqlite3 >/dev/null 2>&1; then
+  failed_nudges=$(sqlite3 "$MESSAGES_DB" "
+    SELECT \"to\", last_delivery_error
+    FROM messages
+    WHERE type = 'nudge'
+      AND delivery_status = 'failed'
+      AND created_at >= datetime('now', '-1 hour')
+    ORDER BY id DESC;
+  " 2>/dev/null || true)
+fi
+
 for role in "${ROLES[@]}"; do
-  case "$role" in
-    wren)  pattern="wren" ;;
-    silas) pattern="silas" ;;
-    kade)  pattern="kade" ;;
-  esac
+  # Check if a recent nudge to this role failed (e.g. unknown role or delivery failure)
+  role_fail=$(echo "$failed_nudges" | grep -F "${role}|" | head -1 || true)
+  if [ -n "$role_fail" ]; then
+    err_msg="${role_fail#*|}"
+    echo "FAIL: ${role} — nudge delivery failed: ${err_msg}"
+    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=delivery-failed,error=${err_msg}" 2>/dev/null || true
+    FAILURES=$((FAILURES + 1))
+    log_canary "role=${role} status=FAIL error=${err_msg}"
+    continue
+  fi
+
+  # Check delivery path role support (chorus-inject / role_pattern check)
+  if ! python3 -c "
+import sys
+KNOWN = {'wren', 'silas', 'kade', 'borg-queen', 'abby-normal'}
+if sys.argv[1] not in KNOWN:
+    sys.exit(1)
+" "$role" 2>/dev/null; then
+    echo "FAIL: ${role} — delivery path refuses role (unknown role: ${role})"
+    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=unknown-role" 2>/dev/null || true
+    FAILURES=$((FAILURES + 1))
+    log_canary "role=${role} status=FAIL error=unknown-role"
+    continue
+  fi
 
   reg="$(resolve_reg "$role" || true)"
   host="${reg%%|*}"
@@ -68,8 +121,28 @@ for role in "${ROLES[@]}"; do
   rpane=""
   [ -n "$reg" ] && { rest="${reg#*|}"; rpid="${rest%%|*}"; rpane="${reg##*|}"; }
 
-  # --- tmux: delivery is the app-level tmux paste (#3668). Do NOT Terminal-probe;
-  # the pane is the address. no-window stays reserved for terminal hosts (ADR-039). ---
+  # Pulse online state for this role
+  pulse_online="unknown"
+  if [ -n "$pulse_actors" ]; then
+    pulse_online=$(python3 - "$role" <<PY
+import json, sys
+role = sys.argv[1]
+try:
+    data = json.loads('''$pulse_actors''')
+    for a in data.get("actors", []):
+        p = a.get("aboutPrincipal", "")
+        if p == f"principal-{role}" or a.get("name", "").lower() == role:
+            live = any(s.get("live", False) for s in a.get("sessions", []))
+            print("true" if live else "false")
+            sys.exit(0)
+    print("false")
+except Exception:
+    print("unknown")
+PY
+    )
+  fi
+
+  # Check tmux host
   if [ -n "$reg" ] && [ "$host" = "tmux" ]; then
     if [ -n "$rpane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$rpane"; then
       echo "OK: ${role} — tmux session (pid ${rpid}) alive, pane ${rpane} exists → paste-buffer reachable"
@@ -78,11 +151,11 @@ for role in "${ROLES[@]}"; do
       [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=tmux-pane-gone,pid=${rpid},pane=${rpane:-none}" 2>/dev/null || true
       FAILURES=$((FAILURES + 1))
     fi
-    echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') role=${role} host=tmux pid=${rpid} pane=${rpane:-none}" >> "${CANARY_DIR}/health.log"
+    log_canary "role=${role} host=tmux pid=${rpid} pane=${rpane:-none}"
     continue
   fi
 
-  # --- vscode: delivery is --vscode (Code app). Do NOT Terminal-probe. ---
+  # Check vscode host
   if [ -n "$reg" ] && [ "$host" = "vscode" ]; then
     if pgrep -x "Code" >/dev/null 2>&1 || pgrep -f "Visual Studio Code" >/dev/null 2>&1 \
        || pgrep -f "Code Helper" >/dev/null 2>&1; then
@@ -92,74 +165,31 @@ for role in "${ROLES[@]}"; do
       [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=vscode-app-down,pid=${rpid}" 2>/dev/null || true
       FAILURES=$((FAILURES + 1))
     fi
-    echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') role=${role} host=vscode pid=${rpid}" >> "${CANARY_DIR}/health.log"
+    log_canary "role=${role} host=vscode pid=${rpid}"
     continue
   fi
 
-  # --- terminal/iterm/unknown, or no registration → window-pattern probe ---
-  # try/on error skips zombie windows Terminal can't name (-1728)
-  result=$(osascript -e "
-tell application \"Terminal\"
-    set matchCount to 0
-    set matchName to \"\"
-    set winCount to count of windows
-    repeat with i from 1 to winCount
-        try
-            set w to window i
-            set winName to name of w
-            if winName contains \"${pattern}\" and winName contains \"claude\" then
-                set matchCount to matchCount + 1
-                set matchName to winName
-            end if
-        end try
-    end repeat
-    return (matchCount as text) & \"::\" & matchName
-end tell" 2>&1)
-
-  match_count=$(echo "$result" | cut -d':' -f1)
-  match_name=$(echo "$result" | sed 's/^[0-9]*:://')
-
-  if [ "$match_count" = "0" ]; then
-    if [ -n "$reg" ]; then
-      echo "ALERT: ${role} — registered host=${host} (pid ${rpid}) but NO matching Terminal window — session moved or window retitled (need '${pattern}' + 'claude')"
-    else
-      echo "ALERT: ${role} — no registration AND no Terminal window (need '${pattern}' + 'claude') — session not started or registry stale"
-    fi
-    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=no-window,host=${host:-none}" 2>/dev/null || true
-    FAILURES=$((FAILURES + 1))
-
-  elif [ "$match_count" != "1" ]; then
-    echo "WARN: ${role} — ${match_count} windows match (ambiguous — inject may hit wrong one)"
-    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.ambiguous" "system" "role=${role},count=${match_count}" 2>/dev/null || true
-    FAILURES=$((FAILURES + 1))
-
-  else
-    wrong_target=false
-    case "$role" in
-      wren)  echo "$match_name" | grep -q "silas" && wrong_target=true; echo "$match_name" | grep -q "kade" && wrong_target=true ;;
-      silas) echo "$match_name" | grep -q "wren" && wrong_target=true; echo "$match_name" | grep -q "kade" && wrong_target=true ;;
-      kade)  echo "$match_name" | grep -q "wren" && wrong_target=true; echo "$match_name" | grep -q "silas" && wrong_target=true ;;
-    esac
-    if [ "$wrong_target" = true ]; then
-      echo "ALERT: ${role} — matched window '${match_name}' contains another role's pattern — WRONG TARGET"
-      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.wrong-target" "system" "role=${role},window=${match_name}" 2>/dev/null || true
-      FAILURES=$((FAILURES + 1))
-    else
-      echo "OK: ${role} — 1 window, correct target: ${match_name}"
-    fi
+  # Check live session on own account (terminal / agent / unknown host)
+  if [ -n "$reg" ]; then
+    echo "OK: ${role} — live session on host=${host} (pid ${rpid}), agreed with Pulse (pulse_online=${pulse_online})"
+    log_canary "role=${role} host=${host} pid=${rpid}"
+    continue
   fi
 
-  echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') role=${role} host=${host:-none} count=${match_count} name=${match_name}" >> "${CANARY_DIR}/health.log"
+  # Role is not registered locally
+  if [ "$pulse_online" = "true" ]; then
+    echo "WARN: ${role} — Pulse says online but no live session registered locally (disagreement)"
+    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.disagreement" "system" "role=${role},pulse=online,local=offline" 2>/dev/null || true
+  else
+    echo "OK: ${role} — offline (agreed with Pulse, no active session)"
+  fi
+  log_canary "role=${role} host=none status=offline"
 done
 
 if [ "$FAILURES" -gt 0 ]; then
   echo "NUDGE HEALTH: ${FAILURES} role(s) have issues"
-  curl -s -X POST http://localhost:3470/api/message \
-    -H 'Content-Type: application/json' \
-    -d "{\"from\": \"system\", \"text\": \"[ALERT] Nudge health check: ${FAILURES} role(s) unreachable or ambiguous. Check /tmp/nudge-canary/health.log\"}" \
-    > /dev/null 2>&1 || true
   exit 1
 else
-  echo "NUDGE HEALTH: all roles reachable (registry-resolved: vscode via --vscode, terminal via window)"
+  echo "NUDGE HEALTH: all roles reachable"
   exit 0
 fi

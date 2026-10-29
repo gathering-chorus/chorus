@@ -87,3 +87,89 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   out_has "REFUSED"
   out_has "principal silas has no hostAccount bound in the identity door"
 }
+
+
+# --- S2 (AC1 / AC2): Nudge-health judges delivery results and run liveness ---
+
+@test "AC1/AC2: nudge-health judges run liveness and Pulse agreement without probing Terminal windows" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  # Register live sessions for the roles
+  for r in wren silas kade borg-queen abby-normal; do
+    printf '{"role":"%s","pid":%s,"tty":"/dev/ttys999","host":"unknown","registered_at":"9999999999"}' \
+      "$r" "$$" > "$W/sessions/$r-$$.json"
+  done
+
+  # Stub Pulse returning live actors
+  PULSE_JSON='{"actors":['
+  first=1
+  for r in wren silas kade borg-queen abby-normal; do
+    [ "$first" -eq 1 ] && first=0 || PULSE_JSON="${PULSE_JSON},"
+    PULSE_JSON="${PULSE_JSON}{\"aboutPrincipal\":\"principal-${r}\",\"sessions\":[{\"live\":true}]}"
+  done
+  PULSE_JSON="${PULSE_JSON}]}"
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          pulse_actors="$PULSE_JSON" \
+          MESSAGES_DB="/dev/null" \
+          bash "$HEALTH"
+  test "$status" -eq 0
+  out_has "NUDGE HEALTH: all roles reachable"
+  out_lacks "Terminal"
+  out_lacks "no-window"
+}
+
+@test "AC1/AC2: a live role on its own account stays green in nudge-health" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-single"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  printf '{"role":"silas","pid":%s,"tty":"/dev/ttys999","host":"unknown"}' \
+    "$$" > "$W/sessions/silas-$$.json"
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="silas" \
+          pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
+          MESSAGES_DB="/dev/null" \
+          bash "$HEALTH"
+  test "$status" -eq 0
+  out_has "OK: silas — live session on host=unknown (pid $$), agreed with Pulse (pulse_online=true)"
+  out_has "NUDGE HEALTH: all roles reachable"
+}
+
+@test "NEGATIVE PROOF (#3734): a refused nudge turns nudge-health RED and names the role" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-fail"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  # Case A: delivery error recorded in messages.db
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="borg-queen" \
+          STUB_FAILED_NUDGES="borg-queen|unknown role: borg-queen" \
+          bash "$HEALTH"
+  test "$status" -ne 0
+  out_has "FAIL: borg-queen — nudge delivery failed: unknown role: borg-queen"
+  out_has "NUDGE HEALTH: 1 role(s) have issues"
+
+  # Case B: delivery path refuses unknown actor
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="unregistered-intruder" \
+          STUB_FAILED_NUDGES="" \
+          bash "$HEALTH"
+  test "$status" -ne 0
+  out_has "FAIL: unregistered-intruder — delivery path refuses role (unknown role: unregistered-intruder)"
+  out_has "NUDGE HEALTH: 1 role(s) have issues"
+}
