@@ -78,28 +78,30 @@ export function rowDiff(want: CardRow, have: CardRow | undefined): string[] {
 
 /**
  * #4780 AC2 — Resolve the credential role this process authenticates to the door with.
- * When `DEPLOY_ROLE=jeff` is used from a per-role Mac account (`chorus-<role>`) for
- * Jeff-authorized `/card` runs, `/Users/chorus-<role>/.chorus/identity/jeff/cred.json`
- * does not exist; fall back to the role account's own credential (`CHORUS_ROLE` or
- * `chorus-<role>` OS username) if its `cred.json` exists in `CHORUS_IDENTITY_DIR`.
+ * A process running under a `chorus-<role>` Mac account ALWAYS signs as `<role>`,
+ * never as `'jeff'` even when `DEPLOY_ROLE=jeff` is set for a Jeff-authorized `/card`
+ * invocation. When not on a `chorus-<role>` account, `DEPLOY_ROLE=jeff` falls back to
+ * `CHORUS_ROLE` when set, and only returns `'jeff'` when `osUser === 'jeffbridwell'`
+ * with no `CHORUS_ROLE` (Slice 4 #4787 retires `DEPLOY_ROLE` guessing entirely).
+ * Defaults to `'automation'`, never a hardcoded peer role.
  */
-function accountRoleFromOs(): string {
-  try {
-    const acct = process.env.CHORUS_TEST_OS_USER || os.userInfo().username;
-    return acct.startsWith('chorus-') ? acct.slice('chorus-'.length) : '';
-  } catch {
-    return '';
+export function resolveWriterRole(osUser?: string): string {
+  const acct = osUser ?? (() => {
+    try { return os.userInfo().username; } catch { return ''; }
+  })();
+  if (acct.startsWith('chorus-')) {
+    const acctRole = acct.slice('chorus-'.length).toLowerCase();
+    if (acctRole) return acctRole;
   }
-}
-
-export function resolveWriterRole(): string {
-  const acctRole = accountRoleFromOs();
-  if (acctRole) return acctRole;
   const chorusRole = (process.env.CHORUS_ROLE ? process.env.CHORUS_ROLE : '').toLowerCase();
   const deploy = (process.env.DEPLOY_ROLE ? process.env.DEPLOY_ROLE : '').toLowerCase();
-  if (deploy === 'jeff' && chorusRole && chorusRole !== 'jeff') return chorusRole;
+  if (deploy === 'jeff') {
+    if (chorusRole && chorusRole !== 'jeff') return chorusRole;
+    if (acct === 'jeffbridwell') return 'jeff';
+    return 'automation';
+  }
   if (deploy) return deploy;
-  return chorusRole ? chorusRole : 'wren';
+  return chorusRole ? chorusRole : 'automation';
 }
 
 function writerRole(): string {

@@ -45,13 +45,34 @@ PY
 }
 
 @test "AC1 NEGATIVE PROOF: an agent principal bound to jeffbridwell fails the hostAccount check (#3734)" {
-  curl -sf "http://127.0.0.1:3360/v1/identity/principals?limit=50" \
-    | sed 's/"hostAccount":"chorus-wren"/"hostAccount":"jeffbridwell"/; s/"hostAccount": "chorus-wren"/"hostAccount": "jeffbridwell"/' \
-    > "$BATS_TEST_TMPDIR/bad-principals.json"
+  cat > "$BATS_TEST_TMPDIR/good-principals.json" <<'JSON'
+{"data":[
+  {"name":"abby-normal","principalKind":"agent","hostAccount":"chorus-abby-normal"},
+  {"name":"borg-queen","principalKind":"agent","hostAccount":"chorus-borg-queen"},
+  {"name":"kade","principalKind":"agent","hostAccount":"chorus-kade"},
+  {"name":"silas","principalKind":"agent","hostAccount":"chorus-silas"},
+  {"name":"wren","principalKind":"agent","hostAccount":"chorus-wren"}
+]}
+JSON
+  run check_agent_host_accounts_json "$BATS_TEST_TMPDIR/good-principals.json"
+  [ "$status" -eq 0 ]
+
+  sed 's/"hostAccount":"chorus-wren"/"hostAccount":"jeffbridwell"/' "$BATS_TEST_TMPDIR/good-principals.json" > "$BATS_TEST_TMPDIR/bad-principals.json"
   run check_agent_host_accounts_json "$BATS_TEST_TMPDIR/bad-principals.json"
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"principal-wren: expected hostAccount 'chorus-wren', got 'jeffbridwell'"* ]] || return 1
+}
+
+@test "AC1 NEGATIVE PROOF: reading or minting kade's credential from another account is refused (#3734)" {
+  mkdir -p "$BATS_TEST_TMPDIR/id/kade"
+  printf '{"agent":"kade","hostAccount":"chorus-kade","id":"id","secret":"sec","issuer":"http://localhost:3001/","webId":"http://localhost:3001/kade/profile/card#me"}\n' > "$BATS_TEST_TMPDIR/id/kade/cred.json"
+  chmod 600 "$BATS_TEST_TMPDIR/id/kade/cred.json"
+
+  run env CHORUS_IDENTITY_DIR="$BATS_TEST_TMPDIR/id" bash "$ROOT/platform/scripts/chorus-identity-token" kade
+  echo "$output"
+  [ "$status" -eq 6 ]
+  [[ "$output" == *"refused — 'kade' is bound to account 'chorus-kade'"* ]] || return 1
 }
 
 @test "AC1: secret-custody.sh passes on 0600 cred.json and fails on 0640/0660 (#3734)" {
@@ -74,38 +95,65 @@ PY
   grep -q 'args(\["600", &path\])' "$ROOT/platform/services/chorus-principal/src/main.rs"
 }
 
-@test "AC2: cards writerRole resolves the role account's own credential when DEPLOY_ROLE=jeff has no cred.json in HOME" {
-  mkdir -p "$BATS_TEST_TMPDIR/id/wren"
-  printf '{"agent":"wren"}\n' > "$BATS_TEST_TMPDIR/id/wren/cred.json"
-  chmod 600 "$BATS_TEST_TMPDIR/id/wren/cred.json"
-
-  run env CHORUS_TEST_OS_USER=chorus-wren CHORUS_IDENTITY_DIR="$BATS_TEST_TMPDIR/id" DEPLOY_ROLE=jeff CHORUS_ROLE=wren \
-    "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
-      import { resolveWriterRole } from "./directing/products/cards/src/graph-sync";
-      console.log(resolveWriterRole());
-    '
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [ "$output" = "wren" ]
+check_writer_not_jeff_for_agent() {
+  local acct="$1"
+  local writer="$2"
+  if [[ "$acct" == chorus-* && "$writer" == "jeff" ]]; then
+    echo "VIOLATION: account $acct resolved writer=jeff"
+    return 1
+  fi
+  if [[ "$acct" == chorus-* && "$writer" != "${acct#chorus-}" ]]; then
+    echo "VIOLATION: account $acct resolved writer=$writer instead of ${acct#chorus-}"
+    return 1
+  fi
+  return 0
 }
 
-@test "AC2 NEGATIVE PROOF: from chorus-silas with DEPLOY_ROLE=jeff, the row writer is silas, never jeff (#3734)" {
-  mkdir -p "$BATS_TEST_TMPDIR/id/silas" "$BATS_TEST_TMPDIR/id/jeff"
-  printf '{"agent":"silas"}\n' > "$BATS_TEST_TMPDIR/id/silas/cred.json"
-  printf '{"agent":"jeff"}\n' > "$BATS_TEST_TMPDIR/id/jeff/cred.json"
-
-  run env CHORUS_TEST_OS_USER=chorus-silas CHORUS_IDENTITY_DIR="$BATS_TEST_TMPDIR/id" DEPLOY_ROLE=jeff \
+@test "AC2: cards resolveWriterRole resolves OS role, CHORUS_ROLE env fallback, and automation default" {
+  run env DEPLOY_ROLE=jeff CHORUS_ROLE=wren \
     "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
       import { resolveWriterRole } from "./directing/products/cards/src/graph-sync";
-      import { detectRole } from "./directing/products/cards/src/config";
-      process.env.DEPLOY_ROLE = "borg-queen";
-      const detected = detectRole();
-      process.env.DEPLOY_ROLE = "jeff";
-      console.log(`${resolveWriterRole()}:${detected}`);
+      const fromOs = resolveWriterRole("chorus-wren");
+      const fromEnv = resolveWriterRole("shared-host");
+      delete process.env.DEPLOY_ROLE;
+      delete process.env.CHORUS_ROLE;
+      const fallback = resolveWriterRole("shared-host");
+      console.log(`${fromOs}:${fromEnv}:${fallback}`);
     '
   echo "$output"
   [ "$status" -eq 0 ]
-  [ "$output" = "silas:borg-queen" ]
+  [ "$output" = "wren:wren:automation" ]
+}
+
+@test "AC2 NEGATIVE PROOF: from chorus-silas with DEPLOY_ROLE=jeff, writer is silas and a jeff writer is caught (#3734)" {
+  run env DEPLOY_ROLE=jeff CHORUS_ROLE="" \
+    "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
+      import { resolveWriterRole } from "./directing/products/cards/src/graph-sync";
+      console.log(resolveWriterRole("chorus-silas"));
+    '
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$output" = "silas" ]
+
+  run check_writer_not_jeff_for_agent "chorus-silas" "$output"
+  [ "$status" -eq 0 ]
+
+  # Negative proof (#3734): a naive DEPLOY_ROLE resolver returning "jeff" for chorus-silas fails the check
+  run check_writer_not_jeff_for_agent "chorus-silas" "jeff"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"VIOLATION: account chorus-silas resolved writer=jeff"* ]] || return 1
+}
+
+@test "AC2: detectRole recognizes borg-queen in VALID_ROLES" {
+  run env DEPLOY_ROLE=borg-queen \
+    "$TS_NODE" --transpile-only --project "$ROOT/directing/products/cards/tsconfig.json" -e '
+      import { detectRole } from "./directing/products/cards/src/config";
+      console.log(detectRole());
+    '
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$output" = "borg-queen" ]
 }
 
 @test "AC2: chorus-env-setup.sh derives CHORUS_ROLE=borg-queen and preserves an explicit caller DEPLOY_ROLE=jeff" {
