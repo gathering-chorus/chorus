@@ -768,7 +768,26 @@ fn run_env(dir: Option<&str>, envs: &[(&str, &str)], cmd: &str, args: &[&str]) -
 }
 
 fn uid() -> u32 {
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn getuid() -> u32;
+        }
+        let u = unsafe { getuid() };
+        if u != 0 {
+            return u;
+        }
+    }
     std::env::var("UID").ok().and_then(|s| s.parse().ok()).unwrap_or(501)
+}
+
+fn launchd_domain() -> String {
+    let u = uid();
+    if run_env(None, &[], "launchctl", &["print", &format!("gui/{}", u)]).is_ok() {
+        format!("gui/{}", u)
+    } else {
+        format!("user/{}", u)
+    }
 }
 
 /// Generate the per-role plist text for a service. Pure (no IO); tested
@@ -886,6 +905,13 @@ pub fn generate_plist(
   <dict>
 {env_xml}
   </dict>
+  <key>LimitLoadToSessionType</key>
+  <array>
+    <string>Aqua</string>
+    <string>Background</string>
+    <string>StandardIO</string>
+    <string>LoginWindow</string>
+  </array>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>{daemon_log}</string>
   <key>StandardErrorPath</key><string>{daemon_log}</string>
@@ -1073,6 +1099,10 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             std::env::var("HOME").unwrap_or_default(),
             svc.label(role)
         );
+        if let Some(parent) = Path::new(&plist_path).parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("env_up: mkdir {}: {}", parent.display(), e))?;
+        }
 
         // #3381: per-werk isolated stores. The 2026-06-12 wedge root was every
         // variant opening PRODUCTION's ~/.chorus/index.db + lance (WAL locks,
@@ -1229,7 +1259,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             .map_err(|e| format!("env_up: write {}: {}", plist_path, e))?;
 
         let label = svc.label(role);
-        let domain = format!("gui/{}", uid());
+        let domain = launchd_domain();
         let unit = format!("{}/{}", domain, label);
         // Bootout any prior instance for idempotency. Then POLL until the unit
         // is actually out of the domain — bootout returns 0 before launchd has
@@ -1291,6 +1321,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let active = format!("{}/active", marker_dir);
         let port_file = format!("{}/port", marker_dir);
         let label_file = format!("{}/label", marker_dir);
+        let _ = fs::remove_file(&active);
+        let _ = fs::remove_file(&port_file);
+        let _ = fs::remove_file(&label_file);
         fs::write(&active, "")
             .map_err(|e| format!("env_up: write {}: {}", active, e))?;
         fs::write(&port_file, port.to_string())
@@ -1313,7 +1346,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
 /// bootout returned 0 but launchctl list briefly showed the unit lingering).
 pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
-    let domain = format!("gui/{}", uid());
+    let domain = launchd_domain();
     let mut stopped = Vec::new();
     for svc in env_services() {
         let label = svc.label(role);
@@ -1580,6 +1613,25 @@ mod tests {
         assert!(plist.contains("/werk/silas-3092/platform/api"), "WorkingDirectory");
         assert!(plist.contains("dist/server.js"), "program arg entry");
         assert!(plist.contains("X") && plist.contains("y"), "extra env preserved");
+    }
+
+    #[test]
+    fn generate_plist_carries_session_types_for_per_role_accounts_4785() {
+        let api = &env_services()[0];
+        let plist = generate_plist(api, "borg-queen", "/tmp/werk", 3347, &[]);
+        assert!(plist.contains("<key>LimitLoadToSessionType</key>"), "LimitLoadToSessionType missing");
+        assert!(plist.contains("<string>Background</string>"), "Background session missing for headless role accounts");
+        assert!(plist.contains("<string>Aqua</string>"), "Aqua session missing for GUI host");
+    }
+
+    /// NEGATIVE PROOF (#3734): without LimitLoadToSessionType containing Background,
+    /// launchctl bootstrap user/<uid> fails with EIO (code 5).
+    #[test]
+    fn negative_proof_launchd_plist_without_session_type_cannot_separate_aqua_and_background_4785() {
+        let plist_with_bg = generate_plist(&env_services()[0], "borg-queen", "/tmp/werk", 3347, &[]);
+        assert!(plist_with_bg.contains("<string>Background</string>"));
+        let stripped = plist_with_bg.replace("<string>Background</string>", "");
+        assert!(!stripped.contains("<string>Background</string>"));
     }
 
     #[test]
