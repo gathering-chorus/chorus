@@ -40,10 +40,9 @@ fn hook_shim_allows_cards_done_without_hook_gate() {
     if let Ok(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR") {
         cmd.env("CHORUS_HOOKS_RUN_DIR", dir);
     } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".into());
-        let agents_sock = format!("{}/.chorus/run-agents/chorus-hooks.sock", home);
+        let agents_sock = format!("{}-agents/chorus-hooks.sock", chorus_hooks::shared::state_paths::hook_run_dir());
         if std::path::Path::new(&agents_sock).exists() {
-            cmd.env("CHORUS_HOOKS_RUN_DIR", format!("{}/.chorus/run-agents", home));
+            cmd.env("CHORUS_HOOKS_RUN_DIR", format!("{}-agents", chorus_hooks::shared::state_paths::hook_run_dir()));
         }
     }
 
@@ -67,10 +66,6 @@ fn hook_shim_allows_cards_done_without_hook_gate() {
             }
         });
         let stdout = String::from_utf8_lossy(&result.stdout);
-        if stdout.contains("daemon unreachable") {
-            eprintln!("SKIP: chorus-hooks daemon unreachable in test environment");
-            return;
-        }
         // After #2270: hook must NOT contain a deny decision for cards done
         assert!(
             !stdout.contains("\"deny\"") && !stdout.contains("Demo gate"),
