@@ -13,7 +13,6 @@
  * and in the spine (card.graph.sync_failed), and the reconcile pass repairs it.
  */
 import { execFileSync } from 'child_process';
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { BoardTask } from './types';
@@ -96,13 +95,10 @@ function accountRoleFromOs(): string {
 export function resolveWriterRole(): string {
   const acctRole = accountRoleFromOs();
   if (acctRole) return acctRole;
-  const home = process.env.HOME ? process.env.HOME : os.homedir();
-  const idDir = process.env.CHORUS_IDENTITY_DIR ? process.env.CHORUS_IDENTITY_DIR : path.join(home, '.chorus/identity');
-  const deploy = (process.env.DEPLOY_ROLE ? process.env.DEPLOY_ROLE : '').toLowerCase();
   const chorusRole = (process.env.CHORUS_ROLE ? process.env.CHORUS_ROLE : '').toLowerCase();
-  const candidates = [deploy, chorusRole].filter(Boolean);
-  const withCred = candidates.find((r) => fs.existsSync(path.join(idDir, r, 'cred.json')));
-  if (withCred) return withCred;
+  const deploy = (process.env.DEPLOY_ROLE ? process.env.DEPLOY_ROLE : '').toLowerCase();
+  if (deploy === 'jeff' && chorusRole && chorusRole !== 'jeff') return chorusRole;
+  if (deploy) return deploy;
   return chorusRole ? chorusRole : 'wren';
 }
 

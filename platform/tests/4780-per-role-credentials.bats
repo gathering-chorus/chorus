@@ -1,12 +1,11 @@
 #!/usr/bin/env bats
-# @test-type: contract
+# @test-type: contract — signal:api is local door read for live agent hostAccount check
 # @domain: identity — per-role account credentials and cross-account resolution (#4780 Slice 1)
 
 load test_helper
 
 setup() {
   ROOT="$CHORUS_ROOT"
-  PRINCIPALS="$ROOT/roles/silas/ontology/identity-principals-3613.ttl"
   SECRET_CUSTODY="$ROOT/platform/security/probes.d/secret-custody.sh"
   ENV_SETUP="$ROOT/platform/scripts/chorus-env-setup.sh"
   TS_NODE="$ROOT/directing/products/cards/node_modules/.bin/ts-node"
@@ -16,22 +15,21 @@ setup() {
   fi
 }
 
-check_agent_host_accounts() {
+check_agent_host_accounts_json() {
   python3 - "$1" <<'PY'
-import re, sys
-text = open(sys.argv[1]).read()
-text = re.sub(r'(?m)^\s*#.*$', '', text)
-blocks = {m.group(1): m.group(2) for m in re.finditer(r'(?ms)^chorus:(principal-[\w-]+) a ([^.]*?(?:"[^"]*"[^.]*?)*)\.\s*$', text)}
+import json, sys
+rows = json.load(open(sys.argv[1])).get("data", [])
+agents = [r for r in rows if r.get("principalKind") == "agent"]
+if len(agents) < 5:
+    print(f"expected at least 5 agent principals, got {len(agents)}")
+    sys.exit(1)
 bad = []
-for name, body in sorted(blocks.items()):
-    if 'principalKind "agent"' not in body:
-        continue
-    role = name.replace("principal-", "")
-    want = f'chorus-{role}'
-    m = re.search(r'hostAccount "([^"]+)"', body)
-    got = m.group(1) if m else None
+for r in sorted(agents, key=lambda x: x.get("name", "")):
+    role = r.get("name", "").replace("principal-", "")
+    want = f"chorus-{role}"
+    got = r.get("hostAccount")
     if got != want:
-        bad.append(f"{name}: expected hostAccount {want!r}, got {got!r}")
+        bad.append(f"principal-{role}: expected hostAccount {want!r}, got {got!r}")
 if bad:
     print("\n".join(bad))
     sys.exit(1)
@@ -39,15 +37,18 @@ print("ok")
 PY
 }
 
-@test "AC1: every agent principal in identity-principals-3613.ttl binds hostAccount chorus-<role>" {
-  run check_agent_host_accounts "$PRINCIPALS"
+@test "AC1: every agent principal in the live identity store binds hostAccount chorus-<role>" {
+  curl -sf "http://127.0.0.1:3360/v1/identity/principals?limit=50" > "$BATS_TEST_TMPDIR/principals.json"
+  run check_agent_host_accounts_json "$BATS_TEST_TMPDIR/principals.json"
   echo "$output"
   [ "$status" -eq 0 ]
 }
 
 @test "AC1 NEGATIVE PROOF: an agent principal bound to jeffbridwell fails the hostAccount check (#3734)" {
-  sed 's/hostAccount "chorus-wren"/hostAccount "jeffbridwell"/' "$PRINCIPALS" > "$BATS_TEST_TMPDIR/bad-principals.ttl"
-  run check_agent_host_accounts "$BATS_TEST_TMPDIR/bad-principals.ttl"
+  curl -sf "http://127.0.0.1:3360/v1/identity/principals?limit=50" \
+    | sed 's/"hostAccount":"chorus-wren"/"hostAccount":"jeffbridwell"/; s/"hostAccount": "chorus-wren"/"hostAccount": "jeffbridwell"/' \
+    > "$BATS_TEST_TMPDIR/bad-principals.json"
+  run check_agent_host_accounts_json "$BATS_TEST_TMPDIR/bad-principals.json"
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"principal-wren: expected hostAccount 'chorus-wren', got 'jeffbridwell'"* ]] || return 1
