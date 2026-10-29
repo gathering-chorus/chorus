@@ -83,24 +83,35 @@ setup() {
   [[ "$output" == *"missing skill: cw"* ]] || return 1
 }
 
-@test "AC4: shim.rs extracts conversation UUID for Antigravity transcripts, index-all-sources.ts covers all 5 roles, and borg-queen welcome search returns 2026-10-23" {
+@test "AC4: shim.rs extracts conversation UUID for Antigravity transcripts, provides idempotent session-backfill under the caller's token, and borg-queen welcome search returns 2026-10-23" {
   run grep -q 'antigravity_session_id' "$ROOT/platform/services/chorus-hooks/src/shim.rs"
   [ "$status" -eq 0 ]
 
-  run grep -q "'borg-queen'" "$ROOT/platform/api/src/index-all-sources.ts"
+  run grep -q '"session-backfill" =>' "$ROOT/platform/services/chorus-hooks/src/shim.rs"
   [ "$status" -eq 0 ]
-  run grep -q "'abby-normal'" "$ROOT/platform/api/src/index-all-sources.ts"
+  run grep -q 'extract_backfill_turns' "$ROOT/platform/services/chorus-hooks/src/shim.rs"
   [ "$status" -eq 0 ]
-  run grep -q 'antigravity-cli/brain' "$ROOT/platform/api/src/index-all-sources.ts"
+  run grep -q '{role}:{session_id}:{turn_idx}' "$ROOT/platform/services/chorus-hooks/src/shim.rs"
   [ "$status" -eq 0 ]
 
   run curl -sf "http://localhost:3340/api/chorus/search?q=welcome&channel=session:borg-queen&order=oldest&limit=1"
   echo "$output"
   [ "$status" -eq 0 ]
   [[ "$output" == *"2026-10-23"* ]] || return 1
+
+  # Idempotency check: re-pushing the same source_id turn under borg-queen's token inserts 0 duplicate rows
+  local token
+  token="$("$ROOT/platform/scripts/chorus-identity-token" borg-queen)"
+  run curl -sf -X POST "http://localhost:3340/api/chorus/session/turns" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{"role":"borg-queen","source":"antigravity","session_id":"c20fed59-2575-431e-92d5-33b4939ba2e4","turns":[{"author":"user","content":"<USER_REQUEST>\nhi borg-queen welcome!\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-10-23T09:04:23-04:00.\n</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Gemini 4 Argon (Medium). No need to comment on this change if the user doesn'\''t ask about it. If reporting what model you are, please use a human readable name instead of the exact string.\n</USER_SETTINGS_CHANGE>","timestamp":"2026-10-23T13:04:23Z","source":"antigravity","source_id":"antigravity:c20fed59-2575-431e-92d5-33b4939ba2e4:step0","session_id":"c20fed59-2575-431e-92d5-33b4939ba2e4"}]}'
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"inserted":0'* ]] || return 1
 }
 
-@test "AC4 NEGATIVE PROOF: session ID extractor rejects bare transcript stem for Antigravity paths (#3734)" {
+@test "AC4 NEGATIVE PROOF: session ID extractor rejects bare transcript stem and cross-role session turn push is refused (#4779, #3734)" {
   run python3 - "$ROOT/platform/services/chorus-hooks/src/shim.rs" <<'PY'
 import pathlib, sys
 src = pathlib.Path(sys.argv[1]).read_text()
@@ -114,4 +125,15 @@ print("ok")
 PY
   echo "$output"
   [ "$status" -eq 0 ]
+
+  # Negative proof (#4779, #3734): borg-queen's token pushing a turn claiming role=wren is refused with HTTP 403
+  local token http_code
+  token="$("$ROOT/platform/scripts/chorus-identity-token" borg-queen)"
+  http_code="$(curl -s -o "$BATS_TEST_TMPDIR/refusal.json" -w "%{http_code}" -X POST "http://localhost:3340/api/chorus/session/turns" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{"role":"wren","source":"antigravity","session_id":"neg-test","turns":[{"author":"assistant","content":"forged turn"}]}')"
+  echo "http_code=$http_code body=$(cat "$BATS_TEST_TMPDIR/refusal.json")"
+  [ "$http_code" = "403" ] || [ "$http_code" = "401" ]
+  grep -Eq 'not-your-lane|authn-missing' "$BATS_TEST_TMPDIR/refusal.json"
 }

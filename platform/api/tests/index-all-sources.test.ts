@@ -333,7 +333,7 @@ describe('createIndexAllSources', () => {
     const { ctor } = fakeDbFactory();
     // Every knowledge source present: briefs/decisions/adrs/memory dirs + docs.
     const fs = {
-      existsSync: (p: string) => !p.includes('.gemini/antigravity-cli'),
+      existsSync: () => true,
       readdirSync: jest.fn((p: string) => {
         if (p.endsWith('.claude/projects')) return ['chorus-x'];
         if (p.endsWith('memory')) return ['m.md'];
@@ -366,42 +366,5 @@ describe('createIndexAllSources', () => {
     expect(r.indexed.slack).toBe('removed (deprecated)');
     const slackSqls = runs.filter(e => e.sql.includes('DELETE FROM watermarks'));
     expect(slackSqls.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('indexes briefs, state, and antigravity sessions across all 5 roles including abby-normal and borg-queen (#4785)', async () => {
-    const { ctor, runs } = fakeDbFactory();
-    const agLines = [
-      JSON.stringify({ step_index: 0, type: 'USER_INPUT', content: 'hi borg-queen welcome to chorus!', created_at: '2026-10-23T15:24:38Z' }),
-      JSON.stringify({ step_index: 1, type: 'PLANNER_RESPONSE', content: '--- Borg Queen | 2026-10-23 11:24 Boston | #none | Werk v1.10.0 ---', created_at: '2026-10-23T15:25:01Z' }),
-    ].join('\n');
-    const fs = {
-      existsSync: (p: string) =>
-        p === '/r/roles/borg-queen/briefs' ||
-        p === '/r/roles/abby-normal/next-session.md' ||
-        p === '/Users/chorus-borg-queen/.gemini/antigravity-cli/brain' ||
-        p === '/Users/chorus-borg-queen/.gemini/antigravity-cli/brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl',
-      readdirSync: jest.fn((p: string) => {
-        if (p === '/r/roles/borg-queen/briefs') return ['welcome.md'];
-        if (p === '/Users/chorus-borg-queen/.gemini/antigravity-cli/brain') return ['c20fed59-2575-431e-92d5-33b4939ba2e4', 'transcript'];
-        return [];
-      }),
-      readFileSync: jest.fn((p: string) => (p.endsWith('transcript.jsonl') ? agLines : 'role content')),
-      statSync: jest.fn(() => ({ mtime: { toISOString: () => '2026-10-23T15:24:38Z' } })),
-    };
-    const run = createIndexAllSources({
-      dbPath: '/db', DatabaseCtor: ctor as any,
-      fs: fs as any, path: FAKE_PATH as any,
-      repoRoot: '/r', homedir: () => '/h',
-    });
-    const r = await run();
-    expect(r.indexed.briefs).toBe('1 briefs indexed');
-    expect(r.indexed.state).toBe('1 state files indexed');
-    expect(r.indexed['antigravity-sessions']).toBe('2 antigravity turns indexed');
-    const agRows = runs.filter(e => e.sql.includes('INTO messages') && e.args[0] === 'antigravity');
-    expect(agRows).toHaveLength(2);
-    expect(agRows[0].args[1]).toBe('antigravity:c20fed59-2575-431e-92d5-33b4939ba2e4:step0');
-    expect(agRows[0].args[2]).toBe('session:borg-queen');
-    // Negative proof (#3734): literal 'transcript' directory is refused
-    expect(agRows.some(x => String(x.args[1]).includes(':transcript:'))).toBe(false);
   });
 });

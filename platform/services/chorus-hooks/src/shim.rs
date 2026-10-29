@@ -261,6 +261,200 @@ fn role_cred_path(id_dir: Option<&str>, home: &str, role: &str) -> std::path::Pa
     base.join(role).join("cred.json")
 }
 
+/// #4779 / #4785 — Obtain the caller's verified ES256 JWT from `cred.json`.
+fn token_for_role(role: &str, home: &str) -> Option<String> {
+    let cred_path = role_cred_path(std::env::var("CHORUS_IDENTITY_DIR").ok().as_deref(), home, role);
+    let explicit_url = std::env::var("CHORUS_SESSION_TURN_PUSH_URL").ok().filter(|s| !s.is_empty());
+    if !cred_path.exists() && explicit_url.is_none() {
+        return None;
+    }
+    let script = format!("{}/platform/scripts/chorus-identity-token", shared::state_paths::chorus_root());
+    std::process::Command::new(&script)
+        .arg(role)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(crate::shared::role::session_token_from_env)
+}
+
+/// #4785 — Extract idempotent session turn rows from a transcript file (`transcript.jsonl`
+/// for Antigravity or `<session-uuid>.jsonl` for Claude). Each row's `source_id` is
+/// `<role>:<session_id>:<turn_index>` so re-running `session-backfill` is idempotent
+/// (`INSERT OR IGNORE` on `source_id UNIQUE` never duplicates turns).
+fn extract_backfill_turns(role: &str, path: &std::path::Path, content: &str) -> Vec<serde_json::Value> {
+    let path_str = path.to_string_lossy();
+    let is_ag = path_str.contains(".system_generated/logs/")
+        || path.file_stem().and_then(|s| s.to_str()).is_some_and(|s| s == "transcript" || s == "transcript_full");
+    let Some(session_id) = antigravity_session_id(&path_str) else {
+        return Vec::new();
+    };
+    let source = if is_ag { "antigravity" } else { "claude" };
+    let mut turns = Vec::new();
+    let mut turn_idx = 0usize;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(rec) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let (author, text, ts) = if is_ag {
+            let rec_type = rec.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let author = match rec_type {
+                "USER_INPUT" => "user",
+                "PLANNER_RESPONSE" => "assistant",
+                _ => continue,
+            };
+            let text = rec.get("content").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let ts = rec.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            (author, text, ts)
+        } else {
+            let rec_type = rec.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let author = match rec_type {
+                "user" => "user",
+                "assistant" => "assistant",
+                _ => continue,
+            };
+            let msg = rec.get("message");
+            let text = match msg.and_then(|m| m.get("content")) {
+                Some(serde_json::Value::String(s)) => s.trim().to_string(),
+                Some(serde_json::Value::Array(arr)) => arr
+                    .iter()
+                    .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                    .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string(),
+                _ => continue,
+            };
+            let ts = rec
+                .get("timestamp")
+                .or_else(|| msg.and_then(|m| m.get("created")))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            (author, text, ts)
+        };
+        if text.len() < 5 {
+            continue;
+        }
+        if author == "user" && (text.starts_with("[alert for ") || text.starts_with("[alert → ")) {
+            continue;
+        }
+        let clipped = if text.chars().count() > 5000 {
+            let s: String = text.chars().take(5000).collect();
+            format!("{s}... [truncated]")
+        } else {
+            text
+        };
+        let source_id = format!("{role}:{session_id}:{turn_idx}");
+        turn_idx += 1;
+        turns.push(serde_json::json!({
+            "author": author,
+            "content": clipped,
+            "timestamp": ts,
+            "source": source,
+            "source_id": source_id,
+            "session_id": session_id,
+        }));
+    }
+    turns
+}
+
+/// #4785 — `chorus-hook-shim session-backfill [role]`: push the caller's own `$HOME`
+/// session transcripts (Claude `.claude/projects/*/*.jsonl` + Antigravity
+/// `.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl`) to
+/// `POST /api/chorus/session/turns` authenticated by the caller's own CSS ES256 token.
+fn session_backfill_cmd(args: &[String]) -> ExitCode {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let role = args
+        .first()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("CHORUS_ROLE").ok().filter(|s| !s.trim().is_empty()));
+    let Some(role) = role else {
+        eprintln!("Usage: chorus-hook-shim session-backfill <role>");
+        return ExitCode::from(1);
+    };
+    let Some(cred) = token_for_role(&role, &home) else {
+        eprintln!("session-backfill: no credential token available for role '{role}'");
+        return ExitCode::from(1);
+    };
+    let url = std::env::var("CHORUS_SESSION_TURN_PUSH_URL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:3340/api/chorus/session/turns".to_string());
+
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    let ag_brain = std::path::Path::new(&home).join(".gemini/antigravity-cli/brain");
+    if let Ok(entries) = std::fs::read_dir(&ag_brain) {
+        for e in entries.flatten() {
+            let p = e.path().join(".system_generated/logs/transcript.jsonl");
+            if p.is_file() {
+                files.push(p);
+            }
+        }
+    }
+    let claude_proj = std::path::Path::new(&home).join(".claude/projects");
+    if let Ok(proj_dirs) = std::fs::read_dir(&claude_proj) {
+        for d in proj_dirs.flatten() {
+            let dp = d.path();
+            let dname = dp.to_string_lossy();
+            if !dp.is_dir() || dname.contains("subagents") || dname.contains("test-project") || dname.contains("-var-") {
+                continue;
+            }
+            if let Ok(jfiles) = std::fs::read_dir(&dp) {
+                for jf in jfiles.flatten() {
+                    let jp = jf.path();
+                    if jp.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                        files.push(jp);
+                    }
+                }
+            }
+        }
+    }
+    files.sort();
+
+    let mut files_pushed = 0usize;
+    let mut turns_inserted = 0usize;
+    for path in files {
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let turns = extract_backfill_turns(&role, &path, &raw);
+        if turns.is_empty() {
+            continue;
+        }
+        files_pushed += 1;
+        let session_id = turns[0].get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let source = turns[0].get("source").and_then(|v| v.as_str()).unwrap_or("claude").to_string();
+        for chunk in turns.chunks(50) {
+            let payload = serde_json::json!({
+                "role": role,
+                "source": source,
+                "session_id": session_id,
+                "turns": chunk,
+            });
+            if let Ok(resp) = ureq::post(&url)
+                .timeout(std::time::Duration::from_secs(10))
+                .set("Authorization", &format!("Bearer {}", cred.trim()))
+                .send_json(payload)
+            {
+                if let Ok(body) = resp.into_json::<serde_json::Value>() {
+                    turns_inserted += body.get("inserted").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                }
+            }
+        }
+    }
+    println!("session-backfill ({role}): {files_pushed} files scanned, {turns_inserted} new turns inserted");
+    ExitCode::SUCCESS
+}
+
 /// #4779 — Push the caller's own session turn authenticated by its verified CSS
 /// credential. Runs best-effort inside the role's own macOS user process.
 fn push_session_turn_best_effort(endpoint: &str, input: &str) {
@@ -281,25 +475,13 @@ fn push_session_turn_best_effort(endpoint: &str, input: &str) {
         return;
     };
     let home = std::env::var("HOME").unwrap_or_default();
-    let cred_path = role_cred_path(std::env::var("CHORUS_IDENTITY_DIR").ok().as_deref(), &home, &role);
-    let explicit_url = std::env::var("CHORUS_SESSION_TURN_PUSH_URL").ok().filter(|s| !s.is_empty());
-    if !cred_path.exists() && explicit_url.is_none() {
-        return;
-    }
-    let script = format!("{}/platform/scripts/chorus-identity-token", shared::state_paths::chorus_root());
-    let cred = std::process::Command::new(&script)
-        .arg(&role)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(crate::shared::role::session_token_from_env);
-    let Some(cred) = cred else {
+    let Some(cred) = token_for_role(&role, &home) else {
         return;
     };
-    let url = explicit_url.unwrap_or_else(|| "http://localhost:3340/api/chorus/session/turns".to_string());
+    let url = std::env::var("CHORUS_SESSION_TURN_PUSH_URL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:3340/api/chorus/session/turns".to_string());
     let _ = ureq::post(&url)
         .timeout(std::time::Duration::from_millis(1500))
         .set("Authorization", &format!("Bearer {}", cred.trim()))
@@ -400,6 +582,21 @@ mod inject_trace_id_tests {
         assert_eq!(ag["session_id"], "c20fed59-2575-431e-92d5-33b4939ba2e4");
         assert_ne!(ag["session_id"], "transcript", "NEGATIVE (#3734): session_id must never be literal 'transcript'");
         assert!(antigravity_session_id("/tmp/transcript.jsonl").is_none(), "NEGATIVE (#3734): bare transcript.jsonl without brain parent dir returns None");
+
+        // #4785: extract_backfill_turns produces deterministic <role>:<session_id>:<turn_idx> source_id (idempotent on rerun)
+        let ag_path = std::path::Path::new("/Users/chorus-borg-queen/.gemini/antigravity-cli/brain/c20fed59-2575-431e-92d5-33b4939ba2e4/.system_generated/logs/transcript.jsonl");
+        let ag_content = concat!(
+            r#"{"step_index":0,"type":"USER_INPUT","content":"hi borg-queen welcome!","created_at":"2026-10-23T13:04:23Z"}"#, "\n",
+            r#"{"step_index":1,"type":"PLANNER_RESPONSE","content":"--- Borg Queen | 2026-10-23 09:04 Boston ---","created_at":"2026-10-23T13:04:30Z"}"#, "\n"
+        );
+        let run1 = extract_backfill_turns("borg-queen", ag_path, ag_content);
+        let run2 = extract_backfill_turns("borg-queen", ag_path, ag_content);
+        assert_eq!(run1, run2, "backfill extraction must be idempotent across runs");
+        assert_eq!(run1.len(), 2);
+        assert_eq!(run1[0]["source_id"], "borg-queen:c20fed59-2575-431e-92d5-33b4939ba2e4:0");
+        assert_eq!(run1[1]["source_id"], "borg-queen:c20fed59-2575-431e-92d5-33b4939ba2e4:1");
+        let bare = extract_backfill_turns("borg-queen", std::path::Path::new("/tmp/transcript.jsonl"), ag_content);
+        assert!(bare.is_empty(), "NEGATIVE (#3734): bare transcript.jsonl must not produce turns with session_id='transcript'");
     }
 
     #[test]
@@ -686,6 +883,8 @@ fn main() -> ExitCode {
         "wall-clock" => return wall_clock_cmd(),
         // #4426 — the boot transcript read, without replaying a flagged conversation.
         "boot-read" => return commands::context_cache::boot_read(&args),
+        // #4785 — backfill the caller's own $HOME session history via its verified token.
+        "session-backfill" => return session_backfill_cmd(&args),
         "heartbeat" => return heartbeat_cmd(),
         // #4515 — clearing-nudge's Skill row runs this, as the verified caller.
         "nudge-send" => return nudge_send_cmd(&args),
