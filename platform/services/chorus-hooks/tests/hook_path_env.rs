@@ -52,13 +52,17 @@ fn accept_gate_cards_view_passes_with_path() {
     ];
     let mut last_err = String::new();
     for cards in &candidates {
-        let output = Command::new("bash")
-            .args([cards, "view", "1992"])
+        let state_dir = std::env::var("CHORUS_STATE_DIR").unwrap_or_else(|_| format!("{}/.chorus", home()));
+        let mut cmd = Command::new("bash");
+        cmd.args([cards, "view", "1992"])
             .env("CHORUS_ROOT", chorus_root())
             .env("HOME", home())
-            .env("PATH", full_path())
-            .output()
-            .expect("failed to run cards");
+            .env("CHORUS_STATE_DIR", &state_dir)
+            .env("PATH", full_path());
+        if let Ok(tok) = std::fs::read_to_string(format!("{}/secrets/vikunja.token", state_dir)) {
+            cmd.env("VIKUNJA_TOKEN", tok.trim());
+        }
+        let output = cmd.output().expect("failed to run cards");
         if output.status.success() {
             return;
         }

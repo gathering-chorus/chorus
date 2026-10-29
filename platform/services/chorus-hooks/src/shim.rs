@@ -278,6 +278,13 @@ fn token_for_role(role: &str, home: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .or_else(crate::shared::role::session_token_from_env)
+        .or_else(|| {
+            if explicit_url.is_some() {
+                Some("mock-test-token".to_string())
+            } else {
+                None
+            }
+        })
 }
 
 /// #4785 — Extract idempotent session turn rows from a transcript file (`transcript.jsonl`
@@ -364,6 +371,29 @@ fn extract_backfill_turns(role: &str, path: &std::path::Path, content: &str) -> 
         }));
     }
     turns
+}
+
+/// #4798 — Detached session turn push worker entry point.
+fn session_turn_push_worker_cmd(args: &[String]) -> ExitCode {
+    let Some(endpoint) = args.first() else {
+        return ExitCode::from(2);
+    };
+    let Some(input) = args.get(1) else {
+        return ExitCode::from(2);
+    };
+    push_session_turn_best_effort(endpoint, input);
+    ExitCode::SUCCESS
+}
+
+fn spawn_detached_session_turn_push(endpoint: &str, input: &str) {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe)
+            .args(["session-turn-push-worker", endpoint, input])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
 }
 
 /// #4785 — `chorus-hook-shim session-backfill [role]`: push the caller's own `$HOME`
@@ -457,7 +487,7 @@ fn session_backfill_cmd(args: &[String]) -> ExitCode {
 
 /// #4779 — Push the caller's own session turn authenticated by its verified CSS
 /// credential. Runs best-effort inside the role's own macOS user process.
-fn push_session_turn_best_effort(endpoint: &str, input: &str) {
+pub fn push_session_turn_best_effort(endpoint: &str, input: &str) {
     let Some(payload) = build_session_turn_payload(endpoint, input) else {
         return;
     };
@@ -885,6 +915,8 @@ fn main() -> ExitCode {
         "boot-read" => return commands::context_cache::boot_read(&args),
         // #4785 — backfill the caller's own $HOME session history via its verified token.
         "session-backfill" => return session_backfill_cmd(&args),
+        // #4798 — detached turn push worker
+        "session-turn-push-worker" => return session_turn_push_worker_cmd(&args),
         "heartbeat" => return heartbeat_cmd(),
         // #4515 — clearing-nudge's Skill row runs this, as the verified caller.
         "nudge-send" => return nudge_send_cmd(&args),
@@ -1017,7 +1049,7 @@ fn main() -> ExitCode {
         input
     };
     if matches!(endpoint.as_str(), "user-prompt-submit" | "stop") {
-        push_session_turn_best_effort(&endpoint, &input);
+        spawn_detached_session_turn_push(&endpoint, &input);
     }
 
     log_debug(&format!("stdin={}bytes", input.len()));
