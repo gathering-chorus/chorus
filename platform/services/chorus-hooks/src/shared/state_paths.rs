@@ -127,8 +127,25 @@ pub fn hook_socket_durable() -> String {
 /// world-writable path this fix exists to abandon; better to refuse to start
 /// than to silently run the guard daemon's socket in a world-writable dir.
 pub fn hook_run_dir() -> String {
+    if let Some(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR").ok().filter(|s| !s.trim().is_empty()) {
+        assert!(
+            dir.starts_with('/'),
+            "chorus-hooks: CHORUS_HOOKS_RUN_DIR must be an absolute path, got {dir:?}",
+        );
+        return dir.trim_end_matches('/').to_string();
+    }
+    // #4785 — under multi-account setup (ADR-065), caller may run as a non-host
+    // account (e.g. chorus-borg-queen, chorus-silas). The shared daemon socket lives
+    // under CHORUS_STATE_DIR/run-agents (exported from env-setup / graph property, #4774).
+    if let Some(state_dir) = std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.trim().is_empty()) {
+        assert!(
+            state_dir.starts_with('/'),
+            "chorus-hooks: CHORUS_STATE_DIR must be an absolute path, got {state_dir:?}",
+        );
+        return format!("{}/run-agents", state_dir.trim_end_matches('/'));
+    }
     run_dir_from(
-        std::env::var("CHORUS_HOOKS_RUN_DIR").ok().as_deref(),
+        None,
         std::env::var("HOME").ok().as_deref(),
     )
 }

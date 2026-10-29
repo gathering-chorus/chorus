@@ -41,9 +41,10 @@ fn hook_check(tool: &str, input: serde_json::Value) -> String {
     if let Ok(state_dir) = std::env::var("CHORUS_STATE_DIR") {
         cmd.env("CHORUS_STATE_DIR", state_dir);
     }
-    if let Ok(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR") {
-        cmd.env("CHORUS_HOOKS_RUN_DIR", dir);
-    }
+    let hooks_run_dir = std::env::var("CHORUS_HOOKS_RUN_DIR").unwrap_or_else(|_| {
+        format!("{}/run-agents", chorus_hooks::shared::state_paths::chorus_state_dir().trim_end_matches('/'))
+    });
+    cmd.env("CHORUS_HOOKS_RUN_DIR", hooks_run_dir);
 
     let output = cmd
         .stdin(std::process::Stdio::piped())
