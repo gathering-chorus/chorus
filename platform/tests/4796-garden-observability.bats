@@ -64,3 +64,10 @@ need_script() {
   echo "$output"
   [ "$status" -eq 0 ]
 }
+
+@test "AC6: the phone page serves the season through the garden API, and says so when the API is down" {
+  need_script check-page.sh
+  run "$GARDEN_REPO/designing/tests/check-page.sh"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
