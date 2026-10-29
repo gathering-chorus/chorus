@@ -22,11 +22,10 @@ fn hook_run_dir_resolves_deterministic_fallback_when_env_unset() {
     std::env::set_var("CHORUS_HOOKS_RUN_DIR", "/tmp/custom-run-dir");
     assert_eq!(chorus_hooks::shared::state_paths::hook_run_dir(), "/tmp/custom-run-dir");
 
-    // 2. Without socket and without override, falls back to home/.chorus/run
+    // 2. With CHORUS_STATE_DIR, resolves to state_dir/run-agents
     std::env::remove_var("CHORUS_HOOKS_RUN_DIR");
-    std::env::set_var("CHORUS_STATE_DIR", "/tmp/nonexistent-state-dir-for-test");
-    std::env::set_var("HOME", "/Users/testuser");
-    assert_eq!(chorus_hooks::shared::state_paths::hook_run_dir(), "/Users/testuser/.chorus/run");
+    std::env::set_var("CHORUS_STATE_DIR", "/tmp/custom-state-dir");
+    assert_eq!(chorus_hooks::shared::state_paths::hook_run_dir(), "/tmp/custom-state-dir/run-agents");
 
     // Restore
     match prev_run_dir {

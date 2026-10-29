@@ -37,6 +37,9 @@ fn hook_shim_allows_cards_done_without_hook_gate() {
         .env("CHORUS_ROOT", chorus_root())
         .env("HOME", std::env::var("HOME").unwrap_or_default());
 
+    if let Ok(state_dir) = std::env::var("CHORUS_STATE_DIR") {
+        cmd.env("CHORUS_STATE_DIR", state_dir);
+    }
     if let Ok(dir) = std::env::var("CHORUS_HOOKS_RUN_DIR") {
         cmd.env("CHORUS_HOOKS_RUN_DIR", dir);
     } else {
