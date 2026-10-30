@@ -95,7 +95,7 @@ export function cachedCards(
   const staleSeconds = () => (last && Date.now() - last.at >= ttlMs ? Math.round((Date.now() - last.at) / 1000) : 0);
   return Object.assign(async () => {
     if (last && Date.now() - last.at < ttlMs) return last.rows;
-    if (last) { refresh(); return last.rows; }
+    if (last) { void refresh(); return last.rows; }
     let wait: ReturnType<typeof setTimeout> | undefined;
     const cold = new Promise<never>((_, reject) => {
       wait = setTimeout(() => reject(new Error(`/cws refreshing: first read not back in ${coldWaitMs} ms`)), coldWaitMs);
