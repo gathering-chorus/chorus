@@ -90,48 +90,22 @@ setup() {
 
 # --- AC2: Role on its own account can kickstart, load, and retire owned com.chorus.* LaunchAgents via narrow ops helper ---
 
-@test "AC2: Role on its own account can kickstart, load, and retire owned com.chorus.* LaunchAgents via launchagent-ops" {
-  MOCK_LOG="$T/mock-launchctl.log"
-  MOCK_BIN="$T/mock-launchctl.sh"
-  cat << EOF > "$MOCK_BIN"
-#!/bin/sh
-echo "\$@" >> "$MOCK_LOG"
-exit 0
-EOF
-  chmod +x "$MOCK_BIN"
-
-  # Silas owns com.chorus.api and com.chorus.clearing
-  CHORUS_TEST_ACCOUNT_OVERRIDE="chorus-silas" LAUNCHCTL_BIN="$MOCK_BIN" \
-    bash "$ROOT/platform/scripts/launchagent-ops" kickstart com.chorus.api
-
-  CHORUS_TEST_ACCOUNT_OVERRIDE="chorus-silas" LAUNCHCTL_BIN="$MOCK_BIN" \
-    bash "$ROOT/platform/scripts/launchagent-ops" retire com.chorus.api
-
-  CHORUS_TEST_ACCOUNT_OVERRIDE="chorus-silas" LAUNCHCTL_BIN="$MOCK_BIN" \
-    bash "$ROOT/platform/scripts/launchagent-ops" load com.chorus.api
-
-  grep -q "kickstart -k .*/com.chorus.api" "$MOCK_LOG" || return 1
-  grep -q "bootout .*/com.chorus.api" "$MOCK_LOG" || return 1
-  grep -q "bootstrap .*com.chorus.api.plist" "$MOCK_LOG" || return 1
+@test "AC2: chorus-hooks daemon socket launchagent_ops enforces graph ownedBy" {
+  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks launchagent_ops_tests::negative_proof_launchagent_ops_refuses_unowned_or_mismatched_role
 }
 
-@test "AC2 NEGATIVE PROOF (#3734): an unowned LaunchAgent label is refused" {
-  run bash "$ROOT/platform/scripts/launchagent-ops" kickstart com.chorus.nonexistent-service-1234
-  test "$status" -ne 0 || return 1
-  [[ "$output" =~ "REFUSED" ]] || return 1
-  [[ "$output" =~ "unowned LaunchAgent label" ]] || return 1
+@test "AC2: agent socket peer check refuses spoofed deploy_role over socket" {
+  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --lib agent_socket::tests::negative_proof_peer_role_refuses_mismatched_deploy_role
 }
 
-@test "AC2 NEGATIVE PROOF (#3734): a role trying to manage a label it does not own is refused" {
-  # kade does not own com.chorus.clearing (ownedBy: silas, wren)
-  run env CHORUS_TEST_ACCOUNT_OVERRIDE="chorus-kade" DEPLOY_ROLE="jeff" \
-    bash "$ROOT/platform/scripts/launchagent-ops" kickstart com.chorus.clearing
-  test "$status" -ne 0 || return 1
-  [[ "$output" =~ "REFUSED" ]] || return 1
-  [[ "$output" =~ "does not own" ]] || return 1
-}
+@test "AC2 NEGATIVE PROOF (#3734): invalid verbs or arbitrary extra args/paths are refused by launchagent-ops" {
+  # Build shim if needed
+  SHIM_BIN="/tmp/target-chorus-hooks/debug/chorus-hook-shim"
+  if [ ! -x "$SHIM_BIN" ]; then
+    CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo build --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hook-shim
+  fi
+  export CHORUS_HOOK_SHIM="$SHIM_BIN"
 
-@test "AC2 NEGATIVE PROOF (#3734): invalid verbs or arbitrary extra args/paths are refused" {
   # Arbitrary verb is refused
   run bash "$ROOT/platform/scripts/launchagent-ops" destroy com.chorus.api
   test "$status" -eq 2 || return 1
@@ -140,8 +114,10 @@ EOF
   # Extra arguments / flags are refused (helper takes label only)
   run bash "$ROOT/platform/scripts/launchagent-ops" kickstart com.chorus.api --force
   test "$status" -eq 2 || return 1
+  [[ "$output" =~ "helper takes a label only" ]] || return 1
 
   # Plist path instead of label is refused
   run bash "$ROOT/platform/scripts/launchagent-ops" load "$T/com.chorus.api.plist"
   test "$status" -eq 2 || return 1
+  [[ "$output" =~ "invalid label" ]] || return 1
 }
