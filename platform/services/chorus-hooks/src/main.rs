@@ -204,6 +204,7 @@ async fn main() {
         .route("/post-tool-use", post(post_tool_use))
         .route("/user-prompt-submit", post(user_prompt_submit))
         .route("/stop", post(stop_hook_bounded))
+        .route("/bouncer-pending", post(bouncer_pending))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024)); // 16MB — tool_response can be large
     let app = routes.clone().with_state(state.clone());
     // #4432 — the same guards for agent principals on their own Mac account,
@@ -1482,6 +1483,83 @@ async fn stop_hook(
     // #3252 — uniform hook.decision emit for the stop hook.
     emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
     Json(response)
+}
+
+/// #4786 AC4 — bouncer pending request handoff over the daemon socket.
+/// The daemon runs as launcher (jeffbridwell) and writes to $CHORUS_STATE_DIR/pending-approvals/<role>/
+/// so role accounts don't need sudo or cross-account writes.
+async fn bouncer_pending(
+    Json(payload): Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let role = payload
+        .get("deploy_role")
+        .or_else(|| payload.get("role"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    let title = payload
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if role.is_empty() || title.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "missing role or title"})),
+        )
+            .into_response();
+    }
+    let stamp = payload
+        .get("stamp")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ").to_string()
+        });
+    let nudge = payload.get("nudge").and_then(|v| v.as_str()).unwrap_or("");
+    let opts = payload
+        .get("card_opts")
+        .or_else(|| payload.get("opts"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    match hooks::card_approval_responder::store_pending_approval(
+        role,
+        &stamp,
+        nudge,
+        title,
+        &opts,
+        std::time::SystemTime::now(),
+    ) {
+        Ok((txt, argv)) => (
+            axum::http::StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ok",
+                "txtPath": txt.to_string_lossy(),
+                "argvPath": argv.to_string_lossy(),
+            })),
+        )
+            .into_response(),
+        Err(hooks::card_approval_responder::PendingStoreError::RetryTooSoon { age_ms, path }) => (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({
+                "error": "retry-too-soon",
+                "age_ms": age_ms,
+                "existing_path": path,
+                "message": format!(
+                    "pending-retry-too-soon: same-role+title written {}ms ago at {}",
+                    age_ms, path
+                ),
+            })),
+        )
+            .into_response(),
+        Err(hooks::card_approval_responder::PendingStoreError::Io(e)) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("io error: {e}")})),
+        )
+            .into_response(),
+    }
 }
 
 #[cfg(test)]

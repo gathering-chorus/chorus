@@ -885,17 +885,6 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
                     return Err((1, format!("could not hand {} its {}", acct, f)));
                 }
             }
-            // #4786 AC4: login provisions $CHORUS_STATE_DIR/pending-approvals/<role> as
-            // chorus-<role>:chorus 0750 so bouncer running as the role account can write
-            // pending approvals into the shared state dir without permission errors.
-            let state_dir = envd("CHORUS_STATE_DIR", &format!("{}/.chorus", ctx.home));
-            let role_pending = format!("{}/pending-approvals/{}", state_dir, role);
-            let base_pending = format!("{}/pending-approvals", state_dir);
-            let mk_pending = format!(
-                "mkdir -p '{}' && chmod 0755 '{}' && (chown {}:chorus '{}' 2>/dev/null || true) && chmod 0750 '{}'",
-                role_pending, base_pending, acct, role_pending, role_pending
-            );
-            let _ = Command::new(&ctx.sudo).args(["-n", "sh", "-c", &mk_pending]).status();
             // #4784 — hand the shared chorus memory set and the role's own memory/
             // folder into the role account's ~/.claude/projects/<slug>/memory/
             // (0700, non-clobbering via tar -k) so Claude auto-memory works.

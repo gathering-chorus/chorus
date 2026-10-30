@@ -830,7 +830,45 @@ export function writePendingApprovalArtifacts(args: {
   title: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cardOpts: any;
+  useSocket?: boolean;
 }): { txtPath: string; argvPath: string } {
+  // #4786 AC4: When invoked in production with useSocket=true, delegate to
+  // chorus-hook-shim bouncer-pending so the daemon (running as launcher/jeffbridwell)
+  // writes to $CHORUS_STATE_DIR/pending-approvals/<role>/ under its own account.
+  // This bypasses cross-account permission boundaries without sudo.
+  if (args.useSocket) {
+    try {
+      const res = spawnSync('chorus-hook-shim', ['bouncer-pending'], {
+        input: JSON.stringify({
+          role: args.role,
+          stamp: args.stamp,
+          nudge: args.nudge,
+          title: args.title,
+          card_opts: args.cardOpts,
+        }),
+        encoding: 'utf-8',
+        timeout: 5000,
+      });
+      if (res.status === 0 && res.stdout) {
+        try {
+          const parsed = JSON.parse(res.stdout);
+          if (parsed.txtPath && parsed.argvPath) {
+            return { txtPath: parsed.txtPath, argvPath: parsed.argvPath };
+          }
+        } catch {}
+      }
+      if (res.stderr && res.stderr.includes('pending-retry-too-soon')) {
+        const match = res.stderr.match(/written (\d+)ms ago at ([^\s]+)/);
+        const ageMs = match ? parseInt(match[1], 10) : 1000;
+        const existingPath = match ? match[2] : 'unknown';
+        throw new PendingRetryTooSoonError(ageMs, existingPath);
+      }
+    } catch (err) {
+      if (err instanceof PendingRetryTooSoonError) throw err;
+      // Fallback to local filesystem write below if socket fails or in test env
+    }
+  }
+
   fs.mkdirSync(args.pendingDir, { recursive: true });
 
   // #2964: dedupe + retry refusal. If we've written a pending payload for the
@@ -1062,6 +1100,7 @@ APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const { txtPath, argvPath } = writePendingApprovalArtifacts({
       pendingDir, role, stamp, nudge, title, cardOpts: opts,
+      useSocket: true,
     });
     console.log(`[card-approval pickup written: ${txtPath}]`);
     console.log(`[card-approval argv sidecar written: ${argvPath}  — read by the AC3 UserPromptSubmit responder on approve]`);

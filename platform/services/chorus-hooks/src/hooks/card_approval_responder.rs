@@ -81,6 +81,110 @@ pub fn role_pending_dir(role: &str) -> PathBuf {
     PathBuf::from(state_dir).join("pending-approvals").join(role_clean)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum PendingStoreError {
+    RetryTooSoon { age_ms: u64, path: String },
+    Io(String),
+}
+
+impl std::fmt::Display for PendingStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PendingStoreError::RetryTooSoon { age_ms, path } => {
+                write!(
+                    f,
+                    "pending-retry-too-soon: same-role+title written {}ms ago at {}",
+                    age_ms, path
+                )
+            }
+            PendingStoreError::Io(e) => write!(f, "io error: {}", e),
+        }
+    }
+}
+
+/// Store a pending approval payload (#4786 AC4).
+/// Called by the daemon when bouncer submits a pending request over the socket.
+/// Handles deduplication (overwrites in place if within 10min) and retry refusal (if within 30s).
+pub fn store_pending_approval(
+    role: &str,
+    stamp: &str,
+    nudge: &str,
+    title: &str,
+    opts: &serde_json::Value,
+    now: SystemTime,
+) -> Result<(PathBuf, PathBuf), PendingStoreError> {
+    let role_clean = role.trim_start_matches("chorus-");
+    let dir = role_pending_dir(role_clean);
+    std::fs::create_dir_all(&dir).map_err(|e| PendingStoreError::Io(e.to_string()))?;
+
+    // Check existing pending files for dedupe & retry refusal
+    let prefix = format!("{}-", role_clean);
+    let entries = std::fs::read_dir(&dir).map_err(|e| PendingStoreError::Io(e.to_string()))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with(&prefix) || !name.ends_with(".argv.json") {
+            continue;
+        }
+        if let Ok(raw) = std::fs::read_to_string(&path) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if parsed.get("title").and_then(|v| v.as_str()) == Some(title) {
+                    if let Ok(meta) = entry.metadata().and_then(|m| m.modified()) {
+                        let age = now.duration_since(meta).unwrap_or(Duration::ZERO);
+                        let age_ms = age.as_millis() as u64;
+                        if age < Duration::from_secs(30) {
+                            return Err(PendingStoreError::RetryTooSoon {
+                                age_ms,
+                                path: path.to_string_lossy().to_string(),
+                            });
+                        }
+                        if age < Duration::from_secs(600) {
+                            // Dedupe: overwrite in place using the same stem
+                            let stem = path
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("");
+                            let stem = stem.strip_suffix(".argv").unwrap_or(stem);
+                            let txt_path = dir.join(format!("{}.txt", stem));
+                            let argv_path = path.clone();
+                            let argv_payload = serde_json::json!({
+                                "title": title,
+                                "opts": opts,
+                            });
+                            std::fs::write(
+                                &argv_path,
+                                serde_json::to_string_pretty(&argv_payload)
+                                    .unwrap_or_default()
+                                    + "\n",
+                            )
+                            .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+                            std::fs::write(&txt_path, format!("{}\n", nudge))
+                                .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+                            return Ok((txt_path, argv_path));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Write new pair
+    let txt_path = dir.join(format!("{}-{}.txt", role_clean, stamp));
+    let argv_path = dir.join(format!("{}-{}.argv.json", role_clean, stamp));
+    let argv_payload = serde_json::json!({
+        "title": title,
+        "opts": opts,
+    });
+    std::fs::write(
+        &argv_path,
+        serde_json::to_string_pretty(&argv_payload).unwrap_or_default() + "\n",
+    )
+    .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+    std::fs::write(&txt_path, format!("{}\n", nudge))
+        .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+    Ok((txt_path, argv_path))
+}
+
 /// Find ALL `<role>-*.argv.json` files under `pending_dir`, ordered oldest-first
 /// by mtime so callers can process them in queue order. #2964 / #4786: when Jeff approves,
 /// the responder drains the queue for the role in its canonical pending directory.
@@ -841,5 +945,39 @@ mod tests {
             |_, _| panic!("spawn must not run when queue empty"),
         );
         assert_eq!(second_run, vec![ApprovalOutcome::NoPending]);
+    }
+
+    #[test]
+    fn store_pending_approval_writes_and_refuses_retry() {
+        let tmp = TempDir::new().unwrap();
+        std::env::set_var("CHORUS_PENDING_DIR", tmp.path().join("pending-approvals"));
+
+        let opts = serde_json::json!({"owner": "silas", "priority": "P1"});
+        let now = SystemTime::now();
+
+        // 1. Initial write
+        let (txt, argv) = store_pending_approval("silas", "10-00-00", "nudge body", "my title", &opts, now).unwrap();
+        assert!(txt.exists());
+        assert!(argv.exists());
+        assert!(argv.to_string_lossy().contains("silas-10-00-00.argv.json"));
+
+        // 2. Retry within 30s -> Refused
+        let err = store_pending_approval("silas", "10-00-10", "nudge body", "my title", &opts, now).unwrap_err();
+        match err {
+            PendingStoreError::RetryTooSoon { age_ms: _, path } => {
+                assert!(path.contains("silas-10-00-00.argv.json"));
+            }
+            _ => panic!("expected RetryTooSoon, got {:?}", err),
+        }
+
+        // 3. Retry within 10min -> Deduplicated / overwritten in place
+        let later = now + Duration::from_secs(60);
+        let (txt2, argv2) = store_pending_approval("silas", "10-01-00", "nudge updated", "my title", &opts, later).unwrap();
+        assert_eq!(argv, argv2, "dedupes by overwriting in place with original stem");
+        assert_eq!(txt, txt2);
+        let content = fs::read_to_string(&txt2).unwrap();
+        assert!(content.contains("nudge updated"));
+
+        std::env::remove_var("CHORUS_PENDING_DIR");
     }
 }
