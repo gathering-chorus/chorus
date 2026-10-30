@@ -4723,6 +4723,22 @@
         "service": "Full launchd label, e.g. com.chorus.api"
       }
     },
+    "launchagent.refused": {
+      "producer": "infrastructure",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "#4809 — launchagent-ops refused a caller: unknown verb, invalid label, label not in the graph, or a role that does not own the service.",
+      "keys": [
+        "label"
+      ],
+      "envelope": [],
+      "fields": {
+        "label": "The LaunchAgent label the caller asked for",
+        "reason": "unowned | not-owner | invalid-label | unknown-verb | missing-verb-or-label"
+      }
+    },
     "service.failed": {
       "producer": "infrastructure",
       "category": "fact",

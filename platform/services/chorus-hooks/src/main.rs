@@ -1645,6 +1645,22 @@ fn find_launchagent_plist(label: &str) -> Option<String> {
 
 /// #4787 AC2: narrow LaunchAgent ops helper running inside daemon (as launcher/jeffbridwell).
 /// Enforces that caller role owns the label via graph ownedBy, then executes launchctl in gui/501.
+/// #4809 AC2 — a refusal is answered AND recorded: `launchagent.refused`
+/// names the caller role, the label and the reason, so a refused op is
+/// visible on the spine instead of only in the caller's stderr.
+async fn refuse_launchagent_op(
+    status: axum::http::StatusCode,
+    role: &str,
+    label: &str,
+    reason: &str,
+    message: String,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let who = if role.is_empty() { "unknown" } else { role };
+    crate::state::chorus_log("launchagent.refused", who, &[("label", label), ("reason", reason)]).await;
+    (status, Json(serde_json::json!({"error": message}))).into_response()
+}
+
 async fn launchagent_ops(
     Json(payload): Json<serde_json::Value>,
 ) -> axum::response::Response {
@@ -1655,19 +1671,15 @@ async fn launchagent_ops(
     let role = payload.get("role").or_else(|| payload.get("deploy_role")).and_then(|v| v.as_str()).unwrap_or("").trim();
 
     if verb.is_empty() || label.is_empty() {
-        return (
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "missing verb or label"})),
-        ).into_response();
+        return refuse_launchagent_op(axum::http::StatusCode::BAD_REQUEST, role, label, "missing-verb-or-label",
+            "missing verb or label".to_string()).await;
     }
 
     match verb {
         "kickstart" | "load" | "retire" | "unload" | "status" => {}
         _ => {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — unknown verb '{verb}'")})),
-            ).into_response();
+            return refuse_launchagent_op(axum::http::StatusCode::BAD_REQUEST, role, label, "unknown-verb",
+                format!("launchagent-ops: REFUSED — unknown verb '{verb}'")).await;
         }
     }
 
@@ -1676,25 +1688,19 @@ async fn launchagent_ops(
     });
 
     if !LABEL_RE.is_match(label) {
-        return (
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — invalid label '{label}'")})),
-        ).into_response();
+        return refuse_launchagent_op(axum::http::StatusCode::BAD_REQUEST, role, label, "invalid-label",
+            format!("launchagent-ops: REFUSED — invalid label '{label}'")).await;
     }
 
     let owners = query_label_owners(label);
     if owners.is_empty() {
-        return (
-            axum::http::StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — unowned LaunchAgent label '{label}' (not found in graph)")})),
-        ).into_response();
+        return refuse_launchagent_op(axum::http::StatusCode::FORBIDDEN, role, label, "unowned",
+            format!("launchagent-ops: REFUSED — unowned LaunchAgent label '{label}' (not found in graph)")).await;
     }
 
     if role != "jeff" && !owners.iter().any(|o| o == role) {
-        return (
-            axum::http::StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — role '{role}' does not own '{label}' (ownedBy: {})", owners.join(" "))})),
-        ).into_response();
+        return refuse_launchagent_op(axum::http::StatusCode::FORBIDDEN, role, label, "not-owner",
+            format!("launchagent-ops: REFUSED — role '{role}' does not own '{label}' (ownedBy: {})", owners.join(" "))).await;
     }
 
     let domain = std::env::var("LAUNCHCTL_DOMAIN").unwrap_or_else(|_| "gui/501".to_string());
@@ -1846,6 +1852,38 @@ mod launchagent_ops_tests {
         }
 
         std::env::remove_var("CHORUS_TEST_OWNERS");
+    }
+
+    /// #4809 AC2 — every refusal leaves a `launchagent.refused` spine event
+    /// naming the caller role, the label and the reason.
+    #[tokio::test]
+    async fn refusal_emits_launchagent_refused_with_role_label_reason() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("spine.log");
+        std::env::set_var("CHORUS_LOG_FILE", log.to_string_lossy().to_string());
+        std::env::set_var("CHORUS_TEST_OWNERS", r#"{"com.chorus.clearing": ["silas", "wren"]}"#);
+
+        let cases = [
+            ("com.chorus.not-in-graph-4809", "silas", "unowned"),
+            ("com.chorus.clearing", "kade", "not-owner"),
+            ("org.other.service", "silas", "invalid-label"),
+        ];
+        for (label, role, _) in &cases {
+            let resp = launchagent_ops(Json(json!({"verb": "kickstart", "label": label, "role": role}))).await;
+            assert!(!resp.status().is_success(), "{label} as {role} must be refused");
+        }
+
+        let spine = std::fs::read_to_string(&log).unwrap_or_default();
+        let refused: Vec<&str> = spine.lines().filter(|l| l.contains("launchagent.refused")).collect();
+        for (label, role, reason) in &cases {
+            assert!(
+                refused.iter().any(|l| l.contains(label) && l.contains(&format!("\"role\":\"{role}\"")) && l.contains(reason)),
+                "no launchagent.refused event for {label} as {role} ({reason}); spine:\n{spine}"
+            );
+        }
+
+        std::env::remove_var("CHORUS_TEST_OWNERS");
+        std::env::remove_var("CHORUS_LOG_FILE");
     }
 }
 
