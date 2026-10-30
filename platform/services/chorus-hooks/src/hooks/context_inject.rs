@@ -561,7 +561,9 @@ pub fn format_pulse_header(v: &serde_json::Value) -> String {
             _ => text(r, "name"),
         }).collect();
         let line = if shown.is_empty() { "none".to_string() } else { shown.join(" · ") };
-        out.push_str(&format!("  {name}: {}\n", line.chars().take(300).collect::<String>()));
+        // #4807 — rows pulse served from its last read while refreshes fail carry their age
+        let stale = entry["staleSeconds"].as_i64().filter(|s| *s > 0).map(|s| format!(" (stale {})", ago(s))).unwrap_or_default();
+        out.push_str(&format!("  {name}{stale}: {}\n", line.chars().take(300).collect::<String>()));
     }
     out
 }
@@ -1496,6 +1498,18 @@ mod tests {
         assert!(s.contains("  cards: unmeasured (/cws — chorus-werk-status --json: exit 2)\n"), "{s}");
         assert!(s.contains("  roles: none\n"), "{s}");
         assert_eq!(format_pulse_header(&serde_json::json!({"error": "unknown-route"})), "  header: unmeasured (no data in the header)\n");
+    }
+
+    // #4807 — cards pulse serves from its last read while refreshes fail say how old they are
+    #[test]
+    fn stale_cards_say_their_age_and_fresh_ones_do_not() {
+        let rows = serde_json::json!([{"card": "4807", "role": "kade", "step": "no run yet", "waitedSeconds": null}]);
+        let stale = serde_json::json!({"data": {"cards": {"source": "/cws", "rows": rows, "staleSeconds": 240}}});
+        assert!(format_pulse_header(&stale).contains("  cards (stale 4m): #4807 kade no run yet\n"), "{}", format_pulse_header(&stale));
+        for fresh in [serde_json::json!({"data": {"cards": {"source": "/cws", "rows": rows, "staleSeconds": 0}}}),
+                      serde_json::json!({"data": {"cards": {"source": "/cws", "rows": rows}}})] {
+            assert!(format_pulse_header(&fresh).contains("  cards: #4807 kade no run yet\n"), "{}", format_pulse_header(&fresh));
+        }
     }
 
     #[test]
