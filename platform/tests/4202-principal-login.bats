@@ -66,7 +66,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   file_has "$T/token.log" "token kade"
   file_has "$T/tmux.log" "send-keys -t chorus-kade"
   # the pane gets the token FILE, never the token on the command line
-  file_has "$T/tmux.log" "CHORUS_SESSION_TOKEN_FILE='$T/identity/kade/token.cache'"
+  file_has "$T/tmux.log" "CHORUS_SESSION_TOKEN_FILE='$T/homes/chorus-kade/.chorus/identity/kade/token.cache'"
   file_lacks "$T/tmux.log" "eyJhbGciOiJFUzI1NiJ9"
 }
 
@@ -78,7 +78,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   file_has "$T/curl.body" '"ownedBy":"principal-kade"'
   file_has "$T/curl.body" '"tokenId":"jti-kade-0001"'
   file_has "$T/curl.body" '"sessionState":"open"'
-  file_has "$T/curl.body" '"hostAccount":"unit-account"'
+  file_has "$T/curl.body" '"hostAccount":"chorus-kade"'
   # the token travels as a header FILE, not as a curl argument
   file_lacks "$T/curl.log" "eyJhbGciOiJFUzI1NiJ9"
   out_has "login: kade"
