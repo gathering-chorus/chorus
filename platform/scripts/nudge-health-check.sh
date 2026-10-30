@@ -21,12 +21,8 @@ MESSAGES_DB="${CHORUS_MESSAGES_DB:-${CHORUS_ROOT}/platform/pulse/messages.db}"
 STATE_DIR="${CHORUS_STATE_DIR:-/Users/jeffbridwell/.chorus}"
 SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-${STATE_DIR}/sessions}"
 
-# Dynamic role discovery from roles door (no hardcoded fallback)
-if [ -n "${ROLES_OVERRIDE:-}" ]; then
-  read -ra ROLES <<< "$ROLES_OVERRIDE"
-else
-  ROLES_URL="${CHORUS_ROLES_URL:-http://localhost:3360/v1/roles/roles?limit=500}"
-  DOOR_ROLES=$(python3 -c '
+ROLES_URL="${CHORUS_ROLES_URL:-http://localhost:3360/v1/roles/roles?limit=500}"
+DOOR_ROLES=$(python3 -c '
 import json, sys, urllib.request
 url = sys.argv[1]
 try:
@@ -41,10 +37,15 @@ except Exception:
 sys.exit(1)
 ' "$ROLES_URL" 2>/dev/null || true)
 
-  if [ -z "$DOOR_ROLES" ]; then
-    echo "UNMEASURED — roles door is unreadable ($ROLES_URL)"
-    exit 2
-  fi
+if [ -z "$DOOR_ROLES" ]; then
+  echo "UNMEASURED — roles door is unreadable ($ROLES_URL)"
+  exit 2
+fi
+
+# Dynamic role discovery from roles door (no hardcoded fallback)
+if [ -n "${ROLES_OVERRIDE:-}" ]; then
+  read -ra ROLES <<< "$ROLES_OVERRIDE"
+else
   read -ra ROLES <<< "$DOOR_ROLES"
 fi
 
@@ -118,21 +119,15 @@ for role in "${ROLES[@]}"; do
   fi
 
   # Check delivery path role support (chorus-inject / role_pattern check).
-  # Roles are read dynamically from the roles door (#4432), never a hardcoded list.
-  if ! python3 -c '
-import json, sys, urllib.request
-role = sys.argv[1]
-url = sys.argv[2]
-try:
-    req = urllib.request.urlopen(url, timeout=2)
-    d = json.loads(req.read().decode())
-    known = {r["name"] for r in d.get("data", []) if r.get("roleKind") == "agent"}
-    if role in known:
-        sys.exit(0)
-except Exception:
-    pass
-sys.exit(1)
-' "$role" "${CHORUS_ROLES_URL:-http://localhost:3360/v1/roles/roles?limit=500}" 2>/dev/null; then
+  # Uses the door-discovered roles parsed at startup, never a hardcoded list (#4432).
+  is_known=false
+  for kr in $DOOR_ROLES; do
+    if [ "$kr" = "$role" ]; then
+      is_known=true
+      break
+    fi
+  done
+  if [ "$is_known" = "false" ]; then
     echo "FAIL: ${role} — delivery path refuses role (unknown role: ${role})"
     [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=unknown-role" 2>/dev/null || true
     FAILURES=$((FAILURES + 1))
