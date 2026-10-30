@@ -79,17 +79,10 @@ fn accept_gate_cards_view_passes_with_path() {
             || combined.contains("No such file or directory")
             || output.status.code() == Some(127);
 
-        let is_auth_or_stack_failure = combined.contains("401")
-            || combined.contains("403")
-            || combined.contains("Unauthorized")
-            || combined.contains("unauthorized")
-            || combined.contains("auth")
-            || combined.contains("token")
-            || combined.contains("unable to open database")
-            || combined.contains("connection refused")
-            || combined.contains("ECONNREFUSED");
+        // Runner account has no Vikunja credential; cards runs but exits with missing token.
+        let is_token_missing = combined.contains("VIKUNJA_TOKEN not set");
 
-        if !is_path_failure && is_auth_or_stack_failure {
+        if !is_path_failure && is_token_missing {
             return;
         }
 
