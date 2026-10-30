@@ -228,15 +228,20 @@ mod tests {
         assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
-    // NEGATIVE PROOF: without the shared read, the same 60 calls read the door 60 times
+    // NEGATIVE PROOF: the same count goes to 60 when the read is not shared (a zero TTL),
+    // so the 1 above is the sharing, not a count that cannot move.
     #[test]
     fn negative_proof_unshared_reads_hit_the_door_every_call() {
+        static CACHE: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
         let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let handles: Vec<_> = (0..60).map(|_| {
             let reads = reads.clone();
-            std::thread::spawn(move || { reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst); })
+            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::ZERO, || {
+                reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(door_with("role-kade"))
+            }))
         }).collect();
-        for h in handles { h.join().unwrap(); }
+        for h in handles { assert!(h.join().unwrap().is_ok()); }
         assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 60);
     }
 
