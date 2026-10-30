@@ -45,17 +45,43 @@ fn pulse_contains_required_sections() {
 /// Pulse includes all 3 roles
 #[test]
 fn pulse_has_all_three_roles() {
+    // Test isolates CHORUS_ROLES_URL to verify pulse reflects roles structure
+    let dir = std::env::temp_dir().join(format!("pulse-test-{}", std::process::id()));
+    let _ = fs::create_dir_all(&dir);
+    let pulse_path = dir.join("pulse-roles.json");
+
+    let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = server.local_addr().unwrap().port();
+    let t = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = server.accept() {
+            use std::io::{Read, Write};
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let body = r#"{"data":{"roles":[{"role":"wren"},{"role":"silas"},{"role":"kade"}]}}"#;
+            let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+
     let _ = std::process::Command::new(
         env!("CARGO_BIN_EXE_chorus-hook-shim")
-    ).arg("pulse").output();
+    )
+    .arg("pulse")
+    .env("CHORUS_ROLES_URL", format!("http://127.0.0.1:{}/roles", port))
+    .env("CHORUS_PULSE_PATH", &pulse_path)
+    .output();
 
-    let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
+    let _ = t.join();
+
+    let content = fs::read_to_string(&pulse_path).unwrap();
     let v: serde_json::Value = serde_json::from_str(&content).unwrap();
 
     let roles = v.get("roles").and_then(|r| r.as_object()).expect("roles should be object");
     assert!(roles.contains_key("wren"), "must have wren");
     assert!(roles.contains_key("silas"), "must have silas");
     assert!(roles.contains_key("kade"), "must have kade");
+
+    let _ = fs::remove_dir_all(&dir);
 }
 
 /// Nudge section shows per-role pending counts

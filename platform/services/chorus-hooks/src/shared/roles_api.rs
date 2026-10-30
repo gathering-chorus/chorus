@@ -25,12 +25,18 @@ pub fn roles_from_api(url: &str) -> serde_json::Value {
                     roles.insert(name.to_string(), row.clone());
                 }
             }
-            if roles.is_empty() {
-                for role in &["wren", "silas", "kade"] {
-                    roles.insert(role.to_string(), serde_json::json!({
-                        "role": role, "state": "unmeasured", "source": "streams-empty", "detail": "roles endpoint returned no rows"
-                    }));
-                }
+            // Offline roles without open sessions drop out of live stream derivations;
+            // ensure canonical trio wren/silas/kade always have an entry so pulse consumers
+            // and contracts see a complete roster.
+            for role in &["wren", "silas", "kade"] {
+                roles.entry(role.to_string()).or_insert_with(|| {
+                    serde_json::json!({
+                        "role": role,
+                        "state": "idle",
+                        "source": "offline",
+                        "detail": "no open session"
+                    })
+                });
             }
         }
         Err(why) => {
@@ -43,4 +49,3 @@ pub fn roles_from_api(url: &str) -> serde_json::Value {
     }
     serde_json::Value::Object(roles)
 }
-
