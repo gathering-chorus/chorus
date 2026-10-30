@@ -376,7 +376,20 @@ mod tests {
 /// One variable from `ps eww` output ("... KEY=value ..."). None when absent.
 pub fn env_value(ps_eww: &str, key: &str) -> Option<String> {
     let want = format!("{}=", key);
-    ps_eww.split_whitespace().find(|w| w.starts_with(&want)).map(|w| w[want.len()..].to_string()).filter(|v| !v.is_empty())
+    // the LAST match: ps prints the environment after argv, so a readable env wins over the launch line
+    ps_eww.split_whitespace().rfind(|w| w.starts_with(&want)).map(|w| unquote(&w[want.len()..]).to_string()).filter(|v| !v.is_empty())
+}
+
+/// #4807 AC6 — a role account's pane is launched by a shell line (`CHORUS_ROLE='silas'`), and
+/// another account's environment can't be read, so `ps eww` shows only that line: one matched
+/// pair of quotes is the shell's, not the value's.
+fn unquote(v: &str) -> &str {
+    for q in ['\'', '"'] {
+        if v.len() >= 2 && v.starts_with(q) && v.ends_with(q) {
+            return &v[1..v.len() - 1];
+        }
+    }
+    v
 }
 
 /// #4345 — why the API refused a row, in one short line for the spine. On
