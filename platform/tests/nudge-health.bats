@@ -66,8 +66,7 @@ terminal_scriptable() {
 hc_world() {
   W="$BATS_TEST_TMPDIR/hc"
   mkdir -p "$W/bin" "$W/root/platform/scripts" "$W/sessions" "$W/canary"
-  sed "s|^CANARY_DIR=\"/tmp/nudge-canary\"|CANARY_DIR=\"$W/canary\"|" "$HEALTH_SCRIPT" > "$W/health.sh"
-  ! cmp -s "$W/health.sh" "$HEALTH_SCRIPT" || { echo "canary redirect did not apply" >&2; return 1; }
+  cp "$HEALTH_SCRIPT" "$W/health.sh"
   printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\nif [[ "$*" == *"/api/actor-state"* ]]; then echo "{\\"actors\\":[{\\"aboutPrincipal\\":\\"principal-wren\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-silas\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-kade\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-borg-queen\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-abby-normal\\",\\"sessions\\":[{\\"live\\":true}]}]}"; fi\n' "$W" > "$W/bin/curl"
   printf '#!/bin/bash\necho "$*" >> "%s/spine.calls"\n' "$W" > "$W/root/platform/scripts/chorus-log"
   if [ -n "${STUB_OSA:-}" ]; then
@@ -90,8 +89,9 @@ register() {
 }
 
 run_health() {
-  run env PATH="$W/bin:$PATH" CHORUS_ROOT="$W/root" CHORUS_SESSIONS_DIR="$W/sessions" bash "$W/health.sh"
+  run env PATH="$W/bin:$PATH" CHORUS_ROOT="$W/root" CHORUS_SESSIONS_DIR="$W/sessions" CANARY_DIR="$W/canary" bash "$W/health.sh"
   echo "output: $output"
+  [ -f "$W/canary/health.log" ] || { echo "canary health.log does not exist in $W/canary" >&2; return 1; }
 }
 
 @test "health check succeeds when role sessions are running" {
