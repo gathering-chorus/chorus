@@ -880,14 +880,14 @@ mod tests {
         // responder reads ONLY that.
         // Negative proof: a file under /Users/chorus-<role>/ is NOT picked up.
         let tmp = TempDir::new().unwrap();
-        let role_home_dir = tmp.path().join("Users/chorus-silas/.chorus/pending-approvals");
+        let role_isolated_dir = tmp.path().join("Users/chorus-silas/.chorus/pending-approvals");
         let state_pending_dir = tmp.path().join("chorus_state/pending-approvals/silas");
-        fs::create_dir_all(&role_home_dir).unwrap();
+        fs::create_dir_all(&role_isolated_dir).unwrap();
         fs::create_dir_all(&state_pending_dir).unwrap();
 
         // Step 1: write a file under the role's home dir
         let home_file = write_pending(
-            &role_home_dir,
+            &role_isolated_dir,
             "silas",
             "16-25-00",
             &fresh_payload_json_titled("silas-home-card"),
