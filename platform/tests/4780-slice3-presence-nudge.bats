@@ -171,6 +171,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
           CHORUS_SESSIONS_DIR="$W/sessions" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="borg-queen" \
+          pulse_actors='{"actors":[{"aboutPrincipal":"principal-borg-queen","sessions":[{"live":true}]}]}' \
           bash "$HEALTH"
   test "$status" -ne 0
   out_has "FAIL: borg-queen — nudge delivery failed: unknown role: borg-queen"
@@ -181,6 +182,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
           CHORUS_SESSIONS_DIR="$W/sessions" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="unregistered-intruder" \
+          pulse_actors='{"actors":[]}' \
           STUB_FAILED_NUDGES="" \
           bash "$HEALTH"
   test "$status" -ne 0

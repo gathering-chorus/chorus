@@ -117,13 +117,22 @@ for role in "${ROLES[@]}"; do
     continue
   fi
 
-  # Check delivery path role support (chorus-inject / role_pattern check)
-  if ! python3 -c "
-import sys
-KNOWN = {'wren', 'silas', 'kade', 'borg-queen', 'abby-normal'}
-if sys.argv[1] not in KNOWN:
-    sys.exit(1)
-" "$role" 2>/dev/null; then
+  # Check delivery path role support (chorus-inject / role_pattern check).
+  # Roles are read dynamically from the roles door (#4432), never a hardcoded list.
+  if ! python3 -c '
+import json, sys, urllib.request
+role = sys.argv[1]
+url = sys.argv[2]
+try:
+    req = urllib.request.urlopen(url, timeout=2)
+    d = json.loads(req.read().decode())
+    known = {r["name"] for r in d.get("data", []) if r.get("roleKind") == "agent"}
+    if role in known:
+        sys.exit(0)
+except Exception:
+    pass
+sys.exit(1)
+' "$role" "${CHORUS_ROLES_URL:-http://localhost:3360/v1/roles/roles?limit=500}" 2>/dev/null; then
     echo "FAIL: ${role} — delivery path refuses role (unknown role: ${role})"
     [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=unknown-role" 2>/dev/null || true
     FAILURES=$((FAILURES + 1))
