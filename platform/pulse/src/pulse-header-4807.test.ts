@@ -148,3 +148,27 @@ test('AC3 negative proof: the same count sees 8 reads from the pre-#4807 cache a
   const after = slowRead();
   expect(await readsAfterExpiry(after, cachedCards(after.read, 10), 8)).toBe(1);
 });
+
+// #4807 slice 2 — 40 prompts at once each asked pulse-api for messages and alerts; it ran out
+// of open files and crashed (2026-10-30 15:32). The same shared read covers those lines.
+describe('sharedRead (messages and alerts)', () => {
+  const { sharedRead } = require('./pulse-header') as typeof import('./pulse-header');
+
+  test('40 concurrent header reads make ONE pulse-api call', async () => {
+    let calls = 0;
+    const msgs = sharedRead(async () => { calls++; await tick(20); return [{ senderName: 'jeff', messageBody: 'x', sentAt: '' }]; }, 2_000);
+    await Promise.all(Array.from({ length: 40 }, () => msgs()));
+    expect(calls).toBe(1);
+  });
+
+  test('negative proof: without sharedRead the same 40 reads make 40 calls', async () => {
+    let calls = 0;
+    const direct = async () => { calls++; await tick(20); return []; };
+    await Promise.all(Array.from({ length: 40 }, () => direct()));
+    expect(calls).toBe(40);
+    const shared = sharedRead(direct, 2_000);
+    calls = 0;
+    await Promise.all(Array.from({ length: 40 }, () => shared()));
+    expect(calls).toBe(1);
+  });
+});

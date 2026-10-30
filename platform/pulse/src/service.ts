@@ -20,7 +20,7 @@ import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
-import { cachedCards, readAlerts, readMessages, registerHeaderRoute } from './pulse-header';
+import { cachedCards, readAlerts, readMessages, registerHeaderRoute, sharedRead } from './pulse-header';
 import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
@@ -552,8 +552,9 @@ export function createApp(
   registerHeaderRoute(app, {
     cards: cachedCards(),
     actorState: () => actorStateService?.getActorStates(),
-    messages: () => readMessages(),
-    alerts: () => readAlerts(),
+    // #4807 slice 2 — one pulse-api call per 2 s however many prompts ask at once
+    messages: sharedRead(() => readMessages(), 2_000, 4_000, 2_000, '/pulse/messages/messages'),
+    alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/pulse/alerts/alerts'),
   });
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {

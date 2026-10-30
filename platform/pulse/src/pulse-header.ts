@@ -73,16 +73,28 @@ export function cachedCards(
   read: (signal?: AbortSignal) => Promise<CwsRow[]> = signal => readCardSteps(undefined, signal),
   ttlMs = 30_000, timeoutMs = 10_000, coldWaitMs = 2_000,
 ): Read<CwsRow[]> & { staleSeconds: () => number } {
-  let last: { at: number; rows: CwsRow[] } | undefined;
-  let inflight: Promise<CwsRow[]> | undefined;
-  const refresh = (): Promise<CwsRow[]> => {
+  return sharedRead(read, ttlMs, timeoutMs, coldWaitMs, '/cws');
+}
+
+/**
+ * #4807 slice 2 — the same one-read-at-a-time sharing for any header line. 40 prompts at once
+ * each asked pulse-api for messages and alerts; it ran out of open files and crashed
+ * (2026-10-30 15:32). Shared for ttlMs, those 40 become one call.
+ */
+export function sharedRead<T>(
+  read: (signal?: AbortSignal) => Promise<T>,
+  ttlMs = 2_000, timeoutMs = 4_000, coldWaitMs = 2_000, name = 'read',
+): Read<T> & { staleSeconds: () => number } {
+  let last: { at: number; rows: T } | undefined;
+  let inflight: Promise<T> | undefined;
+  const refresh = (): Promise<T> => {
     if (inflight) return inflight;
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timedOut = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         abort.abort();
-        reject(new Error(`/cws read: no answer in ${timeoutMs} ms`));
+        reject(new Error(`${name} read: no answer in ${timeoutMs} ms`));
       }, timeoutMs);
     });
     const p = Promise.race([read(abort.signal), timedOut])
@@ -98,7 +110,7 @@ export function cachedCards(
     if (last) { void refresh(); return last.rows; }
     let wait: ReturnType<typeof setTimeout> | undefined;
     const cold = new Promise<never>((_, reject) => {
-      wait = setTimeout(() => reject(new Error(`/cws refreshing: first read not back in ${coldWaitMs} ms`)), coldWaitMs);
+      wait = setTimeout(() => reject(new Error(`${name} refreshing: first read not back in ${coldWaitMs} ms`)), coldWaitMs);
     });
     try { return await Promise.race([refresh(), cold]); } finally { clearTimeout(wait); }
   }, { staleSeconds });
