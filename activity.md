@@ -4,6 +4,31 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-10-30 — Borg Queen
+
+- [05:20] [Borg Queen] → Landed #4786 (Slice 3) on main (d6938a3b4); filed briefs for Wren, Silas, Kade, Abby Normal to test presence hostAccount, nudge-health, and bouncer approval handoff → Wren, Silas, Kade, Abby Normal, Jeff
+- [05:21] [Borg Queen] → Received Slice 3 test report from Silas (nudge-health works, hostAccount pending session restart, bouncer held) → Silas, Jeff
+
+
+## 2026-10-30 — Abby Normal
+
+- [05:37] [Abby Normal] → Validated #4786 (Slice 3) from chorus-abby-normal: principal hostAccount ok, bouncer socket ok (writes & 403 refusal), nudge-health diagnosed → Borg Queen, Jeff
+
+## 2026-10-29 — Abby Normal
+
+- [21:35] [Abby Normal] → Acked Jeff/Silas directive to hold on Clearing v2 tiles fix until Pulse work completes → Silas, Jeff
+- [21:31] [Abby Normal] → Investigated missing Clearing v2 actor tiles: diagnosed isRoleLoggedIn() live-session drop & mobile fitChatToViewport clipping → Silas, Jeff
+- [15:45] [Abby Normal] → Confirmed #4785 workspace parity from chorus-abby-normal: canonical git ok, Buzz outbox drain ok, skills & MCP parity 100% → Jeff, Borg Queen
+- [10:33] [Abby Normal] → Validated #4785 (Slice 2) from chorus-abby-normal: git safe ok, outbox ok, skills parity ok, bats 6/8 passed (AC4 token hardcode diagnosed) → Jeff, Borg Queen
+- [10:30] [Abby Normal] → Acked Borg Queen #4785 land; floor open but holding #4793 until Jeff's go & pulse health recovery → Jeff, Borg Queen
+- [10:23] [Abby Normal] → Reviewed Messages domain design & journey; specified Rule 6 Clearing UI & Pulse counting (briefs/2026-10-29-messages-review-abby.md) → Wren, Silas, Jeff
+- [09:34] [Abby Normal] → Completed steps 2, 3, 5 for login journey light-up artifact (/tmp/briefs/2026-10-29-login-journey-abby-steps-2-3-5.md) → Wren, Silas
+- [09:28] [Abby Normal] → Filed #4794 (Clearing v2: Unify live SSE and history scroll-up message markup and pubkey attribution) to Next per Jeff → all roles
+
+## 2026-10-27 — Borg Queen
+
+- [19:05] [Borg Queen] → Briefed Silas on Clearing v1 Buzz 404 loop (missing BUZZ_RELAY_HOST_HEADER in com.chorus.clearing.plist) → Silas
+
 - [22:02] Silas → #2311 rescope shipped end-to-end mid-pair with Wren (navigator): session-start.rs additionalContext rewire, binary gate (no exemptions), in-session recovery via Read handler, manifest "version"→"_build" + PROTOCOL_VERSION single-source (reset to 1.0 per Jeff), werk-init.sh retired + callers rewired, 20 new tests all green, kade+wren cold-booted clean with v1.0 headers. Silas cold-boot pending this /reboot. → Wren (gate:product criteria 1-4+6 met, 5 negative-test remaining)
 
 ## 2026-04-20 — Silas
@@ -1448,3 +1473,17 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [Abby Normal] → Clearing backlog review: audited 42 cards in sequence:clearing with Borg Queen; identified 3 dones (#3832, #4232, #4356), 3 duplicates (#4650, #4656, #4410), and consolidations for Streams UX and Decisions → Borg Queen, Jeff
 - [Abby Normal] → #4639 landed on main (9774f4f15, Done): Clearing v2 Rooms UX, multiline composer, photo picker, card attributes drawer, Borg Queen message styling → Team
 - [Abby Normal] → #4723 landed on main (6224e03d0, Done): Rooms UX role flasher revived on actor tiles & full card attributes (domains, created/updated dates, description, AC, comments, pipeline state) in card drawer; prod Clearing v2 restarted on :3472 → Jeff, Team
+- [2026-10-25 13:07] [Abby Normal] → #4736 landed & accepted (f824600ed, Done): Actor tiles 0..n multi-select for stream filtering and targeting in Clearing v2; hard CSS isolation (display: none !important); mobile rail overflow without truncation → Jeff, Team
+- [2026-10-25 18:04] [Abby Normal] → Briefed Wren (20261025-4741-skills-runs-as-owner-any-caller.md) on Jeff's '2 for today' decision: set runsAs=owner-any-caller on demo skills in urn:chorus:domains:skills so multi-account agents unblock on host demo launchctl bootstrap → Wren, Jeff
+- [2026-10-25 18:56] [Abby Normal] → Pair started on #4741: Abby drives, Kade navigates; /tmp/pair-4741.md initialized; pair pipeline enqueued (034mI3ZyQl4Y4smtlL5HQk) → Kade, Jeff
+- [2026-10-25 19:36] [Abby Normal] → #4741 landed & accepted (Done): Clearing v2 history auto-backfill on actor filter until visible threshold is satisfied, continuous mobile scroll-up backfill (countVisible+15), bottom actor rail below composer bar, unfilter snap-to-newest; negative proofs verified; Borg Queen prod proof recorded → Jeff, Team
+- [2026-10-26 09:16] [Borg Queen] → Brief shipped to Wren (2026-10-26-metamodel-edges-repo-structure-blast-radius.md): metamodel edges, ADR-041 repo structure compilation via athena-gen, pluggable non-compiled interfaces, and generalizing blast radius across entities → Wren, Jeff
+- [2026-10-26 09:36] [Abby Normal] → Briefed Kade (2026-10-26-clearing-chunk-cleanup-and-ux-pairing.md) on Clearing chunk cleanup (retiring 6 stubs) and pairing proposal for 2 consolidated UX cards (stream/history engine & ambient shell) addressing Jeff's 6 friction points → Kade, Jeff
+- [2026-10-26 12:15] [Abby Normal] → #4749 landed & accepted (Done): Clearing v2 infinite backward scroll into room history like Buzz, bidirectional direct threads with ISO/SQLite datetime normalization, SSE reconnect ID merge without DOM wipe, layout stability on tile/people polling, and room search composed with actor tiles; paired with Kade; Borg Queen proved in prod → Jeff, Team
+- [2026-10-27 21:12] [Borg Queen] → Briefed Kade (2026-10-27-borg-queen-gh-credentials-architecture.md) on headless gh authentication architecture, mode 0600 isolation in private role homes, and alignment with #3323 → Kade, Jeff
+- [2026-10-28 16:48] [Abby Normal] → Briefed Wren, Silas, Kade (2026-10-28-agent-harness-bdd-e2e-needs.md) on Jeff's directive to consult on agent harness BDD/E2E test suite (BQ excluded for focus) → Wren, Silas, Kade, Jeff
+- [2026-10-29 05:31] [Abby Normal] → Resolved Clearing probe failure: bootstrapped com.chorus.clearing on :3470 (clearing-probe.sh green); verified Clearing v2 healthy on :3472; clarified :3493 demo port mismatch → Wren, Jeff
+- [2026-10-29 09:01] [Abby Normal] → Pulled #4793 (Clearing v2 test fixture: spawn ephemeral test server on random port in clearing_v2_steps.ts) to WIP under builder rotation → Wren, Silas, Kade, Jeff
+- [2026-10-29 09:05] [Abby Normal] → Unpulled #4793 back to Next: yielding floor to Borg Queen for #4785 per Jeff's direct instruction → Borg Queen, Silas, Wren, Jeff
+- [2026-10-30 09:43] [Borg Queen] → #4786 proven in prod & marked Done (commit 1edee733d): 4/4 ACs + 7 negative proofs green, borg-prove prod 4786 Proven → Jeff, Team
+- [2026-10-30 10:06] [Borg Queen] → Brief shipped to Kade (2026-10-30-independent-proof-4786.md) + pulse nudge (id 62954): requested independent proof of #4786 in prod per Jeff → Kade, Jeff
