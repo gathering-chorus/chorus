@@ -1582,6 +1582,7 @@ async fn bouncer_pending(
 }
 
 fn query_label_owners(label: &str) -> Vec<String> {
+    #[cfg(test)]
     if let Ok(json_str) = std::env::var("CHORUS_TEST_OWNERS") {
         if let Ok(map) = serde_json::from_str::<serde_json::Value>(&json_str) {
             if let Some(arr) = map.get(label).and_then(|v| v.as_array()) {
@@ -1670,7 +1671,11 @@ async fn launchagent_ops(
         }
     }
 
-    if !label.starts_with("com.chorus.") {
+    static LABEL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^com\.chorus\.[A-Za-z0-9._-]+$").expect("valid label regex")
+    });
+
+    if !LABEL_RE.is_match(label) {
         return (
             axum::http::StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — invalid label '{label}'")})),
@@ -1815,6 +1820,30 @@ mod launchagent_ops_tests {
         });
         let resp3 = launchagent_ops(Json(payload_verb)).await;
         assert_eq!(resp3.status(), axum::http::StatusCode::BAD_REQUEST);
+
+        // 4. Invalid label syntax / injection attempts -> 400 (#3734 negative proof)
+        let injection_cases = [
+            "com.chorus.clearing; rm -rf /",
+            "com.chorus.clearing\" . ?s chorus:ownedBy ?owner }",
+            "com.chorus.clearing/../../etc/passwd",
+            "org.other.service",
+            "com.chorus.",
+            "com.chorus.foo$bar",
+            "com.chorus.foo\nbar",
+        ];
+        for malformed in &injection_cases {
+            let payload = json!({
+                "verb": "kickstart",
+                "label": malformed,
+                "role": "silas"
+            });
+            let resp = launchagent_ops(Json(payload)).await;
+            assert_eq!(
+                resp.status(),
+                axum::http::StatusCode::BAD_REQUEST,
+                "malformed label '{malformed}' must be refused with 400"
+            );
+        }
 
         std::env::remove_var("CHORUS_TEST_OWNERS");
     }

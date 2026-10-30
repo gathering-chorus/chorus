@@ -120,4 +120,9 @@ setup() {
   run bash "$ROOT/platform/scripts/launchagent-ops" load "$T/com.chorus.api.plist"
   test "$status" -eq 2 || return 1
   [[ "$output" =~ "invalid label" ]] || return 1
+
+  # Injection attempt in label is refused
+  run bash "$ROOT/platform/scripts/launchagent-ops" kickstart "com.chorus.api;whoami"
+  test "$status" -eq 2 || return 1
+  [[ "$output" =~ "invalid label" ]] || return 1
 }

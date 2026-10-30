@@ -1587,8 +1587,12 @@ fn launchagent_ops_cmd(args: &[String]) -> ExitCode {
         }
     }
 
-    if !label.starts_with("com.chorus.") {
-        eprintln!("launchagent-ops: REFUSED — invalid label '{label}' (must match com.chorus.*)");
+    static LABEL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^com\.chorus\.[A-Za-z0-9._-]+$").expect("valid label regex")
+    });
+
+    if !LABEL_RE.is_match(label) {
+        eprintln!("launchagent-ops: REFUSED — invalid label '{label}'");
         return ExitCode::from(2);
     }
 
