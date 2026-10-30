@@ -148,3 +148,55 @@ test('AC3 negative proof: the same count sees 8 reads from the pre-#4807 cache a
   const after = slowRead();
   expect(await readsAfterExpiry(after, cachedCards(after.read, 10), 8)).toBe(1);
 });
+
+// #4807 slice 2 — 40 prompts at once each asked pulse-api for messages and alerts; it ran out
+// of open files and crashed (2026-10-30 15:32). The same shared read covers those lines.
+describe('sharedRead (messages and alerts)', () => {
+  const { sharedRead } = require('./pulse-header') as typeof import('./pulse-header');
+
+  test('40 concurrent header reads make ONE pulse-api call', async () => {
+    let calls = 0;
+    const msgs = sharedRead(async () => { calls++; await tick(20); return [{ senderName: 'jeff', messageBody: 'x', sentAt: '' }]; }, 2_000);
+    await Promise.all(Array.from({ length: 40 }, () => msgs()));
+    expect(calls).toBe(1);
+  });
+
+  test('negative proof: without sharedRead the same 40 reads make 40 calls', async () => {
+    let calls = 0;
+    const direct = async () => { calls++; await tick(20); return []; };
+    await Promise.all(Array.from({ length: 40 }, () => direct()));
+    expect(calls).toBe(40);
+    const shared = sharedRead(direct, 2_000);
+    calls = 0;
+    await Promise.all(Array.from({ length: 40 }, () => shared()));
+    expect(calls).toBe(1);
+  });
+});
+
+// #4807 slice 2, #3734 — the proof runs through service.ts's real wiring: if GET /pulse stops
+// sharing the messages/alerts reads, 20 concurrent requests reach pulse-api 20 times and this fails.
+test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)', async () => {
+  const http = require('http');
+  const hits = new Map<string, number>();
+  const fake = http.createServer((req: { url: string }, res: { setHeader: (k: string, v: string) => void; end: (b: string) => void }) => {
+    const path = req.url.split('?')[0];
+    hits.set(path, (hits.get(path) ?? 0) + 1);
+    setTimeout(() => { res.setHeader('Content-Type', 'application/json'); res.end('{"data":[]}'); }, 30);
+  });
+  await new Promise<void>(r => fake.listen(0, '127.0.0.1', r));
+  const prev = process.env.PULSE_API_URL;
+  process.env.PULSE_API_URL = `http://127.0.0.1:${fake.address().port}`;
+  try {
+    const request = require('supertest');
+    const { createApp } = require('./service');
+    const { MessageStore } = require('./store');
+    const app = createApp(new MessageStore(':memory:'));
+    const res = await Promise.all(Array.from({ length: 20 }, () => request(app).get('/pulse')));
+    expect(res.every((r: { status: number }) => r.status === 200)).toBe(true);
+    expect(hits.get('/pulse/messages/messages')).toBe(1);
+    expect(hits.get('/pulse/alerts/alerts')).toBe(1);
+  } finally {
+    if (prev === undefined) delete process.env.PULSE_API_URL; else process.env.PULSE_API_URL = prev;
+    await new Promise(r => fake.close(r));
+  }
+}, 60_000);
