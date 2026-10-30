@@ -31,6 +31,7 @@ EOS
   # #4215 — the mute check reads the spine. Point it at a fixture that says kade
   # answered a moment ago, so "already awake" means the same thing on every box.
   printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
+  printf '{"data":{"principalKind":"agent","hostAccount":"unit-account"}}\n200\n' > "$T/principal-kade.json"
 }
 
 reg() { # reg <pid> [pane]

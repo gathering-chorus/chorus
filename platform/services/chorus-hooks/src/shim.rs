@@ -920,6 +920,8 @@ fn main() -> ExitCode {
         "heartbeat" => return heartbeat_cmd(),
         // #4515 — clearing-nudge's Skill row runs this, as the verified caller.
         "nudge-send" => return nudge_send_cmd(&args),
+        // #4786 AC4 — bouncer pending request handoff to the daemon
+        "bouncer-pending" => return bouncer_pending_cmd(&args),
 
         // #2435 — "inject" subcommand retired alongside inject_by_tab_name.
         // Nudge delivery is the spine-tick-poller reading chorus.log; callers
@@ -1490,6 +1492,76 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 
 
 
+
+/// #4786 AC4 — send pending approval request to chorus-hooks daemon over unix socket.
+/// Stdin is JSON { role, stamp, nudge, title, card_opts }.
+/// Stdout is JSON { status, txtPath, argvPath } on success.
+fn bouncer_pending_cmd(_args: &[String]) -> ExitCode {
+    let mut input = String::new();
+    if let Err(e) = std::io::stdin().read_to_string(&mut input) {
+        eprintln!("bouncer-pending: failed to read stdin: {e}");
+        return ExitCode::from(1);
+    }
+    if input.trim().is_empty() {
+        eprintln!("bouncer-pending: stdin was empty");
+        return ExitCode::from(1);
+    }
+    let socket_path = chorus_hooks::shared::state_paths::hook_socket_durable();
+    let mut stream = match UnixStream::connect(&socket_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("bouncer-pending: failed to connect to hooks daemon at {}: {}", socket_path, e);
+            return ExitCode::from(2);
+        }
+    };
+    let timeout = std::time::Duration::from_secs(10);
+    let _ = stream.set_write_timeout(Some(timeout));
+    let _ = stream.set_read_timeout(Some(timeout));
+
+    let body = input.as_bytes();
+    let request = format!(
+        "POST /bouncer-pending HTTP/1.1\r\n\
+         Host: localhost\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\
+         \r\n",
+        body.len()
+    );
+    if let Err(e) = stream.write_all(request.as_bytes()) {
+        eprintln!("bouncer-pending: write request error: {e}");
+        return ExitCode::from(2);
+    }
+    if let Err(e) = stream.write_all(body) {
+        eprintln!("bouncer-pending: write body error: {e}");
+        return ExitCode::from(2);
+    }
+
+    let mut response_bytes = Vec::new();
+    if let Err(e) = stream.read_to_end(&mut response_bytes) {
+        eprintln!("bouncer-pending: read response error: {e}");
+        return ExitCode::from(2);
+    }
+    let response_str = String::from_utf8_lossy(&response_bytes);
+    let (headers, body_str) = match response_str.split_once("\r\n\r\n") {
+        Some((h, b)) => (h, b),
+        None => ("", response_str.as_ref()),
+    };
+    let status_line = headers.lines().next().unwrap_or("");
+    let is_chunked = headers.to_lowercase().contains("transfer-encoding: chunked");
+    let clean_body = if is_chunked { decode_chunked(body_str) } else { body_str.to_string() };
+
+    if status_line.contains("200 OK") {
+        println!("{}", clean_body.trim());
+        ExitCode::SUCCESS
+    } else if status_line.contains("429") {
+        eprintln!("{}", clean_body.trim());
+        ExitCode::from(1)
+    } else {
+        eprintln!("bouncer-pending: daemon error ({}): {}", status_line, clean_body.trim());
+        ExitCode::from(2)
+    }
+}
 
 /// Wall clock in Boston timezone — replaces wall-clock.sh (#1621)
 fn nudge_send_cmd(args: &[String]) -> ExitCode {

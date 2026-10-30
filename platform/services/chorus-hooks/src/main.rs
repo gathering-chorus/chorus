@@ -204,6 +204,7 @@ async fn main() {
         .route("/post-tool-use", post(post_tool_use))
         .route("/user-prompt-submit", post(user_prompt_submit))
         .route("/stop", post(stop_hook_bounded))
+        .route("/bouncer-pending", post(bouncer_pending))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024)); // 16MB — tool_response can be large
     let app = routes.clone().with_state(state.clone());
     // #4432 — the same guards for agent principals on their own Mac account,
@@ -1066,22 +1067,23 @@ async fn user_prompt_submit(
     tokio::spawn(async move {
         use crate::state::chorus_log;
         use hooks::card_approval_responder::{
-            detect_approval_signal, handle_approval_request_all, sweep_stale_pending,
-            ApprovalOutcome,
+            detect_approval_signal, handle_approval_request_all, role_pending_dir,
+            sweep_stale_pending, ApprovalOutcome,
         };
-        use std::path::PathBuf;
         use std::time::SystemTime;
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-        let pending_dir = PathBuf::from(format!("{}/.chorus/pending-approvals", home));
+        // One canonical location (#4786 AC4): $CHORUS_STATE_DIR/pending-approvals/<role>/
+        let pending_dir = role_pending_dir(&approval_role);
         let now = SystemTime::now();
 
         // AC4: sweep stale pending pairs before the keyword pass — emits
         // card.approval.timeout for each (basename stem captured for trace).
         let pending_dir_for_sweep = pending_dir.clone();
-        let swept = tokio::task::spawn_blocking(move || sweep_stale_pending(&pending_dir_for_sweep, now))
-            .await
-            .unwrap_or_default();
+        let swept = tokio::task::spawn_blocking(move || {
+            sweep_stale_pending(&pending_dir_for_sweep, now)
+        })
+        .await
+        .unwrap_or_default();
         for stem in swept {
             chorus_log("card.approval.timeout", "system", &[("stem", stem.as_str())]).await;
         }
@@ -1091,11 +1093,8 @@ async fn user_prompt_submit(
             None => return,
         };
 
-        // #2964: drain ALL queued pending payloads for the role on a single
-        // approve keystroke. Each outcome emits its own spine event so the
-        // log surface shows "Filed #2959, #2960, #2961" instead of one
-        // event per approve. Today's failure cycle (10 approves → 3 cards
-        // filed) was the most-recent-only behavior; this loops over all.
+        // #2964 / #4786: drain ALL queued pending payloads for the role on a single
+        // approve keystroke in the role's canonical pending dir.
         let role_for_blocking = approval_role.clone();
         let pending_dir_for_blocking = pending_dir.clone();
         let outcomes = tokio::task::spawn_blocking(move || {
@@ -1484,6 +1483,134 @@ async fn stop_hook(
     // #3252 — uniform hook.decision emit for the stop hook.
     emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
     Json(response)
+}
+
+/// #4786 AC4 — bouncer pending request handoff over the daemon socket.
+/// The daemon runs as launcher (jeffbridwell) and writes to $CHORUS_STATE_DIR/pending-approvals/<role>/
+/// so role accounts don't need sudo or cross-account writes.
+async fn bouncer_pending(
+    Json(payload): Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    // #4786 AC4: payload role ≠ deploy_role / peer role → refuse
+    if let (Some(r), Some(dr)) = (
+        payload.get("role").and_then(|v| v.as_str()),
+        payload.get("deploy_role").and_then(|v| v.as_str()),
+    ) {
+        let r_clean = r.trim().trim_start_matches("chorus-");
+        let dr_clean = dr.trim().trim_start_matches("chorus-");
+        if !r_clean.is_empty() && !dr_clean.is_empty() && r_clean != dr_clean {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "error": format!("agent socket refuses: payload claims role '{r}' but socket deploy_role is '{dr}'")
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    let role = payload
+        .get("deploy_role")
+        .or_else(|| payload.get("role"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    let title = payload
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if role.is_empty() || title.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "missing role or title"})),
+        )
+            .into_response();
+    }
+    let stamp = payload
+        .get("stamp")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ").to_string()
+        });
+    let nudge = payload.get("nudge").and_then(|v| v.as_str()).unwrap_or("");
+    let opts = payload
+        .get("card_opts")
+        .or_else(|| payload.get("opts"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    match hooks::card_approval_responder::store_pending_approval(
+        role,
+        &stamp,
+        nudge,
+        title,
+        &opts,
+        std::time::SystemTime::now(),
+    ) {
+        Ok((txt, argv)) => (
+            axum::http::StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ok",
+                "txtPath": txt.to_string_lossy(),
+                "argvPath": argv.to_string_lossy(),
+            })),
+        )
+            .into_response(),
+        Err(hooks::card_approval_responder::PendingStoreError::RetryTooSoon { age_ms, path }) => (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({
+                "error": "retry-too-soon",
+                "age_ms": age_ms,
+                "existing_path": path,
+                "message": format!(
+                    "pending-retry-too-soon: same-role+title written {}ms ago at {}",
+                    age_ms, path
+                ),
+            })),
+        )
+            .into_response(),
+        Err(hooks::card_approval_responder::PendingStoreError::Io(e)) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("io error: {e}")})),
+        )
+            .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod bouncer_pending_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing() {
+        // #4786 AC4 / #3734: kade's socket sends deploy_role=silas -> refused, nothing stored
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::env::set_var("CHORUS_PENDING_DIR", tmp.path().join("pending-approvals"));
+
+        let payload = json!({
+            "role": "silas",
+            "deploy_role": "kade", // peer role identified by agent socket
+            "title": "spoofed card",
+            "opts": {}
+        });
+
+        let resp = bouncer_pending(Json(payload)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // Verify nothing was stored under silas
+        let silas_dir = tmp.path().join("pending-approvals/silas");
+        assert!(!silas_dir.exists(), "silas pending dir must NOT be created");
+
+        // Verify nothing was stored under kade
+        let kade_dir = tmp.path().join("pending-approvals/kade");
+        assert!(!kade_dir.exists(), "kade pending dir must NOT be created");
+
+        std::env::remove_var("CHORUS_PENDING_DIR");
+    }
 }
 
 #[cfg(test)]

@@ -66,9 +66,11 @@ terminal_scriptable() {
 hc_world() {
   W="$BATS_TEST_TMPDIR/hc"
   mkdir -p "$W/bin" "$W/root/platform/scripts" "$W/sessions" "$W/canary"
-  sed "s|^CANARY_DIR=\"/tmp/nudge-canary\"|CANARY_DIR=\"$W/canary\"|" "$HEALTH_SCRIPT" > "$W/health.sh"
-  ! cmp -s "$W/health.sh" "$HEALTH_SCRIPT" || { echo "canary redirect did not apply" >&2; return 1; }
-  printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\n' "$W" > "$W/bin/curl"
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"borg-queen","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"}]}
+JSON
+  cp "$HEALTH_SCRIPT" "$W/health.sh"
+  printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\nif [[ "$*" == *"/api/actor-state"* ]]; then echo "{\\"actors\\":[{\\"aboutPrincipal\\":\\"principal-wren\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-silas\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-kade\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-borg-queen\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-abby-normal\\",\\"sessions\\":[{\\"live\\":true}]}]}"; fi\n' "$W" > "$W/bin/curl"
   printf '#!/bin/bash\necho "$*" >> "%s/spine.calls"\n' "$W" > "$W/root/platform/scripts/chorus-log"
   if [ -n "${STUB_OSA:-}" ]; then
     # records the AppleScript it was asked to run; answers "<count>::<name>"
@@ -90,8 +92,9 @@ register() {
 }
 
 run_health() {
-  run env PATH="$W/bin:$PATH" CHORUS_ROOT="$W/root" CHORUS_SESSIONS_DIR="$W/sessions" bash "$W/health.sh"
+  run env PATH="$W/bin:$PATH" CHORUS_ROOT="$W/root" CHORUS_ROLES_URL="file://$W/roles.json" CHORUS_SESSIONS_DIR="$W/sessions" CANARY_DIR="$W/canary" bash "$W/health.sh"
   echo "output: $output"
+  [ -f "$W/canary/health.log" ] || { echo "canary health.log does not exist in $W/canary" >&2; return 1; }
 }
 
 @test "health check succeeds when role sessions are running" {
@@ -116,93 +119,30 @@ run_health() {
 
 # --- AC 3: Still detects genuinely missing roles ---
 
-# --- #3284 AC8 / ADR-039: registry-aware, no false no-window for vscode ---
-
-# #4336 — was three greps of the script text (resolve_reg, host = vscode,
-# "--vscode reachable"). Now: a registered vscode session is run through the
-# script with Terminal stubbed; it must be judged by the Code-app check and
-# never handed to the Terminal window probe.
-@test "AC8: a registered vscode session resolves through the registry, not the Terminal probe" {
-  STUB_OSA="1::only claude" STUB_PGREP_RC=0 hc_world
-  register wren vscode
-  run_health
-  echo "$output" | grep "wren" | grep -q "OK: wren — vscode session (pid $$) alive, Code running → --vscode reachable"
-  # the Terminal probe ran for the unregistered roles, never for wren
-  [ -s "$W/osa.calls" ] || return 1
-  ! grep -q '"wren"' "$W/osa.calls" || return 1
-}
-
-@test "AC8: a vscode session with Code down alerts vscode-app-down, never no-window (the 84x false alarm)" {
-  STUB_OSA="0::" STUB_PGREP_RC=1 hc_world
-  register wren vscode
-  run_health
-  [ "$status" -eq 1 ]
-  echo "$output" | grep "wren" | grep -q "ALERT: wren — vscode session (pid $$) registered but Code app is NOT running"
-  ! ( echo "$output" | grep "wren" | grep -iq "no.*window" ) || return 1
-  grep -q "role=wren,reason=vscode-app-down" "$W/spine.calls"
-  ! grep -q "role=wren,reason=no-window" "$W/spine.calls" || return 1
-}
-
-# --- #3673: tmux arm — registry host=tmux probes the pane, never Terminal ---
-
-# #4336 — was two greps (host = tmux, "tmux-pane-gone"). Now the tmux arm is
-# run with a stubbed tmux server: a registered pane that exists is OK, one that
-# does not emits reason=tmux-pane-gone — and Terminal is never probed for it.
-@test "3673: the tmux arm probes the pane and reports tmux-pane-gone (stubbed tmux, script run)" {
-  STUB_OSA="0::" STUB_TMUX_PANES="%42" hc_world
-  register wren tmux %42
-  register silas tmux %99
-  run_health
-  echo "$output" | grep "wren" | grep -q "OK: wren — tmux session (pid $$) alive, pane %42 exists"
-  echo "$output" | grep "silas" | grep -q "ALERT: silas — tmux session (pid $$) registered but pane %99 NOT found"
-  grep -q "role=silas,reason=tmux-pane-gone,pid=$$,pane=%99" "$W/spine.calls"
-  ! grep -q '"wren"' "$W/osa.calls" || return 1
-  ! grep -q '"silas"' "$W/osa.calls" || return 1
-}
-
-@test "3673: live tmux pane registration reports OK, never no-window" {
-  command -v tmux >/dev/null 2>&1 || skip "tmux not installed"
+# #4786 (Slice 3 of #4780): nudge-health judges delivery results and run liveness,
+# not Terminal windows.
+@test "health check detects delivery failures from messages.db" {
   hc_world
-  sess="hc-test-$$"
-  tmux new-session -d -s "$sess" || skip "cannot start scratch tmux session"
-  pane="$(tmux list-panes -t "$sess" -F '#{pane_id}' | head -1)"
-  register wren tmux "$pane"
-  run_health
-  tmux kill-session -t "$sess" 2>/dev/null || true
-  echo "$output" | grep "wren" | grep -q "OK:"
-  ! ( echo "$output" | grep "wren" | grep -q "no.*window" ) || return 1
-}
-
-@test "3673: dead pane with live registration alerts tmux-pane-gone, not no-window" {
-  command -v tmux >/dev/null 2>&1 || skip "tmux not installed"
-  tmux list-sessions >/dev/null 2>&1 || skip "no tmux server running"
-  hc_world
-  register wren tmux "%999"
-  run_health
-  echo "$output" | grep "wren" | grep -q "tmux"
-  echo "$output" | grep "wren" | grep -qi "ALERT"
-  ! ( echo "$output" | grep "wren" | grep -qi "no matching Terminal window" ) || return 1
-}
-
-# #4336 — the old case ran its own copy of the AppleScript and never called the
-# script. Now the script runs with Terminal answering "no matching window":
-# every unregistered role must alert, name no-window, and the check must exit 1.
-@test "health check detects missing role window (script run, Terminal stubbed)" {
-  STUB_OSA="0::" hc_world
-  run_health
+  STUB_FAILED_NUDGES="silas|unknown role: silas" run_health
   [ "$status" -eq 1 ]
-  for r in wren silas kade; do
-    echo "$output" | grep -q "ALERT: $r — no registration AND no Terminal window" || return 1
-    grep -q "role=$r,reason=no-window,host=none" "$W/spine.calls" || return 1
+  echo "$output" | grep -q "FAIL: silas — nudge delivery failed: unknown role: silas"
+  grep -q "role=silas,reason=delivery-failed" "$W/spine.calls"
+}
+
+@test "health check detects delivery path refusal for unknown role" {
+  hc_world
+  ROLES_OVERRIDE="unknown-actor" run_health
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "FAIL: unknown-actor — delivery path refuses role (unknown role: unknown-actor)"
+  grep -q "role=unknown-actor,reason=unknown-role" "$W/spine.calls"
+}
+
+@test "NEGATIVE: all roles reachable when live sessions exist and no delivery errors" {
+  STUB_TMUX_PANES="%1" hc_world
+  for r in wren silas kade borg-queen abby-normal; do
+    register "$r" tmux "%1"
   done
-  echo "$output" | grep -q "NUDGE HEALTH: 3 role(s) have issues"
-  [ -s "$W/curl.calls" ] || return 1
-}
-
-@test "NEGATIVE: one matching window per role reads healthy (the missing-window alarm is not constant)" {
-  STUB_OSA="1::only claude" hc_world
   run_health
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "NUDGE HEALTH: all roles reachable"
-  [ ! -e "$W/curl.calls" ] || return 1
 }

@@ -65,13 +65,132 @@ pub struct PendingOpts {
     pub description: Option<String>,
 }
 
+/// Single canonical pending directory for a role (#4786 AC4):
+/// `$CHORUS_STATE_DIR/pending-approvals/<role>/` (or `$CHORUS_PENDING_DIR/<role>/`).
+/// The bouncer (running as the role) writes here, and the responder (running as
+/// launcher/jeffbridwell) reads only this location. Avoids crossing 0700 role home dirs.
+pub fn role_pending_dir(role: &str) -> PathBuf {
+    let role_clean = role.trim_start_matches("chorus-");
+    if let Ok(dir) = std::env::var("CHORUS_PENDING_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir).join(role_clean);
+        }
+    }
+    let state_dir = std::env::var("CHORUS_STATE_DIR")
+        .unwrap_or_else(|_| "/Users/jeffbridwell/.chorus".to_string());
+    PathBuf::from(state_dir).join("pending-approvals").join(role_clean)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PendingStoreError {
+    RetryTooSoon { age_ms: u64, path: String },
+    Io(String),
+}
+
+impl std::fmt::Display for PendingStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PendingStoreError::RetryTooSoon { age_ms, path } => {
+                write!(
+                    f,
+                    "pending-retry-too-soon: same-role+title written {}ms ago at {}",
+                    age_ms, path
+                )
+            }
+            PendingStoreError::Io(e) => write!(f, "io error: {}", e),
+        }
+    }
+}
+
+/// Store a pending approval payload (#4786 AC4).
+/// Called by the daemon when bouncer submits a pending request over the socket.
+/// Handles deduplication (overwrites in place if within 10min) and retry refusal (if within 30s).
+pub fn store_pending_approval(
+    role: &str,
+    stamp: &str,
+    nudge: &str,
+    title: &str,
+    opts: &serde_json::Value,
+    now: SystemTime,
+) -> Result<(PathBuf, PathBuf), PendingStoreError> {
+    let role_clean = role.trim_start_matches("chorus-");
+    let dir = role_pending_dir(role_clean);
+    std::fs::create_dir_all(&dir).map_err(|e| PendingStoreError::Io(e.to_string()))?;
+
+    // Check existing pending files for dedupe & retry refusal
+    let prefix = format!("{}-", role_clean);
+    let entries = std::fs::read_dir(&dir).map_err(|e| PendingStoreError::Io(e.to_string()))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with(&prefix) || !name.ends_with(".argv.json") {
+            continue;
+        }
+        if let Ok(raw) = std::fs::read_to_string(&path) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if parsed.get("title").and_then(|v| v.as_str()) == Some(title) {
+                    if let Ok(meta) = entry.metadata().and_then(|m| m.modified()) {
+                        let age = now.duration_since(meta).unwrap_or(Duration::ZERO);
+                        let age_ms = age.as_millis() as u64;
+                        if age < Duration::from_secs(30) {
+                            return Err(PendingStoreError::RetryTooSoon {
+                                age_ms,
+                                path: path.to_string_lossy().to_string(),
+                            });
+                        }
+                        if age < Duration::from_secs(600) {
+                            // Dedupe: overwrite in place using the same stem
+                            let stem = path
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("");
+                            let stem = stem.strip_suffix(".argv").unwrap_or(stem);
+                            let txt_path = dir.join(format!("{}.txt", stem));
+                            let argv_path = path.clone();
+                            let argv_payload = serde_json::json!({
+                                "title": title,
+                                "opts": opts,
+                            });
+                            std::fs::write(
+                                &argv_path,
+                                serde_json::to_string_pretty(&argv_payload)
+                                    .unwrap_or_default()
+                                    + "\n",
+                            )
+                            .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+                            std::fs::write(&txt_path, format!("{}\n", nudge))
+                                .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+                            return Ok((txt_path, argv_path));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Write new pair
+    let txt_path = dir.join(format!("{}-{}.txt", role_clean, stamp));
+    let argv_path = dir.join(format!("{}-{}.argv.json", role_clean, stamp));
+    let argv_payload = serde_json::json!({
+        "title": title,
+        "opts": opts,
+    });
+    std::fs::write(
+        &argv_path,
+        serde_json::to_string_pretty(&argv_payload).unwrap_or_default() + "\n",
+    )
+    .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+    std::fs::write(&txt_path, format!("{}\n", nudge))
+        .map_err(|e| PendingStoreError::Io(e.to_string()))?;
+    Ok((txt_path, argv_path))
+}
+
 /// Find ALL `<role>-*.argv.json` files under `pending_dir`, ordered oldest-first
-/// by mtime so callers can process them in queue order. #2964: when Jeff approves,
-/// the responder should drain the whole queue for the role, not just the most-recent
-/// payload — otherwise duplicates accumulate and each `approve` keystroke only chips
-/// one off.
+/// by mtime so callers can process them in queue order. #2964 / #4786: when Jeff approves,
+/// the responder drains the queue for the role in its canonical pending directory.
 pub fn find_all_pending(role: &str, pending_dir: &Path) -> Vec<PathBuf> {
-    let prefix = format!("{}-", role);
+    let role_clean = role.trim_start_matches("chorus-");
+    let prefix = format!("{}-", role_clean);
     let entries = match std::fs::read_dir(pending_dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -207,8 +326,8 @@ pub enum ApprovalOutcome {
     SpawnFailed,
 }
 
-
-/// #2964: drain the entire pending queue for a role on one approval keyword.
+/// #2964 / #4786: drain the entire pending queue for a role on one approval keyword
+/// from its canonical role pending directory.
 /// Iterates over every `<role>-*.argv.json` in `pending_dir` oldest-first.
 /// Each payload: stale/parse/approve/deny handling inline
 /// (stale → TimedOut + cleanup; parse-fail → ParseFailed + preserve; approve
@@ -735,5 +854,130 @@ mod tests {
         assert_eq!(payload.title, "fix the thing");
         assert_eq!(payload.opts.owner.as_deref(), Some("wren"));
         assert_eq!(payload.opts.card_type.as_deref(), Some("fix"));
+    }
+
+    #[test]
+    fn role_pending_dir_resolves_to_state_dir_pending_approvals_role() {
+        let dir = role_pending_dir("silas");
+        assert!(
+            dir.ends_with("pending-approvals/silas"),
+            "must end with pending-approvals/silas: {:?}",
+            dir
+        );
+
+        let dir_prefixed = role_pending_dir("chorus-silas");
+        assert!(
+            dir_prefixed.ends_with("pending-approvals/silas"),
+            "must strip chorus- prefix: {:?}",
+            dir_prefixed
+        );
+    }
+
+    #[test]
+    fn negative_proof_file_under_role_home_is_not_picked_up() {
+        // #4786 AC4 / #3734 negative proof:
+        // Silas directs: bouncer writes to $CHORUS_STATE_DIR/pending-approvals/<role>/
+        // responder reads ONLY that.
+        // Negative proof: a file under /Users/chorus-<role>/ is NOT picked up.
+        let tmp = TempDir::new().unwrap();
+        let role_home_dir = tmp.path().join("Users/chorus-silas/.chorus/pending-approvals");
+        let state_pending_dir = tmp.path().join("chorus_state/pending-approvals/silas");
+        fs::create_dir_all(&role_home_dir).unwrap();
+        fs::create_dir_all(&state_pending_dir).unwrap();
+
+        // Step 1: write a file under the role's home dir
+        let home_file = write_pending(
+            &role_home_dir,
+            "silas",
+            "16-25-00",
+            &fresh_payload_json_titled("silas-home-card"),
+        );
+        assert!(home_file.exists());
+
+        // Negative proof: responder reads ONLY the state dir (role_pending_dir).
+        // It does NOT read the role's home directory.
+        let spawn_count = std::sync::Mutex::new(0u32);
+        let outcomes_home = handle_approval_request_all(
+            "silas",
+            ApprovalSignal::Approve,
+            &state_pending_dir,
+            SystemTime::now(),
+            |_, _| {
+                *spawn_count.lock().unwrap() += 1;
+                Ok(true)
+            },
+        );
+        assert_eq!(outcomes_home, vec![ApprovalOutcome::NoPending]);
+        assert_eq!(*spawn_count.lock().unwrap(), 0, "must not file card from role home dir");
+        assert!(home_file.exists(), "file under role home is NOT picked up");
+
+        // Positive proof: bouncer writes to $CHORUS_STATE_DIR/pending-approvals/<role>/
+        let state_file = write_pending(
+            &state_pending_dir,
+            "silas",
+            "20-10-00",
+            &fresh_payload_json_titled("silas-state-card"),
+        );
+        assert!(state_file.exists());
+
+        let outcomes_state = handle_approval_request_all(
+            "silas",
+            ApprovalSignal::Approve,
+            &state_pending_dir,
+            SystemTime::now(),
+            |_, argv| {
+                *spawn_count.lock().unwrap() += 1;
+                assert_eq!(argv.first().map(|s| s.as_str()), Some("silas-state-card"));
+                Ok(true)
+            },
+        );
+        assert_eq!(outcomes_state.len(), 1);
+        assert_eq!(*spawn_count.lock().unwrap(), 1, "card filed exactly once");
+        assert!(matches!(outcomes_state[0], ApprovalOutcome::Approved { ref title } if title == "silas-state-card"));
+        assert!(!state_file.exists(), "state file cleaned up after approval");
+
+        // Second run does not double-file
+        let second_run = handle_approval_request_all(
+            "silas",
+            ApprovalSignal::Approve,
+            &state_pending_dir,
+            SystemTime::now(),
+            |_, _| panic!("spawn must not run when queue empty"),
+        );
+        assert_eq!(second_run, vec![ApprovalOutcome::NoPending]);
+    }
+
+    #[test]
+    fn store_pending_approval_writes_and_refuses_retry() {
+        let tmp = TempDir::new().unwrap();
+        std::env::set_var("CHORUS_PENDING_DIR", tmp.path().join("pending-approvals"));
+
+        let opts = serde_json::json!({"owner": "silas", "priority": "P1"});
+        let now = SystemTime::now();
+
+        // 1. Initial write
+        let (txt, argv) = store_pending_approval("silas", "10-00-00", "nudge body", "my title", &opts, now).unwrap();
+        assert!(txt.exists());
+        assert!(argv.exists());
+        assert!(argv.to_string_lossy().contains("silas-10-00-00.argv.json"));
+
+        // 2. Retry within 30s -> Refused
+        let err = store_pending_approval("silas", "10-00-10", "nudge body", "my title", &opts, now).unwrap_err();
+        match err {
+            PendingStoreError::RetryTooSoon { age_ms: _, path } => {
+                assert!(path.contains("silas-10-00-00.argv.json"));
+            }
+            _ => panic!("expected RetryTooSoon, got {:?}", err),
+        }
+
+        // 3. Retry within 10min -> Deduplicated / overwritten in place
+        let later = now + Duration::from_secs(60);
+        let (txt2, argv2) = store_pending_approval("silas", "10-01-00", "nudge updated", "my title", &opts, later).unwrap();
+        assert_eq!(argv, argv2, "dedupes by overwriting in place with original stem");
+        assert_eq!(txt, txt2);
+        let content = fs::read_to_string(&txt2).unwrap();
+        assert!(content.contains("nudge updated"));
+
+        std::env::remove_var("CHORUS_PENDING_DIR");
     }
 }

@@ -822,6 +822,58 @@ export function findExistingPendingByTitle(
   return null;
 }
 
+function parseSocketPendingOutput(stdout: string): { txtPath: string; argvPath: string } | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    return (parsed?.txtPath && parsed?.argvPath)
+      ? { txtPath: parsed.txtPath, argvPath: parsed.argvPath }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkSocketRetryError(stderr: string): void {
+  if (!stderr.includes('pending-retry-too-soon')) return;
+  const match = stderr.match(/written (\d+)ms ago at ([^\s]+)/);
+  const ageMs = match ? parseInt(match[1], 10) : 1000;
+  const existingPath = match ? match[2] : 'unknown';
+  throw new PendingRetryTooSoonError(ageMs, existingPath);
+}
+
+function delegatePendingApprovalToSocket(args: {
+  role: string;
+  stamp: string;
+  nudge: string;
+  title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cardOpts: any;
+}): { txtPath: string; argvPath: string } | null {
+  try {
+    const res = spawnSync('chorus-hook-shim', ['bouncer-pending'], {
+      input: JSON.stringify({
+        role: args.role,
+        stamp: args.stamp,
+        nudge: args.nudge,
+        title: args.title,
+        card_opts: args.cardOpts,
+      }),
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    if (res.status === 0 && res.stdout) {
+      const parsed = parseSocketPendingOutput(res.stdout);
+      if (parsed) return parsed;
+    }
+    if (res.stderr) {
+      checkSocketRetryError(res.stderr);
+    }
+  } catch (err) {
+    if (err instanceof PendingRetryTooSoonError) throw err;
+  }
+  return null;
+}
+
 export function writePendingApprovalArtifacts(args: {
   pendingDir: string;
   role: string;
@@ -830,7 +882,17 @@ export function writePendingApprovalArtifacts(args: {
   title: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cardOpts: any;
+  useSocket?: boolean;
 }): { txtPath: string; argvPath: string } {
+  // #4786 AC4: When invoked in production with useSocket=true, delegate to
+  // chorus-hook-shim bouncer-pending so the daemon (running as launcher/jeffbridwell)
+  // writes to $CHORUS_STATE_DIR/pending-approvals/<role>/ under its own account.
+  // This bypasses cross-account permission boundaries without sudo.
+  if (args.useSocket) {
+    const socketRes = delegatePendingApprovalToSocket(args);
+    if (socketRes) return socketRes;
+  }
+
   fs.mkdirSync(args.pendingDir, { recursive: true });
 
   // #2964: dedupe + retry refusal. If we've written a pending payload for the
@@ -1052,18 +1114,17 @@ DEPS:     ${trunc(deps, 200)}
 SCOPE:    ${trunc(scope, 220)}
 APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards add … in your terminal bypasses cleanly. Full description in the pickup file.`;
 
-  // #2910: write the composed ask to a pickup file so the model can surface it
-  // in its next response to Jeff. Previous design relied on the model reading
-  // its own stdout and deciding to forward the nudge — Silas demonstrated that
-  // gap by relaying a summary instead. The pickup file lets the next-response
-  // hook (or model-side discipline per skills/cards/bouncer-flow.md) surface
-  // the ask verbatim. Without this, the only reliable delivery channel to Jeff
-  // (model response text) is opt-in.
-  const pendingDir = `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/pending-approvals`;
+  // #2910 / #4786 AC4: write the composed ask to a per-role subdirectory under
+  // $CHORUS_STATE_DIR/pending-approvals/<role>/ so the responder daemon can read
+  // it without traversing 0700 per-role home directories.
+  const stateDir = process.env.CHORUS_STATE_DIR || '/Users/jeffbridwell/.chorus';
+  const pendingBase = process.env.CHORUS_PENDING_DIR || `${stateDir}/pending-approvals`;
+  const pendingDir = `${pendingBase}/${role}`;
   try {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const { txtPath, argvPath } = writePendingApprovalArtifacts({
       pendingDir, role, stamp, nudge, title, cardOpts: opts,
+      useSocket: true,
     });
     console.log(`[card-approval pickup written: ${txtPath}]`);
     console.log(`[card-approval argv sidecar written: ${argvPath}  — read by the AC3 UserPromptSubmit responder on approve]`);

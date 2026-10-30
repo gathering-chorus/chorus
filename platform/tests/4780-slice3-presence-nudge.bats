@@ -1,0 +1,270 @@
+#!/usr/bin/env bats
+# @test-type: integration — drives chorus-principal with login-harness stub world
+# @domain: identity — guards #4786 (Slice 3 of #4780): Presence hostAccount & cleanup
+#
+# AC3: Presence records real hostAccount, retires on run end, and cleans dangling deliveredTo.
+# Negative proof (#3734): a fixture where launcher USER is passed does not contaminate
+# hostAccount, and presence after run end is marked unreachable.
+
+setup() {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
+  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
+  T="$BATS_TEST_TMPDIR"
+  source "$ROOT/platform/tests/lib/login-harness.bash"
+  login_harness
+}
+
+out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
+out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
+
+@test "AC3: login records role account in hostAccount, not launcher USER" {
+  export USER="jeffbridwell"
+  run "$SCRIPT" on wren
+  test "$status" -eq 0
+
+  s=$(body POST identity_sessions)
+  has "$s" '"hostAccount":"chorus-wren"'
+  test -z "$(printf '%s' "$s" | grep -F '"hostAccount":"jeffbridwell"' || true)"
+
+  p=$(body POST identity_presences)
+  has "$p" '"hostAccount":"chorus-wren"'
+  test -z "$(printf '%s' "$p" | grep -F '"hostAccount":"jeffbridwell"' || true)"
+}
+
+@test "NEGATIVE PROOF: launcher USER is rejected from contaminating hostAccount" {
+  export USER="attacker-or-launcher"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+
+  s=$(body POST identity_sessions)
+  has "$s" '"hostAccount":"chorus-silas"'
+  test -z "$(printf '%s' "$s" | grep -F 'attacker-or-launcher' || true)"
+
+  p=$(body POST identity_presences)
+  has "$p" '"hostAccount":"chorus-silas"'
+  test -z "$(printf '%s' "$p" | grep -F 'attacker-or-launcher' || true)"
+}
+
+@test "AC3: presence retires to unreachable on run end and logs spine event" {
+  run "$SCRIPT" on wren
+  run "$SCRIPT" off wren
+  test "$status" -eq 0
+
+  p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1)
+  has "$p" '"reachability":"unreachable"'
+
+  grep -q "session.presence.retired wren" "$T/spine.log"
+}
+
+@test "NEGATIVE PROOF: a retired presence does not stay reachable or unknown" {
+  run "$SCRIPT" on wren
+  run "$SCRIPT" off wren
+
+  p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1)
+  test -z "$(printf '%s' "$p" | grep -F '"reachability":"reachable"' || true)"
+  test -z "$(printf '%s' "$p" | grep -F '"reachability":"unknown"' || true)"
+}
+
+@test "NEGATIVE PROOF: CHORUS_ROLE_ACCOUNT=chorus-kade for silas -> still chorus-silas" {
+  export CHORUS_ROLE_ACCOUNT="chorus-kade"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+
+  s=$(body POST identity_sessions)
+  has "$s" '"hostAccount":"chorus-silas"'
+  test -z "$(printf '%s' "$s" | grep -F '"hostAccount":"chorus-kade"' || true)"
+
+  p=$(body POST identity_presences)
+  has "$p" '"hostAccount":"chorus-silas"'
+  test -z "$(printf '%s' "$p" | grep -F '"hostAccount":"chorus-kade"' || true)"
+}
+
+@test "NEGATIVE PROOF: principal with missing hostAccount in identity door is refused loudly" {
+  printf '{"data":{"principalKind":"agent"}}\n200\n' > "$T/principal-silas.json"
+  run "$SCRIPT" on silas
+  test "$status" -ne 0
+  out_has "REFUSED"
+  out_has "principal silas has no hostAccount bound in the identity door"
+}
+
+
+# --- S2 (AC1 / AC2): Nudge-health judges delivery results and run liveness ---
+
+@test "AC1/AC2: nudge-health judges run liveness and Pulse agreement without probing Terminal windows" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  # Roles door fixture (file://) so tests don't hit live :3360
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"borg-queen","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"}]}
+JSON
+
+  # Register live sessions for the roles
+  for r in wren silas kade borg-queen abby-normal; do
+    printf '{"role":"%s","pid":%s,"tty":"/dev/ttys999","host":"unknown","registered_at":"9999999999"}' \
+      "$r" "$$" > "$W/sessions/$r-$$.json"
+  done
+
+  # Stub Pulse returning live actors
+  PULSE_JSON='{"actors":['
+  first=1
+  for r in wren silas kade borg-queen abby-normal; do
+    [ "$first" -eq 1 ] && first=0 || PULSE_JSON="${PULSE_JSON},"
+    PULSE_JSON="${PULSE_JSON}{\"aboutPrincipal\":\"principal-${r}\",\"sessions\":[{\"live\":true}]}"
+  done
+  PULSE_JSON="${PULSE_JSON}]}"
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          pulse_actors="$PULSE_JSON" \
+          MESSAGES_DB="/dev/null" \
+          bash "$HEALTH"
+  test "$status" -eq 0
+  out_has "NUDGE HEALTH: all roles reachable"
+  out_lacks "Terminal"
+  out_lacks "no-window"
+}
+
+@test "AC1/AC2: a live role on its own account stays green in nudge-health" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-single"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"silas","roleKind":"agent"}]}
+JSON
+
+  printf '{"role":"silas","pid":%s,"tty":"/dev/ttys999","host":"unknown"}' \
+    "$$" > "$W/sessions/silas-$$.json"
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="silas" \
+          pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
+          MESSAGES_DB="/dev/null" \
+          bash "$HEALTH"
+  test "$status" -eq 0
+  out_has "OK: silas — live session on host=unknown (pid $$), agreed with Pulse (pulse_online=true)"
+  out_has "NUDGE HEALTH: all roles reachable"
+}
+
+@test "NEGATIVE PROOF (#3734): a refused nudge turns nudge-health RED and names the role" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-fail"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"borg-queen","roleKind":"agent"}]}
+JSON
+
+  # Case A: delivery error recorded in messages.db (real sqlite3 fixture DB)
+  DB="$W/messages.db"
+  sqlite3 "$DB" "
+    CREATE TABLE messages (
+      id INTEGER PRIMARY KEY,
+      type TEXT,
+      \"to\" TEXT,
+      delivery_status TEXT,
+      last_delivery_error TEXT,
+      created_at TEXT
+    );
+    INSERT INTO messages (type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES ('nudge', 'borg-queen', 'failed', 'unknown role: borg-queen', datetime('now'));
+  "
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
+          CHORUS_MESSAGES_DB="$DB" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="borg-queen" \
+          pulse_actors='{"actors":[{"aboutPrincipal":"principal-borg-queen","sessions":[{"live":true}]}]}' \
+          bash "$HEALTH"
+  test "$status" -ne 0
+  out_has "FAIL: borg-queen — nudge delivery failed: unknown role: borg-queen"
+  out_has "NUDGE HEALTH: 1 role(s) have issues"
+
+  # Case B: delivery path refuses unknown actor
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="unregistered-intruder" \
+          pulse_actors='{"actors":[]}' \
+          STUB_FAILED_NUDGES="" \
+          bash "$HEALTH"
+  test "$status" -ne 0
+  out_has "FAIL: unregistered-intruder — delivery path refuses role (unknown role: unregistered-intruder)"
+  out_has "NUDGE HEALTH: 1 role(s) have issues"
+}
+
+
+@test "NEGATIVE PROOF (#3734): unreadable roles door is UNMEASURED red, never silent fallback" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-door-down"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="http://127.0.0.1:9/unreachable-roles-door" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          bash "$HEALTH"
+  test "$status" -eq 2
+  out_has "UNMEASURED — roles door is unreadable"
+}
+
+@test "NEGATIVE PROOF (#3734): unreadable Pulse actor-state is UNMEASURED red, never silent pass" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-pulse-down"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  # Pulse URL unreadable / failing -> must exit 2 UNMEASURED
+  run env CHORUS_ROOT="$ROOT" \
+          PULSE_URL="http://127.0.0.1:9/unreachable-pulse" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          bash "$HEALTH"
+  test "$status" -eq 2
+  out_has "UNMEASURED — Pulse actor-state is unreadable"
+}
+
+# --- S3 (AC4): Bouncer writes to $CHORUS_STATE_DIR/pending-approvals/<role>/, responder reads only that ---
+
+@test "AC4: store_pending_approval handles writes, dedupe, and retry refusal" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks store_pending_approval_writes_and_refuses_retry
+  test "$status" -eq 0
+  out_has "test hooks::card_approval_responder::tests::store_pending_approval_writes_and_refuses_retry ... ok"
+}
+
+@test "AC4: role_pending_dir resolves to CHORUS_STATE_DIR/pending-approvals/<role>" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks role_pending_dir_resolves_to_state_dir_pending_approvals_role
+  test "$status" -eq 0
+  out_has "test hooks::card_approval_responder::tests::role_pending_dir_resolves_to_state_dir_pending_approvals_role ... ok"
+}
+
+@test "AC4 NEGATIVE PROOF (#3734): a file under /Users/chorus-<role>/ is NOT picked up" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_file_under_role_home_is_not_picked_up
+  test "$status" -eq 0
+  out_has "test hooks::card_approval_responder::tests::negative_proof_file_under_role_home_is_not_picked_up ... ok"
+}
+
+@test "AC4 NEGATIVE PROOF (#3734): kade's socket sends deploy_role=silas is refused and nothing stored" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing
+  test "$status" -eq 0
+  out_has "test bouncer_pending_tests::negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing ... ok"
+}
