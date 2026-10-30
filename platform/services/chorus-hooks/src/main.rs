@@ -1492,6 +1492,24 @@ async fn bouncer_pending(
     Json(payload): Json<serde_json::Value>,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
+    // #4786 AC4: payload role ≠ deploy_role / peer role → refuse
+    if let (Some(r), Some(dr)) = (
+        payload.get("role").and_then(|v| v.as_str()),
+        payload.get("deploy_role").and_then(|v| v.as_str()),
+    ) {
+        let r_clean = r.trim().trim_start_matches("chorus-");
+        let dr_clean = dr.trim().trim_start_matches("chorus-");
+        if !r_clean.is_empty() && !dr_clean.is_empty() && r_clean != dr_clean {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "error": format!("agent socket refuses: payload claims role '{r}' but socket deploy_role is '{dr}'")
+                })),
+            )
+                .into_response();
+        }
+    }
+
     let role = payload
         .get("deploy_role")
         .or_else(|| payload.get("role"))
@@ -1559,6 +1577,39 @@ async fn bouncer_pending(
             Json(serde_json::json!({"error": format!("io error: {e}")})),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod bouncer_pending_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing() {
+        // #4786 AC4 / #3734: kade's socket sends deploy_role=silas -> refused, nothing stored
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::env::set_var("CHORUS_PENDING_DIR", tmp.path().join("pending-approvals"));
+
+        let payload = json!({
+            "role": "silas",
+            "deploy_role": "kade", // peer role identified by agent socket
+            "title": "spoofed card",
+            "opts": {}
+        });
+
+        let resp = bouncer_pending(Json(payload)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // Verify nothing was stored under silas
+        let silas_dir = tmp.path().join("pending-approvals/silas");
+        assert!(!silas_dir.exists(), "silas pending dir must NOT be created");
+
+        // Verify nothing was stored under kade
+        let kade_dir = tmp.path().join("pending-approvals/kade");
+        assert!(!kade_dir.exists(), "kade pending dir must NOT be created");
+
+        std::env::remove_var("CHORUS_PENDING_DIR");
     }
 }
 

@@ -228,3 +228,10 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   test "$status" -eq 0
   out_has "test hooks::card_approval_responder::tests::negative_proof_file_under_role_home_is_not_picked_up ... ok"
 }
+
+@test "AC4 NEGATIVE PROOF (#3734): kade's socket sends deploy_role=silas is refused and nothing stored" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing
+  test "$status" -eq 0
+  out_has "test bouncer_pending_tests::negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing ... ok"
+}

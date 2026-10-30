@@ -71,7 +71,31 @@ pub fn role_for_uid(uid: Option<u32>, door_base: &str) -> Result<String, String>
     role_for_account(&account, &door)
 }
 
-fn refuse(reason: &str) -> Response {
+/// #4786 AC4: payload role ≠ peer role → refuse.
+/// Returns Ok(peer_role_clean) if valid, or Err(refusal_reason) if payload claims a different role.
+pub fn verify_peer_role(peer_role: &str, payload: &Value) -> Result<String, String> {
+    let peer_clean = peer_role.trim().trim_start_matches("chorus-");
+    for key in ["deploy_role", "role"] {
+        if let Some(claimed) = payload.get(key).and_then(Value::as_str) {
+            let claimed_clean = claimed.trim().trim_start_matches("chorus-");
+            if !claimed_clean.is_empty() && claimed_clean != peer_clean {
+                return Err(format!(
+                    "agent socket refuses: payload claims role '{claimed}' but socket peer is '{peer_role}'"
+                ));
+            }
+        }
+    }
+    Ok(peer_clean.to_string())
+}
+
+fn refuse(path: &str, reason: &str) -> Response {
+    if path == "/bouncer-pending" {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(json!({"error": reason})),
+        )
+            .into_response();
+    }
     let deny = json!({"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":reason}});
     Json(json!({"stdout": deny.to_string(), "exit_code": 0})).into_response()
 }
@@ -79,18 +103,67 @@ fn refuse(reason: &str) -> Response {
 /// Middleware for the agent socket: the payload's deploy_role is replaced by
 /// the role the OS identifies. Any failure refuses the call (fail closed).
 pub async fn identify(ConnectInfo(peer): ConnectInfo<AgentPeer>, req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
     let base = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".into());
     let role = match tokio::task::spawn_blocking(move || role_for_uid(peer.uid, &base)).await {
         Ok(Ok(role)) => role,
-        Ok(Err(why)) => return refuse(&why),
-        Err(e) => return refuse(&format!("agent socket refuses: identity lookup failed: {e}")),
+        Ok(Err(why)) => return refuse(&path, &why),
+        Err(e) => return refuse(&path, &format!("agent socket refuses: identity lookup failed: {e}")),
     };
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = to_bytes(body, 16 * 1024 * 1024).await else { return refuse("agent socket refuses: unreadable request body") };
+    let Ok(bytes) = to_bytes(body, 16 * 1024 * 1024).await else {
+        return refuse(&path, "agent socket refuses: unreadable request body");
+    };
     let mut payload: Value = match serde_json::from_slice(&bytes) {
         Ok(Value::Object(o)) => Value::Object(o),
-        _ => return refuse("agent socket refuses: the request body is not a JSON object"),
+        _ => return refuse(&path, "agent socket refuses: the request body is not a JSON object"),
     };
-    payload["deploy_role"] = json!(role);
+
+    // #4786 AC4: payload role ≠ peer role → refuse loudly
+    let peer_role_clean = match verify_peer_role(&role, &payload) {
+        Ok(r) => r,
+        Err(why) => return refuse(&path, &why),
+    };
+
+    payload["deploy_role"] = json!(peer_role_clean);
+    payload["role"] = json!(peer_role_clean);
     next.run(Request::from_parts(parts, Body::from(payload.to_string()))).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_peer_role_allows_matching_role() {
+        let payload = json!({"role": "kade", "deploy_role": "kade"});
+        assert_eq!(verify_peer_role("kade", &payload), Ok("kade".to_string()));
+
+        let payload_prefixed = json!({"role": "chorus-kade", "deploy_role": "chorus-kade"});
+        assert_eq!(verify_peer_role("kade", &payload_prefixed), Ok("kade".to_string()));
+
+        let payload_empty = json!({});
+        assert_eq!(verify_peer_role("kade", &payload_empty), Ok("kade".to_string()));
+    }
+
+    #[test]
+    fn negative_proof_peer_role_refuses_mismatched_deploy_role() {
+        // #4786 AC4 / #3734 negative proof:
+        // kade's socket sends deploy_role=silas -> refused
+        let payload = json!({"deploy_role": "silas"});
+        let err = verify_peer_role("kade", &payload).unwrap_err();
+        assert!(
+            err.contains("payload claims role 'silas' but socket peer is 'kade'"),
+            "got {:?}",
+            err
+        );
+
+        let payload_role = json!({"role": "silas"});
+        let err2 = verify_peer_role("kade", &payload_role).unwrap_err();
+        assert!(
+            err2.contains("payload claims role 'silas' but socket peer is 'kade'"),
+            "got {:?}",
+            err2
+        );
+    }
 }
