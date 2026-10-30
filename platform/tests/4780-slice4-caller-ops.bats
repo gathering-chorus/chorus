@@ -45,7 +45,8 @@ setup() {
 # --- AC1: Caller's role comes from verified account or signed credential, never DEPLOY_ROLE env var or cwd guess ---
 
 @test "AC1: Rust role resolver ignores DEPLOY_ROLE when running as chorus-<role>" {
-  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --lib shared::role::session_resolver_tests_4202::account_chorus_role_ignores_deploy_role_negative_proof
+  cd "$ROOT/platform/services/chorus-hooks"
+  cargo test --offline --frozen --lib shared::role::session_resolver_tests_4202::account_chorus_role_ignores_deploy_role_negative_proof
 }
 
 @test "AC1: cards detectRole uses OS account chorus-<role> and ignores DEPLOY_ROLE" {
@@ -91,18 +92,20 @@ setup() {
 # --- AC2: Role on its own account can kickstart, load, and retire owned com.chorus.* LaunchAgents via narrow ops helper ---
 
 @test "AC2: chorus-hooks daemon socket launchagent_ops enforces graph ownedBy" {
-  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks launchagent_ops_tests::negative_proof_launchagent_ops_refuses_unowned_or_mismatched_role
+  cd "$ROOT/platform/services/chorus-hooks"
+  cargo test --offline --frozen --bin chorus-hooks launchagent_ops_tests::negative_proof_launchagent_ops_refuses_unowned_or_mismatched_role
 }
 
 @test "AC2: agent socket peer check refuses spoofed deploy_role over socket" {
-  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --lib agent_socket::tests::negative_proof_peer_role_refuses_mismatched_deploy_role
+  cd "$ROOT/platform/services/chorus-hooks"
+  cargo test --offline --frozen --lib agent_socket::tests::negative_proof_peer_role_refuses_mismatched_deploy_role
 }
 
 @test "AC2 NEGATIVE PROOF (#3734): invalid verbs or arbitrary extra args/paths are refused by launchagent-ops" {
   # Build shim if needed
-  SHIM_BIN="/tmp/target-chorus-hooks/debug/chorus-hook-shim"
+  SHIM_BIN="$ROOT/platform/services/chorus-hooks/target/debug/chorus-hook-shim"
   if [ ! -x "$SHIM_BIN" ]; then
-    CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo build --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hook-shim
+    (cd "$ROOT/platform/services/chorus-hooks" && cargo build --offline --frozen --bin chorus-hook-shim)
   fi
   export CHORUS_HOOK_SHIM="$SHIM_BIN"
 

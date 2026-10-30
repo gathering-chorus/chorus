@@ -27,7 +27,7 @@ function mintBin(): string {
 /** Mint an ES256 identity token for this process's role, or null when no
  *  credential is resolvable (fail open — the envelope decides). */
 export function mintServiceToken(): string | null {
-  let role = DEFAULT_ROLE;
+  let role: string;
   try {
     const user = os.userInfo().username.toLowerCase();
     if (user.startsWith('chorus-')) {
