@@ -35,7 +35,14 @@ setup() {
 
 @test "AC3 NEGATIVE PROOF (#3734): service-run emitting without service field fails verification" {
   LABEL="com.chorus.test-probe-neg"
-  _SERVICE_RUN_TEST_OMIT_SERVICE=1 bash "$ROOT/platform/scripts/service-run" "$LABEL" job /usr/bin/true
+  # #4809 AC4 — the broken emitter is a sed-doctored COPY in the test's own dir;
+  # prod service-run carries no test-only switch. The copy sources the real lib.
+  broken="$BATS_TEST_TMPDIR/service-run-no-service"
+  mkdir -p "$BATS_TEST_TMPDIR/lib"
+  cp "$ROOT/platform/scripts/lib/service-lifecycle.sh" "$BATS_TEST_TMPDIR/lib/"
+  sed 's/ "service=\$label"//' "$ROOT/platform/scripts/service-run" > "$broken"
+  ! grep -q '"service=\$label"' "$broken" || { echo "sed did not strip the service field"; return 1; }
+  bash "$broken" "$LABEL" job /usr/bin/true
 
   # Verification assertion: event must contain "service":"$LABEL"
   # Under the faulty emission, the assertion fails
