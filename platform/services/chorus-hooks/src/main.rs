@@ -1066,19 +1066,20 @@ async fn user_prompt_submit(
     tokio::spawn(async move {
         use crate::state::chorus_log;
         use hooks::card_approval_responder::{
-            detect_approval_signal, handle_approval_request_in_dirs, pending_dirs_for_role,
-            sweep_stale_pending_in_dirs, ApprovalOutcome,
+            detect_approval_signal, handle_approval_request_all, role_pending_dir,
+            sweep_stale_pending, ApprovalOutcome,
         };
         use std::time::SystemTime;
 
-        let candidate_dirs = pending_dirs_for_role(&approval_role, None);
+        // One canonical location (#4786 AC4): $CHORUS_STATE_DIR/pending-approvals/<role>/
+        let pending_dir = role_pending_dir(&approval_role);
         let now = SystemTime::now();
 
         // AC4: sweep stale pending pairs before the keyword pass — emits
         // card.approval.timeout for each (basename stem captured for trace).
-        let candidate_dirs_for_sweep = candidate_dirs.clone();
+        let pending_dir_for_sweep = pending_dir.clone();
         let swept = tokio::task::spawn_blocking(move || {
-            sweep_stale_pending_in_dirs(&candidate_dirs_for_sweep, now)
+            sweep_stale_pending(&pending_dir_for_sweep, now)
         })
         .await
         .unwrap_or_default();
@@ -1092,15 +1093,14 @@ async fn user_prompt_submit(
         };
 
         // #2964 / #4786: drain ALL queued pending payloads for the role on a single
-        // approve keystroke across candidate directories (including the role's own
-        // account ~/.chorus/pending-approvals).
+        // approve keystroke in the role's canonical pending dir.
         let role_for_blocking = approval_role.clone();
-        let candidate_dirs_for_blocking = candidate_dirs.clone();
+        let pending_dir_for_blocking = pending_dir.clone();
         let outcomes = tokio::task::spawn_blocking(move || {
-            handle_approval_request_in_dirs(
+            handle_approval_request_all(
                 &role_for_blocking,
                 signal,
-                &candidate_dirs_for_blocking,
+                &pending_dir_for_blocking,
                 now,
                 |desc_path, mut argv| {
                     // Production runner: invoke `cards add` with DEPLOY_ROLE=jeff

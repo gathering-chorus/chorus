@@ -1052,14 +1052,12 @@ DEPS:     ${trunc(deps, 200)}
 SCOPE:    ${trunc(scope, 220)}
 APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards add … in your terminal bypasses cleanly. Full description in the pickup file.`;
 
-  // #2910: write the composed ask to a pickup file so the model can surface it
-  // in its next response to Jeff. Previous design relied on the model reading
-  // its own stdout and deciding to forward the nudge — Silas demonstrated that
-  // gap by relaying a summary instead. The pickup file lets the next-response
-  // hook (or model-side discipline per skills/cards/bouncer-flow.md) surface
-  // the ask verbatim. Without this, the only reliable delivery channel to Jeff
-  // (model response text) is opt-in.
-  const pendingDir = `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/pending-approvals`;
+  // #2910 / #4786 AC4: write the composed ask to a per-role subdirectory under
+  // $CHORUS_STATE_DIR/pending-approvals/<role>/ so the responder daemon can read
+  // it without traversing 0700 per-role home directories.
+  const stateDir = process.env.CHORUS_STATE_DIR || '/Users/jeffbridwell/.chorus';
+  const pendingBase = process.env.CHORUS_PENDING_DIR || `${stateDir}/pending-approvals`;
+  const pendingDir = `${pendingBase}/${role}`;
   try {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const { txtPath, argvPath } = writePendingApprovalArtifacts({

@@ -206,18 +206,18 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   out_has "UNMEASURED — Pulse actor-state is unreadable"
 }
 
-# --- S3 (AC4): Bouncer approval responder reads pending from role account ---
+# --- S3 (AC4): Bouncer writes to $CHORUS_STATE_DIR/pending-approvals/<role>/, responder reads only that ---
 
-@test "AC4: bouncer responder candidate directories include role's own account directory" {
+@test "AC4: role_pending_dir resolves to CHORUS_STATE_DIR/pending-approvals/<role>" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks pending_dirs_for_role_includes_role_account_dir
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks role_pending_dir_resolves_to_state_dir_pending_approvals_role
   test "$status" -eq 0
-  out_has "test hooks::card_approval_responder::tests::pending_dirs_for_role_includes_role_account_dir ... ok"
+  out_has "test hooks::card_approval_responder::tests::role_pending_dir_resolves_to_state_dir_pending_approvals_role ... ok"
 }
 
-@test "AC4 NEGATIVE PROOF (#3734): Jeff approve on chorus-silas pending file files card exactly once" {
+@test "AC4 NEGATIVE PROOF (#3734): a file under /Users/chorus-<role>/ is NOT picked up" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_approve_on_chorus_silas_pending_files_card_exactly_once
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_file_under_role_home_is_not_picked_up
   test "$status" -eq 0
-  out_has "test hooks::card_approval_responder::tests::negative_proof_approve_on_chorus_silas_pending_files_card_exactly_once ... ok"
+  out_has "test hooks::card_approval_responder::tests::negative_proof_file_under_role_home_is_not_picked_up ... ok"
 }
