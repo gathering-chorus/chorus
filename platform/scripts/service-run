@@ -32,11 +32,7 @@ if [ ! -x "$cmd" ]; then
   exit 127
 fi
 version="$(shasum -a 256 "$cmd" 2>/dev/null | cut -c1-12)"
-if [ -z "${_SERVICE_RUN_TEST_OMIT_SERVICE:-}" ]; then
-  _sl_emit service.started "service=$label" "pid=$$" "version=${version:-unknown}"
-else
-  _sl_emit service.started "pid=$$" "version=${version:-unknown}"
-fi
+_sl_emit service.started "service=$label" "pid=$$" "version=${version:-unknown}"
 err="$(_sl_err_path "$label")"; mark="$(_sl_size "$err")"
 
 stop_reason=""
@@ -53,24 +49,12 @@ while :; do
 done
 
 if [ -n "$stop_reason" ]; then
-  if [ -z "${_SERVICE_RUN_TEST_OMIT_SERVICE:-}" ]; then
-    _sl_emit service.stopped "service=$label" "pid=$$" "reason=$stop_reason"
-  else
-    _sl_emit service.stopped "pid=$$" "reason=$stop_reason"
-  fi
+  _sl_emit service.stopped "service=$label" "pid=$$" "reason=$stop_reason"
   exit 0
 elif [ "$rc" = 0 ]; then
-  if [ -z "${_SERVICE_RUN_TEST_OMIT_SERVICE:-}" ]; then
-    _sl_emit service.stopped "service=$label" "pid=$$" "reason=exit 0"
-  else
-    _sl_emit service.stopped "pid=$$" "reason=exit 0"
-  fi
+  _sl_emit service.stopped "service=$label" "pid=$$" "reason=exit 0"
   exit 0
 else
-  if [ -z "${_SERVICE_RUN_TEST_OMIT_SERVICE:-}" ]; then
-    _sl_emit service.failed "service=$label" "pid=$$" "reason=$(_sl_reason "$rc" "$err" "$mark")" "exit_code=$rc"
-  else
-    _sl_emit service.failed "pid=$$" "reason=$(_sl_reason "$rc" "$err" "$mark")" "exit_code=$rc"
-  fi
+  _sl_emit service.failed "service=$label" "pid=$$" "reason=$(_sl_reason "$rc" "$err" "$mark")" "exit_code=$rc"
 fi
 exit "$rc"

@@ -68,3 +68,8 @@ setup_file() {
   [[ "$line" == *'"exit_code":"127"'* || "$line" == *'"exit_code":127'* ]] || { echo "no exit_code=127: $line"; return 1; }
   [[ "$line" != *'"exit":'* ]] || { echo "old exit= field still present: $line"; return 1; }
 }
+
+@test "AC4: no test-only env switch in prod service-run or its lifecycle lib" {
+  run grep -rn '_SERVICE_RUN_TEST' "$ROOT/platform/scripts/service-run" "$ROOT/platform/scripts/lib/service-lifecycle.sh"
+  [ "$status" -eq 1 ] || { echo "test-only switch still in prod: $output"; return 1; }
+}
