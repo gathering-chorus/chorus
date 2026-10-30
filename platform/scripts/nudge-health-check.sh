@@ -17,7 +17,7 @@ log_canary() {
 }
 
 PULSE_URL="${PULSE_URL:-http://localhost:3475}"
-MESSAGES_DB="${CHORUS_MESSAGES_DB:-${CHORUS_ROOT}/platform/pulse/messages.db}"
+MESSAGES_DB="${CHORUS_MESSAGES_DB:-${MESSAGES_DB:-${CHORUS_ROOT}/platform/pulse/messages.db}}"
 STATE_DIR="${CHORUS_STATE_DIR:-/Users/jeffbridwell/.chorus}"
 SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-${STATE_DIR}/sessions}"
 
