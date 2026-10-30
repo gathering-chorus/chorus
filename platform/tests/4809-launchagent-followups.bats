@@ -25,7 +25,8 @@ setup_file() {
 
 @test "AC2 (CLI): refusals the shim makes before reaching the daemon also emit launchagent.refused" {
   cd "$ROOT/platform/services/chorus-hooks"
-  cargo build --offline --bin chorus-hook-shim >/dev/null 2>&1
+  run cargo build --bin chorus-hook-shim
+  [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
   SHIM="$CARGO_TARGET_DIR/debug/chorus-hook-shim"
   export CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log"
   : > "$CHORUS_LOG_FILE"
@@ -45,7 +46,7 @@ setup_file() {
 
 @test "AC2: every launchagent-ops refusal emits launchagent.refused with role, label and reason" {
   cd "$ROOT/platform/services/chorus-hooks"
-  run cargo test --offline --bin chorus-hooks launchagent_ops_tests::refusal_emits_launchagent_refused_with_role_label_reason
+  run cargo test --bin chorus-hooks launchagent_ops_tests::refusal_emits_launchagent_refused_with_role_label_reason
   echo "$output"
   [ "$status" -eq 0 ]
 }
