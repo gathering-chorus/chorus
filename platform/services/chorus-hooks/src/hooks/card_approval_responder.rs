@@ -65,32 +65,104 @@ pub struct PendingOpts {
     pub description: Option<String>,
 }
 
-/// Find ALL `<role>-*.argv.json` files under `pending_dir`, ordered oldest-first
-/// by mtime so callers can process them in queue order. #2964: when Jeff approves,
-/// the responder should drain the whole queue for the role, not just the most-recent
-/// payload — otherwise duplicates accumulate and each `approve` keystroke only chips
-/// one off.
-pub fn find_all_pending(role: &str, pending_dir: &Path) -> Vec<PathBuf> {
-    let prefix = format!("{}-", role);
-    let entries = match std::fs::read_dir(pending_dir) {
-        Ok(e) => e,
-        Err(_) => return Vec::new(),
-    };
-    let mut hits: Vec<(PathBuf, SystemTime)> = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if !name.starts_with(&prefix) || !name.ends_with(".argv.json") {
-            continue;
+/// Candidate pending-approval directories for a given role, ordered by preference.
+///
+/// Order:
+/// 1. `CHORUS_PENDING_DIR` env override (if set — used by tests / manual redirects).
+/// 2. `base_pending_dir` (if passed explicitly by caller).
+/// 3. The role's own account home (`~/.chorus/pending-approvals`), i.e.
+///    `/Users/chorus-<role>/.chorus/pending-approvals`.
+/// 4. If `CHORUS_USERS_DIR` is set (for hermetic integration testing):
+///    `<CHORUS_USERS_DIR>/chorus-<role>/.chorus/pending-approvals`.
+/// 5. Shared state dir override: `<CHORUS_STATE_DIR>/pending-approvals`.
+/// 6. Default launcher home fallback: `<HOME>/.chorus/pending-approvals`.
+pub fn pending_dirs_for_role(role: &str, base_pending_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(dir_str) = std::env::var("CHORUS_PENDING_DIR") {
+        if !dir_str.trim().is_empty() {
+            dirs.push(PathBuf::from(dir_str));
         }
-        let mtime = match entry.metadata().and_then(|m| m.modified()) {
-            Ok(t) => t,
+    }
+
+    if let Some(base) = base_pending_dir {
+        dirs.push(base.to_path_buf());
+    }
+
+    let role_clean = role.trim_start_matches("chorus-");
+    let role_account = format!("chorus-{}", role_clean);
+    dirs.push(PathBuf::from(format!(
+        "/Users/{}/.chorus/pending-approvals",
+        role_account
+    )));
+
+    if let Ok(users_dir) = std::env::var("CHORUS_USERS_DIR") {
+        if !users_dir.trim().is_empty() {
+            dirs.push(
+                PathBuf::from(users_dir)
+                    .join(&role_account)
+                    .join(".chorus")
+                    .join("pending-approvals"),
+            );
+        }
+    }
+
+    if let Ok(state_dir) = std::env::var("CHORUS_STATE_DIR") {
+        if !state_dir.trim().is_empty() {
+            dirs.push(PathBuf::from(state_dir).join("pending-approvals"));
+        }
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    dirs.push(PathBuf::from(format!("{}/.chorus/pending-approvals", home)));
+
+    let mut unique = Vec::new();
+    for d in dirs {
+        if !unique.contains(&d) {
+            unique.push(d);
+        }
+    }
+    unique
+}
+
+/// Find ALL `<role>-*.argv.json` files across multiple `pending_dirs`, ordered oldest-first
+/// by mtime so callers can process them in queue order. #2964 / #4786: when Jeff approves,
+/// the responder drains the queue for the role across all candidate directories
+/// (including the role's own account directory).
+pub fn find_all_pending_in_dirs(role: &str, pending_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let role_clean = role.trim_start_matches("chorus-");
+    let prefix = format!("{}-", role_clean);
+    let mut hits: Vec<(PathBuf, SystemTime)> = Vec::new();
+
+    for dir in pending_dirs {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
             Err(_) => continue,
         };
-        hits.push((path, mtime));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !name.starts_with(&prefix) || !name.ends_with(".argv.json") {
+                continue;
+            }
+            let mtime = match entry.metadata().and_then(|m| m.modified()) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            hits.push((path, mtime));
+        }
     }
-    hits.sort_by_key(|(_, t)| *t);
+
+    hits.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    hits.dedup_by(|a, b| a.0 == b.0);
     hits.into_iter().map(|(p, _)| p).collect()
+}
+
+/// Find ALL `<role>-*.argv.json` files under `pending_dir`, ordered oldest-first
+/// by mtime.
+pub fn find_all_pending(role: &str, pending_dir: &Path) -> Vec<PathBuf> {
+    let single = [pending_dir.to_path_buf()];
+    find_all_pending_in_dirs(role, &single)
 }
 
 
@@ -160,6 +232,15 @@ pub fn sweep_stale_pending(pending_dir: &Path, now: SystemTime) -> Vec<String> {
     swept
 }
 
+/// Sweep stale pending files across multiple directories.
+pub fn sweep_stale_pending_in_dirs(pending_dirs: &[PathBuf], now: SystemTime) -> Vec<String> {
+    let mut swept = Vec::new();
+    for dir in pending_dirs {
+        swept.extend(sweep_stale_pending(dir, now));
+    }
+    swept
+}
+
 /// Resolve the cards CLI absolute path. Reads `CHORUS_CARDS_BIN` env var
 /// (testable via `resolve_cards_cli_path_with_env` for an alternate name);
 /// falls back to the canonical absolute path because launchctl-managed
@@ -208,8 +289,9 @@ pub enum ApprovalOutcome {
 }
 
 
-/// #2964: drain the entire pending queue for a role on one approval keyword.
-/// Iterates over every `<role>-*.argv.json` in `pending_dir` oldest-first.
+/// #2964 / #4786: drain the entire pending queue for a role on one approval keyword
+/// across all candidate pending directories (including role home directories).
+/// Iterates over every `<role>-*.argv.json` in `pending_dirs` oldest-first.
 /// Each payload: stale/parse/approve/deny handling inline
 /// (stale → TimedOut + cleanup; parse-fail → ParseFailed + preserve; approve
 /// → spawn + cleanup on success; deny → cleanup). Returns one `ApprovalOutcome`
@@ -218,17 +300,17 @@ pub enum ApprovalOutcome {
 ///
 /// `spawn_cards` is called once per pending payload — closures must be
 /// callable repeatedly (so `Fn`, not `FnOnce`).
-pub fn handle_approval_request_all<F>(
+pub fn handle_approval_request_in_dirs<F>(
     role: &str,
     signal: ApprovalSignal,
-    pending_dir: &Path,
+    pending_dirs: &[PathBuf],
     now: SystemTime,
     spawn_cards: F,
 ) -> Vec<ApprovalOutcome>
 where
     F: Fn(&Path, Vec<String>) -> std::io::Result<bool>,
 {
-    let pending_paths = find_all_pending(role, pending_dir);
+    let pending_paths = find_all_pending_in_dirs(role, pending_dirs);
     if pending_paths.is_empty() {
         return vec![ApprovalOutcome::NoPending];
     }
@@ -288,6 +370,21 @@ where
         }
     }
     outcomes
+}
+
+/// Backwards-compatible convenience wrapper for a single `pending_dir`.
+pub fn handle_approval_request_all<F>(
+    role: &str,
+    signal: ApprovalSignal,
+    pending_dir: &Path,
+    now: SystemTime,
+    spawn_cards: F,
+) -> Vec<ApprovalOutcome>
+where
+    F: Fn(&Path, Vec<String>) -> std::io::Result<bool>,
+{
+    let single = [pending_dir.to_path_buf()];
+    handle_approval_request_in_dirs(role, signal, &single, now, spawn_cards)
 }
 
 /// Standalone-word match for `approve` / `approved`.
@@ -735,5 +832,98 @@ mod tests {
         assert_eq!(payload.title, "fix the thing");
         assert_eq!(payload.opts.owner.as_deref(), Some("wren"));
         assert_eq!(payload.opts.card_type.as_deref(), Some("fix"));
+    }
+
+    #[test]
+    fn pending_dirs_for_role_includes_role_account_dir() {
+        let dirs_silas = pending_dirs_for_role("silas", None);
+        assert!(
+            dirs_silas.iter().any(|d| d == &PathBuf::from("/Users/chorus-silas/.chorus/pending-approvals")),
+            "candidate dirs must include /Users/chorus-silas/.chorus/pending-approvals: {:?}",
+            dirs_silas
+        );
+
+        let dirs_prefixed = pending_dirs_for_role("chorus-silas", None);
+        assert!(
+            dirs_prefixed.iter().any(|d| d == &PathBuf::from("/Users/chorus-silas/.chorus/pending-approvals")),
+            "candidate dirs for chorus-silas must include /Users/chorus-silas/.chorus/pending-approvals"
+        );
+    }
+
+    #[test]
+    fn negative_proof_approve_on_chorus_silas_pending_files_card_exactly_once() {
+        // #4786 AC4 / #3734 negative proof:
+        // Silas's pending file was written by sdk.ts to /Users/chorus-silas/.chorus/pending-approvals.
+        // The old responder only checked /Users/jeffbridwell/.chorus/pending-approvals and saw 0 cards.
+        // With candidate dirs including the role's account dir, Jeff's approve MUST file the card
+        // exactly once and clean up the file.
+        let tmp = TempDir::new().unwrap();
+        let silas_home_pending = tmp.path().join("chorus-silas/.chorus/pending-approvals");
+        let launcher_pending = tmp.path().join("jeffbridwell/.chorus/pending-approvals");
+        fs::create_dir_all(&silas_home_pending).unwrap();
+        fs::create_dir_all(&launcher_pending).unwrap();
+
+        let silas_file = write_pending(
+            &silas_home_pending,
+            "silas",
+            "16-25-00",
+            &fresh_payload_json_titled("silas-proposed-card"),
+        );
+        assert!(silas_file.exists());
+
+        // Negative proof step 1: if only launcher_pending is checked (old behavior), 0 cards filed.
+        let old_dirs = [launcher_pending.clone()];
+        let old_outcomes = handle_approval_request_in_dirs(
+            "silas",
+            ApprovalSignal::Approve,
+            &old_dirs,
+            SystemTime::now(),
+            |_, _| panic!("spawn must not be called when role file is missing from launcher dir"),
+        );
+        assert_eq!(old_outcomes, vec![ApprovalOutcome::NoPending]);
+        assert!(silas_file.exists(), "file remains untouched under old behavior");
+
+        // Positive proof step 2: with candidate dirs containing silas's account dir,
+        // card is filed exactly once.
+        let candidate_dirs = vec![silas_home_pending.clone(), launcher_pending.clone()];
+        let spawn_count = std::sync::Mutex::new(0u32);
+        let spawned_titles = std::sync::Mutex::new(Vec::new());
+
+        let outcomes = handle_approval_request_in_dirs(
+            "silas",
+            ApprovalSignal::Approve,
+            &candidate_dirs,
+            SystemTime::now(),
+            |_, argv| {
+                *spawn_count.lock().unwrap() += 1;
+                spawned_titles.lock().unwrap().push(argv.first().cloned().unwrap_or_default());
+                Ok(true)
+            },
+        );
+
+        assert_eq!(outcomes.len(), 1, "exactly 1 outcome returned");
+        assert_eq!(*spawn_count.lock().unwrap(), 1, "card must be filed exactly once");
+        assert_eq!(
+            *spawned_titles.lock().unwrap(),
+            vec!["silas-proposed-card".to_string()],
+            "correct card title was filed"
+        );
+        assert!(
+            matches!(outcomes[0], ApprovalOutcome::Approved { ref title } if title == "silas-proposed-card")
+        );
+
+        // Verification step 3: pending files cleaned up
+        assert!(!silas_file.exists(), "argv.json must be deleted after approve");
+        assert!(!silas_home_pending.join("silas-16-25-00.txt").exists(), "txt sidecar must be deleted");
+
+        // Verification step 4: subsequent approve does not double-file
+        let second_run = handle_approval_request_in_dirs(
+            "silas",
+            ApprovalSignal::Approve,
+            &candidate_dirs,
+            SystemTime::now(),
+            |_, _| panic!("spawn must not be called on empty queue"),
+        );
+        assert_eq!(second_run, vec![ApprovalOutcome::NoPending]);
     }
 }

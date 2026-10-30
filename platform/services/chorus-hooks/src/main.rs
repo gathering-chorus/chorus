@@ -1066,22 +1066,22 @@ async fn user_prompt_submit(
     tokio::spawn(async move {
         use crate::state::chorus_log;
         use hooks::card_approval_responder::{
-            detect_approval_signal, handle_approval_request_all, sweep_stale_pending,
-            ApprovalOutcome,
+            detect_approval_signal, handle_approval_request_in_dirs, pending_dirs_for_role,
+            sweep_stale_pending_in_dirs, ApprovalOutcome,
         };
-        use std::path::PathBuf;
         use std::time::SystemTime;
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-        let pending_dir = PathBuf::from(format!("{}/.chorus/pending-approvals", home));
+        let candidate_dirs = pending_dirs_for_role(&approval_role, None);
         let now = SystemTime::now();
 
         // AC4: sweep stale pending pairs before the keyword pass — emits
         // card.approval.timeout for each (basename stem captured for trace).
-        let pending_dir_for_sweep = pending_dir.clone();
-        let swept = tokio::task::spawn_blocking(move || sweep_stale_pending(&pending_dir_for_sweep, now))
-            .await
-            .unwrap_or_default();
+        let candidate_dirs_for_sweep = candidate_dirs.clone();
+        let swept = tokio::task::spawn_blocking(move || {
+            sweep_stale_pending_in_dirs(&candidate_dirs_for_sweep, now)
+        })
+        .await
+        .unwrap_or_default();
         for stem in swept {
             chorus_log("card.approval.timeout", "system", &[("stem", stem.as_str())]).await;
         }
@@ -1091,18 +1091,16 @@ async fn user_prompt_submit(
             None => return,
         };
 
-        // #2964: drain ALL queued pending payloads for the role on a single
-        // approve keystroke. Each outcome emits its own spine event so the
-        // log surface shows "Filed #2959, #2960, #2961" instead of one
-        // event per approve. Today's failure cycle (10 approves → 3 cards
-        // filed) was the most-recent-only behavior; this loops over all.
+        // #2964 / #4786: drain ALL queued pending payloads for the role on a single
+        // approve keystroke across candidate directories (including the role's own
+        // account ~/.chorus/pending-approvals).
         let role_for_blocking = approval_role.clone();
-        let pending_dir_for_blocking = pending_dir.clone();
+        let candidate_dirs_for_blocking = candidate_dirs.clone();
         let outcomes = tokio::task::spawn_blocking(move || {
-            handle_approval_request_all(
+            handle_approval_request_in_dirs(
                 &role_for_blocking,
                 signal,
-                &pending_dir_for_blocking,
+                &candidate_dirs_for_blocking,
                 now,
                 |desc_path, mut argv| {
                     // Production runner: invoke `cards add` with DEPLOY_ROLE=jeff

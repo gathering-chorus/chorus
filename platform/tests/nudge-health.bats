@@ -68,7 +68,7 @@ hc_world() {
   mkdir -p "$W/bin" "$W/root/platform/scripts" "$W/sessions" "$W/canary"
   sed "s|^CANARY_DIR=\"/tmp/nudge-canary\"|CANARY_DIR=\"$W/canary\"|" "$HEALTH_SCRIPT" > "$W/health.sh"
   ! cmp -s "$W/health.sh" "$HEALTH_SCRIPT" || { echo "canary redirect did not apply" >&2; return 1; }
-  printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\n' "$W" > "$W/bin/curl"
+  printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\nif [[ "$*" == *"/api/actor-state"* ]]; then echo "{\\"actors\\":[{\\"aboutPrincipal\\":\\"principal-wren\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-silas\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-kade\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-borg-queen\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-abby-normal\\",\\"sessions\\":[{\\"live\\":true}]}]}"; fi\n' "$W" > "$W/bin/curl"
   printf '#!/bin/bash\necho "$*" >> "%s/spine.calls"\n' "$W" > "$W/root/platform/scripts/chorus-log"
   if [ -n "${STUB_OSA:-}" ]; then
     # records the AppleScript it was asked to run; answers "<count>::<name>"

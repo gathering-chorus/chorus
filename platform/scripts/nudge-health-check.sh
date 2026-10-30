@@ -81,8 +81,14 @@ if best:
 PY
 }
 
-# Fetch online status from Pulse actor-state (if reachable)
-pulse_actors=$(curl -s --max-time 2 "${PULSE_URL}/api/actor-state" 2>/dev/null || true)
+# Fetch online status from Pulse actor-state (must be reachable, otherwise UNMEASURED)
+if [ -z "${pulse_actors:-}" ]; then
+  pulse_actors=$(curl -s --max-time 2 "${PULSE_URL}/api/actor-state" 2>/dev/null || true)
+fi
+if [ -z "$pulse_actors" ] || ! echo "$pulse_actors" | grep -q '"actors"'; then
+  echo "UNMEASURED — Pulse actor-state is unreadable (${PULSE_URL}/api/actor-state)"
+  exit 2
+fi
 
 # 1. Check recent nudge delivery errors from messages.db or test stub
 failed_nudges=""

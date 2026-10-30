@@ -189,3 +189,35 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   test "$status" -eq 2
   out_has "UNMEASURED — roles door is unreadable"
 }
+
+@test "NEGATIVE PROOF (#3734): unreadable Pulse actor-state is UNMEASURED red, never silent pass" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s2-pulse-down"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  # Pulse URL unreadable / failing -> must exit 2 UNMEASURED
+  run env CHORUS_ROOT="$ROOT" \
+          PULSE_URL="http://127.0.0.1:9/unreachable-pulse" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          bash "$HEALTH"
+  test "$status" -eq 2
+  out_has "UNMEASURED — Pulse actor-state is unreadable"
+}
+
+# --- S3 (AC4): Bouncer approval responder reads pending from role account ---
+
+@test "AC4: bouncer responder candidate directories include role's own account directory" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks pending_dirs_for_role_includes_role_account_dir
+  test "$status" -eq 0
+  out_has "test hooks::card_approval_responder::tests::pending_dirs_for_role_includes_role_account_dir ... ok"
+}
+
+@test "AC4 NEGATIVE PROOF (#3734): Jeff approve on chorus-silas pending file files card exactly once" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_approve_on_chorus_silas_pending_files_card_exactly_once
+  test "$status" -eq 0
+  out_has "test hooks::card_approval_responder::tests::negative_proof_approve_on_chorus_silas_pending_files_card_exactly_once ... ok"
+}
