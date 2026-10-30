@@ -119,14 +119,18 @@ pub async fn identify(ConnectInfo(peer): ConnectInfo<AgentPeer>, req: Request, n
         _ => return refuse(&path, "agent socket refuses: the request body is not a JSON object"),
     };
 
-    // #4786 AC4: payload role ≠ peer role → refuse loudly
-    let peer_role_clean = match verify_peer_role(&role, &payload) {
-        Ok(r) => r,
-        Err(why) => return refuse(&path, &why),
-    };
+    // #4786 AC4: on /bouncer-pending, verify that payload role matches the peer role.
+    // For standard hooks (e.g. /pre-tool-use), the agent socket overwrites the payload
+    // role with the OS peer role instead of denying.
+    if path == "/bouncer-pending" {
+        if let Err(why) = verify_peer_role(&role, &payload) {
+            return refuse(&path, &why);
+        }
+    }
 
-    payload["deploy_role"] = json!(peer_role_clean);
-    payload["role"] = json!(peer_role_clean);
+    let role_clean = role.trim().trim_start_matches("chorus-");
+    payload["deploy_role"] = json!(role_clean);
+    payload["role"] = json!(role_clean);
     next.run(Request::from_parts(parts, Body::from(payload.to_string()))).await
 }
 
