@@ -207,6 +207,68 @@ JSON
   out_has "NUDGE HEALTH: 1 role(s) have issues"
 }
 
+@test "AC1: older delivery failure is ignored if latest nudge succeeded, but latest failure stays RED" {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
+  W="$BATS_TEST_TMPDIR/hc-s3-latest"
+  mkdir -p "$W/sessions" "$W/canary"
+
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"silas","roleKind":"agent"}]}
+JSON
+
+  printf '{"role":"silas","pid":%s,"tty":"/dev/ttys999","host":"unknown"}' \
+    "$$" > "$W/sessions/silas-$$.json"
+
+  DB="$W/messages.db"
+  sqlite3 "$DB" "
+    CREATE TABLE messages (
+      id INTEGER PRIMARY KEY,
+      type TEXT,
+      \"to\" TEXT,
+      delivery_status TEXT,
+      last_delivery_error TEXT,
+      created_at TEXT
+    );
+    -- Older failure
+    INSERT INTO messages (id, type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES (1, 'nudge', 'silas', 'failed', 'no-window-found', datetime('now', '-1 hour'));
+    -- Newer success
+    INSERT INTO messages (id, type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES (2, 'nudge', 'silas', 'delivered', NULL, datetime('now'));
+  "
+
+  # Recovery: latest is delivered -> green
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
+          CHORUS_MESSAGES_DB="$DB" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="silas" \
+          pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
+          bash "$HEALTH"
+  test "$status" -eq 0
+  out_has "NUDGE HEALTH: all roles reachable"
+
+  # NEGATIVE PROOF: latest nudge failed -> must stay RED
+  sqlite3 "$DB" "
+    INSERT INTO messages (id, type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES (3, 'nudge', 'silas', 'failed', 'connection-reset-negative-proof', datetime('now'));
+  "
+
+  run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
+          CHORUS_MESSAGES_DB="$DB" \
+          CHORUS_SESSIONS_DIR="$W/sessions" \
+          CANARY_DIR="$W/canary" \
+          ROLES_OVERRIDE="silas" \
+          pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
+          bash "$HEALTH"
+  test "$status" -ne 0
+  out_has "FAIL: silas — nudge delivery failed: connection-reset-negative-proof"
+  out_has "NUDGE HEALTH: 1 role(s) have issues"
+}
+
 
 @test "NEGATIVE PROOF (#3734): unreadable roles door is UNMEASURED red, never silent fallback" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"

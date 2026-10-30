@@ -97,12 +97,16 @@ if [ -n "${STUB_FAILED_NUDGES:-}" ]; then
   failed_nudges="$STUB_FAILED_NUDGES"
 elif [ -f "$MESSAGES_DB" ] && command -v sqlite3 >/dev/null 2>&1; then
   failed_nudges=$(sqlite3 "$MESSAGES_DB" "
+    WITH latest_nudges AS (
+      SELECT \"to\", delivery_status, last_delivery_error,
+             ROW_NUMBER() OVER (PARTITION BY \"to\" ORDER BY id DESC) as rn
+      FROM messages
+      WHERE type = 'nudge'
+        AND created_at >= datetime('now', '-24 hours')
+    )
     SELECT \"to\", last_delivery_error
-    FROM messages
-    WHERE type = 'nudge'
-      AND delivery_status = 'failed'
-      AND created_at >= datetime('now', '-24 hours')
-    ORDER BY id DESC;
+    FROM latest_nudges
+    WHERE rn = 1 AND delivery_status = 'failed';
   " 2>/dev/null || true)
 fi
 
