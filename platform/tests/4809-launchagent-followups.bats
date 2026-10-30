@@ -23,6 +23,18 @@ setup_file() {
   fi
 }
 
+@test "AC1: launchagent-ops refusals exit non-zero, so a script can tell it was refused" {
+  cd "$ROOT/platform/services/chorus-hooks"
+  run cargo build --bin chorus-hook-shim
+  [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
+  SHIM="$CARGO_TARGET_DIR/debug/chorus-hook-shim"
+  export CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log"
+  run "$SHIM" launchagent-ops kickstart org.other.service
+  [ "$status" -ne 0 ] || { echo "invalid label exited 0"; return 1; }
+  run "$SHIM" launchagent-ops destroy com.chorus.clearing
+  [ "$status" -ne 0 ] || { echo "unknown verb exited 0"; return 1; }
+}
+
 @test "AC2 (CLI): refusals the shim makes before reaching the daemon also emit launchagent.refused" {
   cd "$ROOT/platform/services/chorus-hooks"
   run cargo build --bin chorus-hook-shim
