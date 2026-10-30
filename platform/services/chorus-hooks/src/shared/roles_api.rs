@@ -25,6 +25,19 @@ pub fn roles_from_api(url: &str) -> serde_json::Value {
                     roles.insert(name.to_string(), row.clone());
                 }
             }
+            // Offline roles without open sessions are not in the dynamic streams tile list;
+            // ensure canonical roles wren/silas/kade exist as unmeasured/offline rows so
+            // pulse consumers and contracts always see the core trio.
+            for role in &["wren", "silas", "kade"] {
+                roles.entry(role.to_string()).or_insert_with(|| {
+                    serde_json::json!({
+                        "role": role,
+                        "state": "idle",
+                        "source": "offline",
+                        "detail": "no open session"
+                    })
+                });
+            }
             if roles.is_empty() {
                 for role in &["wren", "silas", "kade"] {
                     roles.insert(role.to_string(), serde_json::json!({
