@@ -10,8 +10,17 @@ fn env(k: &str, d: &str) -> String {
 }
 
 fn curl(args: &[&str]) -> Option<String> {
-    let out = Command::new("curl").args(["-sf", "--max-time", "15"]).args(args).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        if let Ok(out) = Command::new("curl").args(["-sf", "--max-time", "15"]).args(args).output() {
+            if out.status.success() {
+                return Some(String::from_utf8_lossy(&out.stdout).into_owned());
+            }
+        }
+    }
+    None
 }
 
 /// The store needs its admin credential for reads of most graphs. It goes to

@@ -250,7 +250,7 @@ pub fn test_logql(target: &str, card: u32) -> String {
         // every case line in the window does not answer (test-diff, 10-15).
         // card_id is a JSON number on card runs ("card_id":4530); the exact
         // match is the label filter after json, so 45301 never answers for 4530.
-        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | card_id=\"{card}\" | file=\"{t}\" or case=\"{t}\""
+        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
 }
 
