@@ -45,9 +45,29 @@ fn pulse_contains_required_sections() {
 /// Pulse includes all 3 roles
 #[test]
 fn pulse_has_all_three_roles() {
+    // #4786: Hermetic test fixture for CHORUS_ROLES_URL so test does not depend
+    // on live sessions of all roles being online simultaneously.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let t = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            use std::io::{Read, Write};
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let body = r#"{"data":{"roles":[{"role":"wren","state":"building"},{"role":"silas","state":"building"},{"role":"kade","state":"building"}]}}"#;
+            let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+
     let _ = std::process::Command::new(
         env!("CARGO_BIN_EXE_chorus-hook-shim")
-    ).arg("pulse").output();
+    )
+    .arg("pulse")
+    .env("CHORUS_ROLES_URL", format!("http://127.0.0.1:{}/roles", port))
+    .output();
+
+    let _ = t.join();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
     let v: serde_json::Value = serde_json::from_str(&content).unwrap();
