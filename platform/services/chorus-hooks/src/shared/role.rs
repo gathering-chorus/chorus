@@ -7,6 +7,14 @@
 //! and the shim binary need it, and a second copy would recreate the divergence
 //! this exists to end.
 
+/// Canonical list of registered agent roles (#4787).
+pub const AGENT_ROLES: &[&str] = &["wren", "silas", "kade", "abby-normal", "borg-queen"];
+
+#[inline]
+pub fn is_agent_role(role: &str) -> bool {
+    AGENT_ROLES.contains(&role)
+}
+
 /// Why a role could not be resolved. #3959 — the substitution used to be
 /// invisible: 43 sites read the role, each invented its own default when it was
 /// missing (`:-system` at 9, empty at 7, `:-silas` at 2), and ~26,000 events a
@@ -105,7 +113,7 @@ pub fn resolve_role_from_account(
     // #4787 AC1: process uid chorus-<role> -> role = <role>, env ignored
     if let Some(acct) = account {
         if let Some(r) = acct.strip_prefix("chorus-") {
-            if matches!(r, "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") {
+            if is_agent_role(r) {
                 return Ok(r.to_string());
             } else {
                 return Err(RoleUnresolved::NotARole { value: r.to_string() });
@@ -118,7 +126,7 @@ pub fn resolve_role_from_account(
         .or_else(|| deploy_role.filter(|s| !s.is_empty()));
     match raw {
         None => Err(RoleUnresolved::NoEnv { cwd: cwd.to_string() }),
-        Some(v) if matches!(v.as_str(), "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") => Ok(v),
+        Some(v) if is_agent_role(&v) => Ok(v),
         Some(v) => Err(RoleUnresolved::NotARole { value: v }),
     }
 }
@@ -159,7 +167,7 @@ pub fn resolve_role_with_ancestry(
         Err(no_env) => {
             for pid in ancestry {
                 if let Some(role) = session_role_of(*pid) {
-                    if matches!(role.as_str(), "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") {
+                    if is_agent_role(&role) {
                         return Ok(ResolvedRole { role, inherited_from_pid: Some(*pid) });
                     }
                 }
@@ -317,7 +325,7 @@ pub fn inherited_role_from_ancestry() -> Option<String> {
 pub fn session_role_of_pid(pid: u32) -> Option<String> {
     let home = std::env::var("HOME").ok()?;
     let dir = std::path::Path::new(&home).join(".chorus").join("sessions");
-    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+    for role in AGENT_ROLES {
         if dir.join(format!("{role}-{pid}.json")).exists() {
             return Some(role.to_string());
         }
@@ -355,7 +363,7 @@ pub fn process_ancestry(start: u32, max_depth: usize) -> Vec<u32> {
 /// key on the login, not on a typed DEPLOY_ROLE. Pure: the caller supplies the
 /// token text, so the suite brings its own world (#3528).
 pub fn role_from_webid(webid: &str) -> Option<String> {
-    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+    for role in AGENT_ROLES {
         if webid.ends_with(&format!("/{role}/profile/card#me")) {
             return Some(role.to_string());
         }
@@ -416,7 +424,7 @@ pub fn resolve_role_with_account_and_session(
             // #4787 AC1: process uid chorus-<role> -> role = <role>, env ignored
             if let Some(acct) = account {
                 if let Some(r) = acct.strip_prefix("chorus-") {
-                    if matches!(r, "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") {
+                    if is_agent_role(r) {
                         return Ok(r.to_string());
                     }
                 }
@@ -496,5 +504,16 @@ mod session_resolver_tests_4202 {
         // #4787 AC1 NEGATIVE PROOF — chorus-<unknown> falls through never, refuses immediately
         let err = resolve_role_from_account(Some("chorus-foo"), None, s("jeff"), CWD).unwrap_err();
         assert_eq!(err.reason(), "not-a-role");
+    }
+
+    #[test]
+    fn all_agent_roles_resolve_from_chorus_account() {
+        for role in AGENT_ROLES {
+            let acct = format!("chorus-{}", role);
+            assert_eq!(
+                resolve_role_from_account(Some(&acct), None, None, CWD).unwrap(),
+                *role
+            );
+        }
     }
 }
