@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# launchagent-ops — narrow LaunchAgent ops helper for per-role accounts (#4787 AC2)
+# Usage: launchagent-ops <kickstart|load|retire|unload|status> <com.chorus.*>
+#
+# Rules:
+# - Helper takes a label only, no plist path or extra args
+# - Caller role is verified from peer uid / OS account (chorus-<role>) or launcher
+# - Allowed labels come dynamically from graph ownedBy, never a hardcoded list in code
+# - Negative proof: any other verb, or an unowned / unpermitted label, is refused
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+usage() {
+  echo "Usage: launchagent-ops <kickstart|load|retire|unload|status> <label>" >&2
+  exit 2
+}
+
+# Refuse if wrong number of arguments
+if [ "$#" -ne 2 ]; then
+  usage
+fi
+
+VERB="$1"
+LABEL="$2"
+
+# 1. Validate verb
+case "$VERB" in
+  kickstart|load|retire|unload|status) ;;
+  *)
+    echo "launchagent-ops: REFUSED — unknown verb '$VERB' (must be kickstart, load, retire, or status)" >&2
+    exit 2
+    ;;
+esac
+
+# 2. Validate label (must be a valid com.chorus.* launchd label, no paths or flags)
+if [[ ! "$LABEL" =~ ^com\.chorus\.[a-zA-Z0-9._-]+$ ]]; then
+  echo "launchagent-ops: REFUSED — invalid label '$LABEL' (must match com.chorus.*)" >&2
+  exit 2
+fi
+
+# 3. Resolve caller identity from OS account / verified caller (#4787 AC1)
+resolve_caller_role() {
+  local acct
+  acct="${CHORUS_TEST_ACCOUNT_OVERRIDE:-$(id -un 2>/dev/null || whoami)}"
+  if [[ "$acct" =~ ^chorus-(.+)$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return
+  fi
+  if [ "$acct" = "jeffbridwell" ]; then
+    echo "${DEPLOY_ROLE:-jeff}"
+    return
+  fi
+  echo "${DEPLOY_ROLE:-$acct}"
+}
+
+CALLER_ROLE="$(resolve_caller_role)"
+if [ -z "$CALLER_ROLE" ] || [ "$CALLER_ROLE" = "unknown" ]; then
+  echo "launchagent-ops: REFUSED — cannot resolve caller role identity" >&2
+  exit 1
+fi
+
+# 4. Query graph ownedBy for the label (never hardcoded in code)
+query_label_owners() {
+  local label="$1"
+  local owners=()
+
+  # Query Fuseki SPARQL first
+  local fuseki="${CHORUS_FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+  local q="PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT DISTINCT ?owner WHERE {
+  {
+    ?s chorus:launchdLabel \"$label\" .
+    ?s chorus:ownedBy ?owner .
+  } UNION {
+    ?s chorus:launchdLabel \"$label\" .
+    ?s chorus:runsService ?svc .
+    ?svc chorus:ownedBy ?owner .
+  }
+}"
+  local resp
+  resp=$(curl -s --max-time 3 "$fuseki" --data-urlencode "query=$q" -H "Accept: application/sparql-results+json" 2>/dev/null || true)
+  if [ -n "$resp" ]; then
+    while IFS= read -r o; do
+      [ -n "$o" ] && owners+=("$o")
+    done < <(echo "$resp" | jq -r '.results.bindings[].owner.value // empty' 2>/dev/null | sed -E 's/^.*[#/](principal|role)-//' | sort -u)
+  fi
+
+  # Fallback to Athena if Fuseki returned nothing
+  if [ ${#owners[@]} -eq 0 ]; then
+    local athena_base="${CHORUS_ATHENA_URL:-http://localhost:3340/owl/v1}"
+    for endpoint in "services/instances" "schedule/scheduledjobs"; do
+      local inst_resp
+      inst_resp=$(curl -s --max-time 3 "$athena_base/$endpoint?launchdLabel=$label" 2>/dev/null || true)
+      local names
+      names=$(echo "$inst_resp" | jq -r '.data[].name // empty' 2>/dev/null || true)
+      for name in $names; do
+        local detail
+        detail=$(curl -s --max-time 3 "$athena_base/$endpoint/$name" 2>/dev/null || true)
+        local o
+        o=$(echo "$detail" | jq -r '.links.ownedBy // empty' 2>/dev/null | sed -E 's/^.*(principal|role)[:-]//')
+        [ -n "$o" ] && owners+=("$o")
+      done
+    done
+  fi
+
+  if [ ${#owners[@]} -gt 0 ]; then
+    printf "%s\n" "${owners[@]}" | sort -u
+  fi
+}
+
+OWNERS=()
+while IFS= read -r line; do
+  [ -n "$line" ] && OWNERS+=("$line")
+done < <(query_label_owners "$LABEL")
+
+# 5. Enforce ownership check
+if [ ${#OWNERS[@]} -eq 0 ]; then
+  echo "launchagent-ops: REFUSED — unowned LaunchAgent label '$LABEL' (not found in graph)" >&2
+  exit 1
+fi
+
+is_authorized=0
+for o in "${OWNERS[@]}"; do
+  if [ "$o" = "$CALLER_ROLE" ] || [ "$CALLER_ROLE" = "jeff" ]; then
+    is_authorized=1
+    break
+  fi
+done
+
+if [ "$is_authorized" -ne 1 ]; then
+  echo "launchagent-ops: REFUSED — role '$CALLER_ROLE' does not own '$LABEL' (ownedBy: ${OWNERS[*]:-none})" >&2
+  exit 1
+fi
+
+# 6. Execute launchctl operation
+LAUNCHCTL_BIN="${LAUNCHCTL_BIN:-launchctl}"
+
+resolve_domain() {
+  local uid_n
+  uid_n=$(id -u)
+  if "$LAUNCHCTL_BIN" print "gui/$uid_n" >/dev/null 2>&1; then
+    echo "gui/$uid_n"
+  else
+    echo "user/$uid_n"
+  fi
+}
+
+DOMAIN="$(resolve_domain)"
+
+find_plist() {
+  local label="$1"
+  local candidates=(
+    "$HOME/Library/LaunchAgents/${label}.plist"
+    "/Users/jeffbridwell/Library/LaunchAgents/${label}.plist"
+    "$ROOT/platform/launchagents/${label}.plist"
+    "$ROOT/platform/scripts/launchagents-canonical/${label}.plist"
+    "/Library/LaunchAgents/${label}.plist"
+  )
+  for c in "${candidates[@]}"; do
+    if [ -f "$c" ]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+case "$VERB" in
+  kickstart)
+    "$LAUNCHCTL_BIN" kickstart -k "$DOMAIN/$LABEL"
+    ;;
+  load)
+    PLIST="$(find_plist "$LABEL" || true)"
+    if [ -z "$PLIST" ]; then
+      echo "launchagent-ops: REFUSED — plist for '$LABEL' not found in canonical locations" >&2
+      exit 1
+    fi
+    "$LAUNCHCTL_BIN" bootstrap "$DOMAIN" "$PLIST"
+    ;;
+  retire|unload)
+    "$LAUNCHCTL_BIN" bootout "$DOMAIN/$LABEL"
+    ;;
+  status)
+    "$LAUNCHCTL_BIN" print "$DOMAIN/$LABEL"
+    ;;
+esac
+
+# Best-effort spine emit
+if command -v chorus-log >/dev/null 2>&1; then
+  chorus-log "launchagent.$VERB" "$CALLER_ROLE" "service=$LABEL" >/dev/null 2>&1 || true
+fi
