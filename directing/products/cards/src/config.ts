@@ -2,6 +2,7 @@
  * Local CLI config; LABELS map keyed by validated domain/status/priority enums.
  */
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { BoardConfig } from './types';
 
@@ -175,7 +176,22 @@ const CWD_ROLE_PATTERNS: Array<[string, string]> = [
   ['roles/borg-queen', 'borg-queen'],
 ];
 
-export function detectRole(): string {
+export function detectRole(osUser?: string): string {
+  const user = (osUser ?? (() => {
+    try {
+      return os.userInfo().username;
+    } catch {
+      return '';
+    }
+  })()).toLowerCase();
+
+  // #4787 AC1: process uid chorus-<role> -> role = <role>, env ignored
+  if (user.startsWith('chorus-')) {
+    const role = user.slice('chorus-'.length);
+    if (VALID_ROLES.has(role)) return role;
+    throw new Error(`Invalid role account '${user}': role '${role}' not in valid set`);
+  }
+
   const env = (process.env.DEPLOY_ROLE || '').toLowerCase();
   if (VALID_ROLES.has(env)) return env;
   // Legacy cwd fallback — warn once, deprecated path.

@@ -205,6 +205,7 @@ async fn main() {
         .route("/user-prompt-submit", post(user_prompt_submit))
         .route("/stop", post(stop_hook_bounded))
         .route("/bouncer-pending", post(bouncer_pending))
+        .route("/launchagent-ops", post(launchagent_ops))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024)); // 16MB — tool_response can be large
     let app = routes.clone().with_state(state.clone());
     // #4432 — the same guards for agent principals on their own Mac account,
@@ -1580,6 +1581,178 @@ async fn bouncer_pending(
     }
 }
 
+fn query_label_owners(label: &str) -> Vec<String> {
+    #[cfg(test)]
+    if let Ok(json_str) = std::env::var("CHORUS_TEST_OWNERS") {
+        if let Ok(map) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(arr) = map.get(label).and_then(|v| v.as_array()) {
+                return arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+            }
+        }
+    }
+
+    let fuseki = std::env::var("CHORUS_FUSEKI_QUERY").unwrap_or_else(|_| "http://localhost:3030/pods/query".to_string());
+    let query = format!(
+        "PREFIX chorus: <https://jeffbridwell.com/chorus#> \
+         SELECT DISTINCT ?owner WHERE {{ \
+           {{ ?s chorus:launchdLabel \"{label}\" . ?s chorus:ownedBy ?owner . }} \
+           UNION \
+           {{ ?s chorus:launchdLabel \"{label}\" . ?s chorus:runsService ?svc . ?svc chorus:ownedBy ?owner . }} \
+         }}"
+    );
+    if let Ok(resp) = ureq::get(&fuseki)
+        .query("query", &query)
+        .set("Accept", "application/sparql-results+json")
+        .timeout(std::time::Duration::from_millis(3000))
+        .call()
+    {
+        if let Ok(val) = resp.into_json::<serde_json::Value>() {
+            let mut owners = Vec::new();
+            if let Some(bindings) = val.pointer("/results/bindings").and_then(|v| v.as_array()) {
+                for b in bindings {
+                    if let Some(uri) = b.pointer("/owner/value").and_then(|v| v.as_str()) {
+                        if let Some(role) = uri.split('#').next_back().and_then(|s| s.split(':').next_back()) {
+                            let role_clean = role.trim_start_matches("principal-").trim_start_matches("role-");
+                            owners.push(role_clean.to_string());
+                        }
+                    }
+                }
+            }
+            if !owners.is_empty() {
+                owners.sort();
+                owners.dedup();
+                return owners;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn find_launchagent_plist(label: &str) -> Option<String> {
+    let candidates = [
+        format!("/Users/jeffbridwell/Library/LaunchAgents/{label}.plist"),
+        format!("/Library/LaunchAgents/{label}.plist"),
+        format!("{}/platform/launchagents/{label}.plist", std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into())),
+        format!("{}/platform/scripts/launchagents-canonical/{label}.plist", std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into())),
+    ];
+    for c in &candidates {
+        if std::path::Path::new(c).exists() {
+            return Some(c.clone());
+        }
+    }
+    None
+}
+
+/// #4787 AC2: narrow LaunchAgent ops helper running inside daemon (as launcher/jeffbridwell).
+/// Enforces that caller role owns the label via graph ownedBy, then executes launchctl in gui/501.
+async fn launchagent_ops(
+    Json(payload): Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let verb = payload.get("verb").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let label = payload.get("label").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let role = payload.get("role").or_else(|| payload.get("deploy_role")).and_then(|v| v.as_str()).unwrap_or("").trim();
+
+    if verb.is_empty() || label.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "missing verb or label"})),
+        ).into_response();
+    }
+
+    match verb {
+        "kickstart" | "load" | "retire" | "unload" | "status" => {}
+        _ => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — unknown verb '{verb}'")})),
+            ).into_response();
+        }
+    }
+
+    static LABEL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^com\.chorus\.[A-Za-z0-9._-]+$").expect("valid label regex")
+    });
+
+    if !LABEL_RE.is_match(label) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — invalid label '{label}'")})),
+        ).into_response();
+    }
+
+    let owners = query_label_owners(label);
+    if owners.is_empty() {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — unowned LaunchAgent label '{label}' (not found in graph)")})),
+        ).into_response();
+    }
+
+    if role != "jeff" && !owners.iter().any(|o| o == role) {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": format!("launchagent-ops: REFUSED — role '{role}' does not own '{label}' (ownedBy: {})", owners.join(" "))})),
+        ).into_response();
+    }
+
+    let domain = std::env::var("LAUNCHCTL_DOMAIN").unwrap_or_else(|_| "gui/501".to_string());
+    let launchctl = std::env::var("LAUNCHCTL_BIN").unwrap_or_else(|_| "launchctl".to_string());
+
+    let (status, output) = match verb {
+        "kickstart" => {
+            let out = std::process::Command::new(&launchctl)
+                .args(["kickstart", "-k", &format!("{domain}/{label}")])
+                .output();
+            match out {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                Err(e) => (false, e.to_string()),
+            }
+        }
+        "retire" | "unload" => {
+            let out = std::process::Command::new(&launchctl)
+                .args(["bootout", &format!("{domain}/{label}")])
+                .output();
+            match out {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                Err(e) => (false, e.to_string()),
+            }
+        }
+        "load" => {
+            let plist = find_launchagent_plist(label);
+            match plist {
+                Some(p) => {
+                    let out = std::process::Command::new(&launchctl)
+                        .args(["bootstrap", &domain, &p])
+                        .output();
+                    match out {
+                        Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                        Err(e) => (false, e.to_string()),
+                    }
+                }
+                None => (false, format!("plist for {label} not found")),
+            }
+        }
+        "status" => {
+            let out = std::process::Command::new(&launchctl)
+                .args(["print", &format!("{domain}/{label}")])
+                .output();
+            match out {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                Err(e) => (false, e.to_string()),
+            }
+        }
+        _ => (false, "unreachable".into()),
+    };
+
+    if status {
+        (axum::http::StatusCode::OK, Json(serde_json::json!({"ok": true, "output": output.trim()}))).into_response()
+    } else {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": output.trim()}))).into_response()
+    }
+}
+
 #[cfg(test)]
 mod bouncer_pending_tests {
     use super::*;
@@ -1610,6 +1783,69 @@ mod bouncer_pending_tests {
         assert!(!kade_dir.exists(), "kade pending dir must NOT be created");
 
         std::env::remove_var("CHORUS_PENDING_DIR");
+    }
+}
+
+#[cfg(test)]
+mod launchagent_ops_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn negative_proof_launchagent_ops_refuses_unowned_or_mismatched_role() {
+        // 1. Unowned label -> 403
+        let payload_unowned = json!({
+            "verb": "kickstart",
+            "label": "com.chorus.nonexistent-service",
+            "role": "silas"
+        });
+        let resp = launchagent_ops(Json(payload_unowned)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // 2. Mismatched role -> 403 (kade trying to manage clearing owned by silas, wren)
+        std::env::set_var("CHORUS_TEST_OWNERS", r#"{"com.chorus.clearing": ["silas", "wren"]}"#);
+        let payload_mismatched = json!({
+            "verb": "kickstart",
+            "label": "com.chorus.clearing",
+            "role": "kade"
+        });
+        let resp2 = launchagent_ops(Json(payload_mismatched)).await;
+        assert_eq!(resp2.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // 3. Invalid verb -> 400
+        let payload_verb = json!({
+            "verb": "destroy",
+            "label": "com.chorus.clearing",
+            "role": "silas"
+        });
+        let resp3 = launchagent_ops(Json(payload_verb)).await;
+        assert_eq!(resp3.status(), axum::http::StatusCode::BAD_REQUEST);
+
+        // 4. Invalid label syntax / injection attempts -> 400 (#3734 negative proof)
+        let injection_cases = [
+            "com.chorus.clearing; rm -rf /",
+            "com.chorus.clearing\" . ?s chorus:ownedBy ?owner }",
+            "com.chorus.clearing/../../etc/passwd",
+            "org.other.service",
+            "com.chorus.",
+            "com.chorus.foo$bar",
+            "com.chorus.foo\nbar",
+        ];
+        for malformed in &injection_cases {
+            let payload = json!({
+                "verb": "kickstart",
+                "label": malformed,
+                "role": "silas"
+            });
+            let resp = launchagent_ops(Json(payload)).await;
+            assert_eq!(
+                resp.status(),
+                axum::http::StatusCode::BAD_REQUEST,
+                "malformed label '{malformed}' must be refused with 400"
+            );
+        }
+
+        std::env::remove_var("CHORUS_TEST_OWNERS");
     }
 }
 

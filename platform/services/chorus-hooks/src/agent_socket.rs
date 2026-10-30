@@ -89,7 +89,7 @@ pub fn verify_peer_role(peer_role: &str, payload: &Value) -> Result<String, Stri
 }
 
 fn refuse(path: &str, reason: &str) -> Response {
-    if path == "/bouncer-pending" {
+    if path == "/bouncer-pending" || path == "/launchagent-ops" {
         return (
             axum::http::StatusCode::FORBIDDEN,
             Json(json!({"error": reason})),
@@ -119,10 +119,10 @@ pub async fn identify(ConnectInfo(peer): ConnectInfo<AgentPeer>, req: Request, n
         _ => return refuse(&path, "agent socket refuses: the request body is not a JSON object"),
     };
 
-    // #4786 AC4: on /bouncer-pending, verify that payload role matches the peer role.
+    // #4786 AC4 / #4787 AC2: on /bouncer-pending and /launchagent-ops, verify that payload role matches the peer role.
     // For standard hooks (e.g. /pre-tool-use), the agent socket overwrites the payload
     // role with the OS peer role instead of denying.
-    if path == "/bouncer-pending" {
+    if path == "/bouncer-pending" || path == "/launchagent-ops" {
         if let Err(why) = verify_peer_role(&role, &payload) {
             return refuse(&path, &why);
         }
@@ -168,6 +168,15 @@ mod tests {
             err2.contains("payload claims role 'silas' but socket peer is 'kade'"),
             "got {:?}",
             err2
+        );
+
+        // #4787 AC2 negative proof: payload role spoofed for launchagent-ops refused
+        let payload_launchagent = json!({"verb": "kickstart", "label": "com.chorus.clearing", "role": "silas"});
+        let err3 = verify_peer_role("kade", &payload_launchagent).unwrap_err();
+        assert!(
+            err3.contains("payload claims role 'silas' but socket peer is 'kade'"),
+            "got {:?}",
+            err3
         );
     }
 }

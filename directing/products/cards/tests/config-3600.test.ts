@@ -35,34 +35,46 @@ describe('detectRole', () => {
     else process.env.DEPLOY_ROLE = original;
   });
 
-  it('returns a valid DEPLOY_ROLE verbatim', () => {
+  it('resolves role from OS account chorus-<role> ignoring DEPLOY_ROLE', () => {
+    process.env.DEPLOY_ROLE = 'jeff';
+    expect(detectRole('chorus-silas')).toBe('silas');
+    expect(detectRole('chorus-wren')).toBe('wren');
+    expect(detectRole('chorus-kade')).toBe('kade');
+  });
+
+  it('refuses unknown chorus-<role> account even if DEPLOY_ROLE=jeff', () => {
+    process.env.DEPLOY_ROLE = 'jeff';
+    expect(() => detectRole('chorus-foo')).toThrow(/Invalid role account 'chorus-foo'/);
+  });
+
+  it('returns a valid DEPLOY_ROLE verbatim on launcher account', () => {
     process.env.DEPLOY_ROLE = 'kade';
-    expect(detectRole()).toBe('kade');
+    expect(detectRole('jeffbridwell')).toBe('kade');
   });
 
-  it('lower-cases DEPLOY_ROLE before matching', () => {
+  it('lower-cases DEPLOY_ROLE before matching on launcher account', () => {
     process.env.DEPLOY_ROLE = 'SILAS';
-    expect(detectRole()).toBe('silas');
+    expect(detectRole('jeffbridwell')).toBe('silas');
   });
 
-  it('accepts the automation role', () => {
+  it('accepts the automation role on launcher account', () => {
     process.env.DEPLOY_ROLE = 'automation';
-    expect(detectRole()).toBe('automation');
+    expect(detectRole('jeffbridwell')).toBe('automation');
   });
 
-  it('warns and falls back to cwd parsing when DEPLOY_ROLE is invalid', () => {
+  it('warns and falls back to cwd parsing when DEPLOY_ROLE is invalid on launcher account', () => {
     process.env.DEPLOY_ROLE = 'not-a-real-role';
     const warn = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const role = detectRole();
+    const role = detectRole('jeffbridwell');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('falling back to cwd parse'));
     expect(['kade', 'wren', 'silas', 'automation']).toContain(role);
     warn.mockRestore();
   });
 
-  it('warns (unset variant) and falls back when DEPLOY_ROLE is missing', () => {
+  it('warns (unset variant) and falls back when DEPLOY_ROLE is missing on launcher account', () => {
     delete process.env.DEPLOY_ROLE;
     const warn = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const role = detectRole();
+    const role = detectRole('jeffbridwell');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('DEPLOY_ROLE unset'));
     expect(['kade', 'wren', 'silas', 'automation']).toContain(role);
     warn.mockRestore();

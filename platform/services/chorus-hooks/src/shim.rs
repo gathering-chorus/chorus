@@ -922,6 +922,8 @@ fn main() -> ExitCode {
         "nudge-send" => return nudge_send_cmd(&args),
         // #4786 AC4 — bouncer pending request handoff to the daemon
         "bouncer-pending" => return bouncer_pending_cmd(&args),
+        // #4787 AC2 — narrow LaunchAgent ops helper over durable daemon socket
+        "launchagent-ops" => return launchagent_ops_cmd(&args),
 
         // #2435 — "inject" subcommand retired alongside inject_by_tab_name.
         // Nudge delivery is the spine-tick-poller reading chorus.log; callers
@@ -1559,6 +1561,103 @@ fn bouncer_pending_cmd(_args: &[String]) -> ExitCode {
         ExitCode::from(1)
     } else {
         eprintln!("bouncer-pending: daemon error ({}): {}", status_line, clean_body.trim());
+        ExitCode::from(2)
+    }
+}
+
+/// #4787 AC2: narrow LaunchAgent ops helper over durable daemon socket
+fn launchagent_ops_cmd(args: &[String]) -> ExitCode {
+    if args.len() < 2 {
+        eprintln!("Usage: launchagent-ops <kickstart|load|retire|unload|status> <label>");
+        return ExitCode::from(2);
+    }
+    let verb = &args[0];
+    let label = &args[1];
+
+    if args.len() > 2 {
+        eprintln!("launchagent-ops: REFUSED — helper takes a label only, no plist path or args");
+        return ExitCode::from(2);
+    }
+
+    match verb.as_str() {
+        "kickstart" | "load" | "retire" | "unload" | "status" => {}
+        _ => {
+            eprintln!("launchagent-ops: REFUSED — unknown verb '{verb}'");
+            return ExitCode::from(2);
+        }
+    }
+
+    static LABEL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^com\.chorus\.[A-Za-z0-9._-]+$").expect("valid label regex")
+    });
+
+    if !LABEL_RE.is_match(label) {
+        eprintln!("launchagent-ops: REFUSED — invalid label '{label}'");
+        return ExitCode::from(2);
+    }
+
+    let payload = serde_json::json!({
+        "verb": verb,
+        "label": label
+    });
+    let input = payload.to_string();
+
+    let socket_path = chorus_hooks::shared::state_paths::hook_socket_durable();
+    let mut stream = match UnixStream::connect(&socket_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("launchagent-ops: failed to connect to hooks daemon at {}: {}", socket_path, e);
+            return ExitCode::from(2);
+        }
+    };
+    let timeout = std::time::Duration::from_secs(10);
+    let _ = stream.set_write_timeout(Some(timeout));
+    let _ = stream.set_read_timeout(Some(timeout));
+
+    let body = input.as_bytes();
+    let request = format!(
+        "POST /launchagent-ops HTTP/1.1\r\n\
+         Host: localhost\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\
+         \r\n",
+        body.len()
+    );
+    if let Err(e) = stream.write_all(request.as_bytes()) {
+        eprintln!("launchagent-ops: write request error: {e}");
+        return ExitCode::from(2);
+    }
+    if let Err(e) = stream.write_all(body) {
+        eprintln!("launchagent-ops: write body error: {e}");
+        return ExitCode::from(2);
+    }
+
+    let mut response_bytes = Vec::new();
+    if let Err(e) = stream.read_to_end(&mut response_bytes) {
+        eprintln!("launchagent-ops: read response error: {e}");
+        return ExitCode::from(2);
+    }
+    let response_str = String::from_utf8_lossy(&response_bytes);
+    let (headers, body_str) = match response_str.split_once("\r\n\r\n") {
+        Some((h, b)) => (h, b),
+        None => ("", response_str.as_ref()),
+    };
+    let status_line = headers.lines().next().unwrap_or("");
+    let is_chunked = headers.to_lowercase().contains("transfer-encoding: chunked");
+    let clean_body = if is_chunked { decode_chunked(body_str) } else { body_str.to_string() };
+
+    if status_line.contains("200 OK") {
+        println!("{}", clean_body.trim());
+        ExitCode::SUCCESS
+    } else if status_line.contains("403 Forbidden") {
+        eprintln!("{}", clean_body.trim());
+        ExitCode::from(1)
+    } else if status_line.contains("400 Bad Request") {
+        eprintln!("{}", clean_body.trim());
+        ExitCode::from(2)
+    } else {
+        eprintln!("launchagent-ops: daemon error ({}): {}", status_line, clean_body.trim());
         ExitCode::from(2)
     }
 }

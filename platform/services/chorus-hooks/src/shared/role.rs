@@ -7,6 +7,14 @@
 //! and the shim binary need it, and a second copy would recreate the divergence
 //! this exists to end.
 
+/// Canonical list of registered agent roles (#4787).
+pub const AGENT_ROLES: &[&str] = &["wren", "silas", "kade", "abby-normal", "borg-queen"];
+
+#[inline]
+pub fn is_agent_role(role: &str) -> bool {
+    AGENT_ROLES.contains(&role)
+}
+
 /// Why a role could not be resolved. #3959 — the substitution used to be
 /// invisible: 43 sites read the role, each invented its own default when it was
 /// missing (`:-system` at 9, empty at 7, `:-silas` at 2), and ~26,000 events a
@@ -46,16 +54,38 @@ impl RoleUnresolved {
     }
 }
 
+/// The account name of the current process user (getpwuid_r on getuid).
+pub fn current_account_name() -> Option<String> {
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::getuid() };
+        let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut buf = vec![0 as libc::c_char; 4096];
+        let mut out: *mut libc::passwd = std::ptr::null_mut();
+        let rc = unsafe { libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut out) };
+        if rc != 0 || out.is_null() || pwd.pw_name.is_null() {
+            return None;
+        }
+        Some(unsafe { std::ffi::CStr::from_ptr(pwd.pw_name) }.to_string_lossy().into_owned())
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
 /// The ONE role resolver for emit-time attribution. Returns the reason on
 /// failure rather than substituting a default, so callers can count and report
 /// the gap. It deliberately does NOT panic: a hard failure here would take the
 /// hooks daemon down, and a dead daemon fails the whole team closed — the #3218
 /// lockout shape. Loud and counted, never silent; degraded, never fatal.
 pub fn resolve_caller_role() -> Result<String, RoleUnresolved> {
+    let account = current_account_name();
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "<unknown>".to_string());
-    resolve_role_from(
+    resolve_role_from_account(
+        account.as_deref(),
         std::env::var("CHORUS_ROLE").ok(),
         std::env::var("DEPLOY_ROLE").ok(),
         &cwd,
@@ -71,12 +101,32 @@ pub fn resolve_role_from(
     deploy_role: Option<String>,
     cwd: &str,
 ) -> Result<String, RoleUnresolved> {
+    resolve_role_from_account(None, chorus_role, deploy_role, cwd)
+}
+
+pub fn resolve_role_from_account(
+    account: Option<&str>,
+    chorus_role: Option<String>,
+    deploy_role: Option<String>,
+    cwd: &str,
+) -> Result<String, RoleUnresolved> {
+    // #4787 AC1: process uid chorus-<role> -> role = <role>, env ignored
+    if let Some(acct) = account {
+        if let Some(r) = acct.strip_prefix("chorus-") {
+            if is_agent_role(r) {
+                return Ok(r.to_string());
+            } else {
+                return Err(RoleUnresolved::NotARole { value: r.to_string() });
+            }
+        }
+    }
+
     let raw = chorus_role
         .filter(|s| !s.is_empty())
         .or_else(|| deploy_role.filter(|s| !s.is_empty()));
     match raw {
         None => Err(RoleUnresolved::NoEnv { cwd: cwd.to_string() }),
-        Some(v) if matches!(v.as_str(), "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") => Ok(v),
+        Some(v) if is_agent_role(&v) => Ok(v),
         Some(v) => Err(RoleUnresolved::NotARole { value: v }),
     }
 }
@@ -117,7 +167,7 @@ pub fn resolve_role_with_ancestry(
         Err(no_env) => {
             for pid in ancestry {
                 if let Some(role) = session_role_of(*pid) {
-                    if matches!(role.as_str(), "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") {
+                    if is_agent_role(&role) {
                         return Ok(ResolvedRole { role, inherited_from_pid: Some(*pid) });
                     }
                 }
@@ -275,7 +325,7 @@ pub fn inherited_role_from_ancestry() -> Option<String> {
 pub fn session_role_of_pid(pid: u32) -> Option<String> {
     let home = std::env::var("HOME").ok()?;
     let dir = std::path::Path::new(&home).join(".chorus").join("sessions");
-    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+    for role in AGENT_ROLES {
         if dir.join(format!("{role}-{pid}.json")).exists() {
             return Some(role.to_string());
         }
@@ -313,7 +363,7 @@ pub fn process_ancestry(start: u32, max_depth: usize) -> Vec<u32> {
 /// key on the login, not on a typed DEPLOY_ROLE. Pure: the caller supplies the
 /// token text, so the suite brings its own world (#3528).
 pub fn role_from_webid(webid: &str) -> Option<String> {
-    for role in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+    for role in AGENT_ROLES {
         if webid.ends_with(&format!("/{role}/profile/card#me")) {
             return Some(role.to_string());
         }
@@ -358,9 +408,29 @@ pub fn resolve_role_with_session(
     deploy_role: Option<String>,
     cwd: &str,
 ) -> Result<String, RoleUnresolved> {
+    resolve_role_with_account_and_session(current_account_name().as_deref(), session_token, chorus_role, deploy_role, cwd)
+}
+
+pub fn resolve_role_with_account_and_session(
+    account: Option<&str>,
+    session_token: Option<&str>,
+    chorus_role: Option<String>,
+    deploy_role: Option<String>,
+    cwd: &str,
+) -> Result<String, RoleUnresolved> {
     match session_token.and_then(webid_of_token) {
         Some(webid) => role_from_webid(&webid).ok_or(RoleUnresolved::NotARole { value: webid }),
-        None => resolve_role_from(chorus_role, deploy_role, cwd),
+        None => {
+            // #4787 AC1: process uid chorus-<role> -> role = <role>, env ignored
+            if let Some(acct) = account {
+                if let Some(r) = acct.strip_prefix("chorus-") {
+                    if is_agent_role(r) {
+                        return Ok(r.to_string());
+                    }
+                }
+            }
+            resolve_role_from_account(account, chorus_role, deploy_role, cwd)
+        }
     }
 }
 
@@ -413,8 +483,37 @@ mod session_resolver_tests_4202 {
 
     #[test]
     fn no_session_falls_back_to_the_3959_env_resolution() {
-        assert_eq!(resolve_role_with_session(None, s("wren"), None, CWD).unwrap(), "wren");
-        assert_eq!(resolve_role_with_session(Some("garbage"), s("wren"), None, CWD).unwrap(), "wren");
-        assert_eq!(resolve_role_with_session(None, None, None, CWD).unwrap_err().reason(), "no-env");
+        assert_eq!(resolve_role_with_account_and_session(Some("jeffbridwell"), None, s("wren"), None, CWD).unwrap(), "wren");
+        assert_eq!(resolve_role_with_account_and_session(Some("jeffbridwell"), Some("garbage"), s("wren"), None, CWD).unwrap(), "wren");
+        assert_eq!(resolve_role_with_account_and_session(Some("jeffbridwell"), None, None, None, CWD).unwrap_err().reason(), "no-env");
+    }
+
+    /// #4787 AC1 NEGATIVE PROOF — DEPLOY_ROLE=jeff in a chorus-silas shell does not make the caller jeff
+    #[test]
+    fn account_chorus_role_ignores_deploy_role_negative_proof() {
+        let r = resolve_role_from_account(Some("chorus-silas"), None, s("jeff"), CWD).unwrap();
+        assert_eq!(r, "silas");
+
+        let r2 = resolve_role_from_account(Some("chorus-kade"), s("wren"), s("jeff"), CWD).unwrap();
+        assert_eq!(r2, "kade");
+
+        // Launcher account trusts env
+        let r3 = resolve_role_from_account(Some("jeffbridwell"), None, s("kade"), CWD).unwrap();
+        assert_eq!(r3, "kade");
+
+        // #4787 AC1 NEGATIVE PROOF — chorus-<unknown> falls through never, refuses immediately
+        let err = resolve_role_from_account(Some("chorus-foo"), None, s("jeff"), CWD).unwrap_err();
+        assert_eq!(err.reason(), "not-a-role");
+    }
+
+    #[test]
+    fn all_agent_roles_resolve_from_chorus_account() {
+        for role in AGENT_ROLES {
+            let acct = format!("chorus-{}", role);
+            assert_eq!(
+                resolve_role_from_account(Some(&acct), None, None, CWD).unwrap(),
+                *role
+            );
+        }
     }
 }

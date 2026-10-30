@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# launchagent-ops — narrow LaunchAgent ops helper for per-role accounts (#4787 AC2)
+# Usage: launchagent-ops <kickstart|load|retire|unload|status> <com.chorus.*>
+#
+# Rules:
+# - Helper takes a label only, no plist path or extra args
+# - Role identity verified by daemon socket peer UID (getpeereid) from kernel, never env
+# - Runs inside daemon as launcher (jeffbridwell) in gui/501, no sudo required
+# - Allowed labels come dynamically from graph ownedBy, never a hardcoded list in code
+# - Negative proof: unowned labels or mismatched roles are refused with HTTP 403
+
+set -euo pipefail
+
+SHIM="${CHORUS_HOOK_SHIM:-$(command -v chorus-hook-shim || echo "$HOME/.chorus/bin/chorus-hook-shim")}"
+
+exec "$SHIM" launchagent-ops "$@"
