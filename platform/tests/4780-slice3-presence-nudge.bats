@@ -97,6 +97,11 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   W="$BATS_TEST_TMPDIR/hc-s2"
   mkdir -p "$W/sessions" "$W/canary"
 
+  # Roles door fixture (file://) so tests don't hit live :3360
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"borg-queen","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"}]}
+JSON
+
   # Register live sessions for the roles
   for r in wren silas kade borg-queen abby-normal; do
     printf '{"role":"%s","pid":%s,"tty":"/dev/ttys999","host":"unknown","registered_at":"9999999999"}' \
@@ -113,6 +118,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   PULSE_JSON="${PULSE_JSON}]}"
 
   run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_SESSIONS_DIR="$W/sessions" \
           CANARY_DIR="$W/canary" \
           pulse_actors="$PULSE_JSON" \
@@ -130,10 +136,15 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   W="$BATS_TEST_TMPDIR/hc-s2-single"
   mkdir -p "$W/sessions" "$W/canary"
 
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"silas","roleKind":"agent"}]}
+JSON
+
   printf '{"role":"silas","pid":%s,"tty":"/dev/ttys999","host":"unknown"}' \
     "$$" > "$W/sessions/silas-$$.json"
 
   run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_SESSIONS_DIR="$W/sessions" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
@@ -151,6 +162,10 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   W="$BATS_TEST_TMPDIR/hc-s2-fail"
   mkdir -p "$W/sessions" "$W/canary"
 
+  cat <<'JSON' > "$W/roles.json"
+{"data":[{"name":"borg-queen","roleKind":"agent"}]}
+JSON
+
   # Case A: delivery error recorded in messages.db (real sqlite3 fixture DB)
   DB="$W/messages.db"
   sqlite3 "$DB" "
@@ -167,6 +182,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   "
 
   run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
           CHORUS_SESSIONS_DIR="$W/sessions" \
           CANARY_DIR="$W/canary" \
@@ -179,6 +195,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 
   # Case B: delivery path refuses unknown actor
   run env CHORUS_ROOT="$ROOT" \
+          CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_SESSIONS_DIR="$W/sessions" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="unregistered-intruder" \
