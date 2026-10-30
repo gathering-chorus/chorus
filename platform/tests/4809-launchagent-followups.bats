@@ -3,6 +3,8 @@
 # #4809 — follow-ups from #4787's prod checks.
 # Each AC runs its Rust/bash test from here so borg-prove sees one file per card.
 
+bats_require_minimum_version 1.5.0
+
 setup_file() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   export ROOT
@@ -46,4 +48,23 @@ setup_file() {
   run cargo test --offline --bin chorus-hooks launchagent_ops_tests::refusal_emits_launchagent_refused_with_role_label_reason
   echo "$output"
   [ "$status" -eq 0 ]
+}
+
+@test "AC3a: an abnormal previous run killed by a signal reports exit_code=128+signo" {
+  . "$ROOT/platform/scripts/lib/service-lifecycle.sh"
+  print_out="$(printf '\tlast terminating signal = Killed: 9\n\tlast exit code = (never exited)\n')"
+  out="$(_sl_previous_end "$print_out")"
+  [[ "$out" == *"signal=Killed: 9"* ]] || { echo "no signal: $out"; return 1; }
+  [[ "$out" == *"exit_code=137"* ]] || { echo "no exit_code=137: $out"; return 1; }
+}
+
+@test "AC3b: a missing program reports exit_code=127, the same field name as every other failure" {
+  export CHORUS_HOME="$ROOT"
+  export CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log"
+  : > "$CHORUS_LOG_FILE"
+  run -127 bash "$ROOT/platform/scripts/service-run" com.chorus.probe-4809 job /nonexistent/program-4809
+  [ "$status" -eq 127 ]
+  line="$(grep '"event":"service.failed"' "$CHORUS_LOG_FILE" | tail -1)"
+  [[ "$line" == *'"exit_code":"127"'* || "$line" == *'"exit_code":127'* ]] || { echo "no exit_code=127: $line"; return 1; }
+  [[ "$line" != *'"exit":'* ]] || { echo "old exit= field still present: $line"; return 1; }
 }

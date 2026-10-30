@@ -18,15 +18,17 @@ set -u
 label="$(_sl_label "$1")"; mode="$2"; shift 2
 
 if [ "$mode" = daemon ] && [ -n "$(_sl_launchd_label)" ]; then
-  prev="$(_sl_previous_end "$(launchctl print "gui/$(id -u)/$label" 2>/dev/null)")"
-  [ -n "$prev" ] && _sl_emit service.failed "service=$label" "reason=previous run ended abnormally" "$prev"
+  prev=()
+  while IFS= read -r kv; do [ -n "$kv" ] && prev+=("$kv"); done \
+    < <(_sl_previous_end "$(launchctl print "gui/$(id -u)/$label" 2>/dev/null)")
+  [ ${#prev[@]} -gt 0 ] && _sl_emit service.failed "service=$label" "reason=previous run ended abnormally" "${prev[@]}"
 fi
 cmd="$(command -v "$1" || printf '%s' "$1")"
 # #4570 — a pinned program path that is gone (nvm dropped a node version) fails loud
 # with the path, instead of KeepAlive respawning an unnamed exit 127 forever.
 if [ ! -x "$cmd" ]; then
   echo "service-run: $label: program not found or not executable: $cmd" >&2
-  _sl_emit service.failed "service=$label" "reason=program not found: $cmd" "exit=127"
+  _sl_emit service.failed "service=$label" "reason=program not found: $cmd" "exit_code=127"
   exit 127
 fi
 version="$(shasum -a 256 "$cmd" 2>/dev/null | cut -c1-12)"

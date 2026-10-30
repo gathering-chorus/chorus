@@ -47,10 +47,17 @@ _sl_previous_end() {
   sig="$(printf '%s\n' "$1" | awk -F' = ' '/^\tlast terminating signal = /{print $2; exit}')"
   code="$(printf '%s\n' "$1" | awk -F' = ' '/^\tlast exit code = /{split($2,a,":"); print a[1]; exit}')"
   if [ -n "$sig" ]; then
-    case "$sig" in Terminated*) ;; *) printf 'signal=%s' "$sig" ;; esac
+    # #4809 AC3 — a signal death also carries exit_code=128+signo, the shell
+    # convention, so every service.failed has an exit_code. One key=value per line.
+    case "$sig" in
+      Terminated*) ;;
+      *) printf 'signal=%s\n' "$sig"
+         local signo="${sig##*: }"
+         [[ "$signo" =~ ^[0-9]+$ ]] && printf 'exit_code=%s\n' "$((128 + signo))" ;;
+    esac
   # "(never exited)" on a first run is not a failure: only a number counts
   elif [[ "$code" =~ ^-?[0-9]+$ ]] && [ "$code" != 0 ]; then
-    printf 'exit_code=%s' "$code"
+    printf 'exit_code=%s\n' "$code"
   fi
 }
 
@@ -89,8 +96,11 @@ service_lifecycle_exit() {  # service_lifecycle_exit <status>
 service_lifecycle_daemon() {
   _SL_SERVICE="$(_sl_label "$1")"; _SL_MODE=daemon
   if [ -n "$(_sl_launchd_label)" ]; then
-    local prev; prev="$(_sl_previous_end "$(launchctl print "gui/$(id -u)/$_SL_SERVICE" 2>/dev/null)")"
-    [ -n "$prev" ] && _sl_emit service.failed "service=$_SL_SERVICE" "reason=previous run ended abnormally" "$prev"
+    # #4809 — one key=value per line (the signal text has a space): read into an array
+    local prev=() kv
+    while IFS= read -r kv; do [ -n "$kv" ] && prev+=("$kv"); done \
+      < <(_sl_previous_end "$(launchctl print "gui/$(id -u)/$_SL_SERVICE" 2>/dev/null)")
+    [ ${#prev[@]} -gt 0 ] && _sl_emit service.failed "service=$_SL_SERVICE" "reason=previous run ended abnormally" "${prev[@]}"
   fi
   local version; version="$(shasum -a 256 "$0" 2>/dev/null | cut -c1-12)"
   _sl_emit service.started "service=$_SL_SERVICE" "pid=$$" "version=${version:-unknown}"
