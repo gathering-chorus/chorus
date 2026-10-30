@@ -7,7 +7,7 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
-CANARY_DIR="/tmp/nudge-canary"
+CANARY_DIR="${CANARY_DIR:-/tmp/nudge-canary}"
 # Fall back to user-scoped canary dir if shared health.log is unwritable
 [ -e "${CANARY_DIR}/health.log" ] && [ ! -w "${CANARY_DIR}/health.log" ] && CANARY_DIR="${CANARY_DIR}-${USER:-$(id -un)}"
 mkdir -p "$CANARY_DIR"
