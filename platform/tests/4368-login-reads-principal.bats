@@ -17,7 +17,7 @@ setup() {
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
 }
-row() { printf '{"data":{"principalKind":"%s"}}\n200\n' "$2" > "$T/principal-$1.json"; }
+row() { printf '{"data":{"principalKind":"%s","hostAccount":"chorus-%s"}}\n200\n' "$2" "$1" > "$T/principal-$1.json"; }
 out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
 nothing_started() { test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"; }
 

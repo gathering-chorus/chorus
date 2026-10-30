@@ -822,6 +822,58 @@ export function findExistingPendingByTitle(
   return null;
 }
 
+function parseSocketPendingOutput(stdout: string): { txtPath: string; argvPath: string } | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    return (parsed?.txtPath && parsed?.argvPath)
+      ? { txtPath: parsed.txtPath, argvPath: parsed.argvPath }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkSocketRetryError(stderr: string): void {
+  if (!stderr.includes('pending-retry-too-soon')) return;
+  const match = stderr.match(/written (\d+)ms ago at ([^\s]+)/);
+  const ageMs = match ? parseInt(match[1], 10) : 1000;
+  const existingPath = match ? match[2] : 'unknown';
+  throw new PendingRetryTooSoonError(ageMs, existingPath);
+}
+
+function delegatePendingApprovalToSocket(args: {
+  role: string;
+  stamp: string;
+  nudge: string;
+  title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cardOpts: any;
+}): { txtPath: string; argvPath: string } | null {
+  try {
+    const res = spawnSync('chorus-hook-shim', ['bouncer-pending'], {
+      input: JSON.stringify({
+        role: args.role,
+        stamp: args.stamp,
+        nudge: args.nudge,
+        title: args.title,
+        card_opts: args.cardOpts,
+      }),
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    if (res.status === 0 && res.stdout) {
+      const parsed = parseSocketPendingOutput(res.stdout);
+      if (parsed) return parsed;
+    }
+    if (res.stderr) {
+      checkSocketRetryError(res.stderr);
+    }
+  } catch (err) {
+    if (err instanceof PendingRetryTooSoonError) throw err;
+  }
+  return null;
+}
+
 export function writePendingApprovalArtifacts(args: {
   pendingDir: string;
   role: string;
@@ -837,36 +889,8 @@ export function writePendingApprovalArtifacts(args: {
   // writes to $CHORUS_STATE_DIR/pending-approvals/<role>/ under its own account.
   // This bypasses cross-account permission boundaries without sudo.
   if (args.useSocket) {
-    try {
-      const res = spawnSync('chorus-hook-shim', ['bouncer-pending'], {
-        input: JSON.stringify({
-          role: args.role,
-          stamp: args.stamp,
-          nudge: args.nudge,
-          title: args.title,
-          card_opts: args.cardOpts,
-        }),
-        encoding: 'utf-8',
-        timeout: 5000,
-      });
-      if (res.status === 0 && res.stdout) {
-        try {
-          const parsed = JSON.parse(res.stdout);
-          if (parsed.txtPath && parsed.argvPath) {
-            return { txtPath: parsed.txtPath, argvPath: parsed.argvPath };
-          }
-        } catch {}
-      }
-      if (res.stderr && res.stderr.includes('pending-retry-too-soon')) {
-        const match = res.stderr.match(/written (\d+)ms ago at ([^\s]+)/);
-        const ageMs = match ? parseInt(match[1], 10) : 1000;
-        const existingPath = match ? match[2] : 'unknown';
-        throw new PendingRetryTooSoonError(ageMs, existingPath);
-      }
-    } catch (err) {
-      if (err instanceof PendingRetryTooSoonError) throw err;
-      // Fallback to local filesystem write below if socket fails or in test env
-    }
+    const socketRes = delegatePendingApprovalToSocket(args);
+    if (socketRes) return socketRes;
   }
 
   fs.mkdirSync(args.pendingDir, { recursive: true });
