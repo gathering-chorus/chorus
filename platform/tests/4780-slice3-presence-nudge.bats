@@ -208,6 +208,15 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 
 # --- S3 (AC4): Bouncer writes to $CHORUS_STATE_DIR/pending-approvals/<role>/, responder reads only that ---
 
+@test "AC4: login provisions \$CHORUS_STATE_DIR/pending-approvals/<role> with 0750 permissions" {
+  export USER="jeffbridwell"
+  run "$SCRIPT" on wren
+  test "$status" -eq 0
+
+  grep -q "mkdir -p .*pending-approvals/wren" "$T/sudo.log"
+  grep -q "chmod 0750 .*pending-approvals/wren" "$T/sudo.log"
+}
+
 @test "AC4: role_pending_dir resolves to CHORUS_STATE_DIR/pending-approvals/<role>" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks role_pending_dir_resolves_to_state_dir_pending_approvals_role
