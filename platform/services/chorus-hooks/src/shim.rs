@@ -1566,6 +1566,21 @@ fn bouncer_pending_cmd(_args: &[String]) -> ExitCode {
 }
 
 /// #4787 AC2: narrow LaunchAgent ops helper over durable daemon socket
+/// #4809 AC2 — the shim's own refusals (before the daemon is reached) are
+/// recorded too, so every refused launchagent-ops call shows on the spine.
+fn refuse_launchagent_cli(label: &str, reason: &str, message: String) -> ExitCode {
+    eprintln!("{message}");
+    let role = chorus_hooks::shared::role::resolve_caller_role().unwrap_or_else(|_| "unknown".to_string());
+    let _ = chorus_log::run_silent(&[
+        "launchagent.refused".to_string(),
+        role,
+        format!("label={label}"),
+        format!("reason={reason}"),
+        "source=cli".to_string(),
+    ]);
+    ExitCode::from(2)
+}
+
 fn launchagent_ops_cmd(args: &[String]) -> ExitCode {
     if args.len() < 2 {
         eprintln!("Usage: launchagent-ops <kickstart|load|retire|unload|status> <label>");
@@ -1575,15 +1590,15 @@ fn launchagent_ops_cmd(args: &[String]) -> ExitCode {
     let label = &args[1];
 
     if args.len() > 2 {
-        eprintln!("launchagent-ops: REFUSED — helper takes a label only, no plist path or args");
-        return ExitCode::from(2);
+        return refuse_launchagent_cli(label, "extra-args",
+            "launchagent-ops: REFUSED — helper takes a label only, no plist path or args".to_string());
     }
 
     match verb.as_str() {
         "kickstart" | "load" | "retire" | "unload" | "status" => {}
         _ => {
-            eprintln!("launchagent-ops: REFUSED — unknown verb '{verb}'");
-            return ExitCode::from(2);
+            return refuse_launchagent_cli(label, "unknown-verb",
+                format!("launchagent-ops: REFUSED — unknown verb '{verb}'"));
         }
     }
 
@@ -1592,8 +1607,8 @@ fn launchagent_ops_cmd(args: &[String]) -> ExitCode {
     });
 
     if !LABEL_RE.is_match(label) {
-        eprintln!("launchagent-ops: REFUSED — invalid label '{label}'");
-        return ExitCode::from(2);
+        return refuse_launchagent_cli(label, "invalid-label",
+            format!("launchagent-ops: REFUSED — invalid label '{label}'"));
     }
 
     let payload = serde_json::json!({

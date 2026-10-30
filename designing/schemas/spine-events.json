@@ -4736,7 +4736,8 @@
       "envelope": [],
       "fields": {
         "label": "The LaunchAgent label the caller asked for",
-        "reason": "unowned | not-owner | invalid-label | unknown-verb | missing-verb-or-label"
+        "reason": "unowned | not-owner | invalid-label | unknown-verb | missing-verb-or-label | extra-args",
+        "source": "cli when the shim refused before reaching the daemon; absent when the daemon refused"
       }
     },
     "service.failed": {
