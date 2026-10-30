@@ -146,3 +146,41 @@ run_health() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "NUDGE HEALTH: all roles reachable"
 }
+
+@test "health check queries only latest nudge per role from messages.db" {
+  STUB_TMUX_PANES="%1" hc_world
+  for r in wren silas kade borg-queen abby-normal; do
+    register "$r" tmux "%1"
+  done
+  DB="$W/messages.db"
+  sqlite3 "$DB" "
+    CREATE TABLE messages (
+      id INTEGER PRIMARY KEY,
+      type TEXT,
+      \"to\" TEXT,
+      delivery_status TEXT,
+      last_delivery_error TEXT,
+      created_at TEXT
+    );
+    -- Older failure
+    INSERT INTO messages (id, type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES (1, 'nudge', 'silas', 'failed', 'no-window-found', datetime('now', '-1 hour'));
+    -- Newer success
+    INSERT INTO messages (id, type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES (2, 'nudge', 'silas', 'delivered', NULL, datetime('now'));
+  "
+
+  # Older failure ignored because latest succeeded
+  CHORUS_MESSAGES_DB="$DB" run_health
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "NUDGE HEALTH: all roles reachable"
+
+  # NEGATIVE PROOF: latest nudge failed -> must fail and name error
+  sqlite3 "$DB" "
+    INSERT INTO messages (id, type, \"to\", delivery_status, last_delivery_error, created_at)
+    VALUES (3, 'nudge', 'silas', 'failed', 'connection-reset-negative-proof', datetime('now'));
+  "
+  CHORUS_MESSAGES_DB="$DB" run_health
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "FAIL: silas — nudge delivery failed: connection-reset-negative-proof"
+}
