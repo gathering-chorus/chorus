@@ -27,30 +27,25 @@ setup() {
   [[ "$stop_line" =~ \"service\":\"$LABEL\" ]] || return 1
 }
 
-@test "AC3 NEGATIVE PROOF (#3734): an event missing 'service' field fails verification" {
-  # Verification predicate: line must have "service":"com.chorus.*"
-  verify_service_named() {
-    local line="$1"
-    [[ "$line" =~ \"service\":\"com\.chorus\.[a-zA-Z0-9_-]+\" ]] || return 1
-  }
+@test "AC3 NEGATIVE PROOF (#3734): service-run emitting without service field fails verification" {
+  LABEL="com.chorus.test-probe-neg"
+  _SERVICE_RUN_TEST_OMIT_SERVICE=1 bash "$ROOT/platform/scripts/service-run" "$LABEL" job /usr/bin/true
 
-  # Valid line passes
-  valid_line='{"event":"service.started","service":"com.chorus.test-probe","pid":"1234"}'
-  verify_service_named "$valid_line"
+  # Verification assertion: event must contain "service":"$LABEL"
+  # Under the faulty emission, the assertion fails
+  start_line="$(grep '"event":"service.started"' "$CHORUS_LOG_FILE" | tail -1)"
+  test -n "$start_line"
+  ! [[ "$start_line" =~ \"service\":\"$LABEL\" ]] || return 1
 
-  # Missing service field fails
-  missing_service='{"event":"service.started","pid":"1234"}'
-  ! verify_service_named "$missing_service" || return 1
-
-  # Empty service string fails
-  empty_service='{"event":"service.started","service":"","pid":"1234"}'
-  ! verify_service_named "$empty_service" || return 1
+  stop_line="$(grep '"event":"service.stopped"' "$CHORUS_LOG_FILE" | tail -1)"
+  test -n "$stop_line"
+  ! [[ "$stop_line" =~ \"service\":\"$LABEL\" ]] || return 1
 }
 
 # --- AC1: Caller's role comes from verified account or signed credential, never DEPLOY_ROLE env var or cwd guess ---
 
 @test "AC1: Rust role resolver ignores DEPLOY_ROLE when running as chorus-<role>" {
-  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --lib shared::role::session_resolver_tests_4202::account_chorus_role_ignores_deploy_role_negative_proof
+  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --offline --frozen --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --lib shared::role::session_resolver_tests_4202::account_chorus_role_ignores_deploy_role_negative_proof
 }
 
 @test "AC1: cards detectRole uses OS account chorus-<role> and ignores DEPLOY_ROLE" {
@@ -74,6 +69,23 @@ setup() {
   '
   test "$status" -eq 0
   [[ "$output" =~ "PASS: role is silas" ]] || return 1
+}
+
+@test "AC1 NEGATIVE PROOF (#3734): chorus-<unknown> account with DEPLOY_ROLE=jeff fails loudly and cannot claim jeff" {
+  run node -e '
+    const { detectRole } = require("'"$ROOT"'/directing/products/cards/dist/config");
+    process.env.DEPLOY_ROLE = "jeff";
+    try {
+      const role = detectRole("chorus-foo");
+      console.error("FAIL: unexpectedly succeeded with " + role);
+      process.exit(1);
+    } catch (err) {
+      console.log("PASS: threw " + err.message);
+      process.exit(0);
+    }
+  '
+  test "$status" -eq 0
+  [[ "$output" =~ "PASS: threw" ]] || return 1
 }
 
 # --- AC2: Role on its own account can kickstart, load, and retire owned com.chorus.* LaunchAgents via narrow ops helper ---

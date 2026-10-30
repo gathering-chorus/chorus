@@ -42,6 +42,11 @@ describe('detectRole', () => {
     expect(detectRole('chorus-kade')).toBe('kade');
   });
 
+  it('refuses unknown chorus-<role> account even if DEPLOY_ROLE=jeff', () => {
+    process.env.DEPLOY_ROLE = 'jeff';
+    expect(() => detectRole('chorus-foo')).toThrow(/Invalid role account 'chorus-foo'/);
+  });
+
   it('returns a valid DEPLOY_ROLE verbatim on launcher account', () => {
     process.env.DEPLOY_ROLE = 'kade';
     expect(detectRole('jeffbridwell')).toBe('kade');

@@ -189,6 +189,7 @@ export function detectRole(osUser?: string): string {
   if (user.startsWith('chorus-')) {
     const role = user.slice('chorus-'.length);
     if (VALID_ROLES.has(role)) return role;
+    throw new Error(`Invalid role account '${user}': role '${role}' not in valid set`);
   }
 
   const env = (process.env.DEPLOY_ROLE || '').toLowerCase();

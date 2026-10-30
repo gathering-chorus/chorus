@@ -107,6 +107,8 @@ pub fn resolve_role_from_account(
         if let Some(r) = acct.strip_prefix("chorus-") {
             if matches!(r, "wren" | "silas" | "kade" | "abby-normal" | "borg-queen") {
                 return Ok(r.to_string());
+            } else {
+                return Err(RoleUnresolved::NotARole { value: r.to_string() });
             }
         }
     }
@@ -490,5 +492,9 @@ mod session_resolver_tests_4202 {
         // Launcher account trusts env
         let r3 = resolve_role_from_account(Some("jeffbridwell"), None, s("kade"), CWD).unwrap();
         assert_eq!(r3, "kade");
+
+        // #4787 AC1 NEGATIVE PROOF — chorus-<unknown> falls through never, refuses immediately
+        let err = resolve_role_from_account(Some("chorus-foo"), None, s("jeff"), CWD).unwrap_err();
+        assert_eq!(err.reason(), "not-a-role");
     }
 }
