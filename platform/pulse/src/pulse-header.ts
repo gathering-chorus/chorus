@@ -10,12 +10,12 @@ import type { Express } from 'express';
 import { readCardSteps, type CwsRow } from './card-steps';
 import { factsFromActorState, QUIET_AFTER_S } from './pulse-tree';
 
-export interface Line { source: string; rows?: Array<Record<string, unknown>>; unmeasured?: string }
+export interface Line { source: string; rows?: Array<Record<string, unknown>>; unmeasured?: string; staleSeconds?: number }
 export interface Header { kind: 'Header'; product: 'pulse'; at: string; data: Record<string, Line> }
 
 type Read<T> = () => Promise<T>;
 export interface Sources {
-  cards: Read<CwsRow[]>;
+  cards: Read<CwsRow[]> & { staleSeconds?: () => number };
   actorState: () => unknown;
   messages: Read<Array<{ senderName: string; messageBody: string; sentAt: string }>>;
   alerts: Read<Array<{ name: string; label?: string }>>;
@@ -53,18 +53,55 @@ export async function composeHeader(src: Sources, now = new Date()): Promise<Hea
     }))),
     line('/pulse/alerts/alerts', src.alerts, as => as.map(a => ({ name: a.name, label: a.label ?? '' }))),
   ]);
+  // #4807 — cards served from the last read while refreshes fail say how old they are
+  const stale = src.cards.staleSeconds?.() ?? 0;
+  if (stale > 0 && cards.rows) cards.staleSeconds = stale;
   return { kind: 'Header', product: 'pulse', at: now.toISOString(), data: { cards, roles, messages, alerts } };
 }
 
-/** /cws read at most every 30 s: each read asks dagu about every WIP card. */
-export function cachedCards(read: Read<CwsRow[]> = readCardSteps, ttlMs = 30_000): Read<CwsRow[]> {
+/**
+ * /cws read at most every 30 s: each read asks dagu about every WIP card.
+ * #4807 — one read at a time, shared by every caller (before, each /pulse past the TTL
+ * started its own ~2 s script and they piled up until /pulse stopped answering, and the
+ * prompt hook waiting on /pulse lost the prompt's context). Once a read has landed,
+ * callers get the last cards at once while a refresh runs. A read that fails, or passes
+ * timeoutMs (its child is killed through the signal), is dropped and the next caller
+ * starts a new one. With nothing read yet a caller waits at most coldWaitMs, inside the
+ * prompt hook's 5 s budget, and the line says unmeasured while the read carries on.
+ */
+export function cachedCards(
+  read: (signal?: AbortSignal) => Promise<CwsRow[]> = signal => readCardSteps(undefined, signal),
+  ttlMs = 30_000, timeoutMs = 10_000, coldWaitMs = 2_000,
+): Read<CwsRow[]> & { staleSeconds: () => number } {
   let last: { at: number; rows: CwsRow[] } | undefined;
-  return async () => {
-    if (last && Date.now() - last.at < ttlMs) return last.rows;
-    const rows = await read();
-    last = { at: Date.now(), rows };
-    return rows;
+  let inflight: Promise<CwsRow[]> | undefined;
+  const refresh = (): Promise<CwsRow[]> => {
+    if (inflight) return inflight;
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        abort.abort();
+        reject(new Error(`/cws read: no answer in ${timeoutMs} ms`));
+      }, timeoutMs);
+    });
+    const p = Promise.race([read(abort.signal), timedOut])
+      .then(rows => { last = { at: Date.now(), rows }; return rows; })
+      .finally(() => { clearTimeout(timer); if (inflight === p) inflight = undefined; });
+    inflight = p;
+    p.catch(() => undefined);
+    return p;
   };
+  const staleSeconds = () => (last && Date.now() - last.at >= ttlMs ? Math.round((Date.now() - last.at) / 1000) : 0);
+  return Object.assign(async () => {
+    if (last && Date.now() - last.at < ttlMs) return last.rows;
+    if (last) { void refresh(); return last.rows; }
+    let wait: ReturnType<typeof setTimeout> | undefined;
+    const cold = new Promise<never>((_, reject) => {
+      wait = setTimeout(() => reject(new Error(`/cws refreshing: first read not back in ${coldWaitMs} ms`)), coldWaitMs);
+    });
+    try { return await Promise.race([refresh(), cold]); } finally { clearTimeout(wait); }
+  }, { staleSeconds });
 }
 
 export async function readAlerts(base = process.env.PULSE_API_URL || 'http://127.0.0.1:3392'): Promise<Array<{ name: string; label?: string }>> {
