@@ -177,10 +177,10 @@ describe('sharedRead (messages and alerts)', () => {
 // sharing the messages/alerts reads, 20 concurrent requests reach pulse-api 20 times and this fails.
 test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)', async () => {
   const http = require('http');
-  const hits: Record<string, number> = {};
+  const hits = new Map<string, number>();
   const fake = http.createServer((req: { url: string }, res: { setHeader: (k: string, v: string) => void; end: (b: string) => void }) => {
     const path = req.url.split('?')[0];
-    hits[path] = (hits[path] ?? 0) + 1;
+    hits.set(path, (hits.get(path) ?? 0) + 1);
     setTimeout(() => { res.setHeader('Content-Type', 'application/json'); res.end('{"data":[]}'); }, 30);
   });
   await new Promise<void>(r => fake.listen(0, '127.0.0.1', r));
@@ -193,8 +193,8 @@ test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)
     const app = createApp(new MessageStore(':memory:'));
     const res = await Promise.all(Array.from({ length: 20 }, () => request(app).get('/pulse')));
     expect(res.every((r: { status: number }) => r.status === 200)).toBe(true);
-    expect(hits['/pulse/messages/messages']).toBe(1);
-    expect(hits['/pulse/alerts/alerts']).toBe(1);
+    expect(hits.get('/pulse/messages/messages')).toBe(1);
+    expect(hits.get('/pulse/alerts/alerts')).toBe(1);
   } finally {
     if (prev === undefined) delete process.env.PULSE_API_URL; else process.env.PULSE_API_URL = prev;
     await new Promise(r => fake.close(r));

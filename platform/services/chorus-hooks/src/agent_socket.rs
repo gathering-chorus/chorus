@@ -64,7 +64,7 @@ pub fn role_for_account(account: &str, door: &Value) -> Result<String, String> {
 pub fn role_for_uid(uid: Option<u32>, door_base: &str) -> Result<String, String> {
     let uid = uid.ok_or("agent socket refuses: the peer's uid could not be read")?;
     let account = account_name(uid).ok_or_else(|| format!("agent socket refuses: uid {uid} has no account"))?;
-    let door = shared_door(&DOOR, DOOR_TTL, || read_door(door_base))?;
+    let door = shared_door(&DOOR, DOOR_TTL, door_base, || read_door(door_base))?;
     role_for_account(&account, &door)
 }
 
@@ -81,21 +81,24 @@ fn read_door(door_base: &str) -> Result<Value, String> {
 /// queue on the lock while it is in flight and take its answer. A failed read is not kept,
 /// and nothing older than the TTL is ever used — past it, identity is read again (fail closed).
 const DOOR_TTL: std::time::Duration = std::time::Duration::from_secs(30);
-static DOOR: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+/// Keyed on the door's base URL: a different door is a miss, never another door's answer.
+static DOOR: DoorCache = std::sync::Mutex::new(None);
+type DoorCache = std::sync::Mutex<Option<(std::time::Instant, String, Value)>>;
 
 fn shared_door(
-    cache: &std::sync::Mutex<Option<(std::time::Instant, Value)>>,
+    cache: &DoorCache,
     ttl: std::time::Duration,
+    base: &str,
     read: impl FnOnce() -> Result<Value, String>,
 ) -> Result<Value, String> {
     let mut slot = cache.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some((at, door)) = slot.as_ref() {
-        if at.elapsed() < ttl {
+    if let Some((at, from, door)) = slot.as_ref() {
+        if from == base && at.elapsed() < ttl {
             return Ok(door.clone());
         }
     }
     let door = read()?;
-    *slot = Some((std::time::Instant::now(), door.clone()));
+    *slot = Some((std::time::Instant::now(), base.to_string(), door.clone()));
     Ok(door)
 }
 
@@ -214,11 +217,11 @@ mod tests {
 
     #[test]
     fn sixty_concurrent_calls_make_one_door_read() {
-        static CACHE: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
         let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let handles: Vec<_> = (0..60).map(|_| {
             let reads = reads.clone();
-            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::from_secs(30), || {
+            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::from_secs(30), "door-a", || {
                 reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 Ok(door_with("role-kade"))
@@ -232,11 +235,11 @@ mod tests {
     // so the 1 above is the sharing, not a count that cannot move.
     #[test]
     fn negative_proof_unshared_reads_hit_the_door_every_call() {
-        static CACHE: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
         let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let handles: Vec<_> = (0..60).map(|_| {
             let reads = reads.clone();
-            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::ZERO, || {
+            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::ZERO, "door-a", || {
                 reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(door_with("role-kade"))
             }))
@@ -247,28 +250,37 @@ mod tests {
 
     #[test]
     fn a_revoked_principal_stops_resolving_once_the_ttl_passes() {
-        static CACHE: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
         let ttl = std::time::Duration::from_millis(50);
-        let first = shared_door(&CACHE, ttl, || Ok(door_with("role-kade"))).unwrap();
+        let first = shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-kade"))).unwrap();
         assert_eq!(role_for_account("chorus-kade", &first).unwrap(), "kade");
         // revoked: the door no longer lists the account
         let revoked = json!({"data": []});
-        let within = shared_door(&CACHE, ttl, || Ok(revoked.clone())).unwrap();
+        let within = shared_door(&CACHE, ttl, "door-a", || Ok(revoked.clone())).unwrap();
         assert!(role_for_account("chorus-kade", &within).is_ok(), "inside the TTL the shared read stands");
         std::thread::sleep(std::time::Duration::from_millis(60));
-        let after = shared_door(&CACHE, ttl, || Ok(revoked.clone())).unwrap();
+        let after = shared_door(&CACHE, ttl, "door-a", || Ok(revoked.clone())).unwrap();
         assert!(role_for_account("chorus-kade", &after).unwrap_err().contains("no principal runs as account chorus-kade"));
     }
 
     #[test]
+    fn a_different_door_is_a_miss_never_another_doors_answer() {
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
+        let ttl = std::time::Duration::from_secs(30);
+        shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-kade"))).unwrap();
+        let b = shared_door(&CACHE, ttl, "door-b", || Ok(json!({"data": []}))).unwrap();
+        assert!(role_for_account("chorus-kade", &b).is_err(), "door-b's empty answer, not door-a's cached one");
+    }
+
+    #[test]
     fn a_failed_door_read_is_not_kept_and_past_the_ttl_nothing_stale_is_served() {
-        static CACHE: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
         let ttl = std::time::Duration::from_millis(30);
-        shared_door(&CACHE, ttl, || Ok(door_with("role-kade"))).unwrap();
+        shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-kade"))).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(40));
-        let err = shared_door(&CACHE, ttl, || Err("door down".into())).unwrap_err();
+        let err = shared_door(&CACHE, ttl, "door-a", || Err("door down".into())).unwrap_err();
         assert_eq!(err, "door down", "fail closed: an expired read is never served when the door is down");
-        let again = shared_door(&CACHE, ttl, || Ok(door_with("role-wren"))).unwrap();
+        let again = shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-wren"))).unwrap();
         assert_eq!(role_for_account("chorus-kade", &again).unwrap(), "wren", "the failure was not cached");
     }
 }
