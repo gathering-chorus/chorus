@@ -46,3 +46,32 @@ setup() {
   empty_service='{"event":"service.started","service":"","pid":"1234"}'
   ! verify_service_named "$empty_service" || return 1
 }
+
+# --- AC1: Caller's role comes from verified account or signed credential, never DEPLOY_ROLE env var or cwd guess ---
+
+@test "AC1: Rust role resolver ignores DEPLOY_ROLE when running as chorus-<role>" {
+  CARGO_TARGET_DIR=/tmp/target-chorus-hooks cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --lib shared::role::session_resolver_tests_4202::account_chorus_role_ignores_deploy_role_negative_proof
+}
+
+@test "AC1: cards detectRole uses OS account chorus-<role> and ignores DEPLOY_ROLE" {
+  npm --prefix "$ROOT/directing/products/cards" test tests/config-3600.test.ts
+}
+
+@test "AC1 NEGATIVE PROOF (#3734): DEPLOY_ROLE=jeff in a chorus-silas shell does not make the caller jeff" {
+  run node -e '
+    const { detectRole } = require("'"$ROOT"'/directing/products/cards/dist/config");
+    process.env.DEPLOY_ROLE = "jeff";
+    const role = detectRole("chorus-silas");
+    if (role === "jeff") {
+      console.error("FAIL: spoofed role to jeff");
+      process.exit(1);
+    }
+    if (role !== "silas") {
+      console.error("FAIL: expected silas, got " + role);
+      process.exit(1);
+    }
+    console.log("PASS: role is " + role);
+  '
+  test "$status" -eq 0
+  [[ "$output" =~ "PASS: role is silas" ]] || return 1
+}

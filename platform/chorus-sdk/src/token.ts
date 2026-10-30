@@ -27,7 +27,17 @@ function mintBin(): string {
 /** Mint an ES256 identity token for this process's role, or null when no
  *  credential is resolvable (fail open — the envelope decides). */
 export function mintServiceToken(): string | null {
-  const role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || DEFAULT_ROLE;
+  let role = DEFAULT_ROLE;
+  try {
+    const user = os.userInfo().username.toLowerCase();
+    if (user.startsWith('chorus-')) {
+      role = user.slice('chorus-'.length);
+    } else {
+      role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || DEFAULT_ROLE;
+    }
+  } catch {
+    role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || DEFAULT_ROLE;
+  }
   try {
     // #3721 — dropped the eslint-disable for security/detect-non-literal-fs-filename:
     // that rule targets fs.* calls and never fired on this execFileSync, so the
