@@ -7,7 +7,7 @@
 # proves itself with Chorus stopped. A missing repo, script or PDF folder is a FAIL,
 # never a skip (#3734). Each negative test breaks a temp copy and the check must go red.
 # Needs on the box: Apache Jena (riot, shacl) and pdftotext.
-# SOIL_PDF_DIR (default ~/garden-soil-pdfs) holds the seven UMass PDFs; they carry a
+# SOIL_PDF_DIR (default ~/garden-soil-pdfs, else ~chorus-wren's) holds the seven UMass PDFs; they carry a
 # name and address, so they stay out of both repos. An account without them goes red.
 
 load test_helper
@@ -21,7 +21,12 @@ GARDEN_WERK="${CHORUS_WERK_BASE:-$PROJECTS/chorus-werk}/wren-4836-garden"
 if [ -z "${GARDEN_REPO:-}" ]; then
   if [ -d "$GARDEN_WERK" ]; then GARDEN_REPO="$GARDEN_WERK"; else GARDEN_REPO="$GARDEN_MAIN"; fi
 fi
-export SOIL_PDF_DIR="${SOIL_PDF_DIR:-$HOME/garden-soil-pdfs}"
+# The pipeline runs as another account than the role that keeps the PDFs, so fall back
+# to the keeper's folder (group chorus can read it).
+if [ -z "${SOIL_PDF_DIR:-}" ]; then
+  SOIL_PDF_DIR="$HOME/garden-soil-pdfs"; [ -d "$SOIL_PDF_DIR" ] || SOIL_PDF_DIR=~chorus-wren/garden-soil-pdfs
+fi
+export SOIL_PDF_DIR
 
 # A scratch copy of designing/ the negative tests may break.
 copy_designing() {
