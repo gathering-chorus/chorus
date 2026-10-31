@@ -114,6 +114,22 @@ static WERK_MERGE_CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`. A land that stopped after his go is retried on that go with `platform/scripts/werk-land-retry <card>` (#4707 reopen), never by hand.";
 
+// #4810 — npm ci / install deletes node_modules before it installs. When a werk's
+// node_modules is a symlink into canonical, that delete empties canonical's live
+// tree: 10-21 (wren-4672/pulse) and 10-30 13:54:37 (cards — the cards CLI broke for
+// every role). A memory note did not stop the second one; a refusal does.
+static NPM_INSTALL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bnpm\s+(ci|install|i|clean-install|add)\b").unwrap()
+});
+
+static CD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|)]+)").unwrap()
+});
+
+static NPM_PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"--prefix[ =]([^\s;&|)]+)").unwrap()
+});
+
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
@@ -148,6 +164,19 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::deny(&permission_deny_json(LAND_DENY));
     }
     tracing::trace!(hook = "infra_guardrails", phase = "receive", cmd_len = cmd.len(), "checking bash command");
+
+    // #4810 — before the heredoc/echo skips: nothing is deleted yet when this refuses.
+    if let Some((dir, target)) = npm_through_symlink(&cmd, cwd) {
+        log_guardrail("deny", "npm-through-symlink").await;
+        return HookResponse::deny(&permission_deny_json(&format!(
+            "BLOCKED: npm would install in {dir} through its node_modules symlink -> {target} (#4810). \
+             npm ci/install deletes node_modules first, so it would empty {target}; on 10-30 that \
+             broke the cards CLI for every role. Remove the link first (`rm {dir}/node_modules` \
+             deletes only the link), then install. werk-pull gives each werk a real node_modules.",
+            dir = dir.display(),
+            target = target.display(),
+        )));
+    }
 
     // Skip heredocs and echo/printf (absorbed from app_state_guard #1862)
     if cmd.contains("<<") {
@@ -329,6 +358,35 @@ fn is_land_bypass(cmd: &str) -> bool {
     LAND_ENQUEUE_RE.is_match(&positional)
         || LAND_API_RE.is_match(cmd)
         || WERK_MERGE_CALL_RE.is_match(&positional)
+}
+
+/// #4810 — the directory an `npm ci/install` in `cmd` installs into, and the
+/// symlink target of its node_modules, when that node_modules is a symlink. The
+/// directory is `--prefix`, else the last `cd` before npm, else `cwd`. Pure but
+/// for the one lstat.
+fn npm_through_symlink(cmd: &str, cwd: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let positional = strip_quoted_runs(cmd);
+    let m = NPM_INSTALL_RE.find(&positional)?;
+    let unquote = |s: &str| s.trim_matches(|c| c == '\'' || c == '"').to_string();
+    let after = cmd.get(m.start()..).unwrap_or("");
+    let before = cmd.get(..m.start()).unwrap_or("");
+    let named = NPM_PREFIX_RE.captures(after)
+        .or_else(|| CD_RE.captures_iter(before).last())
+        .map(|c| unquote(&c[1]));
+    let mut dir = std::path::PathBuf::from(cwd);
+    if let Some(d) = named {
+        let d = match d.strip_prefix("~/") {
+            Some(rest) => format!("{}/{}", std::env::var("HOME").unwrap_or_default(), rest),
+            None => d,
+        };
+        dir.push(d);
+    }
+    let nm = dir.join("node_modules");
+    if !nm.symlink_metadata().ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let target = std::fs::read_link(&nm).ok()?;
+    Some((dir, target))
 }
 
 async fn log_guardrail(decision: &str, pattern: &str) {
@@ -1022,5 +1080,63 @@ mod tests {
         let input = silas_bash("sudo -u chorus-silas id -un");
         let r = check(&input).await;
         assert!(r.stdout.is_none(), "sudo to a role account is not itself the problem");
+    }
+
+    // #4810 — npm through a symlinked node_modules. A fixture "canonical" tree and
+    // a fixture werk package whose node_modules links to it.
+    fn npm_world() -> (tempfile::TempDir, String, String) {
+        let t = tempfile::tempdir().unwrap();
+        let canon = t.path().join("canon/node_modules");
+        std::fs::create_dir_all(&canon).unwrap();
+        std::fs::write(canon.join("marker"), "live").unwrap();
+        let linked = t.path().join("werk/linked");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::os::unix::fs::symlink(&canon, linked.join("node_modules")).unwrap();
+        let real = t.path().join("werk/real/node_modules");
+        std::fs::create_dir_all(&real).unwrap();
+        let w = t.path().join("werk").to_string_lossy().into_owned();
+        let c = canon.to_string_lossy().into_owned();
+        (t, w, c)
+    }
+
+    fn bash_in(cmd: &str, cwd: &str) -> HookInput {
+        let mut i = kade_bash(cmd);
+        i.cwd = Some(cwd.to_string());
+        i
+    }
+
+    #[tokio::test]
+    async fn test_4810_deny_npm_ci_through_symlink_naming_target() {
+        let (_t, werk, canon) = npm_world();
+        for cmd in ["npm ci", "npm install --no-audit", "npm i"] {
+            let r = check(&bash_in(cmd, &format!("{werk}/linked"))).await;
+            let out = r.stdout.unwrap_or_default();
+            assert!(out.contains("BLOCKED") && out.contains(&canon), "{cmd}: must refuse naming {canon}: {out}");
+        }
+        assert!(std::path::Path::new(&canon).join("marker").exists(), "canonical untouched");
+    }
+
+    #[tokio::test]
+    async fn test_4810_deny_via_cd_and_prefix() {
+        let (_t, werk, canon) = npm_world();
+        for cmd in [format!("cd {werk}/linked && npm ci"), format!("npm ci --prefix {werk}/linked"), "cd linked; npm install".to_string()] {
+            let r = check(&bash_in(&cmd, &werk)).await;
+            let out = r.stdout.unwrap_or_default();
+            assert!(out.contains(&canon), "{cmd}: must refuse: {out}");
+        }
+    }
+
+    // The separating half: a real node_modules, or a non-installing npm, passes.
+    #[tokio::test]
+    async fn test_4810_allow_real_node_modules_and_read_forms() {
+        let (_t, werk, _canon) = npm_world();
+        let r = check(&bash_in("npm ci", &format!("{werk}/real"))).await;
+        assert!(r.stdout.is_none(), "a real node_modules installs freely");
+        for cmd in ["npm ls --depth=0", "npm test", "npm run build"] {
+            let r = check(&bash_in(cmd, &format!("{werk}/linked"))).await;
+            assert!(r.stdout.is_none(), "{cmd} does not delete node_modules");
+        }
+        let r = check(&bash_in("grep 'npm ci' notes.md", &format!("{werk}/linked"))).await;
+        assert!(r.stdout.is_none(), "quoted text is not a command");
     }
 }
