@@ -208,7 +208,25 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
         }
         _ => String::new(),
     };
-    Ok(format!("nudge sent: {from} → {resolved} (trace={trace}){room}"))
+    // #4817 — a nudge to a logged-out session is not an answered delivery: say so
+    let out = logged_out_note(&state_dir(), to).map(|since| {
+        (deps.spine)("nudge.to.logged_out", from, &format!("to={to},since={since},trace={trace}"));
+        format!(" · {to} is LOGGED OUT since {since}: no answer until that session logs in")
+    }).unwrap_or_default();
+    Ok(format!("nudge sent: {from} → {resolved} (trace={trace}){room}{out}"))
+}
+
+/// #4817 — the shared state dir the Stop hook writes session-auth/<role>.json into.
+fn state_dir() -> String {
+    std::env::var("CHORUS_STATE_DIR").unwrap_or_else(|_| "/Users/jeffbridwell/.chorus".into())
+}
+
+/// #4817 — when `role` is logged out, the time its run of failed turns began.
+pub fn logged_out_note(state_dir: &str, role: &str) -> Option<String> {
+    let t = std::fs::read_to_string(format!("{state_dir}/session-auth/{role}.json")).ok()?;
+    let v: Value = serde_json::from_str(&t).ok()?;
+    (v.get("status").and_then(Value::as_str) == Some("logged-out"))
+        .then(|| v.get("since").and_then(Value::as_str).unwrap_or("?").to_string())
 }
 
 /// #4629 S3 — tell pulse the note did not reach the room (POST /api/buzz/release {from, trace}),
@@ -315,4 +333,32 @@ pub fn flush_outbox(b: &BuzzDeps, role: &str, key: &RoleKey, spine: &dyn Fn(&str
         sent += 1;
     }
     Ok(sent)
+}
+
+#[cfg(test)]
+mod logged_out_4817 {
+    use super::logged_out_note;
+
+    fn dir(tag: &str) -> String {
+        let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let d = std::env::temp_dir().join(format!("ns-4817-{tag}-{n}"));
+        std::fs::create_dir_all(d.join("session-auth")).unwrap();
+        d.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn a_nudge_to_a_logged_out_role_names_since_when() {
+        let d = dir("out");
+        std::fs::write(format!("{d}/session-auth/silas.json"),
+            r#"{"role":"silas","status":"logged-out","since":"2026-10-30T22:05:00Z","last":"2026-10-30T22:30:01Z"}"#).unwrap();
+        assert_eq!(logged_out_note(&d, "silas").as_deref(), Some("2026-10-30T22:05:00Z"));
+    }
+
+    #[test]
+    fn negative_proof_a_logged_in_role_gets_no_note() {
+        let d = dir("in");
+        assert_eq!(logged_out_note(&d, "wren"), None, "no state file: logged in");
+        std::fs::write(format!("{d}/session-auth/wren.json"), r#"{"role":"wren","status":"logged-in"}"#).unwrap();
+        assert_eq!(logged_out_note(&d, "wren"), None);
+    }
 }
