@@ -22,9 +22,9 @@ setup() {
 # off every caller reads, an empty Loki answer is never kept, the OS path forks.
 @test "#4835: shared Loki read, cached memory corpus, cached Boston offset (with negative proofs)" {
   run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks -q -- \
-    concurrent_callers_share_one_read ttl_zero_reads_every_time memory_match_needs_two_keywords offset_cache_4835
+    concurrent_callers_share_one_read ttl_zero_reads_every_time memory_match_needs_two_keywords offset_cache_4835 a_hung_refresh_does_not_block_other_callers
   [ "$status" -eq 0 ] || return 1
-  [[ "$output" == *"5 passed"* ]] || return 1
+  [[ "$output" == *"6 passed"* ]] || return 1
 }
 
 # #4839 AC1 — the prompt route names each serial step's ms (turn-ended, cycle, clock,

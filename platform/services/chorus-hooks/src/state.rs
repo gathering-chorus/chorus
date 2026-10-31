@@ -427,8 +427,8 @@ impl AppState {
 /// permissions, full disk) still returns Err after the retries so the caller —
 /// and the test — can name it.
 pub async fn append_log_result(path: &std::path::Path, line: &str) -> std::io::Result<()> {
-    use tokio::fs::OpenOptions;
-    use tokio::io::AsyncWriteExt;
+    use std::fs::OpenOptions;
+    use std::io::Write;
 
     // #3278 — ONE write of line+newline. Writing the line and the '\n' as two
     // separate write_all calls let another process's append land between them,
@@ -446,9 +446,14 @@ pub async fn append_log_result(path: &std::path::Path, line: &str) -> std::io::R
             // short enough that a hook never visibly stalls on it.
             tokio::time::sleep(std::time::Duration::from_millis(2 * attempt as u64)).await;
         }
-        let attempted = async {
-            let mut f = OpenOptions::new().create(true).append(true).open(path).await?;
-            f.write_all(&buf).await?;
+        // #4839 — plain std::fs, inline: one O_APPEND write takes microseconds.
+        // tokio::fs sent the open, the write and the flush each through the
+        // blocking pool, and under 40+ prompts at once that pool is full of
+        // context lookups, so one log line waited over a second
+        // (prompt.route.timing 10-31 13:41: turn-ended=1225 ms).
+        let attempted = (|| {
+            let mut f = OpenOptions::new().create(true).append(true).open(path)?;
+            f.write_all(&buf)?;
             // #3721 — THE FLUSH IS LOAD-BEARING, and its absence was the actual
             // bug. `tokio::fs::File` is not a thin wrapper around the syscall: it
             // buffers, and dropping it does NOT flush. The old code did
@@ -458,10 +463,9 @@ pub async fn append_log_result(path: &std::path::Path, line: &str) -> std::io::R
             // lines with zero corrupt ones, and my own two-append unit test
             // reading back only the first line on CI. Nothing was interleaved and
             // no fd was exhausted; the bytes were simply still in a buffer that
-            // got dropped.
-            f.flush().await
-        }
-        .await;
+            // got dropped. (std::fs::File is unbuffered; the flush stays as the contract.)
+            f.flush()
+        })();
         match attempted {
             Ok(()) => return Ok(()),
             Err(e) if is_transient_append_error(&e) => last = Some(e),
