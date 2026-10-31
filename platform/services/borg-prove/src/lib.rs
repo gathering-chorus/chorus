@@ -322,13 +322,36 @@ pub fn newer(a: Option<(u128, String)>, b: Option<(u128, String)>) -> Option<Str
 /// `missing=N stale=M head=<sha>`, from /api/crawler/validate. None when the
 /// answer has no such row.
 pub fn crawl_row(body: &str, class: &str) -> Option<(String, String)> {
-    let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    let latest = v.get("data").and_then(|d| d.get("latest")).unwrap_or(&v);
-    let head = latest.get("head").and_then(|h| h.as_str())?.to_string();
-    let row = latest.get("rows")?.as_array()?.iter()
-        .find(|r| r.get("class").and_then(|c| c.as_str()) == Some(class))?;
-    let n = |k: &str| row.get(k).and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0);
-    Some((head, format!("missing={} stale={}", n("missing"), n("stale"))))
+    // std only (ADR-032 §1): the validate answer is read by its fixed keys
+    let head = str_after(body, "\"head\":\"")?;
+    let at = body.find(&format!("\"class\":\"{}\"", class.replace('"', "\\\"")))?;
+    let row = &body[at..];
+    let row = &row[..row.find('}').unwrap_or(row.len())];
+    Some((head, format!("missing={} stale={}", list_len(row, "missing")?, list_len(row, "stale")?)))
+}
+
+/// The string value that starts right after `key` (up to its closing quote).
+fn str_after(body: &str, key: &str) -> Option<String> {
+    let rest = &body[body.find(key)? + key.len()..];
+    Some(rest[..rest.find('"')?].to_string())
+}
+
+/// How many strings a JSON list of strings holds: `"<name>":[ "a", "b\"c" ]` → 2.
+fn list_len(row: &str, name: &str) -> Option<usize> {
+    let key = format!("\"{name}\":[");
+    let rest = &row[row.find(&key)? + key.len()..];
+    let (mut n, mut in_str, mut esc) = (0, false, false);
+    for c in rest.chars() {
+        match (in_str, esc, c) {
+            (true, true, _) => esc = false,
+            (true, false, '\\') => esc = true,
+            (true, false, '"') => in_str = false,
+            (false, _, '"') => { in_str = true; n += 1; }
+            (false, _, ']') => return Some(n),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// #4683 AC3 — the ACs a red verdict files children for: every one not met

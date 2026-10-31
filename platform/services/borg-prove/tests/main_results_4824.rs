@@ -67,3 +67,10 @@ fn a_crawl_with_gaps_or_before_the_land_never_proves() {
         o => panic!("{o:?}"),
     }
 }
+
+// review (wren, silas, abby): std only, so an escaped quote or comma in a path cannot miscount
+#[test]
+fn a_quote_or_comma_inside_a_listed_path_counts_once() {
+    let body = r#"{"data":{"latest":{"head":"abc","rows":[{"class":"Test (files)","missing":["a,b.rs","c\"d.rs"],"stale":[]}]}}}"#;
+    assert_eq!(crawl_row(body, "Test (files)").map(|r| r.1), Some("missing=2 stale=0".into()));
+}
