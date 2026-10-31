@@ -66,10 +66,20 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
             let url = format!("{loki}/loki/api/v1/query_range");
             let (start, end) = (format!("start={}000000000", now - 30 * 86400), format!("end={now}000000000"));
-            let q = format!("query={}", test_logql(&c.target, card));
-            let body = curl(&["-G", &url, "--data-urlencode", &q, "--data-urlencode", &start,
-                "--data-urlencode", &end, "--data-urlencode", "limit=1", "--data-urlencode", "direction=backward"])?;
-            latest_case_result(&body)
+            let ask = |q: String, start: String| curl(&["-G", &url, "--data-urlencode", &format!("query={q}"), "--data-urlencode", &start,
+                "--data-urlencode", &end, "--data-urlencode", "limit=1", "--data-urlencode", "direction=backward"]);
+            let own = ask(test_logql(&c.target, card), start).and_then(|b| latest_case(&b));
+            // #4824 — and main's nightly from the land on: a test the diff does not touch never runs in the card's runs
+            let main = land_time(card).and_then(|t| ask(test_logql_main(&c.target), format!("start={t}000000000")))
+                .and_then(|b| latest_case(&b));
+            newer(own, main)
+        }
+        "crawl" => {
+            // #4824 — the crawl's row for the class, only once the crawl has reached the land
+            let body = curl(&[&format!("{base}/api/crawler/validate")])?;
+            let (head, row) = crawl_row(&body, &c.target)?;
+            let landed = land_time(card)?;
+            (commit_time(&head)? >= landed).then(|| format!("{row} head={}", &head[..head.len().min(9)]))
         }
         _ => None,
     }
@@ -109,6 +119,21 @@ fn desc_of(text: &str) -> String {
     let start = text.find(DESC).map(|i| i + DESC.len()).unwrap_or(0);
     let end = text[start..].find("\n  Domains:").map(|i| start + i).unwrap_or(text.len());
     text[start..end].to_string()
+}
+
+/// #4824 — when the card reached main: the newest first-parent commit on main naming it.
+fn land_time(card: u32) -> Option<u64> {
+    let home = env("CHORUS_HOME", "");
+    let out = Command::new("git").args(["-C", &home, "-c", "safe.directory=*", "log", "origin/main", "--first-parent", "-1",
+        "--extended-regexp", &format!("--grep=#{card}([^0-9]|$)"), "--format=%ct"]).output().ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+/// #4824 — a commit's time, for "has the crawl reached the land".
+fn commit_time(sha: &str) -> Option<u64> {
+    let home = env("CHORUS_HOME", "");
+    let out = Command::new("git").args(["-C", &home, "-c", "safe.directory=*", "log", "-1", "--format=%ct", sha]).output().ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
