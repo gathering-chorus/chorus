@@ -17,7 +17,8 @@ fn boston_offset() -> FixedOffset {
 /// the async workers, several times per prompt, so 40 prompts at once queued on
 /// process spawns. The OS answer is kept for a minute (DST moves the offset at
 /// most twice a year, at a known hour).
-static OFFSET_CACHE: std::sync::Mutex<Option<(std::time::Instant, FixedOffset)>> = std::sync::Mutex::new(None);
+type OffsetSlot = std::sync::Mutex<Option<(std::time::Instant, FixedOffset)>>;
+static OFFSET_CACHE: OffsetSlot = std::sync::Mutex::new(None);
 const OFFSET_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 // per test thread, so tests running side by side cannot count each other's asks
 #[cfg(test)]

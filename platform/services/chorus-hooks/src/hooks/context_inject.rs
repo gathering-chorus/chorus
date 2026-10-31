@@ -413,7 +413,10 @@ fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(St
 /// on 34 of 40 (p50 335 ms, max 825). One answer is shared for LOGS_TTL; callers
 /// queue on the lock while the one read is in flight and take its answer.
 /// CHORUS_INJECT_LOGS_TTL_SECS=0 turns the sharing off (the negative proof).
-static LOGS_CACHE: Mutex<Option<(Instant, Vec<(String, String)>)>> = Mutex::new(None);
+/// One shared answer and when it was read (#4835).
+type Shared<T> = Mutex<Option<(Instant, Vec<T>)>>;
+
+static LOGS_CACHE: Shared<(String, String)> = Mutex::new(None);
 
 fn logs_ttl() -> Duration {
     Duration::from_secs(std::env::var("CHORUS_INJECT_LOGS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30))
@@ -421,7 +424,7 @@ fn logs_ttl() -> Duration {
 
 /// One shared answer per `ttl`: the first caller reads, the rest wait on the lock
 /// and reuse it. An empty answer (Loki down) is not kept, so the next prompt retries.
-fn shared_for<T: Clone>(slot: &Mutex<Option<(Instant, Vec<T>)>>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
+fn shared_for<T: Clone>(slot: &Shared<T>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
     if ttl.is_zero() {
         return read();
     }
@@ -782,7 +785,7 @@ struct MemDoc {
 /// prompts at once). The files are read once and shared for MEMORY_TTL; each
 /// prompt then matches its keywords in memory. CHORUS_INJECT_MEMORY_TTL_SECS=0
 /// reads the files every time (the negative proof).
-static MEMORY_CACHE: Mutex<Option<(Instant, Vec<MemDoc>)>> = Mutex::new(None);
+static MEMORY_CACHE: Shared<MemDoc> = Mutex::new(None);
 
 fn memory_ttl() -> Duration {
     Duration::from_secs(std::env::var("CHORUS_INJECT_MEMORY_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60))
@@ -1814,7 +1817,7 @@ mod cache_eviction_4562 {
     #[test]
     fn concurrent_callers_share_one_read_within_the_ttl() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        static SLOT: std::sync::Mutex<Option<(std::time::Instant, Vec<u8>)>> = std::sync::Mutex::new(None);
+        static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
         static READS: AtomicUsize = AtomicUsize::new(0);
         let hs: Vec<_> = (0..40).map(|_| std::thread::spawn(|| super::shared_for(&SLOT, std::time::Duration::from_secs(30), || {
             READS.fetch_add(1, Ordering::SeqCst);
@@ -1829,11 +1832,11 @@ mod cache_eviction_4562 {
     #[test]
     fn ttl_zero_reads_every_time_and_an_empty_answer_is_not_kept() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        static SLOT: std::sync::Mutex<Option<(std::time::Instant, Vec<u8>)>> = std::sync::Mutex::new(None);
+        static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
         static READS: AtomicUsize = AtomicUsize::new(0);
         for _ in 0..5 { super::shared_for(&SLOT, std::time::Duration::ZERO, || { READS.fetch_add(1, Ordering::SeqCst); vec![1u8] }); }
         assert_eq!(READS.load(Ordering::SeqCst), 5);
-        static EMPTY: std::sync::Mutex<Option<(std::time::Instant, Vec<u8>)>> = std::sync::Mutex::new(None);
+        static EMPTY: super::Shared<u8> = std::sync::Mutex::new(None);
         static R2: AtomicUsize = AtomicUsize::new(0);
         for _ in 0..3 { super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); Vec::<u8>::new() }); }
         assert_eq!(R2.load(Ordering::SeqCst), 3, "Loki down is retried, not cached");
