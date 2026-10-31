@@ -1,3 +1,4 @@
+// @domain: policies — the product domain this suite guards (#4334)
 import { Given, When, Then } from '@cucumber/cucumber';
 import * as assert from 'assert';
 import * as fs from 'fs';

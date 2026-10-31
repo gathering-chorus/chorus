@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @domain: infrastructure — the product domain this suite guards (#4334)
 # @test-type: unit
 # #4809 — follow-ups from #4787's prod checks.
 # Each AC runs its Rust/bash test from here so borg-prove sees one file per card.
