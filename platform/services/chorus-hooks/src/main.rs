@@ -1261,9 +1261,25 @@ async fn session_auth_observe(raw: &serde_json::Value, input: &HookInput) {
     let refs: Vec<&str> = roles.iter().map(String::as_str).collect();
     let ops_nudge = format!("{}/platform/scripts/ops-nudge",
         std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into()));
-    for to in hooks::session_auth::recipients(&role, &refs) {
-        let _ = tokio::process::Command::new(&ops_nudge).arg(&to).arg(&msg).spawn();
-    }
+    let recipients = hooks::session_auth::recipients(&role, &refs);
+    let alert_role = role.clone();
+    let alert_msg = msg.clone();
+    // off the Stop hook's 4 s budget: five sends in a row would outlast it
+    tokio::spawn(async move {
+        let (role, msg) = (alert_role, alert_msg);
+        for to in recipients {
+            // review (abby): an alert that fails to send must leave a trace, and the child is reaped
+            let outcome = match tokio::process::Command::new(&ops_nudge).arg(&to).arg(&msg).status().await {
+                Ok(s) if s.success() => "sent".to_string(),
+                Ok(s) => format!("exit {:?}", s.code()),
+                Err(e) => format!("did not start: {e}"),
+            };
+            if outcome != "sent" {
+                crate::state::chorus_log("session.auth.alert.failed", &role,
+                    &[("to", to.as_str()), ("outcome", outcome.as_str())]).await;
+            }
+        }
+    });
     crate::state::chorus_log("session.auth.alerted", &role, &[("account", account.as_str()), ("message", msg.as_str())]).await;
 }
 
