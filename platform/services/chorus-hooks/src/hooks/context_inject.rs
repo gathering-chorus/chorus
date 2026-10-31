@@ -422,20 +422,27 @@ fn logs_ttl() -> Duration {
     Duration::from_secs(std::env::var("CHORUS_INJECT_LOGS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30))
 }
 
+/// How long an EMPTY answer (the source down or silent) is kept. Review (abby):
+/// not keeping it at all made a down source cost one read per waiting prompt,
+/// in series, behind the lock; keeping it briefly caps that at one read per 5 s.
+const EMPTY_TTL: Duration = Duration::from_secs(5);
+
 /// One shared answer per `ttl`: the first caller reads, the rest wait on the lock
-/// and reuse it. An empty answer (Loki down) is not kept, so the next prompt retries.
+/// and reuse it. An empty answer is kept only for EMPTY_TTL, so a source that comes
+/// back is seen within seconds.
 fn shared_for<T: Clone>(slot: &Shared<T>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
     if ttl.is_zero() {
         return read();
     }
     let mut held = slot.lock().unwrap_or_else(|p| p.into_inner());
     if let Some((at, v)) = held.as_ref() {
-        if at.elapsed() < ttl {
+        let keep = if v.is_empty() { ttl.min(EMPTY_TTL) } else { ttl };
+        if at.elapsed() < keep {
             return v.clone();
         }
     }
     let v = read();
-    *held = if v.is_empty() { None } else { Some((Instant::now(), v.clone())) };
+    *held = Some((Instant::now(), v.clone()));
     v
 }
 
@@ -454,7 +461,9 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
     // event name ending .failed/.error). Match the real failure events, not a
     // level that never appears. (The level=error query returned 0 in prod.)
     let logql = r#"{job=~".+"} |~ "\"event\":\"[a-z._]*\\.(failed|error)\"""#;
+    // #4835 — bounded: a hung Loki holds the shared lock, so it must give up quickly
     let resp = match ureq::get("http://localhost:3102/loki/api/v1/query_range")
+        .timeout(Duration::from_millis(1500))
         .query("query", logql)
         .query("start", &start_ns.to_string())
         .query("end", &now_ns.to_string())
@@ -1830,16 +1839,21 @@ mod cache_eviction_4562 {
 
     // NEGATIVE PROOF: with the sharing off (ttl 0) every caller reads; an empty answer is never kept
     #[test]
-    fn ttl_zero_reads_every_time_and_an_empty_answer_is_not_kept() {
+    fn ttl_zero_reads_every_time_and_an_empty_answer_is_kept_only_briefly() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
         static READS: AtomicUsize = AtomicUsize::new(0);
         for _ in 0..5 { super::shared_for(&SLOT, std::time::Duration::ZERO, || { READS.fetch_add(1, Ordering::SeqCst); vec![1u8] }); }
         assert_eq!(READS.load(Ordering::SeqCst), 5);
+        // review (abby): a down source is read once per EMPTY_TTL, not once per waiting prompt
         static EMPTY: super::Shared<u8> = std::sync::Mutex::new(None);
         static R2: AtomicUsize = AtomicUsize::new(0);
-        for _ in 0..3 { super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); Vec::<u8>::new() }); }
-        assert_eq!(R2.load(Ordering::SeqCst), 3, "Loki down is retried, not cached");
+        for _ in 0..40 { super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); Vec::<u8>::new() }); }
+        assert_eq!(R2.load(Ordering::SeqCst), 1, "forty prompts while Loki is down read it once");
+        // and the empty answer expires after EMPTY_TTL, not the full ttl
+        *EMPTY.lock().unwrap() = Some((std::time::Instant::now() - super::EMPTY_TTL, Vec::new()));
+        super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); vec![7u8] });
+        assert_eq!(R2.load(Ordering::SeqCst), 2, "a source that comes back is read again after EMPTY_TTL");
     }
 
     // #4835 — the cached corpus answers exactly as the per-prompt scan did
