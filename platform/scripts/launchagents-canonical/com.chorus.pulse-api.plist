@@ -20,6 +20,11 @@
     <key>CHORUS_HOME</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
+  <!-- #4814 — 40 prompts at once ran it out of launchd's soft default of 256 files -->
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key><integer>4096</integer>
+  </dict>
   <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/pulse-api.log</string>

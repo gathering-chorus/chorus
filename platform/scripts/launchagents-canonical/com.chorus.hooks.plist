@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- #4814 the chorus-hooks daemon, taken from the copy launchd actually runs (the three
+     older repo copies had drifted from it). It answers every role's prompt, so a burst
+     must not run it out of files: launchd's soft default is 256. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.hooks</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/.chorus/bin/chorus-hooks</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BUZZ_AUTH_RELAY_URL</key><string>wss://buzz.lightlifeurbangardens.com</string>
+    <key>BUZZ_RELAY_TUNNEL</key><string>127.0.0.1:13000</string>
+    <key>BUZZ_RELAY_URL</key><string>ws://buzz.lightlifeurbangardens.com</string>
+    <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>RUST_LOG</key><string>chorus_hooks=info</string>
+  </dict>
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key><integer>4096</integer>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-hooks.log</string>
+  <key>StandardErrorPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-hooks.log</string>
+</dict>
+</plist>

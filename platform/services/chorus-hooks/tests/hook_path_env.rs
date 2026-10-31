@@ -46,9 +46,13 @@ fn accept_gate_cards_view_passes_with_path() {
     // runs. In a werk, the repo-local cards can lack per-package node deps
     // (the #3915 gate-spine class) and fails for a reason unrelated to PATH —
     // fall back to a runnable client rather than reporting a PATH bug.
+    // #4814 — the second candidate had become the werk path again, so the fallback
+    // was gone and every werk run threw ts-node's TSError. It is canonical (main).
+    let canonical = std::env::var("CHORUS_HOME")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", home()));
     let candidates = [
         format!("{}/platform/scripts/cards", chorus_root()),
-        format!("{}/platform/scripts/cards", chorus_root()),
+        format!("{}/platform/scripts/cards", canonical),
     ];
     let mut last_err = String::new();
     for cards in &candidates {

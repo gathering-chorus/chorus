@@ -253,6 +253,15 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
 }
 
 fn main() {
+    // #4814 AC2 — a panic on ANY thread ends the process (tiny_http's accept thread
+    // panics on EMFILE and would otherwise leave a live process that never answers);
+    // launchd's KeepAlive starts a fresh one. Said on stderr first, with the cause.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default_hook(info);
+        eprintln!("{PRODUCT}-api: a thread panicked — exiting so launchd restarts the api");
+        std::process::exit(70);
+    }));
     let s = settings::load();
     // `<product>-api load <file.trig>`: fill the embedded store (a move from another
     // store, or a restore). `dump <file.trig>`: back it up. Both refuse a remote store.
