@@ -1,3 +1,4 @@
+// @domain: seeds — the product domain this suite guards (#4334)
 import { Given, When, Then, Before, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as fs from 'fs';

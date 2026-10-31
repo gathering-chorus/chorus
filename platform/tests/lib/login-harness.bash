@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: identity — the product domain this suite guards (#4334)
 # login-harness.bash — #4367. The fixture world the login scenarios run in: stub
 # tmux, claude, ps, token minter, curl, service probe, osascript and open, all
 # writing into $T; no live services, no live panes. Moved out of

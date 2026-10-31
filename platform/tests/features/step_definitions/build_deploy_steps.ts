@@ -1,3 +1,4 @@
+// @domain: cicd — the product domain this suite guards (#4334)
 // #2880: BDD tests for /build + /deploy substrate — exercise actual scripts.
 //
 // Same convention as #2875 (Wren's demo steps): step defs invoke real

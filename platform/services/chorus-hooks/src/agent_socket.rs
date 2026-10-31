@@ -1,3 +1,4 @@
+// @domain: identity — the product domain this service guards (#4538)
 //! #4432 — the hooks socket for agent principals that run as their own Mac
 //! account (Abby Normal, uid 505). The main socket stays owner-only for the
 //! three roles on Jeff's account; this one is group `chorus`, and on it the OS

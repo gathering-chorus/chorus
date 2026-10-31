@@ -1,3 +1,4 @@
+// @domain: cicd — the product domain this suite guards (#4334)
 // #2875: BDD tests for /demo skill — exercise actual implementation, no mocks.
 //
 // "Actual implementation" for /demo means: the same shell/CLI/MCP surfaces
