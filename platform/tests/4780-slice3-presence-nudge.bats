@@ -301,32 +301,34 @@ JSON
   out_has "UNMEASURED — Pulse actor-state is unreadable"
 }
 
+# #4772 — cargo builds in this account's own folder; a target/ file another
+# account owns cannot be rewritten (EPERM).
 # --- S3 (AC4): Bouncer writes to $CHORUS_STATE_DIR/pending-approvals/<role>/, responder reads only that ---
 
 @test "AC4: store_pending_approval handles writes, dedupe, and retry refusal" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks store_pending_approval_writes_and_refuses_retry
+  run env CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/platform/services/chorus-hooks/target/$(id -un)}" cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks store_pending_approval_writes_and_refuses_retry
   test "$status" -eq 0
   out_has "test hooks::card_approval_responder::tests::store_pending_approval_writes_and_refuses_retry ... ok"
 }
 
 @test "AC4: role_pending_dir resolves to CHORUS_STATE_DIR/pending-approvals/<role>" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks role_pending_dir_resolves_to_state_dir_pending_approvals_role
+  run env CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/platform/services/chorus-hooks/target/$(id -un)}" cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks role_pending_dir_resolves_to_state_dir_pending_approvals_role
   test "$status" -eq 0
   out_has "test hooks::card_approval_responder::tests::role_pending_dir_resolves_to_state_dir_pending_approvals_role ... ok"
 }
 
 @test "AC4 NEGATIVE PROOF (#3734): a file under /Users/chorus-<role>/ is NOT picked up" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_file_under_role_home_is_not_picked_up
+  run env CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/platform/services/chorus-hooks/target/$(id -un)}" cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_file_under_role_home_is_not_picked_up
   test "$status" -eq 0
   out_has "test hooks::card_approval_responder::tests::negative_proof_file_under_role_home_is_not_picked_up ... ok"
 }
 
 @test "AC4 NEGATIVE PROOF (#3734): kade's socket sends deploy_role=silas is refused and nothing stored" {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing
+  run env CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/platform/services/chorus-hooks/target/$(id -un)}" cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing
   test "$status" -eq 0
   out_has "test bouncer_pending_tests::negative_proof_bouncer_pending_refuses_mismatched_deploy_role_and_stores_nothing ... ok"
 }

@@ -419,7 +419,9 @@ fn row_lock_a_build_lock_held_past_the_cap_is_unmeasured_and_names_the_holder() 
     let holder = std::sync::Mutex::new(None::<std::process::Child>);
     let r = run_fixture_full("rl", "91014", &crate_files(FX_LIB), &[crate_row()], &["cargo"],
         &[("WERK_TEST_LOCK_CAP", "2".to_string())], None, |werk| {
-            let d = werk.join("platform/services/fx/target/debug");
+            // #4772 — werk-test builds in this account's own folder, so that is where the lock is
+            let me = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
+            let d = werk.join("platform/services/fx/target").join(me.trim()).join("debug");
             std::fs::create_dir_all(&d).unwrap();
             let child = Command::new("sh").arg("-c").arg("exec 9>>.cargo-lock; sleep 60").current_dir(&d).spawn().unwrap();
             std::thread::sleep(std::time::Duration::from_millis(300));
