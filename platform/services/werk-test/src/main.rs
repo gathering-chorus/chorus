@@ -2557,8 +2557,13 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     // #4494 — start from prod's build cache when this werk has none
     let canonical = std::env::var("CHORUS_HOME")
         .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+    // #4772 — this account's own build folder: the role's local cargo writes the
+    // crate's target/, and a file another account owns cannot be rewritten (EPERM)
+    let account = werk_test::current_account();
+    let target_dir = werk_test::account_target_dir(&dir, &account);
     if Path::new(werk) != Path::new(&canonical) {
-        println!("build-cache: {}", werk_test::seed_target(werk, &canonical, &crate_dir(werk, name)));
+        let canon_crate = format!("{}/{}", canonical, crate_dir(werk, name));
+        println!("build-cache: {}", werk_test::seed_account_target(&target_dir, &canon_crate, &account, &crate_dir(werk, name)));
     }
     if let Err(reason) = nextest_gate(werk) {
         // #4537 — the toolchain, not the card: UNMEASURED, never a red with no failing case
@@ -2568,7 +2573,7 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     }
     // #4537 — another build holding this crate's build lock: wait up to a cap,
     // then UNMEASURED naming the holder (never an hour of "Blocking waiting")
-    if let Err(why) = wait_for_build_lock(&dir) {
+    if let Err(why) = wait_for_build_lock(&dir, &target_dir) {
         eprintln!("UNMEASURED cargo lane for {}: {}", name, why);
         return (werk_test::lane_unmeasured(why.clone()), Vec::new(), why);
     }
@@ -2593,7 +2598,7 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     let mut cmd = Command::new("cargo");
     // #3918 — test child: cleared, so the membrane still refuses it (see child_context).
     cmd.env("CHORUS_CONTEXT", "");
-    cmd.args(&args).current_dir(&dir);
+    cmd.args(&args).current_dir(&dir).env("CARGO_TARGET_DIR", &target_dir);
     apply_suite_world(&mut cmd, werk);
     match output_with_progress(&mut cmd, name) {
         Ok(o) => {
@@ -2626,9 +2631,9 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
 
 /// #4537 — the processes holding a crate's cargo build lock open, as
 /// "pid N (command)". Empty when free or when it cannot be read.
-fn build_lock_holders(crate_dir: &str) -> Vec<String> {
+fn build_lock_holders(crate_dir: &str, target_dir: &str) -> Vec<String> {
     let target = Command::new("cargo").args(["metadata", "--no-deps", "--format-version", "1"])
-        .current_dir(crate_dir).output().ok()
+        .current_dir(crate_dir).env("CARGO_TARGET_DIR", target_dir).output().ok()
         .and_then(|o| werk_test::json_str_field(&String::from_utf8_lossy(&o.stdout), "target_directory"))
         .unwrap_or_else(|| format!("{}/target", crate_dir));
     let me = std::process::id().to_string();
@@ -2649,11 +2654,11 @@ fn build_lock_holders(crate_dir: &str) -> Vec<String> {
 
 /// #4537 — wait while another process holds the build lock, up to
 /// WERK_TEST_LOCK_CAP seconds (default 600); past it, the reason to report.
-fn wait_for_build_lock(crate_dir: &str) -> Result<(), String> {
+fn wait_for_build_lock(crate_dir: &str, target_dir: &str) -> Result<(), String> {
     let cap = std::env::var("WERK_TEST_LOCK_CAP").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600);
     let start = std::time::Instant::now();
     loop {
-        let holders = build_lock_holders(crate_dir);
+        let holders = build_lock_holders(crate_dir, target_dir);
         if holders.is_empty() {
             return Ok(());
         }
