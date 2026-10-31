@@ -461,9 +461,9 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
     // event name ending .failed/.error). Match the real failure events, not a
     // level that never appears. (The level=error query returned 0 in prod.)
     let logql = r#"{job=~".+"} |~ "\"event\":\"[a-z._]*\\.(failed|error)\"""#;
-    // #4835 — bounded: a hung Loki holds the shared lock, so it must give up quickly
+    // #3048 (Jeff): no timeout — wait for the context. A down Loki answers fast
+    // (connection refused) and its empty answer is shared for EMPTY_TTL (#4835).
     let resp = match ureq::get("http://localhost:3102/loki/api/v1/query_range")
-        .timeout(Duration::from_millis(1500))
         .query("query", logql)
         .query("start", &start_ns.to_string())
         .query("end", &now_ns.to_string())
@@ -797,7 +797,9 @@ struct MemDoc {
 static MEMORY_CACHE: Shared<MemDoc> = Mutex::new(None);
 
 fn memory_ttl() -> Duration {
-    Duration::from_secs(std::env::var("CHORUS_INJECT_MEMORY_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60))
+    // #4839 — 60 s expired between real prompts (Wren's, minutes apart, still paid 255–450 ms);
+    // memory files change a few times a day
+    Duration::from_secs(std::env::var("CHORUS_INJECT_MEMORY_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(600))
 }
 
 fn read_memory_docs() -> Vec<MemDoc> {
