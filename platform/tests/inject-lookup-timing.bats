@@ -15,3 +15,14 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"2 passed"* ]] || return 1
 }
+
+# #4835 — the unit proofs behind the speed fix: forty prompts share one Loki read,
+# the memory files are read once per minute, and the Boston offset is asked once
+# per minute instead of a `date` fork per log line. Negative proofs: with sharing
+# off every caller reads, an empty Loki answer is never kept, the OS path forks.
+@test "#4835: shared Loki read, cached memory corpus, cached Boston offset (with negative proofs)" {
+  run cargo test --manifest-path "$ROOT/platform/services/chorus-hooks/Cargo.toml" --bin chorus-hooks -q -- \
+    concurrent_callers_share_one_read ttl_zero_reads_every_time memory_match_needs_two_keywords offset_cache_4835
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"5 passed"* ]] || return 1
+}

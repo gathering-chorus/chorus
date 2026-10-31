@@ -408,6 +408,48 @@ fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(St
 /// logs, so this is the complementary half of the forcing function: the live
 /// "what's breaking right now" signal, injected every prompt. Fail-open and
 /// tightly time-boxed (300ms) — a slow or down Loki must never block a prompt.
+/// #4835 — every prompt asked Loki the same thing ("failure events in the last
+/// 15 minutes", over every stream): at 40 prompts at once it was the slowest lookup
+/// on 34 of 40 (p50 335 ms, max 825). One answer is shared for LOGS_TTL; callers
+/// queue on the lock while the one read is in flight and take its answer.
+/// CHORUS_INJECT_LOGS_TTL_SECS=0 turns the sharing off (the negative proof).
+/// One shared answer and when it was read (#4835).
+type Shared<T> = Mutex<Option<(Instant, Vec<T>)>>;
+
+static LOGS_CACHE: Shared<(String, String)> = Mutex::new(None);
+
+fn logs_ttl() -> Duration {
+    Duration::from_secs(std::env::var("CHORUS_INJECT_LOGS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30))
+}
+
+/// How long an EMPTY answer (the source down or silent) is kept. Review (abby):
+/// not keeping it at all made a down source cost one read per waiting prompt,
+/// in series, behind the lock; keeping it briefly caps that at one read per 5 s.
+const EMPTY_TTL: Duration = Duration::from_secs(5);
+
+/// One shared answer per `ttl`: the first caller reads, the rest wait on the lock
+/// and reuse it. An empty answer is kept only for EMPTY_TTL, so a source that comes
+/// back is seen within seconds.
+fn shared_for<T: Clone>(slot: &Shared<T>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
+    if ttl.is_zero() {
+        return read();
+    }
+    let mut held = slot.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((at, v)) = held.as_ref() {
+        let keep = if v.is_empty() { ttl.min(EMPTY_TTL) } else { ttl };
+        if at.elapsed() < keep {
+            return v.clone();
+        }
+    }
+    let v = read();
+    *held = Some((Instant::now(), v.clone()));
+    v
+}
+
+fn shared_log_errors() -> Vec<(String, String)> {
+    shared_for(&LOGS_CACHE, logs_ttl(), query_recent_log_errors)
+}
+
 fn query_recent_log_errors() -> Vec<(String, String)> {
     let now_ns: u128 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -419,7 +461,9 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
     // event name ending .failed/.error). Match the real failure events, not a
     // level that never appears. (The level=error query returned 0 in prod.)
     let logql = r#"{job=~".+"} |~ "\"event\":\"[a-z._]*\\.(failed|error)\"""#;
+    // #4835 — bounded: a hung Loki holds the shared lock, so it must give up quickly
     let resp = match ureq::get("http://localhost:3102/loki/api/v1/query_range")
+        .timeout(Duration::from_millis(1500))
         .query("query", logql)
         .query("start", &start_ns.to_string())
         .query("end", &now_ns.to_string())
@@ -737,48 +781,64 @@ fn chorus_memory_dirs_in(projects: &str) -> Vec<std::path::PathBuf> {
 }
 
 /// Scan memory files for related decisions and feedback
-fn scan_memory(keywords: &[String]) -> Vec<String> {
-    let mut hits = Vec::new();
+/// #4835 — one memory file as the scan needs it: its name, its text lowercased,
+/// and the first line after the frontmatter.
+#[derive(Clone)]
+struct MemDoc {
+    name: String,
+    lower: String,
+    first_line: String,
+}
+
+/// #4835 — the scan read every memory file on every prompt (max 902 ms at 40
+/// prompts at once). The files are read once and shared for MEMORY_TTL; each
+/// prompt then matches its keywords in memory. CHORUS_INJECT_MEMORY_TTL_SECS=0
+/// reads the files every time (the negative proof).
+static MEMORY_CACHE: Shared<MemDoc> = Mutex::new(None);
+
+fn memory_ttl() -> Duration {
+    Duration::from_secs(std::env::var("CHORUS_INJECT_MEMORY_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60))
+}
+
+fn read_memory_docs() -> Vec<MemDoc> {
+    let mut docs = Vec::new();
     let mut seen_files = std::collections::HashSet::new();
-
     for memory_dir in chorus_memory_dirs() {
-        let dir = match std::fs::read_dir(&memory_dir) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-
+        let Ok(dir) = std::fs::read_dir(&memory_dir) else { continue };
         for entry in dir.flatten() {
             let path = entry.path();
-            if path.extension().is_none_or(|e| e != "md") {
+            if path.extension().is_none_or(|e| e != "md") || path.file_name().is_some_and(|n| n == "MEMORY.md") {
                 continue;
             }
-            if path.file_name().is_some_and(|n| n == "MEMORY.md") {
-                continue;
-            }
-            let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            if !seen_files.insert(fname.clone()) {
+            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if !seen_files.insert(name.clone()) {
                 continue; // same filename already scanned in another project dir
             }
-
             if let Ok(content) = std::fs::read_to_string(&path) {
-                let lower = content.to_lowercase();
-                let match_count = keywords.iter().filter(|k| lower.contains(k.as_str())).count();
-                if match_count >= 2 || (keywords.len() == 1 && match_count == 1) {
-                    // Extract the first meaningful line after frontmatter
-                    let body = content
-                        .split("---")
-                        .nth(2)
-                        .unwrap_or(&content)
-                        .trim();
-                    let first_line: String = body.lines().next().unwrap_or("").chars().take(150).collect();
-                    if !first_line.is_empty() {
-                        hits.push(format!("[{}] {}", fname, first_line));
-                    }
-                }
+                // the first meaningful line after frontmatter
+                let body = content.split("---").nth(2).unwrap_or(&content).trim();
+                let first_line: String = body.lines().next().unwrap_or("").chars().take(150).collect();
+                docs.push(MemDoc { name, lower: content.to_lowercase(), first_line });
             }
         }
     }
+    docs
+}
 
+fn scan_memory(keywords: &[String]) -> Vec<String> {
+    let docs = shared_for(&MEMORY_CACHE, memory_ttl(), read_memory_docs);
+    match_memory(&docs, keywords)
+}
+
+fn match_memory(docs: &[MemDoc], keywords: &[String]) -> Vec<String> {
+    let mut hits: Vec<String> = docs.iter()
+        .filter(|d| {
+            let n = keywords.iter().filter(|k| d.lower.contains(k.as_str())).count();
+            n >= 2 || (keywords.len() == 1 && n == 1)
+        })
+        .filter(|d| !d.first_line.is_empty())
+        .map(|d| format!("[{}] {}", d.name, d.first_line))
+        .collect();
     hits.truncate(5);
     hits
 }
@@ -1138,7 +1198,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         let t_header = tokio::task::spawn_blocking(|| timed(query_pulse_header));
         let t_spine = tokio::task::spawn_blocking(|| timed(|| query_recent_spine(8)));
         let t_athena = tokio::task::spawn_blocking(move || timed(|| cached_query_athena_domain(&r3)));
-        let t_logs = tokio::task::spawn_blocking(|| timed(query_recent_log_errors));
+        let t_logs = tokio::task::spawn_blocking(|| timed(shared_log_errors));
         let (chorus, chorus_ms) = t_chorus.await.unwrap_or_default();
         let (semantic, semantic_ms) = t_semantic.await.unwrap_or_default();
         let (memory, memory_ms) = t_memory.await.unwrap_or_default();
@@ -1760,5 +1820,50 @@ mod cache_eviction_4562 {
     #[test]
     fn no_lookups_names_no_slowest() {
         assert_eq!(super::slowest(&[]), None);
+    }
+
+    // #4835 — forty callers at once read once; the rest take the shared answer
+    #[test]
+    fn concurrent_callers_share_one_read_within_the_ttl() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
+        static READS: AtomicUsize = AtomicUsize::new(0);
+        let hs: Vec<_> = (0..40).map(|_| std::thread::spawn(|| super::shared_for(&SLOT, std::time::Duration::from_secs(30), || {
+            READS.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            vec![1u8]
+        }))).collect();
+        for h in hs { assert_eq!(h.join().unwrap(), vec![1u8]); }
+        assert_eq!(READS.load(Ordering::SeqCst), 1, "one read for forty callers");
+    }
+
+    // NEGATIVE PROOF: with the sharing off (ttl 0) every caller reads; an empty answer is never kept
+    #[test]
+    fn ttl_zero_reads_every_time_and_an_empty_answer_is_kept_only_briefly() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
+        static READS: AtomicUsize = AtomicUsize::new(0);
+        for _ in 0..5 { super::shared_for(&SLOT, std::time::Duration::ZERO, || { READS.fetch_add(1, Ordering::SeqCst); vec![1u8] }); }
+        assert_eq!(READS.load(Ordering::SeqCst), 5);
+        // review (abby): a down source is read once per EMPTY_TTL, not once per waiting prompt
+        static EMPTY: super::Shared<u8> = std::sync::Mutex::new(None);
+        static R2: AtomicUsize = AtomicUsize::new(0);
+        for _ in 0..40 { super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); Vec::<u8>::new() }); }
+        assert_eq!(R2.load(Ordering::SeqCst), 1, "forty prompts while Loki is down read it once");
+        // and the empty answer expires after EMPTY_TTL, not the full ttl
+        *EMPTY.lock().unwrap() = Some((std::time::Instant::now() - super::EMPTY_TTL, Vec::new()));
+        super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); vec![7u8] });
+        assert_eq!(R2.load(Ordering::SeqCst), 2, "a source that comes back is read again after EMPTY_TTL");
+    }
+
+    // #4835 — the cached corpus answers exactly as the per-prompt scan did
+    #[test]
+    fn memory_match_needs_two_keywords_or_the_only_one() {
+        let d = |n: &str, t: &str| super::MemDoc { name: n.into(), lower: t.to_lowercase(), first_line: format!("line of {n}") };
+        let docs = vec![d("a.md", "crawler sync drift"), d("b.md", "crawler only"), d("c.md", "nothing")];
+        let kw = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(super::match_memory(&docs, &kw(&["crawler", "sync"])), vec!["[a.md] line of a.md"]);
+        assert_eq!(super::match_memory(&docs, &kw(&["crawler"])).len(), 2, "one keyword: one match is enough");
+        assert!(super::match_memory(&docs, &kw(&["absent", "words"])).is_empty(), "negative: no match, no hit");
     }
 }

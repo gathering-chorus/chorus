@@ -13,8 +13,33 @@ fn boston_offset() -> FixedOffset {
     boston_offset_pub()
 }
 
+/// #4835 — every chorus_log line called this, and it forked `date` each time: on
+/// the async workers, several times per prompt, so 40 prompts at once queued on
+/// process spawns. The OS answer is kept for a minute (DST moves the offset at
+/// most twice a year, at a known hour).
+type OffsetSlot = std::sync::Mutex<Option<(std::time::Instant, FixedOffset)>>;
+static OFFSET_CACHE: OffsetSlot = std::sync::Mutex::new(None);
+const OFFSET_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+// per test thread, so tests running side by side cannot count each other's asks
+#[cfg(test)]
+thread_local!(static OFFSET_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) });
+
 /// Public accessor for boston_offset — used by chorus_log.rs (#1850)
 pub fn boston_offset_pub() -> FixedOffset {
+    let mut slot = OFFSET_CACHE.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((at, off)) = *slot {
+        if at.elapsed() < OFFSET_TTL {
+            return off;
+        }
+    }
+    let off = ask_os_offset();
+    *slot = Some((std::time::Instant::now(), off));
+    off
+}
+
+fn ask_os_offset() -> FixedOffset {
+    #[cfg(test)]
+    OFFSET_ASKS.with(|n| n.set(n.get() + 1));
     // Ask the OS — it knows the actual DST transition rules
     let output = std::process::Command::new("date")
         .args(["+%z"])
@@ -123,5 +148,32 @@ mod tests {
         let read_back = fs::read_to_string(&test_clock).expect("should read clock file");
         let _ = fs::remove_file(&test_clock);
         assert_eq!(read_back, human);
+    }
+}
+
+#[cfg(test)]
+mod offset_cache_4835 {
+    use super::*;
+
+    #[test]
+    fn a_thousand_log_lines_ask_the_os_once() {
+        let before = OFFSET_ASKS.with(|n| n.get());
+        let first = boston_offset_pub();
+        for _ in 0..1000 {
+            assert_eq!(boston_offset_pub(), first);
+        }
+        let asked = OFFSET_ASKS.with(|n| n.get()) - before;
+        assert!(asked <= 1, "asked the OS {asked} times for 1001 calls");
+    }
+
+    // NEGATIVE PROOF: the uncached path really asks the OS each time
+    #[test]
+    fn the_os_path_asks_every_call() {
+        let before = OFFSET_ASKS.with(|n| n.get());
+        for _ in 0..3 {
+            let off = ask_os_offset();
+            assert!([-4 * 3600, -5 * 3600].contains(&off.local_minus_utc()), "Boston is UTC-4 or UTC-5: {off}");
+        }
+        assert!(OFFSET_ASKS.with(|n| n.get()) - before >= 3);
     }
 }
