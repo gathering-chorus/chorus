@@ -348,8 +348,13 @@ fn query_chorus_semantic(prompt: &str, domain_tag: Option<&str>) -> Vec<(String,
 /// #3191 — single fetch+parse path shared by the FTS and semantic legs (one execution
 /// path, two URL builders). `leg` labels the spine event so a debug can tell which leg
 /// returned what.
+/// #4839 — the longest a search leg may take; past it the leg drops (named in `drops`).
+const SEARCH_BUDGET: Duration = Duration::from_millis(1200);
+
 fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(String, String, String, f64)> {
     let resp = match ureq::get(url)
+        // #4839 — a search that takes seconds (2.65 s seen 10-31 13:05) drops this prompt's leg, never the prompt
+        .timeout(SEARCH_BUDGET)
         .call()
     {
         Ok(r) => r,
