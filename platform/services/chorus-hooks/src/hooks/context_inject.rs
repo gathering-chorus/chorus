@@ -413,36 +413,56 @@ fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(St
 /// on 34 of 40 (p50 335 ms, max 825). One answer is shared for LOGS_TTL; callers
 /// queue on the lock while the one read is in flight and take its answer.
 /// CHORUS_INJECT_LOGS_TTL_SECS=0 turns the sharing off (the negative proof).
-/// One shared answer and when it was read (#4835).
-type Shared<T> = Mutex<Option<(Instant, Vec<T>)>>;
-
-static LOGS_CACHE: Shared<(String, String)> = Mutex::new(None);
+static LOGS_CACHE: SharedSlot<(String, String)> = SharedSlot::new();
 
 fn logs_ttl() -> Duration {
     Duration::from_secs(std::env::var("CHORUS_INJECT_LOGS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30))
 }
 
 /// How long an EMPTY answer (the source down or silent) is kept. Review (abby):
-/// not keeping it at all made a down source cost one read per waiting prompt,
-/// in series, behind the lock; keeping it briefly caps that at one read per 5 s.
+/// not keeping it at all made a down source cost one read per waiting prompt;
+/// keeping it briefly caps that at one read per 5 s.
 const EMPTY_TTL: Duration = Duration::from_secs(5);
 
-/// One shared answer per `ttl`: the first caller reads, the rest wait on the lock
-/// and reuse it. An empty answer is kept only for EMPTY_TTL, so a source that comes
-/// back is seen within seconds.
-fn shared_for<T: Clone>(slot: &Shared<T>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
+/// One shared answer and when it was read (#4835), plus whether a refresh is in flight (#4839).
+pub struct SharedSlot<T> {
+    inner: Mutex<(Option<(Instant, Vec<T>)>, bool)>,
+    done: std::sync::Condvar,
+}
+
+impl<T> SharedSlot<T> {
+    pub const fn new() -> Self {
+        Self { inner: Mutex::new((None, false)), done: std::sync::Condvar::new() }
+    }
+}
+
+/// One shared answer per `ttl`. #4839 (review: silas, abby) — the read runs OUTSIDE
+/// the lock: with no timeouts (#3048), a hung source must never hold every prompt.
+/// While one caller refreshes, the others take the last answer (even past its ttl).
+/// Before the first answer exists they wait for that one read: each would otherwise
+/// make the same read itself (40 Loki queries at a cold start, #4835).
+fn shared_for<T: Clone>(slot: &SharedSlot<T>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
     if ttl.is_zero() {
         return read();
     }
-    let mut held = slot.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some((at, v)) = held.as_ref() {
-        let keep = if v.is_empty() { ttl.min(EMPTY_TTL) } else { ttl };
-        if at.elapsed() < keep {
-            return v.clone();
+    {
+        let mut g = slot.inner.lock().unwrap_or_else(|p| p.into_inner());
+        while g.0.is_none() && g.1 {
+            g = slot.done.wait(g).unwrap_or_else(|p| p.into_inner()); // the first read is in flight
         }
+        if let Some((at, v)) = g.0.as_ref() {
+            let keep = if v.is_empty() { ttl.min(EMPTY_TTL) } else { ttl };
+            if at.elapsed() < keep || g.1 {
+                return v.clone(); // fresh, or stale while someone else refreshes
+            }
+        }
+        g.1 = true; // this caller refreshes
     }
     let v = read();
-    *held = Some((Instant::now(), v.clone()));
+    let mut g = slot.inner.lock().unwrap_or_else(|p| p.into_inner());
+    g.0 = Some((Instant::now(), v.clone()));
+    g.1 = false;
+    slot.done.notify_all();
     v
 }
 
@@ -794,7 +814,7 @@ struct MemDoc {
 /// prompts at once). The files are read once and shared for MEMORY_TTL; each
 /// prompt then matches its keywords in memory. CHORUS_INJECT_MEMORY_TTL_SECS=0
 /// reads the files every time (the negative proof).
-static MEMORY_CACHE: Shared<MemDoc> = Mutex::new(None);
+static MEMORY_CACHE: SharedSlot<MemDoc> = SharedSlot::new();
 
 fn memory_ttl() -> Duration {
     // #4839 — 60 s expired between real prompts (Wren's, minutes apart, still paid 255–450 ms);
@@ -1828,7 +1848,7 @@ mod cache_eviction_4562 {
     #[test]
     fn concurrent_callers_share_one_read_within_the_ttl() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
         static READS: AtomicUsize = AtomicUsize::new(0);
         let hs: Vec<_> = (0..40).map(|_| std::thread::spawn(|| super::shared_for(&SLOT, std::time::Duration::from_secs(30), || {
             READS.fetch_add(1, Ordering::SeqCst);
@@ -1843,17 +1863,17 @@ mod cache_eviction_4562 {
     #[test]
     fn ttl_zero_reads_every_time_and_an_empty_answer_is_kept_only_briefly() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        static SLOT: super::Shared<u8> = std::sync::Mutex::new(None);
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
         static READS: AtomicUsize = AtomicUsize::new(0);
         for _ in 0..5 { super::shared_for(&SLOT, std::time::Duration::ZERO, || { READS.fetch_add(1, Ordering::SeqCst); vec![1u8] }); }
         assert_eq!(READS.load(Ordering::SeqCst), 5);
         // review (abby): a down source is read once per EMPTY_TTL, not once per waiting prompt
-        static EMPTY: super::Shared<u8> = std::sync::Mutex::new(None);
+        static EMPTY: super::SharedSlot<u8> = super::SharedSlot::new();
         static R2: AtomicUsize = AtomicUsize::new(0);
         for _ in 0..40 { super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); Vec::<u8>::new() }); }
         assert_eq!(R2.load(Ordering::SeqCst), 1, "forty prompts while Loki is down read it once");
         // and the empty answer expires after EMPTY_TTL, not the full ttl
-        *EMPTY.lock().unwrap() = Some((std::time::Instant::now() - super::EMPTY_TTL, Vec::new()));
+        EMPTY.inner.lock().unwrap().0 = Some((std::time::Instant::now() - super::EMPTY_TTL, Vec::new()));
         super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); vec![7u8] });
         assert_eq!(R2.load(Ordering::SeqCst), 2, "a source that comes back is read again after EMPTY_TTL");
     }
@@ -1867,5 +1887,26 @@ mod cache_eviction_4562 {
         assert_eq!(super::match_memory(&docs, &kw(&["crawler", "sync"])), vec!["[a.md] line of a.md"]);
         assert_eq!(super::match_memory(&docs, &kw(&["crawler"])).len(), 2, "one keyword: one match is enough");
         assert!(super::match_memory(&docs, &kw(&["absent", "words"])).is_empty(), "negative: no match, no hit");
+    }
+
+    // #4839 (review: silas, abby) — a hung refresh never holds the other prompts:
+    // they take the last answer while it runs. NEGATIVE PROOF: before any answer
+    // exists, a second caller does read (it is not handed an empty result).
+    #[test]
+    fn a_hung_refresh_does_not_block_other_callers() {
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
+        let ttl = std::time::Duration::from_millis(50);
+        assert_eq!(super::shared_for(&SLOT, ttl, || vec![1u8]), vec![1u8]);
+        std::thread::sleep(std::time::Duration::from_millis(60)); // now stale
+        let hung = std::thread::spawn(move || super::shared_for(&SLOT, ttl, || {
+            std::thread::sleep(std::time::Duration::from_secs(3)); vec![2u8]
+        }));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let t = std::time::Instant::now();
+        assert_eq!(super::shared_for(&SLOT, ttl, || vec![9u8]), vec![1u8], "stale answer while the refresh hangs");
+        assert!(t.elapsed() < std::time::Duration::from_millis(500), "did not wait for the hung read");
+        assert_eq!(hung.join().unwrap(), vec![2u8]);
+        static FIRST: super::SharedSlot<u8> = super::SharedSlot::new();
+        assert_eq!(super::shared_for(&FIRST, ttl, || vec![5u8]), vec![5u8], "no answer yet: the first caller reads, never an empty hand-out");
     }
 }
