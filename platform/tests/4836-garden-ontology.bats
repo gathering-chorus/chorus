@@ -83,3 +83,30 @@ copy_designing() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"FAIL personal details found in the soil data"* ]] || return 1
 }
+
+@test "AC3: the plants read as Darwin Core occurrences, each on its bed IRI, 63 with an NCBI taxon" {
+  [ -x "$GARDEN_REPO/designing/tests/check-dwc.sh" ] || { echo "missing: designing/tests/check-dwc.sh"; false; }
+  run "$GARDEN_REPO/designing/tests/check-dwc.sh"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"ok   64 plants as dwc:Occurrence"* ]] || return 1
+  [[ "$output" == *"ok   every dwc:locationID is the plant's bed/zone/cell/room IRI"* ]] || return 1
+}
+
+@test "AC3 negative: a view that loses the bed fails the locationID check" {
+  copy_designing
+  sed -i '' 's/BIND(STR(?place) AS ?loc)/BIND("somewhere" AS ?loc)/' "$W/designing/data/views/dwc-occurrences.rq"
+  grep -q 'BIND("somewhere" AS ?loc)' "$W/designing/data/views/dwc-occurrences.rq" || return 1
+  run "$W/designing/tests/check-dwc.sh"
+  echo "$output"
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"FAIL 64 plants have a missing or wrong dwc:locationID"* ]] || return 1
+}
+
+@test "AC3 negative: an NCBI ID hand-edited in the .ttl fails as stale" {
+  copy_designing
+  sed -i '' 's/NCBITaxon_4081>/NCBITaxon_4082>/' "$W/designing/data/seed/taxa-2025.ttl"
+  run "$W/designing/tests/check-dwc.sh"
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"FAIL taxa-2025.ttl is stale"* ]] || return 1
+}
