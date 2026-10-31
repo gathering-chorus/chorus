@@ -1001,7 +1001,9 @@ def child_runs(run, node):
     """Every child a step ran, as (name, run id, its steps, sub id or None):
     dag.run sub-runs (read through the parent) and runs it started from the werk."""
     out = [(c.get("dagName", ""), c.get("dagRunId", ""), sub_nodes(run.get("name", DAGU_DAG), run.get("dagRunId", ""), c.get("dagRunId", "")), c.get("dagRunId", ""))
-           for c in node.get("children") or []]
+           # #4752 AC9 — dagu 2.18's record names them subRuns (cicd #4752 run 1
+           # read "no reason" with the verdict in its sub-run); older records, children
+           for c in node.get("children") or node.get("subRuns") or []]
     top = started_child(run, node)
     if top is not None:
         out.append((top.get("name", ""), top.get("dagRunId", ""), nodes_of(top), None))

@@ -16,7 +16,7 @@
 #   pair handoff CARD DRIVER NAVIGATOR         cicd has the card; the pair stays registered, handed off (#4752)
 #   pair routed CARD DAG RUN_ID                a cicd/land red: back to the card's pair if it has one (exit 0), else exit 1
 #   pair proven CARD                           the land is proven in prod: the card's pair ends (none: nothing)
-#   pair rerun  CARD HEAD                      a cicd re-run: same HEAD as handed off = no round; a fix commit = exit 3
+#   pair rerun  CARD ROLE                      a cicd re-run: the werk's HEAD as handed off = no round; a fix commit = exit 3
 #
 # #4752 (Jeff 10-30 14:56: "to me pair ends when card is in prod") — a pair is one
 # registration and one file; each dagu pair run is an attempt (Silas 10-31 19:03).
@@ -192,9 +192,10 @@ rerun)
   # #4752 AC6 — pipeline-start asks before a cicd run: a re-run on the HEAD the
   # pair handed off (a setup red, fixed outside the werk) is no round; a fix
   # commit is, and goes back through the navigator's green (exit 3)
-  card="${1:-}"; head="${2:-}"
-  [ -n "$card" ] || die "usage: pair rerun CARD HEAD"
+  card="${1:-}"; role="${2:-}"
+  [ -n "$card" ] && [ -n "$role" ] || die "usage: pair rerun CARD ROLE"
   [ -f "$REG/$card.json" ] || exit 0
+  head=$(werk_head "$card" "$role")
   driver=$(reg_field "$card" driver); nav=$(reg_field "$card" navigator)
   attempt=$(reg_field "$card" attempt_run); was=$(reg_field "$card" handed_off_head)
   if [ -n "$was" ] && [ "$head" != "$was" ]; then

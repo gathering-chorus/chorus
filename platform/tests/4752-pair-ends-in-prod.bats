@@ -218,7 +218,7 @@ werk_repo() {
   bash "$PAIR" handoff 4752 kade silas >/dev/null
   bash "$PAIR" routed 4752 cicd cicd-run-7 >/dev/null
   DAG_RUN_ID=pair-run-2 bash "$PAIR" start 4752 kade silas >/dev/null   # the attempt, waiting at the green
-  run bash "$PAIR" rerun 4752 "$(git -C "$W" rev-parse HEAD)"
+  run bash "$PAIR" rerun 4752 kade
   echo "$output"
   [ "$status" -eq 0 ]
   grep -q 'stop pair --run-id pair-run-2' "$L/dagu"
@@ -235,7 +235,7 @@ werk_repo() {
   bash "$PAIR" routed 4752 cicd cicd-run-7 >/dev/null
   DAG_RUN_ID=pair-run-2 bash "$PAIR" start 4752 kade silas >/dev/null
   git -C "$W" -c user.email=t@t -c user.name=t commit -q --allow-empty -m fix
-  run bash "$PAIR" rerun 4752 "$(git -C "$W" rev-parse HEAD)"
+  run bash "$PAIR" rerun 4752 kade
   echo "$output"
   [ "$status" -eq 3 ]
   [[ "$output" == *"silas's green"*"pair-run-2"* ]] || return 1
@@ -244,7 +244,18 @@ werk_repo() {
 
 @test "AC6: a card with no pair re-runs as before" {
   pair_env; werk_repo
-  run bash "$PAIR" rerun 4752 "$(git -C "$W" rev-parse HEAD)"
+  run bash "$PAIR" rerun 4752 kade
   [ "$status" -eq 0 ]
   [ ! -e "$L/dagu" ]
+}
+
+@test "AC9: cicd's test step names its cicd-test sub-run's reason when dagu records it as subRuns" {
+  verdict_log
+  run cws_py "
+cws.SUB_RUNS[('cicd', 'c1', 's1')] = [{'step': {'name': 'skill-werk-test-verdict'}, 'statusLabel': 'failed', 'error': 'exit status 2', 'stdout': '$BATS_TEST_TMPDIR/verdict.out'}]
+run = {'name': 'cicd', 'dagRunId': 'c1', 'params': 'CARD=4752 ROLE=kade'}
+node = {'step': {'name': 'skill-werk-test-pipeline', 'call': 'cicd-test'}, 'statusLabel': 'failed', 'error': 'exit status 1', 'subRuns': [{'dagName': 'cicd-test', 'dagRunId': 's1'}]}
+print(cws.failed_reason(run, node))"
+  echo "$output"
+  [[ "$output" == "test-verdict: werk-test: UNMEASURED"* ]] || return 1
 }
