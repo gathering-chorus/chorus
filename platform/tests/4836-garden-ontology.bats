@@ -129,3 +129,23 @@ copy_designing() {
   [ "$status" -ne 0 ] || return 1
   [[ "$output" == *'not in notebook row 13: "harvest 9 lb"'* ]] || return 1
 }
+
+@test "AC5: one query joins each bed's soil to its plants and phenology, served at /soil" {
+  [ -x "$GARDEN_REPO/designing/tests/check-soil-page.sh" ] || { echo "missing: designing/tests/check-soil-page.sh"; false; }
+  run "$GARDEN_REPO/designing/tests/check-soil-page.sh"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"ok   back north: P 351.8 beside the hickory's nuts"* ]] || return 1
+  [[ "$output" == *"ok   serve.py serves it at /soil"* ]] || return 1
+}
+
+@test "AC5 negative: soil samples that lose their bed drop off the page and the check fails" {
+  copy_designing
+  cp -R "$GARDEN_REPO/web" "$W/"
+  sed -i '' 's/ sosa:isSampleOf garden:[a-z-]* ;//' "$W/designing/data/seed/soil-2024.ttl"
+  python3 "$W/web/build-soil-page.py" >/dev/null
+  run "$W/designing/tests/check-soil-page.sh"
+  echo "$output"
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"FAIL expected 7 places, got 0"* ]] || return 1
+}
