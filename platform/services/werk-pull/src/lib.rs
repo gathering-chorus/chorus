@@ -23,6 +23,8 @@ include!("../../shared/failure_class.rs");
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
+    // #4810 — APFS copy-on-write clone of a whole tree in one call (macOS libc).
+    fn clonefile(src: *const std::os::raw::c_char, dst: *const std::os::raw::c_char, flags: u32) -> i32;
 }
 const LOCK_EX_NB: i32 = 0x02 | 0x04; // LOCK_EX | LOCK_NB
 const LOCK_UN: i32 = 0x08;
@@ -168,6 +170,56 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// #4810 — give every werk package with a package-lock its own real node_modules.
+/// A symlink into canonical made `npm ci` in the werk empty canonical's live tree
+/// (10-21, 10-30), and a werk with none ran its TS suites UNMEASURED (#4552,
+/// #4787, #4809). Canonical's tree is cloned (APFS copy-on-write: one call, no
+/// extra disk) when the werk's lock is canonical's; otherwise the package installs
+/// from its own lock. Each tree is stamped with the lock it matches, the stamp
+/// werk-build reads to leave it alone. Returns (made, failed package dirs).
+pub fn materialize_node_modules(repo: &Path, werk: &Path) -> (usize, Vec<String>) {
+    let werk_s = werk.to_string_lossy().into_owned();
+    let tracked = run("git", &["-C", &werk_s, "ls-files", "--", "package.json", "*/package.json"]).unwrap_or_default();
+    let (mut made, mut failed) = (0usize, Vec::new());
+    for rel_pj in tracked.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let Some(rel) = Path::new(rel_pj).parent() else { continue };
+        let pkg = werk.join(rel);
+        let Ok(lock) = fs::read(pkg.join("package-lock.json")) else { continue };
+        let nm = pkg.join("node_modules");
+        if nm.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+            let _ = fs::remove_file(&nm);
+        }
+        if nm.exists() {
+            continue;
+        }
+        let canon_nm = repo.join(rel).join("node_modules");
+        let same_lock = fs::read(repo.join(rel).join("package-lock.json")).ok().as_deref() == Some(&lock[..]);
+        let ok = (same_lock && canon_nm.is_dir() && clone_tree(&canon_nm, &nm))
+            || install_from_lock(&pkg);
+        if ok {
+            let _ = fs::write(nm.join(".chorus-installed-lock"), &lock);
+            made += 1;
+        } else {
+            failed.push(rel.display().to_string());
+        }
+    }
+    (made, failed)
+}
+
+fn clone_tree(src: &Path, dst: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let (Ok(s), Ok(d)) = (
+        std::ffi::CString::new(src.as_os_str().as_bytes()),
+        std::ffi::CString::new(dst.as_os_str().as_bytes()),
+    ) else { return false };
+    unsafe { clonefile(s.as_ptr(), d.as_ptr(), 0) == 0 }
+}
+
+fn install_from_lock(pkg: &Path) -> bool {
+    let npm = env::var("CHORUS_NPM").unwrap_or_else(|_| "npm".to_string());
+    run_in(&pkg.to_string_lossy(), &npm, &["ci", "--no-audit", "--no-fund"]).is_ok()
 }
 
 /// flock guard — auto-releases on drop (and on process exit/crash, kernel-level).
@@ -397,11 +449,12 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         jsonl(home, role, card, &trace, "worktree.added", "");
     } // flock released here
 
-    // node_modules — best-effort, not transactional.
-    let nm = repo_root.join("node_modules");
-    if nm.exists() {
-        let _ = std::os::unix::fs::symlink(&nm, werk.join("node_modules"));
-    }
+    // #4810 — node_modules: a real tree in every package, never a symlink into
+    // canonical. Best-effort, not transactional: a package that could not be
+    // given one is named in the log, and werk-build installs it from its lock.
+    let (made, failed) = materialize_node_modules(&repo_root, &werk);
+    jsonl(home, role, card, &trace, "node-modules.materialized",
+        &format!(",\"made\":{},\"failed\":\"{}\"", made, failed.join(" ").replace('"', "'")));
 
     // board move -> WIP (the lifecycle transition), then gh registration. If gh
     // fails, the whole pull rolls back (all-or-nothing): gh is the authoritative

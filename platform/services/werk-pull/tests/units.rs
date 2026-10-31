@@ -171,3 +171,66 @@ fn target_repo_label_with_traversal_refuses() {
     let err = werk_pull::target_repo_root(&home, json).unwrap_err();
     assert!(err.contains("target-repo-invalid"), "typed reason, got: {err}");
 }
+
+// --- #4810: every werk package gets a real node_modules, never a symlink into canonical ---
+
+fn git_track(dir: &std::path::Path, files: &[&str]) {
+    let g = |args: &[&str]| {
+        let ok = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap().status.success();
+        assert!(ok, "git {:?}", args);
+    };
+    g(&["init", "-q"]);
+    let mut add = vec!["add", "--"];
+    add.extend_from_slice(files);
+    g(&add);
+}
+
+#[test]
+fn materialize_clones_canonical_when_the_lock_matches_and_stamps_it() {
+    let root = tmpdir("nm-4810");
+    let (repo, werk) = (root.join("chorus"), root.join("werk"));
+    for base in [&repo, &werk] {
+        fs::create_dir_all(base.join("cards")).unwrap();
+        fs::write(base.join("cards/package.json"), "{}").unwrap();
+        fs::write(base.join("cards/package-lock.json"), "{\"v\":1}").unwrap();
+    }
+    fs::create_dir_all(repo.join("cards/node_modules/dep")).unwrap();
+    fs::write(repo.join("cards/node_modules/dep/index.js"), "live").unwrap();
+    // a stale symlink into canonical, as the old pull left it
+    std::os::unix::fs::symlink(repo.join("cards/node_modules"), werk.join("cards/node_modules")).unwrap();
+    git_track(&werk, &["cards/package.json"]);
+
+    let (made, failed) = werk_pull::materialize_node_modules(&repo, &werk);
+    let nm = werk.join("cards/node_modules");
+    assert_eq!((made, failed.len()), (1, 0));
+    assert!(!nm.is_symlink() && nm.join("dep/index.js").is_file(), "a real tree with canonical's contents");
+    assert_eq!(fs::read(nm.join(".chorus-installed-lock")).unwrap(), b"{\"v\":1}");
+    // negative proof: what npm ci does first (delete node_modules) now leaves canonical intact
+    fs::remove_dir_all(&nm).unwrap();
+    assert!(repo.join("cards/node_modules/dep/index.js").is_file(), "canonical untouched");
+}
+
+#[test]
+fn materialize_installs_from_own_lock_when_it_differs_and_names_failures() {
+    let root = tmpdir("nm-4810-lock");
+    let (repo, werk) = (root.join("chorus"), root.join("werk"));
+    for (base, lock) in [(&repo, "{\"v\":1}"), (&werk, "{\"v\":2}")] {
+        fs::create_dir_all(base.join("api")).unwrap();
+        fs::write(base.join("api/package.json"), "{}").unwrap();
+        fs::write(base.join("api/package-lock.json"), lock).unwrap();
+    }
+    fs::create_dir_all(repo.join("api/node_modules/old")).unwrap();
+    git_track(&werk, &["api/package.json"]);
+    // a stand-in npm that fails: the lock differs, so canonical's tree is NOT borrowed
+    let npm = root.join("npm-fails");
+    fs::write(&npm, "#!/bin/sh\nexit 1\n").unwrap();
+    let mut p = fs::metadata(&npm).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut p, 0o755);
+    fs::set_permissions(&npm, p).unwrap();
+    std::env::set_var("CHORUS_NPM", &npm);
+    let (made, failed) = werk_pull::materialize_node_modules(&repo, &werk);
+    std::env::remove_var("CHORUS_NPM");
+    assert_eq!(made, 0);
+    assert_eq!(failed, vec!["api".to_string()], "the package is named, not silently skipped");
+    assert!(!werk.join("api/node_modules/old").exists(), "the old-lock tree was not cloned");
+}

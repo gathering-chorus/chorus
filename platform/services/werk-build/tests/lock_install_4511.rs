@@ -80,11 +80,12 @@ fn a_werk_with_its_own_lock_installs_from_it_and_leaves_canonical_alone() {
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
     assert!(!werk_nm.is_symlink(), "same lock, but canonical's tree does not satisfy it: own install");
 
-    // NEGATIVE PROOF: same lock and canonical satisfies it, so it goes back to the symlink
+    // NEGATIVE PROOF: same lock and canonical satisfies it, so it borrows canonical's
+    // tree — #4810: as a clone, never a symlink into it
     fs::write(home.join("directing/clearing/node_modules/satisfied"), "").unwrap();
     fs::remove_dir_all(&werk_nm).unwrap();
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
-    assert!(werk_nm.is_symlink(), "same lock and canonical is installed: borrow canonical's tree");
+    assert!(!werk_nm.is_symlink() && werk_nm.join("satisfied").exists(), "same lock and canonical is installed: borrow canonical's tree");
 
     // a failed install is a refusal that names the package, never a silent symlink
     write(&werk, "directing/clearing/package-lock.json", r#"{"sdk":"9.9.9"}"#);
