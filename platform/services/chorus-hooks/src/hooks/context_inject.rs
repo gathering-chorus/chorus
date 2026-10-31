@@ -425,8 +425,11 @@ fn logs_ttl() -> Duration {
 const EMPTY_TTL: Duration = Duration::from_secs(5);
 
 /// One shared answer and when it was read (#4835), plus whether a refresh is in flight (#4839).
+/// The last answer and when it was read.
+type Entry<T> = Option<(Instant, Vec<T>)>;
+
 pub struct SharedSlot<T> {
-    inner: Mutex<(Option<(Instant, Vec<T>)>, bool)>,
+    inner: Mutex<(Entry<T>, bool)>,
     done: std::sync::Condvar,
 }
 
