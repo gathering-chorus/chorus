@@ -461,11 +461,20 @@ fn shared_for<T: Clone>(slot: &SharedSlot<T>, ttl: Duration, read: impl FnOnce()
         }
         g.1 = true; // this caller refreshes
     }
+    // review (abby): if read() panics, the guard still clears the flag and wakes
+    // the waiters, so a cold-start panic never leaves every prompt waiting forever
+    struct Refreshing<'a, T>(&'a SharedSlot<T>);
+    impl<T> Drop for Refreshing<'_, T> {
+        fn drop(&mut self) {
+            let mut g = self.0.inner.lock().unwrap_or_else(|p| p.into_inner());
+            g.1 = false;
+            self.0.done.notify_all();
+        }
+    }
+    let guard = Refreshing(slot);
     let v = read();
-    let mut g = slot.inner.lock().unwrap_or_else(|p| p.into_inner());
-    g.0 = Some((Instant::now(), v.clone()));
-    g.1 = false;
-    slot.done.notify_all();
+    slot.inner.lock().unwrap_or_else(|p| p.into_inner()).0 = Some((Instant::now(), v.clone()));
+    drop(guard);
     v
 }
 
@@ -1911,5 +1920,17 @@ mod cache_eviction_4562 {
         assert_eq!(hung.join().unwrap(), vec![2u8]);
         static FIRST: super::SharedSlot<u8> = super::SharedSlot::new();
         assert_eq!(super::shared_for(&FIRST, ttl, || vec![5u8]), vec![5u8], "no answer yet: the first caller reads, never an empty hand-out");
+    }
+
+    // review (abby): a read that panics at a cold start must not leave the next caller waiting
+    #[test]
+    fn a_panicking_first_read_does_not_hang_the_next_caller() {
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
+        let ttl = std::time::Duration::from_secs(30);
+        let r = std::panic::catch_unwind(|| super::shared_for(&SLOT, ttl, || -> Vec<u8> { panic!("read blew up") }));
+        assert!(r.is_err());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || tx.send(super::shared_for(&SLOT, ttl, || vec![4u8])).unwrap());
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(2)).expect("next caller hung"), vec![4u8]);
     }
 }
