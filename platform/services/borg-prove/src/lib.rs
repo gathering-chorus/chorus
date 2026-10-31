@@ -6,7 +6,7 @@
 pub struct Check {
     pub ac: String,        // ac-<card>-<n>, n = the AC's place on the card (e.g. ac-4456-2)
     pub statement: String, // the AC sentence as the card says it
-    pub kind: String,      // checkKind: http | sparql | test | none
+    pub kind: String,      // checkKind: http | sparql | test | crawl | none
     pub target: String,    // checkTarget: a URL (http), an ASK query (sparql), a test name (test)
     pub expect: String,    // checkExpect: text the answer must hold; sparql: true|false
 }
@@ -41,10 +41,12 @@ pub type Seen = Option<String>;
 pub fn judge(c: &Check, seen: &Seen) -> Outcome {
     match c.kind.as_str() {
         "none" | "" => Outcome::Unmeasured("no runnable check on this AC".into()),
-        "http" | "sparql" | "test" => {
+        "http" | "sparql" | "test" | "crawl" => {
             let Some(body) = seen else {
                 return Outcome::Unmeasured(if c.kind == "test" {
-                    format!("test {}: no result yet (no case event in Loki in 30 days)", c.target)
+                    format!("test {}: no result yet (no case event from this card's runs, nor from main's nightly since the land)", c.target)
+                } else if c.kind == "crawl" {
+                    format!("crawl {}: no crawl of main at or after the land yet", c.target)
                 } else {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
@@ -114,6 +116,8 @@ pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
         let (kind, rest) = check.split_once(char::is_whitespace).map(|(k, r)| (k, r.trim())).unwrap_or((check, ""));
         let (target, expect) = match kind {
             "test" => (rest.to_string(), "pass".to_string()),
+            // #4824 — `check: crawl <class>`: that row of the crawl reads missing=0
+            "crawl" => (rest.to_string(), "missing=0".to_string()),
             "sparql" => match rest.rsplit_once(char::is_whitespace) {
                 Some((q, e)) if e == "true" || e == "false" => (q.trim().to_string(), e.to_string()),
                 _ => (rest.to_string(), String::new()),
@@ -257,6 +261,12 @@ pub fn test_logql(target: &str, card: u32) -> String {
 /// #4536 — the newest result in a Loki query_range answer: "pass" or "fail".
 /// No events (or an unreadable answer) is None — never a pass.
 pub fn latest_case_result(body: &str) -> Option<String> {
+    latest_case(body).map(|(_, r)| r)
+}
+
+/// #4824 — the newest result with its Loki timestamp (ns), so two answers
+/// (the card's own runs, main's nightly since the land) can be compared.
+pub fn latest_case(body: &str) -> Option<(u128, String)> {
     let mut best: Option<(u128, &'static str)> = None;
     let mut rest = body;
     while let Some(i) = rest.find("[\"") {
@@ -285,7 +295,40 @@ pub fn latest_case_result(body: &str) -> Option<String> {
             best = Some((ts, result));
         }
     }
-    best.map(|(_, r)| r.to_string())
+    best.map(|(t, r)| (t, r.to_string()))
+}
+
+/// #4824 — a `test` check's query on MAIN: the nightly's case events for the
+/// test (role nightly, no card), read from the land on. The card's own runs
+/// only run the tests its diff touches, so a test the AC names but the diff
+/// does not (4535 on #4805) had no answer at all. Never another card's branch:
+/// only the nightly runs main.
+pub fn test_logql_main(target: &str) -> String {
+    let t = target.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "{{job=\"platform-chorus\", appName=\"chorus-events\", role=\"nightly\"}} |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
+    )
+}
+
+/// #4824 — of the card's answer and main's answer since the land, the newer.
+pub fn newer(a: Option<(u128, String)>, b: Option<(u128, String)>) -> Option<String> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(if y.0 > x.0 { y.1 } else { x.1 }),
+        (x, y) => x.or(y).map(|(_, r)| r),
+    }
+}
+
+/// #4824 — a `crawl` check: the crawl's row for one class, as
+/// `missing=N stale=M head=<sha>`, from /api/crawler/validate. None when the
+/// answer has no such row.
+pub fn crawl_row(body: &str, class: &str) -> Option<(String, String)> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let latest = v.get("data").and_then(|d| d.get("latest")).unwrap_or(&v);
+    let head = latest.get("head").and_then(|h| h.as_str())?.to_string();
+    let row = latest.get("rows")?.as_array()?.iter()
+        .find(|r| r.get("class").and_then(|c| c.as_str()) == Some(class))?;
+    let n = |k: &str| row.get(k).and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0);
+    Some((head, format!("missing={} stale={}", n("missing"), n("stale"))))
 }
 
 /// #4683 AC3 — the ACs a red verdict files children for: every one not met

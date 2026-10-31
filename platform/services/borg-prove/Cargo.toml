@@ -8,6 +8,7 @@ edition = "2021"
 # names. Zero-dep (ADR-032 §1): std only; curl is a subprocess. Card text is
 # never executed: a check is a typed row (kind, target, expect), not a command.
 [dependencies]
+serde_json = "1"
 
 [[bin]]
 name = "borg-prove"
