@@ -21,7 +21,7 @@ env:
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   failure:
-    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-werk-go=value-stream-step-borg-intake || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} go failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+    command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-werk-go=value-stream-step-borg-intake || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} go failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
   - name: skill-werk-go
     description: "Jeff's go"

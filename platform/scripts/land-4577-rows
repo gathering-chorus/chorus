@@ -25,12 +25,15 @@ DOOR_CLASS = {"skills/skills": ("skills", "skills"), "pipelinesteps": ("pipeline
               "stepskills": ("skills", "stepskills"), "pipelines": ("pipelines", "pipelines")}
 # #4577 reopen 1 — references go to the door as bare names; it mints the
 # prefix and refuses one sent with it (422 double-prefix, ADR-040 Rule 0)
+# #4752 — this plan is #4577's, applied 10-18: it reads the rows as they were
+# then; the pair's rows since are land-4752-rows's
+ROWS = os.environ.get("PAIR_ROWS_TSV", "pair-rows-4577.tsv")
 COVERS = {"proof": "test"}  # every other pair step is Building
 
 
 def rows():
     out = []
-    for line in open(os.path.join(FX, "pair-rows.tsv")):
+    for line in open(os.path.join(FX, ROWS)):
         line = line.rstrip("\n")
         if not line or line.startswith("#") or line.startswith("step\t"):
             continue

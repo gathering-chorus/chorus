@@ -20,10 +20,11 @@ fn known() -> Vec<String> {
 }
 
 fn rows_with(local_proof_args: &str) -> Vec<Row> {
+    // #4752 — the pair no longer runs a local proof; the marker is proven on
+    // the same row added back here, so the generator's queued path stays tested
     let base = fixture("pair-rows.tsv");
-    let row = "cicd-test\t\t\t\tSCOPE=diff queued=true";
-    assert!(base.contains(row), "fixture row moved");
-    parse_rows(&base.replace(row, &format!("cicd-test\t\t\t\t{local_proof_args}"))).expect("rows parse")
+    let row = format!("proof\t6\t1\tskill-pair-local-proof\tlocal proof\tpipeline\tcicd-test\t\t\t\t{local_proof_args}\n");
+    parse_rows(&format!("{base}{row}")).expect("rows parse")
 }
 
 #[test]

@@ -118,6 +118,10 @@ pub struct PairEntry {
     pub last_seen_iso: String,
     pub last_active_epoch: i64,
     pub last_level: Level,
+    /// #4752 — `slicing` (a run waits on the navigator) or `handed-off` (cicd
+    /// and the land have the card), written by the pair script; kept every tick
+    pub phase: String,
+    pub handed_off_epoch: i64,
 }
 
 impl PairEntry {
@@ -131,14 +135,26 @@ impl PairEntry {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0),
             last_level: Level::parse(&json_str_field(j, "last_level").unwrap_or_default()),
+            phase: json_str_field(j, "phase").unwrap_or_default(),
+            handed_off_epoch: json_str_field(j, "handed_off_epoch").and_then(|s| s.parse().ok()).unwrap_or(0),
         })
     }
     fn to_json(&self) -> String {
+        let handed = if self.handed_off_epoch > 0 { self.handed_off_epoch.to_string() } else { String::new() };
         format!(
-            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\"}}",
-            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label()
+            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\",\"phase\":\"{}\",\"handed_off_epoch\":\"{}\"}}",
+            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label(), self.phase, handed
         )
     }
+    fn handed_off(&self) -> bool {
+        self.phase == "handed-off"
+    }
+}
+
+/// #4752 AC11 — how long a hand-off may wait for its prod proof before the pair
+/// ends (a land stranded unproven, #4823): a day, or PAIR_HANDOFF_TIMEOUT_S.
+pub fn handoff_timeout() -> i64 {
+    env::var("PAIR_HANDOFF_TIMEOUT_S").ok().and_then(|s| s.parse().ok()).unwrap_or(86_400)
 }
 
 // --- side-effecting real entry ---
@@ -281,6 +297,18 @@ fn watch_pairs(home: &Path, wip: Option<&[String]>, now: i64) -> String {
                 pruned += 1;
                 continue;
             }
+        }
+        // #4752 — handed off: the navigator has nothing to answer, so silence is
+        // not a stall; a hand-off past the timeout ends the pair, said on the spine
+        if entry.handed_off() {
+            if now - entry.handed_off_epoch > handoff_timeout() {
+                let _ = fs::remove_file(&path);
+                emit_spine(home, "pair.ended", &[("card", entry.card.as_str()), ("reason", "handoff-timeout")]);
+                pruned += 1;
+            } else {
+                watched += 1;
+            }
+            continue;
         }
         watched += 1;
 

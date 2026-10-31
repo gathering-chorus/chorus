@@ -12,7 +12,13 @@
 #   pair slice  CARD "what went green"         the driver logs a slice (pair.slice on the spine)
 #   pair review CARD "what the navigator said" the navigator logs a review (pair.review)
 #   pair end    CARD DRIVER NAVIGATOR          For-Jeff summary from the slice log; deregister
-#   pair red    CARD DRIVER NAVIGATOR RUN_ID   the run failed: back to slice (a new run waits for the green)
+#   pair red    CARD DRIVER NAVIGATOR RUN_ID [DAG]  the run failed: back to slice (a new run waits for the green)
+#   pair handoff CARD DRIVER NAVIGATOR         cicd has the card; the pair stays registered, handed off (#4752)
+#   pair routed CARD DAG RUN_ID                a cicd/land red: back to the card's pair if it has one (exit 0), else exit 1
+#   pair proven CARD                           the land is proven in prod: the card's pair ends (none: nothing)
+#
+# #4752 (Jeff 10-30 14:56: "to me pair ends when card is in prod") — a pair is one
+# registration and one file; each dagu pair run is an attempt (Silas 10-31 19:03).
 #
 # Jeff 10-17 (Q1): slices and reviews are spine events; the navigator's
 # "every AC green" is the one human step a role completes.
@@ -51,6 +57,14 @@ share() {
     chmod +a "user:$u allow read,write,append" "$pf" || return 1
   done
 }
+# #4752 — the registration the heartbeat watches: phase slicing (a run waits on
+# the navigator) or handed-off (cicd and the land have the card; no silence nags)
+register() { # CARD DRIVER NAVIGATOR PHASE HANDED_OFF_EPOCH
+  mkdir -p "$REG"
+  printf '{"card":"%s","navigator":"%s","driver":"%s","last_seen_iso":"","last_active_epoch":"%s","last_level":"active","phase":"%s","handed_off_epoch":"%s"}' \
+    "$1" "$3" "$2" "$(date +%s)" "$4" "$5" > "$REG/$1.json"
+}
+reg_field() { grep -o "\"$2\":\"[^\"]*\"" "$REG/$1.json" 2>/dev/null | cut -d'"' -f4; }
 green_cmd() { # how the navigator answers this run's green
   echo "dagu --config $DAGU_CONFIG human-task complete pair --run-id ${DAG_RUN_ID:-RUN} --step skill_pair_green --input by=$2 --input decision=green"
 }
@@ -96,8 +110,7 @@ start)
   fi
   share "$pf" "$driver" "$nav" || die "#$card: could not share $pf with $driver and $nav"
   mkdir -p "$REG"
-  printf '{"card":"%s","navigator":"%s","driver":"%s","last_seen_iso":"","last_active_epoch":"%s","last_level":"active"}' \
-    "$card" "$nav" "$driver" "$(date +%s)" > "$REG/$card.json"
+  register "$card" "$driver" "$nav" slicing ""
   nudge "$nav" "pair #$card: you navigate, $driver drives. Pair file $pf. When every AC is green: \`$(green_cmd "$card" "$nav")\`"
   ;;
 check)
@@ -147,9 +160,35 @@ end)
   spine pair.ended system "card=$card" "driver=$driver" "partner=$nav" "slices=$slices"
   say "$summary"
   ;;
+handoff)
+  card="${1:-}"; driver="${2:-}"; nav="${3:-}"
+  [ -n "$card" ] && [ -n "$driver" ] && [ -n "$nav" ] || die "usage: pair handoff CARD DRIVER NAVIGATOR"
+  [ -f "$REG/$card.json" ] || die "#$card is not paired: nothing to hand off"
+  register "$card" "$driver" "$nav" handed-off "$(date +%s)"
+  spine pair.handed_off system "card=$card" "driver=$driver" "partner=$nav"
+  say "#$card handed off to cicd; the pair stays open until the card is proven in prod"
+  ;;
+routed)
+  card="${1:-}"; dag="${2:-}"; run="${3:-}"
+  [ -n "$card" ] && [ -n "$dag" ] || die "usage: pair routed CARD DAG RUN_ID"
+  [ -f "$REG/$card.json" ] || exit 1   # no pair: the builder's nudge runs
+  driver=$(reg_field "$card" driver); nav=$(reg_field "$card" navigator)
+  # #4752 AC10 — a card that left WIP ends its pair; a red never loops it
+  if ! bash "$CARDS" view "$card" 2>/dev/null | grep -qE '^\s*Status:\s+WIP\b'; then
+    "$0" end "$card" "${driver:-?}" "${nav:-?}" >/dev/null
+    exit 1
+  fi
+  exec "$0" red "$card" "$driver" "$nav" "$run" "$dag"
+  ;;
+proven)
+  card="${1:-}"
+  [ -n "$card" ] || die "usage: pair proven CARD"
+  [ -f "$REG/$card.json" ] || exit 0   # an unpaired land: nothing to end, never a red land
+  "$0" end "$card" "$(reg_field "$card" driver)" "$(reg_field "$card" navigator)" || true
+  ;;
 red)
-  card="${1:-}"; driver="${2:-}"; nav="${3:-}"; run="${4:-}"
-  why=$(python3 "$S/chorus-werk-status" --why pair "$run" 2>/dev/null || echo "run failed")
+  card="${1:-}"; driver="${2:-}"; nav="${3:-}"; run="${4:-}"; dag="${5:-pair}"
+  why=$(python3 "$S/chorus-werk-status" --why "$dag" "$run" 2>/dev/null || echo "run failed")
   # #4683 reopen 1 — a refused start is not retried: another run would refuse
   # the same way and wait for the same green (the 2 runs #4682 was left with)
   if [ -f "$REG/$card.refused" ]; then
