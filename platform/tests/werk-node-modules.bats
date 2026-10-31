@@ -52,6 +52,7 @@ crate_tests() {
   [ ! -e "$canon/marker" ] || { echo "npm ci did not reach through the link; this fixture proves nothing"; return 1; }
 }
 
-@test "AC2: the hooks guard refuses npm ci/install through a symlink, naming the target, before anything runs" {
-  crate_tests chorus-hooks test_4810 --lib
-}
+# AC2's guard itself is proven in its crate: chorus-hooks infra_guardrails
+# test_4810_* (deny naming the target, cd/--prefix forms, and the separating
+# allow half), which werk-test runs as cargo-test:chorus-hooks. Compiling
+# chorus-hooks a second time here only doubled the load (run 2, 2026-10-31).
