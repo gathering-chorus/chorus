@@ -87,6 +87,16 @@ fn a_werk_with_its_own_lock_installs_from_it_and_leaves_canonical_alone() {
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
     assert!(!werk_nm.is_symlink() && werk_nm.join("satisfied").exists(), "same lock and canonical is installed: borrow canonical's tree");
 
+    // #4810 (Kade's review): the card then changes the lock. The clone came from
+    // main's lock, so the werk must install from its own, in its own tree.
+    let before = fs::read_to_string(root.join("npm.log")).unwrap().lines().count();
+    write(&werk, "directing/clearing/package-lock.json", r#"{"sdk":"1.32.0"}"#);
+    assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
+    let calls = fs::read_to_string(root.join("npm.log")).unwrap();
+    assert_eq!(calls.lines().count(), before + 1, "NEGATIVE PROOF: a changed lock is never served main's clone: {calls}");
+    assert!(werk_nm.join("installed-from-own-lock").exists() && !werk_nm.is_symlink());
+    assert!(!home.join("directing/clearing/node_modules/installed-from-own-lock").exists(), "canonical untouched");
+
     // a failed install is a refusal that names the package, never a silent symlink
     write(&werk, "directing/clearing/package-lock.json", r#"{"sdk":"9.9.9"}"#);
     std::env::set_var("CHORUS_NPM", fake_npm(&root, false));
