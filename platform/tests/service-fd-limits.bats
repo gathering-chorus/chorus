@@ -96,13 +96,15 @@ print("held", len(held))
   grep -q "a thread panicked — exiting" "$BATS_TEST_TMPDIR/pulse.log"
 }
 
-# The werk's own build: the per-account folder a role builds into (#4772), else the
-# pipeline's target/release.
+# The werk's own source, built here. A prebuilt binary is not proof: the first pipeline
+# run found a target/<account> pulse-api from 10-27, seeded before this change, and
+# tested that. cargo is incremental, so an up-to-date build costs seconds.
 pulse_bin() {
-  local t="$ROOT/directing/products/pulse/api/target"
-  if [ -n "${PULSE_API_BIN:-}" ]; then echo "$PULSE_API_BIN"
-  elif [ -x "$t/$(id -un)/release/pulse-api" ]; then echo "$t/$(id -un)/release/pulse-api"
-  else echo "$t/release/pulse-api"; fi
+  if [ -n "${PULSE_API_BIN:-}" ]; then echo "$PULSE_API_BIN"; return; fi
+  local crate="$ROOT/directing/products/pulse/api" t
+  t="$crate/target/$(id -un)"
+  (cd "$crate" && CARGO_TARGET_DIR="$t" cargo build --release --quiet) >&2 || return 1
+  echo "$t/release/pulse-api"
 }
 
 @test "AC2+AC3: with the file limit at 64, a 100-connection burst ends pulse-api (exit 70) instead of hanging it" {
