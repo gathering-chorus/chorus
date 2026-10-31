@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: hooks
+// @domain: spine
 //! #4798 — Detached turn push timing and asynchronous delivery under stalled endpoint.
 //! Negative proof: synchronous worker push under a 3s stalled endpoint blocks >=1400ms,
 //! while detached hook dispatch returns immediately (<300ms) and asynchronously delivers
