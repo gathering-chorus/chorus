@@ -1,3 +1,4 @@
+// @domain: properties — the product domain this test guards (#4538)
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;

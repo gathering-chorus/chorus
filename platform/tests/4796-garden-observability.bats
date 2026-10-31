@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract — the garden-observability repo, read from disk; its own check scripts are the proof
-# @domain: gathering — garden-observability, the second product Chorus builds outside itself (#4796)
+# @domain: monitors — garden-observability, the second product Chorus builds outside itself (#4796)
 #
 # Chorus builds it, it lives without Chorus: every check runs a script that lives
 # in the garden repo, so the repo can prove itself with Chorus stopped.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @domain: messages — the product domain this suite guards (#4538)
 # @test-type: unit — #4765 AC3: bridge-subscriber accepts AGY roles (borg-queen, abby-normal)
 # @card: 4765 · owner: borg-queen
 

@@ -1,3 +1,4 @@
+// @domain: identity — the product domain this service guards (#4538)
 //! chorus-principal <verb> <role> — the session lifecycle (was chorus-awake, #4184; folded in by #4345).
 //!
 //! Jeff, 2026-09-16: "i feel like i need a standard script to start each of u

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @domain: builds — the product domain this suite guards (#4538)
 # @test-type: integration
 
 setup() {
