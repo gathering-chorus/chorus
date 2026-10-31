@@ -928,6 +928,19 @@ pub struct InjectResponse<'a> {
     pub assembled_bytes: usize,
     pub elapsed_ms: u64,
     pub drops: &'a [&'a str], // sources that returned nothing (the silent-drop class, #3048)
+    pub lookups_ms: &'a [(&'a str, u64)], // #4815 — each lookup's own wall time, by name
+}
+
+/// #4815 — one lookup's wall time alongside its answer.
+fn timed<T>(f: impl FnOnce() -> T) -> (T, u64) {
+    let t = Instant::now();
+    let v = f();
+    (v, t.elapsed().as_millis() as u64)
+}
+
+/// #4815 — the slowest lookup by name, the first place to look when a prompt is slow.
+pub fn slowest<'a>(lookups: &[(&'a str, u64)]) -> Option<&'a str> {
+    lookups.iter().max_by_key(|(_, ms)| *ms).map(|(n, _)| *n)
 }
 
 // Pure + testable. Paired to the response by inject_id (a span the controller's
@@ -972,6 +985,8 @@ pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
         "athena": r.athena,
         "log_errors": r.log_errors, "logs": logs_json,
         "assembled_bytes": r.assembled_bytes, "elapsed_ms": r.elapsed_ms, "drops": r.drops,
+        "lookups_ms": r.lookups_ms.iter().map(|(n, ms)| ((*n).to_string(), serde_json::json!(ms))).collect::<serde_json::Map<_, _>>(),
+        "slowest": slowest(r.lookups_ms),
     }).to_string()
 }
 
@@ -1077,7 +1092,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // drives the query; the WIP card domain (if any) rides along as an optional
     // `&domain=` tag (#3134) — card-as-tag, not card-as-driver. No card → the
     // search runs prompt-only. Cached per (role, keywords-hash, domain-tag).
-    let card_tag = role_wip_domain(&role_name);
+    let (card_tag, wip_ms) = timed(|| role_wip_domain(&role_name));
 
     // #3147 — emit the REQUEST (what we're about to ask for) BEFORE the fan-out, so it
     // lands even if every source drops. The 6 calls mirror the spawn_blocking set below.
@@ -1108,30 +1123,42 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // meaning leg (full prompt, mode=semantic — surfaces meaning-matches the FTS AND drops,
     // e.g. the scarecrow story). They query DIFFERENT forms because FTS ANDs tokens (a full
     // sentence zeroes out) while semantic doesn't. merge_candidates fuses them deduped.
-    let (chorus_fts, chorus_sem, memory_hits, pulse_block, spine_events, athena_block, log_errors) = {
+    let (chorus_fts, chorus_sem, memory_hits, pulse_block, spine_events, athena_block, log_errors, lookups_ms) = {
         let (r1, kw1, q1, tag1) = (role_name.clone(), keywords.clone(), query.clone(), card_tag.clone());
         let (rs, ps, tags) = (role_name.clone(), prompt.to_string(), card_tag.clone());
         let kw2 = keywords.clone();
         let r3 = role_name.clone();
-        let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
-        let t_semantic = tokio::task::spawn_blocking(move || cached_query_chorus_semantic(&rs, &ps, tags.as_deref()));
-        let t_memory = tokio::task::spawn_blocking(move || if legacy_memory { scan_memory(&kw2) } else { Vec::new() });
+        let t_chorus = tokio::task::spawn_blocking(move || timed(|| cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref())));
+        let t_semantic = tokio::task::spawn_blocking(move || timed(|| cached_query_chorus_semantic(&rs, &ps, tags.as_deref())));
+        let t_memory = tokio::task::spawn_blocking(move || timed(|| if legacy_memory { scan_memory(&kw2) } else { Vec::new() }));
         let r4 = role_name.clone();
         // #4638 — the tree slice is its own task, concurrent with the snapshot read (Abby's review)
-        let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
-        let t_tree = tokio::task::spawn_blocking(move || query_tree_slice(&r4));
-        let t_header = tokio::task::spawn_blocking(query_pulse_header);
-        let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
-        let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
-        let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
+        let t_pulse = tokio::task::spawn_blocking(|| timed(read_pulse_snapshot));
+        let t_tree = tokio::task::spawn_blocking(move || timed(|| query_tree_slice(&r4)));
+        let t_header = tokio::task::spawn_blocking(|| timed(query_pulse_header));
+        let t_spine = tokio::task::spawn_blocking(|| timed(|| query_recent_spine(8)));
+        let t_athena = tokio::task::spawn_blocking(move || timed(|| cached_query_athena_domain(&r3)));
+        let t_logs = tokio::task::spawn_blocking(|| timed(query_recent_log_errors));
+        let (chorus, chorus_ms) = t_chorus.await.unwrap_or_default();
+        let (semantic, semantic_ms) = t_semantic.await.unwrap_or_default();
+        let (memory, memory_ms) = t_memory.await.unwrap_or_default();
+        let (pulse, pulse_ms) = t_pulse.await.unwrap_or_default();
+        let (header, header_ms) = t_header.await.unwrap_or_default();
+        let (tree, tree_ms) = t_tree.await.unwrap_or_default();
+        let (spine, spine_ms) = t_spine.await.unwrap_or_default();
+        let (athena, athena_ms) = t_athena.await.unwrap_or_default();
+        let (logs, logs_ms) = t_logs.await.unwrap_or_default();
         (
-            t_chorus.await.unwrap_or_default(),
-            t_semantic.await.unwrap_or_default(),
-            t_memory.await.unwrap_or_default(),
-            Some(t_pulse.await.unwrap_or_default().unwrap_or_default() + &t_header.await.unwrap_or_default() + &t_tree.await.unwrap_or_default()).filter(|s| !s.is_empty()),
-            t_spine.await.unwrap_or_default(),
-            t_athena.await.unwrap_or_default(),
-            t_logs.await.unwrap_or_default(),
+            chorus,
+            semantic,
+            memory,
+            Some(pulse.unwrap_or_default() + &header + &tree).filter(|s| !s.is_empty()),
+            spine,
+            athena,
+            logs,
+            vec![("wip-domain", wip_ms), ("chorus", chorus_ms), ("chorus-semantic", semantic_ms), ("memory", memory_ms),
+                ("pulse", pulse_ms), ("pulse-header", header_ms), ("pulse-tree", tree_ms), ("spine", spine_ms),
+                ("athena", athena_ms), ("logs", logs_ms)],
         )
     };
     // Fuse the two legs: authority (FTS) + meaning (semantic), deduped, top-5.
@@ -1227,7 +1254,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             inject_id: &inject_id, role: &role_name, candidates: &[],
             memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
             spine_events: 0, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
+            log_errors: 0, logs: &[], assembled_bytes: manifest_block.len(), elapsed_ms: elapsed, lookups_ms: &lookups_ms,
             drops: &["chorus", "memory", "pulse", "spine", "athena", "logs"],
         });
         return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
@@ -1274,7 +1301,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         memory_hits: memory_hits.len(), memory: &memory_hits,
         pulse_present: pulse_block.is_some(), pulse: pulse_block.as_deref(),
         spine_events: spine_events.len(), spine: &spine_events, athena: athena_block.as_deref(),
-        log_errors: log_errors.len(), logs: &log_errors, assembled_bytes: out.len(), elapsed_ms: elapsed,
+        log_errors: log_errors.len(), logs: &log_errors, assembled_bytes: out.len(), elapsed_ms: elapsed, lookups_ms: &lookups_ms,
         drops: &drops,
     });
     // #3134: observability — emit the actual outcome (hits + injected bytes) to
@@ -1324,7 +1351,7 @@ mod tests {
             inject_id: "inj-wren-42", role: "wren", candidates: &cands,
             memory_hits: 5, memory: &[], pulse_present: true, pulse: None,
             spine_events: 8, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
+            log_errors: 0, logs: &[], assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"], lookups_ms: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["event"], "context.inject.response");
@@ -1354,7 +1381,7 @@ mod tests {
             inject_id: "inj-wren-99", role: "wren", candidates: &cands,
             memory_hits: 1, memory: &[], pulse_present: true, pulse: None,
             spine_events: 1, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+            log_errors: 0, logs: &[], assembled_bytes: 100, elapsed_ms: 10, drops: &[], lookups_ms: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert!(v["candidates"][0]["score"].is_number(),
@@ -1377,7 +1404,7 @@ mod tests {
             spine_events: 1, spine: &spine,
             athena: Some("domain: chorus"),
             log_errors: 1, logs: &logs,
-            assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+            assembled_bytes: 100, elapsed_ms: 10, drops: &[], lookups_ms: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         // not just counts/bools — the ACTUAL per-source content must be reviewable in the log
@@ -1409,7 +1436,7 @@ mod tests {
             inject_id: "inj-X", role: "wren", candidates: &[],
             memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
             spine_events: 0, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &[],
+            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &[], lookups_ms: &[],
         });
         let rv: serde_json::Value = serde_json::from_str(&req).unwrap();
         let pv: serde_json::Value = serde_json::from_str(&resp).unwrap();
@@ -1448,7 +1475,7 @@ mod tests {
             inject_id: id, role: "wren", candidates: &candidates,
             memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
             spine_events: 0, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
+            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &drops, lookups_ms: &[],
         }));
     }
 
@@ -1710,5 +1737,28 @@ mod cache_eviction_4562 {
         insert_fresh(&mut c, "new".into(), 1, Duration::from_secs(30));
         assert_eq!(c.len(), 2);
         assert_eq!(c["recent"].1, 7);
+    }
+
+    // #4815 AC3 — negative proof: a lookup that sleeps 3 s is the one named slowest
+    #[test]
+    fn a_three_second_lookup_is_named_slowest_in_the_response_line() {
+        let (_, fast) = super::timed(|| 1 + 1);
+        let (_, slow) = super::timed(|| std::thread::sleep(std::time::Duration::from_secs(3)));
+        assert!(slow >= 3000, "the sleep was timed: {slow}");
+        let lookups = [("chorus", fast), ("fixture-sleep-3s", slow), ("logs", fast)];
+        let line = super::format_inject_response("t", &super::InjectResponse {
+            inject_id: "i", role: "kade", candidates: &[], memory_hits: 0, memory: &[], pulse_present: false,
+            pulse: None, spine_events: 0, spine: &[], athena: None, log_errors: 0, logs: &[],
+            assembled_bytes: 0, elapsed_ms: slow, drops: &[], lookups_ms: &lookups,
+        });
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["slowest"], "fixture-sleep-3s");
+        assert!(v["lookups_ms"]["fixture-sleep-3s"].as_u64().unwrap() >= 3000);
+        assert!(v["lookups_ms"]["chorus"].as_u64().unwrap() < 100, "a fast lookup reads fast");
+    }
+
+    #[test]
+    fn no_lookups_names_no_slowest() {
+        assert_eq!(super::slowest(&[]), None);
     }
 }
