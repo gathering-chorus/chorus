@@ -1238,6 +1238,35 @@ async fn stated_intent_block(
 /// the verdict; never blocks. Extracted from stop_hook (#3941) — that handler sat at
 /// the clippy cognitive-complexity ceiling, so any new gate tipped the ratchet. Moving
 /// a self-contained observer out is the honest way to make room.
+/// #4817 — a logged-out session: every such turn emits `session.auth.failed`; the
+/// first of a run (and the recovery) goes to Jeff and the other roles.
+async fn session_auth_observe(raw: &serde_json::Value, input: &HookInput) {
+    let Some(path) = raw.get("transcript_path").and_then(|v| v.as_str()).map(str::to_string) else { return };
+    let role = input.role().as_str().to_string();
+    let account = hooks::session_auth::account_of(&path);
+    let failure = {
+        let p = path.clone();
+        tokio::task::spawn_blocking(move || hooks::session_auth::failure(&p)).await.ok().flatten()
+    };
+    if let Some(f) = &failure {
+        crate::state::chorus_log("session.auth.failed", &role,
+            &[("account", account.as_str()), ("since", f.since.as_str()), ("last", f.last.as_str())]).await;
+    }
+    let state_dir = std::env::var("CHORUS_STATE_DIR")
+        .unwrap_or_else(|_| format!("{}/.chorus", std::env::var("HOME").unwrap_or_default()));
+    let t = hooks::session_auth::transition(&state_dir, &role, failure.as_ref());
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let Some(msg) = hooks::session_auth::alert_text(&role, &account, &t, &now) else { return };
+    let roles = tokio::task::spawn_blocking(hooks::session_auth::agent_roles).await.unwrap_or_default();
+    let refs: Vec<&str> = roles.iter().map(String::as_str).collect();
+    let ops_nudge = format!("{}/platform/scripts/ops-nudge",
+        std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into()));
+    for to in hooks::session_auth::recipients(&role, &refs) {
+        let _ = tokio::process::Command::new(&ops_nudge).arg(&to).arg(&msg).spawn();
+    }
+    crate::state::chorus_log("session.auth.alerted", &role, &[("account", account.as_str()), ("message", msg.as_str())]).await;
+}
+
 async fn inject_force_observe(raw: &serde_json::Value, input: &HookInput) {
 if let Some(session_id) = input.session_id.as_deref() {
     let surfaced = hooks::inject_force::read_surfaced(session_id);
@@ -1348,6 +1377,7 @@ async fn stop_hook(
     // heartbeat goes quiet, and silence now truthfully means idle rather than hidden work.
     emit_turn_ended(&input).await;
     inject_force_observe(&raw, &input).await;
+    session_auth_observe(&raw, &input).await;
  // #4429: one bounce per turn. In a continuation a stop gate already caused, no gate blocks again.
  if raw.get("stop_hook_active").and_then(|v| v.as_bool()) == Some(true) {
  crate::state::chorus_log("stop.gate.yielded", input.role().as_str(), &[]).await;
