@@ -940,6 +940,17 @@ def step_reason(node):
     lines = [l for l in lines if l and not STEP_NOISE.match(l) and "not blocking" not in l]
     pick = (next((l for l in lines if STEP_WHY.search(l)), None)
             or next((l for l in reversed(lines) if re.match(r"werk-[\w-]+: ", l)), None))
+    # #4752 AC9 — a verb that says why on stdout leaves dagu only "exit status 2"
+    # (#4814's verdict: "werk-test: UNMEASURED — … — not built"); its last own line
+    if not pick:
+        try:
+            with open(node.get("stdout") or "", errors="replace") as f:
+                out = [l.strip() for l in f.read().splitlines()[-40:]]
+        except OSError:
+            out = []
+        said = re.compile(r"UNMEASURED|\bRED\b|\(exit \d+\)")
+        pick = next((l for l in reversed(out) if re.match(r"werk-[\w-]+: ", l)
+                     and (STEP_WHY.search(l) or said.search(l))), None)
     return pick[:90] if pick else NO_REASON
 
 
@@ -964,6 +975,13 @@ def started_child(run, node):
     dag = STARTS.get((node.get("step") or {}).get("name", ""))
     m = re.search(r"/platform/pipelines/([\w-]+)\.yaml", json.dumps(node.get("step") or {}))
     dag = dag or (m.group(1) if m and " start " in json.dumps(node.get("step") or {}) else None)
+    # #4752 AC9 — a queued child (#4675 `dagu-enqueue-wait <dag> … TRACE=<this run>`),
+    # e.g. the pair's local proof enqueueing cicd-test
+    # (dagu's record splits it: commands[{command: …/dagu-enqueue-wait, args: [dag, …]}])
+    q = re.search(r"dagu-enqueue-wait ([\w-]+)", json.dumps(node.get("step") or {}))
+    queued = [c.get("args") or [] for c in (node.get("step") or {}).get("commands") or []
+              if str(c.get("command", "")).endswith("dagu-enqueue-wait")]
+    dag = dag or (q.group(1) if q else None) or next((a[0] for a in queued if a), None)
     card = re.search(r"(?:^|\s)CARD=\"?(\d+)", run.get("params") or "")
     if not dag or not card:
         return None
@@ -1037,6 +1055,10 @@ def retry_line(name, run_id, node, nodes=None, run=None):
     whole = f"{base} --step={node['step']['name']} --downstream {name}"
     order = [n["step"]["name"] for n in (nodes or [])]
     after = order[order.index(node["step"]["name"]) + 1] if node["step"]["name"] in order[:-1] else None
+    # #4752 AC9 — a queued child (dagu-enqueue-wait) runs whole again on a retry
+    # of its step; nothing recorded is kept, so no "only <step> runs again"
+    if "dagu-enqueue-wait" in json.dumps(node.get("step") or {}):
+        return f"retry: {whole}"
     for kid_name, kid_id, kid_nodes, sub in kids:
         stop = next((n for n in kid_nodes if n.get("statusLabel") == "failed"), None)
         if stop is not None and not sub:
