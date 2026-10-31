@@ -1,3 +1,4 @@
+// @domain: roles — whether each role's Claude session can answer (#4817)
 //! #4817 — a logged-out Claude session ran turns for two hours unseen
 //! (2026-10-30 18:05–19:54, wren + silas): prompts and nudges arrived, turns
 //! started and ended, and every answer was "Not logged in · Please run /login".

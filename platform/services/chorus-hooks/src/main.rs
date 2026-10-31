@@ -73,6 +73,15 @@ fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
 /// and final response: it classifies the decision, writes the JSON hooks.log
 /// line, AND emits a `hook.decision` spine event carrying the shared `trace`.
 /// Spine + hooks.log share the formatter's field set, so they can't drift.
+/// #4839 — `turn-ended=3 cycle=0 … inject=731 …`, plus `slowest=<name>`: one line per prompt.
+fn format_route_steps(steps: &[(&str, u64)]) -> String {
+    let mut out: Vec<String> = steps.iter().map(|(n, ms)| format!("{n}={ms}")).collect();
+    if let Some((n, _)) = steps.iter().max_by_key(|(_, ms)| *ms) {
+        out.push(format!("slowest={n}"));
+    }
+    out.join(" ")
+}
+
 async fn emit_hook_decision(hook: &str, input: &HookInput, module: &str, resp: &HookResponse, start: std::time::Instant) {
     let duration_ms = start.elapsed().as_millis() as u64;
     let tool = input.tool_name_str();
@@ -1022,17 +1031,28 @@ async fn user_prompt_submit(
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
     let start = std::time::Instant::now();
+    // #4839 — each serial step's ms by name, so time outside the context lookups is named
+    let mut steps: Vec<(&str, u64)> = Vec::new();
+    let mut mark = std::time::Instant::now();
+    let mut lap = |name: &'static str, steps: &mut Vec<(&str, u64)>| {
+        steps.push((name, mark.elapsed().as_millis() as u64));
+        mark = std::time::Instant::now();
+    };
     // Generate prompt cycle ID (#2231) — correlates this prompt with all subsequent tool calls
     emit_turn_ended(&input).await;
+    lap("turn-ended", &mut steps);
     let session_id = input.session_id.as_deref().unwrap_or("unknown");
     let cycle_id = format!("{}-{:x}", chrono::Utc::now().timestamp_millis(), std::process::id());
     state.set_cycle_id(session_id, cycle_id.clone()).await;
+    lap("cycle", &mut steps);
 
     // Clock sync on every prompt (#1559, #1849)
     let clock_result = hooks::clock_sync::tick(&input).await;
+    lap("clock", &mut steps);
 
     // Input classifier (#1659) — statement vs command detection
     let classifier_result = hooks::input_classifier::check(&input).await;
+    lap("classifier", &mut steps);
     if classifier_result.stderr.is_some() {
         // Classification signal — pass through (doesn't block)
         // But still run JDI + autonomy guard
@@ -1040,6 +1060,7 @@ async fn user_prompt_submit(
 
     // Context injection (#1838) — search Chorus + memory, inject before role thinks
     let context_result = hooks::context_inject::check(&input, &state).await;
+    lap("inject", &mut steps);
 
     // #4628 — what Jeff typed reaches Buzz once, through pulse. Spawned, 1 s cap.
     hooks::terminal_input::record(input.role().as_str(), input.prompt.as_deref().unwrap_or(""), input.entrypoint.as_deref());
@@ -1180,9 +1201,11 @@ async fn user_prompt_submit(
 
     // Interaction pattern detection (#2282) — fire-and-forget, emits on shift only
     let pattern_signal = hooks::interaction_pattern::check(&input, &state).await;
+    lap("pattern", &mut steps);
 
     // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
+    lap("guard", &mut steps);
 
     // #3191 — route the assembled context block to stdout (it INJECTS via
     // additionalContext), ephemeral warnings to stderr. Pure builder in context_inject,
@@ -1200,6 +1223,10 @@ async fn user_prompt_submit(
     );
     // #3252 — uniform hook.decision emit for the prompt pipeline.
     emit_hook_decision("user_prompt_submit", &input, "prompt_pipeline", &response, start).await;
+    lap("decision", &mut steps);
+    let timing = format_route_steps(&steps);
+    crate::state::chorus_log("prompt.route.timing", input.role().as_str(),
+        &[("total_ms", start.elapsed().as_millis().to_string().as_str()), ("steps", timing.as_str())]).await;
     Json(response)
 }
 
@@ -1802,6 +1829,25 @@ async fn launchagent_ops(
         (axum::http::StatusCode::OK, Json(serde_json::json!({"ok": true, "output": output.trim()}))).into_response()
     } else {
         (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": output.trim()}))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod route_steps_4839 {
+    use super::format_route_steps;
+
+    #[test]
+    fn each_step_is_named_with_its_ms_and_the_slowest_is_called_out() {
+        let line = format_route_steps(&[("turn-ended", 3), ("classifier", 1), ("inject", 731), ("guard", 40)]);
+        assert_eq!(line, "turn-ended=3 classifier=1 inject=731 guard=40 slowest=inject");
+    }
+
+    // NEGATIVE PROOF: a step that is not the slowest is never named slowest
+    #[test]
+    fn a_slow_step_outside_inject_is_the_one_named() {
+        let line = format_route_steps(&[("turn-ended", 1200), ("inject", 300)]);
+        assert!(line.ends_with("slowest=turn-ended"), "{line}");
+        assert_eq!(format_route_steps(&[]), "");
     }
 }
 
