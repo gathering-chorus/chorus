@@ -110,3 +110,22 @@ copy_designing() {
   [ "$status" -ne 0 ] || return 1
   [[ "$output" == *"FAIL taxa-2025.ttl is stale"* ]] || return 1
 }
+
+@test "AC4: flowering and fruiting from the 2025 notebook record as PPO phenology on the plant" {
+  [ -x "$GARDEN_REPO/designing/tests/check-pheno.sh" ] || { echo "missing: designing/tests/check-pheno.sh"; false; }
+  run "$GARDEN_REPO/designing/tests/check-pheno.sh"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"ok   12 PPO phenology observations"* ]] || return 1
+  [[ "$output" == *"ok   every source is quoted from its notebook row"* ]] || return 1
+}
+
+@test "AC4 negative: a flowering fact the notebook never said fails" {
+  copy_designing
+  echo '13,PPO_0002345,,,"harvest 9 lb"' >> "$W/designing/data/seed/phenology-2025.csv"
+  python3 "$W/designing/data/seed/build-phenology.py" "$W/designing/data/seed/phenology-2025.csv" > "$W/designing/data/seed/phenology-2025.ttl"
+  run "$W/designing/tests/check-pheno.sh"
+  echo "$output"
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *'not in notebook row 13: "harvest 9 lb"'* ]] || return 1
+}
