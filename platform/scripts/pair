@@ -16,6 +16,7 @@
 #   pair handoff CARD DRIVER NAVIGATOR         cicd has the card; the pair stays registered, handed off (#4752)
 #   pair routed CARD DAG RUN_ID                a cicd/land red: back to the card's pair if it has one (exit 0), else exit 1
 #   pair proven CARD                           the land is proven in prod: the card's pair ends (none: nothing)
+#   pair rerun  CARD HEAD                      a cicd re-run: same HEAD as handed off = no round; a fix commit = exit 3
 #
 # #4752 (Jeff 10-30 14:56: "to me pair ends when card is in prod") — a pair is one
 # registration and one file; each dagu pair run is an attempt (Silas 10-31 19:03).
@@ -59,10 +60,14 @@ share() {
 }
 # #4752 — the registration the heartbeat watches: phase slicing (a run waits on
 # the navigator) or handed-off (cicd and the land have the card; no silence nags)
-register() { # CARD DRIVER NAVIGATOR PHASE HANDED_OFF_EPOCH
+register() { # CARD DRIVER NAVIGATOR PHASE HANDED_OFF_EPOCH [ATTEMPT_RUN] [HANDED_OFF_HEAD]
   mkdir -p "$REG"
-  printf '{"card":"%s","navigator":"%s","driver":"%s","last_seen_iso":"","last_active_epoch":"%s","last_level":"active","phase":"%s","handed_off_epoch":"%s"}' \
-    "$1" "$3" "$2" "$(date +%s)" "$4" "$5" > "$REG/$1.json"
+  printf '{"card":"%s","navigator":"%s","driver":"%s","last_seen_iso":"","last_active_epoch":"%s","last_level":"active","phase":"%s","handed_off_epoch":"%s","attempt_run":"%s","handed_off_head":"%s"}' \
+    "$1" "$3" "$2" "$(date +%s)" "$4" "$5" "${6:-}" "${7:-}" > "$REG/$1.json"
+}
+werk_head() { # CARD DRIVER — the card's werk HEAD (trusting that werk only, #4599)
+  local w="${CHORUS_WERK_BASE:-}/$2-$1"
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$w" git -C "$w" rev-parse HEAD 2>/dev/null
 }
 reg_field() { grep -o "\"$2\":\"[^\"]*\"" "$REG/$1.json" 2>/dev/null | cut -d'"' -f4; }
 green_cmd() { # how the navigator answers this run's green
@@ -110,7 +115,7 @@ start)
   fi
   share "$pf" "$driver" "$nav" || die "#$card: could not share $pf with $driver and $nav"
   mkdir -p "$REG"
-  register "$card" "$driver" "$nav" slicing ""
+  register "$card" "$driver" "$nav" slicing "" "${DAG_RUN_ID:-}" "$(reg_field "$card" handed_off_head)"
   nudge "$nav" "pair #$card: you navigate, $driver drives. Pair file $pf. When every AC is green: \`$(green_cmd "$card" "$nav")\`"
   ;;
 check)
@@ -148,7 +153,10 @@ end)
   reviews=$(grep -c -- '^- .* review: ' "$pf" 2>/dev/null); reviews=${reviews:-0}
   view=$(bash "$CARDS" view "$card" 2>/dev/null)
   done_n=$(grep -cE '^\s*- \[x\]' <<<"$view"); all_n=$(grep -cE '^\s*- \[[ x]\]' <<<"$view")
-  summary="pair #$card ended: $driver drove, $nav navigated · $slices slices, $reviews reviews · AC $done_n of $all_n checked"
+  # #4752 AC6 — a round is an attempt the navigator greened; a re-run with no fix commit is none
+  backs=$(grep -c '^## Back to slice' "$pf" 2>/dev/null); reruns=$(grep -c '^## Re-run, no fix commit' "$pf" 2>/dev/null)
+  rounds=$(( 1 + ${backs:-0} - ${reruns:-0} ))
+  summary="pair #$card ended: $driver drove, $nav navigated · rounds $rounds · $slices slices, $reviews reviews · AC $done_n of $all_n checked"
   if [ -f "$pf" ]; then
     # #4663 — read the slices BEFORE appending: grep reading the file it was
     # appending to never reached the end (#4652's end wrote 540 GB to /tmp)
@@ -164,7 +172,7 @@ handoff)
   card="${1:-}"; driver="${2:-}"; nav="${3:-}"
   [ -n "$card" ] && [ -n "$driver" ] && [ -n "$nav" ] || die "usage: pair handoff CARD DRIVER NAVIGATOR"
   [ -f "$REG/$card.json" ] || die "#$card is not paired: nothing to hand off"
-  register "$card" "$driver" "$nav" handed-off "$(date +%s)"
+  register "$card" "$driver" "$nav" handed-off "$(date +%s)" "$(reg_field "$card" attempt_run)" "$(werk_head "$card" "$driver")"
   spine pair.handed_off system "card=$card" "driver=$driver" "partner=$nav"
   say "#$card handed off to cicd; the pair stays open until the card is proven in prod"
   ;;
@@ -179,6 +187,28 @@ routed)
     exit 1
   fi
   exec "$0" red "$card" "$driver" "$nav" "$run" "$dag"
+  ;;
+rerun)
+  # #4752 AC6 — pipeline-start asks before a cicd run: a re-run on the HEAD the
+  # pair handed off (a setup red, fixed outside the werk) is no round; a fix
+  # commit is, and goes back through the navigator's green (exit 3)
+  card="${1:-}"; head="${2:-}"
+  [ -n "$card" ] || die "usage: pair rerun CARD HEAD"
+  [ -f "$REG/$card.json" ] || exit 0
+  driver=$(reg_field "$card" driver); nav=$(reg_field "$card" navigator)
+  attempt=$(reg_field "$card" attempt_run); was=$(reg_field "$card" handed_off_head)
+  if [ -n "$was" ] && [ "$head" != "$was" ]; then
+    echo "pair: refused: #$card is paired; its fix commit ${head:0:9} goes back through $nav's green (pair run ${attempt:-?}), not a direct re-run" >&2
+    exit 3
+  fi
+  if [ "$(reg_field "$card" phase)" = slicing ] && [ -n "$attempt" ]; then
+    env -u CHORUS_ROLE -u ROLE "${PAIR_DAGU:-dagu}" --config "$DAGU_CONFIG" stop pair --run-id "$attempt" >/dev/null 2>&1 ||
+      say "#$card: could not stop the waiting attempt $attempt"
+    printf '\n## Re-run, no fix commit %s (not a round)\n' "$(date '+%Y-%m-%d %H:%M')" >> "$(pairfile "$card")" 2>/dev/null || true
+  fi
+  register "$card" "$driver" "$nav" handed-off "$(date +%s)" "$attempt" "$was"
+  spine pair.rerun system "card=$card" "head=${head:0:9}" "round=no"
+  say "#$card re-runs on ${head:0:9}: no fix commit, so no round and no green"
   ;;
 proven)
   card="${1:-}"

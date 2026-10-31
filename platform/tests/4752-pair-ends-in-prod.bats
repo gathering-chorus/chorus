@@ -202,3 +202,49 @@ print(cws.failed_reason(run, node))"
   [[ "$output" != *"not mine"* ]] || return 1
 }
 
+
+# AC6 — a red with no fix commit (same werk HEAD, e.g. a werk setup failure) is
+# not a round: the driver fixes it and re-runs cicd once, with no new green.
+# A fix commit is a round: it goes back through the navigator's green.
+werk_repo() {
+  export CHORUS_WERK_BASE="$BATS_TEST_TMPDIR/werks"
+  W="$CHORUS_WERK_BASE/kade-4752"; mkdir -p "$W"
+  git -C "$W" init -q && git -C "$W" -c user.email=t@t -c user.name=t commit -q --allow-empty -m one
+}
+
+@test "AC6: a re-run on the handed-off HEAD stops the waiting attempt, needs no green, and is not a round" {
+  pair_env; werk_repo
+  DAG_RUN_ID=pair-run-1 bash "$PAIR" start 4752 kade silas >/dev/null
+  bash "$PAIR" handoff 4752 kade silas >/dev/null
+  bash "$PAIR" routed 4752 cicd cicd-run-7 >/dev/null
+  DAG_RUN_ID=pair-run-2 bash "$PAIR" start 4752 kade silas >/dev/null   # the attempt, waiting at the green
+  run bash "$PAIR" rerun 4752 "$(git -C "$W" rev-parse HEAD)"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  grep -q 'stop pair --run-id pair-run-2' "$L/dagu"
+  grep -q '"phase":"handed-off"' "$REG/4752.json"
+  grep -q '^pair.rerun system card=4752' "$L/spine"
+  bash "$PAIR" proven 4752 >/dev/null
+  grep -q 'rounds 1' "$PAIR_DIR/pair-4752.md"   # the hand-off's round only; the re-run is none
+}
+
+@test "AC6 negative proof: a fix commit after the red is a round — a direct re-run is refused, the navigator greens it" {
+  pair_env; werk_repo
+  DAG_RUN_ID=pair-run-1 bash "$PAIR" start 4752 kade silas >/dev/null
+  bash "$PAIR" handoff 4752 kade silas >/dev/null
+  bash "$PAIR" routed 4752 cicd cicd-run-7 >/dev/null
+  DAG_RUN_ID=pair-run-2 bash "$PAIR" start 4752 kade silas >/dev/null
+  git -C "$W" -c user.email=t@t -c user.name=t commit -q --allow-empty -m fix
+  run bash "$PAIR" rerun 4752 "$(git -C "$W" rev-parse HEAD)"
+  echo "$output"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"silas's green"*"pair-run-2"* ]] || return 1
+  ! grep -q 'stop pair' "$L/dagu" || return 1
+}
+
+@test "AC6: a card with no pair re-runs as before" {
+  pair_env; werk_repo
+  run bash "$PAIR" rerun 4752 "$(git -C "$W" rev-parse HEAD)"
+  [ "$status" -eq 0 ]
+  [ ! -e "$L/dagu" ]
+}

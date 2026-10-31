@@ -100,7 +100,7 @@ EOF
   bash "$PAIR" review 4577 "next" >/dev/null
   run bash "$PAIR" end 4577 kade silas
   [ "$status" -eq 0 ]
-  grep -q '^4577|pair #4577 ended: kade drove, silas navigated · 1 slices, 1 reviews · AC 1 of 2 checked' "$L/comments"
+  grep -q '^4577|pair #4577 ended: kade drove, silas navigated · rounds 1 · 1 slices, 1 reviews · AC 1 of 2 checked' "$L/comments"
   grep -q '^## For Jeff' "$PAIR_DIR/pair-4577.md"
   grep -q 'slice: AC two green' "$PAIR_DIR/pair-4577.md"
   [ ! -e "$CHORUS_HOME/ops/active-pairs/4577.json" ]

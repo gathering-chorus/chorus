@@ -26,7 +26,7 @@ fn tick(phase: &str, ago: u64) -> (String, String, Option<String>) {
     let handed = now() - ago;
     fs::write(
         home.join("ops/active-pairs/4752.json"),
-        format!("{{\"card\":\"4752\",\"navigator\":\"silas\",\"driver\":\"kade\",\"last_seen_iso\":\"2026-10-31T19:00:00-0400\",\"last_active_epoch\":\"{old}\",\"last_level\":\"active\",\"phase\":\"{phase}\",\"handed_off_epoch\":\"{handed}\"}}"),
+        format!("{{\"card\":\"4752\",\"navigator\":\"silas\",\"driver\":\"kade\",\"last_seen_iso\":\"2026-10-31T19:00:00-0400\",\"last_active_epoch\":\"{old}\",\"last_level\":\"active\",\"phase\":\"{phase}\",\"handed_off_epoch\":\"{handed}\",\"attempt_run\":\"pair-run-2\",\"handed_off_head\":\"abc123\"}}"),
     )
     .unwrap();
     let obs = home.join("obs");
@@ -58,6 +58,8 @@ fn a_handed_off_pair_is_not_a_stall_and_keeps_its_phase() {
     let reg = reg.expect("an hour-old hand-off stays registered");
     assert!(reg.contains("\"phase\":\"handed-off\""), "the tick must keep the phase: {reg}");
     assert!(reg.contains("\"driver\":\"kade\""), "{reg}");
+    // AC6 — the re-run check reads these; a tick that dropped them would make every re-run a round
+    assert!(reg.contains("\"attempt_run\":\"pair-run-2\"") && reg.contains("\"handed_off_head\":\"abc123\""), "{reg}");
 }
 
 /// Negative proof: the same silence while the pair is slicing is still a stall.

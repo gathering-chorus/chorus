@@ -122,6 +122,10 @@ pub struct PairEntry {
     /// and the land have the card), written by the pair script; kept every tick
     pub phase: String,
     pub handed_off_epoch: i64,
+    /// #4752 AC6 — the attempt run waiting on the navigator, and the werk HEAD
+    /// the pair handed off (a re-run on it is no round): the pair script's, kept
+    pub attempt_run: String,
+    pub handed_off_head: String,
 }
 
 impl PairEntry {
@@ -137,13 +141,16 @@ impl PairEntry {
             last_level: Level::parse(&json_str_field(j, "last_level").unwrap_or_default()),
             phase: json_str_field(j, "phase").unwrap_or_default(),
             handed_off_epoch: json_str_field(j, "handed_off_epoch").and_then(|s| s.parse().ok()).unwrap_or(0),
+            attempt_run: json_str_field(j, "attempt_run").unwrap_or_default(),
+            handed_off_head: json_str_field(j, "handed_off_head").unwrap_or_default(),
         })
     }
     fn to_json(&self) -> String {
         let handed = if self.handed_off_epoch > 0 { self.handed_off_epoch.to_string() } else { String::new() };
         format!(
-            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\",\"phase\":\"{}\",\"handed_off_epoch\":\"{}\"}}",
-            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label(), self.phase, handed
+            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\",\"phase\":\"{}\",\"handed_off_epoch\":\"{}\",\"attempt_run\":\"{}\",\"handed_off_head\":\"{}\"}}",
+            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label(), self.phase, handed,
+            self.attempt_run, self.handed_off_head
         )
     }
     fn handed_off(&self) -> bool {

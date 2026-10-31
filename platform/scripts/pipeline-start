@@ -92,6 +92,22 @@ if [ -d "$slot" ]; then
   done
 fi
 
+# #4752 AC6 — a paired card: a re-run on the HEAD the pair handed off is no
+# round (the waiting attempt stops, no new green); a fix commit goes back
+# through the navigator's green, so a direct run of it is refused (exit 3)
+if [ "$pipeline" = cicd ]; then
+  pair_bin="${PAIR_RERUN_BIN:-$CHORUS_HOME/platform/scripts/pair}"
+  if [ -x "$pair_bin" ]; then
+    head="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$werk" git -C "$werk" rev-parse HEAD 2>/dev/null || true)"
+    prc=0; pout="$("$pair_bin" rerun "$card" "$head" 2>&1)" || prc=$?
+    if [ "$prc" -eq 3 ]; then
+      echo "pipeline-start: $pout; nothing was enqueued" >&2
+      exit 1
+    fi
+    [ -z "$pout" ] || echo "$pout" >&2
+  fi
+fi
+
 # #4753 — one go per card: the card's older cicd run still waiting at Jeff's
 # go is stopped (card.run.superseded), never answered as him.
 if [ "$pipeline" = cicd ]; then
