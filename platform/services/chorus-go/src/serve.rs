@@ -244,11 +244,21 @@ fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str
     let body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
         "decides": d.row, "approvalVerdict": d.decision, "decidedAt": iso(d.at), "actionSha": sha,
         "passkeyProof": json!({"authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
-    let o = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
-            "-H", "Content-Type: application/json", "-H", &format!("Authorization: Bearer {token}"),
+    // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
+    let mut child = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
+            "-H", "Content-Type: application/json", "-H", "@-",
             "--data-binary", &body.to_string(), &format!("{}/decisions/approvaldecisions", door())])
-        .output().map_err(|e| format!("door: {e}"))?;
-    if !o.status.success() { return Err("signed, but the door refused Jeff's decision row".into()); }
+        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+        .spawn().map_err(|e| format!("door: {e}"))?;
+    {
+        use std::io::Write as _;
+        let mut stdin = child.stdin.take().ok_or("door: no stdin")?;
+        writeln!(stdin, "Authorization: Bearer {token}").map_err(|e| format!("door: {e}"))?;
+    }
+    let o = child.wait_with_output().map_err(|e| format!("door: {e}"))?;
+    // A second decision for one ask is refused by the door (the name `decision-<row>` exists),
+    // so two racing decides file at most once.
+    if !o.status.success() { return Err("signed, but the door refused Jeff's decision row (already decided?)".into()); }
     Ok(())
 }
 

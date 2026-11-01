@@ -58,16 +58,19 @@ fn world(tag: &str) -> World {
     std::fs::create_dir_all(&root).unwrap();
     let r = root.display();
     sh(&root.join("bin/curl"), &format!(r#"#!/bin/sh
+echo "$@" >> {r}/curl-argv.log
 url=""; data=""; hdr=""; post=0
 while [ $# -gt 0 ]; do case "$1" in
   -X) [ "$2" = POST ] && post=1; shift 2;;
   --data-binary) data="$2"; shift 2;;
-  -H) hdr="$hdr|$2"; shift 2;;
+  -H) if [ "$2" = "@-" ]; then hdr="$hdr|$(cat)"; else hdr="$hdr|$2"; fi; shift 2;;
   --max-time) shift 2;;
   -*) shift;;
   *) url="$1"; shift;;
 esac; done
-if [ $post = 1 ]; then [ -f {r}/door-refuses ] && exit 22; printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; echo '{{}}'; exit 0; fi
+if [ $post = 1 ]; then [ -f {r}/door-refuses ] && exit 22
+  name=$(printf '%s' "$data" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); grep -q "\"name\":\"$name\"" {r}/posts.log 2>/dev/null && exit 22
+  printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; echo '{{}}'; exit 0; fi
 case "$url" in
   */decisions/approvaldecisions*) cat {r}/decisions.json;;
   */decisions/approvals*) cat {r}/approvals.json;;
@@ -151,6 +154,8 @@ fn jeffs_approve_writes_his_decision_row_and_replays_the_argv_as_jeff() {
     assert_eq!(c, 200, "{b}");
     let posts = w.read("posts.log");
     assert!(posts.contains(MINTED), "the decision row is written with jeff's identity: {posts}");
+    // NEGATIVE PROOF (Silas): the identity never rides curl's argv, where `ps` shows it.
+    assert!(!w.read("curl-argv.log").contains(MINTED), "token on argv: {}", w.read("curl-argv.log"));
     assert!(posts.contains("/decisions/approvaldecisions"), "{posts}");
     assert!(posts.contains(r#""decides":"approval-wren-1""#) && posts.contains(r#""approvalVerdict":"approve""#), "{posts}");
     assert_eq!(w.read("cards.log").trim(), "DEPLOY_ROLE=jeff add Retire the X --owner kade --priority P3");
@@ -199,4 +204,20 @@ fn negative_proof_when_the_door_refuses_the_decision_nothing_is_filed() {
     let (c, _) = decide(&srv, &mut p, "approval-wren-1", "approve");
     assert_eq!(c, 403);
     assert_eq!(w.read("cards.log"), "");
+}
+
+#[test]
+fn negative_proof_two_racing_decides_file_once() {
+    let w = world("race"); let mut p = Phone::new(); let srv = serve(&w, &p);
+    let ch = |_: ()| http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-wren-1"}).to_string()).1;
+    let (a, b) = (ch(()), ch(()));
+    let send = |p: &mut Phone, c: &Value| {
+        let (ad, cd, sig) = p.sign(&unb64(c["challengeApprove"].as_str().unwrap()).unwrap());
+        http(&srv.addr, "POST", "/go/api/approvals/decide", &json!({"row": "approval-wren-1", "nonce": c["nonce"], "decision": "approve",
+            "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string())
+    };
+    assert_eq!(send(&mut p, &a).0, 200);
+    let (c2, b2) = send(&mut p, &b);
+    assert_eq!(c2, 403, "{b2}");
+    assert_eq!(w.read("cards.log").lines().count(), 1, "filed once");
 }
