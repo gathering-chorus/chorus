@@ -28,10 +28,10 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   [ "$(q 'ASK { chorus:ApprovalShape sh:targetClass chorus:Approval ; chorus:instancesGraph "urn:chorus:domains:decisions" }')" = yes ] || return 1
 }
 
-@test "R1-GUARDS model: decidedBy is limited to jeff and state to pending/approved/declined" {
-  [ "$(q 'ASK { chorus:ApprovalShape sh:property [ sh:path chorus:decidedBy ; sh:in/rdf:rest*/rdf:first "jeff" ] }' )" = yes ] || \
-  grep -q 'sh:path chorus:decidedBy ; sh:maxCount 1 ; sh:in ( "jeff" )' "$TTL" || return 1
-  grep -q 'sh:in ( "pending" "approved" "declined" )' "$TTL" || return 1
+@test "R1-GUARDS model: a decision is its own jeff-owned row; the Approval carries no state" {
+  grep -q 'sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( chorus:principal-jeff )' "$TTL" || return 1
+  grep -q 'sh:path chorus:decides ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Approval' "$TTL" || return 1
+  [ "$(q 'ASK { chorus:approvalState ?p ?o }')" = no ] || return 1
 }
 
 @test "R1-NEG model: the ASK helper can say no (a class that does not exist)" {

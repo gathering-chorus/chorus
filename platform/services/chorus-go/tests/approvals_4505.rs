@@ -145,3 +145,33 @@ fn negative_proof_an_approval_nonce_is_spent_once() {
     decide_approval(&store, &nonce, "approve", &r, &ad, &cd, &sig).unwrap();
     assert!(decide_approval(&store, &nonce, "approve", &r, &ad, &cd, &sig).is_err());
 }
+
+#[test]
+fn negative_proof_only_allow_listed_flags_ride_an_approval() {
+    for bad in [r#"["add","T","--desc-file","/etc/hosts"]"#,
+                r#"["add","T","--desc","-"]"#, r#"["add","T","--owner"]"#,
+                r#"["add","--owner","kade"]"#, r#"["add","T","--owner","--desc-file"]"#] {
+        let e = cards_add_argv(bad).unwrap_err();
+        assert!(e.contains("not a cards add argv"), "{bad}: {e}");
+    }
+    assert!(cards_add_argv(r###"["add","T","--desc","## Experience: x","--sequence","werk"]"###).is_ok());
+}
+
+#[test]
+fn a_decline_clears_a_junk_row_and_replays_nothing() {
+    let (store, mut phone) = registered("ap-junk");
+    let r = row(r#"["rm","-rf","/"]"#, "pending");
+    let d = decide_row(&store, &mut phone, &r, &r, "decline").unwrap();
+    assert!(d.argv.is_empty());
+}
+
+#[test]
+fn a_decision_keeps_its_signed_proof() {
+    let (store, mut phone) = registered("ap-proof");
+    let r = row(ARGV, "pending");
+    decide_row(&store, &mut phone, &r, &r, "approve").unwrap();
+    let p = store.dir.join("approvals").join("decided-approval-wren-1.json");
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+    assert_eq!(v["decision"], "approve");
+    assert!(!v["signature"].as_str().unwrap().is_empty());
+}

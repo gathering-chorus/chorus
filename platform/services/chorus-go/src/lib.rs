@@ -429,8 +429,13 @@ pub fn action_sha(action: &str) -> String {
     b64url(&sha256(action.as_bytes()))
 }
 
-/// An approval's action must be a `cards add` argv: a JSON array of strings starting with "add".
-/// It is replayed as data (no shell), so anything else is refused here, at post and at replay.
+/// The only flags an approved ask may carry. Each takes one value. Anything else is refused,
+/// above all `--desc-file` (it would read any file Jeff can read into a card) and `--desc -` (stdin).
+pub const CARDS_ADD_FLAGS: &[&str] = &["--owner", "--priority", "--domain", "--type", "--origin", "--desc", "--sequence"];
+
+/// An approval's action must be a `cards add` argv: a JSON array of strings, "add", a title,
+/// then allow-listed `--flag value` pairs. It is replayed as data (no shell), so anything else
+/// is refused here, at post and at replay.
 pub fn cards_add_argv(action: &str) -> R<Vec<String>> {
     let v: Value = serde_json::from_str(action).map_err(|_| "not a cards add argv: not JSON".to_string())?;
     let arr = v.as_array().ok_or("not a cards add argv: not an array")?;
@@ -442,8 +447,20 @@ pub fn cards_add_argv(action: &str) -> R<Vec<String>> {
         }
         out.push(s.to_string());
     }
-    if out.len() < 2 || out[0] != "add" {
-        return Err("not a cards add argv: it must start with \"add\" and carry a title".into());
+    if out.len() < 2 || out[0] != "add" || out[1].is_empty() || out[1].starts_with('-') {
+        return Err("not a cards add argv: it must start with \"add\" and a title".into());
+    }
+    let mut i = 2;
+    while i < out.len() {
+        let flag = out[i].as_str();
+        if !CARDS_ADD_FLAGS.contains(&flag) {
+            return Err(format!("not a cards add argv: flag '{flag}' is not allowed"));
+        }
+        let val = out.get(i + 1).ok_or_else(|| format!("not a cards add argv: '{flag}' has no value"))?;
+        if val == "-" || val.starts_with("--") {
+            return Err(format!("not a cards add argv: '{flag}' takes a value, not '{val}'"));
+        }
+        i += 2;
     }
     Ok(out)
 }
@@ -483,7 +500,8 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     if action_sha(&row_now.action) != sha {
         return Err("the row's action changed after the page was shown; reload it".into());
     }
-    let argv = cards_add_argv(&row_now.action)?;
+    // A decline replays nothing, so a junk row can still be cleared.
+    let argv = if decision == "approve" { cards_add_argv(&row_now.action)? } else { Vec::new() };
     let ch = approval_challenge(&row, &sha, decision, nonce);
     let count = verify_assertion(&pk, &ch, &unb64(auth_data)?, &unb64(client_data)?, &unb64(signature)?)?;
     if (count != 0 || pk.sign_count != 0) && count <= pk.sign_count {
@@ -491,5 +509,10 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     }
     pk.sign_count = count;
     store.save_passkey(&pk)?;
-    Ok(ApprovalDecision { row, decision: decision.to_string(), argv, at: now() })
+    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now() };
+    // The proof, kept like a go record: what Jeff's phone signed, for this row.
+    write_private(&store.dir.join("approvals").join(format!("decided-{}.json", d.row)), &json!({
+        "row": d.row, "decision": d.decision, "action_sha": sha, "nonce": nonce, "at": d.at,
+        "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string())?;
+    Ok(d)
 }
