@@ -103,13 +103,33 @@ check_account() {
   fi
 
   # 1. Memory check — links memory/ only, never whole projects/
+  local role_projects="$home/.claude/projects"
   local role_memory="$home/.claude/memory"
-  if [ ! -e "$role_memory" ] && [ ! -L "$role_memory" ]; then
-    echo "[parity-missing] account $account: missing memory link at $role_memory" >&2
+
+  # Reject whole-directory projects/ link (#4788 decision: Option A)
+  if [ -L "$role_projects" ]; then
+    echo "[parity-drift] account $account: .claude/projects is a whole-directory link; must link only memory/, never projects/" >&2
+    DIFFS=$((DIFFS + 1))
+  fi
+
+  # Check memory link (either ~/.claude/memory or ~/.claude/projects/*/memory)
+  local mem_target=""
+  if [ -e "$role_memory" ] || [ -L "$role_memory" ]; then
+    mem_target="$role_memory"
+  elif [ -d "$role_projects" ]; then
+    local found_proj_mem
+    found_proj_mem="$(find "$role_projects" -maxdepth 2 -type l -name "memory" 2>/dev/null | head -1 || true)"
+    if [ -n "$found_proj_mem" ]; then
+      mem_target="$found_proj_mem"
+    fi
+  fi
+
+  if [ -z "$mem_target" ]; then
+    echo "[parity-missing] account $account: missing memory/ link (checked $role_memory and $role_projects/*/memory)" >&2
     DIFFS=$((DIFFS + 1))
   else
     local real_memory
-    real_memory="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$role_memory" 2>/dev/null || true)"
+    real_memory="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$mem_target" 2>/dev/null || true)"
     if [ "$real_memory" != "$REAL_LIVE_MEMORY" ]; then
       echo "[parity-drift] account $account: memory resolves to $real_memory, not live source $REAL_LIVE_MEMORY" >&2
       DIFFS=$((DIFFS + 1))

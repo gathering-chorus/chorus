@@ -186,7 +186,19 @@ EOF
   [[ "$output" =~ "data read failed: search API unreachable" ]] || return 1
 }
 
-@test "NEGATIVE PROOF 7: an unreadable home directory reports unreadable rather than missing" {
+@test "NEGATIVE PROOF 8: a whole projects/ link with no memory/ link fails and names account" {
+  mkdir -p "$BATS_TEST_TMPDIR/fake-projects"
+  rm -rf "$HOMES_DIR/chorus-kade/.claude/memory"
+  ln -s "$BATS_TEST_TMPDIR/fake-projects" "$HOMES_DIR/chorus-kade/.claude/projects"
+
+  run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "chorus-kade" ]] || return 1
+  [[ "$output" =~ "whole-directory link" ]] || return 1
+}
+
+@test "NEGATIVE PROOF 9: an unreadable home directory reports unreadable rather than missing" {
   chmod 000 "$HOMES_DIR/chorus-abby-normal"
   run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
   chmod 755 "$HOMES_DIR/chorus-abby-normal"
