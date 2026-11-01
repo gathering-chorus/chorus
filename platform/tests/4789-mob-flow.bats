@@ -87,6 +87,18 @@ mob_run() {
   [ ! -f "$BATS_TEST_TMPDIR/args" ]
 }
 
+@test "AC2: mob-open names an open mob's run, card and seats; a finished one prints nothing; dagu unreadable exits 2" {
+  mob_run running
+  run "$ROOT/platform/scripts/mob-open"
+  [ "$status" -eq 0 ] && [ "$output" = "034mobfixture 4789 wren silas,kade" ] || { echo "open: $status $output"; return 1; }
+  mob_run failed
+  run "$ROOT/platform/scripts/mob-open"
+  [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "finished: $status $output"; return 1; }
+  export CWS_DAGU="file://$BATS_TEST_TMPDIR/no-such-dir"
+  run "$ROOT/platform/scripts/mob-open"
+  [ "$status" -eq 2 ] && [[ "$output" == *"could not read dagu"* ]] || { echo "unreadable: $status $output"; return 1; }
+}
+
 # ---- AC1 / AC3: mob start, seats on the board, verify through the runner ----
 # Who verified comes only from the runner's record of the call (runsAs=caller,
 # caller field), never from text, argv or env. `as_task` plays the runner: it
