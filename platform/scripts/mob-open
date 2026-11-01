@@ -34,24 +34,25 @@ def load_cws():
     return cws
 
 
-def card_done(card):
-    """True when the board says the card is Done (proven in prod); raises when
-    the board cannot be read, so the gate refuses rather than guess."""
+def card_in_wip(card):
+    """True when the board says the card is in WIP; raises when the board
+    cannot be read, so the gate refuses rather than guess (Silas 12:39)."""
     cards = os.environ.get("MOB_OPEN_CARDS") or os.path.join(
         os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/scripts/cards")
     out = subprocess.run([cards, "view", str(card)], capture_output=True, text=True, timeout=30)
     m = re.search(r"^\s*Status:\s+(\S+)", out.stdout, re.M)
     if out.returncode != 0 or not m:
         raise RuntimeError(f"the board did not say #{card}'s status")
-    return m.group(1) == "Done"
+    return m.group(1) == "WIP"
 
 
-def open_mobs(runs, done=card_done):
+def open_mobs(runs, in_wip=card_in_wip):
     """(run-id, card, driver, navigators) of every mob still holding the floor.
-    #4789 (Kade, from #4752: a pair ends when its card is in prod) — a mob holds
-    from its start until its card is Done: a mob run that handed off (succeeded)
-    still holds while the card's cicd and land run. A failed or stopped mob, or
-    a newer run of the same card, holds nothing."""
+    #4789 — a mob holds from its start while its card is worked: a mob run that
+    handed off (succeeded) still holds while the card is in WIP (its cicd and
+    land run). #4862 — once the card leaves WIP (Done, or reopened to Later as
+    #4852 was at 12:00) the floor is free. A failed or stopped mob, or a newer
+    run of the same card, holds nothing."""
     out, seen = [], set()
     newest = sorted(runs, key=lambda r: r.get("startedAt") or r.get("queuedAt") or "", reverse=True)
     for r in newest:
@@ -63,7 +64,7 @@ def open_mobs(runs, done=card_done):
             continue
         seen.add(card)
         st = r.get("statusLabel")
-        if st not in OPEN and not (st == "succeeded" and not done(card)):
+        if st not in OPEN and not (st == "succeeded" and in_wip(card)):
             continue
         out.append((r.get("dagRunId") or "unknown", card,
                      param(params, "ROLE") or "-", param(params, "NAVIGATORS") or "-"))
