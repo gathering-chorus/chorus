@@ -17,6 +17,9 @@ pub enum Outcome {
     NotMet(String),
     /// No runnable check, or the system did not answer: never counted as met.
     Unmeasured(String),
+    /// #4823 AC2 — `check: by #N`: a later card proves it, and is not Done yet.
+    /// It does not strand the land; it never makes a card Proven on its own.
+    Deferred(String),
 }
 
 impl Outcome {
@@ -25,11 +28,12 @@ impl Outcome {
             Outcome::Met(_) => "met",
             Outcome::NotMet(_) => "not met",
             Outcome::Unmeasured(_) => "unmeasured",
+            Outcome::Deferred(_) => "deferred",
         }
     }
     pub fn evidence(&self) -> &str {
         match self {
-            Outcome::Met(e) | Outcome::NotMet(e) | Outcome::Unmeasured(e) => e,
+            Outcome::Met(e) | Outcome::NotMet(e) | Outcome::Unmeasured(e) | Outcome::Deferred(e) => e,
         }
     }
 }
@@ -41,6 +45,12 @@ pub type Seen = Option<String>;
 pub fn judge(c: &Check, seen: &Seen) -> Outcome {
     match c.kind.as_str() {
         "none" | "" => Outcome::Unmeasured("no runnable check on this AC".into()),
+        // #4823 AC2 — what the later card's status is (`cards view`), or nothing
+        "by" => match seen.as_deref().map(str::trim) {
+            Some("Done") => Outcome::Met(format!("proven by #{} (Done)", c.target)),
+            Some(st) => Outcome::Deferred(format!("deferred to #{}, which is {st}", c.target)),
+            None => Outcome::Unmeasured(format!("the board did not answer for #{}", c.target)),
+        },
         "http" | "sparql" | "test" | "crawl" => {
             let Some(body) = seen else {
                 return Outcome::Unmeasured(if c.kind == "test" {
@@ -118,6 +128,11 @@ pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
             "test" => (rest.to_string(), "pass".to_string()),
             // #4824 — `check: crawl <class>`: that row of the crawl reads missing=0
             "crawl" => (rest.to_string(), "missing=0".to_string()),
+            // #4823 — `check: by #N`: card N proves it; it is met when N is Done
+            "by" => match rest.trim_start_matches('#').parse::<u32>() {
+                Ok(n) => (n.to_string(), "Done".to_string()),
+                Err(_) => (String::new(), String::new()),
+            },
             "sparql" => match rest.rsplit_once(char::is_whitespace) {
                 Some((q, e)) if e == "true" || e == "false" => (q.trim().to_string(), e.to_string()),
                 _ => (rest.to_string(), String::new()),
@@ -163,7 +178,9 @@ pub const NO_ROWS: &str = "unproven: no AC has a check";
 pub fn verdict(results: &[(Check, Outcome)]) -> &'static str {
     if results.iter().any(|(_, o)| matches!(o, Outcome::NotMet(_))) {
         "Not met"
-    } else if !results.is_empty() && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_))) {
+    } else if results.iter().any(|(_, o)| matches!(o, Outcome::Met(_)))
+        && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_) | Outcome::Deferred(_)))
+    {
         "Proven"
     } else {
         "Unproven"
@@ -357,7 +374,8 @@ fn list_len(row: &str, name: &str) -> Option<usize> {
 /// #4683 AC3 — the ACs a red verdict files children for: every one not met
 /// or not measured.
 pub fn reds(results: &[(Check, Outcome)]) -> Vec<&(Check, Outcome)> {
-    results.iter().filter(|(_, o)| !matches!(o, Outcome::Met(_))).collect()
+    // #4823 — a deferred AC already has its card (the one that proves it): no child
+    results.iter().filter(|(_, o)| !matches!(o, Outcome::Met(_) | Outcome::Deferred(_))).collect()
 }
 
 /// The child's title names the parent and the AC, so a rerun finds it.
@@ -440,6 +458,7 @@ pub fn results_from_tsv(tsv: &str) -> Result<Vec<(Check, Outcome)>, String> {
             "met" => Outcome::Met(f[6].clone()),
             "not met" => Outcome::NotMet(f[6].clone()),
             "unmeasured" => Outcome::Unmeasured(f[6].clone()),
+            "deferred" => Outcome::Deferred(f[6].clone()),
             w => return Err(format!("unknown outcome '{w}'")),
         };
         Ok((c, o))
