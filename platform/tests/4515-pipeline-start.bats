@@ -100,3 +100,21 @@ setup() {
   run "$ROOT/platform/scripts/pipeline-start" athena 4515 wren
   [ "$(cat "$BATS_TEST_TMPDIR/order")" = "enqueue" ] || { cat "$BATS_TEST_TMPDIR/order"; return 1; }
 }
+
+@test "#4752 AC6: a paired card's fix commit is refused as a direct cicd run, naming the navigator's green; nothing enqueued" {
+  export PAIR_RERUN_BIN="$BATS_TEST_TMPDIR/pair"
+  printf '#!/bin/sh\necho "pair: refused: #4515 is paired; its fix commit goes back through silas'"'"'s green (pair run p2)"; exit 3\n' > "$PAIR_RERUN_BIN"; chmod +x "$PAIR_RERUN_BIN"
+  run "$ROOT/platform/scripts/pipeline-start" cicd 4515 wren
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"silas's green (pair run p2); nothing was enqueued"* ]] || return 1
+  [ ! -f "$BATS_TEST_TMPDIR/args" ]
+}
+
+@test "#4752 AC6 negative proof: a re-run the pair allows (or no pair) is enqueued, and the pair is asked for the card and role" {
+  export PAIR_RERUN_BIN="$BATS_TEST_TMPDIR/pair"
+  printf '#!/bin/sh\necho "$@" > "%s/pair-args"\n' "$BATS_TEST_TMPDIR" > "$PAIR_RERUN_BIN"; chmod +x "$PAIR_RERUN_BIN"
+  run "$ROOT/platform/scripts/pipeline-start" cicd 4515 wren
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/pair-args")" = "rerun 4515 wren" ] || return 1
+  [[ "$(cat "$BATS_TEST_TMPDIR/args")" == *" enqueue $W/platform/pipelines/cicd.yaml"* ]] || return 1
+}

@@ -217,7 +217,7 @@ fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
     // #4494 — the land event triggers athena (#4177); v2's land never passed
     // through the old MCP server's werk-merge, so #4496's model never reached the store.
     let land = generate_land("cicd", &cicd()).unwrap();
-    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
+    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
     // #4499 — every land rebuilds the code units the blast radius reads
     // NEGATIVE PROOF: the card half never deploys a model (nothing has landed)
     let card = generate("cicd", &cicd()).unwrap();
@@ -251,7 +251,7 @@ fn the_cards_own_verbs_come_first_on_the_path() {
 fn a_failed_run_nudges_the_builder() {
     // #4474 run 15 failed at 09:25; nobody knew until 10:06
     let out = generate("cicd", &cicd()).unwrap();
-    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} ").expect("a failure handler");
+    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} ").expect("a failure handler");
     assert!(h < out.find("steps:\n").unwrap(), "handler_on is DAG-level, before the steps");
     // negative proof: the handler is on failure only, never on every exit or success
     assert!(!out.contains("  success:") && !out.contains("  exit:"), "{out}");

@@ -238,7 +238,12 @@ pub fn go_less(name: &str) -> bool {
 pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} \"chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run · dagu ${DAG_RUN_ID}\"; exit 1; }";
 
 /// What every werk-style land does when it succeeds: athena-land, then the crawl.
-pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh";
+/// #4752 — a cicd or land red goes back to the card's pair first (`pair routed`
+/// exits 1 when the card has none, and the builder's nudge or route runs).
+pub const PAIR_ROUTED: &str = "${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ";
+/// #4752 — the land succeeded only after borg-prove recorded it proven in prod:
+/// the card's pair ends there (Jeff 10-30: "pair ends when card is in prod").
+pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh";
 
 fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     let errs = check(rows);
@@ -350,11 +355,11 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // unreadable falls back to the plain words.
     if routes.is_empty() {
         out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo {what} failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+            "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo {what} failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));
     } else {
         out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || ${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed and its route failed too · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+            "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || ${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed and its route failed too · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));
     }
     // #4494 — the land event triggers athena (#4177): a land whose commit

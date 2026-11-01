@@ -15,7 +15,8 @@ verify-in-prod\t6\t1\tskill-borg-verify-in-prod\tborg-verify-in-prod\tdeterminis
 fn every_step_that_names_a_route_is_routed_by_its_failure() {
     let rows = parse_rows(ROWS).unwrap();
     let card = generate("borg-prove", &rows).unwrap();
-    assert!(card.contains("command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-intake=value-stream-step-designing,skill-borg-stage=value-stream-step-build || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE}"), "{card}");
+    // #4752 — a paired card's red goes to its pair first (`pair routed … ||`)
+    assert!(card.contains("command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-intake=value-stream-step-designing,skill-borg-stage=value-stream-step-build || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE}"), "{card}");
     assert!(card.contains("its route failed too"), "a failed route still reaches the builder");
     let land = generate_land("borg-prove", &rows).unwrap();
     assert!(land.contains("skill-borg-verify-in-prod=value-stream-step-borg-surface ||"), "{land}");

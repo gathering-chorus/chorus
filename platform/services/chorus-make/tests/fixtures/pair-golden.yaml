@@ -42,15 +42,11 @@ steps:
     description: "the green came from the navigator"
     depends: [skill-pair-green]
     command: "${CHORUS_HOME}/platform/scripts/pair check ${CARD} ${NAVIGATOR} ${skill_pair_green.outputs.by} ${skill_pair_green.outputs.decision}"
-  - name: skill-pair-local-proof
-    description: "local proof: the tests on the werk, scope diff"
+  - name: skill-pair-handoff
+    description: "pair hands off: cicd has the card; the pair stays open until it is proven in prod (#4752)"
     depends: [skill-pair-check]
-    command: "${CHORUS_HOME}/platform/scripts/dagu-enqueue-wait cicd-test CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff"
+    command: "${CHORUS_HOME}/platform/scripts/pair handoff ${CARD} ${ROLE} ${NAVIGATOR}"
   - name: skill-pair-hand-off
     description: "hand off: one cicd run"
-    depends: [skill-pair-local-proof]
+    depends: [skill-pair-handoff]
     command: "${CHORUS_HOME}/platform/scripts/cicd-supersede ${CARD} ${ROLE} && env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}"
-  - name: skill-pair-end
-    description: "pair end: the For-Jeff summary, deregister"
-    depends: [skill-pair-hand-off]
-    command: "${CHORUS_HOME}/platform/scripts/pair end ${CARD} ${ROLE} ${NAVIGATOR}"
