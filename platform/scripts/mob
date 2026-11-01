@@ -8,7 +8,7 @@
 # template; a mob has N navigators where a pair has one.
 #
 #   mob start  CARD DRIVER NAV1,NAV2,...  refuse a card not in WIP; the seats go on the card; nudge each navigator
-#   mob verify CARD RUN pass|fail "note"  a navigator's verdict, run ONLY by chorus-runner as the MCP task werk-mob-verify
+#   mob verify CARD RUN pass|fail "note" HEAD  a navigator's verdict for the HEAD it checked, run ONLY by chorus-runner as the MCP task werk-mob-verify
 #   mob check  CARD BY verified|fail|stop the run's human step: re-count the seats; stop ends the mob
 #
 # The open mob is the live `mob` dagu run (mob-open): its params hold the seats,
@@ -43,7 +43,11 @@ the_run() { # CARD — "<run> <driver> <navs>" of the card's open mob run
   [ "$rc" -eq 0 ] || die "#$1: could not read dagu for the open mob run: $out"
   awk -v c="$1" '$2==c {print $1, $3, $4; exit}' <<<"$out"
 }
-verdicts() { # CARD RUN — "<caller> <verdict>" per runner record of mob verify for this run, oldest first
+werk_head() { # DRIVER CARD — the driver's werk HEAD (trusting that werk only, #4599)
+  local w="${CHORUS_WERK_BASE:-$HOME/CascadeProjects/chorus-werk}/$1-$2"
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$w" git -C "$w" rev-parse HEAD 2>/dev/null
+}
+verdicts() { # CARD RUN — "<caller> <verdict> <head>" per runner record of mob verify for this run, oldest first
   python3 -I - "$TASKS" "$1" "$2" <<'PY'
 import glob, json, os, stat, sys
 tasks, card, run = sys.argv[1:4]
@@ -78,14 +82,25 @@ for f in glob.glob(os.path.join(tasks, "*.json")):
                 continue
         except OSError:
             continue
-    rows.append((r.get("startedAt") or 0, r.get("caller") or "", a[3]))
-for _, who, v in sorted(rows):
-    print(who.removeprefix("principal-"), v)
+    # #4850 AC3-5 — the head this verify saw, written beside the record by the
+    # verify itself (runner's account); no head file, no head: counts for nothing
+    head = ""
+    try:
+        hf = f[:-5] + ".head"
+        hst = os.stat(hf)
+        if hst.st_uid == d.st_uid and not hst.st_mode & W:
+            head = open(hf).read().strip()
+    except OSError:
+        pass
+    rows.append((r.get("startedAt") or 0, r.get("caller") or "", a[3], head or "-"))
+for _, who, v, head in sorted(rows):
+    print(who.removeprefix("principal-"), v, head)
 PY
 }
-passed() { # CARD RUN NAV — NAV's latest verdict on this run, from the runner's records, is pass
+passed() { # CARD RUN NAV HEAD — NAV's latest verdict AT HEAD on this run, from the runner's records, is pass
   local v; v="$(verdicts "$1" "$2" 2>&1)" || die "#$1: $v"
-  [ "$(awk -v n="$3" '$1==n {v=$2} END {print v}' <<<"$v")" = pass ]
+  [ -n "${4:-}" ] || die "#$1: the driver's werk HEAD is unreadable; no verdict can be matched to it"
+  [ "$(awk -v n="$3" -v h="$4" '$1==n && $3==h {v=$2} END {print v}' <<<"$v")" = pass ]
 }
 
 cmd="${1:-}"; shift || true
@@ -102,18 +117,20 @@ start)
     die "#$card: could not put the seats on the card"
   spine mob.started system "card=$card" "driver=$driver" "navigators=$navs" "run_id=${DAG_RUN_ID:-}"
   for n in "${seats[@]}"; do
-    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool werk-mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\""
+    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool werk-mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\" head=<the $driver-$card HEAD you checked>"
   done
   say "#$card mob open: $driver drives; $list navigate"
   ;;
 verify)
-  card="${1:-}"; run="${2:-}"; verdict="${3:-}"; note="${4:-}"
-  [ -n "$card" ] && [ -n "$run" ] && [ -n "$note" ] || die "usage: mob verify CARD RUN pass|fail \"what you ran\" (via the MCP tool mob-verify)"
+  card="${1:-}"; run="${2:-}"; verdict="${3:-}"; note="${4:-}"; checked="${5:-}"
+  [ -n "$card" ] && [ -n "$run" ] && [ -n "$note" ] && [ -n "$checked" ] ||
+    die "usage: mob verify CARD RUN pass|fail \"what you ran\" HEAD — the head you checked (via the MCP tool werk-mob-verify)"
+  [[ "$checked" =~ ^[0-9a-f]{7,40}$ ]] || die "#$card: '$checked' is not a commit sha (7 to 40 hex)"
   case "$verdict" in pass|fail) ;; *) die "#$card: '$verdict' is not pass or fail" ;; esac
   # who is calling: the runner's record of THIS task, never an argument or env
   rec="${CHORUS_TASK_EXIT:-}"; rec="${rec%.exit}.json"
   [ -n "${CHORUS_TASK_EXIT:-}" ] && [ -f "$rec" ] || die "#$card: no runner record for this call; verify through the MCP tool werk-mob-verify, not a shell"
-  who="$(python3 -I - "$rec" "$PPID" "$(ps -o lstart= -p "$PPID" 2>/dev/null | sed 's/^ *//; s/ *$//')" "$card" "$run" "$verdict" "$note" 2>&1 <<'PY'
+  who="$(python3 -I - "$rec" "$PPID" "$(ps -o lstart= -p "$PPID" 2>/dev/null | sed 's/^ *//; s/ *$//')" "$card" "$run" "$verdict" "$note" "$checked" 2>&1 <<'PY'
 import json, os, stat, sys
 rec, ppid, pstart, *argv = sys.argv[1:]
 st = os.stat(rec)
@@ -122,7 +139,7 @@ if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH) or st.st_uid != os.stat(os.path.di
 r = json.load(open(rec))
 if str(r.get("pid")) != ppid or (r.get("pidStartedAt") or "") != pstart:
     sys.exit("the runner record is not this call's (pid or start time differ)")
-if (r.get("argv") or [])[:5] != ["verify"] + argv:
+if (r.get("argv") or [])[:6] != ["verify"] + argv:
     sys.exit("the runner record's arguments are not this call's")
 print((r.get("caller") or "").removeprefix("principal-"))
 PY
@@ -134,8 +151,17 @@ PY
   IFS=, read -ra seats <<<"$navs"
   seat=""; for n in "${seats[@]}"; do [ "$n" = "$who" ] && seat=1; done
   [ -n "$seat" ] || die "#$card: $who has no seat in mob run $run (seats: $navs)"
+  head="$(werk_head "$driver" "$card")"
+  [ -n "$head" ] || die "#$card: $driver's werk for #$card has no readable HEAD; nothing to verify against"
+  # #4850 (Kade 10:26) — the verdict is for the head the navigator CHECKED; a
+  # commit between their check and this call must not inherit their PASS
+  [[ "$head" == "$checked"* ]] || die "#$card: $who checked ${checked:0:9}, but the werk's HEAD is ${head:0:9}; check the new head and verify again"
+  # #4850 AC3 — the head this verdict is for, beside the runner's record (this
+  # runs as the runner's account; no role writes the runner's store)
+  printf '%s\n' "$head" > "${rec%.json}.head" && chmod 644 "${rec%.json}.head" ||
+    die "#$card: could not record the head beside the runner record"
   V="$(tr a-z A-Z <<<"$verdict")"
-  bash "$CARDS" comment "$card" "mob #$card run $run: $who verified: $V — $note" >/dev/null 2>&1 || say "#$card: the card comment did not post (the runner record stands)"
+  bash "$CARDS" comment "$card" "mob #$card run $run: $who verified at ${head:0:9}: $V — $note" >/dev/null 2>&1 || say "#$card: the card comment did not post (the runner record stands)"
   spine mob.verified system "card=$card" "run_id=$run" "seat=$who" "verdict=$verdict"
   say "#$card: $who's $V recorded"
   complete() { "$DAGU" --config "$DAGU_CONFIG" human-task complete mob --run-id "$run" --step skill_mob_verified --input by=mob --input "decision=$1"; }
@@ -144,7 +170,7 @@ PY
     say "#$card: FAIL stops mob run $run; the driver goes back to slice"
     exit 0
   fi
-  for n in "${seats[@]}"; do passed "$card" "$run" "$n" || { say "#$card: waiting on $n"; exit 0; }; done
+  for n in "${seats[@]}"; do passed "$card" "$run" "$n" "$head" || { say "#$card: waiting on $n at ${head:0:9}"; exit 0; }; done
   complete verified >/dev/null 2>&1 || die "#$card: every seat passed, but the run's human task did not answer"
   say "#$card: every seat passed; mob run $run goes on"
   ;;
@@ -164,7 +190,8 @@ check)
     fail) die "#$card: a navigator's FAIL stopped mob run $run; back to slice" ;;
     verified)
       [ "$by" = mob ] || die "#$card: only the last seat's verify answers verified, not '$by'"
-      for n in "${seats[@]}"; do passed "$card" "$run" "$n" || die "#$card: $n has not verified mob run $run"; done
+      head="$(werk_head "${driver:-}" "$card")"
+      for n in "${seats[@]}"; do passed "$card" "$run" "$n" "$head" || die "#$card: $n has not verified mob run $run at ${head:0:9}"; done
       spine mob.verified.all system "card=$card" "run_id=$run"
       say "#$card: every seat verified mob run $run" ;;
     *) die "#$card: '$decision' is not verified, fail or stop" ;;
