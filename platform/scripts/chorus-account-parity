@@ -148,20 +148,26 @@ check_account() {
     DIFFS=$((DIFFS + 1))
   fi
 
-  # Check memory link (either ~/.claude/memory or ~/.claude/projects/*/memory)
+  # Check memory link: must link the shared chorus memory
+  # Either ~/.claude/memory (if direct memory link)
+  # OR ~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory
+  local role_chorus_slug="$role_projects/-Users-jeffbridwell-CascadeProjects-chorus"
   local mem_target=""
   if [ -e "$role_memory" ] || [ -L "$role_memory" ]; then
     mem_target="$role_memory"
-  elif [ -d "$role_projects" ]; then
-    local found_proj_mem
-    found_proj_mem="$(find "$role_projects" -maxdepth 2 -type l -name "memory" 2>/dev/null | head -1 || true)"
-    if [ -n "$found_proj_mem" ]; then
-      mem_target="$found_proj_mem"
+  elif [ -d "$role_chorus_slug" ] || [ -L "$role_chorus_slug" ]; then
+    local chorus_slug_mem="$role_chorus_slug/memory"
+    if [ -L "$chorus_slug_mem" ]; then
+      mem_target="$chorus_slug_mem"
+    elif [ -d "$chorus_slug_mem" ]; then
+      echo "[parity-drift] account $account: chorus-slug memory at $chorus_slug_mem is a detached directory, not a link to live shared memory" >&2
+      DIFFS=$((DIFFS + 1))
+      mem_target="$chorus_slug_mem"
     fi
   fi
 
   if [ -z "$mem_target" ]; then
-    echo "[parity-missing] account $account: missing memory/ link (checked $role_memory and $role_projects/*/memory)" >&2
+    echo "[parity-missing] account $account: missing chorus memory link at $role_memory or $role_projects/-Users-jeffbridwell-CascadeProjects-chorus/memory" >&2
     DIFFS=$((DIFFS + 1))
   else
     local real_memory

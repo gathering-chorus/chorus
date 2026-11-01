@@ -227,3 +227,17 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" =~ "must be group chorus" ]] || return 1
 }
+
+@test "NEGATIVE PROOF 12: linking role-private memory while chorus-slug memory is detached fails" {
+  rm -f "$HOMES_DIR/chorus-kade/.claude/memory"
+  mkdir -p "$HOMES_DIR/chorus-kade/.claude/projects/-Users-chorus-kade-CascadeProjects-chorus"
+  ln -s "$LIVE_SOURCE/memory" "$HOMES_DIR/chorus-kade/.claude/projects/-Users-chorus-kade-CascadeProjects-chorus/memory"
+  mkdir -p "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
+  echo "frozen" > "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory/MEMORY.md"
+
+  run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "chorus-kade" ]] || return 1
+  [[ "$output" =~ "chorus-slug memory" ]] || return 1
+}
