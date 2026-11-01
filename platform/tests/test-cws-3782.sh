@@ -406,6 +406,42 @@ t "a commit failure's nudge names its step" "cicd failed at commit: werk-commit:
 CWS_DAGU="file://$TD/d8" "$CWS" --why cicd nope >/dev/null; rc=$?
 [ $rc -eq 2 ] || { echo "FAIL unknown run exit=$rc, wanted 2"; fails=$((fails+1)); }
 
+# #4862 (Jeff 2026-11-01 09:35 "i cant tell if mob is moving"; 12:36 "make sure
+# cws shows all related dagu flows for a card") — a card's line follows its mob,
+# names the seats still to verify at the werk's HEAD, and the table lists every
+# pipeline dagu holds, including one no list in this file names.
+mkdir -p "$TD/d9/api/v1" "$TD/w9/wren-4870" "$TD/rt9" "$TD/api9/api/chorus/context/board"
+git -C "$TD/w9/wren-4870" init -q && git -C "$TD/w9/wren-4870" -c user.email=t@t -c user.name=t commit -q --allow-empty -m one
+H9=$(git -C "$TD/w9/wren-4870" rev-parse HEAD)
+cat > "$TD/d9/api/v1/dag-runs" <<EOF9
+{"dagRuns":[
+ {"name":"mob","dagRunId":"m9","params":"CARD=4870 ROLE=wren NAVIGATORS=silas,kade","statusLabel":"waiting","startedAt":"2026-11-01T12:40:00-05:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-mob-start"}},{"statusLabel":"waiting","step":{"name":"skill-mob-verified","id":"skill_mob_verified"}}]},
+ {"name":"zzz-new-flow","dagRunId":"z9","params":"CARD=4870 ROLE=wren","statusLabel":"succeeded","startedAt":"2026-11-01T12:30:00-05:00","finishedAt":"2026-11-01T12:31:00-05:00","nodes":[]},
+ {"name":"mob","dagRunId":"m8","params":"CARD=48700 ROLE=kade NAVIGATORS=silas,wren","statusLabel":"waiting","startedAt":"2026-11-01T12:41:00-05:00","nodes":[]}
+]}
+EOF9
+echo '{"dags":[{"dag":{"name":"cicd"}},{"dag":{"name":"mob"}},{"dag":{"name":"zzz-new-flow"}}],"pagination":{"hasNextPage":false}}' > "$TD/d9/api/v1/dags"
+# silas verified at the werk's HEAD through the runner; kade has not
+printf '{"binary":"/x/mob","argv":["verify","4870","m9","pass","ok","%s"],"caller":"silas","pid":1,"pidStartedAt":"x","startedAt":1}' "$H9" > "$TD/rt9/t1.json"
+echo "$H9" > "$TD/rt9/t1.head"; echo 0 > "$TD/rt9/t1.exit"
+E9=(CWS_DAGU="file://$TD/d9" CHORUS_WERK_BASE="$TD/w9" CHORUS_RUNNER_TASKS="$TD/rt9")
+out=$(env "${E9[@]}" "$CWS" 4870)
+t "#4862 AC2: an open mob is the card's line, naming who still verifies" "#4870 wren   mob: waiting on kade (silas verified at ${H9:0:9})" "$out"
+t "#4862 AC1: the run table lists the mob run" "  mob " "$out"
+t "#4862 AC3: a pipeline no list names still shows for its card" "zzz-new-flow" "$out"
+if [[ "$out" == *"m8"* || "$out" == *"48700"* ]]; then echo "FAIL #4862: another card's mob (CARD=48700) counted for 4870"; fails=$((fails+1)); fi
+# NEGATIVE PROOF (Silas 12:44): a mob's human step is answered by the last seat's
+# verify, never by Jeff's go; /cws must not offer accepter=jeff or a go/no there
+if [[ "$out" == *"accepter=jeff"* || "$out" == *"go: dagu"* ]]; then echo "FAIL #4862: /cws offers Jeff's go at a mob's verify step"; fails=$((fails+1)); fi
+t "#4862: a waiting mob says how its seats answer" "verify: werk-mob-verify card=4870 run=m9" "$out"
+echo '{"data":{"cards":[{"id":4870,"owner":"Wren"}]}}' > "$TD/api9/api/chorus/context/board/wip"
+out=$(env "${E9[@]}" CWS_API="file://$TD/api9" "$CWS")
+t "#4862 AC2: the no-arg view shows the open mob" "#4870 wren   mob: waiting on kade" "$out"
+# NEGATIVE PROOF: a verdict at an older head does not count as verified
+git -C "$TD/w9/wren-4870" -c user.email=t@t -c user.name=t commit -q --allow-empty -m two
+out=$(env "${E9[@]}" "$CWS" 4870)
+t "#4862 NEGATIVE PROOF: a verdict at an older head is not 'verified'" "mob: waiting on silas, kade" "$out"
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"

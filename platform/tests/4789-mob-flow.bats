@@ -340,3 +340,20 @@ new_head() { git -C "$WK" -c user.email=t@t -c user.name=t commit -q --allow-emp
   # NEGATIVE PROOF: the #4850 round 3 shape — mob straight to cicd — is gone
   [[ "$step" != *"enqueue cicd"* ]] || { echo "still a bare cicd enqueue: $step"; return 1; }
 }
+
+# ---- #4862 AC4: a handed-off mob holds the floor only while its card is in WIP ----
+
+@test "AC4 (#4862): a handed-off mob whose card left WIP (Later, Next, Blocked) releases the floor" {
+  for st in Later Next Blocked; do
+    mob_run succeeded; CARD_STATUS=$st; rm -f "$BATS_TEST_TMPDIR/args"
+    run "$ROOT/platform/scripts/pipeline-start" borg-prove 4790 kade
+    [ "$status" -eq 0 ] && [ -f "$BATS_TEST_TMPDIR/args" ] || { echo "$st still held the floor: $output"; return 1; }
+  done
+}
+
+@test "AC4 NEGATIVE PROOF (#4862): a handed-off mob whose card is still WIP, or moved back to WIP, keeps refusing" {
+  mob_run succeeded; CARD_STATUS=WIP; rm -f "$BATS_TEST_TMPDIR/args"
+  run "$ROOT/platform/scripts/pipeline-start" borg-prove 4790 kade
+  [ "$status" -ne 0 ] && [[ "$output" == *"mob run 034mobfixture"* ]] || { echo "WIP released: $output"; return 1; }
+  [ ! -f "$BATS_TEST_TMPDIR/args" ]
+}

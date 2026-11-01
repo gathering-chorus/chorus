@@ -30,6 +30,7 @@ pin in a temp dir, runs BOTH through a naive verbatim-trust reading and this
 tool's reading, and exits 0 only if naive says "running/clean" where this tool
 says "abandoned/stale-present" — proving the tool can tell the two states apart.
 """
+import glob
 import json
 import os
 import re
@@ -63,8 +64,45 @@ MAIN_REF = os.environ.get("CWS_MAIN_REF", "origin/main")
 # #4758 — Jeff's go waits in its own pipeline, `cicd-go` (run go-<cicd run>), on
 # a queue that holds no test runs: the card run hands along to it at the demo
 GO_DAG = os.environ.get("CWS_GO_DAG", f"{DAGU_DAG}-go")
+# #4862 — a mob runs as its own pipeline; while it waits on its seats, that is where the card is
+MOB_DAG = os.environ.get("CWS_MOB_DAG", "mob")
 # the pipelines a card's one line follows; /cws <card> lists every pipeline's runs (#4734)
-LEAD_DAGS = (DAGU_DAG, GO_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG)
+LEAD_DAGS = (DAGU_DAG, GO_DAG, ATHENA_DAG, PAIR_DAG, CARD_DAG, MOB_DAG)
+
+
+def mob_seats(card, run):
+    """#4862 — (still to verify, verified) seats of a waiting mob run. A seat is
+    verified when the runner's newest record of its werk-mob-verify for this run
+    passed (exit 0) at the driver's werk HEAD (#4850): a verdict at an older head
+    is no verdict. Display only; the mob's own check is what counts."""
+    params = run.get("params") or ""
+    seats = [x for x in (re.search(r"NAVIGATORS=\"?([^\s\"]*)", params) or [None, ""])[1].split(",") if x]
+    driver = (re.search(r"ROLE=\"?([^\s\"]*)", params) or [None, ""])[1]
+    werk = os.path.join(os.environ.get("CHORUS_WERK_BASE", os.path.expanduser("~/CascadeProjects/chorus-werk")), f"{driver}-{card}")
+    try:
+        head = subprocess.run(["git", "-c", "safe.directory=*", "-C", werk, "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:
+        head = ""
+    tasks = os.environ.get("CHORUS_RUNNER_TASKS") or os.path.join(
+        os.environ.get("CHORUS_STATE_DIR", os.path.expanduser("~/.chorus")), "runner-tasks")
+    latest = {}
+    for f in glob.glob(os.path.join(tasks, "*.json")):
+        try:
+            r = json.load(open(f))
+            a = r.get("argv") or []
+            if a[:3] != ["verify", str(card), run.get("dagRunId")] or len(a) < 4:
+                continue
+            if open(f[:-5] + ".exit").read().strip() != "0":
+                continue
+            seen = open(f[:-5] + ".head").read().strip()
+        except Exception:
+            continue
+        who = (r.get("caller") or "").removeprefix("principal-")
+        if (r.get("startedAt") or 0) >= latest.get(who, (0, "", ""))[0]:
+            latest[who] = (r.get("startedAt") or 0, a[3], seen)
+    done = [n for n in seats if head and n in latest and latest[n][1] == "pass" and latest[n][2] == head]
+    return [n for n in seats if n not in done], done, head
 DAGU_CONFIG = os.environ.get("CWS_DAGU_CONFIG", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/config/dagu.yaml"))
 
 # act stage markers, in pipeline order — last one seen in the log wins
@@ -708,6 +746,12 @@ def dagu_go(card, run):
         nav = re.search(r"(?:^|\s)NAVIGATOR=\"?([\w-]+)", run.get("params") or "")
         cmd = f"{base} --input by={nav.group(1) if nav else 'NAVIGATOR'}"
         return f" · green: {cmd} --input decision=green · stop: {cmd} --input decision=stop"
+    if dag == MOB_DAG:
+        # #4862 (Silas 12:44) — the mob's human step is answered by the last
+        # seat's werk-mob-verify, never by Jeff's go; a navigator, Abby or Jeff
+        # may stop it
+        return (f" · verify: werk-mob-verify card={card} run={run.get('dagRunId')} verdict=pass|fail head=<sha>"
+                f" · stop: {base} --input by=<navigator|abby-normal|jeff> --input decision=stop")
     if dag == CARD_DAG:
         # #4654 — the card's role says its code is done; Jeff's go is not asked here
         who = re.search(r"(?:^|\s)ROLE=\"?([\w-]+)", run.get("params") or "")
@@ -1197,6 +1241,10 @@ def card_line(card, role, runs, lands, places, now=None, wip=False, parts=None):
     paired = land is None and run.get("name") == PAIR_DAG
     if paired:
         pre, word = "pair: ", word.replace("pair-", "")
+    # #4862 — a mob's run reads as the mob, and at its human step it waits on its seats
+    mobbed = land is None and run.get("name") == MOB_DAG
+    if mobbed:
+        pre, word = "mob: ", word.replace("mob-", "")
     # #4654 — a card run reads as its step: "pull", then "coding · 42m" while the role builds
     carded = land is None and run.get("name") == CARD_DAG
     if carded:
@@ -1228,11 +1276,18 @@ def card_line(card, role, runs, lands, places, now=None, wip=False, parts=None):
             where = f"pair: waiting for {nav.group(1) if nav else 'the navigator'}'s green"
         if carded:
             where = "coding"
+        if mobbed:
+            todo, done, head = mob_seats(card, run)
+            where = "mob: waiting on " + (", ".join(todo) or "the check")
+            if done:
+                where += f" ({', '.join(done)} verified at {head[:9]})"
     elif status == "succeeded" and not land and any(
             n.get("statusLabel") == "skipped" and n["step"]["name"] == f"{DAGU_DAG}-land" for n in nodes_of(run)):
         where = "rejected at the go"
     elif status == "succeeded" and paired:
         where = "pair: ended, handed to cicd"
+    elif status == "succeeded" and mobbed:
+        where = "mob: every seat verified, handed off"
     elif status == "succeeded" and carded:
         where = "coded, handed off"
     elif status == "succeeded":
