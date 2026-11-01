@@ -150,6 +150,50 @@ pub fn hook_run_dir() -> String {
     )
 }
 
+/// #4849 — the DAEMON's own run dir: HOME, or a CHORUS_HOOKS_RUN_DIR override
+/// (#4227's demo variant) — but never an agent dir, and never CHORUS_STATE_DIR.
+///
+/// Both of those are CLIENT settings: env-setup and werk-test (#4785) export
+/// CHORUS_HOOKS_RUN_DIR=~/.chorus/run-agents so a role account finds the shared
+/// agent socket. Every daemon started from that env — a nightly suite's, a
+/// werk's — took it as its own run dir, chmod'ed the live agent dir 0700 and
+/// bound a 0600 control socket over the live 0660 one. On 11-01 that locked
+/// every role out of every tool until Jeff kickstarted com.chorus.hooks.
+pub fn daemon_run_dir() -> String {
+    daemon_run_dir_from(
+        std::env::var("CHORUS_HOOKS_RUN_DIR").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    )
+}
+
+/// The rule, pure: an override naming an agent dir (`…-agents`, the dir a daemon
+/// serves agents from, #4432) is a client's pointer, not a home for a daemon.
+pub fn daemon_run_dir_from(override_dir: Option<&str>, home: Option<&str>) -> String {
+    let override_dir = override_dir.filter(|d| !is_agent_dir(d));
+    run_dir_from(override_dir, home)
+}
+
+/// True for an agent-socket dir: `<run dir>-agents`.
+pub fn is_agent_dir(dir: &str) -> bool {
+    dir.trim().trim_end_matches('/').ends_with("-agents")
+}
+
+/// #4849 — the daemon's control socket, under daemon_run_dir().
+pub fn daemon_socket() -> String {
+    format!("{}/chorus-hooks.sock", daemon_run_dir())
+}
+
+/// #4849 — the daemon's pidfile + singleton lock, under daemon_run_dir().
+pub fn daemon_pid() -> String {
+    format!("{}/chorus-hooks.pid", daemon_run_dir())
+}
+
+/// #4849 — the agent socket the daemon serves to role accounts: beside its own
+/// run dir (`<run dir>-agents`, #4432).
+pub fn daemon_agent_dir() -> String {
+    format!("{}-agents", daemon_run_dir())
+}
+
 /// The rule, pure so it is testable without touching the process environment.
 ///
 /// #4227 — a demo has never had its own hooks daemon, because the socket and

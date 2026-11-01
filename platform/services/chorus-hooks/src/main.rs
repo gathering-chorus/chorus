@@ -145,9 +145,11 @@ async fn main() {
     // #3631 — durable, off-/tmp socket + pidfile in ~/.chorus/run (0700). The
     // daemon and the shim both resolve state_paths::hook_socket_durable(), so
     // they can never drift onto different paths.
-    let pid_durable = chorus_hooks::shared::state_paths::hook_pid_durable();
-    let socket_path = chorus_hooks::shared::state_paths::hook_socket_durable();
-    let run_dir = chorus_hooks::shared::state_paths::hook_run_dir();
+    // #4849 — the daemon resolves its OWN paths; CHORUS_STATE_DIR (a client
+    // setting) never moves them onto the shared agent socket.
+    let pid_durable = chorus_hooks::shared::state_paths::daemon_pid();
+    let socket_path = chorus_hooks::shared::state_paths::daemon_socket();
+    let run_dir = chorus_hooks::shared::state_paths::daemon_run_dir();
 
     // Run dir exists, owner-only (0700) — the control socket lives here, off
     // world-writable /tmp (the old 0o777-socket-in-/tmp was both the flap source
@@ -344,8 +346,8 @@ async fn shutdown_signal(started_at: std::time::Instant) {
     // flock is released automatically when the process exits (no manual unlock);
     // clearing the socket lets the next start bind without a stale-file race.
     chorus_hooks::cleanup_runtime_files(
-        Path::new(&chorus_hooks::shared::state_paths::hook_socket_durable()),
-        Path::new(&chorus_hooks::shared::state_paths::hook_pid_durable()),
+        Path::new(&chorus_hooks::shared::state_paths::daemon_socket()),
+        Path::new(&chorus_hooks::shared::state_paths::daemon_pid()),
     );
 }
 
@@ -355,7 +357,7 @@ async fn shutdown_signal(started_at: std::time::Instant) {
 /// socket is untouched either way.
 fn spawn_agent_socket(app: Router) {
     use std::os::unix::fs::PermissionsExt;
-    let dir = format!("{}-agents", chorus_hooks::shared::state_paths::hook_run_dir());
+    let dir = chorus_hooks::shared::state_paths::daemon_agent_dir();
     let sock = format!("{dir}/chorus-hooks.sock");
     let Some(gid) = (unsafe { libc::getgrnam(c"chorus".as_ptr()).as_ref() }).map(|g| g.gr_gid) else {
         tracing::warn!("chorus-hooks: no `chorus` group — the agent socket is not opened; agent principals on their own account get no guarded tools");
@@ -368,6 +370,12 @@ fn spawn_agent_socket(app: Router) {
     };
     chown(&dir);
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710));
+    // #4849 — never take a socket another daemon is serving: a live listener
+    // there is someone else's (prod's, if this one was misplaced). Refuse loudly.
+    if std::os::unix::net::UnixStream::connect(&sock).is_ok() {
+        tracing::warn!("chorus-hooks: agent socket {sock} is live under another daemon — not taking it");
+        return;
+    }
     let _ = std::fs::remove_file(&sock);
     let listener = match UnixListener::bind(&sock) {
         Ok(l) => l,
