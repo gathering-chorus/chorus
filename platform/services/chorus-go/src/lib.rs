@@ -497,8 +497,10 @@ pub fn go_action(action: &str) -> R<GoAction> {
     let run = o.get("run").and_then(Value::as_str).ok_or("not a go action: no run")?;
     safe_name(run).map_err(|_| "not a go action: the run is not an id".to_string())?;
     let round = o.get("round").and_then(Value::as_str).ok_or("not a go action: no round")?;
-    if round.len() < 7 || !round.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("not a go action: the round is not a commit".into());
+    // The full 40-hex commit: a prefix against the land's full HEAD would be a false refusal or an
+    // ambiguous match (Silas, f7f580465 review).
+    if round.len() != 40 || !round.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err("not a go action: the round is not a full commit".into());
     }
     Ok(GoAction { card, run: run.to_string(), round: round.to_string() })
 }
@@ -566,6 +568,9 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
 /// #4642 — the land's check of a go decision row: Jeff's passkey signed an approve of this row's
 /// exact action, and that action is this card at this round. A jeff-owned row alone is not a go
 /// (Kade 18:41): the signature is re-verified here, every land.
+///
+/// `action` is the approvalAction of the Approval row the decision `decides`, read from that row,
+/// never from the decision row: a decision cannot name what it approved (Silas, f7f580465 review).
 pub fn check_go_decision(pk: &Passkey, row: &str, action: &str, verdict: &str, proof: &Value, card: u64, round: &str) -> R<()> {
     if verdict != "approve" {
         return Err(format!("the go for #{card} was declined"));

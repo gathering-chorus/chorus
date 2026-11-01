@@ -53,8 +53,8 @@ fn registered(tag: &str) -> (Store, Phone) {
 
 // #4642 — a go waits on the same list: Jeff's passkey signs one card's run at one round,
 // the land re-verifies that signature, and a go and a card ask never cross-replay.
-const HEAD: &str = "5174a0592261";
-const OLD: &str = "e04787ca93b8";
+const HEAD: &str = "5174a0592261bbd5b452ec1287cda4e5e2fda45a";
+const OLD: &str = "e04787ca93b83d7d1a610cbaafa64d337c9a9ab5";
 
 fn go_json(card: u64, round: &str) -> String {
     format!(r#"{{"card":{card},"run":"034qFPOewc9praHJbg6SYH","round":"{round}"}}"#)
@@ -98,7 +98,9 @@ fn negative_proof_go_and_card_actions_never_cross_replay() {
     let c = ApprovalRow { id: "approval-wren-x".into(), state: "pending".into(), action: go_json(4642, HEAD), kind: "card".into(), round_now: None };
     assert!(sign(&store, &mut phone, &c, "approve").unwrap_err().contains("not a cards add argv"));
     for bad in [r#"{"card":4642,"run":"r1","round":"abc1234","extra":1}"#, r#"{"card":4642,"run":"a b","round":"abc1234"}"#,
-                r#"{"card":0,"run":"r1","round":"abc1234"}"#, r#"{"card":4642,"run":"r1","round":"HEAD"}"#] {
+                r#"{"card":0,"run":"r1","round":"abc1234"}"#, r#"{"card":4642,"run":"r1","round":"HEAD"}"#,
+                // a short prefix is not a round (Silas): the land compares full HEADs
+                r#"{"card":4642,"run":"r1","round":"5174a0592261"}"#] {
         assert!(go_action(bad).unwrap_err().contains("not a go action"), "{bad}");
     }
 }
