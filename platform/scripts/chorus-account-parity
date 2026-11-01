@@ -48,7 +48,11 @@ else
   exit 2
 fi
 
-if [ -d "$LIVE_SOURCE/memory" ]; then
+if [ -d "$LIVE_SOURCE/.chorus/memory-shared" ]; then
+  LIVE_MEMORY="$LIVE_SOURCE/.chorus/memory-shared"
+elif [ -d "$LIVE_SOURCE/memory-shared" ]; then
+  LIVE_MEMORY="$LIVE_SOURCE/memory-shared"
+elif [ -d "$LIVE_SOURCE/memory" ]; then
   LIVE_MEMORY="$LIVE_SOURCE/memory"
 elif [ -d "$LIVE_SOURCE/.claude/memory" ]; then
   LIVE_MEMORY="$LIVE_SOURCE/.claude/memory"
@@ -57,6 +61,24 @@ elif [ -d "$LIVE_SOURCE/memory/projects" ]; then
 else
   echo "[parity-error] live memory directory missing under $LIVE_SOURCE" >&2
   exit 2
+fi
+
+# Verify live memory directory permissions: must have group rw (mode 2770)
+MEM_GROUP_RW="$(python3 -c '
+import os, sys, stat
+p = sys.argv[1]
+try:
+    st = os.stat(p)
+    gr = bool(st.st_mode & stat.S_IRGRP)
+    gw = bool(st.st_mode & stat.S_IWGRP)
+    print("ok" if (gr and gw) else "missing-group-rw")
+except Exception:
+    print("error")
+' "$LIVE_MEMORY" 2>/dev/null || echo "error")"
+
+if [ "$MEM_GROUP_RW" != "ok" ]; then
+  echo "[parity-drift] live memory $LIVE_MEMORY missing group rw permissions" >&2
+  DIFFS=$((DIFFS + 1))
 fi
 
 if [ -d "$LIVE_SOURCE/.chorus/bin" ]; then

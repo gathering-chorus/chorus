@@ -18,6 +18,7 @@ setup() {
            "$LIVE_SOURCE/skills/pair" \
            "$LIVE_SOURCE/chorus/bin" \
            "$LIVE_SOURCE/chorus/scripts"
+  chmod 775 "$LIVE_SOURCE/memory"
 
   echo "# live nudge skill" > "$LIVE_SOURCE/skills/nudge/SKILL.md"
   echo "# live pair skill" > "$LIVE_SOURCE/skills/pair/SKILL.md"
@@ -206,4 +207,13 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" =~ "unreadable" ]] || return 1
   [[ "$output" =~ "chorus-abby-normal" ]] || return 1
+}
+
+@test "NEGATIVE PROOF 10: live memory target without group rw fails" {
+  chmod 700 "$LIVE_SOURCE/memory"
+  run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
+  chmod 775 "$LIVE_SOURCE/memory"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "missing group rw permissions" ]] || return 1
 }
