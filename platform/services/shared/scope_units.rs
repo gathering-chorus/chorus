@@ -76,10 +76,7 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // platform/scripts/werk-code-contract.sh; the suite that runs that script
     // (platform/tests/werk-code-contract.bats) is pulled in by coverage, the
     // same way an edited script pulls in the suites that name it.
-    let contract = f == "platform/config/werk-code-contract.tsv"
-        // #4850 — the #3424 bounded-surface list, read at run time by the
-        // chorus-hooks guard; bounded_surfaces_test.rs is pulled in by coverage.
-        || f == "platform/config/canonical-surfaces.json";
+    let contract = f == "platform/config/werk-code-contract.tsv";
     // #4446 — the two launchd job scripts that live outside platform/scripts/
     // are the same kind of file as platform/scripts/: a schedule's body, not a
     // build input. Named exactly: any other proving/ or convergence/ path stays
@@ -343,18 +340,6 @@ mod scope_refusal_4169 {
             panic!("a shell suite must scope to itself")
         };
         assert_eq!(names, vec![suite.to_string()]);
-    }
-
-    // #4850 — the bounded-surface list (#3424) is read at run time by the
-    // chorus-hooks guard; its suite (bounded_surfaces_test.rs) is pulled in by
-    // coverage. Named exactly. NEGATIVE PROOF: any other platform/config/ file
-    // still refuses as unmapped, so this cannot hide a real build input.
-    #[test]
-    fn the_canonical_surfaces_list_is_not_a_build_input_4850() {
-        assert!(scope_irrelevant("platform/config/canonical-surfaces.json"));
-        assert!(!scope_irrelevant("platform/config/canonical-surfaces.json.bak"));
-        assert!(!scope_irrelevant("platform/config/agent-onboarding-steps.tsv"));
-        assert!(!scope_irrelevant("platform/config/dagu.yaml"));
     }
 
     #[test]

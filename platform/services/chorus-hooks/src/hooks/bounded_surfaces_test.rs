@@ -68,3 +68,26 @@ fn a_missing_or_broken_list_fails_loud_not_open() {
     assert!(parse_surfaces("not json at all").is_err());
     assert!(parse_surfaces(r#"{"verbs": []}"#).is_err(), "empty/absent skills is not a valid bound");
 }
+
+/// #4850 (Silas 09:34) — the inline fixtures above never read the real list, so
+/// a bad edit to platform/config/canonical-surfaces.json ran no test. This one
+/// parses the file the guard loads at run time. NEGATIVE PROOF: the same file
+/// with one axis emptied or its JSON broken is refused by the same parser.
+#[test]
+fn the_real_platform_config_canonical_surfaces_json_parses_with_both_axes_4850() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/canonical-surfaces.json");
+    let text = std::fs::read_to_string(path).expect("platform/config/canonical-surfaces.json is readable");
+    let s = parse_surfaces(&text).expect("the real canonical-surfaces.json parses");
+    assert!(s.verbs.contains("werk-pull"), "verbs lost werk-pull");
+    assert!(s.skills.contains("pair"), "skills lost pair");
+    assert!(s.skills.contains("mob"), "#4850: mob is a canonical skill");
+    for name in s.skills.iter().chain(s.verbs.iter()) {
+        assert!(
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "'{name}' is not a lowercase-hyphen surface name"
+        );
+    }
+    let emptied = text.replacen("\"skills\": [", "\"skills\": [], \"was\": [", 1);
+    assert!(parse_surfaces(&emptied).is_err(), "an emptied skills axis must be refused");
+    assert!(parse_surfaces(&text[..text.len() / 2]).is_err(), "a truncated file must be refused");
+}
