@@ -439,6 +439,52 @@ fn sh(bin: &str, args: &[&str]) -> Result<String, String> {
     if o.status.success() { Ok(String::from_utf8_lossy(&o.stdout).to_string()) } else { Err(String::from_utf8_lossy(&o.stderr).chars().take(200).collect()) }
 }
 
+/// #4813 — the tmux argv that starts `launch` as the pane's own process, never as
+/// keystrokes. On 10-30 a message typed into BQ's pane mid-launch left the shell at
+/// `dquote>`, and every retry's send-keys line was swallowed as more of that
+/// unfinished command. A fresh session runs it directly; an existing pane is
+/// respawned (-k ends whatever stuck shell is there). remain-on-exit is set
+/// BEFORE the launch runs, so a launch that dies at once still leaves its last
+/// lines readable (AC3); setting it after lost that race. One tmux call, run in order.
+pub fn start_in_pane_args(session: &str, dir: &str, launch: &str, exists: bool) -> Vec<String> {
+    let s = |x: &str| x.to_string();
+    let mut a: Vec<String> = Vec::new();
+    if !exists {
+        // a placeholder process holds the pane until the respawn below replaces it
+        a.extend([s("new-session"), s("-d"), s("-s"), s(session), s("-c"), s(dir), s("sleep"), s("600"), s(";")]);
+    }
+    a.extend([s("set-option"), s("-t"), s(session), s("remain-on-exit"), s("on"), s(";")]);
+    a.extend([s("respawn-pane"), s("-k"), s("-t"), s(session), s("-c"), s(dir), s("bash"), s("-lc"), s(launch)]);
+    a
+}
+
+/// Start the role's runtime in its pane (#4813). Refuses to respawn over a live
+/// registry entry: a respawn kills the pane's process, and that must never be a
+/// running role.
+fn start_in_pane(ctx: &Ctx, role: &str, dir: &str, launch: &str) -> Result<(), (i32, String)> {
+    let session = Ctx::tmux_session(role);
+    let exists = ctx.has_tmux(role);
+    if exists && !live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() {
+        return Err((1, format!("{} has a live session in {}; not respawning over it", role, session)));
+    }
+    let args = start_in_pane_args(&session, dir, launch, exists);
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    sh(&ctx.tmux, &refs).map(|_| ()).map_err(|e| (1, format!("tmux could not start {}: {}", role, e.trim())))
+}
+
+/// #4813 AC3 — the pane's last lines, for a launch that did not start.
+fn pane_tail(ctx: &Ctx, role: &str) -> String {
+    let out = sh(&ctx.tmux, &["capture-pane", "-p", "-S", "-20", "-t", &Ctx::tmux_session(role)]).unwrap_or_default();
+    pane_tail_summary(&out)
+}
+
+/// The last non-empty lines of a pane capture, joined for one stderr line.
+pub fn pane_tail_summary(capture: &str) -> String {
+    let lines: Vec<&str> = capture.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect();
+    let tail = &lines[lines.len().saturating_sub(5)..];
+    if tail.is_empty() { "the pane printed nothing".into() } else { tail.join(" | ") }
+}
+
 fn now_ms() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) }
 
 // ------------------------------------------------------ the verbs (#4295)
@@ -1048,10 +1094,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         let _ = Command::new("bash").arg("-c").arg(&launch).status();
         return Ok(came_of(&st));
     }
-    if !ctx.has_tmux(role) {
-        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { eprintln!("chorus-principal: tmux new-session failed: {}", e); return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
-    }
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { eprintln!("chorus-principal: tmux send-keys failed: {}", e); return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    if let Err(e) = start_in_pane(ctx, role, &role_dir, &launch) { eprintln!("chorus-principal: {}", e.1); return Err(e); }
 
     // 3 — prove it: wait for a live tmux-hosted registry entry.
     let mut found: Option<Live> = None;
@@ -1066,7 +1109,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     // proof: its claude process, tty and pane id are written as the entry.
     let found = found.or_else(|| register_from_pane(ctx, role, rows::PaneRuntime::Claude));
     let Some(l) = found else {
-        eprintln!("awake: {}  registered NO after {}s  via {} — look at the pane: {} attach -t {}", role, ctx.wait, how, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  registered NO after {}s  via {} — the pane says: {} — look: {} attach -t {}", role, ctx.wait, how, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("did not register in {}s", ctx.wait)));
     };
     // #4337 — a process carrying another role's env is not this role logged in
@@ -1127,7 +1170,7 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
     let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut enrolled = false;
     for i in 0..=ctx.wait {
         // #4432 — ask the supervisor of the account the agent runs as (Abby's
@@ -1142,7 +1185,7 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     }
     if !enrolled {
         end_run(ctx, role, "agent-not-enrolled");
-        eprintln!("awake: {}  agent run {} NOT enrolled after {}s — look at the pane: {} attach -t {}", role, run, ctx.wait, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  agent run {} NOT enrolled after {}s — the pane says: {} — look: {} attach -t {}", role, run, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("agent run {} did not enroll", run)));
     }
     ctx.spine(&["session.agent.enrolled", role, &format!("run={}", run)]);
@@ -1189,7 +1232,7 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
     let allow_rules = envd("CHORUS_ALLOW_RULES_FILE", &format!("{}/.claude/settings.json", ctx.home));
     let cmd = rows::gemini_pane_cmd(&agent_bin, &gemini_bin, &allow_rules, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
     let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut found: Option<Live> = None;
     for i in 0..=ctx.wait {
         found = register_from_pane(ctx, role, rows::PaneRuntime::Gemini);
@@ -1197,7 +1240,7 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
         std::thread::sleep(Duration::from_secs(1));
     }
     let Some(l) = found else {
-        eprintln!("awake: {}  gemini did not start in {}s — look at the pane: {} attach -t {}", role, ctx.wait, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  gemini did not start in {}s — the pane says: {} — look: {} attach -t {}", role, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("gemini did not start in {}s", ctx.wait)));
     };
     ctx.spine(&["session.gemini.started", role, &format!("run={}", run), &format!("pid={}", l.pid)]);
@@ -1242,7 +1285,7 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
     let hooks_run_dir = envd("CHORUS_HOOKS_RUN_DIR", &format!("{}/.chorus/run-agents", ctx.home));
     let cmd = rows::runtime_pane_cmd(row, runtime, &bin_dir, &hooks_run_dir, &run, &hooks, &mcp).map_err(|e| (1, e))?;
     let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    start_in_pane(ctx, role, &role_dir, &launch)?;
     let binary = row.get("runtimeBinary").and_then(|b| b.as_str()).unwrap_or("").to_string();
     let mut found: Option<Live> = None;
     for i in 0..=ctx.wait {
@@ -1251,7 +1294,7 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         std::thread::sleep(Duration::from_secs(1));
     }
     let Some(l) = found else {
-        eprintln!("awake: {}  {} did not start in {}s — look at the pane: {} attach -t {}", role, runtime, ctx.wait, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  {} did not start in {}s — the pane says: {} — look: {} attach -t {}", role, runtime, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("{} did not start in {}s", runtime, ctx.wait)));
     };
     ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
