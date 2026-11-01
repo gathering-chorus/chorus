@@ -16,19 +16,26 @@ login_harness_stubs() {
 #!/bin/bash
 grep -qx "\$2" "$T/alive-pids"
 EOS
-  # stub tmux: records calls; a session exists once created; send-keys "starts"
-  # the role, which registers itself like the real SessionStart hook does
+  # stub tmux: records calls; a session exists once created; the launch "starts"
+  # the role, which registers itself like the real SessionStart hook does.
+  # #4813 (2026-11-01) launches with one chained call (new-session ; set-option ;
+  # respawn-pane -t <session> ... <launch>), not send-keys: the stub registers on
+  # respawn-pane too, or every login here reads "registered NO" (#4505 run 2).
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
+register() { role="\${1#chorus-}"; pid=\$(( 800 + \$(ls "$T/sessions" | wc -l) ))
+  [ -f "$T/no-register" ] || { printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%%s"}' "\$role" "\$pid" "\${pid: -1}" "\${pid: -1}" > "$T/sessions/\$role-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; }; }
+args=("\$@"); for ((i=0; i<\${#args[@]}; i++)); do
+  [ "\${args[i]}" = respawn-pane ] || continue
+  for ((j=i+1; j<\${#args[@]}; j++)); do [ "\${args[j]}" = -t ] && { touch "$T/tmux-\${args[j+1]}"; register "\${args[j+1]}"; exit 0; }; done
+done
 case "\$1" in
   has-session) [ -f "$T/tmux-\$3" ]; exit \$? ;;
   new-session) touch "$T/tmux-\$4" ;;
   kill-session) rm -f "$T/tmux-\$3" ;;
   list-clients) cat "$T/clients-\$3" 2>/dev/null ;;
-  send-keys)
-    role="\${3#chorus-}"; pid=\$(( 800 + \$(ls "$T/sessions" | wc -l) ))
-    [ -f "$T/no-register" ] || { printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%%s"}' "\$role" "\$pid" "\${pid: -1}" "\${pid: -1}" > "$T/sessions/\$role-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; } ;;
+  send-keys) register "\$3" ;;
 esac
 exit 0
 EOS

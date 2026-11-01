@@ -334,3 +334,68 @@ chorus:toolchain      chorus:inLayer chorus:layer-build .
 chorus:deploys        chorus:inLayer chorus:layer-build ; chorus:dependsOn chorus:builds .
 chorus:metrics        chorus:inLayer chorus:layer-capability .
 chorus:analytics      chorus:inLayer chorus:layer-capability ; chorus:dependsOn chorus:metrics .
+
+# #4505 round 1 — Approval + ApprovalDecision (decisions domain, Wren). Redraft by Silas 2026-11-01 13:58
+# on Kade's (b): a decision is its own append-only row owned by jeff; an Approval is never edited.
+# Pending = an Approval with no ApprovalDecision pointing at it. ADR pattern (session-model-4302.ttl:715-725).
+# Plain values are DatatypeProperty (no minter); the one link (decides) points at a row of a class
+# this file defines, so the door mints it as an IRI from the Approval's local name.
+
+chorus:decisions chorus:definesVocabulary chorus:Approval , chorus:ApprovalDecision .
+
+chorus:Approval a owl:Class ;
+    rdfs:label "Approval" ;
+    rdfs:comment "One thing a role asks Jeff to approve: a card it proposed (round 1), later a go, an ADR, a design. Posted once by the asking role and never edited; its decision is a separate ApprovalDecision row. Replaces the chat 'approve' keyword and the pending-approvals files. #4505." .
+
+chorus:ApprovalDecision a owl:Class ;
+    rdfs:label "Approval decision" ;
+    rdfs:comment "Jeff's yes or no on one Approval, signed on his phone's passkey: append-only, owned by jeff, written only by chorus-go after the assertion verifies. At most one per Approval. #4505." .
+
+chorus:approvalKind a owl:DatatypeProperty ; rdfs:label "approval kind" ;
+    rdfs:comment "What is being approved: card (round 1); go and others later. #4505." .
+chorus:approvalSubject a owl:DatatypeProperty ; rdfs:label "approval subject" ;
+    rdfs:comment "The thing, as its title (a proposed card has no number yet). #4505." .
+chorus:approvalAction a owl:DatatypeProperty ; rdfs:label "approval action" ;
+    rdfs:comment "What approving runs, as a `cards add` argv JSON array. Replayed through `cards add` only, as data, never a shell; flags limited to --owner --priority --domain --type --origin --desc --sequence. #4505." .
+chorus:decides a owl:ObjectProperty ; rdfs:label "decides" ;
+    rdfs:comment "The Approval this decision answers. #4505." ;
+    rdfs:domain chorus:ApprovalDecision ; rdfs:range chorus:Approval .
+chorus:approvalVerdict a owl:DatatypeProperty ; rdfs:label "approval verdict" ;
+    rdfs:comment "approve or decline. #4505." .
+chorus:decidedAt a owl:DatatypeProperty ; rdfs:label "decided at" ;
+    rdfs:comment "When the passkey signed it. #4505." .
+chorus:actionSha a owl:DatatypeProperty ; rdfs:label "action sha" ;
+    rdfs:comment "sha256 (b64url) of the Approval's approvalAction the challenge was bound to: proves which action was approved. #4505." .
+chorus:passkeyProof a owl:DatatypeProperty ; rdfs:label "passkey proof" ;
+    rdfs:comment "The WebAuthn assertion that signed this decision (authData, clientDataJSON, signature, nonce) as JSON: anyone can re-verify it against Jeff's registered public key. #4505." .
+
+chorus:ApprovalShape a sh:NodeShape ;
+    sh:targetClass chorus:Approval ; sh:node chorus:CoreShape ;
+    chorus:instancesGraph "urn:chorus:domains:decisions" ;
+    sh:property
+      [ sh:path rdfs:label ; sh:minCount 1 ] ,
+      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ] ,                        # the asking role (door sets it from the verified writer)
+      [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" ) ] , # round 2 adds "go"
+      [ sh:path chorus:approvalSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+      [ sh:path chorus:approvalAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+chorus:ApprovalDecisionShape a sh:NodeShape ;
+    sh:targetClass chorus:ApprovalDecision ; sh:node chorus:CoreShape ;
+    chorus:instancesGraph "urn:chorus:domains:decisions" ;
+    sh:property
+      [ sh:path rdfs:label ; sh:minCount 1 ] ,
+      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( chorus:principal-jeff ) ] ,
+      [ sh:path chorus:decides ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Approval ] ,
+      [ sh:path chorus:approvalVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "approve" "decline" ) ] ,
+      [ sh:path chorus:decidedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ,
+      [ sh:path chorus:actionSha ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+      [ sh:path chorus:passkeyProof ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+# Routes: GET /owl/v1/decisions/approvals  ·  GET /owl/v1/decisions/approvaldecisions
+# Pending list = approvals minus those a decision `decides` (computed by chorus-go / the list endpoint).
+# Writers: Approval — the asking role, as itself (graph-sync's per-role mint). ApprovalDecision —
+#   chorus-go only, as principal-jeff, only after verify_assertion passes. Neither is ever PATCHed.
+# Negative proofs: an ApprovalDecision written by any principal but jeff is refused · a second
+#   decision for one Approval is refused · a PATCH to an Approval or ApprovalDecision is refused ·
+#   a decision whose actionSha ≠ sha(approvalAction) is refused · a disallowed flag in the argv is
+#   refused at post and at replay · a second pending Approval sends no second ping.

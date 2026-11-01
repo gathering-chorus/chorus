@@ -16,7 +16,7 @@ setup() {
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
   # one role, one window: has-session answers from a marker; registration is
-  # simulated by the cases themselves, so send-keys registers nothing
+  # simulated by the cases themselves, so the launch (respawn-pane) registers nothing
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
@@ -54,7 +54,7 @@ reg() { # reg <pid> [pane]
   # #4295 — the line names the login, never "registered yes"; nothing is LAUNCHED
   # (the tmux bar is set, so tmux is called, but no keys are sent)
   printf '%s' "$output" | grep -qF "awake: kade  pid 56344  tty /dev/ttys004  pane %0  logged in  via already awake"
-  test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
   [ ! -f "$T/claude.log" ]
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
@@ -77,7 +77,7 @@ reg() { # reg <pid> [pane]
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   grep -q "tmux new-session -d -s chorus-kade" "$T/tmux.log"
-  grep -q "send-keys -t chorus-kade" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-kade" "$T/tmux.log"
   grep -q -- "$T/bin/claude -c" "$T/tmux.log"
   printf '%s' "$output" | grep -qF "pane %5  logged in  via claude -c"
 }

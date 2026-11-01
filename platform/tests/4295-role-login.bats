@@ -54,7 +54,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_lacks "registered yes"
   grep -q '"pid":4264' "$T/identity/kade/login.json"
   # never a second copy
-  test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }
 
 @test "NEGATIVE PROOF: a login recorded for an EARLIER pid does not count for this one" {
@@ -85,7 +85,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_has "login pending  via claude -c"
   out_lacks "UNAUTHENTICATED"
   state_is silas pending
-  grep -q "send-keys -t chorus-silas" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log"
   grep -q "status-right  login pending |" "$T/tmux.log"
 }
 
@@ -129,7 +129,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "NEGATIVE PROOF: the same command from Jeff's shell in roles/kade is allowed" {
   run env CHORUS_ROLE=kade "$SCRIPT" on silas
   test "$status" -eq 0
-  grep -q "send-keys -t chorus-silas" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log"
 }
 
 @test "two live sessions for one role: refused, and the fix is named" {
@@ -229,7 +229,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_has "wren kade silas up, 0 of 3 logged in"
   out_has "kade login pending (identity not answering"
   out_has "retrying on its own"
-  for r in wren kade silas; do grep -q "send-keys -t chorus-$r" "$T/tmux.log"; done
+  for r in wren kade silas; do grep -q "respawn-pane -k -t chorus-$r" "$T/tmux.log"; done
 }
 
 @test "up --windows: VS Code gets the Wren task, Terminal opens Silas and Kade" {

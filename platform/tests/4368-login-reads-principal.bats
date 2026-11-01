@@ -19,13 +19,13 @@ setup() {
 }
 row() { printf '{"data":{"principalKind":"%s","hostAccount":"chorus-%s"}}\n200\n' "$2" "$1" > "$T/principal-$1.json"; }
 out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
-nothing_started() { test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"; }
+nothing_started() { test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"; }
 
 @test "#4368 an agent's row lets it log in, and the row was read" {
   run "$SCRIPT" login wren
   test "$status" -eq 0
   grep -q "/v1/identity/principals/wren" "$T/curl.log"
-  grep -q "send-keys -t chorus-wren" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-wren" "$T/tmux.log"
 }
 
 @test "#4368 a service is refused with why, and nothing starts" {
@@ -80,7 +80,7 @@ nothing_started() { test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || tr
   mk_token pip-normal; mkdir -p "$T/identity/pip-normal"
   run "$SCRIPT" login pip-normal
   test "$status" -eq 0
-  grep -q "send-keys -t chorus-pip-normal" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-pip-normal" "$T/tmux.log"
 }
 
 # #4532 reopen 1 — an agent the runtime table names (abby-normal on agy) logs
@@ -110,7 +110,7 @@ EOS
   agy_pane_world
   run "$SCRIPT" login abby-normal
   test "$status" -eq 0
-  grep -q "send-keys -t chorus-abby-normal" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-abby-normal" "$T/tmux.log"
   grep -q '"pid":701' "$T/sessions/abby-normal-701.json"
 }
 

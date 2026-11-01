@@ -103,13 +103,17 @@ teardown() {
 
 @test "AC1: --self mode checks only the current account" {
   CURRENT_USER="$(id -un)"
-  mkdir -p "$HOMES_DIR/$CURRENT_USER/.claude" "$HOMES_DIR/$CURRENT_USER/.chorus"
-  ln -s "$LIVE_SOURCE/memory" "$HOMES_DIR/$CURRENT_USER/.claude/memory"
-  mkdir -p "$HOMES_DIR/$CURRENT_USER/.claude/skills"
-  ln -s "$LIVE_SOURCE/skills/nudge" "$HOMES_DIR/$CURRENT_USER/.claude/skills/nudge"
-  ln -s "$LIVE_SOURCE/skills/pair" "$HOMES_DIR/$CURRENT_USER/.claude/skills/pair"
-  ln -s "$LIVE_SOURCE/chorus/bin" "$HOMES_DIR/$CURRENT_USER/.chorus/bin"
-  ln -s "$LIVE_SOURCE/chorus/scripts" "$HOMES_DIR/$CURRENT_USER/.chorus/scripts"
+  # #4505 run 2: the pipeline runs this as jeffbridwell, which is not one of the
+  # role homes setup builds, so this home is built here the way setup builds a
+  # role's: memory/ linked at the exact chorus slug (#4788), never .claude/memory.
+  # -sfn so the same lines hold when the current user IS a role setup built.
+  local slug="$HOMES_DIR/$CURRENT_USER/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus"
+  mkdir -p "$slug" "$HOMES_DIR/$CURRENT_USER/.claude/skills" "$HOMES_DIR/$CURRENT_USER/.chorus"
+  ln -sfn "$LIVE_SOURCE/memory" "$slug/memory"
+  ln -sfn "$LIVE_SOURCE/skills/nudge" "$HOMES_DIR/$CURRENT_USER/.claude/skills/nudge"
+  ln -sfn "$LIVE_SOURCE/skills/pair" "$HOMES_DIR/$CURRENT_USER/.claude/skills/pair"
+  ln -sfn "$LIVE_SOURCE/chorus/bin" "$HOMES_DIR/$CURRENT_USER/.chorus/bin"
+  ln -sfn "$LIVE_SOURCE/chorus/scripts" "$HOMES_DIR/$CURRENT_USER/.chorus/scripts"
   cat <<EOF > "$HOMES_DIR/$CURRENT_USER/.claude/settings.json"
 {
   "enabledMcpjsonServers": ["chorus-api"]

@@ -59,7 +59,15 @@ pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
     let json_body = || serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null);
     let field = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let out = match (req.method.as_str(), path) {
-        ("GET", "/go") | ("GET", "/go/register") => return reply(&mut s, 200, "text/html; charset=utf-8", PAGE),
+        ("GET", "/go") | ("GET", "/go/register") | ("GET", "/go/approvals") => return reply(&mut s, 200, "text/html; charset=utf-8", PAGE),
+        // #4505: Jeff's one list of asks, decided by his passkey like a go.
+        ("GET", "/go/api/approvals") => pending_approvals().map(|rows| json!({"ok": true, "approvals": rows})),
+        ("POST", "/go/api/approvals/challenge") => approval_challenge_for(store, &field(&json_body(), "row")),
+        ("POST", "/go/api/approvals/decide") => {
+            let v = json_body();
+            decide(store, &field(&v, "row"), &field(&v, "nonce"), &field(&v, "decision"),
+                &field(&v, "authData"), &field(&v, "clientDataJSON"), &field(&v, "signature"))
+        }
         ("GET", "/go/api/info") => info(store, &param(&req.query, "card"), &param(&req.query, "run"), &param(&req.query, "role")),
         ("GET", "/go/api/register-options") => Ok(json!({
             "challenge": b64url(&register_challenge(&param(&req.query, "token"))), "rpId": rp_id(), "registered": store.passkey().ok().flatten().is_some()})),
@@ -145,4 +153,122 @@ fn complete_dagu(rec: &GoRecord) -> Result<String, String> {
         return Err(format!("signed, but the run did not take it: {}", String::from_utf8_lossy(&o.stderr).trim()));
     }
     Ok(if rec.decision == "go" { format!("Go signed for #{}. It's landing.", rec.card) } else { format!("No signed for #{}. It's held.", rec.card) })
+}
+
+// ---- #4505: approvals. Rows live on the door (decisions domain); this process only reads them,
+// verifies Jeff's passkey, writes his ApprovalDecision as principal-jeff, and replays an approved
+// `cards add` argv as data. Nothing here PATCHes a row.
+
+fn door() -> String { env_or("CHORUS_GO_DOOR", "http://localhost:3360") }
+fn curl_bin() -> String { env_or("CHORUS_GO_CURL", "/usr/bin/curl") }
+
+fn door_get(route: &str) -> Result<Vec<Value>, String> {
+    let o = Command::new(curl_bin()).args(["-sf", "--max-time", "8", &format!("{}{route}?limit=10000", door())])
+        .output().map_err(|e| format!("door: {e}"))?;
+    if !o.status.success() { return Err(format!("the door did not answer {route}")); }
+    let v: Value = serde_json::from_slice(&o.stdout).map_err(|_| format!("the door's {route} is not JSON"))?;
+    Ok(v.get("data").and_then(Value::as_array).cloned().unwrap_or_default())
+}
+
+fn s_of(v: &Value, k: &str) -> String {
+    match v.get(k) {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Object(o)) => o.get("@id").or_else(|| o.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+        _ => String::new(),
+    }
+}
+/// A link may come back as a full IRI or a local name; compare on the local name.
+fn local(s: &str) -> &str { s.rsplit(|c| c == '#' || c == '/' || c == ':').next().unwrap_or(s) }
+
+/// Approvals with no decision by principal-jeff pointing at them, oldest first.
+/// A decision row owned by anyone else is ignored: it decides nothing.
+fn pending_approvals() -> Result<Vec<Value>, String> {
+    let decided: std::collections::HashSet<String> = door_get("/decisions/approvaldecisions")?.iter()
+        .filter(|d| local(&s_of(d, "ownedBy")) == "principal-jeff")
+        .map(|d| local(&s_of(d, "decides")).to_string()).collect();
+    let mut rows: Vec<Value> = door_get("/decisions/approvals")?.into_iter()
+        .filter(|a| !decided.contains(local(&s_of(a, "name"))))
+        .map(|a| json!({"row": s_of(&a, "name"), "asker": local(&s_of(&a, "ownedBy")),
+            "kind": s_of(&a, "approvalKind"), "title": s_of(&a, "approvalSubject"),
+            "action": s_of(&a, "approvalAction"), "at": s_of(&a, "createdAt")}))
+        .collect();
+    rows.sort_by(|a, b| s_of(a, "at").cmp(&s_of(b, "at")).then(s_of(a, "row").cmp(&s_of(b, "row"))));
+    Ok(rows)
+}
+
+/// The row as it stands now: pending only while no jeff decision points at it.
+fn row_now(row: &str) -> Result<ApprovalRow, String> {
+    let all = pending_approvals()?;
+    if let Some(r) = all.iter().find(|r| s_of(r, "row") == row) {
+        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action: s_of(r, "action") });
+    }
+    let exists = door_get("/decisions/approvals")?.iter().any(|a| s_of(a, "name") == row);
+    if exists { Ok(ApprovalRow { id: row.to_string(), state: "decided".into(), action: String::new() }) }
+    else { Err(format!("no approval '{row}'")) }
+}
+
+fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
+    let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
+    let r = row_now(row)?;
+    if r.state != "pending" { return Err("this ask was already decided".into()); }
+    let sha = action_sha(&r.action);
+    let nonce = store.mint_approval_challenge(row, &sha)?;
+    Ok(json!({"ok": true, "row": row, "nonce": nonce, "rpId": pk.rp_id, "credId": pk.cred_id,
+        "challengeApprove": b64url(&approval_challenge(row, &sha, "approve", &nonce)),
+        "challengeDecline": b64url(&approval_challenge(row, &sha, "decline", &nonce))}))
+}
+
+fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &str, sig: &str) -> Result<Value, String> {
+    let r = row_now(row)?;
+    let d = decide_approval(store, nonce, decision, &r, ad, cd, sig)?;
+    write_decision(&d, &action_sha(&r.action), ad, cd, sig)?;
+    if d.decision != "approve" { return Ok(json!({"ok": true, "text": format!("Declined. Nothing was filed.")})); }
+    let o = Command::new(env_or("CHORUS_GO_CARDS", &format!("{}/platform/scripts/cards", chorus_home())))
+        .args(&d.argv).env("DEPLOY_ROLE", "jeff").env_remove("CHORUS_ROLE").env_remove("ROLE")
+        .output().map_err(|e| format!("cards: {e}"))?;
+    let out = String::from_utf8_lossy(&o.stdout).to_string();
+    if !o.status.success() {
+        return Err(format!("approved and recorded, but cards add failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(json!({"ok": true, "text": format!("Approved. {}", out.lines().find(|l| l.contains('#')).unwrap_or("Filed.").trim())}))
+}
+
+/// Jeff's decision is his own row, written as principal-jeff, only after verify_assertion passed.
+fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str) -> Result<(), String> {
+    let mint = env_or("CHORUS_GO_IDENTITY_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", chorus_home()));
+    let t = Command::new(&mint).arg("jeff").output().map_err(|e| format!("identity mint: {e}"))?;
+    let token = String::from_utf8_lossy(&t.stdout).trim().to_string();
+    if !t.status.success() || token.is_empty() {
+        return Err("signed, but there is no identity for jeff to record it with (Jeff's step: seed principal-jeff)".into());
+    }
+    let body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
+        "decides": d.row, "approvalVerdict": d.decision, "decidedAt": iso(d.at), "actionSha": sha,
+        "passkeyProof": json!({"authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
+    // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
+    let mut child = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
+            "-H", "Content-Type: application/json", "-H", "@-",
+            "--data-binary", &body.to_string(), &format!("{}/decisions/approvaldecisions", door())])
+        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+        .spawn().map_err(|e| format!("door: {e}"))?;
+    {
+        use std::io::Write as _;
+        let mut stdin = child.stdin.take().ok_or("door: no stdin")?;
+        writeln!(stdin, "Authorization: Bearer {token}").map_err(|e| format!("door: {e}"))?;
+    }
+    let o = child.wait_with_output().map_err(|e| format!("door: {e}"))?;
+    // A second decision for one ask is refused by the door (the name `decision-<row>` exists),
+    // so two racing decides file at most once.
+    if !o.status.success() { return Err("signed, but the door refused Jeff's decision row (already decided?)".into()); }
+    Ok(())
+}
+
+fn iso(secs: u64) -> String {
+    let days = (secs / 86_400) as i64; let rem = secs % 86_400;
+    // civil-from-days (Howard Hinnant)
+    let z = days + 719_468; let era = z.div_euclid(146_097); let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1; let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }

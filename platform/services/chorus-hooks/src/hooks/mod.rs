@@ -2,7 +2,6 @@
 pub mod jdi_detector;
 pub mod terminal_input;
 pub mod turn_line;
-pub mod card_approval_responder;
 pub mod autonomy_guard;
 pub mod bedroom_nfs_guard;
 pub mod clock_sync;

@@ -2826,6 +2826,11 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
         return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new(),
             vec![(String::new(), String::new(), format!("jest:{} deps unavailable", pkg))]);
     }
+    // #4505 R1-PIPE-2 — scope=all / nightly builds too, or it hits "Cannot find module".
+    if let Err(why) = ensure_built(werk, pkg) {
+        eprintln!("!! jest:{} {}", pkg, why);
+        return (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} {}", pkg, why))]);
+    }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
         // #3974 — a package without jest runs its OWN runner (agent-adapters:
@@ -3088,9 +3093,29 @@ fn npm_test_files(pkg_dir: &str) -> Vec<String> {
 /// repo-relative; jest wants them package-relative.
 fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
+    // #4505 — a test file this card deleted is on the diff but not on disk; handing it
+    // to the runner failed the whole unit with ENOENT. All deleted = run nothing (lib).
+    let (paths, dropped) = werk_test::jest_paths(files, &|f| Path::new(&format!("{}/{}", werk, f)).exists());
+    for f in &dropped {
+        println!("   jest:{} — {} is deleted on this card, not run", pkg, f);
+    }
+    let kept = match paths {
+        werk_test::JestPaths::Run(v) => v,
+        werk_test::JestPaths::Nothing(why) => {
+            println!("   jest:{} — {}; nothing to run", pkg, why);
+            return (true, Vec::new());
+        }
+    };
+    let files: &[String] = &kept;
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} deps unavailable — UNMEASURED", pkg);
         return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new());
+    }
+    // #4505 R1-PIPE-2 — a selected suite's package is built before jest runs it; a
+    // missing build is a loud "not built", never jest's "Cannot find module".
+    if let Err(why) = ensure_built(werk, pkg) {
+        eprintln!("!! jest:{} {}", pkg, why);
+        return (false, Vec::new());
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     let rel: Vec<String> = files
@@ -3287,6 +3312,31 @@ fn ensure_ts_deps(werk: &str, pkg: &str) -> bool {
         }
     }
     Path::new(&format!("{}/node_modules/.bin", pkg_dir)).is_dir()
+}
+
+/// #4505 R1-PIPE-2 — build the package when its `main` entry is missing (lib build_need).
+fn ensure_built(werk: &str, pkg: &str) -> Result<(), String> {
+    let pkg_dir = format!("{}/{}", werk, pkg);
+    let manifest = std::fs::read_to_string(format!("{}/package.json", pkg_dir)).unwrap_or_default();
+    let main_owned = werk_test::package_main(&manifest);
+    let main = main_owned.as_deref();
+    let has_build = werk_test::package_has_build_script(&manifest);
+    let exists = |e: &str| Path::new(&format!("{}/{}", pkg_dir, e)).exists();
+    match werk_test::build_need(main, has_build, &exists) {
+        werk_test::BuildNeed::Ready => Ok(()),
+        werk_test::BuildNeed::NotBuildable(why) => Err(why),
+        werk_test::BuildNeed::Build => {
+            println!("   jest:{} — npm run build", pkg);
+            let out = Command::new("npm").args(["run", "build"]).current_dir(&pkg_dir).output()
+                .map_err(|e| format!("not built: npm run build did not start: {e}"))?;
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr);
+                let tail: Vec<&str> = err.lines().rev().take(5).collect();
+                return Err(format!("not built: {}", tail.into_iter().rev().collect::<Vec<_>>().join(" | ")));
+            }
+            if main.map(exists).unwrap_or(true) { Ok(()) } else { Err(format!("not built: the build ran but {} is still missing", main.unwrap_or(""))) }
+        }
+    }
 }
 
 fn lockfiles_match(a: &str, b: &str) -> bool {

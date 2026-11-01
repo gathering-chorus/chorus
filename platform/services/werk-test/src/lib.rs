@@ -6616,6 +6616,183 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
         || is_feature_suite(f)
 }
 
+/// #4505 (Kade 2026-11-01) — the jest/node:test files a run may hand its runner:
+/// only those still on disk. A test file the card deletes is on the diff and was
+/// passed to `jest --runTestsByPath`, which fails the whole unit with ENOENT
+/// ("Test suite failed to run") while every test that exists passed (#4505 run 1:
+/// 657 passed, 0 failed, unit FAIL). Returns (keep, dropped); the caller names
+/// what it dropped. `exists` is injected so the rule is unit-tested.
+pub fn existing_test_files(files: &[String], exists: &dyn Fn(&str) -> bool) -> (Vec<String>, Vec<String>) {
+    files.iter().cloned().partition(|f| exists(f))
+}
+
+/// #4505 — what a jest unit runs. `Nothing` is its own answer, never an empty
+/// path list: `jest --runTestsByPath` with no paths runs the whole package.
+#[derive(Debug, PartialEq)]
+pub enum JestPaths {
+    Run(Vec<String>),
+    Nothing(String),
+}
+
+pub fn jest_paths(files: &[String], exists: &dyn Fn(&str) -> bool) -> (JestPaths, Vec<String>) {
+    let (kept, dropped) = existing_test_files(files, exists);
+    if kept.is_empty() {
+        (JestPaths::Nothing("every selected test file is deleted on this card".into()), dropped)
+    } else {
+        (JestPaths::Run(kept), dropped)
+    }
+}
+
+/// #4505 R1-PIPE-2 — whether a package a selected suite lives in is built.
+/// The entry is package.json's `main` (what its integration tests spawn).
+#[derive(Debug, PartialEq)]
+pub enum BuildNeed {
+    Ready,
+    Build,
+    NotBuildable(String),
+}
+
+/// A package with a build script is always built when a suite in it runs: an entry
+/// already on disk may be a stale build of older source (Kade, 69b0857e4 review).
+pub fn build_need(main: Option<&str>, has_build_script: bool, exists: &dyn Fn(&str) -> bool) -> BuildNeed {
+    if has_build_script {
+        return BuildNeed::Build;
+    }
+    match main {
+        None => BuildNeed::Ready,
+        Some(entry) if exists(entry) => BuildNeed::Ready,
+        Some(entry) => BuildNeed::NotBuildable(format!("not built: {entry} is missing and the package has no build script")),
+    }
+}
+
+/// #4505 R1-PIPE-2 — package.json's top-level `main`, whitespace-tolerant, no JSON dependency.
+/// Only a top-level key counts: the first `"main"` before any nested object opens.
+pub fn package_main(json: &str) -> Option<String> {
+    let mut depth = 0i32;
+    let b = json.as_bytes();
+    let mut i = 0;
+    let mut in_str = false;
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' { i += 2; continue; }
+            if c == b'"' { in_str = false; }
+        } else if c == b'"' {
+            if depth == 1 && json[i..].starts_with("\"main\"") {
+                // a "main" that is a value, not the key, does not end the scan
+                let value = json[i + 6..].trim_start().strip_prefix(':')
+                    .and_then(|r| r.trim_start().strip_prefix('"'))
+                    .and_then(|r| r.find('"').map(|e| r[..e].to_string()));
+                if value.is_some() { return value; }
+            }
+            in_str = true;
+        } else if c == b'{' { depth += 1; } else if c == b'}' { depth -= 1; }
+        i += 1;
+    }
+    None
+}
+
+/// #4505 R1-PIPE-2 — the package's scripts declare a `build`.
+pub fn package_has_build_script(json: &str) -> bool {
+    let Some(at) = json.find("\"scripts\"") else { return false };
+    let rest = &json[at..];
+    let end = rest.find('}').unwrap_or(rest.len());
+    rest[..end].contains("\"build\"")
+}
+
+#[cfg(test)]
+mod jest_paths_build_need_4505 {
+    use super::*;
+
+    #[test]
+    fn all_deleted_is_nothing_with_its_reason() {
+        let files = vec!["p/tests/gone.test.ts".to_string()];
+        let (paths, dropped) = jest_paths(&files, &|_| false);
+        assert_eq!(paths, JestPaths::Nothing("every selected test file is deleted on this card".into()));
+        assert_eq!(dropped, files);
+    }
+
+    #[test]
+    fn one_kept_runs_only_that_one() {
+        let files = vec!["p/tests/a.test.ts".to_string(), "p/tests/gone.test.ts".to_string()];
+        let (paths, _) = jest_paths(&files, &|f| f.ends_with("a.test.ts"));
+        assert_eq!(paths, JestPaths::Run(vec!["p/tests/a.test.ts".to_string()]));
+    }
+
+    // NEGATIVE PROOF (#3734): Nothing is never returned while an existing file is selected.
+    #[test]
+    fn negative_proof_nothing_never_hides_an_existing_file() {
+        for n in 1..4 {
+            let files: Vec<String> = (0..n).map(|i| format!("p/tests/t{i}.test.ts")).collect();
+            for keep in 0..n {
+                let k = format!("p/tests/t{keep}.test.ts");
+                let (paths, _) = jest_paths(&files, &|f| f == k);
+                assert!(matches!(paths, JestPaths::Run(ref v) if v == &vec![k.clone()]), "{paths:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_missing_entry_with_a_build_script_is_built() {
+        assert_eq!(build_need(Some("dist/server.js"), true, &|_| false), BuildNeed::Build);
+        assert_eq!(build_need(None, false, &|_| false), BuildNeed::Ready);
+        assert_eq!(build_need(Some("dist/server.js"), false, &|_| true), BuildNeed::Ready);
+    }
+
+    // NEGATIVE PROOF (Kade): an entry already on disk is never trusted while the package
+    // can build — a stale dist of older source must not pass as built.
+    #[test]
+    fn negative_proof_a_present_entry_is_rebuilt_not_trusted() {
+        assert_eq!(build_need(Some("dist/server.js"), true, &|_| true), BuildNeed::Build);
+    }
+
+    #[test]
+    fn package_main_and_build_script_are_read_from_package_json() {
+        let j = "{\n  \"name\": \"x\",\n  \"main\": \"dist/server.js\",\n  \"scripts\": { \"build\": \"tsc\", \"test\": \"jest\" }\n}";
+        assert_eq!(package_main(j).as_deref(), Some("dist/server.js"));
+        assert!(package_has_build_script(j));
+        // a nested "main" is not the package's entry, and a test-only scripts block has no build
+        let k = "{ \"config\": { \"main\": \"no\" }, \"scripts\": { \"test\": \"jest\" } }";
+        assert_eq!(package_main(k), None);
+        // a "main" that is a VALUE before the key does not stop the scan (Kade)
+        assert_eq!(package_main(r#"{"name":"main","main":"dist/x.js"}"#).as_deref(), Some("dist/x.js"));
+        assert!(!package_has_build_script(k));
+    }
+
+    // NEGATIVE PROOF: no build script and no entry is "not built", never a pass.
+    #[test]
+    fn negative_proof_unbuildable_is_named_not_built() {
+        match build_need(Some("dist/server.js"), false, &|_| false) {
+            BuildNeed::NotBuildable(r) => assert!(r.starts_with("not built: dist/server.js"), "{r}"),
+            other => panic!("expected NotBuildable, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod existing_test_files_4505 {
+    use super::existing_test_files;
+
+    #[test]
+    fn a_deleted_test_file_is_dropped_and_named_the_rest_still_run() {
+        let files = vec!["directing/products/cards/tests/a.test.ts".to_string(),
+                         "directing/products/cards/tests/gone.test.ts".to_string()];
+        let (keep, dropped) = existing_test_files(&files, &|f| !f.ends_with("gone.test.ts"));
+        assert_eq!(keep, vec!["directing/products/cards/tests/a.test.ts".to_string()]);
+        assert_eq!(dropped, vec!["directing/products/cards/tests/gone.test.ts".to_string()]);
+    }
+
+    // NEGATIVE PROOF (#3734): a file that exists is never dropped, so the
+    // filter cannot hide a real test by calling it missing.
+    #[test]
+    fn negative_proof_an_existing_test_file_is_never_dropped() {
+        let files = vec!["x/tests/a.test.ts".to_string(), "x/tests/b.test.ts".to_string()];
+        let (keep, dropped) = existing_test_files(&files, &|_| true);
+        assert_eq!(keep, files);
+        assert!(dropped.is_empty());
+    }
+}
+
 /// Source a card can break: code by extension, or an extension-less script.
 pub fn is_code(f: &str) -> bool {
     let name = f.rsplit('/').next().unwrap_or(f);

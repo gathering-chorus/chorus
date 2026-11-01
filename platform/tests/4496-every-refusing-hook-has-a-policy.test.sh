@@ -28,8 +28,8 @@ pair_enforcement	warns: tells the partner to load /pair
 pair_gate	warns: advisory since #3677, always allows
 quality_gate	warns: advisory since #3677, logs only
 sparql_guard	warns: raw SPARQL should use /pods/query and a GRAPH clause
+session_auth	warns: alerts when a role'"'"'s Claude session is logged out (#4817), never refuses
 buzz_reply	plumbing: publishes the reply to Buzz
-card_approval_responder	plumbing: replays or cancels cards on approve or deny
 clock_sync	plumbing: writes the wall-clock time
 context_inject	plumbing: adds Chorus, memory and git context to the prompt
 e2e_responder	plumbing: acknowledges e2e test nudges
