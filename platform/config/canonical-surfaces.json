@@ -10,7 +10,7 @@
     "cs", "cw", "cws", "demo", "flow", "fuc", "gate-arch", "gate-code",
     "gate-ops", "gate-product", "gate-quality", "gemba", "gemba-tick",
     "golfball", "interrupt", "jdi", "lc", "listen", "lk", "lm", "look", "ls",
-    "lw", "nudge", "ot", "pair", "pipeline", "pull", "reboot", "retro", "sb",
+    "lw", "mob", "nudge", "ot", "pair", "pipeline", "pull", "reboot", "retro", "sb",
     "share", "simplify", "sup", "unpull", "werk", "wip", "wtf"
   ]
 }
