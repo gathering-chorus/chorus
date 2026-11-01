@@ -368,6 +368,10 @@ chorus:actionSha a owl:DatatypeProperty ; rdfs:label "action sha" ;
     rdfs:comment "sha256 (b64url) of the Approval's approvalAction the challenge was bound to: proves which action was approved. #4505." .
 chorus:passkeyProof a owl:DatatypeProperty ; rdfs:label "passkey proof" ;
     rdfs:comment "The WebAuthn assertion that signed this decision (authData, clientDataJSON, signature, nonce) as JSON: anyone can re-verify it against Jeff's registered public key. #4505." .
+chorus:filedCard a owl:DatatypeProperty ; rdfs:label "filed card" ;
+    rdfs:comment "On a card decision: the number of the card that approving filed (#4642). Absent on a decline or a go." .
+chorus:signedRound a owl:DatatypeProperty ; rdfs:label "signed round" ;
+    rdfs:comment "On a go decision: the round (werk HEAD) Jeff's passkey signed; the land re-verifies the signature and requires this to equal the HEAD it lands (#4642, #4710)." .
 
 chorus:ApprovalShape a sh:NodeShape ;
     sh:targetClass chorus:Approval ; sh:node chorus:CoreShape ;
@@ -375,7 +379,7 @@ chorus:ApprovalShape a sh:NodeShape ;
     sh:property
       [ sh:path rdfs:label ; sh:minCount 1 ] ,
       [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ] ,                        # the asking role (door sets it from the verified writer)
-      [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" ) ] , # round 2 adds "go"
+      [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" "go" ) ] , # #4642: a go waits on the same list
       [ sh:path chorus:approvalSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
       [ sh:path chorus:approvalAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
@@ -389,7 +393,9 @@ chorus:ApprovalDecisionShape a sh:NodeShape ;
       [ sh:path chorus:approvalVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "approve" "decline" ) ] ,
       [ sh:path chorus:decidedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ,
       [ sh:path chorus:actionSha ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
-      [ sh:path chorus:passkeyProof ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+      [ sh:path chorus:passkeyProof ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+      [ sh:path chorus:filedCard ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+      [ sh:path chorus:signedRound ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
 # Routes: GET /owl/v1/decisions/approvals  ·  GET /owl/v1/decisions/approvaldecisions
 # Pending list = approvals minus those a decision `decides` (computed by chorus-go / the list endpoint).

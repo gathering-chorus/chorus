@@ -71,3 +71,15 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   grep -rqnE 'bouncer.pending|card_approval_responder' "$d" || return 1
   rm -rf "$d"
 }
+
+# --- #4642 (round 2): the go joins the one list --------------------------------
+
+@test "R2-GO-ROW model: an Approval may be kind go as well as card, and nothing else" {
+  grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" \)' "$TTL" || return 1
+}
+
+@test "R2-RECORDS model: a decision records the card it filed and the round it signed (at most one each)" {
+  [ "$(q 'ASK { chorus:filedCard a owl:DatatypeProperty . chorus:signedRound a owl:DatatypeProperty }')" = yes ] || return 1
+  grep -q 'sh:path chorus:filedCard ; sh:maxCount 1' "$TTL" || return 1
+  grep -q 'sh:path chorus:signedRound ; sh:maxCount 1' "$TTL" || return 1
+}
