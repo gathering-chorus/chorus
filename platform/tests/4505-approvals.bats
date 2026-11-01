@@ -11,7 +11,6 @@ setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   TTL="$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
   SDK="$ROOT/directing/products/cards/src/sdk.ts"
-  RESPONDER="$ROOT/platform/services/chorus-hooks/src/hooks/card_approval_responder.rs"
 }
 
 q() { # SPARQL ASK against the ttl; prints yes/no
@@ -38,32 +37,37 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   [ "$(q 'ASK { chorus:NoSuchApprovalThing a owl:Class }')" = no ] || return 1
 }
 
-# --- bouncer writes the row, not the file (R1-L1) ----------------------------
+# --- bouncer writes the row, not the file (R1-L1, R1-HEADS-UP) ----------------
 
-@test "R1-L1 bouncer: no pending-approvals file write remains in sdk.ts" {
-  ! grep -nE 'argv\.json|pending-approvals' "$SDK" || return 1
+@test "R1-L1 bouncer: no pending-approvals file or socket write remains in sdk.ts" {
+  ! grep -nE 'argv\.json|pending-approvals|bouncer-pending' "$SDK" || return 1
 }
 
-@test "R1-L1 bouncer: sdk.ts posts the ask to /owl/v1/decisions/approvals" {
-  grep -q '/owl/v1/decisions/approvals' "$SDK" || return 1
+@test "R1-L1/HEADS-UP/NEG bouncer: the ask posts one row as the role; retry, bad argv, door refusal (jest)" {
+  cd "$ROOT/directing/products/cards" || return 1
+  run npx jest tests/approvals.test.ts
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"5 passed"* ]] || { echo "$output"; return 1; }
 }
 
 # --- one list, Jeff-only decide, replay as data (R1-L2..L4, R1-NEG) ----------
 
-@test "R1-L2 list: chorus-go serves the pending approvals oldest first" {
-  grep -rq 'decisions/approvals' "$ROOT/platform/services/chorus-go/src" || return 1
-}
-
-@test "R1-NEG decide: a non-jeff decision is refused" {
-  grep -rqE 'approval.*(not jeff|refused)|refuse.*approval' "$ROOT/platform/services/chorus-go/src" || return 1
-}
-
-@test "R1-NEG replay: an action that is not a cards-add argv is refused" {
-  grep -rq 'not a cards add argv' "$ROOT/platform/services/chorus-go/src" || return 1
+@test "R1-L2..L4/NEG chorus-go: list, passkey-only decide, replay as data, every refusal (cargo)" {
+  cd "$ROOT/platform/services/chorus-go" || return 1
+  run env CARGO_BUILD_JOBS=4 nice cargo test --test approvals_4505 --test serve_approvals_4505
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 11 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 8 passed"* ]] || { echo "$output"; return 1; }
 }
 
 # --- retire the chat keyword path (R1-L5) ------------------------------------
 
-@test "R1-L5 retire: the chat approve/deny responder is gone" {
-  [ ! -f "$RESPONDER" ] || return 1
+@test "R1-L5 retire: the chat approve/deny responder and the socket handoff are gone" {
+  ! grep -rnE 'bouncer.pending|card_approval_responder' "$ROOT/platform/services/chorus-hooks/src" || return 1
+}
+
+@test "R1-L5 NEG: the retire check can fail (a planted reference is seen)" {
+  d="$(mktemp -d)"; echo 'route("/bouncer-pending")' > "$d/x.rs"
+  grep -rqnE 'bouncer.pending|card_approval_responder' "$d" || return 1
+  rm -rf "$d"
 }

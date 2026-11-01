@@ -84,4 +84,4 @@ This skill is the single canonical path for Jeff-initiated cards. The earlier na
 ## When NOT to use /card
 
 - When an agent (Wren/Silas/Kade) is filing a card from their own initiative — they go through the bouncer, not `/card`. The bouncer is the visibility surface Jeff wants for agent-proposed work.
-- When Jeff approves a pending bouncer payload — that flows through the `card_approval_responder` hook and `handle_approval_request_all`. Different substrate, same outcome.
+- When Jeff approves an agent's ask — that happens on his approvals list (`/go/approvals`, passkey-signed; #4505). Different substrate, same outcome.
