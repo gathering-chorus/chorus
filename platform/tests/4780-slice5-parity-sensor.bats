@@ -48,7 +48,9 @@ http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()
     mkdir -p "$home/.claude" "$home/.chorus"
 
     # Link memory, skills, and chorus to live source
-    ln -s "$LIVE_SOURCE/memory" "$home/.claude/memory"
+    # Memory must link into the exact chorus slug project directory
+    mkdir -p "$home/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus"
+    ln -s "$LIVE_SOURCE/memory" "$home/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
     mkdir -p "$home/.claude/skills"
     ln -s "$LIVE_SOURCE/skills/nudge" "$home/.claude/skills/nudge"
     ln -s "$LIVE_SOURCE/skills/pair" "$home/.claude/skills/pair"
@@ -128,8 +130,8 @@ EOF
 
 @test "NEGATIVE PROOF 1: a symlink pointing to a frozen copy outside live source fails and names account" {
   mkdir -p "$BATS_TEST_TMPDIR/frozen-copy"
-  rm -f "$HOMES_DIR/chorus-kade/.claude/memory"
-  ln -s "$BATS_TEST_TMPDIR/frozen-copy" "$HOMES_DIR/chorus-kade/.claude/memory"
+  rm -rf "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
+  ln -s "$BATS_TEST_TMPDIR/frozen-copy" "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
 
   run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
   echo "$output"
@@ -190,7 +192,7 @@ EOF
 
 @test "NEGATIVE PROOF 8: a whole projects/ link with no memory/ link fails and names account" {
   mkdir -p "$BATS_TEST_TMPDIR/fake-projects"
-  rm -rf "$HOMES_DIR/chorus-kade/.claude/memory"
+  rm -rf "$HOMES_DIR/chorus-kade/.claude/projects"
   ln -s "$BATS_TEST_TMPDIR/fake-projects" "$HOMES_DIR/chorus-kade/.claude/projects"
 
   run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
@@ -229,9 +231,9 @@ EOF
 }
 
 @test "NEGATIVE PROOF 12: linking role-private memory while chorus-slug memory is detached fails" {
-  rm -f "$HOMES_DIR/chorus-kade/.claude/memory"
   mkdir -p "$HOMES_DIR/chorus-kade/.claude/projects/-Users-chorus-kade-CascadeProjects-chorus"
   ln -s "$LIVE_SOURCE/memory" "$HOMES_DIR/chorus-kade/.claude/projects/-Users-chorus-kade-CascadeProjects-chorus/memory"
+  rm -rf "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
   mkdir -p "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
   echo "frozen" > "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory/MEMORY.md"
 
@@ -240,4 +242,16 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" =~ "chorus-kade" ]] || return 1
   [[ "$output" =~ "chorus-slug memory" ]] || return 1
+}
+
+@test "NEGATIVE PROOF 13: linked direct .claude/memory while chorus-slug memory is detached or missing fails" {
+  # Even if .claude/memory is linked to live source, lack of exact chorus-slug link fails
+  rm -rf "$HOMES_DIR/chorus-kade/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
+  ln -s "$LIVE_SOURCE/memory" "$HOMES_DIR/chorus-kade/.claude/memory"
+
+  run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "chorus-kade" ]] || return 1
+  [[ "$output" =~ "missing chorus memory link at" ]] || return 1
 }
