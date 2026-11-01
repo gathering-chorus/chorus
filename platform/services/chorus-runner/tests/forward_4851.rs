@@ -64,6 +64,8 @@ class H(http.server.BaseHTTPRequestHandler):
         with open(os.path.join(D, 'seen.log'), 'a') as f:
             f.write(json.dumps({'auth': self.headers.get('Authorization'), 'session': self.headers.get('Mcp-Session-Id'), 'body': body}) + '\n')
         deny = os.path.join(D, 'deny-once')
+        if os.path.exists(os.path.join(D, 'deny-always')):
+            self.send_response(401); self.end_headers(); return
         if os.path.exists(deny):
             os.remove(deny); self.send_response(401); self.end_headers(); return
         msg = json.loads(body)
@@ -144,4 +146,18 @@ fn negative_proof_a_runner_that_is_down_is_an_error_and_nothing_runs_locally() {
     assert!(out.contains(r#""id":5"#) && out.contains("did not answer"), "a request is answered with an error: {out}");
     assert!(err.contains("did not answer"), "and said on stderr: {err}");
     assert!(!d.join("home/.chorus/runner-tasks").exists(), "no task record under the role's own HOME");
+}
+
+#[test]
+fn negative_proof_a_401_after_a_fresh_mint_is_an_error_naming_the_role_and_no_third_try() {
+    let d = tmp("deny");
+    let (mut stub, port) = stub_runner(&d);
+    std::fs::write(d.join("deny-always"), "").unwrap();
+    let (code, out, err) = run_stdio(&d, &format!("http://127.0.0.1:{port}/mcp"), "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/list\"}\n");
+    let _ = stub.kill();
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains(r#""id":9"#) && out.contains("abby-normal"), "the request is answered with an error naming the role: {out}");
+    assert!(err.contains("after a fresh mint"), "stderr says why: {err}");
+    let posts = std::fs::read_to_string(d.join("seen.log")).unwrap().lines().count();
+    assert_eq!(posts, 2, "one try, one re-minted retry, never a third");
 }

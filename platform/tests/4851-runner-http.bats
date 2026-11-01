@@ -14,5 +14,5 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   run env CARGO_BUILD_JOBS=4 nice cargo test --test forward_4851 --test stdio_4515
   echo "$output" | grep -E 'test result|panicked' || true
   [ "$status" -eq 0 ] || return 1
-  [[ "$output" == *"6 passed"* ]] || return 1
+  [[ "$output" == *"7 passed"* ]] || return 1
 }
