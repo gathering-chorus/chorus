@@ -31,6 +31,7 @@ button:disabled { opacity:.45; }
     <button class="no" id="no">No</button>
   </div>
   <div class="row" id="regrow" hidden><button class="reg" id="reg">Register this phone</button></div>
+  <div id="asks"></div>
   <div id="msg"></div>
 </main>
 <script>
@@ -84,7 +85,44 @@ async function registerPage() {
     } catch (e) { say(`Not registered: ${e.message || e}`); $("reg").disabled = false; }
   };
 }
-(location.pathname.replace(/\/$/, "").endsWith("/register") ? registerPage : goPage)().catch((e) => say(String(e)));
+// #4505: Jeff's one list of asks. Each decision is its own passkey signature over that ask's exact action.
+async function approvalsPage() {
+  $("head").textContent = "Waiting on you";
+  $("what").hidden = true;
+  const r = await (await fetch("/go/api/approvals")).json();
+  if (r.ok === false) { say(r.text); return; }
+  if (!r.approvals.length) { say("Nothing waiting."); return; }
+  for (const a of r.approvals) {
+    const card = document.createElement("div"); card.className = "card";
+    const t = document.createElement("div"); t.className = "title"; t.textContent = a.title;
+    const m = document.createElement("div"); m.className = "meta";
+    m.textContent = `${a.asker.replace(/^principal-/, "")} asks · ${a.kind} · ${a.at || ""}`;
+    const act = document.createElement("div"); act.className = "meta"; act.textContent = a.action;
+    const row = document.createElement("div"); row.className = "row";
+    const yes = document.createElement("button"); yes.className = "go"; yes.textContent = "Approve";
+    const no = document.createElement("button"); no.className = "no"; no.textContent = "Decline";
+    const note = document.createElement("div"); note.className = "meta";
+    row.append(yes, no); card.append(t, m, act, row, note); $("asks").append(card);
+    const decide = async (decision) => {
+      yes.disabled = no.disabled = true; note.textContent = "Waiting for Face ID…";
+      try {
+        const ch = await post("/go/api/approvals/challenge", { row: a.row });
+        if (ch.ok === false) { note.textContent = ch.text; return; }
+        const cred = await navigator.credentials.get({ publicKey: {
+          challenge: unb64(decision === "approve" ? ch.challengeApprove : ch.challengeDecline), rpId: ch.rpId,
+          allowCredentials: [{ type: "public-key", id: unb64(ch.credId) }], userVerification: "required", timeout: 60000 } });
+        const res = await post("/go/api/approvals/decide", { row: a.row, nonce: ch.nonce, decision,
+          authData: b64(cred.response.authenticatorData), clientDataJSON: b64(cred.response.clientDataJSON), signature: b64(cred.response.signature) });
+        note.textContent = res.text;
+        if (res.ok === false) { yes.disabled = no.disabled = false; }
+      } catch (e) { note.textContent = `Not sent: ${e.message || e}`; yes.disabled = no.disabled = false; }
+    };
+    yes.onclick = () => decide("approve");
+    no.onclick = () => decide("decline");
+  }
+}
+const here = location.pathname.replace(/\/$/, "");
+(here.endsWith("/register") ? registerPage : here.endsWith("/approvals") ? approvalsPage : goPage)().catch((e) => say(String(e)));
 </script>
 </body>
 </html>
