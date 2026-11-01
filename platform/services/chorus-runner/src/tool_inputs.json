@@ -398,6 +398,39 @@
     ],
     "type": "object"
   },
+  "MobVerifyInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The mob's card.",
+        "type": "integer"
+      },
+      "note": {
+        "description": "What you ran from your own account, and what it showed.",
+        "type": "string"
+      },
+      "run": {
+        "description": "The open mob run's dagu id, as mob start's nudge names it.",
+        "pattern": "^[A-Za-z0-9_-]{6,64}$",
+        "type": "string"
+      },
+      "verdict": {
+        "description": "pass, or fail to stop the mob and send the driver back to slice.",
+        "enum": [
+          "pass",
+          "fail"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card",
+      "run",
+      "verdict",
+      "note"
+    ],
+    "type": "object"
+  },
   "NudgeMessageInput": {
     "additionalProperties": false,
     "properties": {

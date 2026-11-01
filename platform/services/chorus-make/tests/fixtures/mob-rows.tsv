@@ -1,0 +1,8 @@
+# #4789 fixture — /mob as a dagu pipeline: one driver, every other role verifies from its own account (Jeff 10-28 no parallel builds; Silas 11-01 design).
+# The seats' verdicts come through the MCP task mob-verify (runner records, verified caller); the last PASS answers the one human step.
+# Like pair (#4752): no local proof (cicd's test step is the proof). The mob holds the floor until its card is Done (mob-open), so there is no end step here.
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+start	1	1	skill-mob-start	mob start: a WIP card, the seats on the card, each navigator told	deterministic	${CHORUS_HOME}/platform/scripts/mob	start ${CARD} ${ROLE} ${NAVIGATORS}			
+verified	2	1	skill-mob-verified	every seat verified from its own account	human					by=NAVIGATORS choices=verified|fail|stop
+check	3	1	skill-mob-check	the runner's records hold a PASS from every seat	deterministic	${CHORUS_HOME}/platform/scripts/mob	check ${CARD} ${skill_mob_verified.outputs.by} ${skill_mob_verified.outputs.decision}			
+hand-off	4	1	skill-mob-hand-off	hand off: one cicd run	pipeline	cicd				enqueue=true

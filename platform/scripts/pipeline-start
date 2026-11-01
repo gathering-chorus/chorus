@@ -27,6 +27,22 @@ if [ ! -f "$workflow" ]; then
   exit 1
 fi
 
+# #4789 — one build at a time while a mob is open: the mob's own card builds,
+# every other card is refused by name. The open mob is the live `mob` dagu run
+# (mob-open), never a marker file. dagu unreadable refuses: a gate that cannot
+# see the floor must not pass as "no mob open".
+mrc=0; mobs="$("${MOB_OPEN_BIN:-$(dirname "$0")/mob-open}" 2>&1)" || mrc=$?
+if [ "$mrc" -ne 0 ]; then
+  echo "pipeline-start: could not read dagu for an open mob run (${mobs:-no message}); nothing was enqueued" >&2
+  exit 1
+fi
+while read -r mob_run mob_card _seats; do
+  [ -n "$mob_run" ] || continue
+  [ "$mob_card" = "$card" ] && continue
+  echo "pipeline-start: mob run $mob_run is open for #$mob_card; one build at a time, so #$card waits until it ends; nothing was enqueued" >&2
+  exit 1
+done <<<"$mobs"
+
 # #4492 — every generated workflow puts the role's slot first on PATH (#4474),
 # so a slot copy older than the installed verb judges the card with old code
 # (silas-bin/werk-test from 05:05 failed #4412 run 2, 2026-10-10; same class
