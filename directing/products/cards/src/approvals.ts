@@ -23,7 +23,9 @@ export function buildApprovalArgv(title: string, opts: AskOpts): string[] {
     ['--owner', opts.owner], ['--priority', opts.priority], ['--domain', opts.domain],
     ['--type', opts.type], ['--origin', opts.origin], ['--desc', opts.description], ['--sequence', opts.sequence],
   ];
-  const dropped = (['product', 'chunk', 'subproduct', 'parent', 'status'] as const).filter((k) => opts[k]);
+  const dropped = Object.entries({
+    product: opts.product, chunk: opts.chunk, subproduct: opts.subproduct, parent: opts.parent, status: opts.status,
+  }).filter(([, v]) => v).map(([k]) => k);
   if (dropped.length) {
     throw new Error(`not a cards add argv: an ask cannot carry ${dropped.map((k) => `--${k}`).join(', ')} yet; file it without, or ask Jeff to /card it`);
   }
@@ -42,10 +44,12 @@ export function checkApprovalArgv(argv: unknown): string[] {
   if (a.length < 2 || a[0] !== 'add' || !a[1] || a[1].startsWith('-')) {
     throw new Error('not a cards add argv: it must start with "add" and a title');
   }
-  for (let i = 2; i < a.length; i += 2) {
-    if (!(CARDS_ADD_FLAGS as readonly string[]).includes(a[i])) throw new Error(`not a cards add argv: flag '${a[i]}' is not allowed`);
-    const v = a[i + 1];
-    if (v === undefined || v === '-' || v.startsWith('--')) throw new Error(`not a cards add argv: '${a[i]}' takes a value`);
+  const pairs = a.slice(2);
+  while (pairs.length > 0) {
+    const flag = String(pairs.shift());
+    if (!(CARDS_ADD_FLAGS as readonly string[]).includes(flag)) throw new Error(`not a cards add argv: flag '${flag}' is not allowed`);
+    const v = pairs.shift();
+    if (v === undefined || v === '-' || v.startsWith('--')) throw new Error(`not a cards add argv: '${flag}' takes a value`);
   }
   return a;
 }
