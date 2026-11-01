@@ -238,3 +238,106 @@ other_owner() {  # the file reads as another member's: stat reports her, the res
   [ ! -e "$L/dagu" ] || ! grep -q 'enqueue pair' "$L/dagu" || return 1
   grep -q '^kade|pair #4683 start refused' "$L/nudges"
 }
+
+# #4852 — the pair's hand-off routes on the one model-change rule (athena-deploy
+# scope, #4718): a model change rehearses on staging (athena), anything else goes
+# to cicd. Before, the hand-off enqueued cicd for every card and #4579 refused
+# a model card. Stand-in git answers the diff; stand-in dagu records the enqueue.
+handoff_world() { # PATHS... — the card's diff
+  export MOB_OPEN_BIN=/usr/bin/true PAIR_RERUN_BIN=/nonexistent CICD_SUPERSEDE_BIN=/usr/bin/true
+  export CHORUS_WERK_BASE="$BATS_TEST_TMPDIR/werks"
+  HW="$CHORUS_WERK_BASE/kade-4852"; mkdir -p "$HW/platform/pipelines" "$BATS_TEST_TMPDIR/hbin"
+  touch "$HW/platform/pipelines/cicd.yaml" "$HW/platform/pipelines/athena.yaml"
+  export DAGU="$BATS_TEST_TMPDIR/hdagu"
+  printf '#!/bin/sh\necho "$@" >> "%s/enq"\n' "$L" > "$DAGU"; chmod +x "$DAGU"
+  printf '#!/bin/sh\nprintf "%%s\\n" %s\n' "$*" > "$BATS_TEST_TMPDIR/hbin/git"; chmod +x "$BATS_TEST_TMPDIR/hbin/git"
+  export PATH="$BATS_TEST_TMPDIR/hbin:$PATH"; export DAG_NAME=pair DAG_RUN_ID=run1
+  # dagu's run list, read by the real handoff-live: run1 is a live pair run for #4852
+  HF="$BATS_TEST_TMPDIR/hdagu-api"; mkdir -p "$HF/api/v1"; export CWS_DAGU="file://$HF"
+  live_run pair running "CARD=4852 ROLE=kade NAVIGATOR=silas"
+}
+live_run() { # DAG STATUS PARAMS — the one run dagu lists
+  printf '{"dagRuns":[{"name":"%s","dagRunId":"run1","statusLabel":"%s","params":"%s","startedAt":"2026-11-01T11:00:00-05:00"}]}\n' "$1" "$2" "$3" > "$HF/api/v1/dag-runs"
+}
+
+@test "#4852 AC1: the pair's generated hand-off starts the card through pipeline-start handoff, not a bare cicd enqueue" {
+  step="$(awk '/name: skill-pair-hand-off$/{f=1} f&&/command:/{print; exit}' "$ROOT/platform/pipelines/pair.yaml")"
+  [[ "$step" == *"platform/scripts/pipeline-start handoff \${CARD} \${ROLE}"* ]] || { echo "hand-off: $step"; return 1; }
+  [[ "$step" != *"enqueue cicd"* ]] || { echo "still a bare cicd enqueue: $step"; return 1; }
+}
+
+@test "#4852 AC1: hand-off of a model-changing card enqueues athena; of any other card, cicd" {
+  handoff_world roles/kade/ontology/werk-domains.ttl platform/scripts/pair
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(wc -l < "$L/enq")" -eq 1 ] || { echo "not exactly one enqueue: $(cat "$L/enq")"; return 1; }
+  [[ "$(cat "$L/enq")" == *" enqueue $HW/platform/pipelines/athena.yaml -- CARD=4852 ROLE=kade" ]] || { cat "$L/enq"; return 1; }
+  [[ "$output" == *"changes the model"*"athena"* ]] || { echo "$output"; return 1; }
+  rm -f "$L/enq"; handoff_world platform/scripts/pair
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$(cat "$L/enq")" == *" enqueue $HW/platform/pipelines/cicd.yaml -- CARD=4852 ROLE=kade" ]] || { cat "$L/enq"; return 1; }
+}
+
+@test "#4852 AC2 NEGATIVE PROOF: a hand-off whose diff touches an ontology .ttl never enqueues cicd" {
+  handoff_world roles/kade/ontology/werk-domains.ttl
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q "cicd.yaml" "$L/enq" || { echo "cicd enqueued for a model card: $(cat "$L/enq")"; return 1; }
+  # and a retirement line alone, the #4579 case, is a model change too
+  rm -f "$L/enq"; handoff_world designing/schemas/model-retirements.jsonl
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  ! grep -q "cicd.yaml" "$L/enq" || { echo "cicd enqueued for a retirement: $(cat "$L/enq")"; return 1; }
+}
+
+@test "#4852 NEGATIVE PROOF: a model card with no athena workflow in its werk is refused, never sent to cicd" {
+  handoff_world roles/kade/ontology/werk-domains.ttl; rm "$HW/platform/pipelines/athena.yaml"
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  [ ! -e "$L/enq" ] || { echo "enqueued: $(cat "$L/enq")"; return 1; }
+}
+
+@test "#4852 NEGATIVE PROOF (Silas): handoff from a shell, or from any pipeline but pair or mob, is refused and enqueues nothing" {
+  handoff_world platform/scripts/pair
+  unset DAG_NAME
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -ne 0 ] && [[ "$output" == *"pair or mob"* ]] || { echo "shell handoff ran: $output"; return 1; }
+  DAG_NAME=cicd run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -ne 0 ] || { echo "cicd handoff ran: $output"; return 1; }
+  [ ! -e "$L/enq" ] || { echo "enqueued: $(cat "$L/enq")"; return 1; }
+}
+
+@test "#4852: a mob's hand-off routes the same way" {
+  handoff_world roles/kade/ontology/werk-domains.ttl; export DAG_NAME=mob
+  live_run mob running "CARD=4852 ROLE=kade NAVIGATORS=silas,wren"
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(wc -l < "$L/enq")" -eq 1 ] && grep -q "athena.yaml" "$L/enq" || { cat "$L/enq"; return 1; }
+}
+
+@test "#4852 NEGATIVE PROOF (Silas 11:11): a spoofed DAG_NAME=pair with no live pair run for the card is refused" {
+  handoff_world roles/kade/ontology/werk-domains.ttl
+  for case in "pair succeeded CARD=4852 ROLE=kade" "pair running CARD=4853 ROLE=kade" "cicd running CARD=4852 ROLE=kade" "none"; do
+    rm -f "$L/enq"
+    if [ "$case" = none ]; then printf '{"dagRuns":[]}\n' > "$HF/api/v1/dag-runs"; else set -- $case; d=$1 s=$2; shift 2; live_run "$d" "$s" "$*"; fi
+    run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+    [ "$status" -ne 0 ] && [[ "$output" == *"not a live pair run for #4852"* ]] || { echo "[$case] spoof ran: $output"; return 1; }
+    [ ! -e "$L/enq" ] || { echo "[$case] enqueued: $(cat "$L/enq")"; return 1; }
+  done
+}
+
+@test "#4852 (Silas 11:17): platform/scripts/handoff-live itself — live 0, finished or another card's run 1, nameless row 1, unreadable dagu 2" {
+  HL="$ROOT/platform/scripts/handoff-live"
+  HF="$BATS_TEST_TMPDIR/hl-api"; mkdir -p "$HF/api/v1"; export CWS_DAGU="file://$HF"
+  row() { printf '{"dagRuns":[{%s"dagRunId":"run1","statusLabel":"%s","params":"%s","startedAt":"2026-11-01T11:00:00-05:00"}]}\n' "$1" "$2" "$3" > "$HF/api/v1/dag-runs"; }
+  row '"name":"pair",' running "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 0 ] || { echo "live: $output"; return 1; }
+  run "$HL" pair run1 48520; [ "$status" -eq 1 ] || { echo "CARD=4852 matched 48520: $output"; return 1; }
+  row '"name":"pair",' succeeded "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 1 ] && [[ "$output" == *"succeeded, not running"* ]] || { echo "finished: $output"; return 1; }
+  row '' running "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 1 ] || { echo "nameless row counted: $output"; return 1; }
+  rm -rf "$HF"; export CWS_DAGU="http://127.0.0.1:9"
+  run "$HL" pair run1 4852;  [ "$status" -eq 2 ] && [[ "$output" == *"could not read dagu"* ]] || { echo "unreadable: $status $output"; return 1; }
+  run "$HL" cicd run1 4852;  [ "$status" -eq 1 ] || { echo "cicd accepted: $output"; return 1; }
+}

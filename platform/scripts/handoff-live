@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+# @domain: pipelines
+"""handoff-live DAG RUN CARD — #4852: is RUN a live `pair` or `mob` run for CARD?
+
+pipeline-start's `handoff` routes a card past the pair re-run check. Only the
+pair's or the mob's own hand-off step may do that, and DAG_NAME alone proves
+nothing: any shell can export it (Silas 2026-11-01 11:11, the #4579 weakness).
+So the run itself is read from dagu, the way mob-open reads it: RUN must be a
+`pair` or `mob` run, still running, whose params carry CARD.
+
+Exit 0: live and matching. Exit 1: not (named on stderr). Exit 2: dagu cannot
+be read; the caller refuses, never treats "unreadable" as "live".
+"""
+import importlib.machinery
+import importlib.util
+import os
+import re
+import sys
+import time
+
+DAGS = ("pair", "mob")
+
+
+def load_cws():
+    here = os.path.dirname(os.path.abspath(__file__))
+    loader = importlib.machinery.SourceFileLoader("cws", os.path.join(here, "chorus-werk-status"))
+    spec = importlib.util.spec_from_loader("cws", loader)
+    cws = importlib.util.module_from_spec(spec)
+    loader.exec_module(cws)
+    return cws
+
+
+def live(runs, dag, run, card):
+    """'' when RUN is a running DAG run carrying CARD, else why not."""
+    want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(card))
+    for r in runs:
+        if r.get("dagRunId") != run:
+            continue
+        if r.get("name") != dag:  # a row with no name is no proof (Silas 11:17)
+            return f"run {run} is a {r.get('name')} run, not {dag}"
+        if r.get("statusLabel") != "running":
+            return f"{dag} run {run} is {r.get('statusLabel')}, not running"
+        if not want.search(r.get("params") or ""):
+            return f"{dag} run {run} is not for #{card}"
+        return ""
+    return f"no {dag} run {run} in dagu"
+
+
+def main(argv):
+    if len(argv) != 4 or argv[1] not in DAGS or not argv[2] or not argv[3].isdigit():
+        print("usage: handoff-live pair|mob RUN CARD", file=sys.stderr)
+        return 1
+    dag, run, card = argv[1], argv[2], argv[3]
+    try:
+        runs = load_cws().dagu_list(dag, time.time() - 2 * 86400)
+    except Exception as e:
+        print(f"handoff-live: could not read dagu: {e}", file=sys.stderr)
+        return 2
+    why = live(runs, dag, run, card)
+    if why:
+        print(f"handoff-live: {why}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

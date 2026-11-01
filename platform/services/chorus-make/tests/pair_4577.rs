@@ -55,10 +55,13 @@ fn negative_proof_a_human_row_answered_by_a_param_the_pipeline_lacks_is_refused(
 }
 
 #[test]
-fn the_hand_off_enqueues_cicd() {
+fn the_hand_off_routes_through_pipeline_start() {
     let y = generate_straight("pair", &pipe(), &rows(), &known()).unwrap();
-    // #4753 — a card's older cicd run waiting at the go is superseded before the new one is enqueued
-    assert!(y.contains("    command: \"${CHORUS_HOME}/platform/scripts/cicd-supersede ${CARD} ${ROLE} && env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}\"\n"), "{y}");
+    // #4852 — the hand-off routes on the card's diff (model -> athena, else cicd);
+    // pipeline-start owns the rule, #4753's supersede and the live-run check
+    assert!(y.contains("    command: \"env -u CHORUS_ROLE ${CHORUS_HOME}/platform/scripts/pipeline-start handoff ${CARD} ${ROLE}\"\n"), "{y}");
+    // NEGATIVE PROOF (#4852): no bare cicd enqueue is left to skip athena for a model card
+    assert!(!y.contains("enqueue cicd"), "{y}");
     // #4752 — no local proof: cicd's own test step is the proof (tests/pair_ends_4752.rs)
     assert!(!y.contains("cicd-test"), "{y}");
 }
