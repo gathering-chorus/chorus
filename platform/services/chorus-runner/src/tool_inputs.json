@@ -405,6 +405,11 @@
         "description": "The mob's card.",
         "type": "integer"
       },
+      "head": {
+        "description": "The commit you checked (git rev-parse HEAD in the driver's werk). A verify for any other head is refused (#4850).",
+        "pattern": "^[0-9a-f]{7,40}$",
+        "type": "string"
+      },
       "note": {
         "description": "What you ran from your own account, and what it showed.",
         "type": "string"
@@ -427,7 +432,8 @@
       "card",
       "run",
       "verdict",
-      "note"
+      "note",
+      "head"
     ],
     "type": "object"
   },

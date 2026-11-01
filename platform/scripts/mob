@@ -8,7 +8,7 @@
 # template; a mob has N navigators where a pair has one.
 #
 #   mob start  CARD DRIVER NAV1,NAV2,...  refuse a card not in WIP; the seats go on the card; nudge each navigator
-#   mob verify CARD RUN pass|fail "note"  a navigator's verdict, run ONLY by chorus-runner as the MCP task werk-mob-verify
+#   mob verify CARD RUN pass|fail "note" HEAD  a navigator's verdict for the HEAD it checked, run ONLY by chorus-runner as the MCP task werk-mob-verify
 #   mob check  CARD BY verified|fail|stop the run's human step: re-count the seats; stop ends the mob
 #
 # The open mob is the live `mob` dagu run (mob-open): its params hold the seats,
@@ -117,18 +117,20 @@ start)
     die "#$card: could not put the seats on the card"
   spine mob.started system "card=$card" "driver=$driver" "navigators=$navs" "run_id=${DAG_RUN_ID:-}"
   for n in "${seats[@]}"; do
-    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool werk-mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\""
+    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool werk-mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\" head=<the $driver-$card HEAD you checked>"
   done
   say "#$card mob open: $driver drives; $list navigate"
   ;;
 verify)
-  card="${1:-}"; run="${2:-}"; verdict="${3:-}"; note="${4:-}"
-  [ -n "$card" ] && [ -n "$run" ] && [ -n "$note" ] || die "usage: mob verify CARD RUN pass|fail \"what you ran\" (via the MCP tool mob-verify)"
+  card="${1:-}"; run="${2:-}"; verdict="${3:-}"; note="${4:-}"; checked="${5:-}"
+  [ -n "$card" ] && [ -n "$run" ] && [ -n "$note" ] && [ -n "$checked" ] ||
+    die "usage: mob verify CARD RUN pass|fail \"what you ran\" HEAD — the head you checked (via the MCP tool werk-mob-verify)"
+  [[ "$checked" =~ ^[0-9a-f]{7,40}$ ]] || die "#$card: '$checked' is not a commit sha (7 to 40 hex)"
   case "$verdict" in pass|fail) ;; *) die "#$card: '$verdict' is not pass or fail" ;; esac
   # who is calling: the runner's record of THIS task, never an argument or env
   rec="${CHORUS_TASK_EXIT:-}"; rec="${rec%.exit}.json"
   [ -n "${CHORUS_TASK_EXIT:-}" ] && [ -f "$rec" ] || die "#$card: no runner record for this call; verify through the MCP tool werk-mob-verify, not a shell"
-  who="$(python3 -I - "$rec" "$PPID" "$(ps -o lstart= -p "$PPID" 2>/dev/null | sed 's/^ *//; s/ *$//')" "$card" "$run" "$verdict" "$note" 2>&1 <<'PY'
+  who="$(python3 -I - "$rec" "$PPID" "$(ps -o lstart= -p "$PPID" 2>/dev/null | sed 's/^ *//; s/ *$//')" "$card" "$run" "$verdict" "$note" "$checked" 2>&1 <<'PY'
 import json, os, stat, sys
 rec, ppid, pstart, *argv = sys.argv[1:]
 st = os.stat(rec)
@@ -137,7 +139,7 @@ if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH) or st.st_uid != os.stat(os.path.di
 r = json.load(open(rec))
 if str(r.get("pid")) != ppid or (r.get("pidStartedAt") or "") != pstart:
     sys.exit("the runner record is not this call's (pid or start time differ)")
-if (r.get("argv") or [])[:5] != ["verify"] + argv:
+if (r.get("argv") or [])[:6] != ["verify"] + argv:
     sys.exit("the runner record's arguments are not this call's")
 print((r.get("caller") or "").removeprefix("principal-"))
 PY
@@ -151,6 +153,9 @@ PY
   [ -n "$seat" ] || die "#$card: $who has no seat in mob run $run (seats: $navs)"
   head="$(werk_head "$driver" "$card")"
   [ -n "$head" ] || die "#$card: $driver's werk for #$card has no readable HEAD; nothing to verify against"
+  # #4850 (Kade 10:26) — the verdict is for the head the navigator CHECKED; a
+  # commit between their check and this call must not inherit their PASS
+  [[ "$head" == "$checked"* ]] || die "#$card: $who checked ${checked:0:9}, but the werk's HEAD is ${head:0:9}; check the new head and verify again"
   # #4850 AC3 — the head this verdict is for, beside the runner's record (this
   # runs as the runner's account; no role writes the runner's store)
   printf '%s\n' "$head" > "${rec%.json}.head" && chmod 644 "${rec%.json}.head" ||
