@@ -56,10 +56,6 @@ pub struct Runner {
     pub collections: Arc<RwLock<Vec<String>>>,
     /// #4513 — the Skill rows offered as tools, re-read on every tools/list.
     pub skills: Arc<RwLock<Vec<SkillTool>>>,
-    /// #4515 — `chorus-runner stdio`: the caller verified once at start (a
-    /// credential minted as the process's own account and checked by the same
-    /// verifier as the gate). None on the HTTP server, where the gate decides.
-    pub stdio_caller: Option<String>,
 }
 
 impl Runner {
@@ -365,15 +361,15 @@ pub fn task_status_text(id: &str, caller: &str) -> Result<String, String> {
     Ok(format!("{id}: {}\n{}", crate::tasks::status(&dir, id).word(), crate::tasks::tail(&dir, id, 12)))
 }
 
-fn caller_of(ctx: &RequestContext<RoleServer>, stdio: Option<&str>) -> String {
+fn caller_of(ctx: &RequestContext<RoleServer>) -> String {
     let gated = ctx.extensions.get::<http::request::Parts>().and_then(|p| p.extensions.get::<Caller>()).map(|c| c.0.clone());
-    pick_caller(gated, stdio)
+    pick_caller(gated)
 }
 
-/// #4515 — the gate's verified caller (HTTP), else the stdio process's own
-/// verified caller, else nobody. Pure.
-pub fn pick_caller(gated: Option<String>, stdio: Option<&str>) -> String {
-    gated.or_else(|| stdio.map(String::from)).filter(|c| !c.is_empty()).unwrap_or_else(|| "unverified".into())
+/// The gate's verified caller, else nobody. Pure. #4851: the stdio caller is
+/// gone — stdio forwards to this server, whose gate verifies every call.
+pub fn pick_caller(gated: Option<String>) -> String {
+    gated.filter(|c| !c.is_empty()).unwrap_or_else(|| "unverified".into())
 }
 
 impl ServerHandler for Runner {
@@ -404,7 +400,7 @@ impl ServerHandler for Runner {
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
-        let caller = caller_of(&ctx, self.stdio_caller.as_deref());
+        let caller = caller_of(&ctx);
         let tool = request.name.to_string();
         let trace = new_trace_id();
         let args = request.arguments.unwrap_or_default();
@@ -500,7 +496,7 @@ pub fn refresh_collections(into: &Arc<RwLock<Vec<String>>>) {
 
 /// The whole surface: /mcp behind the gate. Every route, every method.
 pub fn router(verifier: Arc<OidcVerifier>, collections: Arc<RwLock<Vec<String>>>) -> axum::Router {
-    let runner = Runner { collections, skills: Arc::new(RwLock::new(Vec::new())), stdio_caller: None };
+    let runner = Runner { collections, skills: Arc::new(RwLock::new(Vec::new())) };
     let config = StreamableHttpServerConfig::default().with_json_response(true).with_sse_keep_alive(None);
     let service: StreamableHttpService<Runner, LocalSessionManager> =
         StreamableHttpService::new(move || Ok(runner.clone()), Default::default(), config);

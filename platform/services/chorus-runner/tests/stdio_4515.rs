@@ -1,9 +1,8 @@
 // @test-type: unit
 // @domain: services
-//! #4515 — `chorus-runner stdio`, for a client that cannot renew an HTTP
-//! credential (Abby's Gemini). What a role sees: its tools over stdio run as
-//! the role the process proved it is, and a process that cannot prove one
-//! never starts.
+//! #4515/#4851 — `chorus-runner stdio`, for a client that cannot renew an HTTP
+//! credential (Abby's and BQ's agy). It forwards to the HTTP runner as the role
+//! it can mint for; a process that cannot mint one never starts.
 use chorus_runner::server::pick_caller;
 use std::process::{Command, Stdio};
 
@@ -14,11 +13,11 @@ fn bin() -> std::path::PathBuf {
 }
 
 #[test]
-fn the_gate_wins_then_the_stdio_caller_then_nobody() {
-    assert_eq!(pick_caller(Some("wren".into()), Some("abby-normal")), "wren");
-    assert_eq!(pick_caller(None, Some("abby-normal")), "abby-normal");
-    assert_eq!(pick_caller(None, None), "unverified");
-    assert_eq!(pick_caller(None, Some("")), "unverified", "an empty name is nobody");
+fn the_gate_decides_and_nobody_else() {
+    // #4851: no stdio caller any more — stdio forwards to the gate.
+    assert_eq!(pick_caller(Some("wren".into())), "wren");
+    assert_eq!(pick_caller(None), "unverified");
+    assert_eq!(pick_caller(Some(String::new())), "unverified", "an empty name is nobody");
 }
 
 fn stdio_with(env: &[(&str, &str)]) -> (i32, String) {
