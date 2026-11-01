@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# chorus-account-parity — 5-account parity sensor (#4788 Slice 5)
+# Verifies tools, MCP, skills, permissions, and data reads across all 5 role accounts.
+# Enforces that each role reads one live memory, skills, and .chorus source.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHORUS_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+HOMES_DIR="/Users"
+LIVE_SOURCE="/Users/jeffbridwell"
+SEARCH_API="http://localhost:3340/api/chorus/search"
+SELF_MODE=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --homes-dir)
+      HOMES_DIR="$2"
+      shift 2
+      ;;
+    --live-source)
+      LIVE_SOURCE="$2"
+      shift 2
+      ;;
+    --search-api)
+      SEARCH_API="$2"
+      shift 2
+      ;;
+    --self)
+      SELF_MODE=1
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Resolve live directories — NEVER pass vacuously if missing
+if [ -d "$LIVE_SOURCE/.claude/skills" ]; then
+  LIVE_SKILLS="$LIVE_SOURCE/.claude/skills"
+elif [ -d "$LIVE_SOURCE/skills" ]; then
+  LIVE_SKILLS="$LIVE_SOURCE/skills"
+else
+  echo "[parity-error] live skills directory missing under $LIVE_SOURCE" >&2
+  exit 2
+fi
+
+if [ -d "$LIVE_SOURCE/memory" ]; then
+  LIVE_MEMORY="$LIVE_SOURCE/memory"
+elif [ -d "$LIVE_SOURCE/.claude/memory" ]; then
+  LIVE_MEMORY="$LIVE_SOURCE/.claude/memory"
+elif [ -d "$LIVE_SOURCE/memory/projects" ]; then
+  LIVE_MEMORY="$LIVE_SOURCE/memory/projects"
+else
+  echo "[parity-error] live memory directory missing under $LIVE_SOURCE" >&2
+  exit 2
+fi
+
+if [ -d "$LIVE_SOURCE/.chorus/bin" ]; then
+  LIVE_BIN="$LIVE_SOURCE/.chorus/bin"
+elif [ -d "$LIVE_SOURCE/chorus/bin" ]; then
+  LIVE_BIN="$LIVE_SOURCE/chorus/bin"
+else
+  echo "[parity-error] live chorus/bin directory missing under $LIVE_SOURCE" >&2
+  exit 2
+fi
+
+if [ -d "$LIVE_SOURCE/.chorus/scripts" ]; then
+  LIVE_SCRIPTS="$LIVE_SOURCE/.chorus/scripts"
+elif [ -d "$LIVE_SOURCE/chorus/scripts" ]; then
+  LIVE_SCRIPTS="$LIVE_SOURCE/chorus/scripts"
+else
+  echo "[parity-error] live chorus/scripts directory missing under $LIVE_SOURCE" >&2
+  exit 2
+fi
+
+# Resolve realpaths for canonical comparison
+REAL_LIVE_SKILLS="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$LIVE_SKILLS")"
+REAL_LIVE_MEMORY="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$LIVE_MEMORY")"
+REAL_LIVE_BIN="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$LIVE_BIN")"
+REAL_LIVE_SCRIPTS="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$LIVE_SCRIPTS")"
+
+ROLES=("wren" "silas" "kade" "abby-normal" "borg-queen")
+DIFFS=0
+
+check_account() {
+  local account="$1"
+  local home="$HOMES_DIR/$account"
+
+  # 0. Check existence and readability
+  if [ ! -e "$home" ]; then
+    echo "[parity-missing] account $account: home directory missing ($home)" >&2
+    DIFFS=$((DIFFS + 1))
+    return
+  fi
+  if [ ! -r "$home" ] || [ ! -x "$home" ]; then
+    echo "[parity-unreadable] account $account: home directory unreadable ($home)" >&2
+    DIFFS=$((DIFFS + 1))
+    return
+  fi
+
+  # 1. Memory check — links memory/ only, never whole projects/
+  local role_memory="$home/.claude/memory"
+  if [ ! -e "$role_memory" ] && [ ! -L "$role_memory" ]; then
+    echo "[parity-missing] account $account: missing memory link at $role_memory" >&2
+    DIFFS=$((DIFFS + 1))
+  else
+    local real_memory
+    real_memory="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$role_memory" 2>/dev/null || true)"
+    if [ "$real_memory" != "$REAL_LIVE_MEMORY" ]; then
+      echo "[parity-drift] account $account: memory resolves to $real_memory, not live source $REAL_LIVE_MEMORY" >&2
+      DIFFS=$((DIFFS + 1))
+    fi
+  fi
+
+  # 2. Skills check — all skills must resolve to live source skills
+  local role_skills="$home/.claude/skills"
+  if [ ! -e "$role_skills" ] && [ ! -L "$role_skills" ]; then
+    echo "[parity-missing] account $account: missing skills directory at $role_skills" >&2
+    DIFFS=$((DIFFS + 1))
+  else
+    for live_skill_dir in "$LIVE_SKILLS"/*/; do
+      [ -d "$live_skill_dir" ] || continue
+      local skill_name
+      skill_name="$(basename "$live_skill_dir")"
+      local role_skill="$role_skills/$skill_name"
+
+      if [ ! -e "$role_skill" ] && [ ! -L "$role_skill" ]; then
+        echo "[parity-missing] account $account: missing skill $skill_name" >&2
+        DIFFS=$((DIFFS + 1))
+      else
+        local real_live_skill real_role_skill
+        real_live_skill="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$live_skill_dir")"
+        real_role_skill="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$role_skill" 2>/dev/null || true)"
+        if [ "$real_role_skill" != "$real_live_skill" ]; then
+          echo "[parity-drift] account $account: skill $skill_name resolves to $real_role_skill, not live source $real_live_skill" >&2
+          DIFFS=$((DIFFS + 1))
+        fi
+      fi
+    done
+  fi
+
+  # 3. .chorus/bin and .chorus/scripts check — must resolve to live source
+  local role_bin="$home/.chorus/bin"
+  if [ ! -e "$role_bin" ] && [ ! -L "$role_bin" ]; then
+    echo "[parity-missing] account $account: missing .chorus/bin" >&2
+    DIFFS=$((DIFFS + 1))
+  else
+    local real_bin
+    real_bin="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$role_bin" 2>/dev/null || true)"
+    if [ "$real_bin" != "$REAL_LIVE_BIN" ]; then
+      echo "[parity-drift] account $account: .chorus/bin resolves to $real_bin, not live source $REAL_LIVE_BIN" >&2
+      DIFFS=$((DIFFS + 1))
+    fi
+  fi
+
+  local role_scripts="$home/.chorus/scripts"
+  if [ ! -e "$role_scripts" ] && [ ! -L "$role_scripts" ]; then
+    echo "[parity-missing] account $account: missing .chorus/scripts" >&2
+    DIFFS=$((DIFFS + 1))
+  else
+    local real_scripts
+    real_scripts="$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$role_scripts" 2>/dev/null || true)"
+    if [ "$real_scripts" != "$REAL_LIVE_SCRIPTS" ]; then
+      echo "[parity-drift] account $account: .chorus/scripts resolves to $real_scripts, not live source $REAL_LIVE_SCRIPTS" >&2
+      DIFFS=$((DIFFS + 1))
+    fi
+  fi
+
+  # 4. Settings / MCP check — must parse JSON and explicitly configure chorus-api
+  local settings_found=0
+  local has_chorus_api=0
+  for s in "$home/.claude/settings.json" "$home/.claude/settings.local.json" "$home/.claude.json"; do
+    if [ -f "$s" ]; then
+      settings_found=1
+      local check_res
+      check_res="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    servers = d.get("mcpServers", {})
+    enabled = d.get("enabledMcpjsonServers", [])
+    if "chorus-api" in servers or "chorus-api" in enabled:
+        print("configured")
+    else:
+        print("no-server")
+except Exception:
+    print("invalid-json")
+' "$s" 2>/dev/null || echo "error")"
+
+      if [ "$check_res" = "invalid-json" ]; then
+        echo "[parity-drift] account $account: invalid JSON in $(basename "$s")" >&2
+        DIFFS=$((DIFFS + 1))
+      elif [ "$check_res" = "configured" ]; then
+        has_chorus_api=1
+      fi
+    fi
+  done
+  if [ "$settings_found" -eq 0 ]; then
+    echo "[parity-missing] account $account: missing settings.json or settings.local.json" >&2
+    DIFFS=$((DIFFS + 1))
+  elif [ "$has_chorus_api" -eq 0 ]; then
+    echo "[parity-drift] account $account: MCP configuration missing chorus-api server in mcpServers/enabledMcpjsonServers" >&2
+    DIFFS=$((DIFFS + 1))
+  fi
+
+  # 5. Data reads check — probe the search API (#4784 AC3)
+  if [ -n "$SEARCH_API" ]; then
+    if ! curl -s -f -m 2 "$SEARCH_API?q=ping" >/dev/null 2>&1; then
+      echo "[parity-drift] account $account: data read failed: search API unreachable at $SEARCH_API" >&2
+      DIFFS=$((DIFFS + 1))
+    fi
+  fi
+
+  # 6. Git safe.directory check
+  local role_gitconfig="$home/.gitconfig"
+  if [ ! -f "$role_gitconfig" ]; then
+    echo "[parity-missing] account $account: missing .gitconfig" >&2
+    DIFFS=$((DIFFS + 1))
+  elif ! grep -q "directory = \*" "$role_gitconfig" 2>/dev/null && ! grep -q "safe.directory" "$role_gitconfig" 2>/dev/null; then
+    echo "[parity-drift] account $account: .gitconfig missing safe.directory=*" >&2
+    DIFFS=$((DIFFS + 1))
+  fi
+}
+
+if [ "$SELF_MODE" -eq 1 ]; then
+  CURRENT_USER="$(id -un)"
+  check_account "$CURRENT_USER"
+  if [ "$DIFFS" -gt 0 ]; then
+    echo "Account parity check (self: $CURRENT_USER) FAILED: $DIFFS differences found" >&2
+    exit 1
+  fi
+  echo "5-account parity check (self: $CURRENT_USER): 0 differences with live source"
+  exit 0
+fi
+
+for role in "${ROLES[@]}"; do
+  check_account "chorus-$role"
+done
+
+if [ "$DIFFS" -gt 0 ]; then
+  echo "5-account parity check FAILED: $DIFFS differences found across 5 accounts" >&2
+  exit 1
+fi
+
+echo "5-account parity check: 0 differences across all 5 roles"
+exit 0
