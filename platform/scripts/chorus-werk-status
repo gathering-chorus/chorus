@@ -1077,12 +1077,43 @@ def retry_line(name, run_id, node, nodes=None, run=None):
     return f"retry: {whole}"
 
 
+PROVE_STEPS = ("skill-borg-verify-in-prod", "skill-borg-record")
+PROVE_AC = re.compile(r"^(ac-\d+-\d+)\s+(not met|unmeasured|deferred|met)\s")
+
+
+def prove_reason(path):
+    """#4823 — a land stopped at the prod proof, in one line: the verdict and each
+    AC that is not met, with the prover's own reason. #4772 and #4752 read "no
+    reason in dagu's record" while borg-prove's output named every AC."""
+    try:
+        with open(path or "", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    verdict = next((l.split("verify in prod:", 1)[1].strip() for l in lines if "verify in prod:" in l), None)
+    gaps = []
+    for i, l in enumerate(lines):
+        m = PROVE_AC.match(l)
+        if not m or m.group(2) == "met":
+            continue
+        ev = lines[i + 1].strip() if i + 1 < len(lines) and not PROVE_AC.match(lines[i + 1]) else ""
+        ev = re.sub(r"^test (?:\S+/)?", "", ev)[:100]
+        gaps.append(f"{m.group(1)} {m.group(2)} ({ev})" if ev else f"{m.group(1)} {m.group(2)}")
+    if verdict is None and not gaps:
+        return None
+    return f"{verdict or 'Unproven'}: " + ("; ".join(gaps) if gaps else "no AC named in the prover's output")
+
+
 def failed_reason(run, node):
     """#4540 — why a failed step stopped. A step that called a child pipeline
     (cicd's test step calls cicd-test) carries only "exit status N"; the
     child's own stopped step and its words are the answer ("verdict: RED —
     unit, lint"). Else the step's record, then the run's red suites, then its
     unmeasured suites."""
+    if (node.get("step") or {}).get("name") in PROVE_STEPS:
+        why = prove_reason(node.get("stdout"))
+        if why:
+            return why
     for _, _, cn, _ in child_runs(run, node):
         stop = next((n for n in cn if n.get("statusLabel") == "failed"), None)
         if stop is not None:

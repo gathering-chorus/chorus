@@ -81,6 +81,13 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
             let landed = land_time(card)?;
             (commit_time(&head)? >= landed).then(|| format!("{row} head={}", &head[..head.len().min(9)]))
         }
+        // #4823 AC2 — `check: by #N`: card N's board status, read-only
+        "by" => {
+            let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+            let out = Command::new("bash").arg(&cards).args(["view", &c.target]).output().ok()?;
+            let view = String::from_utf8_lossy(&out.stdout);
+            out.status.success().then(|| view.lines().find_map(|l| l.trim().strip_prefix("Status:").map(|s| s.trim().to_string())))?
+        }
         _ => None,
     }
 }
