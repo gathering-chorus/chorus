@@ -63,7 +63,7 @@ chorus:SkillShape a sh:NodeShape ;
     # #4513 — a tool is a Skill row (Jeff 08-22: a verb is an automated
     # deterministic skill; Services design #4509: tools as model rows). A
     # deterministic skill with an input shape is offered by the tool runner.
-    sh:property [ sh:path chorus:inputShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:name "input shape" ;
+    sh:property [ sh:path chorus:inputShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:ToolInput ; sh:name "input shape" ;
                   sh:description "Optional. The chorus:ToolInput shape its arguments must fit. A deterministic skill with one is a tool the runner offers." ] ;
     sh:property [ sh:path chorus:forService ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Service ; sh:name "service" ;
                   sh:description "Optional. The Service this skill runs as part of." ] ;

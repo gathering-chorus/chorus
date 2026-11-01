@@ -8,12 +8,12 @@
 # template; a mob has N navigators where a pair has one.
 #
 #   mob start  CARD DRIVER NAV1,NAV2,...  refuse a card not in WIP; the seats go on the card; nudge each navigator
-#   mob verify CARD RUN pass|fail "note"  a navigator's verdict, run ONLY by chorus-runner as the MCP task mob-verify
+#   mob verify CARD RUN pass|fail "note"  a navigator's verdict, run ONLY by chorus-runner as the MCP task werk-mob-verify
 #   mob check  CARD BY verified|fail|stop the run's human step: re-count the seats; stop ends the mob
 #
 # The open mob is the live `mob` dagu run (mob-open): its params hold the seats,
 # its run id keys every verdict. Who verified is never text a role typed (Silas
-# 06:21: every card comment's author is "jeff"): mob-verify is a runsAs=caller
+# 06:21: every card comment's author is "jeff"): werk-mob-verify is a runsAs=caller
 # Task on chorus-runner, and the runner's own record (runner-tasks/<id>.json,
 # written by the runner's account only) carries the verified `caller`. verify
 # reads its OWN record (pid = its parent, start time matching) and refuses
@@ -102,7 +102,7 @@ start)
     die "#$card: could not put the seats on the card"
   spine mob.started system "card=$card" "driver=$driver" "navigators=$navs" "run_id=${DAG_RUN_ID:-}"
   for n in "${seats[@]}"; do
-    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\""
+    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool werk-mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\""
   done
   say "#$card mob open: $driver drives; $list navigate"
   ;;
@@ -112,7 +112,7 @@ verify)
   case "$verdict" in pass|fail) ;; *) die "#$card: '$verdict' is not pass or fail" ;; esac
   # who is calling: the runner's record of THIS task, never an argument or env
   rec="${CHORUS_TASK_EXIT:-}"; rec="${rec%.exit}.json"
-  [ -n "${CHORUS_TASK_EXIT:-}" ] && [ -f "$rec" ] || die "#$card: no runner record for this call; verify through the MCP tool mob-verify, not a shell"
+  [ -n "${CHORUS_TASK_EXIT:-}" ] && [ -f "$rec" ] || die "#$card: no runner record for this call; verify through the MCP tool werk-mob-verify, not a shell"
   who="$(python3 -I - "$rec" "$PPID" "$(ps -o lstart= -p "$PPID" 2>/dev/null | sed 's/^ *//; s/ *$//')" "$card" "$run" "$verdict" "$note" 2>&1 <<'PY'
 import json, os, stat, sys
 rec, ppid, pstart, *argv = sys.argv[1:]
