@@ -3088,6 +3088,19 @@ fn npm_test_files(pkg_dir: &str) -> Vec<String> {
 /// repo-relative; jest wants them package-relative.
 fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
+    // #4505 — a test file this card deleted is on the diff but not on disk;
+    // handing it to the runner failed the whole unit with ENOENT
+    let (kept, dropped) = werk_test::existing_test_files(files, &|f| Path::new(&format!("{}/{}", werk, f)).exists());
+    for f in &dropped {
+        println!("   jest:{} — {} is deleted on this card, not run", pkg, f);
+    }
+    // Every selected file was deleted: run nothing. An empty path list would make
+    // `jest --runTestsByPath` run the whole package — never fall back to the tree.
+    if kept.is_empty() {
+        println!("   jest:{} — every selected test file is deleted on this card; nothing to run", pkg);
+        return (true, Vec::new());
+    }
+    let files: &[String] = &kept;
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} deps unavailable — UNMEASURED", pkg);
         return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new());

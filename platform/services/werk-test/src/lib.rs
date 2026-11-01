@@ -6616,6 +6616,40 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
         || is_feature_suite(f)
 }
 
+/// #4505 (Kade 2026-11-01) — the jest/node:test files a run may hand its runner:
+/// only those still on disk. A test file the card deletes is on the diff and was
+/// passed to `jest --runTestsByPath`, which fails the whole unit with ENOENT
+/// ("Test suite failed to run") while every test that exists passed (#4505 run 1:
+/// 657 passed, 0 failed, unit FAIL). Returns (keep, dropped); the caller names
+/// what it dropped. `exists` is injected so the rule is unit-tested.
+pub fn existing_test_files(files: &[String], exists: &dyn Fn(&str) -> bool) -> (Vec<String>, Vec<String>) {
+    files.iter().cloned().partition(|f| exists(f))
+}
+
+#[cfg(test)]
+mod existing_test_files_4505 {
+    use super::existing_test_files;
+
+    #[test]
+    fn a_deleted_test_file_is_dropped_and_named_the_rest_still_run() {
+        let files = vec!["directing/products/cards/tests/a.test.ts".to_string(),
+                         "directing/products/cards/tests/gone.test.ts".to_string()];
+        let (keep, dropped) = existing_test_files(&files, &|f| !f.ends_with("gone.test.ts"));
+        assert_eq!(keep, vec!["directing/products/cards/tests/a.test.ts".to_string()]);
+        assert_eq!(dropped, vec!["directing/products/cards/tests/gone.test.ts".to_string()]);
+    }
+
+    // NEGATIVE PROOF (#3734): a file that exists is never dropped, so the
+    // filter cannot hide a real test by calling it missing.
+    #[test]
+    fn negative_proof_an_existing_test_file_is_never_dropped() {
+        let files = vec!["x/tests/a.test.ts".to_string(), "x/tests/b.test.ts".to_string()];
+        let (keep, dropped) = existing_test_files(&files, &|_| true);
+        assert_eq!(keep, files);
+        assert!(dropped.is_empty());
+    }
+}
+
 /// Source a card can break: code by extension, or an extension-less script.
 pub fn is_code(f: &str) -> bool {
     let name = f.rsplit('/').next().unwrap_or(f);
