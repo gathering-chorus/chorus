@@ -75,8 +75,8 @@ fn a_missing_or_broken_list_fails_loud_not_open() {
 /// with one axis emptied or its JSON broken is refused by the same parser.
 #[test]
 fn the_real_platform_config_canonical_surfaces_json_parses_with_both_axes_4850() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/canonical-surfaces.json");
-    let text = std::fs::read_to_string(path).expect("platform/config/canonical-surfaces.json is readable");
+    let path = format!("{}/../../config/canonical-surfaces.json", std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let text = std::fs::read_to_string(&path).expect("platform/config/canonical-surfaces.json is readable");
     let s = parse_surfaces(&text).expect("the real canonical-surfaces.json parses");
     assert!(s.verbs.contains("werk-pull"), "verbs lost werk-pull");
     assert!(s.skills.contains("pair"), "skills lost pair");
