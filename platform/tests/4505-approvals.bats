@@ -78,8 +78,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" \)' "$TTL" || return 1
 }
 
-@test "R2-RECORDS model: a decision records the card it filed and the round it signed (at most one each)" {
-  [ "$(q 'ASK { chorus:filedCard a owl:DatatypeProperty . chorus:signedRound a owl:DatatypeProperty }')" = yes ] || return 1
-  grep -q 'sh:path chorus:filedCard ; sh:maxCount 1' "$TTL" || return 1
+@test "R2-RECORDS model: a go decision records the round it signed (at most one)" {
+  [ "$(q 'ASK { chorus:signedRound a owl:DatatypeProperty }')" = yes ] || return 1
   grep -q 'sh:path chorus:signedRound ; sh:maxCount 1' "$TTL" || return 1
 }

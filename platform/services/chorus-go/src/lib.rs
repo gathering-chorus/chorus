@@ -530,6 +530,11 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     if row != row_now.id {
         return Err("this approval was asked for another row".into());
     }
+    // #4642: this server already decided the row (its signed proof is on disk): never twice, even
+    // if the door has not shown the decision yet or the card filing failed after it.
+    if store.dir.join("approvals").join(format!("decided-{row}.json")).exists() {
+        return Err("this row was already decided here".into());
+    }
     if row_now.state != "pending" {
         return Err(format!("this row was already decided ({})", row_now.state));
     }

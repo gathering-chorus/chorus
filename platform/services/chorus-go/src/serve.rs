@@ -141,18 +141,24 @@ fn run_status(dag: &str, run: &str) -> String {
 /// not a role typing Jeff's name (DEC-048): handle reaches this only after
 /// verify_assertion has checked Jeff's passkey signature over this round.
 fn complete_dagu(rec: &GoRecord) -> Result<String, String> {
+    complete_go(&rec.run, &rec.decision)?;
+    Ok(if rec.decision == "go" { format!("Go signed for #{}. It's landing.", rec.card) } else { format!("No signed for #{}. It's held.", rec.card) })
+}
+
+/// Answer the run's go step: `go` or `no`, as Jeff (only after his passkey signature checked).
+fn complete_go(run: &str, decision: &str) -> Result<(), String> {
     let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
     let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
-    let (dag, id) = go_run(&rec.run);
+    let (dag, id) = go_run(run);
     let o = Command::new(&dagu)
         .args(["--config", &cfg, "human-task", "complete", dag, "--run-id", &id, "--step", "skill_werk_go",
-               "--input", "accepter=jeff", "--input", &format!("decision={}", rec.decision)])
+               "--input", "accepter=jeff", "--input", &format!("decision={decision}")])
         .env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output().map_err(|e| format!("dagu: {e}"))?;
     if !o.status.success() {
         return Err(format!("signed, but the run did not take it: {}", String::from_utf8_lossy(&o.stderr).trim()));
     }
-    Ok(if rec.decision == "go" { format!("Go signed for #{}. It's landing.", rec.card) } else { format!("No signed for #{}. It's held.", rec.card) })
+    Ok(())
 }
 
 // ---- #4505: approvals. Rows live on the door (decisions domain); this process only reads them,
@@ -200,7 +206,12 @@ fn pending_approvals() -> Result<Vec<Value>, String> {
 fn row_now(row: &str) -> Result<ApprovalRow, String> {
     let all = pending_approvals()?;
     if let Some(r) = all.iter().find(|r| s_of(r, "row") == row) {
-        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action: s_of(r, "action"), kind: s_of(r, "kind"), round_now: None });
+        let (kind, action) = (s_of(r, "kind"), s_of(r, "action"));
+        // #4642: a go row is checked against the werk's HEAD now (the asker's werk for that card).
+        let round_now = if kind == "go" {
+            go_action(&action).ok().and_then(|g| round_of(s_of(r, "asker").trim_start_matches("principal-"), g.card).ok())
+        } else { None };
+        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action, kind, round_now });
     }
     let exists = door_get("/decisions/approvals")?.iter().any(|a| s_of(a, "name") == row);
     if exists { Ok(ApprovalRow { id: row.to_string(), state: "decided".into(), action: String::new(), kind: String::new(), round_now: None }) }
@@ -211,6 +222,12 @@ fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
     let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
     let r = row_now(row)?;
     if r.state != "pending" { return Err("this ask was already decided".into()); }
+    if r.kind == "go" {
+        let g = go_action(&r.action)?;
+        if r.round_now.as_deref() != Some(g.round.as_str()) {
+            return Err(format!("this go is for round {}; the demo moved on, so wait for the new one", short(&g.round)));
+        }
+    }
     let sha = action_sha(&r.action);
     let nonce = store.mint_approval_challenge(row, &sha)?;
     Ok(json!({"ok": true, "row": row, "nonce": nonce, "rpId": pk.rp_id, "credId": pk.cred_id,
@@ -221,8 +238,20 @@ fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
 fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &str, sig: &str) -> Result<Value, String> {
     let r = row_now(row)?;
     let d = decide_approval(store, nonce, decision, &r, ad, cd, sig)?;
-    write_decision(&d, &action_sha(&r.action), ad, cd, sig)?;
-    if d.decision != "approve" { return Ok(json!({"ok": true, "text": format!("Declined. Nothing was filed.")})); }
+    let sha = action_sha(&r.action);
+    if let Some(g) = &d.go {
+        // A go: Jeff's decision row (with the round it signed), then the run's go step.
+        write_decision(&d, &sha, ad, cd, sig, Some(&g.round))?;
+        let verb = if d.decision == "approve" { "go" } else { "no" };
+        complete_go(&g.run, verb)?;
+        return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
+    }
+    // A card: Jeff's signed decision is written first, the record that must never be lost (Silas
+    // 18:48); a door refusal files nothing. Then an approve replays the argv as data.
+    write_decision(&d, &sha, ad, cd, sig, None)?;
+    if d.decision != "approve" {
+        return Ok(json!({"ok": true, "text": "Declined. Nothing was filed."}));
+    }
     let o = Command::new(env_or("CHORUS_GO_CARDS", &format!("{}/platform/scripts/cards", chorus_home())))
         .args(&d.argv).env("DEPLOY_ROLE", "jeff").env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output().map_err(|e| format!("cards: {e}"))?;
@@ -234,16 +263,18 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
 }
 
 /// Jeff's decision is his own row, written as principal-jeff, only after verify_assertion passed.
-fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str) -> Result<(), String> {
+fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str, round: Option<&str>) -> Result<(), String> {
     let mint = env_or("CHORUS_GO_IDENTITY_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", chorus_home()));
     let t = Command::new(&mint).arg("jeff").output().map_err(|e| format!("identity mint: {e}"))?;
     let token = String::from_utf8_lossy(&t.stdout).trim().to_string();
     if !t.status.success() || token.is_empty() {
         return Err("signed, but there is no identity for jeff to record it with (Jeff's step: seed principal-jeff)".into());
     }
-    let body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
+    let mut body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
         "decides": d.row, "approvalVerdict": d.decision, "decidedAt": iso(d.at), "actionSha": sha,
-        "passkeyProof": json!({"authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
+        // the nonce rides with the signature so the land can re-verify a go (#4642)
+        "passkeyProof": json!({"nonce": d.nonce, "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
+    if let Some(r) = round { body["signedRound"] = json!(r); }
     // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
     let mut child = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
             "-H", "Content-Type: application/json", "-H", "@-",
