@@ -22,6 +22,9 @@ setup() {
   # #4577 — the pair pipeline
   run "$CM" check-straight pair "$F/pair-rows.tsv" "$F/pair-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/pair.yaml"
   [ "$status" -eq 0 ]
+  # #4789 — the mob pipeline (one driver, every other role verifies)
+  run "$CM" check-straight mob "$F/mob-rows.tsv" "$F/mob-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/mob.yaml"
+  [ "$status" -eq 0 ]
   # #4502 — the demo, its own pipeline that cicd calls as one step (Jeff 10-12 21:18)
   run "$CM" check-straight demo "$F/demo-rows.tsv" "$F/demo-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/demo.yaml"
   [ "$status" -eq 0 ]
@@ -38,6 +41,13 @@ setup() {
   ! cmp -s "$ROOT/platform/pipelines/athena.yaml" "$BATS_TEST_TMPDIR/athena.yaml" || return 1
   run "$CM" check athena "$F/athena-rows.tsv" "$BATS_TEST_TMPDIR/athena.yaml"
   [ "$status" -eq 1 ]
+}
+
+@test "negative proof (#4789): a mob whose verdict a hand edit gave to the driver is drift" {
+  sed 's/(${NAVIGATORS} answers)/(${ROLE} answers)/' "$ROOT/platform/pipelines/mob.yaml" > "$BATS_TEST_TMPDIR/mob.yaml"
+  ! cmp -s "$ROOT/platform/pipelines/mob.yaml" "$BATS_TEST_TMPDIR/mob.yaml" || return 1
+  run "$CM" check-straight mob "$F/mob-rows.tsv" "$F/mob-pipe.tsv" "$KNOWN" "$BATS_TEST_TMPDIR/mob.yaml"
+  [ "$status" -ne 0 ]
 }
 
 @test "negative proof: a pair whose green a hand edit gave to the driver is drift" {
@@ -70,7 +80,7 @@ setup() {
 
 @test "dagu itself validates both" {
   command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
-  for f in cicd-test nightly pair demo cicd card; do
+  for f in cicd-test nightly pair demo cicd card mob; do
     run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu validate "$ROOT/platform/pipelines/$f.yaml"
     [ "$status" -eq 0 ] || { echo "$f: $output"; return 1; }
   done

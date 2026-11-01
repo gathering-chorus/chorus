@@ -7,6 +7,7 @@
 # chorus-make writes from their rows, and a hand edit is caught before it lands.
 
 setup() {
+  export MOB_OPEN_BIN=/usr/bin/true  # #4789 — no open mob; never read the live dagu from a unit test
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   FIX="$ROOT/platform/services/chorus-make/tests/fixtures"
   CM="$BATS_TEST_TMPDIR/target/debug/chorus-make"

@@ -123,6 +123,24 @@ chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
                   sh:description "Run to the end and return the output." ] .
 
 chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a borg-tend-herald call runs (#4513)." .
+
+# #4789 — mob-verify: a mob navigator's verdict, recorded by the runner as a Task
+# (runsAs caller) so WHO verified is the runner's word, never typed text.
+# Arguments: verify {card} {run} {verdict} {note}; the caller is never an argument.
+chorus:MobVerifyInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "mob-verify input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The mob's card." ] ;
+    sh:property [ sh:path chorus:mobRun ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Za-z0-9_-]{6,64}$" ; sh:order 2 ; sh:name "run" ;
+                  sh:description "The open mob run's dagu id, as mob start's nudge names it." ] ;
+    sh:property [ sh:path chorus:mobVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "pass" "fail" ) ; sh:order 3 ; sh:name "verdict" ;
+                  sh:description "pass, or fail to stop the mob and send the driver back to slice." ] ;
+    sh:property [ sh:path chorus:mobNote ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:maxLength 300 ; sh:order 4 ; sh:name "note" ;
+                  sh:description "What you ran from your own account, and what it showed." ] .
+
+chorus:mobRun a owl:DatatypeProperty ; rdfs:label "mob run" ; rdfs:comment "The dagu run id of the mob a verdict is for (#4789)." .
+chorus:mobVerdict a owl:DatatypeProperty ; rdfs:label "mob verdict" ; rdfs:comment "pass or fail: a mob navigator's verdict (#4789)." .
+chorus:mobNote a owl:DatatypeProperty ; rdfs:label "mob note" ; rdfs:comment "What a mob navigator ran and saw (#4789)." .
 chorus:dryRun a owl:DatatypeProperty ; rdfs:label "dry run" ; rdfs:comment "Plan and print, write nothing (#4513)." .
 chorus:wait a owl:DatatypeProperty ; rdfs:label "wait" ; rdfs:comment "Run to the end and return the output (#4513)." .
 

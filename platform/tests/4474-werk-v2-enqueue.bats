@@ -6,6 +6,7 @@
 # (#4474 run 10 died with the shell that ran `dagu start`).
 
 setup() {
+  export MOB_OPEN_BIN=/usr/bin/true  # #4789 — no open mob; never read the live dagu from a unit test
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   export CHORUS_HOME="$BATS_TEST_TMPDIR/home" CHORUS_WERK_BASE="$BATS_TEST_TMPDIR/werks"
   mkdir -p "$CHORUS_HOME" "$CHORUS_WERK_BASE/kade-4474/platform/pipelines"

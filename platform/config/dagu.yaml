@@ -61,6 +61,10 @@ queues:
     # as a cicd-test sub-run and its hand-off is enqueued on werk.
     - name: pair
       max_concurrency: 4
+    # #4789 — mobs (made by chorus-make). One mob at a time: a mob IS the one
+    # build, and pipeline-start refuses other cards while it holds the floor.
+    - name: mob
+      max_concurrency: 1
     # #4654 — a card's pull and its coding (made by chorus-make). A card run
     # spends hours waiting on its role's "done", so every WIP card can hold
     # one; its hand-off starts the card's athena or cicd run on their queues.

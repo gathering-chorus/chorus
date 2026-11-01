@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# @domain: pipelines
+# mob — the steps of the mob pipeline (#4789): one driver builds, every other
+# role verifies the card from its own account.
+#
+# Jeff 2026-10-28 (rule: no parallel builds until pulse tells the truth); Silas
+# 2026-11-01 06:14–06:17 (design, navigating #4789). The pair pipeline is the
+# template; a mob has N navigators where a pair has one.
+#
+#   mob start  CARD DRIVER NAV1,NAV2,...  refuse a card not in WIP; the seats go on the card; nudge each navigator
+#   mob verify CARD RUN pass|fail "note"  a navigator's verdict, run ONLY by chorus-runner as the MCP task mob-verify
+#   mob check  CARD BY verified|fail|stop the run's human step: re-count the seats; stop ends the mob
+#
+# The open mob is the live `mob` dagu run (mob-open): its params hold the seats,
+# its run id keys every verdict. Who verified is never text a role typed (Silas
+# 06:21: every card comment's author is "jeff"): mob-verify is a runsAs=caller
+# Task on chorus-runner, and the runner's own record (runner-tasks/<id>.json,
+# written by the runner's account only) carries the verified `caller`. verify
+# reads its OWN record (pid = its parent, start time matching) and refuses
+# without one; check re-counts every seat from the runner's records alone, so a
+# forged record anywhere else never counts. The card comment is for people.
+# The last seat's verify answers the one human task; a FAIL answers it at once.
+# While the mob holds the floor, pipeline-start refuses every other card (AC2).
+set -uo pipefail
+
+CH="${CHORUS_HOME:?CHORUS_HOME not set}"
+S="$CH/platform/scripts"
+CARDS="${MOB_CARDS:-$S/cards}"
+DAGU="${MOB_DAGU:-/opt/homebrew/bin/dagu}"
+DAGU_CONFIG="${MOB_DAGU_CONFIG:-$CH/platform/config/dagu.yaml}"
+MOB_OPEN="${MOB_OPEN_BIN:-$(dirname "$0")/mob-open}"
+# a runsAs=caller child runs with the ROLE's HOME (Silas 06:27): the runner's
+# store is found by CHORUS_STATE_DIR, never by $HOME
+TASKS="${CHORUS_RUNNER_TASKS:-${CHORUS_STATE_DIR:-$HOME/.chorus}/runner-tasks}"
+
+say() { echo "mob: $*"; }
+die() { echo "mob: $*" >&2; exit 1; }
+spine() { bash "$S/chorus-log" "$@" >/dev/null 2>&1 || true; }
+nudge() { env -u CHORUS_ROLE bash "$S/ops-nudge" "$1" "$2" >/dev/null 2>&1 || say "nudge to $1 did not go out"; }
+the_run() { # CARD — "<run> <driver> <navs>" of the card's open mob run
+  local out rc=0
+  out="$("$MOB_OPEN")" || rc=$?
+  [ "$rc" -eq 0 ] || die "#$1: could not read dagu for the open mob run: $out"
+  awk -v c="$1" '$2==c {print $1, $3, $4; exit}' <<<"$out"
+}
+verdicts() { # CARD RUN — "<caller> <verdict>" per runner record of mob verify for this run, oldest first
+  python3 -I - "$TASKS" "$1" "$2" <<'PY'
+import glob, json, os, stat, sys
+tasks, card, run = sys.argv[1:4]
+W = stat.S_IWGRP | stat.S_IWOTH
+try:
+    d = os.stat(tasks)
+except OSError as e:
+    sys.exit(f"runner store {tasks} unreadable: {e}")
+if d.st_mode & W:
+    sys.exit(f"runner store {tasks} is writable by group or others; its records are no one's word")
+# check runs in dagu and verify under the HTTP runner, both as the runner's
+# account: a store another account owns (a role's own stdio runner) is not it
+if d.st_uid != os.getuid():
+    sys.exit(f"runner store {tasks} is not the runner's (owner uid {d.st_uid}, this is uid {os.getuid()}); only the HTTP runner's shared store counts")
+rows = []
+for f in glob.glob(os.path.join(tasks, "*.json")):
+    try:
+        st = os.stat(f)
+        if st.st_uid != d.st_uid or st.st_mode & W:
+            continue  # not the runner's record
+        r = json.load(open(f))
+    except Exception:
+        continue
+    a = r.get("argv") or []
+    if os.path.basename(r.get("binary") or "") != "mob" or a[:3] != ["verify", card, run] or len(a) < 4:
+        continue
+    ex = f[:-5] + ".exit"
+    mine = os.environ.get("CHORUS_TASK_EXIT") == ex
+    if not mine:  # another call counts only once it finished clean (a refused verify exits 1)
+        try:
+            if open(ex).read().strip() != "0":
+                continue
+        except OSError:
+            continue
+    rows.append((r.get("startedAt") or 0, r.get("caller") or "", a[3]))
+for _, who, v in sorted(rows):
+    print(who.removeprefix("principal-"), v)
+PY
+}
+passed() { # CARD RUN NAV — NAV's latest verdict on this run, from the runner's records, is pass
+  local v; v="$(verdicts "$1" "$2" 2>&1)" || die "#$1: $v"
+  [ "$(awk -v n="$3" '$1==n {v=$2} END {print v}' <<<"$v")" = pass ]
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+start)
+  card="${1:-}"; driver="${2:-}"; navs="${3:-}"
+  [ -n "$card" ] && [ -n "$driver" ] && [ -n "$navs" ] || die "usage: mob start CARD DRIVER NAV1,NAV2,..."
+  IFS=, read -ra seats <<<"$navs"
+  for n in "${seats[@]}"; do [ "$n" != "$driver" ] || die "#$card: $driver cannot drive and navigate"; done
+  view=$(bash "$CARDS" view "$card" 2>&1) || die "#$card: the board did not answer: $view"
+  grep -qE '^\s*Status:\s+WIP\b' <<<"$view" || die "#$card is not in WIP: pull it before the mob"
+  list="$(printf '%s, ' "${seats[@]}")"; list="${list%, }"
+  bash "$CARDS" comment "$card" "mob #$card seats: $driver drives; $list navigate (run ${DAG_RUN_ID:-?})" >/dev/null 2>&1 ||
+    die "#$card: could not put the seats on the card"
+  spine mob.started system "card=$card" "driver=$driver" "navigators=$navs" "run_id=${DAG_RUN_ID:-}"
+  for n in "${seats[@]}"; do
+    nudge "$n" "mob #$card: $driver drives; you verify from your own account. When you have, call the MCP tool mob-verify: card=$card run=${DAG_RUN_ID:-?} verdict=pass|fail note=\"what you ran\""
+  done
+  say "#$card mob open: $driver drives; $list navigate"
+  ;;
+verify)
+  card="${1:-}"; run="${2:-}"; verdict="${3:-}"; note="${4:-}"
+  [ -n "$card" ] && [ -n "$run" ] && [ -n "$note" ] || die "usage: mob verify CARD RUN pass|fail \"what you ran\" (via the MCP tool mob-verify)"
+  case "$verdict" in pass|fail) ;; *) die "#$card: '$verdict' is not pass or fail" ;; esac
+  # who is calling: the runner's record of THIS task, never an argument or env
+  rec="${CHORUS_TASK_EXIT:-}"; rec="${rec%.exit}.json"
+  [ -n "${CHORUS_TASK_EXIT:-}" ] && [ -f "$rec" ] || die "#$card: no runner record for this call; verify through the MCP tool mob-verify, not a shell"
+  who="$(python3 -I - "$rec" "$PPID" "$(ps -o lstart= -p "$PPID" 2>/dev/null | sed 's/^ *//; s/ *$//')" "$card" "$run" "$verdict" "$note" 2>&1 <<'PY'
+import json, os, stat, sys
+rec, ppid, pstart, *argv = sys.argv[1:]
+st = os.stat(rec)
+if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH) or st.st_uid != os.stat(os.path.dirname(rec)).st_uid:
+    sys.exit("the runner record is writable by others or not the runner's")
+r = json.load(open(rec))
+if str(r.get("pid")) != ppid or (r.get("pidStartedAt") or "") != pstart:
+    sys.exit("the runner record is not this call's (pid or start time differ)")
+if (r.get("argv") or [])[:5] != ["verify"] + argv:
+    sys.exit("the runner record's arguments are not this call's")
+print((r.get("caller") or "").removeprefix("principal-"))
+PY
+)" || die "#$card: $who"
+  [ -n "$who" ] || die "#$card: the runner record names no caller"
+  read -r open_run driver navs <<<"$(the_run "$card")"
+  [ "${open_run:-}" = "$run" ] || die "#$card: mob run $run is not the card's open mob run (${open_run:-none})"
+  [ "$who" != "$driver" ] || die "#$card: $who drives; the driver does not verify"
+  IFS=, read -ra seats <<<"$navs"
+  seat=""; for n in "${seats[@]}"; do [ "$n" = "$who" ] && seat=1; done
+  [ -n "$seat" ] || die "#$card: $who has no seat in mob run $run (seats: $navs)"
+  V="$(tr a-z A-Z <<<"$verdict")"
+  bash "$CARDS" comment "$card" "mob #$card run $run: $who verified: $V — $note" >/dev/null 2>&1 || say "#$card: the card comment did not post (the runner record stands)"
+  spine mob.verified system "card=$card" "run_id=$run" "seat=$who" "verdict=$verdict"
+  say "#$card: $who's $V recorded"
+  complete() { "$DAGU" --config "$DAGU_CONFIG" human-task complete mob --run-id "$run" --step skill_mob_verified --input by=mob --input "decision=$1"; }
+  if [ "$verdict" = fail ]; then
+    complete fail >/dev/null 2>&1 || die "#$card: FAIL recorded, but the run's human task did not answer"
+    say "#$card: FAIL stops mob run $run; the driver goes back to slice"
+    exit 0
+  fi
+  for n in "${seats[@]}"; do passed "$card" "$run" "$n" || { say "#$card: waiting on $n"; exit 0; }; done
+  complete verified >/dev/null 2>&1 || die "#$card: every seat passed, but the run's human task did not answer"
+  say "#$card: every seat passed; mob run $run goes on"
+  ;;
+check)
+  card="${1:-}"; by="${2:-}"; decision="${3:-}"
+  [ -n "$card" ] && [ -n "$by" ] && [ -n "$decision" ] || die "usage: mob check CARD BY verified|fail|stop"
+  run="${DAG_RUN_ID:-}"; read -r _run driver navs <<<"$(the_run "$card")"
+  run="${run:-${_run:-}}"
+  IFS=, read -ra seats <<<"${navs:-}"
+  case "$decision" in
+    stop)
+      ok=""; for n in "${seats[@]}" abby-normal jeff; do [ "$by" = "$n" ] && ok=1; done
+      [ -n "$ok" ] || die "#$card: $by cannot stop the mob; a navigator, Abby or Jeff can"
+      spine mob.ended system "card=$card" "by=$by" "run_id=$run"
+      bash "$CARDS" comment "$card" "mob #$card run $run: $by ended the mob" >/dev/null 2>&1 || true
+      die "#$card: $by ended the mob" ;;
+    fail) die "#$card: a navigator's FAIL stopped mob run $run; back to slice" ;;
+    verified)
+      [ "$by" = mob ] || die "#$card: only the last seat's verify answers verified, not '$by'"
+      for n in "${seats[@]}"; do passed "$card" "$run" "$n" || die "#$card: $n has not verified mob run $run"; done
+      spine mob.verified.all system "card=$card" "run_id=$run"
+      say "#$card: every seat verified mob run $run" ;;
+    *) die "#$card: '$decision' is not verified, fail or stop" ;;
+  esac
+  ;;
+*) die "usage: mob start|verify|check — see the header" ;;
+esac
