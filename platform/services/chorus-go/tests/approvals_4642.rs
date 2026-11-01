@@ -1,0 +1,132 @@
+// @test-type: unit — a scratch go store in a temp dir and a software P-256 key standing in for Jeff's phone; no network, no live store.
+// @domain: security
+// @card: #4642
+// @owner: wren
+use chorus_go::*;
+use p256::ecdsa::signature::Signer;
+use p256::ecdsa::{Signature, SigningKey};
+use p256::pkcs8::EncodePublicKey;
+use sha2::{Digest, Sha256};
+use std::path::PathBuf;
+
+const RP: &str = "lightlifeurbangardens.com";
+const ORIGIN: &str = "https://lightlifeurbangardens.com";
+const ROUND: &str = "da13a20c285bc7620e81ac3109f9ada644012319";
+
+fn tmp(tag: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("chorus-go-{tag}-{}-{}", std::process::id(), now_nanos()));
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+fn now_nanos() -> u128 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() }
+
+/// A phone: a key, and what it answers to create() and get().
+struct Phone { key: SigningKey, counter: u32 }
+impl Phone {
+    fn new() -> Phone { Phone { key: SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng), counter: 0 } }
+    fn spki(&self) -> String { b64url(self.key.verifying_key().to_public_key_der().unwrap().as_bytes()) }
+    fn client_data(kind: &str, challenge: &[u8], origin: &str) -> Vec<u8> {
+        format!(r#"{{"type":"{kind}","challenge":"{}","origin":"{origin}","crossOrigin":false}}"#, b64url(challenge)).into_bytes()
+    }
+    /// sign as an authenticator would; flags 0x05 = user present + verified
+    fn sign(&mut self, challenge: &[u8], rp: &str, origin: &str, flags: u8) -> (String, String, String) {
+        self.counter += 1;
+        let mut ad: Vec<u8> = Sha256::digest(rp.as_bytes()).to_vec();
+        ad.push(flags);
+        ad.extend_from_slice(&self.counter.to_be_bytes());
+        let cd = Phone::client_data("webauthn.get", challenge, origin);
+        let mut msg = ad.clone();
+        msg.extend_from_slice(&Sha256::digest(&cd));
+        let sig: Signature = self.key.sign(&msg);
+        (b64url(&ad), b64url(&cd), b64url(sig.to_der().as_bytes()))
+    }
+}
+
+fn registered(tag: &str) -> (Store, Phone) {
+    let store = Store::open(&tmp(tag)).unwrap();
+    let phone = Phone::new();
+    let token = store.mint_register_token().unwrap();
+    let cd = Phone::client_data("webauthn.create", &register_challenge(&token), ORIGIN);
+    register(&store, &token, "cred-1", &phone.spki(), &cd, RP, ORIGIN).unwrap();
+    (store, phone)
+}
+
+// #4642 — a go waits on the same list: Jeff's passkey signs one card's run at one round,
+// the land re-verifies that signature, and a go and a card ask never cross-replay.
+const HEAD: &str = "5174a0592261";
+const OLD: &str = "e04787ca93b8";
+
+fn go_json(card: u64, round: &str) -> String {
+    format!(r#"{{"card":{card},"run":"034qFPOewc9praHJbg6SYH","round":"{round}"}}"#)
+}
+fn go_row(action: &str, now: Option<&str>) -> ApprovalRow {
+    ApprovalRow { id: "approval-go-4642".into(), state: "pending".into(), action: action.into(), kind: "go".into(), round_now: now.map(str::to_string) }
+}
+/// Decide a row the way the page does; returns the decision and the proof the server stores.
+fn sign(store: &Store, phone: &mut Phone, row: &ApprovalRow, verdict: &str) -> Result<(ApprovalDecision, serde_json::Value), String> {
+    let sha = action_sha(&row.action);
+    let nonce = store.mint_approval_challenge(&row.id, &sha).unwrap();
+    let (ad, cd, sig) = phone.sign(&approval_challenge(&row.id, &sha, verdict, &nonce), RP, ORIGIN, 0x05);
+    let d = decide_approval(store, &nonce, verdict, row, &ad, &cd, &sig)?;
+    Ok((d, serde_json::json!({"nonce": nonce, "authData": ad, "clientDataJSON": cd, "signature": sig})))
+}
+
+#[test]
+fn a_go_signed_for_this_round_is_a_go_the_land_accepts() {
+    let (store, mut phone) = registered("go-ok");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    let (d, proof) = sign(&store, &mut phone, &r, "approve").unwrap();
+    assert_eq!(d.go.as_ref().unwrap().round, HEAD);
+    assert!(d.argv.is_empty(), "a go replays no cards add");
+    let pk = store.passkey().unwrap().unwrap();
+    check_go_decision(&pk, &r.id, &r.action, "approve", &proof, 4642, HEAD).unwrap();
+}
+
+#[test]
+fn negative_proof_a_go_for_a_stale_round_is_refused_at_decide() {
+    let (store, mut phone) = registered("go-stale");
+    let r = go_row(&go_json(4642, OLD), Some(HEAD));
+    let e = sign(&store, &mut phone, &r, "approve").unwrap_err();
+    assert!(e.contains("the demo moved on"), "{e}");
+}
+
+#[test]
+fn negative_proof_go_and_card_actions_never_cross_replay() {
+    let (store, mut phone) = registered("go-cross");
+    let r = go_row(r#"["add","T","--owner","kade"]"#, Some(HEAD));
+    assert!(sign(&store, &mut phone, &r, "approve").unwrap_err().contains("not a go action"));
+    let c = ApprovalRow { id: "approval-wren-x".into(), state: "pending".into(), action: go_json(4642, HEAD), kind: "card".into(), round_now: None };
+    assert!(sign(&store, &mut phone, &c, "approve").unwrap_err().contains("not a cards add argv"));
+    for bad in [r#"{"card":4642,"run":"r1","round":"abc1234","extra":1}"#, r#"{"card":4642,"run":"a b","round":"abc1234"}"#,
+                r#"{"card":0,"run":"r1","round":"abc1234"}"#, r#"{"card":4642,"run":"r1","round":"HEAD"}"#] {
+        assert!(go_action(bad).unwrap_err().contains("not a go action"), "{bad}");
+    }
+}
+
+#[test]
+fn negative_proof_the_land_refuses_a_go_row_its_signature_does_not_back() {
+    let (store, mut phone) = registered("go-land");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    let (_, proof) = sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    assert!(check_go_decision(&pk, &r.id, &r.action, "approve", &proof, 4505, HEAD).unwrap_err().contains("not #4505"));
+    assert!(check_go_decision(&pk, &r.id, &r.action, "approve", &proof, 4642, OLD).unwrap_err().contains("signed for round"));
+    assert!(check_go_decision(&pk, &r.id, &r.action, "decline", &proof, 4642, HEAD).unwrap_err().contains("declined"));
+    assert!(check_go_decision(&pk, &r.id, &r.action, "approve", &serde_json::json!({}), 4642, HEAD).unwrap_err().contains("no signature"));
+    let mut forged = proof.clone();
+    forged["nonce"] = serde_json::json!("another-nonce");
+    assert!(check_go_decision(&pk, &r.id, &r.action, "approve", &forged, 4642, HEAD).unwrap_err().contains("not signed by Jeff's passkey"));
+    // the same signature does not carry over to an action rewritten after Jeff signed
+    assert!(check_go_decision(&pk, &r.id, &go_json(4642, OLD), "approve", &proof, 4642, OLD).is_err());
+}
+
+#[test]
+fn a_declined_go_is_recorded_and_lands_nothing() {
+    let (store, mut phone) = registered("go-no");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    let (d, proof) = sign(&store, &mut phone, &r, "decline").unwrap();
+    assert_eq!(d.decision, "decline");
+    let pk = store.passkey().unwrap().unwrap();
+    assert!(check_go_decision(&pk, &r.id, &r.action, "decline", &proof, 4642, HEAD).is_err());
+}
+

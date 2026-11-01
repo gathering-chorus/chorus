@@ -56,7 +56,7 @@ fn registered(tag: &str) -> (Store, Phone) {
 const ARGV: &str = r#"["add","Retire the X","--owner","kade","--priority","P3"]"#;
 
 fn row(action: &str, state: &str) -> ApprovalRow {
-    ApprovalRow { id: "approval-wren-1".into(), state: state.into(), action: action.into() }
+    ApprovalRow { id: "approval-wren-1".into(), state: state.into(), action: action.into(), kind: "card".into(), round_now: None }
 }
 
 fn decide_row(store: &Store, phone: &mut Phone, shown: &ApprovalRow, now: &ApprovalRow, decision: &str) -> Result<ApprovalDecision, String> {

@@ -200,10 +200,10 @@ fn pending_approvals() -> Result<Vec<Value>, String> {
 fn row_now(row: &str) -> Result<ApprovalRow, String> {
     let all = pending_approvals()?;
     if let Some(r) = all.iter().find(|r| s_of(r, "row") == row) {
-        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action: s_of(r, "action") });
+        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action: s_of(r, "action"), kind: s_of(r, "kind"), round_now: None });
     }
     let exists = door_get("/decisions/approvals")?.iter().any(|a| s_of(a, "name") == row);
-    if exists { Ok(ApprovalRow { id: row.to_string(), state: "decided".into(), action: String::new() }) }
+    if exists { Ok(ApprovalRow { id: row.to_string(), state: "decided".into(), action: String::new(), kind: String::new(), round_now: None }) }
     else { Err(format!("no approval '{row}'")) }
 }
 
