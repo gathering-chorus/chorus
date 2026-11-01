@@ -36,7 +36,7 @@ def live(runs, dag, run, card):
     for r in runs:
         if r.get("dagRunId") != run:
             continue
-        if r.get("name", dag) != dag:
+        if r.get("name") != dag:  # a row with no name is no proof (Silas 11:17)
             return f"run {run} is a {r.get('name')} run, not {dag}"
         if r.get("statusLabel") != "running":
             return f"{dag} run {run} is {r.get('statusLabel')}, not running"
@@ -52,7 +52,7 @@ def main(argv):
         return 1
     dag, run, card = argv[1], argv[2], argv[3]
     try:
-        runs = [dict(r, name=r.get("name", dag)) for r in load_cws().dagu_list(dag, time.time() - 2 * 86400)]
+        runs = load_cws().dagu_list(dag, time.time() - 2 * 86400)
     except Exception as e:
         print(f"handoff-live: could not read dagu: {e}", file=sys.stderr)
         return 2

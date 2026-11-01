@@ -325,3 +325,19 @@ live_run() { # DAG STATUS PARAMS — the one run dagu lists
     [ ! -e "$L/enq" ] || { echo "[$case] enqueued: $(cat "$L/enq")"; return 1; }
   done
 }
+
+@test "#4852 (Silas 11:17): platform/scripts/handoff-live itself — live 0, finished or another card's run 1, nameless row 1, unreadable dagu 2" {
+  HL="$ROOT/platform/scripts/handoff-live"
+  HF="$BATS_TEST_TMPDIR/hl-api"; mkdir -p "$HF/api/v1"; export CWS_DAGU="file://$HF"
+  row() { printf '{"dagRuns":[{%s"dagRunId":"run1","statusLabel":"%s","params":"%s","startedAt":"2026-11-01T11:00:00-05:00"}]}\n' "$1" "$2" "$3" > "$HF/api/v1/dag-runs"; }
+  row '"name":"pair",' running "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 0 ] || { echo "live: $output"; return 1; }
+  run "$HL" pair run1 48520; [ "$status" -eq 1 ] || { echo "CARD=4852 matched 48520: $output"; return 1; }
+  row '"name":"pair",' succeeded "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 1 ] && [[ "$output" == *"succeeded, not running"* ]] || { echo "finished: $output"; return 1; }
+  row '' running "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 1 ] || { echo "nameless row counted: $output"; return 1; }
+  rm -rf "$HF"; export CWS_DAGU="http://127.0.0.1:9"
+  run "$HL" pair run1 4852;  [ "$status" -eq 2 ] && [[ "$output" == *"could not read dagu"* ]] || { echo "unreadable: $status $output"; return 1; }
+  run "$HL" cicd run1 4852;  [ "$status" -eq 1 ] || { echo "cicd accepted: $output"; return 1; }
+}
