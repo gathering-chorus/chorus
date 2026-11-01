@@ -746,6 +746,12 @@ def dagu_go(card, run):
         nav = re.search(r"(?:^|\s)NAVIGATOR=\"?([\w-]+)", run.get("params") or "")
         cmd = f"{base} --input by={nav.group(1) if nav else 'NAVIGATOR'}"
         return f" · green: {cmd} --input decision=green · stop: {cmd} --input decision=stop"
+    if dag == MOB_DAG:
+        # #4862 (Silas 12:44) — the mob's human step is answered by the last
+        # seat's werk-mob-verify, never by Jeff's go; a navigator, Abby or Jeff
+        # may stop it
+        return (f" · verify: werk-mob-verify card={card} run={run.get('dagRunId')} verdict=pass|fail head=<sha>"
+                f" · stop: {base} --input by=<navigator|abby-normal|jeff> --input decision=stop")
     if dag == CARD_DAG:
         # #4654 — the card's role says its code is done; Jeff's go is not asked here
         who = re.search(r"(?:^|\s)ROLE=\"?([\w-]+)", run.get("params") or "")

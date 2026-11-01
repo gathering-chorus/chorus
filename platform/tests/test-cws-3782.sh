@@ -430,6 +430,10 @@ t "#4862 AC2: an open mob is the card's line, naming who still verifies" "#4870 
 t "#4862 AC1: the run table lists the mob run" "  mob " "$out"
 t "#4862 AC3: a pipeline no list names still shows for its card" "zzz-new-flow" "$out"
 if [[ "$out" == *"m8"* || "$out" == *"48700"* ]]; then echo "FAIL #4862: another card's mob (CARD=48700) counted for 4870"; fails=$((fails+1)); fi
+# NEGATIVE PROOF (Silas 12:44): a mob's human step is answered by the last seat's
+# verify, never by Jeff's go; /cws must not offer accepter=jeff or a go/no there
+if [[ "$out" == *"accepter=jeff"* || "$out" == *"go: dagu"* ]]; then echo "FAIL #4862: /cws offers Jeff's go at a mob's verify step"; fails=$((fails+1)); fi
+t "#4862: a waiting mob says how its seats answer" "verify: werk-mob-verify card=4870 run=m9" "$out"
 echo '{"data":{"cards":[{"id":4870,"owner":"Wren"}]}}' > "$TD/api9/api/chorus/context/board/wip"
 out=$(env "${E9[@]}" CWS_API="file://$TD/api9" "$CWS")
 t "#4862 AC2: the no-arg view shows the open mob" "#4870 wren   mob: waiting on kade" "$out"
