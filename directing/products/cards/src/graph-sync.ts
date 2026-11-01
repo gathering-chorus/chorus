@@ -18,7 +18,7 @@ import * as path from 'path';
 import { BoardTask } from './types';
 import { emitSpineEvent } from './events';
 
-const ATHENA_MAKE = process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
+export const ATHENA_MAKE = process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
 const CARDS_ROUTE = '/cards/cards';
 
 /** The fields a Card row carries, as the door takes them. */
@@ -112,7 +112,7 @@ function writerRole(): string {
 }
 
 let cachedToken: { role: string; token: string; at: number } | null = null;
-function identityToken(role: string): string {
+export function identityToken(role: string): string {
   // Tokens live about 600s; take a fresh one every 5 minutes.
   if (cachedToken && cachedToken.role === role && Date.now() - cachedToken.at < 300_000) return cachedToken.token;
   const script = process.env.CHORUS_IDENTITY_TOKEN_BIN
