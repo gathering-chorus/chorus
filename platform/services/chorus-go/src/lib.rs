@@ -252,7 +252,7 @@ impl Store {
 
     pub fn open(dir: &Path) -> R<Store> {
         use std::os::unix::fs::PermissionsExt;
-        for d in [dir.to_path_buf(), dir.join("challenges"), dir.join("records")] {
+        for d in [dir.to_path_buf(), dir.join("challenges"), dir.join("records"), dir.join("approvals")] {
             fs::create_dir_all(&d).map_err(|e| format!("mkdir {}: {e}", d.display()))?;
             fs::set_permissions(&d, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
         }
@@ -321,6 +321,26 @@ impl Store {
             None => Ok(None),
             Some(v) => GoRecord::from_json(&v).map(Some),
         }
+    }
+    /// #4505: an approval challenge lives in its own dir, so a go nonce can never be spent here.
+    pub fn mint_approval_challenge(&self, row: &str, action_sha: &str) -> R<String> {
+        safe_name(row)?;
+        let nonce = random_token()?;
+        write_private(&self.dir.join("approvals").join(format!("{nonce}.json")),
+            &json!({"row": row, "action_sha": action_sha, "at": now()}).to_string())?;
+        Ok(nonce)
+    }
+
+    /// One use: the file is removed before the answer is checked.
+    pub fn take_approval_challenge(&self, nonce: &str) -> R<(String, String)> {
+        let p = self.dir.join("approvals").join(format!("{}.json", safe_name(nonce)?));
+        let v = read_json(&p).ok_or("this approval was already used, or never asked for")?;
+        fs::remove_file(&p).map_err(|e| format!("could not spend the challenge: {e}"))?;
+        if now().saturating_sub(v.get("at").and_then(Value::as_u64).unwrap_or(0)) > CHALLENGE_TTL_SECS {
+            return Err("this approvals page is too old; reload it".into());
+        }
+        let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string).unwrap_or_default();
+        Ok((s("row"), s("action_sha")))
     }
 }
 
@@ -395,4 +415,81 @@ pub fn werk_head(werk: &str) -> Result<String, String> {
         return Err(String::from_utf8_lossy(&o.stderr).trim().to_string());
     }
     Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+// ---- #4505: approvals — one row Jeff decides on, signed by his passkey ----
+
+/// The bytes Jeff's phone signs for an approval: one row, one exact action, one decision, one nonce.
+pub fn approval_challenge(row: &str, action_sha: &str, decision: &str, nonce: &str) -> [u8; 32] {
+    sha256(format!("chorus-go/v1|approval|{row}|{action_sha}|{decision}|{nonce}").as_bytes())
+}
+
+/// The action's fingerprint: what the challenge binds, so an edited row can't ride an old signature.
+pub fn action_sha(action: &str) -> String {
+    b64url(&sha256(action.as_bytes()))
+}
+
+/// An approval's action must be a `cards add` argv: a JSON array of strings starting with "add".
+/// It is replayed as data (no shell), so anything else is refused here, at post and at replay.
+pub fn cards_add_argv(action: &str) -> R<Vec<String>> {
+    let v: Value = serde_json::from_str(action).map_err(|_| "not a cards add argv: not JSON".to_string())?;
+    let arr = v.as_array().ok_or("not a cards add argv: not an array")?;
+    let mut out = Vec::with_capacity(arr.len());
+    for a in arr {
+        let s = a.as_str().ok_or("not a cards add argv: every element is a string")?;
+        if s.contains('\0') {
+            return Err("not a cards add argv: NUL in an argument".into());
+        }
+        out.push(s.to_string());
+    }
+    if out.len() < 2 || out[0] != "add" {
+        return Err("not a cards add argv: it must start with \"add\" and carry a title".into());
+    }
+    Ok(out)
+}
+
+/// A row as the door serves it, the fields a decision reads.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ApprovalRow {
+    pub id: String,
+    pub state: String,
+    pub action: String,
+}
+
+/// What a verified decision hands the server to record (and, on approve, replay).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ApprovalDecision {
+    pub row: String,
+    pub decision: String,
+    pub argv: Vec<String>,
+    pub at: u64,
+}
+
+/// Jeff decides one row. Order matters: spend the nonce, check the row is still the one
+/// he was shown (same id, still pending, same action), check the action, then the signature.
+pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &ApprovalRow,
+                       auth_data: &str, client_data: &str, signature: &str) -> R<ApprovalDecision> {
+    if decision != "approve" && decision != "decline" {
+        return Err(format!("decision is approve or decline, not '{decision}'"));
+    }
+    let mut pk = store.passkey()?.ok_or("no passkey is registered yet")?;
+    let (row, sha) = store.take_approval_challenge(nonce)?;
+    if row != row_now.id {
+        return Err("this approval was asked for another row".into());
+    }
+    if row_now.state != "pending" {
+        return Err(format!("this row was already decided ({})", row_now.state));
+    }
+    if action_sha(&row_now.action) != sha {
+        return Err("the row's action changed after the page was shown; reload it".into());
+    }
+    let argv = cards_add_argv(&row_now.action)?;
+    let ch = approval_challenge(&row, &sha, decision, nonce);
+    let count = verify_assertion(&pk, &ch, &unb64(auth_data)?, &unb64(client_data)?, &unb64(signature)?)?;
+    if (count != 0 || pk.sign_count != 0) && count <= pk.sign_count {
+        return Err("the passkey's counter went backwards (a copied key?)".into());
+    }
+    pk.sign_count = count;
+    store.save_passkey(&pk)?;
+    Ok(ApprovalDecision { row, decision: decision.to_string(), argv, at: now() })
 }

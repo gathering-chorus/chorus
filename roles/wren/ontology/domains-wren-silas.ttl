@@ -334,3 +334,53 @@ chorus:toolchain      chorus:inLayer chorus:layer-build .
 chorus:deploys        chorus:inLayer chorus:layer-build ; chorus:dependsOn chorus:builds .
 chorus:metrics        chorus:inLayer chorus:layer-capability .
 chorus:analytics      chorus:inLayer chorus:layer-capability ; chorus:dependsOn chorus:metrics .
+
+# #4505 round 1 — Approval (decisions domain, Wren). Draft by Silas 2026-11-01 13:50.
+# Pattern copied from ADR (session-model-4302.ttl:715-725): definesVocabulary + class + shape
+# with instancesGraph urn:chorus:domains:decisions → served at /decisions/approvals.
+# Lessons from #4789 baked in: plain values are DatatypeProperty (no minter needed);
+# the asking role is ownedBy (CoreShape's existing edge), not a new link.
+
+chorus:decisions chorus:definesVocabulary chorus:Approval .
+
+chorus:Approval a owl:Class ;
+    rdfs:label "Approval" ;
+    rdfs:comment "One thing waiting on Jeff's yes or no: a card a role proposed (round 1), later a go, an ADR, a design. The asking role posts it and stops; Jeff decides on the row; the role reads the row's state. Replaces the chat 'approve' keyword. #4505." .
+
+chorus:approvalKind a owl:DatatypeProperty ; rdfs:label "approval kind" ;
+    rdfs:comment "What is being approved: card (round 1); go and others later. #4505." .
+chorus:approvalSubject a owl:DatatypeProperty ; rdfs:label "approval subject" ;
+    rdfs:comment "The thing, as its title (a proposed card has no number yet). #4505." .
+chorus:approvalAction a owl:DatatypeProperty ; rdfs:label "approval action" ;
+    rdfs:comment "Exactly what approving runs, held on the row (the row replaces the pending file — one store): for a card, the `cards add` argv as a JSON array. Approve replays it through `cards add` only, as data, never a shell; any other verb is refused. #4505." .
+chorus:approvalState a owl:DatatypeProperty ; rdfs:label "approval state" ;
+    rdfs:comment "pending, approved or declined. #4505." .
+chorus:decidedBy a owl:DatatypeProperty ; rdfs:label "decided by" ;
+    rdfs:comment "Who decided: only jeff, refused otherwise. #4505." .
+chorus:decidedAt a owl:DatatypeProperty ; rdfs:label "decided at" ;
+    rdfs:comment "When the decision was recorded. #4505." .
+
+chorus:ApprovalShape a sh:NodeShape ;
+    sh:targetClass chorus:Approval ; sh:node chorus:CoreShape ;
+    chorus:instancesGraph "urn:chorus:domains:decisions" ;
+    sh:property
+      [ sh:path rdfs:label ; sh:minCount 1 ] ,
+      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ] ,                       # the asking role
+      [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" ) ] ,  # round 2 adds "go"
+      [ sh:path chorus:approvalSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+      [ sh:path chorus:approvalAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+      [ sh:path chorus:approvalState ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "pending" "approved" "declined" ) ] ,
+      [ sh:path chorus:decidedBy ; sh:maxCount 1 ; sh:in ( "jeff" ) ] ,
+      [ sh:path chorus:decidedAt ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] .
+
+# Route: GET /owl/v1/decisions/approvals?approvalState=pending  → Jeff's one list
+# Flow (round 1): the bouncer posts the row instead of the pending file (state pending, one
+#   heads-up line linking the list; no second ping while one is unread) → Jeff decides on the
+#   row (approve replays approvalAction through `cards add` as jeff; decline marks declined)
+#   → the asking role reads the row.
+# Guards: the door sets ownedBy from the verified writer (never the body); decidedBy/decidedAt
+#   are written only by a verified jeff call (sh:in is a floor, not the check); a decided row
+#   is never decided again.
+# Negative proofs: a non-jeff decision is refused · a second pending row sends no second ping ·
+#   an approvalAction that is not a `cards add` argv is refused at post and at replay ·
+#   a row owned by X but written by Y is refused.
