@@ -419,6 +419,17 @@ fn alive(ps: &str, pid: u64) -> bool {
     Command::new(ps).arg("-p").arg(pid.to_string()).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
+/// #4851 — the runtime is still running after AWAKE_SETTLE seconds (default 5),
+/// checked once a second; Err names when it went away.
+fn settled(ctx: &Ctx, pid: u64) -> Result<(), String> {
+    let secs: u64 = envd("AWAKE_SETTLE", "5").parse().unwrap_or(5);
+    for i in 0..=secs {
+        if !alive(&ctx.ps, pid) { return Err(format!("exited within {}s", i.max(1))); }
+        if i < secs { std::thread::sleep(Duration::from_secs(1)); }
+    }
+    Ok(())
+}
+
 fn live_entries(sessions_dir: &Path, role: &str, ps: &str) -> Vec<Live> {
     let mut out = Vec::new();
     if let Ok(rd) = fs::read_dir(sessions_dir) {
@@ -1297,6 +1308,13 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         eprintln!("awake: {}  {} did not start in {}s — the pane says: {} — look: {} attach -t {}", role, runtime, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("{} did not start in {}s", runtime, ctx.wait)));
     };
+    // #4851 side fix (Jeff 11-01 18:17: BQ said "awake … logged in" then quit a
+    // second later, and nothing said why) — a runtime that dies in its first
+    // seconds is not a login: say so with the pane's last lines.
+    if let Err(why) = settled(ctx, l.pid) {
+        eprintln!("awake: {}  {} started (pid {}) then {} — the pane says: {} — look: {} attach -t {}", role, runtime, l.pid, why, pane_tail(ctx, role), ctx.tmux, tmux_session);
+        return Err((1, format!("{} exited right after starting", runtime)));
+    }
     ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
