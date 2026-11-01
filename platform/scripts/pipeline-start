@@ -18,6 +18,24 @@ if [[ ! "$pipeline" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ || ! "$card" =~ ^[0-9]+$ ||
   echo "usage: pipeline-start <pipeline> <card> <role>   (pipeline e.g. cicd, athena, borg-prove)" >&2
   exit 1
 fi
+# #4852 — `handoff`: the pair's or mob's hand-off step starts the card on the
+# pipeline its diff needs (a model change rehearses on athena, which hands off
+# to cicd itself; anything else goes to cicd), one enqueue, never both. Only
+# that step may: DAG_NAME must be pair or mob and DAG_RUN_ID that live run for
+# this card, read from dagu (any shell can export DAG_NAME — Silas 11:11).
+handoff=""
+if [ "$pipeline" = handoff ]; then
+  case "${DAG_NAME:-}" in
+    pair|mob) ;;
+    *) echo "pipeline-start: handoff is the pair or mob hand-off step's alone (DAG_NAME is '${DAG_NAME:-unset}'); nothing was enqueued" >&2; exit 1 ;;
+  esac
+  lrc=0; lout="$("${HANDOFF_LIVE_BIN:-$(dirname "$0")/handoff-live}" "$DAG_NAME" "${DAG_RUN_ID:-}" "$card" 2>&1)" || lrc=$?
+  if [ "$lrc" -ne 0 ]; then
+    echo "pipeline-start: handoff refused, not a live $DAG_NAME run for #$card (${lout:-no message}); nothing was enqueued" >&2
+    exit 1
+  fi
+  handoff="$DAG_NAME"; pipeline=cicd
+fi
 : "${CHORUS_HOME:?pipeline-start: CHORUS_HOME not set}"
 : "${CHORUS_WERK_BASE:?pipeline-start: CHORUS_WERK_BASE not set}"
 werk="$CHORUS_WERK_BASE/$role-$card"
@@ -87,7 +105,15 @@ if [ "$pipeline" = cicd ] && [ "${DAG_NAME:-}" != athena ]; then
     exit 1
   fi
   model="$(sed -n 's/^model|//p' <<<"$scope_out" | tr '\n' ' ' | sed 's/ $//' || true)"
-  if [ -n "$model" ]; then
+  if [ -n "$model" ] && [ -n "$handoff" ]; then
+    # #4852 — the hand-off routes it: athena only (it hands off to cicd itself)
+    pipeline=athena; workflow="$werk/platform/pipelines/athena.yaml"
+    if [ ! -f "$workflow" ]; then
+      echo "pipeline-start: #$card changes the model ($model) but its werk has no athena workflow at $workflow; nothing was enqueued" >&2
+      exit 1
+    fi
+    echo "pipeline-start: #$card changes the model ($model); the $handoff hand-off starts it on athena (staging first; athena hands off to cicd)" >&2
+  elif [ -n "$model" ]; then
     echo "pipeline-start: #$card changes the model ($model); start it with chorus-athena so it rehearses on staging first; nothing was enqueued" >&2
     exit 1
   fi
@@ -111,7 +137,8 @@ fi
 # #4752 AC6 — a paired card: a re-run on the HEAD the pair handed off is no
 # round (the waiting attempt stops, no new green); a fix commit goes back
 # through the navigator's green, so a direct run of it is refused (exit 3)
-if [ "$pipeline" = cicd ]; then
+# (#4852: the hand-off itself is the round, not a re-run)
+if [ "$pipeline" = cicd ] && [ -z "$handoff" ]; then
   pair_bin="${PAIR_RERUN_BIN:-$CHORUS_HOME/platform/scripts/pair}"
   if [ -x "$pair_bin" ]; then
     prc=0; pout="$("$pair_bin" rerun "$card" "$role" 2>&1)" || prc=$?

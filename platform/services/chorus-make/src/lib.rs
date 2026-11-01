@@ -505,11 +505,24 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
             // pair's red handler already enqueues this way), a top-level run.
             // #4753 — one go per card: a new cicd run first supersedes the
             // card's older run still waiting at the go (pipeline-start does the same).
-            let supersede = if r.implemented_by == "cicd" { "${CHORUS_HOME}/platform/scripts/cicd-supersede ${CARD} ${ROLE} && " } else { "" };
+            // #4852 — a hand-off to cicd routes on the card's diff instead: a model
+            // change starts athena (staging first; athena hands off to cicd itself),
+            // anything else cicd. pipeline-start owns that rule, the supersede and
+            // the check that this step is a live pair/mob run for the card.
+            if r.implemented_by == "cicd" {
+                out.push_str(&format!(
+                    "    command: {}\n",
+                    quote("env -u CHORUS_ROLE ${CHORUS_HOME}/platform/scripts/pipeline-start handoff ${CARD} ${ROLE}")
+                ));
+                if r.with_args.split_whitespace().any(|p| p == "continue_on=failure") {
+                    out.push_str("    continue_on:\n      failure: true\n");
+                }
+                return;
+            }
             out.push_str(&format!(
                 "    command: {}\n",
                 quote(&format!(
-                    "{supersede}env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
+                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
                     r.implemented_by,
                     params.join(" ")
                 ))

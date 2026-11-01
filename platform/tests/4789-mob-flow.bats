@@ -333,3 +333,10 @@ new_head() { git -C "$WK" -c user.email=t@t -c user.name=t commit -q --allow-emp
   run "$AS_TASK" nava t3 verify 4789 mobrun1 pass "x"                      # no head at all
   [ "$status" -ne 0 ] || { echo "no head accepted: $output"; return 1; }
 }
+
+@test "#4852 AC3: the mob's generated hand-off routes through pipeline-start handoff, so a model card rehearses on athena" {
+  step="$(awk '/name: skill-mob-hand-off$/{f=1} f&&/command:/{print; exit}' "$ROOT/platform/pipelines/mob.yaml")"
+  [[ "$step" == *"platform/scripts/pipeline-start handoff \${CARD} \${ROLE}"* ]] || { echo "hand-off: $step"; return 1; }
+  # NEGATIVE PROOF: the #4850 round 3 shape — mob straight to cicd — is gone
+  [[ "$step" != *"enqueue cicd"* ]] || { echo "still a bare cicd enqueue: $step"; return 1; }
+}

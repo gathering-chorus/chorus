@@ -49,4 +49,4 @@ steps:
   - name: skill-pair-hand-off
     description: "hand off: one cicd run"
     depends: [skill-pair-handoff]
-    command: "${CHORUS_HOME}/platform/scripts/cicd-supersede ${CARD} ${ROLE} && env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}"
+    command: "env -u CHORUS_ROLE ${CHORUS_HOME}/platform/scripts/pipeline-start handoff ${CARD} ${ROLE}"
