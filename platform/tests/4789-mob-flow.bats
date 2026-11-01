@@ -109,6 +109,10 @@ mob_world() { # DRIVER NAV1 NAV2
   export CHORUS_HOME="$BATS_TEST_TMPDIR/mh"; S="$CHORUS_HOME/platform/scripts"; L="$BATS_TEST_TMPDIR/ml"
   export CHORUS_RUNNER_TASKS="$BATS_TEST_TMPDIR/runner-tasks"; T="$CHORUS_RUNNER_TASKS"
   mkdir -p "$S" "$L" "$T"; chmod 755 "$T"; : > "$L/comments"  # the live store is 755, the runner's alone
+  # #4850 AC3-5 — the driver's werk, whose HEAD a verdict is for
+  export CHORUS_WERK_BASE="$BATS_TEST_TMPDIR/mwerks"; WK="$CHORUS_WERK_BASE/$1-4789"
+  mkdir -p "$WK" && git -C "$WK" init -q && git -C "$WK" -c user.email=t@t -c user.name=t commit -q --allow-empty -m one
+  HEAD1="$(git -C "$WK" rev-parse HEAD)"
   export STATUS=WIP L MOB
   cat > "$S/cards" <<'C'
 case "$1" in
@@ -137,10 +141,12 @@ A
   unset CHORUS_ROLE CHORUS_TASK_EXIT
 }
 # a finished verify another seat made earlier (exit 0 = it was accepted)
-done_task() { # CALLER ID RUN VERDICT
+done_task() { # CALLER ID RUN VERDICT [HEAD] — the head the verify saw, default the werk's current one
   printf '{"id":"%s","binary":"%s","argv":["verify","4789","%s","%s","ok"],"caller":"%s","pid":1,"pidStartedAt":"x","startedAt":0}' "$2" "$MOB" "$3" "$4" "$1" > "$T/$2.json"
-  chmod 644 "$T/$2.json"; echo 0 > "$T/$2.exit"
+  echo "${5:-$(git -C "$WK" rev-parse HEAD)}" > "$T/$2.head"
+  chmod 644 "$T/$2.json" "$T/$2.head"; echo 0 > "$T/$2.exit"
 }
+new_head() { git -C "$WK" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "${1:-next}"; }
 
 @test "AC1: mob start puts every seat on the board and tells each navigator how to verify" {
   mob_world drv nava navb
@@ -167,7 +173,7 @@ done_task() { # CALLER ID RUN VERDICT
   mob_world drv nava navb
   run "$AS_TASK" nava t1 verify 4789 mobrun1 pass "bats 5/5"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  grep -q "mob #4789 run mobrun1: nava verified: PASS — bats 5/5" "$L/comments" || { cat "$L/comments"; return 1; }
+  grep -q "mob #4789 run mobrun1: nava verified at ${HEAD1:0:9}: PASS — bats 5/5" "$L/comments" || { cat "$L/comments"; return 1; }
   grep -q 'mob.verified' "$L/spine"
   [ ! -f "$L/dagu" ] || { echo "completed with navb still out: $(cat "$L/dagu")"; return 1; }
 }
@@ -194,7 +200,7 @@ done_task() { # CALLER ID RUN VERDICT
   done_task navb t0 mobrun1 pass
   run "$AS_TASK" nava t1 verify 4789 mobrun1 fail "AC2 red from my account"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  grep -q "nava verified: FAIL — AC2 red from my account" "$L/comments"
+  grep -q "nava verified at ${HEAD1:0:9}: FAIL — AC2 red from my account" "$L/comments"
   grep -q 'decision=fail' "$L/dagu" || { cat "$L/dagu" 2>/dev/null; return 1; }
 }
 
@@ -266,4 +272,52 @@ done_task() { # CALLER ID RUN VERDICT
   [ "$(stat -f %u /usr/bin)" != "$(id -u)" ] || skip "running as root: /usr/bin is ours"
   CHORUS_RUNNER_TASKS=/usr/bin run bash "$MOB" check 4789 mob verified   # 755, owned by root: not this account's
   [ "$status" -ne 0 ] && [[ "$output" == *"is not the runner's"* ]] || { echo "$output"; return 1; }
+}
+
+# ---- #4850 AC3-5: a verdict is for the head it saw (folded from #4854) -------
+
+@test "AC3: a verify records the werk HEAD it saw, beside its runner record" {
+  mob_world drv nava navb
+  run "$AS_TASK" nava t1 verify 4789 mobrun1 pass "x"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$T/t1.head")" = "$HEAD1" ] || { echo "head file: $(cat "$T/t1.head" 2>&1)"; return 1; }
+  grep -q "nava verified at ${HEAD1:0:9}: PASS" "$L/comments" || { cat "$L/comments"; return 1; }
+}
+
+@test "AC4: check counts verdicts at the current head" {
+  mob_world drv nava navb
+  done_task navb t0 mobrun1 pass; done_task nava t1 mobrun1 pass
+  run bash "$MOB" check 4789 mob verified
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "AC5 NEGATIVE PROOF: a PASS at an older head is not counted after the head moves" {
+  mob_world drv nava navb
+  done_task navb t0 mobrun1 pass; done_task nava t1 mobrun1 pass
+  new_head round2
+  run bash "$MOB" check 4789 mob verified
+  [ "$status" -ne 0 ] && [[ "$output" == *"has not verified"*"at"* ]] || { echo "stale counted: $output"; return 1; }
+  run "$AS_TASK" nava t2 verify 4789 mobrun1 pass "re-verify"
+  [ "$status" -eq 0 ] && [ ! -f "$L/dagu" ] || { echo "completed with navb stale: $output $(cat "$L/dagu" 2>/dev/null)"; return 1; }
+}
+
+@test "AC5 NEGATIVE PROOF: a verdict with no head beside it counts for nothing" {
+  mob_world drv nava navb
+  done_task navb t0 mobrun1 pass; done_task nava t1 mobrun1 pass; rm "$T/t1.head"
+  run bash "$MOB" check 4789 mob verified
+  [ "$status" -ne 0 ] && [[ "$output" == *"nava has not verified"* ]] || { echo "$output"; return 1; }
+}
+
+@test "AC1: the /mob skill starts the mob pipeline with CARD, ROLE and NAVIGATORS" {
+  f="$ROOT/skills/mob/SKILL.md"
+  [ -f "$f" ] || { echo "no $f"; return 1; }
+  grep -q 'enqueue mob -- CARD=<card> ROLE=<your-role> NAVIGATORS=' "$f" || return 1
+  grep -q '^user-invocable: true' "$f" || return 1
+}
+
+@test "AC2: the /mob skill sends verdicts through the MCP tool werk-mob-verify, never a shell" {
+  f="$ROOT/skills/mob/SKILL.md"
+  grep -q 'mcp tool werk-mob-verify' "$f" || return 1
+  grep -q 'A shell `mob verify`' "$f" || return 1
+  grep -q 'counts for nothing' "$f" || return 1
 }
