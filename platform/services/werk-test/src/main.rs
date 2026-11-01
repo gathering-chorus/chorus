@@ -2826,6 +2826,11 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
         return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new(),
             vec![(String::new(), String::new(), format!("jest:{} deps unavailable", pkg))]);
     }
+    // #4505 R1-PIPE-2 — scope=all / nightly builds too, or it hits "Cannot find module".
+    if let Err(why) = ensure_built(werk, pkg) {
+        eprintln!("!! jest:{} {}", pkg, why);
+        return (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} {}", pkg, why))]);
+    }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
         // #3974 — a package without jest runs its OWN runner (agent-adapters:
@@ -3321,7 +3326,7 @@ fn ensure_built(werk: &str, pkg: &str) -> Result<(), String> {
         werk_test::BuildNeed::Ready => Ok(()),
         werk_test::BuildNeed::NotBuildable(why) => Err(why),
         werk_test::BuildNeed::Build => {
-            println!("   jest:{} — {} is missing; npm run build", pkg, main.unwrap_or(""));
+            println!("   jest:{} — npm run build", pkg);
             let out = Command::new("npm").args(["run", "build"]).current_dir(&pkg_dir).output()
                 .map_err(|e| format!("not built: npm run build did not start: {e}"))?;
             if !out.status.success() {

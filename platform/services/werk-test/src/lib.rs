@@ -6652,11 +6652,15 @@ pub enum BuildNeed {
     NotBuildable(String),
 }
 
+/// A package with a build script is always built when a suite in it runs: an entry
+/// already on disk may be a stale build of older source (Kade, 69b0857e4 review).
 pub fn build_need(main: Option<&str>, has_build_script: bool, exists: &dyn Fn(&str) -> bool) -> BuildNeed {
+    if has_build_script {
+        return BuildNeed::Build;
+    }
     match main {
         None => BuildNeed::Ready,
         Some(entry) if exists(entry) => BuildNeed::Ready,
-        Some(_) if has_build_script => BuildNeed::Build,
         Some(entry) => BuildNeed::NotBuildable(format!("not built: {entry} is missing and the package has no build script")),
     }
 }
@@ -6675,9 +6679,11 @@ pub fn package_main(json: &str) -> Option<String> {
             if c == b'"' { in_str = false; }
         } else if c == b'"' {
             if depth == 1 && json[i..].starts_with("\"main\"") {
-                let rest = json[i + 6..].trim_start();
-                let rest = rest.strip_prefix(':')?.trim_start().strip_prefix('"')?;
-                return Some(rest[..rest.find('"')?].to_string());
+                // a "main" that is a value, not the key, does not end the scan
+                let value = json[i + 6..].trim_start().strip_prefix(':')
+                    .and_then(|r| r.trim_start().strip_prefix('"'))
+                    .and_then(|r| r.find('"').map(|e| r[..e].to_string()));
+                if value.is_some() { return value; }
             }
             in_str = true;
         } else if c == b'{' { depth += 1; } else if c == b'}' { depth -= 1; }
@@ -6729,8 +6735,15 @@ mod jest_paths_build_need_4505 {
     #[test]
     fn a_missing_entry_with_a_build_script_is_built() {
         assert_eq!(build_need(Some("dist/server.js"), true, &|_| false), BuildNeed::Build);
-        assert_eq!(build_need(Some("dist/server.js"), true, &|_| true), BuildNeed::Ready);
         assert_eq!(build_need(None, false, &|_| false), BuildNeed::Ready);
+        assert_eq!(build_need(Some("dist/server.js"), false, &|_| true), BuildNeed::Ready);
+    }
+
+    // NEGATIVE PROOF (Kade): an entry already on disk is never trusted while the package
+    // can build — a stale dist of older source must not pass as built.
+    #[test]
+    fn negative_proof_a_present_entry_is_rebuilt_not_trusted() {
+        assert_eq!(build_need(Some("dist/server.js"), true, &|_| true), BuildNeed::Build);
     }
 
     #[test]
@@ -6741,6 +6754,8 @@ mod jest_paths_build_need_4505 {
         // a nested "main" is not the package's entry, and a test-only scripts block has no build
         let k = "{ \"config\": { \"main\": \"no\" }, \"scripts\": { \"test\": \"jest\" } }";
         assert_eq!(package_main(k), None);
+        // a "main" that is a VALUE before the key does not stop the scan (Kade)
+        assert_eq!(package_main(r#"{"name":"main","main":"dist/x.js"}"#).as_deref(), Some("dist/x.js"));
         assert!(!package_has_build_script(k));
     }
 
