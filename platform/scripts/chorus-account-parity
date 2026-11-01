@@ -63,21 +63,35 @@ else
   exit 2
 fi
 
-# Verify live memory directory permissions: must have group rw (mode 2770)
-MEM_GROUP_RW="$(python3 -c '
-import os, sys, stat
+# Verify live memory directory permissions: must have group rw (mode 2770) and group chorus
+MEM_GROUP_CHECK="$(python3 -c '
+import os, sys, stat, grp
 p = sys.argv[1]
 try:
     st = os.stat(p)
     gr = bool(st.st_mode & stat.S_IRGRP)
     gw = bool(st.st_mode & stat.S_IWGRP)
-    print("ok" if (gr and gw) else "missing-group-rw")
-except Exception:
-    print("error")
+    if not (gr and gw):
+        print("missing-group-rw")
+        sys.exit(0)
+    gname = grp.getgrgid(st.st_gid).gr_name
+    if gname != "chorus":
+        print(f"wrong-group:{gname}")
+        sys.exit(0)
+    print("ok")
+except Exception as e:
+    print(f"error:{e}")
 ' "$LIVE_MEMORY" 2>/dev/null || echo "error")"
 
-if [ "$MEM_GROUP_RW" != "ok" ]; then
+if [ "$MEM_GROUP_CHECK" = "missing-group-rw" ]; then
   echo "[parity-drift] live memory $LIVE_MEMORY missing group rw permissions" >&2
+  DIFFS=$((DIFFS + 1))
+elif [[ "$MEM_GROUP_CHECK" =~ ^wrong-group: ]]; then
+  gname="${MEM_GROUP_CHECK#wrong-group:}"
+  echo "[parity-drift] live memory $LIVE_MEMORY owned by group $gname; must be group chorus" >&2
+  DIFFS=$((DIFFS + 1))
+elif [ "$MEM_GROUP_CHECK" != "ok" ]; then
+  echo "[parity-drift] live memory $LIVE_MEMORY stat check failed ($MEM_GROUP_CHECK)" >&2
   DIFFS=$((DIFFS + 1))
 fi
 

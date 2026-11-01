@@ -18,6 +18,7 @@ setup() {
            "$LIVE_SOURCE/skills/pair" \
            "$LIVE_SOURCE/chorus/bin" \
            "$LIVE_SOURCE/chorus/scripts"
+  chgrp chorus "$LIVE_SOURCE/memory" 2>/dev/null || true
   chmod 775 "$LIVE_SOURCE/memory"
 
   echo "# live nudge skill" > "$LIVE_SOURCE/skills/nudge/SKILL.md"
@@ -216,4 +217,13 @@ EOF
   echo "$output"
   [ "$status" -ne 0 ]
   [[ "$output" =~ "missing group rw permissions" ]] || return 1
+}
+
+@test "NEGATIVE PROOF 11: live memory target owned by staff group instead of chorus fails" {
+  chgrp staff "$LIVE_SOURCE/memory"
+  run "$PARITY_SENSOR" --homes-dir "$HOMES_DIR" --live-source "$LIVE_SOURCE" --search-api "$MOCK_API"
+  chgrp chorus "$LIVE_SOURCE/memory"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "must be group chorus" ]] || return 1
 }
