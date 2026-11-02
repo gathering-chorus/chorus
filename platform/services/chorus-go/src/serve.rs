@@ -116,7 +116,7 @@ fn run_status(dag: &str, run: &str) -> String {
         .env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output()
         .ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_string))
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default()
 }
 

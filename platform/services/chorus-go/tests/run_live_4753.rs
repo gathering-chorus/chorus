@@ -25,14 +25,19 @@ fn a_superseded_finished_or_unknown_run_is_refused_before_signing() {
     assert!(e.contains("cannot read"), "{e}");
 }
 
-/// #4771 — a pending go whose run cicd-supersede answered no reads Succeeded and is
-/// dropped from the list like an aborted one; a run still waiting, or unreadable, is not.
-/// NEGATIVE PROOF: Waiting, Failed and an unreadable status are never called superseded.
+/// #4771 — a pending go whose run cicd-supersede answered no (Succeeded, land skipped) is
+/// dropped from the list like an aborted one.
+/// NEGATIVE PROOF: a go Jeff signed (Succeeded, land ran), Waiting, Failed and an unreadable
+/// status are never called superseded (Silas 17:29: "superseded" for his own go is false).
 #[test]
-fn an_answered_no_or_aborted_go_is_superseded_and_a_waiting_one_is_not() {
+fn an_answered_no_or_aborted_go_is_superseded_and_jeffs_landed_go_is_not() {
     use chorus_go::superseded_status;
-    assert!(superseded_status("Succeeded - 2026-11-02T17:30:00-05:00"));
+    let no = "Succeeded - 2026-11-02T17:30:00-05:00\n\ndag: cicd-go\n├─skill-werk-go (1s) [succeeded]\n├─cicd-land (0s) [skipped]\n";
+    let jeff = "Succeeded - 2026-11-02T16:39:52-05:00\n\ndag: cicd-go\n├─skill-werk-go (36m) [succeeded]\n├─cicd-land (1.0s) [succeeded]\n";
+    assert!(superseded_status(no));
     assert!(superseded_status("Aborted - 2026-11-02T17:30:00-05:00"));
+    assert!(!superseded_status(jeff), "Jeff's go is not superseded");
+    assert!(!superseded_status("Succeeded - 2026-11-02T17:30:00-05:00"), "no step lines: not provably a no");
     assert!(!superseded_status("Waiting - 2026-11-02T17:30:00-05:00"));
     assert!(!superseded_status("Failed - 2026-11-02T17:30:00-05:00"));
     assert!(!superseded_status(""));
