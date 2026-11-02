@@ -23,6 +23,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #4771 AC4 — git reaches GitHub with the land's deploy credential, never a keyring.
+include!("../../shared/deploy_credential.rs");
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -86,12 +89,18 @@ pub fn spine_args(event: &str, extras: &[(&str, &str)]) -> Vec<String> {
 // --- side-effecting helpers ---
 
 fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
-    let out = Command::new(cmd)
+    let mut c = Command::new(cmd);
+    with_deploy_credential(&mut c, cmd); // #4771 AC4
+    let out = c
         .args(args)
         .current_dir(dir)
         .output()
         .map_err(|e| format!("{} failed to start: {}", cmd, e))?;
     if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        if cmd == "git" && is_auth_error(&err) {
+            return Err(auth_fail_message(err.trim()));
+        }
         return Err(format!(
             "{} {}: {}",
             cmd,
@@ -169,10 +178,20 @@ fn require_git_repo(home: &Path) -> R<String> {
 /// bare `werk-sync` hit the usage error after merge. Unrelated dirty or untracked
 /// files in canonical don't block a fast-forward; anything that does is a refusal,
 /// never a stash (that is `recover`, a human's call).
+/// #4771 AC4 — fetch origin/main; other fetch failures stay best-effort as
+/// before, but an auth failure stops the sync loudly: swallowing it would
+/// fast-forward to a stale origin/main and report the land synced.
+fn fetch_main(home_s: &str) -> R<()> {
+    match run_in(home_s, "git", &["fetch", "--quiet", "origin", "main"]) {
+        Err(e) if e.starts_with("auth-fail") => Err(e),
+        _ => Ok(()),
+    }
+}
+
 pub fn ff(home: &Path) -> R<String> {
     let home_s = require_git_repo(home)?;
     let _lock = lock(home, Duration::from_secs(30))?;
-    let _ = run_in(&home_s, "git", &["fetch", "--quiet", "origin", "main"]);
+    fetch_main(&home_s)?;
     let from = run_in(&home_s, "git", &["rev-parse", "HEAD"]).map(|s| s.trim().to_string()).unwrap_or_default();
     run_in(&home_s, "git", &["merge", "--ff-only", "--quiet", "origin/main"])
         .map_err(|e| format!("ff refused: canonical can't fast-forward to origin/main ({}) — run werk-sync recover", e.trim()))?;
@@ -197,7 +216,7 @@ pub fn repair(home: &Path) -> R<String> {
     let _lock = lock(home, Duration::from_secs(30))?;
     run_in(&home_s, "git", &["symbolic-ref", "HEAD", "refs/heads/main"])
         .map_err(|e| format!("repair failed: could not set HEAD → refs/heads/main: {}", e))?;
-    let _ = run_in(&home_s, "git", &["fetch", "--quiet", "origin", "main"]);
+    fetch_main(&home_s)?;
     if let Ok(origin_main) = run_in(&home_s, "git", &["rev-parse", "origin/main"]) {
         let origin_main = origin_main.trim();
         run_in(&home_s, "git", &["update-ref", "refs/heads/main", origin_main])
@@ -346,6 +365,8 @@ pub fn run_sync() -> R<String> {
     let args: Vec<String> = env::args().skip(1).collect();
     let mode = parse_sync_args(&args)?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
+    // #4771 AC4 — the deploy credential or a loud refusal, before any git.
+    arm_deploy_credential(&home)?;
     match mode {
         Mode::Repair => repair(&home),
         Mode::Ff => ff(&home),
@@ -370,5 +391,37 @@ pub fn run_sync() -> R<String> {
                 .unwrap_or_else(|| ts.to_string());
             recover(&home, &base, &stamp)
         }
+    }
+}
+
+#[cfg(test)]
+mod sync_credential_4771 {
+    use super::*;
+
+    /// The helpers git would consult, as sync's own run_in builds the command.
+    fn helpers() -> String {
+        run_in(".", "git", &["config", "--get-all", "credential.helper"]).unwrap_or_default()
+    }
+
+    #[test]
+    fn armed_sync_git_uses_only_the_deploy_credential_helper() {
+        use std::os::unix::fs::PermissionsExt;
+        let f = std::env::temp_dir().join(format!("sync4771-{}", std::process::id()));
+        fs::write(&f, "tok").unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
+        env::set_var(CRED_FILE_ENV, &f);
+        let armed = helpers();
+        env::remove_var(CRED_FILE_ENV);
+        let unarmed = helpers();
+        let _ = fs::remove_file(&f);
+        let last = armed.lines().last().unwrap_or("");
+        assert!(last.starts_with("!f()") && last.contains(CRED_FILE_ENV), "armed: {armed:?}");
+        // NEGATIVE PROOF: unarmed, the list ends in the clearing "" — no keyring helper.
+        assert_eq!(unarmed.lines().last().unwrap_or("x"), "", "unarmed: {unarmed:?}");
+    }
+
+    #[test]
+    fn an_auth_failure_from_git_is_typed_and_names_no_secret() {
+        assert!(auth_fail_message("fatal: Authentication failed for 'https://github.com/a/b.git/'").starts_with("auth-fail"));
     }
 }

@@ -6524,6 +6524,20 @@
         "trace_id": "Werk trace join key",
         "file": "Path of the deploy credential file (never its contents)"
       }
+    },
+    "teardown.auth.failed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-teardown (#4771 AC4) — the remote branch delete failed on auth: the deploy credential is missing or unusable on this account, or GitHub refused it. The delete stays best-effort (the card still closes) but the failure is said, never covered by Jeff's own keyring. `reason` names the credential file's path, never its contents.",
+      "fields": {
+        "card": "Card being torn down (from the caller's emitter)",
+        "role": "Acting role",
+        "branch": "Card branch whose remote delete failed",
+        "reason": "auth-fail message naming the credential file path"
+      }
     }
   }
 }

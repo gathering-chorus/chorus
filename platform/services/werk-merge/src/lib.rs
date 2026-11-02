@@ -33,10 +33,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra), lifted
 // out of this crate's private #3495 copy so every verb classifies identically.
 include!("../../shared/failure_class.rs");
+include!("../../shared/deploy_credential.rs"); // #4771 AC4
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
-    fn geteuid() -> u32;
 }
 const LOCK_EX_NB: i32 = 0x02 | 0x04; // LOCK_EX | LOCK_NB
 const LOCK_UN: i32 = 0x08;
@@ -184,99 +184,11 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     }
 }
 
-// ───────────── #4771 AC4 — the land's one GitHub credential ─────────────
-// On 11-02 06:02 #4642's land stopped on `HTTP 401: Requires authentication`:
-// werk-merge ran `gh` and `git push` with no environment, so both used Jeff's
-// own gh keyring and keychain, and his login had lapsed. The land now uses ONE
-// non-interactive deploy credential: a file (path in DEPLOY_CONF), mode 0600,
-// owned by the account the land runs as. gh gets it through GH_TOKEN, git
-// through GIT_ASKPASS (this binary, in askpass mode) with every credential
-// helper cleared — never argv, never logged, never anyone's keyring. Jeff mints
-// it and writes the file; roles never see it.
-pub const DEPLOY_CONF: &str = "platform/config/werk-deploy.yaml";
-pub const CRED_FILE_ENV: &str = "WERK_DEPLOY_CREDENTIAL_FILE";
-pub const ASKPASS_ENV: &str = "WERK_MERGE_ASKPASS";
-
-/// The credential file's path: $WERK_DEPLOY_CREDENTIAL_FILE, else
-/// `deploy_credential_file:` in DEPLOY_CONF. Missing either way is a refusal.
-pub fn deploy_credential_path(home: &Path) -> R<PathBuf> {
-    if let Some(p) = env::var_os(CRED_FILE_ENV).filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(p));
-    }
-    let conf = home.join(DEPLOY_CONF);
-    let text = fs::read_to_string(&conf)
-        .map_err(|e| format!("auth-fail: cannot read {} (names the deploy credential file): {}", conf.display(), e))?;
-    text.lines()
-        .filter_map(|l| l.trim().strip_prefix("deploy_credential_file:"))
-        .map(|v| v.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
-        .find(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .ok_or_else(|| format!("auth-fail: {} has no deploy_credential_file", conf.display()))
-}
-
-/// The file must exist, be a non-empty regular file, mode 0600 (nothing for
-/// group/other) and be owned by `uid` (the account the land runs as).
-/// Errors name the PATH only, never the contents.
-pub fn check_credential_file(p: &Path, uid: u32) -> R<()> {
-    use std::os::unix::fs::MetadataExt;
-    let m = fs::metadata(p).map_err(|e| format!("auth-fail: deploy credential file {} unreadable: {}", p.display(), e))?;
-    if !m.is_file() || m.len() == 0 {
-        return Err(format!("auth-fail: deploy credential file {} is empty or not a file", p.display()));
-    }
-    if m.mode() & 0o077 != 0 {
-        return Err(format!("auth-fail: deploy credential file {} is mode {:o}; it must be 0600", p.display(), m.mode() & 0o777));
-    }
-    if m.uid() != uid {
-        return Err(format!("auth-fail: deploy credential file {} is owned by uid {}; the land runs as uid {}", p.display(), m.uid(), uid));
-    }
-    Ok(())
-}
-
-/// Resolve + check the credential and hand it to every later `gh`/`git` call.
-pub fn arm_deploy_credential(home: &Path) -> R<PathBuf> {
-    let p = deploy_credential_path(home)?;
-    check_credential_file(&p, unsafe { geteuid() })?;
-    env::set_var(CRED_FILE_ENV, &p);
-    Ok(p)
-}
-
-/// What git's askpass is told: the fixed user for a token, else the token.
-pub fn askpass_answer(prompt: &str, cred: &str) -> String {
-    if prompt.to_lowercase().starts_with("username") {
-        "x-access-token".to_string()
-    } else {
-        cred.trim().to_string()
-    }
-}
-
-/// A 401 or a missing login from gh or git.
-pub fn is_auth_error(stderr: &str) -> bool {
-    let s = stderr.to_lowercase();
-    ["http 401", "requires authentication", "authentication failed", "bad credentials",
-     "could not read username", "could not read password", "gh auth login"]
-        .iter().any(|k| s.contains(k))
-}
-
-/// `gh` / `git` carrying the deploy credential once it is armed; any other tool plain.
+/// #4771 AC4 — `gh` / `git` never use a keyring and carry the land's deploy
+/// credential once armed (services/shared/deploy_credential.rs).
 fn tool(cmd: &str) -> Command {
     let mut c = Command::new(cmd);
-    let Some(p) = env::var_os(CRED_FILE_ENV).filter(|p| !p.is_empty()) else { return c };
-    match cmd {
-        "gh" => {
-            if let Ok(t) = fs::read_to_string(&p) {
-                c.env("GH_TOKEN", t.trim());
-            }
-            c.env("GH_PROMPT_DISABLED", "1");
-        }
-        "git" => {
-            if let Ok(exe) = env::current_exe() {
-                c.env("GIT_ASKPASS", exe).env(ASKPASS_ENV, "1");
-            }
-            c.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never");
-            c.args(["-c", "credential.helper="]);
-        }
-        _ => {}
-    }
+    with_deploy_credential(&mut c, cmd);
     c
 }
 
@@ -291,9 +203,7 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         if (cmd == "gh" || cmd == "git") && is_auth_error(&err) {
-            let file = env::var(CRED_FILE_ENV).unwrap_or_else(|_| "(none armed)".to_string());
-            return Err(format!("auth-fail: GitHub refused the deploy credential in {}: {}",
-                file, err.lines().next().unwrap_or("")));
+            return Err(auth_fail_message(&err));
         }
         return Err(err);
     }
@@ -891,38 +801,12 @@ pub fn verified_conflict_message(pr: u64, files: &[String]) -> String {
 
 #[cfg(test)]
 mod stale_mergeable_3926 {
-    // #4771 AC4 — the credential seam's pure parts.
+    // #4771 AC4 — the seam's own tests live in shared/deploy_credential.rs.
     #[test]
-    fn askpass_gives_the_fixed_user_then_the_credential() {
-        assert_eq!(askpass_answer("Username for 'https://github.com': ", "tok\n"), "x-access-token");
-        assert_eq!(askpass_answer("Password for 'https://x-access-token@github.com': ", "tok\n"), "tok");
-    }
-
-    #[test]
-    fn the_0602_401_is_an_auth_failure_and_a_conflict_is_not() {
-        assert!(is_auth_error("werk-merge: HTTP 401: Requires authentication (https://api.github.com/graphql)"));
-        assert!(is_auth_error("fatal: Authentication failed for 'https://github.com/x/y.git/'"));
-        assert!(is_auth_error("fatal: could not read Username for 'https://github.com': terminal prompts disabled"));
+    fn a_401_classifies_as_auth_fail_and_the_others_still_separate() {
         assert_eq!(classify_merge_error("HTTP 401: Requires authentication"), "auth-fail");
-        // negative proof: the classifier still tells the other refusals apart
-        assert!(!is_auth_error("Pull request is not mergeable: merge conflict"));
         assert_eq!(classify_merge_error("merge conflict in a.txt"), "merge-conflict");
         assert_eq!(classify_merge_error("something else broke"), "merge-fail");
-    }
-
-    #[test]
-    fn a_credential_file_owned_by_another_account_is_refused() {
-        use std::os::unix::fs::PermissionsExt;
-        let f = std::env::temp_dir().join(format!("wm-cred-{}", std::process::id()));
-        fs::write(&f, "tok").unwrap();
-        fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
-        let me = unsafe { geteuid() };
-        assert!(check_credential_file(&f, me).is_ok());
-        let err = check_credential_file(&f, me + 1).unwrap_err();
-        assert!(err.contains("owned by uid") && err.contains(f.to_str().unwrap()) && !err.contains("tok\""), "{err}");
-        fs::write(&f, "").unwrap();
-        assert!(check_credential_file(&f, me).unwrap_err().contains("empty"));
-        let _ = fs::remove_file(&f);
     }
 
     use super::*;
