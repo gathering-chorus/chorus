@@ -80,7 +80,7 @@ esac
     // #4642: a dagu whose go step waits; every human-task answer is logged
     // #4771: a run id listed in `aborted` reads Succeeded (cicd-supersede answered it no, the land skipped);
     // with `dagu-unreadable` present, status prints nothing
-    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then printf 'Succeeded - 2026-11-01 19:05:00\\n├─cicd-land (0s) [skipped]\\n'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
+    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/landed 2>/dev/null; then printf 'Succeeded - 2026-11-02 16:39:52\\n├─cicd-land (1.0s) [succeeded]\\n'; elif grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then printf 'Succeeded - 2026-11-01 19:05:00\\n├─cicd-land (0s) [skipped]\\n'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
     sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
     sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
@@ -391,4 +391,31 @@ fn two_waiting_gos_of_a_card_offer_only_the_newest_and_refuse_the_older() {
     assert!(t.contains("superseded") && t.contains("approval-go-4771-new"), "{b}");
     let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-new"}).to_string());
     assert_eq!(c, 200, "the newest go still opens: {b}");
+}
+
+/// #4771 — a go whose run already landed (Jeff's go went through) leaves the list: it cannot
+/// be signed again (11-02 17:51: run 10's landed go still showed beside two others).
+/// NEGATIVE PROOF: the same row with its run still waiting is offered (it is the card's newest).
+#[test]
+fn a_landed_go_leaves_the_list_and_a_waiting_one_stays() {
+    let p = Phone::new();
+    let w = two_go_world("landed");
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let rows = |b: &Value| b["approvals"].as_array().unwrap().iter().filter_map(|r| r["row"].as_str().map(str::to_string)).collect::<Vec<_>>();
+    let (_, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert!(rows(&b).contains(&"approval-go-4771-new".to_string()), "waiting: offered {b}");
+    std::fs::write(w.root.join("landed"), format!("{NEW_RUN}\ngo-{NEW_RUN}\n")).unwrap();
+    let (_, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert!(!rows(&b).iter().any(|r| r.starts_with("approval-go-4771")), "a landed card offers no go: {b}");
+}
+
+/// #4771 — the page's hidden panels stay hidden: `.row`/`.card` set display, which beats the
+/// browser's [hidden] rule, so the dead Go/No panel showed "Loading…" above the real rows.
+/// NEGATIVE PROOF: the rule is checked by its exact text; without it this fails.
+#[test]
+fn the_page_keeps_hidden_panels_hidden() {
+    let page = include_str!("../src/page.html");
+    assert!(page.contains("[hidden] { display: none !important; }"), "no [hidden] override in page.html");
+    assert!(page.contains("id=\"buttons\" hidden") && page.contains("id=\"regrow\" hidden"));
 }

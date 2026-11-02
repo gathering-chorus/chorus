@@ -1020,6 +1020,8 @@ pub fn go_approval_body(card: u64, run: &str, round_full: &str, title: &str) -> 
         return Err(format!("no go row: '{round_full}' is not the werk's full HEAD"));
     }
     let action = format!("{{\"card\":{card},\"run\":\"{run}\",\"round\":\"{round_full}\"}}");
+    // #4771: the card title already starts "#<card> " — never "#4771 #4771 …"
+    let title = title.strip_prefix(&format!("#{card} ")).unwrap_or(title);
     let subject = format!("#{card} {title}");
     Ok(format!("{{\"name\":\"go-{card}-{run}\",\"label\":{},\"approvalKind\":\"go\",\"approvalSubject\":{},\"approvalAction\":{}}}",
         json_str(&format!("go #{card}")), json_str(&subject), json_str(&action)))

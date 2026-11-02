@@ -76,3 +76,13 @@ fn the_go_binds_the_commit_this_run_pushed() {
     assert_eq!(pushed_sha(&log, 4771, "run13"), None, "a run with no push binds nothing");
     assert_eq!(pushed_sha(&log, 4771, ""), None);
 }
+
+/// #4771 — the go row's subject names the card once (Jeff 16:44: "#4771 #4771 …").
+/// NEGATIVE PROOF: a title without the prefix keeps its text whole.
+#[test]
+fn the_go_row_names_the_card_once() {
+    let b = go_approval_body(4771, "r1", HEAD, "#4771 Fix go automation").unwrap();
+    assert!(b.contains(r##""approvalSubject":"#4771 Fix go automation""##), "{b}");
+    let b = go_approval_body(4771, "r1", HEAD, "Fix go automation").unwrap();
+    assert!(b.contains(r##""approvalSubject":"#4771 Fix go automation""##), "{b}");
+}

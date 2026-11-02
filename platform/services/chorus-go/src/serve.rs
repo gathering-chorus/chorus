@@ -218,6 +218,9 @@ fn offered(rows: Vec<Value>) -> Vec<Value> {
         if s_of(&r, "kind") != "go" { return Some(r); }
         let status = go_row_status(&s_of(&r, "action"));
         if status.as_deref().map(superseded_status).unwrap_or(false) { return None; }
+        // #4771 — a go whose run dagu reads and that no longer waits (answered, landed) cannot
+        // be signed: it leaves the list. Only an unreadable dagu keeps the row, with the reason.
+        if status.as_deref().map(|st| st.trim().is_empty() || go_run_open(st).is_ok()) == Ok(false) { return None; }
         if let Err(why) = status.and_then(|st| go_run_open(&st)) { r["state"] = json!(why); }
         Some(r)
     }).collect()
