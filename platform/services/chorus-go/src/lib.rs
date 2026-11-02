@@ -56,11 +56,6 @@ pub fn random_token() -> R<String> {
     Ok(b64url(&b))
 }
 
-/// The bytes Jeff's phone signs for a go: one card, one run, one round, one nonce.
-pub fn go_challenge(card: u64, run: &str, round: &str, nonce: &str) -> [u8; 32] {
-    sha256(format!("chorus-go/v1|go|{card}|{run}|{round}|{nonce}").as_bytes())
-}
-
 /// The bytes Jeff's phone signs when it registers its passkey.
 pub fn register_challenge(token: &str) -> [u8; 32] {
     sha256(format!("chorus-go/v1|register|{token}").as_bytes())
@@ -135,60 +130,6 @@ pub fn verify_assertion(pk: &Passkey, challenge: &[u8], auth_data: &[u8], client
     Ok(u32::from_be_bytes([auth_data[33], auth_data[34], auth_data[35], auth_data[36]]))
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct GoRecord {
-    pub card: u64,
-    pub run: String,
-    pub round: String,
-    pub nonce: String,
-    pub decision: String,
-    pub auth_data: String,
-    pub client_data: String,
-    pub signature: String,
-    pub at: u64,
-}
-
-impl GoRecord {
-    fn to_json(&self) -> Value {
-        json!({"card": self.card, "run": self.run, "round": self.round, "nonce": self.nonce, "decision": self.decision,
-               "authData": self.auth_data, "clientDataJSON": self.client_data, "signature": self.signature, "at": self.at})
-    }
-    fn from_json(v: &Value) -> R<Self> {
-        let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string).ok_or(format!("go record: no {k}"));
-        Ok(GoRecord {
-            card: v.get("card").and_then(Value::as_u64).ok_or("go record: no card")?,
-            run: s("run")?,
-            round: s("round")?,
-            nonce: s("nonce")?,
-            decision: s("decision")?,
-            auth_data: s("authData")?,
-            client_data: s("clientDataJSON")?,
-            signature: s("signature")?,
-            at: v.get("at").and_then(Value::as_u64).unwrap_or(0),
-        })
-    }
-}
-
-/// The decision is part of what the phone signs: a "no" can never be replayed as a "go".
-pub fn go_challenge_for(rec: &GoRecord) -> [u8; 32] {
-    go_challenge(rec.card, &rec.run, &format!("{}|{}", rec.round, rec.decision), &rec.nonce)
-}
-
-/// Re-verify a stored go: it must be a go, for this card and this round, signed by the passkey.
-pub fn check_record(pk: &Passkey, rec: &GoRecord, card: u64, round: &str) -> R<()> {
-    if rec.card != card {
-        return Err(format!("the signed go is for #{}, not #{card}", rec.card));
-    }
-    if rec.round != round {
-        return Err(format!("the signed go is for round {}, not this round {}", short(&rec.round), short(round)));
-    }
-    if rec.decision != "go" {
-        return Err(format!("Jeff's signed decision is '{}'", rec.decision));
-    }
-    verify_assertion(pk, &go_challenge_for(rec), &unb64(&rec.auth_data)?, &unb64(&rec.client_data)?, &unb64(&rec.signature)?)
-        .map(|_| ())
-}
-
 pub fn short(sha: &str) -> &str {
     &sha[..sha.len().min(12)]
 }
@@ -252,7 +193,7 @@ impl Store {
 
     pub fn open(dir: &Path) -> R<Store> {
         use std::os::unix::fs::PermissionsExt;
-        for d in [dir.to_path_buf(), dir.join("challenges"), dir.join("records"), dir.join("approvals")] {
+        for d in [dir.to_path_buf(), dir.join("approvals")] {
             fs::create_dir_all(&d).map_err(|e| format!("mkdir {}: {e}", d.display()))?;
             fs::set_permissions(&d, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
         }
@@ -291,37 +232,9 @@ impl Store {
         Ok(())
     }
 
-    pub fn mint_challenge(&self, card: u64, run: &str, round: &str) -> R<String> {
-        safe_name(run)?;
-        let nonce = random_token()?;
-        write_private(&self.dir.join("challenges").join(format!("{nonce}.json")),
-            &json!({"card": card, "run": run, "round": round, "at": now()}).to_string())?;
-        Ok(nonce)
-    }
 
-    /// One use: the file is removed before the answer is checked.
-    pub fn take_challenge(&self, nonce: &str) -> R<(u64, String, String)> {
-        let p = self.dir.join("challenges").join(format!("{}.json", safe_name(nonce)?));
-        let v = read_json(&p).ok_or("this go was already used, or never asked for")?;
-        fs::remove_file(&p).map_err(|e| format!("could not spend the challenge: {e}"))?;
-        if now().saturating_sub(v.get("at").and_then(Value::as_u64).unwrap_or(0)) > CHALLENGE_TTL_SECS {
-            return Err("this go page is too old; reload it".into());
-        }
-        let card = v.get("card").and_then(Value::as_u64).ok_or("challenge: no card")?;
-        let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string).unwrap_or_default();
-        Ok((card, s("run"), s("round")))
-    }
 
-    pub fn save_record(&self, rec: &GoRecord) -> R<()> {
-        write_private(&self.dir.join("records").join(format!("{}.json", rec.card)), &rec.to_json().to_string())
-    }
 
-    pub fn record(&self, card: u64) -> R<Option<GoRecord>> {
-        match read_json(&self.dir.join("records").join(format!("{card}.json"))) {
-            None => Ok(None),
-            Some(v) => GoRecord::from_json(&v).map(Some),
-        }
-    }
     /// #4505: an approval challenge lives in its own dir, so a go nonce can never be spent here.
     pub fn mint_approval_challenge(&self, row: &str, action_sha: &str) -> R<String> {
         safe_name(row)?;
@@ -355,41 +268,12 @@ pub fn register(store: &Store, token: &str, cred_id: &str, spki: &str, client_da
     Ok(pk)
 }
 
-/// Accept a signed decision from the go page: spend the challenge, verify the
-/// signature, keep the counter moving forward, and store the record.
-pub fn accept(store: &Store, nonce: &str, decision: &str, auth_data: &str, client_data: &str, signature: &str) -> R<GoRecord> {
-    if decision != "go" && decision != "no" {
-        return Err(format!("decision is go or no, not '{decision}'"));
-    }
-    let mut pk = store.passkey()?.ok_or("no passkey is registered yet")?;
-    let (card, run, round) = store.take_challenge(nonce)?;
-    let rec = GoRecord {
-        card, run, round, nonce: nonce.to_string(), decision: decision.to_string(),
-        auth_data: auth_data.to_string(), client_data: client_data.to_string(), signature: signature.to_string(), at: now(),
-    };
-    let count = verify_assertion(&pk, &go_challenge_for(&rec), &unb64(auth_data)?, &unb64(client_data)?, &unb64(signature)?)?;
-    if (count != 0 || pk.sign_count != 0) && count <= pk.sign_count {
-        return Err("the passkey's counter went backwards (a copied key?)".into());
-    }
-    pk.sign_count = count;
-    store.save_passkey(&pk)?;
-    store.save_record(&rec)?;
-    Ok(rec)
-}
-
 /// What the land asks: is there a signed go from Jeff's passkey for this card's round?
 /// With no passkey registered the land keeps today's behaviour and says so.
 #[derive(Debug, PartialEq)]
 pub enum LandGo {
     Signed,
     NoPasskey,
-}
-
-pub fn land_check(store: &Store, card: u64, round: &str) -> R<LandGo> {
-    let Some(pk) = store.passkey()? else { return Ok(LandGo::NoPasskey) };
-    let rec = store.record(card)?.ok_or(format!("no go signed by Jeff's passkey for #{card}; a go typed by anyone else does not land (#4710)"))?;
-    check_record(&pk, &rec, card, round).map_err(|e| format!("{e} (#4710)"))?;
-    Ok(LandGo::Signed)
 }
 
 /// The commit a role's werk holds (the round a go is for). Abby's and Borg
@@ -471,6 +355,38 @@ pub struct ApprovalRow {
     pub id: String,
     pub state: String,
     pub action: String,
+    /// #4642: "card" or "go"; it picks the parser, and the action must match its shape.
+    pub kind: String,
+    /// #4642: for a go row, the werk's HEAD now (the server reads it); a go for another round is refused.
+    pub round_now: Option<String>,
+}
+
+/// #4642 — what a go row asks for: one card's cicd run, at one round (the werk HEAD the demo showed).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GoAction {
+    pub card: u64,
+    pub run: String,
+    pub round: String,
+}
+
+/// A go row's action is a JSON object {card, run, round} and nothing else. A cards-add argv
+/// (an array) is refused here, as a go object is refused by cards_add_argv: they never cross-replay.
+pub fn go_action(action: &str) -> R<GoAction> {
+    let v: Value = serde_json::from_str(action).map_err(|_| "not a go action: not JSON".to_string())?;
+    let o = v.as_object().ok_or("not a go action: not an object")?;
+    if o.len() != 3 {
+        return Err("not a go action: it carries exactly card, run and round".into());
+    }
+    let card = o.get("card").and_then(Value::as_u64).filter(|c| *c > 0).ok_or("not a go action: no card")?;
+    let run = o.get("run").and_then(Value::as_str).ok_or("not a go action: no run")?;
+    safe_name(run).map_err(|_| "not a go action: the run is not an id".to_string())?;
+    let round = o.get("round").and_then(Value::as_str).ok_or("not a go action: no round")?;
+    // The full 40-hex commit: a prefix against the land's full HEAD would be a false refusal or an
+    // ambiguous match (Silas, f7f580465 review).
+    if round.len() != 40 || !round.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err("not a go action: the round is not a full commit".into());
+    }
+    Ok(GoAction { card, run: run.to_string(), round: round.to_string() })
 }
 
 /// What a verified decision hands the server to record (and, on approve, replay).
@@ -480,6 +396,10 @@ pub struct ApprovalDecision {
     pub decision: String,
     pub argv: Vec<String>,
     pub at: u64,
+    /// #4642: on a go row, what was signed (the land re-verifies it).
+    pub go: Option<GoAction>,
+    /// #4642: the nonce the phone signed over, kept on the decision row so the land can re-verify.
+    pub nonce: String,
 }
 
 /// Jeff decides one row. Order matters: spend the nonce, check the row is still the one
@@ -494,14 +414,31 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     if row != row_now.id {
         return Err("this approval was asked for another row".into());
     }
+    // #4642: this server already decided the row (its signed proof is on disk): never twice, even
+    // if the door has not shown the decision yet or the card filing failed after it.
+    if store.dir.join("approvals").join(format!("decided-{row}.json")).exists() {
+        return Err("this row was already decided here".into());
+    }
     if row_now.state != "pending" {
         return Err(format!("this row was already decided ({})", row_now.state));
     }
     if action_sha(&row_now.action) != sha {
         return Err("the row's action changed after the page was shown; reload it".into());
     }
-    // A decline replays nothing, so a junk row can still be cleared.
-    let argv = if decision == "approve" { cards_add_argv(&row_now.action)? } else { Vec::new() };
+    // #4642: the kind picks the parser; the action must have that kind's shape.
+    let (argv, go) = match row_now.kind.as_str() {
+        // A decline replays nothing, so a junk card row can still be cleared.
+        "card" => (if decision == "approve" { cards_add_argv(&row_now.action)? } else { Vec::new() }, None),
+        "go" => {
+            let g = go_action(&row_now.action)?;
+            if row_now.round_now.as_deref() != Some(g.round.as_str()) {
+                return Err(format!("this go is for round {}, but the werk is at {}; the demo moved on",
+                    short(&g.round), row_now.round_now.as_deref().map(short).unwrap_or("nothing")));
+            }
+            (Vec::new(), Some(g))
+        }
+        k => return Err(format!("an approval of kind '{k}' cannot be decided here")),
+    };
     let ch = approval_challenge(&row, &sha, decision, nonce);
     let count = verify_assertion(&pk, &ch, &unb64(auth_data)?, &unb64(client_data)?, &unb64(signature)?)?;
     if (count != 0 || pk.sign_count != 0) && count <= pk.sign_count {
@@ -509,10 +446,101 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     }
     pk.sign_count = count;
     store.save_passkey(&pk)?;
-    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now() };
+    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now(), go, nonce: nonce.to_string() };
     // The proof, kept like a go record: what Jeff's phone signed, for this row.
+    // Written BEFORE the door POST (Silas 19:27): the break-glass record the land falls back to
+    // when the door has no row (a failed mint). It carries the action, so it re-verifies alone.
     write_private(&store.dir.join("approvals").join(format!("decided-{}.json", d.row)), &json!({
-        "row": d.row, "decision": d.decision, "action_sha": sha, "nonce": nonce, "at": d.at,
-        "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string())?;
+        "row": d.row, "decision": d.decision, "kind": row_now.kind, "action": row_now.action, "action_sha": sha,
+        "nonce": nonce, "at": d.at, "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string())?;
     Ok(d)
+}
+
+/// #4642 — the land's check of a go decision row: Jeff's passkey signed an approve of this row's
+/// exact action, and that action is this card at this round. A jeff-owned row alone is not a go
+/// (Kade 18:41): the signature is re-verified here, every land.
+///
+/// `action` is the approvalAction of the Approval row the decision `decides`, read from that row,
+/// never from the decision row: a decision cannot name what it approved (Silas, f7f580465 review).
+pub fn check_go_decision(pk: &Passkey, row: &str, action: &str, verdict: &str, proof: &Value, card: u64, round: &str) -> R<()> {
+    if verdict != "approve" {
+        return Err(format!("the go for #{card} was declined"));
+    }
+    let g = go_action(action)?;
+    if g.card != card {
+        return Err(format!("that go was for #{}, not #{card}", g.card));
+    }
+    if g.round != round {
+        return Err(format!("the go for #{card} was signed for round {}, not {}", short(&g.round), short(round)));
+    }
+    let f = |k: &str| proof.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let nonce = f("nonce");
+    if nonce.is_empty() {
+        return Err("the go decision carries no signature to check".into());
+    }
+    let ch = approval_challenge(row, &action_sha(action), verdict, &nonce);
+    verify_assertion(pk, &ch, &unb64(&f("authData"))?, &unb64(&f("clientDataJSON"))?, &unb64(&f("signature"))?)
+        .map(|_| ())
+        .map_err(|e| format!("the go for #{card} is not signed by Jeff's passkey: {e}"))
+}
+
+/// #4642 — the land's one go path: from the door's rows, Jeff's go for this card at this round.
+/// `approvals` and `decisions` are the door's /decisions/approvals and /approvaldecisions rows.
+/// The action is read from the Approval row the decision decides, never from the decision; only a
+/// decision owned by principal-jeff counts; the signature is re-verified (check_go_decision).
+pub fn land_go_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value], card: u64, round: &str) -> R<()> {
+    let s = |v: &Value, k: &str| -> String {
+        match v.get(k) {
+            Some(Value::String(x)) => x.clone(),
+            Some(Value::Object(o)) => o.get("@id").or_else(|| o.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+            _ => String::new(),
+        }
+    };
+    let local = |x: &str| x.rsplit(|c| c == '#' || c == '/' || c == ':').next().unwrap_or("").to_string();
+    let mut last = format!("no go signed by Jeff's passkey for #{card} at round {}; a go typed by anyone else does not land (#4710)", short(round));
+    for a in approvals.iter().filter(|a| s(a, "approvalKind") == "go") {
+        let action = s(a, "approvalAction");
+        let Ok(g) = go_action(&action) else { continue };
+        if g.card != card || g.round != round { continue; }
+        let row = local(&s(a, "name"));
+        for d in decisions.iter().filter(|d| local(&s(d, "decides")) == row) {
+            if local(&s(d, "ownedBy")) != "principal-jeff" {
+                last = format!("a go decision for #{card} not owned by principal-jeff decides nothing");
+                continue;
+            }
+            let proof: Value = serde_json::from_str(&s(d, "passkeyProof")).unwrap_or(Value::Null);
+            match check_go_decision(pk, &row, &action, &s(d, "approvalVerdict"), &proof, card, round) {
+                Ok(()) => return Ok(()),
+                Err(e) => last = e,
+            }
+        }
+    }
+    Err(last)
+}
+
+/// #4642 break-glass — Jeff's go from chorus-go's own 0700 store, for when the door has no row
+/// (his identity could not be minted to write it). The passkey re-verify is the authority here
+/// exactly as on the door path: a forged, edited or foreign record is refused.
+pub fn land_go_from_local(pk: &Passkey, store: &Store, card: u64, round: &str) -> R<()> {
+    let mut last = format!("no locally recorded go for #{card} at round {}", short(round));
+    let Ok(rd) = fs::read_dir(store.dir.join("approvals")) else { return Err(last) };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.starts_with("decided-") || !name.ends_with(".json") { continue; }
+        let Some(v) = read_json(&e.path()) else { continue };
+        let f = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        if f("kind") != "go" { continue; }
+        let action = f("action");
+        let Ok(g) = go_action(&action) else { continue };
+        if g.card != card || g.round != round { continue; }
+        if action_sha(&action) != f("action_sha") {
+            last = "a local go record whose action does not match what was signed".into();
+            continue;
+        }
+        match check_go_decision(pk, &f("row"), &action, &f("decision"), &v, card, round) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }

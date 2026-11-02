@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 const RP: &str = "lightlifeurbangardens.com";
 const ORIGIN: &str = "https://lightlifeurbangardens.com";
-const ROUND: &str = "da13a20c285bc7620e81ac3109f9ada644012319";
 
 fn tmp(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("chorus-go-{tag}-{}-{}", std::process::id(), now_nanos()));
@@ -56,7 +55,7 @@ fn registered(tag: &str) -> (Store, Phone) {
 const ARGV: &str = r#"["add","Retire the X","--owner","kade","--priority","P3"]"#;
 
 fn row(action: &str, state: &str) -> ApprovalRow {
-    ApprovalRow { id: "approval-wren-1".into(), state: state.into(), action: action.into() }
+    ApprovalRow { id: "approval-wren-1".into(), state: state.into(), action: action.into(), kind: "card".into(), round_now: None }
 }
 
 fn decide_row(store: &Store, phone: &mut Phone, shown: &ApprovalRow, now: &ApprovalRow, decision: &str) -> Result<ApprovalDecision, String> {
@@ -111,16 +110,6 @@ fn negative_proof_a_decided_row_is_not_decided_again() {
     let decided = row(ARGV, "approved");
     let e = decide_row(&store, &mut phone, &shown, &decided, "approve").unwrap_err();
     assert!(e.contains("already decided"), "{e}");
-}
-
-#[test]
-fn negative_proof_a_go_nonce_cannot_be_spent_on_an_approval() {
-    let (store, mut phone) = registered("ap-go-nonce");
-    let r = row(ARGV, "pending");
-    let go_nonce = store.mint_challenge(4505, "034lcDEndMqLApO6LeLeee", ROUND).unwrap();
-    let (ad, cd, sig) = phone.sign(&approval_challenge(&r.id, &action_sha(ARGV), "approve", &go_nonce), RP, ORIGIN, 0x05);
-    let e = decide_approval(&store, &go_nonce, "approve", &r, &ad, &cd, &sig).unwrap_err();
-    assert!(e.contains("already used, or never asked for"), "{e}");
 }
 
 #[test]

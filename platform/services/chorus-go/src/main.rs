@@ -41,7 +41,7 @@ fn main() {
         Some("check") => {
             let card = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             let round = args.get(2).cloned().unwrap_or_default();
-            match land_check(&store, card, &round) {
+            match chorus_go::serve::land_go(&store, card, &round) {
                 Ok(LandGo::Signed) => { println!("chorus-go: #{card} round {} — go signed by Jeff's passkey", short(&round)); 0 }
                 Ok(LandGo::NoPasskey) => { println!("chorus-go: no passkey registered — the go is not signed yet (#4710)"); 0 }
                 Err(e) => { eprintln!("chorus-go: refused: {e}"); 1 }

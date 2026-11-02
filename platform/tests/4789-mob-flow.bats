@@ -357,3 +357,11 @@ new_head() { git -C "$WK" -c user.email=t@t -c user.name=t commit -q --allow-emp
   [ "$status" -ne 0 ] && [[ "$output" == *"mob run 034mobfixture"* ]] || { echo "WIP released: $output"; return 1; }
   [ ! -f "$BATS_TEST_TMPDIR/args" ]
 }
+
+@test "#4642 NEGATIVE PROOF: an older failed run stamped Z does not hide a newer waiting run stamped -05:00" {
+  # 23:40Z on 11-01 is OLDER than 19:29-05:00 (00:29Z on 11-02); as text, "23" sorts above "19"
+  printf '{"dagRuns":[{"name":"mob","dagRunId":"034oldfailedZ","statusLabel":"failed","params":"CARD=4642 ROLE=wren NAVIGATORS=silas,kade","startedAt":"2026-11-01T23:40:49Z"},{"name":"mob","dagRunId":"034newwaiting","statusLabel":"waiting","params":"CARD=4642 ROLE=wren NAVIGATORS=silas,kade","startedAt":"2026-11-01T19:29:00-05:00"}]}\n' \
+    > "$F/api/v1/dag-runs"
+  run "$ROOT/platform/scripts/mob-open"
+  [ "$status" -eq 0 ] && [ "$output" = "034newwaiting 4642 wren silas,kade" ] || { echo "got: $status $output"; return 1; }
+}

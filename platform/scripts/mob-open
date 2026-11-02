@@ -46,6 +46,16 @@ def card_in_wip(card):
     return m.group(1) == "WIP"
 
 
+def started_at(run):
+    """A run's start (or queue) time as an instant; unreadable sorts oldest."""
+    from datetime import datetime
+    s = run.get("startedAt") or run.get("queuedAt") or ""
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
 def open_mobs(runs, in_wip=card_in_wip):
     """(run-id, card, driver, navigators) of every mob still holding the floor.
     #4789 — a mob holds from its start while its card is worked: a mob run that
@@ -54,7 +64,9 @@ def open_mobs(runs, in_wip=card_in_wip):
     #4852 was at 12:00) the floor is free. A failed or stopped mob, or a newer
     run of the same card, holds nothing."""
     out, seen = [], set()
-    newest = sorted(runs, key=lambda r: r.get("startedAt") or r.get("queuedAt") or "", reverse=True)
+    # #4642 — compare instants, not text: dagu stamps some runs "Z" and others "-05:00", and
+    # "23:40Z" sorts above "19:29-05:00" as text though it is the older run (Silas 19:31).
+    newest = sorted(runs, key=started_at, reverse=True)
     for r in newest:
         if r.get("name", "") != "mob":
             continue

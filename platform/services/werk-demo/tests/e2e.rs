@@ -114,6 +114,16 @@ exit 0
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
     std::env::remove_var("CHORUS_WERK_BASE");
+    // #4642 — the announce posts the go row to the door as the role: a stand-in mint and a
+    // door that logs argv and stdin apart (the identity must ride stdin, never argv).
+    std::env::set_var("CHORUS_DEMO_HEAD", "5174a0592261bbd5b452ec1287cda4e5e2fda45a");
+    let go_door = tmp("godoor"); // (the refused-row ask is unit-tested: go_row_4642.rs go_ask)
+    write_exec(&bin.join("go-mint"), "#!/bin/sh\necho stand-in-identity\n");
+    write_exec(&bin.join("go-curl"), &format!(
+        "#!/bin/sh\necho \"$@\" >> \"{d}/argv\"\ncat >> \"{d}/stdin\"\nprintf 201\n",
+        d = go_door.display()));
+    std::env::set_var("CHORUS_IDENTITY_TOKEN_BIN", bin.join("go-mint"));
+    std::env::set_var("WERK_DEMO_CURL", bin.join("go-curl"));
     fs::create_dir_all(home.join("ops/logs")).unwrap();
     let witness_path = home.join("ops/logs/werk-demo.jsonl");
 
@@ -198,6 +208,12 @@ exit 0
     let sent = fs::read_to_string(&shim_log).unwrap_or_default();
     assert!(sent.contains("gates ✓") && sent.contains("reviews 3/3") && sent.contains("AC 2/2") && sent.contains("go / no / more"),
             "the one ask carries the tally and the go: {}", sent);
+    // #4642 — the go went on Jeff's one list, and the ask points there, not at a per-run link
+    let door_argv = fs::read_to_string(go_door.join("argv")).unwrap_or_default();
+    assert!(door_argv.contains("/decisions/approvals") && door_argv.contains(r#""approvalKind":"go""#), "go row posted: {door_argv}");
+    assert!(!door_argv.contains("stand-in-identity"), "the identity never rides argv: {door_argv}");
+    assert!(fs::read_to_string(go_door.join("stdin")).unwrap_or_default().contains("stand-in-identity"), "it rides stdin");
+    assert!(sent.contains("decide: ") && sent.contains("/go/approvals") && !sent.contains("sign: "), "the ask points at the list: {sent}");
     assert!(!curl_calls.contains("/api/message"), "no room posts: {}", curl_calls);
     // NEGATIVE PROOF 1: a second announce for the same round sends nothing
     let again = announce_step(3046, "wren", &home).unwrap();

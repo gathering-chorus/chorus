@@ -53,22 +53,31 @@ fn reply(s: &mut TcpStream, code: u16, ctype: &str, body: &str) -> Result<(), St
         .map_err(|e| e.to_string())
 }
 
+fn redirect(s: &mut TcpStream, to: &str) -> Result<(), String> {
+    write!(s, "HTTP/1.1 302 Found\r\nLocation: {to}\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n")
+        .map_err(|e| e.to_string())
+}
+
 pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
     let req = read_req(&mut s)?;
     let path = req.path.trim_end_matches('/');
     let json_body = || serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null);
     let field = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let out = match (req.method.as_str(), path) {
+        // #4642: one go path. The old per-run link (/go?card=&run=) lands on the one list.
+        ("GET", "/go") if req.query.contains("card=") => return redirect(&mut s, "/go/approvals"),
         ("GET", "/go") | ("GET", "/go/register") | ("GET", "/go/approvals") => return reply(&mut s, 200, "text/html; charset=utf-8", PAGE),
         // #4505: Jeff's one list of asks, decided by his passkey like a go.
-        ("GET", "/go/api/approvals") => pending_approvals().map(|rows| json!({"ok": true, "approvals": rows})),
+        ("GET", "/go/api/approvals") => pending_approvals().and_then(|mut rows| {
+            rows.extend(signed_not_sent()?);
+            Ok(json!({"ok": true, "approvals": rows}))
+        }),
         ("POST", "/go/api/approvals/challenge") => approval_challenge_for(store, &field(&json_body(), "row")),
         ("POST", "/go/api/approvals/decide") => {
             let v = json_body();
             decide(store, &field(&v, "row"), &field(&v, "nonce"), &field(&v, "decision"),
                 &field(&v, "authData"), &field(&v, "clientDataJSON"), &field(&v, "signature"))
         }
-        ("GET", "/go/api/info") => info(store, &param(&req.query, "card"), &param(&req.query, "run"), &param(&req.query, "role")),
         ("GET", "/go/api/register-options") => Ok(json!({
             "challenge": b64url(&register_challenge(&param(&req.query, "token"))), "rpId": rp_id(), "registered": store.passkey().ok().flatten().is_some()})),
         ("POST", "/go/api/register") => {
@@ -77,11 +86,8 @@ pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
                 &unb64(&field(&v, "clientDataJSON")).unwrap_or_default(), &rp_id(), &origin())
                 .map(|_| json!({"ok": true, "text": "Your phone is registered. From now on only a go it signs lands a card."}))
         }
-        ("POST", "/go/api/decide") => {
-            let v = json_body();
-            accept(store, &field(&v, "nonce"), &field(&v, "decision"), &field(&v, "authData"), &field(&v, "clientDataJSON"), &field(&v, "signature"))
-                .and_then(|rec| complete_dagu(&rec).map(|t| json!({"ok": true, "text": t})))
-        }
+        // #4642 recovery: Jeff's go is recorded but its run never took it (dagu busy or down).
+        ("POST", "/go/api/approvals/resend") => resend_go(store, &field(&json_body(), "row")),
         _ => return reply(&mut s, 404, "text/plain", "not found"),
     };
     match out {
@@ -94,29 +100,6 @@ pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
 fn round_of(role: &str, card: u64) -> Result<String, String> {
     let werk = format!("{}/{role}-{card}", werk_base());
     werk_head(&werk).map_err(|_| format!("no werk for #{card} ({role})"))
-}
-
-fn title_of(card: u64) -> String {
-    Command::new(format!("{}/platform/scripts/cards", chorus_home())).args(["view", &card.to_string()]).output().ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_string))
-        .unwrap_or_else(|| format!("#{card}"))
-}
-
-fn info(store: &Store, card: &str, run: &str, role: &str) -> Result<Value, String> {
-    let card: u64 = card.parse().map_err(|_| "no card in the link".to_string())?;
-    if !role.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') || role.is_empty() { return Err("no role in the link".into()); }
-    let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
-    // #4753 — one go per card: a superseded or answered run is refused before Jeff signs
-    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric()) { return Err("no run in the link".into()); }
-    let (dag, id) = go_run(run);
-    go_run_open(&run_status(dag, &id))?;
-    let round = round_of(role, card)?;
-    let nonce = store.mint_challenge(card, run, &round)?;
-    Ok(json!({
-        "card": card, "run": run, "round": round, "title": title_of(card), "nonce": nonce, "rpId": pk.rp_id, "credId": pk.cred_id,
-        "challengeGo": b64url(&go_challenge(card, run, &format!("{round}|go"), &nonce)),
-        "challengeNo": b64url(&go_challenge(card, run, &format!("{round}|no"), &nonce)),
-    }))
 }
 
 /// #4758 — the dag and run that hold the go of the link's run (lib go_target).
@@ -140,19 +123,20 @@ fn run_status(dag: &str, run: &str) -> String {
 /// Answer the run's go step with what Jeff's phone signed. `accepter=jeff` here is
 /// not a role typing Jeff's name (DEC-048): handle reaches this only after
 /// verify_assertion has checked Jeff's passkey signature over this round.
-fn complete_dagu(rec: &GoRecord) -> Result<String, String> {
+/// Answer the run's go step: `go` or `no`, as Jeff (only after his passkey signature checked).
+fn complete_go(run: &str, decision: &str) -> Result<(), String> {
     let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
     let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
-    let (dag, id) = go_run(&rec.run);
+    let (dag, id) = go_run(run);
     let o = Command::new(&dagu)
         .args(["--config", &cfg, "human-task", "complete", dag, "--run-id", &id, "--step", "skill_werk_go",
-               "--input", "accepter=jeff", "--input", &format!("decision={}", rec.decision)])
+               "--input", "accepter=jeff", "--input", &format!("decision={decision}")])
         .env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output().map_err(|e| format!("dagu: {e}"))?;
     if !o.status.success() {
         return Err(format!("signed, but the run did not take it: {}", String::from_utf8_lossy(&o.stderr).trim()));
     }
-    Ok(if rec.decision == "go" { format!("Go signed for #{}. It's landing.", rec.card) } else { format!("No signed for #{}. It's held.", rec.card) })
+    Ok(())
 }
 
 // ---- #4505: approvals. Rows live on the door (decisions domain); this process only reads them,
@@ -200,10 +184,15 @@ fn pending_approvals() -> Result<Vec<Value>, String> {
 fn row_now(row: &str) -> Result<ApprovalRow, String> {
     let all = pending_approvals()?;
     if let Some(r) = all.iter().find(|r| s_of(r, "row") == row) {
-        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action: s_of(r, "action") });
+        let (kind, action) = (s_of(r, "kind"), s_of(r, "action"));
+        // #4642: a go row is checked against the werk's HEAD now (the asker's werk for that card).
+        let round_now = if kind == "go" {
+            go_action(&action).ok().and_then(|g| round_of(s_of(r, "asker").trim_start_matches("principal-"), g.card).ok())
+        } else { None };
+        return Ok(ApprovalRow { id: row.to_string(), state: "pending".into(), action, kind, round_now });
     }
     let exists = door_get("/decisions/approvals")?.iter().any(|a| s_of(a, "name") == row);
-    if exists { Ok(ApprovalRow { id: row.to_string(), state: "decided".into(), action: String::new() }) }
+    if exists { Ok(ApprovalRow { id: row.to_string(), state: "decided".into(), action: String::new(), kind: String::new(), round_now: None }) }
     else { Err(format!("no approval '{row}'")) }
 }
 
@@ -211,6 +200,12 @@ fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
     let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
     let r = row_now(row)?;
     if r.state != "pending" { return Err("this ask was already decided".into()); }
+    if r.kind == "go" {
+        let g = go_action(&r.action)?;
+        if r.round_now.as_deref() != Some(g.round.as_str()) {
+            return Err(format!("this go is for round {}; the demo moved on, so wait for the new one", short(&g.round)));
+        }
+    }
     let sha = action_sha(&r.action);
     let nonce = store.mint_approval_challenge(row, &sha)?;
     Ok(json!({"ok": true, "row": row, "nonce": nonce, "rpId": pk.rp_id, "credId": pk.cred_id,
@@ -221,8 +216,24 @@ fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
 fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &str, sig: &str) -> Result<Value, String> {
     let r = row_now(row)?;
     let d = decide_approval(store, nonce, decision, &r, ad, cd, sig)?;
-    write_decision(&d, &action_sha(&r.action), ad, cd, sig)?;
-    if d.decision != "approve" { return Ok(json!({"ok": true, "text": format!("Declined. Nothing was filed.")})); }
+    let sha = action_sha(&r.action);
+    if let Some(g) = &d.go {
+        // A go: Jeff's decision row (with the round it signed), then the run's go step.
+        // The door row can fail (no identity minted for jeff): the go still counts — the land reads
+        // the signed record chorus-go already wrote — and the failure is alerted, never silent.
+        if let Err(why) = write_decision(&d, &sha, ad, cd, sig, Some(&g.round)) {
+            alert_unrecorded(&d.row, &why);
+        }
+        let verb = if d.decision == "approve" { "go" } else { "no" };
+        complete_go(&g.run, verb)?;
+        return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
+    }
+    // A card: Jeff's signed decision is written first, the record that must never be lost (Silas
+    // 18:48); a door refusal files nothing. Then an approve replays the argv as data.
+    write_decision(&d, &sha, ad, cd, sig, None)?;
+    if d.decision != "approve" {
+        return Ok(json!({"ok": true, "text": "Declined. Nothing was filed."}));
+    }
     let o = Command::new(env_or("CHORUS_GO_CARDS", &format!("{}/platform/scripts/cards", chorus_home())))
         .args(&d.argv).env("DEPLOY_ROLE", "jeff").env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output().map_err(|e| format!("cards: {e}"))?;
@@ -234,16 +245,18 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
 }
 
 /// Jeff's decision is his own row, written as principal-jeff, only after verify_assertion passed.
-fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str) -> Result<(), String> {
+fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str, round: Option<&str>) -> Result<(), String> {
     let mint = env_or("CHORUS_GO_IDENTITY_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", chorus_home()));
     let t = Command::new(&mint).arg("jeff").output().map_err(|e| format!("identity mint: {e}"))?;
     let token = String::from_utf8_lossy(&t.stdout).trim().to_string();
     if !t.status.success() || token.is_empty() {
         return Err("signed, but there is no identity for jeff to record it with (Jeff's step: seed principal-jeff)".into());
     }
-    let body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
+    let mut body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
         "decides": d.row, "approvalVerdict": d.decision, "decidedAt": iso(d.at), "actionSha": sha,
-        "passkeyProof": json!({"authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
+        // the nonce rides with the signature so the land can re-verify a go (#4642)
+        "passkeyProof": json!({"nonce": d.nonce, "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
+    if let Some(r) = round { body["signedRound"] = json!(r); }
     // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
     let mut child = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
             "-H", "Content-Type: application/json", "-H", "@-",
@@ -271,4 +284,62 @@ fn iso(secs: u64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1; let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// #4642 — what the land asks (`chorus-go check <card> <round>`): Jeff's go for this card at this
+/// round, read from the door's rows and re-verified against his passkey. One go path.
+pub fn land_go(store: &Store, card: u64, round: &str) -> Result<LandGo, String> {
+    let Some(pk) = store.passkey()? else { return Ok(LandGo::NoPasskey) };
+    let door = door_get("/decisions/approvals")
+        .and_then(|a| door_get("/decisions/approvaldecisions").map(|d| (a, d)))
+        .and_then(|(a, d)| land_go_from_rows(&pk, &a, &d, card, round));
+    match door {
+        Ok(()) => Ok(LandGo::Signed),
+        // break-glass (Silas 19:27): the door has no row (a failed mint) or cannot answer; the
+        // signed record chorus-go wrote before the door POST still lands, re-verified.
+        Err(door_why) => land_go_from_local(&pk, store, card, round)
+            .map(|_| LandGo::Signed)
+            .map_err(|local_why| format!("{door_why}; {local_why} (#4642)")),
+    }
+}
+
+/// Go rows Jeff approved whose run still waits at its go step: his decision is recorded, the run
+/// never took it. They stay on his list until it does (Silas, Kade 19:17).
+fn signed_not_sent() -> Result<Vec<Value>, String> {
+    let decided_go: std::collections::HashSet<String> = door_get("/decisions/approvaldecisions")?.iter()
+        .filter(|d| local(&s_of(d, "ownedBy")) == "principal-jeff" && s_of(d, "approvalVerdict") == "approve")
+        .map(|d| local(&s_of(d, "decides")).to_string()).collect();
+    let mut out = Vec::new();
+    for a in door_get("/decisions/approvals")?.into_iter().filter(|a| s_of(a, "approvalKind") == "go") {
+        let row = local(&s_of(&a, "name")).to_string();
+        if !decided_go.contains(&row) { continue; }
+        let Ok(g) = go_action(&s_of(&a, "approvalAction")) else { continue };
+        let (dag, id) = go_run(&g.run);
+        if go_run_open(&run_status(dag, &id)).is_ok() {
+            out.push(json!({"row": row, "asker": local(&s_of(&a, "ownedBy")), "kind": "go", "state": "signed-not-sent",
+                "title": s_of(&a, "approvalSubject"), "action": s_of(&a, "approvalAction"), "at": s_of(&a, "createdAt")}));
+        }
+    }
+    Ok(out)
+}
+
+/// Re-send a recorded go to its run. No new signature: the recorded one is re-verified, exactly as
+/// the land will, before the run's go step is answered.
+fn resend_go(store: &Store, row: &str) -> Result<Value, String> {
+    let pk = store.passkey()?.ok_or("no passkey registered yet")?;
+    let approvals = door_get("/decisions/approvals")?;
+    let a = approvals.iter().find(|a| local(&s_of(a, "name")) == row && s_of(a, "approvalKind") == "go")
+        .ok_or(format!("no go approval '{row}'"))?;
+    let g = go_action(&s_of(a, "approvalAction"))?;
+    land_go_from_rows(&pk, &approvals, &door_get("/decisions/approvaldecisions")?, g.card, &g.round)?;
+    complete_go(&g.run, "go")?;
+    Ok(json!({"ok": true, "text": format!("Go sent for #{}. It's landing.", g.card)}))
+}
+
+/// A go decision the door did not record: loud on the spine and in the log (alert rules read the
+/// spine); the land still has the signed local record.
+fn alert_unrecorded(row: &str, why: &str) {
+    eprintln!("chorus-go: approval.decision.unrecorded row={row}: {why}");
+    let log = format!("{}/platform/scripts/chorus-log", chorus_home());
+    let _ = Command::new(log).args(["approval.decision.unrecorded", "system", &format!("row={row}"), &format!("reason={}", why.replace(' ', "_"))]).output();
 }

@@ -77,6 +77,8 @@ case "$url" in
   *) exit 22;;
 esac
 "#));
+    // #4642: a dagu whose go step waits; every human-task answer is logged
+    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) echo 'Waiting - 2026-11-01 19:00:00';; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
     sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
     sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
@@ -106,6 +108,7 @@ fn serve(w: &World, phone: &Phone) -> Server {
         std::env::set_var(k, w.root.join(v));
     }
     std::env::set_var("CHORUS_GO_DOOR", "http://door.invalid");
+    std::env::set_var("CHORUS_GO_DAGU", w.root.join("bin/dagu"));
     std::env::set_var("CHORUS_GO_RP_ID", RP);
     std::env::set_var("CHORUS_GO_ORIGIN", ORIGIN);
     let store = Store::open(&w.root.join("go")).unwrap();
@@ -220,4 +223,54 @@ fn negative_proof_two_racing_decides_file_once() {
     let (c2, b2) = send(&mut p, &b);
     assert_eq!(c2, 403, "{b2}");
     assert_eq!(w.read("cards.log").lines().count(), 1, "filed once");
+}
+
+// #4642 — the stuck-go recovery (Silas, Kade 19:17): Jeff's go is recorded but the run never took
+// it. It stays on his list as signed-not-sent; resend re-verifies the STORED signature (no new
+// Face ID) and answers the run's go step. Only a jeff-owned, validly signed decision is re-sent.
+const GO_RUN: &str = "034qFPOewc9praHJbg6SYH";
+fn go_world(tag: &str, phone: &mut Phone, owner: &str, forge: bool) -> World {
+    let w = world(tag);
+    let action = format!(r#"{{"card":4642,"run":"{GO_RUN}","round":"5174a0592261bbd5b452ec1287cda4e5e2fda45a"}}"#);
+    let row = "approval-go-4642";
+    let nonce = "n-recorded";
+    let (ad, cd, sig) = phone.sign(&approval_challenge(row, &action_sha(&action), "approve", nonce));
+    let proof = json!({"nonce": if forge { "n-other" } else { nonce }, "authData": ad, "clientDataJSON": cd, "signature": sig});
+    std::fs::write(w.root.join("approvals.json"), json!({"data": [
+        {"name": format!("chorus:{row}"), "ownedBy": "chorus:principal-wren", "approvalKind": "go",
+         "approvalSubject": "#4642 Approvals round 2", "approvalAction": action, "createdAt": "2026-11-01T19:00:00Z"}]}).to_string()).unwrap();
+    std::fs::write(w.root.join("decisions.json"), json!({"data": [
+        {"name": format!("decision-{row}"), "ownedBy": format!("chorus:{owner}"), "decides": format!("chorus:{row}"),
+         "approvalVerdict": "approve", "passkeyProof": proof.to_string()}]}).to_string()).unwrap();
+    w
+}
+
+#[test]
+fn a_signed_go_its_run_never_took_is_listed_and_resent_on_the_recorded_signature() {
+    let mut p = Phone::new();
+    let w = go_world("resend", &mut p, "principal-jeff", false);
+    let srv = serve(&w, &p);
+    let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert_eq!(c, 200, "{b}");
+    let rows = b["approvals"].as_array().unwrap();
+    assert!(rows.iter().any(|r| r["row"] == "approval-go-4642" && r["state"] == "signed-not-sent"), "{b}");
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/resend", &json!({"row": "approval-go-4642"}).to_string());
+    assert_eq!(c, 200, "{b}");
+    let log = w.read("dagu.log");
+    assert!(log.contains("human-task complete cicd-go") && log.contains(&format!("go-{GO_RUN}")) && log.contains("decision=go"), "{log}");
+}
+
+#[test]
+fn negative_proof_resend_refuses_a_decision_that_is_not_jeffs_signed_go() {
+    for (tag, owner, forge, why) in [("resend-kade", "principal-kade", false, "not owned by principal-jeff"),
+                                     ("resend-forged", "principal-jeff", true, "not signed by Jeff's passkey")] {
+        let mut p = Phone::new();
+        let w = go_world(tag, &mut p, owner, forge);
+        let srv = serve(&w, &p);
+        let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/resend", &json!({"row": "approval-go-4642"}).to_string());
+        assert_eq!(c, 403, "{tag}: {b}");
+        assert!(b["text"].as_str().unwrap_or("").contains(why), "{tag}: {b}");
+        assert_eq!(w.read("dagu.log"), "", "{tag}: nothing answered the run");
+        drop(srv);
+    }
 }
