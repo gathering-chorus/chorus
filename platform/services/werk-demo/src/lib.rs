@@ -980,6 +980,20 @@ pub fn approvals_link() -> String {
     format!("{base}/go/approvals")
 }
 
+/// #4642 — the one ask's tail: the list when the go row is on it; otherwise the per-run sign page
+/// and the reason, so the go is never a dead end. Pure.
+pub fn go_ask(line: &str, posted: &Result<(), String>, card: u64, run: &str, role: &str) -> String {
+    match posted {
+        Ok(()) => format!("{line} · decide: {}", approvals_link()),
+        Err(why) => format!("{line} · sign: {} (go row not on the list: {why})", sign_link(card, run, role)),
+    }
+}
+
+/// The per-run sign page, only for when the go row could not be posted (see announce).
+pub fn sign_link(card: u64, run: &str, role: &str) -> String {
+    format!("{}?card={card}&run={run}&role={role}", approvals_link().trim_end_matches("approvals"))
+}
+
 fn json_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
     o.push('"');
@@ -1567,11 +1581,11 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         let posted = full_head(role, card).ok_or_else(|| format!("no go row: #{card}'s werk HEAD is unreadable"))
             .and_then(|head| go_approval_body(card, &trace, &head, &go_row_title(home, card)))
             .and_then(|body| post_go_approval(home, role, &body));
-        if let Err(why) = posted {
-            return Ok(DemoOutcome { message: format!("{announce}\nREFUSED: the go was not put on Jeff's list: {why}"), exit: 1 });
-        }
-        announce_to_jeff(role, &trace, &format!("{} · decide: {}",
-            announce_line(card, &round, &tally, &variant_url, &clearing_url), approvals_link()));
+        // The go is always askable. If the door refused the row (the card that brings go rows
+        // demos against a door whose model does not have them yet; or a real refusal), the ask
+        // carries the per-run sign page today's chorus-go serves, and says why — never a dead end.
+        let line = announce_line(card, &round, &tally, &variant_url, &clearing_url);
+        announce_to_jeff(role, &trace, &go_ask(&line, &posted, card, &trace, role));
         jsonl(home, role, card, &trace, "demo.announced",
               &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
     }

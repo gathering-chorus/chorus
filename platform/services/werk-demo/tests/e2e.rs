@@ -117,10 +117,10 @@ exit 0
     // #4642 — the announce posts the go row to the door as the role: a stand-in mint and a
     // door that logs argv and stdin apart (the identity must ride stdin, never argv).
     std::env::set_var("CHORUS_DEMO_HEAD", "5174a0592261bbd5b452ec1287cda4e5e2fda45a");
-    let go_door = tmp("godoor");
+    let go_door = tmp("godoor"); // (the refused-row ask is unit-tested: go_row_4642.rs go_ask)
     write_exec(&bin.join("go-mint"), "#!/bin/sh\necho stand-in-identity\n");
     write_exec(&bin.join("go-curl"), &format!(
-        "#!/bin/sh\necho \"$@\" >> \"{d}/argv\"\ncat >> \"{d}/stdin\"\n[ -f \"{d}/refuse\" ] && {{ printf 403; exit 0; }}\nprintf 201\n",
+        "#!/bin/sh\necho \"$@\" >> \"{d}/argv\"\ncat >> \"{d}/stdin\"\nprintf 201\n",
         d = go_door.display()));
     std::env::set_var("CHORUS_IDENTITY_TOKEN_BIN", bin.join("go-mint"));
     std::env::set_var("WERK_DEMO_CURL", bin.join("go-curl"));
@@ -171,13 +171,6 @@ exit 0
     let mut both = fs::read_to_string(&witness_path).unwrap();
     both.push_str("{\"ts\":2,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"verdict\":\"concerns\",\"note\":\"watch the land\"}\n");
     fs::write(&witness_path, &both).unwrap();
-    // #4642 NEGATIVE PROOF: the door refuses the go row → no ask goes out, and the step says why
-    fs::write(go_door.join("refuse"), "").unwrap();
-    let refused = announce_step(3046, "wren", &home).unwrap();
-    assert_eq!(refused.exit, 1, "a go row the door refused announces nothing: {}", refused.message);
-    assert!(refused.message.contains("not put on Jeff's list"), "{}", refused.message);
-    assert!(!fs::read_to_string(&shim_log).unwrap_or_default().contains("Demo ready — #3046"), "no ask was sent");
-    fs::remove_file(go_door.join("refuse")).unwrap();
     let result = announce_step(3046, "wren", &home).expect("announce should succeed");
     assert_eq!(result.exit, 0, "#4502 announce step succeeds as a dagu step: {}", result.message);
     // #3511 — the four things Jeff named: gates, team review, card + AC, a claim
