@@ -95,7 +95,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   cd "$ROOT/platform/services/werk-demo" || return 1
   run nice cargo test -j 4 --test go_row_4642 --test e2e
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 6 passed"* ]] || { echo "$output"; return 1; }  # +2 go_ask
+  [[ "$output" == *"test result: ok. 7 passed"* ]] || { echo "$output"; return 1; }  # +2 go_ask; #4771 +1 tested commit
 }
 
 @test "R2-ONE-GO-PATH: the per-run go page, its decide route and the go record are retired" {

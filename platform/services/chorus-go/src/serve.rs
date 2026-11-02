@@ -228,14 +228,16 @@ fn offered(rows: Vec<Value>) -> Vec<Value> {
 fn refuse_stale_go(row: &str, action: &str) -> Result<(), String> {
     // #4771 — one go per card: a newer go row of the card supersedes this one even while
     // dagu still has this run waiting (a run that reached its go after the newer run started).
-    let card = go_action(action).map(|g| g.card).unwrap_or(0);
+    let (card, mine) = go_action(action).map(|g| (g.card, run_started_ms(&g.run))).unwrap_or((0, None));
     let pending = pending_approvals().unwrap_or_default();
-    let mine = pending.iter().find(|r| s_of(r, "row") == row).map(|r| s_of(r, "at")).unwrap_or_default();
-    if let Some(newer) = pending.iter()
-        .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row && s_of(r, "at") > mine)
-        .filter(|r| go_action(&s_of(r, "action")).map(|g| g.card == card).unwrap_or(false))
-        .max_by(|a, b| s_of(a, "at").cmp(&s_of(b, "at"))) {
-        return Err(stale_go_refusal(card, "this run was superseded by a newer run of the card", Some(&s_of(newer, "row"))));
+    if let Some(mine) = mine {
+        if let Some((_, newer)) = pending.iter()
+            .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row)
+            .filter_map(|r| go_action(&s_of(r, "action")).ok().filter(|g| g.card == card)
+                .and_then(|g| run_started_ms(&g.run)).filter(|t| *t > mine).map(|t| (t, s_of(r, "row"))))
+            .max_by_key(|(t, _)| *t) {
+            return Err(stale_go_refusal(card, "this run was superseded by a newer run of the card", Some(&newer)));
+        }
     }
     let status = go_row_status(action);
     let Err(why) = status.clone().and_then(|st| go_run_open(&st)) else { return Ok(()) };

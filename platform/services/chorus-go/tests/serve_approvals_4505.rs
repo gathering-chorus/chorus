@@ -280,8 +280,8 @@ fn negative_proof_resend_refuses_a_decision_that_is_not_jeffs_signed_go() {
 // #4771 AC2 — one go per card. A card's new cicd run supersedes (aborts) its
 // older go; that older go row is not offered, cannot be asked for, and a
 // decide that races the supersede writes nothing and answers no run.
-const OLD_RUN: &str = "034qOLDrun0000000000aa";
-const NEW_RUN: &str = "034qNEWrun0000000000bb";
+const OLD_RUN: &str = "034qq6XgiAeVGOv2S6DEhR"; // run 11, started 11-02 17:28:41 (UUIDv7)
+const NEW_RUN: &str = "034qq9S3EbXzSGzpLWcIXj"; // run 12, started 17:30:36
 fn two_go_world(tag: &str) -> World {
     let w = world(tag);
     // the asker's werk, whose HEAD is the round the go was asked at
@@ -298,8 +298,9 @@ fn two_go_world(tag: &str) -> World {
         "approvalKind": "go", "approvalSubject": "#4771 go lands hands-free",
         "approvalAction": format!(r#"{{"card":4771,"run":"{run}","round":"{round}"}}"#), "createdAt": at});
     std::fs::write(w.root.join("approvals.json"), json!({"data": [
-        go("approval-go-4771-old", OLD_RUN, "2026-11-02T07:00:00Z"),
-        go("approval-go-4771-new", NEW_RUN, "2026-11-02T07:30:00Z")]}).to_string()).unwrap();
+        // the older run's row posted LAST (17:32, the slow run reached its go late; Silas 17:36)
+        go("approval-go-4771-old", OLD_RUN, "2026-11-02T17:32:00-05:00"),
+        go("approval-go-4771-new", NEW_RUN, "2026-11-02T22:31:00Z")]}).to_string()).unwrap();
     std::fs::write(w.root.join("decisions.json"), json!({"data": []}).to_string()).unwrap();
     w
 }

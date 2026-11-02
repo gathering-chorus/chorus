@@ -43,15 +43,23 @@ fn an_answered_no_or_aborted_go_is_superseded_and_jeffs_landed_go_is_not() {
     assert!(!superseded_status(""));
 }
 
-/// #4771 — newest_go_per_card keeps one go per card, by `at`; card asks and other cards stay.
-/// NEGATIVE PROOF: a lone go, another card's go and a card ask are never dropped.
+/// #4771 — newest_go_per_card keeps the go whose run STARTED last (from the UUIDv7 run id),
+/// whatever order the rows posted in; card asks, other cards and unreadable ids stay.
+/// NEGATIVE PROOF: the older run's row posted later (and in a different zone) is still dropped;
+/// a lone go, another card's go, a card ask and an unreadable run id are never dropped.
 #[test]
-fn only_the_newest_go_of_each_card_is_kept() {
+fn only_the_go_of_the_last_started_run_of_each_card_is_kept() {
     use serde_json::json;
-    let g = |row: &str, card: u64, at: &str| json!({"row": row, "kind": "go", "at": at,
-        "action": format!(r#"{{"card":{card},"run":"r-{row}","round":"{}"}}"#, "a".repeat(40))});
-    let rows = vec![g("old", 4771, "2026-11-02T22:28:00Z"), g("new", 4771, "2026-11-02T22:30:00Z"),
-        g("other", 4642, "2026-11-02T20:00:00Z"), json!({"row": "ask", "kind": "card", "at": "x"})];
+    let g = |row: &str, card: u64, run: &str, at: &str| json!({"row": row, "kind": "go", "at": at,
+        "action": format!(r#"{{"card":{card},"run":"{run}","round":"{}"}}"#, "a".repeat(40))});
+    let rows = vec![
+        g("run11", 4771, "034qq6XgiAeVGOv2S6DEhR", "2026-11-02T17:40:00-05:00"),   // started first, posted last
+        g("run12", 4771, "034qq9S3EbXzSGzpLWcIXj", "2026-11-02T22:31:00Z"),
+        g("other", 4642, "034qnl2lQX1God1BGw4iGq", "2026-11-02T20:00:00Z"),
+        g("odd", 4771, "not-a-run-id", "x"),
+        json!({"row": "ask", "kind": "card", "at": "x"})];
     let kept: Vec<String> = chorus_go::newest_go_per_card(rows).iter().map(|r| r["row"].as_str().unwrap().to_string()).collect();
-    assert_eq!(kept, vec!["new", "other", "ask"]);
+    assert_eq!(kept, vec!["run12", "other", "odd", "ask"]);
+    assert!(chorus_go::run_started_ms("go-034qq6XgiAeVGOv2S6DEhR") < chorus_go::run_started_ms("034qq9S3EbXzSGzpLWcIXj"));
+    assert_eq!(chorus_go::run_started_ms("034qq6XgiAeVGOv2S6DEhR"), Some(1793658521365));
 }

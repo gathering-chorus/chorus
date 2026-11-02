@@ -1025,21 +1025,28 @@ pub fn go_approval_body(card: u64, run: &str, round_full: &str, title: &str) -> 
         json_str(&format!("go #{card}")), json_str(&subject), json_str(&action)))
 }
 
-/// The card's werk HEAD in full (the go row binds it; current_round is the 12-char display form).
-fn full_head(role: &str, card: u64) -> Option<String> {
+/// #4771 — the full sha run `trace` pushed for `card`, from werk-push's record (the last
+/// push.completed / push.idempotent line of that card and run). Pure.
+pub fn pushed_sha(push_log: &str, card: u64, trace: &str) -> Option<String> {
+    if trace.is_empty() { return None; }
+    let card_key = format!("\"card_id\":{card},");
+    let trace_key = format!("\"trace_id\":\"{trace}\"");
+    push_log.lines().rev()
+        .filter(|l| l.contains(&card_key) && l.contains(&trace_key))
+        .filter(|l| l.contains("\"event\":\"push.completed\"") || l.contains("\"event\":\"push.idempotent\""))
+        .find_map(|l| l.split("\"sha\":\"").nth(1).and_then(|r| r.split('"').next()).map(str::to_string))
+        .filter(|s| s.len() == 40 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+}
+
+/// The commit the go row binds: CHORUS_DEMO_HEAD (tests), else what this run pushed.
+fn tested_head(home: &Path, card: u64, trace: &str) -> Option<String> {
     if let Ok(h) = env::var("CHORUS_DEMO_HEAD") {
         if !h.trim().is_empty() { return Some(h.trim().to_string()); }
     }
-    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
-        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
-    });
-    let werk = format!("{}/{}-{}", werk_base, role, card);
-    std::process::Command::new("git").args(["-C", &werk, "rev-parse", "HEAD"]).output().ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| s.len() == 40)
+    let log = std::fs::read_to_string(home.join("ops/logs/werk-push.jsonl")).ok()?;
+    pushed_sha(&log, card, trace)
 }
+
 
 /// Post the go row as the demoing role (the door stamps ownedBy from the verified token). The
 /// token goes to curl on stdin, never argv. A refusal is loud: no row, no go to give.
@@ -1578,7 +1585,10 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
             if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
             test_summary.replace("tests: ", "tests "), checked, total);
         // #4642: the go is a row on Jeff's list; the line points there. No row, no announce.
-        let posted = full_head(role, card).ok_or_else(|| format!("no go row: #{card}'s werk HEAD is unreadable"))
+        // #4771 — the go binds the commit THIS run pushed and tested, never the werk's HEAD now:
+        // run 11 (11-02) tested affda76 and its go stamped daf6848, a later commit nobody tested.
+        let posted = tested_head(home, card, &trace)
+            .ok_or_else(|| format!("no go row: no push of #{card} recorded for run {trace}, so no tested commit to bind"))
             .and_then(|head| go_approval_body(card, &trace, &head, &go_row_title(home, card)))
             .and_then(|body| post_go_approval(home, role, &body));
         // The go is always askable. If the door refused the row (the card that brings go rows
