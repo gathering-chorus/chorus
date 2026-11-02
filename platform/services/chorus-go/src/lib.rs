@@ -159,6 +159,11 @@ pub fn go_run_open(status_line: &str) -> Result<(), String> {
     }
 }
 
+/// #4771 AC2 — `dagu status` says this run was stopped (cicd-supersede).
+pub fn superseded_status(status_line: &str) -> bool {
+    status_line.split(" - ").next().unwrap_or("").trim() == "Aborted"
+}
+
 /// #4771 AC2 — the refusal for a go whose run was superseded: it names the
 /// card's newest go to open instead, or says to wait for the new demo.
 pub fn stale_go_refusal(card: u64, why: &str, newest_row: Option<&str>) -> String {

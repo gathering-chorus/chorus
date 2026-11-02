@@ -78,8 +78,9 @@ case "$url" in
 esac
 "#));
     // #4642: a dagu whose go step waits; every human-task answer is logged
-    // #4771: a run id listed in `aborted` reads Aborted (cicd-supersede stopped it)
-    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then echo 'Aborted - 2026-11-01 19:05:00'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
+    // #4771: a run id listed in `aborted` reads Aborted (cicd-supersede stopped it);
+    // with `dagu-unreadable` present, status prints nothing
+    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then echo 'Aborted - 2026-11-01 19:05:00'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
     sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
     sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
@@ -343,4 +344,20 @@ fn negative_proof_a_decide_racing_the_supersede_writes_nothing_and_answers_no_ru
     assert!(b["text"].as_str().unwrap_or("").contains("approval-go-4771-new"), "{b}");
     assert_eq!(w.read("dagu.log"), "", "no run's go step was answered");
     assert_eq!(w.read("posts.log"), "", "no decision row was written");
+}
+
+#[test]
+fn negative_proof_an_unreadable_dagu_keeps_the_go_rows_listed_with_the_reason() {
+    let p = Phone::new();
+    let w = two_go_world("stale-unreadable");
+    std::fs::write(w.root.join("dagu-unreadable"), "").unwrap();
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert_eq!(c, 200, "{b}");
+    let rows = b["approvals"].as_array().unwrap();
+    for name in ["approval-go-4771-old", "approval-go-4771-new"] {
+        let r = rows.iter().find(|r| r["row"] == name).unwrap_or_else(|| panic!("{name} hidden on an unreadable dagu: {b}"));
+        assert!(r["state"].as_str().unwrap_or("").contains("cannot read"), "{name} carries the reason: {b}");
+    }
 }

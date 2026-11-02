@@ -196,17 +196,30 @@ fn row_now(row: &str) -> Result<ApprovalRow, String> {
     else { Err(format!("no approval '{row}'")) }
 }
 
-/// #4771 AC2 — whether a go row's run still waits at the go. A run cicd-supersede
-/// stopped (a newer run of the card started) reads Aborted: that go is stale.
-fn go_row_open(action: &str) -> Result<(), String> {
+/// #4771 AC2 — the first line of `dagu status` for a go row's run.
+fn go_row_status(action: &str) -> Result<String, String> {
     let g = go_action(action)?;
     let (dag, id) = go_run(&g.run);
-    go_run_open(&run_status(dag, &id))
+    Ok(run_status(dag, &id))
 }
 
-/// The list offers a go row only while its run waits at the go; card asks always.
+/// Whether a go row's run still waits at the go. A run cicd-supersede stopped
+/// (a newer run of the card started) reads Aborted: that go is stale.
+fn go_row_open(action: &str) -> Result<(), String> {
+    go_run_open(&go_row_status(action)?)
+}
+
+/// The list drops a go row only when its run was superseded (Aborted). Any
+/// other state that is not waiting (dagu unreadable, not there yet) stays on
+/// the list with its reason, so Jeff never sees an empty list and no why.
 fn offered(rows: Vec<Value>) -> Vec<Value> {
-    rows.into_iter().filter(|r| s_of(r, "kind") != "go" || go_row_open(&s_of(r, "action")).is_ok()).collect()
+    rows.into_iter().filter_map(|mut r| {
+        if s_of(&r, "kind") != "go" { return Some(r); }
+        let status = go_row_status(&s_of(&r, "action"));
+        if status.as_deref().map(superseded_status).unwrap_or(false) { return None; }
+        if let Err(why) = status.and_then(|st| go_run_open(&st)) { r["state"] = json!(why); }
+        Some(r)
+    }).collect()
 }
 
 /// #4771 AC2 — a stale go is refused before Jeff signs and before any decision
