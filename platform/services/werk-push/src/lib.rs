@@ -76,7 +76,12 @@ pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) ->
 
 pub fn resolve_trace(card: u64) -> String {
     let env = env::var("CHORUS_TRACE_ID").ok();
-    resolve_trace_in(card, env.as_deref(), Path::new("/tmp"))
+    // #4771 — CHORUS_TRACE_DIR moves the carrier (default /tmp, unchanged):
+    // a fixed /tmp/<card>-trace made by one account is unwritable by the next,
+    // so the e2e ran green as jeffbridwell and red on every role account.
+    let dir = env::var_os("CHORUS_TRACE_DIR").filter(|d| !d.is_empty()).map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    resolve_trace_in(card, env.as_deref(), &dir)
 }
 
 /// #3163 — the spine event contract (#3135 AUDITABLE): the args handed to `chorus-log`
