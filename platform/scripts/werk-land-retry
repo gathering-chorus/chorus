@@ -15,8 +15,10 @@ when the go is on record:
      (dagu prints the run id it enqueued; the step's stdout holds it),
   4. no other land is running or queued (lands go one at a time).
 
-Then it retries the land from its stopped step, downstream, detached. A land
-that any actor enqueued by hand matches no go step and is refused.
+Then it asks dagu's server to retry the land from its stopped step, downstream
+(#4771): the land runs as dagu's account with launchd's env, whoever asked, and
+a refusal or an unreachable server fails loud. A land that any actor enqueued
+by hand matches no go step and is refused.
 
 Read from dagu's own run files (data_dir/dag-runs), since the run API leaves
 out the go step's inputs. WLR_DATA, WLR_DAGU_URL and WLR_LOG_DIR point it at a
