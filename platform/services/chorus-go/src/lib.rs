@@ -159,6 +159,15 @@ pub fn go_run_open(status_line: &str) -> Result<(), String> {
     }
 }
 
+/// #4771 AC2 — the refusal for a go whose run was superseded: it names the
+/// card's newest go to open instead, or says to wait for the new demo.
+pub fn stale_go_refusal(card: u64, why: &str, newest_row: Option<&str>) -> String {
+    match newest_row {
+        Some(r) => format!("#{card}: {why}: open the newest go ({r})"),
+        None => format!("#{card}: {why}: its new run has not reached the go yet; wait for that demo"),
+    }
+}
+
 /// The go store: the passkey, outstanding challenges, and the signed gos.
 pub struct Store {
     pub dir: PathBuf,
