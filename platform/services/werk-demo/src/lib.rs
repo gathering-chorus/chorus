@@ -972,12 +972,85 @@ pub fn announce_line(card: u64, round: &str, tally: &str, variant_url: &str, cle
     format!("Demo ready — #{} · round {} · {} · {} · clearing {} · go / no / more", card, round, tally, url, clearing)
 }
 
-/// #4710 — where Jeff signs this run's go with his phone. The run id is the
-/// cicd run's (the demo gets it as TRACE); the page asks the server for the round.
-pub fn go_link(card: u64, run: &str, role: &str) -> String {
+/// #4642 — the one place Jeff decides: his approvals list. The per-run sign link is retired; a
+/// go is a row on the list (posted below), beside card asks.
+pub fn approvals_link() -> String {
     let base = std::env::var("CHORUS_GO_ORIGIN").ok().filter(|s| !s.is_empty())
         .unwrap_or_else(|| "https://lightlifeurbangardens.com".to_string());
-    format!("{base}/go/?card={card}&run={run}&role={role}")
+    format!("{base}/go/approvals")
+}
+
+fn json_str(s: &str) -> String {
+    let mut o = String::with_capacity(s.len() + 2);
+    o.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => o.push_str("\\\""),
+            '\\' => o.push_str("\\\\"),
+            '\n' => o.push_str("\\n"),
+            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
+/// #4642 — the go row the demo posts: kind go, its action exactly {card, run, round} with the
+/// werk's full 40-hex HEAD (the land compares full HEADs). Pure.
+pub fn go_approval_body(card: u64, run: &str, round_full: &str, title: &str) -> Result<String, String> {
+    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(format!("no go row: the run id '{run}' is not an id"));
+    }
+    if round_full.len() != 40 || !round_full.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(format!("no go row: '{round_full}' is not the werk's full HEAD"));
+    }
+    let action = format!("{{\"card\":{card},\"run\":\"{run}\",\"round\":\"{round_full}\"}}");
+    let subject = format!("#{card} {title}");
+    Ok(format!("{{\"name\":\"approval-go-{card}-{run}\",\"label\":{},\"approvalKind\":\"go\",\"approvalSubject\":{},\"approvalAction\":{}}}",
+        json_str(&format!("go #{card}")), json_str(&subject), json_str(&action)))
+}
+
+/// The card's werk HEAD in full (the go row binds it; current_round is the 12-char display form).
+fn full_head(role: &str, card: u64) -> Option<String> {
+    if let Ok(h) = env::var("CHORUS_DEMO_HEAD") {
+        if !h.trim().is_empty() { return Some(h.trim().to_string()); }
+    }
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    let werk = format!("{}/{}-{}", werk_base, role, card);
+    std::process::Command::new("git").args(["-C", &werk, "rev-parse", "HEAD"]).output().ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.len() == 40)
+}
+
+/// Post the go row as the demoing role (the door stamps ownedBy from the verified token). The
+/// token goes to curl on stdin, never argv. A refusal is loud: no row, no go to give.
+fn post_go_approval(home: &Path, role: &str, body: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    let mint = env::var("CHORUS_IDENTITY_TOKEN_BIN").unwrap_or_else(|_| script_path(home, "chorus-identity-token"));
+    let t = Command::new(&mint).arg(role).output().map_err(|e| format!("identity mint: {e}"))?;
+    let token = String::from_utf8_lossy(&t.stdout).trim().to_string();
+    if !t.status.success() || token.is_empty() {
+        return Err(format!("no identity for {role} to post the go row with"));
+    }
+    let door = env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".into());
+    let curl = env::var("WERK_DEMO_CURL").unwrap_or_else(|_| "/usr/bin/curl".into());
+    let mut child = Command::new(&curl).args(["-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "8", "-X", "POST",
+            "-H", "Content-Type: application/json", "-H", "@-", "--data-binary", body, &format!("{door}/decisions/approvals")])
+        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+        .spawn().map_err(|e| format!("door: {e}"))?;
+    {
+        let mut stdin = child.stdin.take().ok_or("door: no stdin")?;
+        writeln!(stdin, "Authorization: Bearer {token}").map_err(|e| format!("door: {e}"))?;
+    }
+    let o = child.wait_with_output().map_err(|e| format!("door: {e}"))?;
+    let code = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    // 409: this run's go row is already posted (a re-present of the same round) — fine.
+    if code.starts_with('2') || code == "409" { Ok(()) } else { Err(format!("the door answered {code} to the go row")) }
 }
 
 /// #4502 — true when this round already sent its one ask, or Jeff's go is in:
@@ -1490,8 +1563,15 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         let tally = format!("gates {} · reviews {}/{} · {} · AC {}/{}",
             if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
             test_summary.replace("tests: ", "tests "), checked, total);
-        announce_to_jeff(role, &trace, &format!("{} · sign: {}",
-            announce_line(card, &round, &tally, &variant_url, &clearing_url), go_link(card, &trace, role)));
+        // #4642: the go is a row on Jeff's list; the line points there. No row, no announce.
+        let posted = full_head(role, card).ok_or_else(|| format!("no go row: #{card}'s werk HEAD is unreadable"))
+            .and_then(|head| go_approval_body(card, &trace, &head, &go_row_title(home, card)))
+            .and_then(|body| post_go_approval(home, role, &body));
+        if let Err(why) = posted {
+            return Ok(DemoOutcome { message: format!("{announce}\nREFUSED: the go was not put on Jeff's list: {why}"), exit: 1 });
+        }
+        announce_to_jeff(role, &trace, &format!("{} · decide: {}",
+            announce_line(card, &round, &tally, &variant_url, &clearing_url), approvals_link()));
         jsonl(home, role, card, &trace, "demo.announced",
               &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
     }
@@ -3290,4 +3370,9 @@ mod clearing_v2_link_4625 {
         assert!(why.contains("Clearing v2"), "{why}");
         assert_eq!(clearing_link_refusal(&paths(&["directing/clearing/src/x.ts"]), &clearing_url_for("kade")), None);
     }
+}
+
+/// The card's title for the go row's subject ("" when the board cannot say).
+fn go_row_title(home: &Path, card: u64) -> String {
+    run(&script_path(home, "cards"), &["view", &card.to_string()]).map(|v| card_title(&v)).unwrap_or_default()
 }

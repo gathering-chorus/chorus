@@ -56,8 +56,8 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   cd "$ROOT/platform/services/chorus-go" || return 1
   run env CARGO_BUILD_JOBS=4 nice cargo test --test approvals_4505 --test serve_approvals_4505
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 11 passed"* ]] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 8 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # #4642 retired the go-nonce case
+  [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # #4642 added the resend pair
 }
 
 # --- retire the chat keyword path (R1-L5) ------------------------------------
@@ -81,4 +81,29 @@ q() { # SPARQL ASK against the ttl; prints yes/no
 @test "R2-RECORDS model: a go decision records the round it signed (at most one)" {
   [ "$(q 'ASK { chorus:signedRound a owl:DatatypeProperty }')" = yes ] || return 1
   grep -q 'sh:path chorus:signedRound ; sh:maxCount 1' "$TTL" || return 1
+}
+
+@test "R2-GO-DECIDE/LAND-GUARD/NEG chorus-go: go decide, stale round, land re-verify, resend, cross-replay (cargo)" {
+  cd "$ROOT/platform/services/chorus-go" || return 1
+  run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 7 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }
+}
+
+@test "R2-GO-ROW werk-demo: a ready demo posts the go row and points at the list (cargo)" {
+  cd "$ROOT/platform/services/werk-demo" || return 1
+  run nice cargo test -j 4 --test go_row_4642 --test e2e
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 4 passed"* ]] || { echo "$output"; return 1; }
+}
+
+@test "R2-ONE-GO-PATH: the per-run go page, its decide route and the go record are retired" {
+  ! grep -rnE '/go/api/decide"|/go/api/info"|GoRecord|fn accept\(|go_link\(' "$ROOT/platform/services/chorus-go/src" "$ROOT/platform/services/werk-demo/src" || return 1
+}
+
+@test "R2-ONE-GO-PATH NEG: the retire check can fail (a planted route is seen)" {
+  d="$(mktemp -d)"; echo '("POST", "/go/api/decide") => {' > "$d/x.rs"
+  grep -rqnE '/go/api/decide"' "$d" || return 1
+  rm -rf "$d"
 }
