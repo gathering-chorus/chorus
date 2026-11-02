@@ -44,27 +44,6 @@ async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return r.json();
 }
-async function goPage() {
-  const r = await fetch(`/go/api/info?card=${encodeURIComponent(q.get("card") || "")}&run=${encodeURIComponent(q.get("run") || "")}&role=${encodeURIComponent(q.get("role") || "")}`);
-  const info = await r.json();
-  if (info.ok === false) { $("title").textContent = "Can't ask for this go"; say(info.text); return; }
-  $("title").textContent = info.title;
-  $("meta").textContent = `round ${info.round.slice(0, 12)} · run ${info.run}`;
-  $("buttons").hidden = false;
-  const decide = async (decision) => {
-    $("go").disabled = $("no").disabled = true; say("Waiting for Face ID…");
-    try {
-      const cred = await navigator.credentials.get({ publicKey: {
-        challenge: unb64(decision === "go" ? info.challengeGo : info.challengeNo), rpId: info.rpId,
-        allowCredentials: [{ type: "public-key", id: unb64(info.credId) }], userVerification: "required", timeout: 60000 } });
-      const res = await post("/go/api/decide", { nonce: info.nonce, decision,
-        authData: b64(cred.response.authenticatorData), clientDataJSON: b64(cred.response.clientDataJSON), signature: b64(cred.response.signature) });
-      say(res.text);
-    } catch (e) { say(`Not sent: ${e.message || e}`); $("go").disabled = $("no").disabled = false; }
-  };
-  $("go").onclick = () => decide("go");
-  $("no").onclick = () => decide("no");
-}
 async function registerPage() {
   $("head").textContent = "Register Jeff's phone";
   const token = q.get("token") || "";
@@ -103,6 +82,20 @@ async function approvalsPage() {
     const no = document.createElement("button"); no.className = "no"; no.textContent = "Decline";
     const note = document.createElement("div"); note.className = "meta";
     row.append(yes, no); card.append(t, m, act, row, note); $("asks").append(card);
+    if (a.state === "signed-not-sent") {
+      // #4642: Jeff's go is recorded but its run never took it. Re-sending needs no new Face ID:
+      // the server re-verifies the signature it recorded, as the land will.
+      row.innerHTML = "";
+      const send = document.createElement("button"); send.className = "go"; send.textContent = "Send go again";
+      row.append(send);
+      note.textContent = "Your go is signed but the run hasn't taken it yet.";
+      send.onclick = async () => {
+        send.disabled = true; note.textContent = "Sending…";
+        const res = await post("/go/api/approvals/resend", { row: a.row });
+        note.textContent = res.text; if (res.ok === false) send.disabled = false;
+      };
+      continue;
+    }
     const decide = async (decision) => {
       yes.disabled = no.disabled = true; note.textContent = "Waiting for Face ID…";
       try {
@@ -122,7 +115,7 @@ async function approvalsPage() {
   }
 }
 const here = location.pathname.replace(/\/$/, "");
-(here.endsWith("/register") ? registerPage : here.endsWith("/approvals") ? approvalsPage : goPage)().catch((e) => say(String(e)));
+(here.endsWith("/register") ? registerPage : approvalsPage)().catch((e) => say(String(e)));
 </script>
 </body>
 </html>

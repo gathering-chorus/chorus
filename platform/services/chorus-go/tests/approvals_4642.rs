@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 const RP: &str = "lightlifeurbangardens.com";
 const ORIGIN: &str = "https://lightlifeurbangardens.com";
-const ROUND: &str = "da13a20c285bc7620e81ac3109f9ada644012319";
 
 fn tmp(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("chorus-go-{tag}-{}-{}", std::process::id(), now_nanos()));
@@ -120,6 +119,45 @@ fn negative_proof_the_land_refuses_a_go_row_its_signature_does_not_back() {
     assert!(check_go_decision(&pk, &r.id, &r.action, "approve", &forged, 4642, HEAD).unwrap_err().contains("not signed by Jeff's passkey"));
     // the same signature does not carry over to an action rewritten after Jeff signed
     assert!(check_go_decision(&pk, &r.id, &go_json(4642, OLD), "approve", &proof, 4642, OLD).is_err());
+}
+
+/// The door's rows for one go and Jeff's decision on it, as the land reads them.
+fn door_rows(r: &ApprovalRow, proof: &serde_json::Value, owner: &str, verdict: &str) -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
+    (vec![serde_json::json!({"name": format!("chorus:{}", r.id), "approvalKind": "go", "approvalAction": r.action})],
+     vec![serde_json::json!({"name": "decision-x", "decides": format!("chorus:{}", r.id), "ownedBy": format!("chorus:{owner}"),
+                             "approvalVerdict": verdict, "passkeyProof": proof.to_string()})])
+}
+
+#[test]
+fn the_land_finds_jeffs_signed_go_in_the_door_rows() {
+    let (store, mut phone) = registered("land-rows");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    let (_, proof) = sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    let (a, d) = door_rows(&r, &proof, "principal-jeff", "approve");
+    land_go_from_rows(&pk, &a, &d, 4642, HEAD).unwrap();
+}
+
+#[test]
+fn negative_proof_the_land_refuses_rows_that_are_not_jeffs_signed_go() {
+    let (store, mut phone) = registered("land-neg");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    let (_, proof) = sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    // a decision a role wrote decides nothing (the door stamps owners; the land checks it too)
+    let (a, d) = door_rows(&r, &proof, "principal-kade", "approve");
+    assert!(land_go_from_rows(&pk, &a, &d, 4642, HEAD).unwrap_err().contains("not owned by principal-jeff"));
+    // no go row for this round, and no rows at all
+    let (a, d) = door_rows(&r, &proof, "principal-jeff", "approve");
+    assert!(land_go_from_rows(&pk, &a, &d, 4642, OLD).unwrap_err().contains("no go signed"));
+    assert!(land_go_from_rows(&pk, &[], &[], 4642, HEAD).unwrap_err().contains("no go signed"));
+    // the action comes from the Approval row: a row rewritten after Jeff signed does not land
+    let mut rewritten = a.clone();
+    rewritten[0]["approvalAction"] = serde_json::json!(go_json(4642, HEAD).replace("034qFPOewc9praHJbg6SYH", "034qOtherRunAAAAAAAAAA"));
+    assert!(land_go_from_rows(&pk, &rewritten, &d, 4642, HEAD).unwrap_err().contains("not signed by Jeff's passkey"));
+    // a decline is not a go
+    let (a, d) = door_rows(&r, &proof, "principal-jeff", "decline");
+    assert!(land_go_from_rows(&pk, &a, &d, 4642, HEAD).is_err());
 }
 
 #[test]
