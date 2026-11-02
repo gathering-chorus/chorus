@@ -159,9 +159,10 @@ pub fn go_run_open(status_line: &str) -> Result<(), String> {
     }
 }
 
-/// #4771 AC2 — `dagu status` says this run was stopped (cicd-supersede).
+/// #4771 AC2 — `dagu status` says this go run is over while its row is still pending:
+/// cicd-supersede answered it no (Succeeded, the land skipped) or an old stop aborted it.
 pub fn superseded_status(status_line: &str) -> bool {
-    status_line.split(" - ").next().unwrap_or("").trim() == "Aborted"
+    matches!(status_line.split(" - ").next().unwrap_or("").trim(), "Aborted" | "Succeeded")
 }
 
 /// #4771 AC2 — the refusal for a go whose run was superseded: it names the

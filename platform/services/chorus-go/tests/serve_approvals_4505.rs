@@ -78,9 +78,9 @@ case "$url" in
 esac
 "#));
     // #4642: a dagu whose go step waits; every human-task answer is logged
-    // #4771: a run id listed in `aborted` reads Aborted (cicd-supersede stopped it);
+    // #4771: a run id listed in `aborted` reads Succeeded (cicd-supersede answered it no, the land skipped);
     // with `dagu-unreadable` present, status prints nothing
-    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then echo 'Aborted - 2026-11-01 19:05:00'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
+    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then echo 'Succeeded - 2026-11-01 19:05:00'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
     sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
     sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),

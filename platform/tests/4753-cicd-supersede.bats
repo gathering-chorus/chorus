@@ -35,7 +35,8 @@ RUNS="[{'name': 'cicd', 'dagRunId': 'old', 'statusLabel': 'waiting', 'params': '
 
 @test "the older run is stopped and the stop is on the spine" {
   bin="$BATS_TEST_TMPDIR/bin"; mkdir -p "$bin"
-  printf '#!/bin/sh\necho "$@" >> "%s/dagu.calls"\n' "$BATS_TEST_TMPDIR" > "$bin/dagu"
+  # a dagu whose status reads Succeeded once ended (the real one reads Waiting until answered)
+  printf '#!/bin/sh\necho "$@" >> "%s/dagu.calls"\ncase "$*" in *" status "*) echo "Succeeded - done";; esac\n' "$BATS_TEST_TMPDIR" > "$bin/dagu"
   printf '#!/bin/sh\necho "$@" >> "%s/log.calls"\n' "$BATS_TEST_TMPDIR" > "$bin/chorus-log"
   chmod +x "$bin/dagu" "$bin/chorus-log"
   export DAGU="$bin/dagu" CHORUS_LOG_BIN="$bin/chorus-log"
@@ -43,10 +44,28 @@ RUNS="[{'name': 'cicd', 'dagRunId': 'old', 'statusLabel': 'waiting', 'params': '
   echo "$output"
   [ "$status" -eq 0 ]
   grep -q "stop cicd --run-id old" "$BATS_TEST_TMPDIR/dagu.calls"
-  # #4758 — a go half is stopped in its own dag, by its own run id
-  grep -q "stop cicd-go --run-id go-older" "$BATS_TEST_TMPDIR/dagu.calls"
-  [ "$(wc -l < "$BATS_TEST_TMPDIR/dagu.calls")" -eq 2 ]
+  # #4771 — a go half waits at a human task, which dagu stop cannot end: it is answered
+  # no, as the superseding role, never as Jeff, so its land never starts
+  grep -q "human-task complete cicd-go --run-id go-older --step skill_werk_go --input accepter=abby-normal --input decision=no" "$BATS_TEST_TMPDIR/dagu.calls"
+  ! grep -q "accepter=jeff" "$BATS_TEST_TMPDIR/dagu.calls" || return 1
+  [ "$(grep -vc ' status ' "$BATS_TEST_TMPDIR/dagu.calls")" -eq 2 ]
+  [[ "$output" == *"go-older waiting at the go — stopped"* ]] || return 1
   grep -q "card.run.superseded abby-normal card=4749 run_id=old" "$BATS_TEST_TMPDIR/log.calls"
+}
+
+# NEGATIVE PROOF (#4771): an end that leaves the run waiting is reported as failed,
+# never "stopped" — 11-02 the old stop said stopped while dagu still showed both gos waiting.
+@test "negative proof: a go dagu still reports waiting is never called stopped" {
+  bin="$BATS_TEST_TMPDIR/bin"; mkdir -p "$bin"
+  printf '#!/bin/sh\ncase "$*" in *" status "*) echo "Waiting - at the go";; esac\n' > "$bin/dagu"
+  printf '#!/bin/sh\necho "$@" >> "%s/log.calls"\n' "$BATS_TEST_TMPDIR" > "$bin/chorus-log"
+  chmod +x "$bin/dagu" "$bin/chorus-log"
+  export DAGU="$bin/dagu" CHORUS_LOG_BIN="$bin/chorus-log"
+  run sup_py "sup.supersede('4749', 'kade', [{'name': 'cicd-go', 'dagRunId': 'go-stuck', 'statusLabel': 'waiting', 'params': 'CARD=4749 ROLE=kade'}])"
+  echo "$output"
+  [[ "$output" == *"go-stuck waiting at the go — stop failed (dagu still reports it waiting)"* ]] || return 1
+  [[ "$output" != *"— stopped"* ]] || return 1
+  grep -q "result=stop" "$BATS_TEST_TMPDIR/log.calls"
 }
 
 # NEGATIVE PROOF: the other card's waiting run, and a near-miss card number,

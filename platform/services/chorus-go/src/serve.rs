@@ -225,7 +225,12 @@ fn offered(rows: Vec<Value>) -> Vec<Value> {
 /// #4771 AC2 — a stale go is refused before Jeff signs and before any decision
 /// is written or any run answered, pointing to the card's newest open go.
 fn refuse_stale_go(row: &str, action: &str) -> Result<(), String> {
-    let Err(why) = go_row_open(action) else { return Ok(()) };
+    let status = go_row_status(action);
+    let Err(why) = status.clone().and_then(|st| go_run_open(&st)) else { return Ok(()) };
+    // #4771 — a go answered no by cicd-supersede reads Succeeded; to Jeff it is superseded
+    let why = if status.as_deref().map(superseded_status).unwrap_or(false) {
+        "this run was superseded by a newer run of the card".to_string()
+    } else { why };
     let card = go_action(action).map(|g| g.card).unwrap_or(0);
     let newest = pending_approvals().unwrap_or_default().into_iter()
         .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row)

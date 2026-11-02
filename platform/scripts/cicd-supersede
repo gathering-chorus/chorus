@@ -29,21 +29,43 @@ def superseded(runs, card=None):
             and (want is None or want.search(r.get("params") or ""))]
 
 
+def end_cmd(dagu, cfg, dag, run_id, role):
+    """#4771 — how an older go is ended. dagu `stop` cannot end a run that waits at a
+    human task (it answers "not running" and the run stays Waiting, measured 10-19 and
+    11-02), so a go half is answered as the superseding role with decision no: the
+    land's precondition (decision go) is unmet and nothing lands. Never as Jeff."""
+    if dag == "cicd-go":
+        return [dagu, "--config", cfg, "human-task", "complete", dag, "--run-id", run_id,
+                "--step", "skill_werk_go", "--input", f"accepter={role}", "--input", "decision=no"]
+    return [dagu, "--config", cfg, "stop", dag, "--run-id", run_id]
+
+
+def still_waiting(dagu, cfg, dag, run_id):
+    """True when dagu still reports the run Waiting after the end — the end did not take."""
+    st = subprocess.run([dagu, "--config", cfg, "status", dag, "--run-id", run_id], capture_output=True, text=True)
+    first = ((st.stdout or "").splitlines() or [""])[0]
+    return first.split(" - ")[0].strip() == "Waiting"
+
+
 def supersede(card, role, runs):
     if runs is None:
         print(f"cicd-supersede: #{card}: dagu unreadable — nothing stopped")
         return
     home = os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus"))
     dagu = os.environ.get("DAGU", "/opt/homebrew/bin/dagu")
+    cfg = f"{home}/platform/config/dagu.yaml"
     log = os.environ.get("CHORUS_LOG_BIN", f"{home}/platform/scripts/chorus-log")
     for dag, run_id in superseded(runs, card):
-        stop = subprocess.run([dagu, "--config", f"{home}/platform/config/dagu.yaml", "stop", dag, "--run-id", run_id],
-                              capture_output=True, text=True)
-        how = "stopped" if stop.returncode == 0 else f"stop failed ({(stop.stderr or stop.stdout).strip()[:200]})"
+        end = subprocess.run(end_cmd(dagu, cfg, dag, run_id, role), capture_output=True, text=True)
+        if end.returncode != 0:
+            how = f"stop failed ({(end.stderr or end.stdout).strip()[:200]})"
+        elif still_waiting(dagu, cfg, dag, run_id):
+            how = "stop failed (dagu still reports it waiting)"
+        else:
+            how = "stopped"
         print(f"cicd-supersede: #{card}: older run {run_id} waiting at the go — {how}")
         subprocess.run([log, "card.run.superseded", role, f"card={card}", f"run_id={run_id}", f"result={how.split(' ')[0]}"],
                        capture_output=True)
-
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
