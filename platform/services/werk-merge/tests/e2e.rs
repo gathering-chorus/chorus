@@ -87,6 +87,17 @@ fn origin_main_has(origin: &Path, file: &str) -> bool {
         .status().unwrap().success()
 }
 
+/// #4771 AC4 — the land's deploy credential: a 0600 file this account owns.
+/// GitHub (the gh shim) accepts `expect`; the file holds `token`.
+fn arm_cred(token: &str, expect: &str) -> PathBuf {
+    let f = tmp("cred").join("github-deploy");
+    fs::write(&f, token).unwrap();
+    fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
+    std::env::set_var("WERK_DEPLOY_CREDENTIAL_FILE", f.to_str().unwrap());
+    std::env::set_var("GH_EXPECT_TOKEN", expect);
+    f
+}
+
 #[test]
 fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -102,6 +113,7 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
     std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
     write_exec(&bin.join("gh"), GH_SHIM);
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    arm_cred("deploy-cred-e2e", "deploy-cred-e2e");
 
     // ── Scenario A: no PR exists → create, squash-merge, content-verify ─────────
     {
@@ -313,6 +325,13 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
 /// ORIGIN repo. State lives in $GH_STATE/pr-<n> files.
 const GH_SHIM: &str = r#"#!/bin/sh
 # env: GH_STATE (dir), ORIGIN (origin repo), GH_FAKE_MERGE (optional)
+# #4771 AC4 — GitHub answers 401 unless the land's deploy credential arrives in
+# GH_TOKEN (never a keyring): every gh call in these tests proves it does.
+if [ "$GH_TOKEN" != "$GH_EXPECT_TOKEN" ] || [ -z "$GH_TOKEN" ]; then
+  echo "HTTP 401: Requires authentication (https://api.github.com/graphql)" >&2
+  echo "Try authenticating with:  gh auth login" >&2
+  exit 1
+fi
 cmd="$1"; sub="$2"; shift 2 2>/dev/null
 case "$cmd" in
 pr)
@@ -441,6 +460,7 @@ fn atomic_gate_orders_before_side_effects_and_pr_refusals_are_typed() {
     std::env::remove_var("GH_PR_CREATE_EXIT");
     std::env::remove_var("GH_CREATE_NOOP");
     std::env::remove_var("GH_FAKE_MERGE");
+    arm_cred("deploy-cred-e2e", "deploy-cred-e2e");
 
     // ── --atomic with NO accepter refuses BEFORE any side effect: zero gh calls,
     // zero jsonl events for the card (the gate is FIRST in merge_inner — pin it).
@@ -510,4 +530,74 @@ fn atomic_gate_orders_before_side_effects_and_pr_refusals_are_typed() {
         assert!(err.contains("no-open-pr"), "typed no-open-pr: {err}");
         assert!(!origin_main_has(&origin, "d.txt"), "nothing landed");
     }
+}
+
+// #4771 AC4 — the land merges with the deploy credential and nothing else. On
+// 11-02 06:02 #4642's land stopped on a 401 from Jeff's own lapsed gh login.
+#[test]
+fn land_uses_the_deploy_credential_and_an_auth_failure_is_loud_and_names_the_file() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-4771-credential");
+    let bin = tmp("bin4771");
+    let go = bin.join("chorus-go");
+    write_exec(&go, "#!/bin/sh\necho 'chorus-go: no passkey registered'\n");
+    std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
+    write_exec(&bin.join("gh"), GH_SHIM);
+    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    std::env::remove_var("GH_FAKE_MERGE");
+
+    // The credential GitHub accepts → the work lands.
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9771);
+        commit_and_push(&werk, "kade/9771", "a.txt", "alpha");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate").to_str().unwrap());
+        arm_cred("good-token", "good-token");
+        merge(9771, "kade", &home, &werk_base).expect("lands with the deploy credential");
+        assert!(origin_main_has(&origin, "a.txt"));
+    }
+    // NEGATIVE PROOF: GitHub refuses the credential (revoked/expired) → auth-fail,
+    // naming the file's path, never its contents; nothing lands.
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9772);
+        commit_and_push(&werk, "kade/9772", "b.txt", "beta");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate").to_str().unwrap());
+        let f = arm_cred("revoked-token", "good-token");
+        let err = merge(9772, "kade", &home, &werk_base).expect_err("a refused credential must not land");
+        assert!(err.starts_with("auth-fail"), "typed auth-fail: {err}");
+        assert!(err.contains(f.to_str().unwrap()), "names the credential file: {err}");
+        assert!(!err.contains("revoked-token"), "never prints the credential: {err}");
+        assert!(!origin_main_has(&origin, "b.txt"), "nothing landed");
+        let log = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+        assert!(log.contains("\"reason\":\"auth-fail\""), "witnessed as auth-fail: {log}");
+        assert!(!log.contains("revoked-token"), "the witness never holds the credential");
+    }
+    // NEGATIVE PROOF: no credential configured → refused before any GitHub call,
+    // naming the config that should name the file.
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9773);
+        commit_and_push(&werk, "kade/9773", "c.txt", "gamma");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        let state = tmp("ghstate");
+        std::env::set_var("GH_STATE", state.to_str().unwrap());
+        std::env::remove_var("WERK_DEPLOY_CREDENTIAL_FILE");
+        let err = merge(9773, "kade", &home, &werk_base).expect_err("no credential, no land");
+        assert!(err.starts_with("auth-fail") && err.contains("platform/config/werk-deploy.yaml"), "{err}");
+        assert!(!origin_main_has(&origin, "c.txt"));
+        assert_eq!(fs::read_dir(&state).unwrap().count(), 0, "no PR was opened");
+    }
+    // NEGATIVE PROOF: a credential file others can read is refused, by path and mode.
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9774);
+        commit_and_push(&werk, "kade/9774", "d.txt", "delta");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate").to_str().unwrap());
+        let f = arm_cred("good-token", "good-token");
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o644)).unwrap();
+        let err = merge(9774, "kade", &home, &werk_base).expect_err("an open credential file is refused");
+        assert!(err.contains("must be 0600") && err.contains(f.to_str().unwrap()), "{err}");
+        assert!(!origin_main_has(&origin, "d.txt"));
+    }
+    std::env::remove_var("WERK_DEPLOY_CREDENTIAL_FILE");
 }

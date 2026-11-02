@@ -1,0 +1,7 @@
+# #4771 AC4 — the land's one GitHub credential (werk-merge's gh and git push).
+# This names the FILE only; the credential itself never enters the repo.
+# Jeff mints a fine-grained GitHub token (contents + pull requests: write, this
+# repo only) and writes it to the file, mode 0600, owned by the account the
+# land runs as (jeffbridwell). Roles never read it. A missing, open or
+# wrongly-owned file refuses the land loudly, by path.
+deploy_credential_file: /Users/jeffbridwell/.chorus/secrets/github-deploy

@@ -18,7 +18,7 @@
 //!   - Create the PR if none open for this oid (covers never-PR'd + stale-merged).
 //!   - ONE merge mechanism: squash (the 2026-06-02 Kade+Silas decision — binary = f(source TREE), so squash vs --merge is irrelevant to the artifact).
 //!   - POST-MERGE CONTENT-VERIFY: the PR is MERGED and its merge commit is on origin/main. Never assumed — verified, or the verb refuses.
-//!   - Typed R<T> refusals: no-werk / branch-mismatch / no-open-pr / pr-create-fail / merge-conflict / not-mergeable / merge-fail.
+//!   - Typed R<T> refusals: no-werk / branch-mismatch / auth-fail (#4771) / no-open-pr / pr-create-fail / merge-conflict / not-mergeable / merge-fail.
 //!   - All-or-nothing under one flock; JSONL witness per step (never affects the op); idempotent (this exact oid already merged onto main -> no-op success).
 
 use std::env;
@@ -36,6 +36,7 @@ include!("../../shared/failure_class.rs");
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
+    fn geteuid() -> u32;
 }
 const LOCK_EX_NB: i32 = 0x02 | 0x04; // LOCK_EX | LOCK_NB
 const LOCK_UN: i32 = 0x08;
@@ -145,7 +146,9 @@ pub fn already_landed(stderr: &str) -> bool {
 /// Map a failed `gh pr merge` stderr to a typed refusal reason.
 pub fn classify_merge_error(stderr: &str) -> &'static str {
     let s = stderr.to_lowercase();
-    if s.contains("conflict") {
+    if s.starts_with("auth-fail") || is_auth_error(&s) {
+        "auth-fail"
+    } else if s.contains("conflict") {
         "merge-conflict"
     } else if s.contains("not mergeable") || s.contains("not in mergeable") || s.contains("mergeable state") {
         "not-mergeable"
@@ -181,15 +184,118 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     }
 }
 
+// ───────────── #4771 AC4 — the land's one GitHub credential ─────────────
+// On 11-02 06:02 #4642's land stopped on `HTTP 401: Requires authentication`:
+// werk-merge ran `gh` and `git push` with no environment, so both used Jeff's
+// own gh keyring and keychain, and his login had lapsed. The land now uses ONE
+// non-interactive deploy credential: a file (path in DEPLOY_CONF), mode 0600,
+// owned by the account the land runs as. gh gets it through GH_TOKEN, git
+// through GIT_ASKPASS (this binary, in askpass mode) with every credential
+// helper cleared — never argv, never logged, never anyone's keyring. Jeff mints
+// it and writes the file; roles never see it.
+pub const DEPLOY_CONF: &str = "platform/config/werk-deploy.yaml";
+pub const CRED_FILE_ENV: &str = "WERK_DEPLOY_CREDENTIAL_FILE";
+pub const ASKPASS_ENV: &str = "WERK_MERGE_ASKPASS";
+
+/// The credential file's path: $WERK_DEPLOY_CREDENTIAL_FILE, else
+/// `deploy_credential_file:` in DEPLOY_CONF. Missing either way is a refusal.
+pub fn deploy_credential_path(home: &Path) -> R<PathBuf> {
+    if let Some(p) = env::var_os(CRED_FILE_ENV).filter(|p| !p.is_empty()) {
+        return Ok(PathBuf::from(p));
+    }
+    let conf = home.join(DEPLOY_CONF);
+    let text = fs::read_to_string(&conf)
+        .map_err(|e| format!("auth-fail: cannot read {} (names the deploy credential file): {}", conf.display(), e))?;
+    text.lines()
+        .filter_map(|l| l.trim().strip_prefix("deploy_credential_file:"))
+        .map(|v| v.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+        .find(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("auth-fail: {} has no deploy_credential_file", conf.display()))
+}
+
+/// The file must exist, be a non-empty regular file, mode 0600 (nothing for
+/// group/other) and be owned by `uid` (the account the land runs as).
+/// Errors name the PATH only, never the contents.
+pub fn check_credential_file(p: &Path, uid: u32) -> R<()> {
+    use std::os::unix::fs::MetadataExt;
+    let m = fs::metadata(p).map_err(|e| format!("auth-fail: deploy credential file {} unreadable: {}", p.display(), e))?;
+    if !m.is_file() || m.len() == 0 {
+        return Err(format!("auth-fail: deploy credential file {} is empty or not a file", p.display()));
+    }
+    if m.mode() & 0o077 != 0 {
+        return Err(format!("auth-fail: deploy credential file {} is mode {:o}; it must be 0600", p.display(), m.mode() & 0o777));
+    }
+    if m.uid() != uid {
+        return Err(format!("auth-fail: deploy credential file {} is owned by uid {}; the land runs as uid {}", p.display(), m.uid(), uid));
+    }
+    Ok(())
+}
+
+/// Resolve + check the credential and hand it to every later `gh`/`git` call.
+pub fn arm_deploy_credential(home: &Path) -> R<PathBuf> {
+    let p = deploy_credential_path(home)?;
+    check_credential_file(&p, unsafe { geteuid() })?;
+    env::set_var(CRED_FILE_ENV, &p);
+    Ok(p)
+}
+
+/// What git's askpass is told: the fixed user for a token, else the token.
+pub fn askpass_answer(prompt: &str, cred: &str) -> String {
+    if prompt.to_lowercase().starts_with("username") {
+        "x-access-token".to_string()
+    } else {
+        cred.trim().to_string()
+    }
+}
+
+/// A 401 or a missing login from gh or git.
+pub fn is_auth_error(stderr: &str) -> bool {
+    let s = stderr.to_lowercase();
+    ["http 401", "requires authentication", "authentication failed", "bad credentials",
+     "could not read username", "could not read password", "gh auth login"]
+        .iter().any(|k| s.contains(k))
+}
+
+/// `gh` / `git` carrying the deploy credential once it is armed; any other tool plain.
+fn tool(cmd: &str) -> Command {
+    let mut c = Command::new(cmd);
+    let Some(p) = env::var_os(CRED_FILE_ENV).filter(|p| !p.is_empty()) else { return c };
+    match cmd {
+        "gh" => {
+            if let Ok(t) = fs::read_to_string(&p) {
+                c.env("GH_TOKEN", t.trim());
+            }
+            c.env("GH_PROMPT_DISABLED", "1");
+        }
+        "git" => {
+            if let Ok(exe) = env::current_exe() {
+                c.env("GIT_ASKPASS", exe).env(ASKPASS_ENV, "1");
+            }
+            c.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never");
+            c.args(["-c", "credential.helper="]);
+        }
+        _ => {}
+    }
+    c
+}
+
 /// Run a CLI in a working dir; non-zero exit is a typed error carrying stderr.
+/// #4771 — an auth failure from gh/git names the credential file (path only).
 fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
-    let out = Command::new(cmd)
+    let out = tool(cmd)
         .args(args)
         .current_dir(dir)
         .output()
         .map_err(|e| format!("{} failed to start: {}", cmd, e))?;
     if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        if (cmd == "gh" || cmd == "git") && is_auth_error(&err) {
+            let file = env::var(CRED_FILE_ENV).unwrap_or_else(|_| "(none armed)".to_string());
+            return Err(format!("auth-fail: GitHub refused the deploy credential in {}: {}",
+                file, err.lines().next().unwrap_or("")));
+        }
+        return Err(err);
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -198,7 +304,7 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
 /// code away, but `git merge-tree` says "clean" vs "conflicted" in exactly that
 /// code, so the verification needs it.
 fn run_capture(dir: &str, cmd: &str, args: &[&str]) -> (i32, String) {
-    match Command::new(cmd).args(args).current_dir(dir).output() {
+    match tool(cmd).args(args).current_dir(dir).output() {
         Ok(out) => (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -251,7 +357,7 @@ fn path(p: &Path) -> R<&str> {
 /// True iff `oid` is present on origin/main (i.e., the merge commit landed).
 fn oid_on_main(werk_s: &str, oid: &str) -> bool {
     // `git merge-base --is-ancestor <oid> origin/main` exits 0 iff oid is reachable.
-    Command::new("git")
+    tool("git")
         .args(["merge-base", "--is-ancestor", oid, "origin/main"])
         .current_dir(werk_s)
         .status()
@@ -439,6 +545,21 @@ pub fn go_check(card: u64, round: &str) -> R<String> {
 
 fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: bool, accepter: Option<String>) -> R<String> {
     let trace = trace_id();
+    merge_steps(card, role, home, werk_base, atomic, accepter, &trace).map_err(|e| {
+        // #4771 AC4 — an auth failure is its own spine event, for the alert;
+        // the text names the credential file's path, never its contents.
+        if e.starts_with("auth-fail") {
+            jsonl(home, role, card, &trace, "merge.refused", &fail_extra("auth-fail"));
+            let file = env::var(CRED_FILE_ENV).unwrap_or_default();
+            emit_spine(home, "land.auth.failed", role, card, &trace, &[("file", &file)]);
+        }
+        e
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge_steps(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: bool, accepter: Option<String>, trace: &str) -> R<String> {
+    let trace = trace.to_string();
     // #3297 — approval gate up front (ADR-037): --atomic demands an accepter or refuses;
     // in the flow the demo→GO already authorized, so this returns "flow".
     let approver = require_approval(atomic, accepter)?;
@@ -459,6 +580,10 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         jsonl(home, role, card, &trace, "merge.refused", &fail_extra("branch-mismatch"));
         return Err(format!("werk is on '{}', not '{}' — refusing to merge", cur, branch));
     }
+
+    // #4771 AC4 — before any GitHub call: the deploy credential, or a loud refusal.
+    let cred = arm_deploy_credential(home)?;
+    jsonl(home, role, card, &trace, "merge.credential.armed", &format!(",\"file\":\"{}\"", cred.display()));
 
     let head_sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
     // Refresh remote view so PR resolution + content-verify see current origin/main.
@@ -766,6 +891,40 @@ pub fn verified_conflict_message(pr: u64, files: &[String]) -> String {
 
 #[cfg(test)]
 mod stale_mergeable_3926 {
+    // #4771 AC4 — the credential seam's pure parts.
+    #[test]
+    fn askpass_gives_the_fixed_user_then_the_credential() {
+        assert_eq!(askpass_answer("Username for 'https://github.com': ", "tok\n"), "x-access-token");
+        assert_eq!(askpass_answer("Password for 'https://x-access-token@github.com': ", "tok\n"), "tok");
+    }
+
+    #[test]
+    fn the_0602_401_is_an_auth_failure_and_a_conflict_is_not() {
+        assert!(is_auth_error("werk-merge: HTTP 401: Requires authentication (https://api.github.com/graphql)"));
+        assert!(is_auth_error("fatal: Authentication failed for 'https://github.com/x/y.git/'"));
+        assert!(is_auth_error("fatal: could not read Username for 'https://github.com': terminal prompts disabled"));
+        assert_eq!(classify_merge_error("HTTP 401: Requires authentication"), "auth-fail");
+        // negative proof: the classifier still tells the other refusals apart
+        assert!(!is_auth_error("Pull request is not mergeable: merge conflict"));
+        assert_eq!(classify_merge_error("merge conflict in a.txt"), "merge-conflict");
+        assert_eq!(classify_merge_error("something else broke"), "merge-fail");
+    }
+
+    #[test]
+    fn a_credential_file_owned_by_another_account_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let f = std::env::temp_dir().join(format!("wm-cred-{}", std::process::id()));
+        fs::write(&f, "tok").unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
+        let me = unsafe { geteuid() };
+        assert!(check_credential_file(&f, me).is_ok());
+        let err = check_credential_file(&f, me + 1).unwrap_err();
+        assert!(err.contains("owned by uid") && err.contains(f.to_str().unwrap()) && !err.contains("tok\""), "{err}");
+        fs::write(&f, "").unwrap();
+        assert!(check_credential_file(&f, me).unwrap_err().contains("empty"));
+        let _ = fs::remove_file(&f);
+    }
+
     use super::*;
 
     #[test]
