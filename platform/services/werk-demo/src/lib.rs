@@ -1021,7 +1021,7 @@ pub fn go_approval_body(card: u64, run: &str, round_full: &str, title: &str) -> 
     }
     let action = format!("{{\"card\":{card},\"run\":\"{run}\",\"round\":\"{round_full}\"}}");
     let subject = format!("#{card} {title}");
-    Ok(format!("{{\"name\":\"approval-go-{card}-{run}\",\"label\":{},\"approvalKind\":\"go\",\"approvalSubject\":{},\"approvalAction\":{}}}",
+    Ok(format!("{{\"name\":\"go-{card}-{run}\",\"label\":{},\"approvalKind\":\"go\",\"approvalSubject\":{},\"approvalAction\":{}}}",
         json_str(&format!("go #{card}")), json_str(&subject), json_str(&action)))
 }
 
