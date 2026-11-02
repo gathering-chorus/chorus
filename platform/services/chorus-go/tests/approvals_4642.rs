@@ -168,5 +168,44 @@ fn a_declined_go_is_recorded_and_lands_nothing() {
     assert_eq!(d.decision, "decline");
     let pk = store.passkey().unwrap().unwrap();
     assert!(check_go_decision(&pk, &r.id, &r.action, "decline", &proof, 4642, HEAD).is_err());
+    // nor does its local record land
+    assert!(land_go_from_local(&pk, &store, 4642, HEAD).is_err());
+}
+
+// #4642 break-glass (Silas 19:27): the door never got Jeff's row (no identity minted for jeff),
+// so the land reads the signed record chorus-go wrote first, re-verified the same way.
+#[test]
+fn break_glass_a_signed_go_lands_from_the_local_record_alone() {
+    let (store, mut phone) = registered("glass-ok");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    land_go_from_local(&pk, &store, 4642, HEAD).unwrap();
+    assert!(land_go_from_local(&pk, &store, 4642, OLD).is_err(), "another round does not land");
+    assert!(land_go_from_local(&pk, &store, 4505, HEAD).is_err(), "another card does not land");
+}
+
+#[test]
+fn negative_proof_break_glass_refuses_a_forged_or_edited_local_record() {
+    let (store, mut phone) = registered("glass-neg");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    let path = store.dir.join("approvals").join("decided-approval-go-4642.json");
+    let original = std::fs::read_to_string(&path).unwrap();
+    let mut v: serde_json::Value = serde_json::from_str(&original).unwrap();
+    // a signature that is not Jeff's phone
+    v["nonce"] = serde_json::json!("another-nonce");
+    std::fs::write(&path, v.to_string()).unwrap();
+    assert!(land_go_from_local(&pk, &store, 4642, HEAD).unwrap_err().contains("not signed by Jeff's passkey"));
+    // an action edited after signing (its recorded sha no longer matches)
+    let mut v: serde_json::Value = serde_json::from_str(&original).unwrap();
+    v["action"] = serde_json::json!(go_json(4642, HEAD).replace("034qFPOewc9praHJbg6SYH", "034qOtherRunAAAAAAAAAA"));
+    std::fs::write(&path, v.to_string()).unwrap();
+    assert!(land_go_from_local(&pk, &store, 4642, HEAD).unwrap_err().contains("does not match what was signed"));
+    // a record a role wrote with no signature at all
+    std::fs::write(&path, serde_json::json!({"row": "approval-go-4642", "kind": "go", "decision": "approve",
+        "action": go_json(4642, HEAD), "action_sha": action_sha(&go_json(4642, HEAD))}).to_string()).unwrap();
+    assert!(land_go_from_local(&pk, &store, 4642, HEAD).is_err());
 }
 

@@ -87,7 +87,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   cd "$ROOT/platform/services/chorus-go" || return 1
   run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 7 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 9 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass
   [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }
 }
 

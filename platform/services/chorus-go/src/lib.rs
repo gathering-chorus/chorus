@@ -448,9 +448,11 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     store.save_passkey(&pk)?;
     let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now(), go, nonce: nonce.to_string() };
     // The proof, kept like a go record: what Jeff's phone signed, for this row.
+    // Written BEFORE the door POST (Silas 19:27): the break-glass record the land falls back to
+    // when the door has no row (a failed mint). It carries the action, so it re-verifies alone.
     write_private(&store.dir.join("approvals").join(format!("decided-{}.json", d.row)), &json!({
-        "row": d.row, "decision": d.decision, "action_sha": sha, "nonce": nonce, "at": d.at,
-        "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string())?;
+        "row": d.row, "decision": d.decision, "kind": row_now.kind, "action": row_now.action, "action_sha": sha,
+        "nonce": nonce, "at": d.at, "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string())?;
     Ok(d)
 }
 
@@ -511,6 +513,33 @@ pub fn land_go_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value],
                 Ok(()) => return Ok(()),
                 Err(e) => last = e,
             }
+        }
+    }
+    Err(last)
+}
+
+/// #4642 break-glass — Jeff's go from chorus-go's own 0700 store, for when the door has no row
+/// (his identity could not be minted to write it). The passkey re-verify is the authority here
+/// exactly as on the door path: a forged, edited or foreign record is refused.
+pub fn land_go_from_local(pk: &Passkey, store: &Store, card: u64, round: &str) -> R<()> {
+    let mut last = format!("no locally recorded go for #{card} at round {}", short(round));
+    let Ok(rd) = fs::read_dir(store.dir.join("approvals")) else { return Err(last) };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.starts_with("decided-") || !name.ends_with(".json") { continue; }
+        let Some(v) = read_json(&e.path()) else { continue };
+        let f = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        if f("kind") != "go" { continue; }
+        let action = f("action");
+        let Ok(g) = go_action(&action) else { continue };
+        if g.card != card || g.round != round { continue; }
+        if action_sha(&action) != f("action_sha") {
+            last = "a local go record whose action does not match what was signed".into();
+            continue;
+        }
+        match check_go_decision(pk, &f("row"), &action, &f("decision"), &v, card, round) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = e,
         }
     }
     Err(last)

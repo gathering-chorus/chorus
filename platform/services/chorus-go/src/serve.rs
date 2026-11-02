@@ -219,7 +219,11 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
     let sha = action_sha(&r.action);
     if let Some(g) = &d.go {
         // A go: Jeff's decision row (with the round it signed), then the run's go step.
-        write_decision(&d, &sha, ad, cd, sig, Some(&g.round))?;
+        // The door row can fail (no identity minted for jeff): the go still counts — the land reads
+        // the signed record chorus-go already wrote — and the failure is alerted, never silent.
+        if let Err(why) = write_decision(&d, &sha, ad, cd, sig, Some(&g.round)) {
+            alert_unrecorded(&d.row, &why);
+        }
         let verb = if d.decision == "approve" { "go" } else { "no" };
         complete_go(&g.run, verb)?;
         return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
@@ -286,9 +290,17 @@ fn iso(secs: u64) -> String {
 /// round, read from the door's rows and re-verified against his passkey. One go path.
 pub fn land_go(store: &Store, card: u64, round: &str) -> Result<LandGo, String> {
     let Some(pk) = store.passkey()? else { return Ok(LandGo::NoPasskey) };
-    land_go_from_rows(&pk, &door_get("/decisions/approvals")?, &door_get("/decisions/approvaldecisions")?, card, round)
-        .map_err(|e| format!("{e} (#4642)"))?;
-    Ok(LandGo::Signed)
+    let door = door_get("/decisions/approvals")
+        .and_then(|a| door_get("/decisions/approvaldecisions").map(|d| (a, d)))
+        .and_then(|(a, d)| land_go_from_rows(&pk, &a, &d, card, round));
+    match door {
+        Ok(()) => Ok(LandGo::Signed),
+        // break-glass (Silas 19:27): the door has no row (a failed mint) or cannot answer; the
+        // signed record chorus-go wrote before the door POST still lands, re-verified.
+        Err(door_why) => land_go_from_local(&pk, store, card, round)
+            .map(|_| LandGo::Signed)
+            .map_err(|local_why| format!("{door_why}; {local_why} (#4642)")),
+    }
 }
 
 /// Go rows Jeff approved whose run still waits at its go step: his decision is recorded, the run
@@ -322,4 +334,12 @@ fn resend_go(store: &Store, row: &str) -> Result<Value, String> {
     land_go_from_rows(&pk, &approvals, &door_get("/decisions/approvaldecisions")?, g.card, &g.round)?;
     complete_go(&g.run, "go")?;
     Ok(json!({"ok": true, "text": format!("Go sent for #{}. It's landing.", g.card)}))
+}
+
+/// A go decision the door did not record: loud on the spine and in the log (alert rules read the
+/// spine); the land still has the signed local record.
+fn alert_unrecorded(row: &str, why: &str) {
+    eprintln!("chorus-go: approval.decision.unrecorded row={row}: {why}");
+    let log = format!("{}/platform/scripts/chorus-log", chorus_home());
+    let _ = Command::new(log).args(["approval.decision.unrecorded", "system", &format!("row={row}"), &format!("reason={}", why.replace(' ', "_"))]).output();
 }
