@@ -30,6 +30,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
 include!("../../shared/deploy_credential.rs"); // #4771 AC4
+include!("../../shared/trace_carrier.rs"); // #4771
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
@@ -76,12 +77,8 @@ pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) ->
 
 pub fn resolve_trace(card: u64) -> String {
     let env = env::var("CHORUS_TRACE_ID").ok();
-    // #4771 — CHORUS_TRACE_DIR moves the carrier (default /tmp, unchanged):
-    // a fixed /tmp/<card>-trace made by one account is unwritable by the next,
-    // so the e2e ran green as jeffbridwell and red on every role account.
-    let dir = env::var_os("CHORUS_TRACE_DIR").filter(|d| !d.is_empty()).map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
-    resolve_trace_in(card, env.as_deref(), &dir)
+    // #4771 — the shared carrier dir (CHORUS_TRACE_DIR, default /tmp).
+    resolve_trace_in(card, env.as_deref(), &trace_carrier_dir())
 }
 
 /// #3163 — the spine event contract (#3135 AUDITABLE): the args handed to `chorus-log`
@@ -384,6 +381,7 @@ mod push_credential_4771 {
 
     #[test]
     fn armed_push_git_uses_only_the_deploy_credential_helper() {
+        let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         use std::os::unix::fs::PermissionsExt;
         let f = std::env::temp_dir().join(format!("push4771-{}", std::process::id()));
         fs::write(&f, "tok").unwrap();

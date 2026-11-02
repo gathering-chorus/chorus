@@ -302,6 +302,7 @@ mod teardown_credential_4771 {
 
     #[test]
     fn armed_teardown_git_uses_only_the_deploy_credential_helper() {
+        let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         use std::os::unix::fs::PermissionsExt;
         let f = std::env::temp_dir().join(format!("td4771-{}", std::process::id()));
         std::fs::write(&f, "tok").unwrap();

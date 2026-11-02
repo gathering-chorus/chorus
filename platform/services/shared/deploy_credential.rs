@@ -21,6 +21,10 @@ pub const CRED_FILE_ENV: &str = "WERK_DEPLOY_CREDENTIAL_FILE";
 pub const GIT_CRED_HELPER: &str =
     "!f() { test \"$1\" = get || exit 0; printf 'username=x-access-token\\npassword=%s\\n' \"$(cat \"$WERK_DEPLOY_CREDENTIAL_FILE\")\"; }; f";
 
+/// Tests that set CRED_FILE_ENV take this lock: the env is process-wide and
+/// these tests run in parallel inside each crate that includes this file.
+pub static CRED_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn current_uid() -> u32 {
     extern "C" {
         fn geteuid() -> u32;
@@ -124,12 +128,10 @@ mod deploy_credential_4771 {
         f
     }
 
-    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     /// What git itself would send GitHub, asked through `git credential fill`.
     fn git_fill(armed: Option<&std::path::Path>) -> (bool, String) {
         use std::io::Write;
-        let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
+        let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let mut c = std::process::Command::new("git");
         match armed {
             Some(p) => { std::env::set_var(CRED_FILE_ENV, p); }
