@@ -205,6 +205,16 @@ pub fn newest_go_per_card(rows: Vec<serde_json::Value>) -> Vec<serde_json::Value
     }).collect()
 }
 
+/// #4771 — read curl's `-w "\n%{http_code}"` answer to the decision POST: Ok on a 2xx, else an
+/// error naming the code and the door's own message (first 300 chars), never a guess. Pure.
+pub fn decision_post_result(ran: bool, stdout: &str, stderr: &str) -> Result<(), String> {
+    let (body, code) = stdout.trim_end().rsplit_once('\n').unwrap_or(("", stdout.trim()));
+    if ran && code.starts_with('2') { return Ok(()); }
+    let why: String = if body.trim().is_empty() { stderr.trim() } else { body.trim() }.chars().take(300).collect();
+    let code = if code.is_empty() { "no answer" } else { code };
+    Err(format!("signed, but the door refused Jeff's decision row ({code}): {why}"))
+}
+
 /// #4771 AC2 — the refusal for a go whose run was superseded: it names the
 /// card's newest go to open instead, or says to wait for the new demo.
 pub fn stale_go_refusal(card: u64, why: &str, newest_row: Option<&str>) -> String {

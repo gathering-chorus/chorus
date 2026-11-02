@@ -64,13 +64,13 @@ while [ $# -gt 0 ]; do case "$1" in
   -X) [ "$2" = POST ] && post=1; shift 2;;
   --data-binary) data="$2"; shift 2;;
   -H) if [ "$2" = "@-" ]; then hdr="$hdr|$(cat)"; else hdr="$hdr|$2"; fi; shift 2;;
-  --max-time) shift 2;;
+  --max-time|-w) shift 2;;
   -*) shift;;
   *) url="$1"; shift;;
 esac; done
-if [ $post = 1 ]; then [ -f {r}/door-refuses ] && exit 22
-  name=$(printf '%s' "$data" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); grep -q "\"name\":\"$name\"" {r}/posts.log 2>/dev/null && exit 22
-  printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; echo '{{}}'; exit 0; fi
+if [ $post = 1 ]; then [ -f {r}/door-refuses ] && {{ printf '{{"error":"refused"}}\n422'; exit 0; }}
+  name=$(printf '%s' "$data" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); grep -q "\"name\":\"$name\"" {r}/posts.log 2>/dev/null && {{ printf '{{"error":"exists"}}\n409'; exit 0; }}
+  printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; printf '{{}}\n201'; exit 0; fi
 case "$url" in
   */decisions/approvaldecisions*) cat {r}/decisions.json;;
   */decisions/approvals*) cat {r}/approvals.json;;
@@ -417,5 +417,7 @@ fn a_landed_go_leaves_the_list_and_a_waiting_one_stays() {
 fn the_page_keeps_hidden_panels_hidden() {
     let page = include_str!("../src/page.html");
     assert!(page.contains("[hidden] { display: none !important; }"), "no [hidden] override in page.html");
-    assert!(page.contains("id=\"buttons\" hidden") && page.contains("id=\"regrow\" hidden"));
+    assert!(page.contains("id=\"regrow\" hidden"));
+    // the dead Go/No panel is gone, not hidden (Silas 17:56): Approve on a row is the only go
+    assert!(!page.contains("id=\"buttons\"") && !page.contains(">Go</button>"), "the old Go/No panel is back");
 }

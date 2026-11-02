@@ -63,3 +63,15 @@ fn only_the_go_of_the_last_started_run_of_each_card_is_kept() {
     assert!(chorus_go::run_started_ms("go-034qq6XgiAeVGOv2S6DEhR") < chorus_go::run_started_ms("034qq9S3EbXzSGzpLWcIXj"));
     assert_eq!(chorus_go::run_started_ms("034qq6XgiAeVGOv2S6DEhR"), Some(1793658521365));
 }
+
+/// #4771 — a refused decision row names the door's answer (11-02: run 10's said only
+/// "(already decided?)"). NEGATIVE PROOF: a 2xx is Ok; a 422 is never Ok and carries its text.
+#[test]
+fn a_refused_decision_row_carries_the_doors_answer() {
+    use chorus_go::decision_post_result;
+    assert!(decision_post_result(true, "{\"ok\":true}\n201", "").is_ok());
+    let e = decision_post_result(true, "{ \"error\": \"validation\", \"message\": \"double-prefix\" }\n422", "").unwrap_err();
+    assert!(e.contains("(422)") && e.contains("double-prefix"), "{e}");
+    let e = decision_post_result(false, "", "curl: (7) Failed to connect").unwrap_err();
+    assert!(e.contains("Failed to connect"), "{e}");
+}

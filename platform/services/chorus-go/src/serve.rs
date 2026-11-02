@@ -322,7 +322,7 @@ fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str
         "passkeyProof": json!({"nonce": d.nonce, "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
     if let Some(r) = round { body["signedRound"] = json!(r); }
     // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
-    let mut child = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
+    let mut child = Command::new(curl_bin()).args(["-sS", "--max-time", "8", "-X", "POST", "-w", "\n%{http_code}",
             "-H", "Content-Type: application/json", "-H", "@-",
             "--data-binary", &body.to_string(), &format!("{}/decisions/approvaldecisions", door())])
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
@@ -335,8 +335,9 @@ fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str
     let o = child.wait_with_output().map_err(|e| format!("door: {e}"))?;
     // A second decision for one ask is refused by the door (the name `decision-<row>` exists),
     // so two racing decides file at most once.
-    if !o.status.success() { return Err("signed, but the door refused Jeff's decision row (already decided?)".into()); }
-    Ok(())
+    // #4771: the refusal carries the door's own answer. `-f` used to drop it, so on 11-02 run
+    // 10's decision row failed with only "(already decided?)" and nobody could say why.
+    decision_post_result(o.status.success(), &String::from_utf8_lossy(&o.stdout), &String::from_utf8_lossy(&o.stderr))
 }
 
 fn iso(secs: u64) -> String {
