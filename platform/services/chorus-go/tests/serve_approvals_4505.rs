@@ -78,7 +78,9 @@ case "$url" in
 esac
 "#));
     // #4642: a dagu whose go step waits; every human-task answer is logged
-    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) echo 'Waiting - 2026-11-01 19:00:00';; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
+    // #4771: a run id listed in `aborted` reads Aborted (cicd-supersede stopped it);
+    // with `dagu-unreadable` present, status prints nothing
+    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then echo 'Aborted - 2026-11-01 19:05:00'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
     sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
     sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
@@ -272,5 +274,90 @@ fn negative_proof_resend_refuses_a_decision_that_is_not_jeffs_signed_go() {
         assert!(b["text"].as_str().unwrap_or("").contains(why), "{tag}: {b}");
         assert_eq!(w.read("dagu.log"), "", "{tag}: nothing answered the run");
         drop(srv);
+    }
+}
+
+// #4771 AC2 — one go per card. A card's new cicd run supersedes (aborts) its
+// older go; that older go row is not offered, cannot be asked for, and a
+// decide that races the supersede writes nothing and answers no run.
+const OLD_RUN: &str = "034qOLDrun0000000000aa";
+const NEW_RUN: &str = "034qNEWrun0000000000bb";
+fn two_go_world(tag: &str) -> World {
+    let w = world(tag);
+    // the asker's werk, whose HEAD is the round the go was asked at
+    let werk = w.root.join("werk/wren-4771");
+    std::fs::create_dir_all(&werk).unwrap();
+    let git = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(&werk).args(args)
+        .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
+        .status().unwrap().success());
+    git(&["init", "-q"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "round"]);
+    let o = std::process::Command::new("git").arg("-C").arg(&werk).args(["rev-parse", "HEAD"]).output().unwrap();
+    let round = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    let go = |name: &str, run: &str, at: &str| json!({"name": name, "ownedBy": "chorus:principal-wren",
+        "approvalKind": "go", "approvalSubject": "#4771 go lands hands-free",
+        "approvalAction": format!(r#"{{"card":4771,"run":"{run}","round":"{round}"}}"#), "createdAt": at});
+    std::fs::write(w.root.join("approvals.json"), json!({"data": [
+        go("approval-go-4771-old", OLD_RUN, "2026-11-02T07:00:00Z"),
+        go("approval-go-4771-new", NEW_RUN, "2026-11-02T07:30:00Z")]}).to_string()).unwrap();
+    std::fs::write(w.root.join("decisions.json"), json!({"data": []}).to_string()).unwrap();
+    w
+}
+fn supersede(w: &World, run: &str) {
+    // go_run asks cicd-go for go-<run> first; both ids read Aborted
+    std::fs::write(w.root.join("aborted"), format!("{run}\ngo-{run}\n")).unwrap();
+}
+
+#[test]
+fn a_superseded_go_is_not_offered_and_asking_for_it_points_to_the_newest_go() {
+    let p = Phone::new();
+    let w = two_go_world("stale-list");
+    supersede(&w, OLD_RUN);
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert_eq!(c, 200, "{b}");
+    let rows: Vec<&str> = b["approvals"].as_array().unwrap().iter().filter_map(|r| r["row"].as_str()).collect();
+    assert!(rows.iter().any(|r| *r == "approval-go-4771-new"), "the newest go is offered: {b}");
+    assert!(!rows.iter().any(|r| *r == "approval-go-4771-old"), "the superseded go is not offered: {b}");
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-old"}).to_string());
+    assert_ne!(c, 200, "no challenge for a superseded go: {b}");
+    let t = b["text"].as_str().unwrap_or("");
+    assert!(t.contains("superseded") && t.contains("approval-go-4771-new"), "points to the newest go: {b}");
+}
+
+#[test]
+fn negative_proof_a_decide_racing_the_supersede_writes_nothing_and_answers_no_run() {
+    let mut p = Phone::new();
+    let w = two_go_world("stale-decide");
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    // Jeff opens the old go while it still waits…
+    let (c, ch) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-old"}).to_string());
+    assert_eq!(c, 200, "{ch}");
+    // …a new cicd run of the card supersedes it before he signs.
+    supersede(&w, OLD_RUN);
+    let (ad, cd, sig) = p.sign(&unb64(ch["challengeApprove"].as_str().unwrap()).unwrap());
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/decide", &json!({"row": "approval-go-4771-old",
+        "nonce": ch["nonce"], "decision": "approve", "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string());
+    assert_ne!(c, 200, "a stale go is not taken: {b}");
+    assert!(b["text"].as_str().unwrap_or("").contains("approval-go-4771-new"), "{b}");
+    assert_eq!(w.read("dagu.log"), "", "no run's go step was answered");
+    assert_eq!(w.read("posts.log"), "", "no decision row was written");
+}
+
+#[test]
+fn negative_proof_an_unreadable_dagu_keeps_the_go_rows_listed_with_the_reason() {
+    let p = Phone::new();
+    let w = two_go_world("stale-unreadable");
+    std::fs::write(w.root.join("dagu-unreadable"), "").unwrap();
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert_eq!(c, 200, "{b}");
+    let rows = b["approvals"].as_array().unwrap();
+    for name in ["approval-go-4771-old", "approval-go-4771-new"] {
+        let r = rows.iter().find(|r| r["row"] == name).unwrap_or_else(|| panic!("{name} hidden on an unreadable dagu: {b}"));
+        assert!(r["state"].as_str().unwrap_or("").contains("cannot read"), "{name} carries the reason: {b}");
     }
 }

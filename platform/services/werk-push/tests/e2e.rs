@@ -137,7 +137,11 @@ fn push_pushes_committed_branch_and_registers_gh() {
     fs::create_dir_all(log.parent().unwrap()).unwrap();
     let cap = home.join("spine-capture.txt");
     write_exec(&log, &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display()));
-    fs::write("/tmp/9002-trace", "inherited-trace-9002").unwrap();
+    // #4771 — a per-test carrier dir: /tmp/9002-trace made by another account is EACCES here.
+    let trace_dir = home.join("trace-carrier");
+    fs::create_dir_all(&trace_dir).unwrap();
+    std::env::set_var("CHORUS_TRACE_DIR", &trace_dir);
+    fs::write(trace_dir.join("9002-trace"), "inherited-trace-9002").unwrap();
 
     assert!(push(9002, "kade", &home, &werk_base).is_err(),
         "force-with-lease REFUSES when origin moved out-of-band (lease guard, not blind force)");

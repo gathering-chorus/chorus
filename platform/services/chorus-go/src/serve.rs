@@ -68,7 +68,7 @@ pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
         ("GET", "/go") if req.query.contains("card=") => return redirect(&mut s, "/go/approvals"),
         ("GET", "/go") | ("GET", "/go/register") | ("GET", "/go/approvals") => return reply(&mut s, 200, "text/html; charset=utf-8", PAGE),
         // #4505: Jeff's one list of asks, decided by his passkey like a go.
-        ("GET", "/go/api/approvals") => pending_approvals().and_then(|mut rows| {
+        ("GET", "/go/api/approvals") => pending_approvals().map(offered).and_then(|mut rows| {
             rows.extend(signed_not_sent()?);
             Ok(json!({"ok": true, "approvals": rows}))
         }),
@@ -196,11 +196,52 @@ fn row_now(row: &str) -> Result<ApprovalRow, String> {
     else { Err(format!("no approval '{row}'")) }
 }
 
+/// #4771 AC2 — the first line of `dagu status` for a go row's run.
+fn go_row_status(action: &str) -> Result<String, String> {
+    let g = go_action(action)?;
+    let (dag, id) = go_run(&g.run);
+    Ok(run_status(dag, &id))
+}
+
+/// Whether a go row's run still waits at the go. A run cicd-supersede stopped
+/// (a newer run of the card started) reads Aborted: that go is stale.
+fn go_row_open(action: &str) -> Result<(), String> {
+    go_run_open(&go_row_status(action)?)
+}
+
+/// The list drops a go row only when its run was superseded (Aborted). Any
+/// other state that is not waiting (dagu unreadable, not there yet) stays on
+/// the list with its reason, so Jeff never sees an empty list and no why.
+fn offered(rows: Vec<Value>) -> Vec<Value> {
+    rows.into_iter().filter_map(|mut r| {
+        if s_of(&r, "kind") != "go" { return Some(r); }
+        let status = go_row_status(&s_of(&r, "action"));
+        if status.as_deref().map(superseded_status).unwrap_or(false) { return None; }
+        if let Err(why) = status.and_then(|st| go_run_open(&st)) { r["state"] = json!(why); }
+        Some(r)
+    }).collect()
+}
+
+/// #4771 AC2 — a stale go is refused before Jeff signs and before any decision
+/// is written or any run answered, pointing to the card's newest open go.
+fn refuse_stale_go(row: &str, action: &str) -> Result<(), String> {
+    let Err(why) = go_row_open(action) else { return Ok(()) };
+    let card = go_action(action).map(|g| g.card).unwrap_or(0);
+    let newest = pending_approvals().unwrap_or_default().into_iter()
+        .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row)
+        .filter(|r| go_action(&s_of(r, "action")).map(|g| g.card == card).unwrap_or(false))
+        .filter(|r| go_row_open(&s_of(r, "action")).is_ok())
+        .max_by(|a, b| s_of(a, "at").cmp(&s_of(b, "at")))
+        .map(|r| s_of(&r, "row"));
+    Err(stale_go_refusal(card, &why, newest.as_deref()))
+}
+
 fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
     let pk = store.passkey()?.ok_or("no passkey registered yet: run `chorus-go register-link` on the Library")?;
     let r = row_now(row)?;
     if r.state != "pending" { return Err("this ask was already decided".into()); }
     if r.kind == "go" {
+        refuse_stale_go(row, &r.action)?;
         let g = go_action(&r.action)?;
         if r.round_now.as_deref() != Some(g.round.as_str()) {
             return Err(format!("this go is for round {}; the demo moved on, so wait for the new one", short(&g.round)));
@@ -215,6 +256,8 @@ fn approval_challenge_for(store: &Store, row: &str) -> Result<Value, String> {
 
 fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &str, sig: &str) -> Result<Value, String> {
     let r = row_now(row)?;
+    // #4771 AC2 — the run may have been superseded between challenge and decide.
+    if r.kind == "go" { refuse_stale_go(row, &r.action)?; }
     let d = decide_approval(store, nonce, decision, &r, ad, cd, sig)?;
     let sha = action_sha(&r.action);
     if let Some(g) = &d.go {

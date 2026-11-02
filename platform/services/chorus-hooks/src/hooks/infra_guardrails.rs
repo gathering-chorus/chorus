@@ -105,14 +105,17 @@ static LAND_ENQUEUE_RE: LazyLock<Regex> = LazyLock::new(|| {
 // Matched on the raw command: the URL is usually quoted, and quoted runs are
 // stripped before the command-position checks.
 static LAND_API_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b(curl|wget|http)\b[^\n]*dags/cicd-land/(enqueue|start|retry)").unwrap()
+    // #4771 — and a retry of an existing land run on dagu's server
+    // (dag-runs/cicd-land/<id>/retry, edit-retry): werk-land-retry asks that of
+    // the server only after checking Jeff's recorded go; a raw POST skips it.
+    Regex::new(r"\b(curl|wget|http)\b[^\n]*(dags/cicd-land/(enqueue|start|retry)|dag-runs/cicd-land/[^/\s'\x22]+/(retry|edit-retry))").unwrap()
 });
 
 static WERK_MERGE_CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(\bchorus-runner\s+call\s+werk-merge\b|(^|[\s;&|/])werk-merge\s+\d)").unwrap()
 });
 
-const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`. A land that stopped after his go is retried on that go with `platform/scripts/werk-land-retry <card>` (#4707 reopen), never by hand.";
+const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land or /dag-runs/cicd-land/<id>/retry, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`. A land that stopped after his go is retried on that go with `platform/scripts/werk-land-retry <card>` (#4707 reopen), never by hand.";
 
 // #4810 — npm ci / install deletes node_modules before it installs. When a werk's
 // node_modules is a symlink into canonical, that delete empties canonical's live
@@ -511,6 +514,26 @@ mod tests {
             let r = check(&input).await;
             assert!(denied_as_land(&r), "{:?}", r.stdout);
         }
+    }
+
+    /// #4771 — werk-land-retry now asks dagu's server to retry; the same POST
+    /// typed raw skips the recorded-go check, so it is refused for every actor.
+    #[tokio::test]
+    async fn test_4771_raw_post_to_the_server_retry_of_a_land_is_refused() {
+        for input in [
+            kade_bash("curl -s -X POST 'http://127.0.0.1:8526/api/v1/dag-runs/cicd-land/034qLmzK/retry' -d '{\"dagRunId\":\"034qLmzK\"}'"),
+            abby_bash("curl -s -X POST http://127.0.0.1:8526/api/v2/dag-runs/cicd-land/034qLmzK/retry -H 'Content-Type: application/json' -d '{}'"),
+            silas_bash("curl -s -X POST \"http://127.0.0.1:8526/api/v1/dag-runs/cicd-land/034qLmzK/edit-retry\" -d '{}'"),
+        ] {
+            let r = check(&input).await;
+            assert!(denied_as_land(&r), "{:?}", r.stdout);
+        }
+        // the verb that makes that POST after checking the go still passes
+        let r = check(&kade_bash("platform/scripts/werk-land-retry 4642")).await;
+        assert!(r.stdout.is_none(), "{:?}", r.stdout);
+        // and a retry of a run of another dag is not a land
+        let r = check(&kade_bash("curl -s -X POST 'http://127.0.0.1:8526/api/v1/dag-runs/cicd/034x/retry' -d '{}'")).await;
+        assert!(!denied_as_land(&r), "{:?}", r.stdout);
     }
 
     /// #4707 reopen — the retry verb is the one way back for a land that stopped

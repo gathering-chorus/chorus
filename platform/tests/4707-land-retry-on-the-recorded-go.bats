@@ -15,9 +15,44 @@ setup() {
   ROOT="$BATS_TEST_DIRNAME/../.."
   VERB="$ROOT/platform/scripts/werk-land-retry"
   export WLR_DATA="$BATS_TEST_TMPDIR/data" WLR_LOG_DIR="$BATS_TEST_TMPDIR/logs"
-  export WLR_DAGU_BIN="$BATS_TEST_TMPDIR/dagu"
-  printf '#!/bin/sh\necho "$@" > %s/dagu-called\n' "$BATS_TEST_TMPDIR" > "$WLR_DAGU_BIN"
-  chmod +x "$WLR_DAGU_BIN"
+  fake_dagu
+}
+
+# #4771 — the retry is a POST to dagu's server; a fake server records it.
+fake_dagu() {  # fake_dagu [code]
+  # answers one POST on 127.0.0.1 (port to $BATS_TEST_TMPDIR/port), records
+  # "POST <path> <body>" to dagu-called, answers <code>; exits after one
+  # request or 30s, so no test ever needs to stop it
+  python3 - "$BATS_TEST_TMPDIR" "${1:-200}" 3>&- <<'PY' &
+import http.server, os, socketserver, sys, time
+
+d, code = sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 200
+
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
+        with open(f"{d}/dagu-called", "w") as f:
+            f.write(f"POST {self.path} {body}\n")
+        self.send_response(code)
+        self.end_headers()
+        self.wfile.write(b'{"dagRunId":"ok"}' if code == 200 else b'{"message":"refused by fake"}')
+
+    def log_message(self, *a):
+        pass
+
+
+srv = socketserver.TCPServer(("127.0.0.1", 0), H)
+srv.timeout = 0.5
+with open(f"{d}/port.tmp", "w") as f:
+    f.write(str(srv.server_address[1]))
+os.rename(f"{d}/port.tmp", f"{d}/port")
+end = time.time() + 30
+while time.time() < end and not os.path.exists(f"{d}/dagu-called"):
+    srv.handle_request()
+PY
+  for _ in $(seq 1 50); do [ -f "$BATS_TEST_TMPDIR/port" ] && break; sleep 0.1; done
+  export WLR_DAGU_URL="http://127.0.0.1:$(cat "$BATS_TEST_TMPDIR/port")"
 }
 
 # run <dag> <id> <params> <status> <nodes: name=status,...> [go inputs json] [enqueued land id]
@@ -69,7 +104,7 @@ go_given() {  # the 4715 shape: Jeff's go enqueued land L1, which stopped at bor
   [[ "$output" == *"the go is cicd run C1 (accepter=jeff, decision=go)"* ]] || { echo "$output"; return 1; }
   for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$BATS_TEST_TMPDIR/dagu-called" ] && break; sleep 0.2; done
   called=$(cat "$BATS_TEST_TMPDIR/dagu-called")
-  [[ "$called" == *"retry --run-id=L1 --step=skill-borg-ask --downstream cicd-land" ]] || { echo "$called"; return 1; }
+  [[ "$called" == 'POST /api/v1/dag-runs/cicd-land/L1/retry {"dagRunId": "L1", "stepName": "skill-borg-ask", "includeDownstream": true}' ]] || { echo "$called"; return 1; }
 }
 
 # #4758 — scripts/werk-land-retry: the go now waits in the go half, cicd-go
@@ -143,5 +178,5 @@ go_given() {  # the 4715 shape: Jeff's go enqueued land L1, which stopped at bor
   run_file cicd C1 "CARD=4715 ROLE=kade" 4 "$CICD_DONE" '{"accepter":"jeff","decision":"go"}' L1
   run_file cicd-land L1 "CARD=4715 ROLE=kade ACCEPTER=jeff" 4 "skill-werk-merge=4,skill-borg-ask=4,skill-werk-accept=0"
   run "$VERB" 4715 --dry-run
-  [ "$status" -eq 0 ] && [[ "$output" == *"--step=skill-werk-accept --downstream cicd-land"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 0 ] && [[ "$output" == *"/api/v1/dag-runs/cicd-land/L1/retry from skill-werk-accept, downstream"* ]] || { echo "$output"; return 1; }
 }

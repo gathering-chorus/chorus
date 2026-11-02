@@ -24,6 +24,7 @@ use std::thread::sleep;
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 // Single source under services/shared, compiled into every verb. Not a crate, not a verb.
 include!("../../shared/failure_class.rs");
+include!("../../shared/trace_carrier.rs"); // #4771
 // #3821 — the ONE diff→units scoping core, shared with werk-test (source-include).
 include!("../../shared/scope_units.rs");
 include!("../../shared/crate_dirs.rs");
@@ -61,7 +62,7 @@ pub fn resolve_trace(card: u64) -> String {
             return t.trim().to_string();
         }
     }
-    let p = format!("/tmp/{}-trace", card);
+    let p = trace_carrier(card); // #4771 — shared carrier dir
     if let Ok(t) = fs::read_to_string(&p) {
         if !t.trim().is_empty() {
             return t.trim().to_string();

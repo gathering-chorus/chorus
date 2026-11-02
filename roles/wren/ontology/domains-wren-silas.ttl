@@ -376,7 +376,7 @@ chorus:ApprovalShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:domains:decisions" ;
     sh:property
       [ sh:path rdfs:label ; sh:minCount 1 ] ,
-      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ] ,                        # the asking role (door sets it from the verified writer)
+      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ] , # the asking role (door sets it from the verified writer; an edge, #4771)
       [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" "go" ) ] , # #4642: a go waits on the same list
       [ sh:path chorus:approvalSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
       [ sh:path chorus:approvalAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
@@ -386,7 +386,7 @@ chorus:ApprovalDecisionShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:domains:decisions" ;
     sh:property
       [ sh:path rdfs:label ; sh:minCount 1 ] ,
-      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( chorus:principal-jeff ) ] ,
+      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ; sh:in ( chorus:principal-jeff ) ] ,
       [ sh:path chorus:decides ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Approval ] ,
       [ sh:path chorus:approvalVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "approve" "decline" ) ] ,
       [ sh:path chorus:decidedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ,

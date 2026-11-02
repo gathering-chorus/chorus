@@ -6496,6 +6496,48 @@
         "started_by": "line | none",
         "started_by_line": "pulse jeff-input row id, when started_by=line"
       }
+    },
+    "land.auth.failed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb (#4771 AC4) — GitHub refused the land's deploy credential (a 401 or no login) or the credential file is missing, open (not 0600) or owned by another account. The land stops with reason auth-fail; `file` is the credential file's PATH only, never its contents. Read by the land-failure alert. Before #4771 werk-merge used Jeff's own gh keyring and a lapsed login stalled #4642's land (11-02 06:02).",
+      "fields": {
+        "card": "Card the land belongs to",
+        "role": "Role whose card is landing",
+        "trace_id": "Werk trace join key",
+        "file": "Path of the deploy credential file (never its contents)"
+      }
+    },
+    "merge.credential.armed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb (#4771 AC4) — the deploy credential file passed its checks (exists, non-empty, mode 0600, owned by the land's account) and is armed for every later gh/git call of this land. jsonl witness only; carries the file's path, never its contents. Verb-substep event (#3513 naming law).",
+      "fields": {
+        "card": "Card the land belongs to",
+        "role": "Role whose card is landing",
+        "trace_id": "Werk trace join key",
+        "file": "Path of the deploy credential file (never its contents)"
+      }
+    },
+    "teardown.auth.failed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-teardown (#4771 AC4) — the remote branch delete failed on auth: the deploy credential is missing or unusable on this account, or GitHub refused it. The delete stays best-effort (the card still closes) but the failure is said, never covered by Jeff's own keyring. `reason` names the credential file's path, never its contents.",
+      "fields": {
+        "card": "Card being torn down (from the caller's emitter)",
+        "role": "Acting role",
+        "branch": "Card branch whose remote delete failed",
+        "reason": "auth-fail message naming the credential file path"
+      }
     }
   }
 }

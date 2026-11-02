@@ -18,7 +18,7 @@
 //!   - Create the PR if none open for this oid (covers never-PR'd + stale-merged).
 //!   - ONE merge mechanism: squash (the 2026-06-02 Kade+Silas decision — binary = f(source TREE), so squash vs --merge is irrelevant to the artifact).
 //!   - POST-MERGE CONTENT-VERIFY: the PR is MERGED and its merge commit is on origin/main. Never assumed — verified, or the verb refuses.
-//!   - Typed R<T> refusals: no-werk / branch-mismatch / no-open-pr / pr-create-fail / merge-conflict / not-mergeable / merge-fail.
+//!   - Typed R<T> refusals: no-werk / branch-mismatch / auth-fail (#4771) / no-open-pr / pr-create-fail / merge-conflict / not-mergeable / merge-fail.
 //!   - All-or-nothing under one flock; JSONL witness per step (never affects the op); idempotent (this exact oid already merged onto main -> no-op success).
 
 use std::env;
@@ -33,6 +33,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra), lifted
 // out of this crate's private #3495 copy so every verb classifies identically.
 include!("../../shared/failure_class.rs");
+include!("../../shared/deploy_credential.rs"); // #4771 AC4
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
@@ -145,7 +146,9 @@ pub fn already_landed(stderr: &str) -> bool {
 /// Map a failed `gh pr merge` stderr to a typed refusal reason.
 pub fn classify_merge_error(stderr: &str) -> &'static str {
     let s = stderr.to_lowercase();
-    if s.contains("conflict") {
+    if s.starts_with("auth-fail") || is_auth_error(&s) {
+        "auth-fail"
+    } else if s.contains("conflict") {
         "merge-conflict"
     } else if s.contains("not mergeable") || s.contains("not in mergeable") || s.contains("mergeable state") {
         "not-mergeable"
@@ -181,15 +184,28 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     }
 }
 
+/// #4771 AC4 — `gh` / `git` never use a keyring and carry the land's deploy
+/// credential once armed (services/shared/deploy_credential.rs).
+fn tool(cmd: &str) -> Command {
+    let mut c = Command::new(cmd);
+    with_deploy_credential(&mut c, cmd);
+    c
+}
+
 /// Run a CLI in a working dir; non-zero exit is a typed error carrying stderr.
+/// #4771 — an auth failure from gh/git names the credential file (path only).
 fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
-    let out = Command::new(cmd)
+    let out = tool(cmd)
         .args(args)
         .current_dir(dir)
         .output()
         .map_err(|e| format!("{} failed to start: {}", cmd, e))?;
     if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        if (cmd == "gh" || cmd == "git") && is_auth_error(&err) {
+            return Err(auth_fail_message(&err));
+        }
+        return Err(err);
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -198,7 +214,7 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
 /// code away, but `git merge-tree` says "clean" vs "conflicted" in exactly that
 /// code, so the verification needs it.
 fn run_capture(dir: &str, cmd: &str, args: &[&str]) -> (i32, String) {
-    match Command::new(cmd).args(args).current_dir(dir).output() {
+    match tool(cmd).args(args).current_dir(dir).output() {
         Ok(out) => (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -251,7 +267,7 @@ fn path(p: &Path) -> R<&str> {
 /// True iff `oid` is present on origin/main (i.e., the merge commit landed).
 fn oid_on_main(werk_s: &str, oid: &str) -> bool {
     // `git merge-base --is-ancestor <oid> origin/main` exits 0 iff oid is reachable.
-    Command::new("git")
+    tool("git")
         .args(["merge-base", "--is-ancestor", oid, "origin/main"])
         .current_dir(werk_s)
         .status()
@@ -439,6 +455,21 @@ pub fn go_check(card: u64, round: &str) -> R<String> {
 
 fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: bool, accepter: Option<String>) -> R<String> {
     let trace = trace_id();
+    merge_steps(card, role, home, werk_base, atomic, accepter, &trace).map_err(|e| {
+        // #4771 AC4 — an auth failure is its own spine event, for the alert;
+        // the text names the credential file's path, never its contents.
+        if e.starts_with("auth-fail") {
+            jsonl(home, role, card, &trace, "merge.refused", &fail_extra("auth-fail"));
+            let file = env::var(CRED_FILE_ENV).unwrap_or_default();
+            emit_spine(home, "land.auth.failed", role, card, &trace, &[("file", &file)]);
+        }
+        e
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge_steps(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: bool, accepter: Option<String>, trace: &str) -> R<String> {
+    let trace = trace.to_string();
     // #3297 — approval gate up front (ADR-037): --atomic demands an accepter or refuses;
     // in the flow the demo→GO already authorized, so this returns "flow".
     let approver = require_approval(atomic, accepter)?;
@@ -459,6 +490,10 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         jsonl(home, role, card, &trace, "merge.refused", &fail_extra("branch-mismatch"));
         return Err(format!("werk is on '{}', not '{}' — refusing to merge", cur, branch));
     }
+
+    // #4771 AC4 — before any GitHub call: the deploy credential, or a loud refusal.
+    let cred = arm_deploy_credential()?;
+    jsonl(home, role, card, &trace, "merge.credential.armed", &format!(",\"file\":\"{}\"", cred.display()));
 
     let head_sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
     // Refresh remote view so PR resolution + content-verify see current origin/main.
@@ -766,6 +801,14 @@ pub fn verified_conflict_message(pr: u64, files: &[String]) -> String {
 
 #[cfg(test)]
 mod stale_mergeable_3926 {
+    // #4771 AC4 — the seam's own tests live in shared/deploy_credential.rs.
+    #[test]
+    fn a_401_classifies_as_auth_fail_and_the_others_still_separate() {
+        assert_eq!(classify_merge_error("HTTP 401: Requires authentication"), "auth-fail");
+        assert_eq!(classify_merge_error("merge conflict in a.txt"), "merge-conflict");
+        assert_eq!(classify_merge_error("something else broke"), "merge-fail");
+    }
+
     use super::*;
 
     #[test]

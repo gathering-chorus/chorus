@@ -29,6 +29,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+include!("../../shared/trace_carrier.rs"); // #4771
 include!("../../shared/crate_dirs.rs");
 
 // #3092 — per-role demo env lifecycle (env_start / env_deploy / env_stop).
@@ -63,7 +64,7 @@ pub fn resolve_trace(card: u64) -> String {
             return t.trim().to_string();
         }
     }
-    let p = format!("/tmp/{}-trace", card);
+    let p = trace_carrier(card); // #4771 — shared carrier dir
     if let Ok(t) = fs::read_to_string(&p) {
         if !t.trim().is_empty() {
             return t.trim().to_string();

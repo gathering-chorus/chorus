@@ -12,7 +12,9 @@ const HEAD: &str = "5174a0592261bbd5b452ec1287cda4e5e2fda45a";
 fn the_go_row_carries_kind_go_and_an_action_of_exactly_card_run_round() {
     let b = go_approval_body(4642, "034qFPOewc9praHJbg6SYH", HEAD, "Approvals round 2").unwrap();
     assert!(b.contains(r#""approvalKind":"go""#), "{b}");
-    assert!(b.contains(r#""name":"approval-go-4642-034qFPOewc9praHJbg6SYH""#), "{b}");
+    // #4771: the bare name; the door's mint adds "approval-" (a prefixed name is a 422 double-prefix)
+    assert!(b.contains(r#""name":"go-4642-034qFPOewc9praHJbg6SYH""#), "{b}");
+    assert!(!b.contains(r#""name":"approval-"#), "a prefixed name is refused by the door: {b}");
     // the action is a JSON string holding the 3-key object chorus-go's go_action accepts
     let want = format!(r#""approvalAction":"{{\"card\":4642,\"run\":\"034qFPOewc9praHJbg6SYH\",\"round\":\"{HEAD}\"}}""#);
     assert!(b.contains(&want), "{b}\nwant {want}");

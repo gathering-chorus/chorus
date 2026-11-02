@@ -29,6 +29,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+include!("../../shared/deploy_credential.rs"); // #4771 AC4
+include!("../../shared/trace_carrier.rs"); // #4771
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
@@ -75,7 +77,8 @@ pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) ->
 
 pub fn resolve_trace(card: u64) -> String {
     let env = env::var("CHORUS_TRACE_ID").ok();
-    resolve_trace_in(card, env.as_deref(), Path::new("/tmp"))
+    // #4771 — the shared carrier dir (CHORUS_TRACE_DIR, default /tmp).
+    resolve_trace_in(card, env.as_deref(), &trace_carrier_dir())
 }
 
 /// #3163 — the spine event contract (#3135 AUDITABLE): the args handed to `chorus-log`
@@ -138,12 +141,17 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extr
 /// Run a CLI in a working dir with extra env vars; non-zero exit is a typed error.
 fn run_in_env(dir: &str, cmd: &str, args: &[&str], envs: &[(&str, &str)]) -> R<String> {
     let mut c = Command::new(cmd);
+    with_deploy_credential(&mut c, cmd); // #4771 AC4 — never a keyring
     c.args(args).current_dir(dir);
     for (k, v) in envs {
         c.env(k, v);
     }
     let out = c.output().map_err(|e| format!("{} failed to start: {}", cmd, e))?;
     if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        if (cmd == "git" || cmd == "gh") && is_auth_error(&err) {
+            return Err(auth_fail_message(err.trim()));
+        }
         return Err(format!(
             "{} {}: {}",
             cmd,
@@ -240,6 +248,8 @@ pub fn run_push() -> R<String> {
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
+    // #4771 AC4 — the deploy credential or a loud refusal, before any git.
+    arm_deploy_credential()?;
     push(card, &role, &home, &werk_base)
 }
 
@@ -339,8 +349,10 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
             // silent before, returning Err with no record. Surface push.failed on the ONE
             // spine, carrying the INHERITED trace + reason + disposition, so the break
             // shows on the card's thread the instant it happens (merged-not-live precursor).
-            jsonl(home, role, card, &trace, "push.failed", &fail_extra("push-rejected"));
-            emit_spine(home, "push.failed", role, card, &trace, &[("reason", "push-rejected"), ("failureClass", failure_class("push-rejected")), ("disposition", "refuse")]);
+            // #4771 AC4 — a refused credential is its own reason, not a reject.
+            let reason = if e.starts_with("auth-fail") { "auth-fail" } else { "push-rejected" };
+            jsonl(home, role, card, &trace, "push.failed", &fail_extra(reason));
+            emit_spine(home, "push.failed", role, card, &trace, &[("reason", reason), ("failureClass", failure_class(reason)), ("disposition", "refuse")]);
             return Err(format!("push failed: {}", e));
         }
     }
@@ -361,4 +373,27 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     jsonl(home, role, card, &trace, "push.completed", &format!(",\"sha\":\"{}\"", sha));
     emit_spine(home, "push.completed", role, card, &trace, &[("sha", &sha)]);
     Ok(sha)
+}
+
+#[cfg(test)]
+mod push_credential_4771 {
+    use super::*;
+
+    #[test]
+    fn armed_push_git_uses_only_the_deploy_credential_helper() {
+        let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        use std::os::unix::fs::PermissionsExt;
+        let f = std::env::temp_dir().join(format!("push4771-{}", std::process::id()));
+        fs::write(&f, "tok").unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
+        env::set_var(CRED_FILE_ENV, &f);
+        let armed = run_in(".", "git", &["config", "--get-all", "credential.helper"]).unwrap_or_default();
+        env::remove_var(CRED_FILE_ENV);
+        let unarmed = run_in(".", "git", &["config", "--get-all", "credential.helper"]).unwrap_or_default();
+        let _ = fs::remove_file(&f);
+        let last = armed.lines().last().unwrap_or("");
+        assert!(last.starts_with("!f()") && last.contains(CRED_FILE_ENV), "armed: {armed:?}");
+        // NEGATIVE PROOF: unarmed, no keyring helper survives.
+        assert_eq!(unarmed.lines().last().unwrap_or("x"), "", "unarmed: {unarmed:?}");
+    }
 }
