@@ -159,9 +159,60 @@ pub fn go_run_open(status_line: &str) -> Result<(), String> {
     }
 }
 
-/// #4771 AC2 — `dagu status` says this run was stopped (cicd-supersede).
-pub fn superseded_status(status_line: &str) -> bool {
-    status_line.split(" - ").next().unwrap_or("").trim() == "Aborted"
+/// #4771 AC2 — `dagu status` (the whole answer) says this go run was superseded: stopped
+/// (Aborted), or answered no by cicd-supersede (Succeeded with its land step skipped). A go
+/// Jeff signed also reads Succeeded, but its land ran — that is never called superseded.
+pub fn superseded_status(status: &str) -> bool {
+    match status.split(" - ").next().unwrap_or("").trim() {
+        "Aborted" => true,
+        "Succeeded" => status.lines().any(|l| l.contains("cicd-land") && l.contains("[skipped]")),
+        _ => false,
+    }
+}
+
+/// #4771 — when a dagu run started, in ms since the epoch, read from its id: dagu run ids
+/// are UUIDv7 in base62 (22 chars), whose top 48 bits are the enqueue instant. `go-<id>`
+/// (the go half) reads its cicd run's id. None when it is not such an id. Pure.
+pub fn run_started_ms(run: &str) -> Option<u64> {
+    const A: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let id = run.strip_prefix("go-").unwrap_or(run);
+    if id.len() != 22 { return None; }
+    let mut n: u128 = 0;
+    for c in id.chars() {
+        n = n.checked_mul(62)?.checked_add(A.find(c)? as u128)?;
+    }
+    if n >> 122 != 0 { return None; }
+    Some((n >> 80) as u64)
+}
+
+/// #4771 AC2 — one go per card on Jeff's list: of a card's go rows only the one whose
+/// cicd run STARTED last is kept (Silas 17:36: not when its row posted — a slow older run
+/// posts late). Cards' asks, other cards' gos and a go whose run id is unreadable stay. A
+/// run that reached its go after a newer run started is still waiting in dagu, so the list,
+/// not dagu, says which go is the card's. Pure.
+pub fn newest_go_per_card(rows: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let key = |v: &serde_json::Value| go_action(&s(v, "action")).ok()
+        .and_then(|g| run_started_ms(&g.run).map(|t| (g.card, t)));
+    let mut newest: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    for (c, t) in rows.iter().filter(|r| s(r, "kind") == "go").filter_map(key) {
+        let e = newest.entry(c).or_insert(t);
+        if t > *e { *e = t; }
+    }
+    rows.into_iter().filter(|r| {
+        if s(r, "kind") != "go" { return true; }
+        match key(r) { Some((c, t)) => newest.get(&c).map(|n| *n == t).unwrap_or(true), None => true }
+    }).collect()
+}
+
+/// #4771 — read curl's `-w "\n%{http_code}"` answer to the decision POST: Ok on a 2xx, else an
+/// error naming the code and the door's own message (first 300 chars), never a guess. Pure.
+pub fn decision_post_result(ran: bool, stdout: &str, stderr: &str) -> Result<(), String> {
+    let (body, code) = stdout.trim_end().rsplit_once('\n').unwrap_or(("", stdout.trim()));
+    if ran && code.starts_with('2') { return Ok(()); }
+    let why: String = if body.trim().is_empty() { stderr.trim() } else { body.trim() }.chars().take(300).collect();
+    let code = if code.is_empty() { "no answer" } else { code };
+    Err(format!("signed, but the door refused Jeff's decision row ({code}): {why}"))
 }
 
 /// #4771 AC2 — the refusal for a go whose run was superseded: it names the

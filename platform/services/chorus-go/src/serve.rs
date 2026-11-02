@@ -116,7 +116,7 @@ fn run_status(dag: &str, run: &str) -> String {
         .env_remove("CHORUS_ROLE").env_remove("ROLE")
         .output()
         .ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_string))
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default()
 }
 
@@ -213,10 +213,14 @@ fn go_row_open(action: &str) -> Result<(), String> {
 /// other state that is not waiting (dagu unreadable, not there yet) stays on
 /// the list with its reason, so Jeff never sees an empty list and no why.
 fn offered(rows: Vec<Value>) -> Vec<Value> {
+    let rows = newest_go_per_card(rows);
     rows.into_iter().filter_map(|mut r| {
         if s_of(&r, "kind") != "go" { return Some(r); }
         let status = go_row_status(&s_of(&r, "action"));
         if status.as_deref().map(superseded_status).unwrap_or(false) { return None; }
+        // #4771 — a go whose run dagu reads and that no longer waits (answered, landed) cannot
+        // be signed: it leaves the list. Only an unreadable dagu keeps the row, with the reason.
+        if status.as_deref().map(|st| st.trim().is_empty() || go_run_open(st).is_ok()) == Ok(false) { return None; }
         if let Err(why) = status.and_then(|st| go_run_open(&st)) { r["state"] = json!(why); }
         Some(r)
     }).collect()
@@ -225,8 +229,25 @@ fn offered(rows: Vec<Value>) -> Vec<Value> {
 /// #4771 AC2 — a stale go is refused before Jeff signs and before any decision
 /// is written or any run answered, pointing to the card's newest open go.
 fn refuse_stale_go(row: &str, action: &str) -> Result<(), String> {
-    let Err(why) = go_row_open(action) else { return Ok(()) };
-    let card = go_action(action).map(|g| g.card).unwrap_or(0);
+    // #4771 — one go per card: a newer go row of the card supersedes this one even while
+    // dagu still has this run waiting (a run that reached its go after the newer run started).
+    let (card, mine) = go_action(action).map(|g| (g.card, run_started_ms(&g.run))).unwrap_or((0, None));
+    let pending = pending_approvals().unwrap_or_default();
+    if let Some(mine) = mine {
+        if let Some((_, newer)) = pending.iter()
+            .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row)
+            .filter_map(|r| go_action(&s_of(r, "action")).ok().filter(|g| g.card == card)
+                .and_then(|g| run_started_ms(&g.run)).filter(|t| *t > mine).map(|t| (t, s_of(r, "row"))))
+            .max_by_key(|(t, _)| *t) {
+            return Err(stale_go_refusal(card, "this run was superseded by a newer run of the card", Some(&newer)));
+        }
+    }
+    let status = go_row_status(action);
+    let Err(why) = status.clone().and_then(|st| go_run_open(&st)) else { return Ok(()) };
+    // #4771 — a go answered no by cicd-supersede reads Succeeded; to Jeff it is superseded
+    let why = if status.as_deref().map(superseded_status).unwrap_or(false) {
+        "this run was superseded by a newer run of the card".to_string()
+    } else { why };
     let newest = pending_approvals().unwrap_or_default().into_iter()
         .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row)
         .filter(|r| go_action(&s_of(r, "action")).map(|g| g.card == card).unwrap_or(false))
@@ -301,7 +322,7 @@ fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str
         "passkeyProof": json!({"nonce": d.nonce, "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
     if let Some(r) = round { body["signedRound"] = json!(r); }
     // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
-    let mut child = Command::new(curl_bin()).args(["-sf", "--max-time", "8", "-X", "POST",
+    let mut child = Command::new(curl_bin()).args(["-sS", "--max-time", "8", "-X", "POST", "-w", "\n%{http_code}",
             "-H", "Content-Type: application/json", "-H", "@-",
             "--data-binary", &body.to_string(), &format!("{}/decisions/approvaldecisions", door())])
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
@@ -314,8 +335,9 @@ fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str
     let o = child.wait_with_output().map_err(|e| format!("door: {e}"))?;
     // A second decision for one ask is refused by the door (the name `decision-<row>` exists),
     // so two racing decides file at most once.
-    if !o.status.success() { return Err("signed, but the door refused Jeff's decision row (already decided?)".into()); }
-    Ok(())
+    // #4771: the refusal carries the door's own answer. `-f` used to drop it, so on 11-02 run
+    // 10's decision row failed with only "(already decided?)" and nobody could say why.
+    decision_post_result(o.status.success(), &String::from_utf8_lossy(&o.stdout), &String::from_utf8_lossy(&o.stderr))
 }
 
 fn iso(secs: u64) -> String {

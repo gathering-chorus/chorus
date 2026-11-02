@@ -57,7 +57,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   run env CARGO_BUILD_JOBS=4 nice cargo test --test approvals_4505 --test serve_approvals_4505
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # #4642 retired the go-nonce case
-  [[ "$output" == *"test result: ok. 13 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +3 stale-go
+  [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +4 stale-go
 }
 
 # --- retire the chat keyword path (R1-L5) ------------------------------------
@@ -88,14 +88,14 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"test result: ok. 9 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass
-  [[ "$output" == *"test result: ok. 13 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }
 }
 
 @test "R2-GO-ROW werk-demo: a ready demo posts the go row and points at the list (cargo)" {
   cd "$ROOT/platform/services/werk-demo" || return 1
   run nice cargo test -j 4 --test go_row_4642 --test e2e
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 6 passed"* ]] || { echo "$output"; return 1; }  # +2 go_ask
+  [[ "$output" == *"test result: ok. 8 passed"* ]] || { echo "$output"; return 1; }  # +2 go_ask; #4771 +1 tested commit
 }
 
 @test "R2-ONE-GO-PATH: the per-run go page, its decide route and the go record are retired" {

@@ -64,13 +64,13 @@ while [ $# -gt 0 ]; do case "$1" in
   -X) [ "$2" = POST ] && post=1; shift 2;;
   --data-binary) data="$2"; shift 2;;
   -H) if [ "$2" = "@-" ]; then hdr="$hdr|$(cat)"; else hdr="$hdr|$2"; fi; shift 2;;
-  --max-time) shift 2;;
+  --max-time|-w) shift 2;;
   -*) shift;;
   *) url="$1"; shift;;
 esac; done
-if [ $post = 1 ]; then [ -f {r}/door-refuses ] && exit 22
-  name=$(printf '%s' "$data" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); grep -q "\"name\":\"$name\"" {r}/posts.log 2>/dev/null && exit 22
-  printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; echo '{{}}'; exit 0; fi
+if [ $post = 1 ]; then [ -f {r}/door-refuses ] && {{ printf '{{"error":"refused"}}\n422'; exit 0; }}
+  name=$(printf '%s' "$data" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); grep -q "\"name\":\"$name\"" {r}/posts.log 2>/dev/null && {{ printf '{{"error":"exists"}}\n409'; exit 0; }}
+  printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; printf '{{}}\n201'; exit 0; fi
 case "$url" in
   */decisions/approvaldecisions*) cat {r}/decisions.json;;
   */decisions/approvals*) cat {r}/approvals.json;;
@@ -78,9 +78,9 @@ case "$url" in
 esac
 "#));
     // #4642: a dagu whose go step waits; every human-task answer is logged
-    // #4771: a run id listed in `aborted` reads Aborted (cicd-supersede stopped it);
+    // #4771: a run id listed in `aborted` reads Succeeded (cicd-supersede answered it no, the land skipped);
     // with `dagu-unreadable` present, status prints nothing
-    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then echo 'Aborted - 2026-11-01 19:05:00'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
+    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/landed 2>/dev/null; then printf 'Succeeded - 2026-11-02 16:39:52\\n├─cicd-land (1.0s) [succeeded]\\n'; elif grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then printf 'Succeeded - 2026-11-01 19:05:00\\n├─cicd-land (0s) [skipped]\\n'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
     sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
     sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
@@ -280,8 +280,8 @@ fn negative_proof_resend_refuses_a_decision_that_is_not_jeffs_signed_go() {
 // #4771 AC2 — one go per card. A card's new cicd run supersedes (aborts) its
 // older go; that older go row is not offered, cannot be asked for, and a
 // decide that races the supersede writes nothing and answers no run.
-const OLD_RUN: &str = "034qOLDrun0000000000aa";
-const NEW_RUN: &str = "034qNEWrun0000000000bb";
+const OLD_RUN: &str = "034qq6XgiAeVGOv2S6DEhR"; // run 11, started 11-02 17:28:41 (UUIDv7)
+const NEW_RUN: &str = "034qq9S3EbXzSGzpLWcIXj"; // run 12, started 17:30:36
 fn two_go_world(tag: &str) -> World {
     let w = world(tag);
     // the asker's werk, whose HEAD is the round the go was asked at
@@ -298,8 +298,9 @@ fn two_go_world(tag: &str) -> World {
         "approvalKind": "go", "approvalSubject": "#4771 go lands hands-free",
         "approvalAction": format!(r#"{{"card":4771,"run":"{run}","round":"{round}"}}"#), "createdAt": at});
     std::fs::write(w.root.join("approvals.json"), json!({"data": [
-        go("approval-go-4771-old", OLD_RUN, "2026-11-02T07:00:00Z"),
-        go("approval-go-4771-new", NEW_RUN, "2026-11-02T07:30:00Z")]}).to_string()).unwrap();
+        // the older run's row posted LAST (17:32, the slow run reached its go late; Silas 17:36)
+        go("approval-go-4771-old", OLD_RUN, "2026-11-02T17:32:00-05:00"),
+        go("approval-go-4771-new", NEW_RUN, "2026-11-02T22:31:00Z")]}).to_string()).unwrap();
     std::fs::write(w.root.join("decisions.json"), json!({"data": []}).to_string()).unwrap();
     w
 }
@@ -332,10 +333,15 @@ fn negative_proof_a_decide_racing_the_supersede_writes_nothing_and_answers_no_ru
     let w = two_go_world("stale-decide");
     let srv = serve(&w, &p);
     std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
-    // Jeff opens the old go while it still waits…
+    // Jeff opens the old go while it is the card's only one…
+    let both = std::fs::read_to_string(w.root.join("approvals.json")).unwrap();
+    let only_old: Value = serde_json::from_str(&both).unwrap();
+    let only_old = json!({"data": [only_old["data"][0].clone()]});
+    std::fs::write(w.root.join("approvals.json"), only_old.to_string()).unwrap();
     let (c, ch) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-old"}).to_string());
     assert_eq!(c, 200, "{ch}");
-    // …a new cicd run of the card supersedes it before he signs.
+    // …a new cicd run of the card posts its go and supersedes the old one before he signs.
+    std::fs::write(w.root.join("approvals.json"), both).unwrap();
     supersede(&w, OLD_RUN);
     let (ad, cd, sig) = p.sign(&unb64(ch["challengeApprove"].as_str().unwrap()).unwrap());
     let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/decide", &json!({"row": "approval-go-4771-old",
@@ -356,8 +362,62 @@ fn negative_proof_an_unreadable_dagu_keeps_the_go_rows_listed_with_the_reason() 
     let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
     assert_eq!(c, 200, "{b}");
     let rows = b["approvals"].as_array().unwrap();
-    for name in ["approval-go-4771-old", "approval-go-4771-new"] {
+    // the card's newest go stays listed with the reason (the older one is the card's
+    // superseded go by the one-go-per-card rule, which needs no dagu)
+    for name in ["approval-go-4771-new"] {
         let r = rows.iter().find(|r| r["row"] == name).unwrap_or_else(|| panic!("{name} hidden on an unreadable dagu: {b}"));
         assert!(r["state"].as_str().unwrap_or("").contains("cannot read"), "{name} carries the reason: {b}");
     }
+}
+
+/// #4771 — timing-proof one go per card (Silas 17:33): a run that reached its go AFTER the
+/// newer run started was never superseded in dagu — both wait. The list offers only the newest
+/// and the older is refused, pointing at it.
+/// NEGATIVE PROOF: without newest_go_per_card both rows were offered (run 11 + run 12, 11-02).
+#[test]
+fn two_waiting_gos_of_a_card_offer_only_the_newest_and_refuse_the_older() {
+    let p = Phone::new();
+    let w = two_go_world("both-waiting");
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert_eq!(c, 200, "{b}");
+    let rows: Vec<&str> = b["approvals"].as_array().unwrap().iter().filter_map(|r| r["row"].as_str()).collect();
+    assert!(rows.contains(&"approval-go-4771-new"), "{b}");
+    assert!(!rows.contains(&"approval-go-4771-old"), "the older waiting go is not offered: {b}");
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-old"}).to_string());
+    assert_ne!(c, 200, "{b}");
+    let t = b["text"].as_str().unwrap_or("");
+    assert!(t.contains("superseded") && t.contains("approval-go-4771-new"), "{b}");
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-new"}).to_string());
+    assert_eq!(c, 200, "the newest go still opens: {b}");
+}
+
+/// #4771 — a go whose run already landed (Jeff's go went through) leaves the list: it cannot
+/// be signed again (11-02 17:51: run 10's landed go still showed beside two others).
+/// NEGATIVE PROOF: the same row with its run still waiting is offered (it is the card's newest).
+#[test]
+fn a_landed_go_leaves_the_list_and_a_waiting_one_stays() {
+    let p = Phone::new();
+    let w = two_go_world("landed");
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let rows = |b: &Value| b["approvals"].as_array().unwrap().iter().filter_map(|r| r["row"].as_str().map(str::to_string)).collect::<Vec<_>>();
+    let (_, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert!(rows(&b).contains(&"approval-go-4771-new".to_string()), "waiting: offered {b}");
+    std::fs::write(w.root.join("landed"), format!("{NEW_RUN}\ngo-{NEW_RUN}\n")).unwrap();
+    let (_, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert!(!rows(&b).iter().any(|r| r.starts_with("approval-go-4771")), "a landed card offers no go: {b}");
+}
+
+/// #4771 — the page's hidden panels stay hidden: `.row`/`.card` set display, which beats the
+/// browser's [hidden] rule, so the dead Go/No panel showed "Loading…" above the real rows.
+/// NEGATIVE PROOF: the rule is checked by its exact text; without it this fails.
+#[test]
+fn the_page_keeps_hidden_panels_hidden() {
+    let page = include_str!("../src/page.html");
+    assert!(page.contains("[hidden] { display: none !important; }"), "no [hidden] override in page.html");
+    assert!(page.contains("id=\"regrow\" hidden"));
+    // the dead Go/No panel is gone, not hidden (Silas 17:56): Approve on a row is the only go
+    assert!(!page.contains("id=\"buttons\"") && !page.contains(">Go</button>"), "the old Go/No panel is back");
 }

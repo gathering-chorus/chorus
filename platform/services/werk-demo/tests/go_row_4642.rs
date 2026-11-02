@@ -57,3 +57,32 @@ fn negative_proof_a_refused_go_row_still_asks_with_the_sign_page_and_the_reason(
     assert!(a.contains("sign: ") && a.contains("/go/?card=4642&run=034run&role=wren"), "{a}");
     assert!(a.contains("go row not on the list: the door answered 403"), "{a}");
 }
+
+/// #4771 — the go binds what this run pushed (and so tested), not the werk's HEAD at demo time.
+/// NEGATIVE PROOF: another run's push, another card's push, a push.started line and a missing
+/// trace bind nothing — 11-02 run 11 tested affda76 while its go stamped daf6848.
+#[test]
+fn the_go_binds_the_commit_this_run_pushed() {
+    use werk_demo::pushed_sha;
+    let a = "a".repeat(40); let b = "b".repeat(40); let c = "c".repeat(40);
+    let log = format!(concat!(
+        "{{\"ts\":1,\"event\":\"push.completed\",\"role\":\"kade\",\"card_id\":4771,\"trace_id\":\"run11\",\"sha\":\"{a}\"}}\n",
+        "{{\"ts\":2,\"event\":\"push.completed\",\"role\":\"kade\",\"card_id\":4771,\"trace_id\":\"run12\",\"sha\":\"{b}\"}}\n",
+        "{{\"ts\":3,\"event\":\"push.completed\",\"role\":\"kade\",\"card_id\":47710,\"trace_id\":\"run11\",\"sha\":\"{c}\"}}\n",
+        "{{\"ts\":4,\"event\":\"push.started\",\"role\":\"kade\",\"card_id\":4771,\"trace_id\":\"run11\",\"sha\":\"{c}\"}}\n"),
+        a = a, b = b, c = c);
+    assert_eq!(pushed_sha(&log, 4771, "run11").as_deref(), Some(a.as_str()));
+    assert_eq!(pushed_sha(&log, 4771, "run12").as_deref(), Some(b.as_str()));
+    assert_eq!(pushed_sha(&log, 4771, "run13"), None, "a run with no push binds nothing");
+    assert_eq!(pushed_sha(&log, 4771, ""), None);
+}
+
+/// #4771 — the go row's subject names the card once (Jeff 16:44: "#4771 #4771 …").
+/// NEGATIVE PROOF: a title without the prefix keeps its text whole.
+#[test]
+fn the_go_row_names_the_card_once() {
+    let b = go_approval_body(4771, "r1", HEAD, "#4771 Fix go automation").unwrap();
+    assert!(b.contains(r##""approvalSubject":"#4771 Fix go automation""##), "{b}");
+    let b = go_approval_body(4771, "r1", HEAD, "Fix go automation").unwrap();
+    assert!(b.contains(r##""approvalSubject":"#4771 Fix go automation""##), "{b}");
+}
