@@ -6,7 +6,7 @@
 # #4771 — after Jeff signs go, the card lands with nobody touching it. What Jeff
 # sees: one go per card, and that go starts the land at once; an older go of
 # the same card cannot be signed. (#4642's land on 11-01 took four tries: the
-# fixes for those are werk-land-retry-data-dir.bats and the deploy credential
+# fixes for those are 4771-land-retry-data-dir.bats and the deploy credential
 # in services/shared/deploy_credential.rs. This file proves the go half.)
 
 REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
