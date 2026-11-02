@@ -111,8 +111,11 @@ pub fn with_deploy_credential(c: &mut std::process::Command, tool: &str) {
 /// A 401 or a missing login from gh or git.
 pub fn is_auth_error(stderr: &str) -> bool {
     let s = stderr.to_lowercase();
+    // #4771 run 6: a credential GitHub accepts but whose scope misses the repo
+    // answers 403 "Permission to <repo> denied to <user>" — an auth failure too.
     ["http 401", "requires authentication", "authentication failed", "bad credentials",
-     "could not read username", "could not read password", "gh auth login"]
+     "could not read username", "could not read password", "gh auth login",
+     "returned error: 403", "http 403", "permission to "]
         .iter().any(|k| s.contains(k))
 }
 
@@ -203,6 +206,16 @@ mod deploy_credential_4771 {
         let (ok, out) = git_fill(None);
         assert!(!ok, "git found a credential with every helper cleared: {out}");
         assert!(!out.contains("password="), "{out}");
+    }
+
+    #[test]
+    fn a_403_scope_refusal_is_an_auth_failure_naming_permission() {
+        let e = "remote: Permission to gathering-chorus/chorus.git denied to WJeffBridwell.\nfatal: unable to access 'https://github.com/gathering-chorus/chorus.git/': The requested URL returned error: 403";
+        assert!(is_auth_error(e));
+        let m = auth_fail_message(e);
+        assert!(m.contains("403") && m.contains("deploy credential file") && !m.contains("WJeffBridwell"), "{m}");
+        // NEGATIVE PROOF: a non-fast-forward reject is still not an auth failure
+        assert!(!is_auth_error("! [rejected] HEAD -> kade/1 (non-fast-forward)\nerror: failed to push some refs"));
     }
 
     #[test]
