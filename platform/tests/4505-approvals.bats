@@ -57,7 +57,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   run env CARGO_BUILD_JOBS=4 nice cargo test --test approvals_4505 --test serve_approvals_4505
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # #4642 retired the go-nonce case
-  [[ "$output" == *"test result: ok. 13 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +3 stale-go
+  [[ "$output" == *"test result: ok. 14 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +4 stale-go
 }
 
 # --- retire the chat keyword path (R1-L5) ------------------------------------
@@ -88,7 +88,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"test result: ok. 9 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass
-  [[ "$output" == *"test result: ok. 13 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 14 passed"* ]] || { echo "$output"; return 1; }
 }
 
 @test "R2-GO-ROW werk-demo: a ready demo posts the go row and points at the list (cargo)" {

@@ -332,10 +332,15 @@ fn negative_proof_a_decide_racing_the_supersede_writes_nothing_and_answers_no_ru
     let w = two_go_world("stale-decide");
     let srv = serve(&w, &p);
     std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
-    // Jeff opens the old go while it still waits…
+    // Jeff opens the old go while it is the card's only one…
+    let both = std::fs::read_to_string(w.root.join("approvals.json")).unwrap();
+    let only_old: Value = serde_json::from_str(&both).unwrap();
+    let only_old = json!({"data": [only_old["data"][0].clone()]});
+    std::fs::write(w.root.join("approvals.json"), only_old.to_string()).unwrap();
     let (c, ch) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-old"}).to_string());
     assert_eq!(c, 200, "{ch}");
-    // …a new cicd run of the card supersedes it before he signs.
+    // …a new cicd run of the card posts its go and supersedes the old one before he signs.
+    std::fs::write(w.root.join("approvals.json"), both).unwrap();
     supersede(&w, OLD_RUN);
     let (ad, cd, sig) = p.sign(&unb64(ch["challengeApprove"].as_str().unwrap()).unwrap());
     let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/decide", &json!({"row": "approval-go-4771-old",
@@ -356,8 +361,33 @@ fn negative_proof_an_unreadable_dagu_keeps_the_go_rows_listed_with_the_reason() 
     let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
     assert_eq!(c, 200, "{b}");
     let rows = b["approvals"].as_array().unwrap();
-    for name in ["approval-go-4771-old", "approval-go-4771-new"] {
+    // the card's newest go stays listed with the reason (the older one is the card's
+    // superseded go by the one-go-per-card rule, which needs no dagu)
+    for name in ["approval-go-4771-new"] {
         let r = rows.iter().find(|r| r["row"] == name).unwrap_or_else(|| panic!("{name} hidden on an unreadable dagu: {b}"));
         assert!(r["state"].as_str().unwrap_or("").contains("cannot read"), "{name} carries the reason: {b}");
     }
+}
+
+/// #4771 — timing-proof one go per card (Silas 17:33): a run that reached its go AFTER the
+/// newer run started was never superseded in dagu — both wait. The list offers only the newest
+/// and the older is refused, pointing at it.
+/// NEGATIVE PROOF: without newest_go_per_card both rows were offered (run 11 + run 12, 11-02).
+#[test]
+fn two_waiting_gos_of_a_card_offer_only_the_newest_and_refuse_the_older() {
+    let p = Phone::new();
+    let w = two_go_world("both-waiting");
+    let srv = serve(&w, &p);
+    std::env::set_var("CHORUS_WERK_BASE", w.root.join("werk"));
+    let (c, b) = http(&srv.addr, "GET", "/go/api/approvals", "");
+    assert_eq!(c, 200, "{b}");
+    let rows: Vec<&str> = b["approvals"].as_array().unwrap().iter().filter_map(|r| r["row"].as_str()).collect();
+    assert!(rows.contains(&"approval-go-4771-new"), "{b}");
+    assert!(!rows.contains(&"approval-go-4771-old"), "the older waiting go is not offered: {b}");
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-old"}).to_string());
+    assert_ne!(c, 200, "{b}");
+    let t = b["text"].as_str().unwrap_or("");
+    assert!(t.contains("superseded") && t.contains("approval-go-4771-new"), "{b}");
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/challenge", &json!({"row": "approval-go-4771-new"}).to_string());
+    assert_eq!(c, 200, "the newest go still opens: {b}");
 }

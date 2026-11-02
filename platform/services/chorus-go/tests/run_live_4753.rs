@@ -42,3 +42,16 @@ fn an_answered_no_or_aborted_go_is_superseded_and_jeffs_landed_go_is_not() {
     assert!(!superseded_status("Failed - 2026-11-02T17:30:00-05:00"));
     assert!(!superseded_status(""));
 }
+
+/// #4771 — newest_go_per_card keeps one go per card, by `at`; card asks and other cards stay.
+/// NEGATIVE PROOF: a lone go, another card's go and a card ask are never dropped.
+#[test]
+fn only_the_newest_go_of_each_card_is_kept() {
+    use serde_json::json;
+    let g = |row: &str, card: u64, at: &str| json!({"row": row, "kind": "go", "at": at,
+        "action": format!(r#"{{"card":{card},"run":"r-{row}","round":"{}"}}"#, "a".repeat(40))});
+    let rows = vec![g("old", 4771, "2026-11-02T22:28:00Z"), g("new", 4771, "2026-11-02T22:30:00Z"),
+        g("other", 4642, "2026-11-02T20:00:00Z"), json!({"row": "ask", "kind": "card", "at": "x"})];
+    let kept: Vec<String> = chorus_go::newest_go_per_card(rows).iter().map(|r| r["row"].as_str().unwrap().to_string()).collect();
+    assert_eq!(kept, vec!["new", "other", "ask"]);
+}

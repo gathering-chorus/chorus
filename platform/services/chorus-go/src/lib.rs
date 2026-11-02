@@ -170,6 +170,27 @@ pub fn superseded_status(status: &str) -> bool {
     }
 }
 
+/// #4771 AC2 — one go per card on Jeff's list: of a card's go rows only the newest
+/// (by `at`) is kept; cards' rows and other cards' gos are untouched. A run that reached
+/// its go after a newer run of the card started is still waiting in dagu, so the list,
+/// not dagu, has to say which go is the card's. Pure.
+pub fn newest_go_per_card(rows: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let card = |v: &serde_json::Value| go_action(&s(v, "action")).map(|g| g.card).ok();
+    let newest: std::collections::HashMap<u64, String> = rows.iter()
+        .filter(|r| s(r, "kind") == "go")
+        .filter_map(|r| card(r).map(|c| (c, s(r, "at"))))
+        .fold(std::collections::HashMap::new(), |mut m, (c, at)| {
+            let e = m.entry(c).or_insert_with(String::new);
+            if at > *e { *e = at; }
+            m
+        });
+    rows.into_iter().filter(|r| {
+        if s(r, "kind") != "go" { return true; }
+        match card(r) { Some(c) => newest.get(&c).map(|n| *n == s(r, "at")).unwrap_or(true), None => true }
+    }).collect()
+}
+
 /// #4771 AC2 — the refusal for a go whose run was superseded: it names the
 /// card's newest go to open instead, or says to wait for the new demo.
 pub fn stale_go_refusal(card: u64, why: &str, newest_row: Option<&str>) -> String {

@@ -213,6 +213,7 @@ fn go_row_open(action: &str) -> Result<(), String> {
 /// other state that is not waiting (dagu unreadable, not there yet) stays on
 /// the list with its reason, so Jeff never sees an empty list and no why.
 fn offered(rows: Vec<Value>) -> Vec<Value> {
+    let rows = newest_go_per_card(rows);
     rows.into_iter().filter_map(|mut r| {
         if s_of(&r, "kind") != "go" { return Some(r); }
         let status = go_row_status(&s_of(&r, "action"));
@@ -225,13 +226,23 @@ fn offered(rows: Vec<Value>) -> Vec<Value> {
 /// #4771 AC2 — a stale go is refused before Jeff signs and before any decision
 /// is written or any run answered, pointing to the card's newest open go.
 fn refuse_stale_go(row: &str, action: &str) -> Result<(), String> {
+    // #4771 — one go per card: a newer go row of the card supersedes this one even while
+    // dagu still has this run waiting (a run that reached its go after the newer run started).
+    let card = go_action(action).map(|g| g.card).unwrap_or(0);
+    let pending = pending_approvals().unwrap_or_default();
+    let mine = pending.iter().find(|r| s_of(r, "row") == row).map(|r| s_of(r, "at")).unwrap_or_default();
+    if let Some(newer) = pending.iter()
+        .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row && s_of(r, "at") > mine)
+        .filter(|r| go_action(&s_of(r, "action")).map(|g| g.card == card).unwrap_or(false))
+        .max_by(|a, b| s_of(a, "at").cmp(&s_of(b, "at"))) {
+        return Err(stale_go_refusal(card, "this run was superseded by a newer run of the card", Some(&s_of(newer, "row"))));
+    }
     let status = go_row_status(action);
     let Err(why) = status.clone().and_then(|st| go_run_open(&st)) else { return Ok(()) };
     // #4771 — a go answered no by cicd-supersede reads Succeeded; to Jeff it is superseded
     let why = if status.as_deref().map(superseded_status).unwrap_or(false) {
         "this run was superseded by a newer run of the card".to_string()
     } else { why };
-    let card = go_action(action).map(|g| g.card).unwrap_or(0);
     let newest = pending_approvals().unwrap_or_default().into_iter()
         .filter(|r| s_of(r, "kind") == "go" && s_of(r, "row") != row)
         .filter(|r| go_action(&s_of(r, "action")).map(|g| g.card == card).unwrap_or(false))
