@@ -4,8 +4,9 @@
 //
 // On 11-02 06:02 #4642's land stopped on `HTTP 401: Requires authentication`:
 // the verbs ran `gh` and `git` with no environment, so both used Jeff's own gh
-// keyring and macOS keychain, and his login had lapsed. Now: one file (path in
-// DEPLOY_CONF), mode 0600, owned by the account the land runs as. gh gets it
+// keyring and macOS keychain, and his login had lapsed. Now: one file,
+// ~/.chorus/secrets/github-deploy of the account the land runs as (the runner
+// and dagu run as that account), mode 0600 and owned by it. gh gets it
 // through GH_TOKEN; git through an inline credential helper that reads the file
 // at the moment git asks, after every other helper is cleared. Never argv,
 // never logged, never anyone's keyring. Jeff mints it and writes the file.
@@ -13,7 +14,10 @@
 // BOUNDARY (shared/, #3513): pure, dep-free, single-file include!. Every path
 // is fully qualified so the including crate's `use` lines never collide.
 
-pub const DEPLOY_CONF: &str = "platform/config/werk-deploy.yaml";
+/// Under the running account's HOME on purpose: the file must be OWNED by the
+/// account the land runs as (check_credential_file), so that account's home is
+/// where it lives. Unlike dagu's shared data (#4771 AC3), nothing else reads it.
+pub const DEPLOY_CREDENTIAL_REL: &str = ".chorus/secrets/github-deploy";
 pub const CRED_FILE_ENV: &str = "WERK_DEPLOY_CREDENTIAL_FILE";
 
 /// git runs this through sh for `credential fill`; it answers `get` only, with
@@ -33,20 +37,14 @@ pub fn current_uid() -> u32 {
 }
 
 /// The credential file's path: $WERK_DEPLOY_CREDENTIAL_FILE, else
-/// `deploy_credential_file:` in DEPLOY_CONF. Missing either way is a refusal.
-pub fn deploy_credential_path(home: &std::path::Path) -> Result<std::path::PathBuf, String> {
+/// $HOME/.chorus/secrets/github-deploy of the running account.
+pub fn deploy_credential_path() -> Result<std::path::PathBuf, String> {
     if let Some(p) = std::env::var_os(CRED_FILE_ENV).filter(|p| !p.is_empty()) {
         return Ok(std::path::PathBuf::from(p));
     }
-    let conf = home.join(DEPLOY_CONF);
-    let text = std::fs::read_to_string(&conf)
-        .map_err(|e| format!("auth-fail: cannot read {} (names the deploy credential file): {}", conf.display(), e))?;
-    text.lines()
-        .filter_map(|l| l.trim().strip_prefix("deploy_credential_file:"))
-        .map(|v| v.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
-        .find(|v| !v.is_empty())
-        .map(std::path::PathBuf::from)
-        .ok_or_else(|| format!("auth-fail: {} has no deploy_credential_file", conf.display()))
+    std::env::var_os("HOME").filter(|h| !h.is_empty())
+        .map(|h| std::path::PathBuf::from(h).join(DEPLOY_CREDENTIAL_REL))
+        .ok_or_else(|| format!("auth-fail: no HOME to find ~/{} in", DEPLOY_CREDENTIAL_REL))
 }
 
 /// Exists, non-empty regular file, mode 0600 (nothing for group/other), owned
@@ -68,8 +66,8 @@ pub fn check_credential_file(p: &std::path::Path, uid: u32) -> Result<(), String
 }
 
 /// Resolve + check, then arm it for every later gh/git call of this process.
-pub fn arm_deploy_credential(home: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let p = deploy_credential_path(home)?;
+pub fn arm_deploy_credential() -> Result<std::path::PathBuf, String> {
+    let p = deploy_credential_path()?;
     check_credential_file(&p, current_uid())?;
     std::env::set_var(CRED_FILE_ENV, &p);
     Ok(p)

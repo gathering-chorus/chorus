@@ -366,7 +366,7 @@ pub fn run_sync() -> R<String> {
     let mode = parse_sync_args(&args)?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     // #4771 AC4 — the deploy credential or a loud refusal, before any git.
-    arm_deploy_credential(&home)?;
+    arm_deploy_credential()?;
     match mode {
         Mode::Repair => repair(&home),
         Mode::Ff => ff(&home),

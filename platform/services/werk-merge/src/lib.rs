@@ -492,7 +492,7 @@ fn merge_steps(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     }
 
     // #4771 AC4 — before any GitHub call: the deploy credential, or a loud refusal.
-    let cred = arm_deploy_credential(home)?;
+    let cred = arm_deploy_credential()?;
     jsonl(home, role, card, &trace, "merge.credential.armed", &format!(",\"file\":\"{}\"", cred.display()));
 
     let head_sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();

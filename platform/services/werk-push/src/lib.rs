@@ -249,7 +249,7 @@ pub fn run_push() -> R<String> {
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
     // #4771 AC4 — the deploy credential or a loud refusal, before any git.
-    arm_deploy_credential(&home)?;
+    arm_deploy_credential()?;
     push(card, &role, &home, &werk_base)
 }
 

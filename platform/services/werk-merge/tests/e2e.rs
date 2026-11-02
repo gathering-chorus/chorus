@@ -582,8 +582,12 @@ fn land_uses_the_deploy_credential_and_an_auth_failure_is_loud_and_names_the_fil
         let state = tmp("ghstate");
         std::env::set_var("GH_STATE", state.to_str().unwrap());
         std::env::remove_var("WERK_DEPLOY_CREDENTIAL_FILE");
+        // an account with no credential file: a scratch HOME
+        let real_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", tmp("nocred-home"));
         let err = merge(9773, "kade", &home, &werk_base).expect_err("no credential, no land");
-        assert!(err.starts_with("auth-fail") && err.contains("platform/config/werk-deploy.yaml"), "{err}");
+        if let Some(h) = real_home { std::env::set_var("HOME", h); }
+        assert!(err.starts_with("auth-fail") && err.contains(".chorus/secrets/github-deploy"), "{err}");
         assert!(!origin_main_has(&origin, "c.txt"));
         assert_eq!(fs::read_dir(&state).unwrap().count(), 0, "no PR was opened");
     }

@@ -180,7 +180,7 @@ pub fn teardown_werk(
     // none, git still never reaches a keyring, so a remote delete that needs
     // it fails and says so (teardown.auth.failed) instead of using Jeff's login.
     if armed_credential().is_none() {
-        let _ = arm_deploy_credential(home);
+        let _ = arm_deploy_credential();
     }
 
     let werk_present = werk.is_dir();
