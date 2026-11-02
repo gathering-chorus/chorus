@@ -22,8 +22,16 @@ pub const CRED_FILE_ENV: &str = "WERK_DEPLOY_CREDENTIAL_FILE";
 
 /// git runs this through sh for `credential fill`; it answers `get` only, with
 /// the fixed token user and the file's contents, read when git asks.
+/// Line 1 of the file only, CR and spaces stripped: anything after it (a stray
+/// pasted line) would otherwise reach git as a bad credential line, and git
+/// prints bad lines into the step log (#4771 run 5, Silas 08:48).
 pub const GIT_CRED_HELPER: &str =
-    "!f() { test \"$1\" = get || exit 0; printf 'username=x-access-token\\npassword=%s\\n' \"$(cat \"$WERK_DEPLOY_CREDENTIAL_FILE\")\"; }; f";
+    "!f() { test \"$1\" = get || exit 0; printf 'username=x-access-token\\npassword=%s\\n' \"$(head -n1 \"$WERK_DEPLOY_CREDENTIAL_FILE\" | tr -d '\\r \\t')\"; }; f";
+
+/// The credential as gh gets it: line 1, trimmed. Same rule as the git helper.
+pub fn credential_line(text: &str) -> &str {
+    text.lines().next().unwrap_or("").trim()
+}
 
 /// Tests that set CRED_FILE_ENV take this lock: the env is process-wide and
 /// these tests run in parallel inside each crate that includes this file.
@@ -93,7 +101,7 @@ pub fn with_deploy_credential(c: &mut std::process::Command, tool: &str) {
         "gh" => {
             c.env("GH_PROMPT_DISABLED", "1");
             if let Some(t) = armed_credential().and_then(|p| std::fs::read_to_string(p).ok()) {
-                c.env("GH_TOKEN", t.trim());
+                c.env("GH_TOKEN", credential_line(&t));
             }
         }
         _ => {}
@@ -109,9 +117,21 @@ pub fn is_auth_error(stderr: &str) -> bool {
 }
 
 /// The refusal for an auth failure: names the armed file's path, never its contents.
+/// Names the file's PATH and which refusal it was, never a line of git/gh's
+/// output: git echoes bad credential lines back in warnings (#4771 run 5).
 pub fn auth_fail_message(stderr: &str) -> String {
     let file = armed_credential().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "(none armed)".to_string());
-    format!("auth-fail: GitHub refused the deploy credential in {}: {}", file, stderr.lines().next().unwrap_or(""))
+    let s = stderr.to_lowercase();
+    let kind = if s.contains("401") || s.contains("bad credentials") || s.contains("authentication failed") {
+        "GitHub refused it (401: wrong, revoked or expired)"
+    } else if s.contains("403") || s.contains("permission") {
+        "GitHub refused it (403: no permission on this repo)"
+    } else if s.contains("could not read") || s.contains("gh auth login") {
+        "no credential reached GitHub"
+    } else {
+        "GitHub refused it"
+    };
+    format!("auth-fail: {kind}; deploy credential file {file}")
 }
 
 #[cfg(test)]
@@ -142,7 +162,29 @@ mod deploy_credential_4771 {
             .spawn().unwrap();
         child.stdin.take().unwrap().write_all(b"protocol=https\nhost=github.com\n\n").unwrap();
         let out = child.wait_with_output().unwrap();
-        (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+        (out.status.success(), format!("{}\n--stderr--\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+    }
+
+    // NEGATIVE PROOF (Silas 08:48): a file with a second line sends line 1 only,
+    // and neither git's stdout nor its warnings ever show line 2.
+    #[test]
+    fn a_second_line_in_the_file_never_reaches_git_or_its_log() {
+        let f = cred_file("twoline", "tok-4771\r\nSECOND-LINE-SECRET\n");
+        let (ok, out) = git_fill(Some(&f));
+        assert!(ok, "{out}");
+        assert!(out.contains("password=tok-4771\n"), "{out}");
+        assert!(!out.contains("SECOND-LINE-SECRET"), "line 2 leaked: {out}");
+        assert_eq!(credential_line("tok-4771\r\nSECOND-LINE-SECRET\n"), "tok-4771");
+        let _ = std::fs::remove_file(&f);
+    }
+
+    // NEGATIVE PROOF: the refusal text carries no line of git's output, so a
+    // credential echoed in a git warning never reaches a log or a nudge.
+    #[test]
+    fn the_auth_refusal_never_quotes_git_output() {
+        let m = auth_fail_message("warning: invalid credential line: SECRET-ECHO\nfatal: Authentication failed for 'https://github.com/a/b.git/'");
+        assert!(m.starts_with("auth-fail") && m.contains("401") && m.contains("deploy credential file"), "{m}");
+        assert!(!m.contains("SECRET-ECHO") && !m.contains("warning"), "{m}");
     }
 
     #[test]
