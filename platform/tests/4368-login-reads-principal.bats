@@ -76,7 +76,7 @@ nothing_started() { test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>
 # agy (10-15 05:29). The name here must stay in no list and no runtime table.
 @test "#4368 the list of three is gone: an agent the code never named logs in" {
   row pip-normal agent
-  mkdir -p "$T/roles/pip-normal"
+  mkdir -p "$T/roles/pip-normal"; cp "$T/roles/wren/.mcp.json" "$T/roles/pip-normal/"   # #4845: a Claude role needs its MCP config
   mk_token pip-normal; mkdir -p "$T/identity/pip-normal"
   run "$SCRIPT" login pip-normal
   test "$status" -eq 0

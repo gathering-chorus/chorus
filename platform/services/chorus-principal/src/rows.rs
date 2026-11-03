@@ -429,6 +429,18 @@ pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Op
     }
 }
 
+/// #4845 AC2 — a Claude role's MCP servers come from its role dir's `.mcp.json`;
+/// without one naming chorus-api the role boots with no tools (10-31). Named, never silent.
+pub fn mcp_config_ok(role_dir: &std::path::Path) -> Result<(), String> {
+    let f = role_dir.join(".mcp.json");
+    let txt = std::fs::read_to_string(&f).map_err(|_| format!("no MCP config at {}", f.display()))?;
+    let v: Value = serde_json::from_str(&txt).map_err(|_| format!("MCP config at {} is not JSON", f.display()))?;
+    if v.get("mcpServers").and_then(|m| m.get("chorus-api")).is_none() {
+        return Err(format!("MCP config at {} has no chorus-api server", f.display()));
+    }
+    Ok(())
+}
+
 /// #4432 — the agent roles, from the roles door (`/v1/roles/roles`): every row
 /// whose roleKind is "agent", by name. Abby Normal is the fourth; nothing in
 /// this crate lists the roles by hand any more. An unreadable reply is an
