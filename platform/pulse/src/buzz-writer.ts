@@ -72,7 +72,10 @@ export function body(content: string): string {
  * it never goes into #team, where Jeff reads the room. Matched with or without a delivery header.
  */
 export function ownerOnly(m: Pick<BuzzMessage, 'from' | 'content'>): boolean {
-  return m.from === 'system' && /^\s*(\[[^\]]*\]\s*)?Demo brief for the owner\b/.test(m.content);
+  if (m.from !== 'system') return false;
+  let t = m.content.trimStart();
+  if (t.startsWith('[')) { const end = t.indexOf(']'); t = end < 0 ? t : t.slice(end + 1).trimStart(); }
+  return t.startsWith('Demo brief for the owner');
 }
 
 /**
