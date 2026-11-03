@@ -89,7 +89,7 @@ fn negative_proof_a_go_already_asked_this_round_is_not_asked_again() {
 #[test]
 fn negative_proof_a_localhost_show_link_blocks_the_go() {
     // AC8 (Jeff 08:53): "all links must be wifi not localhost"
-    for bad in ["http://localhost:3503/x", "http://127.0.0.1:3345/api", "https://0.0.0.0/", "file:///tmp/x.png", "see the terminal"] {
+    for bad in ["http://localhost:3503/x", "http://127.0.0.1:3345/api", "https://0.0.0.0/", "file:///tmp/x.png", "see the terminal", "http://[::1]:3503/x", "http://[::]/"] {
         assert!(!reachable_link(bad), "{bad}");
         let o = vouch_line(7, "wren", "owner", R, P, bad, "AC1-3", "", "");
         let w = gates("pass") + &o + &nav();

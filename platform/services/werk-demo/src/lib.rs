@@ -1018,8 +1018,12 @@ fn vouch_of<'a>(witness: &'a str, card: u64, round: &str, patch: &str, as_: &str
 pub fn reachable_link(url: &str) -> bool {
     let u = url.trim().to_ascii_lowercase();
     let rest = match u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) { Some(r) => r, None => return false };
-    let host = rest.split(['/', ':', '?', '#']).next().unwrap_or("");
-    !host.is_empty() && host != "localhost" && !host.starts_with("127.") && host != "0.0.0.0" && host != "[::1]"
+    // Kade c38c84e10: an IPv6 host is bracketed; split on ':' would leave "[" and let [::1] through.
+    let host = match rest.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => rest.split(['/', ':', '?', '#']).next().unwrap_or(""),
+    };
+    !host.is_empty() && host != "localhost" && !host.starts_with("127.") && host != "0.0.0.0" && host != "::1" && host != "::"
 }
 
 /// #4875 AC2/AC3 — what still stands between this round and Jeff's go: any gate that did not
