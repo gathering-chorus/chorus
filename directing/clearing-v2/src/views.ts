@@ -54,10 +54,11 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
 
 /** #4575 — Jeff 07:01: "i dont see a way to send now in board". Every page carries the
  *  #team composer (Rooms has its own, per room); no @ goes to Wren, as in the room. */
-const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
+export const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
       <textarea id="composer-input" rows="1" placeholder="Message #team..." autocomplete="off"></textarea>
       <label for="composer-photo" class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple class="sr-only">📷</label>
+      <label for="composer-file" class="composer-file" title="Attach a file" aria-label="Attach a file"><input type="file" id="composer-file" multiple class="sr-only">📎</label>
       <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
     </form>
@@ -430,9 +431,16 @@ export function formatRoomText(raw: string): string {
 
 /** #4635 — a message that names an uploaded photo shows it, tap to open full size. */
 export function roomPhotos(text: string): string {
-  const names = uploadNames(text);
+  const names = uploadNames(text).filter(n => /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(n));
   if (names.length === 0) return '';
   return `<div class="msg-photos">${names.map((n) => `<a href="/uploads/${n}" target="_blank" rel="noopener"><img src="/uploads/${n}" alt="photo ${n}" loading="lazy"></a>`).join('')}</div>`;
+}
+
+/** #4866 — a message that names an uploaded file shows a download chip. */
+export function roomFiles(text: string): string {
+  const names = uploadNames(text).filter(n => !/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(n));
+  if (names.length === 0) return '';
+  return `<div class="msg-files">${names.map((n) => `<a href="/uploads/${n}" download="${escapeHtml(n.replace(/^\d+_/, ''))}" class="msg-file" target="_blank" rel="noopener">📎 ${escapeHtml(n)}</a>`).join('')}</div>`;
 }
 
 /** #4646 — a short fingerprint of a message's words; app.js computes the same one, so
@@ -464,6 +472,7 @@ export function renderRoomMessage(m: RoomsData['messages'][number]): string {
         ${thinkingBadge}
         <div>${linkifiedText}</div>
         ${roomPhotos(m.text)}
+        ${roomFiles(m.text)}
         ${m.threadCount ? `
           <div class="thread-container" style="margin-top:6px">
             <span class="thr">${m.threadCount} working replies${m.threadLast ? ` · last ${m.threadLast}` : ''}</span>

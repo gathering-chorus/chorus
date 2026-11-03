@@ -220,6 +220,7 @@ function appendMessage(msg) {
   el.appendChild(header);
   el.appendChild(text);
   appendPhotos(el, cleanText);
+  appendFiles(el, cleanText);
 
   // #4732 / #4736 / #4739 / #4749: If actor filter(s) or search query are active, check if incoming message matches filter
   if ((activeRoleFilters && activeRoleFilters.size > 0) || activeSearchQuery) {
@@ -348,15 +349,86 @@ function appendPhotos(el, text) {
   el.appendChild(box);
 }
 
+/** #4866 — names of uploaded files a message mentions */
+function fileNames(text) {
+  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+[-a-zA-Z0-9_.]*\.(?!jpg|png|gif|heic|webp|jpeg)[a-zA-Z0-9]{1,10})/gi), (m) => m[1]);
+}
+
+function appendFiles(el, text, docImpl) {
+  const names = fileNames(text);
+  if (names.length === 0) return;
+  const doc = docImpl || (typeof document !== 'undefined' ? document : null);
+  if (!doc || !doc.createElement) return;
+  const box = doc.createElement('div');
+  box.className = 'msg-files';
+  for (const n of names) {
+    const a = doc.createElement('a');
+    a.href = clearingBase() + '/uploads/' + n;
+    a.target = '_blank';
+    if (a.setAttribute) a.setAttribute('download', n.replace(/^\d+_/, ''));
+    a.className = 'msg-file';
+    a.textContent = '📎 ' + n;
+    box.appendChild(a);
+  }
+  el.appendChild(box);
+}
+
+function formatUploadError(json) {
+  if (!json) return { isAuth: false, text: 'upload failed', html: 'upload failed' };
+  if (json.error === 'not-signed-in' || json.status === 401) {
+    const signInUrl = json.signInUrl || '';
+    const detail = json.detail || 'Not signed in here.';
+    return {
+      isAuth: true,
+      signInUrl,
+      detail,
+      text: `${detail} Sign in to send: ${signInUrl}`,
+      html: signInUrl ? `${detail} <a href="${signInUrl}">Sign in to send</a>` : detail,
+    };
+  }
+  const reason = json.reason || json.detail || json.error || 'upload failed';
+  return { isAuth: false, text: reason, html: reason };
+}
+
+/** #4866 — upload any file (PDF, code, text, doc), then put its path in the composer. */
+async function uploadFile(file, fetchImpl) {
+  if (!file) return { ok: false, reason: 'no file chosen' };
+  const type = file.type || 'application/octet-stream';
+  const name = file.name || 'file.bin';
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/upload?filename=' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Content-Type': type, 'X-Filename': name },
+      body: file
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+      const err = formatUploadError(body);
+      return { ok: false, reason: err.text, errorInfo: err };
+    }
+    return { ok: true, path: body.path, name: body.name || name };
+  } catch (e) {
+    return { ok: false, reason: 'upload failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+}
+
 /** #4635 — the composer's camera button: upload the photo, then put its path in the
  *  message box so Jeff adds words and sends. Failure is named in the composer. */
 async function uploadPhoto(file, fetchImpl) {
   if (!file) return { ok: false, reason: 'no photo chosen' };
   const type = /\.hei[cf]$/i.test(file.name || '') ? 'image/heic' : (file.type || 'image/jpeg');
+  const name = file.name || 'photo.jpg';
   try {
-    const res = await (fetchImpl || fetch)(clearingBase() + '/api/upload', { method: 'POST', headers: { 'Content-Type': type }, body: file });
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/upload?filename=' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Content-Type': type, 'X-Filename': name },
+      body: file
+    });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.ok) return { ok: false, reason: body.reason || body.detail || ('upload failed (' + res.status + ')') };
+    if (!res.ok || !body.ok) {
+      const err = formatUploadError(body);
+      return { ok: false, reason: err.text };
+    }
     return { ok: true, path: body.path };
   } catch (e) {
     return { ok: false, reason: 'upload failed: ' + (e && e.message ? e.message : String(e)) };
@@ -392,6 +464,36 @@ function watchPhotoButton() {
     }
     // #4635 — Jeff 12:22: "much easier if i can pick several at once"
     if (status) status.textContent = failed.length ? failed.length + ' of ' + files.length + ' photos not attached: ' + failed[0] : '';
+    picker.value = '';
+    if (input && input.focus) input.focus();
+  });
+}
+
+function watchFileButton() {
+  if (typeof document === 'undefined') return;
+  const picker = document.getElementById('composer-file');
+  if (!picker || !picker.addEventListener) return;
+  const label = document.querySelector ? document.querySelector('.composer-file') : null;
+  if (label && label.addEventListener) {
+    label.addEventListener('click', (e) => {
+      if (e.target !== picker) {
+        e.preventDefault();
+        picker.click();
+      }
+    });
+  }
+  picker.addEventListener('change', async () => {
+    const input = document.getElementById('composer-input');
+    const status = document.getElementById('send-error');
+    const files = Array.from(picker.files || []);
+    const failed = [];
+    for (const [i, file] of files.entries()) {
+      if (status) status.textContent = 'Uploading file ' + (i + 1) + ' of ' + files.length + '…';
+      const out = await uploadFile(file);
+      if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📎 ' + out.path + ' ';
+      if (!out.ok) failed.push(out.reason);
+    }
+    if (status) status.textContent = failed.length ? failed.length + ' of ' + files.length + ' files not attached: ' + failed[0] : '';
     picker.value = '';
     if (input && input.focus) input.focus();
   });
@@ -1175,6 +1277,9 @@ function initComposerInput() {
 if (typeof document !== 'undefined') {
   initComposerInput();
   initTileFilters();
+  watchPhotoButton();
+  watchFileButton();
+  watchMicButton();
 }
 
 function initTrustStripTooltips() {
@@ -1215,9 +1320,14 @@ if (typeof module !== 'undefined' && module.exports) {
     loadOlderMessages,
     refreshPeopleRow,
     uploadPhoto,
+    uploadFile,
+    formatUploadError,
     watchPhotoButton,
+    watchFileButton,
     transcribeVoice,
     photoNames,
+    fileNames,
+    appendFiles,
     initStream,
     watchRoomScroll,
     countVisibleMessages,

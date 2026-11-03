@@ -1,9 +1,7 @@
 // @domain: messages
 /* eslint-disable security/detect-non-literal-fs-filename -- every path is the upload folder (fixed at startup from CLEARING_V2_UPLOAD_DIR or ~/.chorus/clearing-v2-uploads) plus a numeric timestamp name; nothing from the request reaches a path */
-// #4635 — Jeff 10-19 08:17: "i need a way to attach photos from phone", and 08:18 "if i can
-// attach photos it will really simplify me showing u things i want to change". A photo posts
-// to /api/upload, lands in a folder that survives reboots, and the message carries its full
-// path: the room shows it as an image, and a role reading the message can open the file.
+// #4635 — Jeff 10-19: attach photos from phone.
+// #4866 — Jeff 11-02: attach photos and files (PDF, txt, code, generic documents) up to 50MB.
 import express, { Request, Response } from 'express';
 import fs from 'fs';
 import os from 'os';
@@ -14,18 +12,33 @@ import { execFile } from 'child_process';
 export const UPLOAD_FOLDER = 'clearing-v2-uploads';
 export const DEFAULT_UPLOAD_DIR = process.env.CLEARING_V2_UPLOAD_DIR || path.join(os.homedir(), '.chorus', UPLOAD_FOLDER);
 
-const UPLOAD_NAME_RE = new RegExp(`/${UPLOAD_FOLDER}/(\\d+\\.(?:jpg|png|gif|heic))`, 'g');
+const UPLOAD_NAME_RE = new RegExp(`/${UPLOAD_FOLDER}/(\\d+[-a-zA-Z0-9_.]*\\.[a-zA-Z0-9]{1,10})`, 'gi');
 
 /** The uploaded file names a message mentions, in order (served at /uploads/<name>). */
 export function uploadNames(text: string): string[] {
   return Array.from(String(text || '').matchAll(UPLOAD_NAME_RE), (m) => m[1]);
 }
 
-function extFor(contentType: string): string {
-  if (/hei[cf]/.test(contentType)) return 'heic';
-  if (contentType.includes('png')) return 'png';
-  if (contentType.includes('gif')) return 'gif';
-  return 'jpg';
+export function extFor(contentType: string, originalName?: string): string {
+  if (originalName) {
+    const ext = path.extname(originalName).replace(/^\./, '').toLowerCase();
+    if (ext && /^[a-z0-9]{1,10}$/.test(ext)) return ext;
+  }
+  const ct = contentType.toLowerCase();
+  if (/hei[cf]/.test(ct)) return 'heic';
+  if (ct.includes('png')) return 'png';
+  if (ct.includes('gif')) return 'gif';
+  if (ct.includes('webp')) return 'webp';
+  if (ct.includes('jpeg') || ct.includes('jpg')) return 'jpg';
+  if (ct.includes('pdf')) return 'pdf';
+  if (ct.includes('text/plain') || ct.includes('text/csv')) return 'txt';
+  if (ct.includes('markdown')) return 'md';
+  if (ct.includes('json')) return 'json';
+  if (ct.includes('audio/webm')) return 'webm';
+  if (ct.includes('audio/mp4') || ct.includes('audio/m4a') || ct.includes('audio/aac')) return 'm4a';
+  if (ct.includes('audio/wav') || ct.includes('audio/x-wav')) return 'wav';
+  if (ct.includes('audio/mpeg') || ct.includes('audio/mp3')) return 'mp3';
+  return 'bin';
 }
 
 /** HEIC (iPhone) becomes JPEG with macOS sips; on failure the HEIC is kept. */
@@ -35,16 +48,26 @@ function toJpeg(heicPath: string, jpgPath: string): Promise<boolean> {
   });
 }
 
-/** Saves one uploaded image and returns the name it is served under and its full path. */
-export async function saveUpload(body: Buffer, contentType: string, dir: string, now = Date.now()): Promise<{ name: string; path: string }> {
+/** Saves one uploaded file and returns the name it is served under and its full path. */
+export async function saveUpload(
+  body: Buffer,
+  contentType: string,
+  dir: string,
+  now = Date.now(),
+  originalName?: string
+): Promise<{ name: string; path: string }> {
   fs.mkdirSync(dir, { recursive: true });
-  const ext = extFor(contentType);
-  const saved = path.join(dir, `${now}.${ext}`);
+  const ext = extFor(contentType, originalName);
+  const cleanOriginal = originalName
+    ? path.basename(originalName, path.extname(originalName)).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32)
+    : '';
+  const fileBasename = cleanOriginal ? `${now}_${cleanOriginal}.${ext}` : `${now}.${ext}`;
+  const saved = path.join(dir, fileBasename);
   fs.writeFileSync(saved, body);
   if (ext === 'heic') {
-    const jpg = path.join(dir, `${now}.jpg`);
+    const jpg = path.join(dir, cleanOriginal ? `${now}_${cleanOriginal}.jpg` : `${now}.jpg`);
     if (await toJpeg(saved, jpg)) {
-      fs.unlinkSync(saved);
+      try { fs.unlinkSync(saved); } catch {}
       return { name: path.basename(jpg), path: jpg };
     }
   }
@@ -60,26 +83,29 @@ export interface UploadOptions {
   notSignedIn: () => unknown;
 }
 
-/** Photos are Jeff's own: posting and viewing both need a signed-in session. */
+/** Photos & files are Jeff's own: posting and viewing both need a signed-in session. */
 export function registerUploadRoutes(app: express.Express, opts: UploadOptions): void {
   const serve = express.static(opts.dir, { index: false });
   app.use('/uploads', (req: Request, res: Response, next) => {
     if (!opts.signedIn(req)) { res.status(401).json(opts.notSignedIn()); return; }
     serve(req, res, next);
   });
-  app.post('/api/upload', express.raw({ type: () => true, limit: '40mb' }), async (req: Request, res: Response) => {
+  app.post('/api/upload', express.raw({ type: () => true, limit: '50mb' }), async (req: Request, res: Response) => {
     if (opts.readOnly) { res.status(403).json({ ok: false, reason: opts.readOnlyReason }); return; }
     if (!opts.signedIn(req)) { res.status(401).json(opts.notSignedIn()); return; }
-    const contentType = String(req.headers['content-type'] || '');
-    if (!/^image\//.test(contentType) || !Buffer.isBuffer(req.body) || req.body.length === 0) {
-      res.status(400).json({ ok: false, reason: 'not a photo: send the image itself with an image/* type' });
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ ok: false, reason: 'empty file: send bytes with the upload' });
       return;
     }
+    const contentType = String(req.headers['content-type'] || 'application/octet-stream');
+    const filename = typeof req.query.filename === 'string'
+      ? req.query.filename
+      : (typeof req.headers['x-filename'] === 'string' ? req.headers['x-filename'] : undefined);
     try {
-      const saved = await saveUpload(req.body, contentType, opts.dir);
-      res.json({ ok: true, url: `/uploads/${saved.name}`, path: saved.path });
+      const saved = await saveUpload(req.body, contentType, opts.dir, Date.now(), filename);
+      res.json({ ok: true, url: `/uploads/${saved.name}`, path: saved.path, name: saved.name });
     } catch (e) {
-      res.status(500).json({ ok: false, reason: `the photo could not be saved: ${(e as Error).message}` });
+      res.status(500).json({ ok: false, reason: `the file could not be saved: ${(e as Error).message}` });
     }
   });
 }
