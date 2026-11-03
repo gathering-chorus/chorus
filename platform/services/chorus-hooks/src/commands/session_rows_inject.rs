@@ -75,7 +75,7 @@ pub fn read_all(role: &str) -> Reads {
     let make = std::env::var("CHORUS_ATHENA_MAKE_URL").unwrap_or_else(|_| ATHENA_MAKE.to_string());
     let api = std::env::var("CHORUS_API_URL").unwrap_or_else(|_| CHORUS_API.to_string());
     Reads {
-        sessions: fetch_url(&format!("{make}/v1/identity/sessions?limit=500")),
+        sessions: fetch_url(&format!("{make}/v1/identity/sessions?endedAt.absent=true&limit=5000")), // #4838: open rows only, at the door
         runs: fetch_url(&format!("{make}/v1/identity/sessionruns?limit=500")),
         priorities: fetch_url(&format!("{api}/api/chorus/context/priorities?role={role}")),
     }

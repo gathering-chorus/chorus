@@ -59,6 +59,17 @@ export interface LoggedInRole { name: string; sessions: OpenSession[] }
  * rows carry a 10-minute expiry that renews, so a lapse between renewals is not
  * a logout (Kade 2026-10-12 09:42: Jeff's tile row lost Wren and Silas). */
 const SEEN_KEEPS_LIVE_MS = 60 * 60 * 1000;
+/**
+ * #4838 — the door query for live sessions: no endedAt, and an expiresAt no
+ * older than the seen window (sessionLive still decides inside it). Filtered at
+ * the door: the full list was 2,600 rows and 273 KB, 70 of its 77 "open" rows
+ * expired browser sign-ins, against a 3s abort.
+ */
+export function liveSessionsQuery(nowMs: number = Date.now()): string {
+  const after = new Date(nowMs - SEEN_KEEPS_LIVE_MS).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return `endedAt.absent=true&expiresAt.after=${encodeURIComponent(after)}&limit=5000`;
+}
+
 function sessionLive(r: { expiresAt?: string; lastSeenAt?: string }, nowMs: number): boolean {
   if (!r.expiresAt || Date.parse(r.expiresAt) > nowMs) return true;
   return !!r.lastSeenAt && nowMs - Date.parse(r.lastSeenAt) < SEEN_KEEPS_LIVE_MS;

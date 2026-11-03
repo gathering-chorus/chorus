@@ -6,7 +6,7 @@
  * no "unknown" to answer.
  */
 
-import { agentRolesFrom, loggedInRoles, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
+import { agentRolesFrom, liveSessionsQuery, loggedInRoles, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
 import type { SpineLine } from '../../src/derive-role-state';
 
 const T0 = Date.parse('2026-09-02T15:00:00-04:00');
@@ -193,5 +193,18 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
   it('role field mirrors name so consumers can key off either', async () => {
     const r = await fetchContextRoles(deps(), '/api/chorus/context/roles');
     for (const row of r.body.data.roles) expect(row.role).toBe(row.name);
+  });
+});
+
+// #4838 — the roles door asks the store for live sessions only; the door
+// decides (athena-make live_sessions_4838 proves it against real Jena).
+describe('#4838 liveSessionsQuery', () => {
+  test('asks for no endedAt and an expiresAt within the seen window, as an RFC 3339 Z time', () => {
+    const q = liveSessionsQuery(Date.parse('2026-11-03T19:40:00.123Z'));
+    expect(q).toBe('endedAt.absent=true&expiresAt.after=2026-11-03T18%3A40%3A00Z&limit=5000');
+  });
+  test('negative proof: the old unfiltered list query is gone', () => {
+    expect(liveSessionsQuery()).not.toMatch(/^limit=/);
+    expect(liveSessionsQuery()).toContain('endedAt.absent=true');
   });
 });

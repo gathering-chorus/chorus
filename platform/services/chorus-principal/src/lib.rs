@@ -1772,7 +1772,7 @@ fn ensure_channels(ctx: &Ctx) {
 
 /// `sweep` — close the sessions still reading open long after their token died.
 fn sweep(ctx: &Ctx) -> i32 {
-    let listing = sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
+    let listing = sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838: open rows, at the door
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
     let keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
     let now = iso_utc(now_ms() as u64 / 1000);
@@ -1930,7 +1930,7 @@ fn close_row_from(ctx: &Ctx, role: &str, session: &str, kept: Option<&str>) -> R
     // the row saved at login; else the listing (the single-row GET lacks name/ownedBy)
     let saved = match kept { Some(k) => k.to_string(), None => fs::read_to_string(role_id_dir.join("session.row.json")).unwrap_or_default() };
     let row = lifecycle::closed_row(&saved, session, &ended).or_else(|| {
-        let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?limit=1000", ctx.api)]).unwrap_or_default();
+        let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838: the open row being ended
         lifecycle::closed_row(&list, session, &ended)
     });
     let result = match row {
@@ -2001,7 +2001,7 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
 }
 
 fn status(ctx: &Ctx) -> i32 {
-    let listing = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
+    let listing = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838
     let presences = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
     for role in roles.iter().map(String::as_str) {
