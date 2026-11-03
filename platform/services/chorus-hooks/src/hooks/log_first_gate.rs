@@ -34,8 +34,8 @@ fn is_code_file(path: &str) -> bool {
 }
 
 /// Check if the card context is a fix — reads type: label from board (#1909)
-fn is_defect_fix() -> bool {
-    crate::types::is_fix_card()
+fn is_defect_fix(role: &str) -> bool {
+    crate::types::is_fix_card_for(role)
 }
 
 /// Build/lint error markers — when the session contains these, the fix is for
@@ -165,7 +165,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     // Only enforce on defect fixes — new features are exempt
-    if !is_defect_fix() {
+    if !is_defect_fix(input.role().as_str()) {
         return HookResponse::allow();
     }
 

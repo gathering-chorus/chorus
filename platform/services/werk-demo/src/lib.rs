@@ -989,6 +989,17 @@ pub fn go_ask(line: &str, posted: &Result<(), String>, card: u64, run: &str, rol
     }
 }
 
+/// #4875 — the automated announce, to the OWNER only: what ran, and the one next step. Green:
+/// show the change working, then `werk-demo vouch`, which alone puts the go in front of Jeff.
+/// Red: each red gate named, and no vouch offered. Never a go link. Pure.
+pub fn owner_brief(card: u64, line: &str, gates_green: bool, reds: &[String]) -> String {
+    if gates_green && reds.is_empty() {
+        format!("{line} · for you, not Jeff: show it working, then `werk-demo vouch {card}` (with what is proven and what is not; your navigator vouches too)")
+    } else {
+        format!("{line} · for you, not Jeff: red — {} · fix and re-run; nothing goes to Jeff while a gate is red", reds.join(", "))
+    }
+}
+
 /// The per-run sign page, only for when the go row could not be posted (see announce).
 pub fn sign_link(card: u64, run: &str, role: &str) -> String {
     format!("{}?card={card}&run={run}&role={role}", approvals_link().trim_end_matches("approvals"))
@@ -1087,7 +1098,7 @@ pub fn announce_silent(witness: &str, card: u64, round: &str, patch_id: &str) ->
         })
 }
 
-fn announce_to_jeff(from: &str, trace: &str, msg: &str) {
+fn announce_to_owner(from: &str, trace: &str, msg: &str) {
     let args = nudge_send_args("system", from, msg);
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
     let _ = run(&hook_shim(), &argv);
@@ -1586,18 +1597,13 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         let tally = format!("gates {} · reviews {}/{} · {} · AC {}/{}",
             if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
             test_summary.replace("tests: ", "tests "), checked, total);
-        // #4642: the go is a row on Jeff's list; the line points there. No row, no announce.
-        // #4771 — the go binds the commit THIS run pushed and tested, never the werk's HEAD now:
-        // run 11 (11-02) tested affda76 and its go stamped daf6848, a later commit nobody tested.
-        let posted = tested_head(home, card, &trace)
-            .ok_or_else(|| format!("no go row: no push of #{card} recorded for run {trace}, so no tested commit to bind"))
-            .and_then(|head| go_approval_body(card, &trace, &head, &go_row_title(home, card)))
-            .and_then(|body| post_go_approval(home, role, &body));
-        // The go is always askable. If the door refused the row (the card that brings go rows
-        // demos against a door whose model does not have them yet; or a real refusal), the ask
-        // carries the per-run sign page today's chorus-go serves, and says why — never a dead end.
+        // #4875 — the announce goes to the owner, never Jeff, and posts no go row: the owner
+        // shows the work, then vouches (`werk-demo vouch`); only the vouch puts the go in front
+        // of Jeff. Log evidence: 11-03 06:58 #4873's go went out with "gates ✗ · AC 0/2".
         let line = announce_line(card, &round, &tally, &variant_url, &clearing_url);
-        announce_to_jeff(role, &trace, &go_ask(&line, &posted, card, &trace, role));
+        let reds: Vec<String> = gate_verdicts(&witness, card).into_iter()
+            .filter(|(_, r)| r != "pass").map(|(g, r)| format!("{g} {r}")).collect();
+        announce_to_owner(role, &trace, &owner_brief(card, &line, gates_green, &reds));
         jsonl(home, role, card, &trace, "demo.announced",
               &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
     }

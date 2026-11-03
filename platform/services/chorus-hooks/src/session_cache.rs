@@ -270,56 +270,59 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
     let root = runtime_state_root();
     if let Some(lines) = canonical_history(&root, session_id) { return lines; }
 
-    // Try cwd-derived path first (fast path)
     let project_key = cwd.replace('/', "-");
-    #[allow(clippy::manual_strip)]
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
-    let primary_path = format!(
-        "{}/.claude/projects/-{}/{}.jsonl",
-        home, project_key, session_id
-    );
-    if let Ok(mut f) = std::fs::File::open(&primary_path) {
-        let lines = tail_lines(&mut f, TAIL_LINES);
-        if !lines.is_empty() {
-            return lines;
-        }
+    let project_key = project_key.strip_prefix('-').unwrap_or(&project_key);
+    let roles_root = std::env::var("CHORUS_ROLE_HOMES_ROOT").unwrap_or_else(|_| "/Users".to_string());
+    for h in transcript_homes(&home, &roles_root) {
+        let lines = read_transcript_in(&h, project_key, session_id);
+        if !lines.is_empty() { return lines; }
     }
+    Vec::new()
+}
 
-    // Fallback: search all project dirs for this session UUID
-    // Skip overly broad dirs like -Users-jeffbridwell (home root) — triggers macOS TCC prompts
+/// #4875 — role sessions run under their own accounts (`/Users/chorus-<role>`),
+/// but this daemon's HOME is jeffbridwell's, so their transcripts were never
+/// found: every read came back empty and the log-first gate denied every edit
+/// from a role account. Try the daemon's own HOME first, then each role home.
+fn transcript_homes(home: &str, roles_root: &str) -> Vec<String> {
+    let mut homes = vec![home.to_string()];
+    if let Ok(entries) = std::fs::read_dir(roles_root) {
+        let mut extra: Vec<String> = entries.flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("chorus-"))
+            .map(|e| e.path().to_string_lossy().to_string())
+            .filter(|p| p != home)
+            .collect();
+        extra.sort();
+        homes.extend(extra);
+    }
+    homes
+}
+
+/// One home: the cwd-derived project dir first (fast path), then a scan of
+/// that home's chorus project dirs for the session UUID (cwd changed after a
+/// restart). Only chorus project dirs are scanned — anything else may resolve
+/// to protected folders and trigger macOS TCC dialogs (~20x/day for Jeff).
+fn read_transcript_in(home: &str, project_key: &str, session_id: &str) -> Vec<String> {
+    let primary = format!("{}/.claude/projects/-{}/{}.jsonl", home, project_key, session_id);
+    if let Ok(mut f) = std::fs::File::open(&primary) {
+        let lines = tail_lines(&mut f, TAIL_LINES);
+        if !lines.is_empty() { return lines; }
+    }
     let projects_dir = format!("{}/.claude/projects", home);
     if let Ok(entries) = std::fs::read_dir(&projects_dir) {
         for entry in entries.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
-            // Only scan chorus project dirs — anything else may resolve to
-            // protected folders (Documents, Downloads) and trigger macOS TCC dialogs.
-            // Those dialogs interrupt Jeff ~20x/day. Be strict.
-            let dir_name = entry.file_name().to_string_lossy().to_string();
-            if !dir_name.contains("chorus") {
-                continue;
-            }
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue; }
+            if !entry.file_name().to_string_lossy().contains("chorus") { continue; }
             let candidate = entry.path().join(format!("{}.jsonl", session_id));
             if let Ok(mut f) = std::fs::File::open(&candidate) {
                 let lines = tail_lines(&mut f, TAIL_LINES);
                 if !lines.is_empty() {
-                    debug!(
-                        module = "session_cache",
-                        event = "fallback_found",
-                        path = %candidate.display(),
-                        lines = lines.len(),
-                    );
+                    debug!(module = "session_cache", event = "fallback_found", path = %candidate.display(), lines = lines.len());
                     return lines;
                 }
             }
         }
     }
-
     Vec::new()
 }
 
@@ -327,6 +330,27 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn a_role_account_transcript_is_found_in_the_role_home_4875() {
+        let t = std::env::temp_dir().join(format!("sc-4875-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let daemon_home = t.join("jeff");
+        let roles = t.join("Users");
+        let proj = roles.join("chorus-wren/.claude/projects/-Users-jeff-chorus-roles-wren");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::create_dir_all(&daemon_home).unwrap();
+        std::fs::write(proj.join("sid-1.jsonl"), "{\"a\":1}\n{\"b\":2}\n").unwrap();
+        let homes = transcript_homes(daemon_home.to_str().unwrap(), roles.to_str().unwrap());
+        assert_eq!(homes.len(), 2, "daemon home first, then each chorus-* home: {homes:?}");
+        let found: Vec<String> = homes.iter().map(|h| read_transcript_in(h, "Users-jeff-chorus-roles-wren", "sid-1")).find(|l| !l.is_empty()).unwrap_or_default();
+        assert_eq!(found.len(), 2, "the role's transcript is read: {found:?}");
+        // negative proof (#3734): only the daemon's HOME, as before, finds nothing
+        assert!(read_transcript_in(daemon_home.to_str().unwrap(), "Users-jeff-chorus-roles-wren", "sid-1").is_empty());
+        // and a session that exists nowhere is still empty, never another session's lines
+        assert!(homes.iter().all(|h| read_transcript_in(h, "Users-jeff-chorus-roles-wren", "sid-2").is_empty()));
+        let _ = std::fs::remove_dir_all(&t);
+    }
 
     #[test]
     fn canonical_evidence_projects_completed_operations_and_actual_text() {
