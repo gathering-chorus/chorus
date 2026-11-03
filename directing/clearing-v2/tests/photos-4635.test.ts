@@ -61,14 +61,14 @@ describe('#4635 attach a photo', () => {
     } finally { await s.close(); }
   });
 
-  test('a read-only demo refuses, and a non-image is refused by name', async () => {
+  test('a read-only demo refuses, and empty upload is refused by name', async () => {
     const ro = await up(true);
     try { expect((await post(ro.base, PNG, 'image/png', JEFF)).status).toBe(403); } finally { await ro.close(); }
     const s = await up();
     try {
-      const res = await post(s.base, Buffer.from('hello'), 'text/plain', JEFF);
+      const res = await post(s.base, Buffer.alloc(0), 'image/png', JEFF);
       expect(res.status).toBe(400);
-      expect(((await res.json()) as { reason: string }).reason).toMatch(/not a photo/);
+      expect(((await res.json()) as { reason: string }).reason).toMatch(/empty/);
     } finally { await s.close(); }
   });
 
