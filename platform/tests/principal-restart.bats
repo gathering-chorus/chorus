@@ -14,6 +14,7 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  unset CHORUS_TRACE_ID   # the pipeline runs these under its own trace; each case starts with none
   # every agent role the fixture roles door lists has a home with its MCP config
   for r in wren kade silas abby-normal; do
     mkdir -p "$T/roles/$r" "$T/identity/$r"; mk_token "$r"
@@ -86,4 +87,11 @@ trace_log() { printf '#!/bin/bash\necho "trace=${CHORUS_TRACE_ID:-} $*" >> "%s/s
   run "$SCRIPT" login silas; b=$(printf '%s\n' "$output" | sed -n 's/^trace: //p')
   [ -n "$a" ] && [ -n "$b" ] && [ "$a" != "$b" ]
   ! grep -q "^trace= " "$T/spine.log" || return 1
+}
+
+@test "a caller's trace is kept, not replaced (a login run inside a traced step joins it)" {
+  trace_log
+  CHORUS_TRACE_ID=caller-trace-1 run "$SCRIPT" login silas
+  printf '%s' "$output" | grep -qx "trace: caller-trace-1"
+  [ -z "$(grep -v "^trace=caller-trace-1 " "$T/spine.log" || true)" ]
 }
