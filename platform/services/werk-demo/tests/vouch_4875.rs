@@ -103,7 +103,7 @@ fn negative_proof_a_localhost_show_link_blocks_the_go() {
 #[test]
 fn the_go_message_lists_each_ac_checked_or_not() {
     // Jeff 09:17 "yes add the ac": one phone-sized line per AC, the check: receipt cut off.
-    let view = "  Desc:\n    - [x] AC1: the announce goes to the owner. check: test platform/tests/demo-order.bats\n    - [ ] AC2: the go reaches Jeff only via the vouch. check: test x\n    not an ac line";
+    let view = "✓\tAC1: the announce goes to the owner.\ttest\n☐\tAC2: the go reaches Jeff only via the vouch.\ttest\nborg-prove: noise line";
     let c = ac_checklist(view);
     assert_eq!(c, "✓ AC1: the announce goes to the owner.\n☐ AC2: the go reaches Jeff only via the vouch.", "{c}");
     // negative proof: a view with no AC lines yields nothing, never a made-up list
@@ -113,9 +113,9 @@ fn the_go_message_lists_each_ac_checked_or_not() {
 #[test]
 fn negative_proof_one_unchecked_ac_blocks_the_go() {
     // Kade ba6102a8f / Jeff 09-09: "i NEVER want to be asked for go on a card with unfinished ac"
-    let done = "    - [x] AC1: a. check: t\n    - [x] AC2: b. check: t";
+    let done = "✓\tAC1: a.\ttest\n✓\tAC2: b.\ttest";
     assert!(ac_unfinished(done).is_empty());
-    let one_open = "    - [x] AC1: a. check: t\n    - [ ] AC2: b. check: t";
+    let one_open = "✓\tAC1: a.\ttest\n☐\tAC2: b.\ttest";
     assert_eq!(ac_unfinished(one_open), vec!["unfinished AC2: b.".to_string()]);
 }
 

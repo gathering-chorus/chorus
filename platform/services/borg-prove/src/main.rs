@@ -233,11 +233,20 @@ fn failed_step(dag: &str, run: &str) -> String {
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let (Some(mode), Some(card)) = (a.first(), a.get(1).and_then(|c| c.trim_start_matches('#').parse::<u32>().ok())) else {
-        eprintln!("usage: borg-prove intake|verify|stage|verdict|prod|record|route <card> <role> [run-id routes]");
+        eprintln!("usage: borg-prove ac|intake|verify|stage|verdict|prod|record|route <card> <role> [run-id routes]");
         exit(2);
     };
     let role = a.get(2).cloned().unwrap_or_default();
     match mode.as_str() {
+        // #4875 — the card's AC as the go message shows them: one line each, box state from the
+        // same parser borg-prove proves with. Exit 1 (named) when the board does not answer.
+        "ac" => {
+            let desc = std::env::var("BORG_CARD_DESC").ok().and_then(|p| std::fs::read_to_string(p).ok()).map(|t| desc_of(&t)).or_else(|| card_text(card));
+            let Some(desc) = desc else { eprintln!("borg-prove: the board did not answer for #{card}"); exit(1) };
+            for (done, c) in borg_prove::ac_lines(card, &desc) {
+                println!("{}\t{}\t{}", if done { "✓" } else { "☐" }, c.statement, c.kind);
+            }
+        }
         "intake" => match intake(&checks(card)) {
             Ok(()) => println!("#{card} intake: every AC has a check"),
             Err(errs) => {

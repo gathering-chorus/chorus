@@ -1065,13 +1065,14 @@ pub fn go_already_asked(witness: &str, card: u64, round: &str, patch: &str) -> b
     witness.lines().any(|l| l.contains("\"event\":\"demo.go.asked\"") && l.contains(&card_key) && line_keyed(l, round, patch))
 }
 
-/// #4875 (Jeff 09:17 "yes add the ac") — the card's AC as a phone-sized checklist for the go
-/// message: one line per AC, ✓ or ☐, its text cut before the `check:` receipt. Pure.
-pub fn ac_checklist(card_view: &str) -> String {
-    card_view.lines().map(str::trim).filter_map(|t| {
-        let (mark, rest) = if let Some(r) = t.strip_prefix("- [x]") { ("✓", r) }
-            else if let Some(r) = t.strip_prefix("- [ ]") { ("☐", r) } else { return None };
-        let text = rest.split(" check:").next().unwrap_or("").trim();
+/// #4875 (Jeff 09:17 "yes add the ac"; 09:28 one parser) — the card's AC as a phone-sized
+/// checklist, from `borg-prove ac <card>` (one tab line each: ✓|☐, statement, check kind), so the
+/// go message and the prover read the AC through the same parser. Pure over that output.
+pub fn ac_checklist(borg_ac: &str) -> String {
+    borg_ac.lines().filter_map(|l| {
+        let mut f = l.split('\t');
+        let (mark, text) = (f.next()?, f.next()?.trim());
+        if mark != "✓" && mark != "☐" { return None; }
         let short: String = text.chars().take(90).collect();
         Some(format!("{mark} {short}{}", if text.chars().count() > 90 { "…" } else { "" }))
     }).collect::<Vec<_>>().join("\n")
@@ -2670,7 +2671,8 @@ pub fn run_demo() -> R<DemoOutcome> {
         if go_already_asked(&witness, card, &round, &patch) {
             return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; the go already reached Jeff for this round — nothing more sent"), exit: 0 });
         }
-        let cv = run(&script_path(&home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+        // one reader of the card's AC: borg-prove's (Jeff 09:28); a failed read is "" → refused
+        let cv = run(&script_path(&home, "borg-prove"), &["ac", &card.to_string()]).unwrap_or_default();
         let mut missing = vouch_missing(&witness, card, &round, &patch, &owner);
         missing.extend(ac_unfinished(&cv));
         if !missing.is_empty() {
