@@ -98,6 +98,9 @@ DEST="$BIN_DIR/$NAME"
 DEST_TMP="$DEST.tmp.$$"
 
 mkdir -p "$BIN_DIR"
+# #4853: a werk slot runs as the runner's account, which refuses a slot dir or
+# binary that group/other can write. Role umask is 002, so set modes explicitly.
+if [ "$TARGET" = "werk" ]; then chmod 0755 "$BIN_DIR"; fi
 
 # #3939 — SMOKE BEFORE INSTALL: run the CANDIDATE against a throwaway repo.
 # A verb that fails its own fixture never becomes the running verb — the
@@ -193,6 +196,7 @@ if ! cp -p "$SRC" "$DEST_TMP" 2>/dev/null; then
   rm -f "$DEST_TMP"
   exit 5
 fi
+if [ "$TARGET" = "werk" ]; then chmod 0755 "$DEST_TMP"; fi  # #4853: cp -p keeps a 775 built under umask 002
 
 if ! mv -f "$DEST_TMP" "$DEST" 2>/dev/null; then
   echo "chorus-bin-install: atomic move failed" >&2

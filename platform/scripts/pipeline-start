@@ -129,7 +129,7 @@ if [ -d "$slot" ]; then
     [ -f "$src" ] || src="$installed/$name"
     [ -f "$src" ] && [ "$(head -c 2 "$src")" != "#!" ] || continue
     cmp -s "$src" "$f" && continue
-    cp "$src" "$f.refresh.$$" && chmod +x "$f.refresh.$$" && mv -f "$f.refresh.$$" "$f" &&
+    cp "$src" "$f.refresh.$$" && chmod 0755 "$f.refresh.$$" && mv -f "$f.refresh.$$" "$f" &&
       echo "pipeline-start: refreshed $role-bin/$name from the installed verb (the card does not change it)" >&2
   done
 fi
