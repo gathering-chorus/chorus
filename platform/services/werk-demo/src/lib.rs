@@ -1014,6 +1014,14 @@ fn vouch_of<'a>(witness: &'a str, card: u64, round: &str, patch: &str, as_: &str
         && not_by.is_none_or(|o| json_str_after(l, "role").is_some_and(|r| !r.is_empty() && r != o)))
 }
 
+/// #4875 AC8 — a link Jeff can open from his phone: http(s), and not a loopback host. Pure.
+pub fn reachable_link(url: &str) -> bool {
+    let u = url.trim().to_ascii_lowercase();
+    let rest = match u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) { Some(r) => r, None => return false };
+    let host = rest.split(['/', ':', '?', '#']).next().unwrap_or("");
+    !host.is_empty() && host != "localhost" && !host.starts_with("127.") && host != "0.0.0.0" && host != "[::1]"
+}
+
 /// #4875 AC2/AC3 — what still stands between this round and Jeff's go: any gate that did not
 /// pass, an owner vouch with nothing shown, no navigator vouch from a role other than the owner.
 /// Empty = the go may go to Jeff. Pure.
@@ -1033,6 +1041,9 @@ pub fn vouch_missing(witness: &str, card: u64, round: &str, patch: &str, owner: 
     match own {
         None => missing.push(format!("owner vouch ({owner})")),
         Some(l) if blank(l, "shown") => missing.push("owner vouch: nothing shown".into()),
+        // #4875 AC8 (Jeff 08:53 "all links must be wifi not localhost"): Jeff opens it on his phone.
+        Some(l) if !reachable_link(&json_str_after(l, "shown").unwrap_or_default()) =>
+            missing.push("owner vouch: shown link is not reachable from Jeff's phone (no localhost/127.0.0.1; a wifi or public URL)".into()),
         // Kade b1c438aeb (3): a vouch that names no proof is not a vouch.
         Some(l) if blank(l, "proven") => missing.push("owner vouch: nothing proven".into()),
         Some(_) => {}
