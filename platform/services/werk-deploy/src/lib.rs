@@ -1788,6 +1788,16 @@ fn run_crate_mode(args: &[String]) -> R<String> {
 
 /// The card's changed SERVICE crate(s): names under `platform/services/<X>/` in the diff,
 /// de-duplicated, order-stable. These are the only units a prod deploy needs to (re)build
+/// #4838 — the order a land deploys in: the model door (athena-make) first, then
+/// the other crates, then the TS services. A caller that learns a new door query
+/// must never restart before the door that answers it (Kade 15:04: an old door
+/// answers 400 to an unknown filter).
+pub fn deploy_order(crates: &[String], ts: &[String]) -> Vec<String> {
+    let door = crates.iter().filter(|c| c.as_str() == "athena-make");
+    let rest = crates.iter().filter(|c| c.as_str() != "athena-make");
+    door.chain(rest).chain(ts.iter()).cloned().collect()
+}
+
 /// from canonical + install — everything else on main is already built and deployed.
 pub fn changed_service_crates(diff: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -2360,7 +2370,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         canonical_ff_sync(&home_s)
             .map_err(|e| died(home, role, card, trace, "canonical-ff-fail", e))?;
     }
-    let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
+    let deployed: Vec<String> = deploy_order(&crates, &ts);
     let mut labels: Vec<String> = Vec::new();
     for c in &deployed {
         deploy_crate_canonical(home, role, card, trace, c)
