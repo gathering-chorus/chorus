@@ -1949,8 +1949,68 @@ fn agent_bin() -> String {
     env::var("CHORUS_AGENT_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/chorus-agent", env::var("HOME").unwrap_or_default()))
 }
 
+/// #4866 — CHORUS_GATE_PROFILE wins. Unset, an account with no claude (Abby,
+/// on Gemini) uses the one profile in its own ~/.chorus/agent-profiles.json, so
+/// its gates run as itself instead of failing "no headless model". An account
+/// with claude keeps the Claude path; zero or several profiles choose nothing.
 fn gate_profile() -> Option<String> {
-    env::var("CHORUS_GATE_PROFILE").ok().filter(|s| !s.trim().is_empty())
+    let set = env::var("CHORUS_GATE_PROFILE").ok();
+    choose_gate_profile(set.as_deref(), claude_available, || {
+        let home = env::var("HOME").ok()?;
+        fs::read_to_string(Path::new(&home).join(".chorus/agent-profiles.json")).ok()
+    })
+}
+
+/// #4866 — the rule, without the environment: an explicit profile wins; with
+/// claude present, none; otherwise the account's only profile, or none.
+pub fn choose_gate_profile(set: Option<&str>, has_claude: impl FnOnce() -> bool, profiles: impl FnOnce() -> Option<String>) -> Option<String> {
+    if let Some(p) = set.filter(|s| !s.trim().is_empty()) {
+        return Some(p.to_string());
+    }
+    if has_claude() {
+        return None;
+    }
+    let names = profile_names(&profiles()?);
+    if names.len() == 1 { names.into_iter().next() } else { None }
+}
+
+/// #4866 — the keys of the top-level "profiles" object (std-only JSON walk).
+pub fn profile_names(text: &str) -> Vec<String> {
+    let b = text.as_bytes();
+    let (mut i, mut depth, mut names) = (0usize, 0i32, Vec::new());
+    let mut start: Option<i32> = None; // depth of the profiles object once found
+    let mut last_key_top = String::new();
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                let s = i + 1;
+                i += 1;
+                while i < b.len() && b[i] != b'"' {
+                    if b[i] == b'\\' { i += 1; }
+                    i += 1;
+                }
+                let word = String::from_utf8_lossy(&b[s..i.min(b.len())]).into_owned();
+                let mut j = i + 1;
+                while j < b.len() && (b[j] as char).is_whitespace() { j += 1; }
+                let is_key = j < b.len() && b[j] == b':';
+                if is_key && depth == 1 { last_key_top = word.clone(); }
+                if is_key && start == Some(depth) { names.push(word); }
+            }
+            b'{' => {
+                depth += 1;
+                if start.is_none() && depth == 2 && last_key_top == "profiles" { start = Some(2); }
+            }
+            b'}' => {
+                if start == Some(depth) { return names; }
+                depth -= 1;
+            }
+            b'[' => depth += 1,
+            b']' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    names
 }
 
 /// Encode arbitrary prompt text as a JSON string (werk-demo is std-only).
@@ -3292,6 +3352,38 @@ mod gate_profile_tests_4424 {
         assert_eq!(json_unescape(&extract_json_str(&stdin, "input").unwrap()), "card text \"quoted\"");
         assert_eq!(extract_json_str(&stdin, "input_revision").as_deref(), Some("abc123"));
         assert!(stdin.contains("\"output_schema\":{"));
+    }
+
+    const PROFILES_ONE: &str = r#"{"version":1,"roles":{"abby-normal":{"profile":"x"}},"profiles":{"gemini-managed":{"runtime":"gemini","worker_args":["a"],"adapter_config":{"k":{"n":1}}}},"peer_uids":[1]}"#;
+    const PROFILES_TWO: &str = r#"{"profiles":{"a":{"x":{}},"b":{}}}"#;
+
+    #[test]
+    fn profile_names_reads_only_the_top_level_profiles_keys() {
+        assert_eq!(profile_names(PROFILES_ONE), vec!["gemini-managed".to_string()]);
+        assert_eq!(profile_names(PROFILES_TWO), vec!["a".to_string(), "b".to_string()]);
+        assert!(profile_names(r#"{"roles":{"profiles":{"nested":{}}}}"#).is_empty(), "a nested 'profiles' is not the top-level one");
+        assert!(profile_names("not json").is_empty());
+    }
+
+    #[test]
+    fn an_account_without_claude_gates_on_its_only_profile() {
+        // #4866: Abby's cicd ran as chorus-abby-normal (no claude) and every gate failed.
+        let got = choose_gate_profile(None, || false, || Some(PROFILES_ONE.to_string()));
+        assert_eq!(got.as_deref(), Some("gemini-managed"));
+    }
+
+    #[test]
+    fn negative_proof_claude_present_or_ambiguous_profiles_choose_nothing() {
+        assert_eq!(choose_gate_profile(None, || true, || Some(PROFILES_ONE.to_string())), None, "an account with claude keeps the Claude path");
+        assert_eq!(choose_gate_profile(None, || false, || Some(PROFILES_TWO.to_string())), None, "two profiles: never guess");
+        assert_eq!(choose_gate_profile(None, || false, || None), None, "no profile file: still no model");
+        assert_eq!(choose_gate_profile(Some("  "), || false, || None), None, "a blank override is no override");
+    }
+
+    #[test]
+    fn an_explicit_gate_profile_still_wins() {
+        let got = choose_gate_profile(Some("gate-chat"), || panic!("claude not consulted"), || panic!("file not read"));
+        assert_eq!(got.as_deref(), Some("gate-chat"));
     }
 
     #[test]
