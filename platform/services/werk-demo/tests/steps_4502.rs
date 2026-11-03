@@ -69,8 +69,8 @@ fn each_step_exits_by_what_it_recorded() {
     let fail_flag = home.join("fail");
     let claude = home.join("claude-stub");
     write_exec(&claude, &format!(
-        "#!/bin/sh\ncat >/dev/null\nif [ -f \"{}\" ]; then echo 'model down' >&2; exit 1; fi\necho '{{\"result\":\"pass\",\"findings\":\"looks right\"}}'\n",
-        fail_flag.display()
+        "#!/bin/sh\ncat >/dev/null\nif [ -f \"{}\" ]; then echo 'model down' >&2; exit 1; fi\nif [ -f \"{}\" ]; then echo '{{\"result\":\"fail\",\"findings\":\"door not answering\"}}'; exit 0; fi\necho '{{\"result\":\"pass\",\"findings\":\"looks right\"}}'\n",
+        fail_flag.display(), home.join("red").display()
     ));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);
     std::env::remove_var("CHORUS_GATE_PROFILE");
@@ -86,11 +86,19 @@ fn each_step_exits_by_what_it_recorded() {
     assert_eq!(down.exit, 1, "a gate that could not run exits non-zero: {}", down.message);
     assert!(down.message.contains("could not run") && down.message.contains("model down"), "names why: {}", down.message);
 
-    // the model answers → the gate records pass → exit 0
+    // #4851 — a recorded FAIL is not final for the round: the retry runs the gate
+    // again (the 13:51 ops red was a door blip). The no-op below is the negative
+    // proof: a recorded pass is never re-run.
     fs::remove_file(&fail_flag).unwrap();
+    fs::write(home.join("red"), "").unwrap();
+    let red = run_gate_step(4502, "wren", &home, "code").unwrap();
+    assert!(red.message.contains(": fail"), "{}", red.message);
+    fs::remove_file(home.join("red")).unwrap();
+
+    // the model answers → the gate records pass → exit 0 (a re-run, not "already recorded")
     let up = run_gate_step(4502, "wren", &home, "code").unwrap();
     assert_eq!(up.exit, 0, "a recorded verdict exits 0: {}", up.message);
-    assert!(up.message.contains("gate code for #4502: pass"), "{}", up.message);
+    assert!(up.message.contains("gate code for #4502: pass") && !up.message.contains("already recorded"), "{}", up.message);
     let after = witness(&home).matches("\"event\":\"demo.gate.result\"").count();
 
     // a retry after a pass is a no-op: no second model run, no new record
