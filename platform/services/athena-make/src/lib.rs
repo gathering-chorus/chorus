@@ -5274,8 +5274,8 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
             continue;
         }
         // #4838 — two operators on a served field: `<field>.absent=true` (the row
-        // has no value for it) and `<field>.after=<value>` (a literal, compared as
-        // text, so an ISO-8601 UTC time orders correctly). The first caller is the
+        // has no value for it) and `<field>.after=<RFC 3339 time>` (a literal, compared
+        // as an xsd:dateTime, so "…Z" and "…+00:00" order the same). The first caller is the
         // roles door's "live sessions": `endedAt.absent=true&expiresAt.after=<now>`
         // (5 callers pulled all 2,600 sessions and filtered after; 70 of the 77
         // without an endedAt had expired and nothing may close Jeff's rows but his door).
