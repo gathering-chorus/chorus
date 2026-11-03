@@ -3568,7 +3568,9 @@ esac\n\
 if [ -n \"$slot\" ] && [ -x \"$slot\" ]; then\n\
   # #4853: a slot runs as whoever calls this wrapper (the runner runs as jeffbridwell).\n\
   # Refuse a symlink, or a slot or dir that group/other can write or that is owned by\n\
-  # anyone but this account, root, or the owner of the installed binary.\n\
+  # anyone but this account, root, or the owner of the installed binary. That owner\n\
+  # (jeffbridwell, who owns ~/.chorus/bin) lets a role run its runner-installed slot;\n\
+  # it never lets the runner run a role-owned one, the runner's own uid is not a role's.\n\
   ok=\" $(id -u) 0 $(stat -f %u \"{bin_path}\" 2>/dev/null) \"\n\
   for p in \"$slot\" \"${{slot%/*}}\"; do\n\
     if [ -L \"$p\" ]; then echo \"refusing $slot: $p is a symlink (#4853)\" >&2; exit 126; fi\n\
