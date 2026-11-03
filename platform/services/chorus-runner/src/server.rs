@@ -107,22 +107,73 @@ pub fn state_dir() -> String {
 /// Which binary a tool runs. #4514 — the caller's werk bin slot first, as the
 /// cicd pipeline's PATH does today (${CHORUS_WERK_BASE}/<role>-bin first), so a
 /// card that changes a verb runs its own build; then the installed copy.
-pub fn binary_path(name: &str, who: &str) -> String {
+/// #4853 — a slot binary runs as the runner's account, so a slot any other
+/// account could write is refused, never run and never skipped quietly.
+pub fn binary_path(name: &str, who: &str) -> Result<String, String> {
     if let Ok(base) = std::env::var("CHORUS_WERK_BASE") {
         let slot = format!("{base}/{who}-bin/{name}");
         if !who.is_empty() && std::path::Path::new(&slot).is_file() {
-            return slot;
+            slot_trusted(std::path::Path::new(&slot))?;
+            return Ok(slot);
         }
     }
     let installed = format!("{}/bin/{name}", state_dir());
     if std::path::Path::new(&installed).exists() {
-        return installed;
+        return Ok(installed);
     }
     // #4515 — a row naming a Chorus script (cards, agent-state.sh): the
     // runner's launchd PATH has ~/.chorus/bin only.
     let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
     let script = format!("{home}/platform/scripts/{name}");
-    if !name.contains('/') && std::path::Path::new(&script).is_file() { script } else { name.to_string() }
+    Ok(if !name.contains('/') && std::path::Path::new(&script).is_file() { script } else { name.to_string() })
+}
+
+/// #4853 — the account this runner runs as (read once).
+fn runner_uid() -> Option<u32> {
+    static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *UID.get_or_init(|| {
+        let out = Command::new("/usr/bin/id").arg("-u").output().ok()?;
+        String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+    })
+}
+
+/// #4853 — a slot binary and the directory holding it must both be owned by
+/// this account, root or the installer, and not writable by group or other. Otherwise any
+/// account in group chorus could plant code that runs as the runner's account.
+pub fn slot_trusted(slot: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let me = runner_uid().ok_or("could not read the runner's own account, so no slot binary runs")?;
+    // the installer: whoever owns the installed bin dir (~/.chorus/bin, jeffbridwell).
+    // A role running `chorus-runner call` itself may run a slot the installer wrote;
+    // the shared runner (which IS the installer) still refuses a role-owned slot.
+    use std::os::unix::fs::MetadataExt as _;
+    let installer = std::fs::metadata(format!("{}/bin", state_dir())).map(|m| m.uid()).ok();
+    let trusted = [Some(me), Some(0), installer];
+    let dir = slot.parent().unwrap_or(slot);
+    for p in [dir, slot] {
+        // never follow a link: a symlinked slot points at code the slot owner does not vouch for
+        let m = std::fs::symlink_metadata(p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        if m.file_type().is_symlink() {
+            return Err(format!("refusing to run {}: {} is a symlink (#4853)", slot.display(), p.display()));
+        }
+        let owner_ok = trusted.contains(&Some(m.uid()));
+        if let Some(why) = slot_refusal(if owner_ok { me } else { m.uid() }, m.mode(), me) {
+            return Err(format!("refusing to run {}: {} {why} (#4853: a slot must be owned by the runner's account and writable only by it)", slot.display(), p.display()));
+        }
+    }
+    Ok(())
+}
+
+/// #4853 — pure: why a path with this owner and mode may not hold code the
+/// runner runs, or None.
+pub fn slot_refusal(owner_uid: u32, mode: u32, runner_uid: u32) -> Option<String> {
+    if owner_uid != runner_uid {
+        return Some(format!("is owned by uid {owner_uid}, not the runner (uid {runner_uid})"));
+    }
+    if mode & 0o022 != 0 {
+        return Some(format!("is writable by group or other (mode {:o})", mode & 0o7777));
+    }
+    None
 }
 
 /// #4514 — everything a tool call decides before it runs, shared by the MCP
@@ -177,7 +228,8 @@ pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json:
     } else {
         None
     };
-    Ok(Prepared { binary: binary_path(&tool.binary, &who), argv, env: crate::skills::child_env(&who, &token, trace), who, http })
+    let binary = binary_path(&tool.binary, &who).map_err(|e| (e, 403))?;
+    Ok(Prepared { binary, argv, env: crate::skills::child_env(&who, &token, trace), who, http })
 }
 
 /// #4515 — run an http tool. The credential and body go to curl through its

@@ -10,10 +10,14 @@ fn the_callers_slot_wins_and_another_roles_slot_is_never_used() {
     let base = std::env::temp_dir().join(format!("werk-base-4514-{}", std::process::id()));
     std::fs::create_dir_all(base.join("wren-bin")).unwrap();
     std::fs::write(base.join("wren-bin/werk-build"), "#!/bin/sh\n").unwrap();
+    // #4853 — a trusted slot is runner-owned and writable only by it (role umask is 002)
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(base.join("wren-bin/werk-build"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(base.join("wren-bin"), std::fs::Permissions::from_mode(0o755)).unwrap();
     std::env::set_var("CHORUS_WERK_BASE", &base);
-    assert_eq!(binary_path("werk-build", "wren"), base.join("wren-bin/werk-build").display().to_string());
-    assert!(!binary_path("werk-build", "kade").contains("wren-bin"), "kade ran wren's slot");
-    assert!(!binary_path("werk-build", "").contains("-bin/"), "no caller picked a slot");
+    assert_eq!(binary_path("werk-build", "wren").unwrap(), base.join("wren-bin/werk-build").display().to_string());
+    assert!(!binary_path("werk-build", "kade").unwrap().contains("wren-bin"), "kade ran wren's slot");
+    assert!(!binary_path("werk-build", "").unwrap().contains("-bin/"), "no caller picked a slot");
 }
 
 /// #4515 — the runner's launchd PATH has ~/.chorus/bin but not the scripts, so a
@@ -26,6 +30,6 @@ fn a_script_row_runs_chorus_own_script_and_an_unknown_name_stays_bare() {
     std::fs::create_dir_all(home.join("platform/scripts")).unwrap();
     std::fs::write(home.join("platform/scripts/agent-state.sh"), "#!/bin/sh\n").unwrap();
     std::env::set_var("CHORUS_HOME", &home);
-    assert_eq!(binary_path("agent-state.sh", ""), home.join("platform/scripts/agent-state.sh").display().to_string());
-    assert_eq!(binary_path("no-such-tool-4515", ""), "no-such-tool-4515");
+    assert_eq!(binary_path("agent-state.sh", "").unwrap(), home.join("platform/scripts/agent-state.sh").display().to_string());
+    assert_eq!(binary_path("no-such-tool-4515", "").unwrap(), "no-such-tool-4515");
 }

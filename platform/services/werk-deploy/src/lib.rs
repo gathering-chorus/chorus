@@ -2903,7 +2903,7 @@ fn refresh_role_slots(home: &Path, role: &str, card: u64, trace: &str, crate_nam
         let slot = format!("{}/{}-bin/{}", werk_base, slot_role, bin);
         let tmp = format!("{}.refresh-tmp", slot);
         let ok = fs::copy(canonical_path, &tmp).is_ok()
-            && run_env(None, &[], "chmod", &["+x", &tmp]).is_ok()
+            && run_env(None, &[], "chmod", &["0755", &tmp]).is_ok() // #4853: never 775 under a role umask
             && fs::rename(&tmp, &slot).is_ok();
         if ok {
             jsonl(home, role, card, trace, "slot.refreshed",
@@ -3566,6 +3566,19 @@ case \"${{CHORUS_ROLE:-}}\" in\n\
   *) v=\"WERK_$(printf '%s' \"$CHORUS_ROLE\" | tr 'a-z-' 'A-Z_')_BIN\"; eval \"d=\\${{$v:-}}\"; [ -n \"$d\" ] && slot=\"$d/{name}\" ;;\n\
 esac\n\
 if [ -n \"$slot\" ] && [ -x \"$slot\" ]; then\n\
+  # #4853: a slot runs as whoever calls this wrapper (the runner runs as jeffbridwell).\n\
+  # Refuse a symlink, or a slot or dir that group/other can write or that is owned by\n\
+  # anyone but this account, root, or the owner of the installed binary. That owner\n\
+  # (jeffbridwell, who owns ~/.chorus/bin) lets a role run its runner-installed slot;\n\
+  # it never lets the runner run a role-owned one, the runner's own uid is not a role's.\n\
+  ok=\" $(id -u) 0 $(stat -f %u \"{bin_path}\" 2>/dev/null) \"\n\
+  for p in \"$slot\" \"${{slot%/*}}\"; do\n\
+    if [ -L \"$p\" ]; then echo \"refusing $slot: $p is a symlink (#4853)\" >&2; exit 126; fi\n\
+    um=$(stat -f '%u %Lp' \"$p\" 2>/dev/null) || {{ echo \"refusing $slot: cannot read $p (#4853)\" >&2; exit 126; }}\n\
+    u=${{um% *}}; m=${{um#* }}\n\
+    case \"$ok\" in *\" $u \"*) ;; *) echo \"refusing $slot: $p is owned by uid $u, not this account or the installer (#4853)\" >&2; exit 126 ;; esac\n\
+    if [ $(( 0$m & 022 )) -ne 0 ]; then echo \"refusing $slot: $p is writable by group or other (mode $m) (#4853)\" >&2; exit 126; fi\n\
+  done\n\
   exec \"$slot\" \"$@\"\n\
 fi\n\
 exec \"{bin_path}\" \"$@\"\n",
