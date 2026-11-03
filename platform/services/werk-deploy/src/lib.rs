@@ -1788,6 +1788,22 @@ fn run_crate_mode(args: &[String]) -> R<String> {
 
 /// The card's changed SERVICE crate(s): names under `platform/services/<X>/` in the diff,
 /// de-duplicated, order-stable. These are the only units a prod deploy needs to (re)build
+/// #4838 — the order a land deploys in: the model door (athena-make) first, then
+/// the other crates, then the TS services. A caller that learns a new door query
+/// must never restart before the door that answers it (Kade 15:04: an old door
+/// answers 400 to an unknown filter).
+/// #4838 — the restarts split into the model door's (first, before any TS caller
+/// deploys) and the rest (after, sorted as before).
+pub fn split_door_restarts(restarts: Vec<String>) -> (Vec<String>, Vec<String>) {
+    restarts.into_iter().partition(|l| l == "com.chorus.athena-make")
+}
+
+pub fn deploy_order(crates: &[String], ts: &[String]) -> Vec<String> {
+    let door = crates.iter().filter(|c| c.as_str() == "athena-make");
+    let rest = crates.iter().filter(|c| c.as_str() != "athena-make");
+    door.chain(rest).chain(ts.iter()).cloned().collect()
+}
+
 /// from canonical + install — everything else on main is already built and deployed.
 pub fn changed_service_crates(diff: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -2360,9 +2376,34 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         canonical_ff_sync(&home_s)
             .map_err(|e| died(home, role, card, trace, "canonical-ff-fail", e))?;
     }
-    let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
     let mut labels: Vec<String> = Vec::new();
-    for c in &deployed {
+    // #4838 (Kade 15:07) — a binary serves only once its service restarts, and the
+    // door (athena-make) restarts from the `restarts` list, not its install. So the
+    // crates install first, then the DOOR restarts, then the TS callers deploy:
+    // no caller may come up asking a query the old door answers 400.
+    let (door_restarts, restarts) = split_door_restarts(restarts);
+    let mut door_up = false;
+    let mut restart_door = |labels: &mut Vec<String>| -> R<()> {
+        for label in &door_restarts {
+            kickstart_prod(label)
+                .map_err(|e| died(home, role, card, trace, "restart-fail",
+                    format!("restart of {} (the door, before its callers) failed: {}", label, e)))?;
+            jsonl(home, role, card, trace, "deploy.restarted",
+                &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"door-before-callers\"", label));
+            labels.push(format!("restart:{}", label));
+        }
+        Ok(())
+    };
+    for c in &deploy_order(&crates, &[]) {
+        deploy_crate_canonical(home, role, card, trace, c)
+            .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
+                format!("canonical deploy of {} failed: {}", c, e)))?;
+        labels.push(c.clone());
+        // the door is first in deploy_order: restart it before the next crate (chorus-hooks, chorus-principal) can call it
+        if c == "athena-make" { restart_door(&mut labels)?; door_up = true; }
+    }
+    if !door_up { restart_door(&mut labels)?; }
+    for c in &ts {
         deploy_crate_canonical(home, role, card, trace, c)
             .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
                 format!("canonical deploy of {} failed: {}", c, e)))?;

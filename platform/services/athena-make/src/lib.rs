@@ -5273,6 +5273,36 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
         if COLLECTION_PARAMS.contains(&key) {
             continue;
         }
+        // #4838 — two operators on a served field: `<field>.absent=true` (the row
+        // has no value for it) and `<field>.after=<RFC 3339 time>` (a literal, compared
+        // as an xsd:dateTime, so "…Z" and "…+00:00" order the same). The first caller is the
+        // roles door's "live sessions": `endedAt.absent=true&expiresAt.after=<now>`
+        // (5 callers pulled all 2,600 sessions and filtered after; 70 of the 77
+        // without an endedAt had expired and nothing may close Jeff's rows but his door).
+        if let Some((base, op)) = key.split_once('.') {
+            let Some((_, edge)) = fields.iter().find(|(n, _)| n == base) else {
+                return Err(format!("unknown filter '{key}': '{base}' is not a field this collection serves"));
+            };
+            let value = percent_decode(raw).ok_or_else(|| format!("filter '{key}': bad percent-encoding"))?;
+            let n = carried.len();
+            match op {
+                "absent" if value == "true" => patterns.push_str(&format!(" . FILTER NOT EXISTS {{ ?s <{NS}{base}> ?fa{n} }}")),
+                "absent" => return Err(format!("filter '{key}': the only value is true")),
+                "after" if *edge => return Err(format!("filter '{key}': '{base}' is an edge; after compares literals")),
+                "after" => {
+                    // compared as datetimes, not text, so "…Z" and "…+00:00" order
+                    // the same (Kade 14:36); anything but an RFC 3339 time is refused
+                    if !is_rfc3339(&value) {
+                        return Err(format!("filter '{key}': '{value}' is not an RFC 3339 time (2026-11-03T19:40:00Z)"));
+                    }
+                    let xsd = "http://www.w3.org/2001/XMLSchema#dateTime";
+                    patterns.push_str(&format!(" . ?s <{NS}{base}> ?fa{n} FILTER(<{xsd}>(STR(?fa{n})) > \"{value}\"^^<{xsd}>)"));
+                }
+                _ => return Err(format!("unknown filter operator '{op}' in '{key}': absent or after")),
+            }
+            carried.push(kv);
+            continue;
+        }
         let Some((_, edge)) = fields.iter().find(|(n, _)| n == key) else {
             return Err(format!("unknown filter '{key}': not a field this collection serves"));
         };
@@ -5303,6 +5333,29 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
         carried.push(kv);
     }
     Ok((patterns, carried.join("&")))
+}
+
+/// #4838 — `YYYY-MM-DDTHH:MM:SS[.frac](Z|±HH:MM)`, checked by shape (no regex
+/// dependency): only digits where digits go, so nothing can break out of a query.
+pub fn is_rfc3339(v: &str) -> bool {
+    let b = v.as_bytes();
+    let digits = |r: std::ops::Range<usize>| r.clone().all(|i| b.get(i).is_some_and(|c| c.is_ascii_digit()));
+    if b.len() < 20 || !digits(0..4) || b[4] != b'-' || !digits(5..7) || b[7] != b'-' || !digits(8..10) || b[10] != b'T'
+        || !digits(11..13) || b[13] != b':' || !digits(14..16) || b[16] != b':' || !digits(17..19) {
+        return false;
+    }
+    let mut i = 19;
+    if b[i] == b'.' {
+        i += 1;
+        let start = i;
+        while i < b.len() && b[i].is_ascii_digit() { i += 1; }
+        if i == start { return false; }
+    }
+    match &b[i..] {
+        [b'Z'] => true,
+        [s, h1, h2, b':', m1, m2] if (*s == b'+' || *s == b'-') => [h1, h2, m1, m2].iter().all(|c| c.is_ascii_digit()),
+        _ => false,
+    }
 }
 
 /// `%XX` and `+` decoding for one query-string value. None on a broken escape or
@@ -7302,6 +7355,35 @@ mod tests {
     fn an_unknown_or_unexposed_field_is_refused() {
         assert!(collection_filter("ofTset=x", &result_fields()).is_err());
         assert!(collection_filter("secretPlan=x", &result_fields()).is_err());
+    }
+
+    // #4838 — the live-sessions filter: absent + after, at the door.
+    fn session_fields() -> Vec<(String, bool)> {
+        vec![("endedAt".into(), false), ("expiresAt".into(), false), ("ownedBy".into(), true)]
+    }
+
+    #[test]
+    fn absent_and_after_narrow_at_the_store() {
+        let (p, qs) = collection_filter("endedAt.absent=true&expiresAt.after=2026-11-03T19:40:00Z&limit=5000", &session_fields()).unwrap();
+        let x = "http://www.w3.org/2001/XMLSchema#dateTime";
+        assert_eq!(p, format!(" . FILTER NOT EXISTS {{ ?s <{NS}endedAt> ?fa0 }} . ?s <{NS}expiresAt> ?fa1 FILTER(<{x}>(STR(?fa1)) > \"2026-11-03T19:40:00Z\"^^<{x}>)"));
+        assert!(collection_filter("expiresAt.after=2026-11-03T14:40:00%2B00:00", &session_fields()).is_ok(), "an offset form is a time too");
+        assert_eq!(qs, "endedAt.absent=true&expiresAt.after=2026-11-03T19:40:00Z", "both ride links.next");
+    }
+
+    // NEGATIVE PROOF — a wrong operator, an unknown base, an edge compared with
+    // after, a non-true absent, or a value that could break out is refused.
+    #[test]
+    fn a_bad_operator_or_value_is_refused() {
+        let f = session_fields();
+        assert!(collection_filter("endedAt.before=x", &f).is_err());
+        assert!(collection_filter("nope.absent=true", &f).is_err());
+        assert!(collection_filter("ownedBy.after=a", &f).is_err());
+        assert!(collection_filter("endedAt.absent=false", &f).is_err());
+        assert!(collection_filter("expiresAt.after=a%22)%20}%20DROP", &f).is_err());
+        assert!(collection_filter("expiresAt.after=", &f).is_err());
+        assert!(collection_filter("expiresAt.after=yesterday", &f).is_err(), "not a time");
+        assert!(collection_filter("expiresAt.after=2026-11-03", &f).is_err(), "a date is not a time");
     }
 
     #[test]

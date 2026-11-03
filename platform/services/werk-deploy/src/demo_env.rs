@@ -1187,6 +1187,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
                 // #4022 — /owl proxies to the werk's athena-make, not prod's.
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
+                // #4838 — the api's own door calls (roles tiles, sessions): the werk's door
+                werk_door_env(&owl_upstream)[0],
+                werk_door_env(&owl_upstream)[1],
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
                 ("WERK_TEST_LOG_PATH", nightly_log.as_str()),
                 // Silas, 2026-09-02, proving #4058: the variant booted without
@@ -1245,7 +1248,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("PATH", variant_path.as_str()),
             ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
-            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            // #4838 — pulse reads the door too (actor-state ATHENA_MAKE_URL, changes-overnight ATHENA_URL): the werk's door, never prod's
+            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+                .chain(werk_door_env(&owl_upstream)).collect(),
             "chorus-runner" => runner_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "clearing-v2" => clearing_v2_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
@@ -1428,8 +1433,28 @@ pub fn css_issuer_for_variant() -> String {
         .unwrap_or_else(|| "https://id.lightlifeurbangardens.com/".to_string())
 }
 
+/// #4838 — the env that points a variant's door calls at the WERK's door: chorus-api
+/// and pulse's actor-state read ATHENA_MAKE_URL, pulse's changes-overnight reads
+/// ATHENA_URL. Unset, the variant asked PROD's door, so a demo of a door change
+/// answered 400 on the new filter (20 of 20 at 15:01) and proved nothing.
+pub fn werk_door_env(owl_upstream: &str) -> [(&'static str, &str); 2] {
+    [("ATHENA_MAKE_URL", owl_upstream), ("ATHENA_URL", owl_upstream)]
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_variant_calls_the_werk_door_never_prods_4838() {
+        let env = werk_door_env("http://127.0.0.1:3363");
+        assert_eq!(env, [("ATHENA_MAKE_URL", "http://127.0.0.1:3363"), ("ATHENA_URL", "http://127.0.0.1:3363")]);
+        // NEGATIVE PROOF: both keys the services read are set; a dropped one would leave that service on :3360
+        assert!(env.iter().all(|(_, v)| !v.contains(":3360")));
+        // and env_up wires it for both services (the call sites, read from the source)
+        let src = include_str!("demo_env.rs");
+        assert_eq!(src.matches(concat!("werk_door_env(&owl_upstream)", "[")).count(), 2, "chorus-api: both keys");
+        assert_eq!(src.matches(concat!(".chain(werk_door_env", "(&owl_upstream))")).count(), 1, "pulse");
+    }
 
     /// #4022 — the athena variant carries the CSS issuer (and CHORUS_HOME) the
     /// way prod's launch script does; the bare-binary default is the 401.
