@@ -134,3 +134,17 @@ describe('#4361 same-session rule with Presence targets (pid 0)', () => {
     expect(planDelivery(silas, 'silas', 'hi', { ...wren, tmux: '%15', tty: '/dev/ttys005' })).toEqual({ kind: 'inject', args: ['silas', 'hi'] });
   });
 });
+
+// #4878 (live 2026-11-03): an alert is stored with `from` = its owning role, so
+// "alert for silas" resolved silas's own session as the sender, collided with
+// the target, fell to name-match and failed no-window-found (21 in 3h for
+// silas). A sender of the SAME role is not stale data: it is the target.
+describe('#4878 a self-addressed alert reaches the role\'s own pane', () => {
+  const silas: SessionReg = { role: 'silas', pid: 0, tty: '/dev/ttys005', host: 'tmux', tmux: '%15' };
+  test('sender and target are the same role on the same pane → tmux delivery', () => {
+    expect(planDelivery(silas, 'silas', 'alert', silas)).toEqual({ kind: 'inject', args: ['--tmux', '%15', 'alert'] });
+  });
+  test('negative proof: another role registered on that pane is still treated as stale → name-match', () => {
+    expect(planDelivery(silas, 'silas', 'alert', { ...silas, role: 'wren' })).toEqual({ kind: 'inject', args: ['silas', 'alert'] });
+  });
+});
