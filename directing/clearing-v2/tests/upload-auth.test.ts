@@ -79,8 +79,8 @@ describe('#4866 AC4: upload auth error guidance', () => {
     expect(rendered.html).toContain(`<a href="${SIGN_IN_URL}"`);
   });
 
-  test('watchPhotoButton renders tappable signInUrl link in send-error status when upload returns 401', async () => {
-    const { watchPhotoButton } = require('../public/app.js');
+  test('watchFileButton renders tappable signInUrl link in send-error status when upload returns 401', async () => {
+    const { watchFileButton } = require('../public/app.js');
     let onChange: () => Promise<void> = async () => {};
     const picker = {
       files: [{ name: 'test.jpg', type: 'image/jpeg' }],
@@ -90,7 +90,7 @@ describe('#4866 AC4: upload auth error guidance', () => {
     const input = { value: '', focus: () => {} };
     const status = { innerHTML: '', textContent: '' };
     (global as any).document = {
-      getElementById: (id: string) => ({ 'composer-photo': picker, 'composer-input': input, 'send-error': status } as any)[id] || null,
+      getElementById: (id: string) => ({ 'composer-file': picker, 'composer-input': input, 'send-error': status } as any)[id] || null,
       querySelector: () => null
     };
     (global as any).fetch = async () => ({
@@ -104,7 +104,7 @@ describe('#4866 AC4: upload auth error guidance', () => {
       })
     });
 
-    watchPhotoButton();
+    watchFileButton();
     await onChange();
 
     expect(status.innerHTML).toContain(`<a href="${SIGN_IN_URL}">Sign in to send</a>`);

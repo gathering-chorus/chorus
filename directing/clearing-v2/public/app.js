@@ -326,9 +326,9 @@ function appendBlocks(parent, text) {
 
 /** #4574/#4575/#4597 — #N card links, http(s) links, **bold**, lists, code fences and line breaks
  *  built from DOM nodes: the message text is never parsed as HTML, so a message cannot inject markup. */
-/** #4635 — names of uploaded photos a message mentions (same rule as the server's uploadNames). */
+/** #4635 / #4866 — names of uploaded photos a message mentions (both timestamp and timestamp_name formats). */
 function photoNames(text) {
-  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+\.(?:jpg|png|gif|heic))/g), (m) => m[1]);
+  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+[-a-zA-Z0-9_.]*\.(?:jpg|jpeg|png|gif|heic|webp))\b/gi), (m) => m[1]);
 }
 
 function appendPhotos(el, text) {
@@ -349,9 +349,9 @@ function appendPhotos(el, text) {
   el.appendChild(box);
 }
 
-/** #4866 — names of uploaded files a message mentions */
+/** #4866 — names of uploaded files a message mentions (excluding photo formats). */
 function fileNames(text) {
-  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+[-a-zA-Z0-9_.]*\.(?!jpg|png|gif|heic|webp|jpeg)[a-zA-Z0-9]{1,10})/gi), (m) => m[1]);
+  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+[-a-zA-Z0-9_.]*\.(?!jpg|jpeg|png|gif|heic|webp)[a-zA-Z0-9]{1,10})\b/gi), (m) => m[1]);
 }
 
 function appendFiles(el, text, docImpl) {
@@ -439,56 +439,13 @@ async function uploadPhoto(file, fetchImpl) {
   }
 }
 
-function watchPhotoButton() {
-  if (typeof document === 'undefined') return;
-  const picker = document.getElementById('composer-photo');
-  if (!picker || !picker.addEventListener) return;
-  const label = document.querySelector ? document.querySelector('.composer-photo') : null;
-  if (label && label.addEventListener) {
-    label.addEventListener('click', (e) => {
-      // In HTML, clicking a <label for="X"> natively activates input X.
-      // Calling picker.click() without preventing default causes multiple synthetic clicks
-      // in the same tick on mobile browsers, which immediately cancels the camera/photo sheet.
-      if (e.target !== picker) {
-        e.preventDefault();
-        picker.click();
-      }
-    });
-  }
-  picker.addEventListener('change', async () => {
-    const input = document.getElementById('composer-input');
-    const status = document.getElementById('send-error');
-    const files = Array.from(picker.files || []);
-    const failed = [];
-    for (const [i, file] of files.entries()) {
-      if (status) status.textContent = 'Uploading photo ' + (i + 1) + ' of ' + files.length + '…';
-      const out = await uploadPhoto(file);
-      if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📷 ' + out.path + ' ';
-      if (!out.ok) failed.push(out.errorInfo || { text: out.reason });
-    }
-    // #4635 — Jeff 12:22: "much easier if i can pick several at once"
-    if (status) {
-      if (failed.length) {
-        const firstFail = failed[0];
-        if (firstFail && firstFail.html && status.innerHTML !== undefined) {
-          status.innerHTML = failed.length + ' of ' + files.length + ' photos not attached: ' + firstFail.html;
-        } else {
-          status.textContent = failed.length + ' of ' + files.length + ' photos not attached: ' + (firstFail && firstFail.text ? firstFail.text : firstFail);
-        }
-      } else {
-        if (status.innerHTML !== undefined) status.innerHTML = '';
-        status.textContent = '';
-      }
-    }
-    picker.value = '';
-    if (input && input.focus) input.focus();
-  });
-}
-
 function watchFileButton() {
   if (typeof document === 'undefined') return;
   const picker = document.getElementById('composer-file');
   if (!picker || !picker.addEventListener) return;
+  if (picker.dataset && picker.dataset.wired === 'true') return;
+  if (!picker.dataset) picker.dataset = {};
+  picker.dataset.wired = 'true';
   const label = document.querySelector ? document.querySelector('.composer-file') : null;
   if (label && label.addEventListener) {
     label.addEventListener('click', (e) => {
@@ -550,6 +507,9 @@ function watchMicButton() {
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
   const mic = document.getElementById('composer-mic');
   if (!mic || !mic.addEventListener) return;
+  if (mic.dataset && mic.dataset.wired === 'true') return;
+  if (!mic.dataset) mic.dataset = {};
+  mic.dataset.wired = 'true';
   let recorder = null;
   let chunks = [];
   const say = (t, html) => {
@@ -808,10 +768,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
   window.addEventListener('DOMContentLoaded', () => watchRoomScroll());
   window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
-  window.addEventListener('DOMContentLoaded', watchPhotoButton);
-  window.addEventListener('DOMContentLoaded', watchMicButton);
-  window.addEventListener('DOMContentLoaded', initComposerInput);
-  window.addEventListener('DOMContentLoaded', initTileFilters);
   window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
@@ -1091,6 +1047,7 @@ function markUndelivered(id, roles) {
 
 // Setup EventSource for SSE live stream
 function initStream(customContainer) {
+  if (typeof EventSource === 'undefined') return;
   const container = customContainer || messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
   const evtSource = new EventSource(clearingBase() + '/api/events');
 
@@ -1319,7 +1276,6 @@ function initComposerInput() {
 if (typeof document !== 'undefined') {
   initComposerInput();
   initTileFilters();
-  watchPhotoButton();
   watchFileButton();
   watchMicButton();
 }
@@ -1364,7 +1320,6 @@ if (typeof module !== 'undefined' && module.exports) {
     uploadPhoto,
     uploadFile,
     formatUploadError,
-    watchPhotoButton,
     watchFileButton,
     transcribeVoice,
     photoNames,
