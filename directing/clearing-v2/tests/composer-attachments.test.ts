@@ -1,4 +1,4 @@
-// @test-type: integration
+// @test-type: integration:ui
 // @card: #4866
 // @owner: abby-normal
 // @domain: messages
@@ -114,5 +114,50 @@ describe('#4866 AC2: composer attachment picker and inline photos / download chi
 
     const missingMic = initBlock!.replace(/watchMicButton\(\);?/, '');
     expect(missingMic).not.toMatch(/\bwatchMicButton\(\)/);
+  });
+
+  test('loads app.js cleanly with a stub window without ReferenceError', () => {
+    jest.useFakeTimers();
+    const registeredListeners: { [evt: string]: Function[] } = {};
+    const stubWindow = {
+      addEventListener: (evt: string, fn: Function) => {
+        registeredListeners[evt] = registeredListeners[evt] || [];
+        registeredListeners[evt].push(fn);
+      },
+      CLEARING_BASE: '',
+    };
+    const stubDoc = {
+      getElementById: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+    };
+
+    (global as any).window = stubWindow;
+    (global as any).document = stubDoc;
+
+    try {
+      jest.isolateModules(() => {
+        require('../public/app.js');
+      });
+
+      const domLoadedHandlers = registeredListeners['DOMContentLoaded'] || [];
+      expect(domLoadedHandlers.length).toBeGreaterThan(0);
+      for (const handler of domLoadedHandlers) {
+        expect(() => handler()).not.toThrow();
+      }
+
+      // Negative proof: referencing retired watchPhotoButton in a browser listener throws ReferenceError
+      expect(() => {
+        const fn = new Function('window', `
+          window.addEventListener('DOMContentLoaded', watchPhotoButton);
+        `);
+        fn(stubWindow);
+      }).toThrow(ReferenceError);
+    } finally {
+      delete (global as any).window;
+      delete (global as any).document;
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 });

@@ -762,7 +762,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
   window.addEventListener('DOMContentLoaded', () => watchRoomScroll());
   window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
-  window.addEventListener('DOMContentLoaded', watchPhotoButton);
+  window.addEventListener('DOMContentLoaded', watchFileButton);
   window.addEventListener('DOMContentLoaded', watchMicButton);
   window.addEventListener('DOMContentLoaded', initComposerInput);
   window.addEventListener('DOMContentLoaded', initTileFilters);
@@ -1045,6 +1045,7 @@ function markUndelivered(id, roles) {
 
 // Setup EventSource for SSE live stream
 function initStream(customContainer) {
+  if (typeof EventSource === 'undefined') return;
   const container = customContainer || messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
   const evtSource = new EventSource(clearingBase() + '/api/events');
 
