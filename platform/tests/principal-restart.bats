@@ -74,6 +74,9 @@ trace_log() { printf '#!/bin/bash\necho "trace=${CHORUS_TRACE_ID:-} $*" >> "%s/s
   [ -n "$t" ]
   grep -q "^trace=$t session\." "$T/spine.log"
   [ -z "$(grep -v "^trace=$t " "$T/spine.log" || true)" ] || { grep -v "^trace=$t " "$T/spine.log"; return 1; }
+  # the door writes and reads of the same login carry it too (the door logs it as its trace)
+  grep -q "/v1/identity/" "$T/curl.log"
+  [ -z "$(grep "^curl " "$T/curl.log" | grep -vF "x-chorus-trace-id: $t" || true)" ] || { grep "^curl " "$T/curl.log" | grep -vF "x-chorus-trace-id: $t"; return 1; }
 }
 
 @test "NEGATIVE PROOF — two logins get two traces, so a fixed or empty one fails" {
