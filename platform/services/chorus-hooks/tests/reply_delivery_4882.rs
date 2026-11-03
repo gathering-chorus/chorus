@@ -83,3 +83,26 @@ fn gemini_path_is_unchanged_4882() {
     let raw = json!({"prompt_response": "gemini reply"});
     assert_eq!(reply_text(&raw).as_deref(), Some("gemini reply"));
 }
+
+#[test]
+fn the_room_relay_gets_the_turn_s_final_text_not_the_lagging_transcript_4882() {
+    use chorus_hooks::reply_delivery::enrich_stop_prompt_response;
+    let d = tmp("relay");
+    let tp = d.join("t.jsonl");
+    let lines = [
+        json!({"type":"user","message":{"role":"user","content":"earlier"}}),
+        json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"previous turn's reply"}]}}),
+        json!({"type":"user","message":{"role":"user","content":"whats next"}}),
+    ];
+    std::fs::write(&tp, lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
+    let tp = tp.to_string_lossy().to_string();
+    let with_field = json!({"transcript_path": tp, "last_assistant_message": "final answer"}).to_string();
+    let out: serde_json::Value = serde_json::from_str(&enrich_stop_prompt_response(with_field)).unwrap();
+    assert_eq!(out["prompt_response"], "final answer");
+    // a lagging transcript with no text past the prompt relays nothing
+    let without = json!({"transcript_path": tp}).to_string();
+    let out: serde_json::Value = serde_json::from_str(&enrich_stop_prompt_response(without)).unwrap();
+    assert!(out.get("prompt_response").is_none(), "must not relay the previous reply: {out}");
+    // negative proof (#3734): the old lookup this relay used returns the previous reply
+    assert_eq!(chorus_hooks::last_assistant_text(&tp).as_deref(), Some("previous turn's reply"));
+}

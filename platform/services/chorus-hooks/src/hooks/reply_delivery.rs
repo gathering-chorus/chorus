@@ -174,3 +174,24 @@ fn turn_text_in(lines: &[String]) -> Option<String> {
     }
     last
 }
+
+/// #4779/#4882 — the shim's Stop enrichment (it runs as the role's own macOS user, so it can
+/// read the role's transcript): fill `prompt_response` from the same source the daemon uses,
+/// `reply_text`, when the runtime did not send one. One source for the room relay and the daemon.
+pub fn enrich_stop_prompt_response(input: String) -> String {
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) else {
+        return input;
+    };
+    let has_resp = json
+        .get("prompt_response")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.trim().is_empty());
+    if has_resp {
+        return input;
+    }
+    if let Some(reply) = reply_text(&json) {
+        json["prompt_response"] = serde_json::Value::String(reply);
+        return json.to_string();
+    }
+    input
+}

@@ -166,23 +166,7 @@ fn inject_trace_id(input: String, trace: Option<String>) -> String {
 /// so the daemon never needs cross-home read access and both Stop enforcement
 /// and session turn push receive the text.
 fn enrich_stop_prompt_response(input: String) -> String {
-    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) else {
-        return input;
-    };
-    let has_resp = json
-        .get("prompt_response")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.trim().is_empty());
-    if has_resp {
-        return input;
-    }
-    // #4882 — one source with the daemon: the Stop payload's final text, else
-    // the turn's own text from the transcript (which lags at Stop).
-    if let Some(reply) = chorus_hooks::reply_delivery::reply_text(&json) {
-        json["prompt_response"] = serde_json::Value::String(reply);
-        return json.to_string();
-    }
-    input
+    chorus_hooks::reply_delivery::enrich_stop_prompt_response(input)
 }
 
 /// #4785 — Extract the conversation UUID from an Antigravity transcript path
@@ -550,31 +534,6 @@ mod inject_trace_id_tests {
     fn unparseable_input_is_passed_through() {
         let bad = "not json".to_string();
         assert_eq!(inject_trace_id(bad.clone(), Some("t".to_string())), bad);
-    }
-
-    #[test]
-    fn the_room_relay_gets_the_turn_s_final_text_not_the_lagging_transcript_4882() {
-        let d = std::env::temp_dir().join(format!("shim-4882-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        let tp = d.join("t.jsonl");
-        let lines = [
-            serde_json::json!({"type":"user","message":{"role":"user","content":"earlier"}}),
-            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"previous turn's reply"}]}}),
-            serde_json::json!({"type":"user","message":{"role":"user","content":"whats next"}}),
-        ];
-        std::fs::write(&tp, lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
-        let tp = tp.to_string_lossy().to_string();
-        let with_field = serde_json::json!({"transcript_path": tp, "last_assistant_message": "final answer"}).to_string();
-        let out: serde_json::Value = serde_json::from_str(&enrich_stop_prompt_response(with_field)).unwrap();
-        assert_eq!(out["prompt_response"], "final answer");
-        // a lagging transcript with no text past the prompt relays nothing
-        let without = serde_json::json!({"transcript_path": tp}).to_string();
-        let out: serde_json::Value = serde_json::from_str(&enrich_stop_prompt_response(without)).unwrap();
-        assert!(out.get("prompt_response").is_none(), "must not relay the previous reply: {out}");
-        // negative proof (#3734): the old lookup this relay used returns the previous reply
-        assert_eq!(chorus_hooks::last_assistant_text(&tp).as_deref(), Some("previous turn's reply"));
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
