@@ -61,7 +61,7 @@ EOS
 #!/bin/bash
 echo "curl \$*" >> "$T/curl.log"
 case "\${@: -1}" in *"/v1/identity/sessions?channel=browser"*) if [ -f "$T/api-down" ]; then printf '\n000\n'; elif [ -f "$T/nobody-signed-in" ]; then printf '{"data":[]}\n200\n'; else printf '{"data":[{"name":"jeff-browser-1","ownedBy":"principal-jeff","actsAs":"jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\n200\n'; fi; exit 0 ;; esac   # #4412: who is signed in
-case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then printf 'upstream down\n'; else printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}\n'; fi; exit 0 ;; esac
+case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then printf 'upstream down\n'; elif [ -f "$T/roles-door.json" ]; then cat "$T/roles-door.json"; else printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}\n'; fi; exit 0 ;; esac
 case "\${@: -1}" in */v1/identity/principals\?*) acct=jeff-fixture-account; [ -f "$T/jeff-at-terminal" ] && acct=\$USER; printf '{"data":[{"name":"jeff","principalKind":"person","hostAccount":"%s"},{"name":"wren","principalKind":"agent","hostAccount":"%s"}]}\n' "\$acct" "\$USER"; exit 0 ;; esac   # #4412: who is at this terminal
 case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade|borg-queen|abby-normal) printf '{"data":{"principalKind":"agent","hostAccount":"chorus-%s"}}\n200\n' "\$pn" ;; jeff) printf '{"data":{"principalKind":"person","hostAccount":"jeffbridwell"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
@@ -106,6 +106,8 @@ EOS
   printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
   chmod +x "$T/bin/"*
   for r in wren kade silas; do mk_token "$r"; mkdir -p "$T/identity/$r"; done
+  # #4845 — every Claude role home carries its MCP config, as the repo's do
+  for r in wren kade silas; do printf '{"mcpServers":{"chorus-api":{"command":"chorus-runner","args":["stdio"]}}}\n' > "$T/roles/$r/.mcp.json"; done
   printf '' > "$T/spine-read.log"
 }
 

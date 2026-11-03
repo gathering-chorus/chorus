@@ -474,9 +474,15 @@ pub fn start_in_pane_args(session: &str, dir: &str, launch: &str, exists: bool) 
 /// running role.
 fn start_in_pane(ctx: &Ctx, role: &str, dir: &str, launch: &str) -> Result<(), (i32, String)> {
     let session = Ctx::tmux_session(role);
-    let exists = ctx.has_tmux(role);
+    let mut exists = ctx.has_tmux(role);
     if exists && !live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() {
         return Err((1, format!("{} has a live session in {}; not respawning over it", role, session)));
+    }
+    // #4845 — a session with nothing live in it is left from an earlier run (10-31:
+    // panes from 10-28 came back after the crash); end it and start a fresh one
+    if exists {
+        let _ = sh(&ctx.tmux, &["kill-session", "-t", &session]);
+        exists = false;
     }
     let args = start_in_pane_args(&session, dir, launch, exists);
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -1038,6 +1044,12 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         eprintln!("  a pid and a registry entry are not an answer; ending it so a fresh conversation can start.");
         let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
         let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+    }
+
+    // #4845 AC2 — a Claude role is launched with its MCP servers or not at all, named
+    if let Err(why) = rows::mcp_config_ok(Path::new(&role_dir)) {
+        eprintln!("chorus-principal: {} NOT started — {}", role, why);
+        return Err((1, why));
     }
 
     // 2/7 — the real conversation (#4215: an unreadable list continues, never refuses).
@@ -2067,8 +2079,14 @@ fn up(ctx: &mut Ctx, windows: bool) -> i32 {
     // services are waited for ONCE, with the countdown; each role after that probes once
     if let Err(why) = wait_for_services(ctx, ctx.service_wait, true) { eprintln!("chorus-principal: {}", why); }
     ctx.service_wait = 0;
+    // #4845 — every agent role the roles door lists (Abby and Borg Queen too), never
+    // a list of three; a door that does not answer starts nobody and says so
+    let roles = match agent_roles(ctx) {
+        Ok(r) => r,
+        Err(why) => { eprintln!("chorus-principal up: started nobody — {}", why); return 1; }
+    };
     let mut results = Vec::new();
-    for role in ["wren", "kade", "silas"] {
+    for role in roles.iter().map(String::as_str) {
         let came = match on(ctx, role, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
         results.push((role.to_string(), came));
     }

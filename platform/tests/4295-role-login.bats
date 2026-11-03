@@ -215,24 +215,30 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 # ------------------------------------------------------------------ up
 
 @test "up: all three start logged in and Jeff gets ONE line" {
+  # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
+  printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   run "$SCRIPT" up
   test "$status" -eq 0
-  out_has "wren kade silas up, 3 of 3 logged in"
-  grep -q 'display notification "wren kade silas up, 3 of 3 logged in" with title "Chorus"' "$T/osa.log"
-  grep -q "^roles.up system summary=wren kade silas up, 3 of 3 logged in" "$T/spine.log"
+  out_has "kade silas wren up, 3 of 3 logged in"
+  grep -q 'display notification "kade silas wren up, 3 of 3 logged in" with title "Chorus"' "$T/osa.log"
+  grep -q "^roles.up system summary=kade silas wren up, 3 of 3 logged in" "$T/spine.log"
 }
 
 @test "up with identity down: all three still start, the line says pending, nothing for Jeff to do" {
+  # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
+  printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   touch "$T/down-3001"
   run "$SCRIPT" up
   test "$status" -eq 0
-  out_has "wren kade silas up, 0 of 3 logged in"
+  out_has "kade silas wren up, 0 of 3 logged in"
   out_has "kade login pending (identity not answering"
   out_has "retrying on its own"
   for r in wren kade silas; do grep -q "respawn-pane -k -t chorus-$r" "$T/tmux.log"; done
 }
 
 @test "up --windows: VS Code gets the Wren task, Terminal opens Silas and Kade" {
+  # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
+  printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   run "$SCRIPT" up --windows
   test "$status" -eq 0
   grep -q '"command": "/h/.chorus/bin/chorus-principal login wren"' "$T/vscode/tasks.json"
