@@ -141,6 +141,13 @@ assert_no_tracked_env() {
   return 0
 }
 
+# #4879 — cargo's build caches (.fingerprint, incremental) churn while builds
+# run: the 11-01 deep scan stopped on "walk dir error …
+# athena-gen/target/release/.fingerprint" and measured nothing. They hold no
+# lockfile or source; the rest of target/ stays in the deep scan (#4034).
+# Passed through trivy's env, not $(sca_flags), so the shell never globs it.
+export TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.fingerprint,**/incremental}"
+
 sca_flags() {
   # Cached DB: skip the update when the local DB is <24h old — the nightly
   # must never pay a download, and a stale-DB skip self-heals next day.

@@ -74,11 +74,11 @@ EOF
   return 0
 }
 
-@test "4719: stopped agent with non-zero exit code alerts as crashed" {
+@test "4719: stopped agent with non-zero exit code alerts (#4879: as exited, not crashed)" {
   write_plist "com.chorus.dead-svc" "$W/logs/dead.log"
   touch "$W/logs/dead.log"
   echo "- 1 com.chorus.dead-svc" > "$W/loaded.txt"
 
   run bash "$SCRIPT"
-  grep -q "crashed: com.chorus.dead-svc (exit 1)" "$W/health.json" || return 1
+  grep -q "exited: com.chorus.dead-svc (exit 1)" "$W/health.json" || return 1
 }
