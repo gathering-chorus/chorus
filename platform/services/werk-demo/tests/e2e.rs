@@ -206,14 +206,14 @@ exit 0
     let asks = |p: &PathBuf| fs::read_to_string(p).unwrap_or_default().lines().filter(|l| l.contains("Demo ready — #3046")).count();
     assert_eq!(asks(&shim_log), 1, "one ask for the round: {}", fs::read_to_string(&shim_log).unwrap_or_default());
     let sent = fs::read_to_string(&shim_log).unwrap_or_default();
-    assert!(sent.contains("gates ✓") && sent.contains("reviews 3/3") && sent.contains("AC 2/2") && sent.contains("go / no / more"),
-            "the one ask carries the tally and the go: {}", sent);
-    // #4642 — the go went on Jeff's one list, and the ask points there, not at a per-run link
+    assert!(sent.contains("gates ✓") && sent.contains("reviews 3/3") && sent.contains("AC 2/2"),
+            "the owner's brief carries the tally: {}", sent);
+    // #4875 — the announce is the owner's brief, never Jeff's go: no row on his list, no go link.
+    // The go reaches Jeff only through the owner's vouch (log evidence: 11-03 06:58 #4873).
     let door_argv = fs::read_to_string(go_door.join("argv")).unwrap_or_default();
-    assert!(door_argv.contains("/decisions/approvals") && door_argv.contains(r#""approvalKind":"go""#), "go row posted: {door_argv}");
-    assert!(!door_argv.contains("stand-in-identity"), "the identity never rides argv: {door_argv}");
-    assert!(fs::read_to_string(go_door.join("stdin")).unwrap_or_default().contains("stand-in-identity"), "it rides stdin");
-    assert!(sent.contains("decide: ") && sent.contains("/go/approvals") && !sent.contains("sign: "), "the ask points at the list: {sent}");
+    assert!(!door_argv.contains(r#""approvalKind":"go""#), "the announce posts no go row: {door_argv}");
+    assert!(!sent.contains("/go/") && !sent.contains("decide: ") && !sent.contains("go / no"), "no go in the brief: {sent}");
+    assert!(sent.contains("werk-demo vouch 3046"), "the brief names the owner's next step: {sent}");
     assert!(!curl_calls.contains("/api/message"), "no room posts: {}", curl_calls);
     // NEGATIVE PROOF 1: a second announce for the same round sends nothing
     let again = announce_step(3046, "wren", &home).unwrap();

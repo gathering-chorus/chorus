@@ -32,3 +32,18 @@ fn negative_proof_a_gate_that_did_not_run_is_not_green() {
     assert!(!b.contains("werk-demo vouch"), "an unrun gate blocks the vouch: {b}");
     assert!(b.contains("gate-arch"), "{b}");
 }
+
+#[test]
+fn negative_proof_not_green_with_no_named_red_still_says_why() {
+    // Kade 0408f4f7e: gates_green false with empty reds printed "red — " naming nothing.
+    let b = owner_brief(4875, LINE, false, &[]);
+    assert!(b.contains("red — gates not green"), "{b}");
+    assert!(!b.contains("werk-demo vouch"), "{b}");
+}
+
+#[test]
+fn the_announce_line_offers_no_decision() {
+    // The owner's brief is not a decision point for Jeff: no "go / no / more".
+    let l = werk_demo::announce_line(4875, "abc", "gates ✓", "http://v", "http://c");
+    assert!(!l.contains("go / no"), "{l}");
+}

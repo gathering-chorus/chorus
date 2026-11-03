@@ -969,7 +969,7 @@ pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
 /// Sent from "system" to the demoer's session (#3544: from≠to so it injects).
 pub fn announce_line(card: u64, round: &str, tally: &str, variant_url: &str, clearing: &str) -> String {
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
-    format!("Demo ready — #{} · round {} · {} · {} · clearing {} · go / no / more", card, round, tally, url, clearing)
+    format!("Demo ready — #{} · round {} · {} · {} · clearing {}", card, round, tally, url, clearing)
 }
 
 /// #4642 — the one place Jeff decides: his approvals list. The per-run sign link is retired; a
@@ -996,7 +996,8 @@ pub fn owner_brief(card: u64, line: &str, gates_green: bool, reds: &[String]) ->
     if gates_green && reds.is_empty() {
         format!("{line} · for you, not Jeff: show it working, then `werk-demo vouch {card}` (with what is proven and what is not; your navigator vouches too)")
     } else {
-        format!("{line} · for you, not Jeff: red — {} · fix and re-run; nothing goes to Jeff while a gate is red", reds.join(", "))
+        let named = if reds.is_empty() { "gates not green".to_string() } else { reds.join(", ") };
+        format!("{line} · for you, not Jeff: red — {named} · fix and re-run; nothing goes to Jeff while a gate is red")
     }
 }
 
