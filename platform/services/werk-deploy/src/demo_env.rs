@@ -1187,6 +1187,10 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
                 // #4022 — /owl proxies to the werk's athena-make, not prod's.
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
+                // #4838 — the api's own door calls (roles tiles, sessions) read
+                // ATHENA_MAKE_URL; unset, the variant asked PROD's door, so a demo
+                // of a door change answered 400 and proved nothing.
+                ("ATHENA_MAKE_URL", owl_upstream.as_str()),
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
                 ("WERK_TEST_LOG_PATH", nightly_log.as_str()),
                 // Silas, 2026-09-02, proving #4058: the variant booted without
@@ -1245,7 +1249,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("PATH", variant_path.as_str()),
             ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
-            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            // #4838 — pulse reads the door too (actor-state ATHENA_MAKE_URL, changes-overnight ATHENA_URL): the werk's door, never prod's
+            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+                .chain([("ATHENA_MAKE_URL", owl_upstream.as_str()), ("ATHENA_URL", owl_upstream.as_str())]).collect(),
             "chorus-runner" => runner_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "clearing-v2" => clearing_v2_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
