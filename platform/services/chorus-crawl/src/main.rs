@@ -3237,10 +3237,19 @@ fn main() {
                 if read == TreeRead::Complete {
                     eprintln!("chorus-crawl: {label} deletes REFUSED this run ({dels} of {have})");
                 }
+                // #4880 — a delta still deletes the rows whose file git removed;
+                // a refused whole-tree wipe deletes nothing.
+                // ...and the rows whose file git no longer tracks at all, so a
+                // removal an earlier delta missed (#4748's 12) is not stranded.
+                let gone: Vec<String> = if read == TreeRead::Complete { Vec::new() } else {
+                    let graph = if label == "page" { &page_graph } else { &endpoint_graph };
+                    pages::untracked_sources(graph, &tracked_files(&root).unwrap_or_default(), &removed_by_git)
+                };
+                let keep: &[String] = &gone;
                 if label == "page" {
-                    page_plan.retain(|a| !matches!(a, pages::RowAction::Delete { .. }));
+                    page_plan = pages::keep_git_removed_deletes(std::mem::take(&mut page_plan), &page_graph, keep);
                 } else {
-                    endpoint_plan.retain(|a| !matches!(a, pages::RowAction::Delete { .. }));
+                    endpoint_plan = pages::keep_git_removed_deletes(std::mem::take(&mut endpoint_plan), &endpoint_graph, keep);
                 }
             }
         }
