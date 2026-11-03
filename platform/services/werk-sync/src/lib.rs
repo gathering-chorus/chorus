@@ -1,3 +1,4 @@
+// @domain: builds — the werk verbs live in builds, like werk-commit/merge/accept (#4880)
 //! werk-sync — canonical recovery as a verb (#3300, ADR-038 port of the Bash
 //! `chorus-werk-sync`; ADR-032 §1 blueprint: zero-dep std-only Rust, flock,
 //! subprocess git, spine emits, typed refusals).

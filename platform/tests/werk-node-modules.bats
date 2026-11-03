@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — werk-pull/werk-build node_modules trees and the npm guard, on fixture werks
-# @domain: werk
+# @domain: builds
 #
 # #4810. A werk's node_modules used to be a symlink into canonical, or nothing.
 # Nothing made local proof go UNMEASURED (#4552, #4787 run 6, #4809 run 1). The

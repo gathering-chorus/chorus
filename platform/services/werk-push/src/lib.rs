@@ -1,3 +1,4 @@
+// @domain: builds — the werk verbs live in builds, like werk-commit/merge/accept (#4880)
 //! werk-push — `/werk/push` v2 logic (atomic PUSH verb, split from #3056).
 //!
 //! Self-contained: std only + a direct libc `flock` extern; calls `git` and `gh`
