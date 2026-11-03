@@ -443,6 +443,9 @@ function watchFileButton() {
   if (typeof document === 'undefined') return;
   const picker = document.getElementById('composer-file');
   if (!picker || !picker.addEventListener) return;
+  if (picker.dataset && picker.dataset.wired === 'true') return;
+  if (!picker.dataset) picker.dataset = {};
+  picker.dataset.wired = 'true';
   const label = document.querySelector ? document.querySelector('.composer-file') : null;
   if (label && label.addEventListener) {
     label.addEventListener('click', (e) => {
@@ -504,6 +507,9 @@ function watchMicButton() {
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
   const mic = document.getElementById('composer-mic');
   if (!mic || !mic.addEventListener) return;
+  if (mic.dataset && mic.dataset.wired === 'true') return;
+  if (!mic.dataset) mic.dataset = {};
+  mic.dataset.wired = 'true';
   let recorder = null;
   let chunks = [];
   const say = (t, html) => {
@@ -762,10 +768,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
   window.addEventListener('DOMContentLoaded', () => watchRoomScroll());
   window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
-  window.addEventListener('DOMContentLoaded', watchFileButton);
-  window.addEventListener('DOMContentLoaded', watchMicButton);
-  window.addEventListener('DOMContentLoaded', initComposerInput);
-  window.addEventListener('DOMContentLoaded', initTileFilters);
   window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);

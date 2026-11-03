@@ -160,4 +160,45 @@ describe('#4866 AC2: composer attachment picker and inline photos / download chi
       jest.useRealTimers();
     }
   });
+
+  test('watchFileButton uses dataset.wired guard so listener count is strictly 1 across multiple calls', () => {
+    const { watchFileButton } = require('../public/app.js');
+    let labelClicks = 0;
+    let pickerChanges = 0;
+    const picker = {
+      dataset: {} as any,
+      addEventListener: (evt: string) => {
+        if (evt === 'change') pickerChanges += 1;
+      },
+    };
+    const label = {
+      addEventListener: (evt: string) => {
+        if (evt === 'click') labelClicks += 1;
+      },
+    };
+    (global as any).document = {
+      getElementById: (id: string) => (id === 'composer-file' ? picker : null),
+      querySelector: (sel: string) => (sel === '.composer-file' ? label : null),
+    };
+
+    // First call wires listeners and sets dataset.wired = 'true'
+    watchFileButton();
+    expect(picker.dataset.wired).toBe('true');
+    expect(labelClicks).toBe(1);
+    expect(pickerChanges).toBe(1);
+
+    // Subsequent calls (e.g. repeated DOMContentLoaded or re-init) do nothing
+    watchFileButton();
+    watchFileButton();
+    expect(labelClicks).toBe(1);
+    expect(pickerChanges).toBe(1);
+
+    // Negative proof: without dataset.wired, calling twice would register duplicate listeners
+    delete picker.dataset.wired;
+    watchFileButton();
+    expect(labelClicks).toBe(2);
+    expect(pickerChanges).toBe(2);
+
+    delete (global as any).document;
+  });
 });
