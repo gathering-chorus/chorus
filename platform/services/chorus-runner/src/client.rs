@@ -37,11 +37,19 @@ pub fn run(tool: &str, args: &Value) -> i32 {
     // process; any other account's call goes to the shared runner.
     {
         use std::os::unix::fs::MetadataExt;
-        let installer = std::fs::metadata(format!("{}/bin", crate::server::state_dir())).map(|m| m.uid()).ok();
-        if let Some(me) = own_uid() {
-            if crate::forward::forwards(me, installer) {
-                return crate::forward::call(&role, tool, args);
-            }
+        // Fail closed (review: Kade, Abby): an account that cannot tell who it is,
+        // or who installed, never runs the call in its own process.
+        let bin = format!("{}/bin", crate::server::state_dir());
+        let Ok(installer) = std::fs::metadata(&bin).map(|m| m.uid()) else {
+            eprintln!("chorus-runner call: cannot read {bin}, so who installed is unknown; nothing ran");
+            return 2;
+        };
+        let Some(me) = own_uid() else {
+            eprintln!("chorus-runner call: cannot read this account's uid; nothing ran");
+            return 2;
+        };
+        if crate::forward::forwards(me, Some(installer)) {
+            return crate::forward::call(&role, tool, args);
         }
     }
     // #4515 — athena-get/-list/-add/-set: the same check and the same door
@@ -108,12 +116,8 @@ pub fn run(tool: &str, args: &Value) -> i32 {
     }
 }
 
-/// This process's uid, read from a file it just created (no libc).
+/// This process's uid (no libc): `id -u`.
 fn own_uid() -> Option<u32> {
-    use std::os::unix::fs::MetadataExt;
-    let p = std::env::temp_dir().join(format!("chorus-runner-uid-{}", std::process::id()));
-    std::fs::write(&p, "").ok()?;
-    let uid = std::fs::metadata(&p).ok().map(|m| m.uid());
-    let _ = std::fs::remove_file(&p);
-    uid
+    let out = Command::new("/usr/bin/id").arg("-u").output().ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
