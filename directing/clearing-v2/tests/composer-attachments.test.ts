@@ -7,15 +7,26 @@
  * attached files insert recognizable tokens into the message (📷 /uploads/..., 📎 /uploads/...);
  * files render as download chips in rooms.
  */
-import { TEAM_COMPOSER, renderRoomMessage } from '../src/views';
+import { TEAM_COMPOSER, renderRoomMessage, renderRoomsPage } from '../src/views';
 const { uploadFile, fileNames, appendFiles } = require('../public/app.js');
 
 describe('#4866 AC2: composer attachment pickers and download chips', () => {
-  test('TEAM_COMPOSER HTML contains both photo (📷) and file (📎) attachment pickers', () => {
+  test('TEAM_COMPOSER and renderRoomsPage HTML contain both photo (📷) and file (📎) attachment pickers', () => {
     expect(TEAM_COMPOSER).toContain('id="composer-photo"');
     expect(TEAM_COMPOSER).toContain('id="composer-file"');
     expect(TEAM_COMPOSER).toContain('class="composer-file"');
     expect(TEAM_COMPOSER).toContain('📎');
+
+    const roomsHtml = renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, []);
+    expect(roomsHtml).toContain('id="composer-photo"');
+    expect(roomsHtml).toContain('id="composer-file"');
+    expect(roomsHtml).toContain('class="composer-file"');
+    expect(roomsHtml).toContain('📎');
+
+    // Negative proof: omitting composer-file from the room markup fails the assertion
+    const brokenRoomHtml = roomsHtml.replace(/<label for="composer-file"[\s\S]*?<\/label>/, '');
+    expect(brokenRoomHtml).not.toContain('id="composer-file"');
+    expect(brokenRoomHtml).not.toContain('class="composer-file"');
   });
 
   test('fileNames extracts document uploads from message text', () => {
