@@ -46,3 +46,9 @@ announce_block() {
   [[ "$old" == *"go_ask("* ]] || return 1
   [[ "$old" != *"owner_brief("* ]] || return 1
 }
+
+@test "AC7: a go step nobody vouched for is not shown as waiting for Jeff's go (cws self-test)" {
+  run python3 "${BATS_TEST_DIRNAME}/../scripts/chorus-werk-status" --fixture
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"ok   a go step nobody vouched for is not shown as waiting for Jeff's go"* ]] || return 1
+}

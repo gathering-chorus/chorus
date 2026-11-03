@@ -1207,6 +1207,39 @@ def run_count(runs):
     return f"{name} run {mine}" + "".join(f" · {n} {c} run{'s' if c != 1 else ''}" for n, c in sorted(other.items()))
 
 
+# #4875 AC7 (Jeff 11-03 08:06: "i get a nudge from system even on red … then each act and ask
+# again") — a run waiting at the go step is NOT waiting for Jeff until the owner and the navigator
+# have both vouched (werk-demo's demo.go.asked for the round). Until then the line names who holds
+# it. None = no witness read (fixtures that predate #4875 keep their old reading).
+WITNESS_TEXT = None
+WITNESS_PATH = os.environ.get("CWS_WITNESS", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "ops/logs/werk-demo.jsonl"))
+
+
+def go_state(witness, card):
+    """("asked", "") once the go went to Jeff for the card's latest announced round; ("red", gates)
+    while a gate for that round did not pass; else ("vouch", ""). Pure."""
+    key = f'"card_id":{card},'
+    rows = []
+    for l in (witness or "").splitlines():
+        if key in l:
+            try:
+                rows.append(json.loads(l))
+            except ValueError:
+                pass
+    announced = [r for r in rows if r.get("event") == "demo.announced"]
+    if not announced:
+        return ("vouch", "")
+    rnd = announced[-1].get("round")
+    if any(r.get("event") == "demo.go.asked" and r.get("round") == rnd for r in rows):
+        return ("asked", "")
+    last = {}
+    for r in rows:
+        if r.get("event") == "demo.gate.result" and r.get("round") == rnd:
+            last[r.get("gate")] = r.get("result")
+    reds = [g for g, res in last.items() if res != "pass"]
+    return ("red", ", ".join(sorted(reds))) if reds else ("vouch", "")
+
+
 def card_line(card, role, runs, lands, places, now=None, wip=False, parts=None):
     """#4494 — one line per card: where it is now, for how long, which run.
     Jeff, 2026-10-10: "the cws output is confusing" — a dead v1 line, the build
@@ -1266,6 +1299,12 @@ def card_line(card, role, runs, lands, places, now=None, wip=False, parts=None):
         # commands buried the status. The line is the status; the commands
         # print once, under the v2 runs, on /cws <card>.
         where = "waiting for your go"
+        if not land and WITNESS_TEXT is not None:
+            state, reds = go_state(WITNESS_TEXT, card)
+            if state == "red":
+                where = f"red — {reds}, back to {role}"
+            elif state == "vouch":
+                where = f"waiting for {role}'s vouch"
         if land:
             # #4734 (Wren 10:19) — #4735 and #4637 read "waiting for your go"
             # while their lands waited at skill-borg-queen-proves: a land's
@@ -1473,6 +1512,29 @@ def live_other(card, me):
     r = other[0]
     print(f"refused: {r.get('name', DAGU_DAG)} run {n[r.get('dagRunId')]} is live (dagu {r.get('dagRunId')})")
     return 3
+
+
+def ac7_reads(read):
+    """#4875 AC7 — `read(witness)` renders one waiting run's line with WITNESS_TEXT set to witness."""
+    global WITNESS_TEXT
+    keep = WITNESS_TEXT
+    row = lambda ev, **kw: json.dumps({"event": ev, "card_id": 4875, "round": "r1", **kw}).replace('"card_id": 4875,', '"card_id":4875,')
+    ann = row("demo.announced")
+    try:
+        WITNESS_TEXT = ann
+        unvouched = read(ann)
+        WITNESS_TEXT = ann + "\n" + row("demo.gate.result", gate="product", result="fail")
+        red = read(None)
+        WITNESS_TEXT = ann + "\n" + row("demo.go.asked")
+        asked = read(None)
+        WITNESS_TEXT = ann + "\n" + row("demo.go.asked", round="r0")
+        stale = read(None)
+    finally:
+        WITNESS_TEXT = keep
+    return ("waiting for wren's vouch" in unvouched and "your go" not in unvouched
+            and "red — product, back to wren" in red and "your go" not in red
+            and "waiting for your go" in asked
+            and "your go" not in stale)
 
 
 def fixture_4553():
@@ -1717,6 +1779,11 @@ def fixture_4553():
              and "waiting for your go" not in line(4759, [run("c2", "cicd", "running", 0, [node("running", "skill-werk-build")], 4759),
                                                          run("go-c1", "cicd-go", "waiting", 1, [node("waiting", "skill-werk-go")], 4759),
                                                          run("c1", "cicd", "succeeded", 2, [node("succeeded", "cicd-go")], 4759)], [])),
+            # #4875 AC7 — a run waiting at the go step is Jeff's only after both vouched.
+            # Negative proof: the same waiting run reads "waiting for your go" only once
+            # demo.go.asked is on the witness for the announced round.
+            ("a go step nobody vouched for is not shown as waiting for Jeff's go", ac7_reads(
+                lambda w: line(4875, [run("w7", "cicd", "waiting", 0, [node("waiting", "skill-werk-go")], 4875)], []))),
         ]
         DAGU, GIT_DIR, MAIN_REF, LOKI = keep
     for name, ok in cases:
@@ -1734,6 +1801,11 @@ def main():
     if "--live-other" in args:
         i = args.index("--live-other")
         sys.exit(live_other(args[i + 1], args[i + 2]))
+    global WITNESS_TEXT
+    try:
+        WITNESS_TEXT = Path(WITNESS_PATH).read_text()
+    except OSError:
+        WITNESS_TEXT = ""  # no witness: nothing vouched, so nothing waits on Jeff (#4875 AC7)
     role = None
     card = None
     if "--role" in args:
