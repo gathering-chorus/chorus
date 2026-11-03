@@ -1092,6 +1092,11 @@ pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
 /// vouch call posts it; a navigator who vouches last records and stops. Pure.
 pub fn may_post_go(by: &str, owner: &str) -> bool { !owner.is_empty() && by == owner }
 
+/// #4875 (Kade 09:40) — what the owner is told when the navigator's vouch completes the set. Pure.
+pub fn owner_post_nudge(card: u64) -> String {
+    format!("#{card}: both vouched and every gate passed. Run `werk-demo vouch {card} owner …` to post the go to Jeff.")
+}
+
 /// #4875 (Kade ba6102a8f; Jeff 09-09 "i NEVER want to be asked for go on a card with unfinished
 /// ac") — the AC still unchecked on the card. Any one blocks the go. Pure.
 pub fn ac_unfinished(card_view: &str) -> Vec<String> {
@@ -2696,7 +2701,11 @@ pub fn run_demo() -> R<DemoOutcome> {
         }
         // Kade 09:36 — the go row is posted as the owner, so only the owner's own call posts it
         if !may_post_go(&by, &owner) {
-            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; everything is in — {owner} posts the go with their own vouch"), exit: 0 });
+            // Kade 09:40 — never a silent stall: tell the owner the go is theirs to post
+            let a = nudge_send_args(&by, &owner, &owner_post_nudge(card));
+            let argv: Vec<&str> = a.iter().map(String::as_str).collect();
+            let _ = run(&hook_shim(), &argv);
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; everything is in — {owner} was told to post the go with their own vouch"), exit: 0 });
         }
         let head = tested_head(&home, card, &run_id).ok_or_else(|| format!("no go row: no push of #{card} recorded for run {run_id}"))?;
         go_approval_body(card, &run_id, &head, &go_row_title(&home, card))

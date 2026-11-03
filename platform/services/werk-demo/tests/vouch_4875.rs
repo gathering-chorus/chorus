@@ -4,7 +4,7 @@
 //! #4875 AC2/AC3: the go reaches Jeff only when every gate passed for this round, the owner
 //! vouched with what was shown, proven and not proven, and the navigator (a different role)
 //! vouched too. Each missing piece is named; a negative proof for each.
-use werk_demo::{may_post_go, ac_checklist, ac_unfinished, borg_prove_beside, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
+use werk_demo::{may_post_go, owner_post_nudge, ac_checklist, ac_unfinished, borg_prove_beside, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
 
 const R: &str = "round-abc";
 const P: &str = "patch-1";
@@ -152,4 +152,13 @@ fn negative_proof_only_the_owners_call_posts_the_go() {
     assert!(may_post_go("wren", "wren"));
     assert!(!may_post_go("kade", "wren"), "a navigator vouching last records, never posts as the owner");
     assert!(!may_post_go("", ""), "no owner, no post");
+}
+
+#[test]
+fn a_navigator_vouching_last_tells_the_owner_to_post() {
+    // Kade 09:40: the go must not sit until the owner happens to re-run
+    let n = owner_post_nudge(4875);
+    assert!(n.contains("both vouched") && n.contains("werk-demo vouch 4875 owner"), "{n}");
+    // negative proof: the nudge is not itself a go ask — no link, no go page
+    assert!(!n.contains("/go/") && !n.contains("http"), "{n}");
 }
