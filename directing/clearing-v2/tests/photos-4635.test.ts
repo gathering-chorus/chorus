@@ -143,32 +143,32 @@ describe('#4635 a new version reaches the phone at once', () => {
   });
 });
 
-describe('#4635 several photos at once', () => {
-  test('Jeff picks several photos and every one lands in the message box; a failed one is counted', async () => {
-    const { watchPhotoButton } = require('../public/app.js');
+describe('#4635 / #4866 several files/photos at once', () => {
+  test('Jeff picks several files/photos and every one lands in the message box; a failed one is counted', async () => {
+    const { watchFileButton } = require('../public/app.js');
     let onChange: () => Promise<void> = async () => {};
     const picker = { files: [{ name: 'a.jpg', type: 'image/jpeg' }, { name: 'b.jpg', type: 'image/jpeg' }, { name: 'c.jpg', type: 'image/jpeg' }], value: 'x', addEventListener: (_e: string, f: () => Promise<void>) => { onChange = f; } };
     const input = { value: '@silas', focus: () => {} };
     const status = { textContent: '' };
-    (global as any).document = { getElementById: (id: string) => ({ 'composer-photo': picker, 'composer-input': input, 'send-error': status } as any)[id] || null };
+    (global as any).document = { getElementById: (id: string) => ({ 'composer-file': picker, 'composer-input': input, 'send-error': status } as any)[id] || null };
     let n = 0;
     (global as any).fetch = async () => { n += 1; return n === 2
       ? { ok: false, status: 500, json: async () => ({ reason: 'disk full' }) }
       : { ok: true, status: 200, json: async () => ({ ok: true, path: `/x/clearing-v2-uploads/${n}.jpg` }) }; };
-    watchPhotoButton();
+    watchFileButton();
     await onChange();
-    expect(input.value).toBe('@silas 📷 /x/clearing-v2-uploads/1.jpg 📷 /x/clearing-v2-uploads/3.jpg ');
-    expect(status.textContent).toBe('1 of 3 photos not attached: disk full');
+    expect(input.value).toBe('@silas 📎 /x/clearing-v2-uploads/1.jpg 📎 /x/clearing-v2-uploads/3.jpg ');
+    expect(status.textContent).toBe('1 of 3 files not attached: disk full');
     delete (global as any).document; delete (global as any).fetch;
   });
 
-  test('the photo picker allows several', () => {
+  test('the file picker allows several', () => {
     const { renderRoomsPage } = require('../src/views');
-    expect(renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, [])).toContain('accept="image/*" multiple');
+    expect(renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, [])).toContain('id="composer-file" multiple');
   });
 
   test('label click delegates to file picker cleanly with preventDefault to prevent iOS Safari double-trigger cancel', () => {
-    const { watchPhotoButton } = require('../public/app.js');
+    const { watchFileButton } = require('../public/app.js');
     let pickerClicks = 0;
     const picker = {
       click: () => { pickerClicks += 1; },
@@ -181,10 +181,10 @@ describe('#4635 several photos at once', () => {
       },
     };
     (global as any).document = {
-      getElementById: (id: string) => (id === 'composer-photo' ? picker : null),
-      querySelector: (sel: string) => (sel === '.composer-photo' ? label : null),
+      getElementById: (id: string) => (id === 'composer-file' ? picker : null),
+      querySelector: (sel: string) => (sel === '.composer-file' ? label : null),
     };
-    watchPhotoButton();
+    watchFileButton();
 
     expect(typeof labelClickHandler).toBe('function');
     let defaultPrevented = false;

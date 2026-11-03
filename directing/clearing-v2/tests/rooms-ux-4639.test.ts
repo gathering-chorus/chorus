@@ -128,17 +128,17 @@ describe('#4639 Clearing Rooms UX improvements', () => {
       expect(html).not.toContain('<input type="text" id="composer-input"');
     });
 
-    test('Photo picker has accessible label and file input without display:none hidden attribute', () => {
+    test('File picker has accessible label and file input without display:none hidden attribute', () => {
       const html = renderRoomsPage('team', mockRoomsData, []);
-      // Positive proof: label with for="composer-photo" and file input
-      expect(html).toContain('for="composer-photo"');
-      expect(html).toContain('class="composer-photo"');
-      expect(html).toContain('id="composer-photo"');
-      expect(html).toContain('accept="image/*"');
+      // Positive proof: label with for="composer-file" and file input
+      expect(html).toContain('for="composer-file"');
+      expect(html).toContain('class="composer-file"');
+      expect(html).toContain('id="composer-file"');
+      expect(html).toContain('multiple');
       // Must not use HTML hidden attribute which blocks iOS Safari label clicks
-      expect(html).not.toMatch(/<input[^>]*id="composer-photo"[^>]*\bhidden\b/);
+      expect(html).not.toMatch(/<input[^>]*id="composer-file"[^>]*\bhidden\b/);
       // Uses sr-only class for accessibility
-      expect(html).toMatch(/<input[^>]*id="composer-photo"[^>]*class="[^"]*sr-only[^"]*"/);
+      expect(html).toMatch(/<input[^>]*id="composer-file"[^>]*class="[^"]*sr-only[^"]*"/);
     });
   });
 

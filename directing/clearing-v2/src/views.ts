@@ -57,7 +57,6 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
 export const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
       <textarea id="composer-input" rows="1" placeholder="Message #team..." autocomplete="off"></textarea>
-      <label for="composer-photo" class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple class="sr-only">📷</label>
       <label for="composer-file" class="composer-file" title="Attach a file" aria-label="Attach a file"><input type="file" id="composer-file" multiple class="sr-only">📎</label>
       <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
@@ -900,7 +899,6 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         <footer class="composer-bar">
           <form id="composer-form">
             <textarea id="composer-input" rows="1" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off"></textarea>
-            <label for="composer-photo" class="composer-photo" title="Attach a photo" aria-label="Attach a photo"><input type="file" id="composer-photo" accept="image/*" multiple class="sr-only">📷</label>
             <label for="composer-file" class="composer-file" title="Attach a file" aria-label="Attach a file"><input type="file" id="composer-file" multiple class="sr-only">📎</label>
       <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
