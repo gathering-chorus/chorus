@@ -52,3 +52,15 @@ announce_block() {
   [ "$status" -eq 0 ] || return 1
   [[ "$output" == *"ok   a go step nobody vouched for is not shown as waiting for Jeff's go"* ]] || return 1
 }
+
+@test "AC9: the borg-prove wrapper resolves through CHORUS_BIN under a role HOME" {
+  local fake_home bin
+  fake_home="$(mktemp -d)"; bin="$(mktemp -d)"
+  printf '#!/bin/sh\necho "stub-borg-prove $*"\n' > "$bin/borg-prove"; chmod +x "$bin/borg-prove"
+  run env HOME="$fake_home" CHORUS_BIN="$bin" sh "${BATS_TEST_DIRNAME}/../scripts/borg-prove" ac 4875
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == "stub-borg-prove ac 4875" ]] || return 1
+  # negative proof: the old resolution ($HOME/.chorus/bin) finds nothing under a role HOME
+  run env -u CHORUS_BIN HOME="$fake_home" sh "${BATS_TEST_DIRNAME}/../scripts/borg-prove" ac 4875
+  [ "$status" -ne 0 ] || return 1
+}

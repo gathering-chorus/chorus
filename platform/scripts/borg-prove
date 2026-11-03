@@ -1,4 +1,6 @@
 #!/bin/sh
 # #4456 — borg-prove is a Rust verb (platform/services/borg-prove); this path is
 # what generated workflows call, so it hands off to the installed binary.
-exec "$HOME/.chorus/bin/borg-prove" "$@"
+# #4875 (Kade) — resolve through CHORUS_BIN, not $HOME: a role account (HOME=/Users/chorus-<role>)
+# has no ~/.chorus/bin, so the vouch's AC read came back empty and every vouch read "unreadable".
+exec "${CHORUS_BIN:-$HOME/.chorus/bin}/borg-prove" "$@"
