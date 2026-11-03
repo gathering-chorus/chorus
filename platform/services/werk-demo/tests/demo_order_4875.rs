@@ -47,3 +47,12 @@ fn the_announce_line_offers_no_decision() {
     let l = werk_demo::announce_line(4875, "abc", "gates ✓", "http://v", "http://c");
     assert!(!l.contains("go / no"), "{l}");
 }
+
+#[test]
+fn the_owner_brief_does_not_read_as_demo_ready_to_the_clearing_router() {
+    // AC1 (Kade): directing/clearing/src/router.ts files any text with "demo ready" as a visible
+    // demo-ready message in Jeff's room. The owner's brief must not match it.
+    let l = werk_demo::announce_line(4875, "abc", "gates ✓", "http://v", "http://c");
+    let b = owner_brief(4875, &l, true, &[]);
+    assert!(!b.to_lowercase().contains("demo ready") && !b.contains("[demo]"), "{b}");
+}

@@ -969,7 +969,7 @@ pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
 /// Sent from "system" to the demoer's session (#3544: from≠to so it injects).
 pub fn announce_line(card: u64, round: &str, tally: &str, variant_url: &str, clearing: &str) -> String {
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
-    format!("Demo ready — #{} · round {} · {} · {} · clearing {}", card, round, tally, url, clearing)
+    format!("Demo brief for the owner — #{} · round {} · {} · {} · clearing {}", card, round, tally, url, clearing)
 }
 
 /// #4642 — the one place Jeff decides: his approvals list. The per-run sign link is retired; a

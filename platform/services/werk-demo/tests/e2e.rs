@@ -203,7 +203,7 @@ exit 0
     }
     // #4502 — ONE message per round (Jeff 11:33 "really noisy and repetitive";
     // #3971 folded): the round's ask went out once, and no room posts at all.
-    let asks = |p: &PathBuf| fs::read_to_string(p).unwrap_or_default().lines().filter(|l| l.contains("Demo ready — #3046")).count();
+    let asks = |p: &PathBuf| fs::read_to_string(p).unwrap_or_default().lines().filter(|l| l.contains("Demo brief for the owner — #3046")).count();
     assert_eq!(asks(&shim_log), 1, "one ask for the round: {}", fs::read_to_string(&shim_log).unwrap_or_default());
     let sent = fs::read_to_string(&shim_log).unwrap_or_default();
     assert!(sent.contains("gates ✓") && sent.contains("reviews 3/3") && sent.contains("AC 2/2"),
