@@ -553,6 +553,31 @@ mod inject_trace_id_tests {
     }
 
     #[test]
+    fn the_room_relay_gets_the_turn_s_final_text_not_the_lagging_transcript_4882() {
+        let d = std::env::temp_dir().join(format!("shim-4882-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let tp = d.join("t.jsonl");
+        let lines = [
+            serde_json::json!({"type":"user","message":{"role":"user","content":"earlier"}}),
+            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"previous turn's reply"}]}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":"whats next"}}),
+        ];
+        std::fs::write(&tp, lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
+        let tp = tp.to_string_lossy().to_string();
+        let with_field = serde_json::json!({"transcript_path": tp, "last_assistant_message": "final answer"}).to_string();
+        let out: serde_json::Value = serde_json::from_str(&enrich_stop_prompt_response(with_field)).unwrap();
+        assert_eq!(out["prompt_response"], "final answer");
+        // a lagging transcript with no text past the prompt relays nothing
+        let without = serde_json::json!({"transcript_path": tp}).to_string();
+        let out: serde_json::Value = serde_json::from_str(&enrich_stop_prompt_response(without)).unwrap();
+        assert!(out.get("prompt_response").is_none(), "must not relay the previous reply: {out}");
+        // negative proof (#3734): the old lookup this relay used returns the previous reply
+        assert_eq!(chorus_hooks::last_assistant_text(&tp).as_deref(), Some("previous turn's reply"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn session_turn_payload_builds_for_prompt_and_stop_only_4779() {
         let p = build_session_turn_payload(
             "user-prompt-submit",
