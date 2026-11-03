@@ -1083,6 +1083,12 @@ pub fn ac_checklist(borg_ac: &str) -> String {
 /// #4875 (Kade 26af1b142) — the borg-prove that ships beside THIS werk-demo (current_exe's dir):
 /// a demo slot's werk-demo then reads the AC with its own borg-prove, not prod's older one (which
 /// would deadlock the card that adds `borg-prove ac`). No sibling → `fallback` (the wrapper).
+/// #4882 AC4 — what runs before a gate: only the product gate, and it is borg-prove's
+/// `tick` (AC boxes from the checks' results). Pure.
+pub fn pre_gate_args(gate: &str, card: u64) -> Option<Vec<String>> {
+    (gate == "product").then(|| vec!["tick".to_string(), card.to_string()])
+}
+
 pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
     exe_dir.map(|d| d.join("borg-prove")).filter(|p| p.is_file())
         .map(|p| p.to_string_lossy().to_string()).unwrap_or(fallback)
@@ -1522,6 +1528,14 @@ pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOu
     }
     let trace = run_trace();
     emit_spine(home, "demo.gates.running", role, card, &trace);
+    // #4882 AC4 — the product gate reads AC boxes set from proof, never only hand ticks.
+    // Best effort: a borg-prove without `tick` (before this lands) leaves the card as it is.
+    if let Some(args) = pre_gate_args(gate, card) {
+        let exe = env::current_exe().ok();
+        let bp = borg_prove_beside(exe.as_deref().and_then(Path::parent), script_path(home, "borg-prove"));
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        let _ = run(&bp, &argv);
+    }
     run_one_gate(home, role, card, gate, &round);
     Ok(step_outcome(&what, card, recorded(&read_witness(home))))
 }
