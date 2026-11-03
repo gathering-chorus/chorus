@@ -53,3 +53,22 @@ fn another_accounts_file_is_refused_even_at_0755() {
     assert!(slot_refusal(502, 0o100755, 502).is_none());
     assert!(slot_refusal(502, 0o100757, 502).is_some(), "other-writable");
 }
+
+/// #4853 demo find (12:18): a role running `chorus-runner call` itself refused a
+/// slot the installer (jeffbridwell) owns. The installer's slots run; a slot
+/// owned by any other account is still refused (negative proof, the live
+/// silas-bin/security case, is `another_accounts_file_is_refused_even_at_0755`).
+#[test]
+fn a_slot_owned_by_the_installer_is_trusted_by_a_role_running_call() {
+    use std::os::unix::fs::MetadataExt;
+    let state = std::env::temp_dir().join(format!("state-4853-{}", std::process::id()));
+    std::fs::create_dir_all(state.join("bin")).unwrap();
+    std::env::set_var("CHORUS_STATE_DIR", &state);
+    let base = slot("installer", 0o755, 0o755);
+    std::env::set_var("CHORUS_WERK_BASE", &base);
+    // the test account is both installer and caller here; the owner check passes, the mode check still applies
+    assert_eq!(std::fs::metadata(state.join("bin")).unwrap().uid(), std::fs::metadata(&base).unwrap().uid());
+    assert!(binary_path("werk-build", "wren").is_ok());
+    std::env::remove_var("CHORUS_WERK_BASE");
+    std::env::remove_var("CHORUS_STATE_DIR");
+}

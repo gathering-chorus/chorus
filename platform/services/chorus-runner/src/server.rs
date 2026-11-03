@@ -138,11 +138,17 @@ fn runner_uid() -> Option<u32> {
 }
 
 /// #4853 — a slot binary and the directory holding it must both be owned by
-/// the runner's account and not writable by group or other. Otherwise any
+/// this account, root or the installer, and not writable by group or other. Otherwise any
 /// account in group chorus could plant code that runs as the runner's account.
 pub fn slot_trusted(slot: &std::path::Path) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt;
     let me = runner_uid().ok_or("could not read the runner's own account, so no slot binary runs")?;
+    // the installer: whoever owns the installed bin dir (~/.chorus/bin, jeffbridwell).
+    // A role running `chorus-runner call` itself may run a slot the installer wrote;
+    // the shared runner (which IS the installer) still refuses a role-owned slot.
+    use std::os::unix::fs::MetadataExt as _;
+    let installer = std::fs::metadata(format!("{}/bin", state_dir())).map(|m| m.uid()).ok();
+    let trusted = [Some(me), Some(0), installer];
     let dir = slot.parent().unwrap_or(slot);
     for p in [dir, slot] {
         // never follow a link: a symlinked slot points at code the slot owner does not vouch for
@@ -150,7 +156,8 @@ pub fn slot_trusted(slot: &std::path::Path) -> Result<(), String> {
         if m.file_type().is_symlink() {
             return Err(format!("refusing to run {}: {} is a symlink (#4853)", slot.display(), p.display()));
         }
-        if let Some(why) = slot_refusal(m.uid(), m.mode(), me) {
+        let owner_ok = trusted.contains(&Some(m.uid()));
+        if let Some(why) = slot_refusal(if owner_ok { me } else { m.uid() }, m.mode(), me) {
             return Err(format!("refusing to run {}: {} {why} (#4853: a slot must be owned by the runner's account and writable only by it)", slot.display(), p.display()));
         }
     }
