@@ -67,6 +67,22 @@ export function body(content: string): string {
   return content.replace(/^\[nudge from [^\]|]+\|[^\]]*\]\s*/, '');
 }
 
+/**
+ * #4875 AC10 (Jeff 09:36 screenshot) — the demo brief is for the owner only ("for you, not Jeff"):
+ * it never goes into #team, where Jeff reads the room. Matched with or without a delivery header.
+ */
+export function ownerOnly(m: Pick<BuzzMessage, 'from' | 'content'>): boolean {
+  return m.from === 'system' && /^\s*(\[[^\]]*\]\s*)?Demo brief for the owner\b/.test(m.content);
+}
+
+/**
+ * #4875 AC10 — text a role's terminal received as a delivery (an alert or a peer nudge), not words
+ * Jeff typed: a prompt hook must never record it as "jeff".
+ */
+export function injectedDelivery(content: string): boolean {
+  return /^\s*\[(alert for |alert → |nudge from )/.test(content);
+}
+
 /** The text and kind the room shows for a message (same as clearing/src/tailer.ts). */
 export function roomText(m: BuzzMessage): { text: string; kind: 'nudge' | 'alert' } {
   const words = body(m.content);

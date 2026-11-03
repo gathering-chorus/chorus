@@ -999,7 +999,9 @@ pub fn owner_brief(card: u64, line: &str, gates_green: bool, reds: &[String]) ->
 pub fn vouch_line(card: u64, by: &str, as_: &str, round: &str, patch: &str,
                   shown: &str, proven: &str, not_proven: &str, why: &str) -> String {
     let f = |t: &str| t.replace(['"', '\\'], "'").replace(['\n', '\r'], " ");
-    jsonl_line(0, "demo.vouched", by, card, "vouch",
+    // Kade 09:37: a real time, never "ts":0
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    jsonl_line(ts, "demo.vouched", by, card, "vouch",
         &format!(",\"as\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"shown\":\"{}\",\"proven\":\"{}\",\"not_proven\":\"{}\",\"why\":\"{}\"",
                  f(as_), f(round), f(patch), f(shown), f(proven), f(not_proven), f(why)))
 }
@@ -1085,6 +1087,10 @@ pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
     exe_dir.map(|d| d.join("borg-prove")).filter(|p| p.is_file())
         .map(|p| p.to_string_lossy().to_string()).unwrap_or(fallback)
 }
+
+/// #4875 (Kade 09:36) — the go row is posted with the owner's identity, so only the owner's own
+/// vouch call posts it; a navigator who vouches last records and stops. Pure.
+pub fn may_post_go(by: &str, owner: &str) -> bool { !owner.is_empty() && by == owner }
 
 /// #4875 (Kade ba6102a8f; Jeff 09-09 "i NEVER want to be asked for go on a card with unfinished
 /// ac") — the AC still unchecked on the card. Any one blocks the go. Pure.
@@ -2687,6 +2693,10 @@ pub fn run_demo() -> R<DemoOutcome> {
         missing.extend(ac_unfinished(&cv));
         if !missing.is_empty() {
             return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; not sent to Jeff yet — missing: {}", missing.join(", ")), exit: 0 });
+        }
+        // Kade 09:36 — the go row is posted as the owner, so only the owner's own call posts it
+        if !may_post_go(&by, &owner) {
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; everything is in — {owner} posts the go with their own vouch"), exit: 0 });
         }
         let head = tested_head(&home, card, &run_id).ok_or_else(|| format!("no go row: no push of #{card} recorded for run {run_id}"))?;
         go_approval_body(card, &run_id, &head, &go_row_title(&home, card))

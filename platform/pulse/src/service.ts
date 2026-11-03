@@ -36,7 +36,7 @@ import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
-import { BuzzWriter, bridgeSignerFromHome, identitySignerFromHome, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
+import { BuzzWriter, ownerOnly, injectedDelivery, bridgeSignerFromHome, identitySignerFromHome, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
 import { BuzzReader } from './buzz-reader';
 import { NoteKeys } from './note-keys';
 import { BuzzDelivery } from './buzz-delivery';
@@ -252,6 +252,7 @@ function enqueueUnlessHeld(worker: DeliveryWorker | undefined, held: boolean, ro
 
 /** #4629 S2 — a sender that signed its own note (buzz=sender) gets no bridge copy, so the room holds it once. */
 function copyToBuzz(buzz: BuzzPoster | undefined, body: { buzz?: unknown } | undefined, m: BuzzMessage): void {
+  if (ownerOnly(m)) return; // #4875 AC10 — the owner's demo brief stays out of #team
   if (body?.buzz !== 'sender') buzz?.post(m);
 }
 
@@ -422,6 +423,8 @@ async function recordJeff(b: Record<string, unknown>, store: MessageStore, buzz?
     log('warn', 'record.jeff.not-a-role-pane', { to, chars: content.length });
     return { status: 422, body: { error: 'not-a-role-pane', message: `"${to}" is not a role the roles door lists; nothing recorded` } };
   }
+  // #4875 AC10 — an alert or nudge the role's terminal received is not Jeff's words
+  if (injectedDelivery(content)) { log('info', 'record.jeff.injected-skipped', { to, chars: content.length }); return { status: 200, body: { ok: true, skipped: 'injected' } }; }
   if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentRecords, DEDUP_WINDOW_MS)) return { status: 200, body: { ok: true, deduped: true } };
   if (store.jeffInputSentRecently(to, content)) return { status: 200, body: { ok: true, deduped: 'clearing' } };
   const id = Date.now(); // unique across pulse restarts, unlike a counter

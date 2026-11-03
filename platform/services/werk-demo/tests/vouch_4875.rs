@@ -4,7 +4,7 @@
 //! #4875 AC2/AC3: the go reaches Jeff only when every gate passed for this round, the owner
 //! vouched with what was shown, proven and not proven, and the navigator (a different role)
 //! vouched too. Each missing piece is named; a negative proof for each.
-use werk_demo::{ac_checklist, ac_unfinished, borg_prove_beside, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
+use werk_demo::{may_post_go, ac_checklist, ac_unfinished, borg_prove_beside, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
 
 const R: &str = "round-abc";
 const P: &str = "patch-1";
@@ -138,4 +138,18 @@ fn the_ac_is_read_by_the_borg_prove_beside_this_werk_demo() {
     assert_eq!(borg_prove_beside(Some(&empty), "wrapper".into()), "wrapper");
     assert_eq!(borg_prove_beside(None, "wrapper".into()), "wrapper");
     let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_vouch_row_carries_a_real_time() {
+    // Kade 09:37: vouch rows stamped "ts":0
+    let l = vouch_line(7, "wren", "owner", R, P, "http://192.168.86.36:3503/x", "p", "", "");
+    assert!(!l.starts_with("{\"ts\":0,"), "{l}");
+}
+
+#[test]
+fn negative_proof_only_the_owners_call_posts_the_go() {
+    assert!(may_post_go("wren", "wren"));
+    assert!(!may_post_go("kade", "wren"), "a navigator vouching last records, never posts as the owner");
+    assert!(!may_post_go("", ""), "no owner, no post");
 }
