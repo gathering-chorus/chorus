@@ -61,3 +61,26 @@ out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
   out_has "roles door"
   ! grep -q "respawn-pane" "$T/tmux.log" 2>/dev/null || return 1
 }
+
+# #4845 AC3 — Jeff 11-03 18:11: "do we have a single login traceid". Wren's 10-31
+# login wrote about a dozen session.* events and none carried a trace.
+trace_log() { printf '#!/bin/bash\necho "trace=${CHORUS_TRACE_ID:-} $*" >> "%s/spine.log"\n' "$T" > "$T/bin/chorus-log"; chmod +x "$T/bin/chorus-log"; }
+
+@test "one login, one trace: every event it writes carries the trace it printed" {
+  trace_log
+  run "$SCRIPT" login silas
+  [ "$status" -eq 0 ]
+  t=$(printf '%s\n' "$output" | sed -n 's/^trace: //p' | head -1)
+  [ -n "$t" ]
+  grep -q "^trace=$t session\." "$T/spine.log"
+  [ -z "$(grep -v "^trace=$t " "$T/spine.log" || true)" ] || { grep -v "^trace=$t " "$T/spine.log"; return 1; }
+}
+
+@test "NEGATIVE PROOF — two logins get two traces, so a fixed or empty one fails" {
+  trace_log
+  run "$SCRIPT" login silas; a=$(printf '%s\n' "$output" | sed -n 's/^trace: //p')
+  run "$SCRIPT" logout silas
+  run "$SCRIPT" login silas; b=$(printf '%s\n' "$output" | sed -n 's/^trace: //p')
+  [ -n "$a" ] && [ -n "$b" ] && [ "$a" != "$b" ]
+  ! grep -q "^trace= " "$T/spine.log" || return 1
+}
