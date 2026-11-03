@@ -233,7 +233,7 @@ fn failed_step(dag: &str, run: &str) -> String {
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let (Some(mode), Some(card)) = (a.first(), a.get(1).and_then(|c| c.trim_start_matches('#').parse::<u32>().ok())) else {
-        eprintln!("usage: borg-prove ac|tick|intake|verify|stage|verdict|prod|record|route <card> <role> [run-id routes]");
+        eprintln!("usage: borg-prove ac|intake|verify|stage|verdict|prod|record|route <card> <role> [run-id routes]");
         exit(2);
     };
     let role = a.get(2).cloned().unwrap_or_default();
@@ -245,26 +245,6 @@ fn main() {
             let Some(desc) = desc else { eprintln!("borg-prove: the board did not answer for #{card}"); exit(1) };
             for (done, c) in borg_prove::ac_lines(card, &desc) {
                 println!("{}\t{}\t{}", if done { "✓" } else { "☐" }, c.statement, c.kind);
-            }
-        }
-        // #4882 AC4 — set the card's AC boxes from proof before the product gate reads them:
-        // a met check ticks, a not-met check unticks, no answer leaves the box. Writes the card
-        // only when a box changed; exit 1 (named) when the board does not answer or refuses.
-        "tick" => {
-            let Some(viewed) = card_text(card) else { eprintln!("borg-prove: the board did not answer for #{card}"); exit(1) };
-            // `cards view` indents the description four spaces; the card itself is not indented
-            let desc: String = viewed.trim_start_matches('\n').lines()
-                .map(|l| l.strip_prefix("    ").unwrap_or(l)).collect::<Vec<_>>().join("\n");
-            let r = run_checks(card, &env("BORG_DEMO_BASE", "http://localhost:3343"));
-            let (next, changed) = borg_prove::tick_from_results(&desc, &r);
-            if changed == 0 {
-                println!("#{card} tick: no box changed");
-                return;
-            }
-            let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
-            match Command::new("bash").arg(&cards).args(["update", &card.to_string(), "--desc", next.trim_end()]).status() {
-                Ok(s) if s.success() => println!("#{card} tick: {changed} box(es) set from proof"),
-                _ => { eprintln!("#{card} tick: the board refused the update"); exit(1) }
             }
         }
         "intake" => match intake(&checks(card)) {

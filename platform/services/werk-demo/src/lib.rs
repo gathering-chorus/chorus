@@ -1083,10 +1083,33 @@ pub fn ac_checklist(borg_ac: &str) -> String {
 /// #4875 (Kade 26af1b142) — the borg-prove that ships beside THIS werk-demo (current_exe's dir):
 /// a demo slot's werk-demo then reads the AC with its own borg-prove, not prod's older one (which
 /// would deadlock the card that adds `borg-prove ac`). No sibling → `fallback` (the wrapper).
-/// #4882 AC4 — what runs before a gate: only the product gate, and it is borg-prove's
-/// `tick` (AC boxes from the checks' results). Pure.
-pub fn pre_gate_args(gate: &str, card: u64) -> Option<Vec<String>> {
-    (gate == "product").then(|| vec!["tick".to_string(), card.to_string()])
+/// #4882 AC4 (Jeff 17:03 "missing check boxes is a bad reason to rerun pipeline"; Silas 17:03)
+/// — the product gate decides the AC from `borg-prove verify`, never from box state. Not
+/// Proven → red, naming each AC that is not met or has no check; Proven → the gate sees the
+/// results as the deciding source. Pure.
+pub fn product_proof(verify_ok: bool, verify_out: &str) -> Result<String, String> {
+    if verify_ok {
+        return Ok(format!(
+            "=== AC PROOF (borg-prove verify: the deciding source for AC; box state is display only) ===\n{}",
+            verify_out.trim()
+        ));
+    }
+    // borg-prove's result rows: `ac-<card>-<n>  <met|not met|unmeasured|deferred>  <statement>`
+    let bad: Vec<String> = verify_out
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ac-"))
+        .filter_map(|l| {
+            let (ac, rest) = l.split_once(char::is_whitespace)?;
+            let rest = rest.trim_start();
+            let word = ["not met", "unmeasured"].into_iter().find(|w| rest.starts_with(w))?;
+            Some(format!("{ac} {word}"))
+        })
+        .collect();
+    Err(format!(
+        "AC not proven by their checks: {}",
+        if bad.is_empty() { verify_out.trim().to_string() } else { bad.join("; ") }
+    ))
 }
 
 pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
@@ -1528,14 +1551,6 @@ pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOu
     }
     let trace = run_trace();
     emit_spine(home, "demo.gates.running", role, card, &trace);
-    // #4882 AC4 — the product gate reads AC boxes set from proof, never only hand ticks.
-    // Best effort: a borg-prove without `tick` (before this lands) leaves the card as it is.
-    if let Some(args) = pre_gate_args(gate, card) {
-        let exe = env::current_exe().ok();
-        let bp = borg_prove_beside(exe.as_deref().and_then(Path::parent), script_path(home, "borg-prove"));
-        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-        let _ = run(&bp, &argv);
-    }
     run_one_gate(home, role, card, gate, &round);
     Ok(step_outcome(&what, card, recorded(&read_witness(home))))
 }
@@ -2337,6 +2352,21 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             })
             .unwrap_or_else(|e| format!("(chorus-health failed to spawn: {})", e));
         ops_ctx(&base_ctx, gate, &health)
+    } else if gate == "product" {
+        let exe = env::current_exe().ok();
+        let bp = borg_prove_beside(exe.as_deref().and_then(Path::parent), script_path(home, "borg-prove"));
+        let (ok, out) = Command::new(&bp)
+            .args(["verify", &card.to_string()])
+            .output()
+            .map(|o| (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))))
+            .unwrap_or_else(|e| (false, format!("borg-prove failed to start: {e}")));
+        match product_proof(ok, &out) {
+            Ok(proof) => format!("{base_ctx}\n\n{proof}"),
+            Err(findings) => {
+                record_gate(home, role, card, gate, "fail", &findings, round);
+                return;
+            }
+        }
     } else {
         base_ctx
     };
