@@ -118,3 +118,10 @@ fn negative_proof_one_unchecked_ac_blocks_the_go() {
     let one_open = "    - [x] AC1: a. check: t\n    - [ ] AC2: b. check: t";
     assert_eq!(ac_unfinished(one_open), vec!["unfinished AC2: b.".to_string()]);
 }
+
+#[test]
+fn negative_proof_an_unreadable_card_blocks_the_go() {
+    // Kade 47ef7e508: `cards view` failing gives "", which must refuse, not read as all-done.
+    assert_eq!(ac_unfinished(""), vec!["card AC unreadable".to_string()]);
+    assert_eq!(ac_unfinished("Status: WIP\nno boxes"), vec!["card AC unreadable".to_string()]);
+}

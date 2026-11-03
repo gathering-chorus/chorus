@@ -1080,7 +1080,10 @@ pub fn ac_checklist(card_view: &str) -> String {
 /// #4875 (Kade ba6102a8f; Jeff 09-09 "i NEVER want to be asked for go on a card with unfinished
 /// ac") — the AC still unchecked on the card. Any one blocks the go. Pure.
 pub fn ac_unfinished(card_view: &str) -> Vec<String> {
-    ac_checklist(card_view).lines().filter(|l| l.starts_with('☐'))
+    let list = ac_checklist(card_view);
+    // Kade 47ef7e508: an unreadable card (board down → "") must refuse, never pass as "nothing open".
+    if list.is_empty() { return vec!["card AC unreadable".to_string()]; }
+    list.lines().filter(|l| l.starts_with('☐'))
         .map(|l| format!("unfinished {}", l.trim_start_matches('☐').trim())).collect()
 }
 
