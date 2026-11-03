@@ -1,5 +1,6 @@
 // @domain: messages
 
+import { watchModerator } from './moderator';
 import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import os from 'os';
@@ -673,6 +674,8 @@ export function createApp(options?: CreateAppOptions) {
   mountStatic(app);
 
   const router = new MessageRouter(500);
+  // #4875 AC5 — the moderator is a property, re-read so a change takes effect without a restart.
+  if (!options?.readOnly && process.env.NODE_ENV !== 'test') watchModerator((m) => router.setModerator(m));
   const urls = resolveUrls(options);
   const tileService = new TileService(urls.pulseUrl);
   const known = knownKeysFor(options);

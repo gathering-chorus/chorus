@@ -15,6 +15,7 @@ export class MessageRouter {
   private seenIds: Set<string> = new Set();
   private maxMessages: number;
   private knownRoles: Set<string>;
+  private moderator?: string;
 
   constructor(maxMessages = 200, knownRoles: Iterable<string> = DEFAULT_KNOWN_ROLES) {
     this.maxMessages = maxMessages;
@@ -23,6 +24,11 @@ export class MessageRouter {
 
   setKnownRoles(roles: Iterable<string>): void {
     this.knownRoles = new Set(Array.from(roles).map((r) => r.toLowerCase()));
+  }
+
+  /** #4875 AC5 — the role that alone receives unaddressed Jeff messages (the `room.moderator` property). */
+  setModerator(role: string | undefined): void {
+    this.moderator = role ? role.toLowerCase() : undefined;
   }
 
   addKnownRole(role: string): void {
@@ -141,7 +147,11 @@ export class MessageRouter {
       }
     }
 
-    // #4604: unaddressed Jeff input routes to every role as in v1 (#3833).
+    // #4875 AC5: unaddressed Jeff input goes to the moderator alone, who answers for the team.
+    if (nudges.length === 0 && msg.from === 'jeff' && this.moderator && this.knownRoles.has(this.moderator)) {
+      return [{ from: 'jeff', to: this.moderator, content: msg.text }];
+    }
+    // #4604: with no valid moderator property, unaddressed Jeff input routes to every role (#3833).
     if (nudges.length === 0 && msg.from === 'jeff') {
       for (const role of this.knownRoles) {
         if (role !== 'jeff') {

@@ -6427,6 +6427,20 @@
         "patch_id": "Content key of the round"
       }
     },
+    "demo.go.asked": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "#4875 — the go reached Jeff: every gate passed and both the owner and the navigator vouched for this round, so the go row was posted and Jeff got one message (show, prove, vouch, then go).",
+      "fields": {
+        "role": "The owner, who asks",
+        "trace_id": "The cicd run the go binds",
+        "round": "The round vouched for",
+        "patch_id": "Content key of the round"
+      }
+    },
     "demo.smoke.result": {
       "producer": "pipelines",
       "category": "fact",

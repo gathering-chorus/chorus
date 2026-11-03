@@ -969,7 +969,7 @@ pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
 /// Sent from "system" to the demoer's session (#3544: from≠to so it injects).
 pub fn announce_line(card: u64, round: &str, tally: &str, variant_url: &str, clearing: &str) -> String {
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
-    format!("Demo ready — #{} · round {} · {} · {} · clearing {} · go / no / more", card, round, tally, url, clearing)
+    format!("Demo brief for the owner — #{} · round {} · {} · {} · clearing {}", card, round, tally, url, clearing)
 }
 
 /// #4642 — the one place Jeff decides: his approvals list. The per-run sign link is retired; a
@@ -980,19 +980,146 @@ pub fn approvals_link() -> String {
     format!("{base}/go/approvals")
 }
 
-/// #4642 — the one ask's tail: the list when the go row is on it; otherwise the per-run sign page
-/// and the reason, so the go is never a dead end. Pure.
-pub fn go_ask(line: &str, posted: &Result<(), String>, card: u64, run: &str, role: &str) -> String {
-    match posted {
-        Ok(()) => format!("{line} · decide: {}", approvals_link()),
-        Err(why) => format!("{line} · sign: {} (go row not on the list: {why})", sign_link(card, run, role)),
+/// #4875 — the automated announce, to the OWNER only: what ran, and the one next step. Green:
+/// show the change working, then `werk-demo vouch`, which alone puts the go in front of Jeff.
+/// Red: each red gate named, and no vouch offered. Never a go link. Pure.
+pub fn owner_brief(card: u64, line: &str, gates_green: bool, reds: &[String]) -> String {
+    if gates_green && reds.is_empty() {
+        format!("{line} · for you, not Jeff: show it working, then `werk-demo vouch {card}` (with what is proven and what is not; your navigator vouches too)")
+    } else {
+        let named = if reds.is_empty() { "gates not green".to_string() } else { reds.join(", ") };
+        format!("{line} · for you, not Jeff: red — {named} · fix and re-run; nothing goes to Jeff while a gate is red")
     }
 }
 
-/// The per-run sign page, only for when the go row could not be posted (see announce).
-pub fn sign_link(card: u64, run: &str, role: &str) -> String {
-    format!("{}?card={card}&run={run}&role={role}", approvals_link().trim_end_matches("approvals"))
+/// #4875 — one vouch on the witness: the owner's (what was shown, proven, not proven) or the
+/// navigator's (why they'd click go). Free text is flattened so the witness stays one JSON line
+/// per event and `json_str_after` reads it back whole. Pure.
+#[allow(clippy::too_many_arguments)]
+pub fn vouch_line(card: u64, by: &str, as_: &str, round: &str, patch: &str,
+                  shown: &str, proven: &str, not_proven: &str, why: &str) -> String {
+    let f = |t: &str| t.replace(['"', '\\'], "'").replace(['\n', '\r'], " ");
+    // Kade 09:37: a real time, never "ts":0
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    jsonl_line(ts, "demo.vouched", by, card, "vouch",
+        &format!(",\"as\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"shown\":\"{}\",\"proven\":\"{}\",\"not_proven\":\"{}\",\"why\":\"{}\"",
+                 f(as_), f(round), f(patch), f(shown), f(proven), f(not_proven), f(why)))
 }
+
+/// The latest vouch of a kind for this card and round (patch-keyed like the go), optionally
+/// only from someone other than `not_by`. Pure.
+fn vouch_of<'a>(witness: &'a str, card: u64, round: &str, patch: &str, as_: &str, not_by: Option<&str>) -> Option<&'a str> {
+    let card_key = format!("\"card_id\":{},", card);
+    let as_key = format!("\"as\":\"{as_}\"");
+    witness.lines().rev().find(|l| l.contains("\"event\":\"demo.vouched\"") && l.contains(&card_key)
+        && l.contains(&as_key) && line_keyed(l, round, patch)
+        && not_by.is_none_or(|o| json_str_after(l, "role").is_some_and(|r| !r.is_empty() && r != o)))
+}
+
+/// #4875 AC8 — a link Jeff can open from his phone: http(s), and not a loopback host. Pure.
+pub fn reachable_link(url: &str) -> bool {
+    let u = url.trim().to_ascii_lowercase();
+    let rest = match u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) { Some(r) => r, None => return false };
+    // Kade c38c84e10: an IPv6 host is bracketed; split on ':' would leave "[" and let [::1] through.
+    let host = match rest.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => rest.split(['/', ':', '?', '#']).next().unwrap_or(""),
+    };
+    !host.is_empty() && host != "localhost" && !host.starts_with("127.") && host != "0.0.0.0" && host != "::1" && host != "::"
+}
+
+/// #4875 AC2/AC3 — what still stands between this round and Jeff's go: any gate that did not
+/// pass, an owner vouch with nothing shown, no navigator vouch from a role other than the owner.
+/// Empty = the go may go to Jeff. Pure.
+pub fn vouch_missing(witness: &str, card: u64, round: &str, patch: &str, owner: &str) -> Vec<String> {
+    // Kade b1c438aeb (2): each gate's verdict for THIS round (patch-keyed), never an older round's pass.
+    let card_key = format!("\"card_id\":{},", card);
+    let mut missing: Vec<String> = REQUIRED_GATES.iter().filter_map(|g| {
+        let gate_key = format!("\"gate\":\"{g}\"");
+        let r = witness.lines().rev().find(|l| l.contains("\"event\":\"demo.gate.result\"")
+                && l.contains(&card_key) && l.contains(&gate_key) && line_keyed(l, round, patch))
+            .and_then(|l| json_str_after(l, "result")).unwrap_or_else(|| "-".to_string());
+        (r != "pass").then(|| format!("{g} {r}"))
+    }).collect();
+    let own = vouch_of(witness, card, round, patch, "owner", None)
+        .filter(|l| json_str_after(l, "role").as_deref() == Some(owner));
+    let blank = |l: &str, k: &str| json_str_after(l, k).unwrap_or_default().trim().is_empty();
+    match own {
+        None => missing.push(format!("owner vouch ({owner})")),
+        Some(l) if blank(l, "shown") => missing.push("owner vouch: nothing shown".into()),
+        // #4875 AC8 (Jeff 08:53 "all links must be wifi not localhost"): Jeff opens it on his phone.
+        Some(l) if !reachable_link(&json_str_after(l, "shown").unwrap_or_default()) =>
+            missing.push("owner vouch: shown link is not reachable from Jeff's phone (no localhost/127.0.0.1; a wifi or public URL)".into()),
+        // Kade b1c438aeb (3): a vouch that names no proof is not a vouch.
+        Some(l) if blank(l, "proven") => missing.push("owner vouch: nothing proven".into()),
+        Some(_) => {}
+    }
+    if vouch_of(witness, card, round, patch, "navigator", Some(owner)).is_none() {
+        missing.push("navigator vouch (a role other than the owner)".into());
+    }
+    missing
+}
+
+/// #4875 (Kade b1c438aeb (1)) — the go already reached Jeff for this round: a later vouch must
+/// not post a second row or send a second message. Pure.
+pub fn go_already_asked(witness: &str, card: u64, round: &str, patch: &str) -> bool {
+    let card_key = format!("\"card_id\":{},", card);
+    witness.lines().any(|l| l.contains("\"event\":\"demo.go.asked\"") && l.contains(&card_key) && line_keyed(l, round, patch))
+}
+
+/// #4875 (Jeff 09:17 "yes add the ac"; 09:28 one parser) — the card's AC as a phone-sized
+/// checklist, from `borg-prove ac <card>` (one tab line each: ✓|☐, statement, check kind), so the
+/// go message and the prover read the AC through the same parser. Pure over that output.
+pub fn ac_checklist(borg_ac: &str) -> String {
+    borg_ac.lines().filter_map(|l| {
+        let mut f = l.split('\t');
+        let (mark, text) = (f.next()?, f.next()?.trim());
+        if mark != "✓" && mark != "☐" { return None; }
+        let short: String = text.chars().take(90).collect();
+        Some(format!("{mark} {short}{}", if text.chars().count() > 90 { "…" } else { "" }))
+    }).collect::<Vec<_>>().join("\n")
+}
+
+/// #4875 (Kade 26af1b142) — the borg-prove that ships beside THIS werk-demo (current_exe's dir):
+/// a demo slot's werk-demo then reads the AC with its own borg-prove, not prod's older one (which
+/// would deadlock the card that adds `borg-prove ac`). No sibling → `fallback` (the wrapper).
+pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
+    exe_dir.map(|d| d.join("borg-prove")).filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().to_string()).unwrap_or(fallback)
+}
+
+/// #4875 (Kade 09:36) — the go row is posted with the owner's identity, so only the owner's own
+/// vouch call posts it; a navigator who vouches last records and stops. Pure.
+pub fn may_post_go(by: &str, owner: &str) -> bool { !owner.is_empty() && by == owner }
+
+/// #4875 (Kade 09:40) — what the owner is told when the navigator's vouch completes the set. Pure.
+pub fn owner_post_nudge(card: u64) -> String {
+    format!("#{card}: both vouched and every gate passed. Run `werk-demo vouch {card} owner …` to post the go to Jeff.")
+}
+
+/// #4875 (Kade ba6102a8f; Jeff 09-09 "i NEVER want to be asked for go on a card with unfinished
+/// ac") — the AC still unchecked on the card. Any one blocks the go. Pure.
+pub fn ac_unfinished(card_view: &str) -> Vec<String> {
+    let list = ac_checklist(card_view);
+    // Kade 47ef7e508: an unreadable card (board down → "") must refuse, never pass as "nothing open".
+    if list.is_empty() { return vec!["card AC unreadable".to_string()]; }
+    list.lines().filter(|l| l.starts_with('☐'))
+        .map(|l| format!("unfinished {}", l.trim_start_matches('☐').trim())).collect()
+}
+
+/// #4875 — the ONE message that reaches Jeff: what was shown, proven and not proven, both
+/// "I'd click go", then the link. Sent only when `vouch_missing` is empty. Pure.
+pub fn jeff_go_message(witness: &str, card: u64, round: &str, patch: &str, owner: &str, link: &str, ac: &str) -> String {
+    let o = vouch_of(witness, card, round, patch, "owner", None).unwrap_or("");
+    let n = vouch_of(witness, card, round, patch, "navigator", Some(owner)).unwrap_or("");
+    let g = |l: &str, k: &str| json_str_after(l, k).unwrap_or_default();
+    let not_proven = { let t = g(o, "not_proven"); if t.trim().is_empty() { "nothing named".to_string() } else { t } };
+    let ac = if ac.trim().is_empty() { String::new() } else { format!("\n{ac}\n") };
+    format!("#{card} ready for your go — shown: {} · proven: {} · not proven: {not_proven}{ac} · {owner}: I'd click go · {}: I'd click go ({}) · decide: {link}",
+            g(o, "shown"), g(o, "proven"), g(n, "role"), g(n, "why"))
+}
+
+
 
 fn json_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
@@ -1087,7 +1214,15 @@ pub fn announce_silent(witness: &str, card: u64, round: &str, patch_id: &str) ->
         })
 }
 
-fn announce_to_jeff(from: &str, trace: &str, msg: &str) {
+/// #4875 — the verified caller: the OS account this process runs as (`chorus-<role>`), never an
+/// argument or env a caller could set. None for any non-role account (Jeff never vouches).
+fn verified_caller() -> Option<String> {
+    let out = Command::new("id").arg("-un").output().ok()?;
+    let user = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    user.strip_prefix("chorus-").filter(|r| !r.is_empty()).map(str::to_string)
+}
+
+fn announce_to_owner(from: &str, trace: &str, msg: &str) {
     let args = nudge_send_args("system", from, msg);
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
     let _ = run(&hook_shim(), &argv);
@@ -1586,18 +1721,13 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         let tally = format!("gates {} · reviews {}/{} · {} · AC {}/{}",
             if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
             test_summary.replace("tests: ", "tests "), checked, total);
-        // #4642: the go is a row on Jeff's list; the line points there. No row, no announce.
-        // #4771 — the go binds the commit THIS run pushed and tested, never the werk's HEAD now:
-        // run 11 (11-02) tested affda76 and its go stamped daf6848, a later commit nobody tested.
-        let posted = tested_head(home, card, &trace)
-            .ok_or_else(|| format!("no go row: no push of #{card} recorded for run {trace}, so no tested commit to bind"))
-            .and_then(|head| go_approval_body(card, &trace, &head, &go_row_title(home, card)))
-            .and_then(|body| post_go_approval(home, role, &body));
-        // The go is always askable. If the door refused the row (the card that brings go rows
-        // demos against a door whose model does not have them yet; or a real refusal), the ask
-        // carries the per-run sign page today's chorus-go serves, and says why — never a dead end.
+        // #4875 — the announce goes to the owner, never Jeff, and posts no go row: the owner
+        // shows the work, then vouches (`werk-demo vouch`); only the vouch puts the go in front
+        // of Jeff. Log evidence: 11-03 06:58 #4873's go went out with "gates ✗ · AC 0/2".
         let line = announce_line(card, &round, &tally, &variant_url, &clearing_url);
-        announce_to_jeff(role, &trace, &go_ask(&line, &posted, card, &trace, role));
+        let reds: Vec<String> = gate_verdicts(&witness, card).into_iter()
+            .filter(|(_, r)| r != "pass").map(|(g, r)| format!("{g} {r}")).collect();
+        announce_to_owner(role, &trace, &owner_brief(card, &line, gates_green, &reds));
         jsonl(home, role, card, &trace, "demo.announced",
               &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
     }
@@ -2529,6 +2659,64 @@ pub fn run_demo() -> R<DemoOutcome> {
             "session-smoke" => session_smoke_step(card, role, &home),
             _ => announce_step(card, role, &home),
         };
+    }
+
+    if first == "vouch" {
+        // #4875 AC2 — the ONLY way a go reaches Jeff. The owner vouches (shown / proven / not
+        // proven), the navigator vouches (why); once every gate passed and both are on the
+        // witness for this round, the go row is posted and Jeff gets one message. The voucher
+        // is the verified caller (the OS account), never an argument.
+        let usage_v = "usage: werk-demo vouch <card> owner --shown <url> --proven <text> [--not-proven <text>] | werk-demo vouch <card> navigator --why <text>";
+        let card: u64 = args.next().and_then(|s| s.parse().ok()).ok_or(usage_v)?;
+        let as_ = args.next().filter(|a| a == "owner" || a == "navigator").ok_or(usage_v)?;
+        let rest: Vec<String> = args.collect();
+        let opt = |k: &str| rest.iter().position(|a| a == k).and_then(|i| rest.get(i + 1)).cloned().unwrap_or_default();
+        let by = verified_caller().ok_or("vouch refused: the caller is not a role account (chorus-<role>)")?;
+        let witness_path = home.join("ops/logs/werk-demo.jsonl");
+        let witness = fs::read_to_string(&witness_path).unwrap_or_default();
+        let card_key = format!("\"card_id\":{},", card);
+        let announced = witness.lines().rev()
+            .find(|l| l.contains("\"event\":\"demo.announced\"") && l.contains(&card_key))
+            .ok_or_else(|| format!("vouch refused: #{card} has no demo announced yet"))?;
+        let owner = json_str_after(announced, "role").unwrap_or_default();
+        let run_id = json_str_after(announced, "trace_id").unwrap_or_default();
+        if as_ == "owner" && by != owner { return Err(format!("vouch refused: only the owner ({owner}) vouches as owner, not {by}")); }
+        if as_ == "navigator" && by == owner { return Err(format!("vouch refused: {by} owns #{card} and cannot be its navigator")); }
+        let round = current_round(&owner, card);
+        let patch = current_patch_id(&owner, card);
+        let line = vouch_line(card, &by, &as_, &round, &patch, &opt("--shown"), &opt("--proven"), &opt("--not-proven"), &opt("--why"));
+        { use std::io::Write as _; let mut f = fs::OpenOptions::new().create(true).append(true).open(&witness_path).map_err(|e| e.to_string())?; f.write_all(line.as_bytes()).map_err(|e| e.to_string())?; }
+        let witness = fs::read_to_string(&witness_path).unwrap_or_default();
+        if go_already_asked(&witness, card, &round, &patch) {
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; the go already reached Jeff for this round — nothing more sent"), exit: 0 });
+        }
+        // one reader of the card's AC: borg-prove's (Jeff 09:28); a failed read is "" → refused
+        let exe = env::current_exe().ok();
+        let bp = borg_prove_beside(exe.as_deref().and_then(Path::parent), script_path(&home, "borg-prove"));
+        let cv = run(&bp, &["ac", &card.to_string()]).unwrap_or_default();
+        let mut missing = vouch_missing(&witness, card, &round, &patch, &owner);
+        missing.extend(ac_unfinished(&cv));
+        if !missing.is_empty() {
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; not sent to Jeff yet — missing: {}", missing.join(", ")), exit: 0 });
+        }
+        // Kade 09:36 — the go row is posted as the owner, so only the owner's own call posts it
+        if !may_post_go(&by, &owner) {
+            // Kade 09:40 — never a silent stall: tell the owner the go is theirs to post
+            let a = nudge_send_args(&by, &owner, &owner_post_nudge(card));
+            let argv: Vec<&str> = a.iter().map(String::as_str).collect();
+            let _ = run(&hook_shim(), &argv);
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; everything is in — {owner} was told to post the go with their own vouch"), exit: 0 });
+        }
+        let head = tested_head(&home, card, &run_id).ok_or_else(|| format!("no go row: no push of #{card} recorded for run {run_id}"))?;
+        go_approval_body(card, &run_id, &head, &go_row_title(&home, card))
+            .and_then(|body| post_go_approval(&home, &owner, &body))
+            .map_err(|why| format!("vouches complete but the go row was refused: {why}"))?;
+        let msg = jeff_go_message(&witness, card, &round, &patch, &owner, &approvals_link(), &ac_checklist(&cv));
+        let a = nudge_send_args(&owner, "jeff", &msg);
+        let argv: Vec<&str> = a.iter().map(String::as_str).collect();
+        let _ = run(&hook_shim(), &argv);
+        jsonl(&home, &owner, card, &run_id, "demo.go.asked", &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
+        return Ok(DemoOutcome { message: format!("#{card}: both vouched, every gate passed — the go is on Jeff's list and he has one message."), exit: 0 });
     }
 
     if first == "gate" {

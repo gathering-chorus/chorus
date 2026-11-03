@@ -107,6 +107,12 @@ fn short(s: &str) -> String {
 ///   `check: test <test file or name>`   (expects the test's latest result, pass)
 /// A line with no `check:` is kind none: unmeasured, and refused at intake.
 pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
+    ac_lines(card, desc).into_iter().map(|(_, c)| c).collect()
+}
+
+/// #4875 — the same AC walk with each line's box state (true = `- [x]`), so the go message and
+/// borg-prove read the card's AC through ONE parser (Jeff 09:28: "yes").
+pub fn ac_lines(card: u32, desc: &str) -> Vec<(bool, Check)> {
     let mut in_ac = false;
     let mut out = Vec::new();
     for line in desc.lines() {
@@ -115,6 +121,7 @@ pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
             in_ac = h.trim() == "AC";
             continue;
         }
+        let done = t.starts_with("- [x] ") || t.starts_with("- [X] ");
         let Some(body) = t.strip_prefix("- [ ] ").or_else(|| t.strip_prefix("- [x] ")).or_else(|| t.strip_prefix("- [X] ")) else { continue };
         if !in_ac {
             continue;
@@ -143,13 +150,13 @@ pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
             },
             _ => (rest.to_string(), String::new()),
         };
-        out.push(Check {
+        out.push((done, Check {
             ac: format!("ac-{card}-{}", out.len() + 1),
             statement: statement.to_string(),
             kind: if kind.is_empty() { "none".into() } else { kind.to_string() },
             target,
             expect,
-        });
+        }));
     }
     out
 }

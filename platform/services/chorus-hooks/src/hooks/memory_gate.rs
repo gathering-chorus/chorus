@@ -113,8 +113,8 @@ fn file_has_git_history(file_path: &str) -> bool {
 }
 
 /// Check if the card context is a fix — reads type: label from board (#1909)
-fn is_defect_fix() -> bool {
-    crate::types::is_fix_card()
+fn is_defect_fix(role: &str) -> bool {
+    crate::types::is_fix_card_for(role)
 }
 
 /// Markers that indicate the role produced a context synthesis —
@@ -274,7 +274,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         crate::types::Role::Unknown => false,
     };
 
-    if is_own_domain && !is_defect_fix() {
+    if is_own_domain && !is_defect_fix(role.as_str()) {
         info!(
             gate = "context-synthesis",
             decision = "skip",
@@ -287,7 +287,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     // Fix cards: require git log on the target file (#1903)
     // Skip for new files that have no git history (#2041)
-    if is_defect_fix() {
+    if is_defect_fix(role.as_str()) {
         let file_has_commits = file_has_git_history(&file_path);
         if file_has_commits {
             let has_git_history = scan_for_git_history(input, state, &file_path);
