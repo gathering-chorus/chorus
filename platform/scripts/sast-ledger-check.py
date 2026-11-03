@@ -49,6 +49,16 @@ def parse_findings(report, target):
     return findings
 
 
+def rule_name(rule):
+    """#4879 — semgrep names a rule by its config path, dotted, relative to the
+    folder it ran from: the same rule reads
+    `Users.jeffbridwell.CascadeProjects.chorus.platform.security.semgrep.X`
+    from one place and `platform.security.semgrep.X` from another, so an
+    exempted finding showed as both new and stale. Compare on the rule's own
+    id, the last dotted part, which does not move."""
+    return rule.rsplit(".", 1)[-1]
+
+
 def main():
     ledger_path, semgrep_rc = sys.argv[1], int(sys.argv[2])
     target = os.environ.get("SAST_TARGET", ".")
@@ -57,8 +67,8 @@ def main():
     with open(ledger_path) as fh:
         entries = json.load(fh)["exemptions"]
 
-    ledgered = {(e["path"], e["rule"]): e for e in entries}
-    found = parse_findings(report, target)
+    ledgered = {(e["path"], rule_name(e["rule"])): e for e in entries}
+    found = {(path, rule_name(rule)) for path, rule in parse_findings(report, target)}
 
     unledgered = sorted(found - set(ledgered))
     stale = sorted(set(ledgered) - found)
@@ -85,7 +95,7 @@ def main():
         print("  SAST clean (%d finding(s), all named in the exemption ledger):" % len(found))
         for path, rule in sorted(found):
             print("    DEBT %s  %s  since %s  owner %s"
-                  % (path, rule.rsplit(".", 1)[-1], ledgered[(path, rule)]["since"],
+                  % (path, rule, ledgered[(path, rule)]["since"],
                      ledgered[(path, rule)]["owner"]))
     return rc
 

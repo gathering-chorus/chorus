@@ -205,6 +205,26 @@ agent_exit_code() {
   fi
 }
 
+# #4879 — say what happened. launchd reports a signal death as a negative
+# status and a normal exit as the job's own code. Only a signal, or a job that
+# never started (126/127 exec failure, 78 EX_CONFIG), is a crash. A job that
+# ran and exited non-zero "exited", and the alert carries the last line it
+# wrote (data, not diagnosis): on 11-03 three jobs read "crashed" all day while
+# each had finished and reported findings.
+exit_failure() {
+  local label="$1" ec="$2"
+  if [ "$ec" -lt 0 ] 2>/dev/null; then echo "crashed: $label (signal ${ec#-})"; return; fi
+  case "$ec" in 126|127|78) echo "crashed: $label (exit $ec)"; return;; esac
+  local plist="$HEALTH_PLIST_DIR/$label.plist" last="" f
+  for f in $(/usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null) \
+           $(/usr/libexec/PlistBuddy -c "Print :StandardOutPath" "$plist" 2>/dev/null); do
+    [ -r "$f" ] || continue
+    last=$(tail -n 20 "$f" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr -d '\\\000-\010\013-\037\177' | awk 'NF{l=$0} END{print l}' | cut -c1-140)
+    [ -n "$last" ] && break
+  done
+  if [ -n "$last" ]; then echo "exited: $label (exit $ec) — $last"; else echo "exited: $label (exit $ec)"; fi
+}
+
 agent_stdout_path() {
   local plist="$HEALTH_PLIST_DIR/$1.plist"
   [ -f "$plist" ] || return 1
@@ -261,7 +281,7 @@ while IFS= read -r label; do
   _pid=$(agent_pid "$label")
   if [ -n "$_ec" ] && [ "$_ec" != "-" ] && [ "$_ec" -ne 0 ] 2>/dev/null; then
     if [ -z "$_pid" ] || [ "$_pid" = "-" ]; then
-      FAILURES+=("crashed: $label (exit $_ec)")
+      FAILURES+=("$(exit_failure "$label" "$_ec")")
     fi
   fi
 
@@ -843,7 +863,9 @@ echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HEALTH_LOG_FILE"
 # resolved). Steady-state repeated failures are logged but not re-injected —
 # they're already tracked by swat cards and the status is visible in pulse.
 STATE_FILE="${HEALTH_STATE_FILE:-/tmp/deep-health-last-failures.txt}"
-CURRENT=$(printf '%s\n' "${FAILURES[@]}" | sort)
+# #4879 — an "exited" failure carries the job's last log line, which changes
+# run to run (run ids, times); dedup on the failure itself, not that detail.
+CURRENT=$(printf '%s\n' "${FAILURES[@]}" | sed 's/ — .*//' | sort)
 LAST=""
 [ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE")
 printf '%s' "$CURRENT" > "$STATE_FILE"
