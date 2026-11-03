@@ -219,7 +219,7 @@ exit_failure() {
   for f in $(/usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null) \
            $(/usr/libexec/PlistBuddy -c "Print :StandardOutPath" "$plist" 2>/dev/null); do
     [ -r "$f" ] || continue
-    last=$(tail -n 20 "$f" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr -d '\\' | tr -cd '[:print:]\n' | awk 'NF{l=$0} END{print l}' | cut -c1-140)
+    last=$(tail -n 20 "$f" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr -d '\\\000-\010\013-\037\177' | awk 'NF{l=$0} END{print l}' | cut -c1-140)
     [ -n "$last" ] && break
   done
   if [ -n "$last" ]; then echo "exited: $label (exit $ec) — $last"; else echo "exited: $label (exit $ec)"; fi
