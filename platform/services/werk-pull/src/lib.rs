@@ -390,6 +390,16 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     if werk.is_dir() {
         let cur = run("git", &["-C", &werk_s, "rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
         if cur.trim() == branch {
+            // #4851 (11-03 13:39): a card parked back in Next/Later keeps its werk;
+            // re-pulling it said success and left it out of WIP, so its pair refused
+            // ("not in WIP"). The werk is reused; the board move still happens.
+            let st = run(&script(home, "cards"), &["view", &card.to_string(), "--json"]).ok()
+                .and_then(|cj| json_str_field(&cj, "status")).unwrap_or_default();
+            if st == "Next" || st == "Later" {
+                run(&script(home, "cards"), &["move", &card.to_string(), "WIP"])
+                    .map_err(|e| format!("werk {} reused, but the board move to WIP failed: {e}", werk.display()))?;
+                jsonl(home, role, card, &trace, "card.wip", ",\"reused_werk\":true");
+            }
             jsonl(home, role, card, &trace, "pull.idempotent", "");
             return Ok(branch);
         }

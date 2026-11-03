@@ -1497,8 +1497,8 @@ pub fn validate_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 }
 
 /// #4502 — run ONE gate (product|code|quality|arch|ops) as its own dagu step,
-/// unless it already has a result for this round (a retry after a pass is a
-/// no-op). Exit 0 when a verdict is recorded; non-zero, named, when the gate
+/// unless it already passed this round (a retry after a pass is a no-op; a
+/// retry after a fail runs the gate again, #4851). Exit 0 when a verdict is recorded; non-zero, named, when the gate
 /// could not run (no headless model on the box, or an "error" result).
 pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOutcome> {
     if !REQUIRED_GATES.contains(&gate) {
@@ -1508,7 +1508,10 @@ pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOu
     let patch = current_patch_id(role, card);
     let what = format!("gate {}", gate);
     let recorded = |w: &str| step_result(w, card, "demo.gate.result", "gate", gate, "result", "findings", &round, &patch);
-    if let Some(done) = recorded(&read_witness(home)).filter(|(r, _)| r != "error") {
+    // #4851 (13:52): only a pass is final for the round. A recorded fail is run
+    // again on retry, so a red from a passing blip (the door slow for a second)
+    // is not stuck until someone makes a commit just to get a new round.
+    if let Some(done) = recorded(&read_witness(home)).filter(|(r, _)| r == "pass") {
         return Ok(step_outcome(&format!("{} (already recorded this round)", what), card, Some(done)));
     }
     if !headless_available() {

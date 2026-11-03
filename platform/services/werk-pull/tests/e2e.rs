@@ -113,6 +113,14 @@ fn e2e_pull_to_gh_diagram() {
 
     // --- idempotent re-pull ---
     assert_eq!(pull(7001, "kade", &home, &werk_base).expect("idempotent"), "kade/7001");
+    // #4851 — a parked card (Later) re-pulled onto its kept werk is moved to WIP;
+    // negative proof: when that move fails, the re-pull fails instead of saying success
+    std::env::set_var("CARDS_STATUS", "Later");
+    std::env::set_var("CARDS_MOVE_EXIT", "1");
+    assert!(pull(7001, "kade", &home, &werk_base).is_err(), "a reused werk whose card cannot reach WIP is an error");
+    std::env::set_var("CARDS_MOVE_EXIT", "0");
+    assert_eq!(pull(7001, "kade", &home, &werk_base).expect("reused werk, moved to WIP"), "kade/7001");
+    std::env::set_var("CARDS_STATUS", "Next");
 
     // --- rollback on cards-move failure: worktree + remote ref undone ---
     std::env::set_var("CARDS_MOVE_EXIT", "1");

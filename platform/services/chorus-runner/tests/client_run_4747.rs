@@ -65,6 +65,10 @@ fn setup() -> std::sync::MutexGuard<'static, ()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&mint, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::env::set_var("CHORUS_HOME", &home);
+    // #4851 — the installed bin dir names the installer; this test account owns
+    // it, so the call runs in process (another account's call would forward)
+    std::fs::create_dir_all(home.join("state/bin")).unwrap();
+    std::env::set_var("CHORUS_STATE_DIR", home.join("state"));
     std::env::remove_var("CHORUS_WERK_BASE");
     std::env::set_var("ROLE", "wren");
     g
