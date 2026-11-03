@@ -1065,14 +1065,27 @@ pub fn go_already_asked(witness: &str, card: u64, round: &str, patch: &str) -> b
     witness.lines().any(|l| l.contains("\"event\":\"demo.go.asked\"") && l.contains(&card_key) && line_keyed(l, round, patch))
 }
 
+/// #4875 (Jeff 09:17 "yes add the ac") — the card's AC as a phone-sized checklist for the go
+/// message: one line per AC, ✓ or ☐, its text cut before the `check:` receipt. Pure.
+pub fn ac_checklist(card_view: &str) -> String {
+    card_view.lines().map(str::trim).filter_map(|t| {
+        let (mark, rest) = if let Some(r) = t.strip_prefix("- [x]") { ("✓", r) }
+            else if let Some(r) = t.strip_prefix("- [ ]") { ("☐", r) } else { return None };
+        let text = rest.split(" check:").next().unwrap_or("").trim();
+        let short: String = text.chars().take(90).collect();
+        Some(format!("{mark} {short}{}", if text.chars().count() > 90 { "…" } else { "" }))
+    }).collect::<Vec<_>>().join("\n")
+}
+
 /// #4875 — the ONE message that reaches Jeff: what was shown, proven and not proven, both
 /// "I'd click go", then the link. Sent only when `vouch_missing` is empty. Pure.
-pub fn jeff_go_message(witness: &str, card: u64, round: &str, patch: &str, owner: &str, link: &str) -> String {
+pub fn jeff_go_message(witness: &str, card: u64, round: &str, patch: &str, owner: &str, link: &str, ac: &str) -> String {
     let o = vouch_of(witness, card, round, patch, "owner", None).unwrap_or("");
     let n = vouch_of(witness, card, round, patch, "navigator", Some(owner)).unwrap_or("");
     let g = |l: &str, k: &str| json_str_after(l, k).unwrap_or_default();
     let not_proven = { let t = g(o, "not_proven"); if t.trim().is_empty() { "nothing named".to_string() } else { t } };
-    format!("#{card} ready for your go — shown: {} · proven: {} · not proven: {not_proven} · {owner}: I'd click go · {}: I'd click go ({}) · decide: {link}",
+    let ac = if ac.trim().is_empty() { String::new() } else { format!("\n{ac}\n") };
+    format!("#{card} ready for your go — shown: {} · proven: {} · not proven: {not_proven}{ac} · {owner}: I'd click go · {}: I'd click go ({}) · decide: {link}",
             g(o, "shown"), g(o, "proven"), g(n, "role"), g(n, "why"))
 }
 
@@ -2655,7 +2668,8 @@ pub fn run_demo() -> R<DemoOutcome> {
         go_approval_body(card, &run_id, &head, &go_row_title(&home, card))
             .and_then(|body| post_go_approval(&home, &owner, &body))
             .map_err(|why| format!("vouches complete but the go row was refused: {why}"))?;
-        let msg = jeff_go_message(&witness, card, &round, &patch, &owner, &approvals_link());
+        let cv = run(&script_path(&home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+        let msg = jeff_go_message(&witness, card, &round, &patch, &owner, &approvals_link(), &ac_checklist(&cv));
         let a = nudge_send_args(&owner, "jeff", &msg);
         let argv: Vec<&str> = a.iter().map(String::as_str).collect();
         let _ = run(&hook_shim(), &argv);

@@ -4,7 +4,7 @@
 //! #4875 AC2/AC3: the go reaches Jeff only when every gate passed for this round, the owner
 //! vouched with what was shown, proven and not proven, and the navigator (a different role)
 //! vouched too. Each missing piece is named; a negative proof for each.
-use werk_demo::{go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
+use werk_demo::{ac_checklist, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
 
 const R: &str = "round-abc";
 const P: &str = "patch-1";
@@ -21,8 +21,8 @@ fn nav() -> String { vouch_line(7, "kade", "navigator", R, P, "", "", "", "revie
 fn all_gates_green_and_both_vouches_leave_nothing_missing() {
     let w = gates("pass") + &owner() + &nav();
     assert!(vouch_missing(&w, 7, R, P, "wren").is_empty(), "{:?}", vouch_missing(&w, 7, R, P, "wren"));
-    let m = jeff_go_message(&w, 7, R, P, "wren", "https://x/go/approvals");
-    for want in ["http://192.168.86.36:3503/shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "wren: I'd click go", "kade: I'd click go", "https://x/go/approvals"] {
+    let m = jeff_go_message(&w, 7, R, P, "wren", "https://x/go/approvals", "✓ AC1: the brief goes to the owner");
+    for want in ["http://192.168.86.36:3503/shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "wren: I'd click go", "kade: I'd click go", "https://x/go/approvals", "✓ AC1: the brief goes to the owner"] {
         assert!(m.contains(want), "{want} missing from: {m}");
     }
 }
@@ -98,4 +98,14 @@ fn negative_proof_a_localhost_show_link_blocks_the_go() {
     for ok in ["http://192.168.86.36:3503/rooms", "https://lightlifeurbangardens.com/clearing/rooms"] {
         assert!(reachable_link(ok), "{ok}");
     }
+}
+
+#[test]
+fn the_go_message_lists_each_ac_checked_or_not() {
+    // Jeff 09:17 "yes add the ac": one phone-sized line per AC, the check: receipt cut off.
+    let view = "  Desc:\n    - [x] AC1: the announce goes to the owner. check: test platform/tests/demo-order.bats\n    - [ ] AC2: the go reaches Jeff only via the vouch. check: test x\n    not an ac line";
+    let c = ac_checklist(view);
+    assert_eq!(c, "✓ AC1: the announce goes to the owner.\n☐ AC2: the go reaches Jeff only via the vouch.", "{c}");
+    // negative proof: a view with no AC lines yields nothing, never a made-up list
+    assert_eq!(ac_checklist("Status: WIP\nno boxes here"), "");
 }
