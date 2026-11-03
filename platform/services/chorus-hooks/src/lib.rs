@@ -80,7 +80,7 @@ pub mod word_cap {
 // with Clearing's TS hasher).
 pub mod reply_delivery {
     pub use crate::hooks::reply_delivery::content_hash;
-    pub use crate::hooks::reply_delivery::reply_text;
+    pub use crate::hooks::reply_delivery::{enrich_stop_prompt_response, reply_text, turn_text_from_transcript};
 }
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.

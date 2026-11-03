@@ -166,25 +166,7 @@ fn inject_trace_id(input: String, trace: Option<String>) -> String {
 /// so the daemon never needs cross-home read access and both Stop enforcement
 /// and session turn push receive the text.
 fn enrich_stop_prompt_response(input: String) -> String {
-    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) else {
-        return input;
-    };
-    let has_resp = json
-        .get("prompt_response")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.trim().is_empty());
-    if has_resp {
-        return input;
-    }
-    if let Some(tp) = json.get("transcript_path").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
-        if let Some(reply) = chorus_hooks::last_assistant_text(tp) {
-            if !reply.trim().is_empty() {
-                json["prompt_response"] = serde_json::Value::String(reply);
-                return json.to_string();
-            }
-        }
-    }
-    input
+    chorus_hooks::reply_delivery::enrich_stop_prompt_response(input)
 }
 
 /// #4785 — Extract the conversation UUID from an Antigravity transcript path

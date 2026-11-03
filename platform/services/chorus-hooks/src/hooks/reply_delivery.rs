@@ -69,10 +69,20 @@ pub fn content_hash(text: &str) -> String {
 /// AfterAgent `prompt_response` joins every model turn of the prompt with
 /// spaces (Abby's 10-07 20:41 reply went out doubled), so it is only the
 /// fallback when the chat file cannot be read.
+///
+/// #4882 — Claude Code's Stop input carries the turn's final text as
+/// `last_assistant_message`. The transcript is written asynchronously and lags
+/// at Stop, so reading it re-sent the previous turn's reply (Wren 11-03 15:55)
+/// or a mid-turn line (15:56). When the field is present it is the only source:
+/// empty means the turn wrote no text and nothing is published. The transcript
+/// is read only by runtimes that do not send the field.
 pub fn reply_text(raw: &serde_json::Value) -> Option<String> {
+    if let Some(v) = raw.get("last_assistant_message") {
+        return v.as_str().filter(|t| !t.trim().is_empty()).map(str::to_string);
+    }
     raw.get("transcript_path")
         .and_then(|v| v.as_str())
-        .and_then(crate::hooks::inject_force::last_assistant_text)
+        .and_then(turn_text_from_transcript)
         .or_else(|| {
             raw.get("gemini_transcript_path")
                 .and_then(|v| v.as_str())
@@ -85,4 +95,103 @@ pub fn reply_text(raw: &serde_json::Value) -> Option<String> {
                 .filter(|t| !t.trim().is_empty() && t.trim() != GEMINI_NO_TEXT)
                 .map(str::to_string)
         })
+}
+
+/// #4882 — where `reply_text` reads from, for the `reply.source` spine event.
+pub fn reply_source(raw: &serde_json::Value) -> &'static str {
+    if raw.get("last_assistant_message").is_some() {
+        "stop_payload"
+    } else if raw.get("transcript_path").is_some() {
+        "transcript"
+    } else {
+        "other"
+    }
+}
+
+/// #4882 — a turn's own text from the transcript: the assistant text written
+/// after the turn's prompt (the last user entry that is not a tool result).
+/// A lagging transcript that holds no text past that prompt yields nothing,
+/// never the previous turn's reply.
+pub fn turn_text_from_transcript(path: &str) -> Option<String> {
+    // Widen only until the turn's prompt is in the window (8 MB covers almost
+    // every turn; Silas's transcript is 73 MB).
+    for w in [8 * 1024 * 1024, 64 * 1024 * 1024, u64::MAX] {
+        let mut f = std::fs::File::open(path).ok()?;
+        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+        let lines = crate::session_cache::tail_lines_within(&mut f, usize::MAX, w);
+        let has_prompt = lines
+            .iter()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .any(|v| is_prompt(&v));
+        if has_prompt {
+            return turn_text_in(&lines);
+        }
+        if w >= len {
+            return None;
+        }
+    }
+    None
+}
+
+fn is_prompt(v: &serde_json::Value) -> bool {
+    let role = v.get("message").and_then(|m| m.get("role")).and_then(|r| r.as_str());
+    if v.get("type").and_then(|t| t.as_str()) != Some("user") && role != Some("user") {
+        return false;
+    }
+    match v.get("message").and_then(|m| m.get("content")) {
+        Some(serde_json::Value::String(_)) => true,
+        Some(serde_json::Value::Array(arr)) => !arr
+            .iter()
+            .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result")),
+        _ => false,
+    }
+}
+
+fn turn_text_in(lines: &[String]) -> Option<String> {
+    let parsed: Vec<serde_json::Value> =
+        lines.iter().filter_map(|l| serde_json::from_str(l).ok()).collect();
+    let start = parsed.iter().rposition(is_prompt)?;
+    let mut last: Option<String> = None;
+    for v in &parsed[start + 1..] {
+        let msg = v.get("message").unwrap_or(v);
+        if msg.get("role").and_then(|r| r.as_str()) != Some("assistant")
+            && v.get("type").and_then(|t| t.as_str()) != Some("assistant")
+        {
+            continue;
+        }
+        let text = match msg.get("content") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            _ => continue,
+        };
+        if !text.trim().is_empty() {
+            last = Some(text);
+        }
+    }
+    last
+}
+
+/// #4779/#4882 — the shim's Stop enrichment (it runs as the role's own macOS user, so it can
+/// read the role's transcript): fill `prompt_response` from the same source the daemon uses,
+/// `reply_text`, when the runtime did not send one. One source for the room relay and the daemon.
+pub fn enrich_stop_prompt_response(input: String) -> String {
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) else {
+        return input;
+    };
+    let has_resp = json
+        .get("prompt_response")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.trim().is_empty());
+    if has_resp {
+        return input;
+    }
+    if let Some(reply) = reply_text(&json) {
+        json["prompt_response"] = serde_json::Value::String(reply);
+        return json.to_string();
+    }
+    input
 }
