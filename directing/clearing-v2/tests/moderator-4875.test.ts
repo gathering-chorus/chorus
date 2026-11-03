@@ -7,7 +7,7 @@
 // Enforced at delivery (Kade): the other roles never get the prompt.
 
 import { MessageRouter } from '../src/router';
-import { moderatorFromProperties } from '../src/moderator';
+import { moderatorFromProperties, watchModerator } from '../src/moderator';
 import { ClearingMessage } from '../src/types';
 
 const jeffSays = (text: string): ClearingMessage => ({
@@ -47,5 +47,26 @@ describe('#4875 AC5: one moderator for unaddressed Jeff messages', () => {
     expect(moderatorFromProperties(props('wren', 'response.word.cap'))).toBeUndefined();
     expect(moderatorFromProperties(null)).toBeUndefined();
     expect(moderatorFromProperties({ data: 'x' })).toBeUndefined();
+  });
+
+  test('a missing moderator row is logged once (room.moderator.missing), not silent', async () => {
+    const logs: string[] = []; const seen: Array<string | undefined> = [];
+    const body = { data: [] as unknown[] };
+    const fetchFn = (async () => ({ ok: true, json: async () => body })) as unknown as typeof fetch;
+    const stop = watchModerator((m) => seen.push(m), 'u', 60_000, fetchFn, (l) => logs.push(l));
+    await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+    stop();
+    expect(seen).toEqual([undefined]);
+    expect(logs.length).toBe(1);
+    expect(JSON.parse(logs[0]).event).toBe('room.moderator.missing');
+  });
+
+  test('negative proof: a present moderator row logs nothing', async () => {
+    const logs: string[] = [];
+    const fetchFn = (async () => ({ ok: true, json: async () => props('wren') })) as unknown as typeof fetch;
+    const stop = watchModerator(() => {}, 'u', 60_000, fetchFn, (l) => logs.push(l));
+    await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+    stop();
+    expect(logs).toEqual([]);
   });
 });

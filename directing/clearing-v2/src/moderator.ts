@@ -19,12 +19,19 @@ export function moderatorFromProperties(body: unknown): string | undefined {
 
 /** Reads the property now and every `everyMs`, handing each value to `apply`. */
 export function watchModerator(apply: (m: string | undefined) => void, url = DEFAULT_PROPERTIES_URL,
-  everyMs = 60_000, fetchFn: typeof fetch = fetch): () => void {
+  everyMs = 60_000, fetchFn: typeof fetch = fetch,
+  log: (line: string) => void = (l) => console.error(l)): () => void {
   let stopped = false;
+  let lastMissing = false;
   const read = async () => {
     try {
       const res = await fetchFn(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) apply(moderatorFromProperties(await res.json()));
+      if (!res.ok) return;
+      const m = moderatorFromProperties(await res.json());
+      apply(m);
+      // Kade a587a9b70: the fall-open to every role must be visible, once per change, not silent.
+      if (!m && !lastMissing) log(JSON.stringify({ level: 'warn', event: 'room.moderator.missing', key: MODERATOR_KEY, ts: new Date().toISOString() }));
+      lastMissing = !m;
     } catch { /* keep the last value; the next read retries */ }
   };
   void read();
