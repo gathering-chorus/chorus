@@ -980,15 +980,6 @@ pub fn approvals_link() -> String {
     format!("{base}/go/approvals")
 }
 
-/// #4642 — the one ask's tail: the list when the go row is on it; otherwise the per-run sign page
-/// and the reason, so the go is never a dead end. Pure.
-pub fn go_ask(line: &str, posted: &Result<(), String>, card: u64, run: &str, role: &str) -> String {
-    match posted {
-        Ok(()) => format!("{line} · decide: {}", approvals_link()),
-        Err(why) => format!("{line} · sign: {} (go row not on the list: {why})", sign_link(card, run, role)),
-    }
-}
-
 /// #4875 — the automated announce, to the OWNER only: what ran, and the one next step. Green:
 /// show the change working, then `werk-demo vouch`, which alone puts the go in front of Jeff.
 /// Red: each red gate named, and no vouch offered. Never a go link. Pure.
@@ -1001,10 +992,60 @@ pub fn owner_brief(card: u64, line: &str, gates_green: bool, reds: &[String]) ->
     }
 }
 
-/// The per-run sign page, only for when the go row could not be posted (see announce).
-pub fn sign_link(card: u64, run: &str, role: &str) -> String {
-    format!("{}?card={card}&run={run}&role={role}", approvals_link().trim_end_matches("approvals"))
+/// #4875 — one vouch on the witness: the owner's (what was shown, proven, not proven) or the
+/// navigator's (why they'd click go). Free text is flattened so the witness stays one JSON line
+/// per event and `json_str_after` reads it back whole. Pure.
+#[allow(clippy::too_many_arguments)]
+pub fn vouch_line(card: u64, by: &str, as_: &str, round: &str, patch: &str,
+                  shown: &str, proven: &str, not_proven: &str, why: &str) -> String {
+    let f = |t: &str| t.replace(['"', '\\'], "'").replace(['\n', '\r'], " ");
+    jsonl_line(0, "demo.vouched", by, card, "vouch",
+        &format!(",\"as\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"shown\":\"{}\",\"proven\":\"{}\",\"not_proven\":\"{}\",\"why\":\"{}\"",
+                 f(as_), f(round), f(patch), f(shown), f(proven), f(not_proven), f(why)))
 }
+
+/// The latest vouch of a kind for this card and round (patch-keyed like the go), optionally
+/// only from someone other than `not_by`. Pure.
+fn vouch_of<'a>(witness: &'a str, card: u64, round: &str, patch: &str, as_: &str, not_by: Option<&str>) -> Option<&'a str> {
+    let card_key = format!("\"card_id\":{},", card);
+    let as_key = format!("\"as\":\"{as_}\"");
+    witness.lines().rev().find(|l| l.contains("\"event\":\"demo.vouched\"") && l.contains(&card_key)
+        && l.contains(&as_key) && line_keyed(l, round, patch)
+        && not_by.is_none_or(|o| json_str_after(l, "role").is_some_and(|r| !r.is_empty() && r != o)))
+}
+
+/// #4875 AC2/AC3 — what still stands between this round and Jeff's go: any gate that did not
+/// pass, an owner vouch with nothing shown, no navigator vouch from a role other than the owner.
+/// Empty = the go may go to Jeff. Pure.
+pub fn vouch_missing(witness: &str, card: u64, round: &str, patch: &str, owner: &str) -> Vec<String> {
+    let mut missing: Vec<String> = gate_verdicts(witness, card).into_iter()
+        .filter(|(_, r)| r != "pass").map(|(g, r)| format!("{g} {r}")).collect();
+    let own = vouch_of(witness, card, round, patch, "owner", None)
+        .filter(|l| json_str_after(l, "role").as_deref() == Some(owner));
+    match own {
+        None => missing.push(format!("owner vouch ({owner})")),
+        Some(l) if json_str_after(l, "shown").unwrap_or_default().trim().is_empty() =>
+            missing.push("owner vouch: nothing shown".into()),
+        Some(_) => {}
+    }
+    if vouch_of(witness, card, round, patch, "navigator", Some(owner)).is_none() {
+        missing.push("navigator vouch (a role other than the owner)".into());
+    }
+    missing
+}
+
+/// #4875 — the ONE message that reaches Jeff: what was shown, proven and not proven, both
+/// "I'd click go", then the link. Sent only when `vouch_missing` is empty. Pure.
+pub fn jeff_go_message(witness: &str, card: u64, round: &str, patch: &str, owner: &str, link: &str) -> String {
+    let o = vouch_of(witness, card, round, patch, "owner", None).unwrap_or("");
+    let n = vouch_of(witness, card, round, patch, "navigator", Some(owner)).unwrap_or("");
+    let g = |l: &str, k: &str| json_str_after(l, k).unwrap_or_default();
+    let not_proven = { let t = g(o, "not_proven"); if t.trim().is_empty() { "nothing named".to_string() } else { t } };
+    format!("#{card} ready for your go — shown: {} · proven: {} · not proven: {not_proven} · {owner}: I'd click go · {}: I'd click go ({}) · decide: {link}",
+            g(o, "shown"), g(o, "proven"), g(n, "role"), g(n, "why"))
+}
+
+
 
 fn json_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
@@ -1097,6 +1138,14 @@ pub fn announce_silent(witness: &str, card: u64, round: &str, patch_id: &str) ->
         || witness.lines().any(|l| {
             l.contains("\"event\":\"demo.announced\"") && l.contains(&card_key) && line_keyed(l, round, patch_id)
         })
+}
+
+/// #4875 — the verified caller: the OS account this process runs as (`chorus-<role>`), never an
+/// argument or env a caller could set. None for any non-role account (Jeff never vouches).
+fn verified_caller() -> Option<String> {
+    let out = Command::new("id").arg("-un").output().ok()?;
+    let user = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    user.strip_prefix("chorus-").filter(|r| !r.is_empty()).map(str::to_string)
 }
 
 fn announce_to_owner(from: &str, trace: &str, msg: &str) {
@@ -2536,6 +2585,48 @@ pub fn run_demo() -> R<DemoOutcome> {
             "session-smoke" => session_smoke_step(card, role, &home),
             _ => announce_step(card, role, &home),
         };
+    }
+
+    if first == "vouch" {
+        // #4875 AC2 — the ONLY way a go reaches Jeff. The owner vouches (shown / proven / not
+        // proven), the navigator vouches (why); once every gate passed and both are on the
+        // witness for this round, the go row is posted and Jeff gets one message. The voucher
+        // is the verified caller (the OS account), never an argument.
+        let usage_v = "usage: werk-demo vouch <card> owner --shown <url> --proven <text> [--not-proven <text>] | werk-demo vouch <card> navigator --why <text>";
+        let card: u64 = args.next().and_then(|s| s.parse().ok()).ok_or(usage_v)?;
+        let as_ = args.next().filter(|a| a == "owner" || a == "navigator").ok_or(usage_v)?;
+        let rest: Vec<String> = args.collect();
+        let opt = |k: &str| rest.iter().position(|a| a == k).and_then(|i| rest.get(i + 1)).cloned().unwrap_or_default();
+        let by = verified_caller().ok_or("vouch refused: the caller is not a role account (chorus-<role>)")?;
+        let witness_path = home.join("ops/logs/werk-demo.jsonl");
+        let witness = fs::read_to_string(&witness_path).unwrap_or_default();
+        let card_key = format!("\"card_id\":{},", card);
+        let announced = witness.lines().rev()
+            .find(|l| l.contains("\"event\":\"demo.announced\"") && l.contains(&card_key))
+            .ok_or_else(|| format!("vouch refused: #{card} has no demo announced yet"))?;
+        let owner = json_str_after(announced, "role").unwrap_or_default();
+        let run_id = json_str_after(announced, "trace_id").unwrap_or_default();
+        if as_ == "owner" && by != owner { return Err(format!("vouch refused: only the owner ({owner}) vouches as owner, not {by}")); }
+        if as_ == "navigator" && by == owner { return Err(format!("vouch refused: {by} owns #{card} and cannot be its navigator")); }
+        let round = current_round(&owner, card);
+        let patch = current_patch_id(&owner, card);
+        let line = vouch_line(card, &by, &as_, &round, &patch, &opt("--shown"), &opt("--proven"), &opt("--not-proven"), &opt("--why"));
+        { use std::io::Write as _; let mut f = fs::OpenOptions::new().create(true).append(true).open(&witness_path).map_err(|e| e.to_string())?; f.write_all(line.as_bytes()).map_err(|e| e.to_string())?; }
+        let witness = fs::read_to_string(&witness_path).unwrap_or_default();
+        let missing = vouch_missing(&witness, card, &round, &patch, &owner);
+        if !missing.is_empty() {
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; not sent to Jeff yet — missing: {}", missing.join(", ")), exit: 0 });
+        }
+        let head = tested_head(&home, card, &run_id).ok_or_else(|| format!("no go row: no push of #{card} recorded for run {run_id}"))?;
+        go_approval_body(card, &run_id, &head, &go_row_title(&home, card))
+            .and_then(|body| post_go_approval(&home, &owner, &body))
+            .map_err(|why| format!("vouches complete but the go row was refused: {why}"))?;
+        let msg = jeff_go_message(&witness, card, &round, &patch, &owner, &approvals_link());
+        let a = nudge_send_args(&owner, "jeff", &msg);
+        let argv: Vec<&str> = a.iter().map(String::as_str).collect();
+        let _ = run(&hook_shim(), &argv);
+        jsonl(&home, &owner, card, &run_id, "demo.go.asked", &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
+        return Ok(DemoOutcome { message: format!("#{card}: both vouched, every gate passed — the go is on Jeff's list and he has one message."), exit: 0 });
     }
 
     if first == "gate" {

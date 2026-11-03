@@ -4,7 +4,7 @@
 //! #4642 — src/lib.rs `go_approval_body` / `approvals_link`: a ready demo puts its go on Jeff's
 //! one list as a row whose action is exactly {card, run, round} at the werk's full HEAD; the
 //! announce points at the list, never a per-run sign link.
-use werk_demo::{approvals_link, go_approval_body, go_ask};
+use werk_demo::{approvals_link, go_approval_body};
 
 const HEAD: &str = "5174a0592261bbd5b452ec1287cda4e5e2fda45a";
 
@@ -42,21 +42,8 @@ fn the_announce_points_at_the_one_list_not_a_per_run_link() {
     assert!(!l.contains("card=") && !l.contains("run="), "{l}");
 }
 
-#[test]
-fn a_posted_go_row_asks_on_the_list() {
-    let a = go_ask("Demo ready — #4642", &Ok(()), 4642, "034run", "wren");
-    assert!(a.ends_with(" · decide: https://lightlifeurbangardens.com/go/approvals") || a.contains("/go/approvals"), "{a}");
-    assert!(!a.contains("sign: "), "{a}");
-}
-
-// #4642 NEGATIVE PROOF (its own 19:57 demo): the door refused the go row (its model had no kind
-// go yet). The demo must still ask, on the page today's chorus-go serves, and say why.
-#[test]
-fn negative_proof_a_refused_go_row_still_asks_with_the_sign_page_and_the_reason() {
-    let a = go_ask("Demo ready — #4642", &Err("the door answered 403 to the go row".into()), 4642, "034run", "wren");
-    assert!(a.contains("sign: ") && a.contains("/go/?card=4642&run=034run&role=wren"), "{a}");
-    assert!(a.contains("go row not on the list: the door answered 403"), "{a}");
-}
+// #4875 retired go_ask and the per-run sign page: the go reaches Jeff only through the owner's
+// vouch (`werk-demo vouch`), and a refused go row is a loud error to the owner, never a fallback ask.
 
 /// #4771 — the go binds what this run pushed (and so tested), not the werk's HEAD at demo time.
 /// NEGATIVE PROOF: another run's push, another card's push, a push.started line and a missing
