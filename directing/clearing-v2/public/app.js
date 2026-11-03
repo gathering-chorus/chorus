@@ -404,7 +404,9 @@ async function uploadFile(file, fetchImpl) {
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.ok) {
       const err = formatUploadError(body);
-      return { ok: false, reason: err.text, errorInfo: err };
+      const resObj = { ok: false, reason: err.text };
+      if (err.isAuth) resObj.errorInfo = err;
+      return resObj;
     }
     return { ok: true, path: body.path, name: body.name || name };
   } catch (e) {
@@ -427,7 +429,9 @@ async function uploadPhoto(file, fetchImpl) {
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.ok) {
       const err = formatUploadError(body);
-      return { ok: false, reason: err.text };
+      const resObj = { ok: false, reason: err.text };
+      if (err.isAuth) resObj.errorInfo = err;
+      return resObj;
     }
     return { ok: true, path: body.path };
   } catch (e) {
@@ -460,10 +464,22 @@ function watchPhotoButton() {
       if (status) status.textContent = 'Uploading photo ' + (i + 1) + ' of ' + files.length + '…';
       const out = await uploadPhoto(file);
       if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📷 ' + out.path + ' ';
-      if (!out.ok) failed.push(out.reason);
+      if (!out.ok) failed.push(out.errorInfo || { text: out.reason });
     }
     // #4635 — Jeff 12:22: "much easier if i can pick several at once"
-    if (status) status.textContent = failed.length ? failed.length + ' of ' + files.length + ' photos not attached: ' + failed[0] : '';
+    if (status) {
+      if (failed.length) {
+        const firstFail = failed[0];
+        if (firstFail && firstFail.html && status.innerHTML !== undefined) {
+          status.innerHTML = failed.length + ' of ' + files.length + ' photos not attached: ' + firstFail.html;
+        } else {
+          status.textContent = failed.length + ' of ' + files.length + ' photos not attached: ' + (firstFail && firstFail.text ? firstFail.text : firstFail);
+        }
+      } else {
+        if (status.innerHTML !== undefined) status.innerHTML = '';
+        status.textContent = '';
+      }
+    }
     picker.value = '';
     if (input && input.focus) input.focus();
   });
@@ -491,9 +507,21 @@ function watchFileButton() {
       if (status) status.textContent = 'Uploading file ' + (i + 1) + ' of ' + files.length + '…';
       const out = await uploadFile(file);
       if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📎 ' + out.path + ' ';
-      if (!out.ok) failed.push(out.reason);
+      if (!out.ok) failed.push(out.errorInfo || { text: out.reason });
     }
-    if (status) status.textContent = failed.length ? failed.length + ' of ' + files.length + ' files not attached: ' + failed[0] : '';
+    if (status) {
+      if (failed.length) {
+        const firstFail = failed[0];
+        if (firstFail && firstFail.html && status.innerHTML !== undefined) {
+          status.innerHTML = failed.length + ' of ' + files.length + ' files not attached: ' + firstFail.html;
+        } else {
+          status.textContent = failed.length + ' of ' + files.length + ' files not attached: ' + (firstFail && firstFail.text ? firstFail.text : firstFail);
+        }
+      } else {
+        if (status.innerHTML !== undefined) status.innerHTML = '';
+        status.textContent = '';
+      }
+    }
     picker.value = '';
     if (input && input.focus) input.focus();
   });
@@ -505,7 +533,12 @@ async function transcribeVoice(blob, fetchImpl) {
   try {
     const res = await (fetchImpl || fetch)(clearingBase() + '/api/voice', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.ok) return { ok: false, reason: body.reason || body.detail || ('voice failed (' + res.status + ')') };
+    if (!res.ok || !body.ok) {
+      const err = formatUploadError(body);
+      const resObj = { ok: false, reason: err.text };
+      if (err.isAuth) resObj.errorInfo = err;
+      return resObj;
+    }
     return { ok: true, transcript: body.transcript };
   } catch (e) {
     return { ok: false, reason: 'voice failed: ' + (e && e.message ? e.message : String(e)) };
@@ -519,7 +552,16 @@ function watchMicButton() {
   if (!mic || !mic.addEventListener) return;
   let recorder = null;
   let chunks = [];
-  const say = (t) => { const s = document.getElementById('send-error'); if (s) s.textContent = t; };
+  const say = (t, html) => {
+    const s = document.getElementById('send-error');
+    if (s) {
+      if (html && s.innerHTML !== undefined) {
+        s.innerHTML = html;
+      } else {
+        s.textContent = t;
+      }
+    }
+  };
   mic.addEventListener('click', async () => {
     if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
@@ -536,7 +578,7 @@ function watchMicButton() {
         mic.setAttribute('aria-pressed', 'false');
         say('Turning your voice into words…');
         const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
-        say(out.ok ? '' : 'Voice not added: ' + out.reason);
+        say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
         const input = document.getElementById('composer-input');
         if (out.ok && input) { input.value = (input.value ? input.value + ' ' : '') + out.transcript; input.focus(); }
       };

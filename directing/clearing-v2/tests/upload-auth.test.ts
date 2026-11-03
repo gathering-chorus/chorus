@@ -1,4 +1,4 @@
-// @test-type: integration
+// @test-type: integration:ui
 // @card: #4866
 // @owner: abby-normal
 // @domain: messages
@@ -77,5 +77,38 @@ describe('#4866 AC4: upload auth error guidance', () => {
     expect(rendered.isAuth).toBe(true);
     expect(rendered.signInUrl).toBe(SIGN_IN_URL);
     expect(rendered.html).toContain(`<a href="${SIGN_IN_URL}"`);
+  });
+
+  test('watchPhotoButton renders tappable signInUrl link in send-error status when upload returns 401', async () => {
+    const { watchPhotoButton } = require('../public/app.js');
+    let onChange: () => Promise<void> = async () => {};
+    const picker = {
+      files: [{ name: 'test.jpg', type: 'image/jpeg' }],
+      value: 'chosen',
+      addEventListener: (_e: string, f: () => Promise<void>) => { onChange = f; }
+    };
+    const input = { value: '', focus: () => {} };
+    const status = { innerHTML: '', textContent: '' };
+    (global as any).document = {
+      getElementById: (id: string) => ({ 'composer-photo': picker, 'composer-input': input, 'send-error': status } as any)[id] || null,
+      querySelector: () => null
+    };
+    (global as any).fetch = async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        ok: false,
+        error: 'not-signed-in',
+        detail: 'Not signed in here.',
+        signInUrl: SIGN_IN_URL
+      })
+    });
+
+    watchPhotoButton();
+    await onChange();
+
+    expect(status.innerHTML).toContain(`<a href="${SIGN_IN_URL}">Sign in to send</a>`);
+    delete (global as any).document;
+    delete (global as any).fetch;
   });
 });

@@ -57,4 +57,26 @@ describe('#4866 AC2: composer attachment pickers and download chips', () => {
     expect(parent.children.length).toBe(1);
     expect(parent.children[0].className).toBe('msg-files');
   });
+
+  test('NEGATIVE PROOF: DOM init wires watchPhotoButton, watchFileButton, and watchMicButton listeners', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const appJsContent = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
+
+    // Extract the top-level script DOM init block
+    const allMatches = Array.from(appJsContent.matchAll(/if\s*\(typeof document !== 'undefined'\)\s*\{([\s\S]*?)\}/g));
+    const initBlock = allMatches.map((m: any) => m[1]).find((body: string) => body.includes('initComposerInput()'));
+    expect(initBlock).toBeTruthy();
+
+    expect(initBlock).toMatch(/\bwatchPhotoButton\(\)/);
+    expect(initBlock).toMatch(/\bwatchFileButton\(\)/);
+    expect(initBlock).toMatch(/\bwatchMicButton\(\)/);
+
+    // Negative proof: an init body lacking either call fails this assertion
+    const missingPhoto = initBlock!.replace(/watchPhotoButton\(\);?/, '');
+    expect(missingPhoto).not.toMatch(/\bwatchPhotoButton\(\)/);
+
+    const missingMic = initBlock!.replace(/watchMicButton\(\);?/, '');
+    expect(missingMic).not.toMatch(/\bwatchMicButton\(\)/);
+  });
 });

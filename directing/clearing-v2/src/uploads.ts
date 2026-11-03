@@ -21,7 +21,11 @@ export function uploadNames(text: string): string[] {
 
 export function extFor(contentType: string, originalName?: string): string {
   if (originalName) {
-    const ext = path.extname(originalName).replace(/^\./, '').toLowerCase();
+    let ext = path.extname(originalName).replace(/^\./, '').toLowerCase();
+    // Block dangerous executable/active extensions from being served inline or executing
+    if (['html', 'htm', 'svg', 'xhtml', 'xml', 'js', 'mjs', 'cgi', 'php'].includes(ext)) {
+      ext = 'txt';
+    }
     if (ext && /^[a-z0-9]{1,10}$/.test(ext)) return ext;
   }
   const ct = contentType.toLowerCase();
@@ -85,12 +89,34 @@ export interface UploadOptions {
 
 /** Photos & files are Jeff's own: posting and viewing both need a signed-in session. */
 export function registerUploadRoutes(app: express.Express, opts: UploadOptions): void {
-  const serve = express.static(opts.dir, { index: false });
+  const serve = express.static(opts.dir, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      const ext = path.extname(filePath).toLowerCase();
+      // Photos display inline; all other uploads download as attachments
+      if (!['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
+        res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+      }
+    }
+  });
   app.use('/uploads', (req: Request, res: Response, next) => {
     if (!opts.signedIn(req)) { res.status(401).json(opts.notSignedIn()); return; }
     serve(req, res, next);
   });
-  app.post('/api/upload', express.raw({ type: () => true, limit: '50mb' }), async (req: Request, res: Response) => {
+  app.post('/api/upload', (req: Request, res: Response, next) => {
+    express.raw({ type: () => true, limit: '50mb' })(req, res, (err) => {
+      if (err) {
+        if (err.type === 'entity.too.large' || err.status === 413) {
+          res.status(413).json({ ok: false, reason: 'file too large: upload limit is 50MB' });
+          return;
+        }
+        res.status(400).json({ ok: false, reason: `upload error: ${err.message}` });
+        return;
+      }
+      next();
+    });
+  }, async (req: Request, res: Response) => {
     if (opts.readOnly) { res.status(403).json({ ok: false, reason: opts.readOnlyReason }); return; }
     if (!opts.signedIn(req)) { res.status(401).json(opts.notSignedIn()); return; }
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {

@@ -79,6 +79,53 @@ describe('#4866 AC1: universal uploads (photos and files)', () => {
     } finally { await s.close(); }
   });
 
+  test('signed-in Jeff posts a ~5MB camera JPEG photo: it saves successfully', async () => {
+    const s = await up();
+    try {
+      // 5MB JPEG buffer fixture
+      const largeJpeg = Buffer.alloc(5 * 1024 * 1024, 0xff);
+      largeJpeg[0] = 0xff; largeJpeg[1] = 0xd8; // JPEG SOI
+      largeJpeg[largeJpeg.length - 2] = 0xff; largeJpeg[largeJpeg.length - 1] = 0xd9; // JPEG EOI
+      const res = await post(s.base, largeJpeg, 'image/jpeg', JEFF, 'camera_photo.jpg');
+      expect(res.status).toBe(200);
+      const body = await res.json() as { ok: boolean; path: string; url: string };
+      expect(body.ok).toBe(true);
+      expect(fs.existsSync(body.path)).toBe(true);
+      expect(fs.statSync(body.path).size).toBe(5 * 1024 * 1024);
+    } finally { await s.close(); }
+  });
+
+  test('NEGATIVE PROOF: upload over 50MB limit returns HTTP 413 with named reason', async () => {
+    const s = await up();
+    try {
+      // 51MB payload exceeds 50mb limit
+      const oversized = Buffer.alloc(51 * 1024 * 1024, 0x00);
+      const res = await post(s.base, oversized, 'application/pdf', JEFF, 'huge.pdf');
+      expect(res.status).toBe(413);
+      const body = await res.json() as { ok: boolean; reason: string };
+      expect(body.ok).toBe(false);
+      expect(body.reason).toMatch(/file too large: upload limit is 50MB/);
+    } finally { await s.close(); }
+  });
+
+  test('SECURITY: .html upload is not served as text/html (sanitized to txt + Content-Disposition)', async () => {
+    const s = await up();
+    try {
+      const htmlPayload = Buffer.from('<script>alert("xss")</script>');
+      const res = await post(s.base, htmlPayload, 'text/html', JEFF, 'exploit.html');
+      expect(res.status).toBe(200);
+      const body = await res.json() as { ok: boolean; url: string; path: string };
+      expect(body.ok).toBe(true);
+      expect(body.path.endsWith('.txt')).toBe(true); // Sanitized from .html to .txt
+
+      const viewRes = await fetch(`${s.base}${body.url}`, { headers: { Cookie: JEFF } });
+      expect(viewRes.status).toBe(200);
+      expect(viewRes.headers.get('content-type')).not.toContain('text/html');
+      expect(viewRes.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(viewRes.headers.get('content-disposition')).toMatch(/attachment/);
+    } finally { await s.close(); }
+  });
+
   test('NEGATIVE PROOF: empty file upload fails loud with 400', async () => {
     const s = await up();
     try {
