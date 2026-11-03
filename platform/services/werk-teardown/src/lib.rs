@@ -1,3 +1,4 @@
+// @domain: builds — the werk verbs live in builds, like werk-commit/merge/accept (#4880)
 //! #3431 — native worktree teardown, ported from bash `chorus-werk remove`.
 //!
 //! Semantics preserved verbatim from platform/scripts/chorus-werk cmd_remove

@@ -615,6 +615,38 @@ pub fn is_ours(row: &InGraph) -> bool {
 /// refuses is a WIPE, which is a large share AND more than a handful.
 pub const SMALL_CLEANUP: usize = 2;
 
+/// #4880 — on a delta (or any read that is not the whole tree) a row absent from
+/// the walk is NOT evidence it is gone: the walk saw only what changed. But a
+/// row whose source file git itself removed IS gone, and CodeFile already
+/// deletes those (main.rs, removed_by_git). Pages and endpoints dropped every
+/// delete instead, so the media player's 12 routes outlived its move out of the
+/// repo (#4748, 10-26) and crawler-out-of-sync fired for a week. Keep every
+/// non-delete, and only the deletes of rows whose filePath git removed. Pure.
+pub fn keep_git_removed_deletes<T>(plan: Vec<RowAction<T>>, graph: &[InGraph], removed: &[String]) -> Vec<RowAction<T>> {
+    let removed_file = |name: &str| graph.iter().find(|g| g.name == name).is_some_and(|g| {
+        g.fields.iter().any(|(k, v)| k == "filePath" && removed.iter().any(|r| r == v))
+    });
+    plan.into_iter().filter(|a| match a {
+        RowAction::Delete { name, .. } => removed_file(name),
+        _ => true,
+    }).collect()
+}
+
+/// #4880 — the source files a delta may delete rows for: the ones git removed
+/// in this delta, plus any row's filePath git no longer tracks at all. An
+/// empty tracked list (git could not be read) names only git's removals, never
+/// every row. Pure.
+pub fn untracked_sources(graph: &[InGraph], tracked: &[String], removed: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = removed.to_vec();
+    if tracked.is_empty() { return out; }
+    for g in graph {
+        if let Some((_, f)) = g.fields.iter().find(|(k, v)| k == "filePath" && !v.trim().is_empty()) {
+            if !tracked.iter().any(|t| t == f) && !out.contains(f) { out.push(f.clone()); }
+        }
+    }
+    out
+}
+
 pub fn leg_mass_delete_refused(planned_deletes: usize, rows: usize) -> bool {
     rows > 0 && planned_deletes > SMALL_CLEANUP && planned_deletes * 2 > rows
 }
@@ -1233,4 +1265,65 @@ mod pages_4214 {
     }
 
 
+}
+
+#[cfg(test)]
+mod delta_deletes_4880 {
+    use super::*;
+
+    fn row(name: &str, key: &str, file: &str) -> InGraph {
+        InGraph { name: name.into(), key: key.into(), domain: None, fields: vec![("filePath".into(), file.into())] }
+    }
+    fn plan() -> Vec<RowAction<()>> {
+        vec![
+            RowAction::Delete { name: "endpoint-photos".into(), key: "GET /api/photos".into() },
+            RowAction::Delete { name: "endpoint-health".into(), key: "GET /health".into() },
+            RowAction::Unchanged { key: "GET /api/cards".into() },
+        ]
+    }
+    fn graph() -> Vec<InGraph> {
+        vec![
+            row("endpoint-photos", "GET /api/photos", "platform/apps/sexuality-player/server.js"),
+            row("endpoint-health", "GET /health", "platform/api/src/server.ts"),
+        ]
+    }
+    fn deletes(p: &[RowAction<()>]) -> Vec<String> {
+        p.iter().filter_map(|a| match a { RowAction::Delete { key, .. } => Some(key.clone()), _ => None }).collect()
+    }
+
+    #[test]
+    fn a_delta_deletes_the_route_whose_file_git_removed() {
+        let kept = keep_git_removed_deletes(plan(), &graph(), &["platform/apps/sexuality-player/server.js".into()]);
+        assert_eq!(deletes(&kept), vec!["GET /api/photos"]);
+        assert_eq!(kept.len(), 2, "non-deletes always stay");
+    }
+
+    #[test]
+    fn negative_proof_a_route_merely_absent_from_the_delta_is_never_deleted() {
+        // the #4022 guard: the walk saw only what changed, so GET /health is absent, not gone
+        let kept = keep_git_removed_deletes(plan(), &graph(), &["platform/apps/sexuality-player/server.js".into()]);
+        assert!(!deletes(&kept).contains(&"GET /health".to_string()));
+    }
+
+    #[test]
+    fn negative_proof_nothing_removed_deletes_nothing() {
+        // a refused whole-tree wipe passes an empty list: every delete goes
+        let kept = keep_git_removed_deletes(plan(), &graph(), &[]);
+        assert!(deletes(&kept).is_empty());
+        // and a row with no filePath (athena-make's own, #4214) is never ours to delete
+        let bare = vec![InGraph { name: "endpoint-photos".into(), key: "GET /api/photos".into(), domain: None, fields: vec![] }];
+        assert!(deletes(&keep_git_removed_deletes(plan(), &bare, &["platform/apps/sexuality-player/server.js".into()])).is_empty());
+    }
+    #[test]
+    fn a_route_whose_file_git_no_longer_tracks_is_gone_even_if_an_earlier_delta_missed_it() {
+        let tracked = vec!["platform/api/src/server.ts".to_string()];
+        let gone = untracked_sources(&graph(), &tracked, &[]);
+        assert_eq!(gone, vec!["platform/apps/sexuality-player/server.js".to_string()]);
+        assert_eq!(deletes(&keep_git_removed_deletes(plan(), &graph(), &gone)), vec!["GET /api/photos"]);
+    }
+
+    #[test]
+    fn negative_proof_an_unreadable_tree_never_names_every_row_gone() {
+        assert!(untracked_sources(&graph(), &[], &[]).is_empty(), "git ls-files failed: nothing is gone");
+    }
 }
