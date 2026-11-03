@@ -1078,6 +1078,14 @@ pub fn ac_checklist(borg_ac: &str) -> String {
     }).collect::<Vec<_>>().join("\n")
 }
 
+/// #4875 (Kade 26af1b142) — the borg-prove that ships beside THIS werk-demo (current_exe's dir):
+/// a demo slot's werk-demo then reads the AC with its own borg-prove, not prod's older one (which
+/// would deadlock the card that adds `borg-prove ac`). No sibling → `fallback` (the wrapper).
+pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
+    exe_dir.map(|d| d.join("borg-prove")).filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().to_string()).unwrap_or(fallback)
+}
+
 /// #4875 (Kade ba6102a8f; Jeff 09-09 "i NEVER want to be asked for go on a card with unfinished
 /// ac") — the AC still unchecked on the card. Any one blocks the go. Pure.
 pub fn ac_unfinished(card_view: &str) -> Vec<String> {
@@ -2672,7 +2680,9 @@ pub fn run_demo() -> R<DemoOutcome> {
             return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; the go already reached Jeff for this round — nothing more sent"), exit: 0 });
         }
         // one reader of the card's AC: borg-prove's (Jeff 09:28); a failed read is "" → refused
-        let cv = run(&script_path(&home, "borg-prove"), &["ac", &card.to_string()]).unwrap_or_default();
+        let exe = env::current_exe().ok();
+        let bp = borg_prove_beside(exe.as_deref().and_then(Path::parent), script_path(&home, "borg-prove"));
+        let cv = run(&bp, &["ac", &card.to_string()]).unwrap_or_default();
         let mut missing = vouch_missing(&witness, card, &round, &patch, &owner);
         missing.extend(ac_unfinished(&cv));
         if !missing.is_empty() {

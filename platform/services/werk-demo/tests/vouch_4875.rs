@@ -4,7 +4,7 @@
 //! #4875 AC2/AC3: the go reaches Jeff only when every gate passed for this round, the owner
 //! vouched with what was shown, proven and not proven, and the navigator (a different role)
 //! vouched too. Each missing piece is named; a negative proof for each.
-use werk_demo::{ac_checklist, ac_unfinished, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
+use werk_demo::{ac_checklist, ac_unfinished, borg_prove_beside, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
 
 const R: &str = "round-abc";
 const P: &str = "patch-1";
@@ -124,4 +124,18 @@ fn negative_proof_an_unreadable_card_blocks_the_go() {
     // Kade 47ef7e508: `cards view` failing gives "", which must refuse, not read as all-done.
     assert_eq!(ac_unfinished(""), vec!["card AC unreadable".to_string()]);
     assert_eq!(ac_unfinished("Status: WIP\nno boxes"), vec!["card AC unreadable".to_string()]);
+}
+
+#[test]
+fn the_ac_is_read_by_the_borg_prove_beside_this_werk_demo() {
+    // Kade 26af1b142: a slot's werk-demo must use its own borg-prove, not prod's (no `ac` yet).
+    let d = std::env::temp_dir().join(format!("bp-4875-{}", std::process::id()));
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("borg-prove"), "#!/bin/sh\n").unwrap();
+    assert_eq!(borg_prove_beside(Some(&d), "wrapper".into()), d.join("borg-prove").to_string_lossy());
+    // negative proof: with no sibling binary it falls back to the wrapper, never a missing path
+    let empty = d.join("empty"); std::fs::create_dir_all(&empty).unwrap();
+    assert_eq!(borg_prove_beside(Some(&empty), "wrapper".into()), "wrapper");
+    assert_eq!(borg_prove_beside(None, "wrapper".into()), "wrapper");
+    let _ = std::fs::remove_dir_all(&d);
 }
