@@ -2100,7 +2100,7 @@ fn up(ctx: &mut Ctx, windows: bool) -> i32 {
     // a list of three; a door that does not answer starts nobody and says so
     let roles = match agent_roles(ctx) {
         Ok(r) => r,
-        Err(why) => { eprintln!("chorus-principal up: started nobody — {}", why); return 1; }
+        Err(why) => { eprintln!("chorus-principal up: started nobody — the roles door did not name the roles: {}", why); return 1; }
     };
     let mut results = Vec::new();
     for role in roles.iter().map(String::as_str) {

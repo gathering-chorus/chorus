@@ -46,7 +46,7 @@ out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
   ! grep -q "kill-session -t chorus-kade" "$T/tmux.log" || return 1
 }
 
-@test "a role with no MCP config is named in the command's output and the command fails" {
+@test "NEGATIVE PROOF (AC2) — a role with no MCP config is named in the command's output and the command fails" {
   rm "$T/roles/silas/.mcp.json"
   run "$SCRIPT" up
   [ "$status" -ne 0 ]
@@ -60,6 +60,14 @@ out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
   run "$SCRIPT" up
   [ "$status" -ne 0 ]
   out_has "roles door"
+  ! grep -q "respawn-pane" "$T/tmux.log" 2>/dev/null || return 1
+}
+
+@test "NEGATIVE PROOF — a roles door that does not answer at all starts nobody and names the door" {
+  printf '#!/bin/bash\necho "curl $*" >> "%s/curl.log"\ncase "${@: -1}" in */v1/roles/roles*) exit 7 ;; esac\nexit 0\n' "$T" > "$T/bin/curl"; chmod +x "$T/bin/curl"
+  run "$SCRIPT" up
+  [ "$status" -ne 0 ]
+  out_has "roles door did not name the roles"
   ! grep -q "respawn-pane" "$T/tmux.log" 2>/dev/null || return 1
 }
 
