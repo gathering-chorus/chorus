@@ -33,6 +33,17 @@ pub fn run(tool: &str, args: &Value) -> i32 {
         eprintln!("chorus-runner call: no ROLE to run as");
         return 2;
     }
+    // #4851 (from #4853 AC4): only the installer's account runs a call in
+    // process; any other account's call goes to the shared runner.
+    {
+        use std::os::unix::fs::MetadataExt;
+        let installer = std::fs::metadata(format!("{}/bin", crate::server::state_dir())).map(|m| m.uid()).ok();
+        if let Some(me) = own_uid() {
+            if crate::forward::forwards(me, installer) {
+                return crate::forward::call(&role, tool, args);
+            }
+        }
+    }
     // #4515 — athena-get/-list/-add/-set: the same check and the same door
     // call as the server, as $ROLE with a credential minted for $ROLE
     if crate::is_athena_tool(tool) {
@@ -95,4 +106,14 @@ pub fn run(tool: &str, args: &Value) -> i32 {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+/// This process's uid, read from a file it just created (no libc).
+fn own_uid() -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    let p = std::env::temp_dir().join(format!("chorus-runner-uid-{}", std::process::id()));
+    std::fs::write(&p, "").ok()?;
+    let uid = std::fs::metadata(&p).ok().map(|m| m.uid());
+    let _ = std::fs::remove_file(&p);
+    uid
 }

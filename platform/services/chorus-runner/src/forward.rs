@@ -88,7 +88,7 @@ pub fn error_for(line: &str, message: &str) -> Option<String> {
     Some(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": message}}).to_string())
 }
 
-struct Forwarder {
+pub struct Forwarder {
     role: String,
     url: String,
     helper: String,
@@ -99,6 +99,27 @@ struct Forwarder {
 }
 
 impl Forwarder {
+    /// #4851 — one forwarder per process: the role, the runner's URL, the
+    /// header helper that mints the role's credential, and a 0700 scratch dir.
+    pub fn for_role(role: &str, tag: &str) -> Result<(Self, std::path::PathBuf), String> {
+        let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+        let dir = std::env::temp_dir().join(format!("chorus-runner-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| format!("scratch dir: {e}"))?;
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("scratch dir: {e}"))?;
+        }
+        Ok((Forwarder {
+            role: role.to_string(),
+            url: std::env::var("CHORUS_RUNNER_URL").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "http://localhost:3342/mcp".into()),
+            helper: std::env::var("CHORUS_MCP_HEADERS_BIN").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| format!("{home}/platform/scripts/chorus-mcp-headers")),
+            curl: std::env::var("CHORUS_CURL").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "/usr/bin/curl".into()),
+            dir: dir.clone(),
+            headers: None,
+            session: None,
+        }, dir))
+    }
+
     /// `{"Authorization": "..."}` from the helper, as `Name: value` lines.
     fn mint(&mut self) -> Result<String, String> {
         let out = Command::new(&self.helper).arg(&self.role).output()
@@ -162,22 +183,7 @@ impl Forwarder {
 pub fn run() -> Result<(), String> {
     let role = std::env::var("ROLE").or_else(|_| std::env::var("CHORUS_ROLE")).unwrap_or_default();
     if role.is_empty() { return Err("no ROLE to forward as; nothing runs as nobody".into()); }
-    let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
-    let dir = std::env::temp_dir().join(format!("chorus-runner-stdio-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("scratch dir: {e}"))?;
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("scratch dir: {e}"))?;
-    }
-    let mut f = Forwarder {
-        role: role.clone(),
-        url: std::env::var("CHORUS_RUNNER_URL").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "http://localhost:3342/mcp".into()),
-        helper: std::env::var("CHORUS_MCP_HEADERS_BIN").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| format!("{home}/platform/scripts/chorus-mcp-headers")),
-        curl: std::env::var("CHORUS_CURL").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "/usr/bin/curl".into()),
-        dir: dir.clone(),
-        headers: None,
-        session: None,
-    };
+    let (mut f, dir) = Forwarder::for_role(&role, "stdio")?;
     // Fail loud at start: a role that cannot mint never pretends to serve.
     f.headers = Some(f.mint()?);
     eprintln!("chorus-runner stdio: forwarding as {role} to {}", f.url);
@@ -197,4 +203,90 @@ pub fn run() -> Result<(), String> {
     }
     let _ = std::fs::remove_dir_all(&dir);
     Ok(())
+}
+
+// ── #4851 (from #4853 AC4): `chorus-runner call` from a role account ─────────
+// A role's own process writes files as that role, so Abby's and Borg Queen's
+// deploy-demo left role-owned files in their werk slots, which #4853 refuses
+// to run. A call from any account but the installer goes to the shared runner,
+// which runs it as the installer, the same as stdio does.
+
+/// Pure: does a call from this account go to the shared runner?
+pub fn forwards(caller_uid: u32, installer_uid: Option<u32>) -> bool {
+    installer_uid.is_some_and(|i| i != caller_uid)
+}
+
+/// Pure: the task id in a long tool's start reply, or None.
+pub fn task_id(text: &str) -> Option<String> {
+    let re = regex::Regex::new(r"as task (\S+): call task_status").ok()?;
+    re.captures(text).map(|c| c[1].to_string())
+}
+
+/// Pure: a task_status reply's outcome — Some(Ok(code)) when done, Some(Err) when
+/// lost or unknown, None while running.
+pub fn task_outcome(text: &str) -> Option<Result<i32, String>> {
+    let first = text.lines().next().unwrap_or("");
+    if let Some(c) = regex::Regex::new(r": done \(exit (-?\d+)\)").ok()?.captures(first) {
+        return Some(Ok(c[1].parse().unwrap_or(1)));
+    }
+    if first.contains(": running") { None } else { Some(Err(first.to_string())) }
+}
+
+fn rpc(f: &mut Forwarder, id: u64, method: &str, params: Value) -> Result<Value, String> {
+    let line = serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}).to_string();
+    for m in f.forward(&line)? {
+        let v: Value = serde_json::from_str(&m).unwrap_or(Value::Null);
+        if v["id"] == serde_json::json!(id) {
+            if let Some(e) = v.get("error") { return Err(e["message"].as_str().unwrap_or("error").to_string()); }
+            return Ok(v["result"].clone());
+        }
+    }
+    Err(format!("the HTTP runner gave no answer to {method}"))
+}
+
+fn text_of(result: &Value) -> (bool, String) {
+    let text = result["content"].as_array().map(|a| a.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    (result["isError"].as_bool().unwrap_or(false), text)
+}
+
+/// One tool call through the shared runner; a long tool is waited on through
+/// task_status. Returns the exit code the in-process call would have.
+pub fn call_with(f: &mut Forwarder, tool: &str, args: &Value, poll: std::time::Duration) -> i32 {
+    let init = serde_json::json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "chorus-runner-call", "version": "1"}});
+    if let Err(e) = rpc(f, 1, "initialize", init) { eprintln!("chorus-runner call: {e}"); return 2; }
+    let _ = f.forward(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
+    let (is_err, text) = match rpc(f, 2, "tools/call", serde_json::json!({"name": tool, "arguments": args})) {
+        Ok(r) => text_of(&r),
+        Err(e) => { eprintln!("chorus-runner call: {e}"); return 1; }
+    };
+    if is_err { eprintln!("chorus-runner call: {text}"); return 1; }
+    let Some(id) = task_id(&text) else { println!("{text}"); return 0; };
+    eprintln!("chorus-runner call: {tool} as {} through the shared runner, task {id}", f.role);
+    let mut n = 3;
+    loop {
+        std::thread::sleep(poll);
+        match rpc(f, n, "tools/call", serde_json::json!({"name": "task_status", "arguments": {"id": id}})) {
+            Ok(r) => {
+                let (_, t) = text_of(&r);
+                match task_outcome(&t) {
+                    None => {}
+                    Some(Ok(code)) => { println!("{t}"); return code; }
+                    Some(Err(why)) => { eprintln!("chorus-runner call: {why}"); return 1; }
+                }
+            }
+            Err(e) => { eprintln!("chorus-runner call: {e}"); return 1; }
+        }
+        n += 1;
+    }
+}
+
+/// `chorus-runner call` for a role account: forward, never run locally.
+pub fn call(role: &str, tool: &str, args: &Value) -> i32 {
+    let (mut f, dir) = match Forwarder::for_role(role, "call") {
+        Ok(x) => x,
+        Err(e) => { eprintln!("chorus-runner call: {e}"); return 2; }
+    };
+    let code = call_with(&mut f, tool, args, std::time::Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+    code
 }
