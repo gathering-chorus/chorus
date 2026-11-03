@@ -3245,11 +3245,10 @@ fn main() {
                     let graph = if label == "page" { &page_graph } else { &endpoint_graph };
                     pages::untracked_sources(graph, &tracked_files(&root).unwrap_or_default(), &removed_by_git)
                 };
-                let keep: &[String] = &gone;
                 if label == "page" {
-                    page_plan = pages::keep_git_removed_deletes(std::mem::take(&mut page_plan), &page_graph, keep);
+                    page_plan = pages::keep_git_removed_deletes(std::mem::take(&mut page_plan), &page_graph, &gone);
                 } else {
-                    endpoint_plan = pages::keep_git_removed_deletes(std::mem::take(&mut endpoint_plan), &endpoint_graph, keep);
+                    endpoint_plan = pages::keep_git_removed_deletes(std::mem::take(&mut endpoint_plan), &endpoint_graph, &gone);
                 }
             }
         }
