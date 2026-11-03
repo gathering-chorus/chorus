@@ -1077,6 +1077,13 @@ pub fn ac_checklist(card_view: &str) -> String {
     }).collect::<Vec<_>>().join("\n")
 }
 
+/// #4875 (Kade ba6102a8f; Jeff 09-09 "i NEVER want to be asked for go on a card with unfinished
+/// ac") — the AC still unchecked on the card. Any one blocks the go. Pure.
+pub fn ac_unfinished(card_view: &str) -> Vec<String> {
+    ac_checklist(card_view).lines().filter(|l| l.starts_with('☐'))
+        .map(|l| format!("unfinished {}", l.trim_start_matches('☐').trim())).collect()
+}
+
 /// #4875 — the ONE message that reaches Jeff: what was shown, proven and not proven, both
 /// "I'd click go", then the link. Sent only when `vouch_missing` is empty. Pure.
 pub fn jeff_go_message(witness: &str, card: u64, round: &str, patch: &str, owner: &str, link: &str, ac: &str) -> String {
@@ -2660,7 +2667,9 @@ pub fn run_demo() -> R<DemoOutcome> {
         if go_already_asked(&witness, card, &round, &patch) {
             return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; the go already reached Jeff for this round — nothing more sent"), exit: 0 });
         }
-        let missing = vouch_missing(&witness, card, &round, &patch, &owner);
+        let cv = run(&script_path(&home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+        let mut missing = vouch_missing(&witness, card, &round, &patch, &owner);
+        missing.extend(ac_unfinished(&cv));
         if !missing.is_empty() {
             return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; not sent to Jeff yet — missing: {}", missing.join(", ")), exit: 0 });
         }
@@ -2668,7 +2677,6 @@ pub fn run_demo() -> R<DemoOutcome> {
         go_approval_body(card, &run_id, &head, &go_row_title(&home, card))
             .and_then(|body| post_go_approval(&home, &owner, &body))
             .map_err(|why| format!("vouches complete but the go row was refused: {why}"))?;
-        let cv = run(&script_path(&home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
         let msg = jeff_go_message(&witness, card, &round, &patch, &owner, &approvals_link(), &ac_checklist(&cv));
         let a = nudge_send_args(&owner, "jeff", &msg);
         let argv: Vec<&str> = a.iter().map(String::as_str).collect();

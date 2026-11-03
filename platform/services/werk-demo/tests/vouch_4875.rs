@@ -4,7 +4,7 @@
 //! #4875 AC2/AC3: the go reaches Jeff only when every gate passed for this round, the owner
 //! vouched with what was shown, proven and not proven, and the navigator (a different role)
 //! vouched too. Each missing piece is named; a negative proof for each.
-use werk_demo::{ac_checklist, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
+use werk_demo::{ac_checklist, ac_unfinished, go_already_asked, jeff_go_message, reachable_link, vouch_line, vouch_missing};
 
 const R: &str = "round-abc";
 const P: &str = "patch-1";
@@ -108,4 +108,13 @@ fn the_go_message_lists_each_ac_checked_or_not() {
     assert_eq!(c, "✓ AC1: the announce goes to the owner.\n☐ AC2: the go reaches Jeff only via the vouch.", "{c}");
     // negative proof: a view with no AC lines yields nothing, never a made-up list
     assert_eq!(ac_checklist("Status: WIP\nno boxes here"), "");
+}
+
+#[test]
+fn negative_proof_one_unchecked_ac_blocks_the_go() {
+    // Kade ba6102a8f / Jeff 09-09: "i NEVER want to be asked for go on a card with unfinished ac"
+    let done = "    - [x] AC1: a. check: t\n    - [x] AC2: b. check: t";
+    assert!(ac_unfinished(done).is_empty());
+    let one_open = "    - [x] AC1: a. check: t\n    - [ ] AC2: b. check: t";
+    assert_eq!(ac_unfinished(one_open), vec!["unfinished AC2: b.".to_string()]);
 }
