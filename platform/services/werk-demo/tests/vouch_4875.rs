@@ -4,14 +4,14 @@
 //! #4875 AC2/AC3: the go reaches Jeff only when every gate passed for this round, the owner
 //! vouched with what was shown, proven and not proven, and the navigator (a different role)
 //! vouched too. Each missing piece is named; a negative proof for each.
-use werk_demo::{jeff_go_message, vouch_line, vouch_missing};
+use werk_demo::{go_already_asked, jeff_go_message, vouch_line, vouch_missing};
 
 const R: &str = "round-abc";
 const P: &str = "patch-1";
 
 fn gates(result: &str) -> String {
     ["product", "code", "quality", "arch", "ops"].iter()
-        .map(|g| format!("{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":7,\"trace_id\":\"t\",\"gate\":\"{g}\",\"result\":\"{result}\",\"round\":\"{R}\"}}\n"))
+        .map(|g| format!("{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":7,\"trace_id\":\"t\",\"gate\":\"{g}\",\"result\":\"{result}\",\"round\":\"{R}\",\"patch_id\":\"{P}\"}}\n"))
         .collect()
 }
 fn owner() -> String { vouch_line(7, "wren", "owner", R, P, "http://shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "") }
@@ -58,4 +58,30 @@ fn negative_proof_a_vouch_for_another_round_does_not_count() {
     let stale = vouch_line(7, "kade", "navigator", "old-round", "old-patch", "", "", "", "old");
     let w = gates("pass") + &owner() + &stale;
     assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m.contains("navigator")));
+}
+
+#[test]
+fn negative_proof_an_older_rounds_passing_gates_do_not_count() {
+    // Kade b1c438aeb (2): gates passed for the old round; this round has no gate results.
+    let old = gates("pass").replace(R, "old-round").replace(P, "old-patch");
+    let w = old + &owner() + &nav();
+    assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m == "product -"), "{:?}", vouch_missing(&w, 7, R, P, "wren"));
+}
+
+#[test]
+fn negative_proof_an_owner_vouch_with_nothing_proven_blocks_the_go() {
+    // Kade b1c438aeb (3)
+    let unproven = vouch_line(7, "wren", "owner", R, P, "http://shown/7", "  ", "none", "");
+    let w = gates("pass") + &unproven + &nav();
+    assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m.contains("nothing proven")));
+}
+
+#[test]
+fn negative_proof_a_go_already_asked_this_round_is_not_asked_again() {
+    // Kade b1c438aeb (1): a third vouch after both must not send Jeff a second row or message.
+    let asked = format!("{{\"ts\":2,\"event\":\"demo.go.asked\",\"role\":\"wren\",\"card_id\":7,\"trace_id\":\"run\",\"round\":\"{R}\",\"patch_id\":\"{P}\"}}\n");
+    let w = gates("pass") + &owner() + &nav();
+    assert!(!go_already_asked(&w, 7, R, P), "not yet asked");
+    assert!(go_already_asked(&(w.clone() + &asked), 7, R, P), "asked once");
+    assert!(!go_already_asked(&(w + &asked.replace(R, "next").replace(P, "next-p")), 7, R, P), "another round's ask does not count");
 }

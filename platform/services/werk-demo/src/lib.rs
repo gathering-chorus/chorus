@@ -1018,20 +1018,36 @@ fn vouch_of<'a>(witness: &'a str, card: u64, round: &str, patch: &str, as_: &str
 /// pass, an owner vouch with nothing shown, no navigator vouch from a role other than the owner.
 /// Empty = the go may go to Jeff. Pure.
 pub fn vouch_missing(witness: &str, card: u64, round: &str, patch: &str, owner: &str) -> Vec<String> {
-    let mut missing: Vec<String> = gate_verdicts(witness, card).into_iter()
-        .filter(|(_, r)| r != "pass").map(|(g, r)| format!("{g} {r}")).collect();
+    // Kade b1c438aeb (2): each gate's verdict for THIS round (patch-keyed), never an older round's pass.
+    let card_key = format!("\"card_id\":{},", card);
+    let mut missing: Vec<String> = REQUIRED_GATES.iter().filter_map(|g| {
+        let gate_key = format!("\"gate\":\"{g}\"");
+        let r = witness.lines().rev().find(|l| l.contains("\"event\":\"demo.gate.result\"")
+                && l.contains(&card_key) && l.contains(&gate_key) && line_keyed(l, round, patch))
+            .and_then(|l| json_str_after(l, "result")).unwrap_or_else(|| "-".to_string());
+        (r != "pass").then(|| format!("{g} {r}"))
+    }).collect();
     let own = vouch_of(witness, card, round, patch, "owner", None)
         .filter(|l| json_str_after(l, "role").as_deref() == Some(owner));
+    let blank = |l: &str, k: &str| json_str_after(l, k).unwrap_or_default().trim().is_empty();
     match own {
         None => missing.push(format!("owner vouch ({owner})")),
-        Some(l) if json_str_after(l, "shown").unwrap_or_default().trim().is_empty() =>
-            missing.push("owner vouch: nothing shown".into()),
+        Some(l) if blank(l, "shown") => missing.push("owner vouch: nothing shown".into()),
+        // Kade b1c438aeb (3): a vouch that names no proof is not a vouch.
+        Some(l) if blank(l, "proven") => missing.push("owner vouch: nothing proven".into()),
         Some(_) => {}
     }
     if vouch_of(witness, card, round, patch, "navigator", Some(owner)).is_none() {
         missing.push("navigator vouch (a role other than the owner)".into());
     }
     missing
+}
+
+/// #4875 (Kade b1c438aeb (1)) — the go already reached Jeff for this round: a later vouch must
+/// not post a second row or send a second message. Pure.
+pub fn go_already_asked(witness: &str, card: u64, round: &str, patch: &str) -> bool {
+    let card_key = format!("\"card_id\":{},", card);
+    witness.lines().any(|l| l.contains("\"event\":\"demo.go.asked\"") && l.contains(&card_key) && line_keyed(l, round, patch))
 }
 
 /// #4875 — the ONE message that reaches Jeff: what was shown, proven and not proven, both
@@ -2613,6 +2629,9 @@ pub fn run_demo() -> R<DemoOutcome> {
         let line = vouch_line(card, &by, &as_, &round, &patch, &opt("--shown"), &opt("--proven"), &opt("--not-proven"), &opt("--why"));
         { use std::io::Write as _; let mut f = fs::OpenOptions::new().create(true).append(true).open(&witness_path).map_err(|e| e.to_string())?; f.write_all(line.as_bytes()).map_err(|e| e.to_string())?; }
         let witness = fs::read_to_string(&witness_path).unwrap_or_default();
+        if go_already_asked(&witness, card, &round, &patch) {
+            return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; the go already reached Jeff for this round — nothing more sent"), exit: 0 });
+        }
         let missing = vouch_missing(&witness, card, &round, &patch, &owner);
         if !missing.is_empty() {
             return Ok(DemoOutcome { message: format!("{as_} vouch recorded for #{card}; not sent to Jeff yet — missing: {}", missing.join(", ")), exit: 0 });
