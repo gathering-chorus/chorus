@@ -176,13 +176,11 @@ fn enrich_stop_prompt_response(input: String) -> String {
     if has_resp {
         return input;
     }
-    if let Some(tp) = json.get("transcript_path").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
-        if let Some(reply) = chorus_hooks::last_assistant_text(tp) {
-            if !reply.trim().is_empty() {
-                json["prompt_response"] = serde_json::Value::String(reply);
-                return json.to_string();
-            }
-        }
+    // #4882 — one source with the daemon: the Stop payload's final text, else
+    // the turn's own text from the transcript (which lags at Stop).
+    if let Some(reply) = chorus_hooks::reply_delivery::reply_text(&json) {
+        json["prompt_response"] = serde_json::Value::String(reply);
+        return json.to_string();
     }
     input
 }

@@ -1395,6 +1395,13 @@ async fn stop_hook(
         // #4445 — Gemini has no transcript file: its AfterAgent hook hands the
         // reply itself (prompt_response), forwarded by the runtime hook.
         let text = hooks::reply_delivery::reply_text(&raw);
+        // #4882 — live proof of which source the reply came from.
+        crate::state::chorus_log(
+            "reply.source",
+            input.role().as_str(),
+            &[("source", hooks::reply_delivery::reply_source(&raw))],
+        )
+        .await;
         if let Some(text) = text {
             let role = input.role().as_str().to_string();
             let api_base = std::env::var("CHORUS_API_URL")
