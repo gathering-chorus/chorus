@@ -19,29 +19,40 @@ export function uploadNames(text: string): string[] {
   return Array.from(String(text || '').matchAll(UPLOAD_NAME_RE), (m) => m[1]);
 }
 
+const MIME_MAP: Record<string, string> = {
+  png: 'png',
+  gif: 'gif',
+  webp: 'webp',
+  jpeg: 'jpg',
+  jpg: 'jpg',
+  pdf: 'pdf',
+  'text/plain': 'txt',
+  'text/csv': 'txt',
+  markdown: 'md',
+  json: 'json',
+  'audio/webm': 'webm',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+  'audio/aac': 'm4a',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+};
+
+const BLOCKED_EXTS = new Set(['html', 'htm', 'svg', 'xhtml', 'xml', 'js', 'mjs', 'cgi', 'php']);
+
 export function extFor(contentType: string, originalName?: string): string {
   if (originalName) {
-    let ext = path.extname(originalName).replace(/^\./, '').toLowerCase();
-    // Block dangerous executable/active extensions from being served inline or executing
-    if (['html', 'htm', 'svg', 'xhtml', 'xml', 'js', 'mjs', 'cgi', 'php'].includes(ext)) {
-      ext = 'txt';
-    }
+    const ext = path.extname(originalName).replace(/^\./, '').toLowerCase();
+    if (BLOCKED_EXTS.has(ext)) return 'txt';
     if (ext && /^[a-z0-9]{1,10}$/.test(ext)) return ext;
   }
   const ct = contentType.toLowerCase();
   if (/hei[cf]/.test(ct)) return 'heic';
-  if (ct.includes('png')) return 'png';
-  if (ct.includes('gif')) return 'gif';
-  if (ct.includes('webp')) return 'webp';
-  if (ct.includes('jpeg') || ct.includes('jpg')) return 'jpg';
-  if (ct.includes('pdf')) return 'pdf';
-  if (ct.includes('text/plain') || ct.includes('text/csv')) return 'txt';
-  if (ct.includes('markdown')) return 'md';
-  if (ct.includes('json')) return 'json';
-  if (ct.includes('audio/webm')) return 'webm';
-  if (ct.includes('audio/mp4') || ct.includes('audio/m4a') || ct.includes('audio/aac')) return 'm4a';
-  if (ct.includes('audio/wav') || ct.includes('audio/x-wav')) return 'wav';
-  if (ct.includes('audio/mpeg') || ct.includes('audio/mp3')) return 'mp3';
+  for (const [key, val] of Object.entries(MIME_MAP)) {
+    if (ct.includes(key)) return val;
+  }
   return 'bin';
 }
 
@@ -71,7 +82,12 @@ export async function saveUpload(
   if (ext === 'heic') {
     const jpg = path.join(dir, cleanOriginal ? `${now}_${cleanOriginal}.jpg` : `${now}.jpg`);
     if (await toJpeg(saved, jpg)) {
-      try { fs.unlinkSync(saved); } catch {}
+      try {
+        fs.unlinkSync(saved);
+      } catch {
+        // Ignored: cleanup failure of intermediate heic file
+        void 0;
+      }
       return { name: path.basename(jpg), path: jpg };
     }
   }
