@@ -1228,14 +1228,23 @@ def go_state(witness, card):
                 pass
     announced = [r for r in rows if r.get("event") == "demo.announced"]
     if not announced:
-        return ("vouch", "")
-    rnd = announced[-1].get("round")
-    if any(r.get("event") == "demo.go.asked" and r.get("round") == rnd for r in rows):
+        return ("gates", "")
+    a = announced[-1]
+
+    def same(r):
+        # Kade c4c2963a8 — patch first, like werk-demo's line_keyed (#3944): when both carry a
+        # patch id it decides; only then fall back to the round.
+        if a.get("patch_id") and r.get("patch_id"):
+            return r.get("patch_id") == a.get("patch_id")
+        return r.get("round") == a.get("round")
+    if any(r.get("event") == "demo.go.asked" and same(r) for r in rows):
         return ("asked", "")
     last = {}
     for r in rows:
-        if r.get("event") == "demo.gate.result" and r.get("round") == rnd:
+        if r.get("event") == "demo.gate.result" and same(r):
             last[r.get("gate")] = r.get("result")
+    if not last:
+        return ("gates", "")  # Kade c4c2963a8: no results yet is "gates not in yet", not "vouch"
     reds = [g for g, res in last.items() if res != "pass"]
     return ("red", ", ".join(sorted(reds))) if reds else ("vouch", "")
 
@@ -1305,6 +1314,8 @@ def card_line(card, role, runs, lands, places, now=None, wip=False, parts=None):
                 where = f"red — {reds}, back to {role}"
             elif state == "vouch":
                 where = f"waiting for {role}'s vouch"
+            elif state == "gates":
+                where = "demo: gates not in yet"
         if land:
             # #4734 (Wren 10:19) — #4735 and #4637 read "waiting for your go"
             # while their lands waited at skill-borg-queen-proves: a land's
@@ -1529,12 +1540,20 @@ def ac7_reads(read):
         asked = read(None)
         WITNESS_TEXT = ann + "\n" + row("demo.go.asked", round="r0")
         stale = read(None)
+        # patch-first (#3944): same round, other content — the ask for that content does not count
+        pa = row("demo.announced", patch_id="p2")
+        WITNESS_TEXT = pa + "\n" + row("demo.go.asked", patch_id="p1")
+        other_patch = read(None)
+        WITNESS_TEXT = pa + "\n" + row("demo.gate.result", gate="code", result="pass", patch_id="p2")
+        green_unvouched = read(None)
     finally:
         WITNESS_TEXT = keep
-    return ("waiting for wren's vouch" in unvouched and "your go" not in unvouched
+    return ("gates not in yet" in unvouched and "your go" not in unvouched
             and "red — product, back to wren" in red and "your go" not in red
             and "waiting for your go" in asked
-            and "your go" not in stale)
+            and "your go" not in stale
+            and "your go" not in other_patch
+            and "waiting for wren's vouch" in green_unvouched)
 
 
 def fixture_4553():
