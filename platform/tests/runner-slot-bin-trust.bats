@@ -27,3 +27,9 @@ mode() { stat -f '%Lp' "$1"; }
   run bash -c 'umask 002; mkdir "$1/plain"; cp -p "$1/src" "$1/plain/x"; stat -f %Lp "$1/plain" "$1/plain/x"' _ "$T"
   [[ "$output" == *"775"*"775"* ]] || { echo "$output"; return 1; }
 }
+
+@test "a canonical install under umask 002 leaves the binary 0755 (Kade 12:19: athena-deploy-bin and vocab-gen-bin were 775)" {
+  run bash -c 'umask 002; HOME="$1/home" CHORUS_BIN_SPINE_LOG="$1/spine.log" CHORUS_BIN_SKIP_SMOKE=1 CHORUS_BIN_ALLOW_TEST_CANONICAL=1 "$2" "$1/src" probe-4853' _ "$T" "$ROOT/platform/scripts/chorus-bin-install"
+  [ "$status" -eq 0 ] || skip "canonical installs are refused in a test context (#3997): $output"
+  [ "$(mode "$T/home/.chorus/bin/probe-4853")" = "755" ] || { echo "file $(mode "$T/home/.chorus/bin/probe-4853")"; return 1; }
+}

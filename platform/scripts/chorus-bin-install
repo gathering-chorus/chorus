@@ -196,7 +196,7 @@ if ! cp -p "$SRC" "$DEST_TMP" 2>/dev/null; then
   rm -f "$DEST_TMP"
   exit 5
 fi
-if [ "$TARGET" = "werk" ]; then chmod 0755 "$DEST_TMP"; fi  # #4853: cp -p keeps a 775 built under umask 002
+chmod 0755 "$DEST_TMP"  # #4853: cp -p keeps a 775 built under umask 002; slot or ~/.chorus/bin, the runner runs it as jeffbridwell
 
 if ! mv -f "$DEST_TMP" "$DEST" 2>/dev/null; then
   echo "chorus-bin-install: atomic move failed" >&2
