@@ -7,6 +7,12 @@ CWS="$(cd "$(dirname "$0")/../scripts" && pwd)/chorus-werk-status"
 fails=0
 # #4341 — the board, the spine and the card CLI all point nowhere: this suite reads only its fixtures
 export CWS_API=http://127.0.0.1:9 CWS_LOKI=http://127.0.0.1:9 CWS_CARDS=/usr/bin/false CWS_DAGU=http://127.0.0.1:9
+# #4875 AC7 — cws reads the demo witness: card 109 was announced and both vouched, so its waiting
+# go step IS Jeff's go. Never the live witness (#3528: the test brings its own world).
+WITNESS_FX=$(mktemp)
+printf '%s\n' '{"ts":1,"event":"demo.announced","role":"kade","card_id":109,"trace_id":"t","round":"r1","patch_id":"p1"}' \
+  '{"ts":2,"event":"demo.go.asked","role":"kade","card_id":109,"trace_id":"t","round":"r1","patch_id":"p1"}' > "$WITNESS_FX"
+export CWS_WITNESS="$WITNESS_FX"
 t() { local name="$1" want="$2" got="$3"; if [[ "$got" == *"$want"* ]]; then echo "ok   $name"; else echo "FAIL $name — wanted '$want' in: $got"; fails=$((fails+1)); fi; }
 
 # 1. NEGATIVE PROOF self-test must pass (and is itself the two-states fixture)
