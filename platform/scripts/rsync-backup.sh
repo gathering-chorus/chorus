@@ -50,13 +50,19 @@ backup() {
     # #4705 — --no-specials: werks hold live unix sockets (.chorus-demo/*/
     # chorus-hooks.sock); Bedroom cannot create them ("mkstempsock: Invalid
     # argument") and CascadeProjects failed exit 23 every night on them alone.
+    # #4873 — this account cannot read other accounts' cargo build dirs
+    # (target/chorus-<account>/, rebuildable) or the role-private outboxes
+    # (.chorus/outbox/<role>/, 0700 by design); both failed exit 23 nightly.
+    # Skipped, never loosened. Any other unreadable file still fails.
     out=$(nice -n 10 "$RSYNC" -az --delete --no-specials --timeout=300 \
       --exclude='data/loki/' \
       --exclude='node_modules/' \
       --exclude='.git/objects/' \
       --exclude='target/release/' \
       --exclude='target/debug/' \
+      --exclude='target/chorus-*/' \
       --exclude='/.chorus/chorus.log' \
+      --exclude='/.chorus/outbox/*/' \
       -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1) || rc=$?
     [ -n "$out" ] && printf '%s\n' "$out"
     # #4705 — macOS openrsync exits 23, not 24, when a file vanishes between the
