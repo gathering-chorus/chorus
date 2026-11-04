@@ -19,7 +19,7 @@ setup() {
   # against a card's events (#4336 — was a grep of the page source for identifiers).
   H="$ROOT/platform/api/public/borg/trace.html"
   printf '%s' '[{"ts":"2026-09-17T11:00:00Z","event":"athena.pipeline.started","role":"kade","trace_id":"athena-1-2"},{"ts":"2026-09-17T11:00:01Z","event":"merge.landed","role":"kade","trace_id":"werk-trace-aaa"},{"ts":"2026-09-17T11:00:02Z","event":"werk.started","role":"kade","trace_id":"athena-1-2"}]' > "$T/events.json"
-  run node "$FIX/trace-page-run.js" "$H" "$T/events.json"
+  run node "$ROOT/platform/tests/fixtures/4336/trace-page-run.js" "$H" "$T/events.json"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '^SUM .* 3 events · 2 traces (1 werk · 1 athena)'
   chips=$(echo "$output" | sed -n 's/^CHIPS //p')

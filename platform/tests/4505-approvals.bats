@@ -97,11 +97,31 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }
 }
 
+# #4885 — the go-row cases ran and none failed: named cases, not a count (an exact
+# count went stale when the suites were split, 8 → 3 + 6, and the case stayed red).
+GO_ROW_CASES="the_go_row_carries_kind_go_and_an_action_of_exactly_card_run_round
+the_announce_points_at_the_one_list_not_a_per_run_link
+the_go_binds_the_commit_this_run_pushed
+negative_proof_a_short_round_or_a_bad_run_posts_no_row
+e2e_demo_steps"
+go_row_green() {  # $1 = cargo test output
+  [[ "$1" == *"test result: ok."* ]] || return 1
+  ! printf '%s\n' "$1" | grep -qE '^test .* \.\.\. FAILED$|test result: FAILED' || return 1
+  for c in $GO_ROW_CASES; do printf '%s\n' "$1" | grep -qE "^test $c \.\.\. ok$" || { echo "missing: $c"; return 1; }; done
+}
+
 @test "R2-GO-ROW werk-demo: a ready demo posts the go row and points at the list (cargo)" {
   cd "$ROOT/platform/services/werk-demo" || return 1
   run nice cargo test -j 4 --test go_row_4642 --test e2e
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 8 passed"* ]] || { echo "$output"; return 1; }  # +2 go_ask; #4771 +1 tested commit
+  go_row_green "$output" || { echo "$output"; return 1; }
+}
+
+@test "R2-GO-ROW NEGATIVE PROOF (#4885): one failed go-row case, or a missing one, reds the check" {
+  ok="$(for c in $GO_ROW_CASES; do echo "test $c ... ok"; done; echo 'test result: ok. 9 passed; 0 failed')"
+  go_row_green "$ok" || return 1
+  ! go_row_green "$(printf '%s\n' "$ok" | sed 's/^test the_go_binds_the_commit_this_run_pushed ... ok$/test the_go_binds_the_commit_this_run_pushed ... FAILED/')" || return 1
+  ! go_row_green "$(printf '%s\n' "$ok" | grep -v e2e_demo_steps)" || return 1
 }
 
 @test "R2-ONE-GO-PATH: the per-run go page, its decide route and the go record are retired" {
