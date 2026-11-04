@@ -18,6 +18,7 @@
  * from each role's hooks straight to the relay), so the page says so rather
  * than guessing.
  */
+import { bostonDay as sdkDay, bostonMidnight as sdkMidnight } from '../../chorus-sdk/time/boston';
 /** The note fields the count reads. */
 export interface RoomNote { content: string; tags: string[][]; created_at?: number; kind?: number }
 
@@ -104,17 +105,14 @@ export function countKinds(sent: Sent[], notes: RoomNote[]): KindCount[] {
   });
 }
 
-/** Start of today in Boston, as epoch seconds (the relay's `since`). */
+/** Start of today in Boston, as epoch seconds (the relay's `since`). #4885: the one renderer. */
 export function bostonMidnight(now: Date = new Date()): number {
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    .formatToParts(now).reduce<Record<string, string>>((a, p) => { a[p.type] = p.value; return a; }, {});
-  const sinceMidnight = (Number(parts.hour) % 24) * 3600 + Number(parts.minute) * 60 + Number(parts.second);
-  return Math.floor(now.getTime() / 1000) - sinceMidnight;
+  return sdkMidnight(now);
 }
 
-/** The Boston calendar day of a UTC instant. */
+/** The Boston calendar day of a UTC instant. #4885: the one renderer. */
 export function bostonDay(ms: number): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+  return sdkDay(new Date(ms));
 }
 
 /** A pulse row with its UTC created_at ("YYYY-MM-DD HH:MM:SS"). */
