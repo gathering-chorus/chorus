@@ -8,21 +8,33 @@
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
-ROOM_URL="${CLEARING_ROOM_URL:-http://localhost:3472/}"
+# Jeff's public room, the page he loads (AC1 says the public room, not :3472).
+ROOM_URL="${CLEARING_ROOM_URL:-https://lightlifeurbangardens.com/clearing-v2/}"
 ROWS="$ROOT/platform/tests/lib/room-rows-4887.cjs"
 PW="$ROOT/node_modules/playwright-core"
 
-@test "AC1: headless Chrome on the live room renders an Abby (agy) row and a Claude-role row" {
+@test "AC1: the public room renders Abby's (agy) latest reply and the latest Claude-role reply" {
   run node "$ROWS" "$PW" "$ROOM_URL" abby-normal 'silas|wren|kade'
   echo "$output"
   [ "$status" -eq 0 ] || return 1
 }
 
-@test "AC1 negative proof: the same load names a role that has no row, and fails" {
-  run node "$ROWS" "$PW" "$ROOM_URL" abby-normal nobody-4887
+@test "AC1 negative proof: a latest reply that is in the record but not on the page fails" {
+  # the record holds both replies; the page shows only an older Abby row
+  dir="$BATS_TEST_TMPDIR/room"; mkdir -p "$dir"
+  printf '<div id="messages-stream"><div class="message" id="msg-old" data-from="abby-normal"></div></div>' > "$dir/index.html"
+  printf '[{"id":"old","from":"abby-normal","text":"an old reply"},{"id":"a1","from":"abby-normal","text":"her latest"},{"id":"k1","from":"kade","text":"his latest"}]' > "$dir/record.json"
+  a="$(node -e 'console.log(require(process.argv[1]).contentHash("her latest"))' "$ROOT/platform/chorus-sdk/reply/hash.js")"
+  k="$(node -e 'console.log(require(process.argv[1]).contentHash("his latest"))' "$ROOT/platform/chorus-sdk/reply/hash.js")"
+  run env WANT_4887="abby-normal:$a,kade:$k" ROOM_RECORD_FILE="$dir/record.json" node "$ROWS" "$PW" "file://$dir/index.html"
   echo "$output"
   [ "$status" -eq 1 ] || return 1
-  [[ "$output" == *'"missing":["nobody-4887"]'* ]] || return 1
+  [[ "$output" == *'"missing":[{"role":"abby-normal"'*'"role":"kade"'* ]] || return 1
+  # control: the same page WITH her latest row passes for her
+  printf '<div id="messages-stream"><div class="message" id="msg-a1" data-from="abby-normal"></div></div>' > "$dir/index.html"
+  run env WANT_4887="abby-normal:$a" ROOM_RECORD_FILE="$dir/record.json" node "$ROWS" "$PW" "file://$dir/index.html"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
 }
 
 @test "AC2: Abby's 13:02:57 and 13:03:10 replies, in the room, count as delivered" {
