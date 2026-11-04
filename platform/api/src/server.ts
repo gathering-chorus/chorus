@@ -212,6 +212,8 @@ app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
 
 // Serve Borg shaping surface — #2099
 app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
+// #4885 — the one Boston renderer, for the browser runtime too
+app.use('/vendor/chorus-time', express.static(path.join(__dirname, '..', '..', 'chorus-sdk', 'time'), { extensions: ['js'] }));
 
 // #3656 — Quality Service reparented borg→werk (Jeff: quality is part of werk —
 // the gates fire in the werk pipeline). Old borg path redirects so links survive.

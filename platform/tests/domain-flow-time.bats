@@ -244,14 +244,14 @@ EOF
 # --- AC4 (retire): one renderer per runtime ----------------------------------
 
 # TS/JS source that formats Boston time itself instead of calling chorus-sdk/time/boston.
-# Browser code cannot import it: flow-report-cli.ts:166 (script in a generated page) and public/ bundles.
+# The browser is a runtime too: pages load the same file as a script (globalThis.chorusBoston).
 own_ts_renderers() {
   grep -rnE "timeZone: *['\"]America/New_York['\"]|toLocale[A-Za-z]*String\([^)]*America/New_York" \
-    --include='*.ts' --include='*.js' --exclude-dir=node_modules --exclude-dir=dist "$@" 2>/dev/null \
-    | grep -vE '\.test\.|/tests/|chorus-sdk/time/|flow-report-cli\.ts:|/public/' || true
+    --include='*.ts' --include='*.js' --include='*.html' --exclude-dir=node_modules --exclude-dir=dist "$@" 2>/dev/null \
+    | grep -vE '\.test\.|/tests/|chorus-sdk/time/' || true
 }
 
-@test "AC4: no TypeScript service formats Boston time itself; they import the one renderer" {
+@test "AC4: no TypeScript service or browser page formats Boston time itself; all use the one renderer" {
   out="$(own_ts_renderers "$ROOT/platform" "$ROOT/directing")"
   [ -z "$out" ] || { echo "$out"; return 1; }
 }

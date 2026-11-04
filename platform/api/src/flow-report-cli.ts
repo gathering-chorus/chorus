@@ -16,6 +16,11 @@
  * truncated=true so a consumer never mistakes a cap for completeness.
  */
 import { aggregateFlow, deriveWalkAway, FlowEvent, FlowReport, WalkAway } from './flow-report';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+// #4885 — the page's script renders Boston time with the one renderer, inlined from its file
+const BOSTON_JS = readFileSync(join(__dirname, '../../chorus-sdk/time/boston.js'), 'utf8');
 
 const LOKI = process.env.CHORUS_LOKI_URL || 'http://localhost:3102';
 const PAGE_LIMIT = 5000;
@@ -109,6 +114,7 @@ th:hover{background:#444}.err{color:#a33;font-size:12px;padding:1px 0}.sub{color
 <table><thead><tr id="hdr"></tr></thead><tbody id="rows"></tbody></table>
 <h2>Error classes ranked</h2><ul id="classes"></ul>
 <p class="sub">Standing instrument (#3269, borg-read-flow) — regenerate via the MCP tool; the page is a snapshot of the last call.</p>
+<script>${BOSTON_JS}</script>
 <script>
 const DATA = ${data};
 const COLS = [
@@ -163,7 +169,7 @@ function render(){
       const sum = document.createElement('summary'); sum.textContent = c.errors.length+' ▸'; det.appendChild(sum);
       for (const e of c.errors){
         const div = document.createElement('div'); div.className='err';
-        div.textContent = new Date(e.ts).toLocaleString('en-US',{timeZone:'America/New_York'})+' · '+e.event+' · '+e.detail;
+        div.textContent = chorusBoston.bostonFormat(new Date(e.ts),{year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'})+' · '+e.event+' · '+e.detail;
         det.appendChild(div);
       }
       tde.appendChild(det);

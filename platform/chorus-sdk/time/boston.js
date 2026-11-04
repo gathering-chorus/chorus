@@ -1,7 +1,8 @@
 // @domain: time
 // #4885 — the one TypeScript/JavaScript renderer of Boston time. pulse, the api and Clearing each
 // carried their own copy (bostonOffsetIso ×3, an approximate isEDT); they import this instead.
-// Plain CommonJS with a .d.ts beside it, like lifecycle/. DST comes from the tz database, never a
+// Plain CommonJS with a .d.ts beside it, like lifecycle/; in a browser it is a classic script
+// (clearing-v2 serves it at /vendor/chorus-time/boston.js; generated pages inline it). DST comes from the tz database, never a
 // month rule. Storage stays an instant; these only render one.
 'use strict';
 
@@ -64,5 +65,8 @@ function bostonMidnight(d = new Date()) {
   return Math.floor(d.getTime() / 1000) - (Number(x.h) * 3600 + Number(x.mi) * 60 + Number(x.s));
 }
 
-module.exports = { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute,
+const api = { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute,
   bostonDay, bostonHour, bostonHHMM, bostonMidnight, bostonFormat };
+// The browser is a runtime too: loaded as a <script>, the same file sets globalThis.chorusBoston.
+if (typeof module !== 'undefined' && module.exports) module.exports = api;
+else globalThis.chorusBoston = api;
