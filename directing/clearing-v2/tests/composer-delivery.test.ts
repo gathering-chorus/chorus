@@ -1,9 +1,9 @@
 // @test-type: unit — Clearing v2 composer delivery guarantee (#4877 AC7)
 // @domain: messages
-export {};
 /**
  * Tests for guaranteed /api/send delivery and error handling (#4877 AC7).
  */
+import type { ClearingMessage } from '../src/types';
 const deliveryApp = require('../public/app.js');
 
 describe('guaranteed /api/send delivery (#4877 AC7)', () => {
