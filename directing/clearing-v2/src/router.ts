@@ -124,6 +124,22 @@ export class MessageRouter {
     return inRoom.slice(Math.max(0, idx - limit), idx);
   }
 
+  private resolveUnaddressedJeffNudges(msg: ClearingMessage): PulseNudgePayload[] {
+    const roomRole = msg.room && msg.room !== 'team' ? msg.room.toLowerCase() : undefined;
+    // #4877 AC3: direct role room targets room role alone
+    if (roomRole && this.knownRoles.has(roomRole)) {
+      return [{ from: 'jeff', to: roomRole, content: msg.text }];
+    }
+    // #4875 AC5: unaddressed #team input goes to moderator alone
+    if (this.moderator && this.knownRoles.has(this.moderator)) {
+      return [{ from: 'jeff', to: this.moderator, content: msg.text }];
+    }
+    // #4604: fallback broadcast to all known non-jeff roles
+    return Array.from(this.knownRoles)
+      .filter((r) => r !== 'jeff')
+      .map((r) => ({ from: 'jeff', to: r, content: msg.text }));
+  }
+
   /**
    * Extract @role mentions to generate Pulse nudge dispatch payloads.
    */
@@ -147,21 +163,8 @@ export class MessageRouter {
       }
     }
 
-    // #4875 AC5: unaddressed Jeff input goes to the moderator alone, who answers for the team.
-    if (nudges.length === 0 && msg.from === 'jeff' && this.moderator && this.knownRoles.has(this.moderator)) {
-      return [{ from: 'jeff', to: this.moderator, content: msg.text }];
-    }
-    // #4604: with no valid moderator property, unaddressed Jeff input routes to every role (#3833).
     if (nudges.length === 0 && msg.from === 'jeff') {
-      for (const role of this.knownRoles) {
-        if (role !== 'jeff') {
-          nudges.push({
-            from: 'jeff',
-            to: role,
-            content: msg.text,
-          });
-        }
-      }
+      return this.resolveUnaddressedJeffNudges(msg);
     }
 
     return nudges;

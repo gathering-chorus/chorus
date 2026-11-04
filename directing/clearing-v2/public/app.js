@@ -502,6 +502,57 @@ async function transcribeVoice(blob, fetchImpl) {
   }
 }
 
+/** #4877 — extract actor roles from tiles already loaded on the page; exclude jeff so voice notes never target @jeff. */
+function getLoadedActorRoles() {
+  if (typeof document === 'undefined') return [];
+  const roles = new Set();
+  if (typeof document.querySelectorAll === 'function') {
+    const tiles = document.querySelectorAll('.actor-tile, #rooms-people-row [data-role], #tiles-container .tile, #tiles-container [data-role]');
+    for (const t of Array.from(tiles || [])) {
+      const r = (t && t.dataset && t.dataset.role)
+        ? t.dataset.role.toLowerCase()
+        : (t && t.id ? t.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  const peopleRow = document.getElementById('rooms-people-row');
+  if (peopleRow && peopleRow.children) {
+    for (const child of Array.from(peopleRow.children || [])) {
+      const r = (child && child.dataset && child.dataset.role)
+        ? child.dataset.role.toLowerCase()
+        : (child && child.id ? child.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont && tilesCont.children) {
+    for (const child of Array.from(tilesCont.children || [])) {
+      const r = (child && child.dataset && child.dataset.role)
+        ? child.dataset.role.toLowerCase()
+        : (child && child.id ? child.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  return Array.from(roles);
+}
+
+function resolveVoiceTargetRole(inputRoleFilters) {
+  const loadedRoles = getLoadedActorRoles();
+  const filterRoles = Array.from(inputRoleFilters || [])
+    .map((r) => r.toLowerCase())
+    .filter((r) => r !== 'jeff' && loadedRoles.includes(r));
+  if (filterRoles.length > 0) return filterRoles[0];
+
+  if (typeof document !== 'undefined') {
+    const picker = document.getElementById('room-picker');
+    const val = picker && picker.value && picker.value.toLowerCase();
+    if (val && val !== 'team' && val !== 'jeff' && loadedRoles.includes(val)) {
+      return val;
+    }
+  }
+  return null;
+}
+
 /** #4635 — tap the mic to record, tap again to stop; the words land in the message box. */
 function watchMicButton() {
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
@@ -531,21 +582,48 @@ function watchMicButton() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunks = [];
-      recorder = new MediaRecorder(stream);
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (recErr) {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Voice recorder failed: ' + (recErr && recErr.message ? recErr.message : String(recErr)));
+        return;
+      }
+      recorder.onerror = (e) => {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Voice recording error: ' + (e && e.error ? e.error.message || e.error.name : 'unknown recorder error'));
+      };
       recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         mic.setAttribute('aria-pressed', 'false');
+        if (chunks.length === 0) {
+          say('Voice not added: no audio recorded (0 bytes)');
+          return;
+        }
         say('Turning your voice into words…');
         const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
         say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
         const input = document.getElementById('composer-input');
-        if (out.ok && input) { input.value = (input.value ? input.value + ' ' : '') + out.transcript; input.focus(); }
+        if (out.ok && input) {
+          let text = out.transcript || '';
+          // #4877 AC1: If actor filter is active or direct room selected, prepend @<role> if not already present
+          const targetRole = resolveVoiceTargetRole(activeRoleFilters);
+          const currentVal = input.value || '';
+          if (targetRole && !currentVal.trim().startsWith('@') && !text.trim().startsWith('@')) {
+            text = '@' + targetRole + ' ' + text;
+          }
+          input.value = (currentVal ? currentVal + ' ' : '') + text;
+          input.focus();
+        }
       };
       recorder.start();
       mic.setAttribute('aria-pressed', 'true');
       say('Recording… tap the mic again to stop');
     } catch (e) {
+      mic.setAttribute('aria-pressed', 'false');
       say('Voice not available: ' + (e && e.message ? e.message : String(e)));
     }
   });
@@ -1112,7 +1190,15 @@ async function handleSendMessage(text, options = {}) {
   const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
 
   let cleanText = (text || '').trim();
-  if (!cleanText) return;
+
+  // #4877 AC6: refuse sending empty body or bare role mentions (e.g. "@wren")
+  if (!cleanText || isOnlyRoleMentions(cleanText)) {
+    if (statusEl) {
+      statusEl.textContent = 'Add a message before sending';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
 
   // #4732 / #4736 — if actor tile(s) are selected, automatically target those role(s) without requiring thumb-typing @<role>
   const filterRoles = Array.from(activeRoleFilters);
@@ -1344,5 +1430,8 @@ if (typeof module !== 'undefined' && module.exports) {
     applyRoleFilters,
     isMessageVisibleWithFilters,
     initTileFilters,
+    watchMicButton,
+    getLoadedActorRoles,
+    resolveVoiceTargetRole,
   };
 }
