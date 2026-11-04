@@ -147,6 +147,11 @@ export class MessageRouter {
       }
     }
 
+    // #4877 AC3: unaddressed input in a direct role room routes to that role alone.
+    if (nudges.length === 0 && msg.from === 'jeff' && msg.room && msg.room !== 'team' && this.knownRoles.has(msg.room.toLowerCase())) {
+      return [{ from: 'jeff', to: msg.room.toLowerCase(), content: msg.text }];
+    }
+
     // #4875 AC5: unaddressed Jeff input goes to the moderator alone, who answers for the team.
     if (nudges.length === 0 && msg.from === 'jeff' && this.moderator && this.knownRoles.has(this.moderator)) {
       return [{ from: 'jeff', to: this.moderator, content: msg.text }];

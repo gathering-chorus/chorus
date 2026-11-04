@@ -776,6 +776,12 @@ const bridgeUser = window.BRIDGE_USER || 'jeff';
 const isGuest = bridgeUser !== 'jeff';
 
 function sendMessage() {
+  // #4877 AC8: Clearing v1 composer is retired; refuse sends and direct user to v2
+  var v2Url = (window.CLEARING_V2_URL || '/rooms/team');
+  sendBtn.textContent = 'Use Clearing v2';
+  sendBtn.classList.add('delivery-failed');
+  alert('Clearing v1 sending is retired. Please switch to Clearing v2 at ' + v2Url);
+  return;
   var text = input.value.trim();
   if (!text) return;
   var savedText = text;
@@ -901,10 +907,10 @@ micBtn.addEventListener('click', async () => {
 
         if (result.transcript) {
           console.log('[voice] auto-sending transcript:', result.transcript.substring(0, 80));
-          socket.emit('jeff-message', { text: result.transcript, from: 'jeff' }, (ack) => {
-            console.log('[voice] jeff-message ack:', JSON.stringify(ack));
-            input.placeholder = placeholderText();
-          });
+          // #4877 AC8: refuse voice sending in v1, direct to v2
+          alert('Clearing v1 voice sending is retired. Please switch to Clearing v2 at /rooms/team');
+          input.placeholder = 'Use Clearing v2 for voice';
+          setTimeout(() => { input.placeholder = placeholderText(); }, 3000);
         } else {
           console.warn('[voice] transcription failed:', result.error);
           input.placeholder = result.error || 'Transcription failed';

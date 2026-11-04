@@ -531,21 +531,54 @@ function watchMicButton() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunks = [];
-      recorder = new MediaRecorder(stream);
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (recErr) {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Voice recorder failed: ' + (recErr && recErr.message ? recErr.message : String(recErr)));
+        return;
+      }
+      recorder.onerror = (e) => {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Voice recording error: ' + (e && e.error ? e.error.message || e.error.name : 'unknown recorder error'));
+      };
       recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         mic.setAttribute('aria-pressed', 'false');
+        if (chunks.length === 0) {
+          say('Voice not added: no audio recorded (0 bytes)');
+          return;
+        }
         say('Turning your voice into words…');
         const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
         say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
         const input = document.getElementById('composer-input');
-        if (out.ok && input) { input.value = (input.value ? input.value + ' ' : '') + out.transcript; input.focus(); }
+        if (out.ok && input) {
+          let text = out.transcript || '';
+          // #4877 AC1: If actor filter is active or direct room selected, prepend @<role> if not already present
+          const filterRoles = Array.from(activeRoleFilters);
+          let targetRole = filterRoles.length > 0 ? filterRoles[0] : null;
+          if (!targetRole && typeof document !== 'undefined') {
+            const picker = document.getElementById('room-picker');
+            const val = picker && picker.value;
+            if (val && val !== 'team') targetRole = val.toLowerCase();
+          }
+          const currentVal = input.value || '';
+          if (targetRole && !currentVal.trim().startsWith('@') && !text.trim().startsWith('@')) {
+            text = '@' + targetRole + ' ' + text;
+          }
+          input.value = (currentVal ? currentVal + ' ' : '') + text;
+          input.focus();
+        }
       };
       recorder.start();
       mic.setAttribute('aria-pressed', 'true');
       say('Recording… tap the mic again to stop');
     } catch (e) {
+      mic.setAttribute('aria-pressed', 'false');
       say('Voice not available: ' + (e && e.message ? e.message : String(e)));
     }
   });
@@ -1112,7 +1145,15 @@ async function handleSendMessage(text, options = {}) {
   const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
 
   let cleanText = (text || '').trim();
-  if (!cleanText) return;
+
+  // #4877 AC6: refuse sending empty body or bare role mentions (e.g. "@wren")
+  if (!cleanText || isOnlyRoleMentions(cleanText)) {
+    if (statusEl) {
+      statusEl.textContent = 'Add a message before sending';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
 
   // #4732 / #4736 — if actor tile(s) are selected, automatically target those role(s) without requiring thumb-typing @<role>
   const filterRoles = Array.from(activeRoleFilters);
@@ -1344,5 +1385,6 @@ if (typeof module !== 'undefined' && module.exports) {
     applyRoleFilters,
     isMessageVisibleWithFilters,
     initTileFilters,
+    watchMicButton,
   };
 }
