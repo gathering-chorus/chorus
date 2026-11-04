@@ -18,7 +18,7 @@ import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
-import { bostonOffsetIso } from './boston-iso';
+import { bostonMinute, bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
 import { cachedCards, readAlerts, readMessages, registerHeaderRoute, sharedRead } from './pulse-header';
 import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
@@ -166,9 +166,8 @@ function resolveTraceId(header: unknown, bodyTraceId: unknown): string | undefin
  * prefix; nothing re-added it after the #2804 refactor). Idempotent — never
  * double-prefixes.
  */
-function markNudge(from: string, content: string): string {
+function markNudge(from: string, content: string, tsBoston: string = bostonMinute()): string {
   if (content.startsWith('[nudge from')) return content;
-  const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
   return `[nudge from ${from} | ${tsBoston} Boston] ${content}`;
 }
 
@@ -284,10 +283,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
       log('warn', 'nudge.refused.not-an-actor', { from: String(from ?? ''), to, trace_id: traceId || undefined });
       return res.status(sender.status).json(sender.body);
     }
-    const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
-    const marked = sender.kind === 'alert' ? markAlert(sender.from, sender.source, content, tsBoston) : markNudge(sender.from, content);
+    // #4885 — one instant per message: the label and the room copy carry the same minute
+    const tsBoston = bostonMinute();
+    const marked = sender.kind === 'alert' ? markAlert(sender.from, sender.source, content, tsBoston) : markNudge(sender.from, content, tsBoston);
     // the room copy keeps its source: a system alert still reads "[alert → role]" in Buzz (#4609)
-    const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content) } : { from: sender.from, content: marked };
+    const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content, tsBoston) } : { from: sender.from, content: marked };
     const origin = originFor(sender.kind === 'alert' ? 'alert' : 'nudge', sender.from, req.body.where);
     // an alert is a2r by what it is; the caller's body is read, never rewritten (review, run 5)
     const body = sender.kind === 'alert' ? { ...req.body, class: 'a2r' } : req.body;

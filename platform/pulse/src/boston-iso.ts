@@ -21,3 +21,11 @@ export function bostonOffsetIso(d: Date = new Date()): string {
   const ms = String(d.getMilliseconds()).padStart(3, '0');
   return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}:${get('second')}.${ms}${offset}`;
 }
+
+/**
+ * #4885 — the minute a message's header shows ("2026-11-04 04:26"), Boston wall time. Derived from
+ * bostonOffsetIso, the one formatter: pulse's nudge and alert labels had two inline copies.
+ */
+export function bostonMinute(d: Date = new Date()): string {
+  return bostonOffsetIso(d).slice(0, 16).replace('T', ' ');
+}
