@@ -11,7 +11,7 @@
  *
  * Dependencies injected:
  *   db    — better-sqlite3 Database
- *   isEDT — (dateStr) => boolean (for Boston hour-of-day conversion)
+ *   isEDT — (dateStr) => boolean (kept for callers; #4885: the hour now comes from the one renderer)
  *   now   — () => number (default Date.now)
  *
  * Query:
@@ -26,6 +26,7 @@
  */
 import type Database from 'better-sqlite3';
 import type { FetchResult } from './codebase-topology';
+import { bostonHour } from '../../../chorus-sdk/time/boston'; // #4885 the one renderer (the old one used a date's offset for every hour of it)
 
 const CORRECTIVE_PATTERNS = /\bdon'?t\b|\bstop\s|\bno\s|\bnever\b|\bshouldn'?t\b|\bwrong\b|\bthat'?s not\b/i;
 const COLLABORATIVE_PATTERNS = /\blet'?s\b|\bwe could\b|\bwhat if\b|\bwhat do you think\b|\bagree\b/i;
@@ -190,12 +191,7 @@ function updateWeekly(agg: Aggregates, weekKey: string, role: Role, tone: Tone, 
   agg.weeklyLength[weekKey].count++;
 }
 
-function bostonHour(d: Date, isEDT: (dateStr: string) => boolean): number {
-  const offset = isEDT(d.toISOString().slice(0, 10)) ? 4 : 5;
-  return (d.getUTCHours() - offset + 24) % 24;
-}
-
-function processRow(agg: Aggregates, row: Row, isEDT: (dateStr: string) => boolean, seen: Set<string>): void {
+function processRow(agg: Aggregates, row: Row, seen: Set<string>): void {
   const role = row.channel.replace('session:', '') as Role;
   const tone = classifyTone(row.content);
   const words = tokenize(row.content);
@@ -205,7 +201,7 @@ function processRow(agg: Aggregates, row: Row, isEDT: (dateStr: string) => boole
 
   const d = new Date(row.timestamp);
   updateWeekly(agg, weekKeyFor(d), role, tone, words.length);
-  agg.hourByRole[role][bostonHour(d, isEDT)]++;
+  agg.hourByRole[role][bostonHour(d)]++;
 
   if (!seen.has(row.content)) {
     seen.add(row.content);
@@ -215,10 +211,10 @@ function processRow(agg: Aggregates, row: Row, isEDT: (dateStr: string) => boole
   incrementWordMap(words, agg.roleWordFreq[role]);
 }
 
-function aggregate(rows: Row[], isEDT: (dateStr: string) => boolean): Aggregates {
+function aggregate(rows: Row[]): Aggregates {
   const agg = newAggregates();
   const seen = new Set<string>();
-  for (const row of rows) processRow(agg, row, isEDT, seen);
+  for (const row of rows) processRow(agg, row, seen);
   return agg;
 }
 
@@ -300,7 +296,7 @@ export function fetchChorusVoiceAnalytics(
   const cutoff = new Date(now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const filtered = loadMessages(deps.db, cutoff);
-  const agg = aggregate(filtered, deps.isEDT);
+  const agg = aggregate(filtered);
   const total = filtered.length;
   const weeks = Object.keys(agg.weeklyTone).sort();
 
