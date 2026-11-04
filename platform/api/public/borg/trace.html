@@ -40,11 +40,13 @@
 </header>
 <div id="banner"></div>
 <div class="stream" id="stream"><div style="padding:20px;color:#80868b">Enter a card # or trace and Load.</div></div>
+<script src="/vendor/chorus-time/boston.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => (''+s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const hl = (s,q) => { s = esc(s); if(!q) return s; return s.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'),'<mark>$1</mark>'); };
-const bostonTime = ts => { try { return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour12:false}); } catch(e){ return ''; } };
+// #4885 — the one Boston renderer (loaded above from /vendor/chorus-time)
+const bostonTime = ts => { const d = new Date(ts); return Number.isNaN(d.getTime()) ? '' : chorusBoston.bostonLocal(d).slice(11, 19); };
 const isErr = e => { const ev=e.event||''; return ev.endsWith('.refused')||ev.endsWith('.failed')||ev.endsWith('.error')||ev==='mcp.tool.error'||e.level==='error'; };
 const fullMsg = e => {
   const p = e.payload || {};

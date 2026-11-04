@@ -1607,12 +1607,8 @@ fn wall_clock_cmd() -> ExitCode {
         .unwrap_or("");
     match flag {
         "--iso" => println!("{}", process::wall_clock()),
-        "--write" => {
-            let ts = process::wall_clock();
-            let short: String = ts.chars().take(16).collect();
-            let _ = std::fs::write("/tmp/wall-clock.txt", format!("{}\n", short));
-            println!("{}", short);
-        }
+        // #4885 — `--write` no longer writes /tmp/wall-clock.txt: clock_sync is its one writer.
+        // The flag is still accepted (it prints, like the default) so older callers do not break.
         _ => {
             let ts = process::wall_clock();
             let short: String = ts.chars().take(16).collect();

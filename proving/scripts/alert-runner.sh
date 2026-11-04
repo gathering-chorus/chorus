@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../../platform/scripts/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # alert-runner.sh — Execute all YAML alert checks and fire actions on failure
 # Card #2000 | Silas
 #
@@ -21,7 +22,7 @@ ALERT_STATE_DIR="${ALERT_STATE_DIR:-/Users/jeffbridwell/Library/Logs/Gathering/a
 LOG="${ALERT_LOG:-/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log}"
 COOLDOWN_SECONDS="${ALERT_COOLDOWN:-600}"  # 10 minutes default
 CONSECUTIVE_THRESHOLD="${ALERT_THRESHOLD:-2}"  # require 2 failures before firing
-TIMESTAMP() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
+TIMESTAMP() { boston_time stamp; }
 
 mkdir -p "$(dirname "$LOG")" "$ALERT_STATE_DIR"
 

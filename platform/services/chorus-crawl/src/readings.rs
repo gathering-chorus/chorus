@@ -34,12 +34,6 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// The nth Sunday of a month, as a day number.
-fn nth_sunday(y: i64, m: u32, n: i64) -> i64 {
-    let first = days_from_civil(y, m, 1);
-    let dow = (first + 4).rem_euclid(7); // 1970-01-01 was a Thursday; 0 = Sunday
-    first + (7 - dow) % 7 + 7 * (n - 1)
-}
 
 /// The Boston calendar day of a UTC time ("2026-10-18 22:05:14" or with a T and
 /// fractions/zone). US rule: daylight time from 2am on the second Sunday of
@@ -67,12 +61,11 @@ pub fn boston_day(utc: &str) -> Option<String> {
         _ => 0,
     };
     let secs = days_from_civil(y, m, d) * 86400 + hh * 3600 + mm * 60 + ss - off_secs;
-    let dst_start = nth_sunday(y, 3, 2) * 86400 + 7 * 3600; // 2am EST = 07:00 UTC
-    let dst_end = nth_sunday(y, 11, 1) * 86400 + 6 * 3600; // 2am EDT = 06:00 UTC
-    let offset = if secs >= dst_start && secs < dst_end { 4 } else { 5 };
-    let (by, bm, bd) = civil_from_days((secs - offset * 3600).div_euclid(86400));
-    Some(format!("{by:04}-{bm:02}-{bd:02}"))
+    // #4885 — the offset rule is the shared one (shared/boston.rs), not a copy
+    Some(boston::day(secs))
 }
+
+mod boston { include!("../../shared/boston.rs"); }
 
 /// One pulse message row: created_at (UTC), type, from, delivery_status.
 pub struct MessageRow<'a> {

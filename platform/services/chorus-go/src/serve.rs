@@ -139,6 +139,30 @@ fn complete_go(run: &str, decision: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// #4885 — answer one run's human step as Jeff, only after his passkey signature was checked.
+fn complete_step(st: &StepAction, verdict: &str) -> Result<(), String> {
+    let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
+    let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
+    let o = Command::new(&dagu)
+        .args(["--config", &cfg, "human-task", "complete", &st.dag, "--run-id", &st.run, "--step", &st.step,
+               "--input", "by=jeff", "--input", &format!("decision={verdict}")])
+        .env_remove("CHORUS_ROLE").env_remove("ROLE")
+        .output().map_err(|e| format!("dagu: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("signed, but the run did not take it: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(())
+}
+
+/// #4885 — what a step's next check asks (`chorus-go check-step <dag> <run> <step>`): Jeff's signed
+/// answer to that step, from the door's rows. No passkey, or no door, refuses: fail closed.
+pub fn land_step(store: &Store, dag: &str, run: &str, step: &str) -> Result<(), String> {
+    let pk = store.passkey()?.ok_or("no passkey registered, so no step can be signed")?;
+    let a = door_get("/decisions/approvals")?;
+    let d = door_get("/decisions/approvaldecisions")?;
+    land_step_from_rows(&pk, &a, &d, dag, run, step)
+}
+
 // ---- #4505: approvals. Rows live on the door (decisions domain); this process only reads them,
 // verifies Jeff's passkey, writes his ApprovalDecision as principal-jeff, and replays an approved
 // `cards add` argv as data. Nothing here PATCHes a row.
@@ -291,6 +315,14 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
         let verb = if d.decision == "approve" { "go" } else { "no" };
         complete_go(&g.run, verb)?;
         return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
+    }
+    if let Some(st) = &d.step {
+        // #4885 — a step: Jeff's signed decision row first (the record the step's next check reads),
+        // then the run's human step, answered from what his passkey signed and nothing typed.
+        write_decision(&d, &sha, ad, cd, sig, None)?;
+        let verdict = if d.decision == "approve" { "agreed" } else { "rejected" };
+        complete_step(st, verdict)?;
+        return Ok(json!({"ok": true, "text": format!("{} signed for #{} ({} {}).", if verdict == "agreed" { "Agreed" } else { "Rejected" }, st.card, st.dag, st.step)}));
     }
     // A card: Jeff's signed decision is written first, the record that must never be lost (Silas
     // 18:48); a door refusal files nothing. Then an approve replays the argv as data.

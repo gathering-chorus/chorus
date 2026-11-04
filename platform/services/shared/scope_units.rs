@@ -85,8 +85,12 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // are the same kind of file as platform/scripts/: a schedule's body, not a
     // build input. Named exactly: any other proving/ or convergence/ path stays
     // on the loud FULL escape (#4000's negative proof, werk-test units.rs).
+    // #4885 — the fitness job (com.chorus.fitness-security runs run-fitness.sh,
+    // which calls write-snapshot.sh) is the same kind: named exactly, like these.
     let job_script = matches!(f, "proving/scripts/alert-runner.sh"
-                                 | "building/products/convergence/fuseki-maintenance.sh");
+                                 | "building/products/convergence/fuseki-maintenance.sh"
+                                 | "proving/fitness/run-fitness.sh"
+                                 | "proving/fitness/write-snapshot.sh");
     ext || dir || vcs || contract || job_script || f.contains("/public/")
 }
 

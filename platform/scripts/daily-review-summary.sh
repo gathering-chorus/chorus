@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # daily-review-summary.sh — 6am aggregated review, posts to Bridge
 # Card #1766 | Runs ops + quality, combines into one post
 # #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.daily-review-summary).
@@ -13,7 +14,7 @@ source "$SCRIPT_DIR/lib/bridge-post.sh"
 
 BRIDGE="http://localhost:3470/api/message"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
-TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+TIMESTAMP=$(boston_time show)
 
 # Run both reviews and capture output
 OPS_OUTPUT=$(bash "$SCRIPT_DIR/daily-review-ops.sh" 2>/dev/null || echo "⚠ Ops review failed")

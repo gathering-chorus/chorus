@@ -881,12 +881,26 @@ fn match_memory(docs: &[MemDoc], keywords: &[String]) -> Vec<String> {
 /// Always built now (#3048); paired with the dynamic search/Loki synthesis.
 /// ~2KB identity + orientation + endpoint list. No pre-synthesized blobs.
 pub fn build_manifest_envelope(role: &str, card: Option<&str>, health: &str, team_wip: usize, role_wip: usize) -> String {
+    let now = chrono::Utc::now().with_timezone(&super::clock_sync::boston_offset_pub());
+    build_manifest_envelope_at(role, card, health, team_wip, role_wip, now)
+}
+
+/// #4885 (folds #4699) — the time a role reads is stamped here, by the system, on every prompt.
+/// The role header copies this line; no agent runs `date` or `wall-clock` for it (536 hand
+/// lookups in the 24h to 2026-11-04 03:55). DST-correct: the offset is the OS's, via clock_sync.
+pub fn now_line(now: chrono::DateTime<chrono::FixedOffset>) -> String {
+    format!("Now: {} Boston", now.format("%Y-%m-%d %H:%M"))
+}
+
+pub fn build_manifest_envelope_at(role: &str, card: Option<&str>, health: &str, team_wip: usize, role_wip: usize,
+                                  now: chrono::DateTime<chrono::FixedOffset>) -> String {
     let wip_line = match card {
         Some(c) => format!("You are {}. You are currently building {}.", role, c),
         None => format!("You are {}. You have no WIP card.", role),
     };
     format!(
         "<chorus-context role=\"{}\">\n\
+        {}\n\
         \n\
         {}\n\
         \n\
@@ -909,7 +923,7 @@ pub fn build_manifest_envelope(role: &str, card: Option<&str>, health: &str, tea
           GET /api/chorus/knowledge/domains/{{name}}   — full domain detail\n\
           GET /api/chorus/knowledge/search?q=...     — graph + FTS\n\
         </chorus-context>",
-        role, wip_line, health, team_wip, role_wip, role
+        role, now_line(now), wip_line, health, team_wip, role_wip, role
     )
 }
 

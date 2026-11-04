@@ -71,6 +71,14 @@
       "bump": "minor",
       "date": "2026-10-24",
       "card": "#4707"
+    },
+    {
+      "version": "1.11.0",
+      "constituent_hash": "eb5b9d7ffc31c69b8e3f0e15f5d48fec22e38add67f93bf7c09bff7791cf594b",
+      "core_hash": "e05eb8330fdc46294d7439f01540dc8f82a8fe5617d70bde6e8a75ba2dc290db",
+      "bump": "minor",
+      "date": "2026-11-04",
+      "card": "4885"
     }
   ]
 }

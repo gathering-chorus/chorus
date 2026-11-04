@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # Nudge health check — #4786 (Slice 3 of #4780).
 # Judges delivery results and run liveness, not Terminal windows.
 # Agrees with Pulse on who is online and catches refused nudges.
@@ -13,7 +14,7 @@ CANARY_DIR="${CANARY_DIR:-/tmp/nudge-canary}"
 mkdir -p "$CANARY_DIR"
 
 log_canary() {
-  echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') $*" >> "${CANARY_DIR}/health.log"
+  echo "$(boston_time stamp) $*" >> "${CANARY_DIR}/health.log"
 }
 
 PULSE_URL="${PULSE_URL:-http://localhost:3475}"

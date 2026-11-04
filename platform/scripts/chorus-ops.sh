@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # chorus-ops.sh — Unified operations daemon (merges defect-poller.sh + ops-agent.sh)
 #
 # Subcommands:
@@ -79,7 +80,7 @@ FALSE_POSITIVES=(
     "command not found"
 )
 
-log() { echo "[chorus-ops] $(TZ=America/New_York date '+%H:%M:%S') $*" >&2; }
+log() { echo "[chorus-ops] $(boston_time clock) $*" >&2; }
 vlog() { $VERBOSE && log "$*" || true; }
 
 show_help() {

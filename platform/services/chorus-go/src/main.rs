@@ -1,6 +1,7 @@
 //! chorus-go — #4710. `serve` runs the go page behind the tunnel
 //! (lightlifeurbangardens.com/go); `register-link` makes the one-time link that
-//! registers Jeff's phone; `check <card> <round>` is what the land asks.
+//! registers Jeff's phone; `check <card> <round>` is what the land asks; `check-step <dag> <run> <step>`
+//! is what a step after a Jeff-only human step asks (#4885).
 use chorus_go::serve::{chorus_home, env_or, handle, origin};
 use chorus_go::*;
 use std::net::TcpListener;
@@ -47,7 +48,14 @@ fn main() {
                 Err(e) => { eprintln!("chorus-go: refused: {e}"); 1 }
             }
         }
-        _ => { eprintln!("usage: chorus-go serve | register-link | check <card> <round>"); 2 }
+        Some("check-step") => {
+            let (dag, run, step) = (args.get(1).cloned().unwrap_or_default(), args.get(2).cloned().unwrap_or_default(), args.get(3).cloned().unwrap_or_default());
+            match chorus_go::serve::land_step(&store, &dag, &run, &step) {
+                Ok(()) => { println!("chorus-go: {dag} run {run} step {step} — signed by Jeff's passkey"); 0 }
+                Err(e) => { eprintln!("chorus-go: refused: {e}"); 1 }
+            }
+        }
+        _ => { eprintln!("usage: chorus-go serve | register-link | check <card> <round> | check-step <dag> <run> <step>"); 2 }
     };
     std::process::exit(code);
 }

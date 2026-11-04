@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # cards-orphan-reaper.sh — reap orphaned cards-CLI node processes
 # Card #3989 | LaunchAgent: com.chorus.cards-orphan-reaper
 #
@@ -46,7 +47,7 @@ done
 log() {
   local level="$1" message="$2"
   local ts
-  ts=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S')
+  ts=$(boston_time stamp)
   echo "{\"timestamp\":\"$ts\",\"level\":\"$level\",\"appName\":\"cards-orphan-reaper\",\"message\":\"$message\"}"
 }
 

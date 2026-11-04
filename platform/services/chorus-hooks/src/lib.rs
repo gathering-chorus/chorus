@@ -47,6 +47,8 @@ pub use hooks::context_inject::format_spine_line;
 // #3191 — expose the pure UserPromptSubmit response router for its delivery test
 // (tests/prompt_response_3191.rs): context block → stdout additionalContext, warnings → stderr.
 pub use hooks::context_inject::build_user_prompt_response;
+// #4885 — the system-stamped Now line, pub for tests/now_line_4885.rs
+pub use hooks::context_inject::{build_manifest_envelope, build_manifest_envelope_at, now_line};
 // #3191 (relevance half) — the semantic leg (full-prompt query) + the FTS/semantic
 // merge, pub for tests/relevance_3191.rs (AC6/AC7/AC8). Pure, stateless helpers.
 pub use hooks::context_inject::{build_semantic_url, merge_candidates};

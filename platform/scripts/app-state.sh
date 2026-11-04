@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 
 # app-state.sh — Unified application and infrastructure state management
 # Native LaunchAgent architecture. (ADR-019, #2075)
@@ -41,7 +42,7 @@ fi
 log() {
   local level="$1"
   local message="$2"
-  local timestamp=$(TZ=America/New_York date +"%Y-%m-%d %H:%M:%S")
+  local timestamp=$(boston_time stamp)
   echo "{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"appName\":\"jeff-bridwell-personal-site\",\"message\":\"$message\"}"
 }
 

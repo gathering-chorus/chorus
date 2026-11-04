@@ -1888,51 +1888,12 @@ pub fn rel_path(abs: &str, werk_root: &str) -> String {
 }
 
 /// #3880 — offset-ISO in America/New_York from epoch millis, no chrono dep.
-/// EST/EDT boundary via the 2007+ US rule (2nd Sun Mar / 1st Sun Nov, UTC).
+/// #4885 — by the shared offset rule (shared/boston.rs), not a copy of it.
 pub fn boston_offset_iso(ts_millis: u128) -> String {
-    let secs = (ts_millis / 1000) as i64;
-    fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
-        let y = if m <= 2 { y - 1 } else { y };
-        let era = if y >= 0 { y } else { y - 399 } / 400;
-        let yoe = (y - era * 400) as u64;
-        let mp = (if m > 2 { m - 3 } else { m + 9 }) as u64;
-        let doy = (153 * mp + 2) / 5 + d as u64 - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        era * 146097 + doe as i64 - 719468
-    }
-    fn civil(z: i64) -> (i64, u32, u32) {
-        let z = z + 719468;
-        let era = if z >= 0 { z } else { z - 146096 } / 146097;
-        let doe = (z - era * 146097) as u64;
-        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-        let y = yoe as i64 + era * 400;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-        let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
-        (if m <= 2 { y + 1 } else { y }, m, d)
-    }
-    fn nth_sun(y: i64, m: u32, nth: i64) -> i64 {
-        let d = days_from_civil(y, m, 1);
-        let first_dow = (d + 4).rem_euclid(7); // 0 = Sunday
-        d + (7 - first_dow) % 7 + (nth - 1) * 7
-    }
-    let (y, _, _) = civil(secs.div_euclid(86400));
-    let dst_start = nth_sun(y, 3, 2) * 86400 + 7 * 3600; // 2nd Sun Mar 07:00 UTC
-    let dst_end = nth_sun(y, 11, 1) * 86400 + 6 * 3600; // 1st Sun Nov 06:00 UTC
-    let (off, tag) = if secs >= dst_start && secs < dst_end {
-        (-4 * 3600, "-04:00")
-    } else {
-        (-5 * 3600, "-05:00")
-    };
-    let local = secs + off;
-    let (ly, lm, ld) = civil(local.div_euclid(86400));
-    let tod = local.rem_euclid(86400);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}",
-        ly, lm, ld, tod / 3600, (tod % 3600) / 60, tod % 60, tag
-    )
+    boston::offset_iso((ts_millis / 1000) as i64)
 }
+
+mod boston { include!("../../shared/boston.rs"); }
 
 /// #4063 — the one stored verdict of a shell suite (`test-*.sh`): the registry
 /// names the script's single test by its file name, so the row joins.

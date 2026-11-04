@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # authn-coverage.sh — probe every live MUTATING surface (UI/API/CLI/DB) and
 # report whether an UNAUTHENTICATED / UNVERIFIED actor can mutate it.
 #
@@ -84,7 +85,7 @@ mutate() { # name class port code note
   row "$1" "$2" "$v" "$scope" "$4" "$rk" "$5"
 }
 
-echo "=== authn coverage — unauthenticated MUTATION probes ($(TZ=America/New_York date '+%Y-%m-%d %H:%M')) ==="
+echo "=== authn coverage — unauthenticated MUTATION probes ($(boston_time show)) ==="
 row SURFACE CLASS VERDICT SCOPE CODE RISK NOTE
 echo "--------------------------------------------------------------------------------------------------"
 

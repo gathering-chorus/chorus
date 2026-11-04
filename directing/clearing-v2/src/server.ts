@@ -562,6 +562,8 @@ function resolveUrls(options: CreateAppOptions = {}): ResolvedUrls {
 function mountStatic(app: express.Express): void {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../public'), { index: false }));
+  // #4885 — the one Boston renderer, for the browser runtime too
+  app.use('/vendor/chorus-time', express.static(path.join(__dirname, '../../../platform/chorus-sdk/time'), { extensions: ['js'] }));
   app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '../node_modules/@noble/curves/esm'), { extensions: ['js'] }));
   app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '../node_modules/@noble/hashes/esm'), { extensions: ['js'] }));
 }

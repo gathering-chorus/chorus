@@ -5,6 +5,7 @@
  * fields. Auth is enforced by BRIDGE_TOKEN before req-derived routing reaches
  * any sink.
  */
+import { bostonFormat } from '../../../platform/chorus-sdk/time/boston';
 import { roomRoles, isRoomRole } from './room-roles';
 import express, { Request, Response, NextFunction } from 'express';
 import { checkCap } from './word-cap';
@@ -69,7 +70,7 @@ export function formatObserverDigest(content: string): string[] {
       const key = `${obs.ts}|${obs.digest}`;   // dedup the observer double-write
       if (seen.has(key)) continue;
       seen.add(key);
-      const ts = new Date(obs.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      const ts = bostonFormat(new Date(obs.ts), { hour: 'numeric', minute: '2-digit' }); // #4885 the one renderer
       const card = obs.card ? ` #${obs.card}` : '';
       let short = obs.digest || '';
       // #3852 — the nudging: filter is GONE. Jeff, 2026-08-13: "all commands run
@@ -990,9 +991,7 @@ app.get('/api/stream', (req, res) => {
   lines.sort((a, b) => (Date.parse(a.ts) || 0) - (Date.parse(b.ts) || 0));
 
   const formatted = dedupeLines(lines).slice(-limit).map((l) => {
-    const ts = new Date(l.ts).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
-    });
+    const ts = bostonFormat(new Date(l.ts), { hour: 'numeric', minute: '2-digit' }); // #4885 the one renderer
     const card = l.card ? ` #${l.card}` : '';
     return { ts, role: l.role, text: l.text + card, type: l.type };
   });

@@ -45,7 +45,11 @@ PREV_STATE=$(cat "$STATE_FILE" 2>/dev/null || echo "")
 # declare"), so the old `role-state kade building` wrote nothing and
 # is_role_building() read whatever the file held (waiting, on the 20:56 run) and
 # the gate allowed. The gate reads this file; the fixture states it directly.
-printf '{"role":"kade","state":"building","fixture":"test-skip-gates"}\n' > "$STATE_FILE"
+# #4885: the gate reads this file, and /tmp/claude-team-scan belongs to jeffbridwell. From a
+# role account the write is refused, the gate never sees "building", and nothing fires.
+# That is "unmeasured here", not "gate broken".
+STATE_WRITTEN=1
+printf '{"role":"kade","state":"building","fixture":"test-skip-gates"}\n' > "$STATE_FILE" 2>/dev/null || STATE_WRITTEN=0
 # #2806: canonical_write_guard (#2790) fires BEFORE tdd_gate when the
 # fixture path points at canonical chorus — the guard's "canonical is
 # read-only" deny short-circuits and tdd_gate never executes. Use a
@@ -77,10 +81,14 @@ else rm -f "$STATE_FILE"; fi
 # answer was "unknown", nothing fired. The fixture now states the card type through
 # the CHORUS_CARD_TYPE seam (types.rs) — no board, no clock. The one precondition
 # left is that the installed shim carries the seam.
-if ! strings "$SHIM" 2>/dev/null | grep -q "CHORUS_CARD_TYPE"; then
+if [ "$STATE_WRITTEN" = 0 ]; then
+  echo "  UNMEASURED tdd_gate: cannot write $STATE_FILE as $(id -un) (owned by $(stat -f %Su "$STATE_DIR")), so the gate cannot see 'building' — run as the dir owner"
+elif ! strings "$SHIM" 2>/dev/null | grep -q "CHORUS_CARD_TYPE"; then
   echo "  UNMEASURED tdd_gate: installed shim at $SHIM predates the CHORUS_CARD_TYPE seam (#4130) — deploy chorus-hooks, then this measures"
 else
-  echo "$R" | grep -qiE "TDD|log-first|haven't.*written.*test|haven't.*checked.*log|permissionDecision\":\"deny" \
+  # #4885: R wraps the hook's stdout as a JSON string, so its quotes arrive escaped and a
+  # raw grep for "deny" never matched. Decode stdout and read the decision itself.
+  echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); o=json.loads(d.get('stdout') or '{}'); sys.exit(0 if o.get('hookSpecificOutput',{}).get('permissionDecision')=='deny' else 1)" 2>/dev/null \
     && p "tdd_gate: denies Write to production code (tdd or log-first family)" \
     || f "tdd_gate: expected family deny for production Write, got: $(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); s=d.get('stdout',''); print(s[:80] if s else 'exit_code='+str(d.get('exit_code',0)))" 2>/dev/null)"
 fi
