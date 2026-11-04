@@ -793,6 +793,8 @@ if (require.main === module) {
         await emitSpine('reply.delivery.gap', {
           role: gap.role, hash: gap.hash, emittedAt: gap.emittedAt, surface: 'clearing',
         });
+      }, undefined, undefined, undefined, async (s) => {
+        await emitSpine('reply.delivery.unmeasured', { room: s.room, unmeasured: s.unmeasured, surface: 'clearing' });
       });
       process.stderr.write(JSON.stringify({ event: 'startup.replygap.watch', window_ms: 60000 }) + '\n');
 

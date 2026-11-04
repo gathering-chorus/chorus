@@ -116,17 +116,20 @@ describe('#4004 reply-gap watch loop', () => {
     expect(detectGaps(evs, [], T0, REPLY_GAP_WINDOW_MS, new Set())).toEqual({ gaps: [], unmeasured: 0 });
   });
 
-  it('an unreadable room is logged once and raises no gap', async () => {
+  it('an unreadable room raises no gap; going down and coming back each report once', async () => {
     jest.useFakeTimers();
-    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     const gaps: Gap[] = [];
+    const states: string[] = [];
+    let up = false;
     const tail = async () => emitted('silas', 'lost?', T0 - REPLY_GAP_WINDOW_MS - 1);
-    const stop = startReplyGapWatch(tail, async () => null, async (g) => { gaps.push(g); }, 1000,
-      REPLY_GAP_WINDOW_MS, () => T0);
+    const stop = startReplyGapWatch(tail, async () => (up ? roomWith('x')() : null), async (g) => { gaps.push(g); },
+      1000, REPLY_GAP_WINDOW_MS, () => T0, async (s) => { states.push(`${s.room}:${s.unmeasured}`); });
     await jest.advanceTimersByTimeAsync(3000);
-    stop();
     expect(gaps).toHaveLength(0);
-    expect(err.mock.calls.filter((c) => String(c[0]).includes('unreadable'))).toHaveLength(1);
-    err.mockRestore();
+    expect(states).toEqual(['unreadable:1']);
+    up = true;
+    await jest.advanceTimersByTimeAsync(2000);
+    stop();
+    expect(states).toEqual(['unreadable:1', 'readable:0']);
   });
 });

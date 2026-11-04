@@ -43,6 +43,12 @@ describe('#4887 gap watch reads the room record', () => {
     expect(detectGaps([...events, echo], room.slice(0, 1), NOW, WINDOW, new Set()).gaps).toHaveLength(1);
   });
 
+  // NEGATIVE PROOF: the same text from another role is not this reply.
+  it('identical text from a different role does not count as delivered', () => {
+    const other = room.map((m) => ({ ...m, from: m.ts === '2026-11-04T18:03:10.000Z' ? 'wren' : m.from }));
+    expect(detectGaps(events, other, NOW, WINDOW, new Set()).gaps.map((g) => g.hash)).toEqual(['8be555a4b26569e7']);
+  });
+
   it('an unreadable room reads unmeasured, never a gap', () => {
     expect(detectGaps(events, null, NOW, WINDOW, new Set())).toEqual({ gaps: [], unmeasured: 2 });
   });

@@ -10,7 +10,7 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
 @test "AC2: Abby's 13:02:57 and 13:03:10 replies, in the room, count as delivered" {
   cd "$ROOT/platform/pulse"
-  run npx jest src/reply-gap-4887.test.ts -t "AC2|one join key|fixture is whole"
+  run npx jest src/reply-gap-4887.test.ts -t "AC2|one join key|fixture is whole|different role"
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
 }
 

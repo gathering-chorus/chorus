@@ -45,8 +45,9 @@ export interface Scan { gaps: Gap[]; unmeasured: number }
  * Pure: given spine events, the room's rows (null = the room could not be read),
  * now and the window, return the gaps not yet fired.
  *
- * A reply.emitted older than the window is delivered when a room row hashes to
- * its hash, a gap when none does — but only if the room's record reaches back to
+ * A reply.emitted older than the window is delivered when a room row FROM THE
+ * SAME ROLE hashes to its hash (identical text from another role is not this
+ * reply), a gap when none does — but only if the room's record reaches back to
  * it. A reply older than the room's oldest row (the buffer scrolled) or a room
  * that cannot be read is UNMEASURED, never a gap: the watch says what it cannot
  * see instead of alarming on it. Malformed events are skipped, never thrown on.
@@ -61,7 +62,7 @@ export function detectGaps(
   const inRoom = new Set<string>();
   let oldest = Infinity;
   for (const m of room ?? []) {
-    if (typeof m.text === 'string') inRoom.add(contentHash(m.text));
+    if (typeof m.text === 'string' && m.from) inRoom.add(gapKey({ role: m.from, hash: contentHash(m.text) }));
     const at = m.ts ? Date.parse(m.ts) : NaN;
     if (!Number.isNaN(at) && at < oldest) oldest = at;
   }
@@ -71,9 +72,9 @@ export function detectGaps(
     if (e.event !== 'reply.emitted' || !e.role || !e.hash || !e.timestamp) continue;
     const at = Date.parse(e.timestamp);
     if (Number.isNaN(at) || nowMs - at <= windowMs) continue;
-    if (inRoom.has(e.hash)) continue;
-    if (room === null || at < oldest) { unmeasured += 1; continue; }
     const key = gapKey({ role: e.role, hash: e.hash });
+    if (inRoom.has(key)) continue;
+    if (room === null || at < oldest) { unmeasured += 1; continue; }
     if (alreadyFired.has(key)) continue;
     gaps.push({ role: e.role, hash: e.hash, emittedAt: e.timestamp });
   }
@@ -84,6 +85,9 @@ export type ReadTail = () => Promise<string>;
 /** The room's rows, or null when the room cannot be read. */
 export type ReadRoom = () => Promise<RoomMsg[] | null>;
 export type EmitGap = (gap: Gap) => Promise<void>;
+/** The room went unreadable, or came back: one call per change, never per scan. */
+export interface RoomState { room: 'unreadable' | 'readable'; unmeasured: number }
+export type EmitRoomState = (state: RoomState) => Promise<void>;
 
 /** Parse the spine tail into events; non-JSON lines are skipped. */
 export function parseSpineTail(raw: string): SpineEv[] {
@@ -100,7 +104,9 @@ export function parseSpineTail(raw: string): SpineEv[] {
 
 /**
  * Watch loop: every interval, read the spine tail and the room, detect, emit
- * each gap once. An unreadable room is logged once when it starts, never gapped. Returns a stop function. `fired` is bounded by clearing entries older
+ * each gap once. An unreadable room is never gapped; the change to unreadable,
+ * and back, goes out once through emitRoomState (the spine, in the service) so a
+ * room down for hours is not silent. Returns a stop function. `fired` is bounded by clearing entries older
  * than 10 windows — a long-running pulse must not grow a set forever.
  */
 export function startReplyGapWatch(
@@ -110,6 +116,7 @@ export function startReplyGapWatch(
   intervalMs = 15_000,
   windowMs = REPLY_GAP_WINDOW_MS,
   now: () => number = Date.now,
+  emitRoomState: EmitRoomState = async (s) => { console.error(JSON.stringify({ event: 'reply.delivery.unmeasured', ...s })); },
 ): () => void {
   const fired = new Map<string, number>(); // key → firedAt
   let roomUnread = false;
@@ -118,15 +125,16 @@ export function startReplyGapWatch(
       try {
         const events = parseSpineTail(await readTail());
         const room = await readRoom();
-        if ((room === null) !== roomUnread) {
-          roomUnread = room === null;
-          console.error(JSON.stringify({ event: 'reply.gap.watch', room: roomUnread ? 'unreadable' : 'readable' }));
-        }
         const nowMs = now();
         for (const [k, at] of fired) {
           if (nowMs - at > windowMs * 10) fired.delete(k);
         }
-        for (const gap of detectGaps(events, room, nowMs, windowMs, new Set(fired.keys())).gaps) {
+        const scan = detectGaps(events, room, nowMs, windowMs, new Set(fired.keys()));
+        if ((room === null) !== roomUnread) {
+          roomUnread = room === null;
+          await emitRoomState({ room: roomUnread ? 'unreadable' : 'readable', unmeasured: scan.unmeasured });
+        }
+        for (const gap of scan.gaps) {
           fired.set(gapKey(gap), nowMs);
           await emitGap(gap);
         }
