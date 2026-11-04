@@ -8,6 +8,23 @@
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
+ROOM_URL="${CLEARING_ROOM_URL:-http://localhost:3472/}"
+ROWS="$ROOT/platform/tests/lib/room-rows-4887.cjs"
+PW="$ROOT/node_modules/playwright-core"
+
+@test "AC1: headless Chrome on the live room renders an Abby (agy) row and a Claude-role row" {
+  run node "$ROWS" "$PW" "$ROOM_URL" abby-normal 'silas|wren|kade'
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC1 negative proof: the same load names a role that has no row, and fails" {
+  run node "$ROWS" "$PW" "$ROOM_URL" abby-normal nobody-4887
+  echo "$output"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *'"missing":["nobody-4887"]'* ]] || return 1
+}
+
 @test "AC2: Abby's 13:02:57 and 13:03:10 replies, in the room, count as delivered" {
   cd "$ROOT/platform/pulse"
   run npx jest src/reply-gap-4887.test.ts -t "AC2|one join key|fixture is whole|different role"
