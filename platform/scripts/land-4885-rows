@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""#4885 — the store writes the domain flow needs, DRY RUN unless --apply.
+# @domain: time
+
+Two parts, both read from files that already ship in this land, so the store and
+the committed pipeline cannot differ:
+  1. the time Domain row widens to the clock (Wren 11-04 03:55) and carries the
+     patterns domain-flow inventories by (pathPattern, lossyPattern — new on
+     DomainShape in this land; the model deploys first, as #4577's did);
+  2. the domain-flow pipeline's rows (Skills, PipelineSteps, StepSkills, the
+     Pipeline last), from chorus-make's domain-flow fixtures.
+Each write prints ADD / CHANGE / SAME against the door. --apply is a prod write:
+it runs only after Jeff's yes on the dry run. Exit 0 = plan printed (or applied);
+1 = a write was refused; 2 = the door or the fixtures could not be read.
+"""
+import json, os, subprocess, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+FX = os.path.join(ROOT, "platform/services/chorus-make/tests/fixtures")
+OWNER = "principal-silas"
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+DOOR_CLASS = {"domains/domains": ("domains", "domains"), "skills/skills": ("skills", "skills"),
+              "pipelinesteps": ("pipelines", "steps"), "stepskills": ("skills", "stepskills"),
+              "pipelines": ("pipelines", "pipelines")}
+
+TIME = {"name": "time",
+        "comment": "Time and the clock: scheduling, cron and time-based triggers, and the one Boston clock every record and every screen reads.",
+        "purpose": "Drive time-based work, and keep one clock: the system stamps every time, one renderer per runtime shows it in Boston.",
+        "pathPattern": ["wall-clock", "clock_sync", "boston_offset", "boston\\(", "America/New_York"],
+        "lossyPattern": "TZ=America/New_York date[^)]*%H:%M"}
+
+
+def rows():
+    out = []
+    for line in open(os.path.join(FX, "domain-flow-rows.tsv")):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#") or line.startswith("step\t"):
+            continue
+        f = line.split("\t") + [""] * 11
+        out.append(dict(zip(["step", "stepOrder", "skillOrder", "skill", "label", "executor",
+                             "implementedBy", "mode", "onFail", "inputShape", "withArgs"], f[:11])))
+    return out
+
+
+def pipe():
+    p = {}
+    for line in open(os.path.join(FX, "domain-flow-pipe.tsv")):
+        if "\t" in line and not line.startswith("#"):
+            k, v = line.rstrip("\n").split("\t", 1)
+            p[k] = v
+    return p
+
+
+def want():
+    skills, steps, stepskills = [], [], []
+    for r in rows():
+        skills.append({"name": r["skill"].removeprefix("skill-"), "label": r["label"], "executor": r["executor"],
+                       "implementedBy": r["implementedBy"], "arguments": r["mode"], "hasDomain": "time",
+                       "ownedBy": OWNER, "runsAs": "" if r["executor"] == "human" else "caller"})
+        steps.append({"name": f"domain-flow-{r['step']}", "label": f"domain-flow-{r['step']}", "executor": r["executor"],
+                      "stepOrder": r["stepOrder"], "coversStep": "building"})
+        stepskills.append({"name": f"domain-flow-{r['step']}-{r['skillOrder']}",
+                           "label": f"domain-flow {r['step']} {r['skillOrder']}: {r['label']}",
+                           "callsSkill": r["skill"].removeprefix("skill-"), "forStep": f"domain-flow-{r['step']}",
+                           "skillOrder": r["skillOrder"], "withArguments": r["withArgs"], "ownedBy": OWNER})
+    p = pipe()
+    pipelines = [{"name": "domain-flow", "label": "pipeline-domain-flow", "automates": "werk", "pipelineStatus": "building",
+                  "runQueue": p.get("queue", ""), "runParams": p.get("params", ""), "onFailureRun": p.get("onFailure", ""),
+                  "hasStep": " ".join(f"domain-flow-{r['step']}" for r in rows())}]
+    return [("domains/domains", [TIME]), ("skills/skills", skills), ("pipelinesteps", steps),
+            ("stepskills", stepskills), ("pipelines", pipelines)]
+
+
+def bare(v):
+    if isinstance(v, list):
+        return sorted(str(x) for x in v)
+    for p in ("value-stream-step-", "value-stream-", "pipeline-step-", "skill-", "principal-"):
+        v = " ".join(x.removeprefix(p) for x in str(v).split())
+    return str(v)
+
+
+def call(method, path):
+    with urllib.request.urlopen(urllib.request.Request(f"{DOOR}{path}", method=method), timeout=15) as r:
+        return json.load(r)
+
+
+def main():
+    apply = "--apply" in sys.argv[1:]
+    try:
+        plan = want()
+    except OSError as e:
+        print(f"fixtures unreadable: {e} — no plan")
+        return 2
+    try:
+        live = {c: {r["name"]: r for r in (call("GET", f"/{c}?limit=1000").get("data") or [])} for c, _ in plan}
+    except Exception as e:
+        print(f"door unreadable at {DOOR}: {e} — no plan")
+        return 2
+    counts, refused = {"ADD": 0, "CHANGE": 0, "SAME": 0}, 0
+    for coll, rs in plan:
+        for w in rs:
+            have = live[coll].get(w["name"])
+            if have is None:
+                kind, diff = "ADD", w
+            else:
+                diff = {k: v for k, v in w.items() if k != "name" and bare(have.get(k, "")) != bare(v)}
+                kind = "CHANGE" if diff else "SAME"
+            counts[kind] += 1
+            print(f"{kind:<6} {coll}/{w['name']}  {json.dumps(diff, sort_keys=True) if kind != 'SAME' else ''}")
+            if not apply or kind == "SAME":
+                continue
+            dom, cls = DOOR_CLASS[coll]
+            verb, args = ("athena-add", [f"fields={json.dumps(w)}"]) if kind == "ADD" else \
+                         ("athena-set", [f"id={w['name']}", f"fields={json.dumps(diff)}"])
+            r = subprocess.run([RUNNER, "call", verb, f"domain={dom}", f"class={cls}", *args], capture_output=True, text=True)
+            if r.returncode != 0 or not any(c in r.stdout + r.stderr for c in (" → 200", " → 201")):
+                refused += 1
+                print(f"  REFUSED {coll}/{w['name']}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — {verb}")
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
