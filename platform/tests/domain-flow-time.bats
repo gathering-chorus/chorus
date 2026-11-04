@@ -123,9 +123,20 @@ EOF
 
 # --- AC5: the flow runs as the domain-flow pipeline ------------------------
 
+# #4888 — the werk's own chorus-make, never the installed one: a card that changes
+# the generator regenerates its pipelines, and the installed binary is main's
+# (run 1 of #4888 went red on exactly that). Per-account target, light build.
+werk_cm() {
+  local crate="$ROOT/platform/services/chorus-make" tgt
+  tgt="$crate/target/$(id -un)"
+  CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$tgt" nice cargo build -q --release \
+    --manifest-path "$crate/Cargo.toml" >/dev/null 2>&1 || return 1
+  echo "$tgt/release/chorus-make"
+}
+
 @test "AC5: domain-flow.yaml is exactly what chorus-make writes from its rows" {
-  command -v chorus-make >/dev/null || skip "chorus-make not installed"
-  run chorus-make check-straight domain-flow "$F/domain-flow-rows.tsv" "$F/domain-flow-pipe.tsv" \
+  CM="$(werk_cm)" || { echo "the werk's chorus-make did not build"; return 1; }
+  run "$CM" check-straight domain-flow "$F/domain-flow-rows.tsv" "$F/domain-flow-pipe.tsv" \
     cicd,cicd-test,nightly,athena,pair,demo,card,domain-flow "$ROOT/platform/pipelines/domain-flow.yaml"
   [ "$status" -eq 0 ]
 }
@@ -142,10 +153,10 @@ EOF
 }
 
 @test "AC5 NEGATIVE PROOF: a hand edit that gives the bar to the driver is drift" {
-  command -v chorus-make >/dev/null || skip "chorus-make not installed"
+  CM="$(werk_cm)" || { echo "the werk's chorus-make did not build"; return 1; }
   sed 's/(${APPROVER} answers)/(${ROLE} answers)/' "$ROOT/platform/pipelines/domain-flow.yaml" > "$T/df.yaml"
   ! cmp -s "$ROOT/platform/pipelines/domain-flow.yaml" "$T/df.yaml" || return 1
-  run chorus-make check-straight domain-flow "$F/domain-flow-rows.tsv" "$F/domain-flow-pipe.tsv" \
+  run "$CM" check-straight domain-flow "$F/domain-flow-rows.tsv" "$F/domain-flow-pipe.tsv" \
     cicd,cicd-test,nightly,athena,pair,demo,card,domain-flow "$T/df.yaml"
   [ "$status" -ne 0 ]
 }
