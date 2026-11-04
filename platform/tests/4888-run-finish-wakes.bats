@@ -82,34 +82,30 @@ wake_problems() {
 # him: the newest run-result wake in the room's record must be on the page. The
 # #4887 room check does the load (a wake older than the page's rows: unmeasured).
 ROOM_URL="${CLEARING_ROOM_URL:-https://lightlifeurbangardens.com/clearing-v2/}"
-# Wren 15:53: one real wake, sent as the pipeline (only dagu's account may send an
-# ops wake: a role's is refused 403 not-canonical-caller), then the public room
-# loaded headless must show it — missing is red. It fires only inside this card's
-# own cicd test step (the werk is silas-4888 and the run carries a trace), so a
-# nightly or another card's run never wakes anyone; there it is unmeasured.
-@test "AC5: one real run-finished wake, sent from the cicd test step, renders in the public room" {
-  case "$ROOT" in */silas-4888) ;; *) skip "unmeasured: fires only in #4888's own cicd run" ;; esac
-  [ -n "${CHORUS_TRACE_ID:-}" ] || skip "unmeasured: needs the pipeline's account (run it from cicd)"
-  run_id="ac5-${CHORUS_TRACE_ID}"
-  env -u CHORUS_ROLE DAG_RUN_STATUS=succeeded DAG_RUN_STEP_NAME=onExit \
-    bash "$RF" 4888 silas ac5-proof "$run_id"
-  # the wake's text, as run-finished wrote it, must reach the room's record...
-  want=""
-  for _ in $(seq 1 15); do
-    rec="$(curl -sf --max-time 10 "${ROOM_URL}api/messages" || true)"
-    want="$(printf '%s' "$rec" | node -e '
-      const {contentHash}=require(process.argv[1]); let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
-      let rows=[]; try { rows=JSON.parse(s); } catch {}
-      const w=rows.filter(m=>m.from==="system"&&(m.text||"").includes(process.argv[2])).pop();
-      if(w) console.log("system:"+contentHash(w.text)); });' "$ROOT/platform/chorus-sdk/reply/hash.js" "$run_id")"
-    [ -n "$want" ] && break
-    sleep 2
-  done
-  [ -n "$want" ] || { echo "the wake for $run_id never reached the room's record"; return 1; }
-  # ...and the page Jeff loads must render that exact row
+# AC5 — a run-finished wake shows in Jeff's public room. werk-test cages every
+# test's nudges (CHORUS_PULSE_URL → 127.0.0.1:9), so no test sends a live wake
+# (Wren 16:07: keep the cage). The proof is the room's own record: the newest
+# run-finished wake there (format "#N <pipeline> passed|failed|landed · dagu …")
+# must render on the page Jeff loads. One the page has scrolled past reads
+# unmeasured; Kade confirmed the first ones (15:22, 15:43) by hand in the room.
+WAKE_RE='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · /cws [0-9]+$'
+@test "AC5: the newest run-finished wake in the room's record renders on the public page" {
+  rec="$(curl -sf --max-time 10 "${ROOM_URL}api/messages")" || { echo "room record unreadable"; return 1; }
+  want="$(printf '%s' "$rec" | node -e '
+    const {contentHash}=require(process.argv[1]); let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+    const re=new RegExp(process.argv[2]); const w=JSON.parse(s).filter(m=>m.from==="system"&&re.test(m.text||"")).pop();
+    if(w) console.log("system:"+contentHash(w.text)); });' "$ROOT/platform/chorus-sdk/reply/hash.js" "$WAKE_RE")"
+  [ -n "$want" ] || skip "unmeasured: no run-finished wake in the room's record"
   run env WANT_4887="$want" node "$ROOT/platform/tests/lib/room-rows-4887.cjs" "$ROOT/node_modules/playwright-core" "$ROOM_URL"
   echo "$output"
+  [ "$status" -ne 3 ] || skip "unmeasured: $output"
   [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC5: the wake pattern matches run-finished's own words, and not an older nudge" {
+  re="$WAKE_RE"
+  [[ "[alert → abby-normal] #999999 clearing-evaluate passed · dagu 034rvgJDfrob5mIxbyTwg3 · /cws 999999" =~ $re ]] || return 1
+  [[ ! "[alert → silas] werk v2 #4887 cicd failed at test-pipeline: x · dagu y · /cws 4887 · retry" =~ $re ]] || return 1
 }
 
 @test "AC5 negative proof: the room check names a wake the page does not show" {
