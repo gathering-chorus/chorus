@@ -153,6 +153,9 @@ with open(WF) as f:
   command -v dagu >/dev/null 2>&1 || skip "dagu not installed"
   WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
   export CHORUS_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  # #4888 — the run's exit wake goes to a stand-in, never a real nudge to a role
+  printf '#!/bin/sh\nexit 0\n' > "$BATS_TEST_TMPDIR/shim"; chmod +x "$BATS_TEST_TMPDIR/shim"
+  export CHORUS_HOOK_SHIM="$BATS_TEST_TMPDIR/shim"
   run dagu start "$WF" -- CARD=999999 ROLE=abby-normal NAVIGATOR=wren JEFF=jeff
   [ "$status" -eq 0 ]
   [[ "$output" =~ "skill-clearing-evaluate [skipped]" ]] || return 1

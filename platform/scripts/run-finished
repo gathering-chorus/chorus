@@ -30,6 +30,8 @@ fi
 S="$(cd "$(dirname "$0")" && pwd)"
 CH="${CHORUS_HOME:?CHORUS_HOME not set}"
 REG="$CH/ops/active-pairs/$CARD.json"
+# a pair that ended at the land's prove keeps its members here for this wake (#4888)
+[ -f "$REG" ] || REG="$CH/ops/active-pairs/$CARD.ended"
 STATUS="${DAG_RUN_STATUS:-unknown}"
 
 # the run's own words: "failed at <step>: <reason>" (#4553); RUN_FINISHED_WHY cages it in tests
@@ -49,7 +51,7 @@ case "$STATUS" in
   failed)
     MSG="#$CARD $DAG $(why) · dagu $RUN · /cws $CARD"
     # a paired card's red went back to slice (pair red ran in the failure handler)
-    nav="$(grep -o '"navigator":"[^"]*"' "$REG" 2>/dev/null | cut -d'"' -f4)"
+    nav="$(grep -o '"navigator":"[^"]*"' "$CH/ops/active-pairs/$CARD.json" 2>/dev/null | cut -d'"' -f4)"
     [ -n "$nav" ] && MSG="$MSG · back to slice: the next pair run waits for $nav's green" ;;
   *) MSG="#$CARD $DAG $STATUS · dagu $RUN · /cws $CARD" ;;
 esac
@@ -66,4 +68,9 @@ rc=0
 for r in $(printf '%s\n' $who | awk '!seen[$0]++'); do
   env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG" || { echo "run-finished: the wake to $r did not go out" >&2; rc=1; }
 done
-exit $rc
+# the ended pair's members were kept for this one wake
+case "$REG" in *.ended) rm -f "$REG" ;; esac
+# a wake that did not go out is loud here, but never turns the run's own result:
+# a land that passed stays passed (dagu marks a run failed when its exit handler fails)
+[ "$rc" -eq 0 ] || echo "run-finished: #$CARD $DAG $STATUS — not every wake went out" >&2
+exit 0

@@ -50,12 +50,30 @@ wake_problems() {
   done
 }
 
-@test "a failing child fails its parent, so the parent's exit wakes once with failed (dagu fixture)" {
+@test "real dagu: a failing child fails its parent, and the parent's exit runs run-finished once (the onExit gate is dagu's own name)" {
+  cage
   d="$BATS_TEST_TMPDIR/dg"; mkdir -p "$d/home"
   printf 'params:\n  - TRACE: ""\nsteps:\n  - name: boom\n    command: "false"\n' > "$d/child.yaml"
-  printf 'handler_on:\n  exit:\n    command: sh -c "echo exit:$DAG_RUN_STATUS >> %s/wakes"\nsteps:\n  - name: call-child\n    command: env DAGU_HOME=%s/home dagu start %s/child.yaml -- TRACE=t\n  - name: after\n    depends: [call-child]\n    command: "true"\n' "$d" "$d" "$d" > "$d/parent.yaml"
-  (cd "$d" && DAGU_HOME="$d/home" dagu start parent.yaml >/dev/null 2>&1) || true
-  [ "$(cat "$d/wakes")" = "exit:failed" ] || { cat "$d/wakes"; return 1; }
+  # dagu hands a handler only the env its workflow declares, as the generated ones do
+  printf 'params:\n  - CARD: ""\n  - ROLE: ""\nenv:\n  - CHORUS_HOME: %s\n  - CHORUS_HOOK_SHIM: %s\n  - RUN_FINISHED_WHY: %s\nhandler_on:\n  exit:\n    command: bash %s ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}\nsteps:\n  - name: call-child\n    command: env DAGU_HOME=%s/home dagu start %s/child.yaml -- TRACE=t\n  - name: after\n    depends: [call-child]\n    command: "true"\n' \
+    "$H" "$BATS_TEST_TMPDIR/shim" "$BATS_TEST_TMPDIR/why" "$RF" "$d" "$d" > "$d/parent.yaml"
+  (cd "$d" && env -u CHORUS_ROLE DAGU_HOME="$d/home" dagu start parent.yaml -- CARD=4888 ROLE=silas >/dev/null 2>&1) || true
+  [ "$(wc -l < "$SENT" | tr -d ' ')" -eq 1 ] || { cat "$SENT"; return 1; }
+  grep -q '^silas|#4888 parent failed at' "$SENT" || { cat "$SENT"; return 1; }
+}
+
+@test "the pair ends at the land's prove, yet the land's wake still reaches the navigator, then the kept members go" {
+  cage; printf '{"card":"4888","driver":"silas","navigator":"kade"}' > "$H/ops/active-pairs/4888.ended"
+  run finish succeeded cicd-land
+  [ "$(cut -d'|' -f1 "$SENT" | sort | tr '\n' ' ')" = "kade silas " ] || { cat "$SENT"; return 1; }
+  [ ! -e "$H/ops/active-pairs/4888.ended" ] || return 1
+}
+
+@test "a wake that cannot go out is loud but never turns a passed run red" {
+  cage; printf '#!/bin/sh\nexit 1\n' > "$BATS_TEST_TMPDIR/shim"
+  run finish succeeded cicd-land
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"not every wake went out"* ]] || { echo "$output"; return 1; }
 }
 
 @test "AC4 negative proof: a pipeline with no exit wake, or one that still nudges on failure, is named" {
