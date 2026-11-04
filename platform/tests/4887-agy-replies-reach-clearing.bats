@@ -76,7 +76,8 @@ PW="$ROOT/node_modules/playwright-core"
   run npx jest tests/reply-hash-4887.test.ts
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
   cd "$ROOT/platform/services/chorus-hooks"
-  run env CARGO_BUILD_JOBS=2 nice cargo test --test reply_delivery_3864
+  # per-account target (#4885): each account builds into its own dir, never another's files
+  run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="target/$(id -un)" nice cargo test --test reply_delivery_3864
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
 }
 

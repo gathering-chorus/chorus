@@ -8,6 +8,7 @@
 // on every case, or the gap watch cannot match a room row to its reply.emitted.
 import * as fs from 'fs';
 import * as path from 'path';
+import * as hashModule from '../reply/hash';
 import { contentHash } from '../reply/hash';
 
 const FIXTURES = path.join(__dirname, '../../../config/reply-hash-fixtures.json');
@@ -36,8 +37,8 @@ describe('#4887 reply hash — shared fixture parity', () => {
 
 describe('#4887 reply/hash.d.ts declares exactly what reply/hash.js exports', () => {
   it('every export is typed, and nothing typed is missing from the module', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const js = Object.keys(require('../reply/hash')).sort();
+    // ts-jest's CommonJS interop adds a synthetic 'default'; hash.js exports none
+    const js = Object.keys(hashModule).filter((k) => k !== 'default').sort();
     const dts = fs.readFileSync(path.join(__dirname, '../reply/hash.d.ts'), 'utf8');
     const typed = [...dts.matchAll(/export function (\w+)/g)].map((m: RegExpMatchArray) => m[1]).sort();
     expect(typed).toEqual(js);

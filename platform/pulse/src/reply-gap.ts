@@ -52,6 +52,18 @@ export interface Scan { gaps: Gap[]; unmeasured: number }
  * that cannot be read is UNMEASURED, never a gap: the watch says what it cannot
  * see instead of alarming on it. Malformed events are skipped, never thrown on.
  */
+/** The room's rows as role:hash keys, and the instant its record reaches back to. */
+function indexRoom(room: RoomMsg[]): { inRoom: Set<string>; oldest: number } {
+  const inRoom = new Set<string>();
+  let oldest = Infinity;
+  for (const m of room) {
+    if (typeof m.text === 'string' && m.from) inRoom.add(gapKey({ role: m.from, hash: contentHash(m.text) }));
+    const at = m.ts ? Date.parse(m.ts) : NaN;
+    if (!Number.isNaN(at) && at < oldest) oldest = at;
+  }
+  return { inRoom, oldest };
+}
+
 export function detectGaps(
   events: SpineEv[],
   room: RoomMsg[] | null,
@@ -59,13 +71,7 @@ export function detectGaps(
   windowMs: number,
   alreadyFired: Set<string>,
 ): Scan {
-  const inRoom = new Set<string>();
-  let oldest = Infinity;
-  for (const m of room ?? []) {
-    if (typeof m.text === 'string' && m.from) inRoom.add(gapKey({ role: m.from, hash: contentHash(m.text) }));
-    const at = m.ts ? Date.parse(m.ts) : NaN;
-    if (!Number.isNaN(at) && at < oldest) oldest = at;
-  }
+  const { inRoom, oldest } = indexRoom(room ?? []);
   const gaps: Gap[] = [];
   let unmeasured = 0;
   for (const e of events) {
