@@ -87,7 +87,8 @@ ROOM_URL="${CLEARING_ROOM_URL:-https://lightlifeurbangardens.com/clearing-v2/}"
 # (Wren 16:07: keep the cage). The proof is the room's own record: the newest
 # run-finished wake there (format "#N <pipeline> passed|failed|landed · dagu …")
 # must render on the page Jeff loads. One the page has scrolled past reads
-# unmeasured; Kade confirmed the first ones (15:22, 15:43) by hand in the room.
+# unmeasured. Before the land no real wake exists to check (the card's AC5 sits
+# under "After land": the land's own wake proves it).
 WAKE_RE='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · /cws [0-9]+$'
 @test "AC5: the newest run-finished wake in the room's record renders on the public page" {
   rec="$(curl -sf --max-time 10 "${ROOM_URL}api/messages")" || { echo "room record unreadable"; return 1; }
