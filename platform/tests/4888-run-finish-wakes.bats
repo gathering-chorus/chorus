@@ -69,11 +69,41 @@ wake_problems() {
   [ ! -e "$H/ops/active-pairs/4888.ended" ] || return 1
 }
 
-@test "a wake that cannot go out is loud but never turns a passed run red" {
+@test "a wake that cannot go out is loud, lands on the spine as run.wake.failed, and never turns a passed run red" {
   cage; printf '#!/bin/sh\nexit 1\n' > "$BATS_TEST_TMPDIR/shim"
-  run finish succeeded cicd-land
+  printf '#!/bin/sh\necho "$@" >> %s/spine\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/log"; chmod +x "$BATS_TEST_TMPDIR/log"
+  RUN_FINISHED_LOG="$BATS_TEST_TMPDIR/log" run finish succeeded cicd-land
   [ "$status" -eq 0 ] || return 1
   [[ "$output" == *"not every wake went out"* ]] || { echo "$output"; return 1; }
+  grep -q '^run.wake.failed system card=4888 dag=cicd-land to=silas status=succeeded' "$BATS_TEST_TMPDIR/spine" || { cat "$BATS_TEST_TMPDIR/spine"; return 1; }
+}
+
+# AC5 — the wake shows in Jeff's public room, loaded headless, with no message from
+# him: the newest run-result wake in the room's record must be on the page. The
+# #4887 room check does the load (a wake older than the page's rows: unmeasured).
+ROOM_URL="${CLEARING_ROOM_URL:-https://lightlifeurbangardens.com/clearing-v2/}"
+WAKE_RE='^\[alert → [a-z-]+\] (werk v2 )?#[0-9]+ .*(passed|failed|landed)'
+@test "AC5: the newest finished-run wake renders in the public room, headless" {
+  rec="$(curl -sf --max-time 10 "${ROOM_URL}api/messages")" || { echo "room record unreadable"; return 1; }
+  want="$(printf '%s' "$rec" | node -e '
+    const {contentHash}=require(process.argv[1]); let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+    const re=new RegExp(process.argv[2]); const w=JSON.parse(s).filter(m=>m.from==="system"&&re.test(m.text||"")).pop();
+    if(w) console.log("system:"+contentHash(w.text)); });' "$ROOT/platform/chorus-sdk/reply/hash.js" "$WAKE_RE")"
+  [ -n "$want" ] || skip "unmeasured: no finished-run wake in the room's record yet"
+  run env WANT_4887="$want" node "$ROOT/platform/tests/lib/room-rows-4887.cjs" "$ROOT/node_modules/playwright-core" "$ROOM_URL"
+  echo "$output"
+  [ "$status" -ne 3 ] || skip "unmeasured: $output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC5 negative proof: the room check names a wake the page does not show" {
+  d="$BATS_TEST_TMPDIR/room"; mkdir -p "$d"
+  printf '<div id="messages-stream"><div class="message" id="msg-old" data-from="system" data-ts="2026-11-04T19:00:00.000Z"></div></div>' > "$d/index.html"
+  printf '[{"id":"old","from":"system","text":"x","ts":"2026-11-04T19:00:00.000Z"},{"id":"w1","from":"system","text":"[alert → silas] #4888 cicd-land landed","ts":"2026-11-04T19:05:00.000Z"}]' > "$d/record.json"
+  h="$(node -e 'console.log(require(process.argv[1]).contentHash("[alert → silas] #4888 cicd-land landed"))' "$ROOT/platform/chorus-sdk/reply/hash.js")"
+  run env WANT_4887="system:$h" ROOM_RECORD_FILE="$d/record.json" node "$ROOT/platform/tests/lib/room-rows-4887.cjs" "$ROOT/node_modules/playwright-core" "file://$d/index.html"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *'"missing":[{"role":"system"'* ]] || { echo "$output"; return 1; }
 }
 
 @test "AC4 negative proof: a pipeline with no exit wake, or one that still nudges on failure, is named" {

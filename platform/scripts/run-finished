@@ -66,7 +66,11 @@ if [ -f "$REG" ]; then
 fi
 rc=0
 for r in $(printf '%s\n' $who | awk '!seen[$0]++'); do
-  env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG" || { echo "run-finished: the wake to $r did not go out" >&2; rc=1; }
+  if ! env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG"; then
+    echo "run-finished: the wake to $r did not go out" >&2; rc=1
+    # on the spine too, so a wake that never arrived is findable (Kade 15:05)
+    bash "${RUN_FINISHED_LOG:-$S/chorus-log}" run.wake.failed system "card=$CARD" "dag=$DAG" "to=$r" "status=$STATUS" "run=$RUN" >/dev/null 2>&1 || true
+  fi
 done
 # the ended pair's members were kept for this one wake
 case "$REG" in *.ended) rm -f "$REG" ;; esac
