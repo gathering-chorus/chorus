@@ -123,6 +123,9 @@ function formatAuthor(role) {
 
 // #4885 — the one Boston renderer: a script tag in the page, the sdk module under node tests
 const boston = typeof chorusBoston !== 'undefined' ? chorusBoston : (typeof require !== 'undefined' ? require('../../../platform/chorus-sdk/time/boston') : null);
+if (!boston && typeof window !== 'undefined') {
+  console.error('[clearing-v2] chorusBoston not loaded; falling back to browser-local time formatting');
+}
 
 function formatMessageTime(ts) {
   const d = new Date(ts);
