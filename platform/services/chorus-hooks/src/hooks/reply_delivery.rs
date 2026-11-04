@@ -133,9 +133,19 @@ pub fn turn_text_from_transcript(path: &str) -> Option<String> {
     None
 }
 
+/// #4884 — whether a role's Stop may publish a reply: a session with no role (headless
+/// gate and review runs) has no key and no room, so it publishes nothing.
+pub fn publishes_reply(role: &str) -> bool {
+    !role.is_empty() && role != "unknown"
+}
+
 fn is_prompt(v: &serde_json::Value) -> bool {
     let role = v.get("message").and_then(|m| m.get("role")).and_then(|r| r.as_str());
     if v.get("type").and_then(|t| t.as_str()) != Some("user") && role != Some("user") {
+        return false;
+    }
+    // #4884 (Silas's review): hook-injected meta entries are not the turn's prompt
+    if v.get("isMeta").and_then(|b| b.as_bool()) == Some(true) {
         return false;
     }
     match v.get("message").and_then(|m| m.get("content")) {

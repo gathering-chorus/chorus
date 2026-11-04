@@ -1,4 +1,6 @@
-//! @test-type unit
+// @test-type: unit — pure: the product verdict over borg-prove output text; no door, no network.
+// @domain: decisions
+// @card: #4882
 //! #4882 AC4 — the product gate decides the AC from `borg-prove verify`, never from box state.
 use werk_demo::product_proof;
 

@@ -1,7 +1,9 @@
-//! @test-type unit
+// @test-type: unit — pure: reply source selection over a temp transcript; no daemon, no network.
+// @domain: messages
+// @card: #4882
 //! #4882 — a turn's reply is the turn's own text: the Stop payload's final text first, the
 //! transcript only after the turn's prompt; never the previous reply or an interim line.
-use chorus_hooks::reply_delivery::reply_text;
+use chorus_hooks::reply_delivery::{publishes_reply, reply_text};
 use serde_json::json;
 /// A transcript as it stands at Stop: the previous turn's reply is there,
 /// this turn's final text is not yet written (it lags), only its interim line.
@@ -79,7 +81,7 @@ fn without_the_field_a_lagging_transcript_yields_nothing_past_the_prompt_4882() 
 }
 
 #[test]
-fn gemini_path_is_unchanged_4882() {
+fn prompt_response_is_used_when_there_is_no_field_or_transcript_4882() {
     let raw = json!({"prompt_response": "gemini reply"});
     assert_eq!(reply_text(&raw).as_deref(), Some("gemini reply"));
 }
@@ -105,4 +107,43 @@ fn the_room_relay_gets_the_turn_s_final_text_not_the_lagging_transcript_4882() {
     assert!(out.get("prompt_response").is_none(), "must not relay the previous reply: {out}");
     // negative proof (#3734): the old lookup this relay used returns the previous reply
     assert_eq!(chorus_hooks::last_assistant_text(&tp).as_deref(), Some("previous turn's reply"));
+}
+
+#[test]
+fn a_session_with_no_role_never_publishes_a_reply_4884() {
+    // negative proof: before #4884 an unknown-role Stop reached delivery and failed with
+    // "no key at identity/unknown" (15 times on 11-03 from 18:40)
+    for r in ["unknown", ""] {
+        assert!(!publishes_reply(r), "{r:?} must not publish");
+    }
+    for r in ["wren", "silas", "kade", "abby-normal", "borg-queen"] {
+        assert!(publishes_reply(r), "{r} publishes");
+    }
+}
+
+#[test]
+fn only_a_typed_prompt_starts_a_turn_4884() {
+    let d = tmp("prompt");
+    let p = d.join("t.jsonl");
+    let lines = [
+        json!({"type":"user","message":{"role":"user","content":"whats next"}}),
+        json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"the answer"}]}}),
+        // a hook-injected meta entry and a tool result are not the turn's prompt
+        json!({"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>x</system-reminder>"}}),
+        json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}),
+    ];
+    std::fs::write(&p, lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
+    let tp = p.to_string_lossy().to_string();
+    // negative proof: counting the meta entry as the prompt would leave no text after it → None
+    assert_eq!(reply_text(&json!({"transcript_path": tp})).as_deref(), Some("the answer"));
+}
+
+#[test]
+fn the_4882_test_files_carry_their_domain_4884() {
+    // the crawler files a test with no `@domain:` header as out of sync (Kade, 11-03 19:00)
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    for f in ["chorus-hooks/tests/reply_delivery_4882.rs", "werk-demo/tests/product_proof_4882.rs"] {
+        let head: String = std::fs::read_to_string(root.join(f)).unwrap().lines().take(5).collect::<Vec<_>>().join("\n");
+        assert!(head.contains("// @domain: "), "{f} has no @domain header in its first lines");
+    }
 }
