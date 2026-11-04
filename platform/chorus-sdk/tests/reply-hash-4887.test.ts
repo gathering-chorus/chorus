@@ -33,3 +33,13 @@ describe('#4887 reply hash — shared fixture parity', () => {
     expect(contentHash('--- Silas | 2026-08-13 | #3864 | Werk v1.6.0 ---\nline one\nline two')).toBe(contentHash('line one line two'));
   });
 });
+
+describe('#4887 reply/hash.d.ts declares exactly what reply/hash.js exports', () => {
+  it('every export is typed, and nothing typed is missing from the module', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const js = Object.keys(require('../reply/hash')).sort();
+    const dts = fs.readFileSync(path.join(__dirname, '../reply/hash.d.ts'), 'utf8');
+    const typed = [...dts.matchAll(/export function (\w+)/g)].map((m: RegExpMatchArray) => m[1]).sort();
+    expect(typed).toEqual(js);
+  });
+});
