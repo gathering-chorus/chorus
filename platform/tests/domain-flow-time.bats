@@ -240,3 +240,30 @@ EOF
   run env DOMAIN_FLOW_ROOT="$T/real" "$FLOW" inventory DOMAIN=time
   printf '%s\n' "$output" | grep -F "scripts/regressed.sh" | grep -qF lossy || return 1
 }
+
+# --- AC4 (retire): one renderer per runtime ----------------------------------
+
+# TS/JS source that formats Boston time itself instead of calling chorus-sdk/time/boston.
+# Browser code cannot import it: flow-report-cli.ts:166 (script in a generated page) and public/ bundles.
+own_ts_renderers() {
+  grep -rnE "timeZone: *['\"]America/New_York['\"]|toLocale[A-Za-z]*String\([^)]*America/New_York" \
+    --include='*.ts' --include='*.js' --exclude-dir=node_modules --exclude-dir=dist "$@" 2>/dev/null \
+    | grep -vE '\.test\.|/tests/|chorus-sdk/time/|flow-report-cli\.ts:|/public/' || true
+}
+
+@test "AC4: no TypeScript service formats Boston time itself; they import the one renderer" {
+  out="$(own_ts_renderers "$ROOT/platform" "$ROOT/directing")"
+  [ -z "$out" ] || { echo "$out"; return 1; }
+}
+
+@test "AC4 NEGATIVE PROOF: a service that formats Boston time itself is caught" {
+  mkdir -p "$T/svc/src"
+  printf "export const t = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });\n" > "$T/svc/src/own.ts"
+  out="$(own_ts_renderers "$T/svc")"
+  [[ "$out" == *"own.ts"* ]] || return 1
+}
+
+@test "AC4: the Rust offset rule lives once, in shared/boston.rs" {
+  out="$(grep -rlE 'fn nth_sun(day)?\(' --include='*.rs' "$ROOT/platform/services" | grep -v '/target/' | sed "s|$ROOT/||")"
+  [ "$out" = "platform/services/shared/boston.rs" ] || { echo "$out"; return 1; }
+}
