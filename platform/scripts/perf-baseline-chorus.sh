@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # perf-baseline-chorus.sh — Response time baselines for Chorus services
 # Card #1914 | Runs nightly alongside gathering-app baselines
 #
@@ -8,7 +9,7 @@
 set -eo pipefail
 
 LOG="$HOME/Library/Logs/Chorus/perf-baseline-nightly.log"
-TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S')
+TIMESTAMP=$(boston_time stamp)
 
 measure() {
   local name="$1" url="$2" threshold="$3"

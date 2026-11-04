@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # MIGRATE: TypeScript P3 — DEC-100 (no bash APIs)
 # chat.sh — Lightweight role-to-role chat channel
 #
@@ -32,7 +33,7 @@ cmd_start() {
   cat > "$chat_file" <<EOF
 # Chat: ${topic}
 **Between:** ${from} ↔ ${to}
-**Started:** $(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+**Started:** $(boston_time show)
 ---
 EOF
 
@@ -77,7 +78,7 @@ cmd_say() {
   [ -f "$chat_file" ] || die "Chat $chat_id not found"
 
   local ts
-  ts=$(TZ=America/New_York date '+%H:%M')
+  ts=$(boston_time clock)
   printf '\n**[%s] %s:** %s' "$ts" "$role" "$message" >> "$chat_file"
 
   # Persist to messaging tier
@@ -153,7 +154,7 @@ cmd_end() {
   [ -f "$chat_file" ] || die "Chat $chat_id not found"
 
   local ts
-  ts=$(TZ=America/New_York date '+%H:%M')
+  ts=$(boston_time clock)
   printf '\n\n---\n**Chat ended:** %s\n' "$ts" >> "$chat_file"
 
   # Delete tick marker

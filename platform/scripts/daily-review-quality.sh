@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # daily-review-quality.sh — 6am quality check, posts to Bridge
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail
@@ -12,7 +13,7 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
-TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+TIMESTAMP=$(boston_time show)
 APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 STATUS="green"
 ISSUES=""

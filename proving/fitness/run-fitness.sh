@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../../platform/scripts/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # THE SECURITY FITNESS FUNCTION — run every row, emit every verdict. (#3765)
 #
 # Rows that only run when someone runs them depend on exactly the attention they
@@ -78,7 +79,7 @@ run_bounded() {
 }
 
 green=0; red=0; unmeasurable=0; untrustworthy=0
-echo "SECURITY FITNESS — $(TZ=America/New_York date '+%Y-%m-%d %H:%M') Boston"
+echo "SECURITY FITNESS — $(boston_time show) Boston"
 echo
 
 for entry in "${ROWS[@]}"; do

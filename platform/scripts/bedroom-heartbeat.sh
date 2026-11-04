@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # bedroom-heartbeat.sh — ping Bedroom Mac, notify Jeff if unreachable
 # Runs via LaunchAgent every 5 minutes.
 # Silas owns. 2026-03-23.
@@ -13,7 +14,7 @@ if ping -c 1 -t 3 "$BEDROOM_IP" >/dev/null 2>&1; then
   if [ -f "$STATE_FILE" ] && [ "$(cat "$STATE_FILE")" = "down" ]; then
     # Was down, now recovered
     osascript -e "display notification \"Bedroom Mac is back online\" with title \"Gathering\" sound name \"Glass\"" 2>/dev/null
-    echo "$(TZ=America/New_York date '+%H:%M') RECOVERED" >> "$LOG"
+    echo "$(boston_time clock) RECOVERED" >> "$LOG"
   fi
   echo "up" > "$STATE_FILE"
 else
@@ -21,7 +22,7 @@ else
   if [ ! -f "$STATE_FILE" ] || [ "$(cat "$STATE_FILE")" != "down" ]; then
     # First detection of outage
     osascript -e "display notification \"Bedroom Mac is unreachable — check power/network\" with title \"Gathering\" subtitle \"Jeffs-Mac-mini.local not responding\" sound name \"Basso\"" 2>/dev/null
-    echo "$(TZ=America/New_York date '+%H:%M') DOWN" >> "$LOG"
+    echo "$(boston_time clock) DOWN" >> "$LOG"
   fi
   echo "down" > "$STATE_FILE"
 fi

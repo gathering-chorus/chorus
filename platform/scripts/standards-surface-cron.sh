@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # standards-surface-cron.sh — Nightly auto-regeneration of standards surface
 # Card #2268: Runs via LaunchAgent, only regenerates when sources changed.
 #
@@ -42,7 +43,7 @@ MEMORY_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory"
 # Chorus log helper
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 
-log() { echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $*"; }
+log() { echo "$(boston_time stamp) [$LOG_TAG] $*"; }
 
 # --- Compute current source checksums ---
 compute_checksums() {

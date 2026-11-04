@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # tmp-reaper.sh — Daily cleanup of orphaned /tmp team cruft
 # Card #2057 | LaunchAgent: com.chorus.tmp-reaper
 #
@@ -20,7 +21,7 @@ ERRORS=0
 log() {
   local level="$1" message="$2"
   local timestamp
-  timestamp=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S')
+  timestamp=$(boston_time stamp)
   echo "{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"appName\":\"tmp-reaper\",\"message\":\"$message\"}"
 }
 

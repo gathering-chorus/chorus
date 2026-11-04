@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # security-probes-run.sh (#3900) — execute every committed security probe.
 #
 # Jeff 2026-08-15: "security changes consistently overstated and under
@@ -49,7 +50,7 @@ done
 
 SNAP="${FITNESS_SNAPSHOT:-$HOME/.chorus/security-fitness.json}"
 printf '{\n  "taken": "%s (security-probes-run)",\n  "rows": [%s\n  ]\n}\n' \
-  "$(TZ=America/New_York date '+%Y-%m-%d %H:%M %Z')" "$rows" > "$SNAP.tmp"
+  "$(boston_time show)" "$rows" > "$SNAP.tmp"
 if command -v python3 >/dev/null 2>&1 && ! python3 -m json.tool "$SNAP.tmp" >/dev/null 2>&1; then
   echo "security-probes: snapshot did not serialize to valid JSON — ledger NOT replaced"
   rm -f "$SNAP.tmp"

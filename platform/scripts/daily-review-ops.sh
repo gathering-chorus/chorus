@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # daily-review-ops.sh — 6am ops health check, posts to Bridge
 # Card #1766 | DEC-107 compliant (no osascript)
 # #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.daily-review-ops).
@@ -8,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
-TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+TIMESTAMP=$(boston_time show)
 STATUS="green"
 ISSUES=""
 

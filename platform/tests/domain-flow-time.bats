@@ -23,7 +23,7 @@ setup() {
   cat > "$T/door/time.json" <<'EOF'
 {"kind":"Domain","id":"chorus:time","data":{"label":"time",
  "pathPattern":["wall-clock","clock_sync","boston_offset","boston\\(","America/New_York"],
- "lossyPattern":"TZ=America/New_York date( |$|['\"])"},
+ "lossyPattern":"TZ=America/New_York date[^)]*%H:%M"},
  "links":{"ownedBy":"chorus:principal-silas"}}
 EOF
   cat > "$T/door.py" <<'EOF'
@@ -211,4 +211,32 @@ EOF
   [ "$status" -ne 0 ]
   out_has "no identity"
   [ ! -e "$T/door/posted" ] || return 1
+}
+
+# --- AC3 (wire, part 1): the shell writes and shows time through one function ----
+
+@test "AC3: boston_time carries its zone in every form" {
+  . "$ROOT/platform/scripts/lib/boston-time.sh"
+  [[ "$(boston_time stamp)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[-+][0-9]{4}$ ]] || return 1
+  [[ "$(boston_time show)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}\ E[SD]T$ ]] || return 1
+  [[ "$(boston_time clock)" =~ ^[0-9]{2}:[0-9]{2}:[0-9]{2}\ E[SD]T$ ]] || return 1
+  run boston_time weekday
+  [ "$status" -eq 2 ]
+}
+
+@test "AC3: no script in the tree writes Boston wall time without its zone" {
+  run env DOMAIN_FLOW_ROOT="$ROOT" "$FLOW" inventory DOMAIN=time
+  [ "$status" -eq 0 ]
+  # code only: the role instructions that tell an agent to run date by hand are the agent-stamp
+  # path (AC3 part 2, the injected Now line), not a script
+  lossy="$(printf '%s\n' "$output" | awk -F'\t' '$3 == "lossy" && $1 ~ /^(platform|proving|directing)\// && $1 !~ /\.(md|html|json)$/ { print $1 }')"
+  [ -z "$lossy" ] || { echo "lossy: $lossy"; return 1; }
+  out_has "paths:"
+}
+
+@test "AC3 NEGATIVE PROOF: a script that goes back to its own offset-less date is caught" {
+  mkdir -p "$T/real"; cp -R "$ROOT/platform/scripts" "$T/real/"
+  printf 'echo "$(TZ=America/New_York date '"'"'+%%Y-%%m-%%d %%H:%%M:%%S'"'"') up" >> log\n' > "$T/real/scripts/regressed.sh"
+  run env DOMAIN_FLOW_ROOT="$T/real" "$FLOW" inventory DOMAIN=time
+  printf '%s\n' "$output" | grep -F "scripts/regressed.sh" | grep -qF lossy || return 1
 }
