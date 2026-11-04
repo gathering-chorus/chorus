@@ -18,6 +18,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { bostonOffsetIso } from '../../../platform/chorus-sdk/time/boston'; // #4885 the one renderer
 
 /**
  * Canonical form both surfaces can reach from their own bytes: strip one
@@ -75,17 +76,3 @@ export function makeSpineEmitter(spinePath?: string): EmitSpine {
   };
 }
 
-/** #3880 one-clock: offset-ISO Boston (same rule as every spine writer). */
-function bostonOffsetIso(d: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false, timeZoneName: 'longOffset',
-  }).formatToParts(d);
-  const get = (t: string) => parts.find(p => p.type === t)?.value ?? '';
-  const hour = get('hour') === '24' ? '00' : get('hour');
-  const offset = (get('timeZoneName') || 'GMT+00:00').replace('GMT', '');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}:${get('second')}.${ms}${offset}`;
-}
