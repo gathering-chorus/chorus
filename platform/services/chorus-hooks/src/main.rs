@@ -1248,6 +1248,10 @@ fn attach_debt_advisory(response: &mut HookResponse, advisory: Option<String>) {
 /// build a new custom delivery path" — the relay IS the path). Some(warning) means
 /// the delivery failed and must be LOUD on this role's own terminal.
 async fn emit_and_deliver_reply(role: &str, text: &str, input: &HookInput) -> Option<String> {
+    // #4884 — no role, no key, no room: a headless session's Stop publishes nothing
+    if !hooks::reply_delivery::publishes_reply(role) {
+        return None;
+    }
     let hash = hooks::reply_delivery::content_hash(text);
     let words = hooks::word_cap::count_words(text).to_string();
     let session = input.session_id.as_deref().unwrap_or("");
