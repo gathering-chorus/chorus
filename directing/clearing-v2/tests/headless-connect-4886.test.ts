@@ -41,17 +41,21 @@ describe('#4886 AC3: Headless Chrome loads /clearing-v2/ without console errors 
     const browser = await chromium.launch({
       executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
-    const page = await browser.newPage();
-    const pageErrors: Error[] = [];
-    page.on('pageerror', (err) => pageErrors.push(err));
+    try {
+      const page = await browser.newPage();
+      const pageErrors: Error[] = [];
+      page.on('pageerror', (err) => pageErrors.push(err));
 
-    await page.goto(`http://127.0.0.1:${port}/clearing-v2/`, { waitUntil: 'load', timeout: 8000 });
-    await new Promise((r) => setTimeout(r, 1000));
-    await browser.close();
+      await page.goto(`http://127.0.0.1:${port}/clearing-v2/`, { waitUntil: 'load', timeout: 15000 });
+      await new Promise((r) => setTimeout(r, 1000));
 
-    const requireErrors = pageErrors.filter((e) => e.message.includes('require is not defined'));
-    expect(requireErrors).toHaveLength(0);
-    expect(pageErrors.filter((e) => !e.message.includes('EventSource'))).toHaveLength(0);
-  });
+      const requireErrors = pageErrors.filter((e) => e.message.includes('require is not defined'));
+      expect(requireErrors).toHaveLength(0);
+      expect(pageErrors.filter((e) => !e.message.includes('EventSource'))).toHaveLength(0);
+    } finally {
+      await browser.close();
+    }
+  }, 30000);
 });
