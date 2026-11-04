@@ -36,6 +36,9 @@ class H(http.server.BaseHTTPRequestHandler):
         p = os.path.join(D, name + ".json")
         if self.path.startswith("/v1/domains/domains/") and os.path.exists(p):
             self.send_response(200); self.end_headers(); self.wfile.write(open(p, "rb").read())
+        elif self.path.startswith("/loki/api/v1/query") and os.path.exists(os.path.join(D, "loki.json")):
+            open(os.path.join(D, "loki-asked"), "w").write(self.path)
+            self.send_response(200); self.end_headers(); self.wfile.write(open(os.path.join(D, "loki.json"), "rb").read())
         else:
             self.send_response(404); self.end_headers()
 s = http.server.HTTPServer(("127.0.0.1", 0), H)
@@ -47,6 +50,24 @@ EOF
   python3 "$T/door.py" "$T/door" >/dev/null 2>&1 3>&- &
   for _ in $(seq 1 50); do [ -s "$T/door/port" ] && break; perl -e 'select(undef,undef,undef,0.1)'; done
   export OWL_URL="http://127.0.0.1:$(cat "$T/door/port")" DOMAIN_FLOW_ROOT="$T/tree"
+  export DOMAIN_FLOW_LOKI="$OWL_URL"
+}
+
+@test "AC1: the inventory carries the domain's 24h Loki traffic, labelled domain-level" {
+  printf '{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[0,"536"]}]}}' > "$T/door/loki.json"
+  run "$FLOW" inventory DOMAIN=time
+  out_has "24h traffic (domain-level"
+  out_has ": 536"
+  # the query is the row's own patterns, over 24h
+  grep -qF "24h" "$T/door/loki-asked" || return 1
+  grep -qF "clock_sync" <(python3 -c 'import sys,urllib.parse;print(urllib.parse.unquote_plus(open(sys.argv[1]).read()))' "$T/door/loki-asked") || return 1
+}
+
+@test "AC1 NEGATIVE PROOF: a Loki that does not answer reads not measured, never 0" {
+  run "$FLOW" inventory DOMAIN=time
+  out_has "24h traffic (domain-level"
+  out_has "not measured"
+  ! out_has ": 0" || return 1
 }
 
 out_has() { printf '%s' "$output" | grep -qF -- "$1"; }

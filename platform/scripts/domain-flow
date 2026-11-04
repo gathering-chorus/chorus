@@ -41,19 +41,31 @@ print("|".join(x for x in p if x))
 owner="$(sed -n 1p <<< "$row")"; lossy="$(sed -n 2p <<< "$row")"; patterns="$(sed -n 3p <<< "$row")"
 [ -n "$patterns" ] || { echo "domain-flow: domain $domain names no pathPattern in the graph; nothing to inventory" >&2; exit 2; }
 
+# Domain-level 24h traffic: log lines in Loki matching the row's own patterns.
+# Logs do not name the file that wrote them, so this is never per path. A Loki
+# that does not answer is "not measured", never 0 (the heartbeat-probe lesson).
+traffic() {
+  local loki="${DOMAIN_FLOW_LOKI:-http://localhost:3102}" n
+  n="$(curl -sf --max-time 20 -G "$loki/loki/api/v1/query" \
+        --data-urlencode "query=sum(count_over_time({job=~\".+\"} |~ \"$(printf '%s' "$patterns" | sed 's/\\/\\\\/g; s/"/\\"/g')\" [24h]))" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["status"]=="success"; r=d["data"]["result"]; print(r[0]["value"][1] if r else 0)' 2>/dev/null)" || n=""
+  echo "24h traffic (domain-level, Loki lines matching the row's patterns): ${n:-not measured}"
+}
+
 inventory() {
   local f rel note n=0
-  printf 'path\towner\t24h\tnote\n'
+  printf 'path\towner\tnote\n'
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     rel="${f#"$TREE"/}"
     case "$rel" in platform/tests/*|*/tests/*|*.test.*|*_test.*|*.bats) continue ;; esac
     note=""
     if [ -n "$lossy" ] && grep -qE -- "$lossy" "$f"; then note="lossy"; fi
-    printf '%s\t%s\t-\t%s\n' "$rel" "$owner" "$note"
+    printf '%s\t%s\t%s\n' "$rel" "$owner" "$note"
     n=$((n+1))
   done < <(grep -rlE --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git -- "$patterns" "$TREE" 2>/dev/null | sort)
   echo "paths: $n"
+  traffic
 }
 
 case "$step" in
