@@ -107,6 +107,7 @@ export function renderPageShell(
   ${renderNav(activeNav, counts)}
   ${bodyContent}
   ${activeNav === 'rooms' ? '' : TEAM_COMPOSER}
+  <script src="/vendor/chorus-time/boston.js?v=${ASSET_VERSION}"></script>
   <script src="/app.js?v=${ASSET_VERSION}"></script>
 </body>
 </html>`;
