@@ -377,7 +377,7 @@ chorus:ApprovalShape a sh:NodeShape ;
     sh:property
       [ sh:path rdfs:label ; sh:minCount 1 ] ,
       [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ] , # the asking role (door sets it from the verified writer; an edge, #4771)
-      [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" "go" ) ] , # #4642: a go waits on the same list
+      [ sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "card" "go" "step" ) ] , # #4642: a go waits on the same list; #4885: a Jeff-only pipeline step (the domain flow's bar)
       [ sh:path chorus:approvalSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
       [ sh:path chorus:approvalAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 

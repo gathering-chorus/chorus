@@ -2,6 +2,7 @@
 # One flow for any domain: inventory its uses (the patterns on its Domain row), Jeff names the bar, then wire and retire check the tree against it.
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 inventory	1	1	skill-domain-flow-inventory	inventory: every use of the domain, found by the patterns on its row	deterministic	${CHORUS_HOME}/platform/scripts/domain-flow	inventory DOMAIN=${DOMAIN}			
-bar	2	1	skill-domain-flow-bar	the bar for the domain, named by Jeff	human					by=APPROVER choices=agreed|rejected|stop
-wire	3	1	skill-domain-flow-wire	wire: every use goes through the bar's source	deterministic	${CHORUS_HOME}/platform/scripts/domain-flow	wire DOMAIN=${DOMAIN} BY=${skill_domain_flow_bar.outputs.by} DECISION=${skill_domain_flow_bar.outputs.decision}			
-retire	4	1	skill-domain-flow-retire	retire: the other paths are gone	deterministic	${CHORUS_HOME}/platform/scripts/domain-flow	retire DOMAIN=${DOMAIN} BY=${skill_domain_flow_bar.outputs.by} DECISION=${skill_domain_flow_bar.outputs.decision}			
+ask	2	1	skill-domain-flow-ask	ask: the bar goes on Jeff's approvals list, for his passkey	deterministic	${CHORUS_HOME}/platform/scripts/domain-flow	ask DOMAIN=${DOMAIN} CARD=${CARD} RUN=${DAG_RUN_ID}			
+bar	3	1	skill-domain-flow-bar	the bar for the domain, named by Jeff (answered only from his passkey, by chorus-go)	human					by=APPROVER choices=agreed|rejected|stop
+wire	4	1	skill-domain-flow-wire	wire: every use goes through the bar's source	deterministic	${CHORUS_HOME}/platform/scripts/domain-flow	wire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID} DECISION=${skill_domain_flow_bar.outputs.decision}			
+retire	5	1	skill-domain-flow-retire	retire: the other paths are gone	deterministic	${CHORUS_HOME}/platform/scripts/domain-flow	retire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID} DECISION=${skill_domain_flow_bar.outputs.decision}			

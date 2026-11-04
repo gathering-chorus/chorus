@@ -23,13 +23,17 @@ steps:
   - name: skill-domain-flow-inventory
     description: "inventory: every use of the domain, found by the patterns on its row"
     command: "${CHORUS_HOME}/platform/scripts/domain-flow inventory DOMAIN=${DOMAIN}"
-  - name: skill-domain-flow-bar
-    description: "the bar for the domain, named by Jeff"
+  - name: skill-domain-flow-ask
+    description: "ask: the bar goes on Jeff's approvals list, for his passkey"
     depends: [skill-domain-flow-inventory]
+    command: "${CHORUS_HOME}/platform/scripts/domain-flow ask DOMAIN=${DOMAIN} CARD=${CARD} RUN=${DAG_RUN_ID}"
+  - name: skill-domain-flow-bar
+    description: "the bar for the domain, named by Jeff (answered only from his passkey, by chorus-go)"
+    depends: [skill-domain-flow-ask]
     id: skill_domain_flow_bar
     action: human.task
     with:
-      prompt: "the bar for the domain, named by Jeff for #${CARD}? (${APPROVER} answers)"
+      prompt: "the bar for the domain, named by Jeff (answered only from his passkey, by chorus-go) for #${CARD}? (${APPROVER} answers)"
       form:
         type: object
         properties:
@@ -42,8 +46,8 @@ steps:
   - name: skill-domain-flow-wire
     description: "wire: every use goes through the bar's source"
     depends: [skill-domain-flow-bar]
-    command: "${CHORUS_HOME}/platform/scripts/domain-flow wire DOMAIN=${DOMAIN} BY=${skill_domain_flow_bar.outputs.by} DECISION=${skill_domain_flow_bar.outputs.decision}"
+    command: "${CHORUS_HOME}/platform/scripts/domain-flow wire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID} DECISION=${skill_domain_flow_bar.outputs.decision}"
   - name: skill-domain-flow-retire
     description: "retire: the other paths are gone"
     depends: [skill-domain-flow-wire]
-    command: "${CHORUS_HOME}/platform/scripts/domain-flow retire DOMAIN=${DOMAIN} BY=${skill_domain_flow_bar.outputs.by} DECISION=${skill_domain_flow_bar.outputs.decision}"
+    command: "${CHORUS_HOME}/platform/scripts/domain-flow retire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID} DECISION=${skill_domain_flow_bar.outputs.decision}"

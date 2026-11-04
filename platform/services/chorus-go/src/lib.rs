@@ -465,6 +465,33 @@ pub struct ApprovalDecision {
     pub go: Option<GoAction>,
     /// #4642: the nonce the phone signed over, kept on the decision row so the land can re-verify.
     pub nonce: String,
+    /// #4885: on a step row, the run's human step Jeff answered.
+    pub step: Option<StepAction>,
+}
+
+/// #4885 — what a step row asks for: Jeff's answer to one human step of one dagu run (the domain
+/// flow's bar). The action is exactly {card, dag, run, step}, so the signature binds that run's
+/// step and nothing else (Kade 11-04 04:03); a go object (3 keys) or a cards argv is refused here.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepAction {
+    pub card: u64,
+    pub dag: String,
+    pub run: String,
+    pub step: String,
+}
+
+pub fn step_action(action: &str) -> R<StepAction> {
+    let v: Value = serde_json::from_str(action).map_err(|_| "not a step action: not JSON".to_string())?;
+    let o = v.as_object().ok_or("not a step action: not an object")?;
+    if o.len() != 4 {
+        return Err("not a step action: it carries exactly card, dag, run and step".into());
+    }
+    let card = o.get("card").and_then(Value::as_u64).filter(|c| *c > 0).ok_or("not a step action: no card")?;
+    let id = |k: &str| -> R<String> {
+        let x = o.get(k).and_then(Value::as_str).ok_or_else(|| format!("not a step action: no {k}"))?;
+        safe_name(x).map(str::to_string).map_err(|_| format!("not a step action: the {k} is not an id"))
+    };
+    Ok(StepAction { card, dag: id("dag")?, run: id("run")?, step: id("step")? })
 }
 
 /// Jeff decides one row. Order matters: spend the nonce, check the row is still the one
@@ -502,8 +529,11 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
             }
             (Vec::new(), Some(g))
         }
+        // #4885: a step answer replays nothing itself; the server answers the step after this check
+        "step" => { step_action(&row_now.action)?; (Vec::new(), None) }
         k => return Err(format!("an approval of kind '{k}' cannot be decided here")),
     };
+    let step = if row_now.kind == "step" { Some(step_action(&row_now.action)?) } else { None };
     let ch = approval_challenge(&row, &sha, decision, nonce);
     let count = verify_assertion(&pk, &ch, &unb64(auth_data)?, &unb64(client_data)?, &unb64(signature)?)?;
     if (count != 0 || pk.sign_count != 0) && count <= pk.sign_count {
@@ -511,7 +541,7 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     }
     pk.sign_count = count;
     store.save_passkey(&pk)?;
-    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now(), go, nonce: nonce.to_string() };
+    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now(), go, nonce: nonce.to_string(), step };
     // The proof, kept like a go record: what Jeff's phone signed, for this row.
     // Written BEFORE the door POST (Silas 19:27): the break-glass record the land falls back to
     // when the door has no row (a failed mint). It carries the action, so it re-verifies alone.
@@ -605,6 +635,51 @@ pub fn land_go_from_local(pk: &Passkey, store: &Store, card: u64, round: &str) -
         match check_go_decision(pk, &f("row"), &action, &f("decision"), &v, card, round) {
             Ok(()) => return Ok(()),
             Err(e) => last = e,
+        }
+    }
+    Err(last)
+}
+
+/// #4885 — a pipeline's human step, answered only from Jeff's passkey: from the door's rows, his
+/// signed approve of a step row naming exactly this dag, run and step. Like the land's go check: the
+/// action is read from the Approval row, only a principal-jeff decision counts, and the signature is
+/// re-verified here. A role that typed `by=jeff` into dagu left no such row, so it is refused.
+pub fn land_step_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value], dag: &str, run: &str, step: &str) -> R<()> {
+    let s = |v: &Value, k: &str| -> String {
+        match v.get(k) {
+            Some(Value::String(x)) => x.clone(),
+            Some(Value::Object(o)) => o.get("@id").or_else(|| o.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+            _ => String::new(),
+        }
+    };
+    let local = |x: &str| x.rsplit(|c| c == '#' || c == '/' || c == ':').next().unwrap_or("").to_string();
+    let mut last = format!("{dag} run {run} step {step} is not signed by Jeff's passkey; an answer typed by anyone else counts for nothing");
+    for a in approvals.iter().filter(|a| s(a, "approvalKind") == "step") {
+        let action = s(a, "approvalAction");
+        let Ok(st) = step_action(&action) else { continue };
+        if st.dag != dag || st.run != run || st.step != step { continue; }
+        let row = local(&s(a, "name"));
+        for d in decisions.iter().filter(|d| local(&s(d, "decides")) == row) {
+            if local(&s(d, "ownedBy")) != "principal-jeff" {
+                last = format!("a step decision not owned by principal-jeff decides nothing ({run} {step})");
+                continue;
+            }
+            let verdict = s(d, "approvalVerdict");
+            if verdict != "approve" {
+                last = format!("Jeff declined {dag} run {run} step {step}");
+                continue;
+            }
+            let proof: Value = serde_json::from_str(&s(d, "passkeyProof")).unwrap_or(Value::Null);
+            let f = |k: &str| proof.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            if f("nonce").is_empty() {
+                last = "the step decision carries no signature to check".into();
+                continue;
+            }
+            let ch = approval_challenge(&row, &action_sha(&action), &verdict, &f("nonce"));
+            match verify_assertion(pk, &ch, &unb64(&f("authData"))?, &unb64(&f("clientDataJSON"))?, &unb64(&f("signature"))?) {
+                Ok(_) => return Ok(()),
+                Err(e) => last = format!("{dag} run {run} step {step} is not signed by Jeff's passkey: {e}"),
+            }
         }
     }
     Err(last)

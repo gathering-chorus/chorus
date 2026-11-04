@@ -41,6 +41,10 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_response(200); self.end_headers(); self.wfile.write(open(os.path.join(D, "loki.json"), "rb").read())
         else:
             self.send_response(404); self.end_headers()
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        open(os.path.join(D, "posted"), "w").write(self.path + "\n" + self.rfile.read(n).decode() + "\n" + self.headers.get("Authorization", ""))
+        self.send_response(201); self.end_headers()
 s = http.server.HTTPServer(("127.0.0.1", 0), H)
 open(os.path.join(D, "port"), "w").write(str(s.server_address[1]))
 s.timeout, end = 1, time.time() + 30
@@ -126,13 +130,15 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "AC5: the steps run inventory, then the bar (a human step for the approver), then wire, then retire" {
+@test "AC5: the steps run inventory, ask, then the bar (a human step), then wire, then retire" {
   Y="$ROOT/platform/pipelines/domain-flow.yaml"
-  [ "$(grep -E '^  - name:' "$Y" | sed 's/.*skill-domain-flow-//' | paste -sd' ' -)" = "inventory bar wire retire" ]
-  grep -A3 'name: skill-domain-flow-bar' "$Y" | grep -qF 'depends: [skill-domain-flow-inventory]'
-  grep -qF 'action: human.task' "$Y"
-  grep -qF '(${APPROVER} answers)' "$Y"
-  grep -A3 'name: skill-domain-flow-wire' "$Y" | grep -qF 'depends: [skill-domain-flow-bar]'
+  [ "$(grep -E '^  - name:' "$Y" | sed 's/.*skill-domain-flow-//' | paste -sd' ' -)" = "inventory ask bar wire retire" ] || return 1
+  grep -A3 'name: skill-domain-flow-bar' "$Y" | grep -qF 'depends: [skill-domain-flow-ask]' || return 1
+  grep -qF 'action: human.task' "$Y" || return 1
+  grep -A3 'name: skill-domain-flow-wire' "$Y" | grep -qF 'depends: [skill-domain-flow-bar]' || return 1
+  # wire is handed the run, never a typed answerer
+  grep -F 'domain-flow wire' "$Y" | grep -qF 'RUN=${DAG_RUN_ID}' || return 1
+  ! grep -F 'domain-flow wire' "$Y" | grep -qF 'outputs.by' || return 1
 }
 
 @test "AC5 NEGATIVE PROOF: a hand edit that gives the bar to the driver is drift" {
@@ -144,12 +150,63 @@ EOF
   [ "$status" -ne 0 ]
 }
 
-@test "AC5 NEGATIVE PROOF: wire is refused unless Jeff agreed to the bar" {
-  run "$FLOW" wire DOMAIN=time BY=silas DECISION=agreed
+# a chorus-go that answers check-step from a file: present = Jeff's passkey signed that run's bar
+stub_go() {
+  cat > "$T/chorus-go" <<EOF
+#!/bin/bash
+echo "\$@" >> "$T/go-asked"
+[ "\$1" = check-step ] && [ -f "$T/signed-\$3-\$4" ] && { echo signed; exit 0; }
+echo "not signed by Jeff's passkey" >&2; exit 1
+EOF
+  chmod +x "$T/chorus-go"; export DOMAIN_FLOW_GO_BIN="$T/chorus-go"
+}
+
+@test "AC5: wire runs on Jeff's passkey-signed bar for this run" {
+  stub_go; touch "$T/signed-run1-skill_domain_flow_bar"
+  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=agreed
+  out_has "not built yet"
+  grep -qF "check-step domain-flow run1 skill_domain_flow_bar" "$T/go-asked" || return 1
+}
+
+@test "AC5 NEGATIVE PROOF: a typed by=jeff with no signature is refused; so is another run's signature" {
+  stub_go
+  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=agreed BY=jeff
   [ "$status" -eq 3 ]
-  out_has "no bar recorded for time"
-  run "$FLOW" wire DOMAIN=time BY=jeff DECISION=rejected
+  out_has "no bar signed by Jeff for time"
+  touch "$T/signed-run0-skill_domain_flow_bar"
+  run "$FLOW" retire DOMAIN=time RUN=run1 DECISION=agreed
   [ "$status" -eq 3 ]
-  run "$FLOW" retire DOMAIN=time
+  run "$FLOW" wire DOMAIN=time DECISION=agreed
   [ "$status" -eq 3 ]
+}
+
+@test "AC5 NEGATIVE PROOF: a signed bar Jeff rejected does not wire" {
+  stub_go; touch "$T/signed-run1-skill_domain_flow_bar"
+  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=rejected
+  [ "$status" -eq 3 ]
+  out_has "did not agree"
+}
+
+@test "AC5: ask posts one step row naming this card, run and the bar step, as the role" {
+  printf '#!/bin/bash\necho tok-$1\n' > "$T/mint"; chmod +x "$T/mint"
+  CHORUS_IDENTITY_TOKEN_BIN="$T/mint" ROLE=silas run "$FLOW" ask DOMAIN=time CARD=4885 RUN=run1
+  [ "$status" -eq 0 ]
+  out_has "on Jeff's approvals list"
+  python3 - "$T/door/posted" <<'EOF' || return 1
+import json, sys
+path, body, auth = open(sys.argv[1]).read().split("\n", 2)
+assert path == "/decisions/approvals", path
+assert auth.strip() == "Bearer tok-silas", auth
+b = json.loads(body)
+assert b["approvalKind"] == "step" and b["name"] == "step-4885-run1", b
+assert json.loads(b["approvalAction"]) == {"card": 4885, "dag": "domain-flow", "run": "run1", "step": "skill_domain_flow_bar"}, b
+EOF
+}
+
+@test "AC5 NEGATIVE PROOF: ask with no identity posts nothing" {
+  printf '#!/bin/bash\nexit 1\n' > "$T/mint"; chmod +x "$T/mint"
+  CHORUS_IDENTITY_TOKEN_BIN="$T/mint" ROLE=silas run "$FLOW" ask DOMAIN=time CARD=4885 RUN=run1
+  [ "$status" -ne 0 ]
+  out_has "no identity"
+  [ ! -e "$T/door/posted" ] || return 1
 }
