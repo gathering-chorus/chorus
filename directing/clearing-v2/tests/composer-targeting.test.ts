@@ -216,6 +216,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
           if (id === 'send-error') return errorEl;
           return null;
         },
+        querySelectorAll: (sel: string) => sel.includes('actor-tile') ? [{ dataset: { role: 'silas' } }] : [],
       };
 
       (global as any).Blob = class {
@@ -284,6 +285,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
           if (id === 'send-error') return errorEl;
           return null;
         },
+        querySelectorAll: (sel: string) => sel.includes('actor-tile') ? [{ dataset: { role: 'silas' } }] : [],
       };
 
       (global as any).Blob = class {
@@ -325,6 +327,73 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       await recorderInstance.onstop();
 
       expect(inputEl.value).toBe('team announcement here');
+    });
+
+    it('never prepends @jeff even if room picker or actor filter is jeff', async () => {
+      app.setRoleFilter('jeff');
+      const inputEl = { value: '', focus: jest.fn() };
+      const pickerEl = { value: 'jeff' };
+      let clickHandler: Function | null = null;
+      const micEl: any = {
+        dataset: {},
+        setAttribute: jest.fn(),
+        addEventListener: jest.fn((event, fn) => {
+          if (event === 'click') clickHandler = fn;
+        }),
+      };
+      const errorEl = { textContent: '', innerHTML: '' };
+
+      (global as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'composer-mic') return micEl;
+          if (id === 'composer-input') return inputEl;
+          if (id === 'room-picker') return pickerEl;
+          if (id === 'send-error') return errorEl;
+          return null;
+        },
+        querySelectorAll: (sel: string) => sel.includes('actor-tile') ? [{ dataset: { role: 'wren' } }] : [],
+      };
+
+      (global as any).Blob = class {
+        size = 100;
+        parts: any[];
+        constructor(parts: any[]) { this.parts = parts || []; }
+      };
+
+      let recorderInstance: any = null;
+      (global as any).navigator = {
+        mediaDevices: {
+          getUserMedia: jest.fn().mockResolvedValue({
+            getTracks: () => [{ stop: jest.fn() }],
+          }),
+        },
+      };
+      (global as any).MediaRecorder = class {
+        state = 'inactive';
+        mimeType = 'audio/webm';
+        ondataavailable: any = null;
+        onstop: any = null;
+        constructor() {
+          recorderInstance = this;
+        }
+        start() { this.state = 'recording'; }
+        stop() { this.state = 'inactive'; }
+      };
+
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true, transcript: 'my personal memo' }),
+      });
+
+      app.watchMicButton();
+      await clickHandler!();
+      if (recorderInstance.ondataavailable) {
+        recorderInstance.ondataavailable({ data: { size: 100 } });
+      }
+      await recorderInstance.onstop();
+
+      expect(inputEl.value).toBe('my personal memo');
+      expect(inputEl.value).not.toMatch(/@jeff/);
     });
   });
 

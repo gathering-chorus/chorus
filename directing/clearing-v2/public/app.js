@@ -12,7 +12,6 @@ const relayIndicator = typeof document !== 'undefined' ? document.getElementById
 const tilesContainer = typeof document !== 'undefined' ? document.getElementById('tiles-container') : null;
 
 const STORE = 'chorus.room.key.v1';
-const DEFAULT_KNOWN_ROLES = ['jeff', 'wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
 
 let nodeSchnorr = null;
 let nodeSha256 = null;
@@ -503,6 +502,57 @@ async function transcribeVoice(blob, fetchImpl) {
   }
 }
 
+/** #4877 — extract actor roles from tiles already loaded on the page; exclude jeff so voice notes never target @jeff. */
+function getLoadedActorRoles() {
+  if (typeof document === 'undefined') return [];
+  const roles = new Set();
+  if (typeof document.querySelectorAll === 'function') {
+    const tiles = document.querySelectorAll('.actor-tile, #rooms-people-row [data-role], #tiles-container .tile, #tiles-container [data-role]');
+    for (const t of Array.from(tiles || [])) {
+      const r = (t && t.dataset && t.dataset.role)
+        ? t.dataset.role.toLowerCase()
+        : (t && t.id ? t.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  const peopleRow = document.getElementById('rooms-people-row');
+  if (peopleRow && peopleRow.children) {
+    for (const child of Array.from(peopleRow.children || [])) {
+      const r = (child && child.dataset && child.dataset.role)
+        ? child.dataset.role.toLowerCase()
+        : (child && child.id ? child.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont && tilesCont.children) {
+    for (const child of Array.from(tilesCont.children || [])) {
+      const r = (child && child.dataset && child.dataset.role)
+        ? child.dataset.role.toLowerCase()
+        : (child && child.id ? child.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  return Array.from(roles);
+}
+
+function resolveVoiceTargetRole(inputRoleFilters) {
+  const loadedRoles = getLoadedActorRoles();
+  const filterRoles = Array.from(inputRoleFilters || [])
+    .map((r) => r.toLowerCase())
+    .filter((r) => r !== 'jeff' && (loadedRoles.length === 0 || loadedRoles.includes(r)));
+  if (filterRoles.length > 0) return filterRoles[0];
+
+  if (typeof document !== 'undefined') {
+    const picker = document.getElementById('room-picker');
+    const val = picker && picker.value && picker.value.toLowerCase();
+    if (val && val !== 'team' && val !== 'jeff' && loadedRoles.includes(val)) {
+      return val;
+    }
+  }
+  return null;
+}
+
 /** #4635 — tap the mic to record, tap again to stop; the words land in the message box. */
 function watchMicButton() {
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
@@ -560,13 +610,7 @@ function watchMicButton() {
         if (out.ok && input) {
           let text = out.transcript || '';
           // #4877 AC1: If actor filter is active or direct room selected, prepend @<role> if not already present
-          const filterRoles = Array.from(activeRoleFilters).filter((r) => DEFAULT_KNOWN_ROLES.includes(r.toLowerCase()));
-          let targetRole = filterRoles.length > 0 ? filterRoles[0].toLowerCase() : null;
-          if (!targetRole && typeof document !== 'undefined') {
-            const picker = document.getElementById('room-picker');
-            const val = picker && picker.value && picker.value.toLowerCase();
-            if (val && DEFAULT_KNOWN_ROLES.includes(val)) targetRole = val;
-          }
+          const targetRole = resolveVoiceTargetRole(activeRoleFilters);
           const currentVal = input.value || '';
           if (targetRole && !currentVal.trim().startsWith('@') && !text.trim().startsWith('@')) {
             text = '@' + targetRole + ' ' + text;
@@ -1387,6 +1431,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isMessageVisibleWithFilters,
     initTileFilters,
     watchMicButton,
-    DEFAULT_KNOWN_ROLES,
+    getLoadedActorRoles,
+    resolveVoiceTargetRole,
   };
 }
