@@ -27,6 +27,9 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 }
 
 @test "AC5: one join key — Rust content_hash and TS contentHash agree on the shared fixture" {
+  fixture="$ROOT/config/reply-hash-fixtures.json"
+  n="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["cases"]))' "$fixture")"
+  [ "$n" -gt 0 ] || { echo "the shared fixture has no cases"; return 1; }
   cd "$ROOT/platform/chorus-sdk"
   run npx jest tests/reply-hash-4887.test.ts
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
