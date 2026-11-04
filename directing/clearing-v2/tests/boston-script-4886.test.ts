@@ -7,7 +7,7 @@ import { renderRoomsPage } from '../src/views';
 import * as fs from 'fs';
 import * as path from 'path';
 
-describe('#4886 AC1 & AC2: Boston time script serving and browser-safe loading', () => {
+describe('#4886 AC1, AC2, AC5: Boston time script serving and browser-safe loading', () => {
   it('AC1: renderRoomsPage includes vendor chorus-time boston.js before app.js', () => {
     const html = renderRoomsPage('team', { room: 'team', channels: ['team'], directRoles: [], messages: [] }, []);
     expect(html).toContain('<script src="/vendor/chorus-time/boston.js?v=');
@@ -33,5 +33,10 @@ describe('#4886 AC1 & AC2: Boston time script serving and browser-safe loading',
     const appJsPath = path.join(__dirname, '../public/app.js');
     const content = fs.readFileSync(appJsPath, 'utf8');
     expect(content).toMatch(/typeof chorusBoston !== 'undefined'\s*\?\s*chorusBoston\s*:\s*\(typeof require !== 'undefined'\s*\?\s*require\([^)]+\)\s*:\s*null\)/);
+  });
+
+  it('AC5: Retires public/index.html so views.ts is the single source of truth; fails if a second copy comes back', () => {
+    const indexPath = path.join(__dirname, '../public/index.html');
+    expect(fs.existsSync(indexPath)).toBe(false);
   });
 });
