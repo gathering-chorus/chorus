@@ -7,7 +7,7 @@
 # lose information, ownedBy names its owner.
 #   domain-flow inventory DOMAIN=<d>
 #   domain-flow ask DOMAIN=<d> CARD=<n> RUN=<dagu run>      put the bar on Jeff's approvals list
-#   domain-flow wire|retire DOMAIN=<d> RUN=<dagu run> DECISION=<agreed|rejected>
+#   domain-flow wire|retire DOMAIN=<d> RUN=<dagu run>
 # wire and retire run only when chorus-go finds Jeff's passkey-signed answer to the bar step.
 # OWL_URL is the model door (default http://localhost:3360); DOMAIN_FLOW_ROOT is
 # the tree inventoried (default: this repo).
@@ -18,12 +18,11 @@ TREE="${DOMAIN_FLOW_ROOT:-$(cd "$HERE/../.." && pwd)}"
 DOOR="${OWL_URL:-http://localhost:3360}"
 
 step="${1:-}"; shift || true
-domain="" decision="" card="" run=""
+domain="" card="" run=""
 BAR_STEP=skill_domain_flow_bar
 for a in "$@"; do
   case "$a" in
     DOMAIN=*) domain="${a#DOMAIN=}" ;;
-    DECISION=*) decision="${a#DECISION=}" ;;
     CARD=*) card="${a#CARD=}" ;;
     RUN=*) run="${a#RUN=}" ;;
   esac
@@ -87,12 +86,12 @@ case "$step" in
       *) echo "domain-flow: the door answered $code to the bar row" >&2; exit 2 ;; esac ;;
   wire|retire)
     # the bar is Jeff's: these steps run only on his passkey-signed answer, never on a typed by=jeff
-    # (Wren 11-04 04:00, the accepter=jeff hole). DECISION is what the step was answered with.
+    # (Wren 11-04 04:00, the accepter=jeff hole). check-step requires his signed approve, so a
+    # rejected bar fails here too; nothing typed into the step decides.
     if ! why="$("${DOMAIN_FLOW_GO_BIN:-chorus-go}" check-step domain-flow "${run:-none}" "$BAR_STEP" 2>&1)"; then
       echo "domain-flow: no bar signed by Jeff for $domain ($why)" >&2
       exit 3
     fi
-    [ "$decision" = "agreed" ] || { echo "domain-flow: Jeff did not agree to the bar for $domain (decision=${decision:-none})" >&2; exit 3; }
     echo "domain-flow: $step for $domain is not built yet" >&2; exit 4 ;;
   *) echo "domain-flow: unknown step '${step}' (inventory, ask, wire, retire)" >&2; exit 2 ;;
 esac

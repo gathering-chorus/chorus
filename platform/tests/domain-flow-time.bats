@@ -163,7 +163,7 @@ EOF
 
 @test "AC5: wire runs on Jeff's passkey-signed bar for this run" {
   stub_go; touch "$T/signed-run1-skill_domain_flow_bar"
-  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=agreed
+  run "$FLOW" wire DOMAIN=time RUN=run1
   out_has "not built yet"
   grep -qF "check-step domain-flow run1 skill_domain_flow_bar" "$T/go-asked" || return 1
 }
@@ -174,17 +174,19 @@ EOF
   [ "$status" -eq 3 ]
   out_has "no bar signed by Jeff for time"
   touch "$T/signed-run0-skill_domain_flow_bar"
-  run "$FLOW" retire DOMAIN=time RUN=run1 DECISION=agreed
+  run "$FLOW" retire DOMAIN=time RUN=run1
   [ "$status" -eq 3 ]
-  run "$FLOW" wire DOMAIN=time DECISION=agreed
+  run "$FLOW" wire DOMAIN=time
   [ "$status" -eq 3 ]
 }
 
-@test "AC5 NEGATIVE PROOF: a signed bar Jeff rejected does not wire" {
-  stub_go; touch "$T/signed-run1-skill_domain_flow_bar"
-  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=rejected
+@test "AC5 NEGATIVE PROOF: an answer typed into the step decides nothing; only check-step does" {
+  stub_go
+  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=agreed
   [ "$status" -eq 3 ]
-  out_has "did not agree"
+  touch "$T/signed-run1-skill_domain_flow_bar"
+  run "$FLOW" wire DOMAIN=time RUN=run1 DECISION=rejected
+  out_has "not built yet"
 }
 
 @test "AC5: ask posts one step row naming this card, run and the bar step, as the role" {

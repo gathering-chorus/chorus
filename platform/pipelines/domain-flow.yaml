@@ -46,8 +46,8 @@ steps:
   - name: skill-domain-flow-wire
     description: "wire: every use goes through the bar's source"
     depends: [skill-domain-flow-bar]
-    command: "${CHORUS_HOME}/platform/scripts/domain-flow wire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID} DECISION=${skill_domain_flow_bar.outputs.decision}"
+    command: "${CHORUS_HOME}/platform/scripts/domain-flow wire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID}"
   - name: skill-domain-flow-retire
     description: "retire: the other paths are gone"
     depends: [skill-domain-flow-wire]
-    command: "${CHORUS_HOME}/platform/scripts/domain-flow retire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID} DECISION=${skill_domain_flow_bar.outputs.decision}"
+    command: "${CHORUS_HOME}/platform/scripts/domain-flow retire DOMAIN=${DOMAIN} RUN=${DAG_RUN_ID}"
