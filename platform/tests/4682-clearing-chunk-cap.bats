@@ -152,16 +152,26 @@ with open(WF) as f:
 @test "clearing-evaluate real dagu run skips evaluate step when card has no active chunk (#3734 negative proof)" {
   command -v dagu >/dev/null 2>&1 || skip "dagu not installed"
   WF="$BATS_TEST_DIRNAME/../pipelines/clearing-evaluate.yaml"
-  export CHORUS_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  # #4888 — the run's exit wake goes to a stand-in, never a real nudge to a role
-  printf '#!/bin/sh\nexit 0\n' > "$BATS_TEST_TMPDIR/shim"; chmod +x "$BATS_TEST_TMPDIR/shim"
-  export CHORUS_HOOK_SHIM="$BATS_TEST_TMPDIR/shim"
+  # #4888 — the run's exit wake goes to a stand-in, never a real nudge to a role:
+  # dagu hands the handler only the workflow's own env, so an env cage does not
+  # reach it (this test woke Abby twice on 11-04). CHORUS_HOME is a copy whose
+  # scripts are the werk's, except run-finished, which only records the call.
+  W="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  export CHORUS_HOME="$BATS_TEST_TMPDIR/home"
+  mkdir -p "$CHORUS_HOME/platform/scripts"
+  ln -s "$W/platform/config" "$CHORUS_HOME/platform/config"
+  for f in "$W"/platform/scripts/*; do ln -s "$f" "$CHORUS_HOME/platform/scripts/"; done
+  rm "$CHORUS_HOME/platform/scripts/run-finished"
+  printf '#!/bin/sh\necho "$@" >> %s/wakes\n' "$BATS_TEST_TMPDIR" > "$CHORUS_HOME/platform/scripts/run-finished"
+  chmod +x "$CHORUS_HOME/platform/scripts/run-finished"
   run dagu start "$WF" -- CARD=999999 ROLE=abby-normal NAVIGATOR=wren JEFF=jeff
   [ "$status" -eq 0 ]
   [[ "$output" =~ "skill-clearing-evaluate [skipped]" ]] || return 1
   [[ "$output" =~ "skill-clearing-loop [skipped]" ]] || return 1
   [[ "$output" =~ "skill-clearing-switch [skipped]" ]] || return 1
   [[ "$output" =~ "Result: Succeeded" ]] || return 1
+  # the run's one wake went to the stand-in, once
+  [ "$(wc -l < "$BATS_TEST_TMPDIR/wakes" | tr -d ' ')" -eq 1 ] || return 1
 }
 
 @test "clearing-evaluate loop step has precondition gating on resequence decision" {
