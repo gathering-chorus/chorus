@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# @domain: pipelines
+# run-finished — the one wake a pipeline run sends when it finishes (#4888).
+#
+# Jeff 2026-11-04 14:37: #4887's land succeeded at 14:35 and woke nobody; he found
+# it himself. A failure already woke the owner (ops-nudge from dagu's failure
+# handler), a pass woke no one. Jeff 14:40: "just the finish, not every step";
+# Wren 14:41: a failed step is a finish. Every generated top-level pipeline calls
+# this from dagu's exit handler, so a run wakes exactly once, pass or fail, and a
+# step that passes in the middle sends nothing. The failure handler only routes
+# (pair red, borg-prove route); it no longer nudges.
+#
+#   run-finished CARD ROLE DAG RUN_ID     (dagu sets DAG_RUN_STATUS, DAG_RUN_STEP_NAME=onExit)
+#
+# Who wakes: the card's owner (ROLE) and, for a paired card, the pair's driver
+# and navigator, each once. The path is ops-nudge, the one failures used.
+# cicd parks at Jeff's go: its finish wake is the demo brief, so nothing here.
+# cicd-go's pass is the land it enqueues, whose own finish wakes; a failed go wakes.
+set -uo pipefail
+
+CARD="${1:-}"; ROLE="${2:-}"; DAG="${3:-}"; RUN="${4:-}"
+[ -n "$CARD" ] && [ -n "$ROLE" ] && [ -n "$DAG" ] || { echo "usage: run-finished CARD ROLE DAG RUN_ID" >&2; exit 1; }
+
+# a step in the middle is not a finish: only dagu's exit handler may call this
+if [ "${DAG_RUN_STEP_NAME:-}" != "onExit" ]; then
+  echo "run-finished: refused — not an exit handler (step ${DAG_RUN_STEP_NAME:-unset}); a step in the middle sends nothing" >&2
+  exit 2
+fi
+
+S="$(cd "$(dirname "$0")" && pwd)"
+CH="${CHORUS_HOME:?CHORUS_HOME not set}"
+REG="$CH/ops/active-pairs/$CARD.json"
+# a pair that ended at the land's prove keeps its members here for this wake (#4888)
+[ -f "$REG" ] || REG="$CH/ops/active-pairs/$CARD.ended"
+STATUS="${DAG_RUN_STATUS:-unknown}"
+
+# the run's own words: "failed at <step>: <reason>" (#4553); RUN_FINISHED_WHY cages it in tests
+why() {
+  if [ -n "${RUN_FINISHED_WHY:-}" ]; then "$RUN_FINISHED_WHY" --why "$DAG" "$RUN" 2>/dev/null && return; fi
+  python3 "$S/chorus-werk-status" --why "$DAG" "$RUN" 2>/dev/null || echo "$DAG $STATUS"
+}
+
+case "$STATUS" in
+  succeeded)
+    case "$DAG" in
+      cicd) echo "run-finished: #$CARD cicd passed — its finish wake is the demo brief"; exit 0 ;;
+      cicd-go) echo "run-finished: #$CARD go given — the land it enqueued wakes when it finishes"; exit 0 ;;
+      cicd-land) MSG="#$CARD landed, post-land: check the card's post-land AC in prod and close its open threads · /cws $CARD" ;;
+      # a land whose commit carries model sources enqueues athena-land as its own
+      # run (Kade 16:24): that finish is the model in prod, not a second "landed"
+      athena-land) MSG="#$CARD model deployed to prod (athena-land) · dagu $RUN · /cws $CARD" ;;
+      *) MSG="#$CARD $DAG passed · dagu $RUN · /cws $CARD" ;;
+    esac ;;
+  failed)
+    MSG="#$CARD $DAG $(why) · dagu $RUN · /cws $CARD"
+    # a paired card's red went back to slice (pair red ran in the failure handler)
+    nav="$(grep -o '"navigator":"[^"]*"' "$CH/ops/active-pairs/$CARD.json" 2>/dev/null | cut -d'"' -f4)"
+    [ -n "$nav" ] && MSG="$MSG · back to slice: the next pair run waits for $nav's green" ;;
+  *) MSG="#$CARD $DAG $STATUS · dagu $RUN · /cws $CARD" ;;
+esac
+
+# the owner, then a paired card's driver and navigator; each once
+who="$ROLE"
+if [ -f "$REG" ]; then
+  for k in driver navigator; do
+    r="$(grep -o "\"$k\":\"[^\"]*\"" "$REG" | cut -d'"' -f4)"
+    [ -n "$r" ] && who="$who $r"
+  done
+fi
+rc=0
+for r in $(printf '%s\n' $who | awk '!seen[$0]++'); do
+  if ! env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG"; then
+    echo "run-finished: the wake to $r did not go out" >&2; rc=1
+    # on the spine too, so a wake that never arrived is findable (Kade 15:05)
+    bash "${RUN_FINISHED_LOG:-$S/chorus-log}" run.wake.failed system "card=$CARD" "dag=$DAG" "to=$r" "status=$STATUS" "run=$RUN" >/dev/null 2>&1 || true
+  fi
+done
+# the ended pair's members were kept for this one wake
+case "$REG" in *.ended) rm -f "$REG" ;; esac
+# a wake that did not go out is loud here, but never turns the run's own result:
+# a land that passed stays passed (dagu marks a run failed when its exit handler fails)
+[ "$rc" -eq 0 ] || echo "run-finished: #$CARD $DAG $STATUS — not every wake went out" >&2
+exit 0

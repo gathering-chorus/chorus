@@ -235,7 +235,14 @@ pub fn go_less(name: &str) -> bool {
 /// What `athena` does when it succeeds: the card's werk run, through werk-v2
 /// (its slot refresh, then the cicd enqueue). If that enqueue fails, the
 /// builder hears it; the handler goes red.
-pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} \"chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run · dagu ${DAG_RUN_ID}\"; exit 1; }";
+/// #4888 — no nudge of its own: a failed enqueue turns the run failed (dagu runs
+/// success before exit), and the exit handler's one wake says so.
+pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { echo \"chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run\" >&2; exit 1; }";
+
+/// #4888 (Jeff 11-04 14:37: #4887's land woke nobody) — the one wake a run sends,
+/// from dagu's exit handler, pass or fail: run-finished tells the owner and a
+/// paired card's driver and navigator through ops-nudge. Failure handlers only route.
+pub const RUN_FINISHED: &str = "  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n";
 
 /// What every werk-style land does when it succeeds: athena-land, then the crawl.
 /// #4752 — a cicd or land red goes back to the card's pair first (`pair routed`
@@ -309,7 +316,7 @@ const GIT_TRUST: &str = concat!(
 );
 
 /// The header both halves share: params, the machine's env, the failure nudge.
-fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str, routes: &str, on_success: Option<&str>) {
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], routes: &str, on_success: Option<&str>) {
     out.push_str(HEADER);
     out.push_str(&format!("description: {}\n", quote(description)));
     out.push_str(&format!("queue: {queue}\n"));
@@ -353,15 +360,16 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // run refused because another is live says "refused: cicd run N is live",
     // not "run failed"; any other failure names its step and reason. dagu
     // unreadable falls back to the plain words.
+    // #4888 — the failure handler only routes (back to the pair, or borg-prove's
+    // route); the exit handler below is the run's one wake, pass or fail.
     if routes.is_empty() {
-        out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo {what} failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
-        ));
+        out.push_str(&format!("handler_on:\n  failure:\n    command: '{PAIR_ROUTED}true'\n"));
     } else {
         out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || ${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed and its route failed too · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+            "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || true'\n"
         ));
     }
+    out.push_str(RUN_FINISHED);
     // #4494 — the land event triggers athena (#4177): a land whose commit
     // carried model sources deploys the model. v1 fired it from the old MCP server's
     // werk-merge case; v2's land never passes through there, so #4496's
@@ -585,7 +593,7 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     // go half routes the go)
     let card_end = rows.iter().position(|r| r.executor == "human").unwrap_or(rows.len());
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes_in(&rows, &rows[..card_end]), None);
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], &fail_routes_in(&rows, &rows[..card_end]), None);
     let mut prev: Vec<String> = Vec::new();
     let grouped = groups(&rows);
     for (g, group) in grouped.iter().enumerate() {
@@ -629,7 +637,7 @@ pub fn generate_go(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> 
     let id = dagu_name(&rows, r);
     let prev: Vec<String> = Vec::new();
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], "go", &fail_routes_in(&rows, &rows[g..=g]), None);
+    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], &fail_routes_in(&rows, &rows[g..=g]), None);
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(&mut out, &prev);
@@ -685,7 +693,6 @@ pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<Stri
         &format!("werk v2 — pipeline {pipeline}, generated from the graph"),
         if land { MODEL_LAND_QUEUE } else { CARD_QUEUE },
         &["CARD", "ROLE"],
-        if land { "land" } else { "run" },
         &fail_routes(&rows),
         (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK),
     );
@@ -808,18 +815,18 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
     // measured the double nudge, 10-16). A pipeline with an exit handler tells
     // people there (the nightly's notify names every red to its owner). Else a
     // failure nudges the card's builder.
+    // #4888 — a failure row only routes; a top-level pipeline with no exit of its
+    // own wakes once from run-finished, pass or fail.
     if !pipe.on_failure.is_empty() {
         out.push_str(&format!("  failure:\n    command: {}\n", quote(&pipe.on_failure)));
-    } else if pipe.trace_param.is_empty() && pipe.on_exit.is_empty() {
-        out.push_str(&format!(
-            "  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {pipeline} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
-        ));
     }
     if !pipe.on_abort.is_empty() {
         out.push_str(&format!("  abort:\n    command: {}\n", quote(&pipe.on_abort)));
     }
     if !pipe.on_exit.is_empty() {
         out.push_str(&format!("  exit:\n    command: {}\n", quote(&pipe.on_exit)));
+    } else if pipe.trace_param.is_empty() {
+        out.push_str(RUN_FINISHED);
     }
     out.push_str("steps:\n");
     let mut prev: Vec<String> = Vec::new();
@@ -895,7 +902,7 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
         return Err(vec!["no human go in the rows: nothing to land".to_string()]);
     };
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
     // #4691 — a human step after the go is a role's (Borg Queen proves the
     // land the way a navigator greens a pair): it names who answers and how
     let errs: Vec<String> = rows[go + 1..].iter().filter(|r| r.executor == "human")

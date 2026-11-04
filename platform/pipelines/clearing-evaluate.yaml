@@ -17,8 +17,8 @@ env:
   - GIT_CONFIG_VALUE_0: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/services/werk-test/target/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
-  failure:
-    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} clearing-evaluate $(python3 ${CHORUS_HOME}/platform/scripts/chorus-werk-status --why ${DAG_NAME} ${DAG_RUN_ID} || echo failed) · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+  exit:
+    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'
 steps:
   - name: skill-clearing-chunk-of
     description: "resolve active chunk of card"

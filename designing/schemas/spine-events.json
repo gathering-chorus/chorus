@@ -4358,6 +4358,21 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "run.wake.failed": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "#4888: a finished pipeline run's one wake (run-finished, from dagu's exit handler) did not reach a role. The run's own result is unchanged.",
+      "fields": {
+        "card": "Card the run is for",
+        "dag": "Pipeline that finished",
+        "to": "Role the wake was for",
+        "status": "The run's result (succeeded, failed, …)",
+        "run": "dagu run id"
+      }
+    },
     "reply.delivery.unmeasured": {
       "producer": "messages",
       "category": "fact",

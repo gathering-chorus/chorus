@@ -92,15 +92,19 @@ fn negative_proof_a_pipeline_row_with_no_queue_or_a_stray_field_is_refused() {
 }
 
 /// Silas 10-16, measured on a scratch dagu: the child's own failure handler
-/// doubled the card's nudge. NEGATIVE PROOF both ways: the child has none; a
-/// top-level straight pipeline with no exit handler still has one.
+/// doubled the card's nudge. #4888 — the wake is the exit handler now. NEGATIVE
+/// PROOF both ways: the child has no wake; a top-level straight pipeline with no
+/// exit of its own gets run-finished, and the nightly keeps its own notify.
 #[test]
-fn a_child_pipeline_has_no_failure_handler_and_a_top_level_one_keeps_it() {
+fn a_child_pipeline_has_no_wake_and_a_top_level_one_wakes_from_exit() {
     let child = generate_straight("cicd-test", &parse_pipe(&fixture("cicd-test-pipe.tsv")).unwrap(), &rows("cicd-test-rows.tsv"), &known()).unwrap();
-    assert!(!child.contains("  failure:\n"), "{child}");
+    assert!(!child.contains("  failure:\n") && !child.contains("  exit:\n"), "{child}");
     let top = parse_pipe("queue\twerk\nparams\tCARD ROLE\n").unwrap();
     let out = generate_straight("x", &top, &rows("cicd-test-rows.tsv"), &known()).unwrap();
-    assert!(out.contains("  failure:\n"), "{out}");
+    assert!(out.contains("  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished "), "{out}");
+    assert!(!out.contains("ops-nudge"), "{out}");
+    let nightly = generate_straight("nightly", &parse_pipe(&fixture("nightly-pipe.tsv")).unwrap(), &rows("nightly-rows.tsv"), &known()).unwrap();
+    assert!(nightly.contains("werk-test notify") && !nightly.contains("run-finished"), "{nightly}");
 }
 
 /// #4540 — the graph read: a Pipeline row's run fields become parse_pipe input;

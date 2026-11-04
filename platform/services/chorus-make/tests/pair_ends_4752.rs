@@ -29,10 +29,13 @@ fn failure_handler(yaml: &str) -> String {
 const ROUTED: &str = "${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ";
 
 #[test]
-fn ac2_a_cicd_red_goes_to_the_cards_pair_first_then_the_builders_nudge() {
-    let h = failure_handler(&generate("cicd", &cicd_rows()).unwrap());
+fn ac2_a_cicd_red_goes_to_the_cards_pair_first_then_the_exit_wake() {
+    let y = generate("cicd", &cicd_rows()).unwrap();
+    let h = failure_handler(&y);
     assert!(h.starts_with(&format!("'{ROUTED}")), "{h}");
-    assert!(h.contains("ops-nudge ${ROLE}") || h.contains("borg-prove route"), "the unpaired fallback must stay: {h}");
+    // #4888 — unpaired, nothing routes and the run's exit wake reaches the builder
+    assert!(!h.contains("ops-nudge"), "{h}");
+    assert!(y.contains("platform/scripts/run-finished ${CARD} ${ROLE}"), "{y}");
 }
 
 #[test]

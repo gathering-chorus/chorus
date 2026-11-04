@@ -82,11 +82,13 @@ fn a_failure_runs_the_pairs_own_handler_not_the_builders_nudge() {
     let y = generate_straight("pair", &pipe(), &rows(), &known()).unwrap();
     assert!(y.contains("  failure:\n    command: \"${CHORUS_HOME}/platform/scripts/pair red ${CARD} ${ROLE} ${NAVIGATOR} ${DAG_RUN_ID}\"\n"), "{y}");
     assert!(!y.contains("ops-nudge"), "{y}");
-    // negative proof: without onFailure the builder's nudge comes back
+    // #4888 — the pair's one wake is its exit handler; the failure row only routes
+    assert_eq!(y.matches("platform/scripts/run-finished").count(), 1, "{y}");
+    // negative proof: without onFailure nothing routes, and still no nudge comes back
     let mut p = pipe();
     p.on_failure.clear();
     let y = generate_straight("pair", &p, &rows(), &known()).unwrap();
-    assert!(y.contains("ops-nudge ${ROLE}") && !y.contains("pair red"), "{y}");
+    assert!(!y.contains("ops-nudge") && !y.contains("pair red") && y.contains("run-finished"), "{y}");
 }
 
 #[test]
