@@ -61,6 +61,10 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
             };
+            // #4889 — a skipped case in the test's newest run measured nothing
+            if c.kind == "test" && body.trim() == "skip" {
+                return Outcome::Unmeasured(format!("test {}: its newest run skipped a case", c.target));
+            }
             let want = c.expect.trim();
             if want.is_empty() {
                 return Outcome::Unmeasured("the check names nothing to expect".into());
@@ -278,7 +282,7 @@ pub fn test_logql(target: &str, card: u32) -> String {
         // every case line in the window does not answer (test-diff, 10-15).
         // card_id is a JSON number on card runs ("card_id":4530); the exact
         // match is the label filter after json, so 45301 never answers for 4530.
-        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
+        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
 }
 
@@ -291,7 +295,12 @@ pub fn latest_case_result(body: &str) -> Option<String> {
 /// #4824 — the newest result with its Loki timestamp (ns), so two answers
 /// (the card's own runs, main's nightly since the land) can be compared.
 pub fn latest_case(body: &str) -> Option<(u128, String)> {
-    let mut best: Option<(u128, &'static str)> = None;
+    // #4889 (Kade 18:08) — the WHOLE newest run of the test decides, not its
+    // newest single case: Loki answered limit=1, so one passing case hid a failed
+    // one, and a skipped case was never read. Cases are grouped by their run's
+    // trace; the run with the newest case is the answer: any failed case → fail,
+    // else any skipped case → skip (unmeasured), else pass.
+    let mut cases: Vec<(u128, String, &'static str)> = Vec::new();
     let mut rest = body;
     while let Some(i) = rest.find("[\"") {
         rest = &rest[i + 2..];
@@ -313,13 +322,23 @@ pub fn latest_case(body: &str) -> Option<(u128, String)> {
         }
         rest = &rest[close..];
         let result = if line.contains("\"event\":\"test.case.failed\"") { "fail" }
+            else if line.contains("\"event\":\"test.case.skipped\"") { "skip" }
             else if line.contains("\"event\":\"test.case.passed\"") { "pass" }
             else { continue };
-        if best.map_or(true, |(t, _)| ts > t) {
-            best = Some((ts, result));
-        }
+        cases.push((ts, json_field(&line, "trace").unwrap_or_default(), result));
     }
-    best.map(|(t, r)| (t, r.to_string()))
+    let (newest, run) = cases.iter().max_by_key(|(t, _, _)| *t).map(|(t, r, _)| (*t, r.clone()))?;
+    let of_run: Vec<&str> = cases.iter().filter(|(_, r, _)| *r == run).map(|(_, _, x)| *x).collect();
+    let verdict = if of_run.contains(&"fail") { "fail" } else if of_run.contains(&"skip") { "skip" } else { "pass" };
+    Some((newest, verdict.to_string()))
+}
+
+/// The string value of `"key":"…"` in one flat JSON line (no nesting needed here).
+fn json_field(line: &str, key: &str) -> Option<String> {
+    let k = format!("\"{key}\":\"");
+    let i = line.find(&k)? + k.len();
+    let j = line[i..].find('"')?;
+    Some(line[i..i + j].to_string())
 }
 
 /// #4824 — a `test` check's query on MAIN: the nightly's case events for the
@@ -330,7 +349,7 @@ pub fn latest_case(body: &str) -> Option<(u128, String)> {
 pub fn test_logql_main(target: &str) -> String {
     let t = target.replace('\\', "\\\\").replace('"', "\\\"");
     format!(
-        "{{job=\"platform-chorus\", appName=\"chorus-events\", role=\"nightly\"}} |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
+        "{{job=\"platform-chorus\", appName=\"chorus-events\", role=\"nightly\"}} |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
 }
 

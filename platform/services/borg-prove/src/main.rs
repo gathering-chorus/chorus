@@ -67,7 +67,7 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
             let url = format!("{loki}/loki/api/v1/query_range");
             let (start, end) = (format!("start={}000000000", now - 30 * 86400), format!("end={now}000000000"));
             let ask = |q: String, start: String| curl(&["-G", &url, "--data-urlencode", &format!("query={q}"), "--data-urlencode", &start,
-                "--data-urlencode", &end, "--data-urlencode", "limit=1", "--data-urlencode", "direction=backward"]);
+                "--data-urlencode", &end, "--data-urlencode", "limit=2000", "--data-urlencode", "direction=backward"]);
             let own = ask(test_logql(&c.target, card), start).and_then(|b| latest_case(&b));
             // #4824 — and main's nightly from the land on: a test the diff does not touch never runs in the card's runs
             let main = land_time(card).and_then(|t| ask(test_logql_main(&c.target), format!("start={t}000000000")))
