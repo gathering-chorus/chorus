@@ -122,11 +122,12 @@ function formatAuthor(role) {
 }
 
 // #4885 — the one Boston renderer: a script tag in the page, the sdk module under node tests
-const boston = typeof chorusBoston !== 'undefined' ? chorusBoston : require('../../../platform/chorus-sdk/time/boston');
+const boston = typeof chorusBoston !== 'undefined' ? chorusBoston : (typeof require !== 'undefined' ? require('../../../platform/chorus-sdk/time/boston') : null);
 
 function formatMessageTime(ts) {
   const d = new Date(ts);
-  return Number.isNaN(d.getTime()) ? ts : boston.bostonHHMM(d);
+  if (Number.isNaN(d.getTime())) return ts;
+  return (boston && typeof boston.bostonHHMM === 'function') ? boston.bostonHHMM(d) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function stripPromptHeader(text) {
