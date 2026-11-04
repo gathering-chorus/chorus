@@ -142,21 +142,17 @@ describe('#3772 NEGATIVE PROOF — silent-room state is detectable', () => {
   });
 });
 
-// #4417 — a bare SessionTailer appends reply.rendered to the spine log. Every
-// jest process gets a temp log from env-4363.setup.js; this proves the default
-// emitter writes there and nowhere live. NEGATIVE PROOF: drop the
-// CHORUS_LOG_FILE line from the setup file and both expectations go red.
+// #4417 — every jest process gets a temp spine log from env-4363.setup.js, so a
+// test that writes the spine never reaches the live one. (#4887 retired the
+// tailer's reply.rendered writer; the guard stays for any future writer.)
+// NEGATIVE PROOF: drop the CHORUS_LOG_FILE line from the setup file and this goes red.
 describe('#4417 the spine log in tests is a temp file', () => {
-  test('the default spine emitter writes to the temp log, not ~/.chorus/chorus.log', async () => {
+  test('CHORUS_LOG_FILE points under the temp dir, not ~/.chorus/chorus.log', () => {
     const fs = require('fs');
     const os = require('os');
-    const { makeSpineEmitter } = require('../src/reply-delivery');
     const target = process.env.CHORUS_LOG_FILE || '';
+    expect(target).not.toBe('');
     expect(fs.realpathSync(require('path').dirname(target)).startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
-    const marker = `spine-4417-${Date.now()}`;
-    makeSpineEmitter()({ event: 'reply.rendered', marker });
-    await new Promise((r) => setTimeout(r, 100));
-    expect(fs.readFileSync(target, 'utf8')).toContain(marker);
   });
 
   test('athena-make and Fuseki are a closed port: a session write fails fast, never reaches live', async () => {

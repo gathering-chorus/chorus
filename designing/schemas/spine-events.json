@@ -4358,6 +4358,17 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "reply.delivery.unmeasured": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "description": "#4887: the reply gap watch could not read the room's record (room=unreadable), or can again (room=readable). One event per change, never per scan; while unreadable no reply is called a gap.",
+      "fields": {
+        "room": "unreadable | readable",
+        "unmeasured": "replies the watch could not answer for in that scan",
+        "surface": "clearing"
+      }
+    },
     "reply.emitted": {
       "producer": "messages",
       "category": "diagnostic",
@@ -4376,7 +4387,7 @@
       "producer": "messages",
       "category": "diagnostic",
       "version": "1",
-      "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
+      "description": "RETIRED #4887: Clearing v1's tailer echo of a rendered reply; no writer or reader remains. The gap watch reads the room's own record. Kept so old spine lines still classify.",
       "fields": {}
     },
     "review.floor": {
