@@ -12,6 +12,15 @@ reads a change. It runs on **every** card, fix cards included (#4889: a fix is w
 second path most often slips in). It never reads, counts or judges AC boxes: the AC
 are proven by their own checks in prod, not here.
 
+Grounded in two practices:
+- **ATAM (Architecture Tradeoff Analysis Method)**: read the change against the quality
+  attributes it affects; name its **sensitivity points** (where a small change moves an
+  attribute), **tradeoffs** (where it helps one attribute and hurts another) and
+  **risks**.
+- **Fitness functions (evolutionary architecture)**: an architectural property is held
+  by an automated check. A change to a property must keep, add or update the check
+  that guards it.
+
 ## Arguments
 
 ```
@@ -38,7 +47,8 @@ for context only. In the demo the diff is handed to you; by hand, read it with
 5. **Generated vs hand-edited.** Is a generated file (pipelines, models) edited by
    hand, or changed without its generator or rows?
 6. **Names and IRIs.** Non-canonical namespaces; a new name for a thing that has one.
-7. **ICD consistency.** A change to a domain's data shape or harvester (`*.ttl`,
+7. **ICD consistency** (waiting on convergence: the ICD and SHACL contracts are being
+   brought together, so judge against whichever the domain has today). A change to a domain's data shape or harvester (`*.ttl`,
    `*-harvester.service.ts`, `harvest-*.sh`, an API door's fields) has a matching ICD
    provider section and SHACL shape in the same diff; a new domain is mapped in the
    graph. Name the file that changed shape without its contract.
@@ -52,13 +62,20 @@ for context only. In the demo the diff is handed to you; by hand, read it with
 | Domain boundary scan (directory count) | item 3, read as real boundaries, not a count |
 | "Does it fit the architecture?" | the whole review |
 
+8. **Quality attributes (ATAM).** Which attribute does the change move: reliability,
+   latency, operability, security, modifiability? Name the sensitivity point and any
+   tradeoff or risk it creates.
+9. **Fitness function.** For the property touched (one path, a boundary, a contract,
+   a latency budget), is there an automated check that holds it, and does the diff keep
+   it green or add one? A property with no fitness function is a finding.
+
 Report only what you can point to in the diff: each finding is
 `file:line — what — why it matters`. No finding about the card's AC boxes, ticks or
 wording.
 
 ## Verdict
 
-- **fail**: at least one finding in 1–5 or 7 that ships a second path, a boundary break, a missing contract or
+- **fail**: at least one finding in 1–5, 7 or 9 that ships a second path, a boundary break, a missing contract or
   a hand-edited generated file.
 - **pass**: otherwise; list minor findings as notes.
 

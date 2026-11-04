@@ -11,6 +11,14 @@ for quality and architecture". This gate reviews the **diff** for quality. It ru
 **every** card. It never reads, counts or judges AC boxes: the AC are proven by their
 own checks in prod, not here.
 
+Grounded in two practices:
+- **Test desiderata (Kent Beck)**: tests are isolated, composable, deterministic, fast,
+  writable, readable, behavioural, structure-insensitive, automated, specific,
+  predictive and inspiring. Read each changed test against them.
+- **Mutation testing**: a test suite is as good as the mutants it kills. For each
+  changed line, ask whether flipping a condition, dropping a call or changing a constant
+  would turn a test red. A mutant that survives is a missing test.
+
 ## Arguments
 
 ```
@@ -38,6 +46,12 @@ for context only. In the demo the diff is handed to you; by hand, read it with
    that hide a gap the card claims to close.
 6. **Observability.** A new failure mode with no spine event or log line to find it
    by; a changed handler, route or service with no structured log call.
+7. **Mutants.** Pick the riskiest changed lines; would a mutant of each (inverted
+   condition, deleted call, off-by-one) survive the changed tests? Name the line and the
+   surviving mutant.
+8. **Desiderata.** A changed test that is nondeterministic (time, order, network,
+   shared files), structure-sensitive (asserts on internals, not behaviour) or not
+   specific (a failure would not say what broke).
 
 ## Where the old checks went (#4889, Kade 18:34: fix, never throw away)
 
@@ -57,8 +71,8 @@ wording.
 
 ## Verdict
 
-- **fail**: at least one finding in 1–3 (a hollow check, a swallowed failure, or tests
-  that do not test the change).
+- **fail**: at least one finding in 1–3 or 7 (a hollow check, a swallowed failure, tests
+  that do not test the change, or a surviving mutant on a risky line).
 - **pass**: otherwise; list minor findings as notes.
 
 A diff you could not read is an **error**, never a pass.
