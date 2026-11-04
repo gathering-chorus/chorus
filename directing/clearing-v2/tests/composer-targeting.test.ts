@@ -146,6 +146,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
           if (id === 'send-error') return errorEl;
           return null;
         },
+        querySelectorAll: (sel: string) => sel.includes('actor-tile') ? [{ dataset: { role: 'kade' } }] : [],
       };
 
       (global as any).Blob = class {
@@ -192,6 +193,72 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       await recorderInstance.onstop();
 
       expect(inputEl.value).toBe('@kade how is the build?');
+    });
+
+    it('negative proof: does not prepend role if no actor tiles are loaded on the page even if filter is active', async () => {
+      app.setRoleFilter('kade');
+      const inputEl = { value: '', focus: jest.fn() };
+      let clickHandler: Function | null = null;
+      const micEl: any = {
+        dataset: {},
+        setAttribute: jest.fn(),
+        addEventListener: jest.fn((event, fn) => {
+          if (event === 'click') clickHandler = fn;
+        }),
+      };
+      const errorEl = { textContent: '', innerHTML: '' };
+
+      (global as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'composer-mic') return micEl;
+          if (id === 'composer-input') return inputEl;
+          if (id === 'send-error') return errorEl;
+          return null;
+        },
+        querySelectorAll: () => [], // No tiles loaded
+      };
+
+      (global as any).Blob = class {
+        size = 100;
+        parts: any[];
+        constructor(parts: any[]) { this.parts = parts || []; }
+      };
+
+      let recorderInstance: any = null;
+      (global as any).navigator = {
+        mediaDevices: {
+          getUserMedia: jest.fn().mockResolvedValue({
+            getTracks: () => [{ stop: jest.fn() }],
+          }),
+        },
+      };
+      (global as any).MediaRecorder = class {
+        state = 'inactive';
+        mimeType = 'audio/webm';
+        ondataavailable: any = null;
+        onstop: any = null;
+        constructor() {
+          recorderInstance = this;
+        }
+        start() { this.state = 'recording'; }
+        stop() { this.state = 'inactive'; }
+      };
+
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true, transcript: 'how is the build?' }),
+      });
+
+      app.watchMicButton();
+      await clickHandler!();
+      if (recorderInstance.ondataavailable) {
+        recorderInstance.ondataavailable({ data: { size: 100 } });
+      }
+      await recorderInstance.onstop();
+
+      // Because NO tiles were loaded on the page, no target role is resolved
+      expect(inputEl.value).toBe('how is the build?');
+      expect(inputEl.value).not.toMatch(/@kade/);
     });
 
     it('prepends @<role> when viewing a direct room upon voice transcription stop', async () => {

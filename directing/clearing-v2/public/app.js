@@ -540,7 +540,7 @@ function resolveVoiceTargetRole(inputRoleFilters) {
   const loadedRoles = getLoadedActorRoles();
   const filterRoles = Array.from(inputRoleFilters || [])
     .map((r) => r.toLowerCase())
-    .filter((r) => r !== 'jeff' && (loadedRoles.length === 0 || loadedRoles.includes(r)));
+    .filter((r) => r !== 'jeff' && loadedRoles.includes(r));
   if (filterRoles.length > 0) return filterRoles[0];
 
   if (typeof document !== 'undefined') {
