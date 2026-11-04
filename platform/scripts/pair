@@ -218,28 +218,24 @@ proven)
   "$0" end "$card" "$(reg_field "$card" driver)" "$(reg_field "$card" navigator)" || true
   ;;
 red)
+  # #4888 — red only routes. The run's one wake comes from its exit handler
+  # (run-finished), which names the step and reason to the driver and navigator.
   card="${1:-}"; driver="${2:-}"; nav="${3:-}"; run="${4:-}"; dag="${5:-pair}"
   why=$(python3 "$S/chorus-werk-status" --why "$dag" "$run" 2>/dev/null || echo "run failed")
   # #4683 reopen 1 — a refused start is not retried: another run would refuse
   # the same way and wait for the same green (the 2 runs #4682 was left with)
   if [ -f "$REG/$card.refused" ]; then
     reason=$(cat "$REG/$card.refused"); rm -f "$REG/$card.refused"
-    for r in "$driver" "$nav"; do nudge "$r" "pair #$card start refused: $reason · no new run · dagu $run"; done
-    say "#$card start refused: no new run"
+    say "#$card start refused: $reason · no new run"
     exit 0
   fi
   if [ ! -f "$REG/$card.json" ]; then
-    nudge "$driver" "pair #$card is over: $why · dagu $run"
-    say "#$card is not paired: no new run"
+    say "#$card is not paired: no new run ($why)"
     exit 0
   fi
   if ! out=$(env -u CHORUS_ROLE -u ROLE "${PAIR_DAGU:-dagu}" --config "$DAGU_CONFIG" enqueue pair -- "CARD=$card" "ROLE=$driver" "NAVIGATOR=$nav" 2>&1); then
-    nudge "$driver" "pair #$card: $why, and the next run did not enqueue: $out"
-    die "#$card: enqueue failed: $out"
+    die "#$card: $why, and the next run did not enqueue: $out"
   fi
-  for r in "$driver" "$nav"; do
-    nudge "$r" "pair #$card red: $why. Back to slice; the next run waits for $nav's green."
-  done
   say "#$card back to slice: $why"
   ;;
 *)

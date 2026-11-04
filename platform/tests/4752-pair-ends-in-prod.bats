@@ -66,7 +66,9 @@ EOF
   echo "$output"
   [ "$status" -eq 0 ]
   grep -q 'enqueue pair -- CARD=4752 ROLE=kade NAVIGATOR=silas' "$L/dagu"
-  grep -q '^silas|pair #4752 red: why cicd cicd-run-7' "$L/nudges"
+  # #4888 — red routes only; the run's exit handler (run-finished) is the one wake
+  ! grep -q " red: \| start refused\| is over" "$L/nudges" 2>/dev/null || { cat "$L/nudges"; return 1; }
+  [[ "$output" == *"back to slice: why cicd cicd-run-7"* ]] || return 1
   # AC5 — the red runs no second cicd-test: the next test is cicd's, after the green
   ! grep -q 'cicd-test' "$L/dagu" || return 1
   # the new attempt is the same pair: back to slice, not a second pair.started

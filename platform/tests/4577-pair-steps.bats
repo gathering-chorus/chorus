@@ -66,13 +66,13 @@ EOF
   [[ "$output" == *"must come from the navigator silas"* ]] || return 1
 }
 
-@test "a red sends the pair back to slice: a new run is enqueued and both roles hear it" {
+@test "a red sends the pair back to slice: a new run is enqueued, and red itself wakes nobody (#4888: the exit handler does)" {
   bash "$PAIR" start 4577 kade silas >/dev/null
   run bash "$PAIR" red 4577 kade silas run1
   [ "$status" -eq 0 ]
   grep -q 'enqueue pair -- CARD=4577 ROLE=kade NAVIGATOR=silas' "$L/dagu"
-  grep -q '^kade|pair #4577 red: failed at local-proof' "$L/nudges"
-  grep -q '^silas|pair #4577 red: failed at local-proof' "$L/nudges"
+  ! grep -q " red: \| start refused\| is over" "$L/nudges" 2>/dev/null || { cat "$L/nudges"; return 1; }
+  [[ "$output" == *"back to slice: failed at local-proof"* ]] || return 1
   # the next run's start is back to slice, not a new pair
   run bash "$PAIR" start 4577 kade silas
   grep -q '^## Back to slice' "$PAIR_DIR/pair-4577.md"
@@ -236,7 +236,8 @@ other_owner() {  # the file reads as another member's: stat reports her, the res
   run bash "$PAIR" red 4683 kade abby-normal run1
   [ "$status" -eq 0 ]
   [ ! -e "$L/dagu" ] || ! grep -q 'enqueue pair' "$L/dagu" || return 1
-  grep -q '^kade|pair #4683 start refused' "$L/nudges"
+  [[ "$output" == *"start refused"* ]] || return 1
+  ! grep -q " red: \| start refused\| is over" "$L/nudges" 2>/dev/null || { cat "$L/nudges"; return 1; }
 }
 
 # #4852 — the pair's hand-off routes on the one model-change rule (athena-deploy

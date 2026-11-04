@@ -248,13 +248,15 @@ fn the_cards_own_verbs_come_first_on_the_path() {
 }
 
 #[test]
-fn a_failed_run_nudges_the_builder() {
-    // #4474 run 15 failed at 09:25; nobody knew until 10:06
+fn a_finished_run_wakes_the_builder_once() {
+    // #4474 run 15 failed at 09:25; nobody knew until 10:06. #4888: #4887's land
+    // passed at 14:35 and woke nobody — the wake is the run's finish, pass or fail.
     let out = generate("cicd", &cicd()).unwrap();
-    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} ").expect("a failure handler");
+    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || true'\n  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n").expect("a routing failure handler, then the one exit wake");
     assert!(h < out.find("steps:\n").unwrap(), "handler_on is DAG-level, before the steps");
-    // negative proof: the handler is on failure only, never on every exit or success
-    assert!(!out.contains("  success:") && !out.contains("  exit:"), "{out}");
+    // negative proof: one wake, from exit only — never a second from failure or success
+    assert_eq!(out.matches("run-finished").count(), 1, "{out}");
+    assert!(!out.contains("ops-nudge") && !out.contains("  success:"), "{out}");
 }
 
 #[test]

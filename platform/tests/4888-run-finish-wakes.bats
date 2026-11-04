@@ -16,7 +16,7 @@ RF="$ROOT/platform/scripts/run-finished"
 toplevel() {
   for f in "$1"/*.yaml; do
     grep -q '^  - TRACE: ' "$f" && continue
-    case "$(basename "$f")" in nightly.yaml|cicd-go.yaml) continue ;; esac
+    case "$(basename "$f")" in nightly.yaml) continue ;; esac
     echo "$f"
   done
 }
@@ -37,7 +37,25 @@ wake_problems() {
 @test "AC1/AC2: every top-level pipeline wakes once from its exit handler, through run-finished; its failure handler only routes" {
   out="$(wake_problems "$PIPES")"
   [ -z "$out" ] || { echo "$out"; return 1; }
-  [ "$(toplevel "$PIPES" | wc -l | tr -d ' ')" -ge 5 ] || { echo "too few pipelines found"; return 1; }
+  # the card's five (and the go) by name, so a misread heuristic can never drop one silently
+  for p in pair cicd cicd-go cicd-land athena domain-flow; do
+    toplevel "$PIPES" | grep -q "/$p.yaml$" || { echo "$p.yaml is not checked as a top-level pipeline"; return 1; }
+  done
+}
+
+@test "children stay silent: demo and cicd-test have no wake of their own (the parent's exit is the one)" {
+  for c in demo cicd-test; do
+    h="$(handlers "$PIPES/$c.yaml")"
+    if printf '%s\n' "$h" | grep -qE 'run-finished|ops-nudge'; then echo "$c: $h"; return 1; fi
+  done
+}
+
+@test "a failing child fails its parent, so the parent's exit wakes once with failed (dagu fixture)" {
+  d="$BATS_TEST_TMPDIR/dg"; mkdir -p "$d/home"
+  printf 'params:\n  - TRACE: ""\nsteps:\n  - name: boom\n    command: "false"\n' > "$d/child.yaml"
+  printf 'handler_on:\n  exit:\n    command: sh -c "echo exit:$DAG_RUN_STATUS >> %s/wakes"\nsteps:\n  - name: call-child\n    command: env DAGU_HOME=%s/home dagu start %s/child.yaml -- TRACE=t\n  - name: after\n    depends: [call-child]\n    command: "true"\n' "$d" "$d" "$d" > "$d/parent.yaml"
+  (cd "$d" && DAGU_HOME="$d/home" dagu start parent.yaml >/dev/null 2>&1) || true
+  [ "$(cat "$d/wakes")" = "exit:failed" ] || { cat "$d/wakes"; return 1; }
 }
 
 @test "AC4 negative proof: a pipeline with no exit wake, or one that still nudges on failure, is named" {
@@ -105,7 +123,20 @@ finish() { # STATUS DAG [STEP]
   [[ "$output" == *"not an exit handler"* ]] || { echo "$output"; return 1; }
 }
 
+@test "AC2: run-finished sends through ops-nudge and nothing else" {
+  out="$(grep -nE 'nudge-send|curl|clearing-nudge|/api/nudge|osascript' "$RF" || true)"
+  [ -z "$out" ] || { echo "$out"; return 1; }
+  [ "$(grep -c 'S/ops-nudge' "$RF")" -eq 1 ] || { grep -n ops-nudge "$RF"; return 1; }
+}
+
+@test "a passed go is silent (its land wakes); a failed go wakes" {
+  cage; run finish succeeded cicd-go
+  { [ "$status" -eq 0 ] && [ ! -s "$SENT" ]; } || { cat "$SENT"; return 1; }
+  cage; run finish failed cicd-go
+  grep -q '^silas|#4888 cicd-go failed at' "$SENT" || { cat "$SENT"; return 1; }
+}
+
 @test "AC6: pair red routes back to slice without its own nudge (the exit handler is the one wake)" {
-  out="$(sed -n '/^red)/,/^  ;;/p' "$ROOT/platform/scripts/pair" | grep -n 'Back to slice' || true)"
+  out="$(sed -n '/^red)/,/^  ;;/p' "$ROOT/platform/scripts/pair" | grep -nE '^\s*(nudge|.*ops-nudge) ' || true)"
   [ -z "$out" ] || { echo "pair red still nudges: $out"; return 1; }
 }

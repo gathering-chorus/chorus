@@ -18,6 +18,8 @@ env:
 handler_on:
   failure:
     command: "${CHORUS_HOME}/platform/scripts/pair red ${CARD} ${ROLE} ${NAVIGATOR} ${DAG_RUN_ID}"
+  exit:
+    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'
 steps:
   - name: skill-pair-start
     description: "pair start: a WIP card, the pair file from its AC, the navigator told"
