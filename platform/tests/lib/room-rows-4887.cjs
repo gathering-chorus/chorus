@@ -9,7 +9,9 @@
 // negative proof's fixture).
 // Exit 0 only when every role's latest reply rendered and the page threw nothing;
 // 1 names the replies that did not render; 2 means it could not measure (page or
-// Loki unreachable, no reply to look for) — never a pass.
+// Loki unreachable, no reply to look for) — never a pass; 3 means a role's latest
+// reply is older than the page's oldest row (the page scrolled past it): unmeasured,
+// the same call the gap watch makes, never a red and never a pass.
 // usage: node room-rows-4887.cjs <playwright-core dir> <room url> <role[|alt…]> …
 //   'silas|wren|kade' means the newest reply from any of them.
 const [, , pw, url, ...need] = process.argv;
@@ -49,6 +51,7 @@ async function roomRecord() {
   for (const w of want) {
     const row = record.find((m) => m.from === w.role && contentHash(m.text || '') === w.hash);
     w.id = row ? row.id : null;
+    w.ts = row ? row.ts : (w.at || null);
   }
   const b = await chromium.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -61,12 +64,15 @@ async function roomRecord() {
     p.on('pageerror', (e) => errs.push(e.message));
     await p.goto(url, { waitUntil: 'load', timeout: 20000 });
     await p.waitForFunction('document.querySelectorAll("#messages-stream [data-from]").length > 0', { timeout: 20000 });
-    const rows = await p.$$eval('#messages-stream [data-from]', (els) => els.map((e) => ({ id: e.id, from: e.dataset.from })));
+    const rows = await p.$$eval('#messages-stream [data-from]', (els) => els.map((e) => ({ id: e.id, from: e.dataset.from, ts: e.dataset.ts || '' })));
     const seen = new Set(rows.map((r) => `${r.from}:${r.id}`));
-    // not in the room's record at all, or in it but not on the page: both are missing
-    const missing = want.filter((w) => !w.id || !seen.has(`${w.role}:msg-${w.id}`));
-    console.log(JSON.stringify({ url, rows: rows.length, want, missing, errs }));
-    process.exit(missing.length || errs.length ? 1 : 0);
+    const oldest = Math.min(...rows.map((r) => Date.parse(r.ts)).filter((t) => !Number.isNaN(t)));
+    const absent = want.filter((w) => !w.id || !seen.has(`${w.role}:msg-${w.id}`));
+    // absent AND older than the page's oldest row: the page scrolled past it — unmeasured
+    const scrolled = absent.filter((w) => w.ts && Date.parse(w.ts) < oldest);
+    const missing = absent.filter((w) => !scrolled.includes(w));
+    console.log(JSON.stringify({ url, rows: rows.length, want, missing, scrolled, errs }));
+    process.exit(missing.length || errs.length ? 1 : scrolled.length ? 3 : 0);
   } finally {
     await b.close();
   }
