@@ -1,5 +1,6 @@
 // @test-type: unit — Clearing v2 composer targeting and validation (#4877 AC1, AC2, AC5, AC6)
 // @domain: messages
+export {};
 /**
  * Tests for composer targeting, bare prefill refusal, and mic error surfacing (#4877 AC1, AC2, AC5, AC6).
  */

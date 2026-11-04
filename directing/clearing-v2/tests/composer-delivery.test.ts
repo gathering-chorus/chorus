@@ -1,9 +1,10 @@
 // @test-type: unit — Clearing v2 composer delivery guarantee (#4877 AC7)
 // @domain: messages
+export {};
 /**
  * Tests for guaranteed /api/send delivery and error handling (#4877 AC7).
  */
-const app = require('../public/app.js');
+const deliveryApp = require('../public/app.js');
 
 describe('guaranteed /api/send delivery (#4877 AC7)', () => {
   it('confirms delivery when /api/send returns 200', async () => {
@@ -15,7 +16,7 @@ describe('guaranteed /api/send delivery (#4877 AC7)', () => {
       json: async () => ({ ok: true, stored: true }),
     });
 
-    await app.handleSendMessage('status check', { inputEl, statusEl, btnEl, fetchFn });
+    await deliveryApp.handleSendMessage('status check', { inputEl, statusEl, btnEl, fetchFn });
 
     expect(fetchFn).toHaveBeenCalled();
     expect(btnEl.textContent).toBe('Sent');
@@ -32,7 +33,7 @@ describe('guaranteed /api/send delivery (#4877 AC7)', () => {
       json: async () => ({ error: 'pulse unreachable' }),
     });
 
-    await app.handleSendMessage('important message', { inputEl, statusEl, btnEl, fetchFn });
+    await deliveryApp.handleSendMessage('important message', { inputEl, statusEl, btnEl, fetchFn });
 
     expect(fetchFn).toHaveBeenCalled();
     expect(statusEl.textContent).toBe('Failed: pulse unreachable');
@@ -46,7 +47,7 @@ describe('guaranteed /api/send delivery (#4877 AC7)', () => {
     const btnEl = { textContent: 'Send', classList: { add: jest.fn(), remove: jest.fn() } };
     const fetchFn = jest.fn().mockRejectedValue(new Error('Network connection lost'));
 
-    await app.handleSendMessage('message during outage', { inputEl, statusEl, btnEl, fetchFn });
+    await deliveryApp.handleSendMessage('message during outage', { inputEl, statusEl, btnEl, fetchFn });
 
     expect(fetchFn).toHaveBeenCalled();
     expect(statusEl.textContent).toBe('Failed: Network connection lost');
