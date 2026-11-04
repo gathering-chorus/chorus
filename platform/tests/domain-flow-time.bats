@@ -267,3 +267,27 @@ own_ts_renderers() {
   out="$(grep -rlE 'fn nth_sun(day)?\(' --include='*.rs' "$ROOT/platform/services" | grep -v '/target/' | sed "s|$ROOT/||")"
   [ "$out" = "platform/services/shared/boston.rs" ] || { echo "$out"; return 1; }
 }
+
+# The 21 scripts moved onto boston_time (9d2280085), named so a change to any of them runs this.
+MOVED="platform/scripts/alert-delivery-test.sh platform/scripts/app-state.sh platform/scripts/authn-coverage.sh
+platform/scripts/authz-coverage.sh platform/scripts/bedroom-heartbeat.sh platform/scripts/cards-orphan-reaper.sh
+platform/scripts/chat.sh platform/scripts/chorus-ops.sh platform/scripts/daily-review-ops.sh
+platform/scripts/daily-review-quality.sh platform/scripts/daily-review-summary.sh platform/scripts/daily-signal-scan.sh
+platform/scripts/generate-standards-surface.sh platform/scripts/nudge-health-check.sh platform/scripts/perf-baseline-chorus.sh
+platform/scripts/security-probes-run.sh platform/scripts/standards-surface-cron.sh platform/scripts/tmp-reaper.sh
+proving/fitness/run-fitness.sh proving/fitness/write-snapshot.sh proving/scripts/alert-runner.sh"
+
+@test "AC3: each moved script parses and loads boston_time from its own folder" {
+  for f in $MOVED; do
+    bash -n "$ROOT/$f" || { echo "does not parse: $f"; return 1; }
+    grep -qF 'boston-time.sh' "$ROOT/$f" || { echo "no boston_time: $f"; return 1; }
+    # the source line resolves from the script's own folder (no CHORUS_ROOT needed)
+    lib="$(dirname "$ROOT/$f")/$(sed -n 's|^\. "$(dirname "${BASH_SOURCE\[0\]}")/\([^"]*boston-time\.sh\)".*|\1|p' "$ROOT/$f" | head -1)"
+    [ -f "$lib" ] || { echo "source path does not resolve: $f -> $lib"; return 1; }
+  done
+}
+
+@test "AC3: werk-init no longer asks wall-clock to write the clock file" {
+  ! grep -qE 'wall-clock" --write' "$ROOT/platform/scripts/werk-init.sh" || return 1
+  grep -qF '"$SCRIPT_DIR/wall-clock"' "$ROOT/platform/scripts/werk-init.sh" || return 1
+}

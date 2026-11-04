@@ -42,3 +42,13 @@ describe('#4885 the one Boston renderer', () => {
     expect(bostonFormat(d, { hour: 'numeric', minute: '2-digit' })).toBe('11:26 PM');
   });
 });
+
+describe('#4885 boston.d.ts declares exactly what boston.js exports', () => {
+  it('every export is typed, and nothing typed is missing from the module', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const js = Object.keys(require('../time/boston')).sort();
+    const dts = require('fs').readFileSync(require('path').join(__dirname, '../time/boston.d.ts'), 'utf8');
+    const typed = [...dts.matchAll(/export function (\w+)/g)].map((m: RegExpMatchArray) => m[1]).sort();
+    expect(typed).toEqual(js);
+  });
+});
