@@ -9,6 +9,7 @@ import { isRenderableDigest } from './observations';
 import { projectRoleState, type SpineActivity } from './tiles-spine';
 import { setRoomRoles } from './room-roles';
 import { spinePath, projectSpine } from './spine-tail';
+import { bostonDay, bostonHHMM } from '../../../platform/chorus-sdk/time/boston';
 
 // #2167: env-configurable so tests can point at a fixture directory.
 const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
@@ -154,9 +155,9 @@ export interface DerivedRoleRow {
 function bostonClock(iso: string | undefined, now: Date): string {
   const t = iso ? new Date(iso) : null;
   if (!t || Number.isNaN(t.getTime())) return '?';
-  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', ...o }).format(d);
-  const day = (d: Date) => fmt(d, { month: '2-digit', day: '2-digit' });
-  const hm = fmt(t, { hour: '2-digit', minute: '2-digit', hour12: false });
+  // #4885 — the one renderer
+  const day = (d: Date) => bostonDay(d).slice(5);
+  const hm = bostonHHMM(t);
   return day(t) === day(now) ? hm : `${day(t)} ${hm}`;
 }
 
