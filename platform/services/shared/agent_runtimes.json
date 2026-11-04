@@ -1,7 +1,10 @@
 {
   "runsOn": {
     "abby-normal": "agy",
-    "borg-queen": "agy"
+    "borg-queen": "agy",
+    "kade": "claude-code",
+    "silas": "claude-code",
+    "wren": "claude-code"
   },
   "runtimes": {
     "agy": {

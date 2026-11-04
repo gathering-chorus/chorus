@@ -23,7 +23,7 @@ setup() {
   cat > "$T/door/time.json" <<'EOF'
 {"kind":"Domain","id":"chorus:time","data":{"label":"time",
  "pathPattern":["wall-clock","clock_sync","boston_offset","boston\\(","America/New_York"],
- "lossyPattern":"TZ=America/New_York date[^)]*%H:%M"},
+ "lossyPattern":"TZ=America/New_York date[^)]*%H:%M(:%S)?['\"]"},
  "links":{"ownedBy":"chorus:principal-silas"}}
 EOF
   cat > "$T/door.py" <<'EOF'
@@ -268,13 +268,14 @@ own_ts_renderers() {
   [ "$out" = "platform/services/shared/boston.rs" ] || { echo "$out"; return 1; }
 }
 
-# The 21 scripts moved onto boston_time (9d2280085), named so a change to any of them runs this.
+# The 20 scripts moved onto boston_time (9d2280085), named so a change to any of them runs this.
+# security-probes-run.sh went back (its stamp already carries %Z; the credential card owns that script).
 MOVED="platform/scripts/alert-delivery-test.sh platform/scripts/app-state.sh platform/scripts/authn-coverage.sh
 platform/scripts/authz-coverage.sh platform/scripts/bedroom-heartbeat.sh platform/scripts/cards-orphan-reaper.sh
 platform/scripts/chat.sh platform/scripts/chorus-ops.sh platform/scripts/daily-review-ops.sh
 platform/scripts/daily-review-quality.sh platform/scripts/daily-review-summary.sh platform/scripts/daily-signal-scan.sh
 platform/scripts/generate-standards-surface.sh platform/scripts/nudge-health-check.sh platform/scripts/perf-baseline-chorus.sh
-platform/scripts/security-probes-run.sh platform/scripts/standards-surface-cron.sh platform/scripts/tmp-reaper.sh
+platform/scripts/standards-surface-cron.sh platform/scripts/tmp-reaper.sh
 proving/fitness/run-fitness.sh proving/fitness/write-snapshot.sh proving/scripts/alert-runner.sh"
 
 @test "AC3: each moved script parses and loads boston_time from its own folder" {
@@ -290,4 +291,12 @@ proving/fitness/run-fitness.sh proving/fitness/write-snapshot.sh proving/scripts
 @test "AC3: werk-init no longer asks wall-clock to write the clock file" {
   ! grep -qE 'wall-clock" --write' "$ROOT/platform/scripts/werk-init.sh" || return 1
   grep -qF '"$SCRIPT_DIR/wall-clock"' "$ROOT/platform/scripts/werk-init.sh" || return 1
+}
+
+@test "AC1 NEGATIVE PROOF: a stamp that carries its zone is not lossy; one that ends at the minute or second is" {
+  printf 'a=$(TZ=America/New_York date "+%%Y-%%m-%%d %%H:%%M %%Z")\n' > "$T/tree/scripts/zoned.sh"
+  printf 'b=$(TZ=America/New_York date "+%%H:%%M:%%S")\n' > "$T/tree/scripts/seconds.sh"
+  run "$FLOW" inventory DOMAIN=time
+  ! { printf '%s\n' "$output" | grep -F "scripts/zoned.sh" | grep -qF lossy; } || return 1
+  printf '%s\n' "$output" | grep -F "scripts/seconds.sh" | grep -qF lossy || return 1
 }

@@ -2,6 +2,9 @@
 // @domain: time
 // @card: #4885
 // @owner: silas
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import * as boston from '../time/boston';
 import { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute, bostonDay, bostonHour, bostonHHMM, bostonMidnight, bostonFormat } from '../time/boston';
 
 describe('#4885 the one Boston renderer', () => {
@@ -45,9 +48,8 @@ describe('#4885 the one Boston renderer', () => {
 
 describe('#4885 boston.d.ts declares exactly what boston.js exports', () => {
   it('every export is typed, and nothing typed is missing from the module', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const js = Object.keys(require('../time/boston')).sort();
-    const dts = require('fs').readFileSync(require('path').join(__dirname, '../time/boston.d.ts'), 'utf8');
+    const js = Object.keys(boston).filter((k) => k !== 'default').sort();
+    const dts = readFileSync(join(__dirname, '../time/boston.d.ts'), 'utf8');
     const typed = [...dts.matchAll(/export function (\w+)/g)].map((m: RegExpMatchArray) => m[1]).sort();
     expect(typed).toEqual(js);
   });

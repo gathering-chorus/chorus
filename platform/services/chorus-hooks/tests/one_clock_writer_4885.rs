@@ -21,7 +21,7 @@ fn writers(dir: &Path) -> Vec<String> {
 
 #[test]
 fn clock_sync_is_the_one_writer_of_the_clock_file() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let src = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("src");
     assert_eq!(writers(&src), vec!["clock_sync.rs".to_string()]);
 }
 

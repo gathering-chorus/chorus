@@ -25,6 +25,10 @@ function el(id) {
   return (els[id] = e);
 }
 global.window = global;
+// #4885 — the page loads the one Boston renderer as a script first; load the same file here
+if (src.includes('/vendor/chorus-time/boston.js')) {
+  require('vm').runInThisContext(fs.readFileSync(require('path').join(__dirname, '../../../chorus-sdk/time/boston.js'), 'utf8'));
+}
 global.document = { querySelector: s => el(s.replace(/^#/, '')) };
 global.location = { search: '?card=4195' };
 global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, events }) });

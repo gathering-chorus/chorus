@@ -28,7 +28,7 @@ TIME = {"name": "time",
         "comment": "Time and the clock: scheduling, cron and time-based triggers, and the one Boston clock every record and every screen reads.",
         "purpose": "Drive time-based work, and keep one clock: the system stamps every time, one renderer per runtime shows it in Boston.",
         "pathPattern": ["wall-clock", "clock_sync", "boston_offset", "boston\\(", "America/New_York"],
-        "lossyPattern": "TZ=America/New_York date[^)]*%H:%M"}
+        "lossyPattern": "TZ=America/New_York date[^)]*%H:%M(:%S)?['\"]"}
 
 
 def rows():

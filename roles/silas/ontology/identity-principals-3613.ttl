@@ -35,7 +35,9 @@ chorus:principal-silas a chorus:Principal ;
     chorus:holdsRole chorus:role-silas ;
     chorus:principalKind "agent" ;
     chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
-    chorus:canSignIn "false" .
+    chorus:canSignIn "false" ;
+    # #4885 — runs on Claude Code (Wren 2026-11-04 07:27: the model's truth); athena-gen reads it for agent_runtimes.json.
+    chorus:agentRuntime chorus:runtime-claude-code .
 
 chorus:principal-wren a chorus:Principal ;
     rdfs:label "wren (agent principal)" ;
@@ -43,7 +45,9 @@ chorus:principal-wren a chorus:Principal ;
     chorus:holdsRole chorus:role-wren ;
     chorus:principalKind "agent" ;
     chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
-    chorus:canSignIn "false" .
+    chorus:canSignIn "false" ;
+    # #4885 — runs on Claude Code (Wren 2026-11-04 07:27: the model's truth); athena-gen reads it for agent_runtimes.json.
+    chorus:agentRuntime chorus:runtime-claude-code .
 
 # #4432 — Abby Normal. Minted live 2026-09-17 and never in source, so a
 # reseed would have dropped her. She runs as her own Mac account (uid 505,
@@ -82,7 +86,9 @@ chorus:principal-kade a chorus:Principal ;
     chorus:holdsRole chorus:role-kade ;
     chorus:principalKind "agent" ;
     chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
-    chorus:canSignIn "false" .
+    chorus:canSignIn "false" ;
+    # #4885 — runs on Claude Code (Wren 2026-11-04 07:27: the model's truth); athena-gen reads it for agent_runtimes.json.
+    chorus:agentRuntime chorus:runtime-claude-code .
 
 chorus:principal-bridge a chorus:Principal ;
     rdfs:label "bridge (non-interactive relay principal)" ;

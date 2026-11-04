@@ -25,8 +25,7 @@ describe('#4885 bostonMinute', () => {
   });
 
   it('NEGATIVE PROOF: no inline Boston formatter is left in the message path', () => {
-    for (const f of ['service.ts', 'sender.ts']) {
-      const src = readFileSync(join(__dirname, f), 'utf8');
+    for (const src of [readFileSync(join(__dirname, 'service.ts'), 'utf8'), readFileSync(join(__dirname, 'sender.ts'), 'utf8')]) {
       expect(src).not.toMatch(/toLocaleString\([^)]*America\/New_York/);
       expect(src).not.toMatch(/timeZone:\s*'America\/New_York'/);
     }

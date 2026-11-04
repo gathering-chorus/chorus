@@ -16,9 +16,15 @@ fn borg_queen_runs_on_agy_with_her_own_name_in_the_seen_hook() {
 }
 
 /// NEGATIVE: a role the model gives no runtime gets none, so the table is
-/// not answering agy for every name.
+/// not answering agy for every name. #4885: a fixture table, never a live role —
+/// kade was the "role with none" until the model gave the Claude roles claude-code.
 #[test]
 fn a_role_with_no_agent_runtime_gets_none() {
-    assert!(runtime_for(&runtime_table(), "kade").is_none());
+    let fixture: serde_json::Value = serde_json::json!({
+        "runsOn": { "fixture-assigned": "agy" },
+        "runtimes": { "agy": { "hooksFile": "x" } }
+    });
+    assert!(runtime_for(&fixture, "fixture-assigned").is_some(), "the fixture separates the two states");
+    assert!(runtime_for(&fixture, "fixture-unassigned").is_none());
     assert!(runtime_for(&runtime_table(), "no-such-role").is_none());
 }

@@ -74,8 +74,14 @@ q() { # SPARQL ASK against the ttl; prints yes/no
 
 # --- #4642 (round 2): the go joins the one list --------------------------------
 
-@test "R2-GO-ROW model: an Approval may be kind go as well as card, and nothing else" {
-  grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" \)' "$TTL" || return 1
+@test "R2-GO-ROW model: an Approval may be kind card, go or step (#4885), and nothing else" {
+  grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" "step" \)' "$TTL" || return 1
+}
+
+@test "R2-GO-ROW model NEGATIVE PROOF (#4885): a kind list widened past card, go and step is caught" {
+  sed 's/sh:in ( "card" "go" "step" )/sh:in ( "card" "go" "step" "anything" )/' "$TTL" > "$BATS_TEST_TMPDIR/wide.ttl"
+  ! cmp -s "$TTL" "$BATS_TEST_TMPDIR/wide.ttl" || return 1
+  ! grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" "step" \)' "$BATS_TEST_TMPDIR/wide.ttl" || return 1
 }
 
 @test "R2-RECORDS model: a go decision records the round it signed (at most one)" {
