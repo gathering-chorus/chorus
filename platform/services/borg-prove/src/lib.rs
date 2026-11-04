@@ -294,6 +294,10 @@ pub fn latest_case_result(body: &str) -> Option<String> {
 
 /// #4824 — the newest result with its Loki timestamp (ns), so two answers
 /// (the card's own runs, main's nightly since the land) can be compared.
+/// #4889 — how many case lines the test check asks Loki for. An answer that holds
+/// this many lines may have cut off the newest run's oldest cases (/code-review).
+pub const CASE_LIMIT: usize = 2000;
+
 pub fn latest_case(body: &str) -> Option<(u128, String)> {
     // #4889 (Kade 18:08) — the WHOLE newest run of the test decides, not its
     // newest single case: Loki answered limit=1, so one passing case hid a failed
@@ -325,11 +329,18 @@ pub fn latest_case(body: &str) -> Option<(u128, String)> {
             else if line.contains("\"event\":\"test.case.skipped\"") { "skip" }
             else if line.contains("\"event\":\"test.case.passed\"") { "pass" }
             else { continue };
-        cases.push((ts, json_field(&line, "trace").unwrap_or_default(), result));
+        // a case with no trace is a run of its own: never grouped with others
+        let run = json_field(&line, "trace").filter(|t| !t.is_empty()).unwrap_or_else(|| format!("untraced-{ts}"));
+        cases.push((ts, run, result));
     }
     let (newest, run) = cases.iter().max_by_key(|(t, _, _)| *t).map(|(t, r, _)| (*t, r.clone()))?;
     let of_run: Vec<&str> = cases.iter().filter(|(_, r, _)| *r == run).map(|(_, _, x)| *x).collect();
-    let verdict = if of_run.contains(&"fail") { "fail" } else if of_run.contains(&"skip") { "skip" } else { "pass" };
+    // a full answer whose oldest line is still the newest run may have lost cases
+    let oldest_is_newest_run = cases.iter().min_by_key(|(t, _, _)| *t).map(|(_, r, _)| *r == run).unwrap_or(false);
+    let truncated = cases.len() >= CASE_LIMIT && oldest_is_newest_run;
+    let verdict = if of_run.contains(&"fail") { "fail" }
+        else if truncated || of_run.contains(&"skip") { "skip" }
+        else { "pass" };
     Some((newest, verdict.to_string()))
 }
 

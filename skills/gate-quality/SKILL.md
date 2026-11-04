@@ -36,7 +36,20 @@ for context only. In the demo the diff is handed to you; by hand, read it with
 4. **Dead code.** Code, flags, files or helpers left unused by this change.
 5. **Debug leftovers.** `console.log` in production paths, commented-out code, TODOs
    that hide a gap the card claims to close.
-6. **Observability.** A new failure mode with no spine event or log line to find it by.
+6. **Observability.** A new failure mode with no spine event or log line to find it
+   by; a changed handler, route or service with no structured log call.
+
+## Where the old checks went (#4889, Kade 18:34: fix, never throw away)
+
+| Old check | Now |
+|-----------|-----|
+| Hooks pass (chorus-hooks build current) | werk-test: the card's run builds and tests every crate the diff touches |
+| Regression (tests deleted or skipped) | item 3, on the diff; werk-test still refuses a suite deleted without its unit |
+| console.log in production code | item 5, on the diff |
+| Observability present | item 6, on the diff |
+| Smoke check (the app answers) | werk-test and the demo's env-up, which start the werk's services and fail when they don't answer |
+| Bats (shell-script integration tests) | werk-test: every bats suite the diff touches runs in the card's one test run |
+| "Any new technical debt?" | the whole review |
 
 Report only what you can point to in the diff: each finding is
 `file:line — what — why it matters`. No finding about the card's AC boxes, ticks or

@@ -37,3 +37,21 @@ fn a_skipped_case_in_the_newest_run_is_unmeasured() {
     assert_eq!(latest_case(&b).map(|x| x.1).as_deref(), Some("skip"));
     assert!(matches!(judge(&check(), &Some("skip".into())), Outcome::Unmeasured(_)));
 }
+
+// /code-review 18:34: a trace-less case is never grouped with an older run
+#[test]
+fn a_case_with_no_trace_is_judged_alone_not_with_old_runs() {
+    let b = r#"{"data":{"result":[{"stream":{},"values":[
+        ["300","{\"event\":\"test.case.passed\",\"file\":\"x.bats\"}"],
+        ["100","{\"event\":\"test.case.failed\",\"file\":\"x.bats\"}"]]}]}}"#;
+    assert_eq!(latest_case(b).map(|x| x.1).as_deref(), Some("pass"));
+}
+
+// NEGATIVE PROOF (/code-review 18:34): a full answer still inside the newest run may have lost cases
+#[test]
+fn a_full_answer_that_never_leaves_the_newest_run_is_unmeasured() {
+    let rows: Vec<(String, &str, &str)> = (0..borg_prove::CASE_LIMIT).map(|i| ((1000 + i).to_string(), "passed", "r9")).collect();
+    let refs: Vec<(&str, &str, &str)> = rows.iter().map(|(t, e, r)| (t.as_str(), *e, *r)).collect();
+    assert_eq!(latest_case(&body(&refs)).map(|x| x.1).as_deref(), Some("skip"));
+}
+
