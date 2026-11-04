@@ -61,7 +61,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
   });
 
   describe('AC2: handleSendMessage preserves actor filter targeting', () => {
-    it('prepends active role filter if message text does not start with @', async () => {
+    it('AC2: prepends active role filter if message text does not start with @', async () => {
       app.setRoleFilter('silas');
       const inputEl = { value: 'check the memory pressure' };
       const statusEl = { textContent: '', style: { display: 'none' } };
@@ -77,7 +77,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(sentBody.text).toBe('@silas check the memory pressure');
     });
 
-    it('does not double-prepend if message already starts with @silas', async () => {
+    it('AC2: does not double-prepend if message already starts with @silas', async () => {
       app.setRoleFilter('silas');
       const inputEl = { value: '@silas check the memory pressure' };
       const statusEl = { textContent: '', style: { display: 'none' } };
@@ -95,7 +95,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
   });
 
   describe('AC5: getUserMedia / MediaRecorder failure surfaces visibly', () => {
-    it('displays visible error when getUserMedia rejects (e.g. Permission Denied)', async () => {
+    it('AC5: displays visible error when getUserMedia rejects (e.g. Permission Denied)', async () => {
       const errorEl = { textContent: '', innerHTML: '' };
       const micEl: any = {
         addEventListener: jest.fn(),
@@ -128,7 +128,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
   });
 
   describe('AC1: watchMicButton onstop targeting under filter or direct room', () => {
-    it('prepends @<role> when actor filter is active upon voice transcription stop', async () => {
+    it('AC1: prepends @<role> when actor filter is active upon voice transcription stop', async () => {
       app.setRoleFilter('kade');
       const inputEl = { value: '', focus: jest.fn() };
       let clickHandler: Function | null = null;
@@ -263,7 +263,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(inputEl.value).not.toMatch(/@kade/);
     });
 
-    it('prepends @<role> when viewing a direct room upon voice transcription stop', async () => {
+    it('AC1: prepends @<role> when viewing a direct room upon voice transcription stop', async () => {
       app.setRoleFilter(null);
       const inputEl = { value: '', focus: jest.fn() };
       const pickerEl = { value: 'silas' };
@@ -467,7 +467,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
   });
 
   describe('AC5: 0-byte chunk and MediaRecorder error surfacing', () => {
-    it('displays visible error and does not call transcribeVoice when 0 audio chunks are recorded', async () => {
+    it('AC5: displays visible error and does not call transcribeVoice when 0 audio chunks are recorded', async () => {
       const errorEl = { textContent: '', innerHTML: '' };
       const micEl: any = {
         addEventListener: jest.fn(),
@@ -517,7 +517,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('surfaces error when MediaRecorder constructor throws', async () => {
+    it('AC5: surfaces error when MediaRecorder constructor throws', async () => {
       const errorEl = { textContent: '', innerHTML: '' };
       const micEl: any = {
         addEventListener: jest.fn(),
@@ -553,7 +553,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(errorEl.textContent).toMatch(/Voice recorder failed: Unsupported codec/i);
     });
 
-    it('surfaces error when MediaRecorder encounters runtime error', async () => {
+    it('AC5: surfaces error when MediaRecorder encounters runtime error', async () => {
       const errorEl = { textContent: '', innerHTML: '' };
       const micEl: any = {
         addEventListener: jest.fn(),
