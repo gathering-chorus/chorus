@@ -43,15 +43,20 @@ layers" counts each as one.
 - Prod verify can go red but never did; 67 of 118 lands had no checks to run. That
   is AC2's gap: every AC names one check.
 
-## Retire (Kade 18:00, 18:03)
+## The proof path (Jeff 2026-11-04 18:21)
 
-| Layer | Why it goes | What covers it |
-|-------|-------------|----------------|
-| The five gates | one real defect alone in 30 days | the AC's own check (AC2), run in werk-test |
-| Navigator vouch | repeats the pair green, never refused | pair green (the navigator's sign) |
-| AC verify at the demo | repeats the same checks prod verify runs | werk-test runs each AC's check before the go; prod verify runs them after the land |
-| Demo session smoke | no catch in 30 days; its one fail was unmeasured | — |
+> one test run · one code review · one architecture and quality review · prove in prod
 
-Kept: pair green, pair local proof (the only red before cicd), cicd werk-test, the
-peer reviews, owner vouch, Jeff's go, prod verify. Eleven become seven.
+plus Jeff's go. This replaces the team's 18:00 retire list. Reviews and borg-prove are
+fixed toward their intent, never removed (Jeff 18:11–18:12: "review is supposed to be
+code review not ac checker and same for quality and architecture"). Each step calls the
+skill that already exists — `/code-review`, `/gate-arch` and `/gate-quality`, borg-prove —
+with no copies and no new names (Jeff 18:22–18:25).
 
+| Step | What it reads | Skill |
+|------|---------------|-------|
+| One test run | the round's tests, once | werk-test |
+| One code review | the diff: correctness, tests, and whether each AC's check tests that AC | `/code-review` |
+| One architecture and quality review | the diff: boundaries, duplication, one path, hollow checks, error paths, dead code | `/gate-arch`, `/gate-quality` |
+| Prove in prod | each AC's own check, against prod, after the land; a red reopens the card | borg-prove |
+| Jeff's go | the demo | the go page |
