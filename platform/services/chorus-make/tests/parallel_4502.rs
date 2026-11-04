@@ -57,7 +57,7 @@ fn siblings_generate_the_same_bytes_in_any_row_order() {
 
 // NEGATIVE PROOF: distinct orders are the linear chain. The demo pipeline's
 // rows (its own DAG, Jeff 10-12 21:18) generate its golden with exactly one
-// fan-in (smoke waits for the 8 siblings); with the sibling group removed the
+// fan-in (announce waits for the 3 reviews); with the sibling group removed the
 // same rows have none. cicd itself, which calls the demo as one step, has none.
 #[test]
 fn negative_proof_distinct_orders_stay_the_linear_golden() {
@@ -67,7 +67,7 @@ fn negative_proof_distinct_orders_stay_the_linear_golden() {
     let out = chorus_make::generate_straight("demo", &pipe, &rows, &known).unwrap();
     assert_eq!(out, fixture("fixtures/demo-golden.yaml"));
     let fan_in = |o: &str| o.lines().filter(|l| l.starts_with("    depends: [") && l.contains(", ")).count();
-    assert_eq!(fan_in(&out), 1, "one fan-in: smoke waits for the 8 siblings:\n{out}");
+    assert_eq!(fan_in(&out), 1, "one fan-in: announce waits for the 3 reviews:\n{out}");
     let linear: Vec<_> = rows.into_iter().filter(|r| !r.with_args.contains("parallel=true")).collect(); // drop the parallel group
     assert_eq!(fan_in(&chorus_make::generate_straight("demo", &pipe, &linear, &known).unwrap()), 0, "distinct orders: no fan-in");
     let cicd = generate("cicd", &parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap()).unwrap();

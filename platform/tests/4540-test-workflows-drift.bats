@@ -65,7 +65,7 @@ setup() {
 }
 
 @test "negative proof: a demo with a gate dropped by hand is drift (#4502)" {
-  grep -v 'skill-werk-demo-gate-ops' "$ROOT/platform/pipelines/demo.yaml" > "$BATS_TEST_TMPDIR/demo.yaml"
+  grep -v 'skill-werk-demo-gate-arch' "$ROOT/platform/pipelines/demo.yaml" > "$BATS_TEST_TMPDIR/demo.yaml"
   ! cmp -s "$ROOT/platform/pipelines/demo.yaml" "$BATS_TEST_TMPDIR/demo.yaml" || return 1
   run "$CM" check-straight demo "$F/demo-rows.tsv" "$F/demo-pipe.tsv" "$KNOWN" "$BATS_TEST_TMPDIR/demo.yaml"
   [ "$status" -eq 1 ]

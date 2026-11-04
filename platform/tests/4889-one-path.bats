@@ -12,11 +12,12 @@ steps() {
   grep -q 'pipeline-start handoff' "$p/pair.yaml" && grep -q 'local.proof\|local_proof\|cicd-test' "$p/pair.yaml" && echo "pair test run"
   grep -q 'name: skill-werk-test-pipeline' "$p/cicd.yaml" && echo "test run"
   grep -q 'name: skill-werk-review$' "$p/cicd.yaml" && echo "review floor"
-  for g in product code ops; do grep -q "name: skill-werk-demo-gate-$g$" "$p/demo.yaml" && echo "gate $g"; done
+  for g in product ops; do grep -q "name: skill-werk-demo-gate-$g$" "$p/demo.yaml" && echo "gate $g"; done
   grep -q 'name: skill-werk-demo-review-' "$p/demo.yaml" && echo "peer reviews"
-  grep -q 'name: skill-werk-demo-code-review$' "$p/demo.yaml" && echo "code review"
-  grep -q 'name: skill-werk-demo-arch-quality-review$' "$p/demo.yaml" && echo "architecture and quality review"
-  grep -q 'name: skill-werk-demo-gate-arch$\|name: skill-werk-demo-gate-quality$' "$p/demo.yaml" && echo "gate arch/quality (old)"
+  # each review step calls the skill that already exists (Jeff 18:22: no new names)
+  grep -q 'command: "werk-demo run-gate ${CARD} ${ROLE} code"' "$p/demo.yaml" && echo "code review"
+  grep -q 'command: "werk-demo run-gate ${CARD} ${ROLE} arch"' "$p/demo.yaml" \
+    && grep -q 'command: "werk-demo run-gate ${CARD} ${ROLE} quality"' "$p/demo.yaml" && echo "architecture and quality review"
   grep -q 'name: skill-werk-demo-session-smoke' "$p/demo.yaml" && echo "demo smoke"
   grep -q 'name: skill-werk-go' "$p/cicd-go.yaml" && echo "jeff go"
   grep -q 'name: skill-borg-verify-in-prod' "$p/cicd-land.yaml" && echo "prove in prod"
