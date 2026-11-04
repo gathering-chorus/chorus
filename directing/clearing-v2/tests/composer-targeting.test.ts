@@ -261,8 +261,72 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
 
       expect(inputEl.value).toBe('@silas check the memory pressure');
     });
+
+    it('does not prepend role when room picker value is not a known role (e.g. team or custom)', async () => {
+      app.setRoleFilter(null);
+      const inputEl = { value: '', focus: jest.fn() };
+      const pickerEl = { value: 'team' };
+      let clickHandler: Function | null = null;
+      const micEl: any = {
+        dataset: {},
+        setAttribute: jest.fn(),
+        addEventListener: jest.fn((event, fn) => {
+          if (event === 'click') clickHandler = fn;
+        }),
+      };
+      const errorEl = { textContent: '', innerHTML: '' };
+
+      (global as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'composer-mic') return micEl;
+          if (id === 'composer-input') return inputEl;
+          if (id === 'room-picker') return pickerEl;
+          if (id === 'send-error') return errorEl;
+          return null;
+        },
+      };
+
+      (global as any).Blob = class {
+        size = 100;
+        parts: any[];
+        constructor(parts: any[]) { this.parts = parts || []; }
+      };
+
+      let recorderInstance: any = null;
+      (global as any).navigator = {
+        mediaDevices: {
+          getUserMedia: jest.fn().mockResolvedValue({
+            getTracks: () => [{ stop: jest.fn() }],
+          }),
+        },
+      };
+      (global as any).MediaRecorder = class {
+        state = 'inactive';
+        mimeType = 'audio/webm';
+        ondataavailable: any = null;
+        onstop: any = null;
+        constructor() {
+          recorderInstance = this;
+        }
+        start() { this.state = 'recording'; }
+        stop() { this.state = 'inactive'; }
+      };
+
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true, transcript: 'team announcement here' }),
+      });
+
+      app.watchMicButton();
+      await clickHandler!();
+      if (recorderInstance.ondataavailable) {
+        recorderInstance.ondataavailable({ data: { size: 100 } });
+      }
+      await recorderInstance.onstop();
+
+      expect(inputEl.value).toBe('team announcement here');
+    });
   });
-});
 
   describe('AC5: 0-byte chunk and MediaRecorder error surfacing', () => {
     it('displays visible error and does not call transcribeVoice when 0 audio chunks are recorded', async () => {
@@ -314,4 +378,86 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(errorEl.textContent).toMatch(/Voice not added: no audio recorded \(0 bytes\)/i);
       expect(fetchSpy).not.toHaveBeenCalled();
     });
+
+    it('surfaces error when MediaRecorder constructor throws', async () => {
+      const errorEl = { textContent: '', innerHTML: '' };
+      const micEl: any = {
+        addEventListener: jest.fn(),
+        dataset: {},
+        setAttribute: jest.fn(),
+      };
+
+      (global as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'composer-mic') return micEl;
+          if (id === 'send-error') return errorEl;
+          return null;
+        },
+      };
+
+      (global as any).navigator = {
+        mediaDevices: {
+          getUserMedia: jest.fn().mockResolvedValue({
+            getTracks: () => [{ stop: jest.fn() }],
+          }),
+        },
+      };
+      (global as any).MediaRecorder = class {
+        constructor() {
+          throw new Error('Unsupported codec');
+        }
+      };
+
+      app.watchMicButton();
+      const clickHandler = micEl.addEventListener.mock.calls[0][1];
+      await clickHandler();
+
+      expect(errorEl.textContent).toMatch(/Voice recorder failed: Unsupported codec/i);
+    });
+
+    it('surfaces error when MediaRecorder encounters runtime error', async () => {
+      const errorEl = { textContent: '', innerHTML: '' };
+      const micEl: any = {
+        addEventListener: jest.fn(),
+        dataset: {},
+        setAttribute: jest.fn(),
+      };
+
+      (global as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'composer-mic') return micEl;
+          if (id === 'send-error') return errorEl;
+          return null;
+        },
+      };
+
+      let recorderInstance: any = null;
+      (global as any).navigator = {
+        mediaDevices: {
+          getUserMedia: jest.fn().mockResolvedValue({
+            getTracks: () => [{ stop: jest.fn() }],
+          }),
+        },
+      };
+      (global as any).MediaRecorder = class {
+        state = 'inactive';
+        mimeType = 'audio/webm';
+        ondataavailable: any = null;
+        onerror: any = null;
+        onstop: any = null;
+        constructor() {
+          recorderInstance = this;
+        }
+        start() { this.state = 'recording'; }
+        stop() { this.state = 'inactive'; }
+      };
+
+      app.watchMicButton();
+      const clickHandler = micEl.addEventListener.mock.calls[0][1];
+      await clickHandler();
+
+      recorderInstance.onerror({ error: new Error('Audio hardware disconnected') });
+      expect(errorEl.textContent).toMatch(/Voice recording error: Audio hardware disconnected/i);
+    });
   });
+});

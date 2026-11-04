@@ -54,5 +54,11 @@ describe('router targeting (#4877 AC3, AC4)', () => {
     const teamNudges = router.extractNudges(teamMsg);
     expect(teamNudges).toHaveLength(1);
     expect(teamNudges[0].to).toBe('wren');
+
+    // 3. Fallback broadcast: unaddressed message in #team when no moderator is set targets all non-jeff roles
+    router.setModerator(undefined);
+    const broadcastNudges = router.extractNudges(teamMsg);
+    expect(broadcastNudges).toHaveLength(4);
+    expect(broadcastNudges.map((n) => n.to)).toEqual(['wren', 'silas', 'kade', 'abby-normal']);
   });
 });

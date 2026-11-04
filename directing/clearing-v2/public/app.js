@@ -12,6 +12,7 @@ const relayIndicator = typeof document !== 'undefined' ? document.getElementById
 const tilesContainer = typeof document !== 'undefined' ? document.getElementById('tiles-container') : null;
 
 const STORE = 'chorus.room.key.v1';
+const DEFAULT_KNOWN_ROLES = ['jeff', 'wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
 
 let nodeSchnorr = null;
 let nodeSha256 = null;
@@ -559,12 +560,12 @@ function watchMicButton() {
         if (out.ok && input) {
           let text = out.transcript || '';
           // #4877 AC1: If actor filter is active or direct room selected, prepend @<role> if not already present
-          const filterRoles = Array.from(activeRoleFilters);
-          let targetRole = filterRoles.length > 0 ? filterRoles[0] : null;
+          const filterRoles = Array.from(activeRoleFilters).filter((r) => DEFAULT_KNOWN_ROLES.includes(r.toLowerCase()));
+          let targetRole = filterRoles.length > 0 ? filterRoles[0].toLowerCase() : null;
           if (!targetRole && typeof document !== 'undefined') {
             const picker = document.getElementById('room-picker');
-            const val = picker && picker.value;
-            if (val && val !== 'team') targetRole = val.toLowerCase();
+            const val = picker && picker.value && picker.value.toLowerCase();
+            if (val && DEFAULT_KNOWN_ROLES.includes(val)) targetRole = val;
           }
           const currentVal = input.value || '';
           if (targetRole && !currentVal.trim().startsWith('@') && !text.trim().startsWith('@')) {
@@ -1386,5 +1387,6 @@ if (typeof module !== 'undefined' && module.exports) {
     isMessageVisibleWithFilters,
     initTileFilters,
     watchMicButton,
+    DEFAULT_KNOWN_ROLES,
   };
 }
