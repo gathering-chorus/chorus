@@ -45,7 +45,10 @@ case "$STATUS" in
     case "$DAG" in
       cicd) echo "run-finished: #$CARD cicd passed — its finish wake is the demo brief"; exit 0 ;;
       cicd-go) echo "run-finished: #$CARD go given — the land it enqueued wakes when it finishes"; exit 0 ;;
-      cicd-land|athena-land) MSG="#$CARD landed, post-land: check the card's post-land AC in prod and close its open threads · /cws $CARD" ;;
+      cicd-land) MSG="#$CARD landed, post-land: check the card's post-land AC in prod and close its open threads · /cws $CARD" ;;
+      # a land whose commit carries model sources enqueues athena-land as its own
+      # run (Kade 16:24): that finish is the model in prod, not a second "landed"
+      athena-land) MSG="#$CARD model deployed to prod (athena-land) · dagu $RUN · /cws $CARD" ;;
       *) MSG="#$CARD $DAG passed · dagu $RUN · /cws $CARD" ;;
     esac ;;
   failed)

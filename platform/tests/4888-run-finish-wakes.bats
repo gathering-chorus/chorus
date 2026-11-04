@@ -162,6 +162,15 @@ finish() { # STATUS DAG [STEP]
   grep -q '^silas|#4888 landed, post-land: ' "$SENT" || { cat "$SENT"; return 1; }
 }
 
+@test "a model land's two finishes say two different things: landed, then the model in prod (Kade 16:24)" {
+  cage; run finish succeeded cicd-land
+  cage2="$(cat "$SENT")"
+  cage; run finish succeeded athena-land
+  [[ "$cage2" == *"#4888 landed, post-land"* ]] || { echo "$cage2"; return 1; }
+  grep -q '^silas|#4888 model deployed to prod (athena-land)' "$SENT" || { cat "$SENT"; return 1; }
+  ! grep -q 'landed, post-land' "$SENT" || { cat "$SENT"; return 1; }
+}
+
 @test "AC1: a passing athena, pair or domain-flow run wakes once with its result" {
   for dag in athena pair domain-flow; do
     cage; run finish succeeded "$dag"
