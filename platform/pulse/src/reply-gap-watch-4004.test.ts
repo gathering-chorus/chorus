@@ -7,8 +7,8 @@
 // #4004 — reply-gap.ts sat at 28.57% function coverage while its watcher has
 // fired reply.delivery.gap 1,983 times in the live spine: the loop deciding
 // whether Jeff hears "a role went silent" was the untested part. What Jeff
-// sees: an emitted-but-never-rendered reply alarms ONCE, a rendered reply
-// never alarms, and neither a corrupt spine line nor an unreadable spine can
+// sees: an emitted reply missing from the room alarms ONCE, a rendered reply
+// never alarms (#4887: the room's own rows decide), and neither a corrupt spine line nor an unreadable spine can
 // take the watcher down quietly.
 import {
   detectGaps,
@@ -17,13 +17,19 @@ import {
   startReplyGapWatch,
   REPLY_GAP_WINDOW_MS,
   type Gap,
+  type RoomMsg,
 } from './reply-gap';
+import { contentHash } from '../../chorus-sdk/reply/hash';
 
 const T0 = Date.parse('2026-08-25T12:00:00.000Z');
 const emitted = (role: string, hash: string, atMs: number) =>
   JSON.stringify({ event: 'reply.emitted', role, hash, timestamp: new Date(atMs).toISOString() });
-const rendered = (role: string, hash: string) =>
-  JSON.stringify({ event: 'reply.rendered', role, hash, timestamp: new Date(T0).toISOString() });
+// The room's record, reaching back before every emitted reply in these tests.
+const roomWith = (...texts: string[]) => async (): Promise<RoomMsg[]> => [
+  { from: 'wren', text: 'an older row', ts: new Date(T0 - 3_600_000).toISOString() },
+  ...texts.map((text) => ({ from: 'kade', text, ts: new Date(T0).toISOString() })),
+];
+const room = roomWith();
 
 describe('#4004 reply-gap watch loop', () => {
   afterEach(() => { jest.useRealTimers(); });
@@ -32,7 +38,7 @@ describe('#4004 reply-gap watch loop', () => {
     jest.useFakeTimers();
     const gaps: Gap[] = [];
     const tail = async () => emitted('silas', 'abc', T0 - REPLY_GAP_WINDOW_MS - 1);
-    const stop = startReplyGapWatch(tail, async (g) => { gaps.push(g); }, 1000,
+    const stop = startReplyGapWatch(tail, room, async (g) => { gaps.push(g); }, 1000,
       REPLY_GAP_WINDOW_MS, () => T0);
     await jest.advanceTimersByTimeAsync(1000);
     stop();
@@ -43,19 +49,18 @@ describe('#4004 reply-gap watch loop', () => {
     jest.useFakeTimers();
     const gaps: Gap[] = [];
     const tail = async () => emitted('wren', 'zz', T0 - REPLY_GAP_WINDOW_MS - 1);
-    const stop = startReplyGapWatch(tail, async (g) => { gaps.push(g); }, 1000,
+    const stop = startReplyGapWatch(tail, room, async (g) => { gaps.push(g); }, 1000,
       REPLY_GAP_WINDOW_MS, () => T0);
     await jest.advanceTimersByTimeAsync(3000);
     stop();
     expect(gaps).toHaveLength(1);
   });
 
-  it('NEGATIVE PROOF: a rendered reply raises nothing — the check can tell the states apart', async () => {
+  it('NEGATIVE PROOF: a reply in the room raises nothing — the check can tell the states apart', async () => {
     jest.useFakeTimers();
     const gaps: Gap[] = [];
-    const tail = async () =>
-      [emitted('kade', 'q1', T0 - REPLY_GAP_WINDOW_MS - 1), rendered('kade', 'q1')].join('\n');
-    const stop = startReplyGapWatch(tail, async (g) => { gaps.push(g); }, 1000,
+    const tail = async () => emitted('kade', contentHash('q1'), T0 - REPLY_GAP_WINDOW_MS - 1);
+    const stop = startReplyGapWatch(tail, roomWith('q1'), async (g) => { gaps.push(g); }, 1000,
       REPLY_GAP_WINDOW_MS, () => T0);
     await jest.advanceTimersByTimeAsync(2000);
     stop();
@@ -67,7 +72,7 @@ describe('#4004 reply-gap watch loop', () => {
     const gaps: Gap[] = [];
     const tail = async () =>
       ['{not json', '', emitted('silas', 'ok1', T0 - REPLY_GAP_WINDOW_MS - 1)].join('\n');
-    const stop = startReplyGapWatch(tail, async (g) => { gaps.push(g); }, 1000,
+    const stop = startReplyGapWatch(tail, room, async (g) => { gaps.push(g); }, 1000,
       REPLY_GAP_WINDOW_MS, () => T0);
     await jest.advanceTimersByTimeAsync(1000);
     stop();
@@ -84,7 +89,7 @@ describe('#4004 reply-gap watch loop', () => {
       if (call === 1) throw new Error('spine unreadable');
       return emitted('silas', 'after', T0 - REPLY_GAP_WINDOW_MS - 1);
     };
-    const stop = startReplyGapWatch(tail, async (g) => { gaps.push(g); }, 1000,
+    const stop = startReplyGapWatch(tail, room, async (g) => { gaps.push(g); }, 1000,
       REPLY_GAP_WINDOW_MS, () => T0);
     await jest.advanceTimersByTimeAsync(2000);
     stop();
@@ -96,7 +101,7 @@ describe('#4004 reply-gap watch loop', () => {
   it('stop() ends the watch — no scans after teardown', async () => {
     jest.useFakeTimers();
     let reads = 0;
-    const stop = startReplyGapWatch(async () => { reads += 1; return ''; }, async () => {}, 1000);
+    const stop = startReplyGapWatch(async () => { reads += 1; return ''; }, room, async () => {}, 1000);
     await jest.advanceTimersByTimeAsync(1000);
     const afterFirst = reads;
     stop();
@@ -108,6 +113,20 @@ describe('#4004 reply-gap watch loop', () => {
     const evs = parseSpineTail(
       JSON.stringify({ event: 'reply.emitted', role: 'silas', hash: 'h', timestamp: 'not-a-date' }),
     );
-    expect(detectGaps(evs, T0, REPLY_GAP_WINDOW_MS, new Set())).toEqual([]);
+    expect(detectGaps(evs, [], T0, REPLY_GAP_WINDOW_MS, new Set())).toEqual({ gaps: [], unmeasured: 0 });
+  });
+
+  it('an unreadable room is logged once and raises no gap', async () => {
+    jest.useFakeTimers();
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const gaps: Gap[] = [];
+    const tail = async () => emitted('silas', 'lost?', T0 - REPLY_GAP_WINDOW_MS - 1);
+    const stop = startReplyGapWatch(tail, async () => null, async (g) => { gaps.push(g); }, 1000,
+      REPLY_GAP_WINDOW_MS, () => T0);
+    await jest.advanceTimersByTimeAsync(3000);
+    stop();
+    expect(gaps).toHaveLength(0);
+    expect(err.mock.calls.filter((c) => String(c[0]).includes('unreadable'))).toHaveLength(1);
+    err.mockRestore();
   });
 });

@@ -13,8 +13,8 @@ import { detectGaps, parseSpineTail, RoomMsg } from './reply-gap';
 import { contentHash } from '../../chorus-sdk/reply/hash';
 
 const FIX = path.join(__dirname, '../../tests/fixtures/4887');
-const events = parseSpineTail(fs.readFileSync(path.join(FIX, 'spine.jsonl'), 'utf8'));
-const room: RoomMsg[] = JSON.parse(fs.readFileSync(path.join(FIX, 'room.json'), 'utf8'));
+const events = parseSpineTail(fs.readFileSync(path.join(FIX, 'abby-reply-emitted-4887.jsonl'), 'utf8'));
+const room: RoomMsg[] = JSON.parse(fs.readFileSync(path.join(FIX, 'abby-room-rows-4887.json'), 'utf8'));
 const NOW = Date.parse('2026-11-04T13:05:00-05:00');
 const WINDOW = 60_000;
 

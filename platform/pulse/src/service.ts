@@ -16,7 +16,7 @@ import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presen
 import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
 import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
-import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
+import { startReplyGapWatch, parseSpineTail, SpineEv, RoomMsg } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonMinute, bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
@@ -757,8 +757,9 @@ if (require.main === module) {
       process.stderr.write(JSON.stringify({ event: 'startup.requeue.skipped', reason: 'PULSE_REQUEUE_ON_BOOT unset' }) + '\n');
     }
 
-    // #3864 — reply-delivery gap watch: reply.emitted (Stop hook) without
-    // reply.rendered (Clearing) inside the window fires reply.delivery.gap.
+    // #3864, #4887 — reply-delivery gap watch: a reply.emitted (Stop hook) with no
+    // row in the room's own record (Clearing v2, GET /api/messages) inside the
+    // window fires reply.delivery.gap. A room that cannot be read is unmeasured.
     // Reads the spine TAIL only (last 512KB) — the spine is never rotated
     // (Jeff's ruling) and a full read per tick would grow with it forever.
     const spinePath = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
@@ -777,8 +778,18 @@ if (require.main === module) {
       }
     };
 
+    const roomUrl = process.env.CLEARING_ROOM_MESSAGES_URL || 'http://localhost:3472/api/messages';
+    const readRoom = async (): Promise<RoomMsg[] | null> => {
+      try {
+        const r = await fetch(roomUrl, { signal: AbortSignal.timeout(3000) });
+        if (!r.ok) return null;
+        const body: unknown = await r.json();
+        return Array.isArray(body) ? (body as RoomMsg[]) : null;
+      } catch { return null; }
+    };
+
     {
-      startReplyGapWatch(readTail, async (gap) => {
+      startReplyGapWatch(readTail, readRoom, async (gap) => {
         await emitSpine('reply.delivery.gap', {
           role: gap.role, hash: gap.hash, emittedAt: gap.emittedAt, surface: 'clearing',
         });

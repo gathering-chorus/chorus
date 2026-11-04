@@ -6,9 +6,9 @@
 //! REPLIES — the surface Jeff actually reads — emit nothing. This module is
 //! the missing first event: `reply.emitted`, stamped at the Stop hook the
 //! moment a final reply stands (the transcript IS Claude Code delivery).
-//! Clearing's tailer stamps `reply.rendered` with the same content hash;
-//! pulse joins the pair and fires `reply.delivery.gap` when the render never
-//! comes.
+//! Pulse looks for a row with the same content hash in the room's own record
+//! (Clearing v2 /api/messages) and fires `reply.delivery.gap` when none comes
+//! (#4887; the tailer's `reply.rendered` echo retired).
 //!
 //! The hash is the cross-language join key, contract in
 //! `config/reply-hash-fixtures.json` (the word-cap-fixtures pattern). The two

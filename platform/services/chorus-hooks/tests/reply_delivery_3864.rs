@@ -3,9 +3,9 @@
 //! #3864 — reply-delivery correlation, Rust leg.
 //!
 //! The SHARED FIXTURE suite: config/reply-hash-fixtures.json is the
-//! cross-language contract with Clearing's TS hasher — every case must
-//! produce the identical hash here, or reply.emitted / reply.rendered pairs
-//! never join and every reply reads as a delivery gap. A missing fixture
+//! cross-language contract with the TS hasher (chorus-sdk/reply/hash.js, #4887)
+//! — every case must produce the identical hash here, or a reply.emitted never
+//! joins its room row and every reply reads as a delivery gap. A missing fixture
 //! file is a loud failure, never a skip (#3734 — a guard whose target is
 //! deleted must fail loudly).
 

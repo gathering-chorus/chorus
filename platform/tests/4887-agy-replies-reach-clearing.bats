@@ -35,13 +35,47 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
 }
 
-@test "AC4+AC6: no reply.rendered writer or reader is left, and no new publisher" {
+# AC4 (Jeff 13:10): no new publisher, relay or fallback. Reads a unified diff on
+# stdin, prints every ADDED line that calls a reply publisher or posts a message.
+added_publishers() {
+  grep -E '^\+[^+]' | grep -E "deliver_and_emit\(|emit_and_deliver_reply\(|publish_reply|nudge-send|/api/nudge|method: *['\"]POST['\"]|\.post\(|appendFile\(" || true
+}
+
+@test "AC4: the card's diff adds no publish, relay or fallback caller" {
   cd "$ROOT"
-  # the echo is retired: nothing writes or reads reply.rendered outside tests and comments
-  run bash -c "grep -rn \"'reply.rendered'\" directing/clearing/src platform/pulse/src --include=*.ts | grep -v '\.test\.ts:'"
-  [ -z "$output" ] || { echo "$output"; return 1; }
-  [ ! -e directing/clearing/src/reply-delivery.ts ] || { echo "reply-delivery.ts still present"; return 1; }
-  # the watch reads the room, it does not post anywhere new
-  run grep -nE "fetch\([^)]*(POST|method: *'POST')|appendFile|publish" platform/pulse/src/reply-gap.ts
-  [ -z "$output" ] || { echo "$output"; return 1; }
+  base="$(git merge-base HEAD origin/main)"
+  out="$(git diff "$base" -- . ':!platform/tests/4887-agy-replies-reach-clearing.bats' ':!*.test.ts' | added_publishers)"
+  [ -z "$out" ] || { echo "added publisher: $out"; return 1; }
+  # and the one reply publisher still has exactly one caller (main.rs emit_and_deliver_reply)
+  n="$(grep -rn 'deliver_and_emit(' platform/services/chorus-hooks/src | grep -v 'pub async fn' | wc -l | tr -d ' ')"
+  [ "$n" -eq 1 ] || { echo "deliver_and_emit callers: $n"; return 1; }
+}
+
+@test "AC4 negative proof: a planted second caller is caught" {
+  planted=$'+++ b/platform/services/chorus-hooks/src/main.rs\n+    hooks::buzz_reply::deliver_and_emit(role, text, &hash).await;\n+  await fetch(url, { method: \'POST\', body });'
+  out="$(printf '%s\n' "$planted" | added_publishers)"
+  [[ "$out" == *"deliver_and_emit("* ]] || { echo "missed the planted caller: $out"; return 1; }
+  [[ "$out" == *"method: 'POST'"* ]] || { echo "missed the planted POST: $out"; return 1; }
+}
+
+# AC6: code lines (not tests, not comments) that name reply.rendered under the given dirs.
+rendered_refs() {
+  grep -rn 'reply.rendered' "$@" --include='*.ts' | grep -v '\.test\.ts:' | grep -vE '^\S+:[0-9]+:\s*(//|\*)' || true
+}
+
+@test "AC6: the reply.rendered echo is retired — no writer, no reader" {
+  cd "$ROOT"
+  out="$(rendered_refs directing/clearing/src platform/pulse/src)"
+  [ -z "$out" ] || { echo "$out"; return 1; }
+  # and the v1 emitter itself is gone, not just unused
+  out="$(grep -rn 'makeSpineEmitter\|renderedEvent' directing/clearing/src || true)"
+  [ -z "$out" ] || { echo "$out"; return 1; }
+}
+
+@test "AC6 negative proof: a planted reply.rendered writer is caught, a comment is not" {
+  mkdir -p "$BATS_TEST_TMPDIR/src"
+  printf "  // reply.rendered retired\n  emit({ event: 'reply.rendered', role });\n" > "$BATS_TEST_TMPDIR/src/x.ts"
+  out="$(rendered_refs "$BATS_TEST_TMPDIR/src")"
+  [[ "$out" == *"emit({ event: 'reply.rendered'"* ]] || { echo "missed: $out"; return 1; }
+  [[ "$out" != *"// reply.rendered"* ]] || { echo "counted a comment: $out"; return 1; }
 }

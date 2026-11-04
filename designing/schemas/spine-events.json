@@ -4376,7 +4376,7 @@
       "producer": "messages",
       "category": "diagnostic",
       "version": "1",
-      "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
+      "description": "RETIRED #4887: Clearing v1's tailer echo of a rendered reply; no writer or reader remains. The gap watch reads the room's own record. Kept so old spine lines still classify.",
       "fields": {}
     },
     "review.floor": {

@@ -16,7 +16,6 @@ import fs from 'fs';
 import path from 'path';
 import { MessageRouter } from './router';
 import { TAILED_ROLES } from './room-roles';
-import { EmitSpine, makeSpineEmitter, renderedEvent } from './reply-delivery';
 
 // #2167: env-configurable so tests can point at a fixture directory.
 const PROJECTS_DIR = process.env.CLEARING_PROJECTS_DIR || '/Users/jeffbridwell/.claude/projects';
@@ -99,15 +98,11 @@ export class SessionTailer {
   private awaitingReply: Set<string> = new Set();
   private replyCandidate: Map<string, { id?: string; text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
 
-  constructor(router: MessageRouter, emitRendered?: EmitSpine) {
+  // #4887 — the reply.rendered spine echo retired: pulse's gap watch reads the
+  // room's own record (Clearing v2 /api/messages), so nothing stamps here.
+  constructor(router: MessageRouter) {
     this.router = router;
-    // #3864 — reply-delivery correlation: stamp reply.rendered on the spine
-    // for every promoted role reply, same content hash as chorus-hooks'
-    // reply.emitted. Injectable for tests; defaults to the chorus-api pulse door.
-    this.emitRendered = emitRendered ?? makeSpineEmitter();
   }
-
-  private emitRendered: EmitSpine;
 
   start(): void {
     // Find current session files. #4363: resume where the last run stopped
@@ -320,9 +315,6 @@ export class SessionTailer {
     this.replyCandidate.delete(role);
     this.awaitingReply.delete(role);
     this.router.ingest({ id: candidate.id, from: role, text: candidate.text, ts: candidate.ts, type: 'role-response' });
-    // #3864 — this is the moment the reply is RENDERED into Clearing; stamp
-    // the join key so it pairs with the Stop hook's reply.emitted.
-    this.emitRendered(renderedEvent(role, candidate.text));
   }
 
   private extractAssistantText(contentArr: unknown): string {

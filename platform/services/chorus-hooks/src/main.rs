@@ -1243,8 +1243,8 @@ fn attach_debt_advisory(response: &mut HookResponse, advisory: Option<String>) {
 }
 
 /// #3864/#3893 — a reply that stands: stamp reply.emitted with the cross-surface join
-/// key (Clearing answers with reply.rendered on the same hash; pulse fires
-/// reply.delivery.gap on a missing pair), then deliver it over Buzz (Jeff: "do not
+/// key (pulse matches it to the room's row with the same hash and fires
+/// reply.delivery.gap when there is none, #4887), then deliver it over Buzz (Jeff: "do not
 /// build a new custom delivery path" — the relay IS the path). Some(warning) means
 /// the delivery failed and must be LOUD on this role's own terminal.
 async fn emit_and_deliver_reply(role: &str, text: &str, input: &HookInput) -> Option<String> {
