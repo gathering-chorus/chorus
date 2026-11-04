@@ -274,9 +274,12 @@ crate_under_test() {
   # #4885 — the tree under test, never CHORUS_ROOT: in a card run CHORUS_ROOT is canonical, so
   # this built canonical's crate into jeffbridwell's target and failed from a role account.
   crate="$(crate_under_test chorus-hooks)" || return 1
-  run bash -c "cd '$crate' && cargo test --quiet \
-    --test session_start_additional_context --test session_start_pulse --test session_opening_narrative -- --list 2>/dev/null"
-  [ "$status" -eq 0 ]
+  # #4885 — the account's own target (the target_seed convention: <crate>/target/<account>), so a
+  # card run under one account never writes another account's build files; and cargo's own
+  # words are kept, so a failure says why (it was 2>/dev/null, and run 8 failed with no reason).
+  run bash -c "cd '$crate' && CARGO_TARGET_DIR='$crate/target/$(id -un)' cargo test --quiet \
+    --test session_start_additional_context --test session_start_pulse --test session_opening_narrative -- --list 2>&1"
+  [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
   [[ "$output" == *"session_start_emits_additional_context_json: test"* ]] || return 1
   [[ "$output" == *"session_start_writes_done: test"* ]] || return 1
   [[ "$output" == *"session_start_regenerates_pulse: test"* ]] || return 1
