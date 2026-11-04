@@ -1,4 +1,6 @@
 // @test-type: unit — Clearing v2 router direct room targeting (#4877 AC3, AC4)
+// @card: #4877
+// @owner: abby-normal
 // @domain: messages
 import { MessageRouter } from '../src/router';
 import { ClearingMessage } from '../src/types';

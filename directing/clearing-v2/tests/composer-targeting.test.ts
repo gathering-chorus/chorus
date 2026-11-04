@@ -1,4 +1,6 @@
 // @test-type: unit — Clearing v2 composer targeting and validation (#4877 AC1, AC2, AC5, AC6)
+// @card: #4877
+// @owner: abby-normal
 // @domain: messages
 /**
  * Tests for composer targeting, bare prefill refusal, and mic error surfacing (#4877 AC1, AC2, AC5, AC6).
@@ -12,7 +14,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
   });
 
   describe('AC6: bare role mentions / empty input refusal', () => {
-    it('refuses to send when input is empty or only whitespace, showing error in statusEl', async () => {
+    it('AC6: refuses to send when input is empty or only whitespace, showing error in statusEl', async () => {
       const statusEl = { textContent: '', style: { display: 'none' } };
       const inputEl = { value: '   ' };
       const fetchFn = jest.fn();
@@ -23,7 +25,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(statusEl.style.display).toBe('block');
     });
 
-    it('refuses to send when input contains only bare role mention (e.g. "@wren")', async () => {
+    it('AC6: refuses to send when input contains only bare role mention (e.g. "@wren")', async () => {
       const statusEl = { textContent: '', style: { display: 'none' } };
       const inputEl = { value: '@wren' };
       const fetchFn = jest.fn();
@@ -34,7 +36,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(statusEl.style.display).toBe('block');
     });
 
-    it('refuses to send when input contains multiple bare mentions (e.g. "@wren @silas")', async () => {
+    it('AC6: refuses to send when input contains multiple bare mentions (e.g. "@wren @silas")', async () => {
       const statusEl = { textContent: '', style: { display: 'none' } };
       const inputEl = { value: '@wren @silas ' };
       const fetchFn = jest.fn();
@@ -44,7 +46,7 @@ describe('composer targeting and validation (#4877 AC1, AC2, AC5, AC6)', () => {
       expect(statusEl.textContent).toMatch(/Add a message before sending/i);
     });
 
-    it('allows send when message contains actual text after role mention', async () => {
+    it('AC6: allows send when message contains actual text after role mention', async () => {
       const statusEl = { textContent: '', style: { display: 'none' } };
       const inputEl = { value: '@wren please check the logs' };
       const fetchFn = jest.fn().mockResolvedValue({

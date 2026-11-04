@@ -1,4 +1,6 @@
 // @test-type: unit — Clearing v2 composer delivery guarantee (#4877 AC7)
+// @card: #4877
+// @owner: abby-normal
 // @domain: messages
 /**
  * Tests for guaranteed /api/send delivery and error handling (#4877 AC7).
@@ -7,7 +9,7 @@ import type { ClearingMessage } from '../src/types';
 const deliveryApp = require('../public/app.js');
 
 describe('guaranteed /api/send delivery (#4877 AC7)', () => {
-  it('confirms delivery when /api/send returns 200', async () => {
+  it('AC7: confirms delivery when /api/send returns 200', async () => {
     const inputEl = { value: 'status check' };
     const statusEl = { textContent: '', style: { display: 'none' } };
     const btnEl = { textContent: 'Send', classList: { add: jest.fn(), remove: jest.fn() } };
@@ -23,7 +25,7 @@ describe('guaranteed /api/send delivery (#4877 AC7)', () => {
     expect(statusEl.style.display).toBe('none');
   });
 
-  it('displays visible error in #send-error and restores input when /api/send fails (500)', async () => {
+  it('AC7: displays visible error in #send-error and restores input when /api/send fails (500)', async () => {
     const inputEl = { value: 'important message' };
     const statusEl = { textContent: '', style: { display: 'none' } };
     const btnEl = { textContent: 'Send', classList: { add: jest.fn(), remove: jest.fn() } };
