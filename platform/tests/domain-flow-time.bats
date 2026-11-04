@@ -218,8 +218,8 @@ EOF
 @test "AC3: boston_time carries its zone in every form" {
   . "$ROOT/platform/scripts/lib/boston-time.sh"
   [[ "$(boston_time stamp)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[-+][0-9]{4}$ ]] || return 1
-  [[ "$(boston_time show)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}\ E[SD]T$ ]] || return 1
-  [[ "$(boston_time clock)" =~ ^[0-9]{2}:[0-9]{2}:[0-9]{2}\ E[SD]T$ ]] || return 1
+  [[ "$(boston_time show)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}\ Boston$ ]] || return 1
+  [[ "$(boston_time clock)" =~ ^[0-9]{2}:[0-9]{2}:[0-9]{2}\ Boston$ ]] || return 1
   run boston_time weekday
   [ "$status" -eq 2 ]
 }

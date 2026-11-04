@@ -4,14 +4,14 @@
 # its own `date` in New York time. Each form carries its zone, so no stamp is
 # ambiguous across the DST change (the 14 lossy scripts, inventory 2026-11-04).
 #   boston_time stamp   2026-11-04T04:12:49-0500   a record's time: an instant
-#   boston_time show    2026-11-04 04:12 EST       what a person reads
-#   boston_time clock   04:12 EST                  a line in a running log
+#   boston_time show    2026-11-04 04:12 Boston    what a person reads ("Boston", as everything Jeff reads says)
+#   boston_time clock   04:12:49 Boston            a line a person reads in a running log
 boston_time() {
   local fmt
   case "${1:-stamp}" in
     stamp) fmt='%Y-%m-%dT%H:%M:%S%z' ;;
-    show)  fmt='%Y-%m-%d %H:%M %Z' ;;
-    clock) fmt='%H:%M:%S %Z' ;;
+    show)  fmt='%Y-%m-%d %H:%M Boston' ;;
+    clock) fmt='%H:%M:%S Boston' ;;
     *) echo "boston_time: stamp, show or clock, not '$1'" >&2; return 2 ;;
   esac
   TZ=America/New_York date "+$fmt"
