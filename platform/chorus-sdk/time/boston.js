@@ -5,9 +5,16 @@
 // month rule. Storage stays an instant; these only render one.
 'use strict';
 
+const BOSTON = 'America/New_York';
+
+/** Any other Boston form a screen needs (weekday names, 12-hour clocks): Intl options, Boston zone. */
+function bostonFormat(d, opts, locale = 'en-US') {
+  return new Intl.DateTimeFormat(locale, { ...opts, timeZone: BOSTON }).format(d);
+}
+
 function parts(d) {
   const p = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
+    timeZone: BOSTON,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false, timeZoneName: 'longOffset',
@@ -42,4 +49,20 @@ function bostonLocal(d = new Date()) {
 /** The minute a message header shows: 2026-11-04 04:26. */
 function bostonMinute(d = new Date()) { return bostonLocal(d).slice(0, 16); }
 
-module.exports = { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute };
+/** The Boston calendar day of an instant: 2026-11-04. */
+function bostonDay(d = new Date()) { return bostonLocal(d).slice(0, 10); }
+
+/** The Boston hour of an instant, 0-23. */
+function bostonHour(d = new Date()) { return Number(parts(d).h); }
+
+/** Boston HH:MM, 24-hour. */
+function bostonHHMM(d = new Date()) { return bostonLocal(d).slice(11, 16); }
+
+/** The instant Boston's current day began, as epoch seconds. */
+function bostonMidnight(d = new Date()) {
+  const x = parts(d);
+  return Math.floor(d.getTime() / 1000) - (Number(x.h) * 3600 + Number(x.mi) * 60 + Number(x.s));
+}
+
+module.exports = { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute,
+  bostonDay, bostonHour, bostonHHMM, bostonMidnight, bostonFormat };

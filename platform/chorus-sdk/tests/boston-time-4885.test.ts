@@ -2,7 +2,7 @@
 // @domain: time
 // @card: #4885
 // @owner: silas
-import { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute } from '../time/boston';
+import { bostonOffset, isBostonDaylight, bostonOffsetIso, bostonLocal, bostonMinute, bostonDay, bostonHour, bostonHHMM, bostonMidnight, bostonFormat } from '../time/boston';
 
 describe('#4885 the one Boston renderer', () => {
   it('takes DST from the tz database on both transition days', () => {
@@ -30,5 +30,15 @@ describe('#4885 the one Boston renderer', () => {
     expect(bostonLocal(d)).toBe('2026-11-04 04:26:30');
     expect(bostonMinute(d)).toBe('2026-11-04 04:26');
     expect(bostonOffsetIso(d)).toBe('2026-11-04T04:26:30.123-05:00');
+  });
+
+  it('renders day, hour, HH:MM, midnight and other forms from the same zone', () => {
+    const d = new Date('2026-11-04T04:26:30Z'); // 23:26 the day before, in Boston
+    expect(bostonDay(d)).toBe('2026-11-03');
+    expect(bostonHour(d)).toBe(23);
+    expect(bostonHHMM(d)).toBe('23:26');
+    expect(bostonMidnight(d)).toBe(Date.parse('2026-11-03T05:00:00Z') / 1000);
+    expect(bostonFormat(d, { weekday: 'short' })).toBe('Tue');
+    expect(bostonFormat(d, { hour: 'numeric', minute: '2-digit' })).toBe('11:26 PM');
   });
 });
