@@ -81,24 +81,28 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
+/// #4889 — each AC line of a card view, numbered from 1, with its check target as
+/// "<kind> <target>" (`check: after <kind> <target>` defers; its target is the inner one),
+/// or None when the AC names no check. Pure.
+fn ac_targets(card_view: &str) -> Vec<(usize, Option<String>)> {
+    card_view.lines().map(str::trim_start).filter(|t| t.starts_with("- [x]") || t.starts_with("- [ ]"))
+        .enumerate().map(|(i, t)| {
+            let target = t.rfind("check: ").map(|k| {
+                let mut w = t[k + 7..].split_whitespace();
+                let kind = match w.next().unwrap_or("") { "after" => w.next().unwrap_or(""), k => k };
+                format!("{kind} {}", w.next().unwrap_or("")).trim().to_string()
+            }).filter(|x| x.contains(' '));
+            (i + 1, target)
+        }).collect()
+}
+
 /// #4889 AC9 — what is wrong with a card's AC checks, one line each: an AC that names no
 /// `check:`, and an AC whose check target another AC already uses (each AC's check tests
 /// that AC alone). Empty when every AC names its own check. Pure.
 pub fn ac_check_problems(card_view: &str) -> Vec<String> {
     let mut seen: Vec<(String, usize)> = Vec::new();
     let mut problems = Vec::new();
-    let mut n = 0usize;
-    for line in card_view.lines() {
-        let t = line.trim_start();
-        if !(t.starts_with("- [x]") || t.starts_with("- [ ]")) { continue; }
-        n += 1;
-        let target = t.rfind("check: ").map(|i| {
-            let mut w = t[i + 7..].split_whitespace();
-            // #4889 — `check: after <kind> <target>` defers a check; its target is the inner one
-            let kind = match w.next().unwrap_or("") { "after" => w.next().unwrap_or(""), k => k };
-            let what = w.next().unwrap_or("");
-            format!("{kind} {what}").trim().to_string()
-        }).filter(|x| x.contains(' '));
+    for (n, target) in ac_targets(card_view) {
         match target {
             None => problems.push(format!("AC {n} names no check")),
             Some(tg) => match seen.iter().find(|(s, _)| *s == tg) {
@@ -108,6 +112,24 @@ pub fn ac_check_problems(card_view: &str) -> Vec<String> {
         }
     }
     problems
+}
+
+/// #4889 AC8 — an AC whose `test` check is an unrelated test, one finding each: the file
+/// is missing, or its header (`head_of`, the file's first lines) never names `#<card>`. A
+/// test that proves an AC says which card it proves, so a check borrowed from elsewhere
+/// is flagged until its header names this card. Findings are keyed `<file>:1 — item 1`,
+/// /gate-code's item. Pure: `head_of` reads the file.
+pub fn unrelated_checks(card_view: &str, card: u64, head_of: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let tag = format!("#{card}");
+    let names_card = |h: &str| h.match_indices(&tag).any(|(i, _)| !h[i + tag.len()..].starts_with(|c: char| c.is_ascii_digit()));
+    ac_targets(card_view).into_iter().filter_map(|(n, t)| {
+        let path = t?.strip_prefix("test ")?.to_string();
+        match head_of(&path) {
+            None => Some(format!("{path}:1 — item 1 — AC {n}'s check does not exist")),
+            Some(h) if !names_card(&h) => Some(format!("{path}:1 — item 1 — AC {n}'s check never names {tag}: an unrelated test")),
+            Some(_) => None,
+        }
+    }).collect()
 }
 
 /// #3281 — build the chorus-log argv for a REFUSAL spine emit (pure, testable).
@@ -2173,6 +2195,12 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             let (r, f) = builtin_review(skill, &werk, since.as_deref());
             all.push((r, format!("/{}: {}", skill, f)));
         }
+        // #4889 AC8 — an AC whose check is an unrelated test fails the code review
+        let head_of = |p: &str| fs::read_to_string(Path::new(&werk).join(p)).ok()
+            .map(|s| s.lines().take(15).collect::<Vec<_>>().join("\n"));
+        let unrelated = unrelated_checks(&card_view, card, head_of);
+        all.push(if unrelated.is_empty() { ("pass".to_string(), "ac-checks: no findings".to_string()) }
+                 else { ("fail".to_string(), format!("ac-checks: {}", unrelated.join(" | "))) });
         (result, findings) = combine_verdicts(&all, &[]);
     }
     // #4889 — the findings ledger: an earlier round's open finding carries forward until a
@@ -2220,7 +2248,7 @@ fn unwrapped(seg: &str) -> String {
     loop {
         let before = s;
         if let Some(r) = s.strip_prefix('[').and_then(|r| r.split_once("] ")).map(|(_, r)| r) { s = r.trim(); }
-        for label in ["gate-code: ", "gate-arch: ", "gate-quality: ", "semgrep: ", "dependency-cruiser: ", "/code-review: ", "/security-review: "] {
+        for label in ["gate-code: ", "gate-arch: ", "gate-quality: ", "semgrep: ", "dependency-cruiser: ", "/code-review: ", "/security-review: ", "ac-checks: "] {
             if let Some(r) = s.strip_prefix(label) { s = r.trim(); }
         }
         if s == before { break; }
@@ -2282,6 +2310,17 @@ pub fn builtin_review_prompt(skill: &str, base: &str) -> String {
     }
 }
 
+/// #4889 (security review, run 12) — the argv of one built-in review. The card under
+/// review is the cwd, so its own .claude/settings.json (hooks, permission allows) must not
+/// load: only user settings do (`--setting-sources user`, where the review skills live).
+/// Every review gets read-only tools; the code review also its subagents. Pure.
+pub fn builtin_review_args(skill: &str, prompt: &str) -> Vec<String> {
+    let tools = if skill == "code-review" { "Agent,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" }
+                else { "Skill,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" };
+    ["-p", prompt, "--permission-mode", "dontAsk", "--setting-sources", "user", "--no-session-persistence",
+     "--output-format", "text", "--allowedTools", tools].iter().map(|a| a.to_string()).collect()
+}
+
 /// #4889 — the existing Claude Code reviews the code step runs, each on the whole branch.
 pub const BUILTIN_CODE_REVIEWS: [&str; 2] = ["code-review", "security-review"];
 
@@ -2298,11 +2337,7 @@ fn builtin_review(skill: &str, werk: &str, since: Option<&str>) -> (String, Stri
     let timeout = env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900);
     let mut command = Command::new(&bin);
     command.current_dir(werk).env("CHORUS_HEADLESS", "1")
-        .args(["-p", &prompt, "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "text"]);
-    if skill != "code-review" {
-        // the skill runs through the Skill tool, reading the branch with read-only tools
-        command.args(["--allowedTools", "Skill,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"]);
-    }
+        .args(builtin_review_args(skill, &prompt));
     match bounded_headless(command, String::new(), timeout) {
         Ok(out) => builtin_review_verdict(&out),
         Err(e) => ("error".to_string(), e.replace("chorus-agent", &format!("/{skill}"))),

@@ -70,3 +70,27 @@ fn negative_proof_no_report_is_error_never_pass() {
     assert_eq!(depcruise_verdict("npm ERR! could not determine executable to run", Some(1)).0, "error");
     assert_eq!(depcruise_verdict("", Some(0)).0, "error", "exit 0 with no summary is not a pass");
 }
+
+// security review, run 12: the card under review is the cwd, so it must not supply
+// the reviewer's settings (hooks, permission allows) or any write tool
+use werk_demo::builtin_review_args;
+
+#[test]
+fn each_review_loads_user_settings_only_and_read_only_tools() {
+    for skill in BUILTIN_CODE_REVIEWS {
+        let a = builtin_review_args(skill, "p");
+        let at = |flag: &str| a.iter().position(|x| x == flag).map(|i| a[i + 1].clone());
+        assert_eq!(at("--setting-sources").as_deref(), Some("user"), "{skill}: {a:?}");
+        let tools = at("--allowedTools").unwrap_or_default();
+        assert!(!tools.is_empty() && !tools.contains("Edit") && !tools.contains("Write") && !tools.contains("Bash,") && !tools.ends_with("Bash"), "{skill}: {tools}");
+    }
+}
+
+#[test]
+fn negative_proof_project_settings_or_an_open_tool_list_would_be_caught() {
+    // the shape before this fix: no --setting-sources, code-review with no tool list
+    let old: Vec<String> = ["-p", "p", "--permission-mode", "dontAsk"].iter().map(|s| s.to_string()).collect();
+    assert!(!old.iter().any(|x| x == "--setting-sources"));
+    assert!(!old.iter().any(|x| x == "--allowedTools"));
+    assert_ne!(builtin_review_args("code-review", "p"), old);
+}
