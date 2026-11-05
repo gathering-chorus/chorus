@@ -83,14 +83,10 @@ fn each_review_loads_user_settings_only_and_read_only_tools() {
         assert_eq!(at("--setting-sources").as_deref(), Some("user"), "{skill}: {a:?}");
         let tools = at("--allowedTools").unwrap_or_default();
         assert!(!tools.is_empty() && !tools.contains("Edit") && !tools.contains("Write") && !tools.contains("Bash,") && !tools.ends_with("Bash"), "{skill}: {tools}");
+        // each git verb it may run has its --output= write denied
+        let denied = at("--disallowedTools").unwrap_or_default();
+        for verb in ["diff", "log", "show"] {
+            assert!(!tools.contains(&format!("git {verb}")) || denied.contains(&format!("Bash(git {verb} *--output*)")), "{skill}: git {verb} may write: {denied}");
+        }
     }
-}
-
-#[test]
-fn negative_proof_project_settings_or_an_open_tool_list_would_be_caught() {
-    // the shape before this fix: no --setting-sources, code-review with no tool list
-    let old: Vec<String> = ["-p", "p", "--permission-mode", "dontAsk"].iter().map(|s| s.to_string()).collect();
-    assert!(!old.iter().any(|x| x == "--setting-sources"));
-    assert!(!old.iter().any(|x| x == "--allowedTools"));
-    assert_ne!(builtin_review_args("code-review", "p"), old);
 }

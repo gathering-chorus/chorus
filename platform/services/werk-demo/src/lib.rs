@@ -2310,6 +2310,10 @@ pub fn builtin_review_prompt(skill: &str, base: &str) -> String {
     }
 }
 
+/// #4889 (Kade 15:12) — the read-only git verbs a review may run, minus their one write:
+/// `--output=<file>`.
+pub const REVIEW_DENIED_TOOLS: &str = "Bash(git diff *--output*),Bash(git log *--output*),Bash(git show *--output*)";
+
 /// #4889 (security review, run 12) — the argv of one built-in review. The card under
 /// review is the cwd, so its own .claude/settings.json (hooks, permission allows) must not
 /// load: only user settings do (`--setting-sources user`, where the review skills live).
@@ -2317,8 +2321,9 @@ pub fn builtin_review_prompt(skill: &str, base: &str) -> String {
 pub fn builtin_review_args(skill: &str, prompt: &str) -> Vec<String> {
     let tools = if skill == "code-review" { "Agent,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" }
                 else { "Skill,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" };
+    // git diff/log/show write a file with --output=<path> (Kade 15:12): denied, a deny wins over an allow
     ["-p", prompt, "--permission-mode", "dontAsk", "--setting-sources", "user", "--no-session-persistence",
-     "--output-format", "text", "--allowedTools", tools].iter().map(|a| a.to_string()).collect()
+     "--output-format", "text", "--allowedTools", tools, "--disallowedTools", REVIEW_DENIED_TOOLS].iter().map(|a| a.to_string()).collect()
 }
 
 /// #4889 — the existing Claude Code reviews the code step runs, each on the whole branch.
