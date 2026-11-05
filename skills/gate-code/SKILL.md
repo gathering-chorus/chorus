@@ -38,7 +38,8 @@ diff (`origin/main...HEAD`). In the demo both are handed to you; by hand,
 
 ## Report
 
-Each finding: `{"item": <1|2>, "where": "<check file>:<line>", "what": "AC <n>: ..."}`.
+Each finding names its item (1 or 2), where (`<check file>:<line>`) and what (`AC <n>: ...`).
+The output format is the demo's, given after this skill.
 Nothing about AC ticks or wording. The verdict is derived from the findings: any
 finding fails.
 
