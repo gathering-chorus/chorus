@@ -22,5 +22,5 @@ shared_checks() { grep -E '^\s*- \[[ x]\] ' | grep -oE 'check: (after )?[a-z]+ [
   run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$BATS_TEST_TMPDIR/target" cargo test -q \
     --manifest-path "$ROOT/platform/services/werk-demo/Cargo.toml" --test ac_checks_4889
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"6 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"7 passed"* ]] || { echo "$output"; return 1; }
 }

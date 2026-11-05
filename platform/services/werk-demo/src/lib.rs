@@ -102,6 +102,13 @@ fn ac_targets(card_view: &str) -> Vec<(usize, Option<String>)> {
 pub fn ac_check_problems(card_view: &str) -> Vec<String> {
     let mut seen: Vec<(String, usize)> = Vec::new();
     let mut problems = Vec::new();
+    // #4889 (code review, run 17) — borg-prove needs one AC proven before the land; a card
+    // whose every AC is `check: after` could never be Proven and its land would reopen it.
+    // Refused here, before any review or go.
+    let ac: Vec<&str> = card_view.lines().map(str::trim_start).filter(|t| t.starts_with("- [x]") || t.starts_with("- [ ]")).collect();
+    if !ac.is_empty() && ac.iter().all(|t| t.contains("check: after ")) {
+        problems.push("every AC is `check: after`: nothing proves this card before the land, so it can never be Proven".to_string());
+    }
     for (n, target) in ac_targets(card_view) {
         match target {
             None => problems.push(format!("AC {n} names no check")),

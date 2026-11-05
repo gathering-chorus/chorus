@@ -395,6 +395,11 @@ fn main() {
             // #4889 — a red reopens the card: it goes back to WIP, said on the card, and
             // accept never runs (this step fails)
             if !prod_passes(v) {
+                // #4889 (code review, run 17) — a card whose every AC is `after` is Unproven by
+                // design; werk-demo's validate refuses it before the go, so reaching here says so
+                if !r.is_empty() && r.iter().all(|(c, _)| c.kind == "after") {
+                    eprintln!("#{card} record: every AC is `check: after`, so nothing proved it before the land; validate should have refused it");
+                }
                 reopen(card, word);
                 exit(1)
             }

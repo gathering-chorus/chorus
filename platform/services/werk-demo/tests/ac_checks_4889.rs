@@ -32,7 +32,7 @@ fn negative_proof_a_check_word_with_no_target_is_no_check() {
 
 #[test]
 fn negative_proof_two_deferred_checks_are_told_apart_by_their_inner_target() {
-    let v = "  - [ ] a. check: after test t/a.bats\n  - [ ] b. check: after test t/b.bats\n";
+    let v = "  - [x] n. check: test t/n.bats\n  - [ ] a. check: after test t/a.bats\n  - [ ] b. check: after test t/b.bats\n";
     assert!(ac_check_problems(v).is_empty(), "{:?}", ac_check_problems(v));
     let same = "  - [ ] a. check: after test t/a.bats\n  - [ ] b. check: test t/a.bats\n";
     assert_eq!(ac_check_problems(same), vec!["AC 2 shares its check `test t/a.bats` with AC 1"]);
@@ -42,4 +42,12 @@ fn negative_proof_two_deferred_checks_are_told_apart_by_their_inner_target() {
 fn this_cards_own_ac_pass() {
     let v = include_str!("fixtures/ac_4889.txt");
     assert!(ac_check_problems(v).is_empty(), "{:?}", ac_check_problems(v));
+}
+
+#[test]
+fn negative_proof_a_card_whose_every_ac_is_after_is_refused_before_the_go() {
+    let all_after = "  - [ ] a. check: after test t/a.bats\n  - [ ] b. check: after test t/b.bats\n";
+    assert_eq!(ac_check_problems(all_after), vec!["every AC is `check: after`: nothing proves this card before the land, so it can never be Proven"]);
+    let one_now = "  - [x] a. check: test t/x.bats\n  - [ ] b. check: after test t/b.bats\n";
+    assert!(ac_check_problems(one_now).is_empty(), "{:?}", ac_check_problems(one_now));
 }
