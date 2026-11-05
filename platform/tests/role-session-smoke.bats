@@ -31,6 +31,16 @@ roles_to_smoke() {
   done
 }
 
+# A role session is real only on a role's own account (chorus-<role>): that is how
+# roles run since #4787. dagu runs this suite as jeffbridwell, which hosts every role,
+# and the hooks refuse a roleless session there (#4889 runs 3-4). Kade 06:59: on such
+# an account the session cases are UNMEASURED (a bats skip, never a pass); a role's
+# own werk-test run measures them.
+is_role_account() { [[ "$1" == chorus-* ]]; }
+session_cases_or_skip() {
+  is_role_account "$(id -un)" || skip "unmeasured: role sessions run as chorus-<role>; this run is $(id -un)"
+}
+
 # ok when the reply carries the nonce only the tool call can read
 reply_proves_the_call() { [[ "$1" == *"$2"* ]]; }
 
@@ -65,6 +75,7 @@ smoke_one() {
   changed="$(git -C "$ROOT" diff --name-only origin/main...HEAD)"
   roles="$(roles_to_smoke "$changed" | sort -u)"
   [ -n "$roles" ] || { echo "no role session config in this diff: nothing to smoke"; return 0; }
+  session_cases_or_skip
   failed=0
   for r in $roles; do
     if [[ " $CLAUDE_ROLES " != *" $r "* ]]; then echo "$r: runs on agy, unmeasured here"; continue; fi
@@ -81,12 +92,20 @@ smoke_one() {
   [ -z "$(roles_to_smoke 'platform/services/werk-demo/src/lib.rs')" ]
 }
 
+@test "the account rule: a role account measures sessions; a shared account does not" {
+  is_role_account chorus-kade
+  is_role_account chorus-silas
+  ! is_role_account jeffbridwell || return 1
+  ! is_role_account kade || return 1
+}
+
 @test "negative proof: a reply without the nonce (answered without running the tool) fails" {
   reply_proves_the_call "the file says smoke-x-1" "smoke-x-1"
   ! reply_proves_the_call "I ran it, it printed the token" "smoke-x-1" || return 1
 }
 
 @test "negative proof: a role whose settings block its tool call turns the smoke red" {
+  session_cases_or_skip
   # a copy of kade's session folder whose settings add a hook that refuses every tool
   d="$BATS_TEST_TMPDIR/kade"; cp -R "$ROOT/roles/kade" "$d"
   python3 - "$d/.claude/settings.json" <<'PY'
