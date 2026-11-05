@@ -17,13 +17,14 @@ fn negative_proof_an_unfixed_old_finding_still_shows_red_on_a_delta_round() {
     let (r, f) = apply_ledger("pass", "no findings", Some(PRIOR), Some(&files(&["src/z.rs"])));
     assert_eq!(r, "fail", "{f}");
     assert!(f.contains("carried (not yet fixed): src/a.rs:10 — item 2") && f.contains("carried (not yet fixed): src/b.rs:4 — item 3"), "{f}");
-    assert!(!f.contains("src/c.rs"), "a note is not carried as a failure: {f}");
+    assert!(!f.contains("carried (not yet fixed): src/c.rs") && f.contains("note: src/c.rs:1"), "a note carries as a note, never a failure: {f}");
 }
 
 #[test]
 fn a_finding_whose_file_changed_and_is_not_raised_again_is_fixed() {
     let (r, f) = apply_ledger("pass", "no findings", Some(PRIOR), Some(&files(&["src/a.rs", "src/b.rs"])));
-    assert_eq!((r.as_str(), f.as_str()), ("pass", "no findings"));
+    assert_eq!(r, "pass", "{f}");
+    assert!(!f.contains("src/a.rs") && !f.contains("src/b.rs"), "fixed findings are gone: {f}");
 }
 
 #[test]
@@ -68,4 +69,13 @@ fn negative_proof_a_carried_finding_carries_again_until_its_file_changes() {
     assert!(f.contains("carried (not yet fixed): src/b.rs:4 — item 3") && !f.contains("carried (not yet fixed): carried"), "{f}");
     // fixed once its file changes and it is not raised again
     assert_eq!(apply_ledger("pass", "no findings", Some(&n), Some(&files(&["src/b.rs"]))).0, "pass");
+}
+
+#[test]
+fn a_note_stays_on_the_go_page_until_its_file_changes() {
+    let prior = "note: src/c.rs:1 — item 6 — naming | note: src/d.rs:2 — item 7 — slow";
+    let (r, f) = apply_ledger("pass", "no findings", Some(prior), Some(&files(&["src/d.rs"])));
+    assert_eq!(r, "pass", "a note never fails the round: {f}");
+    assert!(f.contains("note: src/c.rs:1 — item 6 — naming"), "{f}");
+    assert!(!f.contains("src/d.rs"), "NEGATIVE PROOF: a note whose file changed is gone: {f}");
 }

@@ -229,12 +229,8 @@ pub fn prod_passes(v: &str) -> bool {
 pub fn verdict(results: &[(Check, Outcome)]) -> &'static str {
     if results.iter().any(|(_, o)| matches!(o, Outcome::NotMet(_))) {
         "Not met"
-    } else if results.iter().all(|(_, o)| matches!(o, Outcome::Met(_) | Outcome::Deferred(_)))
-        // something measured now, or (#4889 code review, run 14) every deferral is the
-        // card's own `after` check, which re-runs after this land and reopens it on a red;
-        // a card whose ACs all wait on other cards (`by`) still proves nothing itself
-        && (results.iter().any(|(_, o)| matches!(o, Outcome::Met(_)))
-            || (!results.is_empty() && results.iter().all(|(c, _)| c.kind == "after")))
+    } else if results.iter().any(|(_, o)| matches!(o, Outcome::Met(_)))
+        && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_) | Outcome::Deferred(_)))
     {
         "Proven"
     } else {

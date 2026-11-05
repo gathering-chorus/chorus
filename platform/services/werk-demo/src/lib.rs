@@ -2211,7 +2211,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // uses fails the gate; every other finding is a note on his go page, and ships
     if result == "fail" {
         let open = open_findings(&findings);
-        (result, findings) = apply_breaks(&result, &findings, classify_breaks(&open).as_deref());
+        (result, findings) = apply_breaks(&result, &findings, classify_breaks(&werk, &open).as_deref());
     }
     // an unmeasured round reviewed nothing: the next round starts from the last one that did
     let reviewed = if result == "error" { "" } else { head.as_str() };
@@ -2296,10 +2296,20 @@ pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Op
             .collect(),
         _ => Vec::new(),
     };
+    // #4889 (Kade 16:26) — a note stays on Jeff's go page until its file changes, like a red
+    let carried_notes: Vec<String> = match (prior, delta) {
+        (Some(p), Some(_)) => p.split(" | ").filter_map(|seg| unwrapped(seg).strip_prefix("note: ").map(str::to_string))
+            .filter(|c| { let k = finding_key(c); !changed(&k.1) && !now_keys.contains(&k) })
+            .map(|c| format!("note: {c}"))
+            .filter(|n| !notes.iter().any(|x| unwrapped(x) == *n))
+            .collect(),
+        _ => Vec::new(),
+    };
     let open: Vec<String> = now.into_iter().chain(carried).map(|(shown, _)| shown).collect();
     let verdict = if result == "error" { "error" } else if open.is_empty() { "pass" } else { "fail" };
     let mut out = open;
     out.extend(notes);
+    out.extend(carried_notes);
     (verdict.to_string(), if out.is_empty() { "no findings".to_string() } else { out.join(" | ") })
 }
 
@@ -2334,15 +2344,20 @@ pub fn apply_breaks(result: &str, findings: &str, breaks: Option<&[bool]>) -> (S
 }
 
 /// #4889 (Jeff 16:05) — what the breaks question asks, one finding per numbered line. Pure.
-pub fn breaks_prompt(open: &[String]) -> String {
+pub fn breaks_prompt(open: &[String], jeff_uses: &str) -> String {
     let list: Vec<String> = open.iter().enumerate().map(|(i, f)| format!("{}. {}", i + 1, f)).collect();
     format!("Jeff's rule for a card about to land: a review finding blocks the land only if it breaks \
-             something Jeff uses: his messages reaching a role, the alerts he is sent, the Clearing, \
-             his go page, or a land he gives the go to. Every other finding is a note on his go page \
-             and ships. For each numbered finding below answer true if it breaks something Jeff uses, \
-             else false. Reply with only a ```json list of booleans, one per finding, in order.\n\n{}",
+             something Jeff uses: {jeff_uses}. Every other finding is a note on his go page and ships. \
+             For each numbered finding below, read the code it names in this repo, then answer true if \
+             it breaks something Jeff uses, else false. Reply with only a ```json list of booleans, \
+             one per finding, in order.\n\n{}",
             list.join("\n"))
 }
+
+/// #4889 (Kade 16:26) — what Jeff uses is a policy row (review.breaks.jeff_uses), read
+/// through the resolver; no row, or the door down, means no question is asked and the
+/// red stands.
+pub const JEFF_USES_KEY: &str = "review.breaks.jeff_uses";
 
 /// The ```json list of booleans a breaks answer ends with; None when there is none. Pure.
 pub fn breaks_answer(stdout: &str) -> Option<Vec<bool>> {
@@ -2359,13 +2374,16 @@ pub fn breaks_answer(stdout: &str) -> Option<Vec<bool>> {
 
 /// One headless question per red round: which open findings break something Jeff uses.
 /// No tools, user settings only; None when it could not be asked or answered.
-fn classify_breaks(open: &[String]) -> Option<Vec<bool>> {
+fn classify_breaks(werk: &str, open: &[String]) -> Option<Vec<bool>> {
     if open.is_empty() { return None; }
+    let jeff_uses = properties_resolver::global_value(&properties_resolver::door_url(), JEFF_USES_KEY)
+        .map_err(|e| eprintln!("werk-demo: no breaks question asked, the red stands: {e}")).ok()?;
     let bin = claude_bin()?;
     let mut command = Command::new(&bin);
-    command.env("CHORUS_HEADLESS", "1").args(["-p", &breaks_prompt(open), "--permission-mode", "dontAsk",
+    // in the card's werk, read-only, so it reads the code each finding names (Kade 16:26)
+    command.current_dir(werk).env("CHORUS_HEADLESS", "1").args(["-p", &breaks_prompt(open, &jeff_uses), "--permission-mode", "dontAsk",
         "--setting-sources", "user", "--no-session-persistence", "--output-format", "text",
-        "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Agent"]);
+        "--allowedTools", "Read,Grep,Glob", "--disallowedTools", REVIEW_DENIED_TOOLS]);
     bounded_headless(command, String::new(), 300).ok().and_then(|out| breaks_answer(&out))
 }
 

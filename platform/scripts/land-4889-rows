@@ -27,6 +27,10 @@ DOOR_CLASS = {"properties/properties": ("properties", "properties"), "skills/ski
 # them. A second machine needs its own rows.
 TOOL_PATHS = {"semgrep": "/Users/jeffbridwell/.local/bin/semgrep", "claude": "/Users/jeffbridwell/.local/bin/claude"}
 COOLDOWN_KEY, COOLDOWN_MS = "pulse.announce.machine_cooldown_ms", "1800000"
+# Jeff 11-05 16:05 ("Yes, certainly"): a review finding blocks the land only if it breaks
+# something Jeff uses; this row names what he uses. werk-demo reads it; no row = no notes
+JEFF_USES_KEY = "review.breaks.jeff_uses"
+JEFF_USES = "his messages reaching a role, the alerts he is sent, the Clearing, his go page, a land he gives the go to"
 RETIRED_SKILLS = ["werk-demo-gate-product", "werk-demo-gate-ops", "werk-demo-review-1", "werk-demo-review-2",
                   "werk-demo-review-3", "werk-demo-session-smoke", "werk-review", "werk-review-verdict"]
 
@@ -60,6 +64,10 @@ def plan():
                  {"label": "prop-pulse-announce-machine-cooldown-ms", "propertyKey": COOLDOWN_KEY, "propertyScope": "global",
                   "propertyValueType": "int", "propertyValue": COOLDOWN_MS,
                   "comment": "#4889: pulse dedupes a repeated machine alert within this many ms; run-finish wakes are never deduped; no default"}))
+    want.append(("properties/properties", "prop-review-breaks-jeff-uses",
+                 {"label": "prop-review-breaks-jeff-uses", "propertyKey": JEFF_USES_KEY, "propertyScope": "global",
+                  "propertyValueType": "string", "propertyValue": JEFF_USES,
+                  "comment": "#4889 (Jeff 16:05): a review finding that breaks one of these blocks the land; any other is a note on his go page"}))
     for r in demo:
         want.append(("skills/skills", r["skill"].removeprefix("skill-"),
                      {"label": r["label"], "executor": r["executor"], "implementedBy": r["implementedBy"],

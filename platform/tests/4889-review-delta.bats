@@ -13,7 +13,7 @@ WD="$ROOT/platform/services/werk-demo"
 @test "the ledger: carried until fixed, fixed when its file changes, new defects caught" {
   run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$WD/target/$(id -un)" nice cargo test -q --manifest-path "$WD/Cargo.toml" --test ledger_4889
   [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
-  [[ "$output" == *"7 passed"* ]] || { echo "$output" | tail -5; return 1; }
+  [[ "$output" == *"8 passed"* ]] || { echo "$output" | tail -5; return 1; }
 }
 
 @test "a real gate round: same commit carries the red, a fixing commit clears it, a new commit's defect is caught" {

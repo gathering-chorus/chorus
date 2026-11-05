@@ -28,6 +28,19 @@ fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
 
+/// a stand-in properties door: every request answers `body`
+fn door(body: &'static str) -> String {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    std::thread::spawn(move || for mut c in l.incoming().flatten() {
+        let mut b = [0u8; 4096];
+        let _ = c.read(&mut b);
+        let _ = write!(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+    });
+    url
+}
+
 #[test]
 fn the_code_step_runs_code_review_and_security_review_and_fails_on_their_findings() {
     let home = tmp("home");
@@ -62,6 +75,8 @@ case "$*" in
 esac
 "#, log = log.display(), h = home.display()));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);
+    // no properties door until the breaks rounds below: never the live one
+    std::env::set_var("OWL_URL", "http://127.0.0.1:9");
     std::env::remove_var("CHORUS_GATE_PROFILE");
     std::env::set_var("CHORUS_WERK_BASE", &base);
     std::env::set_var("CHORUS_MEM_FLOOR_DISABLE", "1");
@@ -119,9 +134,18 @@ esac
     let strict = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert!(strict.message.contains(": fail") && strict.message.contains("names no fail-items: every finding fails"), "{}", strict.message);
 
-    // #4889 (Jeff 16:05) — a red round asks which findings break something Jeff uses:
-    // breaks nothing → the finding is a note on his go page and the gate passes
+    // #4889 (Jeff 16:05) — a red round asks which findings break something Jeff uses, the
+    // list read from the review.breaks.jeff_uses row (a stand-in door). NEGATIVE PROOF
+    // first: with no door answering, no question is asked and the red stands
     fs::write(home.join("breaksnothing"), "").unwrap();
+    std::env::set_var("OWL_URL", "http://127.0.0.1:9");
+    fs::write(werk.join("a.rs"), "fn a() { e2() }\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "card 4b"]);
+    std::env::set_var("CHORUS_DEMO_ROUND", "r5b");
+    let no_row = run_gate_step(4889, "silas", &home, "code").unwrap();
+    assert!(no_row.message.contains(": fail"), "{}", no_row.message);
+    std::env::set_var("OWL_URL", door(r#"{"data":[{"propertyKey":"review.breaks.jeff_uses","propertyScope":"global","propertyValue":"his messages"}]}"#));
+    // breaks nothing → the finding is a note on his go page and the gate passes
     fs::write(werk.join("a.rs"), "fn a() { f() }\n").unwrap();
     git(&werk, &["commit", "-q", "-am", "card 5"]);
     std::env::set_var("CHORUS_DEMO_ROUND", "r6");

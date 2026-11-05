@@ -43,6 +43,6 @@ fn the_answer_is_a_json_list_of_booleans_and_anything_else_is_none() {
 
 #[test]
 fn the_question_numbers_each_finding_and_names_what_jeff_uses() {
-    let p = breaks_prompt(&["a.rs:1 — x".to_string(), "b.rs:2 — y".to_string()]);
-    assert!(p.contains("1. a.rs:1 — x\n2. b.rs:2 — y") && p.contains("his messages reaching a role") && p.contains("go page"), "{p}");
+    let p = breaks_prompt(&["a.rs:1 — x".to_string(), "b.rs:2 — y".to_string()], "his messages reaching a role");
+    assert!(p.contains("1. a.rs:1 — x\n2. b.rs:2 — y") && p.contains("breaks something Jeff uses: his messages reaching a role.") && p.contains("go page"), "{p}");
 }
