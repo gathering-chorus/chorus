@@ -4,6 +4,8 @@
 # @card: #4889 · owner: silas
 # Jeff 2026-11-04 19:04 ("fine do that"): dependency-cruiser in the architecture review.
 # Kade 19:47: "a planted boundary break that goes red". The rules: platform/quality/depcruise/boundaries.cjs
+# The tool comes from the root package.json (devDependency dependency-cruiser, pinned in
+# package-lock.json): 17.4.3, the last major that runs on our node 20 (18 needs node 22).
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 CFG="$ROOT/platform/quality/depcruise/boundaries.cjs"
 
@@ -14,6 +16,34 @@ plant() {  # a tiny tree with two domain packages and the sdk
   echo "$1" > "$T/directing/clearing/src/a.ts"
 }
 cruise() { (cd "$T" && "$ROOT/node_modules/.bin/depcruise" --config "$CFG" --output-type err directing platform 2>&1); }
+
+# the version package.json and package-lock.json pin for dependency-cruiser, or empty
+pinned() {
+  python3 - "$1" <<'PY2'
+import json, sys
+d = json.load(open(sys.argv[1]))
+if "packages" in d:   # package-lock.json
+    print((d["packages"].get("node_modules/dependency-cruiser") or {}).get("version", ""))
+else:                 # package.json
+    print({**d.get("dependencies", {}), **d.get("devDependencies", {})}.get("dependency-cruiser", ""))
+PY2
+}
+
+@test "package.json and package-lock.json pin dependency-cruiser 17.4.3, and that is what runs" {
+  [ "$(pinned "$ROOT/package.json")" = "17.4.3" ] || { echo "package.json pins '$(pinned "$ROOT/package.json")'"; return 1; }
+  [ "$(pinned "$ROOT/package-lock.json")" = "17.4.3" ] || { echo "package-lock.json pins '$(pinned "$ROOT/package-lock.json")'"; return 1; }
+  run "$ROOT/node_modules/.bin/depcruise" --version
+  [ "$output" = "17.4.3" ] || { echo "installed depcruise is '$output'"; return 1; }
+}
+
+@test "negative proof: a range or another major is not the pin" {
+  printf '{"devDependencies":{"dependency-cruiser":"^18.0.0"}}' > "$BATS_TEST_TMPDIR/package.json"
+  [ "$(pinned "$BATS_TEST_TMPDIR/package.json")" = "^18.0.0" ] || return 1
+  printf '{"packages":{"node_modules/dependency-cruiser":{"version":"18.0.0"}}}' > "$BATS_TEST_TMPDIR/package-lock.json"
+  [ "$(pinned "$BATS_TEST_TMPDIR/package-lock.json")" = "18.0.0" ] || return 1
+  printf '{"devDependencies":{}}' > "$BATS_TEST_TMPDIR/empty.json"
+  [ -z "$(pinned "$BATS_TEST_TMPDIR/empty.json")" ] || return 1
+}
 
 @test "the real tree holds its boundaries" {
   run bash -c "cd '$ROOT' && node_modules/.bin/depcruise --config '$CFG' --output-type err directing platform/api platform/pulse platform/workflow-engine platform/agent-adapters platform/chorus-sdk"

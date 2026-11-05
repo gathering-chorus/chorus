@@ -52,7 +52,9 @@ case "$STATUS" in
       *) MSG="#$CARD $DAG passed · dagu $RUN · /cws $CARD" ;;
     esac ;;
   failed)
-    MSG="#$CARD $DAG $(why) · dagu $RUN · /cws $CARD"
+    # the run's own words go in a fence: they carry retry commands, and the nudge word
+    # cap counts only prose (#4889 run 5: a 52-word wake was refused and nobody woke)
+    MSG="$(printf '#%s %s failed · /cws %s\n```\n%s · dagu %s\n```' "$CARD" "$DAG" "$CARD" "$(why)" "$RUN")"
     # a paired card's red went back to slice (pair red ran in the failure handler)
     nav="$(grep -o '"navigator":"[^"]*"' "$CH/ops/active-pairs/$CARD.json" 2>/dev/null | cut -d'"' -f4)"
     [ -n "$nav" ] && MSG="$MSG · back to slice: the next pair run waits for $nav's green" ;;
@@ -69,10 +71,12 @@ if [ -f "$REG" ]; then
 fi
 rc=0
 for r in $(printf '%s\n' $who | awk '!seen[$0]++'); do
-  if ! env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG"; then
+  if ! err="$(env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG" 2>&1 >/dev/null)"; then
+    echo "$err" >&2
     echo "run-finished: the wake to $r did not go out" >&2; rc=1
-    # on the spine too, so a wake that never arrived is findable (Kade 15:05)
-    bash "${RUN_FINISHED_LOG:-$S/chorus-log}" run.wake.failed system "card=$CARD" "dag=$DAG" "to=$r" "status=$STATUS" "run=$RUN" >/dev/null 2>&1 || true
+    # on the spine too, with the refusal's first line, so a wake that never arrived is
+    # findable and says why (Kade 15:05; #4889 run 5 recorded no reason)
+    bash "${RUN_FINISHED_LOG:-$S/chorus-log}" run.wake.failed system "card=$CARD" "dag=$DAG" "to=$r" "status=$STATUS" "run=$RUN" "reason=$(printf '%s' "$err" | head -1 | cut -c1-160)" >/dev/null 2>&1 || true
   fi
 done
 # the ended pair's members were kept for this one wake
