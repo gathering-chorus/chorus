@@ -1378,7 +1378,12 @@ pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOu
     let trace = run_trace();
     emit_spine(home, "demo.gates.running", role, card, &trace);
     run_one_gate(home, role, card, gate, &round);
-    Ok(step_outcome(&what, card, recorded(&read_witness(home))))
+    let mut out = step_outcome(&what, card, recorded(&read_witness(home)));
+    // #4889 B7 (Wren 16:32: run 14's three red reviews reached the go step) — a red review
+    // fails its step, so dagu runs nothing after it: the owner wakes, Jeff never sees it.
+    // Under Jeff's 16:05 rule a round of notes only is a pass, and goes on.
+    if out.exit == 0 && recorded(&read_witness(home)).is_some_and(|(r, _)| r == "fail") { out.exit = 1; }
+    Ok(out)
 }
 
 

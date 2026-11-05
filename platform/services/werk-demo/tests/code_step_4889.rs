@@ -87,6 +87,8 @@ esac
     std::env::set_var("CHORUS_DEMO_ROUND", "r1");
     let red = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert!(red.message.contains(": fail") && red.message.contains("/code-review: a.rs:1 — b is undefined"), "{}", red.message);
+    // B7 (Wren 16:32): a red review fails its step, so nothing after it runs
+    assert_eq!(red.exit, 1, "{}", red.message);
     let calls = fs::read_to_string(&log).unwrap();
     let w = werk.canonicalize().unwrap();
     assert!(calls.lines().any(|l| l.starts_with(&format!("{} |", w.display())) && l.contains(&format!("/code-review medium --max-findings all {main}...HEAD"))),
@@ -107,6 +109,7 @@ esac
     std::env::set_var("CHORUS_DEMO_ROUND", "r2");
     let ok = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert!(ok.message.contains(": pass"), "{}", ok.message);
+    assert_eq!(ok.exit, 0, "NEGATIVE PROOF: a green review lets the run go on");
 
     // NEGATIVE PROOF: a review that gives no findings list is an error, never a pass
     fs::write(home.join("garbled"), "").unwrap();
@@ -151,6 +154,7 @@ esac
     std::env::set_var("CHORUS_DEMO_ROUND", "r6");
     let shipped = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert!(shipped.message.contains(": pass") && shipped.message.contains("note: a.rs:1 — item 7"), "{}", shipped.message);
+    assert_eq!(shipped.exit, 0, "notes only goes on to the go page");
     // NEGATIVE PROOF: a finding that breaks something Jeff uses still blocks
     fs::remove_file(home.join("breaksnothing")).unwrap();
     fs::write(home.join("breaks"), "").unwrap();
