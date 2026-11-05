@@ -86,16 +86,37 @@ fn negative_proof_an_ac_that_cannot_be_measured_reads_red() {
 }
 
 #[test]
-fn a_card_with_no_cardac_rows_lands_as_today_and_says_unproven() {
+fn negative_proof_a_card_with_no_checks_fails_in_prod_and_is_reopened() {
+    // #4889 (Jeff 18:21, "prove in prod"): it used to land as before and say unproven
     let fx = Fx::new("norows", "");
     let p = fx.run("prod");
-    assert!(p.status.success(), "{}", out(&p));
+    assert!(!p.status.success(), "a card with no checks does not pass prod: {}", out(&p));
     assert!(out(&p).contains("unproven") && out(&p).contains("no AC has a check"), "{}", out(&p));
     let r = fx.run("record");
-    assert!(r.status.success(), "{}", out(&r));
+    assert!(!r.status.success(), "accept is held: {}", out(&r));
     assert!(fx.log("spine.log").contains("verdict=unproven"), "{}", fx.log("spine.log"));
     assert!(!fx.log("spine.log").contains("verdict=Proven"), "never green: {}", fx.log("spine.log"));
-    assert!(fx.log("cards.log").contains("unproven"), "{}", fx.log("cards.log"));
+    assert!(fx.log("cards.log").contains("DEPLOY_ROLE=borg-queen move 4683 WIP"), "reopened: {}", fx.log("cards.log"));
+}
+
+#[test]
+fn a_red_in_prod_reopens_the_card_and_says_why_on_it() {
+    let fx = Fx::new("reopen", &row("ac-4683-1", "/ok.txt", "nope"));
+    let _ = fx.run("prod");
+    let r = fx.run("record");
+    assert!(!r.status.success(), "{}", out(&r));
+    let log = fx.log("cards.log");
+    assert!(log.contains("DEPLOY_ROLE=borg-queen move 4683 WIP"), "{log}");
+    assert!(log.contains("reopened — prod reads Not met"), "{log}");
+}
+
+#[test]
+fn negative_proof_a_proven_card_is_not_reopened() {
+    let fx = Fx::new("noreopen", &row("ac-4683-1", "/ok.txt", "ok"));
+    let _ = fx.run("prod");
+    let r = fx.run("record");
+    assert!(r.status.success(), "{}", out(&r));
+    assert!(!fx.log("cards.log").contains(" move "), "{}", fx.log("cards.log"));
 }
 
 fn adds(fx: &Fx) -> usize { fx.log("cards.log").lines().filter(|l| l.starts_with("DEPLOY_ROLE=borg-queen add ")).count() }

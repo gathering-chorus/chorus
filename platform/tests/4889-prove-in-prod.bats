@@ -10,10 +10,9 @@ BP="$ROOT/platform/services/borg-prove"
   [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
 }
 
-@test "AC6: a card with no checks fails prove in prod, it does not land as 'unproven'" {
-  ! grep -q 'v != "Proven" && v != NO_ROWS' "$BP/src/main.rs" || { echo "a card with no checks still passes prod"; return 1; }
-}
-
-@test "AC6: a red in prod reopens the card" {
-  grep -q 'reopen' "$ROOT/platform/pipelines/cicd-land.yaml" || { echo "no reopen on the land's prove red"; return 1; }
+@test "AC6: a card with no checks fails prove in prod, and a red in prod reopens the card" {
+  # borg-prove's own land tests, negative proofs included: no checks → red + reopened,
+  # a red → back to WIP with the verdict on the card, a Proven card is never reopened
+  run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$BP/target/$(id -un)" nice cargo test -q --manifest-path "$BP/Cargo.toml" --test land_gate_4683
+  [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
 }

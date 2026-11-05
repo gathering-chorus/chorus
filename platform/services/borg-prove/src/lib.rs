@@ -179,9 +179,15 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
-/// #4683 — a card with no AC check (#4760: on its AC lines) has nothing to prove: it lands as
-/// before, and the record says so. Never "Proven".
+/// #4683 — a card with no AC check (#4760: on its AC lines) has nothing to prove. Never
+/// "Proven". #4889 (Jeff 18:21, "prove in prod"): it no longer lands as before: it fails.
 pub const NO_ROWS: &str = "unproven: no AC has a check";
+
+/// #4889 — the land's prove step passes only on Proven: Not met, Unproven and a card with
+/// no checks all hold accept and reopen the card. Pure.
+pub fn prod_passes(v: &str) -> bool {
+    v == "Proven"
+}
 
 /// The verdict over every AC: Proven only when every one is met; Not met when
 /// any is not met; Unproven when none failed but some could not be measured

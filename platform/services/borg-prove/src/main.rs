@@ -222,6 +222,19 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
     }
 }
 
+/// #4889 — a red in prod reopens the card: back to WIP (it was merged, so the fix is a new
+/// round on the same card), with the verdict said on the card. A move that fails is said
+/// on stderr; the step fails either way, so accept never runs.
+fn reopen(card: u32, verdict: &str) {
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    let moved = Command::new("bash").arg(&cards).args(["move", &card.to_string(), "WIP"]).env("DEPLOY_ROLE", "borg-queen").status();
+    let said = Command::new("bash").arg(&cards)
+        .args(["comment", &card.to_string(), &format!("borg-prove: reopened — prod reads {verdict}; accept held until a new round proves it")]).status();
+    if !matches!(moved, Ok(s) if s.success()) || !matches!(said, Ok(s) if s.success()) {
+        eprintln!("#{card} record: reopen did not complete (move {moved:?}, comment {said:?})");
+    }
+}
+
 /// The step that failed in a dagu run, from `dagu status` ("├─name (…) [failed]").
 fn failed_step(dag: &str, run: &str) -> String {
     let cfg = env("DAGU_CONFIG", &format!("{}/platform/config/dagu.yaml", env("CHORUS_HOME", "")));
@@ -268,8 +281,8 @@ fn main() {
         // record runs on the red path too); record judges those same results
         // (it never measures again: Silas, Wren at the demo), writes the
         // verdict and is the gate: it fails on any verdict but Proven, so
-        // accept never runs after a red or an unmeasured AC. A card with no
-        // AC check (#4760: on its AC lines) lands as before and says "unproven".
+        // accept never runs after a red or an unmeasured AC. #4889: a card with no
+        // AC check fails too (it was "lands as before"), and a red reopens the card.
         "prod" => {
             let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
             let path = results_path(card);
@@ -280,7 +293,7 @@ fn main() {
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
             let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} verify in prod: {v}");
-            if v != "Proven" && v != NO_ROWS { exit(1) }
+            if !prod_passes(v) { exit(1) }
         }
         "record" => {
             // #4760 — the land runs record; it hands itself to her account (her
@@ -315,7 +328,12 @@ fn main() {
                 eprintln!("#{card} record: the verdict file was not written: {e}");
                 exit(1);
             }
-            if v != "Proven" && v != NO_ROWS { exit(1) }
+            // #4889 — a red reopens the card: it goes back to WIP, said on the card, and
+            // accept never runs (this step fails)
+            if !prod_passes(v) {
+                reopen(card, word);
+                exit(1)
+            }
         }
         "route" => {
             let (Some(_run), Some(routes)) = (a.get(3), a.get(4)) else {
