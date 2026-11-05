@@ -9,7 +9,7 @@
  * /v1/identity/sessionruns answers (2026-09-27): presenceOf names the run as
  * "session-run-<run name>", and a run is live while runEndedAt is empty.
  */
-import { resolveFromPresence, fetchPresenceResolution, resolveEnds, paneFromTmuxListing, rolePaneFromTmux } from './presence-target';
+import { resolveFromPresence, fetchPresenceResolution, resolveEnds } from './presence-target';
 
 const runs = [
   { name: 'silas-run-old', runEndedAt: '2026-09-26T16:31:00Z' },
@@ -142,19 +142,5 @@ describe('#4362 fetchPresenceResolution / resolveEnds against the API', () => {
   });
 });
 
-// #4362 — Jeff 10-01: "why not fix the issue instead of describing the error
-// better?" A role with no pane on its live run is still in its tmux session.
-describe('#4362 the role\'s own tmux session is its pane when the run has none', () => {
-  test('one pane in chorus-<role> is the target', () => {
-    const asked: string[][] = [];
-    expect(rolePaneFromTmux('silas', (a) => { asked.push(a); return '%63\n'; })).toBe('%63');
-    expect(asked[0]).toEqual(['list-panes', '-t', 'chorus-silas', '-F', '#{pane_id}']);
-  });
-  // NEGATIVE PROOF (#3734): each of these must reach no one.
-  test('no session, several panes, or a non-pane answer is no target', () => {
-    expect(rolePaneFromTmux('silas', () => { throw new Error("can't find session"); })).toBe('');
-    expect(paneFromTmuxListing('%63\n%64\n')).toBe('');
-    expect(paneFromTmuxListing('-\n')).toBe('');
-    expect(paneFromTmuxListing('')).toBe('');
-  });
-});
+// #4889 — the #4362 tmux fallback is retired; its tests went with it (Jeff 07:48).
+

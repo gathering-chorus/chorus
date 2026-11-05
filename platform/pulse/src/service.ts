@@ -12,7 +12,7 @@ import { fetchPeers, startRolesDoorWatch } from './peers';
 import { attributeSender, markAlert, originFor } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
+import { fetchPresenceResolution, resolveEnds } from './presence-target';
 import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
 import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
@@ -31,7 +31,7 @@ type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string 
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { callerRole } from './caller-identity';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
-import { spawn, execFileSync } from 'child_process';
+import { spawn } from 'child_process';
 import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -192,6 +192,18 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
   };
 }
 
+/** #4889 — how long the nudge answer waits for its delivery (the worker's backoff is ~9s). */
+const DELIVERY_WAIT_MS = 12_000;
+
+/** #4889 — what the sender is told: a row's delivery state in its words. Pure. */
+export function deliveryVerdict(rec: { delivery_status: string; last_delivery_error: string | null } | null | undefined):
+  { delivery: 'delivered' | 'queued' | 'not-delivered'; reason?: string } {
+  if (!rec) return { delivery: 'not-delivered', reason: 'the message row is gone' };
+  if (rec.delivery_status === 'delivered') return { delivery: 'delivered' };
+  if (rec.delivery_status === 'failed') return { delivery: 'not-delivered', reason: rec.last_delivery_error || 'delivery failed' };
+  return { delivery: 'queued', ...(rec.last_delivery_error ? { reason: rec.last_delivery_error } : {}) };
+}
+
 /** #4889 — the wake a nudge body marks, when it is one the boundary knows; else none. */
 export function wakeOf(body: { wake?: unknown } | null | undefined): string | undefined {
   return body && body.wake === 'run-finished' ? 'run-finished' : undefined;
@@ -246,12 +258,6 @@ async function nudgeCallerOk(headers: express.Request['headers'], from: unknown)
 /** #4629 S3 — a sender-signed nudge, while pulse delivers from Buzz, waits for its room note. */
 function heldForRoom(body: { buzz?: unknown } | undefined): boolean {
   return body?.buzz === 'sender' && deliverFromBuzz();
-}
-
-/** #2727 AC2: enqueue for async delivery via the worker (no-op if not wired, tests); a held nudge waits for its note. */
-function enqueueUnlessHeld(worker: DeliveryWorker | undefined, held: boolean, row: Parameters<DeliveryWorker['enqueue']>[0]): void {
-  if (held) return;
-  worker?.enqueue(row).catch(() => { /* worker handles its own state */ });
 }
 
 /** #4629 S2 — a sender that signed its own note (buzz=sender) gets no bridge copy, so the room holds it once. */
@@ -326,7 +332,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
     copyToBuzz(buzz, body, { id: Number(id), from: forBuzz.from, to, content: forBuzz.content });
-    enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null, wake: wake ?? null });
+    // #4889 — the sender is told what happened to its nudge, never a blind "sent": the
+    // answer waits for the delivery (up to DELIVERY_WAIT_MS) and says delivered, queued
+    // (not seen yet) or not-delivered with the reason.
+    const delivering = held || !worker ? Promise.resolve()
+      : worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null, wake: wake ?? null }).catch(() => { /* worker handles its own state */ });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
@@ -334,7 +344,9 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const toRes = await fetchPresenceResolution(to);
     const resolved = describeResolution(to, toRes);
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
-    res.json({ ok: true, id, traceId, resolved });
+    await Promise.race([delivering, new Promise((r) => setTimeout(r, DELIVERY_WAIT_MS).unref())]);
+    const { delivery, reason } = deliveryVerdict(store.getDeliveryRecord(Number(id)));
+    res.json({ ok: true, id, traceId, resolved, delivery, ...(reason ? { reason } : {}) });
   }
 
   // #3700 — the drain: the target role's own turn-boundary hook (stop /
@@ -614,13 +626,10 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // target collides with the sender's own session name-matches instead.
     const ends = await resolveEnds(to, from);
     const senderReg = ends.sender;
-    let toRes = ends.toRes;
-    // #4362 — the live run has no pane, but the role runs in its own tmux
-    // session: deliver to that session's pane instead of holding the message.
-    if (toRes.kind === 'no-pane') {
-      const pane = rolePaneFromTmux(to, (args) => execFileSync('tmux', args, { encoding: 'utf8', timeout: 2000 }));
-      if (pane) toRes = { kind: 'resolved', session: { role: to, pid: 0, tty: '', host: 'tmux', tmux: pane } };
-    }
+    const toRes = ends.toRes;
+    // #4889 (Jeff 07:48) — one path: the role's live registration. A run with no pane
+    // is not-delivered to the sender (planDeliveryTyped), never typed into a pane read
+    // from tmux here; the #4362 tmux fallback is retired.
     if (toRes.kind === 'unread') {
       resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-presence-unread', target: `undelivered:${to}:${toRes.why}` });
       return;

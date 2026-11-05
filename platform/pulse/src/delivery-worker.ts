@@ -148,6 +148,11 @@ export const PERMANENT_REASONS = new Set([
 export function classifyInjectResult(r: InjectResult): { kind: 'success' | 'permanent' | 'transient'; reason: string } {
   if (r.rc === 0) return { kind: 'success', reason: 'ok' };
   const stderr = (r.stderr || '').toLowerCase();
+  // #4889 (Jeff 07:48: break decisively, never branch to an old path) — the registered
+  // pane is gone. Retrying it, or guessing another, reaches no one: it is a loud
+  // not-delivered, and the principal re-records the role's pane on its next turn or sweep.
+  const dead = /can't find pane: (%\d+)/.exec(stderr);
+  if (dead) return { kind: 'permanent', reason: `dead-pane ${dead[1]}` };
   for (const reason of PERMANENT_REASONS) {
     if (stderr.includes(reason)) {
       return { kind: 'permanent', reason: 'no-window-found' };

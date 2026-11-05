@@ -8,7 +8,7 @@
 //! Each test uses its own sender name: the cap cache is per process and keyed
 //! on the role, so a shared sender would let one test read another's cap.
 
-use chorus_hooks::nudge_send::{peers_from, send, wake_from, Deps};
+use chorus_hooks::nudge_send::{delivery_word, peers_from, send, wake_from, Delivery, Deps};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,11 @@ type Seen = Arc<Mutex<Vec<String>>>;
 /// One stub for all three services, routed by path. Records each request line
 /// and body so a test can prove what was (and was not) called.
 fn stub(roles: &'static str, cap: Option<u32>, pulse_status: u16) -> (String, Seen) {
+    stub_answering(roles, cap, pulse_status, r#"{"resolved":"wren @ /dev/ttys003","delivery":"delivered"}"#)
+}
+
+/// #4889 — the same stub, with pulse's answer to the nudge given.
+fn stub_answering(roles: &'static str, cap: Option<u32>, pulse_status: u16, nudge_answer: &'static str) -> (String, Seen) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen: Seen = Arc::new(Mutex::new(Vec::new()));
@@ -50,7 +55,7 @@ fn stub(roles: &'static str, cap: Option<u32>, pulse_status: u16) -> (String, Se
             } else if line.contains("/properties/resolve") {
                 match cap { Some(c) => (200, format!(r#"{{"value":{c}}}"#)), None => (503, "{}".into()) }
             } else if line.contains("/api/nudge") {
-                (pulse_status, r#"{"resolved":"wren @ /dev/ttys003"}"#.to_string())
+                (pulse_status, nudge_answer.to_string())
             } else {
                 (404, "{}".into())
             };
@@ -102,7 +107,7 @@ fn a_nudge_to_a_listed_role_goes_through_pulse_and_says_where_it_went() {
     let (base, seen) = stub(ROLES, Some(50), 200);
     let (out, events) = run(&base, &["sender-a", "wren", "AC3 draft is in the scratch file", "--expects", "reply"]);
     let line = out.expect("sent");
-    assert!(line.starts_with("nudge sent: sender-a → wren @ /dev/ttys003 (trace="), "{line}");
+    assert!(line.starts_with("nudge delivered: sender-a → wren @ /dev/ttys003 (trace="), "{line}");
     assert_eq!(events.len(), 2, "requested + emitted, before the send: {events:?}");
     assert!(events[0].starts_with("nudge.requested sender-a from=sender-a,to=wren,"), "{events:?}");
     assert!(events[1].starts_with("nudge.emitted sender-a "), "{events:?}");
@@ -213,4 +218,30 @@ fn only_the_run_finished_mark_is_forwarded() {
     assert_eq!(wake_from(Some("urgent")), None);
     assert_eq!(wake_from(Some("")), None);
     assert_eq!(wake_from(None), None);
+}
+
+/// #4889 (folded #4893) — the sender is told what happened, never a blind "sent".
+#[test]
+fn sender_told_a_nudge_pulse_could_not_deliver_is_not_delivered_with_its_reason() {
+    let (base, _) = stub_answering(ROLES, Some(50), 200, r#"{"resolved":"wren @ /dev/ttys013","delivery":"not-delivered","reason":"dead-pane %12"}"#);
+    let (out, events) = run(&base, &["sender-nd", "wren", "are you there"]);
+    let why = out.expect_err("not delivered is an error to the sender");
+    assert!(why.starts_with("nudge NOT delivered: sender-nd → wren: dead-pane %12 (trace="), "{why}");
+    assert!(!why.contains("nudge sent") && !why.starts_with("nudge delivered"), "{why}");
+    assert!(events.iter().any(|e| e.starts_with("nudge.not_delivered sender-nd to=wren,") && e.contains("reason=dead-pane %12")), "{events:?}");
+}
+
+#[test]
+fn sender_told_a_queued_nudge_is_not_seen_yet_and_not_an_error() {
+    let (base, _) = stub_answering(ROLES, Some(50), 200, r#"{"resolved":"wren @ /dev/ttys003","delivery":"queued","reason":"target-busy"}"#);
+    let line = run(&base, &["sender-q", "wren", "when you are free"]).0.expect("queued is not a failure");
+    assert!(line.starts_with("nudge queued, not seen yet: sender-q → wren @ /dev/ttys003 (target-busy) (trace="), "{line}");
+}
+
+#[test]
+fn sender_told_negative_proof_an_answer_without_a_delivery_word_is_never_delivered() {
+    assert_eq!(delivery_word(&serde_json::json!({"resolved":"wren"})), Delivery::Queued(String::new()));
+    assert_eq!(delivery_word(&serde_json::json!({"delivery":"delivered"})), Delivery::Delivered);
+    assert_eq!(delivery_word(&serde_json::json!({"delivery":"not-delivered"})), Delivery::NotDelivered("no reason given".into()));
+    assert_eq!(delivery_word(&serde_json::json!({"delivery":"something"})), Delivery::Queued(String::new()));
 }

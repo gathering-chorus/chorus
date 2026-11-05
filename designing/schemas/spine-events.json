@@ -6592,6 +6592,59 @@
         "branch": "Card branch whose remote delete failed",
         "reason": "auth-fail message naming the credential file path"
       }
+    },
+    "nudge.not_delivered": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-hook-shim",
+      "description": "nudge-send: pulse answered that the nudge did not reach its recipient; the sender was told not-delivered with the reason, never \"sent\" (#4889).",
+      "fields": {
+        "to": "Recipient role",
+        "trace": "The nudge's trace id",
+        "reason": "pulse's reason (e.g. dead-pane %12, undelivered-no-pane)",
+        "role": "Sender"
+      }
+    },
+    "presence.pane.refreshed": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal (turn or sweep): the role's tmux pane moved, so its Presence row now records the pane its tmux session shows; the principal is the Presence's only writer (#4889).",
+      "fields": {
+        "was": "The pane the Presence held",
+        "now": "The pane recorded now",
+        "written": "Whether the door took the write",
+        "role": "The role"
+      }
+    },
+    "announce.cooldown.read": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "pulse",
+      "description": "pulse read its machine-lane cooldown from the property pulse.announce.machine_cooldown_ms (said once per change) (#4889).",
+      "fields": {
+        "key": "The property key",
+        "ms": "The cooldown in ms"
+      }
+    },
+    "announce.cooldown.unread": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "pulse",
+      "description": "pulse could not read its machine-lane cooldown property: a missing or bad row turns dedupe off, a door that does not answer keeps the last value; said once per change, no default (#4889).",
+      "fields": {
+        "key": "The property key",
+        "error": "Why it could not be read",
+        "dedupe": "off, or the last value kept"
+      }
     }
   }
 }

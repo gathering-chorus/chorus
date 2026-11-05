@@ -186,7 +186,8 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
         (deps.spine)("buzz.sign.skipped", from, &format!("trace={trace},reason={e}"));
     }).ok());
     let mut req = ureq::post(&deps.pulse_url)
-        .timeout(Duration::from_secs(5))
+        // #4889 — pulse answers once the delivery is known (it waits up to 12s)
+        .timeout(Duration::from_secs(20))
         .set("Content-Type", "application/json")
         .set("X-Chorus-Trace-Id", &trace)
         .set("X-Chorus-MCP-Caller", "1");
@@ -203,14 +204,15 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
     if let Some(w) = &deps.wake {
         body["wake"] = json!(w);
     }
-    let resolved = match req.send_json(body) {
-        Ok(resp) => resp.into_json::<Value>().ok().and_then(|b| b.get("resolved").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| to.to_string()),
+    let answer = match req.send_json(body) {
+        Ok(resp) => resp.into_json::<Value>().unwrap_or(Value::Null),
         Err(ureq::Error::Status(code, resp)) => {
             let text = resp.into_string().unwrap_or_default();
             return Err(format!("pulse POST returned {code}: {}", text.chars().take(200).collect::<String>()));
         }
         Err(e) => return Err(format!("pulse did not answer: {e}")),
     };
+    let resolved = answer.get("resolved").and_then(Value::as_str).map(String::from).unwrap_or_else(|| to.to_string());
     let room = match (&deps.buzz, signed) {
         (Some(b), Some((key, ev))) => {
             let line = publish_or_queue(b, from, &key, &ev, deps.spine);
@@ -227,7 +229,30 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
         (deps.spine)("nudge.to.logged_out", from, &format!("to={to},since={since},trace={trace}"));
         format!(" · {to} is LOGGED OUT since {since}: no answer until that session logs in")
     }).unwrap_or_default();
-    Ok(format!("nudge sent: {from} → {resolved} (trace={trace}){room}{out}"))
+    // #4889 — the sender is told what happened, never a blind "sent"
+    match delivery_word(&answer) {
+        Delivery::Delivered => Ok(format!("nudge delivered: {from} → {resolved} (trace={trace}){room}{out}")),
+        Delivery::Queued(why) => Ok(format!("nudge queued, not seen yet: {from} → {resolved}{why} (trace={trace}){room}{out}")),
+        Delivery::NotDelivered(why) => {
+            (deps.spine)("nudge.not_delivered", from, &format!("to={to},trace={trace},reason={why}"));
+            Err(format!("nudge NOT delivered: {from} → {to}: {why} (trace={trace}){room}{out}"))
+        }
+    }
+}
+
+/// #4889 — what pulse said happened to the nudge.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Delivery { Delivered, Queued(String), NotDelivered(String) }
+
+/// #4889 — pulse's answer in words: `delivery` is delivered, queued or not-delivered
+/// (with `reason`). An answer without it (an older pulse) is queued, never "delivered".
+pub fn delivery_word(answer: &Value) -> Delivery {
+    let reason = answer.get("reason").and_then(Value::as_str).unwrap_or("").to_string();
+    match answer.get("delivery").and_then(Value::as_str) {
+        Some("delivered") => Delivery::Delivered,
+        Some("not-delivered") => Delivery::NotDelivered(if reason.is_empty() { "no reason given".into() } else { reason }),
+        _ => Delivery::Queued(if reason.is_empty() { String::new() } else { format!(" ({reason})") }),
+    }
 }
 
 /// #4817 — the shared state dir the Stop hook writes session-auth/<role>.json into.

@@ -150,6 +150,19 @@ pub fn delivered_presence(mut presence: Value, now: &str) -> Option<Value> {
     Some(presence)
 }
 
+/// #4889 — the role's pane moved (a restarted tmux pane keeps the run alive): the
+/// presence takes the pane the role's tmux session shows now. None when the pane is
+/// not a tmux pane id (%N) or is already the one recorded. The principal stays the
+/// only writer of a Presence; pulse only reads it, and a dead pane fails loudly there.
+pub fn repaned_presence(mut presence: Value, pane: &str, tty: &str) -> Option<Value> {
+    presence.get("name")?;
+    let ok = pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit());
+    if !ok || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
+    presence["pane"] = Value::String(pane.into());
+    if !tty.is_empty() { presence["tty"] = Value::String(tty.into()); }
+    Some(presence)
+}
+
 /// A presence whose run ended can no longer be reached there.
 pub fn gone_presence(mut presence: Value) -> Option<Value> {
     presence.get("name")?;
@@ -549,6 +562,17 @@ mod person_for_account_4412 {
 #[cfg(test)]
 mod channel_tests_4424 {
     use super::*;
+    #[test] fn a_moved_pane_is_taken_4889() {
+        let p = presence_row("abby-normal", "p", "r", "%12", "/dev/ttys013", "chorus-abby-normal", "pane");
+        let v = repaned_presence(p.clone(), "%31", "/dev/ttys020").expect("moved");
+        assert_eq!((v["pane"].as_str(), v["tty"].as_str()), (Some("%31"), Some("/dev/ttys020")));
+        // negative proofs: the same pane, not a pane id, an empty answer — nothing to write
+        assert!(repaned_presence(p.clone(), "%12", "/dev/ttys013").is_none());
+        assert!(repaned_presence(p.clone(), "-", "").is_none());
+        assert!(repaned_presence(p.clone(), "", "").is_none());
+        assert!(repaned_presence(p, "%", "").is_none());
+        assert!(repaned_presence(serde_json::json!({}), "%3", "").is_none());
+    }
     #[test] fn unset_channel_is_pane() { assert_eq!(session_channel(None).unwrap(), "pane"); assert_eq!(session_channel(Some("")).unwrap(), "pane"); }
     #[test] fn agent_channel_is_accepted() { assert_eq!(session_channel(Some("agent")).unwrap(), "agent"); }
     // Negative proof: anything else is refused, never quietly read as pane.

@@ -1645,6 +1645,8 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     if delivered {
         if let Some(p) = read_row(ctx, role, "presence").and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
     }
+    // #4889 — the address follows the role: a moved pane is recorded before anyone sends to it
+    refresh_pane(ctx, role);
     // #4339 — is his terminal on this role's pane right now
     if let Some(p) = read_row(ctx, role, "presence") {
         let pane = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -1831,6 +1833,9 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
     let (mut kept, mut failed) = (0, 0);
     for role in roles {
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { continue; }
+        // #4889 — an idle role is never woken by a nudge to a dead pane, so the sweep
+        // keeps its address current too, not only its turns
+        refresh_pane(ctx, role);
         if live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() { continue; }
         let Some(session) = read_row(ctx, role, "session") else { continue };
         let exp = current_login_expiry(ctx, role);
@@ -1841,6 +1846,22 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
         }
     }
     (kept, failed)
+}
+
+/// #4889 (Jeff 07:48: a role's address follows the role, like a phone number) — the
+/// Presence takes the pane the role's tmux session shows now, the same read a login
+/// makes. Run on every turn (seen-write) and every sweep. Pulse never writes a Presence
+/// and never guesses a pane: a pane that is gone is a loud not-delivered there.
+fn refresh_pane(ctx: &Ctx, role: &str) {
+    if !ctx.has_tmux(role) { return; }
+    let Some(p) = read_row(ctx, role, "presence") else { return };
+    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &Ctx::tmux_session(role), "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
+    let (pane, tty) = where_.trim().split_once('|').unwrap_or(("", ""));
+    let was = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if let Some(np) = rows::repaned_presence(p, pane, tty) {
+        let ok = put_row(ctx, role, "identity/presences", "presence", &np);
+        ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
+    }
 }
 
 /// Ids of the role's background sessions (`claude agents --json --cwd <role dir>`).
