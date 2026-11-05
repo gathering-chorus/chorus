@@ -26,6 +26,7 @@ DOOR_CLASS = {"properties/properties": ("properties", "properties"), "skills/ski
 # graph) — the tools the reviews and their tests run, as dagu's account on the Library has
 # them. A second machine needs its own rows.
 TOOL_PATHS = {"semgrep": "/Users/jeffbridwell/.local/bin/semgrep", "claude": "/Users/jeffbridwell/.local/bin/claude"}
+COOLDOWN_KEY, COOLDOWN_MS = "pulse.announce.machine_cooldown_ms", "1800000"
 RETIRED_SKILLS = ["werk-demo-gate-product", "werk-demo-gate-ops", "werk-demo-review-1", "werk-demo-review-2",
                   "werk-demo-review-3", "werk-demo-session-smoke", "werk-review", "werk-review-verdict"]
 
@@ -53,6 +54,12 @@ def plan():
               "propertyValueType": "string", "propertyValue": path,
               "comment": f"#4889: the {t} binary dagu's steps run (Library); read through the resolver, no default"})
             for t, path in TOOL_PATHS.items()]
+    # #4889 (folded #4891): pulse's machine-lane cooldown, read through the shared TS reader;
+    # the hard-coded MACHINE_COOLDOWN_MS (30 min) is retired in this land
+    want.append(("properties/properties", "prop-pulse-announce-machine-cooldown-ms",
+                 {"label": "prop-pulse-announce-machine-cooldown-ms", "propertyKey": COOLDOWN_KEY, "propertyScope": "global",
+                  "propertyValueType": "int", "propertyValue": COOLDOWN_MS,
+                  "comment": "#4889: pulse dedupes a repeated machine alert within this many ms; run-finish wakes are never deduped; no default"}))
     for r in demo:
         want.append(("skills/skills", r["skill"].removeprefix("skill-"),
                      {"label": r["label"], "executor": r["executor"], "implementedBy": r["implementedBy"],

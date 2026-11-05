@@ -20,13 +20,13 @@ const T0 = Date.parse('2026-10-26T20:44:16Z');
 
 describe('#4756 an alert is judged by its source, not its owner', () => {
   test('the stored renudge (from = to = borg-queen) is delivered', () => {
-    const d = decide('borg-queen', 'borg-queen', RENUDGE, T0, new AnnounceState());
+    const d = decide('borg-queen', 'borg-queen', RENUDGE, T0, new AnnounceState(30 * 60_000));
     expect(d.deliver).toBe(true);
     expect(d.lane).toBe('machine');
   });
 
   test('negative proof: a role sending to itself is still a self-echo', () => {
-    const d = decide('wren', 'wren', 'note to self: check #4744', T0, new AnnounceState());
+    const d = decide('wren', 'wren', 'note to self: check #4744', T0, new AnnounceState(30 * 60_000));
     expect(d).toMatchObject({ deliver: false, suppressReason: 'self-echo' });
   });
 
@@ -36,19 +36,19 @@ describe('#4756 an alert is judged by its source, not its owner', () => {
   });
 
   test('two alerts to one role are two incidents: the signature is the body, not the header', () => {
-    const s = new AnnounceState();
+    const s = new AnnounceState(30 * 60_000);
     expect(decide('borg-queen', 'borg-queen', RENUDGE, T0, s).deliver).toBe(true);
     expect(decide('borg-queen', 'borg-queen', WAKE_BQ, T0 + 60_000, s).deliver).toBe(true);
   });
 
   test('two roles woken in the same tick are both woken', () => {
-    const s = new AnnounceState();
+    const s = new AnnounceState(30 * 60_000);
     expect(decide('borg-queen', 'borg-queen', WAKE_BQ, T0, s).deliver).toBe(true);
     expect(decide('abby-normal', 'abby-normal', WAKE_ABBY, T0, s).deliver).toBe(true);
   });
 
   test('negative proof: the same alert again inside the cooldown is still held', () => {
-    const s = new AnnounceState();
+    const s = new AnnounceState(30 * 60_000);
     expect(decide('borg-queen', 'borg-queen', RENUDGE, T0, s).deliver).toBe(true);
     expect(decide('borg-queen', 'borg-queen', RENUDGE, T0 + 60_000, s)).toMatchObject({ deliver: false, suppressReason: 'dup-class' });
   });

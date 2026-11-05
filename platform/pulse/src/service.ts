@@ -192,6 +192,11 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
   };
 }
 
+/** #4889 — the wake a nudge body marks, when it is one the boundary knows; else none. */
+export function wakeOf(body: { wake?: unknown } | null | undefined): string | undefined {
+  return body && body.wake === 'run-finished' ? 'run-finished' : undefined;
+}
+
 /** #3439/#4361 — the destination a nudge resolved to, in words for the sender. */
 function describeResolution(to: string, toRes: Awaited<ReturnType<typeof fetchPresenceResolution>>): string {
   if (toRes.kind === 'resolved') return describeTarget(to, toRes.session);
@@ -314,12 +319,14 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     if ('refused' in pre) return res.status(pre.status).json(pre.refused);
     const { nudgeClass, expects, targetSessionId } = pre;
     const held = heldForRoom(body);
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held, origin);
+    // #4889 — the sender's wake mark (run-finished), a field, never read from the text
+    const wake = wakeOf(body);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held, origin, wake);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
     copyToBuzz(buzz, body, { id: Number(id), from: forBuzz.from, to, content: forBuzz.content });
-    enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null });
+    enqueueUnlessHeld(worker, held, { id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null, wake: wake ?? null });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
@@ -704,6 +711,8 @@ if (require.main === module) {
   const store = new MessageStore();
   const { runInject, emitSpine, selfTest } = buildRuntimeDeps();
   const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
+  // #4889 — the machine-lane cooldown is a property (pulse.announce.machine_cooldown_ms)
+  worker.watchCooldown();
 
   // #3485 — generate the shared secret EAGERLY at boot (not lazily on first
   // request), so the secret file exists before nudge-send sends its first

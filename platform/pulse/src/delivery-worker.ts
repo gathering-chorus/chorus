@@ -80,6 +80,8 @@ export interface DeliveryRow {
   // admission bound this row to.
   target_session_id?: string | null;
   delivery_session_id?: string | null;
+  // #4889 — a wake the sender marked (run-finished): the boundary never dedupes it.
+  wake?: string | null;
 }
 
 // #3343 — spine-event family per delivery kind. Pure so the mapping is pinned
@@ -123,7 +125,8 @@ export function deliveredEvent(kind?: 'nudge' | 'jeff-input'): string {
 // (markDelivered — the row is handled, not failed) and METERED via
 // terminal.announced / terminal.suppressed spine events so interruptions
 // become a queryable budget. The boundary never eats a first occurrence.
-import { decide, AnnounceState } from './announce-boundary';
+import { decide, AnnounceState, COOLDOWN_KEY, parseCooldown } from './announce-boundary';
+import { readGlobal, GlobalRead } from '../../chorus-sdk/properties/global';
 
 
 // Per Kade gemba review 2026-05-07: chorus-inject classifies exactly ONE
@@ -157,8 +160,10 @@ export type SelfTest = () => Promise<InjectResult>;
 
 export class DeliveryWorker {
   private chains: Map<string, Promise<void>> = new Map();
-  // #3357 — boundary dedup windows (machine-lane class signatures)
+  // #3357 — boundary dedup windows (machine-lane class signatures). #4889: the
+  // cooldown comes from the property, read by watchCooldown; unread = no dedupe.
   private announce: AnnounceState = new AnnounceState();
+  private cooldownSeen = '';
 
   constructor(
     private store: MessageStore,
@@ -184,6 +189,43 @@ export class DeliveryWorker {
     }
     await this.emitSpine('nudge.health.smoke_ok', {});
   }
+
+  /** #4889 — the machine-lane cooldown, read now and every `everyMs` (a TTL, never per
+   *  announce). A row that is missing or bad leaves the boundary with no cooldown (it
+   *  dedupes nothing); a door that does not answer keeps the last value read. Either
+   *  failure is said on the spine once per change (announce.cooldown.unread), and a
+   *  recovery once (announce.cooldown.read). No default value exists. */
+  async readCooldown(read: () => Promise<GlobalRead> = () => readGlobal(COOLDOWN_KEY)): Promise<void> {
+    const r = await read();
+    const parsed = r.ok ? parseCooldown(r.value) : r;
+    let seen: string;
+    if (parsed.ok) {
+      this.announce.cooldownMs = parsed.ms;
+      seen = `read:${parsed.ms}`;
+      if (seen !== this.cooldownSeen) await this.emitSpine('announce.cooldown.read', { key: COOLDOWN_KEY, ms: parsed.ms });
+    } else {
+      const fromDoor = 'where' in parsed && parsed.where === 'door';
+      if (!fromDoor) this.announce.cooldownMs = undefined;
+      seen = `unread:${parsed.error}`;
+      if (seen !== this.cooldownSeen) {
+        await this.emitSpine('announce.cooldown.unread', {
+          key: COOLDOWN_KEY, error: parsed.error,
+          dedupe: this.announce.cooldownMs === undefined ? 'off' : `last value ${this.announce.cooldownMs}ms`,
+        });
+      }
+    }
+    this.cooldownSeen = seen;
+  }
+
+  watchCooldown(everyMs = 5 * 60_000, read?: () => Promise<GlobalRead>): () => void {
+    void this.readCooldown(read);
+    const t = setInterval(() => { void this.readCooldown(read); }, everyMs);
+    if (typeof t.unref === 'function') t.unref();
+    return () => clearInterval(t);
+  }
+
+  /** the cooldown the boundary is using now (undefined = dedupe off); for tests and /health */
+  cooldownMs(): number | undefined { return this.announce.cooldownMs; }
 
   /**
    * Enqueue a row for delivery. Returns a promise that resolves when
@@ -223,8 +265,10 @@ export class DeliveryWorker {
    */
   private async announceOrSuppress(row: DeliveryRow): Promise<boolean> {
     if (row.kind === 'jeff-input') return true;
-    const d = decide(row.from, row.to, row.content, Date.now(), this.announce);
-    const traceF = row.trace_id ? { trace_id: row.trace_id } : {};
+    const d = decide(row.from, row.to, row.content, Date.now(), this.announce, row.wake);
+    // #4889 — the wake mark rides the boundary's spine events, so prod can prove a
+    // run-finish wake was announced and never suppressed (run-finish-wake-prod.bats)
+    const traceF = { ...(row.trace_id ? { trace_id: row.trace_id } : {}), ...(row.wake ? { wake: row.wake } : {}) };
     if (!d.deliver) {
       await this.emitSpine('terminal.suppressed', {
         ...traceF,

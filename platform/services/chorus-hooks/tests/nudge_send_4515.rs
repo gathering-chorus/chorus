@@ -8,7 +8,7 @@
 //! Each test uses its own sender name: the cap cache is per process and keyed
 //! on the role, so a shared sender would let one test read another's cap.
 
-use chorus_hooks::nudge_send::{peers_from, send, Deps};
+use chorus_hooks::nudge_send::{peers_from, send, wake_from, Deps};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
@@ -72,6 +72,10 @@ fn run(base: &str, a: &[&str]) -> (Result<String, String>, Vec<String>) {
 }
 
 fn run_as(base: &str, a: &[&str], secret: Option<&str>, token: Option<&str>) -> (Result<String, String>, Vec<String>) {
+    run_full(base, a, secret, token, None)
+}
+
+fn run_full(base: &str, a: &[&str], secret: Option<&str>, token: Option<&str>, wake: Option<String>) -> (Result<String, String>, Vec<String>) {
     let spine: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let write = |e: &str, r: &str, p: &str| spine.lock().unwrap().push(format!("{e} {r} {p}"));
     let deps = Deps {
@@ -82,6 +86,7 @@ fn run_as(base: &str, a: &[&str], secret: Option<&str>, token: Option<&str>) -> 
         identity_token: token.map(String::from),
         spine: &write,
         buzz: None,
+        wake,
     };
     let out = send(&args(a), &deps);
     let events = spine.lock().unwrap().clone();
@@ -181,4 +186,31 @@ fn peers_are_agents_and_humans_only() {
     assert_eq!(peers_from(&v).unwrap(), vec!["jeff", "silas", "wren"]);
     let none: serde_json::Value = serde_json::from_str(r#"{"data":[{"name":"jeff","roleKind":"human"}]}"#).unwrap();
     assert!(peers_from(&none).is_err(), "a door with no agent is refused");
+}
+
+/// #4889 — a run-finish wake (platform/scripts/run-finished sets CHORUS_NUDGE_WAKE) rides the
+/// POST body as `wake`, so pulse's boundary exempts it by field, never by its words.
+#[test]
+fn a_run_finish_wake_rides_the_body_as_a_field() {
+    let (base, seen) = stub(ROLES, Some(50), 200);
+    let (out, _) = run_full(&base, &["system", "wren", "#4889 cicd failed"], Some("s3"), None, wake_from(Some("run-finished")));
+    out.expect("sent");
+    let calls = pulse_calls(&seen);
+    assert!(calls[0].contains(r#""wake":"run-finished""#), "{calls:?}");
+}
+
+#[test]
+fn negative_proof_without_the_env_mark_no_wake_field_is_sent() {
+    let (base, seen) = stub(ROLES, Some(50), 200);
+    let (out, _) = run_full(&base, &["system", "wren", "#4889 cicd failed"], Some("s3"), None, wake_from(None));
+    out.expect("sent");
+    assert!(!pulse_calls(&seen)[0].contains("\"wake\""), "{:?}", pulse_calls(&seen));
+}
+
+#[test]
+fn only_the_run_finished_mark_is_forwarded() {
+    assert_eq!(wake_from(Some("run-finished")), Some("run-finished".to_string()));
+    assert_eq!(wake_from(Some("urgent")), None);
+    assert_eq!(wake_from(Some("")), None);
+    assert_eq!(wake_from(None), None);
 }

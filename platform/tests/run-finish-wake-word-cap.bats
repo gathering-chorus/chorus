@@ -24,7 +24,7 @@ setup() {
 # run-finished with the real shim; pulse is a dead port, so a wake that passes the cap
 # fails only at transport ("pulse did not answer"), never at "word-cap"
 finish() {
-  env -u CHORUS_ROLE CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/chorus.log" CHORUS_HOME="$H" CHORUS_HOOK_SHIM="$SHIM" CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge \
+  env -u CHORUS_ROLE -u CHORUS_NUDGE_SIGNS -u BUZZ_RELAY_URL CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/chorus.log" CHORUS_HOME="$H" CHORUS_HOOK_SHIM="$SHIM" CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge \
     RUN_FINISHED_WHY="$BATS_TEST_TMPDIR/why" RUN_FINISHED_LOG="$BATS_TEST_TMPDIR/log" \
     DAG_RUN_STATUS=failed DAG_RUN_STEP_NAME=onExit bash "$RF" 4889 silas cicd run-5
 }
@@ -43,6 +43,6 @@ finish() {
 }
 
 @test "negative proof: the same reason outside a fence is refused by the word cap" {
-  run env -u CHORUS_ROLE CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/chorus.log" CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge "$SHIM" nudge-send system silas "#4889 cicd $LONG · dagu 034sIjDspy8e2VcCHIxIjy · /cws 4889"
+  run env -u CHORUS_ROLE -u CHORUS_NUDGE_SIGNS -u BUZZ_RELAY_URL CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/chorus.log" CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge "$SHIM" nudge-send system silas "#4889 cicd $LONG · dagu 034sIjDspy8e2VcCHIxIjy · /cws 4889"
   [[ "$output" == *"word-cap"* ]] || { echo "$output"; return 1; }
 }

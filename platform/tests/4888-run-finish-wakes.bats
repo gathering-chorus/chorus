@@ -133,9 +133,9 @@ WAKE_RE='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · /cws [0-9]+$'
 # --- run-finished, with chorus-hook-shim and chorus-werk-status caged ---
 cage() {
   H="$BATS_TEST_TMPDIR/home"; mkdir -p "$H/ops/active-pairs"
-  SENT="$BATS_TEST_TMPDIR/sent"; : > "$SENT"
+  SENT="$BATS_TEST_TMPDIR/sent"; : > "$SENT"; : > "$SENT.wake"
   # one line per send: a wake's fenced reason spans lines (#4889)
-  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s|%%s\\n" "$3" "$(printf %%s "$4" | tr "\\n" " ")" >> %s\n' "$SENT" > "$BATS_TEST_TMPDIR/shim"
+  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s|%%s\\n" "$3" "$(printf %%s "$4" | tr "\\n" " ")" >> %s && echo "${CHORUS_NUDGE_WAKE:-none}" >> %s.wake\n' "$SENT" "$SENT" > "$BATS_TEST_TMPDIR/shim"
   printf '#!/bin/sh\necho "failed at test-pipeline: werk-test: RED (exit 1)"\n' > "$BATS_TEST_TMPDIR/why"
   chmod +x "$BATS_TEST_TMPDIR/shim" "$BATS_TEST_TMPDIR/why"
 }
@@ -210,4 +210,11 @@ finish() { # STATUS DAG [STEP]
 @test "AC6: pair red routes back to slice without its own nudge (the exit handler is the one wake)" {
   out="$(sed -n '/^red)/,/^  ;;/p' "$ROOT/platform/scripts/pair" | grep -nE '^\s*(nudge|.*ops-nudge) ' || true)"
   [ -z "$out" ] || { echo "pair red still nudges: $out"; return 1; }
+}
+
+@test "#4889: every finish wake is marked CHORUS_NUDGE_WAKE=run-finished (a field pulse never dedupes), pass or fail" {
+  cage; run finish failed cicd
+  [ "$(cat "$SENT.wake")" = "run-finished" ] || { cat "$SENT.wake"; return 1; }
+  cage; run finish succeeded cicd-land
+  [ "$(cat "$SENT.wake")" = "run-finished" ] || { cat "$SENT.wake"; return 1; }
 }

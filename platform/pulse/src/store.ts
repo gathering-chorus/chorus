@@ -217,6 +217,12 @@ export class MessageStore {
     if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'origin')) {
       this.db.exec('ALTER TABLE messages ADD COLUMN origin TEXT');
     }
+    // #4889 — a wake the sender marked (run-finished): the announce boundary never dedupes
+    // it. ADD COLUMN rewrites no row; old rows read NULL (an ordinary nudge). Delivery
+    // metadata only: the Buzz note does not carry it (the room sees the words, not routing).
+    if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'wake')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN wake TEXT');
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
     // #4629 S2 — a sender-signed note names its nudge by trace (msg tag trace-<uuid>), so one nudge per trace.
     // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows. A store that has duplicates keeps
@@ -242,15 +248,17 @@ export class MessageStore {
     heldForBuzz = false,
     /** #4637 AC3 — where it was written, in the same INSERT: a row is never stored without it */
     origin?: string,
+    /** #4889 — a sender-marked wake (run-finished), stored with the row so a requeue keeps it */
+    wake?: string,
   ): number {
     // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, buzz_hold, origin) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, buzz_hold, origin, wake) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null,
-      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 1 : 0, origin ?? null).lastInsertRowid);
+      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 1 : 0, origin ?? null, wake ?? null).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -349,7 +357,7 @@ export class MessageStore {
   /** #4629 S3 — one deliverable row by id (pending), for the release path; null when it is gone or not pending. */
   getPendingDelivery(id: number): ReturnType<MessageStore['getPendingDeliveries']>[number] | null {
     const row = this.db.prepare(
-      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id FROM messages WHERE id = ? AND delivery_status = \'pending\''
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id, wake FROM messages WHERE id = ? AND delivery_status = \'pending\''
     ).get(id);
     return (row as ReturnType<MessageStore['getPendingDeliveries']>[number] | undefined) ?? null;
   }
@@ -432,9 +440,9 @@ export class MessageStore {
 
   // #3343: restart-requeue covers BOTH delivery kinds; `kind` tells the worker
   // which spine-event family to emit (jeff.input.* vs nudge.*).
-  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null }> {
+  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null; wake: string | null }> {
     return this.db.prepare(
-      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id, wake FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
     ).all() as ReturnType<MessageStore['getPendingDeliveries']>;
   }
 

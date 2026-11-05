@@ -42,10 +42,11 @@ teardown() { kill "$SRV" 2>/dev/null || true; }
   grep -q 'call athena-add domain=skills class=stepskills' "$BATS_TEST_TMPDIR/calls" || return 1
 }
 
-@test "--only properties/properties plans just the two tool-path rows (the pre-land bootstrap)" {
+@test "--only properties/properties plans just the property rows: two tool paths and pulse's cooldown" {
   run env OWL_URL="http://127.0.0.1:$PORT" CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" python3 "$S" --only properties/properties
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"plan: door writes 2 add, 0 change, 0 delete; 0 same"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"plan: door writes 3 add, 0 change, 0 delete; 0 same"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"prop-pulse-announce-machine-cooldown-ms"* ]] || { echo "$output"; return 1; }
   [[ "$output" != *stepskills* && "$output" != *"skills/skills"* ]] || { echo "$output"; return 1; }
 }
 

@@ -71,7 +71,9 @@ if [ -f "$REG" ]; then
 fi
 rc=0
 for r in $(printf '%s\n' $who | awk '!seen[$0]++'); do
-  if ! err="$(env -u CHORUS_ROLE bash "$S/ops-nudge" "$r" "$MSG" 2>&1 >/dev/null)"; then
+  # CHORUS_NUDGE_WAKE marks this as the run's finish wake: pulse never dedupes it by its
+  # words (#4889: run 4's failure matched run 3's and reached its owner 29 min late)
+  if ! err="$(env -u CHORUS_ROLE CHORUS_NUDGE_WAKE=run-finished bash "$S/ops-nudge" "$r" "$MSG" 2>&1 >/dev/null)"; then
     echo "$err" >&2
     echo "run-finished: the wake to $r did not go out" >&2; rc=1
     # on the spine too, with the refusal's first line, so a wake that never arrived is

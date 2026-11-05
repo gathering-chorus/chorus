@@ -58,6 +58,14 @@ pub struct Deps<'a> {
     pub spine: &'a dyn Fn(&str, &str, &str),
     /// #4629 S2 — set when the sender signs its own room note (CHORUS_NUDGE_SIGNS=1); None keeps pulse's bridge copy.
     pub buzz: Option<BuzzDeps>,
+    /// #4889 — a wake mark pulse's announce boundary never dedupes, carried as the body's
+    /// `wake` field (never read from the words). Only `run-finished` (platform/scripts/run-finished).
+    pub wake: Option<String>,
+}
+
+/// #4889 — the wake mark an env value names, when it is one pulse knows; else none.
+pub fn wake_from(v: Option<&str>) -> Option<String> {
+    (v == Some("run-finished")).then(|| "run-finished".to_string())
 }
 
 impl Deps<'_> {
@@ -100,6 +108,9 @@ impl Deps<'_> {
                     channel: env("BUZZ_TEAM_CHANNEL", TEAM_CHANNEL_DEFAULT),
                 }
             }),
+            // nudge-send runs in the caller's own process, so this is read here, not
+            // forwarded through the hook daemon (the #4130 named-env rule is for hooks)
+            wake: wake_from(std::env::var("CHORUS_NUDGE_WAKE").ok().as_deref()),
         }
     }
 }
@@ -188,6 +199,9 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
     let mut body = json!({ "from": from, "to": to, "content": message, "traceId": trace, "expects": expects });
     if signed.is_some() {
         body["buzz"] = json!("sender");
+    }
+    if let Some(w) = &deps.wake {
+        body["wake"] = json!(w);
     }
     let resolved = match req.send_json(body) {
         Ok(resp) => resp.into_json::<Value>().ok().and_then(|b| b.get("resolved").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| to.to_string()),
