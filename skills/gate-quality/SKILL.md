@@ -63,6 +63,7 @@ for context only. In the demo the diff is handed to you; by hand, read it with
 | console.log in production code | item 5, on the diff |
 | Observability present | item 6, on the diff |
 | Smoke check (the app answers) | werk-test and the demo's env-up, which start the werk's services and fail when they don't answer |
+| Demo session smoke (each changed role signs in and makes one tool call) | werk-test: `platform/tests/role-session-smoke.bats`, in the card's one test run |
 | Bats (shell-script integration tests) | werk-test: every bats suite the diff touches runs in the card's one test run |
 | "Any new technical debt?" | the whole review |
 
