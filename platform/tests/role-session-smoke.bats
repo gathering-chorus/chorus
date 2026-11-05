@@ -57,7 +57,8 @@ smoke_one() {
   local rc=$?
   rm -f "$dir/$file"
   [ "$rc" -eq 0 ] || { echo "$r: session exited $rc: $(tail -1 <<<"$out")"; return 1; }
-  reply_proves_the_call "$out" "$nonce" || { echo "$r: the tool call did not come back: $(tail -1 <<<"$out")"; return 1; }
+  # the whole reply: a refusal spans lines, and its last line alone said nothing (#4889 run 4)
+  reply_proves_the_call "$out" "$nonce" || { echo "$r: the tool call did not come back (account $(id -un), dir $dir):"; printf '%s\n' "$out"; return 1; }
 }
 
 @test "each changed role's session, from this tree, signs in and makes one tool call" {
