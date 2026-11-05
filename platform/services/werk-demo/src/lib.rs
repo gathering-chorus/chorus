@@ -2176,10 +2176,9 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         (result, findings) = combine_verdicts(&all, &[]);
     }
     // #4889 — the findings ledger: an earlier round's open finding carries forward until a
-    // later diff touches its file and does not raise it again; a navigator's settle (a
-    // bootstrap/env waiver on the card) holds until its file changes (Kade 10:07).
-    let settles = settles_on_card(&card_view, gate);
-    (result, findings) = apply_ledger(&result, &findings, prior.as_ref().map(|(_, f)| f.as_str()), delta_files.as_deref(), &settles);
+    // later diff touches its file and does not raise it again (Kade 10:07). There is no
+    // waiver: a finding leaves only by a fix (Kade 10:24 — a self-asserted settle is forgeable).
+    (result, findings) = apply_ledger(&result, &findings, prior.as_ref().map(|(_, f)| f.as_str()), delta_files.as_deref());
     // an unmeasured round reviewed nothing: the next round starts from the last one that did
     let reviewed = if result == "error" { "" } else { head.as_str() };
     record_gate_at(home, role, card, gate, &result, &findings, round, reviewed);
@@ -2206,29 +2205,12 @@ pub fn last_reviewed(witness: &str, card: u64, gate: &str) -> Option<(String, St
         })
 }
 
-/// #4889 — a navigator's settle on the card: `settled: gate=<g> item=<n> file=<path> by=<who> reason=<why>`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Settle { pub item: u32, pub file: String, pub by: String, pub reason: String }
-
-/// The settles on the card text for one gate. A line with no `by=` or `reason=` is no settle. Pure.
-pub fn settles_on_card(card_text: &str, gate: &str) -> Vec<Settle> {
-    card_text.lines().filter_map(|l| {
-        let rest = l.trim().trim_start_matches(['-', '*', ' ']).strip_prefix("settled:")?;
-        let get = |k: &str| rest.split_whitespace().find_map(|w| w.strip_prefix(&format!("{k}="))).map(str::to_string);
-        if get("gate")?.as_str() != gate { return None; }
-        let reason = rest.split_once("reason=")?.1.trim().to_string();
-        let by = get("by").filter(|b| !b.is_empty())?;
-        let file = get("file")?;
-        (!reason.is_empty()).then(|| Settle { item: get("item").and_then(|i| i.parse().ok()).unwrap_or(0), file, by, reason })
-    }).collect()
-}
-
 /// #4889 — one finding's segment, with the labels and part markers a combined record
 /// wraps it in taken off. None for a note, a meta line or "no findings". Pure.
 fn fail_segment(seg: &str) -> Option<String> {
     let s = unwrapped(seg);
     if s.is_empty() || s.starts_with("note:") || s == "no findings" || s.contains("names no fail-items")
-        || s.starts_with("unmeasured") || s.starts_with("carried ") || s.starts_with("settled by ") { return None; }
+        || s.starts_with("unmeasured") || s.starts_with("carried ") { return None; }
     Some(s)
 }
 
@@ -2260,9 +2242,8 @@ pub fn finding_key(seg: &str) -> (u32, String) {
 /// #4889 (Jeff 11-05 10:06; Kade 10:07) — the ledger over one gate's record. `prior` is the
 /// last round's findings, `delta` the files changed since it (None = a whole-branch round).
 /// A prior failing finding whose file the delta left alone carries forward, red; one whose
-/// file changed and is not raised again is fixed. A settle holds while its file is unchanged.
-/// An "error" record stays error (unmeasured). Pure.
-pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Option<&[String]>, settles: &[Settle]) -> (String, String) {
+/// file changed and is not raised again is fixed. An "error" record stays error. Pure.
+pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Option<&[String]>) -> (String, String) {
     // (as recorded, with its labels; cleaned, for its key)
     let fails = |text: &str| -> Vec<(String, String)> {
         text.split(" | ").filter_map(|s| fail_segment(s).map(|c| (s.trim().to_string(), c))).collect()
@@ -2279,18 +2260,9 @@ pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Op
             .collect(),
         _ => Vec::new(),
     };
-    let mut open = Vec::new();
-    let mut settled = Vec::new();
-    for (shown, clean) in now.into_iter().chain(carried) {
-        let (item, file) = finding_key(&clean);
-        match settles.iter().find(|t| t.file == file && (t.item == item || t.item == 0) && !changed(&file)) {
-            Some(t) => settled.push(format!("settled by {} ({}): {}", t.by, t.reason, clean)),
-            None => open.push(shown),
-        }
-    }
+    let open: Vec<String> = now.into_iter().chain(carried).map(|(shown, _)| shown).collect();
     let verdict = if result == "error" { "error" } else if open.is_empty() { "pass" } else { "fail" };
     let mut out = open;
-    out.extend(settled);
     out.extend(notes);
     (verdict.to_string(), if out.is_empty() { "no findings".to_string() } else { out.join(" | ") })
 }
