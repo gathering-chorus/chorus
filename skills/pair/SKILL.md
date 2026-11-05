@@ -84,6 +84,10 @@ The pipeline's steps, in order:
 | pair-handoff | dagu | records the hand-off; the pair stays open until the card is proven in prod (#4752) |
 | pair-hand-off | dagu | enqueues the card's ONE cicd run: its tests are the round's one test run (#4889; there is no pair local proof) |
 
+These are platform/pipelines/pair.yaml's steps as generated. There is no pair-end step:
+#4752 moved the pair's end to the land's prove (the pair stays open until prod proves the
+card), and #4889 retired pair-local-proof (the cicd run's tests are the one test run).
+
 A red anywhere after the start (a wrong signer, a red cicd run) sends the pair
 **back to slice**: the run's failure handler enqueues a new pair run that waits for
 the navigator's green again, and both roles are nudged with the reason. A pair that

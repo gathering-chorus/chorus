@@ -48,7 +48,7 @@ fn the_code_step_runs_code_review_and_security_review_and_fails_on_their_finding
     git(&werk, &["commit", "-q", "-am", "card"]);
 
     // stand-in claude: logs cwd + argv; /code-review finds a bug unless ./clean exists;
-    // /security-review gives no list when ./garbled exists; gate-code finds nothing
+    // the security-review skill gives no list when ./garbled exists; gate-code finds nothing
     let log = home.join("calls");
     let claude = home.join("claude");
     exec(&claude, &format!(r#"#!/bin/sh
@@ -56,7 +56,7 @@ cat >/dev/null
 echo "$(pwd) | $*" >> "{log}"
 case "$*" in
   *"/code-review"*) if [ -f "{h}/clean" ]; then printf '```json\n[]\n```\n'; else printf 'found 1\n```json\n[{{"file":"a.rs","line":1,"summary":"b is undefined"}}]\n```\n'; fi ;;
-  *"/security-review"*) if [ -f "{h}/garbled" ]; then echo 'all good'; else printf '```json\n[]\n```\n'; fi ;;
+  *"security-review skill"*) if [ -f "{h}/garbled" ]; then echo 'all good'; else printf '```json\n[]\n```\n'; fi ;;
   *) if [ -f "{h}/gatefinding" ]; then echo '{{"findings":[{{"item":7,"where":"a.rs:1","what":"too complex"}}]}}'; else echo '{{"findings":[]}}'; fi ;;
 esac
 "#, log = log.display(), h = home.display()));
@@ -75,7 +75,8 @@ esac
     let w = werk.canonicalize().unwrap();
     assert!(calls.lines().any(|l| l.starts_with(&format!("{} |", w.display())) && l.contains(&format!("/code-review medium --max-findings all {main}...HEAD"))),
             "/code-review runs uncapped in the werk on the whole branch:\n{calls}");
-    assert!(calls.lines().any(|l| l.contains(&format!("/security-review {main}...HEAD"))), "{calls}");
+    // /security-review runs as its skill through the Skill tool (its slash command is a zero-turn local command under -p)
+    assert!(calls.lines().any(|l| l.contains(&format!("Invoke the security-review skill on the changes {main}...HEAD")) && l.contains("--allowedTools Skill,")), "{calls}");
 
     // all three clean → pass
     fs::write(home.join("clean"), "").unwrap();

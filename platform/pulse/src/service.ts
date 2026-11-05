@@ -336,7 +336,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // answer waits for the delivery (up to DELIVERY_WAIT_MS) and says delivered, queued
     // (not seen yet) or not-delivered with the reason.
     const delivering = held || !worker ? Promise.resolve()
-      : worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null, wake: wake ?? null }).catch(() => { /* worker handles its own state */ });
+      : worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null, wake: wake ?? null }).catch((e: unknown) => { log('error', 'nudge.enqueue.failed', { id, to, error: String(e), trace_id: traceId || undefined }); });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.

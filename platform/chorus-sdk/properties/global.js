@@ -16,7 +16,9 @@ function doorUrl() {
  *  missing, empty or not global; a door error is where: 'door'). */
 function globalValueFromBody(body, key) {
   const rows = body && Array.isArray(body.data) ? body.data : null;
-  if (!rows) return { ok: false, where: 'door', error: `${key}: malformed properties body` };
+  // a body with no rows list holds no row for the key: the row is missing (the caller's
+  // fall-open applies), not a door that did not answer (code review, run 9)
+  if (!rows) return { ok: false, where: 'row', error: `${key}: the properties body has no rows list` };
   const row = rows.find((r) => r && r.propertyKey === key);
   if (!row) return { ok: false, where: 'row', error: `no property row sets ${key} (add it to the graph; there is no default)` };
   if (row.propertyScope !== 'global') return { ok: false, where: 'row', error: `${key}: the row is not global scope` };

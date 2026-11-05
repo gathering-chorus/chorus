@@ -55,3 +55,13 @@ fn a_full_answer_that_never_leaves_the_newest_run_is_unmeasured() {
     assert_eq!(latest_case(&body(&refs)).map(|x| x.1).as_deref(), Some("skip"));
 }
 
+
+/// #4889 (code review, run 9) — a deferred check whose reopen failed stays registered.
+#[test]
+fn a_failed_reopen_keeps_the_deferred_check() {
+    use borg_prove::{keeps_deferral, Rerun};
+    assert!(keeps_deferral(&Rerun::Reopen, false), "a reopen that did not take must not drop the check");
+    assert!(!keeps_deferral(&Rerun::Reopen, true));
+    assert!(keeps_deferral(&Rerun::KeepOpen, true));
+    assert!(!keeps_deferral(&Rerun::Cleared, false));
+}

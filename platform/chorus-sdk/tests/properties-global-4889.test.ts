@@ -27,8 +27,8 @@ describe('#4889 globalValueFromBody', () => {
   it('NEGATIVE PROOF: a row that is not global scope is an error', () => {
     expect(globalValueFromBody({ data: [row({ propertyScope: 'role' })] }, K)).toEqual({ ok: false, where: 'row', error: `${K}: the row is not global scope` });
   });
-  it('NEGATIVE PROOF: a body with no data list is an error', () => {
-    expect(globalValueFromBody({ nope: 1 }, K).ok).toBe(false);
+  it('NEGATIVE PROOF: a body with no data list is a missing row (the caller falls open), never a value', () => {
+    expect(globalValueFromBody({ nope: 1 }, K)).toEqual({ ok: false, where: 'row', error: `${K}: the properties body has no rows list` });
   });
 });
 

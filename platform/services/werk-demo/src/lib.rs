@@ -1717,7 +1717,9 @@ fn array_objects(text: &str, key: &str) -> Option<Vec<String>> {
 }
 
 /// #4889 — the verdict is derived from the findings: any finding on a fail item fails,
-/// other findings are notes, an empty list passes. A reply with no findings list, or a
+/// other findings are notes, an empty list passes. An empty `fail_on` (a skill that
+/// names no fail-items) is strict: every finding fails, whatever its item number
+/// (Kade 09:14: a 0..=99 range let item 100 pass). A reply with no findings list, or a
 /// finding with no item number, is an error: never a pass. Pure + unit-tested.
 pub fn gate_verdict(stdout: &str, fail_on: &[u32]) -> (String, String) {
     let Some(objs) = findings_objects(stdout) else {
@@ -1736,7 +1738,7 @@ pub fn gate_verdict(stdout: &str, fail_on: &[u32]) -> (String, String) {
         let at = extract_json_str(o, "where").map(|v| json_unescape(&v)).unwrap_or_default();
         let what = extract_json_str(o, "what").map(|v| json_unescape(&v)).unwrap_or_default();
         let line = format!("{at} — item {item} — {what}");
-        if fail_on.contains(&item) { fails.push(line) } else { notes.push(line) }
+        if fail_on.is_empty() || fail_on.contains(&item) { fails.push(line) } else { notes.push(line) }
     }
     let result = if fails.is_empty() { "pass" } else { "fail" };
     let mut all = fails;
@@ -2086,11 +2088,8 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // #4889 bootstrap (Kade 20:14): the skill is read from canonical, never from the card
     // under review (a card must not rewrite its own reviewer). A skill with no fail-items
     // (main's, until this card lands) is read strictly: every finding fails.
-    let mut fail_on = fail_items(&skill_md);
+    let fail_on = fail_items(&skill_md);
     let strict = fail_on.is_empty();
-    if strict {
-        fail_on = (0..=99).collect();
-    }
 
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
@@ -2128,15 +2127,19 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // with /security-review beside it; gate-code adds only what they do not read, whether
     // each AC's check tests that AC. They read the werk themselves, so no diff cap applies.
     // #4889 (Jeff 19:04) — Semgrep in the quality review, on the card's changed lines
+    // #4889 (security review, run 9) — the rules and the boundary config are read from
+    // canonical, like the skills: a card never rewrites the checks run on it. Until a
+    // config is on main its review is unmeasured (error), never a pass.
     if gate == "quality" {
-        let rules = Path::new(&werk).join("platform/quality/semgrep");
-        let (r, f) = semgrep_review(&werk, &rules);
+        let rules = Path::new(home).join("platform/quality/semgrep");
+        let (r, f) = review_config_present(&rules).unwrap_or_else(|| semgrep_review(&werk, &rules));
         (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-quality: {}", findings)), (r, format!("semgrep: {}", f))], &[]);
     }
     // #4889 (Jeff 19:04) — dependency-cruiser in the architecture review: the TS packages'
     // boundaries (platform/quality/depcruise/boundaries.cjs) hold on the whole tree
     if gate == "arch" {
-        let (r, f) = depcruise_review(&werk);
+        let cfg = Path::new(home).join("platform/quality/depcruise/boundaries.cjs");
+        let (r, f) = review_config_present(&cfg).unwrap_or_else(|| depcruise_review(&werk, &cfg));
         (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-arch: {}", findings)), (r, format!("dependency-cruiser: {}", f))], &[]);
     }
     if gate == "code" {
@@ -2148,6 +2151,21 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         (result, findings) = combine_verdicts(&all, &[]);
     }
     record_gate(home, role, card, gate, &result, &findings, round);
+}
+
+/// #4889 — what `claude -p` is asked for each built-in review. /code-review runs as its
+/// slash command. /security-review is a local command under `-p` (measured 11-05: zero
+/// turns, empty result), so the model is asked to invoke the security-review skill
+/// through the Skill tool, the same skill, never a copy of its text (Kade 09:16). Both
+/// end in the ```json findings list builtin_review_verdict reads. Pure.
+pub fn builtin_review_prompt(skill: &str, base: &str) -> String {
+    if skill == "code-review" {
+        format!("/code-review medium --max-findings all {base}...HEAD")
+    } else {
+        format!("Invoke the {skill} skill on the changes {base}...HEAD of this branch. When it is done, end your reply \
+                 with a ```json block holding a list of its findings, each {{\"file\":\"...\",\"line\":N,\"summary\":\"...\"}}, \
+                 and [] when there are none.")
+    }
 }
 
 /// #4889 — the existing Claude Code reviews the code step runs, each on the whole branch.
@@ -2162,15 +2180,15 @@ fn builtin_review(skill: &str, werk: &str) -> (String, String) {
         Ok(b) => b.trim().to_string(),
         Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
     };
-    let prompt = if skill == "code-review" {
-        format!("/code-review medium --max-findings all {base}...HEAD")
-    } else {
-        format!("/{skill} {base}...HEAD")
-    };
+    let prompt = builtin_review_prompt(skill, &base);
     let timeout = env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900);
     let mut command = Command::new(&bin);
     command.current_dir(werk).env("CHORUS_HEADLESS", "1")
         .args(["-p", &prompt, "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "text"]);
+    if skill != "code-review" {
+        // the skill runs through the Skill tool, reading the branch with read-only tools
+        command.args(["--allowedTools", "Skill,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"]);
+    }
     match bounded_headless(command, String::new(), timeout) {
         Ok(out) => builtin_review_verdict(&out),
         Err(e) => ("error".to_string(), e.replace("chorus-agent", &format!("/{skill}"))),
@@ -2212,10 +2230,16 @@ mod properties_resolver;
 pub const DEPCRUISE_DIRS: [&str; 7] = ["directing", "platform/api", "platform/pulse", "platform/workflow-engine",
     "platform/agent-adapters", "platform/chorus-sdk", "roles/wren/scripts"];
 
-fn depcruise_review(werk: &str) -> (String, String) {
+/// #4889 — a review whose config (from canonical) is missing is an error with that
+/// reason; None when it is there. Pure on the filesystem state it reads.
+pub fn review_config_present(cfg: &Path) -> Option<(String, String)> {
+    (!cfg.exists()).then(|| ("error".to_string(), format!("{} is not on canonical: this review is unmeasured until it lands", cfg.display())))
+}
+
+fn depcruise_review(werk: &str, cfg: &Path) -> (String, String) {
     let dirs: Vec<&str> = DEPCRUISE_DIRS.iter().copied().filter(|d| Path::new(werk).join(d).is_dir()).collect();
     let out = Command::new(env::var("CHORUS_NPX_BIN").unwrap_or_else(|_| "npx".to_string())).current_dir(werk)
-        .args(["--no-install", "depcruise", "--config", "platform/quality/depcruise/boundaries.cjs", "--output-type", "err"])
+        .args(["--no-install", "depcruise", "--config"]).arg(cfg).args(["--output-type", "err"])
         .args(&dirs).output();
     match out {
         Ok(o) => depcruise_verdict(&format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)), o.status.code()),
@@ -2719,6 +2743,23 @@ mod tests {
     }
 
     #[test]
+    fn the_security_review_is_asked_through_its_skill_not_the_local_slash_command_4889() {
+        let p = builtin_review_prompt("security-review", "abc");
+        assert!(p.starts_with("Invoke the security-review skill on the changes abc...HEAD"), "{p}");
+        assert!(!p.starts_with('/'), "a slash command is a zero-turn local command under -p: {p}");
+        assert!(p.contains("```json"), "{p}");
+        assert_eq!(builtin_review_prompt("code-review", "abc"), "/code-review medium --max-findings all abc...HEAD");
+    }
+
+    #[test]
+    fn a_review_config_missing_from_canonical_is_unmeasured_never_a_pass_4889() {
+        let (r, f) = review_config_present(Path::new("/no/such/boundaries.cjs")).expect("missing is an answer");
+        assert_eq!(r, "error");
+        assert!(f.contains("not on canonical"), "{f}");
+        assert!(review_config_present(Path::new("/")).is_none());
+    }
+
+    #[test]
     fn gate_verdict_derives_fail_from_a_fail_item_finding() {
         let out = r#"{"findings":[{"item":2,"where":"a.rs:3","what":"swallowed error"},{"item":6,"where":"b.rs:1","what":"no log"}]}"#;
         let (r, f) = gate_verdict(out, &[1, 2, 3]);
@@ -2738,6 +2779,12 @@ mod tests {
     fn notes_only_and_empty_lists_pass() {
         assert_eq!(gate_verdict(r#"{"findings":[{"item":6,"where":"x","what":"y"}]}"#, &[1]).0, "pass");
         assert_eq!(gate_verdict(r#"{"findings":[]}"#, &[1]), ("pass".to_string(), "no findings".to_string()));
+        // #4889 (Kade 09:14) — strict (no fail-items): every finding fails, any item number
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":100,"where":"x","what":"y"}]}"#, &[]).0, "fail");
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":0,"where":"x","what":"y"}]}"#, &[]).0, "fail");
+        assert_eq!(gate_verdict(r#"{"findings":[]}"#, &[]).0, "pass");
+        // NP: a negative item is no item number at all — an error, never a pass
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":-1,"where":"x","what":"y"}]}"#, &[]).0, "error");
     }
 
     #[test]

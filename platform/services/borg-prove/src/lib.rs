@@ -184,6 +184,13 @@ pub fn inner_check(c: &Check) -> Option<Check> {
 /// not met reopens its card, unmeasured keeps it open. Pure.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Rerun { Cleared, Reopen, KeepOpen }
+/// #4889 (code review, run 9) — whether a deferred check stays in the registry after a
+/// re-run: kept while unmeasured, and kept when its reopen did not take (a failed
+/// reopen never drops the check, so the next land tries again). Pure.
+pub fn keeps_deferral(action: &Rerun, reopened: bool) -> bool {
+    match action { Rerun::Cleared => false, Rerun::KeepOpen => true, Rerun::Reopen => !reopened }
+}
+
 pub fn rerun_action(o: &Outcome) -> Rerun {
     match o {
         Outcome::Met(_) => Rerun::Cleared,

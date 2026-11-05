@@ -197,7 +197,11 @@ fn rerun_deferred(this: u32, base: &str) {
             match rerun_action(&o) {
                 Rerun::Cleared => { let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(),
                     &format!("borg-prove: deferred {ac} met at the land of #{this}: {}", o.evidence())]).status(); }
-                Rerun::Reopen => reopen(card, &format!("Not met on deferred {ac} (at the land of #{this})")),
+                // a reopen that did not take keeps the deferral, so the next land tries again
+                Rerun::Reopen => {
+                    let ok = reopen(card, &format!("Not met on deferred {ac} (at the land of #{this})"));
+                    if keeps_deferral(&Rerun::Reopen, ok) { keep.push(line.to_string()) }
+                }
                 Rerun::KeepOpen => keep.push(line.to_string()),
             }
         }
@@ -277,14 +281,17 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
 /// #4889 — a red in prod reopens the card: back to WIP (it was merged, so the fix is a new
 /// round on the same card), with the verdict said on the card. A move that fails is said
 /// on stderr; the step fails either way, so accept never runs.
-fn reopen(card: u32, verdict: &str) {
+/// Moves the card back to WIP with the verdict as a comment. true only when both took.
+fn reopen(card: u32, verdict: &str) -> bool {
     let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
     let moved = Command::new("bash").arg(&cards).args(["move", &card.to_string(), "WIP"]).env("DEPLOY_ROLE", "borg-queen").status();
     let said = Command::new("bash").arg(&cards)
         .args(["comment", &card.to_string(), &format!("borg-prove: reopened — prod reads {verdict}; accept held until a new round proves it")]).status();
-    if !matches!(moved, Ok(s) if s.success()) || !matches!(said, Ok(s) if s.success()) {
+    let done = matches!(moved, Ok(s) if s.success()) && matches!(said, Ok(s) if s.success());
+    if !done {
         eprintln!("#{card} record: reopen did not complete (move {moved:?}, comment {said:?})");
     }
+    done
 }
 
 /// The step that failed in a dagu run, from `dagu status` ("├─name (…) [failed]").
