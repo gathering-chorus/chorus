@@ -5,7 +5,7 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
 # prints each check target used by more than one AC line in the card text on stdin
-shared_checks() { grep -E '^\s*- \[[ x]\] ' | grep -oE 'check: [a-z]+ [^ ]+' | sort | uniq -d; }
+shared_checks() { grep -E '^\s*- \[[ x]\] ' | grep -oE 'check: (after )?[a-z]+ [^ ]+' | sed 's/check: after /check: /' | sort | uniq -d; }
 
 @test "AC9: #4889's own AC each name a different check file" {
   out="$(bash "$ROOT/platform/scripts/cards" view 4889 | shared_checks)"
@@ -22,5 +22,5 @@ shared_checks() { grep -E '^\s*- \[[ x]\] ' | grep -oE 'check: [a-z]+ [^ ]+' | s
   run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$BATS_TEST_TMPDIR/target" cargo test -q \
     --manifest-path "$ROOT/platform/services/werk-demo/Cargo.toml" --test ac_checks_4889
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"5 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"6 passed"* ]] || { echo "$output"; return 1; }
 }

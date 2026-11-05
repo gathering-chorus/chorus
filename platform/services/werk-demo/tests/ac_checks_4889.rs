@@ -31,6 +31,14 @@ fn negative_proof_a_check_word_with_no_target_is_no_check() {
 }
 
 #[test]
+fn negative_proof_two_deferred_checks_are_told_apart_by_their_inner_target() {
+    let v = "  - [ ] a. check: after test t/a.bats\n  - [ ] b. check: after test t/b.bats\n";
+    assert!(ac_check_problems(v).is_empty(), "{:?}", ac_check_problems(v));
+    let same = "  - [ ] a. check: after test t/a.bats\n  - [ ] b. check: test t/a.bats\n";
+    assert_eq!(ac_check_problems(same), vec!["AC 2 shares its check `test t/a.bats` with AC 1"]);
+}
+
+#[test]
 fn this_cards_own_ac_pass() {
     let v = include_str!("fixtures/ac_4889.txt");
     assert!(ac_check_problems(v).is_empty(), "{:?}", ac_check_problems(v));

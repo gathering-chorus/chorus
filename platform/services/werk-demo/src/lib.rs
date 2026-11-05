@@ -94,7 +94,8 @@ pub fn ac_check_problems(card_view: &str) -> Vec<String> {
         n += 1;
         let target = t.rfind("check: ").map(|i| {
             let mut w = t[i + 7..].split_whitespace();
-            let kind = w.next().unwrap_or("");
+            // #4889 — `check: after <kind> <target>` defers a check; its target is the inner one
+            let kind = match w.next().unwrap_or("") { "after" => w.next().unwrap_or(""), k => k };
             let what = w.next().unwrap_or("");
             format!("{kind} {what}").trim().to_string()
         }).filter(|x| x.contains(' '));

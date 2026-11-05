@@ -7,4 +7,5 @@
     - [ ] Each step calls the existing skill: `/code-review` for the code review, `/gate-arch` and `/gate-quality` for the architecture and quality review, borg-prove for prove in prod. No copies and no new names; the old copies (the demo's own gate and review prompts) are deleted in this land. check: test platform/tests/4889-existing-skills.bats
     - [ ] The code review also checks that each AC's check really tests that AC: a check that does not exercise what its AC says is a finding. Negative proof: an AC whose check names an unrelated test is flagged. check: test platform/tests/4889-review-checks-the-checks.bats
     - [ ] No two AC point to the same check file; each AC's check tests that AC alone. Negative proof: a card with two AC on one check file fails. check: test platform/tests/4889-one-check-file-per-ac.bats
-    - [ ] After land: the next card needs one cicd run, measured. check: test platform/tests/4889-one-cicd-run.bats
+    - [ ] After land: the next card needs one cicd run, measured. check: after test platform/tests/4889-one-cicd-run.bats
+    - [ ] After land: the next card's architecture review shows dependency-cruiser ran, not unmeasured (Kade 19:53). check: after test platform/tests/4889-after-land-depcruise.bats
