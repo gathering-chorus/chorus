@@ -5,6 +5,8 @@
 # Jeff 2026-11-04 19:04 ("fine do that"): Semgrep in the quality review. Each rule must
 # fire on the shape it names and stay quiet on the fixed shape (#3734 negative proof).
 # The rules under test: platform/quality/semgrep/quality.yml
+# Their fixtures: platform/tests/fixtures/4889-quality-semgrep/swallow.ts,
+#   platform/tests/fixtures/4889-quality-semgrep/clean.ts and neg.bats.sample
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 R="$ROOT/platform/quality/semgrep"
 F="$ROOT/platform/tests/fixtures/4889-quality-semgrep"
