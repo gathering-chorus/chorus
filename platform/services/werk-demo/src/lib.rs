@@ -1981,10 +1981,19 @@ pub fn ops_ctx(base: &str, gate: &str, health: &str) -> String {
         return base.to_string();
     }
     format!(
-        "{}\n\n=== chorus-health --verbose (PRE-RUN by the gate-runner — JUDGE this output for pass/fail; do NOT run chorus-health yourself, you have no shell) ===\n{}",
-        base, health
+        "{}\n\n=== chorus-health --verbose (PRE-RUN by the gate-runner — JUDGE this output for pass/fail; do NOT run chorus-health yourself, you have no shell) ===\n{}\n\n{}",
+        base, health, OPS_NOT_COUNTED
     )
 }
+
+/// #4894 (Jeff 11-05 12:52) — a health failure this card did not cause and cannot fix:
+/// nudges to the agy roles' panes fail because their Presence records a pane one behind
+/// (fixed by #4889, which waits on this card). The ops gate names it as a note and does
+/// not fail on it; any other nudge-delivery failure still fails.
+pub const OPS_NOT_COUNTED: &str = "NOT COUNTED (Jeff 2026-11-05 12:52): a nudge-delivery FAIL that names ONLY \
+abby-normal and/or borg-queen panes (\"pane %N not found\") is a known condition this card did not cause; \
+#4889 fixes it. List it as a note, never as a fail. A nudge-delivery failure naming any other role, or any \
+other health failure, still fails the gate.";
 
 /// #3625 AC2 — memory floor before every headless-claude spawn. Born from the
 /// 2026-07-07 Library OOM: swap went 4.7→20GB in 15 minutes while gate claudes,
@@ -2984,6 +2993,15 @@ mod tests {
         std::env::remove_var("CHORUS_CLAUDE_BIN");
         // falls through to PATH / known locations — must NOT return the bogus path
         assert_ne!(got.as_deref(), Some("/no/such/claude/binary"));
+    }
+
+    #[test]
+    fn ops_context_names_the_one_failure_not_counted_4894() {
+        let c = ops_ctx("base", "ops", "nudge-delivery FAIL (abby-normal pane %16 not found)");
+        assert!(c.contains("NOT COUNTED (Jeff 2026-11-05 12:52)") && c.contains("abby-normal and/or borg-queen"), "{c}");
+        assert!(c.contains("naming any other role, or any other health failure, still fails"), "{c}");
+        // NP: no other gate gets it
+        assert_eq!(ops_ctx("base", "arch", "x"), "base");
     }
 
     #[test]
