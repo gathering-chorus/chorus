@@ -8,7 +8,8 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 S="$ROOT/platform/scripts/land-4889-rows"
 
 setup() {
-  D="$BATS_TEST_TMPDIR/door"; mkdir -p "$D/skills"
+  D="$BATS_TEST_TMPDIR/door"; mkdir -p "$D/skills" "$D/properties"
+  echo '{"data":[]}' > "$D/properties/properties"
   # the door as it stands: the old demo rows and werk-review, and no code/arch/quality stepskills
   echo '{"data":[{"name":"werk-review"},{"name":"werk-demo-gate-product"},{"name":"werk-demo-validate","label":"demo: validate (WIP, has AC)","executor":"deterministic","implementedBy":"werk-demo","arguments":"validate ${CARD} ${ROLE}","ownedBy":"principal-wren","runsAs":"caller"}]}' > "$D/skills/skills"
   echo '{"data":[{"name":"cicd-test-2"},{"name":"demo-smoke-session-smoke"}]}' > "$D/stepskills"
@@ -27,7 +28,8 @@ teardown() { kill "$SRV" 2>/dev/null || true; }
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   for want in "ADD    stepskills/demo-gates-gate-code" "ADD    stepskills/demo-gates-gate-arch" "ADD    stepskills/demo-gates-gate-quality" \
               'CHANGE pipelinesteps/demo-announce  {"stepOrder": "3"}' "DELETE stepskills/cicd-test-2" "DELETE pipelinesteps/demo-smoke" \
-              "DELETE skills/skills/werk-review" "DELETE skills/skills/werk-demo-gate-product" "nothing written (dry run)"; do
+              "DELETE skills/skills/werk-review" "DELETE skills/skills/werk-demo-gate-product" \
+              "ADD    properties/properties/prop-tool-path-semgrep" "ADD    properties/properties/prop-tool-path-claude" "nothing written (dry run)"; do
     [[ "$output" == *"$want"* ]] || { echo "missing: $want"; echo "$output"; return 1; }
   done
   [ ! -f "$BATS_TEST_TMPDIR/calls" ] || { echo "a dry run wrote: $(cat "$BATS_TEST_TMPDIR/calls")"; return 1; }
@@ -38,6 +40,13 @@ teardown() { kill "$SRV" 2>/dev/null || true; }
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   grep -q 'call athena-delete domain=skills class=skills id=werk-review' "$BATS_TEST_TMPDIR/calls" || { cat "$BATS_TEST_TMPDIR/calls"; return 1; }
   grep -q 'call athena-add domain=skills class=stepskills' "$BATS_TEST_TMPDIR/calls" || return 1
+}
+
+@test "--only properties/properties plans just the two tool-path rows (the pre-land bootstrap)" {
+  run env OWL_URL="http://127.0.0.1:$PORT" CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" python3 "$S" --only properties/properties
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"plan: door writes 2 add, 0 change, 0 delete; 0 same"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *stepskills* && "$output" != *"skills/skills"* ]] || { echo "$output"; return 1; }
 }
 
 @test "negative proof: a door it cannot read is no plan (exit 2), never a guess" {

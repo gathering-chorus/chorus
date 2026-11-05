@@ -37,7 +37,10 @@ reply_proves_the_call() { [[ "$1" == *"$2"* ]]; }
 # one session of role $1, started in $2 (default: this tree's roles/$1), one at a time.
 # Caged like every werk-test run: the pulse door is a dead port, so a hook that would
 # nudge or post reaches nothing live (#4628).
+# #4889 (Jeff 20:55) — claude's path is the tool.path.claude property, which werk-test reads
+# through the resolver and hands in; outside werk-test, set CHORUS_TOOL_CLAUDE. No fallback.
 smoke_one() {
+  [ -n "${CHORUS_TOOL_CLAUDE:-}" ] || { echo "no claude: ${CHORUS_TOOL_CLAUDE_ERROR:-CHORUS_TOOL_CLAUDE is not set (werk-test sets it from the tool.path.claude property)}"; return 1; }
   local r="$1" dir="${2:-$ROOT/roles/$1}" nonce file out
   nonce="smoke-$r-$$-$RANDOM$RANDOM"
   # inside the session's own folder: a role session may only read its working dirs
@@ -46,7 +49,7 @@ smoke_one() {
   out="$(cd "$dir" && CHORUS_ROLE="$r" ROLE="$r" CHORUS_HEADLESS=1 \
     CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge \
     perl -e 'alarm shift; exec @ARGV' "${CHORUS_SMOKE_TIMEOUT_SECS:-180}" \
-    claude -p "Run exactly one Bash command, \`cat $file\`, and reply with its output only." \
+    "$CHORUS_TOOL_CLAUDE" -p "Run exactly one Bash command, \`cat $file\`, and reply with its output only." \
       --no-session-persistence --output-format text --allowedTools "Bash(cat $file)" 2>&1)"
   local rc=$?
   rm -f "$dir/$file"

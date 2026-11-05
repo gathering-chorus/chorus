@@ -283,6 +283,74 @@ pub fn http_get_door(door_url: &str, path: &str) -> Result<(u16, String), String
     Ok((code, body.to_string()))
 }
 
+/// #4889 (Jeff 2026-11-04 20:55, "do the right long term thing"; his 08:08 rule: every
+/// property in the graph, read through the resolver) — a global property's value from the
+/// properties door body (`/properties/properties`). The row's key must match and its scope be
+/// `global`; an absent row or an empty value is an error, never a default. Pure.
+pub fn global_value_from_body(body: &str, key: &str) -> Result<String, String> {
+    let needle = format!("\"propertyKey\": \"{key}\"");
+    let needle_tight = format!("\"propertyKey\":\"{key}\"");
+    let at = body.find(&needle).or_else(|| body.find(&needle_tight))
+        .ok_or_else(|| format!("no property row sets {key} (add it to the graph; there is no default)"))?;
+    let start = body[..at].rfind('{').ok_or_else(|| format!("{key}: malformed properties body"))?;
+    let end = at + body[at..].find('}').ok_or_else(|| format!("{key}: malformed properties body"))?;
+    let row = &body[start..=end];
+    let field = |f: &str| -> Option<String> {
+        let m = row.find(&format!("\"{f}\""))? + f.len() + 2;
+        let rest = row[m..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    if field("propertyScope").as_deref() != Some("global") {
+        return Err(format!("{key}: the row is not global scope"));
+    }
+    match field("propertyValue") {
+        Some(v) if !v.trim().is_empty() => Ok(v),
+        _ => Err(format!("{key}: the row has no value")),
+    }
+}
+
+/// #4889 — read one global property through the door (athena-make, `door_url`). The door
+/// unreachable or not 200 is an error (loud: Fuseki down is a red, never a fallback).
+pub fn global_value(door_url: &str, key: &str) -> Result<String, String> {
+    let (code, body) = http_get_door(door_url, "/properties/properties?limit=1000")
+        .map_err(|e| format!("{key}: the properties door did not answer ({e})"))?;
+    if code != 200 {
+        return Err(format!("{key}: the properties door answered {code}"));
+    }
+    global_value_from_body(&body, key)
+}
+
+#[cfg(test)]
+mod global_value_4889 {
+    use super::*;
+    const BODY: &str = r#"{"data":[{"name":"a","propertyKey":"room.moderator","propertyScope":"global","propertyValueType":"string","propertyValue":"wren"},{"name":"b","propertyKey":"tool.path.semgrep","propertyScope":"global","propertyValueType":"string","propertyValue":"/x/semgrep"}]}"#;
+
+    #[test]
+    fn a_global_row_gives_its_value() {
+        assert_eq!(global_value_from_body(BODY, "tool.path.semgrep").unwrap(), "/x/semgrep");
+    }
+
+    #[test]
+    fn negative_proof_a_missing_row_is_an_error_never_a_default() {
+        let e = global_value_from_body(BODY, "tool.path.claude").unwrap_err();
+        assert!(e.contains("no property row sets tool.path.claude"), "{e}");
+    }
+
+    #[test]
+    fn negative_proof_an_empty_value_or_a_non_global_row_is_an_error() {
+        let empty = r#"{"data":[{"propertyKey":"k","propertyScope":"global","propertyValue":""}]}"#;
+        assert!(global_value_from_body(empty, "k").unwrap_err().contains("no value"));
+        let role = r#"{"data":[{"propertyKey":"k","propertyScope":"role","propertyValue":"v"}]}"#;
+        assert!(global_value_from_body(role, "k").unwrap_err().contains("not global"));
+    }
+
+    #[test]
+    fn negative_proof_an_unreachable_door_is_an_error() {
+        let e = global_value("http://127.0.0.1:9", "tool.path.semgrep").unwrap_err();
+        assert!(e.contains("did not answer"), "{e}");
+    }
+}
+
 #[cfg(test)]
 mod role_scope_3838 {
     use super::*;

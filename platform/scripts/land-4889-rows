@@ -20,8 +20,12 @@ DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 FX = os.path.join(ROOT, "platform/services/chorus-make/tests/fixtures")
 RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
-DOOR_CLASS = {"skills/skills": ("skills", "skills"), "pipelinesteps": ("pipelines", "steps"),
+DOOR_CLASS = {"properties/properties": ("properties", "properties"), "skills/skills": ("skills", "skills"), "pipelinesteps": ("pipelines", "steps"),
               "stepskills": ("skills", "stepskills"), "pipelines": ("pipelines", "pipelines")}
+# #4889 (Jeff 20:55, "do the right long term thing"; his 08:08 rule: every property in the
+# graph) — the tools the reviews and their tests run, as dagu's account on the Library has
+# them. A second machine needs its own rows.
+TOOL_PATHS = {"semgrep": "/Users/jeffbridwell/.local/bin/semgrep", "claude": "/Users/jeffbridwell/.local/bin/claude"}
 RETIRED_SKILLS = ["werk-demo-gate-product", "werk-demo-gate-ops", "werk-demo-review-1", "werk-demo-review-2",
                   "werk-demo-review-3", "werk-demo-session-smoke", "werk-review", "werk-review-verdict"]
 
@@ -44,7 +48,11 @@ def plan():
     steps = {}
     for r in demo:
         steps.setdefault(r["step"], r["stepOrder"])
-    want = []
+    want = [("properties/properties", f"prop-tool-path-{t}",
+             {"label": f"prop-tool-path-{t}", "propertyKey": f"tool.path.{t}", "propertyScope": "global",
+              "propertyValueType": "string", "propertyValue": path,
+              "comment": f"#4889: the {t} binary dagu's steps run (Library); read through the resolver, no default"})
+            for t, path in TOOL_PATHS.items()]
     for r in demo:
         want.append(("skills/skills", r["skill"].removeprefix("skill-"),
                      {"label": r["label"], "executor": r["executor"], "implementedBy": r["implementedBy"],
@@ -79,8 +87,10 @@ def call(path):
 
 def main():
     apply = "--apply" in sys.argv[1:]
+    # --only <collection>: the #4889 bootstrap wrote just the two property rows before the land
+    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv[1:-1] else None
     try:
-        p = plan()
+        p = [x for x in plan() if only is None or x[0] == only]
     except OSError as e:
         print(f"fixtures unreadable or wrong: {e} — no plan")
         return 2

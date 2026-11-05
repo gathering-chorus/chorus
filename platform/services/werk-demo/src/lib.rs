@@ -2185,7 +2185,13 @@ fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
         Ok(b) => b.trim().to_string(),
         Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
     };
-    let bin = env::var("CHORUS_SEMGREP_BIN").unwrap_or_else(|_| "semgrep".to_string());
+    // #4889 (Jeff 20:55) — semgrep's path is the tool.path.semgrep property, read through the
+    // resolver: the door down or the row missing is an error (unmeasured), never a default
+    let door = env::var("OWL_URL").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+    let bin = match properties_resolver::global_value(&door, "tool.path.semgrep") {
+        Ok(b) => b,
+        Err(e) => return ("error".to_string(), format!("semgrep: {e}")),
+    };
     let out = Command::new(&bin).current_dir(werk)
         // a file CA bundle: without it semgrep asks the keychain and aborts (measured 11-04)
         .env("SSL_CERT_FILE", env::var("SSL_CERT_FILE").unwrap_or_else(|_| "/etc/ssl/cert.pem".to_string()))
@@ -2197,6 +2203,11 @@ fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
         Err(e) => ("error".to_string(), format!("semgrep could not run: {e}")),
     }
 }
+
+/// #4889 — the one resolver, compiled in (zero-dep blueprint: a path module, no crate dep).
+#[allow(dead_code)]
+#[path = "../../properties-resolver/src/lib.rs"]
+mod properties_resolver;
 
 /// #4889 — the TS packages dependency-cruiser checks (the boundary rule's own list).
 pub const DEPCRUISE_DIRS: [&str; 7] = ["directing", "platform/api", "platform/pulse", "platform/workflow-engine",

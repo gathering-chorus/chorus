@@ -11,8 +11,11 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 R="$ROOT/platform/quality/semgrep"
 F="$ROOT/platform/tests/fixtures/4889-quality-semgrep"
 
+# #4889 (Jeff 20:55) — semgrep's path is the tool.path.semgrep property, which werk-test reads
+# through the resolver and hands in; outside werk-test, set CHORUS_TOOL_SEMGREP. No fallback.
 scan() {
-  SSL_CERT_FILE=/etc/ssl/cert.pem semgrep scan --config "$R/quality.yml" "$@" --json --metrics=off --disable-version-check 2>/dev/null \
+  [ -n "${CHORUS_TOOL_SEMGREP:-}" ] || { echo "no semgrep: ${CHORUS_TOOL_SEMGREP_ERROR:-CHORUS_TOOL_SEMGREP is not set (werk-test sets it from the tool.path.semgrep property)}" >&2; return 1; }
+  SSL_CERT_FILE=/etc/ssl/cert.pem "$CHORUS_TOOL_SEMGREP" scan --config "$R/quality.yml" "$@" --json --metrics=off --disable-version-check 2>/dev/null \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); print(" ".join(sorted(r["check_id"].split(".")[-1]+"@"+r["path"].rsplit("/",1)[-1] for r in d["results"])))'
 }
 

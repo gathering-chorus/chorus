@@ -2394,6 +2394,22 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 /// every overridable membrane surface) so a lazy subprocess test never panics
 /// MEMBRANE REFUSED into the werk log. Explicit env wins: a var the caller
 /// already set is left alone, so fixtures/integration setups keep control.
+/// #4889 — the one resolver, compiled in (zero-dep blueprint: a path module, no crate dep).
+#[allow(dead_code)]
+#[path = "../../properties-resolver/src/lib.rs"]
+mod properties_resolver;
+
+/// #4889 — the tool-path properties a suite may need, read once per werk-test process.
+pub const TOOL_PROPERTIES: [(&str, &str); 2] = [("CHORUS_TOOL_SEMGREP", "tool.path.semgrep"), ("CHORUS_TOOL_CLAUDE", "tool.path.claude")];
+
+fn tool_paths() -> &'static Vec<(&'static str, &'static str, Result<String, String>)> {
+    static CELL: std::sync::OnceLock<Vec<(&'static str, &'static str, Result<String, String>)>> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        let door = std::env::var("OWL_URL").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+        TOOL_PROPERTIES.iter().map(|(var, key)| (*var, *key, properties_resolver::global_value(&door, key))).collect()
+    })
+}
+
 fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // #4130 AC1 — tell the child it is under the nightly, and what its cap is.
     //
@@ -2428,6 +2444,16 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     for (k, v) in werk_test::suite_world_env(&tmp) {
         if std::env::var(&k).is_err() {
             cmd.env(k, v);
+        }
+    }
+    // #4889 (Jeff 20:55; his 08:08 rule: every property in the graph, read through the
+    // resolver) — the tools a suite runs by name come from their property rows, resolved once
+    // per run: CHORUS_TOOL_<NAME> holds the path, or is empty with CHORUS_TOOL_<NAME>_ERROR
+    // saying why (door down, row missing). The suite that needs it fails loudly; no default.
+    for (var, _key, value) in tool_paths() {
+        match value {
+            Ok(v) => { cmd.env(var, v); }
+            Err(e) => { cmd.env(var, ""); cmd.env(format!("{var}_ERROR"), e); }
         }
     }
     // #4785 — werk-test runner env: export CHORUS_STATE_DIR (same source as sessions, #4535)
