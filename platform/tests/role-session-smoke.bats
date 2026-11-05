@@ -34,18 +34,22 @@ roles_to_smoke() {
 # ok when the reply carries the nonce only the tool call can read
 reply_proves_the_call() { [[ "$1" == *"$2"* ]]; }
 
+# one session of role $1, started in $2 (default: this tree's roles/$1), one at a time.
+# Caged like every werk-test run: the pulse door is a dead port, so a hook that would
+# nudge or post reaches nothing live (#4628).
 smoke_one() {
-  local r="$1" nonce file out
+  local r="$1" dir="${2:-$ROOT/roles/$1}" nonce file out
   nonce="smoke-$r-$$-$RANDOM$RANDOM"
   # inside the session's own folder: a role session may only read its working dirs
   file=".smoke-nonce-$$"
-  printf '%s\n' "$nonce" > "$ROOT/roles/$r/$file"
-  out="$(cd "$ROOT/roles/$r" && CHORUS_ROLE="$r" ROLE="$r" CHORUS_HEADLESS=1 \
+  printf '%s\n' "$nonce" > "$dir/$file"
+  out="$(cd "$dir" && CHORUS_ROLE="$r" ROLE="$r" CHORUS_HEADLESS=1 \
+    CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge \
     perl -e 'alarm shift; exec @ARGV' "${CHORUS_SMOKE_TIMEOUT_SECS:-180}" \
     claude -p "Run exactly one Bash command, \`cat $file\`, and reply with its output only." \
       --no-session-persistence --output-format text --allowedTools "Bash(cat $file)" 2>&1)"
   local rc=$?
-  rm -f "$ROOT/roles/$r/$file"
+  rm -f "$dir/$file"
   [ "$rc" -eq 0 ] || { echo "$r: session exited $rc: $(tail -1 <<<"$out")"; return 1; }
   reply_proves_the_call "$out" "$nonce" || { echo "$r: the tool call did not come back: $(tail -1 <<<"$out")"; return 1; }
 }
@@ -73,4 +77,21 @@ smoke_one() {
 @test "negative proof: a reply without the nonce (answered without running the tool) fails" {
   reply_proves_the_call "the file says smoke-x-1" "smoke-x-1"
   ! reply_proves_the_call "I ran it, it printed the token" "smoke-x-1" || return 1
+}
+
+@test "negative proof: a role whose settings block its tool call turns the smoke red" {
+  # a copy of kade's session folder whose settings add a hook that refuses every tool
+  d="$BATS_TEST_TMPDIR/kade"; cp -R "$ROOT/roles/kade" "$d"
+  python3 - "$d/.claude/settings.json" <<'PY'
+import json, sys
+p = sys.argv[1]; s = json.load(open(p))
+s.setdefault("hooks", {})["PreToolUse"] = [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo planted-block >&2; exit 2"}]}]
+json.dump(s, open(p, "w"))
+PY
+  run smoke_one kade "$d"
+  [ "$status" -ne 0 ] || { echo "a blocked session passed the smoke: $output"; return 1; }
+  # control: the same copy with its own settings passes
+  cp "$ROOT/roles/kade/.claude/settings.json" "$d/.claude/settings.json"
+  run smoke_one kade "$d"
+  [ "$status" -eq 0 ] || { echo "control failed: $output"; return 1; }
 }
