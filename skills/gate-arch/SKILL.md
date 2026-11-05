@@ -34,6 +34,15 @@ The card's branch diff (`origin/main...HEAD` in the card's werk), and the card t
 for context only. In the demo the diff is handed to you; by hand, read it with
 `git -C <werk> diff origin/main...HEAD`.
 
+## dependency-cruiser beside this review (#4889, Jeff 19:04)
+
+The demo's architecture step also runs dependency-cruiser on the TS packages, using
+`platform/quality/depcruise/boundaries.cjs`. Any error-rule hit fails the step. There
+are two rules: a domain package may not reach into another package's files (item 3),
+and there may be no cycles. This is item 9's fitness function for those boundaries.
+Spectral is not used, because no door serves an OpenAPI document (`:3360` returns 404,
+11-04).
+
 ## What to look for in the diff
 
 1. **One path.** Does the change add a second way to do something that already has

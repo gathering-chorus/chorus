@@ -2126,6 +2126,12 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         let (r, f) = semgrep_review(&werk, &rules);
         (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-quality: {}", findings)), (r, format!("semgrep: {}", f))], &[]);
     }
+    // #4889 (Jeff 19:04) — dependency-cruiser in the architecture review: the TS packages'
+    // boundaries (platform/quality/depcruise/boundaries.cjs) hold on the whole tree
+    if gate == "arch" {
+        let (r, f) = depcruise_review(&werk);
+        (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-arch: {}", findings)), (r, format!("dependency-cruiser: {}", f))], &[]);
+    }
     if gate == "code" {
         let mut all = vec![(result.clone(), format!("gate-code: {}", findings))];
         for skill in BUILTIN_CODE_REVIEWS {
@@ -2183,6 +2189,31 @@ fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
         Ok(o) => semgrep_verdict(&String::from_utf8_lossy(&o.stdout)),
         Err(e) => ("error".to_string(), format!("semgrep could not run: {e}")),
     }
+}
+
+/// #4889 — the TS packages dependency-cruiser checks (the boundary rule's own list).
+pub const DEPCRUISE_DIRS: [&str; 7] = ["directing", "platform/api", "platform/pulse", "platform/workflow-engine",
+    "platform/agent-adapters", "platform/chorus-sdk", "roles/wren/scripts"];
+
+fn depcruise_review(werk: &str) -> (String, String) {
+    let dirs: Vec<&str> = DEPCRUISE_DIRS.iter().copied().filter(|d| Path::new(werk).join(d).is_dir()).collect();
+    let out = Command::new(env::var("CHORUS_NPX_BIN").unwrap_or_else(|_| "npx".to_string())).current_dir(werk)
+        .args(["--no-install", "depcruise", "--config", "platform/quality/depcruise/boundaries.cjs", "--output-type", "err"])
+        .args(&dirs).output();
+    match out {
+        Ok(o) => depcruise_verdict(&format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)), o.status.code()),
+        Err(e) => ("error".to_string(), format!("dependency-cruiser could not run: {e}")),
+    }
+}
+
+/// #4889 — dependency-cruiser's `err` report to a verdict: each `error <rule>: a → b`
+/// line fails; a clean summary passes; anything else (not installed, a crash) is an
+/// error, never a pass. Pure.
+pub fn depcruise_verdict(out: &str, code: Option<i32>) -> (String, String) {
+    let errs: Vec<String> = out.lines().map(str::trim).filter(|l| l.starts_with("error ")).map(|l| l[6..].to_string()).collect();
+    if !errs.is_empty() { return ("fail".to_string(), errs.join(" | ")); }
+    if code == Some(0) && out.contains("no dependency violations found") { return ("pass".to_string(), "no findings".to_string()); }
+    ("error".to_string(), format!("no dependency-cruiser report (exit {:?}): {}", code, out.trim().chars().take(160).collect::<String>()))
 }
 
 /// #4889 — Semgrep's JSON report to a verdict: an ERROR-severity result fails, others

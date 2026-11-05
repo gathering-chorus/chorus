@@ -52,3 +52,21 @@ fn a_semgrep_error_fails_and_a_warning_is_a_note() {
 fn negative_proof_no_semgrep_report_is_error_never_pass() {
     assert_eq!(semgrep_verdict("Fatal error: exception Failure(\"no trust anchor\")").0, "error");
 }
+
+// #4889 — dependency-cruiser in the architecture review (Jeff 19:04)
+use werk_demo::depcruise_verdict;
+
+#[test]
+fn a_boundary_break_fails_naming_the_rule_and_the_edge() {
+    let out = "\n  error no-reach-into-another-package: directing/clearing/src/a.ts → platform/api/src/b.ts\n\nx 1 dependency violations (1 errors, 0 warnings).\n";
+    let (r, f) = depcruise_verdict(out, Some(1));
+    assert_eq!(r, "fail");
+    assert_eq!(f, "no-reach-into-another-package: directing/clearing/src/a.ts → platform/api/src/b.ts");
+    assert_eq!(depcruise_verdict("✔ no dependency violations found (909 modules)", Some(0)).0, "pass");
+}
+
+#[test]
+fn negative_proof_no_report_is_error_never_pass() {
+    assert_eq!(depcruise_verdict("npm ERR! could not determine executable to run", Some(1)).0, "error");
+    assert_eq!(depcruise_verdict("", Some(0)).0, "error", "exit 0 with no summary is not a pass");
+}
