@@ -81,6 +81,34 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
+/// #4889 AC9 — what is wrong with a card's AC checks, one line each: an AC that names no
+/// `check:`, and an AC whose check target another AC already uses (each AC's check tests
+/// that AC alone). Empty when every AC names its own check. Pure.
+pub fn ac_check_problems(card_view: &str) -> Vec<String> {
+    let mut seen: Vec<(String, usize)> = Vec::new();
+    let mut problems = Vec::new();
+    let mut n = 0usize;
+    for line in card_view.lines() {
+        let t = line.trim_start();
+        if !(t.starts_with("- [x]") || t.starts_with("- [ ]")) { continue; }
+        n += 1;
+        let target = t.rfind("check: ").map(|i| {
+            let mut w = t[i + 7..].split_whitespace();
+            let kind = w.next().unwrap_or("");
+            let what = w.next().unwrap_or("");
+            format!("{kind} {what}").trim().to_string()
+        }).filter(|x| x.contains(' '));
+        match target {
+            None => problems.push(format!("AC {n} names no check")),
+            Some(tg) => match seen.iter().find(|(s, _)| *s == tg) {
+                Some((_, m)) => problems.push(format!("AC {n} shares its check `{tg}` with AC {m}")),
+                None => seen.push((tg, n)),
+            },
+        }
+    }
+    problems
+}
+
 /// #3281 — build the chorus-log argv for a REFUSAL spine emit (pure, testable).
 /// Agent-side blocks (a demo refusing on wrong-status / no-ac) must become
 /// countable: the event is named with the `.refused` suffix the pain board
@@ -1281,6 +1309,13 @@ pub fn validate_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         jsonl(home, role, card, &trace, "demo.refused", &fail_extra("no-ac"));
         emit_spine_reason(home, "demo.refused", role, card, &trace, "no-ac");
         return Err(format!("#{} has no acceptance criteria", card));
+    }
+    // #4889 AC9 — every AC names its own check, before anything is reviewed
+    let check_problems = ac_check_problems(&cv);
+    if !check_problems.is_empty() {
+        jsonl(home, role, card, &trace, "demo.refused", &fail_extra("ac-checks"));
+        emit_spine_reason(home, "demo.refused", role, card, &trace, "ac-checks");
+        return Err(format!("#{} AC checks: {}", card, check_problems.join("; ")));
     }
     jsonl(home, role, card, &trace, "demo.ac_status",
           &format!(",\"checked\":{},\"total\":{}", checked, total));

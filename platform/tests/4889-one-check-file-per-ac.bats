@@ -17,6 +17,10 @@ shared_checks() { grep -E '^\s*- \[[ x]\] ' | grep -oE 'check: [a-z]+ [^ ]+' | s
   [ "$out" = "check: test t/x.bats" ] || { echo "$out"; return 1; }
 }
 
-@test "AC9: the demo's validate refuses a card whose AC share a check file" {
-  grep -q 'shares its check' "$ROOT/platform/services/werk-demo/src/lib.rs" || return 1
+@test "AC9: the demo's validate refuses a card whose AC share a check file or name none" {
+  # the refusal's own tests, negative proofs included (tests/ac_checks_4889.rs)
+  run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$BATS_TEST_TMPDIR/target" cargo test -q \
+    --manifest-path "$ROOT/platform/services/werk-demo/Cargo.toml" --test ac_checks_4889
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"5 passed"* ]] || { echo "$output"; return 1; }
 }

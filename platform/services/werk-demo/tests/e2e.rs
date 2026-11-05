@@ -88,8 +88,8 @@ if [ "$1" = "view" ]; then
   Owner: wren
   Desc:
     ## Acceptance Criteria
-    - [x] one ported
-    - [x] two ported
+    - [x] one ported. check: test platform/tests/one.bats
+    - [x] two ported. check: test platform/tests/two.bats
   Domains: domain:chorus, type:fix
 CARDEOF
   exit 0
