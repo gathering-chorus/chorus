@@ -2,7 +2,6 @@
 // @domain: messages
 // @card: #4889
 // @owner: silas
-/* eslint-disable sonarjs/no-duplicate-string -- the stored rows, verbatim */
 // #4889 (folded #4891) — src/announce-boundary: a run-finish wake is never dup-class
 // suppressed. Measured 11-05: run 3's failure wake (06:16) and run 4's (06:29) had one
 // signature; run 4's was suppressed and reached Silas at 06:58, when Jeff was asking.

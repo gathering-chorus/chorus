@@ -17,9 +17,9 @@ import { DeliveryWorker } from './delivery-worker';
 import type { GlobalRead } from '../../chorus-sdk/properties/global';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wake-4889-')), 'messages.db');
-const inject = async () => ({ rc: 0, stderr: '' });
+const inject = () => Promise.resolve({ rc: 0, stderr: '' });
 type Ev = Array<[string, Record<string, unknown>]>;
-const into = (events: Ev) => async (e: string, f: Record<string, unknown>) => { events.push([e, f]); };
+const into = (events: Ev) => (e: string, f: Record<string, unknown>) => { events.push([e, f]); return Promise.resolve(); };
 const ok = (value: string): GlobalRead => ({ ok: true, value });
 const row = (error: string): GlobalRead => ({ ok: false, where: 'row', error });
 const door = (error: string): GlobalRead => ({ ok: false, where: 'door', error });
@@ -57,8 +57,8 @@ describe('#4889 the cooldown is the property, read with a TTL', () => {
   it('a read row sets the cooldown and says so once', async () => {
     const events: Ev = [];
     const w = new DeliveryWorker(new MessageStore(tmpDb()), inject, into(events));
-    await w.readCooldown(async () => ok('1800000'));
-    await w.readCooldown(async () => ok('1800000'));
+    await w.readCooldown(() => Promise.resolve(ok('1800000')));
+    await w.readCooldown(() => Promise.resolve(ok('1800000')));
     expect(w.cooldownMs()).toBe(1800000);
     expect(events.filter(([e]) => e === 'announce.cooldown.read')).toHaveLength(1);
   });
@@ -66,8 +66,8 @@ describe('#4889 the cooldown is the property, read with a TTL', () => {
   it('NEGATIVE PROOF: no row means no cooldown (dedupe off), said once, never a default', async () => {
     const events: Ev = [];
     const w = new DeliveryWorker(new MessageStore(tmpDb()), inject, into(events));
-    await w.readCooldown(async () => row('no property row sets pulse.announce.machine_cooldown_ms'));
-    await w.readCooldown(async () => row('no property row sets pulse.announce.machine_cooldown_ms'));
+    await w.readCooldown(() => Promise.resolve(row('no property row sets pulse.announce.machine_cooldown_ms')));
+    await w.readCooldown(() => Promise.resolve(row('no property row sets pulse.announce.machine_cooldown_ms')));
     expect(w.cooldownMs()).toBeUndefined();
     const unread = events.filter(([e]) => e === 'announce.cooldown.unread');
     expect(unread).toHaveLength(1);
@@ -77,7 +77,7 @@ describe('#4889 the cooldown is the property, read with a TTL', () => {
   it('NEGATIVE PROOF: a value that is not a positive whole number is unread', async () => {
     const w = new DeliveryWorker(new MessageStore(tmpDb()), inject, into([]));
     for (const v of ['0', '-5', '30m', '1.5']) {
-      await w.readCooldown(async () => ok(v));
+      await w.readCooldown(() => Promise.resolve(ok(v)));
       expect(w.cooldownMs()).toBeUndefined();
     }
   });
@@ -85,9 +85,9 @@ describe('#4889 the cooldown is the property, read with a TTL', () => {
   it('a door that does not answer keeps the last value read, and says so once', async () => {
     const events: Ev = [];
     const w = new DeliveryWorker(new MessageStore(tmpDb()), inject, into(events));
-    await w.readCooldown(async () => ok('600000'));
-    await w.readCooldown(async () => door('the properties door did not answer'));
-    await w.readCooldown(async () => door('the properties door did not answer'));
+    await w.readCooldown(() => Promise.resolve(ok('600000')));
+    await w.readCooldown(() => Promise.resolve(door('the properties door did not answer')));
+    await w.readCooldown(() => Promise.resolve(door('the properties door did not answer')));
     expect(w.cooldownMs()).toBe(600000);
     const unread = events.filter(([e]) => e === 'announce.cooldown.unread');
     expect(unread).toHaveLength(1);
@@ -97,8 +97,8 @@ describe('#4889 the cooldown is the property, read with a TTL', () => {
   it('a recovery is said once', async () => {
     const events: Ev = [];
     const w = new DeliveryWorker(new MessageStore(tmpDb()), inject, into(events));
-    await w.readCooldown(async () => row('missing'));
-    await w.readCooldown(async () => ok('600000'));
+    await w.readCooldown(() => Promise.resolve(row('missing')));
+    await w.readCooldown(() => Promise.resolve(ok('600000')));
     expect(events.map(([e]) => e)).toEqual(['announce.cooldown.unread', 'announce.cooldown.read']);
   });
 });

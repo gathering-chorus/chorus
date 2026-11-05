@@ -198,23 +198,22 @@ export class DeliveryWorker {
   async readCooldown(read: () => Promise<GlobalRead> = () => readGlobal(COOLDOWN_KEY)): Promise<void> {
     const r = await read();
     const parsed = r.ok ? parseCooldown(r.value) : r;
-    let seen: string;
-    if (parsed.ok) {
-      this.announce.cooldownMs = parsed.ms;
-      seen = `read:${parsed.ms}`;
-      if (seen !== this.cooldownSeen) await this.emitSpine('announce.cooldown.read', { key: COOLDOWN_KEY, ms: parsed.ms });
-    } else {
-      const fromDoor = 'where' in parsed && parsed.where === 'door';
-      if (!fromDoor) this.announce.cooldownMs = undefined;
-      seen = `unread:${parsed.error}`;
-      if (seen !== this.cooldownSeen) {
-        await this.emitSpine('announce.cooldown.unread', {
-          key: COOLDOWN_KEY, error: parsed.error,
-          dedupe: this.announce.cooldownMs === undefined ? 'off' : `last value ${this.announce.cooldownMs}ms`,
-        });
-      }
-    }
+    const [seen, event, fields] = parsed.ok ? this.cooldownRead(parsed.ms) : this.cooldownUnread(parsed);
+    if (seen !== this.cooldownSeen) await this.emitSpine(event, fields);
     this.cooldownSeen = seen;
+  }
+
+  private cooldownRead(ms: number): [string, string, Record<string, unknown>] {
+    this.announce.cooldownMs = ms;
+    return [`read:${ms}`, 'announce.cooldown.read', { key: COOLDOWN_KEY, ms }];
+  }
+
+  /** a row that is missing or bad turns dedupe off; a door that does not answer keeps the last value */
+  private cooldownUnread(e: { error: string; where?: 'row' | 'door' }): [string, string, Record<string, unknown>] {
+    if (e.where !== 'door') this.announce.cooldownMs = undefined;
+    const kept = this.announce.cooldownMs;
+    return [`unread:${e.error}`, 'announce.cooldown.unread',
+      { key: COOLDOWN_KEY, error: e.error, dedupe: kept === undefined ? 'off' : `last value ${kept}ms` }];
   }
 
   watchCooldown(everyMs = 5 * 60_000, read?: () => Promise<GlobalRead>): () => void {

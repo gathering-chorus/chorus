@@ -40,7 +40,7 @@ describe('#4004 delivery suppression branch', () => {
       [1, 2],
       async () => { /* no real sleep */ },
     );
-    await worker.readCooldown(async () => ({ ok: true, value: '1800000' })); // #4889: the cooldown is a property
+    await worker.readCooldown(() => Promise.resolve({ ok: true, value: '1800000' })); // #4889: the cooldown is a property
     const body = '[mcp.error] mcp.transport.error POST /mcp status=400';
     const first = store.sendNudge('system', 'silas', body);
     const second = store.sendNudge('system', 'silas', body);
@@ -63,7 +63,7 @@ describe('#4004 delivery suppression branch', () => {
       async (event, fields) => { events.push({ event, fields }); },
       [1, 2], async () => {},
     );
-    await worker.readCooldown(async () => ({ ok: true, value: '1800000' })); // #4889: the cooldown is a property
+    await worker.readCooldown(() => Promise.resolve({ ok: true, value: '1800000' })); // #4889: the cooldown is a property
     const body = '[mcp.error] duplicate machine line';
     const a = store.sendNudge('system', 'silas', body);
     const b = store.sendNudge('system', 'silas', body);
@@ -86,7 +86,7 @@ describe('#4004 delivery suppression branch', () => {
       async (event, fields) => { events.push({ event, fields }); },
       [1, 2], async () => {},
     );
-    await worker.readCooldown(async () => ({ ok: true, value: '1800000' })); // #4889: the cooldown is a property
+    await worker.readCooldown(() => Promise.resolve({ ok: true, value: '1800000' })); // #4889: the cooldown is a property
     const one = store.sendNudge('wren', 'silas', 'a real question about #4004');
     const two = store.sendNudge('wren', 'silas', 'a different real question');
     await worker.enqueue({ id: one, from: 'wren', to: 'silas', content: 'a real question about #4004', delivery_attempts: 0 });

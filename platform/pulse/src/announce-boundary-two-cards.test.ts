@@ -2,7 +2,6 @@
 // @domain: messages
 // @card: #4889
 // @owner: silas
-/* eslint-disable sonarjs/no-duplicate-string -- the stored rows, verbatim */
 // #4889 (folded #4891) — src/announce-boundary: two cards failing at the same step
 // inside the cooldown each reach their own owner. The signature is the first 48 chars
 // with digits as N, so "#4889 cicd failed at test-pipeline" and "#4890 cicd failed at
