@@ -94,6 +94,13 @@ fn each_step_exits_by_what_it_recorded() {
     let red = run_gate_step(4502, "wren", &home, "code").unwrap();
     assert!(red.message.contains(": fail"), "{}", red.message);
     fs::remove_file(home.join("red")).unwrap();
+    // #4889 (Jeff 11-05 10:06) — at the same commit the finding carries forward: a re-run
+    // never clears a red by the reviewer changing its mind
+    let same = run_gate_step(4502, "wren", &home, "code").unwrap();
+    assert!(same.message.contains(": fail") && same.message.contains("carried (not yet fixed): a.txt:1"), "{}", same.message);
+    // a commit that touches a.txt and is not raised again fixes it
+    fs::write(werk.join("a.txt"), "three\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "fix the door"]);
 
     // the model answers → the gate records pass → exit 0 (a re-run, not "already recorded")
     let up = run_gate_step(4502, "wren", &home, "code").unwrap();

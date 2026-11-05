@@ -20,19 +20,19 @@ steps:
   - name: skill-werk-demo-validate
     description: "demo: validate (WIP, has AC)"
     command: "werk-demo validate ${CARD} ${ROLE}"
-  - name: skill-werk-demo-gate-arch
-    description: "demo: gate arch"
-    depends: [skill-werk-demo-validate]
-    command: "werk-demo run-gate ${CARD} ${ROLE} arch"
-  - name: skill-werk-demo-gate-code
-    description: "demo: gate code"
-    depends: [skill-werk-demo-validate]
-    command: "werk-demo run-gate ${CARD} ${ROLE} code"
   - name: skill-werk-demo-gate-quality
     description: "demo: gate quality"
     depends: [skill-werk-demo-validate]
     command: "werk-demo run-gate ${CARD} ${ROLE} quality"
+  - name: skill-werk-demo-gate-arch
+    description: "demo: gate arch"
+    depends: [skill-werk-demo-gate-quality]
+    command: "werk-demo run-gate ${CARD} ${ROLE} arch"
+  - name: skill-werk-demo-gate-code
+    description: "demo: gate code"
+    depends: [skill-werk-demo-gate-arch]
+    command: "werk-demo run-gate ${CARD} ${ROLE} code"
   - name: skill-werk-demo-announce
     description: "demo: announce (one ask per round)"
-    depends: [skill-werk-demo-gate-arch, skill-werk-demo-gate-code, skill-werk-demo-gate-quality]
+    depends: [skill-werk-demo-gate-code]
     command: "werk-demo announce ${CARD} ${ROLE}"

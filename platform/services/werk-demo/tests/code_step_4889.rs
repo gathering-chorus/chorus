@@ -78,8 +78,16 @@ esac
     // /security-review runs as its skill through the Skill tool (its slash command is a zero-turn local command under -p)
     assert!(calls.lines().any(|l| l.contains(&format!("Invoke the security-review skill on the changes {main}...HEAD")) && l.contains("--allowedTools Skill,")), "{calls}");
 
-    // all three clean → pass
+    // #4889 (Jeff 11-05 10:06) — a round with no new commit reads nothing new: r1's finding
+    // carries forward, red, even though the reviewer would now say clean (never dropped)
     fs::write(home.join("clean"), "").unwrap();
+    std::env::set_var("CHORUS_DEMO_ROUND", "r1b");
+    let still = run_gate_step(4889, "silas", &home, "code").unwrap();
+    assert!(still.message.contains(": fail") && still.message.contains("carried (not yet fixed): a.rs:1 — b is undefined"), "{}", still.message);
+
+    // a fix commit touches a.rs and nothing raises it again → fixed; all three clean → pass
+    fs::write(werk.join("a.rs"), "fn a() { b(); }\nfn b() {}\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "fix"]);
     std::env::set_var("CHORUS_DEMO_ROUND", "r2");
     let ok = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert!(ok.message.contains(": pass"), "{}", ok.message);

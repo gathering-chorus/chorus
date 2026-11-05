@@ -1535,13 +1535,20 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 /// `werk-demo gate <card> <gate> <result>`. The witness is the same
 /// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
 fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str, round: &str) {
+    record_gate_at(home, role, card, gate, result, findings, round, "");
+}
+
+/// #4889 (Jeff 11-05 10:06) — the same record, naming the commit the review read up to,
+/// so the next round reviews only what changed since (`last_reviewed`).
+#[allow(clippy::too_many_arguments)]
+fn record_gate_at(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str, round: &str, commit: &str) {
     let trace = run_trace();
     // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
     // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
     let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
     let pid = current_patch_id(role, card); // #3461 — record patch-id so the result survives a rebase-churn
     jsonl(home, role, card, &trace, "demo.gate.result",
-          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"findings\":\"{}\"", gate, result, round, pid, f));
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"commit\":\"{}\",\"findings\":\"{}\"", gate, result, round, pid, commit, f));
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
@@ -2058,10 +2065,16 @@ fn gate_via_agent(input: &str, instructions: &str, schema: &str, revision: &str)
 /// or why it could not be read: no werk at that path, or git refused. Never an
 /// empty string standing in for "could not read" (Silas, 2026-10-11 15:10).
 pub fn branch_diff(werk: &str) -> Result<String, String> {
+    branch_diff_range(werk, "origin/main...HEAD")
+}
+
+/// #4889 — the diff of one range in the werk (`origin/main...HEAD`, or `<commit>..HEAD`
+/// for a round that reads only what changed since the last one reviewed).
+pub fn branch_diff_range(werk: &str, range: &str) -> Result<String, String> {
     if !Path::new(werk).is_dir() {
         return Err(format!("no werk at {}", werk));
     }
-    let o = Command::new("git").arg("-C").arg(werk).args(["diff", "origin/main...HEAD"]).output()
+    let o = Command::new("git").arg("-C").arg(werk).args(["diff", range]).output()
         .map_err(|e| format!("git could not run in {}: {}", werk, e))?;
     if !o.status.success() {
         return Err(format!("git diff failed in {}: {}", werk, String::from_utf8_lossy(&o.stderr).trim()));
@@ -2099,7 +2112,19 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // #4474 reopen (Silas, 2026-10-11): a diff that could not be read refuses
     // the gate. With role=false every in-run gate since 10-10 reviewed the
     // empty diff of chorus-werk/false-<card> and could only pass.
-    let diff = match branch_diff(&werk) {
+    // #4889 (Jeff 11-05 10:06: "isnt there just a new commit to review?") — a round reads
+    // only what changed since the commit this gate last reviewed; no earlier round, or a
+    // rebase that left it behind, reads the whole branch (Kade 10:07).
+    let head = run_in_dir(&werk, "git", &["rev-parse", "HEAD"]).map(|h| h.trim().to_string()).unwrap_or_default();
+    let prior = last_reviewed(&fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default(), card, gate);
+    let since = prior.as_ref().map(|(c, _)| c.clone())
+        .filter(|c| !c.is_empty() && run_in_dir(&werk, "git", &["merge-base", "--is-ancestor", c, "HEAD"]).is_ok());
+    let range = since.as_ref().map(|c| format!("{c}..HEAD")).unwrap_or_else(|| "origin/main...HEAD".to_string());
+    let delta_files: Option<Vec<String>> = since.as_ref().map(|c| {
+        run_in_dir(&werk, "git", &["diff", "--name-only", &format!("{c}..HEAD")]).unwrap_or_default()
+            .lines().map(str::to_string).filter(|l| !l.is_empty()).collect()
+    });
+    let diff = match branch_diff_range(&werk, &range) {
         Ok(d) => d,
         Err(why) => {
             record_gate(home, role, card, gate, "error", &format!("no branch diff to review: {}", why), round);
@@ -2114,8 +2139,8 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     for (i, batch) in batches.iter().enumerate() {
         let part = if n > 1 { format!(" (part {} of {})", i + 1, n) } else { String::new() };
         let ctx = format!(
-            "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD){} ===\n{}",
-            card, card_view, part, batch
+            "CARD #{}\n{}\n\n=== BRANCH DIFF ({}){} ===\n{}",
+            card, card_view, range, part, batch
         );
         parts.push(review_once(&sys, &ctx, round, &fail_on));
     }
@@ -2132,7 +2157,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // config is on main its review is unmeasured (error), never a pass.
     if gate == "quality" {
         let rules = Path::new(home).join("platform/quality/semgrep");
-        let (r, f) = review_config_present(&rules).unwrap_or_else(|| semgrep_review(&werk, &rules));
+        let (r, f) = review_config_present(&rules).unwrap_or_else(|| semgrep_review(&werk, &rules, since.as_deref()));
         (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-quality: {}", findings)), (r, format!("semgrep: {}", f))], &[]);
     }
     // #4889 (Jeff 19:04) — dependency-cruiser in the architecture review: the TS packages'
@@ -2145,12 +2170,129 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     if gate == "code" {
         let mut all = vec![(result.clone(), format!("gate-code: {}", findings))];
         for skill in BUILTIN_CODE_REVIEWS {
-            let (r, f) = builtin_review(skill, &werk);
+            let (r, f) = builtin_review(skill, &werk, since.as_deref());
             all.push((r, format!("/{}: {}", skill, f)));
         }
         (result, findings) = combine_verdicts(&all, &[]);
     }
-    record_gate(home, role, card, gate, &result, &findings, round);
+    // #4889 — the findings ledger: an earlier round's open finding carries forward until a
+    // later diff touches its file and does not raise it again; a navigator's settle (a
+    // bootstrap/env waiver on the card) holds until its file changes (Kade 10:07).
+    let settles = settles_on_card(&card_view, gate);
+    (result, findings) = apply_ledger(&result, &findings, prior.as_ref().map(|(_, f)| f.as_str()), delta_files.as_deref(), &settles);
+    // an unmeasured round reviewed nothing: the next round starts from the last one that did
+    let reviewed = if result == "error" { "" } else { head.as_str() };
+    record_gate_at(home, role, card, gate, &result, &findings, round, reviewed);
+}
+
+/// #4889 — where a round's review starts: the commit this gate last reviewed, else the
+/// branch's merge-base with origin/main (the whole branch).
+fn review_base(werk: &str, since: Option<&str>) -> Result<String, String> {
+    if let Some(c) = since { return Ok(c.to_string()); }
+    run_in_dir(werk, "git", &["merge-base", "origin/main", "HEAD"]).map(|b| b.trim().to_string())
+        .map_err(|e| format!("no merge-base in {werk}: {e}"))
+}
+
+/// #4889 — the last recorded result of `gate` for `card` that names its commit:
+/// (commit, findings). Pure over the witness text.
+pub fn last_reviewed(witness: &str, card: u64, gate: &str) -> Option<(String, String)> {
+    let card_key = format!("\"card_id\":{},", card);
+    let gate_key = format!("\"gate\":\"{}\"", gate);
+    witness.lines().rev()
+        .filter(|l| l.contains("\"event\":\"demo.gate.result\"") && l.contains(&card_key) && l.contains(&gate_key))
+        .find_map(|l| {
+            let c = extract_json_str(l, "commit")?;
+            (!c.is_empty()).then(|| (c, extract_json_str(l, "findings").unwrap_or_default()))
+        })
+}
+
+/// #4889 — a navigator's settle on the card: `settled: gate=<g> item=<n> file=<path> by=<who> reason=<why>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settle { pub item: u32, pub file: String, pub by: String, pub reason: String }
+
+/// The settles on the card text for one gate. A line with no `by=` or `reason=` is no settle. Pure.
+pub fn settles_on_card(card_text: &str, gate: &str) -> Vec<Settle> {
+    card_text.lines().filter_map(|l| {
+        let rest = l.trim().trim_start_matches(['-', '*', ' ']).strip_prefix("settled:")?;
+        let get = |k: &str| rest.split_whitespace().find_map(|w| w.strip_prefix(&format!("{k}="))).map(str::to_string);
+        if get("gate")?.as_str() != gate { return None; }
+        let reason = rest.split_once("reason=")?.1.trim().to_string();
+        let by = get("by").filter(|b| !b.is_empty())?;
+        let file = get("file")?;
+        (!reason.is_empty()).then(|| Settle { item: get("item").and_then(|i| i.parse().ok()).unwrap_or(0), file, by, reason })
+    }).collect()
+}
+
+/// #4889 — one finding's segment, with the labels and part markers a combined record
+/// wraps it in taken off. None for a note, a meta line or "no findings". Pure.
+fn fail_segment(seg: &str) -> Option<String> {
+    let s = unwrapped(seg);
+    if s.is_empty() || s.starts_with("note:") || s == "no findings" || s.contains("names no fail-items")
+        || s.starts_with("unmeasured") || s.starts_with("carried ") || s.starts_with("settled by ") { return None; }
+    Some(s)
+}
+
+/// A segment with its part markers (`[part 1/3 fail] `) and review labels taken off. Pure.
+fn unwrapped(seg: &str) -> String {
+    let mut s = seg.trim();
+    loop {
+        let before = s;
+        if let Some(r) = s.strip_prefix('[').and_then(|r| r.split_once("] ")).map(|(_, r)| r) { s = r.trim(); }
+        for label in ["gate-code: ", "gate-arch: ", "gate-quality: ", "semgrep: ", "dependency-cruiser: ", "/code-review: ", "/security-review: "] {
+            if let Some(r) = s.strip_prefix(label) { s = r.trim(); }
+        }
+        if s == before { break; }
+    }
+    s.to_string()
+}
+
+/// #4889 — a finding's ledger key: (item, file). The item is the `item N` the review
+/// named (0 when none); the file is what precedes the first `:` or ` — `. Pure.
+pub fn finding_key(seg: &str) -> (u32, String) {
+    let item = seg.split(" — ").find_map(|p| p.trim().strip_prefix("item ").and_then(|n| n.trim().parse().ok()))
+        .or_else(|| seg.split("item ").nth(1).and_then(|r| r.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()))
+        .unwrap_or(0);
+    let head = seg.split(" — ").next().unwrap_or(seg);
+    let file = head.split(':').next().unwrap_or(head).trim().to_string();
+    (item, file)
+}
+
+/// #4889 (Jeff 11-05 10:06; Kade 10:07) — the ledger over one gate's record. `prior` is the
+/// last round's findings, `delta` the files changed since it (None = a whole-branch round).
+/// A prior failing finding whose file the delta left alone carries forward, red; one whose
+/// file changed and is not raised again is fixed. A settle holds while its file is unchanged.
+/// An "error" record stays error (unmeasured). Pure.
+pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Option<&[String]>, settles: &[Settle]) -> (String, String) {
+    // (as recorded, with its labels; cleaned, for its key)
+    let fails = |text: &str| -> Vec<(String, String)> {
+        text.split(" | ").filter_map(|s| fail_segment(s).map(|c| (s.trim().to_string(), c))).collect()
+    };
+    let now = fails(findings);
+    let notes: Vec<String> = findings.split(" | ").filter(|s| fail_segment(s).is_none())
+        .filter(|s| { let u = unwrapped(s); !u.is_empty() && u != "no findings" }).map(|s| s.trim().to_string()).collect();
+    let changed = |f: &str| delta.is_some_and(|d| d.iter().any(|x| x == f));
+    let now_keys: Vec<(u32, String)> = now.iter().map(|(_, c)| finding_key(c)).collect();
+    let carried: Vec<(String, String)> = match (prior, delta) {
+        (Some(p), Some(_)) => fails(p).into_iter()
+            .filter(|(_, c)| { let k = finding_key(c); !changed(&k.1) && !now_keys.contains(&k) })
+            .map(|(_, c)| (format!("carried (not yet fixed): {c}"), c))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut open = Vec::new();
+    let mut settled = Vec::new();
+    for (shown, clean) in now.into_iter().chain(carried) {
+        let (item, file) = finding_key(&clean);
+        match settles.iter().find(|t| t.file == file && (t.item == item || t.item == 0) && !changed(&file)) {
+            Some(t) => settled.push(format!("settled by {} ({}): {}", t.by, t.reason, clean)),
+            None => open.push(shown),
+        }
+    }
+    let verdict = if result == "error" { "error" } else if open.is_empty() { "pass" } else { "fail" };
+    let mut out = open;
+    out.extend(settled);
+    out.extend(notes);
+    (verdict.to_string(), if out.is_empty() { "no findings".to_string() } else { out.join(" | ") })
 }
 
 /// #4889 — what `claude -p` is asked for each built-in review. /code-review runs as its
@@ -2174,11 +2316,11 @@ pub const BUILTIN_CODE_REVIEWS: [&str; 2] = ["code-review", "security-review"];
 /// #4889 — run one built-in review headless in the card's werk over `origin/main...HEAD`,
 /// bounded (CHORUS_CODE_REVIEW_TIMEOUT_SECS, default 900). It reads the repo with its own
 /// tools, so the whole diff is read; ("error", why) when it could not run.
-fn builtin_review(skill: &str, werk: &str) -> (String, String) {
+fn builtin_review(skill: &str, werk: &str, since: Option<&str>) -> (String, String) {
     let Some(bin) = claude_bin() else { return ("error".to_string(), "claude binary not resolvable".to_string()) };
-    let base = match run_in_dir(werk, "git", &["merge-base", "origin/main", "HEAD"]) {
-        Ok(b) => b.trim().to_string(),
-        Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
+    let base = match review_base(werk, since) {
+        Ok(b) => b,
+        Err(e) => return ("error".to_string(), e),
     };
     let prompt = builtin_review_prompt(skill, &base);
     let timeout = env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900);
@@ -2198,10 +2340,10 @@ fn builtin_review(skill: &str, werk: &str) -> (String, String) {
 /// #4889 — the quality rules (platform/quality/semgrep) over the lines the card changed
 /// (`--baseline-commit` = its merge-base). Not installed, or no readable report, is an
 /// error: unmeasured, never a pass.
-fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
-    let base = match run_in_dir(werk, "git", &["merge-base", "origin/main", "HEAD"]) {
-        Ok(b) => b.trim().to_string(),
-        Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
+fn semgrep_review(werk: &str, rules: &Path, since: Option<&str>) -> (String, String) {
+    let base = match review_base(werk, since) {
+        Ok(b) => b,
+        Err(e) => return ("error".to_string(), e),
     };
     // #4889 (Jeff 20:55) — semgrep's path is the tool.path.semgrep property, read through the
     // resolver: the door down or the row missing is an error (unmeasured), never a default
