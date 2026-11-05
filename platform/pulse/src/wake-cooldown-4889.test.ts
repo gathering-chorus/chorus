@@ -102,3 +102,31 @@ describe('#4889 the cooldown is the property, read with a TTL', () => {
     expect(events.map(([e]) => e)).toEqual(['announce.cooldown.unread', 'announce.cooldown.read']);
   });
 });
+
+const ALERT = '[alert for silas · from system] chorus-health: x down';
+
+describe('#4889 (code review, run 14) no dedupe-off window at pulse start', () => {
+  it('a machine nudge waits for the first cooldown read, so a repeat inside the cooldown is suppressed', async () => {
+    const events: Ev = [];
+    const store = new MessageStore(tmpDb());
+    const w = new DeliveryWorker(store, inject, into(events), [1], () => Promise.resolve());
+    let answer: (r: GlobalRead) => void = () => undefined;
+    w.watchCooldown(60_000, () => new Promise<GlobalRead>((r) => { answer = r; }));
+    const send = (id: number) => w.enqueue({ id, from: 'system', to: 'silas', content: ALERT, delivery_attempts: 0 });
+    const a = send(store.sendNudge('system', 'silas', ALERT));
+    const b = send(store.sendNudge('system', 'silas', ALERT));
+    answer(ok('1800000'));
+    await Promise.all([a, b]);
+    expect(events.filter(([e]) => e === 'terminal.suppressed')).toHaveLength(1);
+  });
+
+  it('NEGATIVE PROOF: with no cooldown read, the same pair both announce (dedupe off)', async () => {
+    const events: Ev = [];
+    const store = new MessageStore(tmpDb());
+    const w = new DeliveryWorker(store, inject, into(events), [1], () => Promise.resolve());
+    const send = (id: number) => w.enqueue({ id, from: 'system', to: 'silas', content: ALERT, delivery_attempts: 0 });
+    await send(store.sendNudge('system', 'silas', ALERT));
+    await send(store.sendNudge('system', 'silas', ALERT));
+    expect(events.filter(([e]) => e === 'terminal.suppressed')).toHaveLength(0);
+  });
+});

@@ -1856,7 +1856,7 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
 fn refresh_pane(ctx: &Ctx, role: &str) {
     let Some(p) = read_row(ctx, role, "presence") else { return };
     let answer = if ctx.has_tmux(role) {
-        sh(&ctx.tmux, &["display-message", "-p", "-t", &Ctx::tmux_session(role), "#{pane_id}|#{pane_tty}"])
+        sh(&ctx.tmux, &["list-panes", "-t", &Ctx::tmux_session(role), "-F", "#{pane_id}|#{pane_tty}"])
     } else {
         Err(format!("no tmux session {} readable from account {}", Ctx::tmux_session(role), env::var("USER").unwrap_or_default()))
     };
@@ -1865,7 +1865,10 @@ fn refresh_pane(ctx: &Ctx, role: &str) {
         Ok(pt) => { let _ = fs::remove_file(&marker); pt }
         Err(why) => {
             if !marker.exists() {
-                let _ = fs::write(&marker, &why);
+                // the marker makes the event once per change; without its dir it would fire every sweep
+                if let Err(e) = marker.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(&marker, &why)) {
+                    eprintln!("chorus-principal: pane.unreadable marker for {role} not written: {e}");
+                }
                 ctx.spine(&["presence.pane.unreadable", role, &format!("why={}", why)]);
             }
             return;

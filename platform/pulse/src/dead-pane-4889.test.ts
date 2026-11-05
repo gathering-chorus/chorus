@@ -25,16 +25,30 @@ describe('#4889 a dead pane is not-delivered, once, with its reason', () => {
     expect(classifyInjectResult({ rc: 1, stderr: 'osascript timed out' }).kind).toBe('transient');
   });
 
-  it('the worker tries the dead pane once and marks the row failed with the reason', async () => {
+  it('a pane still dead after the sweep waits is marked failed with the reason, never retried on the backoff', async () => {
     const store = new MessageStore(tmpDb());
     let tries = 0;
     const inject = () => { tries += 1; return Promise.resolve({ rc: 1, stderr: "can't find pane: %12" }); };
     const w = new DeliveryWorker(store, inject, () => Promise.resolve(), [1, 1, 1, 1, 1], noSleep);
     const id = store.sendNudge('wren', 'abby-normal', 'are you there');
     await w.enqueue({ id, from: 'wren', to: 'abby-normal', content: 'are you there', delivery_attempts: 0 });
-    expect(tries).toBe(1);
+    // one try, then one re-resolve after each of the two sweep waits
+    expect(tries).toBe(1 + w.deadPaneWaitsMs.length);
     expect(deliveryVerdict(store.getDeliveryRecord(id))).toEqual({ delivery: 'not-delivered', reason: expect.stringContaining('dead-pane %12') });
     store.close();
+  });
+
+  it("Jeff's message to a role whose pane was just re-recorded arrives after the sweep wait", async () => {
+    const store = new MessageStore(tmpDb());
+    const waits: number[] = [];
+    let tries = 0;
+    // the first try names the old pane; the sweep re-records it, so the re-resolve answers
+    const inject = () => { tries += 1; return Promise.resolve(tries === 1 ? { rc: 1, stderr: "can't find pane: %14" } : { rc: 0, stderr: '' }); };
+    const w = new DeliveryWorker(store, inject, () => Promise.resolve(), [1], (ms) => { waits.push(ms); return Promise.resolve(); });
+    const id = store.sendJeffInput('borg-queen', 'nothing');
+    await w.enqueue({ id, kind: 'jeff-input', from: 'jeff', to: 'borg-queen', content: 'nothing', delivery_attempts: 0 });
+    expect(deliveryVerdict(store.getDeliveryRecord(id))).toEqual({ delivery: 'delivered' });
+    expect(waits).toEqual([w.deadPaneWaitsMs[0]]);
   });
 
   it('NEGATIVE PROOF: a pane that answers is delivered', async () => {

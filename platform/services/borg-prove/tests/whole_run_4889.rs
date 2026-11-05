@@ -65,3 +65,18 @@ fn a_failed_reopen_keeps_the_deferred_check() {
     assert!(keeps_deferral(&Rerun::KeepOpen, true));
     assert!(!keeps_deferral(&Rerun::Cleared, false));
 }
+
+/// #4889 (code review, run 14) — a card whose every AC is a `check: after` can land: its
+/// checks re-run after the land and reopen it on a red. Negative proof: all `by` still
+/// proves nothing, and an `after` beside an unmeasured AC is still Unproven.
+#[test]
+fn a_card_with_only_after_checks_is_proven_and_lands() {
+    use borg_prove::{checks_from_card, judge, verdict, Outcome};
+    let after = checks_from_card(1, "## AC\n- [ ] a check: after test t/a.bats\n").remove(0);
+    let o = judge(&after, &None);
+    assert!(matches!(o, Outcome::Deferred(_)), "{o:?}");
+    assert_eq!(verdict(&[(after.clone(), o.clone())]), "Proven");
+    let by = checks_from_card(1, "## AC\n- [ ] b check: by #4805\n").remove(0);
+    assert_eq!(verdict(&[(by.clone(), Outcome::Deferred("later".into()))]), "Unproven");
+    assert_eq!(verdict(&[(after, o), (by, Outcome::Unmeasured("x".into()))]), "Unproven");
+}

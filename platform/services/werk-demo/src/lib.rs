@@ -2207,6 +2207,12 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // later diff touches its file and does not raise it again (Kade 10:07). There is no
     // waiver: a finding leaves only by a fix (Kade 10:24 — a self-asserted settle is forgeable).
     (result, findings) = apply_ledger(&result, &findings, prior.as_ref().map(|(_, f)| f.as_str()), delta_files.as_deref());
+    // #4889 (Jeff 16:05, "Yes, certainly") — only a finding that breaks something Jeff
+    // uses fails the gate; every other finding is a note on his go page, and ships
+    if result == "fail" {
+        let open = open_findings(&findings);
+        (result, findings) = apply_breaks(&result, &findings, classify_breaks(&open).as_deref());
+    }
     // an unmeasured round reviewed nothing: the next round starts from the last one that did
     let reviewed = if result == "error" { "" } else { head.as_str() };
     record_gate_at(home, role, card, gate, &result, &findings, round, reviewed);
@@ -2238,7 +2244,7 @@ pub fn last_reviewed(witness: &str, card: u64, gate: &str) -> Option<(String, St
 fn fail_segment(seg: &str) -> Option<String> {
     let s = unwrapped(seg);
     if s.is_empty() || s.starts_with("note:") || s == "no findings" || s.contains("names no fail-items")
-        || s.starts_with("unmeasured") || s.starts_with("carried ") { return None; }
+        || s.starts_with("unmeasured") { return None; }
     Some(s)
 }
 
@@ -2248,7 +2254,9 @@ fn unwrapped(seg: &str) -> String {
     loop {
         let before = s;
         if let Some(r) = s.strip_prefix('[').and_then(|r| r.split_once("] ")).map(|(_, r)| r) { s = r.trim(); }
-        for label in ["gate-code: ", "gate-arch: ", "gate-quality: ", "semgrep: ", "dependency-cruiser: ", "/code-review: ", "/security-review: ", "ac-checks: "] {
+        // #4889 (code review, run 14) — a carried finding is still the finding: it carries
+        // again next round until fixed, never dropped after one
+        for label in ["carried (not yet fixed): ", "gate-code: ", "gate-arch: ", "gate-quality: ", "semgrep: ", "dependency-cruiser: ", "/code-review: ", "/security-review: ", "ac-checks: "] {
             if let Some(r) = s.strip_prefix(label) { s = r.trim(); }
         }
         if s == before { break; }
@@ -2293,6 +2301,72 @@ pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Op
     let mut out = open;
     out.extend(notes);
     (verdict.to_string(), if out.is_empty() { "no findings".to_string() } else { out.join(" | ") })
+}
+
+/// #4889 (Jeff 16:05) — a red round's open findings, in order: the ones the breaks
+/// question is asked about. Pure.
+pub fn open_findings(findings: &str) -> Vec<String> {
+    findings.split(" | ").filter_map(fail_segment).collect()
+}
+
+/// #4889 (Jeff 16:05: "breaks something Jeff uses → blocks the land; nothing breaks →
+/// note on his go page, ships") — `breaks[i]` answers for the i-th open finding. Each
+/// finding that breaks nothing becomes a `note:` (the ledger never carries a note); the
+/// round fails only if one breaks. No answer, or one that does not match the findings,
+/// leaves the round failed: an unclassified finding blocks. Pure.
+pub fn apply_breaks(result: &str, findings: &str, breaks: Option<&[bool]>) -> (String, String) {
+    let n = open_findings(findings).len();
+    let Some(b) = breaks.filter(|b| b.len() == n && n > 0) else {
+        return (result.to_string(), findings.to_string());
+    };
+    let mut i = 0usize;
+    let out: Vec<String> = findings.split(" | ").map(|seg| match fail_segment(seg) {
+        Some(clean) => {
+            // i < n == b.len(), by the filter above
+            let keep = b[i];
+            i += 1;
+            if keep { seg.trim().to_string() } else { format!("note: {clean}") }
+        }
+        None => seg.trim().to_string(),
+    }).collect();
+    let verdict = if b.iter().any(|x| *x) { "fail" } else { "pass" };
+    (verdict.to_string(), out.join(" | "))
+}
+
+/// #4889 (Jeff 16:05) — what the breaks question asks, one finding per numbered line. Pure.
+pub fn breaks_prompt(open: &[String]) -> String {
+    let list: Vec<String> = open.iter().enumerate().map(|(i, f)| format!("{}. {}", i + 1, f)).collect();
+    format!("Jeff's rule for a card about to land: a review finding blocks the land only if it breaks \
+             something Jeff uses: his messages reaching a role, the alerts he is sent, the Clearing, \
+             his go page, or a land he gives the go to. Every other finding is a note on his go page \
+             and ships. For each numbered finding below answer true if it breaks something Jeff uses, \
+             else false. Reply with only a ```json list of booleans, one per finding, in order.\n\n{}",
+            list.join("\n"))
+}
+
+/// The ```json list of booleans a breaks answer ends with; None when there is none. Pure.
+pub fn breaks_answer(stdout: &str) -> Option<Vec<bool>> {
+    let start = stdout.rfind("```json")? + 7;
+    let body = &stdout[start..];
+    let body = &body[..body.find("```")?];
+    let inner = body.trim().strip_prefix('[')?.strip_suffix(']')?;
+    inner.split(',').map(str::trim).filter(|t| !t.is_empty()).map(|t| match t {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }).collect()
+}
+
+/// One headless question per red round: which open findings break something Jeff uses.
+/// No tools, user settings only; None when it could not be asked or answered.
+fn classify_breaks(open: &[String]) -> Option<Vec<bool>> {
+    if open.is_empty() { return None; }
+    let bin = claude_bin()?;
+    let mut command = Command::new(&bin);
+    command.env("CHORUS_HEADLESS", "1").args(["-p", &breaks_prompt(open), "--permission-mode", "dontAsk",
+        "--setting-sources", "user", "--no-session-persistence", "--output-format", "text",
+        "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Agent"]);
+    bounded_headless(command, String::new(), 300).ok().and_then(|out| breaks_answer(&out))
 }
 
 /// #4889 — what `claude -p` is asked for each built-in review. /code-review runs as its

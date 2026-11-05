@@ -57,3 +57,15 @@ fn a_findings_key_is_its_item_and_file() {
     assert_eq!(finding_key("platform/x.ts:3 — /gate-quality item 2: swallowed"), (2, "platform/x.ts".to_string()));
     assert_eq!(finding_key("a.rs:1 — b is undefined"), (0, "a.rs".to_string()));
 }
+
+#[test]
+fn negative_proof_a_carried_finding_carries_again_until_its_file_changes() {
+    // round N carried src/b.rs:4; round N+1 touched neither file and raised nothing
+    let n = apply_ledger("pass", "no findings", Some(PRIOR), Some(&files(&["src/a.rs"]))).1;
+    assert!(n.contains("carried (not yet fixed): src/b.rs:4"), "{n}");
+    let (r, f) = apply_ledger("pass", "no findings", Some(&n), Some(&files(&["src/z.rs"])));
+    assert_eq!(r, "fail", "{f}");
+    assert!(f.contains("carried (not yet fixed): src/b.rs:4 — item 3") && !f.contains("carried (not yet fixed): carried"), "{f}");
+    // fixed once its file changes and it is not raised again
+    assert_eq!(apply_ledger("pass", "no findings", Some(&n), Some(&files(&["src/b.rs"]))).0, "pass");
+}

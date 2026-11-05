@@ -59,6 +59,8 @@ describe('#4889 Jeff\'s post reaches the role whose room he is in, and no other'
     expect(client.roomFromPath('/rooms/borg-queen')).toBe('borg-queen');
     expect(client.roomFromPath('/clearing/rooms/abby-normal')).toBe('abby-normal');
     expect(client.roomFromPath('/')).toBe('team');
+    // a malformed escape never throws while Jeff is sending
+    expect(client.roomFromPath('/rooms/borg%E0%A4%A')).toBe('borg%E0%A4%A');
     let sent: { event: NostrEvent } | undefined;
     const fetchFn = jest.fn().mockImplementation(async (_u: string, init: { body: string }) => {
       sent = JSON.parse(init.body);

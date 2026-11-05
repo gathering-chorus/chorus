@@ -150,13 +150,22 @@ pub fn delivered_presence(mut presence: Value, now: &str) -> Option<Value> {
     Some(presence)
 }
 
-/// #4889 — the pane and tty a tmux display-message answered, or why there is none:
+/// #4889 — the pane and tty tmux list-panes answered for the role's session, or why there is none:
 /// an unreadable socket, an empty answer or something that is not a pane id (%N).
 pub fn pane_read(answer: Result<String, String>) -> Result<(String, String), String> {
     let a = answer.map_err(|e| e.trim().to_string())?;
-    let (pane, tty) = a.trim().split_once('|').unwrap_or((a.trim(), ""));
-    let ok = pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit());
-    if ok { Ok((pane.to_string(), tty.to_string())) } else { Err(format!("tmux answered no pane id: '{}'", a.trim())) }
+    // #4889 (code review, run 14) — the answer lists every pane of the role's session; a
+    // session with more than one is refused, never guessed (the #4362 rule)
+    let lines: Vec<&str> = a.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if lines.len() > 1 { return Err(format!("session has {} panes; refusing to guess the role's", lines.len())); }
+    let one = lines.first().copied().unwrap_or("");
+    let (pane, tty) = one.split_once('|').unwrap_or((one, ""));
+    if is_pane_id(pane) { Ok((pane.to_string(), tty.to_string())) } else { Err(format!("tmux answered no pane id: '{}'", a.trim())) }
+}
+
+/// A tmux pane id: `%` and digits. One definition for every reader and writer.
+pub fn is_pane_id(pane: &str) -> bool {
+    pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit())
 }
 
 /// #4889 — the role's pane moved (a restarted tmux pane keeps the run alive): the
@@ -165,8 +174,7 @@ pub fn pane_read(answer: Result<String, String>) -> Result<(String, String), Str
 /// only writer of a Presence; pulse only reads it, and a dead pane fails loudly there.
 pub fn repaned_presence(mut presence: Value, pane: &str, tty: &str) -> Option<Value> {
     presence.get("name")?;
-    let ok = pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit());
-    if !ok || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
+    if !is_pane_id(pane) || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
     presence["pane"] = Value::String(pane.into());
     if !tty.is_empty() { presence["tty"] = Value::String(tty.into()); }
     Some(presence)
@@ -577,6 +585,8 @@ mod channel_tests_4424 {
         assert!(pane_read(Err("error connecting to /private/tmp/tmux-502/default (Permission denied)".into())).unwrap_err().contains("Permission denied"));
         assert!(pane_read(Ok("".into())).unwrap_err().contains("no pane id"));
         assert!(pane_read(Ok("-|/dev/ttys001".into())).unwrap_err().contains("no pane id"));
+        // NEGATIVE PROOF (#4889 code review, run 14): two panes is refused, never the first one taken
+        assert!(pane_read(Ok("%31|/dev/ttys020\n%32|/dev/ttys021\n".into())).unwrap_err().contains("2 panes"));
     }
     #[test] fn a_moved_pane_is_taken_4889() {
         let p = presence_row("abby-normal", "p", "r", "%12", "/dev/ttys013", "chorus-abby-normal", "pane");

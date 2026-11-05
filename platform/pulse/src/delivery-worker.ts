@@ -149,8 +149,9 @@ export function classifyInjectResult(r: InjectResult): { kind: 'success' | 'perm
   if (r.rc === 0) return { kind: 'success', reason: 'ok' };
   const stderr = (r.stderr || '').toLowerCase();
   // #4889 (Jeff 07:48: break decisively, never branch to an old path) — the registered
-  // pane is gone. Retrying it, or guessing another, reaches no one: it is a loud
-  // not-delivered, and the principal's sweep (every ~60s) re-records the role's pane.
+  // pane is gone. Guessing another pane is never done; the worker re-reads the one
+  // registration after the principal's sweep (every ~60s) and fails loudly only if it
+  // still names a dead pane (DeliveryWorker.deadPaneWaitsMs).
   const dead = /can't find pane: (%\d+)/.exec(stderr);
   if (dead) return { kind: 'permanent', reason: `dead-pane ${dead[1]}` };
   for (const reason of PERMANENT_REASONS) {
@@ -169,6 +170,13 @@ export class DeliveryWorker {
   // cooldown comes from the property, read by watchCooldown; unread = no dedupe.
   private announce: AnnounceState = new AnnounceState();
   private cooldownSeen = '';
+  // #4889 (code review, run 14) — the first cooldown read, awaited before any announce
+  // decision, so a pulse start never runs a window with dedupe off
+  private firstCooldownRead: Promise<void> = Promise.resolve();
+  /** #4889 (code review, run 14) — a dead pane is re-resolved through the role's live
+   *  registration after each wait (together longer than the principal's ~63s sweep), so
+   *  Jeff's message to a role whose pane just changed still arrives; then not-delivered. */
+  deadPaneWaitsMs: number[] = [30_000, 45_000];
 
   constructor(
     private store: MessageStore,
@@ -222,7 +230,9 @@ export class DeliveryWorker {
   }
 
   watchCooldown(everyMs = 5 * 60_000, read?: () => Promise<GlobalRead>): () => void {
-    void this.readCooldown(read);
+    this.firstCooldownRead = this.readCooldown(read).catch((e: unknown) => {
+      void this.emitSpine('announce.cooldown.unread', { key: COOLDOWN_KEY, error: String(e), dedupe: 'off' });
+    });
     const t = setInterval(() => { void this.readCooldown(read); }, everyMs);
     if (typeof t.unref === 'function') t.unref();
     return () => clearInterval(t);
@@ -269,6 +279,7 @@ export class DeliveryWorker {
    */
   private async announceOrSuppress(row: DeliveryRow): Promise<boolean> {
     if (row.kind === 'jeff-input') return true;
+    await this.firstCooldownRead;
     const d = decide(row.from, row.to, row.content, Date.now(), this.announce, row.wake);
     // #4889 — the wake mark rides the boundary's spine events, so prod can prove a
     // run-finish wake was announced and never suppressed (run-finish-wake-prod.bats)
@@ -343,8 +354,17 @@ export class DeliveryWorker {
     return existing.delivery_attempts > 0 || this.announceOrSuppress(row);
   }
 
+  /** #4889 — a dead pane waits out the principal's sweep (true), until the waits are spent */
+  private async waitedForSweep(c: { kind: string; reason: string }, done: number): Promise<boolean> {
+    if (c.kind !== 'permanent' || !c.reason.startsWith('dead-pane') || done >= this.deadPaneWaitsMs.length) return false;
+    // eslint-disable-next-line security/detect-object-injection -- bounded counter
+    await this.sleep(this.deadPaneWaitsMs[done]);
+    return true;
+  }
+
   private async deliverOne(row: DeliveryRow): Promise<void> {
     const maxAttempts = this.backoffMs.length + 1;
+    let deadPaneWaits = 0;
     // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
     const prefix = eventPrefix(row.kind);
     // #4424 — a row the supervisor already admitted (or whose admission is
@@ -394,21 +414,15 @@ export class DeliveryWorker {
         return;
       }
 
-      if (classified.kind === 'permanent') {
-        await this.emitSpine(`${prefix}.surface.failed`, {
-          ...traceFields,
-          id: row.id,
-          from: row.from,
-          to: row.to,
-          attempt,
-          reason: classified.reason,
-          permanent: true,
-        });
-        this.store.markFailed(row.id, classified.reason);
-        return;
+      if (await this.waitedForSweep(classified, deadPaneWaits)) {
+        // the next attempt resolves the registration afresh (runInject reads Presence)
+        deadPaneWaits += 1;
+        attempt -= 1;
+        continue;
       }
 
-      // transient — emit per-attempt failure event, retry if attempts left
+      const permanent = classified.kind === 'permanent';
+      // permanent: one failure event and the row fails; transient: per-attempt event, retry if attempts left
       await this.emitSpine(`${prefix}.surface.failed`, {
         ...traceFields,
         id: row.id,
@@ -416,10 +430,10 @@ export class DeliveryWorker {
         to: row.to,
         attempt,
         reason: classified.reason,
-        permanent: false,
+        permanent,
       });
 
-      if (attempt >= maxAttempts) {
+      if (permanent || attempt >= maxAttempts) {
         this.store.markFailed(row.id, classified.reason);
         return;
       }

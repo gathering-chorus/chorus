@@ -1184,7 +1184,9 @@ function initStream(customContainer) {
 /** #4889 — the room a page is: the segment after /rooms/ (any base prefix before it), else 'team'. */
 function roomFromPath(pathname) {
   const m = /\/rooms\/([^/?#]+)/.exec(pathname || '');
-  return m ? decodeURIComponent(m[1]) : 'team';
+  if (!m) return 'team';
+  // a malformed escape must not stop Jeff's send: use the segment as typed
+  try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
 }
 
 async function handleSendMessage(text, options = {}) {

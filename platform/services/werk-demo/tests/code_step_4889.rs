@@ -57,6 +57,7 @@ echo "$(pwd) | $*" >> "{log}"
 case "$*" in
   *"/code-review"*) if [ -f "{h}/clean" ]; then printf '```json\n[]\n```\n'; else printf 'found 1\n```json\n[{{"file":"a.rs","line":1,"summary":"b is undefined"}}]\n```\n'; fi ;;
   *"security-review skill"*) if [ -f "{h}/garbled" ]; then echo 'all good'; else printf '```json\n[]\n```\n'; fi ;;
+  *"Jeff's rule"*) if [ -f "{h}/breaksnothing" ]; then printf '```json\n[false]\n```\n'; elif [ -f "{h}/breaks" ]; then printf '```json\n[true]\n```\n'; else echo 'no answer'; fi ;;
   *) if [ -f "{h}/gatefinding" ]; then echo '{{"findings":[{{"item":7,"where":"a.rs:1","what":"too complex"}}]}}'; else echo '{{"findings":[]}}'; fi ;;
 esac
 "#, log = log.display(), h = home.display()));
@@ -117,4 +118,21 @@ esac
     std::env::set_var("CHORUS_DEMO_ROUND", "r5");
     let strict = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert!(strict.message.contains(": fail") && strict.message.contains("names no fail-items: every finding fails"), "{}", strict.message);
+
+    // #4889 (Jeff 16:05) — a red round asks which findings break something Jeff uses:
+    // breaks nothing → the finding is a note on his go page and the gate passes
+    fs::write(home.join("breaksnothing"), "").unwrap();
+    fs::write(werk.join("a.rs"), "fn a() { f() }\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "card 5"]);
+    std::env::set_var("CHORUS_DEMO_ROUND", "r6");
+    let shipped = run_gate_step(4889, "silas", &home, "code").unwrap();
+    assert!(shipped.message.contains(": pass") && shipped.message.contains("note: a.rs:1 — item 7"), "{}", shipped.message);
+    // NEGATIVE PROOF: a finding that breaks something Jeff uses still blocks
+    fs::remove_file(home.join("breaksnothing")).unwrap();
+    fs::write(home.join("breaks"), "").unwrap();
+    fs::write(werk.join("a.rs"), "fn a() { g() }\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "card 6"]);
+    std::env::set_var("CHORUS_DEMO_ROUND", "r7");
+    let blocked = run_gate_step(4889, "silas", &home, "code").unwrap();
+    assert!(blocked.message.contains(": fail") && !blocked.message.contains("note: a.rs:1 — item 7"), "{}", blocked.message);
 }
