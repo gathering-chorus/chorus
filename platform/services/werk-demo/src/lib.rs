@@ -2017,28 +2017,93 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             return;
         }
     };
-    // Cap the diff so a huge change can't blow the context budget.
-    let diff_capped: String = diff.chars().take(60_000).collect();
-    let base_ctx = format!(
-        "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
-        card, card_view, diff_capped
-    );
-    // #4889 — every gate is a review of the diff (code, arch, quality): one context
-    let ctx = base_ctx;
+    // #4889 (Kade 19:00) — a big diff is reviewed per file, in batches under the cap;
+    // what cannot be read whole is unmeasured, never a pass (the 60k cut was hollow).
+    let (batches, unread) = diff_batches(&diff, DIFF_BATCH_CAP);
+    let n = batches.len();
+    let mut parts: Vec<(String, String)> = Vec::new();
+    for (i, batch) in batches.iter().enumerate() {
+        let part = if n > 1 { format!(" (part {} of {})", i + 1, n) } else { String::new() };
+        let ctx = format!(
+            "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD){} ===\n{}",
+            card, card_view, part, batch
+        );
+        parts.push(review_once(&sys, &ctx, round));
+    }
+    let (result, findings) = combine_verdicts(&parts, &unread);
+    record_gate(home, role, card, gate, &result, &findings, round);
+}
 
-    if let Some(job) = gate_via_agent(&ctx, &sys, GATE_OUTPUT_SCHEMA, round) {
-        match job {
-            Ok(out) => { let (result, findings) = parse_gate_verdict(&out); record_gate(home, role, card, gate, &result, &findings, round); }
-            Err(e) => record_gate(home, role, card, gate, "error", &e, round),
+/// #4889 — the largest diff one review reads at once.
+pub const DIFF_BATCH_CAP: usize = 60_000;
+
+/// #4889 — split a diff into per-file pieces (a file over the cap into its hunks, each
+/// under its file header) and pack them into batches of at most `cap` chars. A single
+/// hunk over the cap cannot be read whole: it is returned in the second list, by file.
+pub fn diff_batches(diff: &str, cap: usize) -> (Vec<String>, Vec<String>) {
+    let mut files: Vec<String> = Vec::new();
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") || files.is_empty() { files.push(String::new()); }
+        files.last_mut().unwrap().push_str(line);
+    }
+    let mut pieces: Vec<String> = Vec::new();
+    let mut unread: Vec<String> = Vec::new();
+    for f in files.into_iter().filter(|f| !f.is_empty()) {
+        if f.chars().count() <= cap { pieces.push(f); continue; }
+        let name = f.lines().next().unwrap_or("").trim_start_matches("diff --git ").to_string();
+        let (head, hunks) = match f.find("\n@@") { Some(i) => f.split_at(i + 1), None => (f.as_str(), "") };
+        let mut hunk_list: Vec<String> = Vec::new();
+        for line in hunks.split_inclusive('\n') {
+            if line.starts_with("@@") || hunk_list.is_empty() { hunk_list.push(String::new()); }
+            hunk_list.last_mut().unwrap().push_str(line);
         }
-        return;
+        if hunk_list.is_empty() { unread.push(name); continue; }
+        for h in hunk_list {
+            let piece = format!("{}{}", head, h);
+            if piece.chars().count() > cap { if !unread.contains(&name) { unread.push(name.clone()); } } else { pieces.push(piece); }
+        }
+    }
+    let mut batches: Vec<String> = Vec::new();
+    for p in pieces {
+        match batches.last_mut() {
+            Some(b) if b.chars().count() + p.chars().count() <= cap => b.push_str(&p),
+            _ => batches.push(p),
+        }
+    }
+    if batches.is_empty() && unread.is_empty() { batches.push(String::new()); }
+    (batches, unread)
+}
+
+/// #4889 — one verdict from the batches' verdicts: a part that could not run, or a part
+/// of the diff that could not be read, is an error (unmeasured, never a pass); else any
+/// fail fails; else pass. Every part's findings are kept, labelled.
+pub fn combine_verdicts(parts: &[(String, String)], unread: &[String]) -> (String, String) {
+    let n = parts.len();
+    let mut notes: Vec<String> = parts.iter().enumerate()
+        .filter(|(_, (_, f))| !f.trim().is_empty())
+        .map(|(i, (r, f))| if n > 1 { format!("[part {}/{} {}] {}", i + 1, n, r, f) } else { f.clone() })
+        .collect();
+    if !unread.is_empty() {
+        notes.insert(0, format!("unmeasured: too big to read whole: {}", unread.join(", ")));
+    }
+    let result = if !unread.is_empty() || parts.iter().any(|(r, _)| r == "error") { "error" }
+        else if parts.iter().any(|(r, _)| r == "fail") { "fail" } else { "pass" };
+    (result.to_string(), notes.join(" | "))
+}
+
+/// One headless review of one context; ("error", why) when it could not run.
+fn review_once(sys: &str, ctx: &str, round: &str) -> (String, String) {
+    if let Some(job) = gate_via_agent(ctx, sys, GATE_OUTPUT_SCHEMA, round) {
+        return match job {
+            Ok(out) => parse_gate_verdict(&out),
+            Err(e) => ("error".to_string(), e),
+        };
     }
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
     let bin = match claude_bin() {
         Some(b) => b,
         None => {
-            record_gate(home, role, card, gate, "error", "claude binary not resolvable", round);
-            return;
+            return ("error".to_string(), ("claude binary not resolvable").to_string());
         }
     };
     let child = Command::new(&bin)
@@ -2056,7 +2121,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             "--no-session-persistence",
             "--output-format", "text",
             "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt", &sys,
+            "--system-prompt", sys,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -2065,8 +2130,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
-            record_gate(home, role, card, gate, "error", &format!("claude spawn failed: {}", e), round);
-            return;
+            return ("error".to_string(), (format!("claude spawn failed: {}", e)).to_string());
         }
     };
     if let Some(mut stdin) = child.stdin.take() {
@@ -2091,19 +2155,14 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
                 sleep(Duration::from_millis(200));
             }
             Err(e) => {
-                record_gate(home, role, card, gate, "error",
-                            &format!("claude wait failed: {}", e), round);
-                return;
+                return ("error".to_string(), (format!("claude wait failed: {}", e)).to_string());
             }
         }
     };
     let status = match status {
         Some(s) => s,
         None => {
-            record_gate(home, role, card, gate, "error",
-                        &format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs),
-                        round);
-            return;
+            return ("error".to_string(), (format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs)).to_string());
         }
     };
     let mut stdout = String::new();
@@ -2115,13 +2174,9 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         let _ = e.read_to_string(&mut stderr);
     }
     if !status.success() {
-        record_gate(home, role, card, gate, "error",
-                    &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()),
-                    round);
-        return;
+        return ("error".to_string(), (format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>())).to_string());
     }
-    let (result, findings) = parse_gate_verdict(&stdout);
-    record_gate(home, role, card, gate, &result, &findings, round);
+    parse_gate_verdict(&stdout)
 }
 
 
