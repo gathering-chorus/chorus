@@ -104,9 +104,12 @@ def main():
         if not apply or kind == "SAME":
             continue
         dom, cls = DOOR_CLASS[coll]
-        verb, args = {"ADD": ("athena-add", [f"fields={json.dumps({'name': name, **w})}"]),
-                      "CHANGE": ("athena-set", [f"id={name}", f"fields={json.dumps(diff)}"]),
-                      "DELETE": ("athena-delete", [f"id={name}"])}[kind]
+        if kind == "ADD":
+            verb, args = "athena-add", [f"fields={json.dumps({'name': name, **w})}"]
+        elif kind == "CHANGE":
+            verb, args = "athena-set", [f"id={name}", f"fields={json.dumps(diff)}"]
+        else:
+            verb, args = "athena-delete", [f"id={name}"]
         r = subprocess.run([RUNNER, "call", verb, f"domain={dom}", f"class={cls}", *args], capture_output=True, text=True)
         if r.returncode != 0 or not any(c in r.stdout + r.stderr for c in (" → 200", " → 201", " → 204")):
             refused += 1
