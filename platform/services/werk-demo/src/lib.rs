@@ -2389,7 +2389,16 @@ fn classify_breaks(werk: &str, open: &[String]) -> Option<Vec<bool>> {
     command.current_dir(werk).env("CHORUS_HEADLESS", "1").args(["-p", &breaks_prompt(open, &jeff_uses), "--permission-mode", "dontAsk",
         "--setting-sources", "user", "--no-session-persistence", "--output-format", "text",
         "--allowedTools", "Read,Grep,Glob", "--disallowedTools", REVIEW_DENIED_TOOLS]);
-    bounded_headless(command, String::new(), 300).ok().and_then(|out| breaks_answer(&out))
+    // the answer goes to the step's log either way, so a red that stood can be read (run 15)
+    match bounded_headless(command, String::new(), 300) {
+        Ok(out) => {
+            let a = breaks_answer(&out);
+            eprintln!("werk-demo: breaks question on {} finding(s) answered {:?}{}", open.len(), a,
+                if a.as_ref().is_some_and(|v| v.len() == open.len()) { String::new() } else { format!(" — unusable, the red stands: {}", out.trim().chars().take(300).collect::<String>()) });
+            a
+        }
+        Err(e) => { eprintln!("werk-demo: breaks question not answered, the red stands: {e}"); None }
+    }
 }
 
 /// #4889 — what `claude -p` is asked for each built-in review. /code-review runs as its
