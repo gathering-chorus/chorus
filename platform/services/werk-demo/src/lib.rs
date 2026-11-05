@@ -2185,9 +2185,7 @@ fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
         Ok(b) => b.trim().to_string(),
         Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
     };
-    let Some(bin) = semgrep_bin() else {
-        return ("error".to_string(), "semgrep not found (CHORUS_SEMGREP_BIN, PATH, ~/.local/bin, the repo owner home ~/.local/bin, /opt/homebrew/bin)".to_string());
-    };
+    let bin = env::var("CHORUS_SEMGREP_BIN").unwrap_or_else(|_| "semgrep".to_string());
     let out = Command::new(&bin).current_dir(werk)
         // a file CA bundle: without it semgrep asks the keychain and aborts (measured 11-04)
         .env("SSL_CERT_FILE", env::var("SSL_CERT_FILE").unwrap_or_else(|_| "/etc/ssl/cert.pem".to_string()))
@@ -2223,23 +2221,6 @@ pub fn depcruise_verdict(out: &str, code: Option<i32>) -> (String, String) {
     if !errs.is_empty() { return ("fail".to_string(), errs.join(" | ")); }
     if code == Some(0) && out.contains("no dependency violations found") { return ("pass".to_string(), "no findings".to_string()); }
     ("error".to_string(), format!("no dependency-cruiser report (exit {:?}): {}", code, out.trim().chars().take(160).collect::<String>()))
-}
-
-/// #4889 run 2 — dagu's PATH has no ~/.local/bin, where semgrep is installed (measured:
-/// the quality bats failed in 48ms). Resolve it like claude_bin: the override, PATH, then
-/// the known install places.
-fn semgrep_bin() -> Option<String> {
-    if let Ok(p) = env::var("CHORUS_SEMGREP_BIN") {
-        if Path::new(&p).exists() { return Some(p); }
-    }
-    if Command::new("semgrep").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
-        return Some("semgrep".to_string());
-    }
-    let home = env::var("HOME").unwrap_or_default();
-    // the repo owner's home (CHORUS_HOME = <owner home>/CascadeProjects/chorus), where it is installed
-    let owner = env::var("CHORUS_HOME").ok().and_then(|h| Path::new(&h).parent()?.parent().map(|p| p.display().to_string())).unwrap_or_default();
-    [format!("{home}/.local/bin/semgrep"), format!("{owner}/.local/bin/semgrep"), "/opt/homebrew/bin/semgrep".to_string()]
-        .into_iter().find(|c| Path::new(c).exists())
 }
 
 /// #4889 — Semgrep's JSON report to a verdict: an ERROR-severity result fails, others

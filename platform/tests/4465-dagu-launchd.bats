@@ -132,3 +132,32 @@ node_major() {
   run node_major "$bad"
   [ "$output" != "20" ] || return 1
 }
+
+# #4889 run 2 — dagu's steps run the reviews' tools by name: semgrep (quality) and claude
+# (/code-review, the session smoke). ONE PATH, here, never a lookup list per caller (Kade
+# 20:45). The tools a step needs, found on the plist's own PATH.
+tools_missing() {
+  local path tool dir found missing=""
+  path=$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PATH' "$1")
+  IFS=: read -ra dirs <<< "$path"
+  for tool in semgrep claude node npx; do
+    found=""
+    for dir in "${dirs[@]}"; do [ -x "$dir/$tool" ] && found=1 && break; done
+    [ -n "$found" ] || missing="$missing $tool"
+  done
+  echo "${missing# }"
+}
+
+@test "dagu's PATH finds every tool a step runs by name (semgrep, claude, node, npx)" {
+  run tools_missing "$PLIST"
+  [ -z "$output" ] || { echo "not on the dagu PATH: $output"; return 1; }
+}
+
+@test "negative proof: run 2's PATH, without ~/.local/bin, misses semgrep and claude" {
+  bad="$BATS_TEST_TMPDIR/dagu-path.plist"
+  cp "$PLIST" "$bad"
+  good=$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PATH' "$PLIST")
+  /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:PATH $(printf '%s' "$good" | tr ':' '\n' | grep -v '/\.local/bin$' | paste -sd: -)" "$bad"
+  run tools_missing "$bad"
+  [[ "$output" == *semgrep* && "$output" == *claude* ]] || { echo "$output"; return 1; }
+}

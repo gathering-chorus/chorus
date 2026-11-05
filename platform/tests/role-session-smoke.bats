@@ -19,8 +19,6 @@
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 CLAUDE_ROLES="wren silas kade"   # abby-normal and borg-queen run on agy, not claude
-# dagu's PATH has no ~/.local/bin (run 2, measured): find claude where it is installed
-CLAUDE="$(command -v claude || for c in "$HOME/.local/bin/claude"; do [ -x "$c" ] && echo "$c" && break; done)"
 
 # the roles whose session config these changed paths touch, one per line
 roles_to_smoke() {
@@ -48,7 +46,7 @@ smoke_one() {
   out="$(cd "$dir" && CHORUS_ROLE="$r" ROLE="$r" CHORUS_HEADLESS=1 \
     CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge \
     perl -e 'alarm shift; exec @ARGV' "${CHORUS_SMOKE_TIMEOUT_SECS:-180}" \
-    "${CLAUDE:-claude-not-found}" -p "Run exactly one Bash command, \`cat $file\`, and reply with its output only." \
+    claude -p "Run exactly one Bash command, \`cat $file\`, and reply with its output only." \
       --no-session-persistence --output-format text --allowedTools "Bash(cat $file)" 2>&1)"
   local rc=$?
   rm -f "$dir/$file"
