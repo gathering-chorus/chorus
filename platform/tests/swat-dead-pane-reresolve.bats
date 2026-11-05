@@ -42,3 +42,18 @@ own_pane_lookup() {
   echo "rolePaneFromTmux in a test is fine" > "$d/x.test.ts"
   [ "$(own_pane_lookup "$d")" = "$d/service.ts" ] || return 1
 }
+
+# prints the function body of fn $2 in the Rust file $1
+fn_body() { awk -v f="fn $2(" 'index($0,f){p=1} p{print} p&&/^}/{exit}' "$1"; }
+
+@test "the pane a runtime is found in is written to its Presence (measured 11-05: %14 recorded, agy in %15)" {
+  body="$(fn_body "$ROOT/platform/services/chorus-principal/src/lib.rs" register_from_pane_matching)"
+  [[ "$body" == *'read_row(ctx, role, "presence")'*'repane(ctx, role, p, &pane, &tty)'* ]] || { echo "$body"; return 1; }
+}
+
+@test "negative proof: a registration that writes only the registry file is caught" {
+  f="$BATS_TEST_TMPDIR/lib.rs"
+  printf 'fn register_from_pane_matching(ctx: &Ctx) -> Option<Live> {\n    fs::write(p, entry).ok()?;\n    parse_registry(&e)\n}\n' > "$f"
+  body="$(fn_body "$f" register_from_pane_matching)"
+  [[ "$body" != *'repane(ctx, role, p, &pane, &tty)'* ]] || return 1
+}

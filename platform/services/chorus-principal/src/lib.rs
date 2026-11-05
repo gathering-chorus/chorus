@@ -1871,8 +1871,13 @@ fn refresh_pane(ctx: &Ctx, role: &str) {
             return;
         }
     };
-    let was = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    if let Some(np) = rows::repaned_presence(p, &pane, &tty) {
+    repane(ctx, role, p, &pane, &tty);
+}
+
+/// #4889 — write the pane the role really runs in onto its Presence, when it moved.
+fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
+    let was = presence.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if let Some(np) = rows::repaned_presence(presence, pane, tty) {
         let ok = put_row(ctx, role, "identity/presences", "presence", &np);
         ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
     }
@@ -1912,6 +1917,10 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
     let _ = fs::create_dir_all(&ctx.sessions_dir);
     fs::write(ctx.sessions_dir.join(format!("{}-{}.json", role, pid)), entry.to_string()).ok()?;
     ctx.spine(&["session.registered.from_pane", role, &format!("pid={}", pid), &format!("pane={}", pane)]);
+    // #4889 (measured 11-05 11:20: Abby %16→%17, BQ %14→%15) — the run's Presence was
+    // written before start_in_pane replaced the session (#4845), so it names a pane that
+    // no longer exists; the pane the runtime is found in is its address
+    if let Some(p) = read_row(ctx, role, "presence") { repane(ctx, role, p, &pane, &tty); }
     parse_registry(&entry.to_string())
 }
 
