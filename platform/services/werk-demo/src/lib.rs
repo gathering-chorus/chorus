@@ -1991,7 +1991,7 @@ pub fn ops_ctx(base: &str, gate: &str, health: &str) -> String {
 /// (fixed by #4889, which waits on this card). The ops gate names it as a note and does
 /// not fail on it; any other nudge-delivery failure still fails.
 pub const OPS_NOT_COUNTED: &str = "NOT COUNTED (Jeff 2026-11-05 12:52): a nudge-delivery FAIL that names ONLY \
-abby-normal and/or borg-queen panes (\"pane %N not found\") is a known condition this card did not cause; \
+abby-normal and/or borg-queen panes (chorus-health says \"<role> pane %N not found\"; the inject error is \"can't find pane: %N\") is a known condition this card did not cause; \
 #4889 fixes it. List it as a note, never as a fail. A nudge-delivery failure naming any other role, or any \
 other health failure, still fails the gate.";
 
