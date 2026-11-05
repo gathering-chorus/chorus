@@ -32,6 +32,13 @@ The card's branch diff (`origin/main...HEAD` in the card's werk), and the card t
 for context only. In the demo the diff is handed to you; by hand, read it with
 `git -C <werk> diff origin/main...HEAD`.
 
+## Semgrep beside this review (#4889, Jeff 19:04)
+
+The demo's quality step also runs Semgrep with `platform/quality/semgrep/quality.yml`
+on the card's changed lines only. An ERROR result fails the step and a WARNING is a
+note. Each rule names the item below that it automates. A shape a rule can hold goes
+into the rules, not into this prose.
+
 ## What to look for in the diff
 
 1. **Hollow checks (#3734).** A test, gate or guard that cannot go red: it greps a

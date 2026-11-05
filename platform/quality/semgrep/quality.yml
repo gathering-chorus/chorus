@@ -1,0 +1,34 @@
+# #4889 (Jeff 19:04, "fine do that"): Semgrep in the quality review. Each rule is a
+# shape /gate-quality names. ERROR fails the review; WARNING is a note for the reader.
+# The review runs these on the card's changed lines only (--baseline-commit).
+rules:
+  - id: empty-catch-swallows-failure
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "/gate-quality item 2: an empty catch swallows the failure; log it, rethrow it, or say why in the block"
+    pattern-either:
+      - pattern: try { ... } catch ($E) {}
+      - pattern: try { ... } catch {}
+  - id: promise-catch-swallows-failure
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "/gate-quality item 2: .catch(() => {}) swallows the failure"
+    pattern-either:
+      - pattern: $P.catch(() => {})
+      - pattern: $P.catch(($E) => {})
+  - id: shell-or-true
+    languages: [generic]
+    paths:
+      include: ["*.sh", "*.bats", "platform/scripts/*"]
+    severity: WARNING
+    message: "/gate-quality item 2: `|| true` hides a failure; make sure nothing that matters is behind it"
+    pattern: "|| true"
+  - id: bats-negation-cannot-fail
+    languages: [generic]
+    paths:
+      # .bats.sample: the planted fixture, so no test runner picks it up as a suite
+      include: ["*.bats", "*.bats.sample"]
+    severity: ERROR
+    message: "/gate-quality item 1: a bare `! cmd` inside a bats test cannot fail on bash 3.2 (#4335); add `|| return 1`"
+    patterns:
+      - pattern-regex: '^\s+! [^|\n]*$'

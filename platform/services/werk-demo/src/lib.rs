@@ -1691,7 +1691,13 @@ fn findings_objects(stdout: &str) -> Option<Vec<String>> {
         Some(r) if r.contains("findings") => json_unescape(&r),
         _ => stdout.to_string(),
     };
-    let key = text.find("\"findings\"")?;
+    array_objects(&text, "findings")
+}
+
+/// The JSON objects inside the first `"<key>": [ ... ]` array of `text`. None when
+/// there is no such array, or it never closes.
+fn array_objects(text: &str, key: &str) -> Option<Vec<String>> {
+    let key = text.find(&format!("\"{key}\""))?;
     let open = key + text[key..].find('[')?;
     let (mut depth, mut in_str, mut esc, mut start) = (0i32, false, false, None);
     let mut objs = Vec::new();
@@ -2114,6 +2120,12 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // #4889 (Jeff 19:04, "fine do that"): the code review IS Claude Code's /code-review,
     // with /security-review beside it; gate-code adds only what they do not read, whether
     // each AC's check tests that AC. They read the werk themselves, so no diff cap applies.
+    // #4889 (Jeff 19:04) — Semgrep in the quality review, on the card's changed lines
+    if gate == "quality" {
+        let rules = Path::new(&werk).join("platform/quality/semgrep");
+        let (r, f) = semgrep_review(&werk, &rules);
+        (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-quality: {}", findings)), (r, format!("semgrep: {}", f))], &[]);
+    }
     if gate == "code" {
         let mut all = vec![(result.clone(), format!("gate-code: {}", findings))];
         for skill in BUILTIN_CODE_REVIEWS {
@@ -2150,6 +2162,47 @@ fn builtin_review(skill: &str, werk: &str) -> (String, String) {
         Ok(out) => builtin_review_verdict(&out),
         Err(e) => ("error".to_string(), e.replace("chorus-agent", &format!("/{skill}"))),
     }
+}
+
+/// #4889 — the quality rules (platform/quality/semgrep) over the lines the card changed
+/// (`--baseline-commit` = its merge-base). Not installed, or no readable report, is an
+/// error: unmeasured, never a pass.
+fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
+    let base = match run_in_dir(werk, "git", &["merge-base", "origin/main", "HEAD"]) {
+        Ok(b) => b.trim().to_string(),
+        Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
+    };
+    let bin = env::var("CHORUS_SEMGREP_BIN").unwrap_or_else(|_| "semgrep".to_string());
+    let out = Command::new(&bin).current_dir(werk)
+        // a file CA bundle: without it semgrep asks the keychain and aborts (measured 11-04)
+        .env("SSL_CERT_FILE", env::var("SSL_CERT_FILE").unwrap_or_else(|_| "/etc/ssl/cert.pem".to_string()))
+        .args(["scan", "--config"]).arg(rules)
+        .args(["--baseline-commit", &base, "--json", "--metrics=off", "--disable-version-check", "--exclude", "fixtures"])
+        .output();
+    match out {
+        Ok(o) => semgrep_verdict(&String::from_utf8_lossy(&o.stdout)),
+        Err(e) => ("error".to_string(), format!("semgrep could not run: {e}")),
+    }
+}
+
+/// #4889 — Semgrep's JSON report to a verdict: an ERROR-severity result fails, others
+/// are notes, none passes; a report with no results list is an error. Pure.
+pub fn semgrep_verdict(json: &str) -> (String, String) {
+    let Some(objs) = array_objects(json, "results") else {
+        return ("error".to_string(), format!("no semgrep report: {}", json.chars().take(160).collect::<String>()));
+    };
+    let (mut fails, mut notes) = (Vec::new(), Vec::new());
+    for o in &objs {
+        let path = extract_json_str(o, "path").map(|v| json_unescape(&v)).unwrap_or_default();
+        let line = o.find("\"line\"").map(|k| o[k + 6..].trim_start().trim_start_matches(':').trim_start()
+            .chars().take_while(|c| c.is_ascii_digit()).collect::<String>()).unwrap_or_default();
+        let msg = extract_json_str(o, "message").map(|v| json_unescape(&v)).unwrap_or_default();
+        let entry = format!("{path}:{line} — {msg}");
+        if extract_json_str(o, "severity").as_deref() == Some("ERROR") { fails.push(entry) } else { notes.push(format!("note: {entry}")) }
+    }
+    let result = if fails.is_empty() { "pass" } else { "fail" };
+    fails.extend(notes);
+    (result.to_string(), if fails.is_empty() { "no findings".to_string() } else { fails.join(" | ") })
 }
 
 fn run_in_dir(dir: &str, cmd: &str, args: &[&str]) -> R<String> {

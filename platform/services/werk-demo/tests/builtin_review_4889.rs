@@ -34,3 +34,21 @@ fn the_last_json_block_is_the_findings_not_an_earlier_example() {
     let out = "e.g. ```json\n[]\n```\nthen\n```json\n[{\"file\":\"x.rs\",\"line\":1,\"summary\":\"bug\"}]\n```";
     assert_eq!(builtin_review_verdict(out).0, "fail");
 }
+
+// #4889 — Semgrep in the quality review (Jeff 19:04)
+use werk_demo::semgrep_verdict;
+
+#[test]
+fn a_semgrep_error_fails_and_a_warning_is_a_note() {
+    let j = r#"{"results":[{"check_id":"a.empty-catch","path":"x.ts","start":{"line":2,"col":1},"extra":{"message":"empty catch","severity":"ERROR"}},{"check_id":"a.or-true","path":"y.sh","start":{"line":9},"extra":{"message":"|| true","severity":"WARNING"}}],"errors":[]}"#;
+    let (r, f) = semgrep_verdict(j);
+    assert_eq!(r, "fail");
+    assert!(f.starts_with("x.ts:2 — empty catch") && f.contains("note: y.sh:9"), "{f}");
+    assert_eq!(semgrep_verdict(r#"{"results":[{"path":"y.sh","start":{"line":1},"extra":{"message":"m","severity":"WARNING"}}]}"#).0, "pass");
+    assert_eq!(semgrep_verdict(r#"{"results":[],"errors":[]}"#), ("pass".to_string(), "no findings".to_string()));
+}
+
+#[test]
+fn negative_proof_no_semgrep_report_is_error_never_pass() {
+    assert_eq!(semgrep_verdict("Fatal error: exception Failure(\"no trust anchor\")").0, "error");
+}
