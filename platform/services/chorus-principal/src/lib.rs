@@ -1645,8 +1645,6 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     if delivered {
         if let Some(p) = read_row(ctx, role, "presence").and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
     }
-    // #4889 — the address follows the role: a moved pane is recorded before anyone sends to it
-    refresh_pane(ctx, role);
     // #4339 — is his terminal on this role's pane right now
     if let Some(p) = read_row(ctx, role, "presence") {
         let pane = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -1850,15 +1848,31 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
 
 /// #4889 (Jeff 07:48: a role's address follows the role, like a phone number) — the
 /// Presence takes the pane the role's tmux session shows now, the same read a login
-/// makes. Run on every turn (seen-write) and every sweep. Pulse never writes a Presence
-/// and never guesses a pane: a pane that is gone is a loud not-delivered there.
+/// makes. Run by the sweep (every ~60s, as jeffbridwell, whose tmux socket holds every
+/// role's session): a role's own account cannot read that socket (mode 700), so a
+/// turn could not do it (Kade 07:57). A sweep that cannot read the pane says so once
+/// per change (presence.pane.unreadable), never silently. Pulse never writes a
+/// Presence and never guesses a pane: a pane that is gone is a loud not-delivered there.
 fn refresh_pane(ctx: &Ctx, role: &str) {
-    if !ctx.has_tmux(role) { return; }
     let Some(p) = read_row(ctx, role, "presence") else { return };
-    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &Ctx::tmux_session(role), "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
-    let (pane, tty) = where_.trim().split_once('|').unwrap_or(("", ""));
+    let answer = if ctx.has_tmux(role) {
+        sh(&ctx.tmux, &["display-message", "-p", "-t", &Ctx::tmux_session(role), "#{pane_id}|#{pane_tty}"])
+    } else {
+        Err(format!("no tmux session {} readable from account {}", Ctx::tmux_session(role), env::var("USER").unwrap_or_default()))
+    };
+    let marker = PathBuf::from(&ctx.identity_dir).join(role).join("pane.unreadable");
+    let (pane, tty) = match rows::pane_read(answer) {
+        Ok(pt) => { let _ = fs::remove_file(&marker); pt }
+        Err(why) => {
+            if !marker.exists() {
+                let _ = fs::write(&marker, &why);
+                ctx.spine(&["presence.pane.unreadable", role, &format!("why={}", why)]);
+            }
+            return;
+        }
+    };
     let was = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    if let Some(np) = rows::repaned_presence(p, pane, tty) {
+    if let Some(np) = rows::repaned_presence(p, &pane, &tty) {
         let ok = put_row(ctx, role, "identity/presences", "presence", &np);
         ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
     }

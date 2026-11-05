@@ -150,6 +150,15 @@ pub fn delivered_presence(mut presence: Value, now: &str) -> Option<Value> {
     Some(presence)
 }
 
+/// #4889 — the pane and tty a tmux display-message answered, or why there is none:
+/// an unreadable socket, an empty answer or something that is not a pane id (%N).
+pub fn pane_read(answer: Result<String, String>) -> Result<(String, String), String> {
+    let a = answer.map_err(|e| e.trim().to_string())?;
+    let (pane, tty) = a.trim().split_once('|').unwrap_or((a.trim(), ""));
+    let ok = pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit());
+    if ok { Ok((pane.to_string(), tty.to_string())) } else { Err(format!("tmux answered no pane id: '{}'", a.trim())) }
+}
+
 /// #4889 — the role's pane moved (a restarted tmux pane keeps the run alive): the
 /// presence takes the pane the role's tmux session shows now. None when the pane is
 /// not a tmux pane id (%N) or is already the one recorded. The principal stays the
@@ -562,6 +571,13 @@ mod person_for_account_4412 {
 #[cfg(test)]
 mod channel_tests_4424 {
     use super::*;
+    #[test] fn a_moved_pane_is_taken_4889_read() {
+        assert_eq!(pane_read(Ok("%31|/dev/ttys020\n".into())), Ok(("%31".into(), "/dev/ttys020".into())));
+        // negative proofs: an account that cannot read the socket, an empty or odd answer — each says why
+        assert!(pane_read(Err("error connecting to /private/tmp/tmux-502/default (Permission denied)".into())).unwrap_err().contains("Permission denied"));
+        assert!(pane_read(Ok("".into())).unwrap_err().contains("no pane id"));
+        assert!(pane_read(Ok("-|/dev/ttys001".into())).unwrap_err().contains("no pane id"));
+    }
     #[test] fn a_moved_pane_is_taken_4889() {
         let p = presence_row("abby-normal", "p", "r", "%12", "/dev/ttys013", "chorus-abby-normal", "pane");
         let v = repaned_presence(p.clone(), "%31", "/dev/ttys020").expect("moved");

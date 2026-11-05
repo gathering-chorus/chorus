@@ -150,7 +150,7 @@ export function classifyInjectResult(r: InjectResult): { kind: 'success' | 'perm
   const stderr = (r.stderr || '').toLowerCase();
   // #4889 (Jeff 07:48: break decisively, never branch to an old path) — the registered
   // pane is gone. Retrying it, or guessing another, reaches no one: it is a loud
-  // not-delivered, and the principal re-records the role's pane on its next turn or sweep.
+  // not-delivered, and the principal's sweep (every ~60s) re-records the role's pane.
   const dead = /can't find pane: (%\d+)/.exec(stderr);
   if (dead) return { kind: 'permanent', reason: `dead-pane ${dead[1]}` };
   for (const reason of PERMANENT_REASONS) {

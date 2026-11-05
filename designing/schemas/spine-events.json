@@ -6613,7 +6613,7 @@
       "version": "1",
       "vertebra": "building",
       "source": "chorus-principal",
-      "description": "chorus-principal (turn or sweep): the role's tmux pane moved, so its Presence row now records the pane its tmux session shows; the principal is the Presence's only writer (#4889).",
+      "description": "chorus-principal sweep: the role's tmux pane moved, so its Presence row now records the pane its tmux session shows; the principal is the Presence's only writer (#4889).",
       "fields": {
         "was": "The pane the Presence held",
         "now": "The pane recorded now",
@@ -6644,6 +6644,18 @@
         "key": "The property key",
         "error": "Why it could not be read",
         "dedupe": "off, or the last value kept"
+      }
+    },
+    "presence.pane.unreadable": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal sweep could not read the role's tmux pane (no session, an account that cannot read the socket, or no pane id), so its Presence was not refreshed; said once per change, never silent (#4889).",
+      "fields": {
+        "why": "Why the pane could not be read",
+        "role": "The role"
       }
     }
   }

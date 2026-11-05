@@ -4,8 +4,10 @@
 # @card: #4889 · owner: silas
 # What Jeff sees: a role's address follows the role like a phone number (Jeff 07:48).
 # One path: the role's live registration. platform/services/chorus-principal/src/rows.rs
-# (repaned_presence, called from lib.rs on every turn and every sweep) re-records the
-# pane the role's tmux session shows; the principal is the Presence's only writer.
+# (pane_read + repaned_presence, called from lib.rs by the sweep, every ~60s as the
+# account that holds the tmux socket) re-records the pane the role's tmux session shows,
+# and says presence.pane.unreadable once when it cannot read it; the principal is the
+# Presence's only writer.
 # platform/pulse/src/delivery-worker.ts makes a gone pane one loud not-delivered (no
 # retry, no other pane), and platform/pulse/src/service.ts / presence-target.ts no longer
 # hold the #4362 tmux fallback (rolePaneFromTmux).
@@ -18,10 +20,10 @@ own_pane_lookup() {
   grep -rlE "rolePaneFromTmux|paneFromTmuxListing|list-panes" "$1" --include='*.ts' | grep -v '\.test\.ts$' || true
 }
 
-@test "a moved pane is re-recorded by the principal; the same pane, or no pane id, writes nothing" {
+@test "a moved pane is re-recorded by the principal; an unreadable tmux, the same pane, or no pane id, writes nothing and says why" {
   run env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$PR/target/$(id -un)" nice cargo test -q --manifest-path "$PR/Cargo.toml" --lib a_moved_pane_is_taken_4889
   [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
-  [[ "$output" == *"1 passed"* ]] || { echo "$output" | tail -5; return 1; }
+  [[ "$output" == *"2 passed"* ]] || { echo "$output" | tail -5; return 1; }
 }
 
 @test "a dead pane is one not-delivered with its reason; a live pane delivers" {
