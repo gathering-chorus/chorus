@@ -28,7 +28,7 @@ const LIVE: &[&str] = &[
     "athena-add", "athena-deploy", "athena-gen", "athena-get", "athena-list", "athena-model", "athena-set",
     "athena-validate", "task_status", "werk-accept", "werk-build", "werk-commit", "werk-demo",
     "werk-deploy", "werk-deploy-crate", "werk-deploy-demo", "werk-deploy-env-down", "werk-deploy-env-up",
-    "werk-deploy-prod", "werk-merge", "werk-pull", "werk-push", "werk-review", "werk-review-verdict",
+    "werk-deploy-prod", "werk-merge", "werk-pull", "werk-push",
     "werk-sync", "werk-test", "werk-unpull",
 ];
 

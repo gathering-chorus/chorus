@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""#4889: the store writes for Jeff's 18:21 proof path. DRY RUN unless --apply.
+# @domain: pipelines
+
+The plan is read from files that ship in this land (chorus-make's demo and cicd
+fixtures), so the store and the committed pipelines cannot differ:
+  1. the demo pipeline: validate, then the three reviews (code, arch, quality), then
+     announce. The product and ops gates, the three peer reviews and the session smoke
+     step are retired (Skills, StepSkills, the smoke PipelineStep), and announce
+     becomes step 3;
+  2. cicd: the werk-review floor leaves the test step (its StepSkill), and its Skills
+     (werk-review, werk-review-verdict) are retired with the crate.
+Each write prints ADD / CHANGE / DELETE / SAME against the door. --apply is a prod
+write: it runs only after Jeff's yes on the dry run. Exit 0 = plan printed (or
+applied); 1 = a write was refused; 2 = the door or the fixtures could not be read.
+"""
+import json, os, subprocess, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+FX = os.path.join(ROOT, "platform/services/chorus-make/tests/fixtures")
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+DOOR_CLASS = {"skills/skills": ("skills", "skills"), "pipelinesteps": ("pipelines", "steps"),
+              "stepskills": ("skills", "stepskills"), "pipelines": ("pipelines", "pipelines")}
+RETIRED_SKILLS = ["werk-demo-gate-product", "werk-demo-gate-ops", "werk-demo-review-1", "werk-demo-review-2",
+                  "werk-demo-review-3", "werk-demo-session-smoke", "werk-review", "werk-review-verdict"]
+
+
+def rows(name):
+    out = []
+    for line in open(os.path.join(FX, name)):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#") or line.startswith("step\t"):
+            continue
+        f = line.split("\t") + [""] * 11
+        out.append(dict(zip(["step", "stepOrder", "skillOrder", "skill", "label", "executor",
+                             "implementedBy", "mode", "onFail", "inputShape", "withArgs"], f[:11])))
+    return out
+
+
+def plan():
+    """(collection, name, wanted fields or None to delete)"""
+    demo = rows("demo-rows.tsv")
+    steps = {}
+    for r in demo:
+        steps.setdefault(r["step"], r["stepOrder"])
+    want = []
+    for r in demo:
+        want.append(("skills/skills", r["skill"].removeprefix("skill-"),
+                     {"label": r["label"], "executor": r["executor"], "implementedBy": r["implementedBy"],
+                      "arguments": r["mode"], "ownedBy": "principal-wren", "runsAs": "caller"}))
+        tail = r["skill"].removeprefix("skill-werk-demo-")
+        want.append(("stepskills", f"demo-{r['step']}-{tail}",
+                     {"forStep": f"pipeline-step-demo-{r['step']}", "callsSkill": r["skill"], "skillOrder": r["skillOrder"]}))
+    for s, order in steps.items():
+        want.append(("pipelinesteps", f"demo-{s}", {"stepOrder": order}))
+    want.append(("pipelines", "demo", {"hasStep": " ".join(f"pipeline-step-demo-{s}" for s in sorted(steps))}))
+    gone = [("stepskills", "demo-gates-gate-product", None), ("stepskills", "demo-gates-gate-ops", None),
+            ("stepskills", "demo-gates-review-1", None), ("stepskills", "demo-gates-review-2", None),
+            ("stepskills", "demo-gates-review-3", None), ("stepskills", "demo-smoke-session-smoke", None),
+            ("pipelinesteps", "demo-smoke", None), ("stepskills", "cicd-test-2", None)]
+    cicd = {r["skill"] for r in rows("cicd-rows.tsv")}
+    if "skill-werk-review" in cicd:
+        raise OSError("cicd-rows.tsv still names skill-werk-review")
+    gone += [("skills/skills", s, None) for s in RETIRED_SKILLS]
+    return want + gone
+
+
+def bare(v):
+    if isinstance(v, list):
+        return " ".join(sorted(str(x) for x in v))
+    return " ".join(sorted(str(v).split())) if " " in str(v) else str(v)
+
+
+def call(path):
+    with urllib.request.urlopen(urllib.request.Request(f"{DOOR}{path}"), timeout=15) as r:
+        return json.load(r)
+
+
+def main():
+    apply = "--apply" in sys.argv[1:]
+    try:
+        p = plan()
+    except OSError as e:
+        print(f"fixtures unreadable or wrong: {e} — no plan")
+        return 2
+    try:
+        live = {c: {r["name"]: r for r in (call(f"/{c}?limit=1000").get("data") or [])} for c in DOOR_CLASS}
+    except Exception as e:
+        print(f"door unreadable at {DOOR}: {e} — no plan")
+        return 2
+    counts, refused = {"ADD": 0, "CHANGE": 0, "DELETE": 0, "SAME": 0}, 0
+    for coll, name, w in p:
+        have = live[coll].get(name)
+        if w is None:
+            kind, diff = ("DELETE", {}) if have is not None else ("SAME", {})
+        elif have is None:
+            kind, diff = "ADD", w
+        else:
+            diff = {k: v for k, v in w.items() if bare(have.get(k, "")) != bare(v)}
+            kind = "CHANGE" if diff else "SAME"
+        counts[kind] += 1
+        print(f"{kind:<6} {coll}/{name}  {json.dumps(diff, sort_keys=True) if kind in ('ADD', 'CHANGE') else ''}")
+        if not apply or kind == "SAME":
+            continue
+        dom, cls = DOOR_CLASS[coll]
+        verb, args = {"ADD": ("athena-add", [f"fields={json.dumps({'name': name, **w})}"]),
+                      "CHANGE": ("athena-set", [f"id={name}", f"fields={json.dumps(diff)}"]),
+                      "DELETE": ("athena-delete", [f"id={name}"])}[kind]
+        r = subprocess.run([RUNNER, "call", verb, f"domain={dom}", f"class={cls}", *args], capture_output=True, text=True)
+        if r.returncode != 0 or not any(c in r.stdout + r.stderr for c in (" → 200", " → 201", " → 204")):
+            refused += 1
+            print(f"  REFUSED {coll}/{name}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE'] + counts['DELETE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change, {counts['DELETE']} delete; "
+          f"{counts['SAME']} same — {verb}")
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
