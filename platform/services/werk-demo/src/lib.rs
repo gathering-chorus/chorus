@@ -2034,7 +2034,7 @@ fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<Stri
 /// unchanged); otherwise the reply from `chorus-agent run --text`.
 fn gate_via_agent(input: &str, instructions: &str, schema: &str, revision: &str) -> Option<R<String>> {
     let profile = gate_profile()?;
-    let timeout = env::var("CHORUS_GATE_TIMEOUT_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(180).clamp(1, 3600);
+    let timeout = env::var("CHORUS_GATE_TIMEOUT_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600).clamp(1, 3600);
     let model = env::var("CHORUS_GATE_MODEL").ok();
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_default();
     let payload = headless_job_request(&profile, input, instructions, schema, model.as_deref(), timeout, &trace, revision);
@@ -2283,10 +2283,11 @@ fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, S
         // stdin drops here → closed, so claude sees EOF and proceeds.
     }
     // #3443 (Silas's BOUNDED contract) — a hung model must NOT block the gate
-    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 180); on
+    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 600; 180 timed out on 3 of 5 past diffs, #4889); on
     // expiry, kill the child and record error-on-expiry (fail-LOUD, never green).
+    // #4889 — 180s timed out on 3 of 5 past diffs (one only 18k): 600s
     let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(600);
     let start = Instant::now();
     let status = loop {
         match child.try_wait() {

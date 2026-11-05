@@ -32,7 +32,8 @@ fn the_graph_read_gives_the_same_workflow_as_the_rows_file() {
     // #4682 — the land evaluates chunk sequence or lane switch (clearing-evaluate)
     // #4691 — record left the land for Borg Queen's session: ask, her step, check (+2)
     // #4760 — the land records her proof itself, as her account (-2, the store's own rows)
-    assert_eq!(from_graph.len(), 16);
+    // #4889 — werk-review retired (-1)
+    assert_eq!(from_graph.len(), 15);
     let from_file = parse_rows(&std::fs::read_to_string(format!("{}/tests/fixtures/cicd-rows.tsv", dir())).unwrap()).unwrap();
     assert_eq!(generate("cicd", &from_graph).unwrap(), generate("cicd", &from_file).unwrap());
     assert_eq!(generate_land("cicd", &from_graph).unwrap(), generate_land("cicd", &from_file).unwrap());
