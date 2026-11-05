@@ -2,7 +2,7 @@
 // @domain: properties
 // @card: #4889
 // @owner: silas
-// Exercises platform/chorus-sdk/properties/global.js (Kade 07:06: one shared reader,
+// Exercises platform/chorus-sdk/properties/global.js and its types, platform/chorus-sdk/properties/global.d.ts (Kade 07:06: one shared reader,
 // the same errors as the Rust properties-resolver global_value, a negative proof each).
 import { globalValueFromBody, readGlobal, doorUrl } from '../properties/global';
 
