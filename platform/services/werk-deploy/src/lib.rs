@@ -1541,6 +1541,26 @@ fn restart_when_idle(args: &[String]) -> R<String> {
 // #4515 — the #3320 self-deploy detach is gone: it fired only when the old TS
 // MCP server deployed itself, and that server is retired.
 
+/// #4889 — the card's own store-write script, when this land ships it. Only a script the
+/// diff adds or changes counts: an old card's script on main never runs again. Pure.
+pub fn land_rows_script(canon: &Path, card: u64, diff: &str) -> Option<PathBuf> {
+    let rel = format!("platform/scripts/land-{card}-rows");
+    diff.lines().any(|l| l.trim() == rel).then(|| canon.join(&rel)).filter(|p| p.is_file())
+}
+
+/// Run a land-rows script with --apply; Err with its last lines when it refuses or fails.
+pub fn run_land_rows(script: &Path) -> R<String> {
+    let o = Command::new("python3").arg(script).arg("--apply").output()
+        .map_err(|e| format!("{} could not run: {}", script.display(), e))?;
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    if !o.status.success() {
+        let tail: Vec<&str> = out.lines().rev().take(3).collect();
+        return Err(format!("{} --apply refused (exit {:?}): {}", script.display(), o.status.code(),
+            tail.into_iter().rev().collect::<Vec<_>>().join(" | ")).into());
+    }
+    Ok(out)
+}
+
 /// #4511 — the packages a TS daemon runs are the ones its lockfile pins. The
 /// deploy only ever ran `npm run build`, so a lock change (the 1.31.0 MCP SDK
 /// security pin, #4468) never reached node_modules: canonical ran 1.29.0 for
@@ -2291,6 +2311,21 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
                 return Err(format!(
                     "allow-set gate REFUSED — deploying would leave every door failing closed, \
                      for everyone, including whoever would fix it. {}", e).into());
+            }
+        }
+    }
+
+    // #4889 (Kade 20:07: "one touch") — a card that ships platform/scripts/land-<card>-rows
+    // has its store writes applied here, after Jeff's go, in the land: no second ask. The
+    // script's own dry run is what the go was shown. A refused write stops the land.
+    if let Some(script) = land_rows_script(&canon, card, &diff) {
+        match run_land_rows(&script) {
+            Ok(out) => jsonl(home, role, card, trace, "deploy.rows_applied",
+                &format!(",\"target\":\"canonical\",\"script\":\"{}\",\"plan\":\"{}\"",
+                    script.display(), out.lines().last().unwrap_or("").replace('"', "'"))),
+            Err(e) => {
+                emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "land-rows"), ("failureClass", failure_class("land-rows"))]);
+                return Err(died(home, role, card, trace, "land-rows", e));
             }
         }
     }

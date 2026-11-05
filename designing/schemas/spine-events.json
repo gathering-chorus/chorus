@@ -2416,6 +2416,20 @@
         "verb": "#3270 — emitting verb (deploy)"
       }
     },
+    "deploy.rows_applied": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): the land ran the card's own platform/scripts/land-<card>-rows --apply after Jeff's go, and the store took every write (#4889).",
+      "fields": {
+        "script": "The rows script that ran",
+        "plan": "The script's last line: its add / change / delete counts",
+        "role": "Acting role",
+        "trace_id": "Werk trace join key"
+      }
+    },
     "deploy.restarted": {
       "producer": "deploys",
       "category": "fact",
