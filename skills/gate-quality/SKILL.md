@@ -1,12 +1,24 @@
 ---
 name: gate-quality
-description: Quality gate — verify hooks pass, no regression, no console.log in production code. Kade only.
+description: Quality review of a card's diff — hollow checks, error paths, dead code, tests that test the change. Runs on every card. Never reads AC boxes.
 user-invocable: true
+fail-items: 1-3, 7
 ---
 
-# /gate-quality — Quality Gate
+# /gate-quality — Quality review
 
-Fires at code-complete, after /gate-code passes. Verifies quality standards. **Kade only.**
+Jeff 2026-11-04 18:11: "review is supposed to be code review not ac checker and same
+for quality and architecture". This gate reviews the **diff** for quality. It runs on
+**every** card. It never reads, counts or judges AC boxes: the AC are proven by their
+own checks in prod, not here.
+
+Grounded in two practices:
+- **Test desiderata (Kent Beck)**: tests are isolated, composable, deterministic, fast,
+  writable, readable, behavioural, structure-insensitive, automated, specific,
+  predictive and inspiring. Read each changed test against them.
+- **Mutation testing**: a test suite is as good as the mutants it kills. For each
+  changed line, ask whether flipping a condition, dropping a call or changing a constant
+  would turn a test red. A mutant that survives is a missing test.
 
 ## Arguments
 
@@ -14,180 +26,62 @@ Fires at code-complete, after /gate-code passes. Verifies quality standards. **K
 /gate-quality <card-id>
 ```
 
-## Owner Check
+## Input
 
-Only Kade can run this gate. If another role invokes it:
-```
-Quality gate is owned by Kade.
-```
-Exit — no checks run.
+The card's branch diff (`origin/main...HEAD` in the card's werk), and the card text
+for context only. In the demo the diff is handed to you; by hand, read it with
+`git -C <werk> diff origin/main...HEAD`.
 
-## Prerequisite
+## Semgrep beside this review (#4889, Jeff 19:04)
 
-/gate-code must have passed for this card. Check for `gate.code.passed` spine event or `gate:code-pass` card comment. If not found:
-```
-WARN: No gate:code-pass found for this card. Run /gate-code <card-id> first.
-```
-In pilot mode: warn but continue. In enforce mode (future): block.
+The demo's quality step also runs Semgrep with `platform/quality/semgrep/quality.yml`
+on the card's changed lines only. An ERROR result fails the step and a WARNING is a
+note. Each rule names the item below that it automates. A shape a rule can hold goes
+into the rules, not into this prose.
 
-## Applicability Check
+## What to look for in the diff
 
-Same as /gate-code — doc-only and board-process cards skip.
+1. **Hollow checks (#3734).** A test, gate or guard that cannot go red: it greps a
+   string its own comment contains, counts a skip as a pass, passes when its target is
+   missing, or asserts only on an empty input. Does every new check ship a negative
+   proof that fails on the violation?
+2. **Error paths.** A failure swallowed silently (`|| true`, empty catch, an ignored
+   exit code), or a fallback that hides a real failure as a success.
+3. **Tests that test the change.** Do the changed tests exercise the changed code, or
+   only a fixture of their own? Were tests deleted or skipped without a replacement?
+4. **Dead code.** Code, flags, files or helpers left unused by this change.
+5. **Debug leftovers.** `console.log` in production paths, commented-out code, TODOs
+   that hide a gap the card claims to close.
+6. **Observability.** A new failure mode with no spine event or log line to find it
+   by; a changed handler, route or service with no structured log call.
+7. **Mutants.** Pick the riskiest changed lines; would a mutant of each (inverted
+   condition, deleted call, off-by-one) survive the changed tests? Name the line and the
+   surviving mutant.
+8. **Desiderata.** A changed test that is nondeterministic (time, order, network,
+   shared files), structure-sensitive (asserts on internals, not behaviour) or not
+   specific (a failure would not say what broke).
 
-## Automated Checks (run all, collect results)
+## Where the old checks went (#4889, Kade 18:34: fix, never throw away)
 
-Resolve the diff base before running checks:
-```bash
-cd /Users/jeffbridwell/CascadeProjects/chorus
-# Use card's WIP-start commit if available (from spine event), fall back to HEAD~3
-WIP_BASE=$(grep "card=$CARD_ID" /Users/jeffbridwell/.chorus/logs/spine.log 2>/dev/null | grep 'card.wip.started\|role.state.building' | tail -1 | sed 's/.*commit=\([a-f0-9]*\).*/\1/' 2>/dev/null)
-DIFF_BASE="${WIP_BASE:-HEAD~3}"
-```
+| Old check | Now |
+|-----------|-----|
+| Hooks pass (chorus-hooks build current) | werk-test: the card's run builds and tests every crate the diff touches |
+| Regression (tests deleted or skipped) | item 3, on the diff; werk-test still refuses a suite deleted without its unit |
+| console.log in production code | item 5, on the diff |
+| Observability present | item 6, on the diff |
+| Smoke check (the app answers) | werk-test and the demo's env-up, which start the werk's services and fail when they don't answer |
+| Demo session smoke (each changed role signs in and makes one tool call) | werk-test: `platform/tests/role-session-smoke.bats`, in the card's one test run |
+| Bats (shell-script integration tests) | werk-test: every bats suite the diff touches runs in the card's one test run |
+| "Any new technical debt?" | the whole review |
 
-### 1. Hooks pass
+Report only what you can point to in the diff: each finding is
+`file:line — what — why it matters`. No finding about the card's AC boxes, ticks or
+wording.
 
-```bash
-# Verify chorus-hooks build is current (tests already ran in /gate-code)
-cd /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks
-# Check the hook shim exists and is recent
-[ -f target/release/chorus-hook-shim ] && echo "PASS" || echo "FAIL: hook shim not built"
-```
+## Verdict
 
-**Pass:** Hook shim binary exists and is current.
-**Fail:** Hook shim missing — build broke or wasn't run.
+- **fail**: at least one finding in 1–3 or 7 (a hollow check, a swallowed failure, tests
+  that do not test the change, or a surviving mutant on a risky line).
+- **pass**: otherwise; list minor findings as notes.
 
-Note: Full test suite already ran in /gate-code. This check verifies the hooks are deployable, not re-running tests.
-
-### 2. Regression check
-
-```bash
-# Verify no test files were deleted or skipped in this change
-cd /Users/jeffbridwell/CascadeProjects/chorus
-DELETED_TESTS=$(git diff "$DIFF_BASE" --diff-filter=D --name-only | grep -E 'test|spec|\.bats')
-if [ -n "$DELETED_TESTS" ]; then
-  echo "WARN: test files deleted: $DELETED_TESTS"
-fi
-```
-
-**Pass:** No test files deleted.
-**Warn:** Test files removed — verify intentional.
-
-### 3. Console.log check
-
-```bash
-# Check changed production files for console.log (should use logger)
-cd /Users/jeffbridwell/CascadeProjects/chorus
-PROD_FILES=$(git diff "$DIFF_BASE" --name-only -- '*.ts' '*.rs' | grep -v 'test\|spec\|\.test\.')
-if [ -n "$PROD_FILES" ]; then
-  grep -n 'console\.log' $PROD_FILES 2>/dev/null
-  if [ $? -eq 0 ]; then
-    echo "FAIL: console.log found in production code — use structured logger"
-    exit 1
-  fi
-fi
-echo "PASS: no console.log in production code"
-```
-
-**Pass:** No `console.log` in changed production files.
-**Fail:** List files and line numbers with `console.log`. Must use structured logger.
-
-### 4. Observability present
-
-```bash
-# Check changed handlers/routes for structured log calls
-cd /Users/jeffbridwell/CascadeProjects/chorus
-HANDLER_FILES=$(git diff "$DIFF_BASE" --name-only -- '*.ts' | grep -E 'handler|route|service' | grep -v test)
-if [ -n "$HANDLER_FILES" ]; then
-  # Should have at least one logger call per handler file
-  for f in $HANDLER_FILES; do
-    if ! grep -q 'logger\.\|console\.error\|chorus-log' "$f" 2>/dev/null; then
-      echo "WARN: $f has no logging — consider adding structured logs"
-    fi
-  done
-fi
-```
-
-**Pass:** Changed handlers have logging.
-**Warn:** Handler files without logging — advisory, not blocking.
-
-### 5. Smoke check
-
-Per ADR-026 §b open-decision (A): gate-quality runs smoke-check on the
-changed surface. Skip if Gathering app isn't running locally (smoke-check
-needs `localhost:3000`); fail-the-gate if the app is up and smoke fails.
-
-```bash
-APP_HEALTH=$(curl -sf --max-time 2 -o /dev/null -w '%{http_code}' http://localhost:3000/health 2>/dev/null)
-if [ "$APP_HEALTH" = "200" ]; then
-  if bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all 2>&1; then
-    echo "PASS: smoke-check all pages green"
-  else
-    echo "FAIL: smoke-check found broken pages — see output"
-    exit 1
-  fi
-else
-  echo "WARN: Gathering app not reachable on :3000 — smoke-check skipped"
-fi
-```
-
-**Pass:** All known pages return expected status + content.
-**Fail:** One or more pages broken — gate fails.
-**Warn:** App down locally — surface but don't block.
-
-### 6. Bats — shell-script integration tests (#2941)
-
-CI runs bats nightly only (DEC-2525 cost-stop). Local /gate-quality runs
-the suite at demo time so trailer/trap regressions on shell surfaces
-(build-signed.sh, deploy-daemon-card.sh, e2e trace propagation, deploy-
-daemon multi-unit) are caught before /acp instead of next morning.
-
-```bash
-if command -v bats >/dev/null 2>&1; then
-  if bats /Users/jeffbridwell/CascadeProjects/chorus/platform/tests/ 2>&1; then
-    echo "PASS: bats suite green"
-  else
-    echo "FAIL: bats suite found regressions — see output"
-    exit 1
-  fi
-else
-  echo "WARN: bats not installed — shell-script integration tests skipped (brew install bats-core)"
-fi
-```
-
-**Pass:** All bats tests green.
-**Fail:** One or more bats regressions — gate fails.
-**Warn:** bats not installed — surface but don't block (one-time install).
-
-## Manual Confirm (1 item)
-
-Only shown if all automated checks pass.
-
-**"Any new technical debt introduced?"** — Kade reviews the diff and answers yes/no. If yes, card the debt.
-
-## Result
-
-Print summary:
-
-```
-## /gate-quality #<card-id>
-
-  Hooks pass:          PASS | FAIL
-  Regression suite:    PASS | FAIL
-  Console.log check:   PASS | FAIL (files listed)
-  Observability:       PASS | WARN (files listed)
-  Smoke check:         PASS | FAIL | SKIP (app down)
-  New debt:            PASS | FAIL (carded)
-
-  VERDICT: PASS | FAIL
-```
-
-## On Pass
-
-1. Emit spine event: `gate.quality.passed` with card ID
-2. Add card comment: "gate:quality-pass — Kade"
-3. Nudge Silas: "gate:quality passed on #<card-id> — run /gate-arch"
-
-## On Fail
-
-1. Emit spine event: `gate.quality.failed` with card ID and failing items
-2. Print failing items. Fix before re-running.
+A diff you could not read is an **error**, never a pass.

@@ -149,6 +149,8 @@ fn each_step_exits_by_what_it_recorded() {
         fail_flag.display()
     ));
     std::env::set_var("CHORUS_CLAUDE_BIN", &smoke_stub);
+    // a role's own account measures a session (the shared account cannot: #4894)
+    std::env::set_var("USER", "chorus-silas");
     let ok = session_smoke_step(4502, "wren", &home).unwrap();
     assert_eq!(ok.exit, 0, "{}", ok.message);
     assert!(ok.message.contains("silas started from the werk build and made one tool call"), "{}", ok.message);
@@ -183,6 +185,15 @@ fn each_step_exits_by_what_it_recorded() {
     let both = session_smoke_step(4502, "wren", &home).unwrap();
     assert_eq!(both.exit, 1, "{}", both.message);
     assert!(both.message.contains("silas: session exited 2: hook refused Bash"), "{}", both.message);
+    fs::remove_file(&fail_flag).unwrap();
+    // #4894 NEGATIVE PROOF: on a shared account (dagu's) the session is UNMEASURED,
+    // named, exit 0 so the demo goes on, and never listed as smoked
+    std::env::set_var("USER", "jeffbridwell");
+    fs::write(&fail_flag, "").unwrap();
+    let shared = session_smoke_step(4502, "wren", &home).unwrap();
+    assert_eq!(shared.exit, 0, "{}", shared.message);
+    assert!(shared.message.contains("silas: UNMEASURED here (run as jeffbridwell"), "{}", shared.message);
+    assert!(!shared.message.contains("made one tool call"), "an unmeasured session is never counted as smoked: {}", shared.message);
     fs::remove_file(&fail_flag).unwrap();
 }
 
