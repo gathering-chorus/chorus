@@ -45,6 +45,8 @@ pub type Seen = Option<String>;
 pub fn judge(c: &Check, seen: &Seen) -> Outcome {
     match c.kind.as_str() {
         "none" | "" => Outcome::Unmeasured("no runnable check on this AC".into()),
+        // #4889 — never met at its own land: the next land re-runs the inner check
+        "after" => Outcome::Deferred(format!("after land: `{}` re-runs at the next land", c.target)),
         // #4823 AC2 — what the later card's status is (`cards view`), or nothing
         "by" => match seen.as_deref().map(str::trim) {
             Some("Done") => Outcome::Met(format!("proven by #{} (Done)", c.target)),
@@ -139,6 +141,9 @@ pub fn ac_lines(card: u32, desc: &str) -> Vec<(bool, Check)> {
             "test" => (rest.to_string(), "pass".to_string()),
             // #4824 — `check: crawl <class>`: that row of the crawl reads missing=0
             "crawl" => (rest.to_string(), "missing=0".to_string()),
+            // #4889 (Kade 19:56) — `check: after <check>`: proven only after the land, by
+            // the next land's re-run; at its own land it reads deferred, never met
+            "after" if !rest.is_empty() => (rest.to_string(), "later".to_string()),
             // #4823 — `check: by #N`: card N proves it; it is met when N is Done
             "by" => match rest.trim_start_matches('#').parse::<u32>() {
                 Ok(n) => (n.to_string(), "Done".to_string()),
@@ -163,6 +168,28 @@ pub fn ac_lines(card: u32, desc: &str) -> Vec<(bool, Check)> {
         }));
     }
     out
+}
+
+/// #4889 — the check an `after` check defers: its target parsed as a check of its own,
+/// under the same AC id. None for any other kind, or an inner check that names nothing.
+pub fn inner_check(c: &Check) -> Option<Check> {
+    if c.kind != "after" { return None; }
+    let (_, mut inner) = ac_lines(0, &format!("## AC\n- [ ] {} check: {}\n", c.statement, c.target)).into_iter().next()?;
+    if inner.kind == "none" || inner.kind == "after" || inner.target.is_empty() { return None; }
+    inner.ac = c.ac.clone();
+    Some(inner)
+}
+
+/// #4889 — what the next land does with one open deferred check's re-run: met clears it,
+/// not met reopens its card, unmeasured keeps it open. Pure.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Rerun { Cleared, Reopen, KeepOpen }
+pub fn rerun_action(o: &Outcome) -> Rerun {
+    match o {
+        Outcome::Met(_) => Rerun::Cleared,
+        Outcome::NotMet(_) => Rerun::Reopen,
+        Outcome::Unmeasured(_) | Outcome::Deferred(_) => Rerun::KeepOpen,
+    }
 }
 
 /// Intake (Proving step 1): a card is Rejected when it has no AC, or an AC

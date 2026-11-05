@@ -153,6 +153,58 @@ fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     results
 }
 
+/// #4889 (Kade 19:56) — the open deferred checks: one file per card, one line per AC
+/// (`ac \t statement \t check text`), written at that card's land, read at every land after.
+fn deferred_dir() -> std::path::PathBuf {
+    let dir = env("BORG_RESULTS_DIR", &format!("{}/ops/borg-prove", env("CHORUS_HOME", "/tmp")));
+    std::path::PathBuf::from(dir).join("deferred")
+}
+
+/// At a card's own land: its `after` checks are written down to be re-run later.
+fn defer_open(card: u32, r: &[(Check, Outcome)]) {
+    let lines: Vec<String> = r.iter().filter(|(c, _)| c.kind == "after")
+        .map(|(c, _)| format!("{}\t{}\t{}", c.ac, c.statement.replace('\t', " "), c.target)).collect();
+    if lines.is_empty() { return; }
+    let d = deferred_dir();
+    let path = d.join(format!("{card}.tsv"));
+    if let Err(e) = std::fs::create_dir_all(&d).and_then(|_| std::fs::write(&path, lines.join("\n") + "\n")) {
+        eprintln!("#{card} record: the deferred checks were not written to {}: {e}", path.display());
+        exit(1);
+    }
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    let names: Vec<&str> = r.iter().filter(|(c, _)| c.kind == "after").map(|(c, _)| c.ac.as_str()).collect();
+    let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(),
+        &format!("borg-prove: deferred: {} — re-run at the next land; met clears it, red reopens this card", names.join(", "))]).status();
+}
+
+/// At every land: re-run every other card's open deferred checks against prod. Met clears
+/// the line; not met reopens that card (slice 5's path); unmeasured stays open.
+fn rerun_deferred(this: u32, base: &str) {
+    let Ok(entries) = std::fs::read_dir(deferred_dir()) else { return };
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    for e in entries.flatten() {
+        let Some(card) = e.path().file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok()) else { continue };
+        if card == this { continue; }
+        let text = std::fs::read_to_string(e.path()).unwrap_or_default();
+        let mut keep = Vec::new();
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let mut f = line.splitn(3, '\t');
+            let (ac, statement, target) = (f.next().unwrap_or(""), f.next().unwrap_or(""), f.next().unwrap_or(""));
+            let outer = Check { ac: ac.into(), statement: statement.into(), kind: "after".into(), target: target.into(), expect: "later".into() };
+            let Some(c) = inner_check(&outer) else { keep.push(line.to_string()); continue };
+            let o = judge(&c, &probe(&c, base, card));
+            println!("#{card} deferred {ac}: {} — {}", o.word(), o.evidence());
+            match rerun_action(&o) {
+                Rerun::Cleared => { let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(),
+                    &format!("borg-prove: deferred {ac} met at the land of #{this}: {}", o.evidence())]).status(); }
+                Rerun::Reopen => reopen(card, &format!("Not met on deferred {ac} (at the land of #{this})")),
+                Rerun::KeepOpen => keep.push(line.to_string()),
+            }
+        }
+        let _ = if keep.is_empty() { std::fs::remove_file(e.path()) } else { std::fs::write(e.path(), keep.join("\n") + "\n") };
+    }
+}
+
 /// Where prod leaves its results for record: one file per card per run.
 fn results_path(card: u32) -> std::path::PathBuf {
     run_file(card, "tsv")
@@ -284,7 +336,10 @@ fn main() {
         // accept never runs after a red or an unmeasured AC. #4889: a card with no
         // AC check fails too (it was "lands as before"), and a red reopens the card.
         "prod" => {
-            let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
+            let prod_base = env("BORG_PROD_BASE", "http://localhost:3340");
+            // #4889 — every land re-runs the other cards' open deferred checks first
+            rerun_deferred(card, &prod_base);
+            let r = run_checks(card, &prod_base);
             let path = results_path(card);
             if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, results_to_tsv(&r))) {
                 eprintln!("#{card} prod: the results were not written to {}: {e}", path.display());
@@ -321,6 +376,8 @@ fn main() {
             let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} record: {v}");
             record(card, &role, v, &r);
+            // #4889 — a Proven card with `after` checks lands Done; they stay open, named on it
+            if prod_passes(v) { defer_open(card, &r); }
             // #4691 — the verdict for check, written as whoever ran record:
             // in the land that is Borg Queen's own session, her Mac account
             let word = if v == NO_ROWS { "unproven" } else { v };

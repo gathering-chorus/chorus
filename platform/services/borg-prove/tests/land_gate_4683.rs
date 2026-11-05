@@ -33,9 +33,10 @@ impl Fx {
         }
         Fx { dir }
     }
-    fn run(&self, mode: &str) -> Output {
+    fn run(&self, mode: &str) -> Output { self.run_card(mode, "4683") }
+    fn run_card(&self, mode: &str, card: &str) -> Output {
         Command::new(env!("CARGO_BIN_EXE_borg-prove"))
-            .args([mode, "4683", "kade"])
+            .args([mode, card, "kade"])
             .env("BORG_PROD_BASE", format!("file://{}", self.dir.join("prod").display()))
             .env("BORG_CHORUS_LOG", self.dir.join("chorus-log"))
             .env("BORG_CARDS", self.dir.join("cards"))
@@ -301,4 +302,48 @@ fn a_card_text_file_reads_ac_like_the_board_view() {
         .env("DAG_RUN_ID", "run9")
         .output().unwrap();
     assert!(p.status.success() && out(&p).contains("Proven"), "the comment's /nope.txt check was not read: {}", out(&p));
+}
+
+// #4889 (Kade 19:56) — `check: after <check>`: deferred at its own land (the card still
+// lands Done, the deferral named on it), re-run at the next land: met clears, red reopens.
+fn after_fx(name: &str) -> Fx {
+    Fx::new(name, &format!("{}    - [ ] ac-4683-2  check: after http /later.txt ok\n", row("ac-4683-1", "/ok.txt", "ok")))
+}
+
+#[test]
+fn an_after_check_is_deferred_at_its_own_land_and_named_on_the_card() {
+    let fx = after_fx("after-own");
+    let p = fx.run("prod");
+    assert!(p.status.success(), "{}", out(&p));
+    assert!(out(&p).contains("deferred") && out(&p).contains("Proven"), "{}", out(&p));
+    let r = fx.run("record");
+    assert!(r.status.success(), "accept runs: {}", out(&r));
+    assert!(fx.log("cards.log").contains("deferred: ac-4683-2"), "{}", fx.log("cards.log"));
+    assert!(fx.dir.join("results/deferred/4683.tsv").is_file(), "the deferral is written down");
+}
+
+#[test]
+fn negative_proof_the_next_land_reopens_the_card_when_its_deferred_check_is_red() {
+    let fx = after_fx("after-red");
+    let _ = fx.run("prod");
+    let _ = fx.run("record");
+    std::fs::write(fx.dir.join("prod/later.txt"), "nope\n").unwrap();
+    let next = fx.run_card("prod", "4900");
+    assert!(out(&next).contains("#4683 deferred ac-4683-2: not met"), "{}", out(&next));
+    assert!(fx.log("cards.log").contains("DEPLOY_ROLE=borg-queen move 4683 WIP"), "reopened: {}", fx.log("cards.log"));
+    assert!(!fx.dir.join("results/deferred/4683.tsv").exists(), "handled, no longer open");
+}
+
+#[test]
+fn the_next_land_clears_a_met_deferred_check_and_keeps_an_unmeasured_one() {
+    let fx = after_fx("after-met");
+    let _ = fx.run("prod");
+    let _ = fx.run("record");
+    let _ = fx.run_card("prod", "4900"); // later.txt absent: unmeasured, stays open
+    assert!(fx.dir.join("results/deferred/4683.tsv").is_file(), "unmeasured stays open");
+    std::fs::write(fx.dir.join("prod/later.txt"), "ok\n").unwrap();
+    let _ = fx.run_card("prod", "4901");
+    assert!(!fx.dir.join("results/deferred/4683.tsv").exists(), "met clears it");
+    assert!(fx.log("cards.log").contains("deferred ac-4683-2 met at the land of #4901"), "{}", fx.log("cards.log"));
+    assert!(!fx.log("cards.log").contains("move 4683"), "a met deferral never reopens: {}", fx.log("cards.log"));
 }
