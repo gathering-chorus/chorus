@@ -1,18 +1,30 @@
 #!/usr/bin/env bats
-# @test-type: unit — a round's tests run once
+# @test-type: unit — a round's tests run once, read from the generated workflows
 # @domain: pipelines
 # @card: #4889 · owner: silas
+# Jeff 2026-11-04 18:21: "one test run". A round goes through pair (or mob), card,
+# cicd (with its demo), then the go and the land. Only cicd's test step runs the tests;
+# the pair's local proof is gone (#4752) and nothing else calls cicd-test or werk-test.
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+FLOWS="pair mob card cicd demo cicd-go cicd-land"
 
-# how many places run the card's tests for one round: the pair's hand-off and cicd
+# the steps in DIR's workflows that run the tests, one "<file>: <line>" each
 test_runs() {
-  local p="$1" n=0
-  grep -q 'name: skill-werk-test-pipeline' "$p/cicd.yaml" && n=$((n+1))
-  grep -q 'werk-test\|cicd-test\|local.proof' "$p/pair.yaml" "$ROOT/platform/scripts/pipeline-start" 2>/dev/null \
-    && grep -q 'local proof\|local_proof\|werk-test .*--scope' "$ROOT/platform/scripts/pipeline-start" && n=$((n+1))
-  echo "$n"
+  local d="$1" f
+  for f in $FLOWS; do
+    grep -nE 'dag: cicd-test|command: .*(werk-test |cicd-test)' "$d/$f.yaml" | sed "s|^|$f: |"
+  done
 }
 
-@test "AC3: one test run per round" {
-  [ "$(test_runs "$ROOT/platform/pipelines")" -eq 1 ] || { test_runs "$ROOT/platform/pipelines"; return 1; }
+@test "AC3: one test run per round — cicd's test step, and only it" {
+  out="$(test_runs "$ROOT/platform/pipelines")"
+  [ "$(printf '%s\n' "$out" | grep -c .)" -eq 1 ] || { echo "$out"; return 1; }
+  [[ "$out" == "cicd: "*"dag: cicd-test"* ]] || { echo "$out"; return 1; }
+}
+
+@test "negative proof: a pair that runs the tests again is a second test run" {
+  d="$BATS_TEST_TMPDIR/p"; mkdir -p "$d"
+  for f in $FLOWS; do cp "$ROOT/platform/pipelines/$f.yaml" "$d/"; done
+  printf '  - name: skill-pair-local-proof\n    call:\n      dag: cicd-test\n' >> "$d/pair.yaml"
+  [ "$(test_runs "$d" | grep -c .)" -eq 2 ] || { test_runs "$d"; return 1; }
 }

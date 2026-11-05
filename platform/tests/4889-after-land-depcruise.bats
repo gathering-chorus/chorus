@@ -5,6 +5,8 @@
 # @needs: nightly — after land: reads the next card's review; the card's AC says `check: after test` (borg-prove re-runs it at the next land)
 # Kade 19:53: after #4889 lands, the next card's architecture review must show that
 # dependency-cruiser ran (its werk installs it from the lock), not unmeasured.
+# It skips (unmeasured, never a pass) until both hold: #4889 is on main, and another
+# card's architecture review is recorded after that land. Then it measures.
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 W="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/ops/logs/werk-demo.jsonl"
 
