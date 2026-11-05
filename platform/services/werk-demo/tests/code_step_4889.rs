@@ -57,7 +57,7 @@ echo "$(pwd) | $*" >> "{log}"
 case "$*" in
   *"/code-review"*) if [ -f "{h}/clean" ]; then printf '```json\n[]\n```\n'; else printf 'found 1\n```json\n[{{"file":"a.rs","line":1,"summary":"b is undefined"}}]\n```\n'; fi ;;
   *"/security-review"*) if [ -f "{h}/garbled" ]; then echo 'all good'; else printf '```json\n[]\n```\n'; fi ;;
-  *) echo '{{"findings":[]}}' ;;
+  *) if [ -f "{h}/gatefinding" ]; then echo '{{"findings":[{{"item":7,"where":"a.rs:1","what":"too complex"}}]}}'; else echo '{{"findings":[]}}'; fi ;;
 esac
 "#, log = log.display(), h = home.display()));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);
@@ -92,4 +92,20 @@ esac
     let bad = run_gate_step(4889, "silas", &home, "code").unwrap();
     assert_eq!(bad.exit, 1, "{}", bad.message);
     assert!(bad.message.contains("/security-review: no findings list"), "{}", bad.message);
+
+    // #4889 bootstrap: a skill with no fail-items (main's, before this land) is strict.
+    // Item 7 is a note under fail-items 1-2, and a fail when the skill names none.
+    fs::remove_file(home.join("garbled")).unwrap();
+    fs::write(home.join("gatefinding"), "").unwrap();
+    fs::write(werk.join("a.rs"), "fn a() { d() }\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "card 3"]);
+    std::env::set_var("CHORUS_DEMO_ROUND", "r4");
+    let note = run_gate_step(4889, "silas", &home, "code").unwrap();
+    assert!(note.message.contains(": pass") && note.message.contains("note: a.rs:1 — item 7"), "{}", note.message);
+    fs::write(home.join("skills/gate-code/SKILL.md"), "---\nname: gate-code\n---\n# gate-code\n").unwrap();
+    fs::write(werk.join("a.rs"), "fn a() { e() }\n").unwrap();
+    git(&werk, &["commit", "-q", "-am", "card 4"]);
+    std::env::set_var("CHORUS_DEMO_ROUND", "r5");
+    let strict = run_gate_step(4889, "silas", &home, "code").unwrap();
+    assert!(strict.message.contains(": fail") && strict.message.contains("names no fail-items: every finding fails"), "{}", strict.message);
 }

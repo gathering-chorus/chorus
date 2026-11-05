@@ -2083,10 +2083,13 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         }
     };
     let sys = gate_system_prompt(&skill_md);
-    let fail_on = fail_items(&skill_md);
-    if fail_on.is_empty() {
-        record_gate(home, role, card, gate, "error", &format!("{} names no fail-items", skill.display()), round);
-        return;
+    // #4889 bootstrap (Kade 20:14): the skill is read from canonical, never from the card
+    // under review (a card must not rewrite its own reviewer). A skill with no fail-items
+    // (main's, until this card lands) is read strictly: every finding fails.
+    let mut fail_on = fail_items(&skill_md);
+    let strict = fail_on.is_empty();
+    if strict {
+        fail_on = (0..=99).collect();
     }
 
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
@@ -2118,6 +2121,9 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         parts.push(review_once(&sys, &ctx, round, &fail_on));
     }
     let (mut result, mut findings) = combine_verdicts(&parts, &unread);
+    if strict {
+        findings = format!("{} names no fail-items: every finding fails | {}", skill.display(), findings);
+    }
     // #4889 (Jeff 19:04, "fine do that"): the code review IS Claude Code's /code-review,
     // with /security-review beside it; gate-code adds only what they do not read, whether
     // each AC's check tests that AC. They read the werk themselves, so no diff cap applies.
@@ -2699,7 +2705,7 @@ mod tests {
     fn fail_items_reads_ranges_and_singles_from_frontmatter() {
         let md = "---\nname: gate-x\nfail-items: 1-3, 7, 9\n---\n# x\nfail-items: 99\n";
         assert_eq!(fail_items(md), vec![1, 2, 3, 7, 9]);
-        assert!(fail_items("---\nname: y\n---\n# y").is_empty(), "no rule → empty (the runner refuses)");
+        assert!(fail_items("---\nname: y\n---\n# y").is_empty(), "no rule → empty (the runner then fails every finding)");
     }
 
     #[test]
