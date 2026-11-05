@@ -1,12 +1,18 @@
 ---
 name: gate-code
-description: Code gate — verify tests green, build clean, no new warnings. Kade only.
+description: The code review's one addition to Claude Code's /code-review and /security-review — whether each AC's check really tests that AC. Runs on every card. Never counts AC boxes.
 user-invocable: true
+fail-items: 1-2
 ---
 
-# /gate-code — Code Gate
+# /gate-code — Code review: do the checks test the AC
 
-Fires at code-complete. Verifies the code is solid. **Kade only.**
+Jeff 2026-11-04 18:21: "one code review". Jeff 19:04 ("fine do that"): the code review
+**is** Claude Code's `/code-review` (correctness, on the whole branch, read with its own
+tools) with `/security-review` beside it. The demo's code step runs both, then this
+skill, and fails when any of the three finds a defect (#4889). This skill holds only
+what those two do not read. It is not a copy of them: correctness, design and tests are
+theirs.
 
 ## Arguments
 
@@ -14,194 +20,38 @@ Fires at code-complete. Verifies the code is solid. **Kade only.**
 /gate-code <card-id>
 ```
 
-## Owner Check
+## Input
 
-Only Kade can run this gate. If another role invokes it:
-```
-Code gate is owned by Kade.
-```
-Exit — no checks run.
+The card text (its AC lines, each ending `check: <kind> <target>`) and the card's branch
+diff (`origin/main...HEAD`). In the demo both are handed to you; by hand,
+`git -C <werk> diff origin/main...HEAD`.
 
-## Applicability Check
+## What to look for (Jeff 18:22–18:25)
 
-Read the card with `cards view <card-id>`. Check the card type label.
+1. **Does each AC's check test that AC?** For every AC line, read its `check:` target in
+   the diff (or the repo). A check that exercises something other than what its AC
+   says, only a fixture of its own, or nothing that can fail, is a finding. Name the AC
+   and the check file.
+2. **One check per AC.** No two AC may share one check file. (The demo's validate
+   already refuses a shared or missing check; a finding here is a check that is
+   distinct by name but tests the same thing.)
 
-- Doc-only / board-process cards: **SKIP** — "Code gate not applicable for this card type."
-- All cards with code changes: **RUN**.
+## Report
 
-If skipped, emit: `gate.code.skipped` spine event. Exit.
+Each finding names its item (1 or 2), where (`<check file>:<line>`) and what (`AC <n>: ...`).
+The output format is the demo's, given after this skill.
+Nothing about AC ticks or wording. The verdict is derived from the findings: any
+finding fails.
 
-## Automated Checks (run all, collect results)
+## Where the old checks went (#4889, Kade 18:34: fix, never throw away)
 
-### 1. Tests green
-
-```bash
-# Run the test suite for the affected codebase
-# Detect which codebase from changed files
-cd /Users/jeffbridwell/CascadeProjects/chorus
-# Use card's WIP-start commit if available (from spine event), fall back to HEAD~3
-WIP_BASE=$(grep "card=$CARD_ID" /Users/jeffbridwell/.chorus/logs/spine.log 2>/dev/null | grep 'card.wip.started\|role.state.building' | tail -1 | sed 's/.*commit=\([a-f0-9]*\).*/\1/' 2>/dev/null)
-DIFF_BASE="${WIP_BASE:-HEAD~3}"
-CHANGED=$(git diff "$DIFF_BASE" --name-only)
-
-# Rust tests (chorus-hooks)
-if echo "$CHANGED" | grep -q 'chorus-hooks'; then
-  cd platform/services/chorus-hooks && cargo test 2>&1
-fi
-
-# TypeScript tests — scoped per changed file, auto-fallback to full (#2226).
-# Uses jest --findRelatedTests in each project with .ts changes.
-# Falls through to full suite if: --full flag, >20 changed files, or 0 changes.
-# Demo pre-flight (step 3 of /demo) still runs full — this is for gate:code only.
-# Set GATE_CODE_FULL=true to force full suite (e.g., broad refactor not caught by threshold).
-FULL_ARG=""
-if [ "${GATE_CODE_FULL:-}" = "true" ]; then FULL_ARG="--full"; fi
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-code-tests.sh "$DIFF_BASE" $FULL_ARG
-```
-
-**Pass:** All test suites exit 0.
-**Fail:** Any test failure — list the failing tests.
-
-### 2. Build clean
-
-```bash
-# Rust build
-if echo "$CHANGED" | grep -q 'chorus-hooks'; then
-  cd /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks
-  cargo build --release 2>&1 | tail -5
-fi
-
-# TypeScript build
-if echo "$CHANGED" | grep -q '\.ts$'; then
-  cd /Users/jeffbridwell/CascadeProjects/chorus/directing/products/cards
-  npx tsc --noEmit 2>&1
-fi
-```
-
-**Pass:** Build exits 0.
-**Fail:** Compilation errors.
-
-### 3. Warning count diff
-
-```bash
-# Compare warning count before and after
-# Rust: count warning lines in build output
-cd /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks
-WARNINGS_NOW=$(cargo build --release 2>&1 | grep -c '^warning:')
-# Compare against baseline (persisted across reboots)
-BASELINE_FILE="/Users/jeffbridwell/CascadeProjects/chorus/platform/state/gate-warning-baseline"
-WARNINGS_PREV=$(cat "$BASELINE_FILE" 2>/dev/null || echo "0")
-if [ "$WARNINGS_NOW" -gt "$WARNINGS_PREV" ]; then
-  echo "FAIL: warnings increased from $WARNINGS_PREV to $WARNINGS_NOW"
-  exit 1
-else
-  echo "$WARNINGS_NOW" > "$BASELINE_FILE"
-  echo "PASS: warnings $WARNINGS_NOW (was $WARNINGS_PREV)"
-fi
-```
-
-**Pass:** Warning count did not increase.
-**Fail:** New warnings introduced — list them.
-
-### 4. Pattern match (read before write)
-
-```bash
-# Check that changed files follow existing patterns
-# Crude: verify no new files with names that don't match existing conventions
-cd /Users/jeffbridwell/CascadeProjects/chorus
-git diff "$DIFF_BASE" --diff-filter=A --name-only | head -10
-# New files listed for manual review if any
-```
-
-**Pass:** No new files, or new files follow naming conventions.
-**Fail:** New files with unexpected naming — warn.
-
-### 5. execSync lint (#2000)
-
-```bash
-# Check changed .ts files for execSync in request-path code
-APP_ROOT="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
-CHANGED_TS=$(cd "$APP_ROOT" && git diff "$DIFF_BASE" --name-only -- '*.ts' 2>/dev/null | head -50)
-if [ -n "$CHANGED_TS" ]; then
-  FULL_PATHS=$(echo "$CHANGED_TS" | sed "s|^|${APP_ROOT}/|")
-  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-code-lint.sh $FULL_PATHS
-fi
-```
-
-**Pass:** No execSync in src/handlers/, src/services/, src/middleware/.
-**Fail:** execSync found in request-path code — blocks the event loop.
-
-### 6. Negative proof for every new gate (#3734)
-
-If the diff ADDS or MODIFIES a check that gates anything — an assertion, a guard, a ratchet, a pre-commit hook, a CI job, a structural bats test — it must ship with a **negative proof**: a fixture in which the guarded condition is VIOLATED and the check is shown to FAIL.
-
-```bash
-# Surface checks touched by this diff that may need a negative proof.
-git diff "$DIFF_BASE" --name-only -- '*.bats' '*.sh' '*.rs' '*.ts' 2>/dev/null \
-  | while read -r f; do
-      [ -f "$f" ] || continue
-      # a "check" is anything that can refuse: assert / exit 1 / false / grep -q guard
-      if git diff "$DIFF_BASE" -- "$f" | grep -qE '^\+.*(assert|\bexit 1\b|\|\| false|grep -q)'; then
-        echo "  CHECK TOUCHED: $f"
-      fi
-    done
-```
-
-**Pass:** every touched check has a corresponding test that fails when the guarded condition is violated — a planted violation, a doctored baseline, a fixture with the bad shape.
-**Fail:** a check was added or changed with no demonstration that it can go red.
-
-Stricter than red-green, deliberately. Red-green shows a test failing against *missing code*; this shows a check failing against *a violation*. A gate can go red because a feature is absent and still be unable to go red once the feature exists.
-
-When reviewing, **read the fixture, not just its result** — on #3725 a negative-proof fixture was itself bogus: the comment marking the omission contained the very string being grepped, so it passed for the wrong reason.
-
-**Not in scope:** wrong assumptions about a dependency's semantics (e.g. a buffered write with no flush). Different failure, different defence.
-
-## No Manual Confirms
-
-All code checks are automated.
-
-## Result
-
-Print summary:
-
-```
-## /gate-code #<card-id>
-
-  Tests green:       PASS | FAIL (N failing)
-  Build clean:       PASS | FAIL (errors)
-  Warning diff:      PASS | FAIL (N new warnings)
-  Pattern match:     PASS | WARN (new files listed)
-  execSync lint:     PASS | FAIL (N files with execSync on request path)
-  Known fails:       N entries (carded — see platform/state/known-fails.json)
-
-  VERDICT: PASS | FAIL
-```
-
-### Known fails counter (#2497)
-
-Pull the count from the allowlist before printing summary:
-
-```bash
-KF_COUNT=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/known-fails-filter.sh count 2>/dev/null || echo "0")
-KF_CARDS=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/known-fails-filter.sh list-cards 2>/dev/null | tr '\n' ' ')
-echo "  Known fails:       ${KF_COUNT} entries (cards: ${KF_CARDS:-none})"
-```
-
-Display only — does not affect the verdict.
-
-> **#3725 AC7:** this line used to read "(CI is authoritative)". It has not been
-> true since #2600 cost-killed hosted per-PR CI, and ADR-053 (#3480) moved merge
-> authority to the local werk stack. Nothing downstream re-checks the known-fails
-> count, so treating it as someone else's problem is how a known-fail becomes
-> permanent. The verdict is this gate's, and the land gate is werk-test.
-
-## On Pass
-
-1. Emit spine event: `gate.code.passed` with card ID
-2. Add card comment: "gate:code-pass — Kade"
-3. Prompt: "Run /gate-quality next."
-
-## On Fail
-
-1. Emit spine event: `gate.code.failed` with card ID and failing items
-2. Print failing items. Fix before re-running.
+| Old check | Now |
+|-----------|-----|
+| Fagan defect classes (logic, interface, data, error handling, concurrency) | `/code-review`, on the whole branch |
+| Google's questions (functionality, complexity, tests, naming) | `/code-review` |
+| Security (injection, secrets, auth) | `/security-review` |
+| Tests green, build clean, warning count | werk-test: the card's one test run builds and tests every unit the diff touches |
+| execSync lint | werk-test's lint ratchet |
+| Negative proof for every new gate (#3734) | `/gate-quality` item 1 |
+| Known fails counter | werk-test's nightly red list |
+| The old floor (werk-review: unchecked boxes, src without tests, removed symbols) | removed symbols and missing tests: `/code-review`; boxes: never a review's job (Jeff 18:11) |
