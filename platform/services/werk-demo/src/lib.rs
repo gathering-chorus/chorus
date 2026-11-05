@@ -2187,8 +2187,7 @@ fn semgrep_review(werk: &str, rules: &Path) -> (String, String) {
     };
     // #4889 (Jeff 20:55) — semgrep's path is the tool.path.semgrep property, read through the
     // resolver: the door down or the row missing is an error (unmeasured), never a default
-    let door = env::var("OWL_URL").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
-    let bin = match properties_resolver::global_value(&door, "tool.path.semgrep") {
+    let bin = match properties_resolver::global_value(&properties_resolver::door_url(), "tool.path.semgrep") {
         Ok(b) => b,
         Err(e) => return ("error".to_string(), format!("semgrep: {e}")),
     };

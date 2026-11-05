@@ -309,6 +309,12 @@ pub fn global_value_from_body(body: &str, key: &str) -> Result<String, String> {
     }
 }
 
+/// #4889 (Kade 21:02) — the door every caller reads properties from: OWL_URL, else
+/// athena-make on the Library. One home for the default.
+pub fn door_url() -> String {
+    std::env::var("OWL_URL").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string())
+}
+
 /// #4889 — read one global property through the door (athena-make, `door_url`). The door
 /// unreachable or not 200 is an error (loud: Fuseki down is a red, never a fallback).
 pub fn global_value(door_url: &str, key: &str) -> Result<String, String> {

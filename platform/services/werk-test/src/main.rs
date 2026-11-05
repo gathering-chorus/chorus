@@ -2405,7 +2405,7 @@ pub const TOOL_PROPERTIES: [(&str, &str); 2] = [("CHORUS_TOOL_SEMGREP", "tool.pa
 fn tool_paths() -> &'static Vec<(&'static str, &'static str, Result<String, String>)> {
     static CELL: std::sync::OnceLock<Vec<(&'static str, &'static str, Result<String, String>)>> = std::sync::OnceLock::new();
     CELL.get_or_init(|| {
-        let door = std::env::var("OWL_URL").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+        let door = properties_resolver::door_url();
         TOOL_PROPERTIES.iter().map(|(var, key)| (*var, *key, properties_resolver::global_value(&door, key))).collect()
     })
 }
