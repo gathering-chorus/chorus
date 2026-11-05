@@ -1374,6 +1374,17 @@ fn smoke_one(werk: &str, r: &str, card: u64) -> Result<(), String> {
 /// #4502 — the session-smoke step. No role config in the diff is a named
 /// pass, never a silent one; any role that cannot start, run its hooks and
 /// make one tool call fails the step, named.
+/// #4894 — a session smoke measures only on a role's own account (chorus-<role>). Pure.
+pub fn smoke_account_measures(account: &str) -> bool {
+    account.starts_with("chorus-")
+}
+
+fn current_account() -> String {
+    env::var("USER").ok().filter(|u| !u.is_empty())
+        .or_else(|| run("id", &["-un"]).ok().map(|s| s.trim().to_string()))
+        .unwrap_or_default()
+}
+
 pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
@@ -1391,16 +1402,27 @@ pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> 
     }
     let mut failed = Vec::new();
     let mut by_hand = Vec::new();
+    let mut smoked: Vec<&str> = Vec::new();
     for r in &roles {
         // #4691 (Jeff 2026-10-22 16:12, "2"): an agy role is not smoked here (no
         // headless agy smoke on this box); it is named, recorded by-hand, and that
         // role checks its own session by hand after the land. Never a pass.
-        if !SMOKE_CLAUDE_ROLES.contains(r) {
+        // #4894 (from #4889 runs 3-4): a role session is real only on its own account
+        // (chorus-<role>); dagu runs this as a shared account, where the hooks refuse a
+        // roleless session. There it is unmeasured, named, by hand — never a pass.
+        if !SMOKE_CLAUDE_ROLES.contains(r) || !smoke_account_measures(&current_account()) {
+            if SMOKE_CLAUDE_ROLES.contains(r) {
+                jsonl(home, role, card, &trace, "demo.smoke.result",
+                      &format!(",\"smoked\":\"{}\",\"result\":\"unmeasured\",\"why\":\"run as {}: role sessions run as chorus-<role>\"", r, current_account()));
+                by_hand.push(format!("{}: UNMEASURED here (run as {}, role sessions run as chorus-{}); {} checks its session after the land", r, current_account(), r, r));
+                continue;
+            }
             jsonl(home, role, card, &trace, "demo.smoke.result",
                   &format!(",\"smoked\":\"{}\",\"result\":\"by-hand\",\"why\":\"runs on agy: not smoked here\"", r));
             by_hand.push(format!("{}: runs on agy, not smoked here; {} checks the session by hand after the land", r, r));
             continue;
         }
+        smoked.push(r);
         let res = smoke_one(&werk, r, card);
         let (word, why) = match &res { Ok(()) => ("pass", String::new()), Err(e) => ("fail", e.clone()) };
         jsonl(home, role, card, &trace, "demo.smoke.result",
@@ -1408,7 +1430,6 @@ pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> 
         if let Err(e) = res { failed.push(format!("{}: {}", r, e)); }
     }
     emit_spine(home, "demo.smoke.recorded", role, card, &trace);
-    let smoked: Vec<&str> = roles.iter().copied().filter(|r| SMOKE_CLAUDE_ROLES.contains(r)).collect();
     let mut parts = Vec::new();
     if !smoked.is_empty() { parts.push(format!("{} started from the werk build and made one tool call", smoked.join(", "))); }
     parts.extend(by_hand);

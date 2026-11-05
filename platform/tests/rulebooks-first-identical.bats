@@ -3,6 +3,9 @@
 # @domain: pipelines
 # @card: #4894 · owner: silas
 # What Jeff sees: #4889's reviews read rules from main, so the rules land first, unchanged.
+# The skill files make main's demo smoke every Claude role, which dagu's shared account
+# cannot do, so this card also carries that fix (werk-demo src/lib.rs session_smoke_step:
+# unmeasured off a chorus-<role> account, proven in tests/steps_4502.rs).
 # The five: platform/quality/depcruise/boundaries.cjs, platform/quality/semgrep/quality.yml,
 # skills/gate-arch/SKILL.md, skills/gate-code/SKILL.md, skills/gate-quality/SKILL.md
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -28,9 +31,9 @@ differs() {
   [ -z "$out" ] || { echo "differ from $r: $out"; return 1; }
 }
 
-@test "this card changes nothing but the five files" {
+@test "this card changes nothing but the five files, their checks, and main's session-smoke fix" {
   git -C "$ROOT" rev-parse -q --verify origin/main >/dev/null || skip "unmeasured: no origin/main"
-  extra="$(git -C "$ROOT" diff --name-only origin/main...HEAD | grep -vxF -f <(tr ' ' '\n' <<<"$FILES"; echo platform/tests/rulebooks-first-identical.bats; echo platform/tests/rulebooks-first-main-parses.bats) || true)"
+  extra="$(git -C "$ROOT" diff --name-only origin/main...HEAD | grep -vxF -f <(tr ' ' '\n' <<<"$FILES"; echo platform/tests/rulebooks-first-identical.bats; echo platform/tests/rulebooks-first-main-parses.bats; echo platform/services/werk-demo/src/lib.rs; echo platform/services/werk-demo/tests/steps_4502.rs) || true)"
   [ -z "$extra" ] || { echo "outside the rulebooks: $extra"; return 1; }
 }
 
