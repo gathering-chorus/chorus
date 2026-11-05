@@ -69,7 +69,7 @@ fn each_step_exits_by_what_it_recorded() {
     let fail_flag = home.join("fail");
     let claude = home.join("claude-stub");
     write_exec(&claude, &format!(
-        "#!/bin/sh\ncat >/dev/null\nif [ -f \"{}\" ]; then echo 'model down' >&2; exit 1; fi\nif [ -f \"{}\" ]; then echo '{{\"findings\":[{{\"item\":1,\"where\":\"a.txt:1\",\"what\":\"door not answering\"}}]}}'; exit 0; fi\necho '{{\"findings\":[]}}'\n",
+        "#!/bin/sh\ncat >/dev/null\nif [ -f \"{}\" ]; then echo 'model down' >&2; exit 1; fi\n# #4889 the code step also runs /code-review and /security-review (prompt in argv)\ncase \"$*\" in *-review*) printf 'done\\n```json\\n[]\\n```\\n'; exit 0;; esac\nif [ -f \"{}\" ]; then echo '{{\"findings\":[{{\"item\":1,\"where\":\"a.txt:1\",\"what\":\"door not answering\"}}]}}'; exit 0; fi\necho '{{\"findings\":[]}}'\n",
         fail_flag.display(), home.join("red").display()
     ));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);

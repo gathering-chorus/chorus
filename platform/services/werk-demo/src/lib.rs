@@ -2110,8 +2110,73 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         );
         parts.push(review_once(&sys, &ctx, round, &fail_on));
     }
-    let (result, findings) = combine_verdicts(&parts, &unread);
+    let (mut result, mut findings) = combine_verdicts(&parts, &unread);
+    // #4889 (Jeff 19:04, "fine do that"): the code review IS Claude Code's /code-review,
+    // with /security-review beside it; gate-code adds only what they do not read, whether
+    // each AC's check tests that AC. They read the werk themselves, so no diff cap applies.
+    if gate == "code" {
+        let mut all = vec![(result.clone(), format!("gate-code: {}", findings))];
+        for skill in BUILTIN_CODE_REVIEWS {
+            let (r, f) = builtin_review(skill, &werk);
+            all.push((r, format!("/{}: {}", skill, f)));
+        }
+        (result, findings) = combine_verdicts(&all, &[]);
+    }
     record_gate(home, role, card, gate, &result, &findings, round);
+}
+
+/// #4889 — the existing Claude Code reviews the code step runs, each on the whole branch.
+pub const BUILTIN_CODE_REVIEWS: [&str; 2] = ["code-review", "security-review"];
+
+/// #4889 — run one built-in review headless in the card's werk over `origin/main...HEAD`,
+/// bounded (CHORUS_CODE_REVIEW_TIMEOUT_SECS, default 900). It reads the repo with its own
+/// tools, so the whole diff is read; ("error", why) when it could not run.
+fn builtin_review(skill: &str, werk: &str) -> (String, String) {
+    let Some(bin) = claude_bin() else { return ("error".to_string(), "claude binary not resolvable".to_string()) };
+    let base = match run_in_dir(werk, "git", &["merge-base", "origin/main", "HEAD"]) {
+        Ok(b) => b.trim().to_string(),
+        Err(e) => return ("error".to_string(), format!("no merge-base in {werk}: {e}")),
+    };
+    let prompt = if skill == "code-review" {
+        format!("/code-review medium --max-findings all {base}...HEAD")
+    } else {
+        format!("/{skill} {base}...HEAD")
+    };
+    let timeout = env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900);
+    let mut command = Command::new(&bin);
+    command.current_dir(werk).env("CHORUS_HEADLESS", "1")
+        .args(["-p", &prompt, "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "text"]);
+    match bounded_headless(command, String::new(), timeout) {
+        Ok(out) => builtin_review_verdict(&out),
+        Err(e) => ("error".to_string(), e.replace("chorus-agent", &format!("/{skill}"))),
+    }
+}
+
+fn run_in_dir(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
+    let o = Command::new(cmd).current_dir(dir).args(args).output().map_err(|e| format!("{cmd}: {e}"))?;
+    if !o.status.success() { return Err(String::from_utf8_lossy(&o.stderr).trim().to_string()); }
+    Ok(String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
+/// #4889 — a built-in review's verdict, derived from its findings (Kade 19:19): the reply
+/// ends in a JSON list of findings ({file, line, summary, ...}); any finding fails, an
+/// empty list passes, no list is an error (never a pass). Pure + unit-tested.
+pub fn builtin_review_verdict(stdout: &str) -> (String, String) {
+    let Some(open) = stdout.rfind("```json").map(|i| i + 7).and_then(|i| stdout[i..].find('[').map(|j| i + j)) else {
+        return ("error".to_string(), format!("no findings list in the review: {}", stdout.chars().take(160).collect::<String>()));
+    };
+    let wrapped = format!("{{\"findings\":{}", &stdout[open..]);
+    let Some(objs) = findings_objects(&wrapped) else {
+        return ("error".to_string(), "the findings list never closes".to_string());
+    };
+    let lines: Vec<String> = objs.iter().map(|o| {
+        let file = extract_json_str(o, "file").map(|v| json_unescape(&v)).unwrap_or_default();
+        let line = o.find("\"line\"").map(|k| o[k + 6..].trim_start().trim_start_matches(':').trim_start()
+            .chars().take_while(|c| c.is_ascii_digit()).collect::<String>()).unwrap_or_default();
+        let what = extract_json_str(o, "summary").map(|v| json_unescape(&v)).unwrap_or_default();
+        format!("{file}:{line} — {what}")
+    }).collect();
+    if lines.is_empty() { ("pass".to_string(), "no findings".to_string()) } else { ("fail".to_string(), lines.join(" | ")) }
 }
 
 /// #4889 — the largest diff one review reads at once.
