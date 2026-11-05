@@ -2390,7 +2390,9 @@ fn classify_breaks(werk: &str, open: &[String]) -> Option<Vec<bool>> {
         "--setting-sources", "user", "--no-session-persistence", "--output-format", "text",
         "--allowedTools", "Read,Grep,Glob", "--disallowedTools", REVIEW_DENIED_TOOLS]);
     // the answer goes to the step's log either way, so a red that stood can be read (run 15)
-    match bounded_headless(command, String::new(), 300) {
+    // run 15: the question reads the code each finding names; 12 arch findings took ~8 min,
+    // past a 300s bound, and the red stood. It gets the reviews' own bound.
+    match bounded_headless(command, String::new(), review_timeout_secs()) {
         Ok(out) => {
             let a = breaks_answer(&out);
             eprintln!("werk-demo: breaks question on {} finding(s) answered {:?}{}", open.len(), a,
@@ -2432,6 +2434,12 @@ pub fn builtin_review_args(skill: &str, prompt: &str) -> Vec<String> {
      "--output-format", "text", "--allowedTools", tools, "--disallowedTools", REVIEW_DENIED_TOOLS].iter().map(|a| a.to_string()).collect()
 }
 
+/// #4889 — how long one headless review (or the breaks question about its findings) may
+/// run: CHORUS_CODE_REVIEW_TIMEOUT_SECS, default 900.
+pub fn review_timeout_secs() -> u64 {
+    env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900)
+}
+
 /// #4889 — the existing Claude Code reviews the code step runs, each on the whole branch.
 pub const BUILTIN_CODE_REVIEWS: [&str; 2] = ["code-review", "security-review"];
 
@@ -2445,7 +2453,7 @@ fn builtin_review(skill: &str, werk: &str, since: Option<&str>) -> (String, Stri
         Err(e) => return ("error".to_string(), e),
     };
     let prompt = builtin_review_prompt(skill, &base);
-    let timeout = env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900);
+    let timeout = review_timeout_secs();
     let mut command = Command::new(&bin);
     command.current_dir(werk).env("CHORUS_HEADLESS", "1")
         .args(builtin_review_args(skill, &prompt));

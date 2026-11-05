@@ -46,3 +46,14 @@ fn the_question_numbers_each_finding_and_names_what_jeff_uses() {
     let p = breaks_prompt(&["a.rs:1 — x".to_string(), "b.rs:2 — y".to_string()], "his messages reaching a role");
     assert!(p.contains("1. a.rs:1 — x\n2. b.rs:2 — y") && p.contains("breaks something Jeff uses: his messages reaching a role.") && p.contains("go page"), "{p}");
 }
+
+#[test]
+fn the_breaks_question_gets_the_reviews_bound_not_300s() {
+    // run 15: 12 arch findings took ~8 min to classify; a 300s bound left the red standing
+    std::env::remove_var("CHORUS_CODE_REVIEW_TIMEOUT_SECS");
+    assert_eq!(werk_demo::review_timeout_secs(), 900);
+    let src = include_str!("../src/lib.rs");
+    let ask = &src[src.find("fn classify_breaks").unwrap()..];
+    let ask = &ask[..ask.find("\n}\n").unwrap()];
+    assert!(ask.contains("review_timeout_secs()") && !ask.contains(", 300)"), "NEGATIVE PROOF: the question is bounded below the reviews");
+}
