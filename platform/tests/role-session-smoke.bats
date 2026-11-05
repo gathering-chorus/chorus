@@ -46,7 +46,10 @@ smoke_one() {
   # inside the session's own folder: a role session may only read its working dirs
   file=".smoke-nonce-$$"
   printf '%s\n' "$nonce" > "$dir/$file"
-  out="$(cd "$dir" && CHORUS_ROLE="$r" ROLE="$r" CHORUS_HEADLESS=1 \
+  # DEPLOY_ROLE is the role the hook shim hands the daemon (as deploy_role) when the
+  # account is not chorus-<role>: dagu runs this as jeffbridwell, which hosts every
+  # role, and without it the hooks refuse the call (#4889 run 3).
+  out="$(cd "$dir" && CHORUS_ROLE="$r" DEPLOY_ROLE="$r" ROLE="$r" CHORUS_HEADLESS=1 \
     CHORUS_PULSE_URL=http://127.0.0.1:9/api/nudge \
     perl -e 'alarm shift; exec @ARGV' "${CHORUS_SMOKE_TIMEOUT_SECS:-180}" \
     "$CHORUS_TOOL_CLAUDE" -p "Run exactly one Bash command, \`cat $file\`, and reply with its output only." \
