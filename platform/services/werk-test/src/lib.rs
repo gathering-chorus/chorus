@@ -6246,8 +6246,29 @@ pub fn data_file_keys(f: &str) -> Vec<String> {
             keys.push(d.to_string());
         }
     }
+    // #4889 run 5/8 — a generic file at the repo root (package.json) has no crate to fall
+    // back to, so no test could ever claim it and every change to it was UNMEASURED. A
+    // test claims it by its root path as a test spells it, `$ROOT/package.json`; the bare
+    // name stays unclaimed (every test names some package.json).
+    if GENERIC.contains(&stem) && !f.contains('/') {
+        keys.push(format!("ROOT/{f}"));
+    }
     keys.dedup();
     keys
+}
+
+#[cfg(test)]
+mod root_data_file_4889 {
+    use super::*;
+    #[test]
+    fn a_root_generic_file_is_claimed_by_its_root_path_only() {
+        assert_eq!(data_file_keys("package.json"), vec!["ROOT/package.json".to_string()]);
+        assert!(mentions(r#"[ "$(pinned "$ROOT/package.json")" = "17.4.3" ]"#, "ROOT/package.json"));
+        // negative proofs: the bare name, another package's file, a nested generic file
+        assert!(!mentions("reads its package.json", "ROOT/package.json"));
+        assert!(!mentions("$ROOT/platform/api/package.json", "ROOT/package.json"));
+        assert!(data_file_keys("platform/api/package.json").is_empty());
+    }
 }
 
 pub fn mention_key(path: &str) -> Option<String> {
