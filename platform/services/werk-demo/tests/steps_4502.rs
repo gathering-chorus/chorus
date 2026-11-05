@@ -48,7 +48,7 @@ fn each_step_exits_by_what_it_recorded() {
     fs::create_dir_all(home.join("skills/gate-code")).unwrap();
     fs::create_dir_all(home.join("roles/silas")).unwrap();
     fs::create_dir_all(home.join("ops/logs")).unwrap();
-    fs::write(home.join("skills/gate-code/SKILL.md"), "# gate-code\nTests green, build clean.\n").unwrap();
+    fs::write(home.join("skills/gate-code/SKILL.md"), "---\nname: gate-code\nfail-items: 1\n---\n# gate-code\n1. Logic.\n").unwrap();
     fs::write(home.join("roles/silas/CLAUDE.md"), "# Silas\nArchitect.\n").unwrap();
     // #4502 — abby-normal runs on agy: her persona is AGENTS.md, not CLAUDE.md
     fs::create_dir_all(home.join("roles/abby-normal")).unwrap();
@@ -69,7 +69,7 @@ fn each_step_exits_by_what_it_recorded() {
     let fail_flag = home.join("fail");
     let claude = home.join("claude-stub");
     write_exec(&claude, &format!(
-        "#!/bin/sh\ncat >/dev/null\nif [ -f \"{}\" ]; then echo 'model down' >&2; exit 1; fi\nif [ -f \"{}\" ]; then echo '{{\"result\":\"fail\",\"findings\":\"door not answering\"}}'; exit 0; fi\necho '{{\"result\":\"pass\",\"findings\":\"looks right\"}}'\n",
+        "#!/bin/sh\ncat >/dev/null\nif [ -f \"{}\" ]; then echo 'model down' >&2; exit 1; fi\nif [ -f \"{}\" ]; then echo '{{\"findings\":[{{\"item\":1,\"where\":\"a.txt:1\",\"what\":\"door not answering\"}}]}}'; exit 0; fi\necho '{{\"findings\":[]}}'\n",
         fail_flag.display(), home.join("red").display()
     ));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);

@@ -1668,44 +1668,84 @@ pub fn extract_json_str(json: &str, field: &str) -> Option<String> {
     }
 }
 
-/// Parse a gate verdict out of a headless claude gate run. The gate is prompted
-/// to emit `{"result":"pass"|"fail","findings":"<one line>"}`. Handles both a
-/// raw payload and the `--output-format json` envelope (whose `result` field
-/// holds the assistant text). Unknown/garbled → ("error", reason) so a broken
-/// gate is recorded VISIBLE, never silently passed. Pure + unit-tested.
-pub fn parse_gate_verdict(stdout: &str) -> (String, String) {
-    // If an envelope `result` holds nested gate JSON, parse that; else parse raw.
-    let text = match extract_json_str(stdout, "result") {
-        Some(r) if r.contains("findings") || r.contains("\\\"") => json_unescape(&r),
-        _ => stdout.to_string(),
-    };
-    let verdict = extract_json_str(&text, "result").map(|v| json_unescape(&v));
-    let findings = extract_json_str(&text, "findings")
-        .map(|v| json_unescape(&v))
-        .unwrap_or_default();
-    match verdict.as_deref().map(|s| s.trim()) {
-        Some("pass") => ("pass".to_string(), findings),
-        Some("fail") => ("fail".to_string(), findings),
-        _ => {
-            let reason = if !findings.is_empty() {
-                findings
-            } else {
-                format!("unparseable gate output: {}", text.chars().take(160).collect::<String>())
-            };
-            ("error".to_string(), reason)
+/// #4889 (Kade 19:19: "derive the verdict from the findings, not the model's own word")
+/// — a review's fail items, read from its SKILL.md frontmatter (`fail-items: 1-5, 7`).
+/// The skill is the one home of its rule; the runner never hard-codes it. Pure.
+pub fn fail_items(skill_md: &str) -> Vec<u32> {
+    let line = skill_md.lines().take_while(|l| !l.starts_with("# ")).find_map(|l| l.strip_prefix("fail-items:"));
+    let mut out = Vec::new();
+    for part in line.unwrap_or("").split(',') {
+        let part = part.trim();
+        match part.split_once('-') {
+            Some((a, b)) => if let (Ok(a), Ok(b)) = (a.trim().parse::<u32>(), b.trim().parse::<u32>()) { out.extend(a..=b) },
+            None => if let Ok(n) = part.parse::<u32>() { out.push(n) },
         }
     }
+    out
 }
 
-/// Build the headless system prompt for a gate: the gate's SKILL.md plus a strict
-/// output contract. Pure so the contract is unit-pinned.
+/// The JSON objects inside the first `"findings": [ ... ]` array of a review's reply
+/// (raw, or nested escaped in an envelope's `result`). None when there is no such array.
+fn findings_objects(stdout: &str) -> Option<Vec<String>> {
+    let text = match extract_json_str(stdout, "result") {
+        Some(r) if r.contains("findings") => json_unescape(&r),
+        _ => stdout.to_string(),
+    };
+    let key = text.find("\"findings\"")?;
+    let open = key + text[key..].find('[')?;
+    let (mut depth, mut in_str, mut esc, mut start) = (0i32, false, false, None);
+    let mut objs = Vec::new();
+    for (i, c) in text[open + 1..].char_indices() {
+        let at = open + 1 + i;
+        if in_str { if esc { esc = false } else if c == '\\' { esc = true } else if c == '"' { in_str = false } continue; }
+        match c {
+            '"' => in_str = true,
+            '{' => { if depth == 0 { start = Some(at) } depth += 1 }
+            '}' => { depth -= 1; if depth == 0 { if let Some(s0) = start.take() { objs.push(text[s0..=at].to_string()) } } }
+            ']' if depth == 0 => return Some(objs),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// #4889 — the verdict is derived from the findings: any finding on a fail item fails,
+/// other findings are notes, an empty list passes. A reply with no findings list, or a
+/// finding with no item number, is an error: never a pass. Pure + unit-tested.
+pub fn gate_verdict(stdout: &str, fail_on: &[u32]) -> (String, String) {
+    let Some(objs) = findings_objects(stdout) else {
+        return ("error".to_string(), format!("unparseable review output: {}", stdout.chars().take(160).collect::<String>()));
+    };
+    let mut fails = Vec::new();
+    let mut notes = Vec::new();
+    for o in &objs {
+        let item = o.find("\"item\"").and_then(|k| {
+            let rest = o[k + 6..].trim_start().strip_prefix(':')?.trim_start();
+            rest.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok()
+        });
+        let Some(item) = item else {
+            return ("error".to_string(), format!("a finding names no item: {}", o.chars().take(160).collect::<String>()));
+        };
+        let at = extract_json_str(o, "where").map(|v| json_unescape(&v)).unwrap_or_default();
+        let what = extract_json_str(o, "what").map(|v| json_unescape(&v)).unwrap_or_default();
+        let line = format!("{at} — item {item} — {what}");
+        if fail_on.contains(&item) { fails.push(line) } else { notes.push(line) }
+    }
+    let result = if fails.is_empty() { "pass" } else { "fail" };
+    let mut all = fails;
+    all.extend(notes.into_iter().map(|n| format!("note: {n}")));
+    (result.to_string(), if all.is_empty() { "no findings".to_string() } else { all.join(" | ") })
+}
+
+/// Build the headless system prompt for a review: its SKILL.md plus a strict output
+/// contract. The model reports findings only; werk-demo derives the verdict. Pure.
 pub fn gate_system_prompt(skill_md: &str) -> String {
     format!(
-        "{}\n\n---\nYou are running HEADLESS as this gate. Review the card AC and the \
-         branch diff provided in the user message against the gate's criteria above. \
-         Output ONLY a single JSON object and nothing else: \
-         {{\"result\":\"pass\",\"findings\":\"<one concise line>\"}} \
-         where result is \"pass\" or \"fail\". No prose, no markdown, no code fence.",
+        "{}\n\n---\nYou are running HEADLESS as this review. Review the branch diff in the \
+         user message against the numbered items above. Output ONLY a single JSON object \
+         and nothing else: {{\"findings\":[{{\"item\":<number>,\"where\":\"file:line\",\"what\":\"<one line>\"}}]}} \
+         with one entry per finding and an empty list when there are none. Do not give a \
+         verdict: it is derived from your findings. No prose, no markdown, no code fence.",
         skill_md.trim()
     )
 }
@@ -1850,7 +1890,7 @@ fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round:
     }
 }
 
-const GATE_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","fail","error"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
+const GATE_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"item":{"type":"integer"},"where":{"type":"string"},"what":{"type":"string"}},"required":["item","where","what"],"additionalProperties":false}}},"required":["findings"],"additionalProperties":false}"#;
 
 fn agent_bin() -> String {
     env::var("CHORUS_AGENT_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/chorus-agent", env::var("HOME").unwrap_or_default()))
@@ -2036,6 +2076,11 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         }
     };
     let sys = gate_system_prompt(&skill_md);
+    let fail_on = fail_items(&skill_md);
+    if fail_on.is_empty() {
+        record_gate(home, role, card, gate, "error", &format!("{} names no fail-items", skill.display()), round);
+        return;
+    }
 
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
@@ -2063,7 +2108,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD){} ===\n{}",
             card, card_view, part, batch
         );
-        parts.push(review_once(&sys, &ctx, round));
+        parts.push(review_once(&sys, &ctx, round, &fail_on));
     }
     let (result, findings) = combine_verdicts(&parts, &unread);
     record_gate(home, role, card, gate, &result, &findings, round);
@@ -2127,10 +2172,10 @@ pub fn combine_verdicts(parts: &[(String, String)], unread: &[String]) -> (Strin
 }
 
 /// One headless review of one context; ("error", why) when it could not run.
-fn review_once(sys: &str, ctx: &str, round: &str) -> (String, String) {
+fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, String) {
     if let Some(job) = gate_via_agent(ctx, sys, GATE_OUTPUT_SCHEMA, round) {
         return match job {
-            Ok(out) => parse_gate_verdict(&out),
+            Ok(out) => gate_verdict(&out, fail_on),
             Err(e) => ("error".to_string(), e),
         };
     }
@@ -2211,7 +2256,7 @@ fn review_once(sys: &str, ctx: &str, round: &str) -> (String, String) {
     if !status.success() {
         return ("error".to_string(), (format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>())).to_string());
     }
-    parse_gate_verdict(&stdout)
+    gate_verdict(&stdout, fail_on)
 }
 
 
@@ -2500,41 +2545,45 @@ mod tests {
     }
 
     #[test]
-    fn parse_gate_verdict_raw_pass() {
-        let out = r#"{"result":"pass","findings":"AC met, demo evidence present"}"#;
-        let (r, f) = parse_gate_verdict(out);
-        assert_eq!(r, "pass");
-        assert_eq!(f, "AC met, demo evidence present");
+    fn fail_items_reads_ranges_and_singles_from_frontmatter() {
+        let md = "---\nname: gate-x\nfail-items: 1-3, 7, 9\n---\n# x\nfail-items: 99\n";
+        assert_eq!(fail_items(md), vec![1, 2, 3, 7, 9]);
+        assert!(fail_items("---\nname: y\n---\n# y").is_empty(), "no rule → empty (the runner refuses)");
     }
 
     #[test]
-    fn parse_gate_verdict_raw_fail() {
-        let out = r#"{"result":"fail","findings":"no tests for AC3"}"#;
-        let (r, f) = parse_gate_verdict(out);
+    fn gate_verdict_derives_fail_from_a_fail_item_finding() {
+        let out = r#"{"findings":[{"item":2,"where":"a.rs:3","what":"swallowed error"},{"item":6,"where":"b.rs:1","what":"no log"}]}"#;
+        let (r, f) = gate_verdict(out, &[1, 2, 3]);
         assert_eq!(r, "fail");
-        assert_eq!(f, "no tests for AC3");
+        assert!(f.starts_with("a.rs:3 — item 2 — swallowed error"), "{f}");
+        assert!(f.contains("note: b.rs:1 — item 6"), "{f}");
     }
 
     #[test]
-    fn parse_gate_verdict_unwraps_json_envelope() {
-        // claude -p --output-format json: the gate JSON is nested+escaped in `result`.
-        let out = r#"{"type":"result","subtype":"success","result":"{\"result\":\"pass\",\"findings\":\"clean\"}","is_error":false}"#;
-        let (r, f) = parse_gate_verdict(out);
-        assert_eq!(r, "pass");
-        assert_eq!(f, "clean");
+    fn negative_proof_the_models_own_pass_word_is_ignored() {
+        // #4708's shape: the reply says pass but lists a fail-item finding
+        let out = r#"{"result":"pass","findings":[{"item":1,"where":"t.bats:9","what":"negative proof passes vacuously"}]}"#;
+        assert_eq!(gate_verdict(out, &[1]).0, "fail");
     }
 
     #[test]
-    fn parse_gate_verdict_garbled_is_error_never_pass() {
-        let (r, f) = parse_gate_verdict("I think this looks fine to me, shipping it");
-        assert_eq!(r, "error");
-        assert!(!f.is_empty());
+    fn notes_only_and_empty_lists_pass() {
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":6,"where":"x","what":"y"}]}"#, &[1]).0, "pass");
+        assert_eq!(gate_verdict(r#"{"findings":[]}"#, &[1]), ("pass".to_string(), "no findings".to_string()));
     }
 
     #[test]
-    fn parse_gate_verdict_missing_result_is_error() {
-        let (r, _) = parse_gate_verdict(r#"{"findings":"only findings, no verdict"}"#);
-        assert_eq!(r, "error");
+    fn gate_verdict_unwraps_json_envelope() {
+        let out = r#"{"type":"result","result":"{\"findings\":[{\"item\":3,\"where\":\"z.rs:2\",\"what\":\"null means two things\"}]}","is_error":false}"#;
+        assert_eq!(gate_verdict(out, &[3]).0, "fail");
+    }
+
+    #[test]
+    fn negative_proof_garbled_or_itemless_is_error_never_pass() {
+        assert_eq!(gate_verdict("I think this looks fine to me, shipping it", &[1]).0, "error");
+        assert_eq!(gate_verdict(r#"{"result":"pass","findings":"clean"}"#, &[1]).0, "error", "the old string shape is no list");
+        assert_eq!(gate_verdict(r#"{"findings":[{"where":"a","what":"b"}]}"#, &[1]).0, "error");
     }
 
     // #3623 drive-by hermeticity fix: these two tests mutate the SAME process-wide
@@ -2567,8 +2616,8 @@ mod tests {
     fn gate_system_prompt_embeds_skill_and_output_contract() {
         let p = gate_system_prompt("# Gate Product\nCheck the AC.");
         assert!(p.contains("Gate Product"));
-        assert!(p.contains("\"result\":\"pass\""));
-        assert!(p.contains("ONLY a single JSON object"));
+        assert!(p.contains("\"findings\":[{\"item\""));
+        assert!(p.contains("ONLY a single JSON object") && p.contains("Do not give a verdict"));
     }
 
 
@@ -3078,13 +3127,13 @@ mod gate_profile_tests_4424 {
     fn set_gate_profile_runs_chorus_agent_with_a_json_job() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = scratch("set");
-        let bin = fake_agent(&dir, r#"{"result":"fail","findings":"missing test"}"#);
+        let bin = fake_agent(&dir, r#"{"findings":[{"item":8,"where":"a.rs:1","what":"missing test"}]}"#);
         env::set_var("CHORUS_GATE_PROFILE", "gate-chat");
         env::set_var("CHORUS_AGENT_BIN", &bin);
         let out = gate_via_agent("card text \"quoted\"", "gate sys", GATE_OUTPUT_SCHEMA, "abc123").expect("profile set").unwrap();
         env::remove_var("CHORUS_GATE_PROFILE");
         env::remove_var("CHORUS_AGENT_BIN");
-        assert_eq!(parse_gate_verdict(&out).0, "fail");
+        assert_eq!(gate_verdict(&out, &[8]).0, "fail");
         assert_eq!(fs::read_to_string(dir.join("args")).unwrap().trim(), "run --text");
         let stdin = fs::read_to_string(dir.join("stdin")).unwrap();
         assert_eq!(extract_json_str(&stdin, "profile").as_deref(), Some("gate-chat"));

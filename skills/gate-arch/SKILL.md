@@ -2,6 +2,7 @@
 name: gate-arch
 description: Architecture review of a card's diff — one path, retire in the same land, boundaries, duplication, generated files. Runs on every card, fix cards included. Never reads AC boxes.
 user-invocable: true
+fail-items: 1-5, 7, 9
 ---
 
 # /gate-arch — Architecture review

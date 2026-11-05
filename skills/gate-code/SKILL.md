@@ -2,6 +2,7 @@
 name: gate-code
 description: Code review of a card's diff on Google's engineering practices and Fagan inspection — correctness, design, tests, and whether each AC's check really tests that AC. Runs on every card. Never counts AC boxes.
 user-invocable: true
+fail-items: 1-5, 8, 10
 ---
 
 # /gate-code — Code review

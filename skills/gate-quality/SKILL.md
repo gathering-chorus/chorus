@@ -2,6 +2,7 @@
 name: gate-quality
 description: Quality review of a card's diff — hollow checks, error paths, dead code, tests that test the change. Runs on every card. Never reads AC boxes.
 user-invocable: true
+fail-items: 1-3, 7
 ---
 
 # /gate-quality — Quality review
