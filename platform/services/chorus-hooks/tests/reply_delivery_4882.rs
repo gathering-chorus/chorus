@@ -143,8 +143,7 @@ fn the_4882_test_files_carry_their_domain_4884() {
     // the crawler files a test with no `@domain:` header as out of sync (Kade, 11-03 19:00)
     let root = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("..");
     // werk-demo/tests/product_proof_4882.rs left with the product gate (#4889)
-    for f in ["chorus-hooks/tests/reply_delivery_4882.rs"] {
-        let head: String = std::fs::read_to_string(root.join(f)).unwrap().lines().take(5).collect::<Vec<_>>().join("\n");
-        assert!(head.contains("// @domain: "), "{f} has no @domain header in its first lines");
-    }
+    let f = "chorus-hooks/tests/reply_delivery_4882.rs";
+    let head: String = std::fs::read_to_string(root.join(f)).unwrap().lines().take(5).collect::<Vec<_>>().join("\n");
+    assert!(head.contains("// @domain: "), "{f} has no @domain header in its first lines");
 }
