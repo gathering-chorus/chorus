@@ -11,7 +11,7 @@ use borg_prove::{latest_case_result, test_logql};
 fn the_query_names_the_test_by_file_or_case_and_matches_the_event_exactly() {
     let q = test_logql("platform/tests/x.bats", 4530);
     assert!(q.starts_with(r#"{job="platform-chorus", appName="chorus-events"}"#), "{q}");
-    assert!(q.contains(r#"| json | event=~"test.case.(passed|failed)""#), "{q}");
+    assert!(q.contains(r#"| json | event=~"test.case.(passed|failed|skipped)""#), "{q}"); // #4889: skips are read too
     assert!(q.contains(r#"file="platform/tests/x.bats" or case="platform/tests/x.bats""#), "{q}");
 }
 

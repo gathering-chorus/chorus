@@ -69,4 +69,14 @@ describe('#4875 AC5: one moderator for unaddressed Jeff messages', () => {
     stop();
     expect(logs).toEqual([]);
   });
+
+  test('#4889 negative proof: a 200 with no rows list falls open to every role (never a stale moderator)', async () => {
+    const seen: Array<string | undefined> = [];
+    const answers = [props('wren'), { nope: 1 }];
+    const fetchFn = (async () => ({ ok: true, json: async () => answers.shift() })) as unknown as typeof fetch;
+    const stop = watchModerator((m) => seen.push(m), 'u', 5, fetchFn, () => {});
+    await new Promise((r) => setTimeout(r, 30));
+    stop();
+    expect(seen.slice(0, 2)).toEqual(['wren', undefined]);
+  });
 });

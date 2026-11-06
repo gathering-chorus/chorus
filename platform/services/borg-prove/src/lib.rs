@@ -45,6 +45,8 @@ pub type Seen = Option<String>;
 pub fn judge(c: &Check, seen: &Seen) -> Outcome {
     match c.kind.as_str() {
         "none" | "" => Outcome::Unmeasured("no runnable check on this AC".into()),
+        // #4889 — never met at its own land: the next land re-runs the inner check
+        "after" => Outcome::Deferred(format!("after land: `{}` re-runs at the next land", c.target)),
         // #4823 AC2 — what the later card's status is (`cards view`), or nothing
         "by" => match seen.as_deref().map(str::trim) {
             Some("Done") => Outcome::Met(format!("proven by #{} (Done)", c.target)),
@@ -61,6 +63,10 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
             };
+            // #4889 — a skipped case in the test's newest run measured nothing
+            if c.kind == "test" && body.trim() == "skip" {
+                return Outcome::Unmeasured(format!("test {}: its newest run skipped a case", c.target));
+            }
             let want = c.expect.trim();
             if want.is_empty() {
                 return Outcome::Unmeasured("the check names nothing to expect".into());
@@ -135,6 +141,9 @@ pub fn ac_lines(card: u32, desc: &str) -> Vec<(bool, Check)> {
             "test" => (rest.to_string(), "pass".to_string()),
             // #4824 — `check: crawl <class>`: that row of the crawl reads missing=0
             "crawl" => (rest.to_string(), "missing=0".to_string()),
+            // #4889 (Kade 19:56) — `check: after <check>`: proven only after the land, by
+            // the next land's re-run; at its own land it reads deferred, never met
+            "after" if !rest.is_empty() => (rest.to_string(), "later".to_string()),
             // #4823 — `check: by #N`: card N proves it; it is met when N is Done
             "by" => match rest.trim_start_matches('#').parse::<u32>() {
                 Ok(n) => (n.to_string(), "Done".to_string()),
@@ -161,6 +170,35 @@ pub fn ac_lines(card: u32, desc: &str) -> Vec<(bool, Check)> {
     out
 }
 
+/// #4889 — the check an `after` check defers: its target parsed as a check of its own,
+/// under the same AC id. None for any other kind, or an inner check that names nothing.
+pub fn inner_check(c: &Check) -> Option<Check> {
+    if c.kind != "after" { return None; }
+    let (_, mut inner) = ac_lines(0, &format!("## AC\n- [ ] {} check: {}\n", c.statement, c.target)).into_iter().next()?;
+    if inner.kind == "none" || inner.kind == "after" || inner.target.is_empty() { return None; }
+    inner.ac = c.ac.clone();
+    Some(inner)
+}
+
+/// #4889 — what the next land does with one open deferred check's re-run: met clears it,
+/// not met reopens its card, unmeasured keeps it open. Pure.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Rerun { Cleared, Reopen, KeepOpen }
+/// #4889 (code review, run 9) — whether a deferred check stays in the registry after a
+/// re-run: kept while unmeasured, and kept when its reopen did not take (a failed
+/// reopen never drops the check, so the next land tries again). Pure.
+pub fn keeps_deferral(action: &Rerun, reopened: bool) -> bool {
+    match action { Rerun::Cleared => false, Rerun::KeepOpen => true, Rerun::Reopen => !reopened }
+}
+
+pub fn rerun_action(o: &Outcome) -> Rerun {
+    match o {
+        Outcome::Met(_) => Rerun::Cleared,
+        Outcome::NotMet(_) => Rerun::Reopen,
+        Outcome::Unmeasured(_) | Outcome::Deferred(_) => Rerun::KeepOpen,
+    }
+}
+
 /// Intake (Proving step 1): a card is Rejected when it has no AC, or an AC
 /// has no runnable check. Every gap is named.
 pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
@@ -175,9 +213,15 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
-/// #4683 — a card with no AC check (#4760: on its AC lines) has nothing to prove: it lands as
-/// before, and the record says so. Never "Proven".
+/// #4683 — a card with no AC check (#4760: on its AC lines) has nothing to prove. Never
+/// "Proven". #4889 (Jeff 18:21, "prove in prod"): it no longer lands as before: it fails.
 pub const NO_ROWS: &str = "unproven: no AC has a check";
+
+/// #4889 — the land's prove step passes only on Proven: Not met, Unproven and a card with
+/// no checks all hold accept and reopen the card. Pure.
+pub fn prod_passes(v: &str) -> bool {
+    v == "Proven"
+}
 
 /// The verdict over every AC: Proven only when every one is met; Not met when
 /// any is not met; Unproven when none failed but some could not be measured
@@ -278,7 +322,7 @@ pub fn test_logql(target: &str, card: u32) -> String {
         // every case line in the window does not answer (test-diff, 10-15).
         // card_id is a JSON number on card runs ("card_id":4530); the exact
         // match is the label filter after json, so 45301 never answers for 4530.
-        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
+        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
 }
 
@@ -290,8 +334,17 @@ pub fn latest_case_result(body: &str) -> Option<String> {
 
 /// #4824 — the newest result with its Loki timestamp (ns), so two answers
 /// (the card's own runs, main's nightly since the land) can be compared.
+/// #4889 — how many case lines the test check asks Loki for. An answer that holds
+/// this many lines may have cut off the newest run's oldest cases (/code-review).
+pub const CASE_LIMIT: usize = 2000;
+
 pub fn latest_case(body: &str) -> Option<(u128, String)> {
-    let mut best: Option<(u128, &'static str)> = None;
+    // #4889 (Kade 18:08) — the WHOLE newest run of the test decides, not its
+    // newest single case: Loki answered limit=1, so one passing case hid a failed
+    // one, and a skipped case was never read. Cases are grouped by their run's
+    // trace; the run with the newest case is the answer: any failed case → fail,
+    // else any skipped case → skip (unmeasured), else pass.
+    let mut cases: Vec<(u128, String, &'static str)> = Vec::new();
     let mut rest = body;
     while let Some(i) = rest.find("[\"") {
         rest = &rest[i + 2..];
@@ -313,13 +366,30 @@ pub fn latest_case(body: &str) -> Option<(u128, String)> {
         }
         rest = &rest[close..];
         let result = if line.contains("\"event\":\"test.case.failed\"") { "fail" }
+            else if line.contains("\"event\":\"test.case.skipped\"") { "skip" }
             else if line.contains("\"event\":\"test.case.passed\"") { "pass" }
             else { continue };
-        if best.map_or(true, |(t, _)| ts > t) {
-            best = Some((ts, result));
-        }
+        // a case with no trace is a run of its own: never grouped with others
+        let run = json_field(&line, "trace").filter(|t| !t.is_empty()).unwrap_or_else(|| format!("untraced-{ts}"));
+        cases.push((ts, run, result));
     }
-    best.map(|(t, r)| (t, r.to_string()))
+    let (newest, run) = cases.iter().max_by_key(|(t, _, _)| *t).map(|(t, r, _)| (*t, r.clone()))?;
+    let of_run: Vec<&str> = cases.iter().filter(|(_, r, _)| *r == run).map(|(_, _, x)| *x).collect();
+    // a full answer whose oldest line is still the newest run may have lost cases
+    let oldest_is_newest_run = cases.iter().min_by_key(|(t, _, _)| *t).map(|(_, r, _)| *r == run).unwrap_or(false);
+    let truncated = cases.len() >= CASE_LIMIT && oldest_is_newest_run;
+    let verdict = if of_run.contains(&"fail") { "fail" }
+        else if truncated || of_run.contains(&"skip") { "skip" }
+        else { "pass" };
+    Some((newest, verdict.to_string()))
+}
+
+/// The string value of `"key":"…"` in one flat JSON line (no nesting needed here).
+fn json_field(line: &str, key: &str) -> Option<String> {
+    let k = format!("\"{key}\":\"");
+    let i = line.find(&k)? + k.len();
+    let j = line[i..].find('"')?;
+    Some(line[i..i + j].to_string())
 }
 
 /// #4824 — a `test` check's query on MAIN: the nightly's case events for the
@@ -330,7 +400,7 @@ pub fn latest_case(body: &str) -> Option<(u128, String)> {
 pub fn test_logql_main(target: &str) -> String {
     let t = target.replace('\\', "\\\\").replace('"', "\\\"");
     format!(
-        "{{job=\"platform-chorus\", appName=\"chorus-events\", role=\"nightly\"}} |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
+        "{{job=\"platform-chorus\", appName=\"chorus-events\", role=\"nightly\"}} |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
 }
 

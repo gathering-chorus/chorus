@@ -99,7 +99,7 @@ fn key_for(dir: &Path, role: &str) -> String {
 fn run(base: &str, buzz: Option<BuzzDeps>, msg: &str) -> (Result<String, String>, Vec<String>) {
     let spine: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let write = |e: &str, r: &str, p: &str| spine.lock().unwrap().push(format!("{e} {r} {p}"));
-    let deps = Deps { door: base.into(), api: base.into(), pulse_url: format!("{base}/api/nudge"), pulse_secret: Some("s3".into()), identity_token: None, spine: &write, buzz };
+    let deps = Deps { door: base.into(), api: base.into(), pulse_url: format!("{base}/api/nudge"), pulse_secret: Some("s3".into()), identity_token: None, spine: &write, buzz, wake: None };
     let out = send(&["wren".into(), "silas".into(), msg.into()], &deps);
     let events = spine.lock().unwrap().clone();
     (out, events)

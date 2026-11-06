@@ -25,5 +25,12 @@ echo 'scan platform/api/src/handlers/context-roles.ts' > "$T/platform/tests/ctx.
 [ "$(run_gate directing/clearing-v2/src/sources/roles.ts)" = 0 ] && { echo "PASS a longer name that ends in roles.ts does not block"; pass=$((pass+1)); } || { echo "FAIL blocked: $(cat "$T/err")"; fail=$((fail+1)); }
 echo 'import directing/clearing-v2/src/sources/roles.ts' > "$T/platform/tests/v2.bats"
 [ "$(run_gate directing/clearing-v2/src/sources/roles.ts)" = 1 ] && grep -q v2.bats "$T/err" && ! grep -q ctx.bats "$T/err" && { echo "PASS negative proof: a test naming the deleted roles.ts still blocks"; pass=$((pass+1)); } || { echo "FAIL not caught: $(cat "$T/err")"; fail=$((fail+1)); }
+# #4889 — a crate's tests/e2e.rs is generic too: another crate's e2e.rs must not block,
+# a test naming the deleted one by its path still does
+rm -f "$T"/platform/tests/*.bats
+echo '# covered by platform/services/werk-push/tests/e2e.rs' > "$T/platform/tests/push.bats"
+[ "$(run_gate platform/services/werk-review/tests/e2e.rs)" = 0 ] && { echo "PASS another crate's e2e.rs does not block"; pass=$((pass+1)); } || { echo "FAIL blocked: $(cat "$T/err")"; fail=$((fail+1)); }
+echo 'cargo test --test e2e  # werk-review/tests/e2e.rs' > "$T/platform/tests/rev.bats"
+[ "$(run_gate platform/services/werk-review/tests/e2e.rs)" = 1 ] && grep -q rev.bats "$T/err" && ! grep -q push.bats "$T/err" && { echo "PASS negative proof: a test naming the deleted e2e.rs by its path still blocks"; pass=$((pass+1)); } || { echo "FAIL not caught: $(cat "$T/err")"; fail=$((fail+1)); }
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

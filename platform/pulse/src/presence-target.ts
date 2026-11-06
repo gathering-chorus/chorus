@@ -84,19 +84,5 @@ export async function fetchPresenceResolution(role: string, base = process.env.A
   }
 }
 
-/** #4362 — a role's live run has no pane (it was logged in outside tmux), but
- * the role itself runs in its own tmux session, chorus-<role>. Read that
- * session's panes: exactly one %N pane is the role's pane. Anything else
- * (no session, several panes, not a pane id) reaches no one. */
-export function paneFromTmuxListing(listing: string): string {
-  const panes = listing.split('\n').map((l) => l.trim()).filter(Boolean);
-  return panes.length === 1 && /^%\d+$/.test(panes[0]) ? panes[0] : '';
-}
-
-export function rolePaneFromTmux(role: string, run: (args: string[]) => string): string {
-  try {
-    return paneFromTmuxListing(run(['list-panes', '-t', `chorus-${role}`, '-F', '#{pane_id}']));
-  } catch {
-    return '';
-  }
-}
+// #4889 — the #4362 fallback (reading a pane from the role's tmux session) is retired:
+// a role is reached at its one live registration or not at all (Jeff 07:48).

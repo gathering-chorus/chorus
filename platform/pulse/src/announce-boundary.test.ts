@@ -65,21 +65,21 @@ describe('#3357 decide — the boundary policy', () => {
   const t0 = 1_000_000;
 
   test('self-echo is killed: a sender never receives its own send', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const d = decide('wren', 'wren', ROLE_MESSAGE, t0, st);
     expect(d.deliver).toBe(false);
     expect(d.suppressReason).toBe('self-echo');
   });
 
   test('typed refusals are suppressed as benign control flow', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const d = decide('chorus-mcp', 'wren', CARDS_REFUSAL, t0, st);
     expect(d.deliver).toBe(false);
     expect(d.suppressReason).toBe('benign-refusal');
   });
 
   test('machine repeats collapse: first delivers, repeats within cooldown suppress with a count', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const first = decide('system', 'jeff', EVENT_LOOP_ALERT, t0, st);
     expect(first.deliver).toBe(true);
     // same incident, new numbers, 10 minutes later — still inside the machine cooldown
@@ -94,7 +94,7 @@ describe('#3357 decide — the boundary policy', () => {
   });
 
   test('role-to-role messages always deliver (exact-dup guard #3335 stays upstream)', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const a = decide('silas', 'kade', ROLE_MESSAGE, t0, st);
     const b = decide('silas', 'kade', ROLE_MESSAGE + ' more', t0 + 1000, st);
     expect(a.deliver).toBe(true);
@@ -102,7 +102,7 @@ describe('#3357 decide — the boundary policy', () => {
   });
 
   test('real machine errors deliver first time (never silently eaten)', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const d = decide('chorus-mcp', 'wren', REAL_MCP_ERROR, t0, st);
     expect(d.deliver).toBe(true);
   });
@@ -110,7 +110,7 @@ describe('#3357 decide — the boundary policy', () => {
 
 describe("#3357 AC6 — replay today's tape: ≤1/3 the deliveries, zero loss", () => {
   test('the 2026-06-11 machine tape collapses', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     let delivered = 0;
     const minute = 60_000;
     let t = 0;
@@ -140,14 +140,14 @@ describe("#3357 AC6 — replay today's tape: ≤1/3 the deliveries, zero loss", 
 
 describe('#3357 cold-eyes catch — refusal matching is allowlist, fail-open', () => {
   test('a real error containing "connection refused: timeout" DELIVERS as error', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const d = decide('chorus-mcp', 'wren', '[mcp.error] db connection refused: timeout after 8s', 1000, st);
     expect(d.deliver).toBe(true);
     expect(d.cls).toBe('error');
   });
 
   test('an unknown refused:-class fails open to delivery', () => {
-    const st = new AnnounceState();
+    const st = new AnnounceState(30 * 60_000);
     const d = decide('chorus-mcp', 'wren', 'tool refused: some-brand-new-class — details', 1000, st);
     expect(d.deliver).toBe(true);
   });

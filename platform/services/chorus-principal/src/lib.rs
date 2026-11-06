@@ -1831,6 +1831,9 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
     let (mut kept, mut failed) = (0, 0);
     for role in roles {
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { continue; }
+        // #4889 — an idle role is never woken by a nudge to a dead pane, so the sweep
+        // keeps its address current too, not only its turns
+        refresh_pane(ctx, role);
         if live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() { continue; }
         let Some(session) = read_row(ctx, role, "session") else { continue };
         let exp = current_login_expiry(ctx, role);
@@ -1841,6 +1844,46 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
         }
     }
     (kept, failed)
+}
+
+/// #4889 (Jeff 07:48: a role's address follows the role, like a phone number) — the
+/// Presence takes the pane the role's tmux session shows now, the same read a login
+/// makes. Run by the sweep (every ~60s, as jeffbridwell, whose tmux socket holds every
+/// role's session): a role's own account cannot read that socket (mode 700), so a
+/// turn could not do it (Kade 07:57). A sweep that cannot read the pane says so once
+/// per change (presence.pane.unreadable), never silently. Pulse never writes a
+/// Presence and never guesses a pane: a pane that is gone is a loud not-delivered there.
+fn refresh_pane(ctx: &Ctx, role: &str) {
+    let Some(p) = read_row(ctx, role, "presence") else { return };
+    let answer = if ctx.has_tmux(role) {
+        sh(&ctx.tmux, &["list-panes", "-t", &Ctx::tmux_session(role), "-F", "#{pane_id}|#{pane_tty}"])
+    } else {
+        Err(format!("no tmux session {} readable from account {}", Ctx::tmux_session(role), env::var("USER").unwrap_or_default()))
+    };
+    let marker = PathBuf::from(&ctx.identity_dir).join(role).join("pane.unreadable");
+    let (pane, tty) = match rows::pane_read(answer) {
+        Ok(pt) => { let _ = fs::remove_file(&marker); pt }
+        Err(why) => {
+            if !marker.exists() {
+                // the marker makes the event once per change; without its dir it would fire every sweep
+                if let Err(e) = marker.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(&marker, &why)) {
+                    eprintln!("chorus-principal: pane.unreadable marker for {role} not written: {e}");
+                }
+                ctx.spine(&["presence.pane.unreadable", role, &format!("why={}", why)]);
+            }
+            return;
+        }
+    };
+    repane(ctx, role, p, &pane, &tty);
+}
+
+/// #4889 — write the pane the role really runs in onto its Presence, when it moved.
+fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
+    let was = presence.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if let Some(np) = rows::repaned_presence(presence, pane, tty) {
+        let ok = put_row(ctx, role, "identity/presences", "presence", &np);
+        ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
+    }
 }
 
 /// Ids of the role's background sessions (`claude agents --json --cwd <role dir>`).
@@ -1877,6 +1920,10 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
     let _ = fs::create_dir_all(&ctx.sessions_dir);
     fs::write(ctx.sessions_dir.join(format!("{}-{}.json", role, pid)), entry.to_string()).ok()?;
     ctx.spine(&["session.registered.from_pane", role, &format!("pid={}", pid), &format!("pane={}", pane)]);
+    // #4889 (measured 11-05 11:20: Abby %16→%17, BQ %14→%15) — the run's Presence was
+    // written before start_in_pane replaced the session (#4845), so it names a pane that
+    // no longer exists; the pane the runtime is found in is its address
+    if let Some(p) = read_row(ctx, role, "presence") { repane(ctx, role, p, &pane, &tty); }
     parse_registry(&entry.to_string())
 }
 

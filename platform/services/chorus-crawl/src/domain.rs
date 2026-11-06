@@ -166,7 +166,6 @@ const BINARIES: &[(&str, &str)] = &[
     ("werk-pull", "cicd"),
     ("werk-commit", "cicd"),
     ("werk-push", "cicd"),
-    ("werk-review", "cicd"),
     ("werk-resume", "cicd"),
     ("chorus-werk", "cicd"),
     ("deep-health", "monitors"),

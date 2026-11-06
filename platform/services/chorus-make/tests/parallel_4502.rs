@@ -56,9 +56,8 @@ fn siblings_generate_the_same_bytes_in_any_row_order() {
 }
 
 // NEGATIVE PROOF: distinct orders are the linear chain. The demo pipeline's
-// rows (its own DAG, Jeff 10-12 21:18) generate its golden with exactly one
-// fan-in (smoke waits for the 8 siblings); with the sibling group removed the
-// same rows have none. cicd itself, which calls the demo as one step, has none.
+// rows (its own DAG, Jeff 10-12 21:18) generate its golden as a chain since #4889:
+// a red review stops the ones after it. cicd itself, which calls the demo as one step, has none.
 #[test]
 fn negative_proof_distinct_orders_stay_the_linear_golden() {
     let known: Vec<String> = ["cicd", "cicd-test", "nightly", "athena", "pair", "demo"].iter().map(|s| s.to_string()).collect();
@@ -67,9 +66,14 @@ fn negative_proof_distinct_orders_stay_the_linear_golden() {
     let out = chorus_make::generate_straight("demo", &pipe, &rows, &known).unwrap();
     assert_eq!(out, fixture("fixtures/demo-golden.yaml"));
     let fan_in = |o: &str| o.lines().filter(|l| l.starts_with("    depends: [") && l.contains(", ")).count();
-    assert_eq!(fan_in(&out), 1, "one fan-in: smoke waits for the 8 siblings:\n{out}");
-    let linear: Vec<_> = rows.into_iter().filter(|r| !r.with_args.contains("parallel=true")).collect(); // drop the parallel group
-    assert_eq!(fan_in(&chorus_make::generate_straight("demo", &pipe, &linear, &known).unwrap()), 0, "distinct orders: no fan-in");
+    // #4889 (Jeff 11-05 10:06) — the reviews run in turn and the first red stops the demo:
+    // no fan-in; each review waits on the one before (quality → arch → code → announce)
+    assert_eq!(fan_in(&out), 0, "the reviews run in turn, no fan-in:\n{out}");
+    for (s, after) in [("skill-werk-demo-gate-quality", "skill-werk-demo-validate"), ("skill-werk-demo-gate-arch", "skill-werk-demo-gate-quality"),
+                       ("skill-werk-demo-gate-code", "skill-werk-demo-gate-arch"), ("skill-werk-demo-announce", "skill-werk-demo-gate-code")] {
+        assert!(out.contains(&format!("  - name: {s}\n")) && out.split(&format!("  - name: {s}\n")).nth(1).unwrap().lines().any(|l| l == format!("    depends: [{after}]")), "{s} waits for {after}:\n{out}");
+    }
+    assert!(!rows.iter().any(|r| r.with_args.contains("parallel=true")), "no parallel group left in the demo rows");
     let cicd = generate("cicd", &parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap()).unwrap();
     assert_eq!(cicd, fixture("fixtures/cicd-golden.yaml"));
     assert_eq!(fan_in(&cicd), 0, "cicd calls the demo as one step");

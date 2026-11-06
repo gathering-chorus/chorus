@@ -81,6 +81,64 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
+/// #4889 — each AC line of a card view, numbered from 1, with its check target as
+/// "<kind> <target>" (`check: after <kind> <target>` defers; its target is the inner one),
+/// or None when the AC names no check. Pure.
+fn ac_targets(card_view: &str) -> Vec<(usize, Option<String>)> {
+    card_view.lines().map(str::trim_start).filter(|t| t.starts_with("- [x]") || t.starts_with("- [ ]"))
+        .enumerate().map(|(i, t)| {
+            let target = t.rfind("check: ").map(|k| {
+                let mut w = t[k + 7..].split_whitespace();
+                let kind = match w.next().unwrap_or("") { "after" => w.next().unwrap_or(""), k => k };
+                format!("{kind} {}", w.next().unwrap_or("")).trim().to_string()
+            }).filter(|x| x.contains(' '));
+            (i + 1, target)
+        }).collect()
+}
+
+/// #4889 AC9 — what is wrong with a card's AC checks, one line each: an AC that names no
+/// `check:`, and an AC whose check target another AC already uses (each AC's check tests
+/// that AC alone). Empty when every AC names its own check. Pure.
+pub fn ac_check_problems(card_view: &str) -> Vec<String> {
+    let mut seen: Vec<(String, usize)> = Vec::new();
+    let mut problems = Vec::new();
+    // #4889 (code review, run 17) — borg-prove needs one AC proven before the land; a card
+    // whose every AC is `check: after` could never be Proven and its land would reopen it.
+    // Refused here, before any review or go.
+    let ac: Vec<&str> = card_view.lines().map(str::trim_start).filter(|t| t.starts_with("- [x]") || t.starts_with("- [ ]")).collect();
+    if !ac.is_empty() && ac.iter().all(|t| t.contains("check: after ")) {
+        problems.push("every AC is `check: after`: nothing proves this card before the land, so it can never be Proven".to_string());
+    }
+    for (n, target) in ac_targets(card_view) {
+        match target {
+            None => problems.push(format!("AC {n} names no check")),
+            Some(tg) => match seen.iter().find(|(s, _)| *s == tg) {
+                Some((_, m)) => problems.push(format!("AC {n} shares its check `{tg}` with AC {m}")),
+                None => seen.push((tg, n)),
+            },
+        }
+    }
+    problems
+}
+
+/// #4889 AC8 — an AC whose `test` check is an unrelated test, one finding each: the file
+/// is missing, or its header (`head_of`, the file's first lines) never names `#<card>`. A
+/// test that proves an AC says which card it proves, so a check borrowed from elsewhere
+/// is flagged until its header names this card. Findings are keyed `<file>:1 — item 1`,
+/// /gate-code's item. Pure: `head_of` reads the file.
+pub fn unrelated_checks(card_view: &str, card: u64, head_of: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let tag = format!("#{card}");
+    let names_card = |h: &str| h.match_indices(&tag).any(|(i, _)| !h[i + tag.len()..].starts_with(|c: char| c.is_ascii_digit()));
+    ac_targets(card_view).into_iter().filter_map(|(n, t)| {
+        let path = t?.strip_prefix("test ")?.to_string();
+        match head_of(&path) {
+            None => Some(format!("{path}:1 — item 1 — AC {n}'s check does not exist")),
+            Some(h) if !names_card(&h) => Some(format!("{path}:1 — item 1 — AC {n}'s check never names {tag}: an unrelated test")),
+            Some(_) => None,
+        }
+    }).collect()
+}
+
 /// #3281 — build the chorus-log argv for a REFUSAL spine emit (pure, testable).
 /// Agent-side blocks (a demo refusing on wrong-status / no-ac) must become
 /// countable: the event is named with the `.refused` suffix the pain board
@@ -102,21 +160,21 @@ pub fn refuse_spine_args(event: &str, role: &str, card: u64, trace: &str, reason
 /// Gates moved to the /demo SKILL layer (#3116) as LLM subagents; this is the
 /// enforcement contract that makes them non-optional — the binary refuses a
 /// verdict until each has left a demo.gate.result in the witness.
-pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "ops"];
+pub const REQUIRED_GATES: [&str; 3] = ["code", "arch", "quality"];
 
 
 /// #3352 — the demo ceremony as an INVARIANT ordering, verb-enforced:
-///   gates recorded → gathers sent → gathers REPLIED → announce → go.
+///   reviews recorded → announce → go (#4889: peer gathers retired).
 /// Jeff's spec verbatim (2026-06-11): "slow / often skipped gates; role feedback
 /// skipped or failed; announce happens b4 role feedback so go precedes that."
 /// Behavioral discipline failed 4× across 2 roles (3282, 3334, 3269, 3343); the
 /// only durable fix is structural. announce_ready_full is the single ready
-/// predicate: every gate recorded AND every peer's 4-question gather REPLIED.
+/// predicate: every required review (code, arch, quality) recorded.
 /// skip (act/headless/test-suite) skips BOTH identically — scoped at birth,
 /// the #3318 lesson (never land-breaking-then-scope).
 /// #3365 — ROUND identity: Jeff's five steps run per ROUND, not per card.
-/// A round is the commit sha being demoed (the werk's HEAD). Every gate,
-/// gather, and announce record carries it; every check matches on it — so a
+/// A round is the commit sha being demoed (the werk's HEAD). Every gate
+/// and announce record carries it; every check matches on it — so a
 /// card with last round's records cannot land this round's commits unreviewed
 /// (the hole that let #3352's own final round close without feedback).
 /// CHORUS_DEMO_ROUND overrides for tests; git failure yields "round-unknown",
@@ -346,15 +404,16 @@ pub fn current_patch_id(role: &str, card: u64) -> String {
 }
 
 
-pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, patch_id: &str, skip: bool) -> bool {
-    skip || (gates_missing(witness, card, round, patch_id).is_empty() && gathers_missing(witness, card, role, round, patch_id).is_empty())
+pub fn announce_ready_full(witness: &str, card: u64, _role: &str, round: &str, patch_id: &str, skip: bool) -> bool {
+    // #4889 — the reviews ARE the gates now (code, arch, quality): one list
+    skip || gates_missing(witness, card, round, patch_id).is_empty()
 }
 
 /// #3519 — THE WITNESS-GATED LAND predicate. demo() present-and-exits (ALWAYS exit 2,
 /// #3279/#3511) and so can never signal "proven" through its exit code; but werk.yml gated
 /// the merge on demo exit-0 (#3499). The two contradict → the merge step never fired →
 /// nothing landed. This is the predicate the merge keys on INSTEAD: the land is proven iff,
-/// for THIS patch, the witness shows every required gate + both peer gathers replied
+/// for THIS patch, the witness shows every required review
 /// (announce_ready_full) AND Jeff's recorded go (jeff_go_recorded). All matching is patch-
 /// keyed (line_keyed, #3461) so it survives the concurrent rebases that churn the round-sha.
 /// Pure + unit-tested (tests/3519-verdict.rs). Reconciles #3499 (gate the land) with #3511
@@ -380,39 +439,8 @@ pub const PEER_ROLES: [&str; 4] = ["wren", "silas", "kade", "abby-normal"];
 /// drift test fails when a role dir is in neither list.
 pub const PROVER_ROLES: [&str; 1] = ["borg-queen"];
 
-/// The peer roles owed a review for this demo: every agent role but the
-/// demoer. Every builder gets the same count (3), so the pipeline's review
-/// steps are fixed: run-review 1..3. (jeff is the prover, not a peer.)
-pub fn gather_peers(role: &str) -> Vec<&'static str> {
-    PEER_ROLES.into_iter().filter(|r| *r != role).take(3).collect()
-}
 
-/// #4502 — a peer's persona: roles/<peer>/CLAUDE.md, else AGENTS.md (abby-normal).
-pub fn peer_persona_path(home: &Path, peer: &str) -> std::path::PathBuf {
-    let claude = home.join(format!("roles/{}/CLAUDE.md", peer));
-    if claude.is_file() { claude } else { home.join(format!("roles/{}/AGENTS.md", peer)) }
-}
 
-/// Peers with NO demo.gather.replied recorded for the card. Empty = both
-/// peers' feedback is IN — the announce may fire. Mirrors gates_missing
-/// (comma-terminated card match, same anti-collision rule). A gather reply is
-/// recorded via `werk-demo gather <card> <peer> replied` when the peer's ACK
-/// arrives — evidence on the witness, never a model claim.
-pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<&'static str> {
-    let card_key = format!("\"card_id\":{},", card);
-    gather_peers(role)
-        .into_iter()
-        .filter(|peer| {
-            let peer_key = format!("\"peer\":\"{}\"", peer);
-            !witness.lines().any(|l| {
-                l.contains("\"event\":\"demo.gather.replied\"")
-                    && l.contains(&card_key)
-                    && l.contains(&peer_key)
-                    && line_keyed(l, round, patch_id)
-            })
-        })
-        .collect()
-}
 
 /// #3511 — true iff JEFF's go is recorded for this card at THIS round. The go is
 /// the human accept (DEC-048), given AFTER the demoer presents the finished, gated
@@ -566,29 +594,6 @@ pub fn render_gate_feedback(witness: &str, card: u64) -> String {
     }
 }
 
-/// #3511 — summarize the ROLE feedback (the peer gathers) for the announce: each
-/// peer's recorded demo.gather.replied verdict + substance. Distinct from the
-/// per-gate findings above — this is the TEAM's review Jeff weighs before his go.
-/// #4474 — only THIS round's peers: the demoer never reviews itself, and a reply
-/// from an earlier round is not this round's review (run 14 showed a kade "block"
-/// recorded rounds earlier, when the demo ran without a role and kade was a peer).
-pub fn render_role_feedback(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> String {
-    let card_key = format!("\"card_id\":{},", card);
-    let mut lines = Vec::new();
-    for peer in gather_peers(role) {
-        let peer_key = format!("\"peer\":\"{}\"", peer);
-        if let Some(l) = witness.lines().rev().find(|l| {
-            l.contains("\"event\":\"demo.gather.replied\"") && l.contains(&card_key) && l.contains(&peer_key)
-                && line_keyed(l, round, patch_id)
-        }) {
-            let verdict = json_str_after(l, "verdict").unwrap_or_else(|| "pass".to_string());
-            let note = json_str_after(l, "note").unwrap_or_default();
-            let tail = if note.is_empty() { String::new() } else { format!(" — {}", note) };
-            lines.push(format!("  {}: {}{}", peer, verdict, tail));
-        }
-    }
-    if lines.is_empty() { String::new() } else { format!("team review:\n{}", lines.join("\n")) }
-}
 
 /// #3511 — the card's TITLE line from `cards view` (first non-empty line, "#N …").
 pub fn card_title(card_view: &str) -> String {
@@ -899,20 +904,6 @@ fn hook_shim() -> String {
 }
 
 
-/// #3479 — record a peer review's verdict (pass|concerns|block|error) and
-/// substance on the witness. #4502 — the single writer, called by the headless
-/// review step (run_one_review); keyed peer+round+patch_id so a review survives
-/// rebase-churn (#3461 line_keyed). The announce step reads it.
-pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, verdict: &str, note: &str) {
-    let round = current_round(role, card);
-    let pid = current_patch_id(role, card);
-    let trace = run_trace();
-    let n = note.replace('\\', " ").replace('"', "'").replace('\n', " ");
-    jsonl(home, role, card, &trace, "demo.gather.replied",
-          &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"verdict\":\"{}\",\"note\":\"{}\"",
-                   peer, round, pid, verdict, n));
-    emit_spine(home, "demo.gather.replied", role, card, &trace);
-}
 
 
 
@@ -1080,37 +1071,6 @@ pub fn ac_checklist(borg_ac: &str) -> String {
     }).collect::<Vec<_>>().join("\n")
 }
 
-/// #4875 (Kade 26af1b142) — the borg-prove that ships beside THIS werk-demo (current_exe's dir):
-/// a demo slot's werk-demo then reads the AC with its own borg-prove, not prod's older one (which
-/// would deadlock the card that adds `borg-prove ac`). No sibling → `fallback` (the wrapper).
-/// #4882 AC4 (Jeff 17:03 "missing check boxes is a bad reason to rerun pipeline"; Silas 17:03)
-/// — the product gate decides the AC from `borg-prove verify`, never from box state. Not
-/// Proven → red, naming each AC that is not met or has no check; Proven → the gate sees the
-/// results as the deciding source. Pure.
-pub fn product_proof(verify_ok: bool, verify_out: &str) -> Result<String, String> {
-    if verify_ok {
-        return Ok(format!(
-            "=== AC PROOF (borg-prove verify: the deciding source for AC; box state is display only) ===\n{}",
-            verify_out.trim()
-        ));
-    }
-    // borg-prove's result rows: `ac-<card>-<n>  <met|not met|unmeasured|deferred>  <statement>`
-    let bad: Vec<String> = verify_out
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("ac-"))
-        .filter_map(|l| {
-            let (ac, rest) = l.split_once(char::is_whitespace)?;
-            let rest = rest.trim_start();
-            let word = ["not met", "unmeasured"].into_iter().find(|w| rest.starts_with(w))?;
-            Some(format!("{ac} {word}"))
-        })
-        .collect();
-    Err(format!(
-        "AC not proven by their checks: {}",
-        if bad.is_empty() { verify_out.trim().to_string() } else { bad.join("; ") }
-    ))
-}
 
 pub fn borg_prove_beside(exe_dir: Option<&Path>, fallback: String) -> String {
     exe_dir.map(|d| d.join("borg-prove")).filter(|p| p.is_file())
@@ -1270,35 +1230,6 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
     // #4502 — no room post here: the round sends one message, at the end of announce
 }
 
-// --- session-smoke (#4502) ---
-//
-// AC: "The demo starts a throwaway session of each changed role from the werk
-// build (its own config and hooks), signs it in, and runs one tool call, before
-// Jeff's go." Silas 10-14: #4377, #4520 and #4444 were proven only after land.
-
-/// Session config every Claude role loads: a change here touches all of them.
-const SMOKE_SHARED: [&str; 4] = ["designing/claudemd/shared/", ".claude/", "platform/services/chorus-hooks/", "skills/"];
-/// The Claude-session roles (abby-normal runs on agy, not claude).
-const SMOKE_CLAUDE_ROLES: [&str; 3] = ["wren", "silas", "kade"];
-
-/// #4502 — the roles whose session config the card's changed paths touch:
-/// roles/<r>/ or designing/claudemd/roles/<r>/ for that role, the shared
-/// paths above for every Claude role. Order: PEER_ROLES, then PROVER_ROLES
-/// (#4691: borg-queen's files are named too, never skipped). Pure.
-pub fn smoke_roles(changed: &[String]) -> Vec<&'static str> {
-    let shared = changed.iter().any(|f| SMOKE_SHARED.iter().any(|p| f.starts_with(p)));
-    PEER_ROLES
-        .into_iter()
-        .chain(PROVER_ROLES)
-        .filter(|r| {
-            (shared && SMOKE_CLAUDE_ROLES.contains(r))
-                || changed.iter().any(|f| {
-                    f.starts_with(&format!("roles/{}/", r)) || f.starts_with(&format!("designing/claudemd/roles/{}/", r))
-                })
-        })
-        .collect()
-}
-
 /// The card's changed paths (git diff --name-only origin/main...HEAD), trusting
 /// only the card's own werk (#4599/#4602: a werk another user owns is "dubious
 /// ownership" to git otherwise).
@@ -1313,144 +1244,18 @@ pub fn changed_paths(werk: &str) -> Result<Vec<String>, String> {
     Ok(String::from_utf8_lossy(&o.stdout).lines().map(str::to_string).collect())
 }
 
-/// One throwaway headless session of `r`, started in the werk's roles/<r>/ so it
-/// loads that build's own .claude settings and hooks, asked for exactly one
-/// Bash call. Ok when the call's output comes back; Err names why not.
-fn smoke_one(werk: &str, r: &str, card: u64) -> Result<(), String> {
-    let bin = claude_bin().ok_or("claude binary not resolvable")?;
-    let dir = Path::new(werk).join("roles").join(r);
-    if !dir.is_dir() {
-        return Err(format!("no roles/{} in the werk", r));
-    }
-    // the reply must carry a value only the tool call can read: a nonce in a
-    // file, so a model that answers without running Bash cannot pass
-    let nonce = format!("smoke-{}-{}-{}", card, r, SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
-    let nonce_file = env::temp_dir().join(format!("werk-demo-smoke-{}-{}-{}", card, r, std::process::id()));
-    fs::write(&nonce_file, &nonce).map_err(|e| format!("cannot write the smoke nonce: {}", e))?;
-    let cmd = format!("cat {}", nonce_file.display());
-    let token = nonce;
-    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
-    let mut child = Command::new(&bin)
-        .current_dir(&dir)
-        .env("CHORUS_ROLE", r).env("ROLE", r).env("CHORUS_HEADLESS", "1")
-        .args(["-p", "--model", &model, "--no-session-persistence", "--output-format", "text",
-               "--allowedTools", &format!("Bash({})", cmd)])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("claude spawn failed: {}", e))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("Run exactly one Bash command, `{}`, and reply with its output only.", cmd).as_bytes());
-    }
-    let secs: u64 = env::var("CHORUS_SMOKE_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180);
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break st,
-            Ok(None) if start.elapsed() >= Duration::from_secs(secs) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("no answer in {}s", secs));
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(250)),
-            Err(e) => return Err(format!("wait failed: {}", e)),
-        }
-    };
-    let _ = fs::remove_file(&nonce_file);
-    let mut out = String::new();
-    let mut err = String::new();
-    if let Some(mut o) = child.stdout.take() { let _ = o.read_to_string(&mut out); }
-    if let Some(mut e) = child.stderr.take() { let _ = e.read_to_string(&mut err); }
-    if !status.success() {
-        return Err(format!("session exited {}: {}", status.code().unwrap_or(-1), err.trim().lines().last().unwrap_or("")));
-    }
-    if !out.contains(&token) {
-        return Err(format!("the tool call did not come back (no `{}` in the reply)", token));
-    }
-    Ok(())
-}
 
-/// #4502 — the session-smoke step. No role config in the diff is a named
-/// pass, never a silent one; any role that cannot start, run its hooks and
-/// make one tool call fails the step, named.
-/// #4894 — a session smoke measures only on a role's own account (chorus-<role>). Pure.
-pub fn smoke_account_measures(account: &str) -> bool {
-    account.starts_with("chorus-")
-}
-
-fn current_account() -> String {
-    env::var("USER").ok().filter(|u| !u.is_empty())
-        .or_else(|| run("id", &["-un"]).ok().map(|s| s.trim().to_string()))
-        .unwrap_or_default()
-}
-
-pub fn session_smoke_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
-    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
-        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
-    });
-    let werk = format!("{}/{}-{}", werk_base, role, card);
-    let trace = run_trace();
-    let changed = match changed_paths(&werk) {
-        Ok(c) => c,
-        Err(why) => return Ok(DemoOutcome { message: format!("session-smoke #{} could not read the diff: {}", card, why), exit: 1 }),
-    };
-    let roles = smoke_roles(&changed);
-    if roles.is_empty() {
-        jsonl(home, role, card, &trace, "demo.smoke.result", ",\"result\":\"none\"");
-        return Ok(DemoOutcome { message: format!("session-smoke #{}: nothing to smoke: no role config in the diff", card), exit: 0 });
-    }
-    let mut failed = Vec::new();
-    let mut by_hand = Vec::new();
-    let mut smoked: Vec<&str> = Vec::new();
-    for r in &roles {
-        // #4691 (Jeff 2026-10-22 16:12, "2"): an agy role is not smoked here (no
-        // headless agy smoke on this box); it is named, recorded by-hand, and that
-        // role checks its own session by hand after the land. Never a pass.
-        // #4894 (from #4889 runs 3-4): a role session is real only on its own account
-        // (chorus-<role>); dagu runs this as a shared account, where the hooks refuse a
-        // roleless session. There it is unmeasured, named, by hand — never a pass.
-        if !SMOKE_CLAUDE_ROLES.contains(r) || !smoke_account_measures(&current_account()) {
-            if SMOKE_CLAUDE_ROLES.contains(r) {
-                jsonl(home, role, card, &trace, "demo.smoke.result",
-                      &format!(",\"smoked\":\"{}\",\"result\":\"unmeasured\",\"why\":\"run as {}: role sessions run as chorus-<role>\"", r, current_account()));
-                by_hand.push(format!("{}: UNMEASURED here (run as {}, role sessions run as chorus-{}); {} checks its session after the land", r, current_account(), r, r));
-                continue;
-            }
-            jsonl(home, role, card, &trace, "demo.smoke.result",
-                  &format!(",\"smoked\":\"{}\",\"result\":\"by-hand\",\"why\":\"runs on agy: not smoked here\"", r));
-            by_hand.push(format!("{}: runs on agy, not smoked here; {} checks the session by hand after the land", r, r));
-            continue;
-        }
-        smoked.push(r);
-        let res = smoke_one(&werk, r, card);
-        let (word, why) = match &res { Ok(()) => ("pass", String::new()), Err(e) => ("fail", e.clone()) };
-        jsonl(home, role, card, &trace, "demo.smoke.result",
-              &format!(",\"smoked\":\"{}\",\"result\":\"{}\",\"why\":\"{}\"", r, word, why.replace('"', "'")));
-        if let Err(e) = res { failed.push(format!("{}: {}", r, e)); }
-    }
-    emit_spine(home, "demo.smoke.recorded", role, card, &trace);
-    let mut parts = Vec::new();
-    if !smoked.is_empty() { parts.push(format!("{} started from the werk build and made one tool call", smoked.join(", "))); }
-    parts.extend(by_hand);
-    if failed.is_empty() {
-        Ok(DemoOutcome { message: format!("session-smoke #{}: {}", card, parts.join(" · ")), exit: 0 })
-    } else {
-        Ok(DemoOutcome { message: format!("session-smoke #{} failed — {}", card, failed.join(" · ")), exit: 1 })
-    }
-}
 
 // --- the demo steps (#4502) ---
 //
 // #4502 (Jeff 2026-10-18 11:31, "that looks right") — the demo is dagu steps,
 // not one binary run in a hidden order:
-//   validate → [gate-product, -code, -quality, -arch, -ops, review-peer-1, -2]
-//   in parallel → session-smoke → announce → Jeff's go.
+//   validate → [gate-code, -arch, -quality] in parallel → announce → Jeff's go.
+// #4889 (Jeff 11-04 18:21): one code review, one architecture and quality review;
+// the product/ops gates, peer reviews and session smoke are retired (their checks'
+// new homes are in each gate skill's "Where the old checks went" table).
 // Each step is one subcommand below; dagu shows which one stopped and retries
-// it alone. The old all-in-one `werk-demo <card> <role>` (gates one by one,
-// then a poll for peer reviews, then the announce) is gone: the 2 peer reviews
-// are headless runs (#3539), so they are parallel steps, not a wait.
-// Gates and reviews inform; Jeff's go stays sovereign (#3263/DEC-048).
+// it alone. Reviews inform; Jeff's go stays sovereign (#3263/DEC-048).
 
 fn read_witness(home: &Path) -> String {
     fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default()
@@ -1535,6 +1340,13 @@ pub fn validate_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         emit_spine_reason(home, "demo.refused", role, card, &trace, "no-ac");
         return Err(format!("#{} has no acceptance criteria", card));
     }
+    // #4889 AC9 — every AC names its own check, before anything is reviewed
+    let check_problems = ac_check_problems(&cv);
+    if !check_problems.is_empty() {
+        jsonl(home, role, card, &trace, "demo.refused", &fail_extra("ac-checks"));
+        emit_spine_reason(home, "demo.refused", role, card, &trace, "ac-checks");
+        return Err(format!("#{} AC checks: {}", card, check_problems.join("; ")));
+    }
     jsonl(home, role, card, &trace, "demo.ac_status",
           &format!(",\"checked\":{},\"total\":{}", checked, total));
     post_preflight_evidence(home, card, role, checked, total, &trace)?;
@@ -1573,54 +1385,24 @@ pub fn run_gate_step(card: u64, role: &str, home: &Path, gate: &str) -> R<DemoOu
     let trace = run_trace();
     emit_spine(home, "demo.gates.running", role, card, &trace);
     run_one_gate(home, role, card, gate, &round);
-    Ok(step_outcome(&what, card, recorded(&read_witness(home))))
+    let mut out = step_outcome(&what, card, recorded(&read_witness(home)));
+    // #4889 B7 (Wren 16:32: run 14's three red reviews reached the go step) — a red review
+    // fails its step, so dagu runs nothing after it: the owner wakes, Jeff never sees it.
+    // Under Jeff's 16:05 rule a round of notes only is a pass, and goes on.
+    if out.exit == 0 && recorded(&read_witness(home)).is_some_and(|(r, _)| r == "fail") { out.exit = 1; }
+    Ok(out)
 }
 
-/// #4502 — run the n-th peer review (1-based, the order gather_peers gives) as
-/// its own dagu step: one headless review loaded with that peer's CLAUDE.md
-/// (#3539). Same exit rule as a gate. No longer waits for the gates: the
-/// reviews run beside them.
-pub fn run_review_step(card: u64, role: &str, home: &Path, n: usize) -> R<DemoOutcome> {
-    let peers = gather_peers(role);
-    let peer = match n.checked_sub(1).and_then(|i| peers.get(i)) {
-        Some(p) => *p,
-        None => return Err(format!("no peer {} for {} — {} has {} peers: {:?}", n, role, role, peers.len(), peers)),
-    };
-    let round = current_round(role, card);
-    let patch = current_patch_id(role, card);
-    let what = format!("review by {}", peer);
-    let recorded = |w: &str| step_result(w, card, "demo.gather.replied", "peer", peer, "verdict", "note", &round, &patch);
-    if let Some(done) = recorded(&read_witness(home)).filter(|(r, _)| r != "error") {
-        return Ok(step_outcome(&format!("{} (already recorded this round)", what), card, Some(done)));
-    }
-    if !headless_available() {
-        return Ok(DemoOutcome {
-            message: format!("{} for #{} could not run: no headless model on this box (no claude, no chorus-agent profile)", what, card),
-            exit: 1,
-        });
-    }
-    let trace = run_trace();
-    emit_spine(home, "demo.reviews.running", role, card, &trace);
-    run_one_review(home, role, card, peer, &round);
-    Ok(step_outcome(&what, card, recorded(&read_witness(home))))
-}
 
-/// #4502 — what announce still needs: the gates and peer reviews with no
-/// usable result this round ("error" counts as missing — it never ran). Pure.
-pub fn announce_missing(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<String> {
+/// #4502 — what announce still needs: the reviews (code, arch, quality, #4889) with
+/// no usable result this round ("error" counts as missing — it never ran). Pure.
+pub fn announce_missing(witness: &str, card: u64, _role: &str, round: &str, patch_id: &str) -> Vec<String> {
     let usable = |r: Option<(String, String)>| r.is_some_and(|(v, _)| v != "error");
-    let mut missing: Vec<String> = REQUIRED_GATES
+    REQUIRED_GATES
         .iter()
         .filter(|g| !usable(step_result(witness, card, "demo.gate.result", "gate", g, "result", "findings", round, patch_id)))
         .map(|g| format!("gate-{}", g))
-        .collect();
-    missing.extend(
-        gather_peers(role)
-            .into_iter()
-            .filter(|p| !usable(step_result(witness, card, "demo.gather.replied", "peer", p, "verdict", "note", round, patch_id)))
-            .map(|p| format!("review-{}", p)),
-    );
-    missing
+        .collect()
 }
 
 /// #4502 — the announce step: refuses, naming each missing step, unless every
@@ -1727,7 +1509,6 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let title = card_title(&cv);
     let experience = extract_section(&cv, "Experience");
     let ac_items = render_ac_items(&cv);
-    let role_feedback = render_role_feedback(&witness, card, role, &round, &patch);
     let claim = if experience.is_empty() {
         format!("🔬 To prove it works: exercise the AC against the live variant ({}).", variant_url)
     } else {
@@ -1743,7 +1524,6 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     if !ac_items.is_empty() { parts.push(ac_items); }
     parts.push(gate_summary);
     if !gate_feedback.is_empty() { parts.push(gate_feedback); }
-    if !role_feedback.is_empty() { parts.push(role_feedback); }
     parts.push(claim);
     parts.push(format!("variant: {}", variant_status));
     parts.push(test_summary.clone());
@@ -1768,11 +1548,8 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // #4502 — ONE ask per round: never a second for the same round, never
     // after the go (#3971's "one card, one go"). The tally is what Jeff weighs.
     if !announce_silent(&witness, card, &round, &patch) {
-        let reviews = gather_peers(role).len();
-        let reviews_in = reviews - announce_missing(&witness, card, role, &round, &patch)
-            .iter().filter(|m| m.starts_with("review-")).count();
-        let tally = format!("gates {} · reviews {}/{} · {} · AC {}/{}",
-            if gates_green { "✓" } else { "✗" }, reviews_in, reviews,
+        let tally = format!("reviews {} · {} · AC {}/{}",
+            if gates_green { "✓" } else { "✗" },
             test_summary.replace("tests: ", "tests "), checked, total);
         // #4875 — the announce goes to the owner, never Jeff, and posts no go row: the owner
         // shows the work, then vouches (`werk-demo vouch`); only the vouch puts the go in front
@@ -1792,13 +1569,20 @@ pub fn announce_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 /// `werk-demo gate <card> <gate> <result>`. The witness is the same
 /// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
 fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str, round: &str) {
+    record_gate_at(home, role, card, gate, result, findings, round, "");
+}
+
+/// #4889 (Jeff 11-05 10:06) — the same record, naming the commit the review read up to,
+/// so the next round reviews only what changed since (`last_reviewed`).
+#[allow(clippy::too_many_arguments)]
+fn record_gate_at(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str, round: &str, commit: &str) {
     let trace = run_trace();
     // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
     // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
     let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
     let pid = current_patch_id(role, card); // #3461 — record patch-id so the result survives a rebase-churn
     jsonl(home, role, card, &trace, "demo.gate.result",
-          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"findings\":\"{}\"", gate, result, round, pid, f));
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"commit\":\"{}\",\"findings\":\"{}\"", gate, result, round, pid, commit, f));
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
@@ -1926,74 +1710,96 @@ pub fn extract_json_str(json: &str, field: &str) -> Option<String> {
     }
 }
 
-/// Parse a gate verdict out of a headless claude gate run. The gate is prompted
-/// to emit `{"result":"pass"|"fail","findings":"<one line>"}`. Handles both a
-/// raw payload and the `--output-format json` envelope (whose `result` field
-/// holds the assistant text). Unknown/garbled → ("error", reason) so a broken
-/// gate is recorded VISIBLE, never silently passed. Pure + unit-tested.
-pub fn parse_gate_verdict(stdout: &str) -> (String, String) {
-    // If an envelope `result` holds nested gate JSON, parse that; else parse raw.
-    let text = match extract_json_str(stdout, "result") {
-        Some(r) if r.contains("findings") || r.contains("\\\"") => json_unescape(&r),
-        _ => stdout.to_string(),
-    };
-    let verdict = extract_json_str(&text, "result").map(|v| json_unescape(&v));
-    let findings = extract_json_str(&text, "findings")
-        .map(|v| json_unescape(&v))
-        .unwrap_or_default();
-    match verdict.as_deref().map(|s| s.trim()) {
-        Some("pass") => ("pass".to_string(), findings),
-        Some("fail") => ("fail".to_string(), findings),
-        _ => {
-            let reason = if !findings.is_empty() {
-                findings
-            } else {
-                format!("unparseable gate output: {}", text.chars().take(160).collect::<String>())
-            };
-            ("error".to_string(), reason)
+/// #4889 (Kade 19:19: "derive the verdict from the findings, not the model's own word")
+/// — a review's fail items, read from its SKILL.md frontmatter (`fail-items: 1-5, 7`).
+/// The skill is the one home of its rule; the runner never hard-codes it. Pure.
+pub fn fail_items(skill_md: &str) -> Vec<u32> {
+    let line = skill_md.lines().take_while(|l| !l.starts_with("# ")).find_map(|l| l.strip_prefix("fail-items:"));
+    let mut out = Vec::new();
+    for part in line.unwrap_or("").split(',') {
+        let part = part.trim();
+        match part.split_once('-') {
+            Some((a, b)) => if let (Ok(a), Ok(b)) = (a.trim().parse::<u32>(), b.trim().parse::<u32>()) { out.extend(a..=b) },
+            None => if let Ok(n) = part.parse::<u32>() { out.push(n) },
         }
     }
+    out
 }
 
-/// Build the headless system prompt for a gate: the gate's SKILL.md plus a strict
-/// output contract. Pure so the contract is unit-pinned.
+/// The JSON objects inside the first `"findings": [ ... ]` array of a review's reply
+/// (raw, or nested escaped in an envelope's `result`). None when there is no such array.
+fn findings_objects(stdout: &str) -> Option<Vec<String>> {
+    let text = match extract_json_str(stdout, "result") {
+        Some(r) if r.contains("findings") => json_unescape(&r),
+        _ => stdout.to_string(),
+    };
+    array_objects(&text, "findings")
+}
+
+/// The JSON objects inside the first `"<key>": [ ... ]` array of `text`. None when
+/// there is no such array, or it never closes.
+fn array_objects(text: &str, key: &str) -> Option<Vec<String>> {
+    let key = text.find(&format!("\"{key}\""))?;
+    let open = key + text[key..].find('[')?;
+    let (mut depth, mut in_str, mut esc, mut start) = (0i32, false, false, None);
+    let mut objs = Vec::new();
+    for (i, c) in text[open + 1..].char_indices() {
+        let at = open + 1 + i;
+        if in_str { if esc { esc = false } else if c == '\\' { esc = true } else if c == '"' { in_str = false } continue; }
+        match c {
+            '"' => in_str = true,
+            '{' => { if depth == 0 { start = Some(at) } depth += 1 }
+            '}' => { depth -= 1; if depth == 0 { if let Some(s0) = start.take() { objs.push(text[s0..=at].to_string()) } } }
+            ']' if depth == 0 => return Some(objs),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// #4889 — the verdict is derived from the findings: any finding on a fail item fails,
+/// other findings are notes, an empty list passes. An empty `fail_on` (a skill that
+/// names no fail-items) is strict: every finding fails, whatever its item number
+/// (Kade 09:14: a 0..=99 range let item 100 pass). A reply with no findings list, or a
+/// finding with no item number, is an error: never a pass. Pure + unit-tested.
+pub fn gate_verdict(stdout: &str, fail_on: &[u32]) -> (String, String) {
+    let Some(objs) = findings_objects(stdout) else {
+        return ("error".to_string(), format!("unparseable review output: {}", stdout.chars().take(160).collect::<String>()));
+    };
+    let mut fails = Vec::new();
+    let mut notes = Vec::new();
+    for o in &objs {
+        let item = o.find("\"item\"").and_then(|k| {
+            let rest = o[k + 6..].trim_start().strip_prefix(':')?.trim_start();
+            rest.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok()
+        });
+        let Some(item) = item else {
+            return ("error".to_string(), format!("a finding names no item: {}", o.chars().take(160).collect::<String>()));
+        };
+        let at = extract_json_str(o, "where").map(|v| json_unescape(&v)).unwrap_or_default();
+        let what = extract_json_str(o, "what").map(|v| json_unescape(&v)).unwrap_or_default();
+        let line = format!("{at} — item {item} — {what}");
+        if fail_on.is_empty() || fail_on.contains(&item) { fails.push(line) } else { notes.push(line) }
+    }
+    let result = if fails.is_empty() { "pass" } else { "fail" };
+    let mut all = fails;
+    all.extend(notes.into_iter().map(|n| format!("note: {n}")));
+    (result.to_string(), if all.is_empty() { "no findings".to_string() } else { all.join(" | ") })
+}
+
+/// Build the headless system prompt for a review: its SKILL.md plus a strict output
+/// contract. The model reports findings only; werk-demo derives the verdict. Pure.
 pub fn gate_system_prompt(skill_md: &str) -> String {
     format!(
-        "{}\n\n---\nYou are running HEADLESS as this gate. Review the card AC and the \
-         branch diff provided in the user message against the gate's criteria above. \
-         Output ONLY a single JSON object and nothing else: \
-         {{\"result\":\"pass\",\"findings\":\"<one concise line>\"}} \
-         where result is \"pass\" or \"fail\". No prose, no markdown, no code fence.",
+        "{}\n\n---\nYou are running HEADLESS as this review. Review the branch diff in the \
+         user message against the numbered items above. Output ONLY a single JSON object \
+         and nothing else: {{\"findings\":[{{\"item\":<number>,\"where\":\"file:line\",\"what\":\"<one line>\"}}]}} \
+         with one entry per finding and an empty list when there are none. Do not give a \
+         verdict: it is derived from your findings. No prose, no markdown, no code fence.",
         skill_md.trim()
     )
 }
 
-/// Run one gate headless and record its verdict. Best-effort: any failure path
-/// records an "error" verdict (visible on the decision surface), never panics,
-/// never silently passes.
-/// #3468/#3471 — fold a pre-run chorus-health report into the OPS gate's context.
-/// The ops gate judges health but can't fetch it (claude -p has `--disallowedTools
-/// Bash`); the gate-runner pre-runs chorus-health (it can shell) and the gate reads
-/// the report here instead of trying to execute one. ops-only; other gates pass
-/// through unchanged. Pure + unit-pinned.
-pub fn ops_ctx(base: &str, gate: &str, health: &str) -> String {
-    if gate != "ops" {
-        return base.to_string();
-    }
-    format!(
-        "{}\n\n=== chorus-health --verbose (PRE-RUN by the gate-runner — JUDGE this output for pass/fail; do NOT run chorus-health yourself, you have no shell) ===\n{}\n\n{}",
-        base, health, OPS_NOT_COUNTED
-    )
-}
-
-/// #4894 (Jeff 11-05 12:52) — a health failure this card did not cause and cannot fix:
-/// nudges to the agy roles' panes fail because their Presence records a pane one behind
-/// (fixed by #4889, which waits on this card). The ops gate names it as a note and does
-/// not fail on it; any other nudge-delivery failure still fails.
-pub const OPS_NOT_COUNTED: &str = "NOT COUNTED (Jeff 2026-11-05 12:52): a nudge-delivery FAIL that names ONLY \
-abby-normal and/or borg-queen panes (chorus-health says \"<role> pane %N not found\"; the inject error is \"can't find pane: %N\") is a known condition this card did not cause; \
-#4889 fixes it. List it as a note, never as a fail. A nudge-delivery failure naming any other role, or any \
-other health failure, still fails the gate.";
 
 /// #3625 AC2 — memory floor before every headless-claude spawn. Born from the
 /// 2026-07-07 Library OOM: swap went 4.7→20GB in 15 minutes while gate claudes,
@@ -2134,8 +1940,7 @@ fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round:
     }
 }
 
-const GATE_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","fail","error"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
-const REVIEW_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","concerns","block"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
+const GATE_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"item":{"type":"integer"},"where":{"type":"string"},"what":{"type":"string"}},"required":["item","where","what"],"additionalProperties":false}}},"required":["findings"],"additionalProperties":false}"#;
 
 fn agent_bin() -> String {
     env::var("CHORUS_AGENT_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/chorus-agent", env::var("HOME").unwrap_or_default()))
@@ -2279,7 +2084,7 @@ fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<Stri
 /// unchanged); otherwise the reply from `chorus-agent run --text`.
 fn gate_via_agent(input: &str, instructions: &str, schema: &str, revision: &str) -> Option<R<String>> {
     let profile = gate_profile()?;
-    let timeout = env::var("CHORUS_GATE_TIMEOUT_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(180).clamp(1, 3600);
+    let timeout = env::var("CHORUS_GATE_TIMEOUT_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600).clamp(1, 3600);
     let model = env::var("CHORUS_GATE_MODEL").ok();
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_default();
     let payload = headless_job_request(&profile, input, instructions, schema, model.as_deref(), timeout, &trace, revision);
@@ -2289,35 +2094,21 @@ fn gate_via_agent(input: &str, instructions: &str, schema: &str, revision: &str)
     Some(bounded_headless(command, payload, timeout + 5))
 }
 
-/// #4424 AC4 — a peer's reply in the gather vocabulary. pass → pass,
-/// concerns → concerns, block or fail → block; anything else is an error.
-pub fn parse_review_verdict(stdout: &str) -> (String, String) {
-    let text = match extract_json_str(stdout, "result") {
-        Some(r) if r.contains("findings") || r.contains("\\\"") => json_unescape(&r),
-        _ => stdout.to_string(),
-    };
-    let raw = extract_json_str(&text, "result").map(|v| json_unescape(&v));
-    let findings = extract_json_str(&text, "findings").map(|v| json_unescape(&v)).unwrap_or_default();
-    let verdict = match raw.as_deref().map(str::trim) {
-        Some("pass") => "pass",
-        Some("concerns") => "concerns",
-        Some("block") | Some("fail") => "block",
-        _ => {
-            let reason = if findings.is_empty() { format!("unparseable review output: {}", text.chars().take(160).collect::<String>()) } else { findings };
-            return ("error".to_string(), reason);
-        }
-    };
-    (verdict.to_string(), findings)
-}
 
 /// #4474 reopen — the card's branch diff (`origin/main...HEAD`) in its werk,
 /// or why it could not be read: no werk at that path, or git refused. Never an
 /// empty string standing in for "could not read" (Silas, 2026-10-11 15:10).
 pub fn branch_diff(werk: &str) -> Result<String, String> {
+    branch_diff_range(werk, "origin/main...HEAD")
+}
+
+/// #4889 — the diff of one range in the werk (`origin/main...HEAD`, or `<commit>..HEAD`
+/// for a round that reads only what changed since the last one reviewed).
+pub fn branch_diff_range(werk: &str, range: &str) -> Result<String, String> {
     if !Path::new(werk).is_dir() {
         return Err(format!("no werk at {}", werk));
     }
-    let o = Command::new("git").arg("-C").arg(werk).args(["diff", "origin/main...HEAD"]).output()
+    let o = Command::new("git").arg("-C").arg(werk).args(["diff", range]).output()
         .map_err(|e| format!("git could not run in {}: {}", werk, e))?;
     if !o.status.success() {
         return Err(format!("git diff failed in {}: {}", werk, String::from_utf8_lossy(&o.stderr).trim()));
@@ -2341,6 +2132,11 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         }
     };
     let sys = gate_system_prompt(&skill_md);
+    // #4889 bootstrap (Kade 20:14): the skill is read from canonical, never from the card
+    // under review (a card must not rewrite its own reviewer). A skill with no fail-items
+    // (main's, until this card lands) is read strictly: every finding fails.
+    let fail_on = fail_items(&skill_md);
+    let strict = fail_on.is_empty();
 
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
@@ -2350,70 +2146,509 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // #4474 reopen (Silas, 2026-10-11): a diff that could not be read refuses
     // the gate. With role=false every in-run gate since 10-10 reviewed the
     // empty diff of chorus-werk/false-<card> and could only pass.
-    let diff = match branch_diff(&werk) {
+    // #4889 (Jeff 11-05 10:06: "isnt there just a new commit to review?") — a round reads
+    // only what changed since the commit this gate last reviewed; no earlier round, or a
+    // rebase that left it behind, reads the whole branch (Kade 10:07).
+    let head = run_in_dir(&werk, "git", &["rev-parse", "HEAD"]).map(|h| h.trim().to_string()).unwrap_or_default();
+    let prior = last_reviewed(&fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default(), card, gate);
+    let since = prior.as_ref().map(|(c, _)| c.clone())
+        .filter(|c| !c.is_empty() && run_in_dir(&werk, "git", &["merge-base", "--is-ancestor", c, "HEAD"]).is_ok());
+    let range = since.as_ref().map(|c| format!("{c}..HEAD")).unwrap_or_else(|| "origin/main...HEAD".to_string());
+    let delta_files: Option<Vec<String>> = since.as_ref().map(|c| {
+        run_in_dir(&werk, "git", &["diff", "--name-only", &format!("{c}..HEAD")]).unwrap_or_default()
+            .lines().map(str::to_string).filter(|l| !l.is_empty()).collect()
+    });
+    let diff = match branch_diff_range(&werk, &range) {
         Ok(d) => d,
         Err(why) => {
             record_gate(home, role, card, gate, "error", &format!("no branch diff to review: {}", why), round);
             return;
         }
     };
-    // Cap the diff so a huge change can't blow the context budget.
-    let diff_capped: String = diff.chars().take(60_000).collect();
-    let base_ctx = format!(
-        "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
-        card, card_view, diff_capped
-    );
-    // #3468/#3471 — for the OPS gate, pre-run chorus-health HERE (the Rust gate-runner
-    // can shell; the gate's claude -p cannot) and fold its full output + exit status
-    // into the context. Captured regardless of exit code — chorus-health exits 1 on
-    // FAIL, which the gate must still SEE to judge. Non-ops gates: base_ctx unchanged.
-    let ctx = if gate == "ops" {
-        let hp = script_path(home, "chorus-health");
-        let health = Command::new(&hp)
-            .arg("--verbose")
-            .output()
-            .map(|o| {
-                format!(
-                    "exit_status: {}\n{}{}",
-                    o.status.code().map(|c| c.to_string()).unwrap_or_else(|| "killed-by-signal".into()),
-                    String::from_utf8_lossy(&o.stdout),
-                    String::from_utf8_lossy(&o.stderr),
-                )
-            })
-            .unwrap_or_else(|e| format!("(chorus-health failed to spawn: {})", e));
-        ops_ctx(&base_ctx, gate, &health)
-    } else if gate == "product" {
-        let exe = env::current_exe().ok();
-        let bp = borg_prove_beside(exe.as_deref().and_then(Path::parent), script_path(home, "borg-prove"));
-        let (ok, out) = Command::new(&bp)
-            .args(["verify", &card.to_string()])
-            .output()
-            .map(|o| (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))))
-            .unwrap_or_else(|e| (false, format!("borg-prove failed to start: {e}")));
-        match product_proof(ok, &out) {
-            Ok(proof) => format!("{base_ctx}\n\n{proof}"),
-            Err(findings) => {
-                record_gate(home, role, card, gate, "fail", &findings, round);
-                return;
-            }
+    // #4889 (Kade 19:00) — a big diff is reviewed per file, in batches under the cap;
+    // what cannot be read whole is unmeasured, never a pass (the 60k cut was hollow).
+    let (batches, unread) = diff_batches(&diff, DIFF_BATCH_CAP);
+    let n = batches.len();
+    let mut parts: Vec<(String, String)> = Vec::new();
+    for (i, batch) in batches.iter().enumerate() {
+        let part = if n > 1 { format!(" (part {} of {})", i + 1, n) } else { String::new() };
+        let ctx = format!(
+            "CARD #{}\n{}\n\n=== BRANCH DIFF ({}){} ===\n{}",
+            card, card_view, range, part, batch
+        );
+        parts.push(review_once(&sys, &ctx, round, &fail_on));
+    }
+    let (mut result, mut findings) = combine_verdicts(&parts, &unread);
+    if strict {
+        findings = format!("{} names no fail-items: every finding fails | {}", skill.display(), findings);
+    }
+    // #4889 (Jeff 19:04, "fine do that"): the code review IS Claude Code's /code-review,
+    // with /security-review beside it; gate-code adds only what they do not read, whether
+    // each AC's check tests that AC. They read the werk themselves, so no diff cap applies.
+    // #4889 (Jeff 19:04) — Semgrep in the quality review, on the card's changed lines
+    // #4889 (security review, run 9) — the rules and the boundary config are read from
+    // canonical, like the skills: a card never rewrites the checks run on it. Until a
+    // config is on main its review is unmeasured (error), never a pass.
+    if gate == "quality" {
+        let rules = Path::new(home).join("platform/quality/semgrep");
+        let (r, f) = review_config_present(&rules).unwrap_or_else(|| semgrep_review(&werk, &rules, since.as_deref()));
+        (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-quality: {}", findings)), (r, format!("semgrep: {}", f))], &[]);
+    }
+    // #4889 (Jeff 19:04) — dependency-cruiser in the architecture review: the TS packages'
+    // boundaries (platform/quality/depcruise/boundaries.cjs) hold on the whole tree
+    if gate == "arch" {
+        let cfg = Path::new(home).join("platform/quality/depcruise/boundaries.cjs");
+        let (r, f) = review_config_present(&cfg).unwrap_or_else(|| depcruise_review(&werk, &cfg));
+        (result, findings) = combine_verdicts(&[(result.clone(), format!("gate-arch: {}", findings)), (r, format!("dependency-cruiser: {}", f))], &[]);
+    }
+    if gate == "code" {
+        let mut all = vec![(result.clone(), format!("gate-code: {}", findings))];
+        for skill in BUILTIN_CODE_REVIEWS {
+            let (r, f) = builtin_review(skill, &werk, since.as_deref());
+            all.push((r, format!("/{}: {}", skill, f)));
         }
-    } else {
-        base_ctx
-    };
+        // #4889 AC8 — an AC whose check is an unrelated test fails the code review
+        let head_of = |p: &str| fs::read_to_string(Path::new(&werk).join(p)).ok()
+            .map(|s| s.lines().take(15).collect::<Vec<_>>().join("\n"));
+        let unrelated = unrelated_checks(&card_view, card, head_of);
+        all.push(if unrelated.is_empty() { ("pass".to_string(), "ac-checks: no findings".to_string()) }
+                 else { ("fail".to_string(), format!("ac-checks: {}", unrelated.join(" | "))) });
+        (result, findings) = combine_verdicts(&all, &[]);
+    }
+    // #4889 — the findings ledger: an earlier round's open finding carries forward until a
+    // later diff touches its file and does not raise it again (Kade 10:07). There is no
+    // waiver: a finding leaves only by a fix (Kade 10:24 — a self-asserted settle is forgeable).
+    (result, findings) = apply_ledger(&result, &findings, prior.as_ref().map(|(_, f)| f.as_str()), delta_files.as_deref());
+    // #4889 (Jeff 16:05, "Yes, certainly") — only a finding that breaks something Jeff
+    // uses fails the gate; every other finding is a note on his go page, and ships
+    if result == "fail" {
+        let open = open_findings(&findings);
+        (result, findings) = apply_breaks(&result, &findings, classify_breaks(&werk, &open).as_deref());
+    }
+    // an unmeasured round reviewed nothing: the next round starts from the last one that did
+    let reviewed = if result == "error" { "" } else { head.as_str() };
+    record_gate_at(home, role, card, gate, &result, &findings, round, reviewed);
+}
 
-    if let Some(job) = gate_via_agent(&ctx, &sys, GATE_OUTPUT_SCHEMA, round) {
-        match job {
-            Ok(out) => { let (result, findings) = parse_gate_verdict(&out); record_gate(home, role, card, gate, &result, &findings, round); }
-            Err(e) => record_gate(home, role, card, gate, "error", &e, round),
+/// #4889 — where a round's review starts: the commit this gate last reviewed, else the
+/// branch's merge-base with origin/main (the whole branch).
+fn review_base(werk: &str, since: Option<&str>) -> Result<String, String> {
+    if let Some(c) = since { return Ok(c.to_string()); }
+    run_in_dir(werk, "git", &["merge-base", "origin/main", "HEAD"]).map(|b| b.trim().to_string())
+        .map_err(|e| format!("no merge-base in {werk}: {e}"))
+}
+
+/// #4889 — the last recorded result of `gate` for `card` that names its commit:
+/// (commit, findings). Pure over the witness text.
+pub fn last_reviewed(witness: &str, card: u64, gate: &str) -> Option<(String, String)> {
+    let card_key = format!("\"card_id\":{},", card);
+    let gate_key = format!("\"gate\":\"{}\"", gate);
+    witness.lines().rev()
+        .filter(|l| l.contains("\"event\":\"demo.gate.result\"") && l.contains(&card_key) && l.contains(&gate_key))
+        .find_map(|l| {
+            let c = extract_json_str(l, "commit")?;
+            (!c.is_empty()).then(|| (c, extract_json_str(l, "findings").unwrap_or_default()))
+        })
+}
+
+/// #4889 — one finding's segment, with the labels and part markers a combined record
+/// wraps it in taken off. None for a note, a meta line or "no findings". Pure.
+fn fail_segment(seg: &str) -> Option<String> {
+    let s = unwrapped(seg);
+    if s.is_empty() || s.starts_with("note:") || s == "no findings" || s.contains("names no fail-items")
+        || s.starts_with("unmeasured") { return None; }
+    Some(s)
+}
+
+/// A segment with its part markers (`[part 1/3 fail] `) and review labels taken off. Pure.
+fn unwrapped(seg: &str) -> String {
+    let mut s = seg.trim();
+    loop {
+        let before = s;
+        if let Some(r) = s.strip_prefix('[').and_then(|r| r.split_once("] ")).map(|(_, r)| r) { s = r.trim(); }
+        // #4889 (code review, run 14) — a carried finding is still the finding: it carries
+        // again next round until fixed, never dropped after one
+        for label in ["carried (not yet fixed): ", "gate-code: ", "gate-arch: ", "gate-quality: ", "semgrep: ", "dependency-cruiser: ", "/code-review: ", "/security-review: ", "ac-checks: "] {
+            if let Some(r) = s.strip_prefix(label) { s = r.trim(); }
         }
-        return;
+        if s == before { break; }
+    }
+    s.to_string()
+}
+
+/// #4889 — a finding's ledger key: (item, file). The item is the `item N` the review
+/// named (0 when none); the file is what precedes the first `:` or ` — `. Pure.
+pub fn finding_key(seg: &str) -> (u32, String) {
+    let item = seg.split(" — ").find_map(|p| p.trim().strip_prefix("item ").and_then(|n| n.trim().parse().ok()))
+        .or_else(|| seg.split("item ").nth(1).and_then(|r| r.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()))
+        .unwrap_or(0);
+    let head = seg.split(" — ").next().unwrap_or(seg);
+    let file = head.split(':').next().unwrap_or(head).trim().to_string();
+    (item, file)
+}
+
+/// #4889 (Jeff 11-05 10:06; Kade 10:07) — the ledger over one gate's record. `prior` is the
+/// last round's findings, `delta` the files changed since it (None = a whole-branch round).
+/// A prior failing finding whose file the delta left alone carries forward, red; one whose
+/// file changed and is not raised again is fixed. An "error" record stays error. Pure.
+pub fn apply_ledger(result: &str, findings: &str, prior: Option<&str>, delta: Option<&[String]>) -> (String, String) {
+    // (as recorded, with its labels; cleaned, for its key)
+    let fails = |text: &str| -> Vec<(String, String)> {
+        text.split(" | ").filter_map(|s| fail_segment(s).map(|c| (s.trim().to_string(), c))).collect()
+    };
+    let now = fails(findings);
+    let notes: Vec<String> = findings.split(" | ").filter(|s| fail_segment(s).is_none())
+        .filter(|s| { let u = unwrapped(s); !u.is_empty() && u != "no findings" }).map(|s| s.trim().to_string()).collect();
+    let changed = |f: &str| delta.is_some_and(|d| d.iter().any(|x| x == f));
+    let now_keys: Vec<(u32, String)> = now.iter().map(|(_, c)| finding_key(c)).collect();
+    let carried: Vec<(String, String)> = match (prior, delta) {
+        (Some(p), Some(_)) => fails(p).into_iter()
+            .filter(|(_, c)| { let k = finding_key(c); !changed(&k.1) && !now_keys.contains(&k) })
+            .map(|(_, c)| (format!("carried (not yet fixed): {c}"), c))
+            .collect(),
+        _ => Vec::new(),
+    };
+    // #4889 (Kade 16:26) — a note stays on Jeff's go page until its file changes, like a red
+    let carried_notes: Vec<String> = match (prior, delta) {
+        (Some(p), Some(_)) => p.split(" | ").filter_map(|seg| unwrapped(seg).strip_prefix("note: ").map(str::to_string))
+            .filter(|c| { let k = finding_key(c); !changed(&k.1) && !now_keys.contains(&k) })
+            .map(|c| format!("note: {c}"))
+            .filter(|n| !notes.iter().any(|x| unwrapped(x) == *n))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let open: Vec<String> = now.into_iter().chain(carried).map(|(shown, _)| shown).collect();
+    let verdict = if result == "error" { "error" } else if open.is_empty() { "pass" } else { "fail" };
+    let mut out = open;
+    out.extend(notes);
+    out.extend(carried_notes);
+    (verdict.to_string(), if out.is_empty() { "no findings".to_string() } else { out.join(" | ") })
+}
+
+/// #4889 (Jeff 16:05) — a red round's open findings, in order: the ones the breaks
+/// question is asked about. Pure.
+pub fn open_findings(findings: &str) -> Vec<String> {
+    findings.split(" | ").filter_map(fail_segment).collect()
+}
+
+/// #4889 (Jeff 16:05: "breaks something Jeff uses → blocks the land; nothing breaks →
+/// note on his go page, ships") — `breaks[i]` answers for the i-th open finding. Each
+/// finding that breaks nothing becomes a `note:` (the ledger never carries a note); the
+/// round fails only if one breaks. No answer, or one that does not match the findings,
+/// leaves the round failed: an unclassified finding blocks. Pure.
+pub fn apply_breaks(result: &str, findings: &str, breaks: Option<&[bool]>) -> (String, String) {
+    let n = open_findings(findings).len();
+    let Some(b) = breaks.filter(|b| b.len() == n && n > 0) else {
+        return (result.to_string(), findings.to_string());
+    };
+    let mut i = 0usize;
+    let out: Vec<String> = findings.split(" | ").map(|seg| match fail_segment(seg) {
+        Some(clean) => {
+            // i < n == b.len(), by the filter above
+            let keep = b[i];
+            i += 1;
+            if keep { seg.trim().to_string() } else { format!("note: {clean}") }
+        }
+        None => seg.trim().to_string(),
+    }).collect();
+    let verdict = if b.iter().any(|x| *x) { "fail" } else { "pass" };
+    (verdict.to_string(), out.join(" | "))
+}
+
+/// #4889 (Jeff 16:05) — what the breaks question asks, one finding per numbered line. Pure.
+pub fn breaks_prompt(open: &[String], jeff_uses: &str) -> String {
+    let list: Vec<String> = open.iter().enumerate().map(|(i, f)| format!("{}. {}", i + 1, f)).collect();
+    format!("Jeff's rule for a card about to land: a review finding blocks the land only if it breaks \
+             something Jeff uses: {jeff_uses}. Every other finding is a note on his go page and ships. \
+             For each numbered finding below, read the code it names in this repo, then answer true if \
+             it breaks something Jeff uses, else false. Reply with only a ```json list of booleans, \
+             one per finding, in order.\n\n{}",
+            list.join("\n"))
+}
+
+/// #4889 (Kade 16:26) — what Jeff uses is a policy row (review.breaks.jeff_uses), read
+/// through the resolver; no row, or the door down, means no question is asked and the
+/// red stands.
+pub const JEFF_USES_KEY: &str = "review.breaks.jeff_uses";
+
+/// The ```json list of booleans a breaks answer ends with; None when there is none. Pure.
+pub fn breaks_answer(stdout: &str) -> Option<Vec<bool>> {
+    let start = stdout.rfind("```json")? + 7;
+    let body = &stdout[start..];
+    let body = &body[..body.find("```")?];
+    let inner = body.trim().strip_prefix('[')?.strip_suffix(']')?;
+    inner.split(',').map(str::trim).filter(|t| !t.is_empty()).map(|t| match t {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }).collect()
+}
+
+/// One headless question per red round: which open findings break something Jeff uses.
+/// No tools, user settings only; None when it could not be asked or answered.
+fn classify_breaks(werk: &str, open: &[String]) -> Option<Vec<bool>> {
+    if open.is_empty() { return None; }
+    let jeff_uses = properties_resolver::global_value(&properties_resolver::door_url(), JEFF_USES_KEY)
+        .map_err(|e| eprintln!("werk-demo: no breaks question asked, the red stands: {e}")).ok()?;
+    let bin = claude_bin()?;
+    let mut command = Command::new(&bin);
+    // in the card's werk, read-only, so it reads the code each finding names (Kade 16:26)
+    command.current_dir(werk).env("CHORUS_HEADLESS", "1").args(["-p", &breaks_prompt(open, &jeff_uses), "--permission-mode", "dontAsk",
+        "--setting-sources", "user", "--no-session-persistence", "--output-format", "text",
+        "--allowedTools", "Read,Grep,Glob", "--disallowedTools", REVIEW_DENIED_TOOLS]);
+    // the answer goes to the step's log either way, so a red that stood can be read (run 15)
+    // run 15: the question reads the code each finding names; 12 arch findings took ~8 min,
+    // past a 300s bound, and the red stood. It gets the reviews' own bound.
+    match bounded_headless(command, String::new(), review_timeout_secs()) {
+        Ok(out) => {
+            let a = breaks_answer(&out);
+            eprintln!("werk-demo: breaks question on {} finding(s) answered {:?}{}", open.len(), a,
+                if a.as_ref().is_some_and(|v| v.len() == open.len()) { String::new() } else { format!(" — unusable, the red stands: {}", out.trim().chars().take(300).collect::<String>()) });
+            a
+        }
+        Err(e) => { eprintln!("werk-demo: breaks question not answered, the red stands: {e}"); None }
+    }
+}
+
+/// #4889 — what `claude -p` is asked for each built-in review. /code-review runs as its
+/// slash command. /security-review is a local command under `-p` (measured 11-05: zero
+/// turns, empty result), so the model is asked to invoke the security-review skill
+/// through the Skill tool, the same skill, never a copy of its text (Kade 09:16). Both
+/// end in the ```json findings list builtin_review_verdict reads. Pure.
+pub fn builtin_review_prompt(skill: &str, base: &str) -> String {
+    if skill == "code-review" {
+        format!("/code-review medium --max-findings all {base}...HEAD")
+    } else {
+        format!("Invoke the {skill} skill on the changes {base}...HEAD of this branch. When it is done, end your reply \
+                 with a ```json block holding a list of its findings, each {{\"file\":\"...\",\"line\":N,\"summary\":\"...\"}}, \
+                 and [] when there are none.")
+    }
+}
+
+/// #4889 (Kade 15:12) — the read-only git verbs a review may run, minus their one write:
+/// `--output=<file>`.
+pub const REVIEW_DENIED_TOOLS: &str = "Bash(git diff *--output*),Bash(git log *--output*),Bash(git show *--output*)";
+
+/// #4889 (security review, run 12) — the argv of one built-in review. The card under
+/// review is the cwd, so its own .claude/settings.json (hooks, permission allows) must not
+/// load: only user settings do (`--setting-sources user`, where the review skills live).
+/// Every review gets read-only tools; the code review also its subagents. Pure.
+pub fn builtin_review_args(skill: &str, prompt: &str) -> Vec<String> {
+    let tools = if skill == "code-review" { "Agent,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" }
+                else { "Skill,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" };
+    // git diff/log/show write a file with --output=<path> (Kade 15:12): denied, a deny wins over an allow
+    ["-p", prompt, "--permission-mode", "dontAsk", "--setting-sources", "user", "--no-session-persistence",
+     "--output-format", "text", "--allowedTools", tools, "--disallowedTools", REVIEW_DENIED_TOOLS].iter().map(|a| a.to_string()).collect()
+}
+
+/// #4889 — how long one headless review (or the breaks question about its findings) may
+/// run: CHORUS_CODE_REVIEW_TIMEOUT_SECS, default 900.
+pub fn review_timeout_secs() -> u64 {
+    env::var("CHORUS_CODE_REVIEW_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900)
+}
+
+/// #4889 — the existing Claude Code reviews the code step runs, each on the whole branch.
+pub const BUILTIN_CODE_REVIEWS: [&str; 2] = ["code-review", "security-review"];
+
+/// #4889 — run one built-in review headless in the card's werk over `origin/main...HEAD`,
+/// bounded (CHORUS_CODE_REVIEW_TIMEOUT_SECS, default 900). It reads the repo with its own
+/// tools, so the whole diff is read; ("error", why) when it could not run.
+fn builtin_review(skill: &str, werk: &str, since: Option<&str>) -> (String, String) {
+    let Some(bin) = claude_bin() else { return ("error".to_string(), "claude binary not resolvable".to_string()) };
+    let base = match review_base(werk, since) {
+        Ok(b) => b,
+        Err(e) => return ("error".to_string(), e),
+    };
+    let prompt = builtin_review_prompt(skill, &base);
+    let timeout = review_timeout_secs();
+    let mut command = Command::new(&bin);
+    command.current_dir(werk).env("CHORUS_HEADLESS", "1")
+        .args(builtin_review_args(skill, &prompt));
+    match bounded_headless(command, String::new(), timeout) {
+        Ok(out) => builtin_review_verdict(&out),
+        Err(e) => ("error".to_string(), e.replace("chorus-agent", &format!("/{skill}"))),
+    }
+}
+
+/// #4889 — the quality rules (platform/quality/semgrep) over the lines the card changed
+/// (`--baseline-commit` = its merge-base). Not installed, or no readable report, is an
+/// error: unmeasured, never a pass.
+fn semgrep_review(werk: &str, rules: &Path, since: Option<&str>) -> (String, String) {
+    let base = match review_base(werk, since) {
+        Ok(b) => b,
+        Err(e) => return ("error".to_string(), e),
+    };
+    // #4889 (Jeff 20:55) — semgrep's path is the tool.path.semgrep property, read through the
+    // resolver: the door down or the row missing is an error (unmeasured), never a default
+    let bin = match properties_resolver::global_value(&properties_resolver::door_url(), "tool.path.semgrep") {
+        Ok(b) => b,
+        Err(e) => return ("error".to_string(), format!("semgrep: {e}")),
+    };
+    let out = Command::new(&bin).current_dir(werk)
+        // a file CA bundle: without it semgrep asks the keychain and aborts (measured 11-04)
+        .env("SSL_CERT_FILE", env::var("SSL_CERT_FILE").unwrap_or_else(|_| "/etc/ssl/cert.pem".to_string()))
+        .args(["scan", "--config"]).arg(rules)
+        .args(["--baseline-commit", &base, "--json", "--metrics=off", "--disable-version-check", "--exclude", "fixtures"])
+        .output();
+    match out {
+        Ok(o) => semgrep_verdict(&String::from_utf8_lossy(&o.stdout)),
+        Err(e) => ("error".to_string(), format!("semgrep could not run: {e}")),
+    }
+}
+
+/// #4889 — the one resolver, compiled in (zero-dep blueprint: a path module, no crate dep).
+#[allow(dead_code)]
+#[path = "../../properties-resolver/src/lib.rs"]
+mod properties_resolver;
+
+/// #4889 — the TS packages dependency-cruiser checks (the boundary rule's own list).
+pub const DEPCRUISE_DIRS: [&str; 7] = ["directing", "platform/api", "platform/pulse", "platform/workflow-engine",
+    "platform/agent-adapters", "platform/chorus-sdk", "roles/wren/scripts"];
+
+/// #4889 — a review whose config (from canonical) is missing is an error with that
+/// reason; None when it is there. Pure on the filesystem state it reads.
+pub fn review_config_present(cfg: &Path) -> Option<(String, String)> {
+    (!cfg.exists()).then(|| ("error".to_string(), format!("{} is not on canonical: this review is unmeasured until it lands", cfg.display())))
+}
+
+fn depcruise_review(werk: &str, cfg: &Path) -> (String, String) {
+    let dirs: Vec<&str> = DEPCRUISE_DIRS.iter().copied().filter(|d| Path::new(werk).join(d).is_dir()).collect();
+    let out = Command::new(env::var("CHORUS_NPX_BIN").unwrap_or_else(|_| "npx".to_string())).current_dir(werk)
+        .args(["--no-install", "depcruise", "--config"]).arg(cfg).args(["--output-type", "err"])
+        .args(&dirs).output();
+    match out {
+        Ok(o) => depcruise_verdict(&format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)), o.status.code()),
+        Err(e) => ("error".to_string(), format!("dependency-cruiser could not run: {e}")),
+    }
+}
+
+/// #4889 — dependency-cruiser's `err` report to a verdict: each `error <rule>: a → b`
+/// line fails; a clean summary passes; anything else (not installed, a crash) is an
+/// error, never a pass. Pure.
+pub fn depcruise_verdict(out: &str, code: Option<i32>) -> (String, String) {
+    let errs: Vec<String> = out.lines().map(str::trim).filter(|l| l.starts_with("error ")).map(|l| l[6..].to_string()).collect();
+    if !errs.is_empty() { return ("fail".to_string(), errs.join(" | ")); }
+    if code == Some(0) && out.contains("no dependency violations found") { return ("pass".to_string(), "no findings".to_string()); }
+    ("error".to_string(), format!("no dependency-cruiser report (exit {:?}): {}", code, out.trim().chars().take(160).collect::<String>()))
+}
+
+/// #4889 — Semgrep's JSON report to a verdict: an ERROR-severity result fails, others
+/// are notes, none passes; a report with no results list is an error. Pure.
+pub fn semgrep_verdict(json: &str) -> (String, String) {
+    let Some(objs) = array_objects(json, "results") else {
+        return ("error".to_string(), format!("no semgrep report: {}", json.chars().take(160).collect::<String>()));
+    };
+    let (mut fails, mut notes) = (Vec::new(), Vec::new());
+    for o in &objs {
+        let path = extract_json_str(o, "path").map(|v| json_unescape(&v)).unwrap_or_default();
+        let line = o.find("\"line\"").map(|k| o[k + 6..].trim_start().trim_start_matches(':').trim_start()
+            .chars().take_while(|c| c.is_ascii_digit()).collect::<String>()).unwrap_or_default();
+        let msg = extract_json_str(o, "message").map(|v| json_unescape(&v)).unwrap_or_default();
+        let entry = format!("{path}:{line} — {msg}");
+        if extract_json_str(o, "severity").as_deref() == Some("ERROR") { fails.push(entry) } else { notes.push(format!("note: {entry}")) }
+    }
+    let result = if fails.is_empty() { "pass" } else { "fail" };
+    fails.extend(notes);
+    (result.to_string(), if fails.is_empty() { "no findings".to_string() } else { fails.join(" | ") })
+}
+
+fn run_in_dir(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
+    let o = Command::new(cmd).current_dir(dir).args(args).output().map_err(|e| format!("{cmd}: {e}"))?;
+    if !o.status.success() { return Err(String::from_utf8_lossy(&o.stderr).trim().to_string()); }
+    Ok(String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
+/// #4889 — a built-in review's verdict, derived from its findings (Kade 19:19): the reply
+/// ends in a JSON list of findings ({file, line, summary, ...}); any finding fails, an
+/// empty list passes, no list is an error (never a pass). Pure + unit-tested.
+pub fn builtin_review_verdict(stdout: &str) -> (String, String) {
+    let Some(open) = stdout.rfind("```json").map(|i| i + 7).and_then(|i| stdout[i..].find('[').map(|j| i + j)) else {
+        return ("error".to_string(), format!("no findings list in the review: {}", stdout.chars().take(160).collect::<String>()));
+    };
+    let wrapped = format!("{{\"findings\":{}", &stdout[open..]);
+    let Some(objs) = findings_objects(&wrapped) else {
+        return ("error".to_string(), "the findings list never closes".to_string());
+    };
+    let lines: Vec<String> = objs.iter().map(|o| {
+        let file = extract_json_str(o, "file").map(|v| json_unescape(&v)).unwrap_or_default();
+        let line = o.find("\"line\"").map(|k| o[k + 6..].trim_start().trim_start_matches(':').trim_start()
+            .chars().take_while(|c| c.is_ascii_digit()).collect::<String>()).unwrap_or_default();
+        let what = extract_json_str(o, "summary").map(|v| json_unescape(&v)).unwrap_or_default();
+        format!("{file}:{line} — {what}")
+    }).collect();
+    if lines.is_empty() { ("pass".to_string(), "no findings".to_string()) } else { ("fail".to_string(), lines.join(" | ")) }
+}
+
+/// #4889 — the largest diff one review reads at once.
+pub const DIFF_BATCH_CAP: usize = 60_000;
+
+/// #4889 — split a diff into per-file pieces (a file over the cap into its hunks, each
+/// under its file header) and pack them into batches of at most `cap` chars. A single
+/// hunk over the cap cannot be read whole: it is returned in the second list, by file.
+pub fn diff_batches(diff: &str, cap: usize) -> (Vec<String>, Vec<String>) {
+    let mut files: Vec<String> = Vec::new();
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") || files.is_empty() { files.push(String::new()); }
+        files.last_mut().unwrap().push_str(line);
+    }
+    let mut pieces: Vec<String> = Vec::new();
+    let mut unread: Vec<String> = Vec::new();
+    for f in files.into_iter().filter(|f| !f.is_empty()) {
+        if f.chars().count() <= cap { pieces.push(f); continue; }
+        let name = f.lines().next().unwrap_or("").trim_start_matches("diff --git ").to_string();
+        let (head, hunks) = match f.find("\n@@") { Some(i) => f.split_at(i + 1), None => (f.as_str(), "") };
+        let mut hunk_list: Vec<String> = Vec::new();
+        for line in hunks.split_inclusive('\n') {
+            if line.starts_with("@@") || hunk_list.is_empty() { hunk_list.push(String::new()); }
+            hunk_list.last_mut().unwrap().push_str(line);
+        }
+        if hunk_list.is_empty() { unread.push(name); continue; }
+        for h in hunk_list {
+            let piece = format!("{}{}", head, h);
+            if piece.chars().count() > cap { if !unread.contains(&name) { unread.push(name.clone()); } } else { pieces.push(piece); }
+        }
+    }
+    let mut batches: Vec<String> = Vec::new();
+    for p in pieces {
+        match batches.last_mut() {
+            Some(b) if b.chars().count() + p.chars().count() <= cap => b.push_str(&p),
+            _ => batches.push(p),
+        }
+    }
+    if batches.is_empty() && unread.is_empty() { batches.push(String::new()); }
+    (batches, unread)
+}
+
+/// #4889 — one verdict from the batches' verdicts: a part that could not run, or a part
+/// of the diff that could not be read, is an error (unmeasured, never a pass); else any
+/// fail fails; else pass. Every part's findings are kept, labelled.
+pub fn combine_verdicts(parts: &[(String, String)], unread: &[String]) -> (String, String) {
+    let n = parts.len();
+    let mut notes: Vec<String> = parts.iter().enumerate()
+        .filter(|(_, (_, f))| !f.trim().is_empty())
+        .map(|(i, (r, f))| if n > 1 { format!("[part {}/{} {}] {}", i + 1, n, r, f) } else { f.clone() })
+        .collect();
+    if !unread.is_empty() {
+        notes.insert(0, format!("unmeasured: too big to read whole: {}", unread.join(", ")));
+    }
+    let result = if !unread.is_empty() || parts.iter().any(|(r, _)| r == "error") { "error" }
+        else if parts.iter().any(|(r, _)| r == "fail") { "fail" } else { "pass" };
+    (result.to_string(), notes.join(" | "))
+}
+
+/// One headless review of one context; ("error", why) when it could not run.
+fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, String) {
+    if let Some(job) = gate_via_agent(ctx, sys, GATE_OUTPUT_SCHEMA, round) {
+        return match job {
+            Ok(out) => gate_verdict(&out, fail_on),
+            Err(e) => ("error".to_string(), e),
+        };
     }
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
     let bin = match claude_bin() {
         Some(b) => b,
         None => {
-            record_gate(home, role, card, gate, "error", "claude binary not resolvable", round);
-            return;
+            return ("error".to_string(), ("claude binary not resolvable").to_string());
         }
     };
     let child = Command::new(&bin)
@@ -2431,7 +2666,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             "--no-session-persistence",
             "--output-format", "text",
             "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt", &sys,
+            "--system-prompt", sys,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -2440,8 +2675,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
-            record_gate(home, role, card, gate, "error", &format!("claude spawn failed: {}", e), round);
-            return;
+            return ("error".to_string(), (format!("claude spawn failed: {}", e)).to_string());
         }
     };
     if let Some(mut stdin) = child.stdin.take() {
@@ -2449,10 +2683,11 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         // stdin drops here → closed, so claude sees EOF and proceeds.
     }
     // #3443 (Silas's BOUNDED contract) — a hung model must NOT block the gate
-    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 180); on
+    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 600; 180 timed out on 3 of 5 past diffs, #4889); on
     // expiry, kill the child and record error-on-expiry (fail-LOUD, never green).
+    // #4889 — 180s timed out on 3 of 5 past diffs (one only 18k): 600s
     let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(600);
     let start = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -2466,19 +2701,14 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
                 sleep(Duration::from_millis(200));
             }
             Err(e) => {
-                record_gate(home, role, card, gate, "error",
-                            &format!("claude wait failed: {}", e), round);
-                return;
+                return ("error".to_string(), (format!("claude wait failed: {}", e)).to_string());
             }
         }
     };
     let status = match status {
         Some(s) => s,
         None => {
-            record_gate(home, role, card, gate, "error",
-                        &format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs),
-                        round);
-            return;
+            return ("error".to_string(), (format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs)).to_string());
         }
     };
     let mut stdout = String::new();
@@ -2490,158 +2720,12 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         let _ = e.read_to_string(&mut stderr);
     }
     if !status.success() {
-        record_gate(home, role, card, gate, "error",
-                    &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()),
-                    round);
-        return;
+        return ("error".to_string(), (format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>())).to_string());
     }
-    let (result, findings) = parse_gate_verdict(&stdout);
-    record_gate(home, role, card, gate, &result, &findings, round);
+    gate_verdict(&stdout, fail_on)
 }
 
-/// #3539 — wrap a peer's CLAUDE.md as the system prompt for their SPAWNED review.
-/// The peer reviews as themselves (their identity), answers the 4 gather questions,
-/// and ends with a machine-parsable verdict line. Identity capped so a large
-/// CLAUDE.md can't blow the context budget.
-pub fn review_system_prompt(peer: &str, identity: &str) -> String {
-    let id: String = identity.chars().take(40_000).collect();
-    format!(
-        "You are {peer}. Your role identity (CLAUDE.md) follows. Review the peer's card + branch diff (provided next) AS {peer} WOULD — substantive, not a rubber stamp. Answer the four gather questions: (1) how does this impact your products, (2) how does it impact you and your domain, (3) are they over-building or under-planning, (4) does this strengthen the system or just please the room. Then END your reply with exactly one JSON line and nothing after it: {{\"result\":\"pass\",\"findings\":\"<your substance>\"}} — result is pass | concerns | block.\n\n=== {peer} identity (CLAUDE.md) ===\n{id}",
-        peer = peer, id = id
-    )
-}
 
-/// #3539 — run ONE peer's review as a spawned headless `claude -p` loaded with
-/// that peer's CLAUDE.md + the card + the branch diff + the 4 questions, recording
-/// the verdict as demo.gather.replied. Mirrors run_one_gate exactly — peer review
-/// becomes a deterministic in-process GATE, not an awaited live-session reply (the
-/// step-5 fix: spawn-and-record replaces nudge-and-wait, which had no reliable writer).
-fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
-    // #3625 AC2 — same memory floor as gates: a review is one more headless claude.
-    if !wait_for_memory_floor(home, role, card, peer, round) {
-        record_gather_replied(home, role, card, peer, "error",
-            "memory-pressure: swap/free floor not met after bounded wait — review spawn refused (#3625)");
-        return;
-    }
-    let _ = round; // verdict round/patch are stamped by record_gather_replied (current_round/current_patch_id)
-    let peer_md = peer_persona_path(home, peer);
-    let identity = match fs::read_to_string(&peer_md) {
-        Ok(s) => s,
-        Err(e) => {
-            record_gather_replied(home, role, card, peer, "error",
-                &format!("peer persona unreadable {}: {}", peer_md.display(), e));
-            return;
-        }
-    };
-    let sys = review_system_prompt(peer, &identity);
-
-    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
-        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
-    });
-    let werk = format!("{}/{}-{}", werk_base, role, card);
-    let card_view = run(&script_path(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
-    // #4474 reopen — a review of a diff that could not be read is no review
-    let diff = match branch_diff(&werk) {
-        Ok(d) => d,
-        Err(why) => {
-            record_gather_replied(home, role, card, peer, "error", &format!("no branch diff to review: {}", why));
-            return;
-        }
-    };
-    let diff_capped: String = diff.chars().take(60_000).collect();
-    let ctx = format!(
-        "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
-        card, card_view, diff_capped
-    );
-
-    // A job profile's output is schema-checked, so the reply is the JSON alone.
-    let job_sys = format!("{}\n\nOutput ONLY the JSON object, nothing before or after it.", sys);
-    if let Some(job) = gate_via_agent(&ctx, &job_sys, REVIEW_OUTPUT_SCHEMA, round) {
-        match job {
-            Ok(out) => { let (verdict, findings) = parse_review_verdict(&out); record_gather_replied(home, role, card, peer, &verdict, &findings); }
-            Err(e) => record_gather_replied(home, role, card, peer, "error", &e),
-        }
-        return;
-    }
-    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
-    let bin = match claude_bin() {
-        Some(b) => b,
-        None => {
-            record_gather_replied(home, role, card, peer, "error", "claude binary not resolvable");
-            return;
-        }
-    };
-    let child = Command::new(&bin)
-        .env("CHORUS_HEADLESS", "1") // exempt the review's claude -p from RESPOND-FIRST (#3218/#3471)
-        .args([
-            "-p",
-            "--model", &model,
-            "--permission-mode", "dontAsk",
-            "--no-session-persistence",
-            "--output-format", "text",
-            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt", &sys,
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => {
-            record_gather_replied(home, role, card, peer, "error", &format!("claude spawn failed: {}", e));
-            return;
-        }
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(ctx.as_bytes());
-    }
-    let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break Some(st),
-            Ok(None) => {
-                if start.elapsed() >= Duration::from_secs(timeout_secs) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                sleep(Duration::from_millis(200));
-            }
-            Err(e) => {
-                record_gather_replied(home, role, card, peer, "error", &format!("claude wait failed: {}", e));
-                return;
-            }
-        }
-    };
-    let status = match status {
-        Some(s) => s,
-        None => {
-            record_gather_replied(home, role, card, peer, "error",
-                &format!("review timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs));
-            return;
-        }
-    };
-    let mut stdout = String::new();
-    if let Some(mut o) = child.stdout.take() {
-        let _ = o.read_to_string(&mut stdout);
-    }
-    if !status.success() {
-        let mut stderr = String::new();
-        if let Some(mut e) = child.stderr.take() {
-            let _ = e.read_to_string(&mut stderr);
-        }
-        record_gather_replied(home, role, card, peer, "error",
-            &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()));
-        return;
-    }
-    // #4424 AC4 — the gather vocabulary (pass|concerns|block); a reply that
-    // can't be read is an error, never a "concerns".
-    let (verdict, findings) = parse_review_verdict(&stdout);
-    record_gather_replied(home, role, card, peer, &verdict, &findings);
-}
 
 
 
@@ -2688,7 +2772,7 @@ fn card_test_verdict(werk: &str) -> &'static str {
 }
 
 /// #4502 — the demo's step subcommands: `<step> <card> <role> [arg]`.
-pub const DEMO_STEPS: [&str; 5] = ["validate", "run-gate", "run-review", "session-smoke", "announce"];
+pub const DEMO_STEPS: [&str; 3] = ["validate", "run-gate", "announce"];
 
 /// #4474 — whose werk the demo is for. A step names the builder role the way
 /// every werk verb does (`<step> <card> <role>`, #4502), so a dagu step needs no
@@ -2708,7 +2792,7 @@ pub fn demo_role(argv: &[String], deploy_role: &str) -> R<String> {
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
-/// The demo steps (#4502) — `validate`, `run-gate <gate>`, `run-review <n>`,
+/// The demo steps (#4502, #4889) — `validate`, `run-gate <code|arch|quality>`,
 /// `announce`, each `<step> <card> <role>` — plus the recording subcommands:
 /// `gate` (record a gate result, #3237), `test-result` (werk-test's verdict),
 /// `go` (Jeff's go) and `verdict` (the land's witness check).
@@ -2729,11 +2813,6 @@ pub fn run_demo() -> R<DemoOutcome> {
         return match first.as_str() {
             "validate" => validate_step(card, role, &home),
             "run-gate" => run_gate_step(card, role, &home, &args.next().ok_or_else(usage)?),
-            "run-review" => {
-                let n: usize = args.next().and_then(|s| s.parse().ok()).ok_or_else(usage)?;
-                run_review_step(card, role, &home, n)
-            }
-            "session-smoke" => session_smoke_step(card, role, &home),
             _ => announce_step(card, role, &home),
         };
     }
@@ -2859,7 +2938,7 @@ pub fn run_demo() -> R<DemoOutcome> {
     if first == "verdict" {
         // #3519 — THE WITNESS-GATED LAND, the verb werk.yml's merge now keys on (replacing
         // the demo-exit-0 gate that can never fire). Reads the witness and returns exit 0 iff
-        // verdict_proven — gates + both peer gathers + Jeff's go, all patch-keyed for THIS
+        // verdict_proven — the reviews + Jeff's go, all patch-keyed for THIS
         // round. demo() still present-and-exits (#3511); the go records (`werk-demo go`);
         // THIS reads the witness and decides the land. Exit 2 = presented-not-landed (a clean
         // green stop, not an error), mirroring demo()'s present-and-exit contract.
@@ -2873,10 +2952,10 @@ pub fn run_demo() -> R<DemoOutcome> {
         let proven = verdict_proven(&witness, card, role.trim(), &round, &patch);
         return Ok(DemoOutcome {
             message: if proven {
-                format!("[verdict] #{} PROVEN (round {}) — gates + gathers + Jeff's go all on the witness for this patch → land.", card, round)
+                format!("[verdict] #{} PROVEN (round {}) — reviews + Jeff's go all on the witness for this patch → land.", card, round)
             } else {
                 let mut missing: Vec<&str> = Vec::new();
-                if !announce_ready_full(&witness, card, role.trim(), &round, &patch, false) { missing.push("gates/gathers"); }
+                if !announce_ready_full(&witness, card, role.trim(), &round, &patch, false) { missing.push("reviews"); }
                 if !jeff_go_recorded(&witness, card, &round, &patch) { missing.push("jeff-go"); }
                 format!("[verdict] #{} NOT proven (round {}) — witness missing: [{}]. Presented, not landed.", card, round, missing.join(", "))
             },
@@ -2892,7 +2971,7 @@ pub fn run_demo() -> R<DemoOutcome> {
 fn usage() -> String {
     format!(
         "usage: werk-demo <{}> <card> <role> [gate|n] — the demo runs as these steps (#4502): \
-         validate · run-gate <product|code|quality|arch|ops> · run-review <1|2> · announce; \
+         validate · run-gate <code|arch|quality> · announce; \
          recording: werk-demo gate|test-result|go|verdict <card> ...",
         DEMO_STEPS.join("|")
     )
@@ -2932,41 +3011,68 @@ mod tests {
     }
 
     #[test]
-    fn parse_gate_verdict_raw_pass() {
-        let out = r#"{"result":"pass","findings":"AC met, demo evidence present"}"#;
-        let (r, f) = parse_gate_verdict(out);
-        assert_eq!(r, "pass");
-        assert_eq!(f, "AC met, demo evidence present");
+    fn fail_items_reads_ranges_and_singles_from_frontmatter() {
+        let md = "---\nname: gate-x\nfail-items: 1-3, 7, 9\n---\n# x\nfail-items: 99\n";
+        assert_eq!(fail_items(md), vec![1, 2, 3, 7, 9]);
+        assert!(fail_items("---\nname: y\n---\n# y").is_empty(), "no rule → empty (the runner then fails every finding)");
     }
 
     #[test]
-    fn parse_gate_verdict_raw_fail() {
-        let out = r#"{"result":"fail","findings":"no tests for AC3"}"#;
-        let (r, f) = parse_gate_verdict(out);
+    fn the_security_review_is_asked_through_its_skill_not_the_local_slash_command_4889() {
+        let p = builtin_review_prompt("security-review", "abc");
+        assert!(p.starts_with("Invoke the security-review skill on the changes abc...HEAD"), "{p}");
+        assert!(!p.starts_with('/'), "a slash command is a zero-turn local command under -p: {p}");
+        assert!(p.contains("```json"), "{p}");
+        assert_eq!(builtin_review_prompt("code-review", "abc"), "/code-review medium --max-findings all abc...HEAD");
+    }
+
+    #[test]
+    fn a_review_config_missing_from_canonical_is_unmeasured_never_a_pass_4889() {
+        let (r, f) = review_config_present(Path::new("/no/such/boundaries.cjs")).expect("missing is an answer");
+        assert_eq!(r, "error");
+        assert!(f.contains("not on canonical"), "{f}");
+        assert!(review_config_present(Path::new("/")).is_none());
+    }
+
+    #[test]
+    fn gate_verdict_derives_fail_from_a_fail_item_finding() {
+        let out = r#"{"findings":[{"item":2,"where":"a.rs:3","what":"swallowed error"},{"item":6,"where":"b.rs:1","what":"no log"}]}"#;
+        let (r, f) = gate_verdict(out, &[1, 2, 3]);
         assert_eq!(r, "fail");
-        assert_eq!(f, "no tests for AC3");
+        assert!(f.starts_with("a.rs:3 — item 2 — swallowed error"), "{f}");
+        assert!(f.contains("note: b.rs:1 — item 6"), "{f}");
     }
 
     #[test]
-    fn parse_gate_verdict_unwraps_json_envelope() {
-        // claude -p --output-format json: the gate JSON is nested+escaped in `result`.
-        let out = r#"{"type":"result","subtype":"success","result":"{\"result\":\"pass\",\"findings\":\"clean\"}","is_error":false}"#;
-        let (r, f) = parse_gate_verdict(out);
-        assert_eq!(r, "pass");
-        assert_eq!(f, "clean");
+    fn negative_proof_the_models_own_pass_word_is_ignored() {
+        // #4708's shape: the reply says pass but lists a fail-item finding
+        let out = r#"{"result":"pass","findings":[{"item":1,"where":"t.bats:9","what":"negative proof passes vacuously"}]}"#;
+        assert_eq!(gate_verdict(out, &[1]).0, "fail");
     }
 
     #[test]
-    fn parse_gate_verdict_garbled_is_error_never_pass() {
-        let (r, f) = parse_gate_verdict("I think this looks fine to me, shipping it");
-        assert_eq!(r, "error");
-        assert!(!f.is_empty());
+    fn notes_only_and_empty_lists_pass() {
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":6,"where":"x","what":"y"}]}"#, &[1]).0, "pass");
+        assert_eq!(gate_verdict(r#"{"findings":[]}"#, &[1]), ("pass".to_string(), "no findings".to_string()));
+        // #4889 (Kade 09:14) — strict (no fail-items): every finding fails, any item number
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":100,"where":"x","what":"y"}]}"#, &[]).0, "fail");
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":0,"where":"x","what":"y"}]}"#, &[]).0, "fail");
+        assert_eq!(gate_verdict(r#"{"findings":[]}"#, &[]).0, "pass");
+        // NP: a negative item is no item number at all — an error, never a pass
+        assert_eq!(gate_verdict(r#"{"findings":[{"item":-1,"where":"x","what":"y"}]}"#, &[]).0, "error");
     }
 
     #[test]
-    fn parse_gate_verdict_missing_result_is_error() {
-        let (r, _) = parse_gate_verdict(r#"{"findings":"only findings, no verdict"}"#);
-        assert_eq!(r, "error");
+    fn gate_verdict_unwraps_json_envelope() {
+        let out = r#"{"type":"result","result":"{\"findings\":[{\"item\":3,\"where\":\"z.rs:2\",\"what\":\"null means two things\"}]}","is_error":false}"#;
+        assert_eq!(gate_verdict(out, &[3]).0, "fail");
+    }
+
+    #[test]
+    fn negative_proof_garbled_or_itemless_is_error_never_pass() {
+        assert_eq!(gate_verdict("I think this looks fine to me, shipping it", &[1]).0, "error");
+        assert_eq!(gate_verdict(r#"{"result":"pass","findings":"clean"}"#, &[1]).0, "error", "the old string shape is no list");
+        assert_eq!(gate_verdict(r#"{"findings":[{"where":"a","what":"b"}]}"#, &[1]).0, "error");
     }
 
     // #3623 drive-by hermeticity fix: these two tests mutate the SAME process-wide
@@ -2996,32 +3102,13 @@ mod tests {
     }
 
     #[test]
-    fn ops_context_names_the_one_failure_not_counted_4894() {
-        let c = ops_ctx("base", "ops", "nudge-delivery FAIL (abby-normal pane %16 not found)");
-        assert!(c.contains("NOT COUNTED (Jeff 2026-11-05 12:52)") && c.contains("abby-normal and/or borg-queen"), "{c}");
-        assert!(c.contains("naming any other role, or any other health failure, still fails"), "{c}");
-        // NP: no other gate gets it
-        assert_eq!(ops_ctx("base", "arch", "x"), "base");
-    }
-
-    #[test]
     fn gate_system_prompt_embeds_skill_and_output_contract() {
         let p = gate_system_prompt("# Gate Product\nCheck the AC.");
         assert!(p.contains("Gate Product"));
-        assert!(p.contains("\"result\":\"pass\""));
-        assert!(p.contains("ONLY a single JSON object"));
+        assert!(p.contains("\"findings\":[{\"item\""));
+        assert!(p.contains("ONLY a single JSON object") && p.contains("Do not give a verdict"));
     }
 
-    #[test]
-    fn review_system_prompt_embeds_peer_identity_and_verdict_contract() {
-        // #3539 — the spawned peer review loads the peer's CLAUDE.md as identity and
-        // must end on the same {result, findings} contract parse_gate_verdict reads.
-        let p = review_system_prompt("silas", "# Silas — Ops\nYou own observability.");
-        assert!(p.contains("You are silas"));
-        assert!(p.contains("Silas — Ops")); // identity embedded
-        assert!(p.contains("\"result\":\"pass\"")); // machine-parsable verdict contract
-        assert!(p.contains("over-building or under-planning")); // the 4 gather questions
-    }
 
     #[test]
     fn ac_counts_zero_when_no_ac() {
@@ -3047,55 +3134,38 @@ mod tests {
     }
 
     #[test]
-    fn gates_missing_empty_when_all_five_recorded() {
+    fn gates_missing_empty_when_every_review_recorded() {
         let w = REQUIRED_GATES
             .iter()
             .map(|g| gate_line(3237, g))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(gates_missing(&w, 3237, "r1", "").is_empty(), "all 5 gates present → none missing");
+        assert!(gates_missing(&w, 3237, "r1", "").is_empty(), "every review present → none missing");
     }
 
     #[test]
     fn gates_missing_lists_absent_gates() {
-        let w = format!("{}\n{}", gate_line(3237, "product"), gate_line(3237, "code"));
-        assert_eq!(gates_missing(&w, 3237, "r1", ""), vec!["quality", "arch", "ops"]);
+        let w = gate_line(3237, "code");
+        assert_eq!(gates_missing(&w, 3237, "r1", ""), vec!["arch", "quality"]);
     }
 
     #[test]
     fn gates_missing_all_when_witness_empty() {
-        assert_eq!(gates_missing("", 3237, "r1", "").len(), 5);
+        assert_eq!(gates_missing("", 3237, "r1", "").len(), REQUIRED_GATES.len());
     }
 
     // === #3461 — gate/gather evidence survives a content-preserving rebase ===
 
-    #[test]
-    fn gathers_reply_survives_round_churn_via_patch_id() {
-        // Both peers replied at round sha "rA" carrying patch-id "pidX". A rebase
-        // churns the round to "rB" but the tree (patch-id) is unchanged.
-        let w = "{\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"silas\",\"round\":\"rA\",\"patch_id\":\"pidX\"}\n\
-                 {\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"kade\",\"round\":\"rA\",\"patch_id\":\"pidX\"}\n\
-                 {\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"abby-normal\",\"round\":\"rA\",\"patch_id\":\"pidX\"}";
-        // churned round rB, SAME patch pidX → replies still count (no re-nudge loop)
-        assert!(gathers_missing(w, 3461, "wren", "rB", "pidX").is_empty(),
-            "patch-id match must survive the round churn");
-        // different patch (real content change) AND churned round → genuinely missing
-        assert_eq!(gathers_missing(w, 3461, "wren", "rB", "pidY"), vec!["silas", "kade", "abby-normal"]);
-        // empty patch → round-only fallback (no false match; #3459 parity)
-        assert_eq!(gathers_missing(w, 3461, "wren", "rB", ""), vec!["silas", "kade", "abby-normal"]);
-        // exact round still works
-        assert!(gathers_missing(w, 3461, "wren", "rA", "").is_empty());
-    }
 
     #[test]
     fn gates_survive_round_churn_via_patch_id() {
         let mut w = String::new();
-        for g in ["product", "code", "quality", "arch", "ops"] {
+        for g in REQUIRED_GATES {
             w.push_str(&format!("{{\"event\":\"demo.gate.result\",\"card_id\":3461,\"gate\":\"{}\",\"round\":\"rA\",\"patch_id\":\"pidX\"}}\n", g));
         }
         assert!(gates_missing(&w, 3461, "rB", "pidX").is_empty(), "gates survive rebase via patch-id");
-        assert_eq!(gates_missing(&w, 3461, "rB", "pidY").len(), 5, "real content change → gates re-run");
-        assert_eq!(gates_missing(&w, 3461, "rB", "").len(), 5, "empty patch → round-only");
+        assert_eq!(gates_missing(&w, 3461, "rB", "pidY").len(), REQUIRED_GATES.len(), "real content change → gates re-run");
+        assert_eq!(gates_missing(&w, 3461, "rB", "").len(), REQUIRED_GATES.len(), "empty patch → round-only");
     }
 
     #[test]
@@ -3113,96 +3183,34 @@ mod tests {
     // #3324 AUDIT — announce_skip_drives_tail_for_test_suite deleted: with skip=true
     // announce_ready is `true || …` — the assert could not fail (passes-by-definition).
 
-    // #3352 — the full invariant: gates AND gathers-replied before any announce.
-    #[test]
-    fn team_review_shows_this_rounds_peers_only_4474() {
-        let now = r#"{"ts":2,"event":"demo.gather.replied","role":"kade","card_id":4474,"trace_id":"t","peer":"wren","round":"r2","note":"ok"}"#;
-        let old_self = r#"{"ts":1,"event":"demo.gather.replied","role":"false","card_id":4474,"trace_id":"t","peer":"kade","round":"r2","verdict":"block","note":"Branch diff is empty"}"#;
-        let old_peer = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":4474,"trace_id":"t","peer":"silas","round":"r1","verdict":"block","note":"stale"}"#;
-        let w = format!("{}\n{}\n{}", old_self, old_peer, now);
-        let out = render_role_feedback(&w, 4474, "kade", "r2", "");
-        assert!(out.contains("wren: pass — ok"), "{out}");
-        // NEGATIVE PROOF — the demoer's own old reply and another round's reply must not show
-        assert!(!out.contains("kade:"), "the demoer reviewed itself: {out}");
-        assert!(!out.contains("stale"), "an earlier round's review shown as this round's: {out}");
-    }
-
-    fn gather_line(card: u64, peer: &str) -> String {
-        format!(
-            r#"{{"ts":1,"event":"demo.gather.replied","role":"wren","card_id":{},"trace_id":"t","peer":"{}","round":"r1","note":"ack"}}"#,
-            card, peer
-        )
-    }
 
     #[test]
-    fn gather_peers_excludes_the_demoer() {
-        assert_eq!(gather_peers("wren"), vec!["silas", "kade", "abby-normal"]);
-        assert_eq!(gather_peers("kade"), vec!["wren", "silas", "abby-normal"]);
-        // #4502 — every builder gets the same count, Abby included
-        assert_eq!(gather_peers("abby-normal"), vec!["wren", "silas", "kade"]);
-    }
-
-    #[test]
-    fn announce_full_blocked_when_gates_present_but_gathers_missing() {
-        // The 2026-06-11 class: all 5 gates recorded, NO peer feedback — the old
-        // announce fired here and Jeff's go preceded the team's input. Now: standby.
-        let w = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect::<Vec<_>>().join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates without gathers ⇒ no announce");
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas", "kade", "abby-normal"]);
-    }
-
-    #[test]
-    fn announce_full_blocked_when_only_one_peer_replied() {
-        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
-        lines.push(gather_line(3352, "kade"));
-        let w = lines.join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "one peer's reply is not the team's feedback");
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas", "abby-normal"]);
-    }
-
-    #[test]
-    fn announce_full_fires_when_gates_and_both_gathers_replied() {
-        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
-        lines.push(gather_line(3352, "silas"));
-        lines.push(gather_line(3352, "kade"));
-        lines.push(gather_line(3352, "abby-normal"));
-        let w = lines.join("\n");
-        assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + every peer's reply ⇒ announce");
+    fn announce_full_fires_when_every_review_recorded() {
+        // #4889: the reviews are the demo's only gate (peer gathers retired).
+        let lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
+        assert!(announce_ready_full(&lines.join("\n"), 3352, "wren", "r1", "", false), "every review ⇒ announce");
+        // negative proof: one review missing ⇒ no announce
+        assert!(!announce_ready_full(&lines[..2].join("\n"), 3352, "wren", "r1", "", false), "a missing review blocks announce");
     }
 
 
 
-    #[test]
-    fn gather_sent_alone_does_not_satisfy_replied() {
-        // Sending the 4 questions is not receiving feedback — only replied counts.
-        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
-        lines.push(format!(
-            r#"{{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3352,"trace_id":"t","peer":"silas","round":"r1","note":""}}"#
-        ));
-        lines.push(gather_line(3352, "kade"));
-        let w = lines.join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "sent != replied");
-    }
 
     // #3365 — THE core proof: a prior round's records never satisfy this round.
     #[test]
     fn round2_with_only_round1_records_refuses_everything() {
-        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3365, g)).collect();
-        lines.push(gather_line(3365, "silas"));
-        lines.push(gather_line(3365, "kade"));
-        lines.push(gather_line(3365, "abby-normal"));
+        let lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3365, g)).collect();
         let w = lines.join("\n"); // a fully-passed ROUND r1
         assert!(announce_ready_full(&w, 3365, "wren", "r1", "", false), "r1 evidence satisfies r1");
         assert!(!announce_ready_full(&w, 3365, "wren", "r2", "", false), "r1 evidence must NOT satisfy r2");
-        assert_eq!(gates_missing(&w, 3365, "r2", "").len(), 5, "all gates fresh per round");
-        assert_eq!(gathers_missing(&w, 3365, "wren", "r2", "").len(), 3, "all feedback fresh per round");
+        assert_eq!(gates_missing(&w, 3365, "r2", "").len(), REQUIRED_GATES.len(), "all reviews fresh per round");
     }
 
     #[test]
     fn pre_3365_records_without_round_field_match_nothing() {
         // Old evidence (no round field) ages out structurally on landing.
         let w = r#"{"ts":1,"event":"demo.gate.result","role":"wren","card_id":3365,"trace_id":"t","gate":"product","result":"pass"}"#;
-        assert_eq!(gates_missing(w, 3365, "r1", "").len(), 5);
+        assert_eq!(gates_missing(w, 3365, "r1", "").len(), REQUIRED_GATES.len());
     }
 
     // #3365 cross-verb contract (Kade's ACK ask): werk-demo's current_round and
@@ -3297,11 +3305,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    #[test]
-    fn gathers_missing_ignores_other_cards_comma_terminated() {
-        let w = format!("{}\n{}", gather_line(33520, "silas"), gather_line(33520, "kade"));
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", "").len(), 3, "card 33520's gathers must not satisfy 3352");
-    }
 
     #[test]
     fn gates_missing_ignores_other_cards_comma_terminated() {
@@ -3311,7 +3314,7 @@ mod tests {
             .map(|g| gate_line(31, g))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(gates_missing(&w, 3, "r1", "").len(), 5, "card 31's gates must not satisfy card 3");
+        assert_eq!(gates_missing(&w, 3, "r1", "").len(), REQUIRED_GATES.len(), "card 31's gates must not satisfy card 3");
     }
 
     // #3511 — JEFF's go matcher: round+patch-keyed, card-scoped, his go only.
@@ -3340,11 +3343,11 @@ mod tests {
     fn gate_verdicts_reads_each_recorded_result() {
         let w = format!(
             "{}\n{}",
-            gate_line_result(3284, "product", "pass"),
+            gate_line_result(3284, "arch", "pass"),
             gate_line_result(3284, "code", "fail")
         );
         let map: std::collections::HashMap<_, _> = gate_verdicts(&w, 3284).into_iter().collect();
-        assert_eq!(map["product"], "pass");
+        assert_eq!(map["arch"], "pass");
         assert_eq!(map["code"], "fail");
         assert_eq!(map["quality"], "-", "a not-run gate is '-', never a fake pass");
     }
@@ -3398,11 +3401,11 @@ mod tests {
     fn render_gate_summary_marks_pass_fail_and_notrun() {
         let w = format!(
             "{}\n{}",
-            gate_line_result(3284, "product", "pass"),
+            gate_line_result(3284, "arch", "pass"),
             gate_line_result(3284, "code", "fail")
         );
         let s = render_gate_summary(&w, 3284);
-        assert!(s.contains("product ✓"), "pass → ✓: {}", s);
+        assert!(s.contains("arch ✓"), "pass → ✓: {}", s);
         assert!(s.contains("code ✗"), "fail → ✗: {}", s);
         assert!(s.contains("quality -"), "not-run → -: {}", s);
         assert!(!s.contains("(none run"), "the misleading 'optional' label is gone: {}", s);
@@ -3613,13 +3616,13 @@ mod gate_profile_tests_4424 {
     fn set_gate_profile_runs_chorus_agent_with_a_json_job() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = scratch("set");
-        let bin = fake_agent(&dir, r#"{"result":"fail","findings":"missing test"}"#);
+        let bin = fake_agent(&dir, r#"{"findings":[{"item":8,"where":"a.rs:1","what":"missing test"}]}"#);
         env::set_var("CHORUS_GATE_PROFILE", "gate-chat");
         env::set_var("CHORUS_AGENT_BIN", &bin);
         let out = gate_via_agent("card text \"quoted\"", "gate sys", GATE_OUTPUT_SCHEMA, "abc123").expect("profile set").unwrap();
         env::remove_var("CHORUS_GATE_PROFILE");
         env::remove_var("CHORUS_AGENT_BIN");
-        assert_eq!(parse_gate_verdict(&out).0, "fail");
+        assert_eq!(gate_verdict(&out, &[8]).0, "fail");
         assert_eq!(fs::read_to_string(dir.join("args")).unwrap().trim(), "run --text");
         let stdin = fs::read_to_string(dir.join("stdin")).unwrap();
         assert_eq!(extract_json_str(&stdin, "profile").as_deref(), Some("gate-chat"));
@@ -3671,16 +3674,6 @@ mod gate_profile_tests_4424 {
         assert!(!available);
     }
 
-    #[test]
-    fn unparseable_review_is_error_never_concerns() {
-        assert_eq!(parse_review_verdict("no json here at all").0, "error");
-        assert_eq!(parse_review_verdict(r#"{"result":"maybe","findings":"?"}"#).0, "error");
-        // Negative proof: real verdicts keep their meaning.
-        assert_eq!(parse_review_verdict(r#"{"result":"fail","findings":"bad"}"#).0, "block");
-        assert_eq!(parse_review_verdict(r#"{"result":"block","findings":"bad"}"#).0, "block");
-        assert_eq!(parse_review_verdict(r#"{"result":"concerns","findings":"hm"}"#), ("concerns".to_string(), "hm".to_string()));
-        assert_eq!(parse_review_verdict(r#"{"result":"pass","findings":"ok"}"#).0, "pass");
-    }
 }
 
 #[cfg(test)]

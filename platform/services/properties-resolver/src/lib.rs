@@ -283,6 +283,122 @@ pub fn http_get_door(door_url: &str, path: &str) -> Result<(u16, String), String
     Ok((code, body.to_string()))
 }
 
+/// #4889 (Jeff 2026-11-04 20:55, "do the right long term thing"; his 08:08 rule: every
+/// property in the graph, read through the resolver) — a global property's value from the
+/// properties door body (`/properties/properties`). The row's key must match and its scope be
+/// `global`; an absent row or an empty value is an error, never a default. Pure.
+pub fn global_value_from_body(body: &str, key: &str) -> Result<String, String> {
+    // #4889 (code review, run 9) — each row is a whole JSON object found by brace depth,
+    // outside strings, so a `{` or `}` inside a value (a URL template) can never move it
+    let row = row_objects(body).into_iter()
+        .find(|r| string_field(r, "propertyKey").as_deref() == Some(key))
+        .ok_or_else(|| format!("no property row sets {key} (add it to the graph; there is no default)"))?;
+    if string_field(row, "propertyScope").as_deref() != Some("global") {
+        return Err(format!("{key}: the row is not global scope"));
+    }
+    match string_field(row, "propertyValue") {
+        Some(v) if !v.trim().is_empty() => Ok(v),
+        _ => Err(format!("{key}: the row has no value")),
+    }
+}
+
+/// The objects one level inside the body's top object (`{"data":[{row},{row}]}` → each
+/// row), matched by brace depth with strings and escapes skipped. Pure.
+fn row_objects(body: &str) -> Vec<&str> {
+    let (mut out, mut depth, mut start, mut in_str, mut esc) = (Vec::new(), 0usize, None, false, false);
+    for (i, c) in body.char_indices() {
+        if in_str {
+            if esc { esc = false } else if c == '\\' { esc = true } else if c == '"' { in_str = false }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => { depth += 1; if depth == 2 { start = Some(i) } }
+            '}' => {
+                if depth == 2 { if let Some(s0) = start.take() { out.push(&body[s0..=i]) } }
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A top-level string field of one JSON object (`"f": "v"`), escapes kept as written. Pure.
+fn string_field(obj: &str, f: &str) -> Option<String> {
+    let needle = format!("\"{f}\"");
+    let mut from = 0;
+    while let Some(k) = obj[from..].find(&needle) {
+        let after = from + k + needle.len();
+        if let Some(rest) = obj[after..].trim_start().strip_prefix(':') {
+            let rest = rest.trim_start().strip_prefix('"')?;
+            let (mut esc, mut end) = (false, None);
+            for (i, c) in rest.char_indices() {
+                if esc { esc = false } else if c == '\\' { esc = true } else if c == '"' { end = Some(i); break }
+            }
+            return Some(rest[..end?].to_string());
+        }
+        from = after;
+    }
+    None
+}
+
+/// #4889 (Kade 21:02) — the door every caller reads properties from: OWL_URL, else
+/// athena-make on the Library. One home for the default.
+pub fn door_url() -> String {
+    std::env::var("OWL_URL").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string())
+}
+
+/// #4889 — read one global property through the door (athena-make, `door_url`). The door
+/// unreachable or not 200 is an error (loud: Fuseki down is a red, never a fallback).
+pub fn global_value(door_url: &str, key: &str) -> Result<String, String> {
+    let (code, body) = http_get_door(door_url, "/properties/properties?limit=1000")
+        .map_err(|e| format!("{key}: the properties door did not answer ({e})"))?;
+    if code != 200 {
+        return Err(format!("{key}: the properties door answered {code}"));
+    }
+    global_value_from_body(&body, key)
+}
+
+#[cfg(test)]
+mod global_value_4889 {
+    use super::*;
+    const BODY: &str = r#"{"data":[{"name":"a","propertyKey":"room.moderator","propertyScope":"global","propertyValueType":"string","propertyValue":"wren"},{"name":"b","propertyKey":"tool.path.semgrep","propertyScope":"global","propertyValueType":"string","propertyValue":"/x/semgrep"}]}"#;
+
+    #[test]
+    fn a_global_row_gives_its_value() {
+        assert_eq!(global_value_from_body(BODY, "tool.path.semgrep").unwrap(), "/x/semgrep");
+    }
+
+    #[test]
+    fn negative_proof_a_missing_row_is_an_error_never_a_default() {
+        let e = global_value_from_body(BODY, "tool.path.claude").unwrap_err();
+        assert!(e.contains("no property row sets tool.path.claude"), "{e}");
+    }
+
+    #[test]
+    fn negative_proof_an_empty_value_or_a_non_global_row_is_an_error() {
+        let empty = r#"{"data":[{"propertyKey":"k","propertyScope":"global","propertyValue":""}]}"#;
+        assert!(global_value_from_body(empty, "k").unwrap_err().contains("no value"));
+        let role = r#"{"data":[{"propertyKey":"k","propertyScope":"role","propertyValue":"v"}]}"#;
+        assert!(global_value_from_body(role, "k").unwrap_err().contains("not global"));
+    }
+
+    #[test]
+    fn a_brace_or_a_key_name_inside_another_rows_value_cannot_move_the_row() {
+        // run 9's review: rfind('{') picked up a `{` inside an earlier value
+        let body = r#"{"data":[{"propertyKey":"url.tpl","propertyScope":"global","propertyValue":"http://x/{id}/\"propertyKey\":\"k\" {"},{"name":"b","propertyKey":"k","propertyScope":"global","propertyValue":"v","links":{"ownedBy":"silas"}}]}"#;
+        assert_eq!(global_value_from_body(body, "k").unwrap(), "v");
+        assert_eq!(global_value_from_body(body, "url.tpl").unwrap(), r#"http://x/{id}/\"propertyKey\":\"k\" {"#);
+    }
+
+    #[test]
+    fn negative_proof_an_unreachable_door_is_an_error() {
+        let e = global_value("http://127.0.0.1:9", "tool.path.semgrep").unwrap_err();
+        assert!(e.contains("did not answer"), "{e}");
+    }
+}
+
 #[cfg(test)]
 mod role_scope_3838 {
     use super::*;

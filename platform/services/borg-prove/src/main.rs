@@ -67,7 +67,7 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
             let url = format!("{loki}/loki/api/v1/query_range");
             let (start, end) = (format!("start={}000000000", now - 30 * 86400), format!("end={now}000000000"));
             let ask = |q: String, start: String| curl(&["-G", &url, "--data-urlencode", &format!("query={q}"), "--data-urlencode", &start,
-                "--data-urlencode", &end, "--data-urlencode", "limit=1", "--data-urlencode", "direction=backward"]);
+                "--data-urlencode", &end, "--data-urlencode", &format!("limit={}", borg_prove::CASE_LIMIT), "--data-urlencode", "direction=backward"]);
             let own = ask(test_logql(&c.target, card), start).and_then(|b| latest_case(&b));
             // #4824 — and main's nightly from the land on: a test the diff does not touch never runs in the card's runs
             let main = land_time(card).and_then(|t| ask(test_logql_main(&c.target), format!("start={t}000000000")))
@@ -153,6 +153,62 @@ fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     results
 }
 
+/// #4889 (Kade 19:56) — the open deferred checks: one file per card, one line per AC
+/// (`ac \t statement \t check text`), written at that card's land, read at every land after.
+fn deferred_dir() -> std::path::PathBuf {
+    let dir = env("BORG_RESULTS_DIR", &format!("{}/ops/borg-prove", env("CHORUS_HOME", "/tmp")));
+    std::path::PathBuf::from(dir).join("deferred")
+}
+
+/// At a card's own land: its `after` checks are written down to be re-run later.
+fn defer_open(card: u32, r: &[(Check, Outcome)]) {
+    let lines: Vec<String> = r.iter().filter(|(c, _)| c.kind == "after")
+        .map(|(c, _)| format!("{}\t{}\t{}", c.ac, c.statement.replace('\t', " "), c.target)).collect();
+    if lines.is_empty() { return; }
+    let d = deferred_dir();
+    let path = d.join(format!("{card}.tsv"));
+    if let Err(e) = std::fs::create_dir_all(&d).and_then(|_| std::fs::write(&path, lines.join("\n") + "\n")) {
+        eprintln!("#{card} record: the deferred checks were not written to {}: {e}", path.display());
+        exit(1);
+    }
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    let names: Vec<&str> = r.iter().filter(|(c, _)| c.kind == "after").map(|(c, _)| c.ac.as_str()).collect();
+    let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(),
+        &format!("borg-prove: deferred: {} — re-run at the next land; met clears it, red reopens this card", names.join(", "))]).status();
+}
+
+/// At every land: re-run every other card's open deferred checks against prod. Met clears
+/// the line; not met reopens that card (slice 5's path); unmeasured stays open.
+fn rerun_deferred(this: u32, base: &str) {
+    let Ok(entries) = std::fs::read_dir(deferred_dir()) else { return };
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    for e in entries.flatten() {
+        let Some(card) = e.path().file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok()) else { continue };
+        if card == this { continue; }
+        let text = std::fs::read_to_string(e.path()).unwrap_or_default();
+        let mut keep = Vec::new();
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let mut f = line.splitn(3, '\t');
+            let (ac, statement, target) = (f.next().unwrap_or(""), f.next().unwrap_or(""), f.next().unwrap_or(""));
+            let outer = Check { ac: ac.into(), statement: statement.into(), kind: "after".into(), target: target.into(), expect: "later".into() };
+            let Some(c) = inner_check(&outer) else { keep.push(line.to_string()); continue };
+            let o = judge(&c, &probe(&c, base, card));
+            println!("#{card} deferred {ac}: {} — {}", o.word(), o.evidence());
+            match rerun_action(&o) {
+                Rerun::Cleared => { let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(),
+                    &format!("borg-prove: deferred {ac} met at the land of #{this}: {}", o.evidence())]).status(); }
+                // a reopen that did not take keeps the deferral, so the next land tries again
+                Rerun::Reopen => {
+                    let ok = reopen(card, &format!("Not met on deferred {ac} (at the land of #{this})"));
+                    if keeps_deferral(&Rerun::Reopen, ok) { keep.push(line.to_string()) }
+                }
+                Rerun::KeepOpen => keep.push(line.to_string()),
+            }
+        }
+        let _ = if keep.is_empty() { std::fs::remove_file(e.path()) } else { std::fs::write(e.path(), keep.join("\n") + "\n") };
+    }
+}
+
 /// Where prod leaves its results for record: one file per card per run.
 fn results_path(card: u32) -> std::path::PathBuf {
     run_file(card, "tsv")
@@ -222,6 +278,22 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
     }
 }
 
+/// #4889 — a red in prod reopens the card: back to WIP (it was merged, so the fix is a new
+/// round on the same card), with the verdict said on the card. A move that fails is said
+/// on stderr; the step fails either way, so accept never runs.
+/// Moves the card back to WIP with the verdict as a comment. true only when both took.
+fn reopen(card: u32, verdict: &str) -> bool {
+    let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
+    let moved = Command::new("bash").arg(&cards).args(["move", &card.to_string(), "WIP"]).env("DEPLOY_ROLE", "borg-queen").status();
+    let said = Command::new("bash").arg(&cards)
+        .args(["comment", &card.to_string(), &format!("borg-prove: reopened — prod reads {verdict}; accept held until a new round proves it")]).status();
+    let done = matches!(moved, Ok(s) if s.success()) && matches!(said, Ok(s) if s.success());
+    if !done {
+        eprintln!("#{card} record: reopen did not complete (move {moved:?}, comment {said:?})");
+    }
+    done
+}
+
 /// The step that failed in a dagu run, from `dagu status` ("├─name (…) [failed]").
 fn failed_step(dag: &str, run: &str) -> String {
     let cfg = env("DAGU_CONFIG", &format!("{}/platform/config/dagu.yaml", env("CHORUS_HOME", "")));
@@ -268,10 +340,13 @@ fn main() {
         // record runs on the red path too); record judges those same results
         // (it never measures again: Silas, Wren at the demo), writes the
         // verdict and is the gate: it fails on any verdict but Proven, so
-        // accept never runs after a red or an unmeasured AC. A card with no
-        // AC check (#4760: on its AC lines) lands as before and says "unproven".
+        // accept never runs after a red or an unmeasured AC. #4889: a card with no
+        // AC check fails too (it was "lands as before"), and a red reopens the card.
         "prod" => {
-            let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
+            let prod_base = env("BORG_PROD_BASE", "http://localhost:3340");
+            // #4889 — every land re-runs the other cards' open deferred checks first
+            rerun_deferred(card, &prod_base);
+            let r = run_checks(card, &prod_base);
             let path = results_path(card);
             if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, results_to_tsv(&r))) {
                 eprintln!("#{card} prod: the results were not written to {}: {e}", path.display());
@@ -280,7 +355,7 @@ fn main() {
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
             let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} verify in prod: {v}");
-            if v != "Proven" && v != NO_ROWS { exit(1) }
+            if !prod_passes(v) { exit(1) }
         }
         "record" => {
             // #4760 — the land runs record; it hands itself to her account (her
@@ -308,6 +383,8 @@ fn main() {
             let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
             println!("#{card} record: {v}");
             record(card, &role, v, &r);
+            // #4889 — a Proven card with `after` checks lands Done; they stay open, named on it
+            if prod_passes(v) { defer_open(card, &r); }
             // #4691 — the verdict for check, written as whoever ran record:
             // in the land that is Borg Queen's own session, her Mac account
             let word = if v == NO_ROWS { "unproven" } else { v };
@@ -315,7 +392,17 @@ fn main() {
                 eprintln!("#{card} record: the verdict file was not written: {e}");
                 exit(1);
             }
-            if v != "Proven" && v != NO_ROWS { exit(1) }
+            // #4889 — a red reopens the card: it goes back to WIP, said on the card, and
+            // accept never runs (this step fails)
+            if !prod_passes(v) {
+                // #4889 (code review, run 17) — a card whose every AC is `after` is Unproven by
+                // design; werk-demo's validate refuses it before the go, so reaching here says so
+                if !r.is_empty() && r.iter().all(|(c, _)| c.kind == "after") {
+                    eprintln!("#{card} record: every AC is `check: after`, so nothing proved it before the land; validate should have refused it");
+                }
+                reopen(card, word);
+                exit(1)
+            }
         }
         "route" => {
             let (Some(_run), Some(routes)) = (a.get(3), a.get(4)) else {

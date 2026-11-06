@@ -59,7 +59,7 @@ wake_problems() {
     "$H" "$BATS_TEST_TMPDIR/shim" "$BATS_TEST_TMPDIR/why" "$RF" "$d" "$d" > "$d/parent.yaml"
   (cd "$d" && env -u CHORUS_ROLE DAGU_HOME="$d/home" dagu start parent.yaml -- CARD=4888 ROLE=silas >/dev/null 2>&1) || true
   [ "$(wc -l < "$SENT" | tr -d ' ')" -eq 1 ] || { cat "$SENT"; return 1; }
-  grep -q '^silas|#4888 parent failed at' "$SENT" || { cat "$SENT"; return 1; }
+  grep -q '^silas|#4888 parent failed .*failed at' "$SENT" || { cat "$SENT"; return 1; }
 }
 
 @test "the pair ends at the land's prove, yet the land's wake still reaches the navigator, then the kept members go" {
@@ -133,8 +133,9 @@ WAKE_RE='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · /cws [0-9]+$'
 # --- run-finished, with chorus-hook-shim and chorus-werk-status caged ---
 cage() {
   H="$BATS_TEST_TMPDIR/home"; mkdir -p "$H/ops/active-pairs"
-  SENT="$BATS_TEST_TMPDIR/sent"; : > "$SENT"
-  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s|%%s\\n" "$3" "$4" >> %s\n' "$SENT" > "$BATS_TEST_TMPDIR/shim"
+  SENT="$BATS_TEST_TMPDIR/sent"; : > "$SENT"; : > "$SENT.wake"
+  # one line per send: a wake's fenced reason spans lines (#4889)
+  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s|%%s\\n" "$3" "$(printf %%s "$4" | tr "\\n" " ")" >> %s && echo "${CHORUS_NUDGE_WAKE:-none}" >> %s.wake\n' "$SENT" "$SENT" > "$BATS_TEST_TMPDIR/shim"
   printf '#!/bin/sh\necho "failed at test-pipeline: werk-test: RED (exit 1)"\n' > "$BATS_TEST_TMPDIR/why"
   chmod +x "$BATS_TEST_TMPDIR/shim" "$BATS_TEST_TMPDIR/why"
 }
@@ -147,7 +148,7 @@ finish() { # STATUS DAG [STEP]
   cage; run finish failed cicd
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(wc -l < "$SENT" | tr -d ' ')" -eq 1 ] || { cat "$SENT"; return 1; }
-  grep -q '^silas|.*#4888 cicd failed at test-pipeline: werk-test: RED' "$SENT" || { cat "$SENT"; return 1; }
+  grep -q '^silas|#4888 cicd failed · /cws 4888 ``` failed at test-pipeline: werk-test: RED' "$SENT" || { cat "$SENT"; return 1; }
 }
 
 @test "AC1: a paired card's finish wakes the driver and the navigator, each once" {
@@ -203,10 +204,17 @@ finish() { # STATUS DAG [STEP]
   cage; run finish succeeded cicd-go
   { [ "$status" -eq 0 ] && [ ! -s "$SENT" ]; } || { cat "$SENT"; return 1; }
   cage; run finish failed cicd-go
-  grep -q '^silas|#4888 cicd-go failed at' "$SENT" || { cat "$SENT"; return 1; }
+  grep -q '^silas|#4888 cicd-go failed .*failed at' "$SENT" || { cat "$SENT"; return 1; }
 }
 
 @test "AC6: pair red routes back to slice without its own nudge (the exit handler is the one wake)" {
   out="$(sed -n '/^red)/,/^  ;;/p' "$ROOT/platform/scripts/pair" | grep -nE '^\s*(nudge|.*ops-nudge) ' || true)"
   [ -z "$out" ] || { echo "pair red still nudges: $out"; return 1; }
+}
+
+@test "#4889: every finish wake is marked CHORUS_NUDGE_WAKE=run-finished (a field pulse never dedupes), pass or fail" {
+  cage; run finish failed cicd
+  [ "$(cat "$SENT.wake")" = "run-finished" ] || { cat "$SENT.wake"; return 1; }
+  cage; run finish succeeded cicd-land
+  [ "$(cat "$SENT.wake")" = "run-finished" ] || { cat "$SENT.wake"; return 1; }
 }

@@ -28,7 +28,8 @@ use std::process::Command;
 /// An actor idle this long with work waiting is woken.
 pub const IDLE_SECS: i64 = 60;
 /// The same work wakes the same actor again only after this long: pulse's
-/// machine-lane cooldown (MACHINE_COOLDOWN_MS), which would hold it anyway.
+/// machine-lane cooldown (the pulse.announce.machine_cooldown_ms property since
+/// #4889, 30 min), which would hold it anyway.
 pub const REWAKE_SECS: i64 = 1800;
 /// A nudge younger than this may still be on its way.
 pub const NUDGE_GRACE_SECS: i64 = 60;

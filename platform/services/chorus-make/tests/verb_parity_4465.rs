@@ -37,7 +37,9 @@ fn skill_verbs_are_the_binaries_of_deterministic_rows() {
     assert!(!v.iter().any(|b| b.is_empty()), "the human go has no binary: {v:?}");
     // #4683 — borg-prove runs two skills in the land (prod, record) and is one verb
     assert!(v.contains("borg-prove"), "{v:?}");
-    assert_eq!(v.len(), 11);
+    // #4889 — werk-review retired (the code review is the demo's /code-review)
+    assert!(!v.contains("werk-review"), "{v:?}");
+    assert_eq!(v.len(), 10);
 }
 
 // NEGATIVE PROOF, measured live 2026-10-09 14:49: MCP has pull and unpull with

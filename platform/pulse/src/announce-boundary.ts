@@ -78,10 +78,24 @@ export function signature(content: string): string {
     .toLowerCase();
 }
 
-/** Machine-lane cooldown: one announcement per (signature) per window per
- *  recipient-set. 30min — long enough to absorb today's 22-minute alert cadence,
- *  short enough that an ongoing incident re-surfaces twice an hour. */
-export const MACHINE_COOLDOWN_MS = 30 * 60_000;
+/** #4889 — the machine-lane cooldown is the global property COOLDOWN_KEY, read through
+ *  the shared TS properties reader (chorus-sdk/properties/global) by watchCooldown in the
+ *  delivery worker; the hard-coded 30 min constant is retired. Until a value is read (door
+ *  down, row missing) the boundary dedupes nothing: every alert is delivered, and the
+ *  worker says so on the spine once per change (announce.cooldown.unread). */
+export const COOLDOWN_KEY = 'pulse.announce.machine_cooldown_ms';
+
+/** The cooldown a property value names, or an error. Pure. */
+export function parseCooldown(v: string): { ok: true; ms: number } | { ok: false; error: string } {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? { ok: true, ms: n } : { ok: false, error: `${COOLDOWN_KEY}: '${v}' is not a positive whole number of ms` };
+}
+
+/** #4889 — a wake that is never deduped: the one wake a pipeline run sends when it finishes
+ *  (#4888 run-finished). Marked by the sender as a field on the nudge (`wake`), never
+ *  recognised from its text (Kade 07:04). #4889 run 4's failure (06:29) matched run 3's
+ *  (06:16) by signature and reached its owner 29 min late. */
+export const UNDEDUPED_WAKES = new Set(['run-finished']);
 
 // DECIDED (Jeff's 20×3 datum, 2026-06-11): the window is keyed by signature
 // ONLY — recipient-agnostic. One incident announces ONCE ANYWHERE, because the
@@ -96,6 +110,8 @@ export class AnnounceState {
   /** keyed by signature (recipient-agnostic on purpose: the same incident
    *  fanned to 3 terminals is ONE incident — Jeff's 20×3 datum) */
   windows: Map<string, WindowEntry> = new Map();
+  /** the machine-lane cooldown (COOLDOWN_KEY); undefined = not read, dedupe nothing */
+  constructor(public cooldownMs?: number) {}
 }
 
 /** #4756 — an alert is stored under its owning role, its source in the
@@ -119,6 +135,7 @@ export function decide(
   stored: string,
   nowMs: number,
   state: AnnounceState,
+  wake?: string | null,
 ): Decision {
   const { from, body: content } = boundaryInput(storedFrom, stored);
   const { lane, cls } = classify(from, to, content);
@@ -139,10 +156,20 @@ export function decide(
     return { deliver: false, cls, lane, suppressReason: 'benign-refusal' };
   }
 
-  // 4) machine alerts/errors: dedupe by class signature with cooldown.
+  // 4) #4889 — a run-finish wake always reaches its owner (marked by field, not text).
+  if (wake && UNDEDUPED_WAKES.has(wake)) {
+    return { deliver: true, cls, lane };
+  }
+
+  // 5) machine alerts/errors: dedupe by class signature with the cooldown property.
+  //    No cooldown read yet: dedupe nothing (deliver; the worker reports it unread).
+  const cooldown = state.cooldownMs;
+  if (cooldown === undefined) {
+    return { deliver: true, cls, lane };
+  }
   const sig = signature(content);
   const win = state.windows.get(sig);
-  if (win && nowMs - win.openedAt < MACHINE_COOLDOWN_MS) {
+  if (win && nowMs - win.openedAt < cooldown) {
     win.suppressed += 1;
     return {
       deliver: false,
@@ -156,7 +183,7 @@ export function decide(
   state.windows.set(sig, { openedAt: nowMs, suppressed: 0 });
   // prune long-dead windows so the map can't grow unbounded
   for (const [k, w] of state.windows) {
-    if (nowMs - w.openedAt > 4 * MACHINE_COOLDOWN_MS) state.windows.delete(k);
+    if (nowMs - w.openedAt > 4 * cooldown) state.windows.delete(k);
   }
   return { deliver: true, cls, lane, suppressedSinceLast };
 }

@@ -42,13 +42,9 @@ steps:
     with:
       dag: cicd-test
       params: "CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff"
-  - name: skill-werk-review
-    description: "werk-review"
-    depends: [skill-werk-test-pipeline]
-    command: "${HOME}/.chorus/bin/chorus-runner call werk-review card=${CARD}"
   - name: skill-werk-deploy-demo
     description: "werk-deploy-demo"
-    depends: [skill-werk-review]
+    depends: [skill-werk-test-pipeline]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-demo card=${CARD}"
   - name: skill-werk-deploy-env-up
     description: "werk-deploy env-up"

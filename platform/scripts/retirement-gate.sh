@@ -37,7 +37,9 @@ for f in "${deleted[@]:-}"; do
   # still matched by its base name, which is how tests usually name a script.
   needle="$base"
   case "$base" in
-    main.rs|lib.rs|mod.rs|build.rs|index.ts|index.js|server.ts|main.ts|mod.ts|__init__.py|main.py)
+    # #4889 — and a crate's generic test files: deleting werk-review's tests/e2e.rs and
+    # tests/units.rs was blocked by werk-push's e2e.rs and a fixture's tmp units.rs
+    main.rs|lib.rs|mod.rs|build.rs|index.ts|index.js|server.ts|main.ts|mod.ts|__init__.py|main.py|e2e.rs|units.rs)
       needle=$(printf '%s' "$f" | awk -F/ '{ n=NF; s=$n; if (n>1) s=$(n-1)"/"s; if (n>2) s=$(n-2)"/"s; print s }') ;;
   esac
   # #4563 — the needle must start at a name boundary: roles.ts matched context-roles.ts.

@@ -10,7 +10,7 @@ const R: &str = "round-abc";
 const P: &str = "patch-1";
 
 fn gates(result: &str) -> String {
-    ["product", "code", "quality", "arch", "ops"].iter()
+    werk_demo::REQUIRED_GATES.iter()
         .map(|g| format!("{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":7,\"trace_id\":\"t\",\"gate\":\"{g}\",\"result\":\"{result}\",\"round\":\"{R}\",\"patch_id\":\"{P}\"}}\n"))
         .collect()
 }
@@ -30,7 +30,7 @@ fn all_gates_green_and_both_vouches_leave_nothing_missing() {
 #[test]
 fn negative_proof_a_red_gate_blocks_the_go() {
     let w = gates("fail") + &owner() + &nav();
-    assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m.contains("product fail")));
+    assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m.contains("code fail")));
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn negative_proof_an_older_rounds_passing_gates_do_not_count() {
     // Kade b1c438aeb (2): gates passed for the old round; this round has no gate results.
     let old = gates("pass").replace(R, "old-round").replace(P, "old-patch");
     let w = old + &owner() + &nav();
-    assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m == "product -"), "{:?}", vouch_missing(&w, 7, R, P, "wren"));
+    assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m == "code -"), "{:?}", vouch_missing(&w, 7, R, P, "wren"));
 }
 
 #[test]

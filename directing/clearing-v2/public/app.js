@@ -1181,6 +1181,14 @@ function initStream(customContainer) {
   };
 }
 
+/** #4889 — the room a page is: the segment after /rooms/ (any base prefix before it), else 'team'. */
+function roomFromPath(pathname) {
+  const m = /\/rooms\/([^/?#]+)/.exec(pathname || '');
+  if (!m) return 'team';
+  // a malformed escape must not stop Jeff's send: use the segment as typed
+  try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+}
+
 async function handleSendMessage(text, options = {}) {
   const inputEl = options.inputEl || composerInput;
   const statusEl = options.statusEl || (typeof document !== 'undefined' ? document.getElementById('send-error') : null);
@@ -1222,12 +1230,17 @@ async function handleSendMessage(text, options = {}) {
     let signedEvent = null;
     const webid = (typeof window !== 'undefined' && window.CHORUS_WEBID) ? window.CHORUS_WEBID : 'https://id.lightlifeurbangardens.com/jeff/profile/card#me';
 
+    // #4889 — the note carries the room Jeff is in: a post in @ borg-queen was signed
+    // room 'team' and went to the moderator (11-04 row 67493, to: wren)
+    const pathname = options.pathname !== undefined ? options.pathname
+      : (typeof window !== 'undefined' && window.location ? window.location.pathname : '');
+    const room = roomFromPath(pathname);
     if (typeof window !== 'undefined' && window.roomKey && typeof window.roomKey.signEvent === 'function') {
       const { sk } = window.roomKey.loadOrCreate(webid);
-      signedEvent = window.roomKey.signEvent(sk, 1, [['room', 'team']], cleanText);
+      signedEvent = window.roomKey.signEvent(sk, 1, [['room', room]], cleanText);
     } else {
       const { sk } = loadOrCreateRoomKey(webid);
-      signedEvent = signEvent(sk, cleanText, { room: 'team' });
+      signedEvent = signEvent(sk, cleanText, { room });
     }
 
     if (!fetchFn) {
@@ -1416,6 +1429,7 @@ if (typeof module !== 'undefined' && module.exports) {
     loadOrCreateRoomKey,
     signEvent,
     handleSendMessage,
+    roomFromPath,
     teamNudgesOn,
     setTeamNudges,
     getActiveRoleFilter,

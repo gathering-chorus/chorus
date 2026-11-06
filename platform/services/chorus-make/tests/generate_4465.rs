@@ -109,7 +109,7 @@ fn every_land_step_runs_after_the_go_and_none_before_it() {
 fn negative_proof_a_hand_edited_step_goes_red_in_the_drift_check() {
     let expected = generate("cicd", &cicd()).unwrap();
     assert!(drift(&expected, &expected).is_ok(), "an untouched file matches");
-    let edited = expected.replace("chorus-runner call werk-review card=${CARD}", "chorus-runner call werk-review card=${CARD} type=unit");
+    let edited = expected.replace("chorus-runner call werk-build card=${CARD}", "chorus-runner call werk-build card=${CARD} type=unit");
     assert_ne!(edited, expected, "the edit must change the file, or this proves nothing");
     let err = drift(&expected, &edited).expect_err("a hand edit must be caught");
     assert!(err.contains("type=unit"), "the failure names what changed: {err}");
@@ -262,8 +262,10 @@ fn a_finished_run_wakes_the_builder_once() {
 #[test]
 fn negative_proof_one_skill_called_twice_is_refused() {
     let mut rows = cicd();
-    rows[4].skill = rows[3].skill.clone(); // review now calls the test step's skill again
-    let twice = format!("{}: called twice", rows[3].skill);
+    // #4889 (werk-review retired): env-up now calls the demo step's deploy skill again
+    assert_eq!((rows[4].step.as_str(), rows[5].step.as_str()), ("demo", "demo"), "two skills of one step");
+    rows[5].skill = rows[4].skill.clone();
+    let twice = format!("{}: called twice", rows[4].skill);
     assert!(check(&rows).iter().any(|e| e.contains(&twice)), "{:?}", check(&rows));
 }
 
