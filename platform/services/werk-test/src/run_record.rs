@@ -586,10 +586,17 @@ pub fn notify_messages(rows: &[SuiteRow], security_owner: &str, crawl: &str) -> 
     } else {
         format!(" — {} slow (speed, not breakage: {})", slow.len(), slow.join(", "))
     };
-    out.push((
-        "kade".to_string(),
-        format!("nightly TOTAL: {} red across the board ({}) — bar is zero{}{}{}{}", reds.len(), per_owner.join(", "), skipmsg, slowmsg, stalemsg, crawl),
-    ));
+    // #4915 AC5 — one list that names every red suite, whoever owns it: each owner's
+    // own line carries only its own, so no single message showed the whole night
+    // (Wren's 11-05 list and Kade's disagreed). Wren gives Jeff the one line, so she
+    // gets it too (Jeff 11-05 20:36: results go to Wren).
+    let all: Vec<String> = owners.iter()
+        .map(|o| format!("{}: {}", o, reds.iter().filter(|r| r.owner == *o).map(|r| r.suite_name()).collect::<Vec<_>>().join(", ")))
+        .collect();
+    let total = format!("nightly TOTAL: {} red across the board ({}) — bar is zero{}{}{}{} · {}",
+        reds.len(), per_owner.join(", "), skipmsg, slowmsg, stalemsg, crawl, all.join(" · "));
+    out.push(("kade".to_string(), total.clone()));
+    out.push(("wren".to_string(), total));
     out
 }
 
@@ -1376,6 +1383,28 @@ mod run_record_4145 {
         let total = &m.last().unwrap().1;
         assert!(total.starts_with("nightly TOTAL: 3 red across the board (silas 1, wren 2) — bar is zero"), "{total}");
         assert!(total.contains("1 slow (speed, not breakage: p.sh)"));
+    }
+
+    /// #4915 AC5 — the TOTAL names every red suite of every owner, and reaches Wren
+    /// as well as Kade. NEGATIVE PROOF: a suite left out of it is caught, and the
+    /// per-owner lines alone never carry another owner's suite.
+    #[test]
+    fn total_names_every_red_suite_of_every_owner_and_reaches_wren() {
+        let rows = vec![
+            SuiteRow::new("bats", "platform/tests/a.bats", "wren", "fail", "0 pass, 1 fail"),
+            SuiteRow::new("bats", "platform/tests/k.bats", "kade", "fail", "0 pass, 1 fail"),
+            SuiteRow::new("bats", "platform/tests/s.bats", "silas", "fail", "0 pass, 1 fail"),
+            SuiteRow::new("bats", "platform/tests/g.bats", "kade", "pass", "1 pass, 0 fail"),
+        ];
+        let m = notify_messages(&rows, "nobody", "");
+        let totals: Vec<&(String, String)> = m.iter().filter(|(_, s)| s.starts_with("nightly TOTAL")).collect();
+        assert_eq!(totals.iter().map(|(to, _)| to.as_str()).collect::<Vec<_>>(), vec!["kade", "wren"]);
+        for name in ["a.bats", "k.bats", "s.bats"] {
+            assert!(totals[0].1.contains(name), "TOTAL misses {name}: {}", totals[0].1);
+        }
+        assert!(!totals[0].1.contains("g.bats"), "a green suite is not in the red list");
+        let wren_own = m.iter().find(|(to, s)| to == "wren" && s.starts_with("nightly: ")).unwrap();
+        assert!(!wren_own.1.contains("k.bats") && !wren_own.1.contains("s.bats"), "per-owner line stays per-owner");
     }
 
     #[test]
