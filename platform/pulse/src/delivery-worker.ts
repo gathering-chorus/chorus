@@ -182,6 +182,12 @@ export class DeliveryWorker {
    *  writer). Wired in service.ts; a no-op by default so tests opt in. */
   onUndelivered: (role: string, pane: string) => void = () => {};
 
+  /** #4895 — a permanent dead-pane failure names the pane the principal marks unreachable */
+  private askUndelivered(role: string, reason: string, permanent: boolean): void {
+    const dead = permanent ? /^dead-pane (%\d+)$/.exec(reason) : null;
+    if (dead) this.onUndelivered(role, dead[1]);
+  }
+
   constructor(
     private store: MessageStore,
     private runInject: RunInject,
@@ -438,8 +444,7 @@ export class DeliveryWorker {
       });
 
       if (permanent || attempt >= maxAttempts) {
-        const dead = permanent ? /^dead-pane (%\d+)$/.exec(classified.reason) : null;
-        if (dead) this.onUndelivered(row.to, dead[1]);
+        this.askUndelivered(row.to, classified.reason, permanent);
         this.store.markFailed(row.id, classified.reason);
         return;
       }

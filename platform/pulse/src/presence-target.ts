@@ -48,8 +48,8 @@ function liveCandidates(presences: PresenceRow[], runs: RunRow[], role: string):
  *  delivery would use ("reachable" only after a delivery landed there, "unreachable" the
  *  moment one failed for good), or "offline" when no live run has a Presence. */
 export function reachabilityFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): string {
-  const current = liveCandidates(presences, runs, role)[0];
-  return current ? (current.reachability || 'unknown') : 'offline';
+  const live = liveCandidates(presences, runs, role);
+  return live.length === 0 ? 'offline' : (live[0].reachability || 'unknown');
 }
 
 export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): TypedResolution {

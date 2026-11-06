@@ -541,9 +541,15 @@ function deriveOneActor(
     observedAt,
     waitingOn: stateOutcome.waitingOn,
     sessions: sessionResults,
-    ...(input.reachability && input.reachability[role] ? { reachability: input.reachability[role] } : {}),
+    ...reachabilityOf(input.reachability, role),
     unmeasuredSource: combineUnmeasured(unmeasured, stateOutcome.unmeasuredSource),
   };
+}
+
+/** #4895 — the actor's reachability, when the fact was read; nothing when it was not. */
+function reachabilityOf(all: Record<string, string> | undefined, role: string): { reachability?: string } {
+  const r = all ? new Map(Object.entries(all)).get(role) : undefined;
+  return r ? { reachability: r } : {};
 }
 
 export function deriveActorState(input: ActorFactInput): RoleStateResult[] {

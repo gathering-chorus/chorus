@@ -13,6 +13,8 @@ import { DeliveryWorker } from './delivery-worker';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'undelivered-4895-')), 'messages.db');
 const noSleep = () => Promise.resolve();
+const ABBY = 'abby-normal';
+const ASK = 'are you there';
 
 describe('#4895 a dead pane makes the presence unreachable at once', () => {
   it('a pane still dead after the sweep waits asks the principal once, with the role and pane', async () => {
@@ -20,9 +22,9 @@ describe('#4895 a dead pane makes the presence unreachable at once', () => {
     const w = new DeliveryWorker(store, () => Promise.resolve({ rc: 1, stderr: "0:638: execution error: can't find pane: %16 (1)" }), () => Promise.resolve(), [1, 1], noSleep);
     const asked: Array<[string, string]> = [];
     w.onUndelivered = (role, pane) => { asked.push([role, pane]); };
-    const id = store.sendNudge('wren', 'abby-normal', 'are you there');
-    await w.enqueue({ id, from: 'wren', to: 'abby-normal', content: 'are you there', delivery_attempts: 0 });
-    expect(asked).toEqual([['abby-normal', '%16']]);
+    const id = store.sendNudge('wren', ABBY, ASK);
+    await w.enqueue({ id, from: 'wren', to: ABBY, content: ASK, delivery_attempts: 0 });
+    expect(asked).toEqual([[ABBY, '%16']]);
     store.close();
   });
 
@@ -31,8 +33,8 @@ describe('#4895 a dead pane makes the presence unreachable at once', () => {
     const w = new DeliveryWorker(store, () => Promise.resolve({ rc: 0, stderr: '' }), () => Promise.resolve(), [1, 1], noSleep);
     const asked: Array<[string, string]> = [];
     w.onUndelivered = (role, pane) => { asked.push([role, pane]); };
-    const id = store.sendNudge('wren', 'abby-normal', 'are you there');
-    await w.enqueue({ id, from: 'wren', to: 'abby-normal', content: 'are you there', delivery_attempts: 0 });
+    const id = store.sendNudge('wren', ABBY, ASK);
+    await w.enqueue({ id, from: 'wren', to: ABBY, content: ASK, delivery_attempts: 0 });
     expect(asked).toEqual([]);
     store.close();
   });
@@ -42,8 +44,8 @@ describe('#4895 a dead pane makes the presence unreachable at once', () => {
     const w = new DeliveryWorker(store, () => Promise.resolve({ rc: 1, stderr: 'osascript timed out' }), () => Promise.resolve(), [1, 1], noSleep);
     const asked: Array<[string, string]> = [];
     w.onUndelivered = (role, pane) => { asked.push([role, pane]); };
-    const id = store.sendNudge('wren', 'abby-normal', 'are you there');
-    await w.enqueue({ id, from: 'wren', to: 'abby-normal', content: 'are you there', delivery_attempts: 0 });
+    const id = store.sendNudge('wren', ABBY, ASK);
+    await w.enqueue({ id, from: 'wren', to: ABBY, content: ASK, delivery_attempts: 0 });
     expect(asked).toEqual([]);
     store.close();
   });
