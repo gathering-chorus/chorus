@@ -19,7 +19,7 @@ Dry run is the default: it prints what would move and changes nothing.
 chorus.log is renamed: no process holds it open to write (each write opens,
 appends, closes), unlike the Fuseki and Loki logs whose mv blinded them on 10-20.
 """
-import gzip, hashlib, json, os, re, shutil, sys, time
+import grp, gzip, hashlib, json, os, re, shutil, sys, time
 
 HOME = os.path.expanduser("~")
 DAGU_LOGS = os.environ.get("LOG_ARCHIVE_DAGU_LOGS", f"{HOME}/Library/Logs/Chorus/dagu")
@@ -153,6 +153,25 @@ def dagu(days, apply):
     return 0
 
 
+def fresh_log(path):
+    """#4915 (Silas) — the spine log every account writes. The rotation used to leave the
+    next write to create it, and the 04:30 rotation on 11-06 made it jeffbridwell:staff
+    0644: every role account (borg-record as chorus-borg-queen, the land's verdict) was
+    refused from then on. Create it group chorus, 0664, here; if a writer won the race
+    the file exists, so set its group and mode instead."""
+    gid = grp.getgrnam(os.environ.get("LOG_ARCHIVE_GROUP", "chorus")).gr_gid
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o664)
+        try:
+            os.fchown(fd, -1, gid)
+            os.fchmod(fd, 0o664)
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        os.chown(path, -1, gid)
+        os.chmod(path, 0o664)
+
+
 def chorus_log(apply, over=0):
     """chorus.log has no long-lived writer (each chorus-log call opens, appends,
     closes; on 10-25 only promtail held it, read-only), so it is renamed, not
@@ -173,6 +192,7 @@ def chorus_log(apply, over=0):
     os.makedirs(os.path.join(ARCHIVE, "chorus-log"), exist_ok=True)
     raw = os.path.join(os.path.dirname(CHORUS_LOG), f".chorus.log.rotating.{stamp}")
     os.rename(CHORUS_LOG, raw)  # same directory: atomic; the next write creates chorus.log
+    fresh_log(CHORUS_LOG)
     time.sleep(float(os.environ.get("LOG_ARCHIVE_SETTLE_SECS", "2")))  # a write already in flight lands in raw
     out = os.path.join(ARCHIVE, "chorus-log", f"chorus.log.{stamp}.gz")
     h, copied = hashlib.sha256(), 0
