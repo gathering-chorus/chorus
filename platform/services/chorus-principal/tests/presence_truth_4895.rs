@@ -46,3 +46,27 @@ fn a_moved_pane_is_unknown_until_a_delivery_lands() {
 fn negative_proof_the_same_pane_is_not_a_move() {
     assert!(repaned_presence(presence("%17", "reachable"), "%17", "").is_none());
 }
+
+// Code review (run 2): the role's turn writes the Presence from the role account's cached
+// copy, `undelivered` and the sweep from jeffbridwell's. A whole-row PUT of a stale copy
+// would put "reachable" back over the "unreachable" the other writer just set. A write
+// takes the moving fields from the door's row first.
+#[test]
+fn a_write_takes_the_moving_fields_from_the_door() {
+    let stale = presence("%16", "reachable");
+    let door = json!({"pane": "%17", "tty": "/dev/ttys016", "reachability": "unreachable", "lastDeliveredAt": "2026-11-06T14:42:12Z", "comment": "door"});
+    let p = with_door_presence(stale, &door).unwrap();
+    assert_eq!(p["reachability"], "unreachable");
+    assert_eq!(p["pane"], "%17");
+    assert_eq!(p["name"], "abby-normal-presence-x", "the row's own fields stay");
+}
+
+// NEGATIVE PROOF: an empty door field never blanks the cached one, and a door row that
+// is not an object writes nothing.
+#[test]
+fn negative_proof_the_door_never_blanks_or_invents() {
+    let p = with_door_presence(presence("%16", "reachable"), &json!({"pane": "", "reachability": ""})).unwrap();
+    assert_eq!(p["pane"], "%16");
+    assert_eq!(p["reachability"], "reachable");
+    assert!(with_door_presence(presence("%16", "reachable"), &json!("not a row")).is_none());
+}

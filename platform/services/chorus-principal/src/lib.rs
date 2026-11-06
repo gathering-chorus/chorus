@@ -1376,6 +1376,19 @@ fn api_send(ctx: &Ctx, role: &str, route: &str, name: Option<&str>, body: &Value
 
 fn ok_code(c: &str) -> bool { matches!(c, "200" | "201" | "204") }
 fn row_path(ctx: &Ctx, role: &str, kind: &str) -> PathBuf { PathBuf::from(&ctx.identity_dir).join(role).join(format!("{}.row.json", kind)) }
+/// #4895 (code review) — the Presence as the door holds it now, for a write. Two accounts
+/// write it from their own cached copy (the role's turn as the role account; the sweep and
+/// `undelivered` as jeffbridwell), and a PUT sends the whole row: a stale copy put back
+/// would undo the other writer's pane or reachability. The fields another writer moves
+/// are taken from the door; an unreadable door writes nothing (never a guess).
+fn presence_now(ctx: &Ctx, role: &str) -> Option<Value> {
+    let cached = read_row(ctx, role, "presence")?;
+    let url = format!("{}/v1/identity/presences/{}", ctx.api, row_name(&cached));
+    let body = door(ctx, &["-sf", "--max-time", "3", &url]).ok()?;
+    let live: Value = serde_json::from_str(&body).ok()?;
+    rows::with_door_presence(cached, live.get("data")?)
+}
+
 fn read_row(ctx: &Ctx, role: &str, kind: &str) -> Option<Value> { fs::read_to_string(row_path(ctx, role, kind)).ok().and_then(|t| serde_json::from_str(&t).ok()) }
 fn save_row(ctx: &Ctx, role: &str, kind: &str, v: &Value) { let _ = write_private(&row_path(ctx, role, kind), &v.to_string()); }
 fn row_name(v: &Value) -> String { v.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string() }
@@ -1416,7 +1429,7 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
             }
         }
     }
-    if let Some(p) = read_row(ctx, role, "presence") {
+    if let Some(p) = presence_now(ctx, role) {
         if p.get("reachability").and_then(|r| r.as_str()) != Some("unreachable") {
             if let Some(gone) = rows::gone_presence(p) {
                 if put_row(ctx, role, "identity/presences", "presence", &gone) {
@@ -1578,6 +1591,10 @@ fn end_revoked(ctx: &Ctx, role: &str, why: &str) {
 fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    // #4895 (code review) — at the turn's end only the time is stamped: no revocation
+    // check (exit 2 on a Stop hook means "keep going", and its curl would sit on every
+    // turn end) and no second read of a prompt already handled when it arrived
+    if rows::is_turn_end(&input) { return stamp_seen(ctx, role, &rows::turn_facts(&input).0, "turn", false); }
     // #4385 — revocation bites on the next turn, not at the next login: the
     // turn is refused (exit 2 stops the prompt), and it says why once
     let marker = PathBuf::from(&ctx.identity_dir).join(role).join("revoked");
@@ -1598,13 +1615,19 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     // #4340 — keep what actually arrived, so the projector can tell a message
     // that landed cut from one that landed whole (pulse cannot see that)
     log_received(ctx, role, &input);
+    let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
+    stamp_seen(ctx, role, &conv, flag, delivered || jeff)
+}
+
+/// The rate-limited stamp both turn edges share: due → a detached `seen-write`.
+fn stamp_seen(ctx: &Ctx, role: &str, conv: &str, flag: &str, force: bool) -> i32 {
+    let conv = conv.to_string();
     let at = PathBuf::from(&ctx.identity_dir).join(role).join("seen.at");
     let now = now_ms() as u64 / 1000;
     let last = fs::read_to_string(&at).ok().and_then(|t| t.trim().parse::<u64>().ok());
     let every: u64 = envd("AWAKE_SEEN_EVERY", "60").parse().unwrap_or(60);
-    if !rows::seen_due(last, now, every, delivered || jeff) { return 0; }
+    if !rows::seen_due(last, now, every, force) { return 0; }
     let _ = fs::write(&at, now.to_string());
-    let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
     if envd("AWAKE_SEEN_SYNC", "0") == "1" { return seen_write(ctx, role, &conv, flag); }
     if let Ok(me) = env::current_exe() {
         // #4520 reopen 2 — its own process group: Gemini's hook runner ends the
@@ -1643,10 +1666,10 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         }
     }
     if delivered {
-        if let Some(p) = read_row(ctx, role, "presence").and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
+        if let Some(p) = presence_now(ctx, role).and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
     }
     // #4339 — is his terminal on this role's pane right now
-    if let Some(p) = read_row(ctx, role, "presence") {
+    if let Some(p) = presence_now(ctx, role) {
         let pane = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
         let clients = Command::new(&ctx.tmux).args(["list-clients", "-F", "#{client_flags}|#{pane_id}"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
         if let Some(p) = rows::focused_presence(p, rows::pane_shown(&clients, &pane), &now) { put_row(ctx, role, "identity/presences", "presence", &p); }
@@ -1854,7 +1877,7 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
 /// per change (presence.pane.unreadable), never silently. Pulse never writes a
 /// Presence and never guesses a pane: a pane that is gone is a loud not-delivered there.
 fn refresh_pane(ctx: &Ctx, role: &str) {
-    let Some(p) = read_row(ctx, role, "presence") else { return };
+    let Some(p) = presence_now(ctx, role) else { return };
     let answer = if ctx.has_tmux(role) {
         sh(&ctx.tmux, &["list-panes", "-t", &Ctx::tmux_session(role), "-F", "#{pane_id}|#{pane_tty}"])
     } else {
@@ -1889,7 +1912,7 @@ fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
 /// #4895 — a delivery to the role's pane failed for good: its Presence reads unreachable
 /// now, not at the next sweep, and says so on the spine.
 fn undelivered(ctx: &Ctx, role: &str, pane: &str) -> i32 {
-    let Some(p) = read_row(ctx, role, "presence") else { eprintln!("chorus-principal: no presence for {role}"); return 1 };
+    let Some(p) = presence_now(ctx, role) else { eprintln!("chorus-principal: no presence for {role}"); return 1 };
     match rows::undelivered_presence(p, pane) {
         None => 0,
         Some(np) => {
@@ -1937,7 +1960,7 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
     // #4889 (measured 11-05 11:20: Abby %16→%17, BQ %14→%15) — the run's Presence was
     // written before start_in_pane replaced the session (#4845), so it names a pane that
     // no longer exists; the pane the runtime is found in is its address
-    if let Some(p) = read_row(ctx, role, "presence") { repane(ctx, role, p, &pane, &tty); }
+    if let Some(p) = presence_now(ctx, role) { repane(ctx, role, p, &pane, &tty); }
     parse_registry(&entry.to_string())
 }
 

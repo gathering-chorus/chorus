@@ -20,6 +20,11 @@ describe('#4895 the roster shows who cannot be reached', () => {
     expect(reachabilityFromPresence(presences, runs, 'kade')).toBe('reachable');
   });
 
+  it('a live Presence written before #4895 (no reachability field) reads unknown, never reachable', () => {
+    const old = [{ name: 'kade-presence-z', presenceOf: 'session-run-kade-run-1a193a88380', pane: '%1', checkedAt: '2026-11-06T15:00:00Z' }];
+    expect(reachabilityFromPresence(old, runs, 'kade')).toBe('unknown');
+  });
+
   it('NEGATIVE PROOF: a Presence of an ENDED run never reads reachable; no live run is offline', () => {
     expect(reachabilityFromPresence(presences, runs, 'wren')).toBe('offline');
     expect(reachabilityFromPresence(presences, runs, 'borg-queen')).toBe('offline');

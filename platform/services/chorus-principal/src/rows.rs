@@ -193,6 +193,19 @@ pub fn undelivered_presence(mut presence: Value, pane: &str) -> Option<Value> {
     Some(presence)
 }
 
+/// #4895 — the cached Presence with the fields other writers move taken from the door's
+/// row (pane, tty, reachability, lastDeliveredAt). None when the door's row is not an object.
+pub fn with_door_presence(mut cached: Value, door: &Value) -> Option<Value> {
+    let d = door.as_object()?;
+    for k in ["pane", "tty", "reachability", "lastDeliveredAt"] {
+        match d.get(k).and_then(|v| v.as_str()) {
+            Some(v) if !v.is_empty() => { cached[k] = Value::String(v.into()); }
+            _ => {}
+        }
+    }
+    Some(cached)
+}
+
 /// A presence whose run ended can no longer be reached there.
 pub fn gone_presence(mut presence: Value) -> Option<Value> {
     presence.get("name")?;
@@ -270,9 +283,15 @@ pub fn turn_facts(hook_input: &str) -> (String, bool) {
 mod conv_id { include!("../../shared/conversation_id.rs"); }
 pub fn conversation_of(v: &Value) -> String {
     conv_id::conversation_id(
-        v.get("session_id").and_then(|s| s.as_str()),
+        v.get("chorus_session_id").or_else(|| v.get("session_id")).and_then(|s| s.as_str()),
         v.get("transcript_path").and_then(|s| s.as_str()),
     ).unwrap_or_default()
+}
+
+/// #4895 — the hook input is a turn's end (Claude's Stop, Gemini's AfterAgent).
+pub fn is_turn_end(hook_input: &str) -> bool {
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    matches!(v.get("hook_event_name").and_then(|e| e.as_str()), Some("Stop" | "SubagentStop" | "AfterAgent"))
 }
 
 /// #4339 — who a prompt is from. pulse types only WAKE_LINE for a nudge, and

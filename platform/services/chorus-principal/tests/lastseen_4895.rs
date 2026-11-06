@@ -55,3 +55,14 @@ fn every_tracked_role_settings_stamps_at_the_turn_end() {
         assert!(cmds.iter().any(|c| c.ends_with(&format!("chorus-principal seen {role}"))), "{role} {ev}: {cmds:?}");
     }
 }
+
+// Code review (run 2): the turn's end only stamps the time. A Stop hook that exits 2 tells
+// Claude to keep going, so the turn-end path never takes the revocation branch.
+#[test]
+fn a_turn_end_is_recognised_and_a_prompt_is_not() {
+    use chorus_principal::rows::is_turn_end;
+    assert!(is_turn_end(r#"{"hook_event_name":"Stop","session_id":"s"}"#));
+    assert!(is_turn_end(r#"{"hook_event_name":"AfterAgent","prompt":"hi"}"#));
+    assert!(!is_turn_end(r#"{"hook_event_name":"UserPromptSubmit","prompt":"hi"}"#));
+    assert!(!is_turn_end(r#"{"prompt":"hi"}"#));
+}

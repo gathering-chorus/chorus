@@ -734,6 +734,7 @@ if (require.main === module) {
     const bin = process.env.CHORUS_PRINCIPAL_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-principal');
     const p = spawn(bin, ['undelivered', role, pane], { detached: true, stdio: 'ignore' });
     p.on('error', (e) => { void emitSpine('presence.undelivered.unwritten', { role, pane, error: e.message }); });
+    p.on('exit', (code) => { if (code !== 0) void emitSpine('presence.undelivered.unwritten', { role, pane, error: `chorus-principal undelivered exited ${String(code)}` }); });
     p.unref();
   };
 
