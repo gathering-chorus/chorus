@@ -35,11 +35,12 @@ impl Status {
     }
 }
 
-/// Where Tasks keep their files: `$CHORUS_RUNNER_TASKS`, else `~/.chorus/runner-tasks`.
+/// Where Tasks keep their files: `$CHORUS_RUNNER_TASKS`, else `runner-tasks` in the
+/// team's state dir (#4915: was the caller's own HOME, so a role on its own account
+/// read and wrote an empty folder — the mob script already resolved it this way).
 pub fn tasks_dir() -> PathBuf {
-    std::env::var("CHORUS_RUNNER_TASKS").map(PathBuf::from).unwrap_or_else(|_| {
-        PathBuf::from(format!("{}/.chorus/runner-tasks", std::env::var("HOME").unwrap_or_default()))
-    })
+    std::env::var("CHORUS_RUNNER_TASKS").map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(crate::server::state_dir()).join("runner-tasks"))
 }
 
 fn file(dir: &Path, id: &str, ext: &str) -> PathBuf {
