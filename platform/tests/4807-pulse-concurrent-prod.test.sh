@@ -39,6 +39,7 @@ max=$(awk '{print $2}' "$tmp/all" | sort -n | tail -1)
 peak=$(cat "$tmp"/a.peak "$tmp"/b.peak | sort -n | tail -1)
 echo "pulse_pid=$PULSE_PID calls=$total slow_or_failed=$bad max_s=$max cws_peak=$peak (limit ${LIMIT}s, peak ≤1)"
 [ "$total" -eq $((N * 2)) ] || { echo "FAIL: only $total of $((N * 2)) calls reported"; exit 1; }
-[ "$bad" -eq 0 ] || { echo "FAIL: $bad calls failed or took over ${LIMIT}s"; exit 1; }
+# #4915 (Silas) — a red names itself: 11-06's 40/40 at 0.004s said nothing about why
+[ "$bad" -eq 0 ] || { echo "FAIL: $bad calls failed or took over ${LIMIT}s; status codes:"; awk '{print $1}' "$tmp/all" | sort | uniq -c; exit 1; }
 [ "$peak" -le 1 ] || { echo "FAIL: $peak /cws scripts ran at once"; exit 1; }
 echo PASS

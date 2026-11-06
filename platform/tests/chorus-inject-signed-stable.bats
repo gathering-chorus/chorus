@@ -48,40 +48,40 @@ authority_of() {
 
 @test "build-signed.sh chorus-inject pins identifier=com.chorus.inject" {
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  [ "$(identifier_of "$INJECT_DIR/target/$(id -un)/release/chorus-inject")" = "com.chorus.inject" ]
+  [ "$(identifier_of "${CARGO_TARGET_DIR:-$INJECT_DIR/target/$(id -un)}/release/chorus-inject")" = "com.chorus.inject" ]
 }
 
 @test "build-signed.sh chorus-inject signs with keychain identity (not ad-hoc)" {
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  AUTH=$(authority_of "$INJECT_DIR/target/$(id -un)/release/chorus-inject")
+  AUTH=$(authority_of "${CARGO_TARGET_DIR:-$INJECT_DIR/target/$(id -un)}/release/chorus-inject")
   [ -n "$AUTH" ]
   [ "$AUTH" != "Ad-hoc" ]
 }
 
 @test "build-signed.sh chorus-inject cdhash is stable across two consecutive runs" {
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  HASH1=$(cdhash_of "$INJECT_DIR/target/$(id -un)/release/chorus-inject")
+  HASH1=$(cdhash_of "${CARGO_TARGET_DIR:-$INJECT_DIR/target/$(id -un)}/release/chorus-inject")
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  HASH2=$(cdhash_of "$INJECT_DIR/target/$(id -un)/release/chorus-inject")
+  HASH2=$(cdhash_of "${CARGO_TARGET_DIR:-$INJECT_DIR/target/$(id -un)}/release/chorus-inject")
   [ -n "$HASH1" ]
   [ "$HASH1" = "$HASH2" ]
 }
 
 @test "build-signed.sh chorus-hooks pins identifier=com.chorus.hook-shim" {
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  [ "$(identifier_of "$HOOKS_DIR/target/$(id -un)/release/chorus-hook-shim")" = "com.chorus.hook-shim" ]
+  [ "$(identifier_of "${CARGO_TARGET_DIR:-$HOOKS_DIR/target/$(id -un)}/release/chorus-hook-shim")" = "com.chorus.hook-shim" ]
 }
 
 @test "build-signed.sh chorus-hooks also signs chorus-hooks bin as com.chorus.hooks" {
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  [ "$(identifier_of "$HOOKS_DIR/target/$(id -un)/release/chorus-hooks")" = "com.chorus.hooks" ]
+  [ "$(identifier_of "${CARGO_TARGET_DIR:-$HOOKS_DIR/target/$(id -un)}/release/chorus-hooks")" = "com.chorus.hooks" ]
 }
 
 @test "build-signed.sh chorus-hooks cdhash stable across consecutive runs" {
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  HASH1=$(cdhash_of "$HOOKS_DIR/target/$(id -un)/release/chorus-hook-shim")
+  HASH1=$(cdhash_of "${CARGO_TARGET_DIR:-$HOOKS_DIR/target/$(id -un)}/release/chorus-hook-shim")
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  HASH2=$(cdhash_of "$HOOKS_DIR/target/$(id -un)/release/chorus-hook-shim")
+  HASH2=$(cdhash_of "${CARGO_TARGET_DIR:-$HOOKS_DIR/target/$(id -un)}/release/chorus-hook-shim")
   [ -n "$HASH1" ]
   [ "$HASH1" = "$HASH2" ]
 }

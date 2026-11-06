@@ -322,6 +322,11 @@ chorus_verify_role_skills() {
 case "${HOME:-}" in
   /Users/chorus-*)
     chorus_sync_role_skills "$HOME/.claude/skills" >/dev/null 2>&1 || true
+    # #4915 (Silas) — a role session anchors at roles/<role>/, whose .claude/skills is
+    # the set it loads; only $HOME's was synced, so a new skill (mob) never reached it
+    __r="${HOME#/Users/chorus-}"
+    [ -d "$CHORUS_ROOT/roles/$__r/.claude/skills" ] && chorus_sync_role_skills "$CHORUS_ROOT/roles/$__r/.claude/skills" >/dev/null 2>&1
+    unset __r
     ;;
 esac
 

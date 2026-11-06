@@ -1832,8 +1832,14 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             c.arg("-c").arg(&cmd).current_dir(&root)
                 .env("CHORUS_CONTEXT", "")
                 // #4454 — the specs' own events ride the trace like every other unit's
-                .env("CHORUS_TEST_EVENTS", test_events_path(&root))
-                .env("CLEARING_URL", std::env::var("CLEARING_URL").unwrap_or_else(|_| "http://localhost:3470".to_string()));
+                .env("CHORUS_TEST_EVENTS", test_events_path(&root));
+            // #4915 — no live default: the specs refuse the live room and, with CLEARING_URL
+            // unset, start their own Clearing (#4417). Defaulting it to :3470 made every spec
+            // file throw at load, so the whole leg read UNMEASURED each night (11-06).
+            match std::env::var("CLEARING_URL") {
+                Ok(u) if !u.is_empty() => { c.env("CLEARING_URL", u); }
+                _ => { c.env_remove("CLEARING_URL"); }
+            }
             let (rc, out) = werk_test::time_unit("proving/flows", || werk_test::run_capped(c, std::time::Duration::from_secs(1800)));
             forward_test_events(&root);
             let (verdict, summary) = werk_test::ui_lane_verdict(rc, &out);
