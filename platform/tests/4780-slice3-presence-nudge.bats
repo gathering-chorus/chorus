@@ -95,17 +95,17 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
   W="$BATS_TEST_TMPDIR/hc-s2"
-  mkdir -p "$W/sessions" "$W/canary"
+  mkdir -p "$W/where" "$W/canary"
 
   # Roles door fixture (file://) so tests don't hit live :3360
   cat <<'JSON' > "$W/roles.json"
 {"data":[{"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"borg-queen","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"}]}
 JSON
 
-  # Register live sessions for the roles
+  # #4895 — where each role is comes from pulse's /api/where (its live run's Presence)
+  mkdir -p "$W/where"; n=40
   for r in wren silas kade borg-queen abby-normal; do
-    printf '{"role":"%s","pid":%s,"tty":"/dev/ttys999","host":"unknown","registered_at":"9999999999"}' \
-      "$r" "$$" > "$W/sessions/$r-$$.json"
+    n=$((n + 1)); printf '{"role":"%s","kind":"resolved","pane":"%%%s"}' "$r" "$n" > "$W/where/$r"
   done
 
   # Stub Pulse returning live actors
@@ -119,7 +119,7 @@ JSON
 
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           pulse_actors="$PULSE_JSON" \
           MESSAGES_DB="/dev/null" \
@@ -134,25 +134,24 @@ JSON
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
   W="$BATS_TEST_TMPDIR/hc-s2-single"
-  mkdir -p "$W/sessions" "$W/canary"
+  mkdir -p "$W/where" "$W/canary"
 
   cat <<'JSON' > "$W/roles.json"
 {"data":[{"name":"silas","roleKind":"agent"}]}
 JSON
 
-  printf '{"role":"silas","pid":%s,"tty":"/dev/ttys999","host":"unknown"}' \
-    "$$" > "$W/sessions/silas-$$.json"
+  mkdir -p "$W/where"; printf '{"role":"silas","kind":"resolved","pane":"%%42"}' > "$W/where/silas"
 
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
           MESSAGES_DB="/dev/null" \
           bash "$HEALTH"
   test "$status" -eq 0
-  out_has "OK: silas — live session on host=unknown (pid $$), agreed with Pulse (pulse_online=true)"
+  out_has "OK: silas — live run's Presence pane %42 exists → delivery can land"
   out_has "NUDGE HEALTH: all roles reachable"
 }
 
@@ -160,7 +159,7 @@ JSON
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
   W="$BATS_TEST_TMPDIR/hc-s2-fail"
-  mkdir -p "$W/sessions" "$W/canary"
+  mkdir -p "$W/where" "$W/canary"
 
   cat <<'JSON' > "$W/roles.json"
 {"data":[{"name":"borg-queen","roleKind":"agent"}]}
@@ -184,7 +183,7 @@ JSON
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="borg-queen" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-borg-queen","sessions":[{"live":true}]}]}' \
@@ -196,7 +195,7 @@ JSON
   # Case B: delivery path refuses unknown actor
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="unregistered-intruder" \
           pulse_actors='{"actors":[]}' \
@@ -211,14 +210,13 @@ JSON
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
   W="$BATS_TEST_TMPDIR/hc-s3-latest"
-  mkdir -p "$W/sessions" "$W/canary"
+  mkdir -p "$W/where" "$W/canary"
 
   cat <<'JSON' > "$W/roles.json"
 {"data":[{"name":"silas","roleKind":"agent"}]}
 JSON
 
-  printf '{"role":"silas","pid":%s,"tty":"/dev/ttys999","host":"unknown"}' \
-    "$$" > "$W/sessions/silas-$$.json"
+  mkdir -p "$W/where"; printf '{"role":"silas","kind":"resolved","pane":"%%42"}' > "$W/where/silas"
 
   DB="$W/messages.db"
   sqlite3 "$DB" "
@@ -242,7 +240,7 @@ JSON
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
@@ -259,7 +257,7 @@ JSON
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
@@ -274,11 +272,11 @@ JSON
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
   W="$BATS_TEST_TMPDIR/hc-s2-door-down"
-  mkdir -p "$W/sessions" "$W/canary"
+  mkdir -p "$W/where" "$W/canary"
 
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="http://127.0.0.1:9/unreachable-roles-door" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           bash "$HEALTH"
   test "$status" -eq 2
@@ -289,12 +287,12 @@ JSON
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HEALTH="$ROOT/platform/scripts/nudge-health-check.sh"
   W="$BATS_TEST_TMPDIR/hc-s2-pulse-down"
-  mkdir -p "$W/sessions" "$W/canary"
+  mkdir -p "$W/where" "$W/canary"
 
   # Pulse URL unreadable / failing -> must exit 2 UNMEASURED
   run env CHORUS_ROOT="$ROOT" \
           PULSE_URL="http://127.0.0.1:9/unreachable-pulse" \
-          CHORUS_SESSIONS_DIR="$W/sessions" \
+          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
           CANARY_DIR="$W/canary" \
           bash "$HEALTH"
   test "$status" -eq 2

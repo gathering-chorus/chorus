@@ -1683,7 +1683,9 @@ fn deploy_ts_daemon_canonical(
     }
     if let Err(why) = restart_verdict(before, service_pid(&svc), kicked.as_ref().err().map(String::as_str)) {
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "not-restarted"), ("failureClass", failure_class("not-restarted"))]);
-        return Err(died(home, role, card, trace, "not-restarted", format!("{} {}", name, why)));
+        // Kade's review: a land run from a role account kickstarts in ITS gui domain, where
+        // the owner's agent is not loaded; the domain is named so that cause reads at once
+        return Err(died(home, role, card, trace, "not-restarted", format!("{} {} [kickstart domain gui/{}/{}]", name, why, uid(), svc)));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"target\":\"canonical\"", name));
     Ok(format!("{} deployed", name))

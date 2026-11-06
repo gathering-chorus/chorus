@@ -20,7 +20,6 @@ log_canary() {
 PULSE_URL="${PULSE_URL:-http://localhost:3475}"
 MESSAGES_DB="${CHORUS_MESSAGES_DB:-${MESSAGES_DB:-${CHORUS_ROOT}/platform/pulse/messages.db}}"
 STATE_DIR="${CHORUS_STATE_DIR:-/Users/jeffbridwell/.chorus}"
-SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-${STATE_DIR}/sessions}"
 
 ROLES_URL="${CHORUS_ROLES_URL:-http://localhost:3360/v1/roles/roles?limit=500}"
 DOOR_ROLES=$(python3 -c '
@@ -52,35 +51,26 @@ fi
 
 FAILURES=0
 
-# Resolve a role to its most-recently-registered LIVE session.
-resolve_reg() {
-  python3 - "$1" "$SESSIONS_DIR" <<'PY'
-import json, os, sys, glob
-role = sys.argv[1]
-sessions_dir = sys.argv[2]
-best = None
-for f in glob.glob(f"{sessions_dir}/{role}-*.json"):
-    try:
-        d = json.load(open(f))
-    except Exception:
-        continue
-    pid = d.get("pid")
-    if not pid:
-        continue
-    try:
-        os.kill(int(pid), 0)          # alive?
-    except ProcessLookupError:
-        continue                       # dead — never a target (registry liveness)
-    except PermissionError:
-        pass                           # exists, not signalable — still alive
-    except Exception:
-        continue
-    at = str(d.get("registered_at", "0"))
-    if best is None or at > best[0]:
-        best = (at, d.get("host", "unknown"), pid, d.get("tty", ""), d.get("tmux", ""))
-if best:
-    print(f"{best[1]}|{best[2]}|{best[3]}|{best[4]}")
-PY
+# #4895 — where a nudge to the role goes: pulse's own answer (/api/where/<role>, the
+# resolution delivery uses: the live run's Presence). The ~/.chorus/sessions registry
+# this read before is retired for routing (#4361) and kept dead panes alive here
+# (11-05/06: "can't find pane %16/%14" long after the roles had moved). Prints
+# kind|pane|why; a failed read prints unread|| with the reason.
+WHERE_URL="${WHERE_URL:-${PULSE_URL}/api/where}"
+where_of() {
+  local body
+  body=$(curl -sf --max-time 3 "${WHERE_URL}/$1" 2>/dev/null) || { echo "unread||${WHERE_URL}/$1 did not answer"; return; }
+  printf '%s' "$body" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("unread||not JSON"); sys.exit(0)
+print("|".join([str(d.get("kind", "unread")), str(d.get("pane", "")), str(d.get("why", d.get("run", "")))]))'
+}
+# the panes tmux has now (TMUX_PANES_OVERRIDE is the test seam: tmux is not in a test)
+live_panes() {
+  if [ -n "${TMUX_PANES_OVERRIDE+x}" ]; then printf '%s\n' $TMUX_PANES_OVERRIDE; else tmux list-panes -a -F '#{pane_id}' 2>/dev/null; fi
 }
 
 # Fetch online status from Pulse actor-state (must be reachable, otherwise UNMEASURED)
@@ -140,11 +130,11 @@ for role in "${ROLES[@]}"; do
     continue
   fi
 
-  reg="$(resolve_reg "$role" || true)"
-  host="${reg%%|*}"
-  rpid=""
-  rpane=""
-  [ -n "$reg" ] && { rest="${reg#*|}"; rpid="${rest%%|*}"; rpane="${reg##*|}"; }
+  where="$(where_of "$role")"
+  kind="${where%%|*}"
+  rest="${where#*|}"
+  rpane="${rest%%|*}"
+  why="${rest#*|}"
 
   # Pulse online state for this role
   pulse_online="unknown"
@@ -167,48 +157,42 @@ PY
     )
   fi
 
-  # Check tmux host
-  if [ -n "$reg" ] && [ "$host" = "tmux" ]; then
-    if [ -n "$rpane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$rpane"; then
-      echo "OK: ${role} — tmux session (pid ${rpid}) alive, pane ${rpane} exists → paste-buffer reachable"
-    else
-      echo "ALERT: ${role} — tmux session (pid ${rpid}) registered but pane ${rpane:-<none>} NOT found — tmux delivery cannot land"
-      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=tmux-pane-gone,pid=${rpid},pane=${rpane:-none}" 2>/dev/null || true
+  case "$kind" in
+    resolved)
+      # the pane delivery would type into: it must exist now
+      if [ -n "$rpane" ] && live_panes | grep -qx "$rpane"; then
+        echo "OK: ${role} — live run's Presence pane ${rpane} exists → delivery can land"
+      else
+        echo "ALERT: ${role} — live run's Presence names pane ${rpane:-<none>}, which tmux does NOT have — delivery cannot land"
+        [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=tmux-pane-gone,pane=${rpane:-none}" 2>/dev/null || true
+        FAILURES=$((FAILURES + 1))
+      fi
+      log_canary "role=${role} where=pane pane=${rpane:-none}" ;;
+    agent)
+      echo "OK: ${role} — live run reached over the agent channel (run ${why})"
+      log_canary "role=${role} where=agent run=${why}" ;;
+    no-pane)
+      echo "WARN: ${role} — live run has no tmux pane; nudges wait for its turn-end drain"
+      log_canary "role=${role} where=no-pane" ;;
+    ambiguous)
+      echo "ALERT: ${role} — live on both a pane run and an agent run; delivery has no single answer"
+      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=ambiguous" 2>/dev/null || true
       FAILURES=$((FAILURES + 1))
-    fi
-    log_canary "role=${role} host=tmux pid=${rpid} pane=${rpane:-none}"
-    continue
-  fi
-
-  # Check vscode host
-  if [ -n "$reg" ] && [ "$host" = "vscode" ]; then
-    if pgrep -x "Code" >/dev/null 2>&1 || pgrep -f "Visual Studio Code" >/dev/null 2>&1 \
-       || pgrep -f "Code Helper" >/dev/null 2>&1; then
-      echo "OK: ${role} — vscode session (pid ${rpid}) alive, Code running → --vscode reachable"
-    else
-      echo "ALERT: ${role} — vscode session (pid ${rpid}) registered but Code app is NOT running → --vscode cannot land"
-      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=vscode-app-down,pid=${rpid}" 2>/dev/null || true
+      log_canary "role=${role} where=ambiguous" ;;
+    dead|unregistered)
+      if [ "$pulse_online" = "true" ]; then
+        echo "WARN: ${role} — Pulse says online but no live run has a Presence (disagreement)"
+        [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.disagreement" "system" "role=${role},pulse=online,presence=${kind}" 2>/dev/null || true
+      else
+        echo "OK: ${role} — offline (agreed with Pulse, no live run)"
+      fi
+      log_canary "role=${role} where=none status=offline" ;;
+    *)
+      echo "ALERT: ${role} — where it is could not be read (${why:-$kind}); unmeasured, never a pass"
+      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=where-unread" 2>/dev/null || true
       FAILURES=$((FAILURES + 1))
-    fi
-    log_canary "role=${role} host=vscode pid=${rpid}"
-    continue
-  fi
-
-  # Check live session on own account (terminal / agent / unknown host)
-  if [ -n "$reg" ]; then
-    echo "OK: ${role} — live session on host=${host} (pid ${rpid}), agreed with Pulse (pulse_online=${pulse_online})"
-    log_canary "role=${role} host=${host} pid=${rpid}"
-    continue
-  fi
-
-  # Role is not registered locally
-  if [ "$pulse_online" = "true" ]; then
-    echo "WARN: ${role} — Pulse says online but no live session registered locally (disagreement)"
-    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.disagreement" "system" "role=${role},pulse=online,local=offline" 2>/dev/null || true
-  else
-    echo "OK: ${role} — offline (agreed with Pulse, no active session)"
-  fi
-  log_canary "role=${role} host=none status=offline"
+      log_canary "role=${role} where=unread" ;;
+  esac
 done
 
 if [ "$FAILURES" -gt 0 ]; then
