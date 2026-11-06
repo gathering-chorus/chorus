@@ -23,6 +23,8 @@ except Exception:
     print(f"RED {role}: where unreadable"); sys.exit(1)
 if w.get("kind") not in ("resolved", "agent"):
     print(f"RED {role}: pulse resolves {w.get('kind')}"); sys.exit(1)
+if last.startswith("unreadable"):
+    print(f"RED {role}: messages.db {last}"); sys.exit(1)
 if last != "delivered":
     print(f"RED {role}: newest nudge {last or 'none in 24h'}"); sys.exit(1)
 print(f"GREEN {role}: {w.get('kind')} {w.get('pane','')} · newest nudge delivered")
@@ -35,7 +37,7 @@ PY
   bad=0
   for r in $roles; do
     where=$(curl -sf --max-time 5 "$PULSE/api/where/$r" || echo '')
-    last=$(sqlite3 -readonly "$DB" "select delivery_status from messages where type='nudge' and \"to\"='$r' and created_at >= datetime('now','-24 hours') order by id desc limit 1" 2>/dev/null)
+    last=$(sqlite3 -readonly "$DB" "select delivery_status from messages where type='nudge' and \"to\"='$r' and created_at >= datetime('now','-24 hours') order by id desc limit 1" 2>&1) || last="unreadable: $last"
     run verdict "$r" "$where" "$last"; echo "$output"
     [ "$status" -eq 0 ] || bad=1
   done
@@ -44,11 +46,13 @@ PY
 
 @test "negative proof: a dead-pane failure, an offline role or no nudge reads red" {
   run verdict abby-normal '{"kind":"resolved","pane":"%16"}' failed
-  [ "$status" -eq 1 ] && [[ "$output" == *"newest nudge failed"* ]]
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"newest nudge failed"* ]] || return 1
   run verdict borg-queen '{"kind":"dead"}' delivered
-  [ "$status" -eq 1 ] && [[ "$output" == *"resolves dead"* ]]
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"resolves dead"* ]] || return 1
   run verdict wren '{"kind":"resolved","pane":"%9"}' ''
-  [ "$status" -eq 1 ] && [[ "$output" == *"none in 24h"* ]]
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"none in 24h"* ]] || return 1
+  run verdict silas '{"kind":"resolved","pane":"%3"}' 'unreadable: no such table'
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"unreadable"* ]] || return 1
   run verdict kade '{"kind":"resolved","pane":"%1"}' delivered
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 0 ] || return 1
 }
