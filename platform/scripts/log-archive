@@ -168,8 +168,13 @@ def fresh_log(path):
         finally:
             os.close(fd)
     except FileExistsError:
-        os.chown(path, -1, gid)
-        os.chmod(path, 0o664)
+        # Silas 11-06: a role account that won the race owns the file, and only it may
+        # chown/chmod it; that must not kill the rotation after the rename, before the archive
+        try:
+            os.chown(path, -1, gid)
+            os.chmod(path, 0o664)
+        except PermissionError:
+            print("log-archive: fresh log owned by another account; left as is", file=sys.stderr)
 
 
 def chorus_log(apply, over=0):

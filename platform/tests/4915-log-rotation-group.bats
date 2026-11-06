@@ -37,3 +37,22 @@ mode_group() { stat -f '%Lp %Sg' "$1"; }
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(mode_group "$D/chorus.log")" = "664 chorus" ] || { mode_group "$D/chorus.log"; return 1; }
 }
+
+@test "a fresh log another account owns (chown refused) leaves it as is, and the rotation still archives" {
+  D="$BATS_TEST_TMPDIR/foreign"; rm -rf "$D"; mkdir -p "$D/archive"; printf 'one\ntwo\n' > "$D/chorus.log"
+  run env LOG_ARCHIVE_CHORUS_LOG="$D/chorus.log" LOG_ARCHIVE_ROOT="$D/archive" LOG_ARCHIVE_SETTLE_SECS=0 python3 -c '
+import importlib.machinery, os, sys
+m = importlib.machinery.SourceFileLoader("la", sys.argv[1]).load_module()
+real_rename = os.rename
+def rename_then_foreign_writer(a, b):
+    real_rename(a, b)
+    open(a, "w").close()          # a writer won the race
+def refused(*_a, **_k):
+    raise PermissionError(1, "Operation not permitted")
+m.os.rename, m.os.chown = rename_then_foreign_writer, refused
+sys.exit(m.chorus_log(True, 0))' "$ROOT/platform/scripts/log-archive"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"owned by another account; left as is"* ]] || return 1
+  ls "$D/archive/chorus-log/"chorus.log.*.gz >/dev/null 2>&1 || { echo "nothing archived"; return 1; }
+}
