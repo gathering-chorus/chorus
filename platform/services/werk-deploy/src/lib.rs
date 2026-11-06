@@ -1668,8 +1668,11 @@ fn deploy_ts_daemon_canonical(
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-build-fail"), ("failureClass", failure_class("npm-build-fail"))]);
         return Err(died(home, role, card, trace, "npm-build-fail", format!("npm run build failed for {}: {}", name, e)));
     }
-    // bash parity: kickstart is warn-only — the smoke is the gate
-    let (installed, _) = kickstart_prod_reporting(&svc);
+    // #4895 — the smoke alone cannot tell new code from old: the running process answers
+    // healthy either way. #4889's land reported pulse deploy.completed while pid 91234
+    // ran the old code until the next day. The pid must change, or the land is red.
+    let before = service_pid(&svc);
+    let (installed, kicked) = kickstart_prod_reporting(&svc);
     if let Err(e) = smoke() {
         if matches!(installed, Ok(AgentInstall::Installed)) {
             let bootout = |l: &str| run_env(None, &[], "launchctl", &["bootout", &format!("gui/{}/{}", uid(), l)]);
@@ -1677,6 +1680,10 @@ fn deploy_ts_daemon_canonical(
         }
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "smoke-timeout"), ("failureClass", failure_class("smoke-timeout"))]);
         return Err(died(home, role, card, trace, "smoke-timeout", format!("{} smoke failed after deploy: {}", name, e)));
+    }
+    if let Err(why) = restart_verdict(before, service_pid(&svc), kicked.as_ref().err().map(String::as_str)) {
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "not-restarted"), ("failureClass", failure_class("not-restarted"))]);
+        return Err(died(home, role, card, trace, "not-restarted", format!("{} {}", name, why)));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"target\":\"canonical\"", name));
     Ok(format!("{} deployed", name))
@@ -3619,6 +3626,28 @@ fn kickstart_prod_reporting(label: &str) -> (R<AgentInstall>, R<String>) {
     let installed = ensure_agent_installed(label, &root, &launch_agents_dir(), &loaded, &boot);
     let kicked = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)]);
     (installed, kicked)
+}
+
+/// #4895 — the pid launchd reports for a loaded agent (`pid = N` in `launchctl print`),
+/// None when it is not running or not loaded.
+pub fn pid_from_print(print: &str) -> Option<u32> {
+    print.lines().map(str::trim).find_map(|l| l.strip_prefix("pid = ").and_then(|p| p.trim().parse().ok()))
+}
+
+fn service_pid(label: &str) -> Option<u32> {
+    let out = run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), label)]).ok()?;
+    pid_from_print(&out)
+}
+
+/// #4895 — a deploy restarted the service only if a process runs now that did not run
+/// before. A kickstart error, no process after, or the same pid is not-restarted.
+/// `before` None (it was not running) needs only a process after.
+pub fn restart_verdict(before: Option<u32>, after: Option<u32>, kick_err: Option<&str>) -> Result<(), String> {
+    match (before, after) {
+        (_, None) => Err(format!("not-restarted: no process after the kickstart{}", kick_err.map(|e| format!(" ({})", e)).unwrap_or_default())),
+        (Some(b), Some(a)) if a == b => Err(format!("not-restarted: pid {} still running the old code{}", a, kick_err.map(|e| format!(" (kickstart: {})", e)).unwrap_or_default())),
+        _ => Ok(()),
+    }
 }
 
 /// #4570 — every prod kickstart goes through here: install-if-unloaded, then kickstart.

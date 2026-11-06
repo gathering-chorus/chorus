@@ -1886,6 +1886,20 @@ fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
     }
 }
 
+/// #4895 — a delivery to the role's pane failed for good: its Presence reads unreachable
+/// now, not at the next sweep, and says so on the spine.
+fn undelivered(ctx: &Ctx, role: &str, pane: &str) -> i32 {
+    let Some(p) = read_row(ctx, role, "presence") else { eprintln!("chorus-principal: no presence for {role}"); return 1 };
+    match rows::undelivered_presence(p, pane) {
+        None => 0,
+        Some(np) => {
+            let ok = put_row(ctx, role, "identity/presences", "presence", &np);
+            ctx.spine(&["presence.unreachable", role, &format!("pane={}", pane), "reason=delivery-failed", &format!("written={}", ok)]);
+            if ok { 0 } else { 1 }
+        }
+    }
+}
+
 /// Ids of the role's background sessions (`claude agents --json --cwd <role dir>`).
 fn background_ids(ctx: &Ctx, role: &str) -> Vec<String> {
     let out = sh(&ctx.claude, &["agents", "--json", "--cwd", &ctx.role_dir(role)]).unwrap_or_default();
@@ -2258,6 +2272,13 @@ pub fn run(args: &[String]) -> i32 {
             Err(c) => c,
         },
         "sweep" => sweep(&ctx),
+        // #4895 — pulse, after a delivery failed for good on a dead pane; the principal
+        // stays the only writer of a Presence
+        "undelivered" => match (name_arg(1), args.get(2).filter(|p| rows::is_pane_id(p))) {
+            (Ok(r), Some(pane)) => undelivered(&ctx, &r, pane),
+            (Ok(_), None) => { eprintln!("chorus-principal: undelivered <role> <pane %N>"); 2 }
+            (Err(c), _) => c,
+        },
         // #4447 — the identity owner writes a role's Credential rows, once
         // #4455 — the writer is the caller's own role; none set is refused, never a teammate's name
         "credentials" => match (role_arg(1), credentials_writer(env::var("CHORUS_ROLE").ok())) { (Ok(r), Ok(w)) => record_credentials(&ctx, &r, &w), (Err(c), _) | (_, Err(c)) => c },

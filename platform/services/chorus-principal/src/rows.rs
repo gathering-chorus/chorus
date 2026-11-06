@@ -177,6 +177,19 @@ pub fn repaned_presence(mut presence: Value, pane: &str, tty: &str) -> Option<Va
     if !is_pane_id(pane) || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
     presence["pane"] = Value::String(pane.into());
     if !tty.is_empty() { presence["tty"] = Value::String(tty.into()); }
+    // #4895 — a new pane has had no delivery yet: reachable only after one lands there
+    presence["reachability"] = Value::String("unknown".into());
+    Some(presence)
+}
+
+/// #4895 — a delivery to `pane` failed for good (the pane is gone): the presence is
+/// unreachable at once, if it still names that pane. A presence the sweep already moved
+/// to a new pane is left alone: the new pane has not been tried.
+pub fn undelivered_presence(mut presence: Value, pane: &str) -> Option<Value> {
+    presence.get("name")?;
+    if presence.get("pane").and_then(|p| p.as_str()) != Some(pane) { return None; }
+    if presence.get("reachability").and_then(|r| r.as_str()) == Some("unreachable") { return None; }
+    presence["reachability"] = Value::String("unreachable".into());
     Some(presence)
 }
 
