@@ -1,5 +1,7 @@
 // @domain: spine
+// @covers: platform/config/stated-intent-vocabulary.json
 // #4916 — stated intent stall gate on Gemini runtime (prompt_response, no transcript_path).
+// Reads platform/config/stated-intent-vocabulary.json for commitments.
 use chorus_hooks::{load_commitments, stated_intent_from_raw};
 
 #[test]
