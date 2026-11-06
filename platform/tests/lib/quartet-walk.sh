@@ -153,7 +153,13 @@ print("UNMET " + pat)' "$1" "$2" "$3"
 # opens a create only (#4517); on a class with no row owner the update, the delete
 # and the cleanup are all refused, so a create there leaves its probe row in prod
 # every night (111 by 11-06). The manifest's refuseIfNoCleanup decides it: skip.
-APPEND_ONLY="$(curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" 2>/dev/null | python3 -c 'import json,sys
+# A failed read is not "no Append rows": it would let every ownerless create through and
+# leave its row (review 11-06). The walk refuses instead.
+PERMS_JSON="$(curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" 2>/dev/null)" || {
+  echo "UNMEASURED: $API/v1/security/permissions did not answer — cannot tell which creates would leave a row; nothing walked." >&2
+  exit 3
+}
+APPEND_ONLY="$(printf '%s' "$PERMS_JSON" | python3 -c 'import json,sys
 d=json.load(sys.stdin); rows=d.get("data",d) if isinstance(d,dict) else d
 me=[r for r in rows if r.get("agent")=="principal-"+sys.argv[1]]
 w={r["accessTo"] for r in me if r.get("mode","").endswith("#Write")}

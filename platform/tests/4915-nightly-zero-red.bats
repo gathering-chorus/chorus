@@ -9,7 +9,9 @@
 # An unmeasured suite is not green either (#4562): it counts against zero.
 
 # the repo owner's home (two levels above the checkout), not a role account's $HOME
-OWNER_HOME="$(cd "$BATS_TEST_DIRNAME/../../../../.." && pwd)"
+# (review 11-06: "../" counts differ between canonical and a werk; the main checkout's
+# .git sits at <home>/CascadeProjects/chorus/.git from both)
+OWNER_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && cd "$(git rev-parse --git-common-dir)/../../.." && pwd)"
 RUNS="${NIGHTLY_RUNS_4915:-$OWNER_HOME/.chorus/nightly-failures/runs}"
 
 verdict() {  # <lane-output.log> → 0 clean, 1 red/unmeasured listed, 2 no suite lines

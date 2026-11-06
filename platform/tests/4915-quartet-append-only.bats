@@ -43,3 +43,12 @@ setup() {
   [ "$status" -ne 0 ] || { echo "a plain refusal of an allowed class passed"; return 1; }
   [[ "$output" == *"Actor: rows allow, door answered NOT-PERM"* ]] || { echo "$output"; return 1; }
 }
+
+@test "negative proof: when the Permission rows cannot be read the walk refuses, never creates" {
+  block="$(sed -n '/^PERMS_JSON="\$(curl/,/^}/p' "$ROOT/platform/tests/lib/quartet-walk.sh")"
+  [ -n "$block" ] || { echo "the refusal block is gone from quartet-walk.sh"; return 1; }
+  mkdir -p "$BATS_TEST_TMPDIR/bin"; printf '#!/bin/sh\nexit 22\n' > "$BATS_TEST_TMPDIR/bin/curl"; chmod +x "$BATS_TEST_TMPDIR/bin/curl"
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" API=http://x bash -c "$block; echo SENTINEL-CONTINUED-4915"
+  [ "$status" -eq 3 ] || { echo "$output"; return 1; }
+  [[ "$output" != *SENTINEL-CONTINUED-4915* ]] || return 1
+}

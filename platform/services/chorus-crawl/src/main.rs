@@ -3401,9 +3401,14 @@ fn main() {
         .filter(|g| gone.contains(g.path.as_str()))
         .filter_map(|g| g.other.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
         .collect();
+    // a row this pass creates is live too (review 11-06): its name is the one the pass mints
     let live_names: std::collections::HashSet<String> = graph.iter()
         .filter(|g| !gone.contains(g.path.as_str()))
         .filter_map(|g| g.other.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
+        .chain(actions.iter().filter_map(|a| match a {
+            Action::Post { path } => Some(chorus_crawl::file_row_name(&home_repo, path, !foreign)),
+            _ => None,
+        }))
         .collect();
     // Silas 11-06: `graph` is this repo's rows; an edge to another repo's file is
     // live too. On the first miss, every repo's CodeFile names are read once. If

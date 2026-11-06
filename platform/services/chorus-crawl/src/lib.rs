@@ -1553,6 +1553,15 @@ mod dead_edges_4915 {
         ]);
     }
 
+    #[test]
+    fn a_served_value_with_the_chorus_prefix_is_judged_by_its_bare_name() {
+        let row = vec![("exercises".to_string(), "chorus:file-a-rs-1".to_string())];
+        let live = |n: &str| n == "file-a-rs-1";
+        assert_eq!(drop_dead_edges(row.clone(), "exercises", &live), row, "a live edge in the chorus: form was dropped");
+        let dead = |_: &str| false;
+        assert!(drop_dead_edges(row, "exercises", &dead).is_empty());
+    }
+
     // NEGATIVE PROOF (#3734): with every target live nothing is dropped, so the
     // red above is about the dead target, not about edges in general; and a
     // dead-looking value under another key is never touched.

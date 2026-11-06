@@ -10,7 +10,9 @@
 # drops an edge to a row that is gone. This reads the crawler's own log.
 # the crawler writes under the repo owner's home (two levels above the checkout),
 # which is not $HOME when a role account runs this
-OWNER_HOME="$(cd "$BATS_TEST_DIRNAME/../../../../.." && pwd)"
+# (review 11-06: "../" counts differ between canonical and a werk; the main checkout's
+# .git sits at <home>/CascadeProjects/chorus/.git from both)
+OWNER_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && cd "$(git rev-parse --git-common-dir)/../../.." && pwd)"
 LOG="${CRAWL_LOG_4915:-$OWNER_HOME/Library/Logs/Chorus/crawl-nightly.log}"
 
 # the verdict over a crawl log: the newest pass's wrote/failed line, and any
