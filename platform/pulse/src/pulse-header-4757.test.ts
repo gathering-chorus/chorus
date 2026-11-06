@@ -84,4 +84,5 @@ test('GET /pulse answers the header from pulse itself', async () => {
   expect(Object.keys(res.body.data)).toEqual(['cards', 'roles', 'messages', 'alerts']);
   // no actor-state service here: the roles line says so rather than showing nothing
   expect(res.body.data.roles.unmeasured).toBeTruthy();
+// slow-by-design (#4915): createApp + the first require of service.ts under ts-jest measured 1.5 s idle (11-06); 60 s covers the nightly's load
 }, 60_000);

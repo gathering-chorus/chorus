@@ -199,4 +199,5 @@ test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)
     if (prev === undefined) delete process.env.PULSE_API_URL; else process.env.PULSE_API_URL = prev;
     await new Promise(r => fake.close(r));
   }
+// slow-by-design (#4915): 20 concurrent GET /pulse through createApp measured 2.4 s idle (11-06); 60 s covers the nightly's load
 }, 60_000);

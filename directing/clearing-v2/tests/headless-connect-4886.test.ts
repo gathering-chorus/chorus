@@ -68,7 +68,7 @@ describe('#4886 AC3: Headless Chrome loads /clearing-v2/ without console errors 
     } finally {
       await browser.close();
     }
-  }, 30000);
+  });
 
   it('AC3 negative proof: without Boston script tag, console error is logged and fallback engages', async () => {
     // Serve HTML that omits the /vendor/chorus-time/boston.js script tag
@@ -112,5 +112,5 @@ describe('#4886 AC3: Headless Chrome loads /clearing-v2/ without console errors 
       await browser.close();
       await new Promise<void>((resolve) => mockServer.close(() => resolve()));
     }
-  }, 30000);
+  });
 });
