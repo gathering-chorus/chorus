@@ -61,6 +61,8 @@ backup() {
       --exclude='target/release/' \
       --exclude='target/debug/' \
       --exclude='target/chorus-*/' \
+      --exclude='target/*/release/' \
+      --exclude='target/*/debug/' \
       --exclude='/.chorus/chorus.log' \
       --exclude='/.chorus/outbox/*/' \
       -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1) || rc=$?
