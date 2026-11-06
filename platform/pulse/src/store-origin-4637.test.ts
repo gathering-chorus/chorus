@@ -1,6 +1,7 @@
 // @test-type: integration — a real SQLite store in a tempdir, read back raw
 // @domain: messages
 // @card: #4637
+// @owner: silas
 // #4637 AC3 (Abby + Kade review, run 3) — a message's origin is written by the
 // INSERT that stores it. The first cut stored the row and then ran a second
 // UPDATE, so a crash between them left a row with origin NULL: the hole AC3 closes.

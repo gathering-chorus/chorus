@@ -1,5 +1,6 @@
 // @test-type: unit — pure: which messages stay out of Jeff's room and out of his name.
 // @card: #4875
+// @owner: wren
 // @domain: messages
 // AC10 (Jeff 2026-11-03 09:36 screenshot): the owner's demo brief showed in #team twice, once as
 // "system [alert → wren]" and once as a message from jeff (the terminal hook recorded the alert).

@@ -54,7 +54,11 @@ for bin in "$BIN_DIR"/werk-*; do
   name="$(basename "$bin")"
   case "$name" in *-bin) continue ;; esac
   crate="platform/services/$name"
-  [ -d "$CHORUS_ROOT/$crate" ] || continue
+  # #4915 — a crate is its Cargo.toml, not its folder: #4889 retired werk-review, but
+  # canonical keeps its untracked target/ dir, so the folder test still matched and the
+  # retired verb read as drifted every night (11-06). A retired verb's leftover binary
+  # is not drift.
+  [ -f "$CHORUS_ROOT/$crate/Cargo.toml" ] || continue
   # newest deployed commit for this binary, from the spine (source of truth)
   # #4131 — the canonical deploy installs werk-test as `werk-test-bin` (the
   # `werk-test` name is the wrapper) and emits binary.deployed under that name;

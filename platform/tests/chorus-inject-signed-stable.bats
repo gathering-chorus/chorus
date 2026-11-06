@@ -28,6 +28,12 @@ CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
 export BUILD_SKIP_INSTALL=1
 INJECT_DIR="$CHORUS_ROOT/platform/services/chorus-inject"
 HOOKS_DIR="$CHORUS_ROOT/platform/services/chorus-hooks"
+# #4915 — where build-signed.sh puts a crate's build: CARGO_TARGET_DIR when set; a crate
+# inside a werk keeps <crate>/target; the shared checkout builds per account (review 11-06)
+target_of() {
+  if [ -n "${CARGO_TARGET_DIR:-}" ]; then echo "$CARGO_TARGET_DIR"; return; fi
+  case "$(cd "$1" && pwd -P)" in */chorus-werk/*) echo "$1/target" ;; *) echo "$1/target/$(id -un)" ;; esac
+}
 BUILD_SIGNED="$CHORUS_ROOT/platform/scripts/build-signed.sh"
 
 cdhash_of() {
@@ -48,40 +54,40 @@ authority_of() {
 
 @test "build-signed.sh chorus-inject pins identifier=com.chorus.inject" {
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  [ "$(identifier_of "$INJECT_DIR/target/release/chorus-inject")" = "com.chorus.inject" ]
+  [ "$(identifier_of "$(target_of "$INJECT_DIR")/release/chorus-inject")" = "com.chorus.inject" ]
 }
 
 @test "build-signed.sh chorus-inject signs with keychain identity (not ad-hoc)" {
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  AUTH=$(authority_of "$INJECT_DIR/target/release/chorus-inject")
+  AUTH=$(authority_of "$(target_of "$INJECT_DIR")/release/chorus-inject")
   [ -n "$AUTH" ]
   [ "$AUTH" != "Ad-hoc" ]
 }
 
 @test "build-signed.sh chorus-inject cdhash is stable across two consecutive runs" {
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  HASH1=$(cdhash_of "$INJECT_DIR/target/release/chorus-inject")
+  HASH1=$(cdhash_of "$(target_of "$INJECT_DIR")/release/chorus-inject")
   bash "$BUILD_SIGNED" chorus-inject >/dev/null 2>&1
-  HASH2=$(cdhash_of "$INJECT_DIR/target/release/chorus-inject")
+  HASH2=$(cdhash_of "$(target_of "$INJECT_DIR")/release/chorus-inject")
   [ -n "$HASH1" ]
   [ "$HASH1" = "$HASH2" ]
 }
 
 @test "build-signed.sh chorus-hooks pins identifier=com.chorus.hook-shim" {
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  [ "$(identifier_of "$HOOKS_DIR/target/release/chorus-hook-shim")" = "com.chorus.hook-shim" ]
+  [ "$(identifier_of "$(target_of "$HOOKS_DIR")/release/chorus-hook-shim")" = "com.chorus.hook-shim" ]
 }
 
 @test "build-signed.sh chorus-hooks also signs chorus-hooks bin as com.chorus.hooks" {
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  [ "$(identifier_of "$HOOKS_DIR/target/release/chorus-hooks")" = "com.chorus.hooks" ]
+  [ "$(identifier_of "$(target_of "$HOOKS_DIR")/release/chorus-hooks")" = "com.chorus.hooks" ]
 }
 
 @test "build-signed.sh chorus-hooks cdhash stable across consecutive runs" {
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  HASH1=$(cdhash_of "$HOOKS_DIR/target/release/chorus-hook-shim")
+  HASH1=$(cdhash_of "$(target_of "$HOOKS_DIR")/release/chorus-hook-shim")
   bash "$BUILD_SIGNED" chorus-hooks >/dev/null 2>&1
-  HASH2=$(cdhash_of "$HOOKS_DIR/target/release/chorus-hook-shim")
+  HASH2=$(cdhash_of "$(target_of "$HOOKS_DIR")/release/chorus-hook-shim")
   [ -n "$HASH1" ]
   [ "$HASH1" = "$HASH2" ]
 }

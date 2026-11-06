@@ -56,6 +56,20 @@ run_runner() {
   mkdir -p "$W/platform/api/src" "$W/platform/api/node_modules/.bin"
   cp "$cfg" "$W/platform/api/jest.config.js"
   cp "$ROOT/platform/api/package.json" "$W/platform/api/"
+  # #4915 — since #4505 (11-01) the runner runs a package's build script before jest;
+  # this tree has no tsc, so the build failed, jest was never reached, and 4 cases
+  # read an empty record. The build is not this file's seam: the copy's build is a
+  # no-op and its `main` stands built, as a real werk's would after its build.
+  python3 - "$W/platform/api/package.json" <<'PYJ'
+import json, os, sys
+p = sys.argv[1]; d = json.load(open(p))
+d.setdefault("scripts", {})["build"] = "true"
+json.dump(d, open(p, "w"))
+m = d.get("main")
+if m:
+    os.makedirs(os.path.join(os.path.dirname(p), os.path.dirname(m)), exist_ok=True)
+    open(os.path.join(os.path.dirname(p), m), "w").close()
+PYJ
   printf '#!/bin/bash\necho "ARGV $*" >> "%s"\necho "RUN_INTEGRATION=${RUN_INTEGRATION:-}" >> "%s"\necho "CHILD_CONTEXT=[${CHORUS_CONTEXT-unset}]" >> "%s"\nfor a in "$@"; do [ "$a" = --json ] && echo "{\\"numFailedTests\\":0,\\"testResults\\":[]}"; done\nexit 0\n' \
     "$REC" "$REC" "$REC" > "$W/platform/api/node_modules/.bin/jest"
   chmod +x "$W/platform/api/node_modules/.bin/jest"

@@ -39,7 +39,7 @@ given_a_card() {
   git clone -q "$R/origin" "$R/home"
   mkdir -p "$R/home/platform/scripts" "$R/board" "$R/gh" "$R/werks" "$R/bin"
   # the stubs, named by their full paths so werk-test sees this suite exercise each one
-  cp "$ROOT/platform/tests/fixtures/verb-story/cards" "$ROOT/platform/tests/fixtures/verb-story/chorus-log" \
+  cp "$ROOT/platform/tests/fixtures/verb-story/cards" "$ROOT/platform/tests/fixtures/verb-story/chorus-log" "$ROOT/platform/tests/fixtures/verb-story/borg-prove-intake" \
      "$ROOT/platform/tests/fixtures/verb-story/role-state" "$R/home/platform/scripts/"
   cp "$ROOT/platform/tests/fixtures/verb-story/gh" "$ROOT/platform/tests/fixtures/verb-story/werk-deploy" \
      "$ROOT/platform/tests/fixtures/verb-story/chorus-go" "$R/bin/"
@@ -48,6 +48,11 @@ given_a_card() {
     CHORUS_GO_BIN="$R/bin/chorus-go" BOARD="$R/board" SPINE="$R/spine" GH_STATE="$R/gh" GH_LOG="$R/ghlog" ORIGIN="$R/origin" \
     PATH="$R/bin:$PATH"
   unset DAG_RUN_ID CHORUS_TRACE_ID ROLE ACCEPTER DEPLOY_ROLE
+  # #4915 — werk-push arms a deploy credential on every push since #4771 and refuses
+  # when the account has none (a role account never does). Origin here is a local
+  # repo, so the story brings its own 0600 placeholder; nothing is ever sent with it.
+  printf 'fixture-placeholder\n' > "$R/deploy-cred"; chmod 600 "$R/deploy-cred"
+  export WERK_DEPLOY_CREDENTIAL_FILE="$R/deploy-cred"
   : > "$R/spine"
 }
 

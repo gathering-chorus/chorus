@@ -1,5 +1,7 @@
 // @domain: awareness
 // @test-type: unit — composeHeader in platform/pulse/src/pulse-header.ts over fake sources, and GET /pulse in platform/pulse/src/service.ts; no live services
+// @card: #4757
+// @owner: wren
 /**
  * #4757 — GET /pulse reads each line from the API that holds it, at request time.
  * Jeff 2026-10-26: "why are we writing prompts we already have messages api".
@@ -84,4 +86,5 @@ test('GET /pulse answers the header from pulse itself', async () => {
   expect(Object.keys(res.body.data)).toEqual(['cards', 'roles', 'messages', 'alerts']);
   // no actor-state service here: the roles line says so rather than showing nothing
   expect(res.body.data.roles.unmeasured).toBeTruthy();
+// slow-by-design (#4915): createApp + the first require of service.ts under ts-jest measured 1.5 s idle (11-06); 60 s covers the nightly's load
 }, 60_000);

@@ -1,5 +1,7 @@
 // @domain: awareness
 // @test-type: unit — cachedCards in platform/pulse/src/pulse-header.ts over a fake /cws read; no live services
+// @card: #4807
+// @owner: kade
 /**
  * #4807 — /pulse hung for every role's prompt hook. Its cards line runs the /cws script
  * (~2s) behind a 30s cache, and when the cache expired every concurrent /pulse started its
@@ -199,4 +201,5 @@ test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)
     if (prev === undefined) delete process.env.PULSE_API_URL; else process.env.PULSE_API_URL = prev;
     await new Promise(r => fake.close(r));
   }
+// slow-by-design (#4915): 20 concurrent GET /pulse through createApp measured 2.4 s idle (11-06); 60 s covers the nightly's load
 }, 60_000);

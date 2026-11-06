@@ -504,9 +504,13 @@ fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     // #4494 — start from prod's build cache when this werk has none
     seed_from_canonical(werk_s, &crate_rel_dir(Path::new(werk_s), crate_name));
     let build_signed = format!("{}/platform/scripts/build-signed.sh", werk_s);
+    // #4915 — a werk is one account's, and werk-deploy reads <crate>/target/release
+    // (lib.rs:1701, 2204, 2595, 3028). build-signed now defaults to a per-account
+    // target dir for canonical's shared tree; in a werk the crate's own target stays.
+    let target = format!("{}/target", crate_dir);
     let out = run_in_env(
         werk_s,
-        &[("BUILD_SKIP_INSTALL", "1")],
+        &[("BUILD_SKIP_INSTALL", "1"), ("CARGO_TARGET_DIR", target.as_str())],
         &build_signed,
         &[&crate_dir, &identifier, &binary],
     )?;

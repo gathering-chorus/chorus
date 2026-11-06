@@ -3391,6 +3391,43 @@ fn main() {
         out
     };
 
+    // #4915 — the rows still live once this pass is done: every served row
+    // name, less the rows this pass deletes. A replace drops an `exercises`
+    // edge to anything else (drop_dead_edges).
+    let gone: std::collections::HashSet<&str> = actions.iter()
+        .filter_map(|a| match a { Action::Delete { path } => Some(path.as_str()), _ => None })
+        .collect();
+    let gone_names: std::collections::HashSet<String> = graph.iter()
+        .filter(|g| gone.contains(g.path.as_str()))
+        .filter_map(|g| g.other.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
+        .collect();
+    // a row this pass creates is live too (review 11-06): its name is the one the pass mints
+    let live_names: std::collections::HashSet<String> = graph.iter()
+        .filter(|g| !gone.contains(g.path.as_str()))
+        .filter_map(|g| g.other.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
+        .chain(actions.iter().filter_map(|a| match a {
+            Action::Post { path } => Some(chorus_crawl::file_row_name(&home_repo, path, !foreign)),
+            _ => None,
+        }))
+        .collect();
+    // Silas 11-06: `graph` is this repo's rows; an edge to another repo's file is
+    // live too. On the first miss, every repo's CodeFile names are read once. If
+    // that read fails nothing is dropped: an unknown is never treated as gone.
+    let every_repo: std::cell::OnceCell<Option<std::collections::HashSet<String>>> = std::cell::OnceCell::new();
+    let is_live = |n: &str| -> bool {
+        if live_names.contains(n) {
+            return true;
+        }
+        if gone_names.contains(n) {
+            return false;
+        }
+        match every_repo.get_or_init(|| fetch_rows(&api, &token, "CodeFile").ok().map(|rows| rows.iter()
+            .filter_map(|r| r.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
+            .collect())) {
+            Some(all) => all.contains(n),
+            None => true,
+        }
+    };
 
     for a in &actions {
         match a {
@@ -3454,7 +3491,13 @@ fn main() {
                 // either. Read from the file, never the folder; silence when
                 // the rules cannot agree, exactly as for a test.
                 owned.extend(place_file(path));
-                let mut fields = merge_row(existing, &owned);
+                let merged = merge_row(existing, &owned);
+                let mut fields = chorus_crawl::drop_dead_edges(merged.clone(), "exercises", &is_live);
+                // Wren 11-06: a dropped edge is said, never silent — a test that still
+                // names a retired file must stay in view
+                for (_, v) in merged.iter().filter(|kv| !fields.contains(kv)) {
+                    println!("chorus-crawl: dropped-edge {path} -> {v}");
+                }
                 // the name the door serves for this row, else the one this pass mints
                 let name = served_name_for(&graph, path).unwrap_or_else(|| chorus_crawl::file_row_name(&home_repo, path, !foreign));
                 // The door names the prefix its mint adds; a refusal that names

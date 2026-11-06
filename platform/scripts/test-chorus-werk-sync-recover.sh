@@ -63,6 +63,12 @@ fi
 TEST_HOME="/tmp/chorus-recover-test-$$"
 mkdir -p "$TEST_HOME/.chorus"
 export HOME_BAK="$HOME"
+# #4915 — werk-sync arms a deploy credential on every fetch since #4771 and refused
+# here ("auth-fail: deploy credential file … unreadable"): this HOME has none, and 5
+# of 6 assertions went red. The remotes are local bare repos, so a 0600 placeholder
+# is all it needs; nothing is ever sent with it.
+printf 'fixture-placeholder\n' > "$TEST_HOME/deploy-cred"; chmod 600 "$TEST_HOME/deploy-cred"
+export WERK_DEPLOY_CREDENTIAL_FILE="$TEST_HOME/deploy-cred"
 
 # Assertion 1: clean tree → no-op
 echo "test-chorus-werk-sync-recover: assertion 1 — clean tree → no-op sync"

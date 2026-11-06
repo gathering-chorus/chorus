@@ -1,5 +1,7 @@
 // @test-type: unit — a temp sqlite store, no relay
 // @domain: messages
+// @card: #4634
+// @owner: silas
 /**
  * #4634 — the messages sensor's Buzz reader. It reads only nudges and Jeff's
  * inputs from pulse's store, and it reports UNMEASURED (exit 3, nothing on

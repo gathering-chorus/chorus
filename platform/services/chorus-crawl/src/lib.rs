@@ -1512,6 +1512,71 @@ fn find_str_end(s: &str, from: usize) -> Option<usize> {
     None
 }
 
+/// #4915 — a file update restates the row as served, so an `exercises` edge
+/// to a row deleted since rides along, and the door refuses the whole PUT as
+/// unknown-target. On 2026-11-06 four test files named werk-review's deleted
+/// Cargo.lock, every crawl failed 4 writes, and the watermark held all night.
+/// Keep only the edges whose target is `live` (a served name, with or without
+/// the door's `code-file-` prefix). Other keys are untouched.
+pub fn drop_dead_edges(
+    fields: Vec<(String, String)>,
+    key: &str,
+    live: &dyn Fn(&str) -> bool,
+) -> Vec<(String, String)> {
+    fields
+        .into_iter()
+        .filter(|(k, v)| k != key || live(v.trim_start_matches("chorus:").trim_start_matches("code-file-")))
+        .collect()
+}
+
+#[cfg(test)]
+mod dead_edges_4915 {
+    use super::*;
+
+    fn row() -> Vec<(String, String)> {
+        vec![
+            ("filePath".to_string(), "platform/tests/t.bats".to_string()),
+            ("exercises".to_string(), "code-file-file-a-rs-1".to_string()),
+            ("exercises".to_string(), "code-file-file-platform-services-werk-review-cargo-lock-d9d7d84e".to_string()),
+            ("hasDomain".to_string(), "werk".to_string()),
+        ]
+    }
+
+    #[test]
+    fn an_edge_to_a_deleted_row_is_dropped_and_the_rest_kept() {
+        let live = |n: &str| n == "file-a-rs-1";
+        let out = drop_dead_edges(row(), "exercises", &live);
+        assert_eq!(out, vec![
+            ("filePath".to_string(), "platform/tests/t.bats".to_string()),
+            ("exercises".to_string(), "code-file-file-a-rs-1".to_string()),
+            ("hasDomain".to_string(), "werk".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn a_served_value_with_the_chorus_prefix_is_judged_by_its_bare_name() {
+        let row = vec![("exercises".to_string(), "chorus:file-a-rs-1".to_string())];
+        let live = |n: &str| n == "file-a-rs-1";
+        assert_eq!(drop_dead_edges(row.clone(), "exercises", &live), row, "a live edge in the chorus: form was dropped");
+        let dead = |_: &str| false;
+        assert!(drop_dead_edges(row, "exercises", &dead).is_empty());
+    }
+
+    // NEGATIVE PROOF (#3734): with every target live nothing is dropped, so the
+    // red above is about the dead target, not about edges in general; and a
+    // dead-looking value under another key is never touched.
+    #[test]
+    fn negative_proof_live_edges_and_other_keys_are_kept() {
+        let all = |_: &str| true;
+        assert_eq!(drop_dead_edges(row(), "exercises", &all), row());
+        let none = |_: &str| false;
+        let out = drop_dead_edges(row(), "exercises", &none);
+        assert!(out.iter().all(|(k, _)| k != "exercises"));
+        assert!(out.contains(&("hasDomain".to_string(), "werk".to_string())));
+        assert!(out.contains(&("filePath".to_string(), "platform/tests/t.bats".to_string())));
+    }
+}
+
 /// The row to PUT back: everything the door served, with the crawler's own
 /// fields written over it. Server-managed keys are dropped — restating them is
 /// either refused or a lie about who changed the row.

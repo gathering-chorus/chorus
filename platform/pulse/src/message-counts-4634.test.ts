@@ -1,5 +1,7 @@
 // @test-type: unit — pure count over fixture rows and notes
 // @domain: messages
+// @card: #4634
+// @owner: silas
 /**
  * #4634 — the countKinds rule, now in pulse, counted per Boston day: what
  * should have reached Buzz (sent) and what did (kept).

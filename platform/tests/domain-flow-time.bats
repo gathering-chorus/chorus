@@ -256,10 +256,18 @@ EOF
 
 # TS/JS source that formats Boston time itself instead of calling chorus-sdk/time/boston.
 # The browser is a runtime too: pages load the same file as a script (globalThis.chorusBoston).
+# #4915 — inside a checkout, only what git tracks: canonical's dist.prev builds and
+# coverage pages are not services (nightly 11-06 read 4 of them as renderers).
 own_ts_renderers() {
-  grep -rnE "timeZone: *['\"]America/New_York['\"]|toLocale[A-Za-z]*String\([^)]*America/New_York" \
-    --include='*.ts' --include='*.js' --include='*.html' --exclude-dir=node_modules --exclude-dir=dist "$@" 2>/dev/null \
-    | grep -vE '\.test\.|/tests/|chorus-sdk/time/' || true
+  local re="timeZone: *['\"]America/New_York['\"]|toLocale[A-Za-z]*String\([^)]*America/New_York" d top
+  for d in "$@"; do
+    top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)"
+    if [ -n "$top" ]; then
+      git -C "$top" ls-files -- "$d" | grep -E '\.(ts|js|html)$' | grep -v '/dist/' | (cd "$top" && xargs grep -nHE "$re" 2>/dev/null) | sed "s|^|$top/|"
+    else
+      grep -rnE "$re" --include='*.ts' --include='*.js' --include='*.html' --exclude-dir=node_modules --exclude-dir=dist "$d" 2>/dev/null
+    fi
+  done | grep -vE '\.test\.|/tests/|chorus-sdk/time/' || true
 }
 
 @test "AC4: no TypeScript service or browser page formats Boston time itself; all use the one renderer" {
@@ -272,6 +280,19 @@ own_ts_renderers() {
   printf "export const t = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });\n" > "$T/svc/src/own.ts"
   out="$(own_ts_renderers "$T/svc")"
   [[ "$out" == *"own.ts"* ]] || return 1
+}
+
+@test "AC4 (#4915): inside a checkout an untracked copy is not a service, and the same file tracked still is" {
+  mkdir -p "$T/repo/platform/svc/dist.prev" "$T/repo/platform/svc/src"
+  git -C "$T/repo" init -q
+  printf "const s = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' });\n" > "$T/repo/platform/svc/dist.prev/service.js"
+  out="$(own_ts_renderers "$T/repo/platform")"
+  [ -z "$out" ] || { echo "untracked dist.prev read as code: $out"; return 1; }
+  # negative proof: the same line in a tracked source file is caught
+  cp "$T/repo/platform/svc/dist.prev/service.js" "$T/repo/platform/svc/src/own.ts"
+  git -C "$T/repo" add platform/svc/src/own.ts
+  out="$(own_ts_renderers "$T/repo/platform")"
+  [[ "$out" == *"src/own.ts"* ]] || { echo "tracked renderer missed: $out"; return 1; }
 }
 
 @test "AC4: the Rust offset rule lives once, in shared/boston.rs" {
