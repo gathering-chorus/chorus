@@ -832,7 +832,9 @@ pub fn runtime_hooks_file(row: &Value, runtime: &str, role: &str, shim: &str, pr
     for (ours, tool) in [("eventSessionStart", false), ("eventBeforePrompt", false), ("eventBeforeTool", true), ("eventAfterTool", true), ("eventOnStop", false)] {
         let Some(native) = rs(row, ours) else { continue };
         let mut handlers = vec![hook(native)];
-        if ours == "eventBeforePrompt" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
+        // #4895 — the turn's end stamps it too: a long turn of tool calls sends no prompt,
+        // and Kade's and Wren's lastSeenAt sat 10-16 minutes old while both worked (11-06)
+        if ours == "eventBeforePrompt" || ours == "eventOnStop" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
         let entry = if tool || layout == "claude-settings" { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
         events.insert(native.to_string(), entry);
     }

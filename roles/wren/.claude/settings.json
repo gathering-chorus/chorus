@@ -49,6 +49,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen wren",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "disableAgentView": true
