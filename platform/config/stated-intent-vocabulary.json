@@ -38,7 +38,7 @@
     {
       "id": "bare-gerund",
       "_note": "Subjectless commitment opening a sentence \u2014 'Building the gate that way.' Caught by the test suite against Wren's own 2026-08-20 replies; the first vocabulary draft missed it because every pattern assumed a subject. Extended twice on 2026-08-20 \u2014 'Committing the Host fix...' and 'Re-running with honest AC.' each slipped a list that looked complete. Both were found by the fixture, neither by reading it.",
-      "pattern": "(?i)(?:^|[.!?]\\s+|\\n\\s*)(?:re-)?(?:taking|building|running|fixing|landing|writing|starting|doing|filing|sending|registering|checking|committing|pushing|merging|deploying|pulling|wiring|adding|moving)\\b",
+      "pattern": "(?i)(?:^|[.!?]\\s+|\\n\\s*)(?:re-)?(?:taking|building|running|fixing|landing|writing|starting|doing|filing|sending|registering|checking|committing|pushing|merging|deploying|pulling|wiring|adding|moving|executing|advancing)\\b",
       "example": "Building the gate that way."
     },
     {

@@ -5263,6 +5263,15 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "stated.intent.missing_prompt_response": {
+      "producer": "policies",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — Gemini / non-transcript runtime hook payload missing prompt_response at stop hook.",
+      "fields": {
+        "role": "Role whose stop hook ran without prompt_response"
+      }
+    },
     "stop.gate.yielded": {
       "producer": "policies",
       "category": "fact",

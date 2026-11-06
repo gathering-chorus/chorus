@@ -523,6 +523,28 @@ pub fn stated_intent_without_action(
         .map(|c| c.id.clone())
 }
 
+/// #4916 — Stated intent evaluation for runtimes without transcript files (e.g. Gemini).
+/// Reads the prompt response text, takes the last non-empty closing line, and checks
+/// against the commitment vocabulary.
+pub fn stated_intent_from_raw(
+    raw: &serde_json::Value,
+    commitments: &[Commitment],
+) -> Result<Option<String>, &'static str> {
+    if let Some(tp) = raw.get("transcript_path").and_then(|v| v.as_str()) {
+        let Some(text) = crate::hooks::inject_force::last_assistant_text(tp) else {
+            return Ok(None);
+        };
+        let calls = tool_calls_this_turn(tp);
+        Ok(stated_intent_without_action(&text, calls, commitments))
+    } else {
+        let text = crate::hooks::reply_delivery::reply_text(raw)
+            .ok_or("missing_prompt_response")?;
+        let stripped = strip_code_blocks(&text);
+        let closing = stripped.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        Ok(stated_intent_without_action(closing, 0, commitments))
+    }
+}
+
 /// Count tool invocations in the CURRENT turn — everything the assistant did since
 /// the last human message. This is the other half of the signal: intent in the text
 /// is only a stall if nothing was actually done.

@@ -582,7 +582,7 @@ export function createApp(
     actorState: () => actorStateService?.getActorStates(),
     // #4807 slice 2 — one pulse-api call per 2 s however many prompts ask at once
     messages: sharedRead(() => readMessages(), 2_000, 4_000, 2_000, '/pulse/messages/messages'),
-    alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/pulse/alerts/alerts'),
+    alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/api/alertmanager/grafana/api/v2/alerts'),
   });
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {
