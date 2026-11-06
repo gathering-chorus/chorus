@@ -1,5 +1,7 @@
 // @domain: awareness
 // @test-type: unit — composeHeader in platform/pulse/src/pulse-header.ts over fake sources, and GET /pulse in platform/pulse/src/service.ts; no live services
+// @card: #4757
+// @owner: wren
 /**
  * #4757 — GET /pulse reads each line from the API that holds it, at request time.
  * Jeff 2026-10-26: "why are we writing prompts we already have messages api".

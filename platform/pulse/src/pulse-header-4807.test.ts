@@ -1,5 +1,7 @@
 // @domain: awareness
 // @test-type: unit — cachedCards in platform/pulse/src/pulse-header.ts over a fake /cws read; no live services
+// @card: #4807
+// @owner: kade
 /**
  * #4807 — /pulse hung for every role's prompt hook. Its cards line runs the /cws script
  * (~2s) behind a 30s cache, and when the cache expired every concurrent /pulse started its

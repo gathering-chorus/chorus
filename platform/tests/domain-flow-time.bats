@@ -256,10 +256,18 @@ EOF
 
 # TS/JS source that formats Boston time itself instead of calling chorus-sdk/time/boston.
 # The browser is a runtime too: pages load the same file as a script (globalThis.chorusBoston).
+# #4915 — inside a checkout, only what git tracks: canonical's dist.prev builds and
+# coverage pages are not services (nightly 11-06 read 4 of them as renderers).
 own_ts_renderers() {
-  grep -rnE "timeZone: *['\"]America/New_York['\"]|toLocale[A-Za-z]*String\([^)]*America/New_York" \
-    --include='*.ts' --include='*.js' --include='*.html' --exclude-dir=node_modules --exclude-dir=dist "$@" 2>/dev/null \
-    | grep -vE '\.test\.|/tests/|chorus-sdk/time/' || true
+  local re="timeZone: *['\"]America/New_York['\"]|toLocale[A-Za-z]*String\([^)]*America/New_York" d top
+  for d in "$@"; do
+    top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)"
+    if [ -n "$top" ]; then
+      git -C "$top" ls-files -- "$d" | grep -E '\.(ts|js|html)$' | grep -v '/dist/' | (cd "$top" && xargs grep -nE "$re" 2>/dev/null) | sed "s|^|$top/|"
+    else
+      grep -rnE "$re" --include='*.ts' --include='*.js' --include='*.html' --exclude-dir=node_modules --exclude-dir=dist "$d" 2>/dev/null
+    fi
+  done | grep -vE '\.test\.|/tests/|chorus-sdk/time/' || true
 }
 
 @test "AC4: no TypeScript service or browser page formats Boston time itself; all use the one renderer" {

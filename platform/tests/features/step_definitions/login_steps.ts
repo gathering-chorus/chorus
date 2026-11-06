@@ -284,8 +284,11 @@ Then('the command says wren is already logged in', STEP, function () {
   sh('test "$(cat "$T/status")" -eq 0; out_has "logged in"; out_has "already awake"');
 });
 
+// #4915 — a launch is `respawn-pane -k` since #4813 (11-01), not send-keys: a check for
+// send-keys alone passed whatever happened. LAUNCH matches either way a role is started.
+const LAUNCH = "-E '(send-keys|respawn-pane -k) -t chorus-'";
 Then("nothing is sent to wren's pane", STEP, function () {
-  sh(`test "$(cat "$T/status")" -eq 0; test -z "$(grep -F 'send-keys' "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"`);
+  sh(`test "$(cat "$T/status")" -eq 0; test -z "$(grep ${LAUNCH} "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"`);
 });
 
 Then('no session row is written', STEP, function () {
@@ -297,7 +300,7 @@ Then('that pane is ended and wren starts again', STEP, function () {
 });
 
 Then('wren starts anyway', STEP, function () {
-  sh('grep -q "send-keys -t chorus-wren" "$T/tmux.log"');
+  sh(`grep -qE '(send-keys|respawn-pane -k) -t chorus-wren' "$T/tmux.log"`);
 });
 
 Then('the command says the login is pending, and why', STEP, function () {
@@ -322,7 +325,7 @@ Then('it is refused with {string}', STEP, function (msg: string) {
 });
 
 Then('nothing is started', STEP, function () {
-  sh('test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"');
+  sh(`test -z "$(grep ${LAUNCH} "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"`);
 });
 
 Then('the run ends as logout, the presence is unreachable, and the session is closed, in that order', STEP, function () {
@@ -348,7 +351,7 @@ Then("wren's live session is left alone", STEP, function () {
 });
 
 Then('wren starts as chorus-wren', STEP, function () {
-  sh(`test "$(cat "$T/status")" -eq 0; grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"`);
+  sh(`test "$(cat "$T/status")" -eq 0; grep -E '(send-keys|respawn-pane -k) -t chorus-wren' "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"`);
 });
 
 Then("wren's credentials are in chorus-wren's home, readable by that account alone", STEP, function () {

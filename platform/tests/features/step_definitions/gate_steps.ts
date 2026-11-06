@@ -69,10 +69,18 @@ Before(function () {
 });
 
 After(function () {
+  // #4915 — a scenario an earlier Before skipped (clearing-v2 with no test instance:
+  // UNMEASURED by design, #4574) never ran this file's Before, so there is nothing of
+  // ours to restore. It crashed here on an unset ctx and every honest skip in 4 feature
+  // files read as a failure (nightly 11-06). And a ctx left from an earlier scenario
+  // must never restore its stale backups over live state, so it is cleared below.
+  const c = ctx as TestContext | undefined;
+  if (!c) return;
+  ctx = undefined as unknown as TestContext;
   // Restore ALL role state files
   for (const role of ALL_ROLES) {
     const statePath = path.join(STATE_DIR, `${role}-declared.json`);
-    const backup = ctx.stateBackups.get(role);
+    const backup = c.stateBackups.get(role);
     if (backup !== null && backup !== undefined) {
       fs.writeFileSync(statePath, backup);
     } else if (fs.existsSync(statePath)) {
@@ -81,8 +89,8 @@ After(function () {
   }
 
   // Clean up session JSONL
-  const projectKey = ctx.cwd.replace(/\//g, '-').replace(/^-/, '');
-  const jsonlPath = path.join(HOME, '.claude', 'projects', `-${projectKey}`, `${ctx.sessionId}.jsonl`);
+  const projectKey = c.cwd.replace(/\//g, '-').replace(/^-/, '');
+  const jsonlPath = path.join(HOME, '.claude', 'projects', `-${projectKey}`, `${c.sessionId}.jsonl`);
   if (fs.existsSync(jsonlPath)) {
     fs.unlinkSync(jsonlPath);
   }

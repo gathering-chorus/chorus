@@ -55,6 +55,18 @@ traffic() {
   echo "24h traffic (domain-level, Loki lines matching the row's patterns): ${n:-not measured}"
 }
 
+# #4915 — the files a domain's code lives in: what git tracks when TREE is a checkout.
+# A walk of the disk read canonical's runtime logs, dist.prev builds and coverage pages
+# as "scripts" (nightly 11-06: 4 log files read lossy). A tree that is not a checkout
+# (a test's planted copy) is still walked.
+tree_files_matching() {
+  if [ "$(git -C "$TREE" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$TREE" && pwd -P)" ]; then
+    git -C "$TREE" ls-files -z | (cd "$TREE" && xargs -0 grep -lE -- "$1" 2>/dev/null) | sed "s|^|$TREE/|"
+  else
+    grep -rlE --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git -- "$1" "$TREE" 2>/dev/null
+  fi
+}
+
 inventory() {
   local f rel note n=0
   printf 'path\towner\tnote\n'
@@ -66,7 +78,7 @@ inventory() {
     if [ -n "$lossy" ] && grep -qE -- "$lossy" "$f"; then note="lossy"; fi
     printf '%s\t%s\t%s\n' "$rel" "$owner" "$note"
     n=$((n+1))
-  done < <(grep -rlE --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git -- "$patterns" "$TREE" 2>/dev/null | sort)
+  done < <(tree_files_matching "$patterns" | sort)
   echo "paths: $n"
   traffic
 }
