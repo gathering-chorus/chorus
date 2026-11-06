@@ -258,9 +258,25 @@ pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
 /// produces a turn, so it can never mark the presence reachable.
 pub fn turn_facts(hook_input: &str) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
-    let conv = v.get("session_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let conv = conversation_of(&v);
     let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
     (conv, is_delivery(prompt))
+}
+
+/// #4895 — the conversation a turn belongs to. Claude's hook input carries it as
+/// `session_id`. An Antigravity (agy) turn does not, or carries the word "transcript"
+/// there; its id is the brain folder in `transcript_path`
+/// (`.../antigravity-cli/brain/<uuid>/.system_generated/logs/transcript.jsonl`, the rule
+/// chorus-hooks' shim reads, #4785). Abby's and BQ's runs read "pending" from 11-05
+/// 16:19 on because only `session_id` was read. Anything that is not a UUID is no id.
+pub fn conversation_of(v: &Value) -> String {
+    let uuid = |s: &str| s.len() == 36 && s.chars().enumerate().all(|(i, c)| if matches!(i, 8 | 13 | 18 | 23) { c == '-' } else { c.is_ascii_hexdigit() });
+    if let Some(s) = v.get("session_id").and_then(|s| s.as_str()).filter(|s| uuid(s)) { return s.to_string(); }
+    let path = v.get("transcript_path").and_then(|s| s.as_str()).unwrap_or("");
+    path.split('/').collect::<Vec<_>>().windows(2)
+        .find(|w| w[0] == "brain" && uuid(w[1]))
+        .map(|w| w[1].to_string())
+        .unwrap_or_default()
 }
 
 /// #4339 — who a prompt is from. pulse types only WAKE_LINE for a nudge, and
