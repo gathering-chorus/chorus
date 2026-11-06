@@ -6657,6 +6657,17 @@
         "why": "Why the pane could not be read",
         "role": "The role"
       }
+    },
+    "deploy.root_installed": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): the repo root's node_modules did not match its lock, so the land installed the root lock (staged npm ci, swapped in, npm ls passed) before anything else ran (#4915).",
+      "fields": {
+        "target": "Always canonical"
+      }
     }
   }
 }

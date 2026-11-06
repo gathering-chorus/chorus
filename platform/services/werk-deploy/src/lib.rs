@@ -2315,6 +2315,20 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         }
     }
 
+    // #4915 — the repo root's packages (the review and lint tools: dependency-cruiser,
+    // eslint) are what the root lock pins. Only a TS daemon's dir was ever installed,
+    // so the root sat on its 10-10 tree: #4889 added dependency-cruiser and the
+    // architecture review's depcruise was missing in prod (nightly 11-06, exit 127).
+    // A no-op when `npm ls` already passes; a failed install stops the land.
+    match ensure_installed(&canon.to_string_lossy(), &npm_bin()) {
+        Ok(true) => jsonl(home, role, card, trace, "deploy.root_installed", ",\"target\":\"canonical\""),
+        Ok(false) => {}
+        Err(e) => {
+            emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "npm-ci-fail"), ("failureClass", failure_class("npm-ci-fail"))]);
+            return Err(died(home, role, card, trace, "npm-ci-fail", e));
+        }
+    }
+
     // #4889 (Kade 20:07: "one touch") — a card that ships platform/scripts/land-<card>-rows
     // has its store writes applied here, after Jeff's go, in the land: no second ask. The
     // script's own dry run is what the go was shown. A refused write stops the land.

@@ -3391,6 +3391,16 @@ fn main() {
         out
     };
 
+    // #4915 — the rows still live once this pass is done: every served row
+    // name, less the rows this pass deletes. A replace drops an `exercises`
+    // edge to anything else (drop_dead_edges).
+    let gone: std::collections::HashSet<&str> = actions.iter()
+        .filter_map(|a| match a { Action::Delete { path } => Some(path.as_str()), _ => None })
+        .collect();
+    let live_names: std::collections::HashSet<String> = graph.iter()
+        .filter(|g| !gone.contains(g.path.as_str()))
+        .filter_map(|g| g.other.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
+        .collect();
 
     for a in &actions {
         match a {
@@ -3454,7 +3464,7 @@ fn main() {
                 // either. Read from the file, never the folder; silence when
                 // the rules cannot agree, exactly as for a test.
                 owned.extend(place_file(path));
-                let mut fields = merge_row(existing, &owned);
+                let mut fields = chorus_crawl::drop_dead_edges(merge_row(existing, &owned), "exercises", &|n: &str| live_names.contains(n));
                 // the name the door serves for this row, else the one this pass mints
                 let name = served_name_for(&graph, path).unwrap_or_else(|| chorus_crawl::file_row_name(&home_repo, path, !foreign));
                 // The door names the prefix its mint adds; a refusal that names
