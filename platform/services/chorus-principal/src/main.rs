@@ -69,7 +69,7 @@ fn main() {
         // #4345 — one binary. The session lifecycle (on/off/status/up/relogin,
         // and the hooks' seen/seen-write/sweep/project-messages) was chorus-awake;
         // it is this crate's library now, so the verbs run here, not forwarded.
-        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials") => chorus_principal::run(&args),
+        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials" | "undelivered") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
         Some("move") => match args.get(1) { Some(n) => cmd_move(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: move needs a name"); 2 } },
         Some("one-webid") => cmd_one_webid(args.get(1).map(String::as_str).unwrap_or("jeff")),
