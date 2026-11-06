@@ -92,10 +92,10 @@ def verdict(planned, results):
         if want == "deny":
             if got == "NOT-PERM":
                 continue
-            wrong.append(f"{cls}: rows deny, door answered {got} {detail[:80]}".rstrip())
+            wrong.append(f"{cls}: rows deny, door answered {got} {detail}".rstrip())
         elif got != "PASS":
             rows = "rows append (own row)" if want == "append" else "rows allow"
-            wrong.append(f"{cls}: {rows}, door answered {got} {detail[:80]}".rstrip())
+            wrong.append(f"{cls}: {rows}, door answered {got} {detail}".rstrip())
     return wrong
 
 
