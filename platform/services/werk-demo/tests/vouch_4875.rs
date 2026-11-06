@@ -14,7 +14,7 @@ fn gates(result: &str) -> String {
         .map(|g| format!("{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":7,\"trace_id\":\"t\",\"gate\":\"{g}\",\"result\":\"{result}\",\"round\":\"{R}\",\"patch_id\":\"{P}\"}}\n"))
         .collect()
 }
-fn owner() -> String { vouch_line(7, "wren", "owner", R, P, "http://192.168.86.36:3503/shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "") }
+fn owner() -> String { vouch_line(7, "wren", "owner", R, P, "http://192.168.1.36:3503/shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "") }
 fn nav() -> String { vouch_line(7, "kade", "navigator", R, P, "", "", "", "reviewed every slice") }
 
 #[test]
@@ -22,7 +22,7 @@ fn all_gates_green_and_both_vouches_leave_nothing_missing() {
     let w = gates("pass") + &owner() + &nav();
     assert!(vouch_missing(&w, 7, R, P, "wren").is_empty(), "{:?}", vouch_missing(&w, 7, R, P, "wren"));
     let m = jeff_go_message(&w, 7, R, P, "wren", "https://x/go/approvals", "✓ AC1: the brief goes to the owner");
-    for want in ["http://192.168.86.36:3503/shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "wren: I'd click go", "kade: I'd click go", "https://x/go/approvals", "✓ AC1: the brief goes to the owner"] {
+    for want in ["http://192.168.1.36:3503/shown/7", "AC1-3 by demo-order.bats", "AC5 moderator", "wren: I'd click go", "kade: I'd click go", "https://x/go/approvals", "✓ AC1: the brief goes to the owner"] {
         assert!(m.contains(want), "{want} missing from: {m}");
     }
 }
@@ -71,7 +71,7 @@ fn negative_proof_an_older_rounds_passing_gates_do_not_count() {
 #[test]
 fn negative_proof_an_owner_vouch_with_nothing_proven_blocks_the_go() {
     // Kade b1c438aeb (3)
-    let unproven = vouch_line(7, "wren", "owner", R, P, "http://192.168.86.36:3503/shown/7", "  ", "none", "");
+    let unproven = vouch_line(7, "wren", "owner", R, P, "http://192.168.1.36:3503/shown/7", "  ", "none", "");
     let w = gates("pass") + &unproven + &nav();
     assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m.contains("nothing proven")));
 }
@@ -95,7 +95,7 @@ fn negative_proof_a_localhost_show_link_blocks_the_go() {
         let w = gates("pass") + &o + &nav();
         assert!(vouch_missing(&w, 7, R, P, "wren").iter().any(|m| m.contains("not reachable")), "{bad}");
     }
-    for ok in ["http://192.168.86.36:3503/rooms", "https://lightlifeurbangardens.com/clearing/rooms"] {
+    for ok in ["http://192.168.1.36:3503/rooms", "https://lightlifeurbangardens.com/clearing/rooms"] {
         assert!(reachable_link(ok), "{ok}");
     }
 }
@@ -143,7 +143,7 @@ fn the_ac_is_read_by_the_borg_prove_beside_this_werk_demo() {
 #[test]
 fn a_vouch_row_carries_a_real_time() {
     // Kade 09:37: vouch rows stamped "ts":0
-    let l = vouch_line(7, "wren", "owner", R, P, "http://192.168.86.36:3503/x", "p", "", "");
+    let l = vouch_line(7, "wren", "owner", R, P, "http://192.168.1.36:3503/x", "p", "", "");
     assert!(!l.starts_with("{\"ts\":0,"), "{l}");
 }
 
