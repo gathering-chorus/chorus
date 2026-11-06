@@ -63,6 +63,10 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
             };
+            // #4889 (land 11-05) — the lookup itself failed: said as the error it is
+            if c.kind == "test" && body.starts_with("error: ") {
+                return Outcome::Unmeasured(format!("test {}: {}", c.target, body));
+            }
             // #4889 — a skipped case in the test's newest run measured nothing
             if c.kind == "test" && body.trim() == "skip" {
                 return Outcome::Unmeasured(format!("test {}: its newest run skipped a case", c.target));
@@ -324,6 +328,50 @@ pub fn test_logql(target: &str, card: u32) -> String {
         // match is the label filter after json, so 45301 never answers for 4530.
         "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
+}
+
+/// #4889 (land 11-05) — the `Created:` time a `cards view` names (RFC3339). No run of a
+/// card is older, so it starts every Loki window for the card's own runs (not 30 days,
+/// which Loki split into hundreds of sub-queries and refused with 429). Pure.
+pub fn card_created(view: &str) -> Option<String> {
+    view.lines().map(str::trim).find_map(|l| l.strip_prefix("Created:")).map(|v| v.trim().to_string()).filter(|v| v.len() >= 20 && v.ends_with('Z'))
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ` to seconds since the epoch (UTC). Pure.
+pub fn rfc3339_epoch(t: &str) -> Option<u64> {
+    let n = |a: usize, b: usize| t.get(a..b)?.parse::<i64>().ok();
+    let (y, m, d, hh, mm, ss) = (n(0, 4)?, n(5, 7)?, n(8, 10)?, n(11, 13)?, n(14, 16)?, n(17, 19)?);
+    // days from civil (Howard Hinnant)
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    u64::try_from(days * 86400 + hh * 3600 + mm * 60 + ss).ok()
+}
+
+/// #4889 (code review, run 20) — Loki refuses a window wider than its max query length
+/// (30 days by default), so the card's window starts at its creation or 29 days ago,
+/// whichever is later: an old card is still measured from its recent runs. Pure.
+pub fn window_start(created: u64, now: u64) -> u64 {
+    created.max(now.saturating_sub(29 * 86400))
+}
+
+/// #4889 (land 11-05) — one Loki answer: 200 is read for its newest case (None = no
+/// events); any other status is an error, never "no result yet" (a 429 read as no
+/// result held #4889's land twice). Pure.
+pub fn loki_seen(code: &str, body: &str) -> Result<Option<(u128, String)>, String> {
+    if code.trim() == "200" { Ok(latest_case(body)) } else { Err(format!("error: Loki answered {} (unmeasured, not \"no result\")", code.trim())) }
+}
+
+/// #4889 — the card's own answer and main's nightly answer to one test check: an error
+/// in either is the result (said as an error); else the newer of the two.
+pub fn test_seen(own: Result<Option<(u128, String)>, String>, main: Result<Option<(u128, String)>, String>) -> Option<String> {
+    match (own, main) {
+        (Err(e), _) | (_, Err(e)) => Some(e),
+        (Ok(a), Ok(b)) => newer(a, b),
+    }
 }
 
 /// #4536 — the newest result in a Loki query_range answer: "pass" or "fail".
