@@ -12,7 +12,7 @@ import { fetchPeers, startRolesDoorWatch } from './peers';
 import { attributeSender, markAlert, originFor } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution, resolveEnds } from './presence-target';
+import { fetchPresenceResolution, fetchPresenceView, resolveEnds } from './presence-target';
 import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
 import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
@@ -555,6 +555,12 @@ export function createApp(
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
+  // #4895 — where a nudge to this role goes: the one resolution delivery uses (its live
+  // run's Presence). Health checks read it here instead of the retired sessions registry.
+  app.get('/api/where/:role', async (req, res) => {
+    const { resolution: where, reachability } = await fetchPresenceView(req.params.role);
+    res.json({ role: req.params.role, ...where, ...(reachability ? { reachability } : {}), ...(where.kind === 'resolved' ? { pane: where.session.tmux ?? '', tty: where.session.tty } : {}) });
+  });
   // #4560 — actor state derived once in pulse, every surface presents it
   app.get('/api/actor-state', (_req, res) => {
     res.json(
@@ -722,6 +728,15 @@ if (require.main === module) {
   const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
   // #4889 — the machine-lane cooldown is a property (pulse.announce.machine_cooldown_ms)
   worker.watchCooldown();
+  // #4895 — a delivery that failed for good on a dead pane: the principal (the Presence's
+  // only writer) marks it unreachable now. Detached: delivery never waits on it.
+  worker.onUndelivered = (role, pane) => {
+    const bin = process.env.CHORUS_PRINCIPAL_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-principal');
+    const p = spawn(bin, ['undelivered', role, pane], { detached: true, stdio: 'ignore' });
+    p.on('error', (e) => { void emitSpine('presence.undelivered.unwritten', { role, pane, error: e.message }); });
+    p.on('exit', (code) => { if (code !== 0) void emitSpine('presence.undelivered.unwritten', { role, pane, error: `chorus-principal undelivered exited ${String(code)}` }); });
+    p.unref();
+  };
 
   // #3485 — generate the shared secret EAGERLY at boot (not lazily on first
   // request), so the secret file exists before nudge-send sends its first

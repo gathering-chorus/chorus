@@ -125,11 +125,11 @@ setup() {
 }
 
 @test "AC4 NEGATIVE PROOF: session ID extractor rejects bare transcript stem and cross-role session turn push is refused (#4779, #3734)" {
-  run python3 - "$ROOT/platform/services/chorus-hooks/src/shim.rs" <<'PY'
+  run python3 - "$ROOT/platform/services/shared/conversation_id.rs" <<'PY'
 import pathlib, sys
 src = pathlib.Path(sys.argv[1]).read_text()
 if "fn antigravity_session_id" not in src:
-    print("missing antigravity_session_id in shim.rs")
+    print("missing antigravity_session_id in shared/conversation_id.rs (#4895: the one rule the shim and principal include)")
     sys.exit(1)
 if '!= "transcript"' not in src and '!= Some("transcript")' not in src and '.system_generated/logs/' not in src:
     print("antigravity_session_id does not guard against bare 'transcript'")

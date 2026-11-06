@@ -36,10 +36,12 @@ HEALTH_SCRIPT="${CHORUS_ROOT:-$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && p
 # So the precondition is measured against THE DIRECTORY THE SCRIPT WILL READ,
 # not against $HOME — and when the sandbox is in force (the normal case), the
 # assertion is UNMEASURABLE and skips rather than reporting a false red.
+# #4895 — the script asks pulse where each role is (/api/where), not the retired
+# sessions registry; the precondition asks the same place.
 roles_measurable() {
-  local dir="${CHORUS_SESSIONS_DIR:-$HOME/.chorus/sessions}" n=0
+  local n=0
   for r in wren silas kade; do
-    ls "$dir/${r}-"*.json >/dev/null 2>&1 && n=$((n+1))
+    curl -sf --max-time 3 "${PULSE_URL:-http://localhost:3475}/api/where/$r" 2>/dev/null | grep -q '"kind":"resolved"' && n=$((n+1))
   done
   [ "$n" -eq 3 ] || return 1
   command -v tmux >/dev/null 2>&1 || return 1
@@ -65,12 +67,12 @@ terminal_scriptable() {
 # asks (STUB_OSA / STUB_PGREP_RC / STUB_TMUX_PANES); otherwise the real ones run.
 hc_world() {
   W="$BATS_TEST_TMPDIR/hc"
-  mkdir -p "$W/bin" "$W/root/platform/scripts" "$W/sessions" "$W/canary"
+  mkdir -p "$W/bin" "$W/root/platform/scripts" "$W/where" "$W/canary"
   cat <<'JSON' > "$W/roles.json"
 {"data":[{"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"borg-queen","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"}]}
 JSON
   cp "$HEALTH_SCRIPT" "$W/health.sh"
-  printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\nif [[ "$*" == *"/api/actor-state"* ]]; then echo "{\\"actors\\":[{\\"aboutPrincipal\\":\\"principal-wren\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-silas\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-kade\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-borg-queen\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-abby-normal\\",\\"sessions\\":[{\\"live\\":true}]}]}"; fi\n' "$W" > "$W/bin/curl"
+  printf '#!/bin/bash\necho "$*" >> "%s/curl.calls"\n[[ "$*" == *"file://"* ]] && exec /usr/bin/curl "$@"\nif [[ "$*" == *"/api/actor-state"* ]]; then echo "{\\"actors\\":[{\\"aboutPrincipal\\":\\"principal-wren\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-silas\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-kade\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-borg-queen\\",\\"sessions\\":[{\\"live\\":true}]},{\\"aboutPrincipal\\":\\"principal-abby-normal\\",\\"sessions\\":[{\\"live\\":true}]}]}"; fi\n' "$W" > "$W/bin/curl"
   printf '#!/bin/bash\necho "$*" >> "%s/spine.calls"\n' "$W" > "$W/root/platform/scripts/chorus-log"
   if [ -n "${STUB_OSA:-}" ]; then
     # records the AppleScript it was asked to run; answers "<count>::<name>"
@@ -85,14 +87,14 @@ JSON
   chmod +x "$W/bin/"* "$W/root/platform/scripts/chorus-log"
 }
 
-# register <role> <host> [pane] — a live registration (pid = this test process)
+# register <role> <host> [pane] — #4895: where pulse says the role is (/api/where/<role>)
 register() {
-  printf '{"role":"%s","pid":%s,"tty":"/dev/ttys999","host":"%s","tmux":"%s","registered_at":"9999999999"}' \
-    "$1" "$$" "$2" "${3:-}" > "$W/sessions/$1-$$.json"
+  mkdir -p "$W/where"
+  printf '{"role":"%s","kind":"resolved","pane":"%s"}' "$1" "${3:-}" > "$W/where/$1"
 }
 
 run_health() {
-  run env PATH="$W/bin:$PATH" CHORUS_ROOT="$W/root" CHORUS_ROLES_URL="file://$W/roles.json" CHORUS_SESSIONS_DIR="$W/sessions" CANARY_DIR="$W/canary" bash "$W/health.sh"
+  run env PATH="$W/bin:$PATH" CHORUS_ROOT="$W/root" CHORUS_ROLES_URL="file://$W/roles.json" WHERE_URL="file://$W/where" CANARY_DIR="$W/canary" bash "$W/health.sh"
   echo "output: $output"
   [ -f "$W/canary/health.log" ] || { echo "canary health.log does not exist in $W/canary" >&2; return 1; }
 }

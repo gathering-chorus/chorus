@@ -87,6 +87,7 @@ export function toActorRow(a: PulseActor): ActorRow {
     // display filter: live sessions listed, the rest counted (pulse decides live)
     sessions: liveSessionLines(a.sessions || []),
     unmeasured: unmeasuredText(a.unmeasuredSource),
+    reachability: a.reachability,
   };
 }
 

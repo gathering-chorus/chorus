@@ -1,0 +1,62 @@
+#!/usr/bin/env bats
+# @test-type: integration — reads the running pulse and messages.db after the land
+# @domain: messages
+# @needs: machine — reads prod after the land (AC2 check: after); a card run leaves it to borg-prove and the nightly (#4539)
+# @card: #4895 · owner: silas
+# #4895 AC2 — every agent role, Abby and BQ included, is reached at its live pane: pulse
+# resolves it, its delivery Presence reads reachable (written only after a delivery landed
+# on that pane, AC1), and the newest nudge to it in the last day was delivered. Each role runs this from its own account after the land.
+
+PULSE="${PULSE_URL:-http://localhost:3475}"
+# prod's messages.db sits in the main checkout (the werk's .git points at it), never in a werk
+MAIN="$(cd "$BATS_TEST_DIRNAME/../.." && cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+DB="${CHORUS_MESSAGES_DB:-$MAIN/platform/pulse/messages.db}"
+
+# verdict <role> <where-json> <newest-nudge-status>: GREEN, or RED naming what failed
+verdict() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+role, where, last = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    w = json.loads(where)
+except Exception:
+    print(f"RED {role}: where unreadable"); sys.exit(1)
+if w.get("kind") not in ("resolved", "agent"):
+    print(f"RED {role}: pulse resolves {w.get('kind')}"); sys.exit(1)
+if w.get("reachability") != "reachable":
+    print(f"RED {role}: Presence reads {w.get('reachability') or 'no reachability'} (reachable only after a delivery landed there)"); sys.exit(1)
+if last.startswith("unreadable"):
+    print(f"RED {role}: messages.db {last}"); sys.exit(1)
+if last != "delivered":
+    print(f"RED {role}: newest nudge {last or 'none in 24h'}"); sys.exit(1)
+print(f"GREEN {role}: {w.get('kind')} {w.get('pane','')} · newest nudge delivered")
+PY
+}
+
+@test "every agent role resolves to a live address and its newest nudge was delivered" {
+  roles=$(curl -sf --max-time 5 "http://localhost:3360/v1/roles/roles?limit=500" | python3 -c 'import json,sys; print(" ".join(r["name"] for r in json.load(sys.stdin)["data"] if r.get("roleKind")=="agent"))')
+  [ -n "$roles" ] || { echo "UNMEASURED: roles door unreadable"; return 1; }
+  bad=0
+  for r in $roles; do
+    where=$(curl -sf --max-time 5 "$PULSE/api/where/$r" || echo '')
+    last=$(sqlite3 -readonly "$DB" "select delivery_status from messages where type='nudge' and \"to\"='$r' and created_at >= datetime('now','-24 hours') order by id desc limit 1" 2>&1) || last="unreadable: $last"
+    run verdict "$r" "$where" "$last"; echo "$output"
+    [ "$status" -eq 0 ] || bad=1
+  done
+  [ "$bad" -eq 0 ]
+}
+
+@test "negative proof: a dead-pane failure, an offline role or no nudge reads red" {
+  run verdict abby-normal '{"kind":"resolved","pane":"%16","reachability":"unreachable"}' delivered
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"Presence reads unreachable"* ]] || return 1
+  run verdict abby-normal '{"kind":"resolved","pane":"%16","reachability":"reachable"}' failed
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"newest nudge failed"* ]] || return 1
+  run verdict borg-queen '{"kind":"dead"}' delivered
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"resolves dead"* ]] || return 1
+  run verdict wren '{"kind":"resolved","pane":"%9","reachability":"reachable"}' ''
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"none in 24h"* ]] || return 1
+  run verdict silas '{"kind":"resolved","pane":"%3","reachability":"reachable"}' 'unreadable: no such table'
+  [ "$status" -eq 1 ] || return 1; [[ "$output" == *"unreadable"* ]] || return 1
+  run verdict kade '{"kind":"resolved","pane":"%1","reachability":"reachable"}' delivered
+  [ "$status" -eq 0 ] || return 1
+}
