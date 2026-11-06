@@ -11,7 +11,7 @@
  */
 import type { SessionReg, TypedResolution } from './session-registry';
 
-export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string; reachableOver?: string }
+export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string; reachableOver?: string; reachability?: string }
 export interface RunRow { name: string; runEndedAt?: string; startedAt?: string }
 
 /** presenceOf names the run as the API stored it: "<kind>-<run name>"
@@ -30,17 +30,33 @@ function overAgent(p: PresenceRow): boolean {
   return over === 'agent' || over.endsWith('-agent');
 }
 
+// #4362 — only a tmux pane id (%N) is a pane. A run logged in outside tmux
+// stores "-", which tmux reads as "the current pane": every nudge typed into
+// whoever was on screen.
+const paneOf = (p: PresenceRow): string => (/^%\d+$/.test(p.pane ?? '') ? (p.pane as string) : '');
+
+/** The role's Presences of live runs, the one delivery would use first: a live run
+ *  with a real pane wins; then the newest. Shared by delivery and the roster (#4895). */
+function liveCandidates(presences: PresenceRow[], runs: RunRow[], role: string): PresenceRow[] {
+  const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
+  return presences
+    .filter((p) => p.name.startsWith(`${role}-presence-`) && ofLiveRun(p.presenceOf ?? '', live))
+    .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
+}
+
+/** #4895 — what the room shows: the reachability the principal wrote on the Presence
+ *  delivery would use ("reachable" only after a delivery landed there, "unreachable" the
+ *  moment one failed for good), or "offline" when no live run has a Presence. */
+export function reachabilityFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): string {
+  const current = liveCandidates(presences, runs, role)[0];
+  return current ? (current.reachability || 'unknown') : 'offline';
+}
+
 export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): TypedResolution {
   const mine = presences.filter((p) => p.name.startsWith(`${role}-presence-`));
   if (mine.length === 0) return { kind: 'unregistered' };
   const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
-  // #4362 — only a tmux pane id (%N) is a pane. A run logged in outside tmux
-  // stores "-", which tmux reads as "the current pane": every nudge typed into
-  // whoever was on screen. A live run with a real pane wins; then the newest.
-  const paneOf = (p: PresenceRow): string => (/^%\d+$/.test(p.pane ?? '') ? (p.pane as string) : '');
-  const candidates = mine
-    .filter((p) => ofLiveRun(p.presenceOf ?? '', live))
-    .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
+  const candidates = liveCandidates(presences, runs, role);
   if (candidates.length === 0) return { kind: 'dead' };
   // #4424 — a run on another model is reached through the agent supervisor,
   // addressed by the run's own name (the supervisor's session id).

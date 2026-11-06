@@ -145,6 +145,8 @@ function renderActorDetail(a: ActorRow): string {
   return [
     a.pair ? `<div class="meta pair">${a.pair}</div>` : '',
     a.waiting ? `<div class="meta waiting-reason">${a.waiting}</div>` : '',
+    // #4895 — a role a nudge cannot reach says so in the room before anyone has to ask
+    a.reachability === 'unreachable' ? `<div class="meta fail actor-unreachable">unreachable — nudges to ${a.id} will not land</div>` : '',
     a.unmeasured ? `<div class="meta fail actor-unmeasured">unmeasured: ${a.unmeasured}</div>` : '',
   ].join('');
 }

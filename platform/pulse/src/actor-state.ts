@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { reachabilityFromPresence, type PresenceRow, type RunRow } from './presence-target';
 
 export type StateValue =
   | 'building'
@@ -93,6 +94,8 @@ export interface ActorFactInput {
   wipCards?: WipCardFact[];
   reviewCards?: ReviewCardFact[];
   cardSteps?: Record<number, string>;
+  /** #4895 — role → the reachability its delivery Presence carries (presence-target). */
+  reachability?: Record<string, string>;
   unmeasured?: Array<{ source: string; reason: string }>;
 }
 
@@ -111,6 +114,8 @@ export interface RoleStateResult {
   observedAt: string;
   waitingOn?: { on: string; what: string; since: string };
   sessions: Array<{ id: string; channel: string; live: boolean; lastActionAt?: string }>;
+  /** #4895 — reachable | unreachable | unknown | offline, as the Presence says; absent when unread. */
+  reachability?: string;
   unmeasuredSource?: Array<{ source: string; reason: string }>;
 }
 
@@ -536,6 +541,7 @@ function deriveOneActor(
     observedAt,
     waitingOn: stateOutcome.waitingOn,
     sessions: sessionResults,
+    ...(input.reachability && input.reachability[role] ? { reachability: input.reachability[role] } : {}),
     unmeasuredSource: combineUnmeasured(unmeasured, stateOutcome.unmeasuredSource),
   };
 }
@@ -1038,12 +1044,19 @@ export function buildLiveActorFactFetcher(options: {
     const unmeasured: Array<{ source: string; reason: string }> = [];
     const now = new Date();
 
-    const [principals, sessions, wipCards, actionMap] = await Promise.all([
+    const [principals, sessions, wipCards, actionMap, presence] = await Promise.all([
       fetchRolesFact(athenaBase, unmeasured),
       fetchSessionsFact(athenaBase, unmeasured),
       fetchWipCardsFact(apiBase, unmeasured),
       fetchLokiActionFacts(lokiBase, unmeasured),
+      fetchPresenceFact(athenaBase, unmeasured),
     ]);
+    const reachability = presence
+      ? Object.fromEntries(principals.map((p) => {
+          const role = principalToRole(typeof p === 'string' ? p : p.principal);
+          return [role, reachabilityFromPresence(presence.presences, presence.runs, role)];
+        }))
+      : undefined;
 
     const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
     const activePairs = readActivePairsFromDisk(options.opsDir);
@@ -1080,7 +1093,29 @@ export function buildLiveActorFactFetcher(options: {
       wipCards,
       cardSteps,
       owedNudges,
+      reachability,
       unmeasured: unmeasured.length > 0 ? unmeasured : undefined,
     };
   };
+}
+
+/** #4895 — the Presences and runs delivery reads, once per derive; unread is named, never empty. */
+async function fetchPresenceFact(
+  athenaBase: string,
+  unmeasured: Array<{ source: string; reason: string }>
+): Promise<{ presences: PresenceRow[]; runs: RunRow[] } | null> {
+  try {
+    const get = async (p: string): Promise<unknown[]> => {
+      const r = await fetch(`${athenaBase}/v1/identity/${p}?limit=5000`, { signal: AbortSignal.timeout(2000) });
+      if (!r.ok) throw new Error(`${p} answered HTTP ${r.status}`);
+      const d = ((await r.json()) as { data?: unknown }).data;
+      if (!Array.isArray(d)) throw new Error(`${p} answered no data list`);
+      return d;
+    };
+    const [presences, runs] = await Promise.all([get('presences'), get('sessionruns')]);
+    return { presences: presences as PresenceRow[], runs: runs as RunRow[] };
+  } catch (e: unknown) {
+    unmeasured.push({ source: 'athena:identity:presences', reason: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
 }
