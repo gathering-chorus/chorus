@@ -149,6 +149,24 @@ for r in rows if isinstance(rows, list) else []:
 print("UNMET " + pat)' "$1" "$2" "$3"
 }
 
+# #4915 (Silas) — the graphs this owner holds acl:Append on and not acl:Write. Append
+# opens a create only (#4517); on a class with no row owner the update, the delete
+# and the cleanup are all refused, so a create there leaves its probe row in prod
+# every night (111 by 11-06). The manifest's refuseIfNoCleanup decides it: skip.
+APPEND_ONLY="$(curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" 2>/dev/null | python3 -c 'import json,sys
+d=json.load(sys.stdin); rows=d.get("data",d) if isinstance(d,dict) else d
+me=[r for r in rows if r.get("agent")=="principal-"+sys.argv[1]]
+w={r["accessTo"] for r in me if r.get("mode","").endswith("#Write")}
+print(" ".join(sorted({r["accessTo"] for r in me if r.get("mode","").endswith("#Append")}-w)))' "$OWNER" 2>/dev/null)"
+
+# 0 when <manifest> names no ownedBy field and <graph> is one this owner may only append to
+append_only_ownerless() {  # <manifest> <graph>
+  [ -n "$2" ] && case " $APPEND_ONLY " in *" $2 "*) ;; *) return 1 ;; esac || return 1
+  python3 -c 'import json,sys
+f=[x.get("field") for x in json.load(open(sys.argv[1])).get("requiredFields") or []]
+sys.exit(1 if "ownedBy" in f else 0)' "$1"
+}
+
 pass=0; fail=0; unmeasured=0
 echo "owner: $OWNER  api: $API  run: ${RUN_ID:-manifest-subject}"
 printf '%-22s %-8s %s\n' CLASS RESULT DETAIL
@@ -162,6 +180,13 @@ for CLASS in $CLASSES; do
   M="$WORK/$CLASS.json"
   if ! "$GEN" generate-tests --class "$CLASS" >"$M" 2>/dev/null || [ ! -s "$M" ]; then
     emit "$CLASS" UNMEASURED "the generator emitted no manifest"
+    unmeasured=$((unmeasured+1)); continue
+  fi
+  GRAPH="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1])); print(next((r.split(" ",1)[1] for r in d["unit"]["routes"] if r.startswith("GET ") and ":name" not in r and not r.endswith("/batch")), ""))' "$M" 2>/dev/null)"
+  GRAPH="$([ -n "$GRAPH" ] && curl -sf --max-time 20 "$API$GRAPH?limit=1" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("servedFrom",""))' 2>/dev/null)"
+  if append_only_ownerless "$M" "$GRAPH"; then
+    emit "$CLASS" NOT-PERM "append-only on an ownerless class: a create would leave a row (refuseIfNoCleanup) — $GRAPH"
     unmeasured=$((unmeasured+1)); continue
   fi
 

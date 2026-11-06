@@ -89,6 +89,8 @@ def verdict(planned, results):
             continue  # no principal may write it, either way; not a scope question
         if got == "NOT-PERM" and '"deploy-only"' in detail:
             continue  # #4661 — written only by the model deploy (#4220): not a scope question either
+        if got == "NOT-PERM" and detail.startswith("append-only on an ownerless class") and want in ("allow", "append"):
+            continue  # #4915 — Append opens a create only; with no row owner nothing could clean it up
         if want == "deny":
             if got == "NOT-PERM":
                 continue
