@@ -122,8 +122,8 @@ export function sharedRead<T>(
 export async function readAlerts(base = process.env.GRAFANA_ALERTS_URL || 'http://127.0.0.1:3100/api/alertmanager/grafana'): Promise<Array<{ name: string; label?: string }>> {
   const res = await fetch(`${base}/api/v2/alerts?active=true`, { signal: AbortSignal.timeout(4000) });
   if (!res.ok) throw new Error(`alerts stream: HTTP ${res.status}`);
-  const body = await res.json() as Array<{ labels?: { alertname?: unknown; __alert_rule_uid__?: unknown }; annotations?: { summary?: unknown } }>;
-  return (body ?? []).map(a => ({
+  const body = (await res.json() || []) as Array<{ labels?: { alertname?: unknown; __alert_rule_uid__?: unknown }; annotations?: { summary?: unknown } }>;
+  return body.map(a => ({
     name: typeof a.labels?.__alert_rule_uid__ === 'string' ? a.labels.__alert_rule_uid__ : (typeof a.labels?.alertname === 'string' ? a.labels.alertname : ''),
     label: typeof a.annotations?.summary === 'string' ? a.annotations.summary : (typeof a.labels?.alertname === 'string' ? a.labels.alertname : ''),
   }));
