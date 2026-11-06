@@ -2,6 +2,7 @@
 # @test-type: integration — reads the newest 03:00 nightly's own suite lines; runs nothing
 # @domain: tests
 # @card: #4915 · owner: kade
+# @needs: machine — reads prod after the land (AC check: after); a card run leaves it to borg-prove and the nightly (#4539)
 # AC4 (checked after the land): the nightly reports 0 red suites. Jeff 11-06 06:13:
 # "Should we mob all of our test errors and get things clean?" The verdict is the
 # nightly's own `nightly-unit|<kind>|<suite>|<status>|<summary>` lines in its run log.
