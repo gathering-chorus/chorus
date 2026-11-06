@@ -38,3 +38,17 @@ fn the_window_starts_at_the_cards_creation() {
     assert_eq!(card_created(view).as_deref(), Some("2026-11-04T22:51:49Z"));
     assert_eq!(card_created("no header"), None, "NEGATIVE PROOF: no Created line, no window");
 }
+
+#[test]
+fn an_old_card_is_asked_for_29_days_at_most() {
+    use borg_prove::{rfc3339_epoch, window_start};
+    // 2026-11-04T22:51:49Z, checked against `date -u -j -f`
+    assert_eq!(rfc3339_epoch("2026-11-04T22:51:49Z"), Some(1793832709));
+    assert_eq!(rfc3339_epoch("1970-01-01T00:00:00Z"), Some(0));
+    let now = 1793930000;
+    let fresh = now - 86400;
+    assert_eq!(window_start(fresh, now), fresh, "a new card: from its creation");
+    // NEGATIVE PROOF (code review, run 20): a card from August is not asked for 70+ days
+    let august = rfc3339_epoch("2026-08-24T12:00:00Z").unwrap();
+    assert_eq!(window_start(august, now), now - 29 * 86400);
+}

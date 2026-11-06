@@ -337,6 +337,27 @@ pub fn card_created(view: &str) -> Option<String> {
     view.lines().map(str::trim).find_map(|l| l.strip_prefix("Created:")).map(|v| v.trim().to_string()).filter(|v| v.len() >= 20 && v.ends_with('Z'))
 }
 
+/// `YYYY-MM-DDTHH:MM:SSZ` to seconds since the epoch (UTC). Pure.
+pub fn rfc3339_epoch(t: &str) -> Option<u64> {
+    let n = |a: usize, b: usize| t.get(a..b)?.parse::<i64>().ok();
+    let (y, m, d, hh, mm, ss) = (n(0, 4)?, n(5, 7)?, n(8, 10)?, n(11, 13)?, n(14, 16)?, n(17, 19)?);
+    // days from civil (Howard Hinnant)
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    u64::try_from(days * 86400 + hh * 3600 + mm * 60 + ss).ok()
+}
+
+/// #4889 (code review, run 20) — Loki refuses a window wider than its max query length
+/// (30 days by default), so the card's window starts at its creation or 29 days ago,
+/// whichever is later: an old card is still measured from its recent runs. Pure.
+pub fn window_start(created: u64, now: u64) -> u64 {
+    created.max(now.saturating_sub(29 * 86400))
+}
+
 /// #4889 (land 11-05) — one Loki answer: 200 is read for its newest case (None = no
 /// events); any other status is an error, never "no result yet" (a 429 read as no
 /// result held #4889's land twice). Pure.

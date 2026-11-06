@@ -74,8 +74,9 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
                 let (body, code) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
                 borg_prove::loki_seen(code, body)
             };
-            let own = match card_view(card).as_deref().and_then(borg_prove::card_created) {
-                Some(created) => ask(test_logql(&c.target, card), format!("start={created}")),
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+            let own = match card_view(card).as_deref().and_then(borg_prove::card_created).as_deref().and_then(borg_prove::rfc3339_epoch) {
+                Some(created) => ask(test_logql(&c.target, card), format!("start={}000000000", borg_prove::window_start(created, now))),
                 None => Err(format!("error: #{card}'s Created time is not readable (unmeasured)")),
             };
             let main = match land_time(card) {
