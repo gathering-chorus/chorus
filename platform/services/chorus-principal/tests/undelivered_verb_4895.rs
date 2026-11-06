@@ -41,4 +41,5 @@ fn negative_proof_an_unlisted_verb_never_reaches_the_arm() {
     let (code, err) = run("unlisted", &["Undelivered_x", "abby-normal"]);
     assert_eq!(code, 2, "{err}");
     assert!(!err.contains("undelivered <role> <pane %N>"), "{err}");
+    assert!(!err.contains("REFUSED"), "an unlisted non-name verb must never reach login: {err}");
 }
