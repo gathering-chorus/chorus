@@ -73,3 +73,13 @@ build() {
   grep -q 'CARGO_TARGET_DIR", target.as_str()' "$ROOT/platform/services/werk-build/src/lib.rs" \
     || { echo "werk-build no longer pins the werk crate's own target dir"; return 1; }
 }
+
+@test "a crate inside a werk keeps its own target/ even when the caller passes nothing (the installed werk-build)" {
+  W="$BATS_TEST_TMPDIR/chorus-werk/kade-1/crate"; mkdir -p "$W"
+  unset CARGO_TARGET_DIR
+  run env PATH="$S/bin:$PATH" BUILD_SKIP_INSTALL=1 CHORUS_HOME="$S" \
+    bash "$ROOT/platform/scripts/build-signed.sh" "$W" com.test.fake fake-bin
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [ -x "$W/target/release/fake-bin" ] || { ls -R "$W/target" | head; return 1; }
+}

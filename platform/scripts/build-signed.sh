@@ -127,7 +127,13 @@ fi
 # never got: canonical's shared target/ held a chorus-borg-queen 0644 libsqlite3-sys
 # out/bindgen.rs (10-30) that no other account could overwrite, so every build here
 # exited 101 for the nightly. The installed binary is ~/.chorus/bin's (bin-install below).
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$crate_dir/target/$(id -un)}"
+# A werk is one account's tree, and werk-deploy reads its <crate>/target/release; only
+# the shared checkout builds per account. Decided here, not by the caller: a land runs
+# the INSTALLED werk-build with this card's build-signed (cicd run 3, 11-06 07:35).
+case "$(cd "$crate_dir" && pwd -P)" in
+  */chorus-werk/*) export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$crate_dir/target}" ;;
+  *)               export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$crate_dir/target/$(id -un)}" ;;
+esac
 echo "build-signed: cargo build --release in $crate_dir (target $CARGO_TARGET_DIR)"
 (cd "$crate_dir" && cargo build --release)
 
