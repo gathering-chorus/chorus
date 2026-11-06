@@ -86,6 +86,12 @@ export async function resolveEnds(to: string, from?: string): Promise<{ toRes: T
 }
 
 export async function fetchPresenceResolution(role: string, base = process.env.ATHENA_MAKE_URL || 'http://localhost:3360'): Promise<TypedResolution | { kind: 'unread'; why: string }> {
+  return (await fetchPresenceView(role, base)).resolution;
+}
+
+/** #4895 — one read of both collections answers where a role is and how reachable it is
+ *  (/api/where serves both; AC2's check needs reachable, not only a resolved pane). */
+export async function fetchPresenceView(role: string, base = process.env.ATHENA_MAKE_URL || 'http://localhost:3360'): Promise<{ resolution: TypedResolution | { kind: 'unread'; why: string }; reachability?: string }> {
   try {
     const get = async (p: string): Promise<unknown[]> => {
       const r = await fetch(`${base}/v1/identity/${p}?limit=5000`, { signal: AbortSignal.timeout(2000) });
@@ -94,9 +100,12 @@ export async function fetchPresenceResolution(role: string, base = process.env.A
       return body.data ?? [];
     };
     const [presences, runs] = await Promise.all([get('presences'), get('sessionruns')]);
-    return resolveFromPresence(presences as PresenceRow[], runs as RunRow[], role);
+    return {
+      resolution: resolveFromPresence(presences as PresenceRow[], runs as RunRow[], role),
+      reachability: reachabilityFromPresence(presences as PresenceRow[], runs as RunRow[], role),
+    };
   } catch (e) {
-    return { kind: 'unread', why: e instanceof Error ? e.message : String(e) };
+    return { resolution: { kind: 'unread', why: e instanceof Error ? e.message : String(e) } };
   }
 }
 

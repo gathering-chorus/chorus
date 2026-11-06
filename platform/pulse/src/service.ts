@@ -12,7 +12,7 @@ import { fetchPeers, startRolesDoorWatch } from './peers';
 import { attributeSender, markAlert, originFor } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution, resolveEnds } from './presence-target';
+import { fetchPresenceResolution, fetchPresenceView, resolveEnds } from './presence-target';
 import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
 import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
@@ -558,8 +558,8 @@ export function createApp(
   // #4895 — where a nudge to this role goes: the one resolution delivery uses (its live
   // run's Presence). Health checks read it here instead of the retired sessions registry.
   app.get('/api/where/:role', async (req, res) => {
-    const where = await fetchPresenceResolution(req.params.role);
-    res.json({ role: req.params.role, ...where, ...(where.kind === 'resolved' ? { pane: where.session.tmux ?? '', tty: where.session.tty } : {}) });
+    const { resolution: where, reachability } = await fetchPresenceView(req.params.role);
+    res.json({ role: req.params.role, ...where, ...(reachability ? { reachability } : {}), ...(where.kind === 'resolved' ? { pane: where.session.tmux ?? '', tty: where.session.tty } : {}) });
   });
   // #4560 — actor state derived once in pulse, every surface presents it
   app.get('/api/actor-state', (_req, res) => {

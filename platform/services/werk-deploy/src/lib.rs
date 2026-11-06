@@ -1682,6 +1682,11 @@ fn deploy_ts_daemon_canonical(
         return Err(died(home, role, card, trace, "smoke-timeout", format!("{} smoke failed after deploy: {}", name, e)));
     }
     if let Err(why) = restart_verdict(before, service_pid(&svc), kicked.as_ref().err().map(String::as_str)) {
+        // the old process still runs: put the disk back to match it, as the npm failures do
+        if Path::new(&prev).is_dir() {
+            let _ = fs::remove_dir_all(&dist);
+            let _ = fs::rename(&prev, &dist);
+        }
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "not-restarted"), ("failureClass", failure_class("not-restarted"))]);
         // Kade's review: a land run from a role account kickstarts in ITS gui domain, where
         // the owner's agent is not loaded; the domain is named so that cause reads at once
