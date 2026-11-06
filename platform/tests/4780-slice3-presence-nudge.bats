@@ -57,6 +57,18 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   grep -q "session.presence.retired wren" "$T/spine.log"
 }
 
+@test "#4895: a Presence write the door cannot read first is skipped and named, never silent" {
+  run "$SCRIPT" on wren
+  touch "$T/presence-door-down"
+  run "$SCRIPT" off wren
+  grep -q "presence.door.unread wren" "$T/spine.log" || { cat "$T/spine.log"; return 1; }
+  # NEGATIVE PROOF: with the door answering, no such event
+  rm -f "$T/presence-door-down" "$T/spine.log"
+  run "$SCRIPT" on wren
+  run "$SCRIPT" off wren
+  ! grep -q "presence.door.unread" "$T/spine.log" || return 1
+}
+
 @test "NEGATIVE PROOF: a retired presence does not stay reachable or unknown" {
   run "$SCRIPT" on wren
   run "$SCRIPT" off wren

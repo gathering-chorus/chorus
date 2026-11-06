@@ -6635,6 +6635,19 @@
         "role": "The role"
       }
     },
+    "presence.door.unread": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal skipped a Presence write because the door's current row could not be read first (a write never puts a stale cached copy back; #4895).",
+      "fields": {
+        "presence": "The Presence row name",
+        "why": "Why the door's row could not be read",
+        "role": "The role"
+      }
+    },
     "presence.undelivered.unwritten": {
       "producer": "pulse",
       "category": "fact",

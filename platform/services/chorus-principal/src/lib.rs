@@ -1383,10 +1383,18 @@ fn row_path(ctx: &Ctx, role: &str, kind: &str) -> PathBuf { PathBuf::from(&ctx.i
 /// are taken from the door; an unreadable door writes nothing (never a guess).
 fn presence_now(ctx: &Ctx, role: &str) -> Option<Value> {
     let cached = read_row(ctx, role, "presence")?;
-    let url = format!("{}/v1/identity/presences/{}", ctx.api, row_name(&cached));
-    let body = door(ctx, &["-sf", "--max-time", "3", &url]).ok()?;
-    let live: Value = serde_json::from_str(&body).ok()?;
-    rows::with_door_presence(cached, live.get("data")?)
+    let name = row_name(&cached);
+    let url = format!("{}/v1/identity/presences/{}", ctx.api, name);
+    let read = door(ctx, &["-sf", "--max-time", "3", &url])
+        .and_then(|b| serde_json::from_str::<Value>(&b).map_err(|e| format!("not JSON: {e}")))
+        .and_then(|v| v.get("data").cloned().ok_or_else(|| "no data".to_string()))
+        .and_then(|d| rows::with_door_presence(cached, &d).ok_or_else(|| "data is not a row".to_string()));
+    // code review (run 6): a write skipped because the door's row could not be read says so,
+    // as the PUT it replaces did (session.row.failed), never silently
+    read.map_err(|why| {
+        eprintln!("chorus-principal: {role}'s Presence {name} not written: the door's current row could not be read ({why})");
+        ctx.spine(&["presence.door.unread", role, &format!("presence={name}"), &format!("why={why}")]);
+    }).ok()
 }
 
 fn read_row(ctx: &Ctx, role: &str, kind: &str) -> Option<Value> { fs::read_to_string(row_path(ctx, role, kind)).ok().and_then(|t| serde_json::from_str(&t).ok()) }
@@ -1912,7 +1920,7 @@ fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
 /// #4895 — a delivery to the role's pane failed for good: its Presence reads unreachable
 /// now, not at the next sweep, and says so on the spine.
 fn undelivered(ctx: &Ctx, role: &str, pane: &str) -> i32 {
-    let Some(p) = presence_now(ctx, role) else { eprintln!("chorus-principal: no presence for {role}"); return 1 };
+    let Some(p) = presence_now(ctx, role) else { return 1 };
     match rows::undelivered_presence(p, pane) {
         None => 0,
         Some(np) => {
