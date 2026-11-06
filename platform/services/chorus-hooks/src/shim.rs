@@ -169,27 +169,10 @@ fn enrich_stop_prompt_response(input: String) -> String {
     chorus_hooks::reply_delivery::enrich_stop_prompt_response(input)
 }
 
-/// #4785 — Extract the conversation UUID from an Antigravity transcript path
-/// (`.../.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/transcript.jsonl`),
-/// refusing literal `"transcript"` / `"transcript_full"` file stems so turns never
-/// collide on `session_id = "transcript"`.
-fn antigravity_session_id(path: &str) -> Option<String> {
-    let p = std::path::Path::new(path.trim());
-    let stem = p.file_stem()?.to_str()?;
-    if path.contains(".system_generated/logs/") || stem == "transcript" || stem == "transcript_full" {
-        let logs = p.parent()?;
-        let sys = logs.parent()?;
-        let conv = sys.parent()?.file_name()?.to_str()?;
-        if !conv.is_empty() && conv != "transcript" && conv != "transcript_full" && conv != ".system_generated" && conv != "logs" {
-            return Some(conv.to_string());
-        }
-        return None;
-    }
-    if !stem.is_empty() && stem != "transcript" && stem != "transcript_full" {
-        return Some(stem.to_string());
-    }
-    None
-}
+// #4785 / #4895 — the conversation id rule lives once, in shared/ (chorus-principal's
+// `seen` includes the same file).
+mod conv_id { include!("../../shared/conversation_id.rs"); }
+use conv_id::{antigravity_session_id, conversation_id};
 
 /// #4779 / #4785 — Pure builder for verified session turn push payload.
 fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json::Value> {
@@ -207,18 +190,10 @@ fn build_session_turn_payload(endpoint: &str, input: &str) -> Option<serde_json:
     {
         return None;
     }
-    let session_id = json
-        .get("chorus_session_id")
-        .or_else(|| json.get("session_id"))
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty() && *s != "transcript" && *s != "transcript_full")
-        .map(str::to_string)
-        .or_else(|| {
-            json.get("transcript_path")
-                .and_then(|v| v.as_str())
-                .and_then(antigravity_session_id)
-        });
+    let session_id = conversation_id(
+        json.get("chorus_session_id").or_else(|| json.get("session_id")).and_then(|v| v.as_str()),
+        json.get("transcript_path").and_then(|v| v.as_str()),
+    );
     let source = json
         .get("runtime")
         .and_then(|v| v.as_str())

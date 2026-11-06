@@ -30,12 +30,13 @@ fn the_pending_run_takes_the_agy_conversation() {
 }
 
 // NEGATIVE PROOF (#3734): a turn with no id anywhere writes nothing (the run stays
-// pending, never a made-up id), and a path without a brain/<uuid> folder is no id.
+// pending, never a made-up id). The rule is shared/conversation_id.rs, the one the
+// chorus-hooks shim includes (Kade's review: one path, not a copy).
 #[test]
 fn negative_proof_no_id_is_never_invented() {
     assert_eq!(conversation_of(&json!({"session_id": "transcript"})), "");
     assert_eq!(conversation_of(&json!({"transcript_path": "/tmp/transcript.jsonl"})), "");
-    assert_eq!(conversation_of(&json!({"transcript_path": "/x/brain/not-a-uuid/logs/transcript.jsonl"})), "");
+    assert_eq!(conversation_of(&json!({"session_id": "transcript_full", "transcript_path": ""})), "");
     let run = json!({"name": "abby-normal-run-x", "conversationId": "pending"});
     assert!(with_conversation(run, "").is_none());
 }
