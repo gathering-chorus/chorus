@@ -58,21 +58,31 @@ fn probe(c: &Check, base: &str, card: u32) -> Seen {
         }
         "sparql" => sparql(&c.target, "application/sparql-results+json"),
         "test" => {
-            // #4536 — the latest result of the test, from its case events in
-            // Loki (card runs and the nightly both log there; TestResult rows
-            // are no longer written), from this card's own runs only. No event in
-            // 30 days → None → UNMEASURED.
+            // #4536 — the latest result of the test, from its case events in Loki (card
+            // runs and the nightly both log there), from this card's own runs, and main's
+            // nightly from the land on (#4824).
+            // #4889 (land 11-05) — the card's window starts at its creation, never 30 days
+            // back, and a Loki answer that is not 200 is an error, not "no result yet".
             let loki = env("LOKI_URL", "http://127.0.0.1:3102");
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
             let url = format!("{loki}/loki/api/v1/query_range");
-            let (start, end) = (format!("start={}000000000", now - 30 * 86400), format!("end={now}000000000"));
-            let ask = |q: String, start: String| curl(&["-G", &url, "--data-urlencode", &format!("query={q}"), "--data-urlencode", &start,
-                "--data-urlencode", &end, "--data-urlencode", &format!("limit={}", borg_prove::CASE_LIMIT), "--data-urlencode", "direction=backward"]);
-            let own = ask(test_logql(&c.target, card), start).and_then(|b| latest_case(&b));
-            // #4824 — and main's nightly from the land on: a test the diff does not touch never runs in the card's runs
-            let main = land_time(card).and_then(|t| ask(test_logql_main(&c.target), format!("start={t}000000000")))
-                .and_then(|b| latest_case(&b));
-            newer(own, main)
+            let ask = |q: String, start: String| -> Result<Option<(u128, String)>, String> {
+                let out = Command::new("curl").args(["-s", "--max-time", "60", "-G", &url, "--data-urlencode", &format!("query={q}"),
+                    "--data-urlencode", &start, "--data-urlencode", &format!("limit={}", borg_prove::CASE_LIMIT),
+                    "--data-urlencode", "direction=backward", "-w", "\n%{http_code}"]).output()
+                    .map_err(|e| format!("error: Loki not asked: {e}"))?;
+                let text = String::from_utf8_lossy(&out.stdout).into_owned();
+                let (body, code) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
+                borg_prove::loki_seen(code, body)
+            };
+            let own = match card_view(card).as_deref().and_then(borg_prove::card_created) {
+                Some(created) => ask(test_logql(&c.target, card), format!("start={created}")),
+                None => Err(format!("error: #{card}'s Created time is not readable (unmeasured)")),
+            };
+            let main = match land_time(card) {
+                Some(t) => ask(test_logql_main(&c.target), format!("start={t}000000000")),
+                None => Ok(None),
+            };
+            borg_prove::test_seen(own, main)
         }
         "crawl" => {
             // #4824 — the crawl's row for the class, only once the crawl has reached the land
@@ -109,13 +119,15 @@ fn checks(card: u32) -> Vec<Check> {
 
 /// The card's description as the board holds it (`cards view`), cut before
 /// the board's own fields so a comment's checkbox is never read as an AC.
-fn card_text(card: u32) -> Option<String> {
+/// The whole `cards view` (its header lines hold Created:).
+fn card_view(card: u32) -> Option<String> {
     let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
     let out = Command::new("bash").arg(&cards).args(["view", &card.to_string()]).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(desc_of(&String::from_utf8_lossy(&out.stdout)))
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn card_text(card: u32) -> Option<String> {
+    card_view(card).map(|t| desc_of(&t))
 }
 
 /// The description part of a `cards view` (between `  Desc:` and `  Domains:`);

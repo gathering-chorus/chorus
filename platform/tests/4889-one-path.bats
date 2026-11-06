@@ -5,6 +5,8 @@
 # Jeff 2026-11-04 18:21: "one test run · one code review · one architecture and
 # quality review · prove in prod", plus his go. Nothing else between push and land.
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+# the workflows read; 4889-one-path-after-land.bats points this at main's after the land
+PIPELINES="${PIPELINES:-$ROOT/platform/pipelines}"
 
 # one line per proof step present in the workflows under DIR
 steps() {
@@ -30,13 +32,14 @@ jeff go
 prove in prod"
 
 @test "AC2: a card's proof path is exactly Jeff's: one test run, one code review, one architecture and quality review, prove in prod, his go" {
-  got="$(steps "$ROOT/platform/pipelines")"
+  got="$(steps "$PIPELINES")"
   [ "$got" = "$WANT" ] || { echo "got:"; echo "$got"; return 1; }
 }
 
-@test "AC2 negative proof: today's main, with the old layers, is not Jeff's path" {
+@test "AC2 negative proof: the same workflows with the old layers planted back are not Jeff's path" {
   d="$BATS_TEST_TMPDIR/p"; mkdir -p "$d"
-  for f in pair cicd demo cicd-go cicd-land; do git -C "$ROOT" show "origin/main:platform/pipelines/$f.yaml" > "$d/$f.yaml"; done
+  for f in pair cicd demo cicd-go cicd-land; do cp "$PIPELINES/$f.yaml" "$d/$f.yaml"; done
+  printf '  - name: skill-werk-demo-gate-product\n  - name: skill-werk-demo-session-smoke\n' >> "$d/demo.yaml"
   got="$(steps "$d")"
   [ "$got" != "$WANT" ] || return 1
   [[ "$got" == *"gate product"* && "$got" == *"demo smoke"* ]] || { echo "$got"; return 1; }

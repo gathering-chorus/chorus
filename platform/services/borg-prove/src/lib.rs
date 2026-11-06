@@ -63,6 +63,10 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
             };
+            // #4889 (land 11-05) — the lookup itself failed: said as the error it is
+            if c.kind == "test" && body.starts_with("error: ") {
+                return Outcome::Unmeasured(format!("test {}: {}", c.target, body));
+            }
             // #4889 — a skipped case in the test's newest run measured nothing
             if c.kind == "test" && body.trim() == "skip" {
                 return Outcome::Unmeasured(format!("test {}: its newest run skipped a case", c.target));
@@ -324,6 +328,29 @@ pub fn test_logql(target: &str, card: u32) -> String {
         // match is the label filter after json, so 45301 never answers for 4530.
         "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
+}
+
+/// #4889 (land 11-05) — the `Created:` time a `cards view` names (RFC3339). No run of a
+/// card is older, so it starts every Loki window for the card's own runs (not 30 days,
+/// which Loki split into hundreds of sub-queries and refused with 429). Pure.
+pub fn card_created(view: &str) -> Option<String> {
+    view.lines().map(str::trim).find_map(|l| l.strip_prefix("Created:")).map(|v| v.trim().to_string()).filter(|v| v.len() >= 20 && v.ends_with('Z'))
+}
+
+/// #4889 (land 11-05) — one Loki answer: 200 is read for its newest case (None = no
+/// events); any other status is an error, never "no result yet" (a 429 read as no
+/// result held #4889's land twice). Pure.
+pub fn loki_seen(code: &str, body: &str) -> Result<Option<(u128, String)>, String> {
+    if code.trim() == "200" { Ok(latest_case(body)) } else { Err(format!("error: Loki answered {} (unmeasured, not \"no result\")", code.trim())) }
+}
+
+/// #4889 — the card's own answer and main's nightly answer to one test check: an error
+/// in either is the result (said as an error); else the newer of the two.
+pub fn test_seen(own: Result<Option<(u128, String)>, String>, main: Result<Option<(u128, String)>, String>) -> Option<String> {
+    match (own, main) {
+        (Err(e), _) | (_, Err(e)) => Some(e),
+        (Ok(a), Ok(b)) => newer(a, b),
+    }
 }
 
 /// #4536 — the newest result in a Loki query_range answer: "pass" or "fail".
