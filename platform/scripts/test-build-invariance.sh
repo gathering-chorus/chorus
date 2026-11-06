@@ -51,6 +51,9 @@ case "$TARGET" in
     ;;
 esac
 
+# #4915 — clean and build in the same per-account target dir build-signed builds into,
+# so the clean really clears what the build reuses
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$CRATE_DIR/target/$(id -un)}"
 COMMIT=$(git -C "$CHORUS_HOME" rev-parse --short HEAD)
 echo "test-build-invariance: target=$TARGET commit=$COMMIT"
 
