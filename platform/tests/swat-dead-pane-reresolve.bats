@@ -48,7 +48,8 @@ fn_body() { awk -v f="fn $2(" 'index($0,f){p=1} p{print} p&&/^}/{exit}' "$1"; }
 
 @test "the pane a runtime is found in is written to its Presence (measured 11-05: %14 recorded, agy in %15)" {
   body="$(fn_body "$ROOT/platform/services/chorus-principal/src/lib.rs" register_from_pane_matching)"
-  [[ "$body" == *'read_row(ctx, role, "presence")'*'repane(ctx, role, p, &pane, &tty)'* ]] || { echo "$body"; return 1; }
+  # #4895 — the Presence a write starts from is the door's current row (presence_now), not a cached copy
+  [[ "$body" == *'presence_now(ctx, role)'*'repane(ctx, role, p, &pane, &tty)'* ]] || { echo "$body"; return 1; }
 }
 
 @test "negative proof: a registration that writes only the registry file is caught" {
