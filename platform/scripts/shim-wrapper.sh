@@ -17,8 +17,11 @@ SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
 if [ -z "$SHIM" ] || [ ! -x "$SHIM" ]; then
   SHIM="$HOME/.chorus/bin/chorus-hook-shim"
 fi
+# #4915 — no target/release fallback: build-signed builds per account now, so that
+# path is no account's install; a missing deploy says so instead of running a stale build
 if [ ! -x "$SHIM" ]; then
-  SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  echo "shim-wrapper: no installed chorus-hook-shim (PATH or ~/.chorus/bin)" >&2
+  exit 127
 fi
 CMD="$(basename "$0")"
 LOGFILE="${HOME}/Library/Logs/Chorus/shim-wrapper.log"

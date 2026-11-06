@@ -64,3 +64,12 @@ build() {
   echo "$output"
   [ "$status" -eq 0 ] || return 1
 }
+
+@test "a werk build (werk-build passes CARGO_TARGET_DIR=<crate>/target) lands where werk-deploy reads: <crate>/target/release" {
+  CARGO_TARGET_DIR="$S/crate/target" build
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [ -x "$S/crate/target/release/fake-bin" ] || return 1
+  grep -q 'CARGO_TARGET_DIR", target.as_str()' "$ROOT/platform/services/werk-build/src/lib.rs" \
+    || { echo "werk-build no longer pins the werk crate's own target dir"; return 1; }
+}

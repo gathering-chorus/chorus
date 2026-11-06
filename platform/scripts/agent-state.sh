@@ -434,7 +434,6 @@ cmd_orphans() {
   # #2734); pre-#2823 only the build-cache path was checked, missing orphans
   # launched from the deploy location.
   local SOCKET_MAP=(
-    "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks:hooks"
     "/Users/jeffbridwell/.chorus/bin/chorus-hooks:hooks"
   )
   local bin name
