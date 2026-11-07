@@ -33,7 +33,7 @@ export function attributeSender(from: unknown, to: unknown, owner: unknown, acto
   const t = typeof to === 'string' ? to.trim() : '';
   const isActor = (x: string) => x !== '' && (x === 'jeff' || actors.includes(x));
   if (isActor(f)) return { kind: 'actor', from: f };
-  if ((MACHINE_SENDERS as readonly string[]).includes(f)) {
+  if (isMachineSender(f)) {
     const o = typeof owner === 'string' ? owner.trim() : '';
     const who = isActor(o) ? o : isActor(t) ? t : '';
     if (who) return { kind: 'alert', from: who, source: f };

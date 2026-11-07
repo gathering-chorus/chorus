@@ -238,7 +238,6 @@ async function admitNudge(body: { class?: unknown; expects?: unknown; target_ses
   return { ...readEnvelope(body, from, peers), targetSessionId };
 }
 
-/** #4432 — the peer set, or the reason the roles door could not give it (logged). */
 // #4916 — a machine's alert does not ride on the roles door. When the door
 // cannot be read, the alert's recipient stands as its owner; delivery still
 // fails loud on a role with no pane. On 2026-11-06 the door's own alarm died
@@ -250,6 +249,7 @@ async function actorsFor(from: unknown, to: unknown): Promise<string[] | string>
   return actors;
 }
 
+/** #4432 — the peer set, or the reason the roles door could not give it (logged). */
 async function peersOrRefusal(from: string, to: string): Promise<string[] | string> {
   try { return await fetchPeers(); }
   catch (e) {

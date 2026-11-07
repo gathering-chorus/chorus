@@ -18,6 +18,11 @@ jest.mock('./peers', () => ({
 }));
 
 describe('#4916 roles door alert reaches owner without using the door', () => {
+  const allowBefore = process.env.PULSE_ALLOW_DIRECT_POST;
+  afterAll(() => {
+    if (allowBefore === undefined) delete process.env.PULSE_ALLOW_DIRECT_POST;
+    else process.env.PULSE_ALLOW_DIRECT_POST = allowBefore;
+  });
   let store: MessageStore;
   let app: ReturnType<typeof createApp>;
 

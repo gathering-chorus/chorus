@@ -5263,6 +5263,26 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "door.busy": {
+      "producer": "athena-make",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — the roles door (athena-make serve) refused a caller with 503 busy: in-flight connections at the cap. At most one per 10s; every refusal is also on stderr.",
+      "fields": {
+        "in_flight": "Connections in flight when the caller was refused",
+        "max": "ATHENA_MAKE_MAX_CONN, the cap"
+      }
+    },
+    "door.empty-read": {
+      "producer": "athena-make",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — the roles door read no request line (empty or cut-off read), so routing fell through to Discovery. At most one per 10s; every one is also on stderr.",
+      "fields": {
+        "in_flight": "Connections in flight at the read",
+        "max": "ATHENA_MAKE_MAX_CONN, the cap"
+      }
+    },
     "stated.intent.missing_prompt_response": {
       "producer": "policies",
       "category": "diagnostic",

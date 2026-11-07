@@ -51,7 +51,9 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # 49 since #4432 (2026-10-06): permission-wren-events, for Wren's events domain (#4438).
   # 46 since the #4204 reopen (2026-10-12): the three identity grants are retired.
   # They overrode the row-owner check, so every role could edit every login.
-  test "$n" -eq 46
+  # 47 since #4916 (2026-11-06): permission-borg-queen-cards, on Jeff's go (16:03).
+  # borg-prove moves a red-deferred card to Later as borg-queen and 403'd.
+  test "$n" -eq 47
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
@@ -124,7 +126,7 @@ TTL
 }
 
 # #3102 — every principal the cards CLI writes as (DEPLOY_ROLE jeff on accept and
-# /card, the three roles otherwise) needs a Write row on the cards graph, or its
+# /card, the three roles otherwise, borg-queen for borg-prove's reopen — #4916) needs a Write row on the cards graph, or its
 # graph write-through 403s. Jeff's was missing and the land's accept left #3102's
 # row at WIP.
 cards_writers_missing() {  # cards_writers_missing <perms.ttl> → names with no Write row
@@ -132,7 +134,7 @@ cards_writers_missing() {  # cards_writers_missing <perms.ttl> → names with no
     'PREFIX acl: <http://www.w3.org/ns/auth/acl#>' \
     'SELECT ?a WHERE { ?p a chorus:Permission ; chorus:agent ?a ; chorus:mode acl:Write ; chorus:accessTo ?g FILTER(STR(?g) = "urn:chorus:domains:cards") }' > "$T/cw.rq"
   have=$(arq --results csv --query "$T/cw.rq" --data "$1" 2>/dev/null | tail -n +2 | tr -d '\r')
-  for w in jeff wren silas kade; do
+  for w in jeff wren silas kade borg-queen; do
     grep -qx "https://jeffbridwell.com/chorus#principal-$w" <<<"$have" || echo "$w"
   done
 }
@@ -146,4 +148,10 @@ cards_writers_missing() {  # cards_writers_missing <perms.ttl> → names with no
   awk '/^chorus:permission-jeff-cards /{skip=1} skip&&/ \.$/{skip=0;next} !skip' "$PERMS" > "$T/nojeff.ttl"
   missing=$(cards_writers_missing "$T/nojeff.ttl")
   [ "$missing" = "jeff" ] || { echo "expected jeff missing, got: '$missing'"; false; }
+}
+
+@test "NEGATIVE PROOF — drop borg-queen's cards row and the check names borg-queen (#4916)" {
+  awk '/^chorus:permission-borg-queen-cards /{skip=1} skip&&/ \.$/{skip=0;next} !skip' "$PERMS" > "$T/nobq.ttl"
+  missing=$(cards_writers_missing "$T/nobq.ttl")
+  [ "$missing" = "borg-queen" ] || { echo "expected borg-queen missing, got: '$missing'"; false; }
 }

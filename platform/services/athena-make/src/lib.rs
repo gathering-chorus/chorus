@@ -6230,13 +6230,6 @@ pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
         .collect())
 }
 
-/// #3609 — read a full HTTP request: headers to CRLFCRLF, then the body until
-/// Content-Length is satisfied, capped at `max_body + 1` bytes of body (one
-/// past the cap so an oversize body is DETECTABLE and 422s with the cap
-/// message downstream, instead of truncating silently at the old single-4KB
-/// read — which made every >4KB /batch body fail 4-field validation).
-/// Never hangs: the caller sets a read timeout; EOF/timeout returns what
-/// arrived. Generic over Read so the loop is unit-tested with chunked mocks.
 /// #4916 — admit one connection, or refuse with the in-flight count when the door is
 /// full. Ok carries the count after admitting; Err carries the count that refused it.
 pub fn door_admit(active: &std::sync::atomic::AtomicUsize, max_conn: usize) -> Result<usize, usize> {
@@ -6328,6 +6321,13 @@ mod door_overload_4916 {
     }
 }
 
+/// #3609 — read a full HTTP request: headers to CRLFCRLF, then the body until
+/// Content-Length is satisfied, capped at `max_body + 1` bytes of body (one
+/// past the cap so an oversize body is DETECTABLE and 422s with the cap
+/// message downstream, instead of truncating silently at the old single-4KB
+/// read — which made every >4KB /batch body fail 4-field validation).
+/// Never hangs: the caller sets a read timeout; EOF/timeout returns what
+/// arrived. Generic over Read so the loop is unit-tested with chunked mocks.
 pub fn read_http_request<Rd: std::io::Read>(r: &mut Rd, max_body: usize) -> String {
     let mut data: Vec<u8> = Vec::with_capacity(8192);
     let mut buf = [0u8; 4096];

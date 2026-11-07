@@ -334,6 +334,23 @@ fn negative_proof_the_next_land_reopens_the_card_when_its_deferred_check_is_red(
     assert!(!fx.dir.join("results/deferred/4683.tsv").exists(), "handled, no longer open");
 }
 
+// #4916 (Wren) — a card already in Later is not moved or commented again at every land.
+#[test]
+fn negative_proof_a_red_deferred_card_already_in_later_gets_no_new_move_or_comment() {
+    let fx = after_fx("after-later");
+    let _ = fx.run("prod");
+    let _ = fx.run("record");
+    std::fs::write(fx.dir.join("prod/later.txt"), "nope\n").unwrap();
+    let view = std::fs::read_to_string(fx.dir.join("view.txt")).unwrap().replace("Status:   WIP", "Status:   Later");
+    std::fs::write(fx.dir.join("view.txt"), view).unwrap();
+    let before = fx.log("cards.log");
+    let next = fx.run_card("prod", "4900");
+    assert!(out(&next).contains("#4683 deferred ac-4683-2: not met"), "{}", out(&next));
+    let after = fx.log("cards.log");
+    let new = &after[before.len()..];
+    assert!(!new.contains("move 4683") && !new.contains("comment 4683"), "already Later, yet: {new}");
+}
+
 #[test]
 fn the_next_land_clears_a_met_deferred_check_and_keeps_an_unmeasured_one() {
     let fx = after_fx("after-met");
