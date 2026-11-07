@@ -28,16 +28,16 @@ fn a_crashed_claude_names_its_real_error_on_either_stream() {
 
     // 12:33 shape: the warning alone on stderr, the error on stdout
     std::env::set_var("CHORUS_CLAUDE_BIN", fake_claude(&dir, "Error: rate limited", WARNING, 1));
-    let (verdict, finding) = review_once("sys", "ctx", "round-1", &[]);
+    let (verdict, finding) = review_once("sys", "ctx", "round-1", &[], "");
     assert_eq!(verdict, "error");
     assert!(finding.contains("rate limited"), "finding lost the stdout error: {finding}");
-    assert!(finding.starts_with("claude exit Some(1): "), "{finding}");
+    assert!(finding.starts_with("claude as ") && finding.contains(" exit Some(1): "), "{finding}");
 
     // 12:08 shape: a long warning, then the error, both on stderr
     let stderr = format!("{WARNING} {}\nError: auth expired", "x".repeat(200));
     assert!(!stderr.chars().take(160).collect::<String>().contains("auth expired"), "fixture must defeat the old cut");
     std::env::set_var("CHORUS_CLAUDE_BIN", fake_claude(&dir, "", &stderr, 1));
-    let (_, finding) = review_once("sys", "ctx", "round-1", &[]);
+    let (_, finding) = review_once("sys", "ctx", "round-1", &[], "");
     std::fs::remove_dir_all(&dir).ok();
     assert!(finding.contains("auth expired"), "finding lost the stderr error: {finding}");
     assert!(finding.contains("stdout: (empty)"), "an empty stream is named, not hidden: {finding}");

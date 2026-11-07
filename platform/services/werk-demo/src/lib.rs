@@ -2176,7 +2176,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
             "CARD #{}\n{}\n\n=== BRANCH DIFF ({}){} ===\n{}",
             card, card_view, range, part, batch
         );
-        parts.push(review_once(&sys, &ctx, round, &fail_on));
+        parts.push(review_once(&sys, &ctx, round, &fail_on, role));
     }
     let (mut result, mut findings) = combine_verdicts(&parts, &unread);
     if strict {
@@ -2663,7 +2663,31 @@ fn tail(text: &str) -> String {
 
 /// One review by claude -p (or chorus-agent when CHORUS_GATE_PROFILE is set):
 /// (verdict, finding). Public for the #4921 fake-claude test.
-pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, String) {
+/// #4921 (Jeff 12:53: "run as one of u / why am i needed") — the gate's claude
+/// runs as the card's role account, under that role's own login, never under
+/// the runner's (jeffbridwell's login expired at 12:48 and every demo crashed).
+/// The hop is the one chorus-principal starts role panes with (#4777), covered
+/// by /etc/sudoers.d/chorus-principals. Already that account: no hop. Returns
+/// (program, args, who) — `who` names the account in a crash finding.
+pub fn gate_command(me: &str, role: &str, bin: &str, model: &str, sys: &str) -> (String, Vec<String>, String) {
+    let claude: Vec<String> = [
+        bin, "-p", "--model", model, "--permission-mode", "dontAsk", "--no-session-persistence",
+        "--output-format", "text", "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
+        "--system-prompt", sys,
+    ].iter().map(|s| s.to_string()).collect();
+    let account = format!("chorus-{role}");
+    if role.is_empty() || me == account {
+        return (claude[0].clone(), claude[1..].to_vec(), format!("claude as {me}"));
+    }
+    let quoted: Vec<String> = claude.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect();
+    let inner = format!(
+        "{{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && export CHORUS_HEADLESS=1 CHORUS_ROLE='{role}' && exec {}",
+        quoted.join(" ")
+    );
+    ("sudo".to_string(), ["-n", "-u", &account, "-H", "bash", "-c", &inner].iter().map(|s| s.to_string()).collect(), format!("claude as {account}"))
+}
+
+pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32], role: &str) -> (String, String) {
     if let Some(job) = gate_via_agent(ctx, sys, GATE_OUTPUT_SCHEMA, round) {
         return match job {
             Ok(out) => gate_verdict(&out, fail_on),
@@ -2677,23 +2701,14 @@ pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (Strin
             return ("error".to_string(), ("claude binary not resolvable").to_string());
         }
     };
-    let child = Command::new(&bin)
-        // #3471 — mark the gate's claude -p as HEADLESS so chorus-hooks'
-        // owes_response_block (#3218 RESPOND-FIRST) exempts it. A headless gate has
-        // no peer to answer; without this the nudge-block deadlocks the gate's own
-        // shell → the 180s timeout / denied chorus-health that errored this card's
-        // product+ops gates. owes_response_block reads env::var("CHORUS_HEADLESS").is_ok()
-        // (any value), alongside GITHUB_ACTIONS/ACT — same exemption family.
+    let me = env::var("USER").unwrap_or_default();
+    let (program, args, who) = gate_command(&me, role, &bin, &model, sys);
+    // #3471 — CHORUS_HEADLESS marks the gate's claude -p as headless so
+    // chorus-hooks' RESPOND-FIRST block exempts it (also set inside the hop,
+    // since sudo drops the environment).
+    let child = Command::new(&program)
         .env("CHORUS_HEADLESS", "1")
-        .args([
-            "-p",
-            "--model", &model,
-            "--permission-mode", "dontAsk",
-            "--no-session-persistence",
-            "--output-format", "text",
-            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt", sys,
-        ])
+        .args(&args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -2701,7 +2716,7 @@ pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (Strin
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
-            return ("error".to_string(), (format!("claude spawn failed: {}", e)).to_string());
+            return ("error".to_string(), format!("{who} spawn failed: {e}"));
         }
     };
     if let Some(mut stdin) = child.stdin.take() {
@@ -2720,6 +2735,10 @@ pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (Strin
             Ok(Some(st)) => break Some(st),
             Ok(None) => {
                 if start.elapsed() >= Duration::from_secs(timeout_secs) {
+                    // #4921 — through the hop the child is sudo: SIGTERM is
+                    // relayed to claude, SIGKILL would orphan it, so TERM first
+                    unsafe { kill(child.id() as i32, 15); }
+                    sleep(Duration::from_secs(2));
                     let _ = child.kill();
                     let _ = child.wait();
                     break None;
@@ -2746,7 +2765,7 @@ pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (Strin
         let _ = e.read_to_string(&mut stderr);
     }
     if !status.success() {
-        return ("error".to_string(), crashed_reviewer("claude", &format!("exit {:?}", status.code()), &stderr, &stdout));
+        return ("error".to_string(), crashed_reviewer(&who, &format!("exit {:?}", status.code()), &stderr, &stdout));
     }
     gate_verdict(&stdout, fail_on)
 }
