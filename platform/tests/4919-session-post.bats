@@ -114,3 +114,10 @@ gate() { printf '%s' "$1" | "$POST" --gate; }
   run gate '{"tool_name":"Bash","tool_input":{"command":"role-post; touch /tmp/x"}}'
   [ "$status" -eq 2 ] || { echo "$output"; return 1; }
 }
+
+@test "the gate fails open on its own error: unparseable hook input passes even with a failed POST" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 1 ] || return 1
+  run gate 'not json'
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}

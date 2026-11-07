@@ -29,6 +29,9 @@ if [ "${1:-}" = "--gate" ]; then
   in=$(cat)
   tool=$(printf '%s' "$in" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("tool_name",""))' 2>/dev/null)
   cmd=$(printf '%s' "$in" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null)
+  # the gate never refuses on its own error: unparseable hook input passes (a broken
+  # gate must not become the 01:17 lockout)
+  [ -n "$tool" ] || exit 0
   # reads, and the nudge so the refused role can say what failed
   case "$tool" in Read|Grep|Glob|mcp__chorus-api__clearing-nudge) exit 0 ;; esac
   # re-running the POST itself, and only that: the whole command must be role-post
