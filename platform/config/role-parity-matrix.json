@@ -1,0 +1,31 @@
+{
+  "updated_at": "2026-11-07T01:40:00Z",
+  "card": 4917,
+  "roles": ["borg-queen", "abby-normal", "kade", "wren", "silas"],
+  "capabilities": {
+    "settings_file": {
+      "borg-queen": "roles/borg-queen/.gemini/settings.json",
+      "abby-normal": "roles/abby-normal/.gemini/settings.json",
+      "kade": "roles/kade/config",
+      "status": "fixed"
+    },
+    "turn_end_stated_intent": {
+      "borg-queen": "platform/services/chorus-hooks/src/hooks/autonomy_guard.rs",
+      "abby-normal": "platform/services/chorus-hooks/src/hooks/autonomy_guard.rs",
+      "kade": "platform/services/chorus-hooks/src/hooks/autonomy_guard.rs",
+      "status": "fixed-in-4916"
+    },
+    "cards_write_row": {
+      "borg-queen": "roles/silas/ontology/permissions-4183.ttl",
+      "abby-normal": "roles/silas/ontology/permissions-4183.ttl",
+      "kade": "roles/silas/ontology/permissions-4183.ttl",
+      "status": "fixed-in-4916"
+    },
+    "werk_pull": {
+      "borg-queen": "working",
+      "abby-normal": "working",
+      "kade": "working",
+      "status": "verified"
+    }
+  }
+}
