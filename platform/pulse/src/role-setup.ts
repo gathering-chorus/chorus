@@ -61,7 +61,7 @@ export class RoleSetupWatch {
       const prev = this.told.get(role);
       if (prev === undefined && key === '') { this.told.set(role, ''); continue; }
       if (prev === key) continue;
-      const line = key ? `POST refused (${role}): ${key}` : `POST ok (${role}): refusal cleared`;
+      const line = key ? `role setup broken (${role}): ${key}` : `role setup ok (${role}): fixed`;
       try {
         await this.post(line);
         this.told.set(role, key);

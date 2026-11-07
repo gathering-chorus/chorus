@@ -6,98 +6,22 @@
     "CHORUS_HOME": "/Users/jeffbridwell/CascadeProjects/chorus",
     "CHORUS_WERK_BASE": "/Users/jeffbridwell/CascadeProjects/chorus-werk",
     "CHORUS_BIN": "/Users/jeffbridwell/.chorus/bin",
-    "CHORUS_HOOKS_RUN_DIR": "/Users/jeffbridwell/.chorus/run-agents",
-    "CHORUS_SESSIONS_DIR": "/Users/jeffbridwell/.chorus/sessions",
-    "CHORUS_IDENTITY_DIR": "/Users/chorus-silas/.chorus/identity",
-    "CHORUS_SESSION_TOKEN_FILE": "/Users/chorus-silas/.chorus/identity/silas/token.cache",
-    "VIKUNJA_DB": "/Users/jeffbridwell/.chorus/vikunja/db/vikunja.db",
     "SILAS_WERK": "/Users/jeffbridwell/CascadeProjects/chorus-werk/silas"
   },
   "enableAllProjectMcpServers": true,
   "hooks": {
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-post --gate",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim pre-tool-use",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim post-tool-use",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim post-tool-use",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim stop",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim session-start silas",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim session-start silas",
             "timeout": 30
           },
           {
             "type": "command",
             "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
             "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-post --session-start",
-            "timeout": 20
           }
         ]
       }
@@ -118,9 +42,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim user-prompt-submit",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
             "timeout": 5
-          },
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
           {
             "type": "command",
             "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",

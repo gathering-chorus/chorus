@@ -56,11 +56,11 @@ describe('RoleSetupWatch', () => {
     expect(posted).toEqual([]);
     mode = 0o660;
     await w.tick(); await w.tick();
-    expect(posted).toEqual(['POST refused (silas): key: nostr.json mode 0660, want 0600']);
+    expect(posted).toEqual(['role setup broken (silas): key: nostr.json mode 0660, want 0600']);
     expect(w.state()).toEqual({ silas: ['key: nostr.json mode 0660, want 0600'] });
     mode = 0o600;
     await w.tick();
-    expect(posted).toEqual(['POST refused (silas): key: nostr.json mode 0660, want 0600', 'POST ok (silas): refusal cleared']);
+    expect(posted).toEqual(['role setup broken (silas): key: nostr.json mode 0660, want 0600', 'role setup ok (silas): fixed']);
     expect(w.state()).toEqual({ silas: [] });
   });
 
@@ -74,7 +74,7 @@ describe('RoleSetupWatch', () => {
     await w.tick();
     fail = false;
     await w.tick();
-    expect(posted).toEqual(['POST refused (silas): key: nostr.json mode 0660, want 0600']);
+    expect(posted).toEqual(['role setup broken (silas): key: nostr.json mode 0660, want 0600']);
   });
 });
 
