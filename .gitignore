@@ -192,3 +192,4 @@ platform/backups/graph-retirements/
 *.profraw
 target.seeding/
 target.seeding
+.git-build.lock
