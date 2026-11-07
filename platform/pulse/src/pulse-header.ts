@@ -47,7 +47,7 @@ export async function composeHeader(src: Sources, now = new Date()): Promise<Hea
       return actors.map(role => {
         const last = calls.get(role);
         const s = last ? Math.max(0, Math.round((now.getTime() - Date.parse(last)) / 1000)) : null;
-        const refused = src.setup?.()?.[role] ?? [];
+        const refused = new Map(Object.entries(src.setup?.() ?? {})).get(role) ?? [];
         if (refused.length) return { role, state: 'refused', secondsSinceLastCall: s, refused };
         return { role, state: s !== null && s < QUIET_AFTER_S ? 'moving' : 'quiet', secondsSinceLastCall: s };
       });

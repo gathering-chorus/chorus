@@ -11,9 +11,9 @@
 import { checkRoleSetup, RoleSetupWatch, type SetupReads } from './role-setup';
 
 const reads = (over: Partial<SetupReads> = {}): SetupReads => ({
-  principals: async () => [{ name: 'silas', hostAccount: 'chorus-silas' }, { name: 'wren', hostAccount: 'chorus-wren' }],
-  keyMode: async role => (role ? 0o600 : null),
-  settingsDrift: async () => false,
+  principals: () => Promise.resolve([{ name: 'silas', hostAccount: 'chorus-silas' }, { name: 'wren', hostAccount: 'chorus-wren' }]),
+  keyMode: role => Promise.resolve(role ? 0o600 : null),
+  settingsDrift: () => Promise.resolve(false),
   ...over,
 });
 
@@ -23,26 +23,26 @@ test('control: a sound role has no setup failures', async () => {
 
 // NEGATIVE PROOF: the 01:18 lockout — no principal runs as the role's account
 test('negative proof: a principal at hostAccount=jeffbridwell is a named failure', async () => {
-  const f = await checkRoleSetup('silas', reads({ principals: async () => [{ name: 'silas', hostAccount: 'jeffbridwell' }] }));
+  const f = await checkRoleSetup('silas', reads({ principals: () => Promise.resolve([{ name: 'silas', hostAccount: 'jeffbridwell' }]) }));
   expect(f).toEqual(['identity: no principal runs as chorus-silas']);
 });
 
 // NEGATIVE PROOF: the 07:10 drift — a 660 key
 test('negative proof: a key at mode 660 is a named failure', async () => {
-  const f = await checkRoleSetup('silas', reads({ keyMode: async () => 0o660 }));
+  const f = await checkRoleSetup('silas', reads({ keyMode: () => Promise.resolve(0o660) }));
   expect(f).toEqual(['key: nostr.json mode 0660, want 0600']);
 });
 
 test('negative proof: settings edited live (differs from git) is a named failure', async () => {
-  const f = await checkRoleSetup('silas', reads({ settingsDrift: async () => true }));
+  const f = await checkRoleSetup('silas', reads({ settingsDrift: () => Promise.resolve(true) }));
   expect(f).toEqual(['settings: differs from git']);
 });
 
 // A read that fails is a failure that says so, never a pass (#3734)
 test('negative proof: an unreadable door or key is a failure, never a pass', async () => {
   const f = await checkRoleSetup('silas', reads({
-    principals: async () => { throw new Error('door 000'); },
-    keyMode: async () => null,
+    principals: () => Promise.reject(new Error('door 000')),
+    keyMode: () => Promise.resolve(null),
   }));
   expect(f).toEqual(['identity: roles door unreadable (door 000)', 'key: nostr.json missing']);
 });
@@ -51,7 +51,7 @@ describe('RoleSetupWatch', () => {
   test('posts one line on refusal and one on recovery, nothing while unchanged', async () => {
     const posted: string[] = [];
     let mode = 0o600;
-    const w = new RoleSetupWatch(['silas'], reads({ keyMode: async () => mode }), async line => { posted.push(line); });
+    const w = new RoleSetupWatch(['silas'], reads({ keyMode: () => Promise.resolve(mode) }), line => { posted.push(line); return Promise.resolve(); });
     await w.tick();
     expect(posted).toEqual([]);
     mode = 0o660;
@@ -68,8 +68,9 @@ describe('RoleSetupWatch', () => {
   test('negative proof: a failed post is retried next tick', async () => {
     const posted: string[] = [];
     let fail = true;
-    const w = new RoleSetupWatch(['silas'], reads({ keyMode: async () => 0o660 }), async line => {
-      if (fail) throw new Error('pulse down'); posted.push(line);
+    const w = new RoleSetupWatch(['silas'], reads({ keyMode: () => Promise.resolve(0o660) }), line => {
+      if (fail) return Promise.reject(new Error('pulse down'));
+      posted.push(line); return Promise.resolve();
     });
     await w.tick();
     fail = false;

@@ -89,9 +89,13 @@ export function liveReads(
       const res = await fetch(`${door}/v1/identity/principals?limit=500`, { signal: AbortSignal.timeout(4000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json() as { data?: Array<{ name?: unknown; hostAccount?: unknown }> };
-      return (body.data ?? []).map(p => ({ name: String(p.name ?? ''), hostAccount: String(p.hostAccount ?? '') }));
+      const str = (v: unknown) => (typeof v === 'string' ? v : '');
+      return (body.data ?? []).map(p => ({ name: str(p.name), hostAccount: str(p.hostAccount) }));
     },
     keyMode: async role => {
+      // role comes from PULSE_SETUP_ROLES, never from a request; refuse anything that is not a role name
+      if (!/^[a-z][a-z0-9-]*$/.test(role)) throw new Error(`not a role name: ${role}`);
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is identityDir + a checked role name
       try { return (await fs.stat(`${identityDir}/${role}/nostr.json`)).mode; }
       catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
     },
