@@ -36,7 +36,16 @@ if [ "${1:-}" = "--gate" ]; then
   case "$tool" in Read|Grep|Glob|mcp__chorus-api__clearing-nudge) exit 0 ;; esac
   # re-running the POST itself, and only that: the whole command must be role-post
   if [ "$tool" = Bash ] && printf '%s' "$cmd" | grep -qE '^[[:space:]]*([^[:space:];&|]*/)?role-post[[:space:]]*$'; then exit 0; fi
-  { echo "POST refused (#4919): this session's power-on self test failed — fix these, then re-run role-post:"; cat "$marker"; } >&2
+  { echo "POST refused (#4919): this session's power-on self test failed — fix these, then re-run role-post"
+    echo "(if the POST itself is wrong, nudge a peer: only a different role may waive it):"; cat "$marker"; } >&2
+  exit 2
+fi
+
+# No self-waive (Wren 09:20): a role cannot clear its own refusal except by passing the
+# POST. A peer waiver needs a place a peer can write and this role can read; it is not
+# built yet (#4919 open item), so there is deliberately no --waive here.
+if [ "${1:-}" = "--waive" ]; then
+  echo "role-post --waive: a role cannot waive its own POST; ask a peer (peer waiver not built yet)" >&2
   exit 2
 fi
 acct="${POST_ACCOUNT:-$(id -un)}"

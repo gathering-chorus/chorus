@@ -18,7 +18,8 @@ setup() {
   echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
   export POST_ROLE=silas POST_ACCOUNT=chorus-silas
   export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"
-  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true" POST_STATE_DIR="$T/post"
+  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true" POST_STATE_DIR="$T/post" POST_LOG_CMD="$T/log"
+  printf '#!/bin/sh\necho "$@" >> %s/log.out\n' "$T" > "$T/log"; chmod 755 "$T/log"
 }
 
 @test "control: a sound setup passes every check and says POST ok" {
@@ -120,4 +121,14 @@ gate() { printf '%s' "$1" | "$POST" --gate; }
   run "$POST"; [ "$status" -eq 1 ] || return 1
   run gate 'not json'
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "negative proof: a role cannot waive its own refusal (no self-waive), and the gate refuses the attempt" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 1 ] || return 1
+  run gate '{"tool_name":"Bash","tool_input":{"command":"role-post --waive \"x\""}}'
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  run "$POST" --waive "the door check is wrong"
+  [ "$status" -eq 2 ] || return 1
+  [ -f "$BATS_TEST_TMPDIR/post/silas.failed" ] || return 1
 }
