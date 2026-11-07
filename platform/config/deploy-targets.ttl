@@ -1,5 +1,12 @@
 # deploy-targets.ttl — #4919: the live DeployTarget rows deploy-drift checks prod against.
 # The class and its shape are in roles/silas/ontology/deploy-targets-4919.ttl.
+#
+# Pipeline defects met landing #4919 (2026-11-07, also on the card), for the deploy model to cover next:
+#  1 dagu records no reason when an athena step fails (the verb printed one each time)
+#  2 a failed athena run leaves its model in staging; the next run reads it as "before"
+#  3 werk-demo keeps only the first 160 chars of the reviewer's stderr, so the cause is lost
+#  4 a hand `dagu retry` of a cicd step runs under the parent athena trace; vouch then finds no push
+#  5 a rerun of an already-reviewed commit emits no demo.announced, so vouch keeps reading the old run
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 
 # ── Real targets: the role identity keys (the 07:10 drift). Mode 0600, owned by the runner account.
