@@ -10,7 +10,8 @@ import request from 'supertest';
 import { MessageStore } from './store';
 import { createApp, resetNudgeDedup } from './service';
 
-// Door answers Discovery fixture (no data list of roles)
+// The door answers Discovery (no data list of roles), as it did 2026-11-06 17:22-19:40:
+// peers.ts reads that as "the roles door answered with no data list".
 jest.mock('./peers', () => ({
   fetchPeers: () => Promise.reject(new Error('the roles door answered with no data list')),
   startRolesDoorWatch: () => () => {},

@@ -20,7 +20,8 @@
 //!   chorus-hook-shim role-state query <role|all>              → reads the derived rows
 //!   chorus-hook-shim role-state cleanup                       → no-op (nothing stored)
 
-// use std::fs;
+#[cfg(test)]
+use std::fs;
 use std::process::ExitCode;
 
 const DERIVED_STATES: &[&str] = &["building", "waiting", "observing", "idle"];
