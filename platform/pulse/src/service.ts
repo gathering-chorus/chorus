@@ -239,6 +239,17 @@ async function admitNudge(body: { class?: unknown; expects?: unknown; target_ses
 }
 
 /** #4432 — the peer set, or the reason the roles door could not give it (logged). */
+// #4916 — a machine's alert does not ride on the roles door. When the door
+// cannot be read, the alert's recipient stands as its owner; delivery still
+// fails loud on a role with no pane. On 2026-11-06 the door's own alarm died
+// at 17:26 while the door was down.
+async function actorsFor(from: unknown, to: unknown): Promise<string[] | string> {
+  const actors = await peersOrRefusal(typeof from === 'string' ? from : '', to as string);
+  const recipient = typeof to === 'string' ? to.trim() : '';
+  if (typeof actors === 'string' && isMachineSender(from) && recipient !== '') return [recipient];
+  return actors;
+}
+
 async function peersOrRefusal(from: string, to: string): Promise<string[] | string> {
   try { return await fetchPeers(); }
   catch (e) {
@@ -287,14 +298,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
     // The one roles-door read: #4432 already refused every nudge (503) when the
     // door is down; this read replaces that one, it adds no second dependency.
-    let actors = await peersOrRefusal(String(from ?? ''), to);
-    // #4916 — a machine's alert does not ride on the roles door. When the door
-    // cannot be read, the alert's recipient stands as its owner; delivery still
-    // fails loud on a role with no pane. On 2026-11-06 the door's own alarm died
-    // here at 17:26 while the door was down.
-    if (typeof actors === 'string' && isMachineSender(from) && typeof to === 'string' && to.trim() !== '') {
-      actors = [to.trim()];
-    }
+    const actors = await actorsFor(from, to);
     if (typeof actors === 'string') return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: actors });
     const sender = attributeSender(from, to, req.body.owner, actors);
     if (sender.kind === 'refused') {

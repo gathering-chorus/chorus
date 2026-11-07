@@ -64,7 +64,7 @@ terminal_scriptable() {
 # tmpdir (the copy is checked to differ — a silent no-op sed would fall back to
 # /tmp), a curl stub that records instead of posting, and a CHORUS_ROOT whose
 # chorus-log is a recorder. osascript/pgrep/tmux are stubbed only when a case
-# asks (STUB_OSA / STUB_PGREP_RC / STUB_TMUX_PANES); otherwise the real ones run.
+# asks (STUB_OSA / STUB_PGREP_RC; #4916 retired tmux from the script); otherwise the real ones run.
 hc_world() {
   W="$BATS_TEST_TMPDIR/hc"
   mkdir -p "$W/bin" "$W/root/platform/scripts" "$W/where" "$W/canary"
@@ -81,16 +81,13 @@ JSON
   if [ -n "${STUB_PGREP_RC:-}" ]; then
     printf '#!/bin/bash\nexit %s\n' "$STUB_PGREP_RC" > "$W/bin/pgrep"
   fi
-  if [ -n "${STUB_TMUX_PANES:-}" ]; then
-    printf '#!/bin/bash\n[ "$1" = list-panes ] && printf "%%s\\n" %s\nexit 0\n' "$STUB_TMUX_PANES" > "$W/bin/tmux"
-  fi
   chmod +x "$W/bin/"* "$W/root/platform/scripts/chorus-log"
 }
 
 # register <role> <host> [pane] — #4895: where pulse says the role is (/api/where/<role>)
 register() {
   mkdir -p "$W/where"
-  printf '{"role":"%s","kind":"resolved","pane":"%s"}' "$1" "${3:-}" > "$W/where/$1"
+  printf '{"role":"%s","kind":"resolved","pane":"%s","reachability":"reachable"}' "$1" "${3:-}" > "$W/where/$1"
 }
 
 run_health() {
@@ -140,7 +137,7 @@ run_health() {
 }
 
 @test "NEGATIVE: all roles reachable when live sessions exist and no delivery errors" {
-  STUB_TMUX_PANES="%1" hc_world
+  hc_world
   for r in wren silas kade borg-queen abby-normal; do
     register "$r" tmux "%1"
   done
@@ -150,7 +147,7 @@ run_health() {
 }
 
 @test "health check queries only latest nudge per role from messages.db" {
-  STUB_TMUX_PANES="%1" hc_world
+  hc_world
   for r in wren silas kade borg-queen abby-normal; do
     register "$r" tmux "%1"
   done
