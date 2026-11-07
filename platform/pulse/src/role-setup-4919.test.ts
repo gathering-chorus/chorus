@@ -10,6 +10,8 @@
  */
 import { checkRoleSetup, RoleSetupWatch, type SetupReads } from './role-setup';
 
+const KEY_660 = 'key: nostr.json mode 0660, want 0600';
+
 const reads = (over: Partial<SetupReads> = {}): SetupReads => ({
   principals: () => Promise.resolve([{ name: 'silas', hostAccount: 'chorus-silas' }, { name: 'wren', hostAccount: 'chorus-wren' }]),
   keyMode: role => Promise.resolve(role ? 0o600 : null),
@@ -30,12 +32,20 @@ test('negative proof: a principal at hostAccount=jeffbridwell is a named failure
 // NEGATIVE PROOF: the 07:10 drift — a 660 key
 test('negative proof: a key at mode 660 is a named failure', async () => {
   const f = await checkRoleSetup('silas', reads({ keyMode: () => Promise.resolve(0o660) }));
-  expect(f).toEqual(['key: nostr.json mode 0660, want 0600']);
+  expect(f).toEqual([KEY_660]);
 });
 
 test('negative proof: settings edited live (differs from git) is a named failure', async () => {
   const f = await checkRoleSetup('silas', reads({ settingsDrift: () => Promise.resolve(true) }));
   expect(f).toEqual(['settings: differs from git']);
+});
+
+// fs.stat().mode carries the file-type bits (0o100000 for a regular file): a sound 0600 key
+// reads 0o100600 and must pass; a 660 key reads 0o100660 and must fail (quality review, 13:41)
+test('a real stat mode with file-type bits: 0o100600 passes, 0o100660 is named', async () => {
+  expect(await checkRoleSetup('silas', reads({ keyMode: () => Promise.resolve(0o100600) }))).toEqual([]);
+  expect(await checkRoleSetup('silas', reads({ keyMode: () => Promise.resolve(0o100660) })))
+    .toEqual([KEY_660]);
 });
 
 // A read that fails is a failure that says so, never a pass (#3734)
@@ -57,7 +67,7 @@ describe('RoleSetupWatch', () => {
     mode = 0o660;
     await w.tick(); await w.tick();
     expect(posted).toEqual(['role setup broken (silas): key: nostr.json mode 0660, want 0600']);
-    expect(w.state()).toEqual({ silas: ['key: nostr.json mode 0660, want 0600'] });
+    expect(w.state()).toEqual({ silas: [KEY_660] });
     mode = 0o600;
     await w.tick();
     expect(posted).toEqual(['role setup broken (silas): key: nostr.json mode 0660, want 0600', 'role setup ok (silas): fixed']);
@@ -96,10 +106,10 @@ test('the roles line shows a refused role as refused with its failures, others u
     ] }),
     messages: () => Promise.resolve([]),
     alerts: () => Promise.resolve([]),
-    setup: () => ({ silas: ['key: nostr.json mode 0660, want 0600'], wren: [] }),
+    setup: () => ({ silas: [KEY_660], wren: [] }),
   }, now);
   expect(h.data.roles.rows).toEqual([
-    { role: 'silas', state: 'refused', secondsSinceLastCall: 5, refused: ['key: nostr.json mode 0660, want 0600'] },
+    { role: 'silas', state: 'refused', secondsSinceLastCall: 5, refused: [KEY_660] },
     { role: 'wren', state: 'moving', secondsSinceLastCall: 5 },
   ]);
 });
