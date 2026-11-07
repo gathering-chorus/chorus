@@ -60,6 +60,9 @@ fn tick_on_board(stream_ts: &str, last_seen: &str, board: &str) -> (String, bool
         .env("CHORUS_HOME", &home)
         .env("PAIR_OBS_DIR", &obs)
         .env("PAIR_BOARD_URL", format!("file://{}", home.join("board.json").display()))
+        // #4756 — the WTFU half of the tick reads nothing live here
+        .env("WTFU_DAGU", "http://127.0.0.1:9")
+        .env("WTFU_LOKI", "http://127.0.0.1:9")
         .env_remove("CHORUS_ROLE")
         .output()
         .unwrap();

@@ -109,6 +109,10 @@ pub struct HookInput {
     pub hook_type: Option<String>,
     /// Injected by shim from DEPLOY_ROLE env var (#1714)
     pub deploy_role: Option<String>,
+    /// #4628 reopen 2 — injected by the shim from CLAUDE_CODE_ENTRYPOINT: "cli"
+    /// for an interactive session, "sdk-cli" for headless `claude -p`.
+    #[serde(default)]
+    pub entrypoint: Option<String>,
     /// #4131 — injected by the shim from CHORUS_CARD_TYPE (fixture seam); the
     /// gates read it through `card_type_for_input` before asking the board.
     #[serde(default)]
@@ -408,6 +412,14 @@ pub(crate) fn caller_role_for_event() -> String {
 /// Event is named for what actually happened — the test override env var was
 /// checked — not "gate bypassed in production." Role attribution comes from
 /// `caller_role_for_event()`, never hardcoded (#2899).
+/// #4875 — the caller's own card decides, never a teammate's: with the global
+/// check, one role's fix card put every role (and every account) behind the
+/// log-first and memory gates. The test override still wins.
+pub fn is_fix_card_for(role: &str) -> bool {
+    if std::env::var("CHORUS_TEST_FORCE_FIX_CARD").is_ok() { return is_fix_card(); }
+    !role.is_empty() && card_type_for_role(role) == "fix"
+}
+
 pub fn is_fix_card() -> bool {
     if let Ok(v) = std::env::var("CHORUS_TEST_FORCE_FIX_CARD") {
         let forced = v == "1" || v.eq_ignore_ascii_case("true");

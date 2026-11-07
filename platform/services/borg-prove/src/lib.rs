@@ -1,12 +1,12 @@
-//! borg-prove (#4456). The pure half: CardAC rows in, a result per AC out, and
+//! borg-prove (#4456). The pure half: a card's AC lines in (#4760), a result per AC out, and
 //! the route a failed step takes. main.rs does the I/O (store, HTTP, dagu).
 
-/// One acceptance criterion and the check that proves it (a CardAC row).
+/// One acceptance criterion and the check that proves it (one AC line of the card, #4760).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Check {
-    pub ac: String,        // the CardAC row's name, ac-<card>-<n> (e.g. ac-4456-2)
+    pub ac: String,        // ac-<card>-<n>, n = the AC's place on the card (e.g. ac-4456-2)
     pub statement: String, // the AC sentence as the card says it
-    pub kind: String,      // checkKind: http | sparql | test | none
+    pub kind: String,      // checkKind: http | sparql | test | crawl | none
     pub target: String,    // checkTarget: a URL (http), an ASK query (sparql), a test name (test)
     pub expect: String,    // checkExpect: text the answer must hold; sparql: true|false
 }
@@ -17,6 +17,9 @@ pub enum Outcome {
     NotMet(String),
     /// No runnable check, or the system did not answer: never counted as met.
     Unmeasured(String),
+    /// #4823 AC2 — `check: by #N`: a later card proves it, and is not Done yet.
+    /// It does not strand the land; it never makes a card Proven on its own.
+    Deferred(String),
 }
 
 impl Outcome {
@@ -25,11 +28,12 @@ impl Outcome {
             Outcome::Met(_) => "met",
             Outcome::NotMet(_) => "not met",
             Outcome::Unmeasured(_) => "unmeasured",
+            Outcome::Deferred(_) => "deferred",
         }
     }
     pub fn evidence(&self) -> &str {
         match self {
-            Outcome::Met(e) | Outcome::NotMet(e) | Outcome::Unmeasured(e) => e,
+            Outcome::Met(e) | Outcome::NotMet(e) | Outcome::Unmeasured(e) | Outcome::Deferred(e) => e,
         }
     }
 }
@@ -41,14 +45,32 @@ pub type Seen = Option<String>;
 pub fn judge(c: &Check, seen: &Seen) -> Outcome {
     match c.kind.as_str() {
         "none" | "" => Outcome::Unmeasured("no runnable check on this AC".into()),
-        "http" | "sparql" | "test" => {
+        // #4889 — never met at its own land: the next land re-runs the inner check
+        "after" => Outcome::Deferred(format!("after land: `{}` re-runs at the next land", c.target)),
+        // #4823 AC2 — what the later card's status is (`cards view`), or nothing
+        "by" => match seen.as_deref().map(str::trim) {
+            Some("Done") => Outcome::Met(format!("proven by #{} (Done)", c.target)),
+            Some(st) => Outcome::Deferred(format!("deferred to #{}, which is {st}", c.target)),
+            None => Outcome::Unmeasured(format!("the board did not answer for #{}", c.target)),
+        },
+        "http" | "sparql" | "test" | "crawl" => {
             let Some(body) = seen else {
                 return Outcome::Unmeasured(if c.kind == "test" {
-                    format!("test {}: no result yet (no case event in Loki in 30 days)", c.target)
+                    format!("test {}: no result yet (no case event from this card's runs, nor from main's nightly since the land)", c.target)
+                } else if c.kind == "crawl" {
+                    format!("crawl {}: no crawl of main at or after the land yet", c.target)
                 } else {
                     format!("{} {} did not answer", c.kind, c.target)
                 });
             };
+            // #4889 (land 11-05) — the lookup itself failed: said as the error it is
+            if c.kind == "test" && body.starts_with("error: ") {
+                return Outcome::Unmeasured(format!("test {}: {}", c.target, body));
+            }
+            // #4889 — a skipped case in the test's newest run measured nothing
+            if c.kind == "test" && body.trim() == "skip" {
+                return Outcome::Unmeasured(format!("test {}: its newest run skipped a case", c.target));
+            }
             let want = c.expect.trim();
             if want.is_empty() {
                 return Outcome::Unmeasured("the check names nothing to expect".into());
@@ -87,11 +109,105 @@ fn short(s: &str) -> String {
     if s.chars().count() > 160 { s.chars().take(160).collect::<String>() + "…" } else { s }
 }
 
+/// #4760 — the card's AC, read from the card itself (Jeff 2026-10-27: "so we
+/// dont need cardac"). Each `- [ ]` / `- [x]` line under `## AC` is one AC, in
+/// card order; its check rides at the end of the line:
+///   `check: http <path> [status|text]`  (expect defaults to 200)
+///   `check: sparql <ASK query> <true|false>`
+///   `check: test <test file or name>`   (expects the test's latest result, pass)
+/// A line with no `check:` is kind none: unmeasured, and refused at intake.
+pub fn checks_from_card(card: u32, desc: &str) -> Vec<Check> {
+    ac_lines(card, desc).into_iter().map(|(_, c)| c).collect()
+}
+
+/// #4875 — the same AC walk with each line's box state (true = `- [x]`), so the go message and
+/// borg-prove read the card's AC through ONE parser (Jeff 09:28: "yes").
+pub fn ac_lines(card: u32, desc: &str) -> Vec<(bool, Check)> {
+    let mut in_ac = false;
+    let mut out = Vec::new();
+    for line in desc.lines() {
+        let t = line.trim();
+        if let Some(h) = t.strip_prefix("## ") {
+            in_ac = h.trim() == "AC";
+            continue;
+        }
+        let done = t.starts_with("- [x] ") || t.starts_with("- [X] ");
+        let Some(body) = t.strip_prefix("- [ ] ").or_else(|| t.strip_prefix("- [x] ")).or_else(|| t.strip_prefix("- [X] ")) else { continue };
+        if !in_ac {
+            continue;
+        }
+        let (statement, check) = match body.rfind("check:") {
+            Some(i) => (body[..i].trim(), body[i + 6..].trim()),
+            None => (body.trim(), ""),
+        };
+        let (kind, rest) = check.split_once(char::is_whitespace).map(|(k, r)| (k, r.trim())).unwrap_or((check, ""));
+        let (target, expect) = match kind {
+            "test" => (rest.to_string(), "pass".to_string()),
+            // #4824 — `check: crawl <class>`: that row of the crawl reads missing=0
+            "crawl" => (rest.to_string(), "missing=0".to_string()),
+            // #4889 (Kade 19:56) — `check: after <check>`: proven only after the land, by
+            // the next land's re-run; at its own land it reads deferred, never met
+            "after" if !rest.is_empty() => (rest.to_string(), "later".to_string()),
+            // #4823 — `check: by #N`: card N proves it; it is met when N is Done
+            "by" => match rest.trim_start_matches('#').parse::<u32>() {
+                Ok(n) => (n.to_string(), "Done".to_string()),
+                Err(_) => (String::new(), String::new()),
+            },
+            "sparql" => match rest.rsplit_once(char::is_whitespace) {
+                Some((q, e)) if e == "true" || e == "false" => (q.trim().to_string(), e.to_string()),
+                _ => (rest.to_string(), String::new()),
+            },
+            "http" => match rest.split_once(char::is_whitespace) {
+                Some((u, e)) => (u.to_string(), e.trim().to_string()),
+                None => (rest.to_string(), "200".to_string()),
+            },
+            _ => (rest.to_string(), String::new()),
+        };
+        out.push((done, Check {
+            ac: format!("ac-{card}-{}", out.len() + 1),
+            statement: statement.to_string(),
+            kind: if kind.is_empty() { "none".into() } else { kind.to_string() },
+            target,
+            expect,
+        }));
+    }
+    out
+}
+
+/// #4889 — the check an `after` check defers: its target parsed as a check of its own,
+/// under the same AC id. None for any other kind, or an inner check that names nothing.
+pub fn inner_check(c: &Check) -> Option<Check> {
+    if c.kind != "after" { return None; }
+    let (_, mut inner) = ac_lines(0, &format!("## AC\n- [ ] {} check: {}\n", c.statement, c.target)).into_iter().next()?;
+    if inner.kind == "none" || inner.kind == "after" || inner.target.is_empty() { return None; }
+    inner.ac = c.ac.clone();
+    Some(inner)
+}
+
+/// #4889 — what the next land does with one open deferred check's re-run: met clears it,
+/// not met reopens its card, unmeasured keeps it open. Pure.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Rerun { Cleared, Reopen, KeepOpen }
+/// #4889 (code review, run 9) — whether a deferred check stays in the registry after a
+/// re-run: kept while unmeasured, and kept when its reopen did not take (a failed
+/// reopen never drops the check, so the next land tries again). Pure.
+pub fn keeps_deferral(action: &Rerun, reopened: bool) -> bool {
+    match action { Rerun::Cleared => false, Rerun::KeepOpen => true, Rerun::Reopen => !reopened }
+}
+
+pub fn rerun_action(o: &Outcome) -> Rerun {
+    match o {
+        Outcome::Met(_) => Rerun::Cleared,
+        Outcome::NotMet(_) => Rerun::Reopen,
+        Outcome::Unmeasured(_) | Outcome::Deferred(_) => Rerun::KeepOpen,
+    }
+}
+
 /// Intake (Proving step 1): a card is Rejected when it has no AC, or an AC
 /// has no runnable check. Every gap is named.
 pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if checks.is_empty() {
-        return Err(vec!["the card has no CardAC rows: every AC needs a check that can fail".into()]);
+        return Err(vec!["the card has no AC lines under ## AC: every AC needs a check that can fail".into()]);
     }
     let errs: Vec<String> = checks
         .iter()
@@ -101,13 +217,25 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
+/// #4683 — a card with no AC check (#4760: on its AC lines) has nothing to prove. Never
+/// "Proven". #4889 (Jeff 18:21, "prove in prod"): it no longer lands as before: it fails.
+pub const NO_ROWS: &str = "unproven: no AC has a check";
+
+/// #4889 — the land's prove step passes only on Proven: Not met, Unproven and a card with
+/// no checks all hold accept and reopen the card. Pure.
+pub fn prod_passes(v: &str) -> bool {
+    v == "Proven"
+}
+
 /// The verdict over every AC: Proven only when every one is met; Not met when
 /// any is not met; Unproven when none failed but some could not be measured
 /// (an unmeasured AC is never a pass, and never a regression either).
 pub fn verdict(results: &[(Check, Outcome)]) -> &'static str {
     if results.iter().any(|(_, o)| matches!(o, Outcome::NotMet(_))) {
         "Not met"
-    } else if !results.is_empty() && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_))) {
+    } else if results.iter().any(|(_, o)| matches!(o, Outcome::Met(_)))
+        && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_) | Outcome::Deferred(_)))
+    {
         "Proven"
     } else {
         "Unproven"
@@ -148,44 +276,6 @@ pub fn route_for(failed_step: &str, routes: &[(String, String)], role: &str) -> 
         }
         Some((_, to)) => Route::Reopen { step: to.clone() },
     }
-}
-
-/// A card's CardAC rows (Wren's shape, #4456): acFor · acIndex · acStatement ·
-/// checkKind · checkTarget · checkExpect, one row per AC, in AC order.
-pub const CHECKS_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
-SELECT ?ac ?statement ?kind ?target ?expect WHERE {
-  GRAPH ?g { ?ac a chorus:CardAC ; chorus:acFor chorus:card-{CARD} ; chorus:acIndex ?i .
-             OPTIONAL { ?ac chorus:acStatement ?statement }
-             OPTIONAL { ?ac chorus:checkKind ?kind }
-             OPTIONAL { ?ac chorus:checkTarget ?target }
-             OPTIONAL { ?ac chorus:checkExpect ?expect } }
-}
-ORDER BY xsd:integer(?i)
-"#;
-
-pub fn checks_query(card: u32) -> String {
-    format!("PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n{}", CHECKS_QUERY.replace("{CARD}", &card.to_string()))
-}
-
-/// CardAC rows from SPARQL TSV: ?ac ?statement ?kind ?target ?expect.
-pub fn checks_from_tsv(tsv: &str) -> Result<Vec<Check>, String> {
-    let mut lines = tsv.lines();
-    let header = lines.next().unwrap_or("");
-    if !header.starts_with("?ac") {
-        return Err(format!("not a CardAC result: header {header:?}"));
-    }
-    Ok(lines
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            let mut f: Vec<String> = l.split('\t').map(term).collect();
-            f.resize(5, String::new());
-            Check { ac: local(&f[0]), statement: f[1].clone(), kind: f[2].clone(), target: f[3].clone(), expect: f[4].clone() }
-        })
-        .collect())
-}
-
-fn local(s: &str) -> String {
-    s.rsplit(['#', '/']).next().unwrap_or(s).to_string()
 }
 
 fn term(t: &str) -> String {
@@ -236,14 +326,73 @@ pub fn test_logql(target: &str, card: u32) -> String {
         // every case line in the window does not answer (test-diff, 10-15).
         // card_id is a JSON number on card runs ("card_id":4530); the exact
         // match is the label filter after json, so 45301 never answers for 4530.
-        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed)\" | json | event=~\"test.case.(passed|failed)\" | card_id=\"{card}\" | file=\"{t}\" or case=\"{t}\""
+        "{{job=\"platform-chorus\", appName=\"chorus-events\"}} |= \"\\\"card_id\\\":{card}\" |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | card_id=\"{card}\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
     )
+}
+
+/// #4889 (land 11-05) — the `Created:` time a `cards view` names (RFC3339). No run of a
+/// card is older, so it starts every Loki window for the card's own runs (not 30 days,
+/// which Loki split into hundreds of sub-queries and refused with 429). Pure.
+pub fn card_created(view: &str) -> Option<String> {
+    view.lines().map(str::trim).find_map(|l| l.strip_prefix("Created:")).map(|v| v.trim().to_string()).filter(|v| v.len() >= 20 && v.ends_with('Z'))
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ` to seconds since the epoch (UTC). Pure.
+pub fn rfc3339_epoch(t: &str) -> Option<u64> {
+    let n = |a: usize, b: usize| t.get(a..b)?.parse::<i64>().ok();
+    let (y, m, d, hh, mm, ss) = (n(0, 4)?, n(5, 7)?, n(8, 10)?, n(11, 13)?, n(14, 16)?, n(17, 19)?);
+    // days from civil (Howard Hinnant)
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    u64::try_from(days * 86400 + hh * 3600 + mm * 60 + ss).ok()
+}
+
+/// #4889 (code review, run 20) — Loki refuses a window wider than its max query length
+/// (30 days by default), so the card's window starts at its creation or 29 days ago,
+/// whichever is later: an old card is still measured from its recent runs. Pure.
+pub fn window_start(created: u64, now: u64) -> u64 {
+    created.max(now.saturating_sub(29 * 86400))
+}
+
+/// #4889 (land 11-05) — one Loki answer: 200 is read for its newest case (None = no
+/// events); any other status is an error, never "no result yet" (a 429 read as no
+/// result held #4889's land twice). Pure.
+pub fn loki_seen(code: &str, body: &str) -> Result<Option<(u128, String)>, String> {
+    if code.trim() == "200" { Ok(latest_case(body)) } else { Err(format!("error: Loki answered {} (unmeasured, not \"no result\")", code.trim())) }
+}
+
+/// #4889 — the card's own answer and main's nightly answer to one test check: an error
+/// in either is the result (said as an error); else the newer of the two.
+pub fn test_seen(own: Result<Option<(u128, String)>, String>, main: Result<Option<(u128, String)>, String>) -> Option<String> {
+    match (own, main) {
+        (Err(e), _) | (_, Err(e)) => Some(e),
+        (Ok(a), Ok(b)) => newer(a, b),
+    }
 }
 
 /// #4536 — the newest result in a Loki query_range answer: "pass" or "fail".
 /// No events (or an unreadable answer) is None — never a pass.
 pub fn latest_case_result(body: &str) -> Option<String> {
-    let mut best: Option<(u128, &'static str)> = None;
+    latest_case(body).map(|(_, r)| r)
+}
+
+/// #4824 — the newest result with its Loki timestamp (ns), so two answers
+/// (the card's own runs, main's nightly since the land) can be compared.
+/// #4889 — how many case lines the test check asks Loki for. An answer that holds
+/// this many lines may have cut off the newest run's oldest cases (/code-review).
+pub const CASE_LIMIT: usize = 2000;
+
+pub fn latest_case(body: &str) -> Option<(u128, String)> {
+    // #4889 (Kade 18:08) — the WHOLE newest run of the test decides, not its
+    // newest single case: Loki answered limit=1, so one passing case hid a failed
+    // one, and a skipped case was never read. Cases are grouped by their run's
+    // trace; the run with the newest case is the answer: any failed case → fail,
+    // else any skipped case → skip (unmeasured), else pass.
+    let mut cases: Vec<(u128, String, &'static str)> = Vec::new();
     let mut rest = body;
     while let Some(i) = rest.find("[\"") {
         rest = &rest[i + 2..];
@@ -265,11 +414,189 @@ pub fn latest_case_result(body: &str) -> Option<String> {
         }
         rest = &rest[close..];
         let result = if line.contains("\"event\":\"test.case.failed\"") { "fail" }
+            else if line.contains("\"event\":\"test.case.skipped\"") { "skip" }
             else if line.contains("\"event\":\"test.case.passed\"") { "pass" }
             else { continue };
-        if best.map_or(true, |(t, _)| ts > t) {
-            best = Some((ts, result));
+        // a case with no trace is a run of its own: never grouped with others
+        let run = json_field(&line, "trace").filter(|t| !t.is_empty()).unwrap_or_else(|| format!("untraced-{ts}"));
+        cases.push((ts, run, result));
+    }
+    let (newest, run) = cases.iter().max_by_key(|(t, _, _)| *t).map(|(t, r, _)| (*t, r.clone()))?;
+    let of_run: Vec<&str> = cases.iter().filter(|(_, r, _)| *r == run).map(|(_, _, x)| *x).collect();
+    // a full answer whose oldest line is still the newest run may have lost cases
+    let oldest_is_newest_run = cases.iter().min_by_key(|(t, _, _)| *t).map(|(_, r, _)| *r == run).unwrap_or(false);
+    let truncated = cases.len() >= CASE_LIMIT && oldest_is_newest_run;
+    let verdict = if of_run.contains(&"fail") { "fail" }
+        else if truncated || of_run.contains(&"skip") { "skip" }
+        else { "pass" };
+    Some((newest, verdict.to_string()))
+}
+
+/// The string value of `"key":"…"` in one flat JSON line (no nesting needed here).
+fn json_field(line: &str, key: &str) -> Option<String> {
+    let k = format!("\"{key}\":\"");
+    let i = line.find(&k)? + k.len();
+    let j = line[i..].find('"')?;
+    Some(line[i..i + j].to_string())
+}
+
+/// #4824 — a `test` check's query on MAIN: the nightly's case events for the
+/// test (role nightly, no card), read from the land on. The card's own runs
+/// only run the tests its diff touches, so a test the AC names but the diff
+/// does not (4535 on #4805) had no answer at all. Never another card's branch:
+/// only the nightly runs main.
+pub fn test_logql_main(target: &str) -> String {
+    let t = target.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "{{job=\"platform-chorus\", appName=\"chorus-events\", role=\"nightly\"}} |= \"{t}\" |~ \"test.case.(passed|failed|skipped)\" | json | event=~\"test.case.(passed|failed|skipped)\" | file=~\".*{t}\" or file=\"{t}\" or case=\"{t}\""
+    )
+}
+
+/// #4824 — of the card's answer and main's answer since the land, the newer.
+pub fn newer(a: Option<(u128, String)>, b: Option<(u128, String)>) -> Option<String> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(if y.0 > x.0 { y.1 } else { x.1 }),
+        (x, y) => x.or(y).map(|(_, r)| r),
+    }
+}
+
+/// #4824 — a `crawl` check: the crawl's row for one class, as
+/// `missing=N stale=M head=<sha>`, from /api/crawler/validate. None when the
+/// answer has no such row.
+pub fn crawl_row(body: &str, class: &str) -> Option<(String, String)> {
+    // std only (ADR-032 §1): the validate answer is read by its fixed keys
+    let head = str_after(body, "\"head\":\"")?;
+    let at = body.find(&format!("\"class\":\"{}\"", class.replace('"', "\\\"")))?;
+    let row = &body[at..];
+    let row = &row[..row.find('}').unwrap_or(row.len())];
+    Some((head, format!("missing={} stale={}", list_len(row, "missing")?, list_len(row, "stale")?)))
+}
+
+/// The string value that starts right after `key` (up to its closing quote).
+fn str_after(body: &str, key: &str) -> Option<String> {
+    let rest = &body[body.find(key)? + key.len()..];
+    Some(rest[..rest.find('"')?].to_string())
+}
+
+/// How many strings a JSON list of strings holds: `"<name>":[ "a", "b\"c" ]` → 2.
+fn list_len(row: &str, name: &str) -> Option<usize> {
+    let key = format!("\"{name}\":[");
+    let rest = &row[row.find(&key)? + key.len()..];
+    let (mut n, mut in_str, mut esc) = (0, false, false);
+    for c in rest.chars() {
+        match (in_str, esc, c) {
+            (true, true, _) => esc = false,
+            (true, false, '\\') => esc = true,
+            (true, false, '"') => in_str = false,
+            (false, _, '"') => { in_str = true; n += 1; }
+            (false, _, ']') => return Some(n),
+            _ => {}
         }
     }
-    best.map(|(_, r)| r.to_string())
+    None
+}
+
+/// #4683 AC3 — the ACs a red verdict files children for: every one not met
+/// or not measured.
+pub fn reds(results: &[(Check, Outcome)]) -> Vec<&(Check, Outcome)> {
+    // #4823 — a deferred AC already has its card (the one that proves it): no child
+    results.iter().filter(|(_, o)| !matches!(o, Outcome::Met(_) | Outcome::Deferred(_))).collect()
+}
+
+/// The child's title names the parent and the AC, so a rerun finds it.
+pub fn child_title(parent: u32, c: &Check) -> String {
+    let s: String = c.statement.split_whitespace().collect::<Vec<_>>().join(" ");
+    let s = if s.chars().count() > 80 { format!("{}…", s.chars().take(79).collect::<String>().trim_end()) } else { s };
+    format!("#{parent} {} not proven in prod: {s}", c.ac)
+}
+
+/// The child's description carries the card floor (Experience + AC) and
+/// borg-prove's evidence.
+pub fn child_desc(parent: u32, c: &Check, o: &Outcome) -> String {
+    format!(
+        "## Experience\nborg-prove checked #{parent} in prod after its land and {} {} ({} check on {}).\n\nEvidence: {}\n\n## AC\n- [ ] {}: {}  check: {}\n",
+        c.ac, o.word(), c.kind, c.target, o.evidence(), c.ac, c.statement, child_check(c)
+    )
+}
+
+/// #4760 — the child's one AC is the parent's AC, carrying the parent's own
+/// check, so the child passes intake at pull and proves the same thing.
+fn child_check(c: &Check) -> String {
+    match c.kind.as_str() {
+        "test" => format!("test {}", c.target),
+        "http" | "sparql" => format!("{} {} {}", c.kind, c.target, c.expect).trim_end().to_string(),
+        _ => "none".into(),
+    }
+}
+
+/// The parent's owner from `cards view` ("  Owner:    Kade"), lowercased.
+pub fn owner_of(view: &str) -> Option<String> {
+    view.lines().find_map(|l| l.trim().strip_prefix("Owner:")).map(|o| o.trim().to_lowercase()).filter(|o| !o.is_empty())
+}
+
+/// Titles of the parent's children from `cards view` ("  Children (2):" then
+/// "    #4700 [Later] title" lines). None when the count the view states is not
+/// the count read (Silas, Abby at the demo): a format change must refuse,
+/// never silently file a second child.
+pub fn child_titles(view: &str) -> Option<Vec<String>> {
+    let mut lines = view.lines().map(str::trim);
+    let Some(head) = lines.by_ref().find(|t| t.starts_with("Children (")) else { return Some(Vec::new()) };
+    let n: usize = head.trim_start_matches("Children (").split(')').next()?.parse().ok()?;
+    let out: Vec<String> = lines.take(n)
+        .filter_map(|t| t.strip_prefix('#').and_then(|r| r.split_once("] ")).map(|(_, title)| title.to_string()))
+        .collect();
+    (out.len() == n).then_some(out)
+}
+
+/// #4683 (Silas, Wren in the demo reviews) — record must judge what prod
+/// measured, not measure again: prod writes its results, record reads them.
+/// One row per AC, tab-separated, with tabs, newlines and backslashes escaped.
+pub fn results_to_tsv(results: &[(Check, Outcome)]) -> String {
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n");
+    let mut out = String::from("ac\tstatement\tkind\ttarget\texpect\toutcome\tevidence\n");
+    for (c, o) in results {
+        let f = [&c.ac, &c.statement, &c.kind, &c.target, &c.expect, o.word(), o.evidence()];
+        out.push_str(&f.iter().map(|x| esc(x)).collect::<Vec<_>>().join("\t"));
+        out.push('\n');
+    }
+    out
+}
+
+pub fn results_from_tsv(tsv: &str) -> Result<Vec<(Check, Outcome)>, String> {
+    let unesc = |s: &str| {
+        let (mut out, mut it) = (String::new(), s.chars());
+        while let Some(ch) = it.next() {
+            if ch != '\\' { out.push(ch); continue; }
+            match it.next() { Some('t') => out.push('\t'), Some('n') => out.push('\n'), Some(x) => out.push(x), None => {} }
+        }
+        out
+    };
+    let mut lines = tsv.lines();
+    if lines.next() != Some("ac\tstatement\tkind\ttarget\texpect\toutcome\tevidence") {
+        return Err("not a borg-prove results file".into());
+    }
+    lines.filter(|l| !l.is_empty()).map(|l| {
+        let f: Vec<String> = l.split('\t').map(unesc).collect();
+        if f.len() != 7 { return Err(format!("a results row has {} fields, not 7", f.len())); }
+        let c = Check { ac: f[0].clone(), statement: f[1].clone(), kind: f[2].clone(), target: f[3].clone(), expect: f[4].clone() };
+        let o = match f[5].as_str() {
+            "met" => Outcome::Met(f[6].clone()),
+            "not met" => Outcome::NotMet(f[6].clone()),
+            "unmeasured" => Outcome::Unmeasured(f[6].clone()),
+            "deferred" => Outcome::Deferred(f[6].clone()),
+            w => return Err(format!("unknown outcome '{w}'")),
+        };
+        Ok((c, o))
+    }).collect()
+}
+
+/// #4760 — the land runs `record` itself, so nobody waits on a human step,
+/// and the verdict file must still be written by her account. Run as anyone else, record hands itself to her through
+/// `sudo -n -u <queen>` with the run named in its args (sudo drops the env);
+/// run as her, it records. The sudoers line allows only `borg-prove record`.
+pub fn queen_hop(me: &str, queen: &str, exe: &str, card: &str, role: &str, run: &str, home: &str) -> Option<Vec<String>> {
+    if me == queen {
+        return None;
+    }
+    Some(["-n", "-u", queen, exe, "record", card, role, run, home].iter().map(|s| s.to_string()).collect())
 }

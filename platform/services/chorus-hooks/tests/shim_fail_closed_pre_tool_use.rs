@@ -54,8 +54,7 @@ fn run_shim(endpoint: &str, stdin_json: &str) -> (String, String, Option<i32>) {
 /// on any host with a live daemon it failed to skip and the test went red
 /// against a healthy system — the exact false-fire class #3617 closed.
 fn socket_unreachable() -> bool {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let sock = format!("{}/.chorus/run/chorus-hooks.sock", home);
+    let sock = chorus_hooks::shared::state_paths::hook_socket_durable();
     std::os::unix::net::UnixStream::connect(sock).is_err()
 }
 

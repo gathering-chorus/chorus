@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 
 # app-state.sh — Unified application and infrastructure state management
 # Native LaunchAgent architecture. (ADR-019, #2075)
@@ -41,7 +42,7 @@ fi
 log() {
   local level="$1"
   local message="$2"
-  local timestamp=$(TZ=America/New_York date +"%Y-%m-%d %H:%M:%S")
+  local timestamp=$(boston_time stamp)
   echo "{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"appName\":\"jeff-bridwell-personal-site\",\"message\":\"$message\"}"
 }
 
@@ -265,23 +266,10 @@ cmd_start() {
     run_tests || exit 1
   fi
 
-  # Start Fuseki if not running
-  if ! service_running "$FUSEKI_LABEL"; then
-    log "info" "Starting Fuseki..."
-    service_start "$FUSEKI_LABEL"
-    local i=0
-    while [ $i -lt 30 ]; do
-      if curl -sf --max-time 2 "http://localhost:3030/\$/ping" &>/dev/null; then
-        log "info" "Fuseki started — http://localhost:3030"
-        break
-      fi
-      sleep 2; ((i+=2))
-    done
-    if [ $i -ge 30 ]; then
-      log "warn" "Fuseki started but not healthy after 30s"
-    fi
-  else
-    log "info" "Fuseki already running"
+  # #4718 — Fuseki is shared infra (both products, one store); its lifecycle is
+  # fuseki-ctl's, never the app's. The app only needs it up.
+  if ! curl -sf --max-time 2 "http://localhost:3030/\$/ping" &>/dev/null; then
+    log "warn" "Fuseki is not answering on :3030 — start it with platform/scripts/fuseki-ctl start"
   fi
 
   # Start app if not running
@@ -307,11 +295,7 @@ cmd_stop() {
     stopped=true
   fi
 
-  if service_running "$FUSEKI_LABEL"; then
-    log "info" "Stopping Fuseki..."
-    service_stop "$FUSEKI_LABEL"
-    stopped=true
-  fi
+  # #4718 — stopping the app never stops Fuseki (shared by both products): fuseki-ctl stop
 
   if $stopped; then
     log "info" "Services stopped"
@@ -442,19 +426,19 @@ Commands:
 
 Managed services (LaunchAgents):
   com.gathering.app         Express application (port 3000)
-  com.gathering.fuseki      SPARQL triplestore (port 3030)
 
-Observability services (checked by status, not managed):
+Checked by status, not managed (Fuseki: fuseki-ctl):
+  com.gathering.fuseki      SPARQL triplestore (port 3030)
   com.gathering.prometheus  Prometheus (port 9090)
   com.gathering.grafana     Grafana (port 3100)
   com.gathering.loki        Loki (port 3102)
   com.gathering.promtail    Promtail
 
 Examples:
-  ./app-state.sh start              # Start app + Fuseki
+  ./app-state.sh start              # Start app (Fuseki: fuseki-ctl)
   ./app-state.sh start --test       # Run tests, then start
   ./app-state.sh restart            # Restart app
-  ./app-state.sh stop               # Stop app + Fuseki
+  ./app-state.sh stop               # Stop app (Fuseki: fuseki-ctl)
   ./app-state.sh logs               # Query recent logs from Loki
   ./app-state.sh logs --errors      # Query error logs from Loki
   ./app-state.sh status             # Full health check

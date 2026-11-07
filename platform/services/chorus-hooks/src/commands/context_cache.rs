@@ -489,18 +489,16 @@ pub fn boot_read_instruction(role: &str) -> String {
 }
 
 /// #4444 — may `name` boot-read? The three Claude roles always; any other
-/// name only when the roles door lists it (Abby: "usage: … <wren|silas|kade>"
-/// at 17:32 sent her grepping the repo). The name goes into a URL, so it must
+/// name only when the roles door lists it. The name goes into a URL, so it must
 /// be a plain slug first.
 pub fn boot_read_allowed(name: &str, door_roles: &[String]) -> bool {
-    let slug = !name.is_empty() && name.len() <= 40 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    let slug = !name.is_empty() && name.len() <= 40
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     slug && (matches!(name, "wren" | "silas" | "kade") || door_roles.iter().any(|r| r == name))
 }
 
-/// #4444 — only the role's own session messages. The search treats a channel
-/// it has never indexed as no filter at all (measured 17:39: channel
-/// session:abby-normal answered with Wren's and Kade's turns), so every result
-/// is checked here; a role with none gets one plain line, never someone else's.
+/// #4444 / #4779 — only the role's own session messages, excluding safety/crisis
+/// helpline responses (#4426) so they never re-trigger classifier stops on boot.
 pub fn own_messages(search_body: &str, role: &str) -> String {
     let want = format!("session:{role}");
     let Ok(mut v) = serde_json::from_str::<serde_json::Value>(search_body) else {
@@ -509,11 +507,35 @@ pub fn own_messages(search_body: &str, role: &str) -> String {
     let Some(results) = v.get_mut("results").and_then(|r| r.as_array_mut()) else {
         return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
     };
-    results.retain(|r| r.get("channel").and_then(|c| c.as_str()) == Some(want.as_str()));
+    results.retain(|r| {
+        let ch = r.get("channel").and_then(|c| c.as_str()).unwrap_or("");
+        let is_own = ch == want.as_str()
+            || (ch.is_empty() && r.get("role").and_then(|ro| ro.as_str()) == Some(role));
+        let text = r.get("content").and_then(|c| c.as_str()).unwrap_or("").trim_start();
+        let is_system_alert = text.starts_with("[alert for ") || text.starts_with("[alert → ");
+        is_own && !text.contains("Suicide & Crisis Lifeline") && !is_system_alert
+    });
     if results.is_empty() {
         return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
     }
+    if v.get("_meta")
+        .and_then(|m| m.get("newest_result_age_s"))
+        .and_then(|a| a.as_u64())
+        .is_some_and(|age| age > 3600)
+    {
+        if let Some(meta) = v.get_mut("_meta").and_then(|m| m.as_object_mut()) {
+            meta.insert("stale".to_string(), serde_json::Value::Bool(true));
+        }
+    }
     v.to_string()
+}
+
+/// #4779 — channel-scoped recent query URL for `boot-read <role>`. No `q=the` hack.
+pub fn boot_read_url(role: &str) -> String {
+    format!(
+        "http://localhost:3340/api/chorus/search?channel=session:{}&order=recent&limit=30",
+        role
+    )
 }
 
 fn door_role_names() -> Vec<String> {
@@ -534,7 +556,7 @@ pub fn boot_read(args: &[String]) -> std::process::ExitCode {
         eprintln!("usage: chorus-hook-shim boot-read <role>   (a role the roles door lists)");
         return std::process::ExitCode::from(2);
     };
-    let url = format!("http://localhost:3340/api/chorus/search?q=the&channel=session:{}&order=recent&limit=30", role);
+    let url = boot_read_url(role);
     match std::process::Command::new("curl").args(["-s", "--max-time", "20", &url]).output() {
         Ok(out) => {
             println!("{}", boot_messages(&own_messages(&String::from_utf8_lossy(&out.stdout), role)));
@@ -602,5 +624,40 @@ mod boot_read_tests_4426 {
         let text = boot_read_instruction("kade");
         assert!(text.contains("chorus-hook-shim boot-read kade"), "{text}");
         assert!(!text.contains("curl -s \"http://localhost:3340/api/chorus/search"), "{text}");
+    }
+
+    #[test]
+    fn boot_read_url_queries_channel_recent_without_q_the_hack_4779() {
+        let url = boot_read_url("silas");
+        assert_eq!(
+            url,
+            "http://localhost:3340/api/chorus/search?channel=session:silas&order=recent&limit=30"
+        );
+        assert!(!url.contains("q=the"), "NEGATIVE: boot_read_url must not require q=the: {url}");
+    }
+
+    #[test]
+    fn historical_turns_tagged_role_or_session_replay_and_keep_4426_guard_4779() {
+        let hist = r#"{"results":[{"channel":"session:silas","role":"silas","content":"10-27 session turn"},{"role":"silas","content":"10-27 role-tagged turn"},{"channel":"session:kade","role":"kade","content":"kade turn"}]}"#;
+        let filtered = boot_messages(&own_messages(hist, "silas"));
+        assert!(filtered.contains("10-27 session turn"), "{filtered}");
+        assert!(filtered.contains("10-27 role-tagged turn"), "{filtered}");
+        assert!(!filtered.contains("kade turn"), "NEGATIVE: kade turn must never appear: {filtered}");
+
+        let flagged_hist = r#"{"results":[{"channel":"session:silas","role":"silas","content":"Your response above was stopped by a safety classifier"},{"channel":"session:silas","role":"silas","content":"10-27 turn"}]}"#;
+        let blocked = boot_messages(&own_messages(flagged_hist, "silas"));
+        assert!(blocked.contains("not replayed"), "NEGATIVE (#4426): {blocked}");
+        assert!(!blocked.contains("10-27 turn"), "NEGATIVE (#4426): {blocked}");
+    }
+
+    #[test]
+    fn own_messages_filters_system_alerts_and_marks_stale_past_threshold_4784() {
+        let flooded = r#"{"_meta":{"newest_result_age_s":9914,"stale":false},"results":[{"channel":"session:silas","author":"user","content":"[alert for silas · from system | 2026-10-29 03:38 Boston] deep-health: 5 failure(s)"},{"channel":"session:silas","author":"user","content":"[alert → silas] grafana: SHACL violations"},{"channel":"session:silas","author":"user","content":"@silas real question"},{"channel":"session:silas","author":"assistant","content":"--- Silas | 2026-10-29 03:39 Boston --- real answer"}]}"#;
+        let out = own_messages(flooded, "silas");
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let results = parsed["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2, "NEGATIVE (#3734): system alerts must not crowd boot-read: {out}");
+        assert!(!out.contains("[alert for silas") && !out.contains("[alert → silas"), "NEGATIVE (#3734): {out}");
+        assert_eq!(parsed["_meta"]["stale"], serde_json::Value::Bool(true), "NEGATIVE (#3734): 9914s old must report stale:true: {out}");
     }
 }

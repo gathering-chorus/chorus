@@ -1,3 +1,4 @@
+// @domain: identity — the product domain this service guards (#4538)
 //! #4432 — the hooks socket for agent principals that run as their own Mac
 //! account (Abby Normal, uid 505). The main socket stays owner-only for the
 //! three roles on Jeff's account; this one is group `chorus`, and on it the OS
@@ -64,14 +65,69 @@ pub fn role_for_account(account: &str, door: &Value) -> Result<String, String> {
 pub fn role_for_uid(uid: Option<u32>, door_base: &str) -> Result<String, String> {
     let uid = uid.ok_or("agent socket refuses: the peer's uid could not be read")?;
     let account = account_name(uid).ok_or_else(|| format!("agent socket refuses: uid {uid} has no account"))?;
-    let url = format!("{door_base}/v1/identity/principals?limit=500");
-    let door: Value = ureq::get(&url).timeout(std::time::Duration::from_millis(2000)).call()
-        .map_err(|e| format!("agent socket refuses: the principals door is unreadable ({url}): {e}"))?
-        .into_json().map_err(|e| format!("agent socket refuses: the principals door answered non-JSON: {e}"))?;
+    let door = shared_door(&DOOR, DOOR_TTL, door_base, || read_door(door_base))?;
     role_for_account(&account, &door)
 }
 
-fn refuse(reason: &str) -> Response {
+fn read_door(door_base: &str) -> Result<Value, String> {
+    let url = format!("{door_base}/v1/identity/principals?limit=500");
+    ureq::get(&url).timeout(std::time::Duration::from_millis(2000)).call()
+        .map_err(|e| format!("agent socket refuses: the principals door is unreadable ({url}): {e}"))?
+        .into_json().map_err(|e| format!("agent socket refuses: the principals door answered non-JSON: {e}"))
+}
+
+/// #4807 — every agent-socket call (each role account's prompts and tool calls) read all
+/// principals from the door. 60 at once overran it (502, os error 22) and the calls were
+/// refused, so prompts lost their context. One read is now shared for DOOR_TTL: callers
+/// queue on the lock while it is in flight and take its answer. A failed read is not kept,
+/// and nothing older than the TTL is ever used — past it, identity is read again (fail closed).
+const DOOR_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+/// Keyed on the door's base URL: a different door is a miss, never another door's answer.
+static DOOR: DoorCache = std::sync::Mutex::new(None);
+type DoorCache = std::sync::Mutex<Option<(std::time::Instant, String, Value)>>;
+
+fn shared_door(
+    cache: &DoorCache,
+    ttl: std::time::Duration,
+    base: &str,
+    read: impl FnOnce() -> Result<Value, String>,
+) -> Result<Value, String> {
+    let mut slot = cache.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((at, from, door)) = slot.as_ref() {
+        if from == base && at.elapsed() < ttl {
+            return Ok(door.clone());
+        }
+    }
+    let door = read()?;
+    *slot = Some((std::time::Instant::now(), base.to_string(), door.clone()));
+    Ok(door)
+}
+
+/// #4786 AC4: payload role ≠ peer role → refuse.
+/// Returns Ok(peer_role_clean) if valid, or Err(refusal_reason) if payload claims a different role.
+pub fn verify_peer_role(peer_role: &str, payload: &Value) -> Result<String, String> {
+    let peer_clean = peer_role.trim().trim_start_matches("chorus-");
+    for key in ["deploy_role", "role"] {
+        if let Some(claimed) = payload.get(key).and_then(Value::as_str) {
+            let claimed_clean = claimed.trim().trim_start_matches("chorus-");
+            if !claimed_clean.is_empty() && claimed_clean != peer_clean {
+                return Err(format!(
+                    "agent socket refuses: payload claims role '{claimed}' but socket peer is '{peer_role}'"
+                ));
+            }
+        }
+    }
+    Ok(peer_clean.to_string())
+}
+
+fn refuse(path: &str, reason: &str) -> Response {
+    if path == "/launchagent-ops" {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(json!({"error": reason})),
+        )
+            .into_response();
+    }
     let deny = json!({"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":reason}});
     Json(json!({"stdout": deny.to_string(), "exit_code": 0})).into_response()
 }
@@ -79,18 +135,153 @@ fn refuse(reason: &str) -> Response {
 /// Middleware for the agent socket: the payload's deploy_role is replaced by
 /// the role the OS identifies. Any failure refuses the call (fail closed).
 pub async fn identify(ConnectInfo(peer): ConnectInfo<AgentPeer>, req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
     let base = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".into());
     let role = match tokio::task::spawn_blocking(move || role_for_uid(peer.uid, &base)).await {
         Ok(Ok(role)) => role,
-        Ok(Err(why)) => return refuse(&why),
-        Err(e) => return refuse(&format!("agent socket refuses: identity lookup failed: {e}")),
+        Ok(Err(why)) => return refuse(&path, &why),
+        Err(e) => return refuse(&path, &format!("agent socket refuses: identity lookup failed: {e}")),
     };
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = to_bytes(body, 16 * 1024 * 1024).await else { return refuse("agent socket refuses: unreadable request body") };
+    let Ok(bytes) = to_bytes(body, 16 * 1024 * 1024).await else {
+        return refuse(&path, "agent socket refuses: unreadable request body");
+    };
     let mut payload: Value = match serde_json::from_slice(&bytes) {
         Ok(Value::Object(o)) => Value::Object(o),
-        _ => return refuse("agent socket refuses: the request body is not a JSON object"),
+        _ => return refuse(&path, "agent socket refuses: the request body is not a JSON object"),
     };
-    payload["deploy_role"] = json!(role);
+
+    // #4787 AC2: on /launchagent-ops, verify that payload role matches the peer role.
+    // For standard hooks (e.g. /pre-tool-use), the agent socket overwrites the payload
+    // role with the OS peer role instead of denying.
+    if path == "/launchagent-ops" {
+        if let Err(why) = verify_peer_role(&role, &payload) {
+            return refuse(&path, &why);
+        }
+    }
+
+    let role_clean = role.trim().trim_start_matches("chorus-");
+    payload["deploy_role"] = json!(role_clean);
+    payload["role"] = json!(role_clean);
     next.run(Request::from_parts(parts, Body::from(payload.to_string()))).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_peer_role_allows_matching_role() {
+        let payload = json!({"role": "kade", "deploy_role": "kade"});
+        assert_eq!(verify_peer_role("kade", &payload), Ok("kade".to_string()));
+
+        let payload_prefixed = json!({"role": "chorus-kade", "deploy_role": "chorus-kade"});
+        assert_eq!(verify_peer_role("kade", &payload_prefixed), Ok("kade".to_string()));
+
+        let payload_empty = json!({});
+        assert_eq!(verify_peer_role("kade", &payload_empty), Ok("kade".to_string()));
+    }
+
+    #[test]
+    fn negative_proof_peer_role_refuses_mismatched_deploy_role() {
+        // #4786 AC4 / #3734 negative proof:
+        // kade's socket sends deploy_role=silas -> refused
+        let payload = json!({"deploy_role": "silas"});
+        let err = verify_peer_role("kade", &payload).unwrap_err();
+        assert!(
+            err.contains("payload claims role 'silas' but socket peer is 'kade'"),
+            "got {:?}",
+            err
+        );
+
+        let payload_role = json!({"role": "silas"});
+        let err2 = verify_peer_role("kade", &payload_role).unwrap_err();
+        assert!(
+            err2.contains("payload claims role 'silas' but socket peer is 'kade'"),
+            "got {:?}",
+            err2
+        );
+
+        // #4787 AC2 negative proof: payload role spoofed for launchagent-ops refused
+        let payload_launchagent = json!({"verb": "kickstart", "label": "com.chorus.clearing", "role": "silas"});
+        let err3 = verify_peer_role("kade", &payload_launchagent).unwrap_err();
+        assert!(
+            err3.contains("payload claims role 'silas' but socket peer is 'kade'"),
+            "got {:?}",
+            err3
+        );
+    }
+    // #4807 — the principals door is read once per DOOR_TTL however many calls arrive.
+    fn door_with(role: &str) -> Value {
+        json!({"data": [{"hostAccount": "chorus-kade", "holdsRole": role}]})
+    }
+
+    #[test]
+    fn sixty_concurrent_calls_make_one_door_read() {
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handles: Vec<_> = (0..60).map(|_| {
+            let reads = reads.clone();
+            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::from_secs(30), "door-a", || {
+                reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                Ok(door_with("role-kade"))
+            }))
+        }).collect();
+        for h in handles { assert!(h.join().unwrap().is_ok()); }
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // NEGATIVE PROOF: the same count goes to 60 when the read is not shared (a zero TTL),
+    // so the 1 above is the sharing, not a count that cannot move.
+    #[test]
+    fn negative_proof_unshared_reads_hit_the_door_every_call() {
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handles: Vec<_> = (0..60).map(|_| {
+            let reads = reads.clone();
+            std::thread::spawn(move || shared_door(&CACHE, std::time::Duration::ZERO, "door-a", || {
+                reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(door_with("role-kade"))
+            }))
+        }).collect();
+        for h in handles { assert!(h.join().unwrap().is_ok()); }
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 60);
+    }
+
+    #[test]
+    fn a_revoked_principal_stops_resolving_once_the_ttl_passes() {
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
+        let ttl = std::time::Duration::from_millis(50);
+        let first = shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-kade"))).unwrap();
+        assert_eq!(role_for_account("chorus-kade", &first).unwrap(), "kade");
+        // revoked: the door no longer lists the account
+        let revoked = json!({"data": []});
+        let within = shared_door(&CACHE, ttl, "door-a", || Ok(revoked.clone())).unwrap();
+        assert!(role_for_account("chorus-kade", &within).is_ok(), "inside the TTL the shared read stands");
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        let after = shared_door(&CACHE, ttl, "door-a", || Ok(revoked.clone())).unwrap();
+        assert!(role_for_account("chorus-kade", &after).unwrap_err().contains("no principal runs as account chorus-kade"));
+    }
+
+    #[test]
+    fn a_different_door_is_a_miss_never_another_doors_answer() {
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
+        let ttl = std::time::Duration::from_secs(30);
+        shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-kade"))).unwrap();
+        let b = shared_door(&CACHE, ttl, "door-b", || Ok(json!({"data": []}))).unwrap();
+        assert!(role_for_account("chorus-kade", &b).is_err(), "door-b's empty answer, not door-a's cached one");
+    }
+
+    #[test]
+    fn a_failed_door_read_is_not_kept_and_past_the_ttl_nothing_stale_is_served() {
+        static CACHE: DoorCache = std::sync::Mutex::new(None);
+        let ttl = std::time::Duration::from_millis(30);
+        shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-kade"))).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let err = shared_door(&CACHE, ttl, "door-a", || Err("door down".into())).unwrap_err();
+        assert_eq!(err, "door down", "fail closed: an expired read is never served when the door is down");
+        let again = shared_door(&CACHE, ttl, "door-a", || Ok(door_with("role-wren"))).unwrap();
+        assert_eq!(role_for_account("chorus-kade", &again).unwrap(), "wren", "the failure was not cached");
+    }
 }

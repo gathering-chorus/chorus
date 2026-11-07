@@ -226,10 +226,21 @@ print('emit-path-ok')
 # --- discover-pages was retired by #4187: the route answers 410 Gone ---
 # (it skipped on 401 for weeks; once auth let it through, the old 200/400/422 smoke went red)
 
-@test "discover-pages is retired: POST answers 410" {
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
-    "http://localhost:3340/api/athena/discover-pages" 2>/dev/null)
-  [[ "$CODE" == "410" ]] || { echo "discover-pages answered $CODE, want 410 (retired by #4187)"; false; }
+# #4885 — read from the tree under test, never live prod :3340 (whose answer depended on what
+# prod was running, and on its sign-in check, not on this tree): the route's handler answers 410.
+discover_pages_retired() {  # $1 = server.ts
+  awk "/app\.post\('\/api\/athena\/discover-pages'/{on=1} on{print} on&&/^}\);/{exit}" "$1" > "$BATS_TEST_TMPDIR/dp.ts"
+  [ -s "$BATS_TEST_TMPDIR/dp.ts" ] || { echo "no discover-pages route in $1"; return 1; }
+  grep -q "res.status(410)" "$BATS_TEST_TMPDIR/dp.ts" && grep -q "retired" "$BATS_TEST_TMPDIR/dp.ts"
+}
+
+@test "discover-pages is retired: its route answers 410 in the tree under test" {
+  discover_pages_retired "$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)/platform/api/src/server.ts" || return 1
+}
+
+@test "NEGATIVE PROOF (#4885): a discover-pages route that answers 200 is caught" {
+  printf "app.post('/api/athena/discover-pages', (_req: Request, res: Response) => {\n  res.status(200).json({ ok: true });\n});\n" > "$BATS_TEST_TMPDIR/live.ts"
+  ! discover_pages_retired "$BATS_TEST_TMPDIR/live.ts" || return 1
 }
 
 # --- #3734 negative proof: the log assertion can still go RED ---

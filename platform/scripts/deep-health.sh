@@ -110,21 +110,29 @@ STALE_2H=$((now - 7200))
 STALE_25H=$((now - 90000))
 STALE_8D=$((now - 691200))
 
-# Skip: stderr-only logs, own log, agents that don't use stdout
-SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log harvest-exporter.log"
+# Skip: stderr-only logs, own log, agents that don't use stdout, or one-shot/event-driven/retired jobs (#4719)
+SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log harvest-exporter.log roles-up.log mcp-config-herald.log building-pipeline.log embed-worker.log log-sync.log infra-alert.log posture-capture.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Persistent daemons — silence is healthy when the process is alive.
 # Format: "logname:launchctl_label" — check PID via launchctl, skip mtime.
 LIVENESS_LOGS="chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
 # Daily jobs — 25h threshold instead of 2h
 DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log lance-maintain.log"
-# Weekly / multi-day jobs — 8 day threshold
-WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log"
+# Weekly / multi-day jobs — 8 day threshold (#4719: security-scan-weekly)
+WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log security-scan-weekly.log"
+
+# --- Deferred services (#3820, #4719) — off BY DECISION, not broken. -----------
+deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
+  case "$1" in
+    buzz-relay-http|*buzz*) echo "deferred per #3674 (Buzz-as-substrate is a chosen 'later', not now)" ;;
+    *) echo "" ;;
+  esac
+}
 
 # Labels currently LOADED in launchd. Empty output is itself a finding.
 loaded_agent_labels() {
   if [ -n "$HEALTH_AGENT_LIST" ]; then
-    cat "$HEALTH_AGENT_LIST" 2>/dev/null || true
+    awk '{print ($NF ~ /^com\./ ? $NF : $1)}' "$HEALTH_AGENT_LIST" 2>/dev/null || true
   else
     launchctl list 2>/dev/null | awk 'NR>1 {print $3}' \
       | grep -E '^com\.(chorus|gathering)\.' || true
@@ -168,16 +176,53 @@ agent_interval_s() {
 agent_is_persistent() {
   local plist="$HEALTH_PLIST_DIR/$1.plist"
   [ -f "$plist" ] || return 1
-  /usr/libexec/PlistBuddy -c "Print :KeepAlive" "$plist" >/dev/null 2>&1 && return 0
+  local ka
+  ka=$(/usr/libexec/PlistBuddy -c "Print :KeepAlive" "$plist" 2>/dev/null || true)
+  if [ -n "$ka" ]; then
+    [ "$ka" != "false" ] && return 0
+    return 1
+  fi
   /usr/libexec/PlistBuddy -c "Print :StartInterval" "$plist" >/dev/null 2>&1 && return 1
   /usr/libexec/PlistBuddy -c "Print :StartCalendarInterval" "$plist" >/dev/null 2>&1 && return 1
-  return 0
+  return 1
 }
 
 # Is the label actually running right now? "-" in column 1 means loaded but not
 # running. #3369: a missing label must never be fatal under set -e.
 agent_pid() {
-  launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $1}' | head -1 || true
+  if [ -n "$HEALTH_AGENT_LIST" ]; then
+    awk -v l="$1" '$NF==l && NF>=3 {print $1}' "$HEALTH_AGENT_LIST" 2>/dev/null | head -1 || true
+  else
+    launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $1}' | head -1 || true
+  fi
+}
+
+agent_exit_code() {
+  if [ -n "$HEALTH_AGENT_LIST" ]; then
+    awk -v l="$1" '$NF==l && NF>=3 {print $2}' "$HEALTH_AGENT_LIST" 2>/dev/null | head -1 || true
+  else
+    launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $2}' | head -1 || true
+  fi
+}
+
+# #4879 — say what happened. launchd reports a signal death as a negative
+# status and a normal exit as the job's own code. Only a signal, or a job that
+# never started (126/127 exec failure, 78 EX_CONFIG), is a crash. A job that
+# ran and exited non-zero "exited", and the alert carries the last line it
+# wrote (data, not diagnosis): on 11-03 three jobs read "crashed" all day while
+# each had finished and reported findings.
+exit_failure() {
+  local label="$1" ec="$2"
+  if [ "$ec" -lt 0 ] 2>/dev/null; then echo "crashed: $label (signal ${ec#-})"; return; fi
+  case "$ec" in 126|127|78) echo "crashed: $label (exit $ec)"; return;; esac
+  local plist="$HEALTH_PLIST_DIR/$label.plist" last="" f
+  for f in $(/usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null) \
+           $(/usr/libexec/PlistBuddy -c "Print :StandardOutPath" "$plist" 2>/dev/null); do
+    [ -r "$f" ] || continue
+    last=$(tail -n 20 "$f" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr -d '\\\000-\010\013-\037\177' | awk 'NF{l=$0} END{print l}' | cut -c1-140)
+    [ -n "$last" ] && break
+  done
+  if [ -n "$last" ]; then echo "exited: $label (exit $ec) — $last"; else echo "exited: $label (exit $ec)"; fi
 }
 
 agent_stdout_path() {
@@ -193,6 +238,11 @@ fi
 
 while IFS= read -r label; do
   [ -n "$label" ] || continue
+
+  # Skip deferred agents (#3674, #4719)
+  if [ -n "$(deferred_reason "$label")" ]; then
+    continue
+  fi
 
   log=$(agent_stdout_path "$label") || {
     FAILURES+=("log-freshness: $label is loaded but its plist declares no StandardOutPath — it cannot be observed")
@@ -226,6 +276,15 @@ while IFS= read -r label; do
     continue
   fi
 
+  # Check for crash / non-zero exit code (#4704, #4719: only when not running)
+  _ec=$(agent_exit_code "$label")
+  _pid=$(agent_pid "$label")
+  if [ -n "$_ec" ] && [ "$_ec" != "-" ] && [ "$_ec" -ne 0 ] 2>/dev/null; then
+    if [ -z "$_pid" ] || [ "$_pid" = "-" ]; then
+      FAILURES+=("$(exit_failure "$label" "$_ec")")
+    fi
+  fi
+
   # Persistent daemon: ask launchd whether it is alive, not whether it spoke.
   if agent_is_persistent "$label"; then
     _p=$(agent_pid "$label")
@@ -244,22 +303,26 @@ while IFS= read -r label; do
   size=$(stat -f %z "$log" 2>/dev/null || echo 0)
   mtime=$(stat -f %m "$log" 2>/dev/null || echo 0)
 
+  # For StartInterval jobs, judge by launchd exit 0; check age only if the log has content (#4704).
+  # If size is 0 and exit code was not non-zero, the job ran cleanly without emitting stdout noise.
+  if [ "$size" -eq 0 ]; then
+    continue
+  fi
+
   # Threshold: the agent's own cadence first, hand lists only as override.
-  # Two missed runs is the bar — one missed run is a slow box, two is a stop.
+  # Three missed intervals is the bar (#4704).
   interval_s=$(agent_interval_s "$label" || true)
   if [[ " $WEEKLY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_8D
   elif [[ " $DAILY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_25H
   elif [ -n "$interval_s" ] && [ "$interval_s" -gt 0 ] 2>/dev/null; then
-    threshold=$(( now - (interval_s * 2) - 3600 ))
+    threshold=$(( now - (interval_s * 3) ))
   else
     threshold=$STALE_2H
   fi
 
-  if [ "$size" -eq 0 ]; then
-    FAILURES+=("log-freshness: $name is 0 bytes — $label loaded but silent")
-  elif [ "$mtime" -lt "$threshold" ]; then
+  if [ "$mtime" -lt "$threshold" ]; then
     age_h=$(( (now - mtime) / 3600 ))
     FAILURES+=("log-freshness: $name is ${age_h}h stale — $label is loaded")
   fi
@@ -273,9 +336,14 @@ done <<< "$_loaded_labels"
 # fetches /ready by that exact mDNS name in 60ms while this probe was failing.
 # Exit-code-is-verdict (#3571), applied here too.
 bedroom_loki=$(ssh -o ConnectTimeout=5 -o BatchMode=yes bedroom \
-  "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" 2>/dev/null)
-ssh_rc=$?
-if [ "$ssh_rc" -eq 255 ]; then
+  "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" 2>/dev/null) \
+  && ssh_rc=0 || ssh_rc=$?
+# #4692 — under set -e an unguarded rc 28 (curl's timeout, relayed by ssh)
+# killed the run here before its summary: "DIED before summary (exit 28 near
+# line 276)", six times on 10-22 while Bedroom reached Loki in 0.1 s.
+if [ "$ssh_rc" -eq 28 ]; then
+  WARNINGS+=("loki-bedroom-slow: Bedroom got no answer from Loki /ready within 3s (rc=28)")
+elif [ "$ssh_rc" -eq 255 ]; then
   # 255 is ssh's own transport failure — says nothing about Loki.
   WARNINGS+=("loki-bedroom-unknown: ssh to bedroom failed (rc=255) — Loki reachability NOT measured")
 elif [ "$ssh_rc" -ne 0 ]; then
@@ -417,9 +485,12 @@ done
 # "should run". Retiring an agent = DELETE its plist, so on-disk-but-not-loaded
 # is always an anomaly. Catches the silent deaths (embed-worker, watchdog, ...)
 # that the curated CRITICAL_SERVICES list (#10) structurally cannot see.
+# #4719: Retired worktree LaunchAgents (#2640) and retired log-harvest.
+RETIRED_PLISTS="com.chorus.api.werk.abby-normal com.chorus.athena-make.werk.abby-normal com.chorus.clearing.werk.abby-normal com.chorus.hooks.werk.abby-normal com.chorus.log-harvest"
 for plist in "$HOME"/Library/LaunchAgents/com.chorus.*.plist; do
   [ -f "$plist" ] || continue
   label=$(basename "$plist" .plist)
+  [[ " $RETIRED_PLISTS " == *" $label "* ]] && continue
   if ! launchctl list "$label" >/dev/null 2>&1; then
     FAILURES+=("$label: plist on disk but NOT loaded — silent death (load it, or delete the plist if retired)")
   fi
@@ -506,15 +577,7 @@ fi
 # decision may be stale), never silent. The reason travels so the readout says
 # WHY it is muted, not just that it is.
 #
-# A case function, NOT declare -A: macOS /bin/bash is 3.2 (no associative
-# arrays) and this probe runs under launchd/cron in that shell — an assoc array
-# would break the whole health check, turning a mute into an outage.
-deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
-  case "$1" in
-    buzz-relay-http) echo "deferred per #3674 (Buzz-as-substrate is a chosen 'later', not now)" ;;
-    *) echo "" ;;
-  esac
-}
+
 
 # #4138 seams — HEALTH_ENDPOINTS_FILE replaces the list above (one url|name|desc
 # per line, empty file = probe nothing) so a test never touches a live port;
@@ -800,7 +863,9 @@ echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HEALTH_LOG_FILE"
 # resolved). Steady-state repeated failures are logged but not re-injected —
 # they're already tracked by swat cards and the status is visible in pulse.
 STATE_FILE="${HEALTH_STATE_FILE:-/tmp/deep-health-last-failures.txt}"
-CURRENT=$(printf '%s\n' "${FAILURES[@]}" | sort)
+# #4879 — an "exited" failure carries the job's last log line, which changes
+# run to run (run ids, times); dedup on the failure itself, not that detail.
+CURRENT=$(printf '%s\n' "${FAILURES[@]}" | sed 's/ — .*//' | sort)
 LAST=""
 [ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE")
 printf '%s' "$CURRENT" > "$STATE_FILE"

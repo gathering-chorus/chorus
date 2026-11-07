@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 use crate::shared::state_paths::chorus_root;
 use crate::state::{append_log, chorus_log, AppState};
 use crate::types::{HookInput, HookResponse, Role};
@@ -166,7 +167,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
     }
 

@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: athena
+// @domain: domains
 //! #4515 — `athena-validate --card <n>`, the Model step of the v2 athena pipeline.
 //! The card's werk is $CHORUS_WERK_BASE/<role>-<n>; its model change is the
 //! model sources its diff since main touched. Every changed TTL must parse and

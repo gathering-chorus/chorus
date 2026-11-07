@@ -25,8 +25,6 @@
   # #4540 — the test step runs the cicd-test child pipeline (werk-test as steps), scope diff
   chorus:skill-werk-test-pipeline a chorus:Skill ; rdfs:label "the tests: cicd-test, scope diff" ; chorus:executor "pipeline" ; chorus:implementedBy "cicd-test" .
   chorus:stepskill-cicd-test-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-test-pipeline ; chorus:skillOrder 1 ; chorus:withArguments "SCOPE=diff" .
-  chorus:skill-werk-review a chorus:Skill ; rdfs:label "werk-review" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-review" ; chorus:arguments "{card} {caller}" ; chorus:inputShape chorus:WerkCardOnlyInput .
-  chorus:stepskill-cicd-test-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-review ; chorus:skillOrder 2 .
   chorus:skill-werk-deploy-demo a chorus:Skill ; rdfs:label "werk-deploy-demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "{card} {caller} --target werk" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-demo-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-demo ; chorus:skillOrder 1 .
   chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up {caller} {card}" ; chorus:inputShape chorus:WerkCardOnlyInput .
@@ -42,7 +40,13 @@
   chorus:skill-werk-deploy-prod a chorus:Skill ; rdfs:label "werk-deploy-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "{card} {caller} --target canonical" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-land-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-deploy-prod ; chorus:skillOrder 3 .
   chorus:skill-werk-accept a chorus:Skill ; rdfs:label "werk-accept" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-accept" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
-  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 4 ; chorus:withArguments "atomic=true" .
+  chorus:skill-borg-verify-in-prod a chorus:Skill ; rdfs:label "borg-verify-in-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "prod ${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-verify-in-prod ; chorus:skillOrder 4 ; chorus:withArguments "continue_on=failure" .
+  chorus:skill-borg-record a chorus:Skill ; rdfs:label "borg-record" ; chorus:executor "deterministic" ; chorus:implementedBy "borg-prove" ; chorus:arguments "record ${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-land-5 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-borg-record ; chorus:skillOrder 5 .
+  chorus:stepskill-cicd-land-6 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 6 ; chorus:withArguments "atomic=true" .
+  chorus:skill-clearing-evaluate a chorus:Skill ; rdfs:label "post-land: evaluate chunk sequence or lane switch" ; chorus:executor "pipeline" ; chorus:implementedBy "clearing-evaluate" .
+  chorus:stepskill-cicd-land-7 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-clearing-evaluate ; chorus:skillOrder 7 ; chorus:withArguments "continue_on=failure enqueue=true" .
 }
 # #4465 AC7 — the walk: stream ← automates ← pipeline; pipeline step coversStep stream steps; skills name domains.
 <urn:chorus:domains:value-streams> {
@@ -71,7 +75,6 @@
   chorus:skill-werk-build chorus:hasDomain chorus:builds .
   chorus:skill-werk-test chorus:hasDomain chorus:tests .
   chorus:skill-werk-test-pipeline chorus:hasDomain chorus:tests .
-  chorus:skill-werk-review chorus:hasDomain chorus:code .
   chorus:skill-werk-deploy-demo chorus:hasDomain chorus:deploys .
   chorus:skill-werk-deploy-env-up chorus:hasDomain chorus:deploys .
   chorus:skill-werk-demo-pipeline chorus:hasDomain chorus:pipelines .
@@ -80,4 +83,7 @@
   chorus:skill-werk-sync chorus:hasDomain chorus:version-control .
   chorus:skill-werk-deploy-prod chorus:hasDomain chorus:deploys .
   chorus:skill-werk-accept chorus:hasDomain chorus:version-control .
+  chorus:skill-borg-verify-in-prod chorus:hasDomain chorus:tests .
+  chorus:skill-borg-record chorus:hasDomain chorus:cards .
+  chorus:skill-clearing-evaluate chorus:hasDomain chorus:cards .
 }

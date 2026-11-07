@@ -14,4 +14,7 @@ if [ -r "$_credenv" ]; then
 fi
 # spine events through the team's logger on this box
 export PULSE_EVENTS_COMMAND="${PULSE_EVENTS_COMMAND:-$HOME/CascadeProjects/chorus/platform/scripts/chorus-log}"
+# #4716 — pulse writes through the door as principal-pulse (its own identity,
+# seeded 2026-10-24), never with the store password; reads stay plain SPARQL.
+export PULSE_STORE_KIND="${PULSE_STORE_KIND:-door}"
 exec "$HOME/.chorus/bin/pulse-api" "$@"

@@ -1,5 +1,6 @@
 #4456 AC4 — one check row per 2026-10-07 hand finding (Wren's index.db record,
-2026-10-07T19:33:38Z). Run: BORG_CHECKS_TSV=<card>.tsv borg-prove prod <card> <role>
+2026-10-07T19:33:38Z). Run: BORG_CARD_DESC=<card>.md borg-prove prod <card> <role>
+(#4760: the AC lines with their checks; these were CardAC .tsv rows)
 10-07 → 10-11 prod: same #4447 (not met) #4419 (not met: Clearing blast radius has 0 edges) #4438 (met); not → met #4446 #4440 #4445 #4358;
 unmeasured (no read-only check yet) #4420 #4444 #4432 #4452.
 Flips explained by later lands (Wren, 10-11 10:20): #4446 5614e2034 (10-07 17:40) · #4440 3be70f80a (10-07 20:03)

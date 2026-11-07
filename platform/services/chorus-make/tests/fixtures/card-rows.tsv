@@ -1,0 +1,7 @@
+# #4654 fixture — a card's pull and its coding as a dagu pipeline (Jeff 10-18, 10-20 10:17 "wire werk-pull and werk-code into dagu").
+# The role's "code is done" is the one human step; the hand-off starts athena (a model card) or cicd.
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+pull	1	1	skill-werk-card-pull	pull: the card to WIP and its werk off main	deterministic	${CHORUS_HOME}/platform/scripts/werk-card	pull ${CARD} ${ROLE}			
+code	2	1	skill-werk-code	code: the role builds the card	human					by=ROLE choices=done|stop
+check	3	1	skill-werk-card-check	the done came from the card's role	deterministic	${CHORUS_HOME}/platform/scripts/werk-card	check ${CARD} ${ROLE} ${skill_werk_code.outputs.by} ${skill_werk_code.outputs.decision}			
+hand-off	4	1	skill-werk-card-handoff	hand off: athena if the card changes the model, else cicd	deterministic	${CHORUS_HOME}/platform/scripts/werk-card	handoff ${CARD} ${ROLE}			

@@ -1,0 +1,24 @@
+[package]
+name = "chorus-jeff-signer"
+version = "0.1.0"
+edition = "2021"
+description = "#4652 — NIP-46 remote signer for Jeff's key. Runs as its own macOS user; signs only kind 9 in #team and kind 22242 for our relay."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-jeff-signer"
+path = "src/main.rs"
+
+[dependencies]
+secp256k1 = { version = "0.29", features = ["global-context"] }
+hmac = "0.12"
+hkdf = "0.12"
+chacha20 = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+serde_json = "1"
+getrandom = "0.2"
+tungstenite = { version = "0.21", default-features = false, features = ["handshake"] }

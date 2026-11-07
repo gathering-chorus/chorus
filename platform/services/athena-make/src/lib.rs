@@ -1425,6 +1425,7 @@ pub fn write_routes(plural: &str) -> Vec<String> {
     let mut routes = vec![
         format!("POST /{}", plural),                  // create entity
         format!("PUT /{}/:name", plural),             // replace entity
+        format!("PATCH /{}/:name", plural),           // #4762 change fields (the door serves it: PatchEntity)
         format!("DELETE /{}/:name", plural),          // delete entity
         format!("POST /{}/:name/partof", plural),     // add partOf edge
         format!("DELETE /{}/:name/partof", plural),   // remove partOf edge
@@ -1721,9 +1722,15 @@ fn parse_json_object(body: &str, allow_null: bool) -> R<std::collections::BTreeM
                 return Err(format!("create property '{}': an empty list says nothing — omit the property instead", key));
             }
             items
+        } else if body[i..].starts_with("true") || body[i..].starts_with("false") {
+            // #4713 — a JSON boolean is its lexical form; the DAL types it from the
+            // field's sh:datatype (xsd:boolean); a non-boolean typed field still refuses it.
+            let lexical = if body[i..].starts_with("true") { "true" } else { "false" };
+            i += lexical.len();
+            vec![lexical.to_string()]
         } else {
             vec![string_at(body, &mut i)
-                .map_err(|e| format!("create property '{}' must be a JSON string or a list of strings ({})", key, e))?]
+                .map_err(|e| format!("create property '{}' must be a JSON string, a JSON boolean, or a list of strings ({})", key, e))?]
         };
         if out.insert(key.clone(), value).is_some() {
             return Err(format!("create property '{}' appears more than once", key));
@@ -2137,7 +2144,8 @@ fn dal_batch(graph: &str, deletes: &[(String, String, String)], inserts: &[(Stri
 /// Tab can't appear in a valid IRI/literal, so athena-make never assembles SPARQL — it
 /// splits into typed argv and hands them to the chorus-model `batch` CLI (slot-
 /// validation + structural single-graph). `graph` = the scope-validated x-target-graph.
-fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16, String) {
+/// #4715 — and the deploy-only check every single write runs (batch_deploy_refusal).
+pub fn handle_batch_checked(graph: &str, body: &str, caller_role: &str, token: &str, tables: &[RouteTable]) -> (u16, String) {
     if graph.trim().is_empty() {
         return write_resp("validation", "batch requires x-target-graph (no default graph, ever)");
     }
@@ -2163,6 +2171,11 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
     if deletes.is_empty() && inserts.is_empty() {
         return write_resp("validation", "batch: no DEL/INS lines");
     }
+    let all: Vec<(String, String, String)> = deletes.iter().chain(inserts.iter()).cloned().collect();
+    if let Some(why) = batch_deploy_refusal(&all, tables) {
+        emit_write_spine(caller_role, "batch", graph, "", "authz");
+        return write_resp("authz", &why);
+    }
     match dal_batch(graph, &deletes, &inserts, token) {
         Ok(_) => {
             emit_write_spine(caller_role, "batch", graph, "", "ok");
@@ -2173,6 +2186,46 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
             dal_err_resp(&e)
         }
     }
+}
+
+/// #4715 AC4 — the door's one writer. TDB2 takes one write transaction at a
+/// time, and the door ran a thread per connection, so concurrent writes reached
+/// Fuseki together and lost to "already in a transaction" (Abby). Every write the
+/// door serves now waits its turn here, so a burst is queued, not refused, and a
+/// multi-call write (PATCH) runs with no other door write between its calls.
+static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Run one write while holding the door's writer lock. A poisoned lock (a write
+/// that panicked) still serializes: the next write takes it over.
+pub fn with_write_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    f()
+}
+
+/// #4715 AC2 — /batch took raw triples with only a scope check, so a role with
+/// Write on a graph that also holds a deploy-only class (Principal, #4220) could
+/// INS or DEL that class's rows: the one check every single write runs was
+/// skipped. A batch line is refused when its subject is a deploy-only class's
+/// row (minted the same way entity_subject mints it) or it types something as
+/// one. The owner rule is already met: /batch requires a Write row on the graph,
+/// and a Write row opens every row on it for single writes too.
+pub fn batch_deploy_refusal(lines: &[(String, String, String)], tables: &[RouteTable]) -> Option<String> {
+    const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+    let strip = |x: &str| x.trim().trim_start_matches('<').trim_end_matches('>').to_string();
+    for t in tables.iter().filter(|t| deploy_only(&t.write_authority)) {
+        let local = t.class.rsplit('#').next().unwrap_or(&t.class);
+        let bare = matches!(local, "Product" | "Domain" | "Test" | "Principle" | "Machine" | "AgentRuntime");
+        let prefix = entity_subject(&t.class, "");
+        for (subj, pred, obj) in lines {
+            let (s, p, o) = (strip(subj), strip(pred), strip(obj));
+            let row_of_class = !bare && s.starts_with(&prefix) && s.len() > prefix.len();
+            let typed_as = p == RDF_TYPE && (o == t.class || o.rsplit('#').next() == Some(local));
+            if row_of_class || typed_as {
+                return Some(format!("<{}> is a {} row, which only the model deploy may write (writeAuthority deploy, #4220); a batch is no way around it", s, local));
+            }
+        }
+    }
+    None
 }
 
 /// #4517 — a create needs a Write row on the graph it lands in (Jeff 2026-10-13
@@ -2355,12 +2408,19 @@ fn partof_exists(entity: &str, instances_graph: &str) -> bool {
 }
 
 /// Does the entity exist at all? (create → 409 if it does; replace → 404 if it doesn't).
-fn entity_exists(class: &str, entity: &str, instances_graph: &str) -> bool {
+/// #4715 — a store that did not answer is an Err, never "does not exist": it was
+/// mapped to false, so a PUT/PATCH during a Fuseki outage answered 404 (#4708's class).
+pub fn entity_exists(class: &str, entity: &str, instances_graph: &str) -> R<bool> {
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
         g = instances_graph, s = entity_subject(class, entity)
     );
-    sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
+    sparql_json(&q).map(|b| !select_v(&b).is_empty())
+}
+
+/// #4715 — the write answer when the existence read itself failed: 503 with the reason.
+pub fn exists_unavailable(e: &str) -> (String, String) {
+    ("unavailable".to_string(), format!("the store did not answer the existence read, so nothing was written: {}", e))
 }
 
 /// The one prepared representation shared by single and batch create. At this
@@ -3037,6 +3097,29 @@ mod unbounded_edges_4222 {
 }
 
 #[cfg(test)]
+mod json_boolean_4713_tests {
+    use super::*;
+
+    /// #4713 — the door took only JSON strings, so PATCH {"platform": true} was a
+    /// 422 and the boolean had to go in as the string "true".
+    #[test]
+    fn a_json_boolean_reads_as_its_lexical_form_in_create_and_patch() {
+        let c = parse_create_object(r#"{"platform": true, "label": "x"}"#).unwrap();
+        assert_eq!(c["platform"], vec!["true".to_string()]);
+        let p = parse_patch_object(r#"{"platform":false}"#).unwrap();
+        assert_eq!(p["platform"], vec!["false".to_string()]);
+    }
+
+    /// NEGATIVE PROOF: a bare word that only starts like a boolean, or a number,
+    /// is still refused; the door does not guess.
+    #[test]
+    fn a_bare_word_or_number_is_still_refused() {
+        assert!(parse_create_object(r#"{"platform": truex}"#).is_err());
+        assert!(parse_create_object(r#"{"platform": 1}"#).is_err());
+    }
+}
+
+#[cfg(test)]
 mod bounds_closedshape_tests {
     use super::*;
 
@@ -3619,8 +3702,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         // null removes the field, and every other triple — rdf:type, rdfs:subClassOf,
         // the links nobody named — stays exactly as it was.
         WriteOp::PatchEntity { name } => {
-            if !entity_exists(&table.class, name, &table.instances_graph) {
-                return write_resp("not-found", "entity does not exist; PATCH changes a row, it never creates one");
+            match entity_exists(&table.class, name, &table.instances_graph) {
+                Err(e) => { let (k, m) = exists_unavailable(&e); return write_resp(&k, &m); }
+                Ok(false) => return write_resp("not-found", "entity does not exist; PATCH changes a row, it never creates one"),
+                Ok(true) => {}
             }
             let values = match parse_patch_object(body) {
                 Ok(v) => v,
@@ -3652,13 +3737,14 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                 }
             }
             // Keep the version being changed, as PUT does (#4102): no revision, no patch.
+            // #4715 AC1 — the revision, every field and the stamps go to the DAL as ONE
+            // `apply`, so the row changes whole or not at all. It ran one DAL process per
+            // field: a refusal at field 3 left fields 1-2 changed and the stamps unset.
             let same_change = same_change_as_current(&table.class, name, &graph, landed_commit);
+            let mut lines: Vec<String> = Vec::new();
             if !same_change {
                 match build_revision(table, name, caller_role) {
-                    Ok(rev) => if let Err(e) = dal_write_many(&prepared_create_ndjson(std::slice::from_ref(&rev)), token) {
-                        emit_write_spine(caller_role, "patch", name, "", "revision-fail");
-                        return write_resp("validation", &format!("could not keep the prior version as a revision, patch refused: {}", e));
-                    },
+                    Ok(rev) => lines.push(format!("{{\"revision\":{}}}", prepared_create_ndjson(std::slice::from_ref(&rev)).trim_end())),
                     Err(e) if e == "not-found" => {}
                     Err(e) => {
                         emit_write_spine(caller_role, "patch", name, "", "revision-fail");
@@ -3666,52 +3752,53 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                     }
                 }
             }
+            let q = |x: &str| format!("\"{}\"", json_escape(x));
             let mut changed: Vec<String> = Vec::new();
             for (k, vs) in &values {
                 let field = field_of(k);
                 let edge_class = field.as_deref().and_then(|f| f.split_once("|edge:")).map(|(_, c)| c.to_string());
-                let result = if let Some(class) = edge_class {
+                if let Some(class) = edge_class {
                     // A link field: remove what is no longer named, link what is new.
                     let tkind = kind_of_class(&class);
                     let pred = format!("{}{}", NS, k);
                     // Keep each stored value's full IRI: a wrong-kind value (c:Proving where
                     // value-stream-step-proving belongs) can only be removed by the IRI the store
                     // holds; the DAL unlink rebuilds <kind>-<name> and missed it (#4482).
-                    let current: Vec<(String, String)> = sparql_json(&format!(
-                        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{p}> ?o }} BIND(STR(?o) AS ?v) }}", g = graph, s = subject, p = pred))
-                        .map(|b| select_v(&b)).unwrap_or_default()
-                        .into_iter().map(|iri| (iri.rsplit('#').next().unwrap_or(&iri).to_string(), iri)).collect();
+                    let current: Vec<(String, String)> = match sparql_json(&format!(
+                        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{p}> ?o }} BIND(STR(?o) AS ?v) }}", g = graph, s = subject, p = pred)) {
+                        Ok(b) => select_v(&b).into_iter().map(|iri| (iri.rsplit('#').next().unwrap_or(&iri).to_string(), iri)).collect(),
+                        Err(e) => { let (t, m) = exists_unavailable(&e); return write_resp(&t, &m); }
+                    };
                     let want: Vec<String> = vs.iter().map(|v| v.rsplit(['#', ':']).next().unwrap_or(v).to_string()).collect();
                     let strip = |n: &str| n.strip_prefix(&format!("{}-", tkind)).unwrap_or(n).to_string();
-                    let gone: Vec<(String, String, String)> = current.iter()
-                        .filter(|(c, _)| !want.iter().any(|w| strip(w) == strip(c)))
-                        .map(|(_, iri)| (format!("<{}>", subject), format!("<{}>", pred), format!("<{}>", iri))).collect();
-                    let r: R<()> = if gone.is_empty() { Ok(()) } else { dal_batch(&graph, &gone, &[], token) };
-                    // #4499 reopen 4 — every new link in ONE DAL call: one process
-                    // per link cost ~0.45 s (22,675 exercises links ≈ 2.8 h). One
-                    // missing target still refuses them all, naming it.
+                    for (_, iri) in current.iter().filter(|(c, _)| !want.iter().any(|w| strip(w) == strip(c))) {
+                        lines.push(format!("{{\"del\":[{},{},{}]}}", q(&format!("<{}>", subject)), q(&format!("<{}>", pred)), q(&format!("<{}>", iri))));
+                    }
                     let new: Vec<String> = want.iter().filter(|w| !current.iter().any(|(c, _)| strip(c) == strip(w))).map(|w| strip(w)).collect();
-                    r.and_then(|_| if new.is_empty() { Ok(()) } else { dal_run(&link_args(&kind, name, &graph, k, &tkind, &new), token) })
+                    if !new.is_empty() {
+                        let edges: Vec<String> = new.iter().map(|t| format!("[{},{},{}]", q(k), q(&tkind), q(t))).collect();
+                        lines.push(format!("{{\"link\":[{}]}}", edges.join(",")));
+                    }
                 } else if vs.is_empty() {
                     // null: remove every value of this one predicate, nothing else.
-                    dal_batch(&graph, &[(format!("<{}>", subject), format!("<{}{}>", NS, k), "?o".to_string())], &[], token)
+                    lines.push(format!("{{\"del\":[{},{},{}]}}", q(&format!("<{}>", subject)), q(&format!("<{}{}>", NS, k)), q("?o")));
                 } else {
-                    dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
-                        "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, vs[0])], token)
-                };
-                if let Err(e) = result {
-                    emit_write_spine(caller_role, "patch", name, k, "error");
-                    return write_resp("validation", &format!("patch stopped at '{}' ({} field(s) already changed: {}): {}", k, changed.len(), changed.join(", "), e));
+                    lines.push(format!("{{\"set\":{{\"field\":{},\"value\":{}}}}}", q(k), q(&vs[0])));
                 }
                 changed.push(k.clone());
             }
-            // The stamps follow the change, as on PUT (#4101).
+            // The stamps follow the change, as on PUT (#4101) — inside the same update now.
             let prev = query_version(&table.class, name, &graph);
             let mut stamps = write_stamps(table, landed_commit);
             if !same_change { if let Some(v) = version_stamp(table, prev.as_deref()) { stamps.push(v); } }
             for (k, v) in stamps {
-                let _ = dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
-                    "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, v)], token);
+                lines.push(format!("{{\"set\":{{\"field\":{},\"value\":{}}}}}", q(&k), q(&v)));
+            }
+            let args: Vec<String> = ["apply", "--kind", &kind, "--name", name, "--graph", &graph].iter().map(|x| x.to_string()).collect();
+            if let Err(e) = dal_run_stdin(&args, token, &(lines.join("\n") + "\n")) {
+                emit_write_spine(caller_role, "patch", name, &changed.join(","), "error");
+                let (code, body) = dal_err_resp(&e);
+                return (code, body.replacen("\"message\": \"", "\"message\": \"patch refused, nothing was changed: ", 1));
             }
             emit_write_spine(caller_role, "patch", name, &changed.join(","), "ok");
             write_resp("ok", &format!("patched {}: {}", name, changed.join(", ")))
@@ -3719,8 +3806,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
-            if !entity_exists(&table.class, name, &table.instances_graph) {
-                return write_resp("not-found", "entity does not exist");
+            match entity_exists(&table.class, name, &table.instances_graph) {
+                Err(e) => { let (k, m) = exists_unavailable(&e); return write_resp(&k, &m); }
+                Ok(false) => return write_resp("not-found", "entity does not exist"),
+                Ok(true) => {}
             }
             // #3573 AC5 — closed-shape: reject an off-model property on replace too.
             if let Some(bad) = off_model_property(body, &table.fields) {
@@ -3965,6 +4054,9 @@ pub fn openapi_json(t: &RouteTable) -> String {
                 Some(format!("{{ \"$ref\": \"#/components/schemas/{}Create\" }}", class_short))
             } else if m == "put" && p.ends_with("/{name}") {
                 Some(format!("{{ \"$ref\": \"#/components/schemas/{}Replace\" }}", class_short))
+            } else if m == "patch" && p.ends_with("/{name}") {
+                // #4762 — a change carries only the fields it changes
+                Some("{ \"type\": \"object\", \"minProperties\": 1 }".to_string())
             } else if p.contains("/{name}/") {
                 Some("{ \"type\": \"object\", \"additionalProperties\": false, \"properties\": { \"target\": { \"type\": \"string\" } }, \"required\": [\"target\"] }".to_string())
             } else {
@@ -4632,6 +4724,16 @@ pub fn build_scope_chain(rows: &[String]) -> R<Vec<ScopeNode>> {
     Ok(nodes)
 }
 
+/// #4774 — `/effective/:node/:key` is a cross-class route dispatched onto the
+/// Property table for its `instances_graph` (`urn:chorus:domains:properties`).
+/// `:node` is already the target scope individual's localname (`role-borg-queen`,
+/// `service-pulse`, `chorus`), never a Property row — passing `table.class`
+/// (`Property`) to `entity_subject` prefixed `property-` onto every node
+/// (`chorus:property-role-borg-queen`) and broke 100% of `/effective` reads.
+pub fn effective_node_subject(node: &str) -> String {
+    format!("{}{}", NS, node)
+}
+
 /// #3435 — the node-scoped effective-config fetch. Reads `urn:chorus:instances` LIVE
 /// via SPARQL — NO projection/mirror/sqlite store (the AC invariant; the query-builder
 /// test asserts the instances graph + hasProperty traversal so a projection swap goes
@@ -5143,6 +5245,11 @@ pub fn collection_page_query_filtered(graph: &str, class: &str, filter: &str, li
     )
 }
 
+/// #4728 — the datatypes athena-model's field_literal writes (#4717); a literal
+/// filter matches its value in each of them as well as plain.
+const TYPED_FILTER_DATATYPES: &[&str] = &["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+    "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"];
+
 /// Collection GET keys that page or shape the read rather than filter it.
 const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 
@@ -5153,7 +5260,8 @@ const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth", "count"];
 ///
 /// `fields` is the caller's EXPOSED projection (name, is-edge), so a filter can
 /// only test a field the caller could already read. An edge matches the target's
-/// local name (the value the collection serves for it); a literal matches exactly.
+/// local name (the value the collection serves for it); a literal matches its
+/// text plain or in any datatype the DAL writes (#4728).
 /// Both bind a constant into the triple pattern, so the store answers from its
 /// index. An unknown key or an unsafe value is an error, never a silent "all rows".
 /// Returns the SPARQL patterns and the query-string to carry on `links.next`.
@@ -5163,6 +5271,36 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
     for kv in query.split('&').filter(|kv| !kv.is_empty()) {
         let (key, raw) = kv.split_once('=').unwrap_or((kv, ""));
         if COLLECTION_PARAMS.contains(&key) {
+            continue;
+        }
+        // #4838 — two operators on a served field: `<field>.absent=true` (the row
+        // has no value for it) and `<field>.after=<RFC 3339 time>` (a literal, compared
+        // as an xsd:dateTime, so "…Z" and "…+00:00" order the same). The first caller is the
+        // roles door's "live sessions": `endedAt.absent=true&expiresAt.after=<now>`
+        // (5 callers pulled all 2,600 sessions and filtered after; 70 of the 77
+        // without an endedAt had expired and nothing may close Jeff's rows but his door).
+        if let Some((base, op)) = key.split_once('.') {
+            let Some((_, edge)) = fields.iter().find(|(n, _)| n == base) else {
+                return Err(format!("unknown filter '{key}': '{base}' is not a field this collection serves"));
+            };
+            let value = percent_decode(raw).ok_or_else(|| format!("filter '{key}': bad percent-encoding"))?;
+            let n = carried.len();
+            match op {
+                "absent" if value == "true" => patterns.push_str(&format!(" . FILTER NOT EXISTS {{ ?s <{NS}{base}> ?fa{n} }}")),
+                "absent" => return Err(format!("filter '{key}': the only value is true")),
+                "after" if *edge => return Err(format!("filter '{key}': '{base}' is an edge; after compares literals")),
+                "after" => {
+                    // compared as datetimes, not text, so "…Z" and "…+00:00" order
+                    // the same (Kade 14:36); anything but an RFC 3339 time is refused
+                    if !is_rfc3339(&value) {
+                        return Err(format!("filter '{key}': '{value}' is not an RFC 3339 time (2026-11-03T19:40:00Z)"));
+                    }
+                    let xsd = "http://www.w3.org/2001/XMLSchema#dateTime";
+                    patterns.push_str(&format!(" . ?s <{NS}{base}> ?fa{n} FILTER(<{xsd}>(STR(?fa{n})) > \"{value}\"^^<{xsd}>)"));
+                }
+                _ => return Err(format!("unknown filter operator '{op}' in '{key}': absent or after")),
+            }
+            carried.push(kv);
             continue;
         }
         let Some((_, edge)) = fields.iter().find(|(n, _)| n == key) else {
@@ -5178,11 +5316,46 @@ pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(Stri
             if value.is_empty() || value.chars().any(|c| c == '"' || c == '\\' || c.is_control()) {
                 return Err(format!("filter '{key}': value must be non-empty, with no quote, backslash or control character"));
             }
-            patterns.push_str(&format!(" . ?s <{NS}{key}> \"{value}\""));
+            // #4728 — since #4717 the DAL writes a literal with its shape's
+            // datatype ("2026-10-24"^^xsd:date, "42"^^xsd:integer), and the
+            // retype gave old rows the same; an exact plain-literal pattern then
+            // matched nothing (readingDay=<today> → 0 rows, every day-filtered
+            // alert "no-reading"). The value is matched as written and as each
+            // datatype the DAL types, still as constants, so the store keeps
+            // answering from its index.
+            let n = carried.len();
+            let terms: String = std::iter::once(format!("\"{value}\""))
+                .chain(TYPED_FILTER_DATATYPES.iter().map(|d| format!("\"{value}\"^^<http://www.w3.org/2001/XMLSchema#{d}>")))
+                .collect::<Vec<_>>()
+                .join(" ");
+            patterns.push_str(&format!(" . VALUES ?fv{n} {{ {terms} }} ?s <{NS}{key}> ?fv{n}"));
         }
         carried.push(kv);
     }
     Ok((patterns, carried.join("&")))
+}
+
+/// #4838 — `YYYY-MM-DDTHH:MM:SS[.frac](Z|±HH:MM)`, checked by shape (no regex
+/// dependency): only digits where digits go, so nothing can break out of a query.
+pub fn is_rfc3339(v: &str) -> bool {
+    let b = v.as_bytes();
+    let digits = |r: std::ops::Range<usize>| r.clone().all(|i| b.get(i).is_some_and(|c| c.is_ascii_digit()));
+    if b.len() < 20 || !digits(0..4) || b[4] != b'-' || !digits(5..7) || b[7] != b'-' || !digits(8..10) || b[10] != b'T'
+        || !digits(11..13) || b[13] != b':' || !digits(14..16) || b[16] != b':' || !digits(17..19) {
+        return false;
+    }
+    let mut i = 19;
+    if b[i] == b'.' {
+        i += 1;
+        let start = i;
+        while i < b.len() && b[i].is_ascii_digit() { i += 1; }
+        if i == start { return false; }
+    }
+    match &b[i..] {
+        [b'Z'] => true,
+        [s, h1, h2, b':', m1, m2] if (*s == b'+' || *s == b'-') => [h1, h2, m1, m2].iter().all(|c| c.is_ascii_digit()),
+        _ => false,
+    }
 }
 
 /// `%XX` and `+` decoding for one query-string value. None on a broken escape or
@@ -5403,7 +5576,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if !is_safe_key(key) {
             return (400, "{ \"error\": \"invalid key\" }".to_string());
         }
-        let q = effective_fetch_query(&entity_subject(&table.class, node), &table.instances_graph);
+        let q = effective_fetch_query(&effective_node_subject(node), &table.instances_graph);
         return match sparql_json(&q) {
             Ok(body) => {
                 let rows = select_v(&body);
@@ -6057,6 +6230,97 @@ pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
         .collect())
 }
 
+/// #4916 — admit one connection, or refuse with the in-flight count when the door is
+/// full. Ok carries the count after admitting; Err carries the count that refused it.
+pub fn door_admit(active: &std::sync::atomic::AtomicUsize, max_conn: usize) -> Result<usize, usize> {
+    let now = active.load(std::sync::atomic::Ordering::SeqCst);
+    if now >= max_conn {
+        return Err(now);
+    }
+    Ok(active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1)
+}
+
+/// #4916 — true when the read carried no request line (empty, or cut off before the
+/// path). Such a request routes to "/" and is answered with Discovery.
+pub fn is_empty_read(req: &str) -> bool {
+    req.lines().next().and_then(|l| l.split_whitespace().nth(1)).is_none()
+}
+
+/// #4916 — the door's overload log line: kind (busy | empty-read) and in-flight count.
+pub fn door_overload_line(kind: &str, in_flight: usize, max_conn: usize) -> String {
+    format!("athena-make: door.{} in_flight={} max={}", kind, in_flight, max_conn)
+}
+
+/// #4916 — one spine event per 10s at most, so an overloaded door is not also
+/// spawning a chorus-log process for every refused caller.
+pub fn overload_spine_due(last: &std::sync::Mutex<Option<std::time::Instant>>, now: std::time::Instant) -> bool {
+    let mut g = match last.lock() { Ok(g) => g, Err(p) => p.into_inner() };
+    match *g {
+        Some(t) if now.duration_since(t) < std::time::Duration::from_secs(10) => false,
+        _ => { *g = Some(now); true }
+    }
+}
+
+/// #4916 — log every overload (stderr → athena-make.log) and put it on the spine,
+/// rate-limited, off the accept thread.
+fn door_overload(kind: &str, in_flight: usize, max_conn: usize, last: &std::sync::Mutex<Option<std::time::Instant>>) {
+    eprintln!("{}", door_overload_line(kind, in_flight, max_conn));
+    if overload_spine_due(last, std::time::Instant::now()) {
+        let (kind, n, m) = (kind.to_string(), in_flight, max_conn);
+        std::thread::spawn(move || {
+            let home = std::env::var("CHORUS_HOME")
+                .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+            let log = format!("{}/platform/scripts/chorus-log", home);
+            let _ = Command::new("bash").args([
+                log.as_str(), &format!("door.{}", kind), "system",
+                &format!("in_flight={}", n), &format!("max={}", m),
+            ]).output();
+        });
+    }
+}
+
+#[cfg(test)]
+mod door_overload_4916 {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn a_full_door_refuses_with_the_in_flight_count_and_admits_after_a_release() {
+        let active = AtomicUsize::new(0);
+        assert_eq!(door_admit(&active, 2), Ok(1));
+        assert_eq!(door_admit(&active, 2), Ok(2));
+        // negative proof: the third caller is refused, and the refusal names 2 in flight
+        assert_eq!(door_admit(&active, 2), Err(2));
+        active.fetch_sub(1, Ordering::SeqCst);
+        assert_eq!(door_admit(&active, 2), Ok(2));
+    }
+
+    #[test]
+    fn an_empty_or_cut_read_is_detected_and_a_real_request_is_not() {
+        assert!(is_empty_read(""));
+        assert!(is_empty_read("GET"));
+        assert!(is_empty_read("\r\n"));
+        // negative proof: the request that failed on 2026-11-06 is not an empty read
+        assert!(!is_empty_read("GET /v1/roles/roles?limit=500 HTTP/1.1\r\nHost: localhost:3360\r\n\r\n"));
+    }
+
+    #[test]
+    fn the_log_line_names_the_kind_and_in_flight_count() {
+        assert_eq!(door_overload_line("busy", 16, 16), "athena-make: door.busy in_flight=16 max=16");
+        assert_eq!(door_overload_line("empty-read", 3, 16), "athena-make: door.empty-read in_flight=3 max=16");
+    }
+
+    #[test]
+    fn the_spine_event_is_rate_limited_to_one_per_ten_seconds() {
+        let last = std::sync::Mutex::new(None);
+        let t0 = std::time::Instant::now();
+        assert!(overload_spine_due(&last, t0));
+        // negative proof: a second overload 1s later does not spawn another event
+        assert!(!overload_spine_due(&last, t0 + std::time::Duration::from_secs(1)));
+        assert!(overload_spine_due(&last, t0 + std::time::Duration::from_secs(11)));
+    }
+}
+
 /// #3609 — read a full HTTP request: headers to CRLFCRLF, then the body until
 /// Content-Length is satisfied, capped at `max_body + 1` bytes of body (one
 /// past the cap so an oversize body is DETECTABLE and 422s with the cap
@@ -6243,6 +6507,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let surfaces = &surfaces;
     let req_counter = &req_counter;
     let active_ref = &active;
+    let overload_last: &std::sync::Mutex<Option<std::time::Instant>> = &std::sync::Mutex::new(None);
     struct InFlight<'a>(&'a std::sync::atomic::AtomicUsize);
     impl Drop for InFlight<'_> {
         fn drop(&mut self) { self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst); }
@@ -6250,12 +6515,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     std::thread::scope(|sc| {
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
-        if active_ref.load(std::sync::atomic::Ordering::SeqCst) >= max_conn {
+        if let Err(in_flight) = door_admit(active_ref, max_conn) {
+            // #4916 — every busy 503 is logged with the in-flight count. The door
+            // refused every caller 17:22-19:40 on 2026-11-06 and nothing said so.
+            door_overload("busy", in_flight, max_conn, overload_last);
             let resp = http_response_ct(status_line(503), "{ \"error\": \"busy\", \"message\": \"athena-make: too many in-flight connections\" }", "application/json");
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
-        active_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         sc.spawn(move || {
             let _in_flight = InFlight(active_ref);
                 let started = std::time::Instant::now();
@@ -6265,6 +6532,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
                 let req_string = read_http_request(&mut stream, MAX_WRITE_BYTES);
                 let req = req_string.as_str();
+                if is_empty_read(req) {
+                    // #4916 — no request line arrived, so routing falls through to "/" and
+                    // the caller gets Discovery for whatever it asked. Logged, every time.
+                    door_overload("empty-read", active_ref.load(std::sync::atomic::Ordering::SeqCst), max_conn, overload_last);
+                }
                 let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
                 // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
                 // breaks select_table at serve level); carry it to handle for pagination.
@@ -6415,7 +6687,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                             let landed_commit = header("x-landed-commit");
                             set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
-                            handle_create_linked(body_str, tables, &role, token, &landed_commit, &claims.scope)
+                            with_write_lock(|| handle_create_linked(body_str, tables, &role, token, &landed_commit, &claims.scope))
                         }
                     };
                     let resp = http_response_ct(status_line(code), &body, "application/json");
@@ -6453,7 +6725,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                     .principal_for(&claims.web_id, now_secs)
                                     .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                                handle_batch(&target_graph, body_str, &role, token)
+                                with_write_lock(|| handle_batch_checked(&target_graph, body_str, &role, token, tables))
                             }
                         }
                     };
@@ -6552,7 +6824,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // #4101 — the land names the commit that is changing the row
                                 let landed_commit = header("x-landed-commit");
                                 set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
-                                let (c, b) = handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope);
+                                let (c, b) = with_write_lock(|| handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope));
                                 // #4183 reopen 1 — a Permission row just changed: drop the cached
                                 // scopes so the grant (or revoke) holds on the very next write.
                                 if (200..300).contains(&c) && grants_changed(&table.class) {
@@ -7162,7 +7434,12 @@ mod tests {
     #[test]
     fn a_filter_on_a_literal_matches_the_decoded_value() {
         let (p, _) = collection_filter("result=did%20not+run", &result_fields()).unwrap();
-        assert_eq!(p, format!(" . ?s <{NS}result> \"did not run\""));
+        // every datatype the DAL writes, in order (Wren/Kade 10-24: an exact
+        // assert, so a shortened list is caught)
+        let typed: String = ["boolean", "integer", "int", "long", "decimal", "double", "float", "dateTime", "date",
+            "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger", "short", "byte", "unsignedInt", "unsignedLong", "unsignedShort"]
+            .iter().map(|d| format!(" \"did not run\"^^<http://www.w3.org/2001/XMLSchema#{d}>")).collect();
+        assert_eq!(p, format!(" . VALUES ?fv0 {{ \"did not run\"{typed} }} ?s <{NS}result> ?fv0"));
     }
 
     #[test]
@@ -7177,6 +7454,35 @@ mod tests {
     fn an_unknown_or_unexposed_field_is_refused() {
         assert!(collection_filter("ofTset=x", &result_fields()).is_err());
         assert!(collection_filter("secretPlan=x", &result_fields()).is_err());
+    }
+
+    // #4838 — the live-sessions filter: absent + after, at the door.
+    fn session_fields() -> Vec<(String, bool)> {
+        vec![("endedAt".into(), false), ("expiresAt".into(), false), ("ownedBy".into(), true)]
+    }
+
+    #[test]
+    fn absent_and_after_narrow_at_the_store() {
+        let (p, qs) = collection_filter("endedAt.absent=true&expiresAt.after=2026-11-03T19:40:00Z&limit=5000", &session_fields()).unwrap();
+        let x = "http://www.w3.org/2001/XMLSchema#dateTime";
+        assert_eq!(p, format!(" . FILTER NOT EXISTS {{ ?s <{NS}endedAt> ?fa0 }} . ?s <{NS}expiresAt> ?fa1 FILTER(<{x}>(STR(?fa1)) > \"2026-11-03T19:40:00Z\"^^<{x}>)"));
+        assert!(collection_filter("expiresAt.after=2026-11-03T14:40:00%2B00:00", &session_fields()).is_ok(), "an offset form is a time too");
+        assert_eq!(qs, "endedAt.absent=true&expiresAt.after=2026-11-03T19:40:00Z", "both ride links.next");
+    }
+
+    // NEGATIVE PROOF — a wrong operator, an unknown base, an edge compared with
+    // after, a non-true absent, or a value that could break out is refused.
+    #[test]
+    fn a_bad_operator_or_value_is_refused() {
+        let f = session_fields();
+        assert!(collection_filter("endedAt.before=x", &f).is_err());
+        assert!(collection_filter("nope.absent=true", &f).is_err());
+        assert!(collection_filter("ownedBy.after=a", &f).is_err());
+        assert!(collection_filter("endedAt.absent=false", &f).is_err());
+        assert!(collection_filter("expiresAt.after=a%22)%20}%20DROP", &f).is_err());
+        assert!(collection_filter("expiresAt.after=", &f).is_err());
+        assert!(collection_filter("expiresAt.after=yesterday", &f).is_err(), "not a time");
+        assert!(collection_filter("expiresAt.after=2026-11-03", &f).is_err(), "a date is not a time");
     }
 
     #[test]
@@ -7629,6 +7935,7 @@ mod tests {
         t.routes.extend([
             "POST /domains".into(),
             "PUT /domains/:name".into(),
+            "PATCH /domains/:name".into(),
             "DELETE /domains/:name".into(),
             "POST /domains/:name/partof".into(),
             "DELETE /domains/:name/partof".into(),
@@ -7638,7 +7945,8 @@ mod tests {
             .lines()
             .find(|line| line.trim_start().starts_with("\"/domains/{name}\":"))
             .expect("entity path");
-        assert_eq!(entity_path.matches("\"requestBody\"").count(), 1, "DELETE has no body; PUT has one: {entity_path}");
+        assert_eq!(entity_path.matches("\"requestBody\"").count(), 2, "DELETE has no body; PUT and PATCH have one: {entity_path}");
+        assert!(entity_path.contains("\"patch\": {"), "#4762: PATCH is documented: {entity_path}");
         assert!(entity_path.contains("#/components/schemas/DomainReplace"), "PUT uses the replace schema: {entity_path}");
         assert!(entity_path.contains("\"delete\": { \"parameters\":"), "DELETE remains documented: {entity_path}");
 
@@ -7678,6 +7986,8 @@ mod tests {
         assert!(r.contains(&"POST /domains".to_string()), "create entity");
         assert!(r.contains(&"POST /domains/batch".to_string()), "#4158: every served class gets the batch route");
         assert!(r.contains(&"PUT /domains/:name".to_string()), "replace entity");
+        // #4762 — the door serves PATCH (parse_write PatchEntity); the generated route table says so
+        assert!(r.contains(&"PATCH /domains/:name".to_string()), "change fields of an entity");
         assert!(r.contains(&"DELETE /domains/:name".to_string()), "delete entity");
         // per-edge add/remove (mirrors the read edges)
         for edge in ["partof", "contains", "has-child"] {
@@ -8727,6 +9037,26 @@ mod dispatch_effective_3845 {
         );
         // and the genuinely-unknown path is still unknown, in the same model
         assert_eq!(dispatch_for("/nonsense", &t), Dispatch::NotFound);
+    }
+
+    /// #4774 — `/effective/:node/:key` dispatches to the Property table, so
+    /// `entity_subject(&table.class, node)` prefixed `property-` onto every
+    /// node (`chorus:property-role-borg-queen`). `effective_node_subject`
+    /// keeps the node's own localname (`chorus:role-borg-queen`).
+    /// NEGATIVE PROOF (#3734): `entity_subject` on the Property table still
+    /// produces the wrong `property-` prefix, proving the two are distinct.
+    #[test]
+    fn effective_node_subject_does_not_prefix_property_onto_target_node() {
+        let prop_class = "https://jeffbridwell.com/chorus#Property";
+        assert_eq!(
+            effective_node_subject("role-borg-queen"),
+            "https://jeffbridwell.com/chorus#role-borg-queen"
+        );
+        assert_eq!(
+            entity_subject(prop_class, "role-borg-queen"),
+            "https://jeffbridwell.com/chorus#property-role-borg-queen",
+            "negative proof: entity_subject(Property, ..) prefixes property-"
+        );
     }
 }
 

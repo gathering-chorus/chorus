@@ -183,3 +183,25 @@ Jeff opens `/tmp/pulse-latest.json` after this lands and sees:
 - `platform/services/chorus-hooks/tests/pulse_service.rs` — current tests
 - `designing/docs/context-service-design.md` — Context boundary
 - Prior art: #1881 (original pulse), #1889 (suppression bandaid), #2120 (post-tool-use refresh), #2168 (per-section timings)
+
+
+## The generated crate (#4742, 2026-10-25)
+
+Pulse's API is generated, not hand-built:
+
+```
+graph (TTL: designing/data, designing/ontology, roles/*/ontology)
+  └─ athena-gen generate --product pulse        designing/services/athena-gen
+       └─ directing/products/pulse/api           Rust crate `pulse-api`, committed; DO NOT EDIT
+            └─ com.chorus.pulse-api              127.0.0.1:3392, launcher pulse-api-launch.sh
+```
+
+- Routes: `/pulse/<domain>/<collection>[/<name>]`. Children are the domains pulse owns
+  (awareness, streams) and composes (alerts, cards, messages; read-only, owner's graph).
+  The top level is a composition, not an orchestration (Jeff 10-25).
+- A change goes in the model or the generator's templates, never in the crate:
+  `crates_4490` fails when the committed crate differs from what the generator writes.
+- A regeneration that would drop a route is refused unless the route is named `--drop`.
+- Store kinds: `door` (reads SPARQL, writes through the one door), `sparql`, `embedded`
+  (oxigraph, no Fuseki).
+- The hand-built TS pulse (`platform/pulse`, `com.chorus.pulse`) still runs beside it.

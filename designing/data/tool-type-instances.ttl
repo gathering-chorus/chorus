@@ -22,22 +22,22 @@
 # classes, properties and shapes.
 
 
-chorus:Sense a chorus:ToolType ;
+chorus:tool-type-sense a chorus:ToolType ;
     rdfs:label "Sense" ;
     rdfs:comment "Input capture — eyes, ears, voice." .
 
-chorus:Interaction a chorus:ToolType ;
+chorus:tool-type-interaction a chorus:ToolType ;
     rdfs:label "Interaction" ;
     rdfs:comment "Multi-party coordination and alignment." .
 
-chorus:Memory a chorus:ToolType ;
+chorus:tool-type-memory a chorus:ToolType ;
     rdfs:label "Memory" ;
     rdfs:comment "Persistent shared context — indexes, searches, remembers." .
 
-chorus:Orchestration a chorus:ToolType ;
+chorus:tool-type-orchestration a chorus:ToolType ;
     rdfs:label "Orchestration" ;
     rdfs:comment "Sequences and tracks work across roles." .
 
-chorus:Analysis a chorus:ToolType ;
+chorus:tool-type-analysis a chorus:ToolType ;
     rdfs:label "Analysis" ;
     rdfs:comment "Decomposes, examines, produces structured insight." .

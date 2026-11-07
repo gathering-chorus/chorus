@@ -47,6 +47,38 @@
       "bump": "patch",
       "date": "2026-10-07",
       "card": "unattributed"
+    },
+    {
+      "version": "1.8.2",
+      "constituent_hash": "b48ca618801aa8768bd2e94355faae0d7e0774a77894ffa4815432ddf0fe3cdd",
+      "core_hash": "f5c14bd63350586c341881bcac46110768e50e01b04f9c8b20b2c48ac8d6dce4",
+      "bump": "patch",
+      "date": "2026-10-22",
+      "card": "#4691"
+    },
+    {
+      "version": "1.9.0",
+      "constituent_hash": "da591dbd157a5e97d9b1c545f2a796c13c8182dd6cf04b1883d4c61cba8b2775",
+      "core_hash": "a6b66f8396074567b86ea4eae92beb6f52a069f6dc571bdcb6378cf039c2e929",
+      "bump": "minor",
+      "date": "2026-10-23",
+      "card": "#4707"
+    },
+    {
+      "version": "1.10.0",
+      "constituent_hash": "ea0a960fa07b9e19c0a18ee136ed39645e678bc097e8cc2e02827890a3b5ab6f",
+      "core_hash": "d00f709d25ef0edac4e21269d8fb22ae9b3c1d3659b2fc35bda355972e04e1be",
+      "bump": "minor",
+      "date": "2026-10-24",
+      "card": "#4707"
+    },
+    {
+      "version": "1.11.0",
+      "constituent_hash": "eb5b9d7ffc31c69b8e3f0e15f5d48fec22e38add67f93bf7c09bff7791cf594b",
+      "core_hash": "e05eb8330fdc46294d7439f01540dc8f82a8fe5617d70bde6e8a75ba2dc290db",
+      "bump": "minor",
+      "date": "2026-11-04",
+      "card": "4885"
     }
   ]
 }

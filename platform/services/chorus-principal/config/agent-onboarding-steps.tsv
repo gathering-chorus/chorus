@@ -1,0 +1,19 @@
+# agent-onboarding-steps (#4691) — every step that makes an agent principal on
+# its own Mac account (Abby, Borg Queen, the next one) a working teammate, as
+# data. One list, read by both sides so they cannot drift (Jeff 2026-10-22
+# 08:35: "any gemini principal to onboard exactly the same way every time"):
+#   chorus-principal census  checks each step and names the one missing
+#   chorus-principal create  performs each step whose owner is create (#4694)
+# owner jeff = a step only Jeff can do; census names it as his, never as done.
+#
+# id	owner	what
+principal-host	create	Principal row has hostAccount: the Mac account it runs as
+principal-role	create	Principal row has holdsRole: the Role it holds
+principal-runtime	create	Principal row has agentRuntime: the runtime its pane starts
+role-agent	create	the Role row has roleKind agent (the store's word; the AgentRole type lives only in source, Wren 09:08)
+role-word-caps	create	the Role has both word-cap edges (response, nudge) to Property rows that exist
+account-group	create	the Mac account is in group chorus, so it can write the repo
+runtime-table	create	shared/agent_runtimes.json runsOn names it (until login reads agentRuntime from the door, #4694)
+role-home	create	roles/<role>/AGENTS.md is generated from the claudemd manifest
+webid-card	create	its WebID profile card answers 200
+runtime-sign-in	jeff	the runtime is signed in, in its own pane (agy: Jeff's Google login)

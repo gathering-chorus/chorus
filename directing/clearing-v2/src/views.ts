@@ -2,7 +2,25 @@ import type { BoardColumn } from './sources/board';
 // @domain: messages
 
 import { TrustStripSource, RolesData, TodayData, RoomsData, ActorRow } from './data-service';
-import type { KindCount } from './sources/message-counts';
+import { DAY_COLUMNS, DOUBLE_COLUMNS, type DayCell, type DayRow, type SyncDay } from './sources/readings';
+import type { Streams } from './sources/streams';
+import { uploadNames } from './uploads';
+import fs from 'fs';
+import path from 'path';
+
+/** #4635 — Cloudflare hands phones these files with a 4-hour cache (measured: max-age=14400),
+ *  so Jeff's iPhone kept the old page script and stylesheet: the photo button did nothing and
+ *  the icon words showed. Each URL carries the files' newest change time, so a new version is
+ *  a new URL and is fetched at once. */
+export const ASSET_VERSION = ((): string => {
+  const dir = path.join(__dirname, '../public');
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed names under this package's own public dir
+    return String(Math.floor(Math.max(...['app.js', 'style.css', 'room-key.js'].map((f) => fs.statSync(path.join(dir, f)).mtimeMs))));
+  } catch {
+    return String(Date.now());
+  }
+})();
 
 function renderTrustChip(s: TrustStripSource): string {
   if (s.status === 'failed' || s.status === 'unmeasured') {
@@ -27,6 +45,7 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
     <a href="/rooms/team" class="${on('rooms')}">Rooms</a>
     <a href="/board" class="${on('board')}">Board</a>
     <a href="/roles" class="${on('roles')}">Teammates</a>
+    <a href="/streams" class="${on('streams')}">Streams</a>
     <a href="/calendar" class="${on('calendar')}">Calendar</a>
     <a href="/plans" class="${on('plans')}">Plans</a>
     <a href="/alerts" class="${on('alerts')}">Alerts${countBadge(counts?.alerts)}</a>
@@ -35,9 +54,11 @@ function renderNav(activeNav: string, counts?: { decisions?: number; alerts?: nu
 
 /** #4575 — Jeff 07:01: "i dont see a way to send now in board". Every page carries the
  *  #team composer (Rooms has its own, per room); no @ goes to Wren, as in the room. */
-const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
+export const TEAM_COMPOSER = `<footer class="composer-bar page-composer">
     <form id="composer-form">
-      <input type="text" id="composer-input" placeholder="Message #team..." autocomplete="off">
+      <textarea id="composer-input" rows="1" placeholder="Message #team..." autocomplete="off"></textarea>
+      <label for="composer-file" class="composer-file" title="Attach a file" aria-label="Attach a file"><input type="file" id="composer-file" multiple class="sr-only">📎</label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
       <button type="submit" id="composer-send">Send</button>
     </form>
     <div id="send-error" class="send-error" role="alert"></div>
@@ -58,7 +79,7 @@ export function renderPageShell(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title} · The Clearing v2</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=${ASSET_VERSION}">
   <script type="importmap">
   {
     "imports": {
@@ -71,7 +92,7 @@ export function renderPageShell(
   <script>
     window.CHORUS_WEBID = "https://id.lightlifeurbangardens.com/jeff/profile/card#me";
   </script>
-  <script type="module" src="/room-key.js"></script>
+  <script type="module" src="/room-key.js?v=${ASSET_VERSION}"></script>
 </head>
 <body>
   <header class="app-header">
@@ -86,7 +107,8 @@ export function renderPageShell(
   ${renderNav(activeNav, counts)}
   ${bodyContent}
   ${activeNav === 'rooms' ? '' : TEAM_COMPOSER}
-  <script src="/app.js"></script>
+  <script src="/vendor/chorus-time/boston.js?v=${ASSET_VERSION}"></script>
+  <script src="/app.js?v=${ASSET_VERSION}"></script>
 </body>
 </html>`;
 }
@@ -123,6 +145,8 @@ function renderActorDetail(a: ActorRow): string {
   return [
     a.pair ? `<div class="meta pair">${a.pair}</div>` : '',
     a.waiting ? `<div class="meta waiting-reason">${a.waiting}</div>` : '',
+    // #4895 — a role a nudge cannot reach says so in the room before anyone has to ask
+    a.reachability === 'unreachable' ? `<div class="meta fail actor-unreachable">unreachable — nudges to ${a.id} will not land</div>` : '',
     a.unmeasured ? `<div class="meta fail actor-unmeasured">unmeasured: ${a.unmeasured}</div>` : '',
   ].join('');
 }
@@ -316,27 +340,141 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
   return renderPageShell('Teammates', 'roles', content, sources);
 }
 
-function formatRoomText(raw: string): string {
-  return escapeHtml(raw)
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+function formatInlineHtml(text: string): string {
+  let escaped = escapeHtml(text);
+
+  // Preserve inline code first so its contents are not bolded or linked
+  const inlineCodes: string[] = [];
+  escaped = escaped.replace(/`([^`\n]+)`/g, (_match, code) => {
+    inlineCodes.push(`<code>${code}</code>`);
+    return `\x00CODE_${inlineCodes.length - 1}\x00`;
+  });
+
+  // Bold **...**
+  escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+
+  // URLs (http/https): clickable, open in new tab (AC2)
+  escaped = escaped.replace(/(https?:\/\/[^\s<>"']+)/g, (_match, url) => {
+    const m = url.match(/^(https?:\/\/[^\s<>"']+?)([.,;!?)]*)$/);
+    const cleanUrl = m ? m[1] : url;
+    const punct = m ? m[2] : '';
+    return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${cleanUrl}</a>${punct}`;
+  });
+
+  // #card refs
+  escaped = escaped.replace(/#(\d+)/g, '<a class="cid card-ref" href="#" onclick="openCardDrawer(\'$1\');return false;">#$1</a>');
+
+  // Restore inline code
+  inlineCodes.forEach((code, i) => {
+    escaped = escaped.replace(`\x00CODE_${i}\x00`, code);
+  });
+
+  return escaped;
 }
 
-function renderRoomMessage(m: RoomsData['messages'][number]): string {
+export function formatRoomText(raw: string): string {
+  // 1. Extract code fences first so their contents are preserved literally (AC4)
+  const fences: string[] = [];
+  const textWithoutFences = raw.replace(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g, (_match, fence) => {
+    const m = fence.match(/^```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```$/);
+    const lang = m ? m[1] : '';
+    const code = m ? m[2].replace(/\n$/, '') : fence.slice(3, -3);
+    const langCls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
+    fences.push(`<pre><code${langCls}>${escapeHtml(code)}</code></pre>`);
+    return `\x00FENCE_${fences.length - 1}\x00`;
+  });
+
+  // 2. Format lines and list blocks
+  const lines = textWithoutFences.split('\n');
+  const output: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  for (const [i, line] of lines.entries()) {
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)$/);
+
+    if (bulletMatch) {
+      if (inOl) { output.push('</ol>'); inOl = false; }
+      if (!inUl) { output.push('<ul>'); inUl = true; }
+      output.push(`<li>${formatInlineHtml(bulletMatch[1])}</li>`);
+    } else if (numberedMatch) {
+      if (inUl) { output.push('</ul>'); inUl = false; }
+      if (!inOl) { output.push('<ol>'); inOl = true; }
+      output.push(`<li>${formatInlineHtml(numberedMatch[2])}</li>`);
+    } else {
+      if (inUl) { output.push('</ul>'); inUl = false; }
+      if (inOl) { output.push('</ol>'); inOl = false; }
+
+      if (line.includes('\x00FENCE_')) {
+        output.push(line);
+      } else {
+        if (i > 0 && output.length > 0 && !output[output.length - 1].endsWith('</ul>') && !output[output.length - 1].endsWith('</ol>')) {
+          output.push('<br>');
+        }
+        if (line.length > 0) {
+          output.push(formatInlineHtml(line));
+        }
+      }
+    }
+  }
+  if (inUl) output.push('</ul>');
+  if (inOl) output.push('</ol>');
+
+  let result = output.join('');
+
+  // Restore code fences
+  fences.forEach((fence, i) => {
+    result = result.replace(`\x00FENCE_${i}\x00`, fence);
+  });
+
+  return result;
+}
+
+/** #4635 — a message that names an uploaded photo shows it, tap to open full size. */
+export function roomPhotos(text: string): string {
+  const names = uploadNames(text).filter(n => /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(n));
+  if (names.length === 0) return '';
+  return `<div class="msg-photos">${names.map((n) => `<a href="/uploads/${n}" target="_blank" rel="noopener"><img src="/uploads/${n}" alt="photo ${n}" loading="lazy"></a>`).join('')}</div>`;
+}
+
+/** #4866 — a message that names an uploaded file shows a download chip. */
+export function roomFiles(text: string): string {
+  const names = uploadNames(text).filter(n => !/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(n));
+  if (names.length === 0) return '';
+  return `<div class="msg-files">${names.map((n) => `<a href="/uploads/${n}" download="${escapeHtml(n.replace(/^\d+_/, ''))}" class="msg-file" target="_blank" rel="noopener">📎 ${escapeHtml(n)}</a>`).join('')}</div>`;
+}
+
+/** #4646 — a short fingerprint of a message's words; app.js computes the same one, so
+ *  the page can spot a second copy without carrying the whole text in an attribute. */
+export function bodyHash(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+function formatAuthorName(role: string): string {
+  if (role === 'abby-normal') return 'Abby Normal';
+  if (role === 'borg-queen') return 'Borg Queen';
+  return role;
+}
+
+export function renderRoomMessage(m: RoomsData['messages'][number]): string {
   const linkifiedText = formatRoomText(m.text);
   const isThinking = m.type === 'thinking';
   const thinkingClass = isThinking ? ' msg-thinking' : '';
   const thinkingBadge = isThinking ? '<span class="badge-thinking">thinking</span>' : '';
   return `
-    <div class="msg${thinkingClass}" id="msg-${m.id}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
+    <div class="msg${thinkingClass}" id="msg-${m.id}" data-from="${escapeHtml(m.from)}" data-body="${bodyHash(String(m.text || '').trim())}" data-ts="${escapeHtml(String(m.ts || ''))}" data-msg-type="${m.type || 'message'}"${m.kind ? ` data-kind="${m.kind}"` : ''}>
       <span class="av a-${m.from}">${m.from.charAt(0).toUpperCase()}</span>
       <div class="body">
-        <span class="nm who-${m.from}">${m.from}</span>
+        <span class="nm who-${m.from}">${formatAuthorName(m.from)}</span>
         <span class="tm">${m.time}</span>
         ${m.tick ? '<span class="tick delivery-tick">✓ relay</span>' : ''}
         ${thinkingBadge}
         <div>${linkifiedText}</div>
+        ${roomPhotos(m.text)}
+        ${roomFiles(m.text)}
         ${m.threadCount ? `
           <div class="thread-container" style="margin-top:6px">
             <span class="thr">${m.threadCount} working replies${m.threadLast ? ` · last ${m.threadLast}` : ''}</span>
@@ -372,7 +510,9 @@ const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style=
         <button class="btn ghost drawer-close-btn" onclick="closeCardDrawer()" style="font-size:16px;padding:4px 8px;cursor:pointer">✕</button>
       </div>
       <h3 id="drawer-card-title" style="margin-top:10px">Loading card...</h3>
-      <div class="meta" id="drawer-card-meta" style="margin-top:6px"></div>
+      <div class="meta" id="drawer-card-meta" style="margin-top:6px;line-height:1.5"></div>
+      <div class="meta" id="drawer-card-domains" style="margin-top:4px;font-size:11.5px;color:var(--muted);display:none"></div>
+      <div class="meta" id="drawer-card-dates" style="margin-top:4px;font-size:11px;color:var(--faint);display:none"></div>
 
       <div id="drawer-card-desc-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
         <div class="sec-t" style="margin-bottom:6px">Description</div>
@@ -382,6 +522,11 @@ const ROOM_CARD_DRAWER = `    <aside class="card-drawer" id="card-drawer" style=
       <div id="drawer-card-ac-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
         <div class="sec-t" style="margin-bottom:6px">Acceptance Criteria</div>
         <div class="card-ac-list" id="drawer-card-ac"></div>
+      </div>
+
+      <div id="drawer-card-comments-container" style="display:none;margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
+        <div class="sec-t" style="margin-bottom:6px">Recent Comments</div>
+        <div class="card-comments-list" id="drawer-card-comments"></div>
       </div>
 
       <div id="drawer-card-cws-container" style="margin-top:14px;border-top:1px solid var(--line2);padding-top:10px">
@@ -413,10 +558,14 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       var l = document.getElementById('drawer-card-link');
       var t = document.getElementById('drawer-card-title');
       var m = document.getElementById('drawer-card-meta');
+      var domEl = document.getElementById('drawer-card-domains');
+      var datesEl = document.getElementById('drawer-card-dates');
       var descCont = document.getElementById('drawer-card-desc-container');
       var descEl = document.getElementById('drawer-card-desc');
       var acCont = document.getElementById('drawer-card-ac-container');
       var acEl = document.getElementById('drawer-card-ac');
+      var commentsCont = document.getElementById('drawer-card-comments-container');
+      var commentsEl = document.getElementById('drawer-card-comments');
       var cwsEl = document.getElementById('drawer-card-cws');
       var cwsMotion = document.getElementById('drawer-card-cws-motion');
       var cwsInd = document.getElementById('drawer-cws-indicator');
@@ -428,15 +577,19 @@ const ROOM_DRAWER_SCRIPT = `  <script>
       }
       if (t) t.textContent = 'Loading card #' + id + '...';
       if (m) m.textContent = '';
+      if (domEl) { domEl.textContent = ''; domEl.style.display = 'none'; }
+      if (datesEl) { datesEl.textContent = ''; datesEl.style.display = 'none'; }
       if (descCont) descCont.style.display = 'none';
       if (descEl) descEl.textContent = '';
       if (acCont) acCont.style.display = 'none';
       if (acEl) acEl.innerHTML = '';
+      if (commentsCont) commentsCont.style.display = 'none';
+      if (commentsEl) commentsEl.innerHTML = '';
       if (cwsEl) cwsEl.textContent = 'Loading pipeline state...';
       if (cwsMotion) cwsMotion.style.display = 'none';
       if (cwsInd) cwsInd.innerHTML = '<span class="chip">reading pipeline...</span>';
 
-      // 1. Fetch card details first so title, owner, status, description, and AC display immediately
+      // 1. Fetch card details first so title, owner, status, description, AC, and comments display immediately
       try {
         var res = await fetch('/api/cards/' + id);
         if (String(id) === currentCardDrawerId) {
@@ -451,6 +604,19 @@ const ROOM_DRAWER_SCRIPT = `  <script>
               if (c.priority) metaParts.push('Priority: ' + drawerEscape(c.priority));
               if (m) m.textContent = metaParts.join(' · ');
 
+              if (c.domain && domEl) {
+                domEl.textContent = 'Domains: ' + c.domain;
+                domEl.style.display = 'block';
+              }
+
+              if ((c.created || c.updated) && datesEl) {
+                var dateParts = [];
+                if (c.created) dateParts.push('Created: ' + drawerEscape(c.created));
+                if (c.updated) dateParts.push('Updated: ' + drawerEscape(c.updated));
+                datesEl.textContent = dateParts.join(' · ');
+                datesEl.style.display = 'block';
+              }
+
               if (c.description && descEl && descCont) {
                 descEl.textContent = c.description;
                 descCont.style.display = 'block';
@@ -464,6 +630,18 @@ const ROOM_DRAWER_SCRIPT = `  <script>
                     '</div>';
                 }).join('');
                 acCont.style.display = 'block';
+              }
+
+              if (c.comments && c.comments.length > 0 && commentsEl && commentsCont) {
+                commentsEl.innerHTML = c.comments.slice(-3).map(function(item) {
+                  var authorText = item.author ? '<b>' + drawerEscape(item.author) + '</b>' : '<b>comment</b>';
+                  var timeText = item.time ? ' <span class="meta" style="font-size:11px">' + drawerEscape(item.time) + '</span>' : '';
+                  return '<div class="comment-item" style="margin:8px 0;padding:6px 8px;background:var(--bg-primary, rgba(0,0,0,0.03));border:1px solid var(--line2);border-radius:4px;font-size:12.5px;line-height:1.4">' +
+                    '<div style="margin-bottom:3px;font-size:11.5px">' + authorText + timeText + '</div>' +
+                    '<div style="white-space:pre-wrap">' + drawerEscape(item.text) + '</div>' +
+                    '</div>';
+                }).join('');
+                commentsCont.style.display = 'block';
               }
             }
           } else {
@@ -508,8 +686,9 @@ const ROOM_DRAWER_SCRIPT = `  <script>
             } else if (p.status === 'failed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">failed' + (p.failedStep ? ' at ' + drawerEscape(p.failedStep) : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
-            } else if (p.status === 'unmeasured') {
-              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">unmeasured' + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
+            } else if (p.status === 'unmeasured' || p.status === 'stale' || p.isStale) {
+              var staleLabel = (p.isStale || p.status === 'stale') ? 'stale' : 'unmeasured';
+              if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-failed">' + staleLabel + (p.unmeasuredReason ? ' (' + drawerEscape(p.unmeasuredReason) + ')' : '') + '</span>';
               if (cwsMotion) cwsMotion.style.display = 'none';
             } else if (p.status === 'landed') {
               if (cwsInd) cwsInd.innerHTML = '<span class="chip chip-ok">landed</span>';
@@ -617,14 +796,28 @@ const ROOM_DRAWER_SCRIPT = `  <script>
     }
   </script>`;
 
-export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
-  const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
-  const isDirect = Boolean(directRoleMatch);
-  const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
+/**
+ * #4639 — Jeff 10-24 04:59: "i dont need the circles for each name i dont need a team tile
+ * basically i need to see name and cards for all logged in roles".
+ * A role is logged in if its state is not offline/off, and if sessions are reported,
+ * at least one session is live (or not all marked "not live").
+ */
+export function isRoleLoggedIn(a: ActorRow): boolean {
+  const state = (a.state || '').toLowerCase();
+  if (state === 'offline' || state === 'off') return false;
+  if (a.sessions.length > 0) {
+    const hasLive = a.sessions.some(s => s.includes(' · live') || s === 'live');
+    const allNotLive = a.sessions.every(s => s.startsWith('+') || s.includes('not live'));
+    if (allNotLive && !hasLive) return false;
+  }
+  return true;
+}
 
+function railActorsFor(actors: ActorRow[] | undefined): ActorRow[] {
+  const list = actors || [];
   const knownRoleSlugs = ['wren', 'silas', 'kade', 'abby-normal'];
-  const railActors: ActorRow[] = knownRoleSlugs.map(roleId => {
-    const found = (data.actors || []).find(a => a.id.toLowerCase() === roleId || a.name.toLowerCase().replace(/\s+/g, '-') === roleId);
+  const matched = knownRoleSlugs.map(roleId => {
+    const found = list.find(a => a.id.toLowerCase() === roleId || a.name.toLowerCase().replace(/\s+/g, '-') === roleId);
     if (found) return found;
     return {
       id: roleId,
@@ -635,14 +828,50 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
       stream: [],
     };
   });
+  const knownSet = new Set(knownRoleSlugs);
+  const extra = list.filter(a => !knownSet.has(a.id.toLowerCase()) && a.id.toLowerCase() !== 'jeff');
+  return [...matched, ...extra].filter(isRoleLoggedIn);
+}
+
+/** #4639 / #4723 — compact role tiles for logged in roles: no #team tile, no avatar circles;
+ *  andon flasher dot beside name + clickable card links in a single row without horizontal overflow. */
+export function renderPeopleRow(room: string, actors: ActorRow[] | undefined): string {
+  const railActors = railActorsFor(actors);
+  return `
+    <div class="actor-rail people-row" id="rooms-people-row">
+      ${railActors.map(a => {
+        const andon = roleAndonLight(a);
+        const cardHtml = a.cards && a.cards.length > 0
+          ? a.cards.map(c => `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${c.id}');return false;">#${c.id}</span>`).join(' ')
+          : (a.card ? `<span class="cid card-ref" onclick="event.stopPropagation();if(typeof openCardDrawer==='function')openCardDrawer('${a.card.id}');return false;">#${a.card.id}</span>` : 'no card');
+        const isActive = room.toLowerCase() === a.id.toLowerCase();
+        return `
+          <a class="actor-tile actor-tile-${a.id}${isActive ? ' on' : ''}" data-role="${a.id}" href="/rooms/${a.id}" onclick="if(typeof toggleActorFilter==='function'){return toggleActorFilter(event, '${a.id}');}window.location.href=(window.CLEARING_BASE || '') + '/rooms/${a.id}';return false;">
+            <div class="actor-tile-info">
+              <div class="actor-tile-name"><span class="andon-dot ${andon.cssClass}"></span><b>${escapeHtml(a.name)}</b></div>
+              <div class="actor-tile-card">${cardHtml}</div>
+            </div>
+          </a>
+        `;
+      }).join('')}
+    </div>`;
+}
+
+export function renderRoomsPage(room: string = 'team', data: RoomsData, sources: TrustStripSource[]): string {
+  const directRoleMatch = data.directRoles.find(dr => dr.toLowerCase().replace(/\s+/g, '-') === room.toLowerCase());
+  const isDirect = Boolean(directRoleMatch);
+  const headerTitle = isDirect ? `@ ${directRoleMatch}` : `# ${room}`;
+
+  const railActors = railActorsFor(data.actors);
+  const peopleRowHtml = renderPeopleRow(room, data.actors);
 
   const content = `
   <div class="rooms-view">
     <div class="rooms">
       <main class="chat chat-container" style="flex:1;min-width:0">
-        <div class="row chat-header-row" style="justify-content:space-between;padding:4px 10px;border-bottom:1px solid var(--line2);min-width:0;flex-wrap:nowrap;overflow-x:auto">
+        <div class="row chat-header-row">
           <div style="min-width:0;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
-            <select id="room-picker" class="room-picker" onchange="window.location.href='/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
+            <select id="room-picker" class="room-picker" onchange="window.location.href=(window.CLEARING_BASE || '') + '/rooms/' + this.value" style="font-weight:700;font-size:13px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);cursor:pointer">
               <optgroup label="Rooms">
                 ${data.channels.map(c => `<option value="${c}"${room === c ? ' selected' : ''}># ${c}</option>`).join('')}
               </optgroup>
@@ -653,14 +882,16 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
                 }).join('')}
               </optgroup>
             </select>
+            <input type="search" id="room-search-input" placeholder="Search loaded..." oninput="if(typeof setSearchQuery==='function')setSearchQuery(this.value);" style="font-size:11px;background:var(--frame);border:1px solid var(--line2);border-radius:4px;padding:2px 6px;color:var(--ink);width:90px;max-width:110px;min-width:60px">
           </div>
-          <div class="row" style="gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap">
+          <div class="row header-controls-row" style="gap:8px;align-items:center;flex-shrink:0">
             <button id="thinking-toggle-btn" class="btn ghost toggle-thinking-btn" onclick="toggleThinking();return false;" style="font-size:11px;padding:2px 6px;cursor:pointer">Thinking: ON</button>
             <label class="meta" style="font-size:11px;white-space:nowrap"><input type="checkbox" id="team-nudges"> nudges</label>
             <a class="meta" href="/counts" style="font-size:11px">counts</a>
             <span class="ex" style="font-size:10.5px">${data.relayConnected ? 'live relay' : 'relay disconnected'}</span>
           </div>
         </div>
+        <div id="history-status" class="history-status" style="font-size:11.5px;text-align:center;color:var(--meta, #888);padding:4px 0" role="status"></div>
         <div class="messages" id="messages-stream">
           ${data.messages.length === 0 ? `
             <div class="empty-feed" style="padding:24px;color:var(--meta);text-align:center">
@@ -670,11 +901,14 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
         </div>
         <footer class="composer-bar">
           <form id="composer-form">
-            <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
-            <button type="submit" id="composer-send">Send</button>
+            <textarea id="composer-input" rows="1" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off"></textarea>
+            <label for="composer-file" class="composer-file" title="Attach a file" aria-label="Attach a file"><input type="file" id="composer-file" multiple class="sr-only">📎</label>
+      <button type="button" class="composer-mic" id="composer-mic" title="Record voice" aria-label="Record voice" aria-pressed="false">🎤</button>
+      <button type="submit" id="composer-send">Send</button>
           </form>
           <div id="send-error" class="send-error" role="alert"></div>
         </footer>
+        ${peopleRowHtml}
       </main>
       <aside class="stream-drawer" id="stream-drawer" style="display:none">
         <div class="stream-drawer-h">
@@ -702,25 +936,117 @@ ${TEAM_NUDGES_TOGGLE}`;
  * cannot be read is named, never shown as zeros (a red must mean the product
  * broke, not that the page could not look).
  */
-export function renderCountsPage(rows: KindCount[], meta: { day: string; error?: string }, sources: TrustStripSource[]): string {
-  const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '—' : v}</td>`;
-  const body = meta.error
-    ? `<div class="meta fail" style="padding:16px">Counts could not be read: ${escapeHtml(meta.error)}</div>`
-    : `<table class="counts-table" style="width:100%;border-collapse:collapse">
-      <thead><tr><th style="text-align:left">Kind</th><th>Sent</th><th>Reached Buzz</th><th>Gap</th></tr></thead>
-      <tbody>
-${rows.map((r) => `        <tr><td>${r.label}</td>${cell(r.sent)}${cell(r.reached)}${cell(r.gap, r.gap ? 'fail' : '')}</tr>`).join('\n')}
-      </tbody>
-    </table>
-    <p class="meta" style="margin-top:12px">Role reply: sent not measured — replies go from each role straight to the relay, and pulse does not carry them.</p>`;
-  const content = `<main class="page counts-page" style="padding:14px">
-    <h2>Messages today <span class="meta">${meta.day}, Boston</span></h2>
-    ${body}
-  </main>`;
-  return renderPageShell('Messages today', 'counts', content, sources);
+/** #4634 — a day where Buzz kept fewer than were sent, or the spine read 0 events. */
+function redCell(c: DayCell, d: DayRow): boolean {
+  const sent = d.values.find((x) => x.metric === 'messages-sent')?.value;
+  if (c.metric === 'messages-kept') return c.value !== null && sent !== null && sent !== undefined && c.value < sent;
+  return c.metric === 'events' && c.value === 0;
 }
 
-function escapeHtml(t: string): string {
+/** #4634 — messages and events by day since day 1, from the sensors' readings. */
+export function renderCountsPage(days: DayRow[], meta: { error?: string }, sources: TrustStripSource[], doubles: DayRow[] = []): string {
+  const cell = (v: number | null, cls = '') => `<td class="num ${cls}">${v === null ? '<span class="meta">unmeasured</span>' : v}</td>`;
+  // #4628 — the doubles table goes first: under 200+ day rows Jeff would never reach it (Wren, 390 px)
+  const doublesHtml = doubles.length === 0
+      ? '<p class="meta">Doubles: unmeasured (the sensor has no doubles reading yet)</p>'
+      : `<h3 style="margin-top:16px">Doubles in Buzz <span class="meta">same author, same words, within 20 s</span></h3>
+    <table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Day</th>${DOUBLE_COLUMNS.map(([, , l]) => `<th>${l}</th>`).join('')}</tr></thead>
+      <tbody>
+${doubles.map((d) => `        <tr><td>${d.day.slice(5)}</td>${d.values.map((c) => cell(c.value, c.value !== null && c.value > 0 ? 'fail' : '')).join('')}</tr>`).join('\n')}
+      </tbody>
+    </table>
+    <p class="meta">Each kind of message has one writer, so any double is a second writer still in place.</p>`;
+  const body = meta.error || days.length === 0
+    ? `<div class="meta fail" style="padding:16px">Unmeasured: ${escapeHtml(meta.error || 'the sensors have written no readings yet')}</div>`
+    : `<div style="overflow-x:auto"><table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Day</th>${DAY_COLUMNS.map(([, , l]) => `<th>${l}</th>`).join('')}</tr></thead>
+      <tbody>
+${days.map((d) => `        <tr><td>${d.day}</td>${d.values.map((c) => cell(c.value, redCell(c, d) ? 'fail' : '')).join('')}</tr>`).join('\n')}
+      </tbody>
+    </table></div>
+    <p class="meta" style="margin-top:12px">From the herald sensors (messages: pulse and Buzz; events: the spine). A day is counted once it is over.</p>`;
+  const content = `<main class="page counts-page" style="padding:14px">
+    <p class="meta"><a href="/sync">Git vs graph by day</a> (the crawler's sync sensor)</p>
+    ${doublesHtml}
+    <h2>Messages and events by day <span class="meta">Boston days</span></h2>
+    ${body}
+  </main>`;
+  return renderPageShell('Messages and events', 'counts', content, sources);
+}
+
+/**
+ * #4647 — git vs graph, from the sync sensor: per crawled class, files in git
+ * with no row (missing) and rows out of date (stale). Summary first, the
+ * newest day's classes worst first, then the history, at 390 px (Wren 18:39).
+ * A class or a day with no reading says unmeasured, never 0.
+ */
+export function renderSyncPage(days: SyncDay[], meta: { error?: string }, sources: TrustStripSource[]): string {
+  const num = (v: number | null) => `<td class="num ${v !== null && v > 0 ? 'fail' : ''}">${v === null ? '<span class="meta">unmeasured</span>' : v}</td>`;
+  let body: string;
+  if (meta.error || days.length === 0) {
+    body = `<div class="meta fail" style="padding:16px">Unmeasured: ${escapeHtml(meta.error || 'the sync sensor has written no readings yet')}</div>`;
+  } else {
+    const latest = days[0];
+    const unmeasured = latest.classes.filter((c) => c.missing === null || c.stale === null);
+    const off = latest.classes.filter((c) => (c.missing || 0) + (c.stale || 0) > 0);
+    const summary = unmeasured.length
+      ? `<p class="fail"><b>${latest.day}: unmeasured</b> for ${unmeasured.map((c) => escapeHtml(c.subject)).join(', ')}</p>`
+      : off.length
+        ? `<p class="fail"><b>${latest.day}: ${off.length} of ${latest.classes.length} classes out of sync</b>, ${off.reduce((n, c) => n + (c.missing || 0), 0)} missing, ${off.reduce((n, c) => n + (c.stale || 0), 0)} stale</p>`
+        : `<p><b>${latest.day}: all ${latest.classes.length} classes in sync</b></p>`;
+    const history = days.slice(1).map((d) => {
+      const bad = d.classes.filter((c) => c.missing === null || c.stale === null || (c.missing || 0) + (c.stale || 0) > 0);
+      return `        <tr><td>${d.day.slice(5)}</td><td class="${bad.length ? 'fail' : ''}">${bad.length ? bad.map((c) => escapeHtml(c.subject)).join(', ') : 'in sync'}</td></tr>`;
+    }).join('\n');
+    body = `${summary}
+    <table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Class</th><th>Missing</th><th>Stale</th></tr></thead>
+      <tbody>
+${latest.classes.map((c) => `        <tr><td>${escapeHtml(c.subject)}</td>${num(c.missing)}${num(c.stale)}</tr>`).join('\n')}
+      </tbody>
+    </table>
+    <p class="meta">Missing: files in git with no row in the graph. Stale: rows older than the file. The sensor runs after every land crawl and at 03:30.</p>${history ? `
+    <h3 style="margin-top:16px">Earlier days</h3>
+    <table class="counts-table" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left">Day</th><th style="text-align:left">Out of sync</th></tr></thead>
+      <tbody>
+${history}
+      </tbody>
+    </table>` : ''}`;
+  }
+  const content = `<main class="page counts-page" style="padding:14px">
+    <h2>Git vs graph <span class="meta">Boston days</span></h2>
+    ${body}
+    <p class="meta" style="margin-top:12px"><a href="/counts">Messages and events by day</a></p>
+  </main>`;
+  return renderPageShell('Git vs graph', 'counts', content, sources);
+}
+
+/**
+ * #4597 — Jeff 16:25: "i really need a streams menu option too". One column per role,
+ * newest command first, refreshed every 5 seconds. An unreadable stream is named.
+ */
+export function renderStreamsPage(streams: Streams, sources: TrustStripSource[]): string {
+  const body = !streams.ok
+    ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
+    : streams.roles.length === 0
+      ? `<div class="meta" style="padding:16px">No commands in the stream yet.</div>`
+      : `<div class="streams-grid">${streams.roles.map((r) => `
+      <section class="stream-col">
+        <h3 class="who-${escapeHtml(r.role)}">${escapeHtml(r.role)}</h3>
+        ${r.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> ${escapeHtml(l.text)}</div>`).join('')}
+      </section>`).join('')}
+    </div>`;
+  const content = `<main class="page streams-page" id="streams-page">
+    ${body}
+  </main>
+  <script>setTimeout(function () { window.location.reload(); }, 5000);</script>`;
+  return renderPageShell('Streams', 'streams', content, sources);
+}
+
+function escapeHtml(t: string | undefined): string {
+  if (!t) return '';
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 

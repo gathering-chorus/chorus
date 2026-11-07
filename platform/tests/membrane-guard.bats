@@ -98,7 +98,10 @@ require_shim() {
   require_shim
   # Same test-marker env, but the runner declares itself prod — the membrane
   # honors the explicit contract and resolves the (redirected-HOME) prod path.
+  # #4885: the spine resolves CHORUS_STATE_DIR before HOME (#4535), and every role's
+  # env exports it, so a redirected HOME alone sent this probe to the LIVE spine.
   run env HOME="$TEST_HOME" \
+      CHORUS_STATE_DIR="$TEST_HOME/.chorus" \
       CHORUS_LOG_FILE= \
       CHORUS_SESSIONS_DIR= \
       CHORUS_CONTEXT=prod \

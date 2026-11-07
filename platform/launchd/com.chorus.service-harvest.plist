@@ -10,7 +10,7 @@
          as a SensorRun; wait:true so a red pass exits 1 and launchd sees it. -->
     <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh</string>
     <string>silas</string>
-    <string>borg-tend-herald</string>
+    <string>herald-run</string>
     <string>{"role":"silas","sensor":"services","wait":true}</string>
   </array>
   <key>StartInterval</key><integer>3600</integer>

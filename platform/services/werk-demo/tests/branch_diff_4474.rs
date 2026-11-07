@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: werk
+// @domain: builds
 //! #4474 reopen (Silas, 2026-10-11 15:09/15:10). werk.yml passed GO where
 //! werk-demo reads the role, so role=false: every v1 demo-ready nudge went to
 //! "false", and every in-run gate diffed chorus-werk/false-<card> — an empty
@@ -43,8 +43,8 @@ fn the_v2_pipeline_hands_werk_demo_the_card_and_never_the_go() {
     // #4502 — the steps live in the demo pipeline (Jeff 10-12 21:18), which
     // cicd starts from the card's own werk file as one step
     let demo = std::fs::read_to_string(format!("{dir}/../../../platform/pipelines/demo.yaml")).unwrap();
-    for step in ["validate ${CARD} ${ROLE}", "run-gate ${CARD} ${ROLE} code", "run-review ${CARD} ${ROLE} 3",
-                 "session-smoke ${CARD} ${ROLE}", "announce ${CARD} ${ROLE}"] {
+    for step in ["validate ${CARD} ${ROLE}", "run-gate ${CARD} ${ROLE} code", "run-gate ${CARD} ${ROLE} arch",
+                 "run-gate ${CARD} ${ROLE} quality", "announce ${CARD} ${ROLE}"] {
         assert!(demo.contains(&format!("command: \"werk-demo {step}\"")), "missing demo step {step}");
         assert!(!yml.contains(&format!("werk-demo {step}")), "cicd runs the demo pipeline, not its steps: {step}");
     }

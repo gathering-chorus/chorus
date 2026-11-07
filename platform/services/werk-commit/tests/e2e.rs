@@ -219,9 +219,13 @@ fn commit_emits_failure_to_the_spine_with_the_inherited_trace() {
     fs::write(&log, format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display())).unwrap();
     assert!(Command::new("chmod").args(["+x", log.to_str().unwrap()]).status().unwrap().success());
 
-    // Seed the INHERITED trace via the /tmp file carrier (resolve_trace reads it) —
-    // no env mutation, so the test stays hermetic under parallelism.
-    fs::write("/tmp/9301-trace", "inherited-trace-9301").unwrap();
+    // Seed the INHERITED trace via the file carrier (resolve_trace reads it).
+    // #4771 — a per-test carrier dir: /tmp/9301-trace made by another account is
+    // EACCES here (green as jeffbridwell, red on every role account).
+    let trace_dir = home.join("trace-carrier");
+    fs::create_dir_all(&trace_dir).unwrap();
+    std::env::set_var("CHORUS_TRACE_DIR", &trace_dir);
+    fs::write(trace_dir.join("9301-trace"), "inherited-trace-9301").unwrap();
 
     // FAILURE path: clean werk, nothing to commit → commit() returns Err. Today that
     // return is fully silent (the exact #3162 bug).

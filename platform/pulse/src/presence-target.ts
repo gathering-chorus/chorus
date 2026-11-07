@@ -11,7 +11,7 @@
  */
 import type { SessionReg, TypedResolution } from './session-registry';
 
-export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string; reachableOver?: string }
+export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string; reachableOver?: string; reachability?: string }
 export interface RunRow { name: string; runEndedAt?: string; startedAt?: string }
 
 /** presenceOf names the run as the API stored it: "<kind>-<run name>"
@@ -30,17 +30,33 @@ function overAgent(p: PresenceRow): boolean {
   return over === 'agent' || over.endsWith('-agent');
 }
 
+// #4362 — only a tmux pane id (%N) is a pane. A run logged in outside tmux
+// stores "-", which tmux reads as "the current pane": every nudge typed into
+// whoever was on screen.
+const paneOf = (p: PresenceRow): string => (/^%\d+$/.test(p.pane ?? '') ? (p.pane as string) : '');
+
+/** The role's Presences of live runs, the one delivery would use first: a live run
+ *  with a real pane wins; then the newest. Shared by delivery and the roster (#4895). */
+function liveCandidates(presences: PresenceRow[], runs: RunRow[], role: string): PresenceRow[] {
+  const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
+  return presences
+    .filter((p) => p.name.startsWith(`${role}-presence-`) && ofLiveRun(p.presenceOf ?? '', live))
+    .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
+}
+
+/** #4895 — what the room shows: the reachability the principal wrote on the Presence
+ *  delivery would use ("reachable" only after a delivery landed there, "unreachable" the
+ *  moment one failed for good), or "offline" when no live run has a Presence. */
+export function reachabilityFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): string {
+  const live = liveCandidates(presences, runs, role);
+  return live.length === 0 ? 'offline' : (live[0].reachability || 'unknown');
+}
+
 export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): TypedResolution {
   const mine = presences.filter((p) => p.name.startsWith(`${role}-presence-`));
   if (mine.length === 0) return { kind: 'unregistered' };
   const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
-  // #4362 — only a tmux pane id (%N) is a pane. A run logged in outside tmux
-  // stores "-", which tmux reads as "the current pane": every nudge typed into
-  // whoever was on screen. A live run with a real pane wins; then the newest.
-  const paneOf = (p: PresenceRow): string => (/^%\d+$/.test(p.pane ?? '') ? (p.pane as string) : '');
-  const candidates = mine
-    .filter((p) => ofLiveRun(p.presenceOf ?? '', live))
-    .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
+  const candidates = liveCandidates(presences, runs, role);
   if (candidates.length === 0) return { kind: 'dead' };
   // #4424 — a run on another model is reached through the agent supervisor,
   // addressed by the run's own name (the supervisor's session id).
@@ -70,6 +86,12 @@ export async function resolveEnds(to: string, from?: string): Promise<{ toRes: T
 }
 
 export async function fetchPresenceResolution(role: string, base = process.env.ATHENA_MAKE_URL || 'http://localhost:3360'): Promise<TypedResolution | { kind: 'unread'; why: string }> {
+  return (await fetchPresenceView(role, base)).resolution;
+}
+
+/** #4895 — one read of both collections answers where a role is and how reachable it is
+ *  (/api/where serves both; AC2's check needs reachable, not only a resolved pane). */
+export async function fetchPresenceView(role: string, base = process.env.ATHENA_MAKE_URL || 'http://localhost:3360'): Promise<{ resolution: TypedResolution | { kind: 'unread'; why: string }; reachability?: string }> {
   try {
     const get = async (p: string): Promise<unknown[]> => {
       const r = await fetch(`${base}/v1/identity/${p}?limit=5000`, { signal: AbortSignal.timeout(2000) });
@@ -78,25 +100,14 @@ export async function fetchPresenceResolution(role: string, base = process.env.A
       return body.data ?? [];
     };
     const [presences, runs] = await Promise.all([get('presences'), get('sessionruns')]);
-    return resolveFromPresence(presences as PresenceRow[], runs as RunRow[], role);
+    return {
+      resolution: resolveFromPresence(presences as PresenceRow[], runs as RunRow[], role),
+      reachability: reachabilityFromPresence(presences as PresenceRow[], runs as RunRow[], role),
+    };
   } catch (e) {
-    return { kind: 'unread', why: e instanceof Error ? e.message : String(e) };
+    return { resolution: { kind: 'unread', why: e instanceof Error ? e.message : String(e) } };
   }
 }
 
-/** #4362 — a role's live run has no pane (it was logged in outside tmux), but
- * the role itself runs in its own tmux session, chorus-<role>. Read that
- * session's panes: exactly one %N pane is the role's pane. Anything else
- * (no session, several panes, not a pane id) reaches no one. */
-export function paneFromTmuxListing(listing: string): string {
-  const panes = listing.split('\n').map((l) => l.trim()).filter(Boolean);
-  return panes.length === 1 && /^%\d+$/.test(panes[0]) ? panes[0] : '';
-}
-
-export function rolePaneFromTmux(role: string, run: (args: string[]) => string): string {
-  try {
-    return paneFromTmuxListing(run(['list-panes', '-t', `chorus-${role}`, '-F', '#{pane_id}']));
-  } catch {
-    return '';
-  }
-}
+// #4889 — the #4362 fallback (reading a pane from the role's tmux session) is retired:
+// a role is reached at its one live registration or not at all (Jeff 07:48).

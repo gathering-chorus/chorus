@@ -44,6 +44,16 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   test "$(grep -c "session.revoked wren" "$T/spine.log")" -eq 1
 }
 
+@test "#4895 a revoked role's turn END exits 0: on a Stop hook, exit 2 would mean keep going" {
+  "$SCRIPT" login wren >/dev/null 2>&1
+  revoke; turn                      # the prompt path ends it as revoked (exit 2, above)
+  run bash -c "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"c-4385\"}' | AWAKE_SEEN_SYNC=1 '$SCRIPT' seen wren"
+  test "$status" -eq 0
+  # NEGATIVE PROOF: the same revoked role's prompt is still refused (the turn-end path is the only exemption)
+  turn
+  test "$status" -eq 2
+}
+
 @test "#4385 NEGATIVE PROOF: an unrevoked principal's turn runs untouched" {
   "$SCRIPT" login wren >/dev/null 2>&1
   turn

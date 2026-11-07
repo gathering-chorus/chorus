@@ -1,7 +1,7 @@
 // @domain: domains
 //! athena-gen (#4490):
 //!   athena-gen model    --root <repo> --product <name>              prints the product's slice of the model
-//!   athena-gen generate --root <repo> --product <name> --out <dir> [--verifier <chorus-oidc dir>]
+//!   athena-gen generate --root <repo> --product <name> --out <dir> [--verifier <chorus-oidc dir>] [--drop <route>]…
 //!                                                                    writes the product's API crate
 //!   athena-gen generate --card <n> [--out <dir>] [--verifier <dir>]  #4515: every product the card's model
 //!                                                                    change touches, from the card's werk,
@@ -12,6 +12,11 @@
 //!   athena-gen runtimes --root <repo> --out <file>                   writes the agent runtime table (#4444)
 
 use std::path::{Path, PathBuf};
+
+/// #4742 — every `--drop <route>` given: routes a regeneration may remove.
+fn drops(args: &[String]) -> Vec<String> {
+    args.windows(2).filter(|w| w[0] == "--drop").map(|w| w[1].clone()).collect()
+}
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
@@ -35,8 +40,18 @@ fn load_model(root: &Path) -> oxigraph::store::Store {
 }
 
 /// Write one product's API crate into `out`.
-fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Path, verifier: Option<&String>) {
+fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Path, verifier: Option<&String>, drops: &[String]) {
     let p = athena_gen::model::product(store, product).unwrap_or_else(|e| die(e));
+    // #4742 gap 8 (#4708) — a route the crate serves today leaves only when it is named
+    if let Ok(old) = std::fs::read_to_string(out.join("src/model.rs")) {
+        if old.contains("ClassDef {") && athena_gen::emit::old_routes(&old, product).is_empty() {
+            die(format!("{product}: cannot read the routes the crate serves today from {}; the route-drop guard would be blind", out.join("src/model.rs").display()));
+        }
+        let dropped: Vec<String> = athena_gen::emit::dropped_routes(&old, &p).into_iter().filter(|r| !drops.contains(r)).collect();
+        if !dropped.is_empty() {
+            die(format!("{product}: the model no longer serves {dropped:?}; if that is meant, name each with --drop <route>"));
+        }
+    }
     let mv = athena_gen::model::model_version(store).unwrap_or_else(|e| die(e));
     let settings = athena_gen::model::settings(store, product).unwrap_or_else(|e| die(e));
     let missing = athena_gen::model::missing_settings(&settings);
@@ -49,7 +64,12 @@ fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Pa
         None => athena_gen::emit::oidc_path(root, out),
     }
     .unwrap_or_else(|e| die(e));
-    for (path, text) in athena_gen::emit::crate_files_with(&p, &mv, &settings, &oidc) {
+    // #4744 — every operation's handler is in the repo, or nothing is generated
+    let handlers: Vec<(String, String)> = p.operations.iter()
+        .map(|o| athena_gen::emit::handler_path(root, out, o).map(|h| (o.name.replace('-', "_"), h)))
+        .collect::<Result<_, _>>()
+        .unwrap_or_else(|e| die(e));
+    for (path, text) in athena_gen::emit::crate_files_ops(&p, &mv, &settings, &oidc, &handlers) {
         let f = out.join(&path);
         if let Some(dir) = f.parent() {
             std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
@@ -123,6 +143,13 @@ fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
             unserved.join(", ")
         ));
     }
+    // #4691 — instance rows of existing classes, and no class or shape change:
+    // nothing to generate, and the seed step deploys the rows (Wren 08:36)
+    if products.is_empty() && t.classes.is_empty() && t.targets.is_empty() && !t.instances.is_empty() {
+        let names: Vec<String> = t.instances.iter().map(|s| athena_gen::card::card_scope::local_name(s)).collect();
+        println!("card #{}: {} instance row(s) only, nothing to generate; the seed step deploys them: {}", card.card, names.len(), names.join(", "));
+        return;
+    }
     if products.is_empty() {
         die(format!("card #{}: the card's model change touches no product — nothing to generate", card.card));
     }
@@ -140,7 +167,7 @@ fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
     let out_base = arg(args, "--out").map(PathBuf::from).unwrap_or_else(|| root.join("directing/products"));
     let verifier = arg(args, "--verifier");
     for p in &built {
-        generate(&store, &root, p, &product_out(&out_base, p), verifier.as_ref());
+        generate(&store, &root, p, &product_out(&out_base, p), verifier.as_ref(), &drops(args));
     }
 }
 
@@ -190,7 +217,7 @@ fn main() {
         }
         "generate" => {
             let out = PathBuf::from(arg(&args, "--out").unwrap_or_else(|| die("generate needs --out <dir>")));
-            generate(&store, &root, &product, &out, arg(&args, "--verifier").as_ref());
+            generate(&store, &root, &product, &out, arg(&args, "--verifier").as_ref(), &drops(&args));
         }
         other => die(format!("unknown command '{other}' (model | generate)")),
     }

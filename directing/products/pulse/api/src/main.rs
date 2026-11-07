@@ -5,9 +5,12 @@
 
 mod auth;
 mod model;
+mod ops;
 mod rules;
 mod settings;
 mod store;
+#[cfg(test)]
+mod door_tests;
 #[cfg(test)]
 mod embedded_tests;
 #[cfg(test)]
@@ -36,6 +39,59 @@ fn error(code: u16, kind: &str, message: &str) -> (u16, Value) {
     (code, json!({ "error": kind, "message": message }))
 }
 
+/// #4744 — `%XX` and `+` in a query value, decoded; a malformed escape is kept as typed.
+fn decode(v: &str) -> String {
+    let b = v.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len() => match std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                Some(x) => { out.push(x); i += 2; }
+                None => out.push(b'%'),
+            },
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// #4744 AC8 — the filter a collection read carries: every query key but limit and offset
+/// names a field of the class (or is `q`, the text search). An unknown key is refused by name.
+fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)> {
+    let mut w = store::Where::default();
+    for kv in query.split('&').filter(|kv| !kv.is_empty()) {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        let (k, v) = (decode(k), decode(v));
+        let known = |f: &str| f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f);
+        let unknown = |f: &str| error(400, "unknown-field", &format!("{} has no field '{f}'", class.name));
+        if let Some((f, op)) = k.strip_suffix(".lt").map(|f| (f, "<")).or_else(|| k.strip_suffix(".gt").map(|f| (f, ">"))) {
+            if !known(f) { return Err(unknown(f)); }
+            // a bound compares text, which orders ISO times and plain text, never numbers (Kade's review)
+            let datatype = class.fields.iter().find(|d| d.name == f).map_or("string", |d| d.datatype);
+            if !matches!(datatype, "string" | "dateTime" | "date") {
+                return Err(error(400, "unordered-field", &format!("{}.{f} is {datatype}: a bound needs a text or time field", class.name)));
+            }
+            w.bounds.push((f.to_string(), op, v));
+            continue;
+        }
+        match k.as_str() {
+            "limit" | "offset" => {}
+            "sort" => {
+                let (f, desc) = v.strip_prefix('-').map(|f| (f, true)).unwrap_or((v.as_str(), false));
+                if !known(f) { return Err(unknown(f)); }
+                w.sort = Some((f.to_string(), desc));
+            }
+            "q" => w.q = Some(v),
+            f if f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f) => w.eq.push((k.clone(), v)),
+            f => return Err(error(400, "unknown-field", &format!("{} has no field '{f}'", class.name))),
+        }
+    }
+    Ok(w)
+}
+
 fn query_param(query: &str, key: &str) -> Option<usize> {
     query.split('&').find_map(|kv| kv.strip_prefix(&format!("{key}=")).and_then(|v| v.parse().ok()))
 }
@@ -55,6 +111,10 @@ fn refused(r: rules::Refusal) -> (u16, Value) {
 /// A write, after the caller is known: shape check → owner or Permission → keep the
 /// displaced version → one atomic store write → event. Nothing is written on a refusal.
 pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+    // #4742 — a composed domain belongs to another product: this one reads it, its owner writes it
+    if class.composed {
+        return error(405, "composed", &format!("{} is composed here from its owner; write it through {}'s own door", class.domain, class.domain));
+    }
     let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
         match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
     };
@@ -69,7 +129,9 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         _ => return error(405, "method", "this route takes GET and POST"),
     };
     let s = rules::subject(class, &name);
-    let prior = match ctx.store.get(class, &name) { Ok(p) => p, Err(m) => return error(503, "store", &m) };
+    // #4757 — every refusal past this point is on the spine: pulse's role-state replaces failed
+    // for an evening with nothing logged, because these 503s returned before any event
+    let prior = match ctx.store.get(class, &name) { Ok(p) => p, Err(m) => { rules::event(&ctx.events, &caller.principal, "read", class, &name, "store-error"); return error(503, "store", &m) } };
     let op = match method { "POST" => "create", "PUT" => "replace", "PATCH" => "patch", "DELETE" => "delete", _ => return error(405, "method", "unknown method") };
     if op == "create" && prior.is_some() { return error(409, "exists", &format!("{name} already exists; PATCH or PUT it")); }
     if op != "create" && prior.is_none() { return error(404, "not-found", &format!("no {} named {name}; a {op} never creates", class.name)); }
@@ -83,7 +145,7 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
     };
     if op == "patch" && cells.is_empty() { return error(422, "empty-patch", "the patch names no field"); }
     if matches!(op, "create" | "replace") {
-        if let Some(m) = rules::required_missing(class, &cells) { return error(422, "required", &format!("{m} is required")); }
+        if let Some(m) = rules::required_missing(class, &cells) { rules::event(&ctx.events, &caller.principal, op, class, &name, "required"); return error(422, "required", &format!("{m} is required")); }
         if rules::field(class, "ownedBy").is_some() {
             let owner = prior.as_ref().and_then(|r| r.get("ownedBy")).and_then(Value::as_str).map(String::from).unwrap_or_else(|| format!("principal-{}", caller.principal));
             cells.push(("ownedBy".into(), vec![rules::Cell::Link(format!("{}{owner}", model::NS))]));
@@ -91,9 +153,10 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         if !cells.iter().any(|(k, _)| k == "label") { cells.push(("label".into(), vec![rules::Cell::Literal(name.clone(), "string")])); }
     }
     if let Some(p) = &prior {
-        let n = match ctx.store.version_count(&format!("{}/{name}", class.plural)) { Ok(n) => n + 1, Err(m) => return error(503, "store", &m) };
+        let n = match ctx.store.version_count(&format!("{}/{name}", class.plural)) { Ok(n) => n + 1, Err(m) => { rules::event(&ctx.events, &caller.principal, op, class, &name, "version-error"); return error(503, "store", &m) } };
         let (vs, vcells) = rules::version_row(class, &name, p, n);
         if let Err(m) = ctx.store.write(&format!("{}provenance", model::GRAPH_PREFIX), &vs, Some("Version"), &vcells, true) {
+            rules::event(&ctx.events, &caller.principal, op, class, &name, "version-error");
             return error(503, "store", &format!("could not keep the prior version, nothing written: {m}"));
         }
     }
@@ -116,7 +179,21 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
     let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
-    if parts.len() < 3 || parts[0] != API_VERSION {
+    // #4757 — no root header here: pulse serves its header from its sources (:3475/pulse)
+    // #4744 — an operation (a live computation the model declares) answers under the same read rule
+    if parts.len() >= 3 && parts[0] == PRODUCT && method == "GET" && ops::has(parts[1], parts[2]) {
+        if !ctx.reads_public {
+            if let Err(e) = who.caller(authorization) {
+                let (code, kind) = auth::refusal(&e);
+                return error(code, kind, &format!("{e:?}"));
+            }
+        }
+        if let Some(r) = ops::route(ctx, parts[1], parts[2], &parts[3..], query) {
+            return r;
+        }
+    }
+    // #4742 (Jeff 10-25): the product is the top-level route, each of its domains a child route
+    if parts.len() < 3 || parts[0] != PRODUCT {
         return error(404, "unknown-route", "not a route of this API");
     }
     let Some(class) = CLASSES.iter().find(|c| c.domain == parts[1] && c.segment == parts[2]) else {
@@ -151,7 +228,12 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         3 => {
             let limit = query_param(query, "limit").unwrap_or(100).min(1000);
             let offset = query_param(query, "offset").unwrap_or(0);
-            let page = match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) };
+            let w = match where_of(class, query) { Ok(w) => w, Err(e) => return e };
+            let page = if w != store::Where::default() {
+                store.list_where(class, limit, offset, viewer.as_deref(), &w)
+            } else {
+                match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) }
+            };
             match page {
                 Ok((rows, total)) => {
                     let mut e = envelope(class, path, json!(rows));
@@ -171,6 +253,15 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
 }
 
 fn main() {
+    // #4814 AC2 — a panic on ANY thread ends the process (tiny_http's accept thread
+    // panics on EMFILE and would otherwise leave a live process that never answers);
+    // launchd's KeepAlive starts a fresh one. Said on stderr first, with the cause.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default_hook(info);
+        eprintln!("{PRODUCT}-api: a thread panicked — exiting so launchd restarts the api");
+        std::process::exit(70);
+    }));
     let s = settings::load();
     // `<product>-api load <file.trig>`: fill the embedded store (a move from another
     // store, or a restore). `dump <file.trig>`: back it up. Both refuse a remote store.

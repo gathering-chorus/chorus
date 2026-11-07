@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4645)
 // @test-type: unit — pure function over a settings list; no store, no services
 //! #4576 — the generator builds only a product that runs its own server. Athena
 //! declares model.namespace (#4519) but is served by athena-make v1, so it must

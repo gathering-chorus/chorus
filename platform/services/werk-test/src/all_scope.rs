@@ -118,9 +118,6 @@ struct GraphRows {
     enabled: bool,
     run_ts: std::cell::RefCell<String>,
     order: std::cell::Cell<usize>,
-    token: std::cell::RefCell<Option<String>>,
-    written: std::cell::Cell<usize>,
-    failed: std::cell::Cell<usize>,
 }
 
 impl Ctx {
@@ -133,52 +130,25 @@ impl Ctx {
             Err(_) => false,
         }
     }
-    /// #4156 — one SUITE row: the log line, and the same row in the graph.
+    /// One SUITE row, to the run log. #4579 reopen — the graph no longer carries
+    /// suite rows (TestSuiteRun, Jeff 10-18 19:10); /nightly reads the log.
     fn record_row(&self, row: &SuiteRow) {
         self.append_log(&row.line());
         if let Some(t) = row.time_line() {
             self.append_log(&t);
         }
-        if !self.graph.enabled {
-            return;
-        }
-        let order = self.graph.order.get() + 1;
-        self.graph.order.set(order);
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-        let role = env_or("WERK_TEST_MINT_ROLE", "nightly");
-        let body = werk_test::run_record::suite_row_payload_timed(&self.graph.run_ts.borrow(), order, row, ts);
-        // #4416 — a store whose shape predates suiteSeconds refuses the field
-        // as off-model; the row still lands without it, never lost for a timing
-        let landed = self.post_graph("testsuiteruns", &role, &body, &self.graph.token)
-            || (row.millis.is_some()
-                && self.post_graph("testsuiteruns", &role, &werk_test::run_record::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts), &self.graph.token));
-        if landed {
-            self.graph.written.set(self.graph.written.get() + 1);
-        } else {
-            self.graph.failed.set(self.graph.failed.get() + 1);
-        }
     }
     /// #4007 — a unit started or ended. The log keeps both edges, so a run that
-    /// dies mid-lane names what was in flight; a start goes on the spine with
-    /// the run_id; the graph holds a live row while the unit runs, which the
-    /// /nightly page reads, and the end removes it.
+    /// dies mid-lane names what was in flight, and /nightly reads the open ones
+    /// from it; a start carries the unit's timeout so the page can call a hung
+    /// unit WEDGED (#4579 reopen: this was the graph's live row). A start goes
+    /// on the spine with the run_id.
     fn unit_mark(&self, edge: &str, item: &str, ms: u128) {
-        let tag = if edge == "start" { "SUITESTART" } else { "SUITEEND" };
-        self.append_log(&format!("{}|{}|{}", tag, item, ms));
         if edge == "start" {
+            self.append_log(&format!("SUITESTART|{}|{}|timeout={}s", item, ms, werk_test::unit_timeout().as_secs()));
             self.spine("test.suite.started", &[("unit".into(), item.into())]);
-        }
-        if !self.graph.enabled {
-            return;
-        }
-        let role = env_or("WERK_TEST_MINT_ROLE", "nightly");
-        let run_ts = self.graph.run_ts.borrow().clone();
-        if edge == "start" {
-            let body = werk_test::run_record::live_row_payload(&run_ts, item, ms, werk_test::unit_timeout().as_secs());
-            self.post_graph("testsuiteruns", &role, &body, &self.graph.token);
         } else {
-            let name = werk_test::run_record::live_row_name(&run_ts, item);
-            self.send_graph("DELETE", &format!("testsuiteruns/{}", name), &role, "", &self.graph.token);
+            self.append_log(&format!("SUITEEND|{}|{}", item, ms));
         }
     }
     /// POST one row through athena-make.
@@ -1025,26 +995,29 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     // #4318 — Jeff's note, line one: "prereq: all tests current + in graph".
     // The validate ran at 03:00 against a graph the crawler only refreshes at
     // 04:30, so any file changed during the day read as a gap (2026-09-26: 2
-    // log files). The run now crawls first — a full pass writes, then
-    // validates — so it checks a current graph. A run that writes no prod
-    // rows (a werk, #3722) validates only.
+    // log files). #4568 — each land's crawl now keeps the graph current, so
+    // every run validates only and writes nothing; a gap here means a land's
+    // crawl did not write.
     c.args(crawler_args(ctx.graph.enabled))
         .envs(crawler_env(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("WERK_TEST_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
+    // #4568 — what each land's crawl did since last night, read before this run appends
+    let crawl_log = env_or("CRAWL_WERK_TEST_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+    let lands = land_crawl_line(&std::fs::read_to_string(&crawl_log).unwrap_or_default());
     let (rc, out) = run_capped(c, Duration::from_secs(1200));
-    // #4185 — this is now the ONE full pass (the 04:30 job is retired), so its
-    // output joins the crawler's own log: crawler-stale and the nightly's
-    // TOTAL line read that file. Only a run that may write prod writes it.
+    // #4185 — the nightly's check joins the crawler's own log: crawler-stale
+    // and the nightly's TOTAL line read that file. Only a prod run writes it.
     if ctx.graph.enabled {
         let log = env_or("CRAWL_WERK_TEST_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
             use std::io::Write;
-            let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n{out}");
+            let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's read-only check, run by werk-test)\n{out}");
         }
     }
     let (status, summary) = crawler_validate_verdict(rc, &out);
+    let summary = format!("{summary} · {lands}");
     let row = SuiteRow::new("crawler-validate", path, "kade", status, &summary);
     if status != "pass" {
         ctx.write_fail_log(&row, &out);
@@ -1052,11 +1025,74 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     row
 }
 
+/// #4568 — the land crawls since the last nightly, against the ones before:
+/// each write pass logs `wrote=N failed=N · elapsed=Ns`, and a refused land
+/// crawl leaves a `chorus-runner call:` or `nothing ran` line. Ten days of
+/// refusals (10-17..10-19) were hidden behind the nightly's own write pass.
+pub fn land_crawl_line(log: &str) -> String {
+    let lines: Vec<&str> = log.lines().collect();
+    let cut = lines.iter().rposition(|l| l.starts_with("chorus-crawl: (the 03:00 nightly's")).map(|i| i + 1).unwrap_or(0);
+    let field = |l: &str, k: &str| -> Option<u64> {
+        let at = l.find(k)? + k.len();
+        l[at..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
+    };
+    let passes = |ls: &[&str]| -> Vec<(u64, u64, u64)> {
+        ls.iter()
+            .filter_map(|l| Some((field(l, "elapsed=")?, field(l, "wrote=").unwrap_or(0), field(l, "failed=").unwrap_or(0))))
+            .collect()
+    };
+    let now = passes(&lines[cut..]);
+    let refused = lines[cut..].iter().filter(|l| l.starts_with("chorus-runner call:") || l.contains("nothing ran")).count();
+    let mut before: Vec<u64> = passes(&lines[..cut]).into_iter().rev().take(20).map(|p| p.0).collect();
+    before.sort_unstable();
+    let median = before.get(before.len() / 2).map(|m| format!("median {m}s over the {} before", before.len())).unwrap_or_else(|| "no earlier pass".into());
+    let did = if now.is_empty() {
+        "no land crawl since last night".to_string()
+    } else {
+        format!(
+            "land crawls since last night: {} (wrote {}, failed {}, longest {}s; {median})",
+            now.len(),
+            now.iter().map(|p| p.1).sum::<u64>(),
+            now.iter().map(|p| p.2).sum::<u64>(),
+            now.iter().map(|p| p.0).max().unwrap_or(0)
+        )
+    };
+    if refused > 0 { format!("{did} · {refused} refused") } else { did }
+}
+
+#[cfg(test)]
+mod land_crawls_4568 {
+    use super::*;
+
+    #[test]
+    fn the_land_crawls_since_last_night_are_counted_against_the_ones_before() {
+        let log = "chorus-crawl: wrote=10 failed=0 · elapsed=40s rate=1/s\n\
+                   chorus-crawl: wrote=12 failed=0 · elapsed=60s rate=1/s\n\
+                   chorus-crawl: (the 03:00 nightly's read-only check, run by werk-test)\n\
+                   chorus-crawl: wrote=5 failed=1 · elapsed=30s rate=1/s\n\
+                   chorus-crawl: wrote=7 failed=0 · elapsed=90s rate=1/s\n";
+        assert_eq!(land_crawl_line(log), "land crawls since last night: 2 (wrote 12, failed 1, longest 90s; median 60s over the 2 before)");
+    }
+
+    /// NEGATIVE PROOF — 10-19: every land crawl refused reads as refused, never as a quiet day
+    #[test]
+    fn refused_land_crawls_are_named() {
+        let log = "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n\
+                   chorus-runner call: kade may not run herald-run: it runs as silas\n";
+        assert_eq!(land_crawl_line(log), "no land crawl since last night · 1 refused");
+        assert_eq!(land_crawl_line(""), "no land crawl since last night");
+    }
+}
+
 /// #4318 — the crawler's arguments for the nightly's first leg: a full pass
 /// (write, then validate) when the run may write the graph, validate-only
 /// when it may not.
-pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
-    if may_write { Vec::new() } else { vec!["--validate"] }
+/// #4568 (Jeff 10-16 "ok do that") — the nightly only checks that the store
+/// matches the code; each land's crawl writes what it changed. Until then the
+/// nightly's full write pass hid a land crawl refused on every land since
+/// 10-16, and re-read every store row each night.
+pub fn crawler_args(_may_write: bool) -> Vec<&'static str> {
+    vec!["--validate"]
 }
 
 /// #4185 — the write pass must be a FULL pass: the crawler prints its
@@ -1064,8 +1100,8 @@ pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
 /// watermark made it a delta (2026-09-30 08:33: "delta becf31089..9760be75a",
 /// no VALIDATE lines, the lane UNMEASURED). An empty watermark is the
 /// crawler's "full pass requested by the job", as the 04:30 job asks.
-pub fn crawler_env(may_write: bool) -> Vec<(&'static str, &'static str)> {
-    if may_write { vec![("CHORUS_CRAWL_WATERMARK", "")] } else { Vec::new() }
+pub fn crawler_env(_may_write: bool) -> Vec<(&'static str, &'static str)> {
+    Vec::new()
 }
 
 /// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
@@ -1158,25 +1194,113 @@ fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     }
 }
 
-fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
+fn leg_duration(ctx: &Ctx, secs: u64, holds: usize) -> SuiteRow {
     // #4277 — the budget is a regression guard, so it sits above the measured
     // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
     // (4033s, 4252s) and the first budget (3600s) went red on a normal night.
     let budget: u64 = env_or("WERK_TEST_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
-    let (status, summary) = duration_verdict_with_load(secs, budget, holds);
+    let (status, mut summary) = duration_verdict_with_load(secs, budget, holds);
+    if status == "fail" {
+        let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
+        summary = format!("{summary} · {}", grew_line(&suite_growth(&log, 7)));
+    }
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
+}
+
+/// #4645 — the duration red was red six nights running (6,642–11,329 s) and
+/// said only "over budget by N s", so nobody could act on it. A red now names
+/// the suites that grew most against their own median over the last `nights`
+/// runs: (suite, seconds tonight, median seconds before). Suites with fewer
+/// than 3 earlier timings, or that grew under 60 s, are left out.
+pub fn suite_growth(log: &str, nights: usize) -> Vec<(String, f64, f64)> {
+    let mut runs: Vec<std::collections::HashMap<String, f64>> = Vec::new();
+    for line in log.lines() {
+        if line.starts_with("RUN|start|") {
+            runs.push(std::collections::HashMap::new());
+        } else if let (Some(run), Some(rest)) = (runs.last_mut(), line.strip_prefix("SUITETIME|")) {
+            let mut f = rest.rsplitn(2, '|');
+            if let (Some(s), Some(name)) = (f.next().and_then(|s| s.parse::<f64>().ok()), f.next()) {
+                run.insert(name.to_string(), s);
+            }
+        }
+    }
+    let Some(now) = runs.pop() else { return Vec::new() };
+    let before: Vec<_> = runs.iter().rev().filter(|r| !r.is_empty()).take(nights).collect();
+    let mut grew: Vec<(String, f64, f64)> = now
+        .iter()
+        .filter_map(|(name, &s)| {
+            let mut past: Vec<f64> = before.iter().filter_map(|r| r.get(name).copied()).collect();
+            if past.len() < 3 {
+                return None;
+            }
+            past.sort_by(|a, b| a.total_cmp(b));
+            let median = past[past.len() / 2];
+            (s - median >= 60.0).then(|| (name.clone(), s, median))
+        })
+        .collect();
+    grew.sort_by(|a, b| (b.1 - b.2).total_cmp(&(a.1 - a.2)).then(a.0.cmp(&b.0)));
+    grew.truncate(3);
+    grew
+}
+
+fn grew_line(grew: &[(String, f64, f64)]) -> String {
+    if grew.is_empty() {
+        return "no suite grew 60 s or more against its median: the run is slow across the board".to_string();
+    }
+    let parts: Vec<String> = grew
+        .iter()
+        .map(|(n, s, m)| format!("{} {:.0}s (median {:.0}s)", n.rsplit('/').next().unwrap_or(n), s, m))
+        .collect();
+    format!("grew most: {}", parts.join(", "))
+}
+
+#[cfg(test)]
+mod duration_growth_4645 {
+    use super::*;
+
+    fn night(times: &[(&str, f64)]) -> String {
+        let mut s = String::from("RUN|start|2026-10-18T03:00:03|pid=1\n");
+        for (n, t) in times {
+            s.push_str(&format!("SUITETIME|bats|platform/tests/{n}|{t}\n"));
+        }
+        s
+    }
+
+    #[test]
+    fn a_suite_that_jumped_is_named_with_its_median() {
+        let mut log = String::new();
+        for _ in 0..4 {
+            log.push_str(&night(&[("a.bats", 100.0), ("b.bats", 50.0)]));
+        }
+        log.push_str(&night(&[("a.bats", 400.0), ("b.bats", 55.0)]));
+        let g = suite_growth(&log, 7);
+        assert_eq!(g, vec![("bats|platform/tests/a.bats".to_string(), 400.0, 100.0)]);
+        assert_eq!(grew_line(&g), "grew most: a.bats 400s (median 100s)");
+    }
+
+    /// NEGATIVE PROOF — steady times, or a suite with too little history, name nothing
+    #[test]
+    fn steady_suites_and_new_suites_are_not_named() {
+        let mut log = String::new();
+        for _ in 0..4 {
+            log.push_str(&night(&[("a.bats", 100.0)]));
+        }
+        log.push_str(&night(&[("a.bats", 130.0), ("new.bats", 900.0)]));
+        assert!(suite_growth(&log, 7).is_empty());
+        assert!(grew_line(&[]).contains("slow across the board"));
+        assert!(suite_growth("", 7).is_empty());
+    }
 }
 
 #[cfg(test)]
 mod crawl_first_4318 {
     use super::*;
 
+    /// #4568 — the team run writes nothing: each land's crawl writes, the nightly checks
     #[test]
-    fn the_team_run_crawls_before_it_validates() {
-        assert!(crawler_args(true).is_empty(), "a full pass: write, then validate");
-        // #4185 — no args alone was a DELTA pass (the graph's watermark), which
-        // prints no VALIDATE lines; the empty watermark is what makes it full.
-        assert_eq!(crawler_env(true), vec![("CHORUS_CRAWL_WATERMARK", "")]);
+    fn the_team_run_only_validates() {
+        assert_eq!(crawler_args(true), vec!["--validate"]);
+        assert!(crawler_env(true).is_empty(), "--validate is always full; no watermark to override");
     }
 
     /// NEGATIVE PROOF — a run that may not write prod (a werk) never crawls.
@@ -1395,14 +1519,14 @@ mod lanes_4278 {
         std::env::remove_var("WERK_TEST_RUNNER_CMD");
         let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
         assert!(log.contains("SUITESTART|a.bats|1000") && log.contains("SUITEEND|a.bats|2000"), "{log}");
-        assert!(log.contains("SUITESTART|b.bats|3000"), "the unit in flight is named: {log}");
+        assert!(log.contains("SUITESTART|b.bats|3000|timeout="), "the unit in flight is named, with its timeout (#4579): {log}");
         assert!(!log.contains("SUITEEND|b.bats"), "a unit that never ended reads ended: {log}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn unit_marks_parse_and_other_unit_lines_do_not() {
-        use werk_test::run_record::{live_row_name, live_row_payload, parse_unit_mark};
+        use werk_test::run_record::parse_unit_mark;
         assert_eq!(parse_unit_mark("nightly-unit-start|platform/tests/x.bats|1700"), Some(("start", "platform/tests/x.bats".into(), 1700)));
         assert_eq!(parse_unit_mark("nightly-unit-end|werk-test#units|9"), Some(("end", "werk-test#units".into(), 9)));
         // NEGATIVE PROOF: the time line and the result line are not marks
@@ -1412,11 +1536,6 @@ mod lanes_4278 {
         // what the runner child prints is what the parent reads
         let (edge, item, ms) = parse_unit_mark(&werk_test::unit_mark_line("start", "c.bats")).expect("round trip");
         assert!(edge == "start" && item == "c.bats" && ms > 1_700_000_000_000, "{ms}");
-        let a = live_row_name("2026-10-10T03:00:03", "a.bats");
-        assert!(a.starts_with("nightly-live-2026-10-10t03-00-03-"), "{a}");
-        assert_ne!(a, live_row_name("2026-10-10T03:00:03", "b.bats"), "two units share one live row");
-        let body = live_row_payload("2026-10-10T03:00:03", "a.bats", 5, 1200);
-        assert!(body.contains("\"result\":\"running\"") && body.contains("timeout=1200s") && !body.contains("suiteOrder"), "{body}");
     }
 
 }
@@ -1612,7 +1731,7 @@ pub fn step_all(
                 let began: u64 = first_of(&d, "clock").and_then(|v| v.parse().ok()).unwrap_or_else(epoch);
                 let holds = first_of(&d, "holds-queue").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0) + lane.gate_holds;
                 let t = Instant::now();
-                push(&ctx, timed(leg_duration(epoch().saturating_sub(began), holds), t), &mut rows);
+                push(&ctx, timed(leg_duration(&ctx, epoch().saturating_sub(began), holds), t), &mut rows);
             }
             d.put(&format!("suites-{}", side), &rows_lines(&rows))?;
             d.put(&format!("cases-{}", side), &cases_lines(&lane.cases))?;

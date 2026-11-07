@@ -40,6 +40,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+include!("../../shared/trace_carrier.rs"); // #4771
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
@@ -98,7 +99,7 @@ pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) ->
 
 pub fn resolve_trace(card: u64) -> String {
     let env = env::var("CHORUS_TRACE_ID").ok();
-    resolve_trace_in(card, env.as_deref(), Path::new("/tmp"))
+    resolve_trace_in(card, env.as_deref(), &trace_carrier_dir()) // #4771
 }
 
 /// #3162 — the spine event contract (#3135 AUDITABLE): the args handed to

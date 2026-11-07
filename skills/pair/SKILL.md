@@ -81,11 +81,14 @@ The pipeline's steps, in order:
 | pair-start | dagu | refuses a card not in WIP; writes `/tmp/pair-<card-id>.md` from the card's AC; registers the pair (driver and navigator) for the heartbeat; emits `pair.started`; nudges the navigator with the green command |
 | pair-green | **navigator** | waits until the navigator says every AC is green (a dagu human task, the same mechanism as Jeff's go) |
 | pair-check | dagu | the green must come from the navigator; the driver's is refused. `decision=stop` ends the pair (the navigator, or Abby or Jeff when the navigator is gone) |
-| pair-local-proof | dagu | the werk-test steps on the werk (cicd-test, scope diff) |
-| pair-hand-off | dagu | enqueues the card's ONE cicd run |
-| pair-end | dagu | For-Jeff summary from the slice log (pair file + card comment); deregisters; `pair.ended` |
+| pair-handoff | dagu | records the hand-off; the pair stays open until the card is proven in prod (#4752) |
+| pair-hand-off | dagu | enqueues the card's ONE cicd run: its tests are the round's one test run (#4889; there is no pair local proof) |
 
-A red anywhere after the start (a wrong signer, a red local proof) sends the pair
+These are platform/pipelines/pair.yaml's steps as generated. There is no pair-end step:
+#4752 moved the pair's end to the land's prove (the pair stays open until prod proves the
+card), and #4889 retired pair-local-proof (the cicd run's tests are the one test run).
+
+A red anywhere after the start (a wrong signer, a red cicd run) sends the pair
 **back to slice**: the run's failure handler enqueues a new pair run that waits for
 the navigator's green again, and both roles are nudged with the reason. A pair that
 ended (stop, or the card left WIP) is never re-enqueued.
@@ -102,7 +105,7 @@ dagu --config /Users/jeffbridwell/CascadeProjects/chorus/platform/config/dagu.ya
 /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/pair review <card-id> "next: AC 4 …"      # navigator
 ```
 
-`/cws <card-id>` shows where the pair is: `pair: waiting for silas's green`, `pair: local-proof`.
+`/cws <card-id>` shows where the pair is: `pair: waiting for silas's green`, then the cicd run's step.
 
 Still by hand: nudge the navigator to load `/pair <card-id> <your-role>` so both
 hold the full protocol, and note the start time for the 15-minute checkpoint.

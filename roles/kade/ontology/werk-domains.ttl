@@ -67,6 +67,8 @@
     # (optional): each Test row holds its latest result, updated in place.
     # 0.8.0 (#4539): TestShape gains testNeeds (machine | nightly, optional).
     # 0.9.0 (#4540): the tests domain claims TestType (pipelines-4040.ttl).
+    # #4579 reopen: TestSuiteRun and its suite* properties are retired (Jeff
+    # 10-18 19:10); /nightly reads the run log (model-retirements.jsonl).
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
     owl:versionInfo "0.9.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
@@ -326,42 +328,10 @@ chorus:Test a owl:Class ;
     chorus:dataSource "crawler cycle → tag-tests-domain.py (#3811): full clear+insert regenerate per run, add/change/delete all reconciled; results land per-land via werk-test wire-back (#3774)" ;
     chorus:ingestionStatus "hydrated" .
 
-chorus:TestSuiteRun a owl:Class ;
-    chorus:mintKey ("cardId" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Test Suite Run" ;
-    rdfs:comment "A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain. A nightly row is one SUITE line of the run, written the moment the suite lands and joined to its PipelineRun by runTs; the /nightly page and the morning readout render from these rows (#4156)." ;
-    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.test_result {result} per card; nightly reporter (NOT TRUSTED until #3272/#3273)" ;
-    chorus:ingestionStatus "ingestible" .
-
 chorus:covers a owl:ObjectProperty ;
     rdfs:label "covers" ;
     rdfs:domain chorus:Test ; rdfs:range chorus:Domain ;
     rdfs:comment "Test → the domain/unit it proves. THE edge werk-test queries (which-tests-for-which-card = card's changed units → covering tests). Populated by #2818 tagging." .
-
-# #4156 — a nightly suite row, as the run wrote it. The log line was
-# SUITE|kind|path|owner|status|summary; path rides chorus:filePath and status
-# rides chorus:result, the words the model already has for them.
-chorus:suiteKind a owl:DatatypeProperty ;
-    rdfs:label "suite kind" ;
-    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:string ;
-    rdfs:comment "The lane or tool that produced a nightly suite row: cargo, npm, bats, shell, lint, coverage, ui, perf, a stage name. What ran it, not what kind of proving it is (that is chorus:testType on the Test)." .
-chorus:suiteOwner a owl:DatatypeProperty ;
-    rdfs:label "suite owner" ;
-    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:string ;
-    rdfs:comment "The role or principal the run attributed the suite to (the owner map read from the model at run start). The name the red nudge went to." .
-chorus:suiteSummary a owl:DatatypeProperty ;
-    rdfs:label "suite summary" ;
-    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:string ;
-    rdfs:comment "The suite's one-line result as the runner wrote it, e.g. '135 pass, 0 fail' or '0 pass, 0 fail (UNMEASURED — …)'. Rendered verbatim; never re-derived." .
-chorus:suiteSeconds a owl:DatatypeProperty ;
-    rdfs:label "suite seconds" ;
-    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:decimal ;
-    rdfs:comment "How long the suite ran, start to end, in seconds with one decimal, timed by the runner after the load gate let it start (#4416). Absent on rows the runner did not time." .
-chorus:suiteOrder a owl:DatatypeProperty ;
-    rdfs:label "suite order" ;
-    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:integer ;
-    rdfs:comment "Position of the suite in its run, from 1, in the order the rows landed. The page folds by type in run order, so the order is data, not an accident of the query." .
 
 chorus:testType a owl:DatatypeProperty ;
     rdfs:label "test type" ;
@@ -472,13 +442,15 @@ chorus:tests a chorus:Domain ;
     # #4540 — TestType: the test types in the order the run's one queue starts them
     # #4579 — TestResult retired (Jeff 10-17: "deprecate logging in the graph"):
     # a case's latest result lives on its Test row (#4536), each run's on Loki.
-    chorus:definesVocabulary chorus:Test , chorus:TestSuiteRun , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Actor ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); Actor = the BDD scenario actor
+    chorus:definesVocabulary chorus:Test , chorus:TestType , chorus:Scenario , chorus:QualityFinding , chorus:Actor , chorus:Persona ;  # #4576: Scenario, QualityFinding homed (Kade confirmed 07:54); #4662: Persona added beside Actor
     chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
     chorus:hasDesignDoc "designing/docs/quality-service-design.html" .
 
-chorus:chorus chorus:hasDomain chorus:tests .
+# #4702 — tests has one home, werk (Jeff 2026-10-22 16:09: "werk eg werk-tests";
+# werk hasDomain tests is in designing/data/product-instances.ttl). The chorus
+# hasDomain tests edge that stood here gave it two homes; removed.
 
 chorus:hasRecordClass a owl:AnnotationProperty ;
     rdfs:label "has record class" ;
@@ -600,28 +572,6 @@ chorus:TestShape a sh:NodeShape ;
     # Present only while the latest result is a fail; fail→pass removes it.
     sh:property [ sh:path chorus:failureReason ; sh:datatype xsd:string ]  .
 
-chorus:TestSuiteRunShape a sh:NodeShape ;
-    sh:targetClass chorus:TestSuiteRun ; sh:node chorus:CoreShape ;
-    # #3592 (steward MUST-FIX, #3675 pattern) — explicit instance home so the
-    # serve-read and the DAL write target can never drift. Matches werk-test's
-    # x-target-graph and the tests domain's resolved home.
-    chorus:instancesGraph "urn:chorus:domains:tests" ;
-    # #4156 — cardId optional: a card run has one, a nightly suite row has
-    # none (typed absence, key omitted, as on TestResult).
-    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ] ;
-    # #4156 — the nightly suite row. Optional here because card rows carry
-    # none of it; the runner sends all six on every nightly row.
-    sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:suiteOrder ] ;
-    sh:property [ sh:path chorus:suiteKind ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:filePath ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:suiteOwner ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:suiteSummary ; sh:datatype xsd:string ] ;
-    # #4416 — optional: only rows the runner timed carry it
-    sh:property [ sh:path chorus:suiteSeconds ]  .
-
 chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:CodeFile ] ;   # #4185 — the crawler's CodeFile row, not the unserved SourceFile
@@ -661,6 +611,28 @@ chorus:ScenarioVerifiedByShape a sh:NodeShape ;
     sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
 
 
-# #4576 — Actor is the BDD scenario actor (Given/When/Then subject), homed in tests.
+# #4662 (Jeff 2026-10-20 13:24) — the BDD scenario subject is Persona; Actor now
+# means whoever acts. Both stay homed in tests for this card: moving Actor's home
+# to roles (beside Teammate) changes its served route, a drop the deploy audit
+# refuses, so that move rides with Teammate-as-Actor later. Both carry required
+# fields, so 4022 can walk them (it skipped Actor: no required field).
+chorus:PersonaShape a sh:NodeShape ;
+    sh:targetClass chorus:Persona ; sh:node chorus:CoreShape ;
+    sh:property chorus:PersonaShape-label ;
+    sh:property chorus:PersonaShape-playsRole .
+chorus:PersonaShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:PersonaShape-playsRole a sh:PropertyShape ;
+    sh:path chorus:playsRole ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:message "playsRole names the part the persona plays: Jeff, a peer role, an outsider" .
+
 chorus:ActorShape a sh:NodeShape ;
-    sh:targetClass chorus:Actor ; sh:node chorus:CoreShape .
+    sh:targetClass chorus:Actor ; sh:node chorus:CoreShape ;
+    sh:property chorus:ActorShape-label ;
+    sh:property chorus:ActorShape-actorKind .
+chorus:ActorShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:ActorShape-actorKind a sh:PropertyShape ;
+    sh:path chorus:actorKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(person|agent|service)$" ;
+    sh:message "actorKind is one of person / agent / service" .

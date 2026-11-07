@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: athena
+// @domain: domains
 //! #4576 reopen — a model deploy keeps CoreShape's fields on every shape.
 //!
 //! The flatten (#4576) links each shape that names `sh:node chorus:CoreShape`

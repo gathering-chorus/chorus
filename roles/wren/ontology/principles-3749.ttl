@@ -40,6 +40,11 @@ chorus:source a owl:DatatypeProperty ;
     rdfs:label "source" ;
     rdfs:comment "Where the principle came from, as one citation: Hemenway, T. Gaia's Garden, 2nd ed., p. N." .
 
+# #4757 — PrincipleShape's sh:path named it since #3749; declared nowhere until now (Kade measured 10-26).
+chorus:order a owl:DatatypeProperty ;
+    rdfs:label "order" ; rdfs:range xsd:integer ;
+    rdfs:comment "A principle's place in the list, 1 to 14." .
+
 chorus:PrincipleShape a sh:NodeShape ;
     sh:targetClass chorus:Principle ; sh:node chorus:CoreShape ;
     rdfs:comment "One of the 14 permaculture principles from Toby Hemenway's Gaia's Garden that the team designs by, with what it means to Jeff and to the code." ;

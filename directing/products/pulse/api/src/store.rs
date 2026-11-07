@@ -30,6 +30,52 @@ pub trait RowStore: Send + Sync {
     fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String>;
     /// One row by name if `viewer` may see it; None otherwise (never "exists, but not yours").
     fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;
+    /// #4744 — a page of the rows that match `w` (and that `viewer` may see, when given),
+    /// with the count of all matches: the filter runs in the store, before the page is cut.
+    fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String>;
+}
+
+/// #4744 — one filter for every collection: each `eq` field holds the value (a literal
+/// equal to it, or a link whose name it is), and `q` is found in some literal of the row.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Where {
+    pub eq: Vec<(String, String)>,
+    pub q: Option<String>,
+    /// `<field>.lt=` / `<field>.gt=`: the field's value compared as a string (ISO times sort as text)
+    pub bounds: Vec<(String, &'static str, String)>,
+    /// `sort=<field>` or `sort=-<field>` (newest first): (field, descending)
+    pub sort: Option<(String, bool)>,
+}
+
+fn sparql_str(v: &str) -> String {
+    format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r"))
+}
+
+/// The graph pattern for `w`, over the row `?s` in `graph`.
+pub fn where_pattern(w: &Where, graph: &str) -> String {
+    let mut out = String::new();
+    for (i, (field, value)) in w.eq.iter().enumerate() {
+        let v = sparql_str(value);
+        out.push_str(&format!(
+            "GRAPH <{graph}> {{ ?s <{NS}{field}> ?w{i} }} \
+             FILTER(STR(?w{i}) = {v} || (isIRI(?w{i}) && (STRENDS(STR(?w{i}), CONCAT(\"#\", {v})) || STRENDS(STR(?w{i}), CONCAT(\"/\", {v}))))) "
+        ));
+    }
+    for (i, (field, op, value)) in w.bounds.iter().enumerate() {
+        out.push_str(&format!(
+            "GRAPH <{graph}> {{ ?s <{NS}{field}> ?b{i} }} FILTER(STR(?b{i}) {op} {}) ", sparql_str(value)
+        ));
+    }
+    if let Some((field, _)) = &w.sort {
+        out.push_str(&format!("OPTIONAL {{ GRAPH <{graph}> {{ ?s <{NS}{field}> ?ord }} }} "));
+    }
+    if let Some(q) = &w.q {
+        out.push_str(&format!(
+            "FILTER EXISTS {{ GRAPH <{graph}> {{ ?s ?qp ?qo }} FILTER(isLiteral(?qo) && CONTAINS(LCASE(STR(?qo)), LCASE({}))) }} ",
+            sparql_str(q)
+        ));
+    }
+    out
 }
 
 /// #4524 — the visibility filter, one pattern for list, count and get. `?s` is the row in
@@ -113,11 +159,128 @@ pub trait Engine: Send + Sync {
     fn as_embedded(&self) -> Option<&Embedded> {
         None
     }
+    /// #4716 — the door, when writes go through it instead of to the store.
+    fn as_door(&self) -> Option<&Door> {
+        None
+    }
+}
+
+/// #4716 — `store.kind = door`. Reads are SPARQL queries; every write is a
+/// change sent to the door's `/batch` under this service's own token, so the
+/// store's write password lives in the door alone.
+pub struct Door {
+    pub reads: Remote,
+    pub door: String,
+    /// a fixed token (tests), used when `token_command` is empty
+    pub token: String,
+    /// #4716 — the command that prints a current token. Service tokens live ~600 s
+    /// and the command keeps a cache, so asking it on every write never sends an
+    /// expired one and costs a file read when the cache is warm.
+    pub token_command: String,
+}
+
+impl Engine for Door {
+    fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
+        self.reads.select(query)
+    }
+    fn update(&self, _update: &str) -> Result<(), String> {
+        Err("store: a door store sends no SPARQL update; writes go through the door".into())
+    }
+    fn as_door(&self) -> Option<&Door> {
+        Some(self)
+    }
+}
+
+impl Door {
+    /// One change to one graph, all of it or none of it (the door's batch).
+    fn current_token(&self) -> String {
+        if self.token_command.trim().is_empty() {
+            return self.token.clone();
+        }
+        token_from_command(&self.token_command, TOKEN_WAIT)
+    }
+
+    pub fn batch(&self, graph: &str, lines: &[String]) -> Result<(), String> {
+        let token = self.current_token();
+        if token.trim().is_empty() {
+            return Err("store: no service token for the door; nothing written".into());
+        }
+        if lines.is_empty() {
+            return Ok(());
+        }
+        ureq::post(&format!("{}/batch", self.door.trim_end_matches('/')))
+            .set("Authorization", &format!("Bearer {token}"))
+            .set("x-target-graph", graph)
+            .send_string(&lines.join("\n"))
+            .map(|_| ())
+            .map_err(|e| format!("store: the door refused the write: {e}"))
+    }
+}
+
+/// #4716 — how long a write waits for the token command. A hung command must
+/// not hang the write that asked: past this the write gets no token and refuses.
+pub const TOKEN_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// #4716 — the token a command prints, or "" when it fails, prints nothing, or
+/// is still running after `wait` (it is stopped, and the caller refuses).
+pub fn token_from_command(cmd: &str, wait: std::time::Duration) -> String {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let Ok(mut child) = Command::new("sh").args(["-c", cmd])
+        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+        return String::new();
+    };
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return String::new();
+                }
+                let mut out = String::new();
+                if let Some(mut so) = child.stdout.take() {
+                    let _ = so.read_to_string(&mut out);
+                }
+                return out.trim().to_string();
+            }
+            Ok(None) if start.elapsed() < wait => std::thread::sleep(std::time::Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return String::new();
+            }
+        }
+    }
+}
+
+/// #4716 — the same change as `write_update`, as the door's batch lines
+/// (`DEL s p ?o` / `INS s p o`). The door takes no predicate wildcard, so a whole
+/// replace names the predicates the row has now (`existing`).
+pub fn write_lines(subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool, existing: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut del = |p: &str| {
+        let l = format!("DEL\t<{subject}>\t<{p}>\t?o");
+        if !out.contains(&l) { out.push(l); }
+    };
+    if whole {
+        existing.iter().for_each(|p| del(p));
+    } else {
+        fields.iter().for_each(|(k, _)| del(&format!("{NS}{k}")));
+    }
+    if let Some(t) = type_of {
+        out.push(format!("INS\t<{subject}>\t<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>\t<{NS}{t}>"));
+    }
+    for (k, cells) in fields {
+        for c in cells {
+            out.push(format!("INS\t<{subject}>\t<{NS}{k}>\t{}", term(c)));
+        }
+    }
+    out
 }
 
 pub struct Remote {
-    endpoint: String,
-    auth: Option<(String, String)>,
+    pub endpoint: String,
+    pub auth: Option<(String, String)>,
 }
 
 impl Engine for Remote {
@@ -193,6 +356,17 @@ impl Engine for Embedded {
 pub fn open_engine(s: &Settings) -> std::sync::Arc<dyn Engine> {
     match s.store_kind.as_str() {
         "sparql" => std::sync::Arc::new(Remote { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
+        "door" => {
+            // #4716 (Silas, demo review) — no token, no start: a door store that
+            // came up without one would refuse every write at run time instead
+            let d = Door { reads: Remote { endpoint: s.store_endpoint.clone(), auth: None }, door: s.store_door.clone(),
+                           token: String::new(), token_command: s.store_token_command.clone() };
+            if d.current_token().trim().is_empty() {
+                eprintln!("{}: store kind 'door' needs a service token from `{}`; refusing to start", crate::model::PRODUCT, s.store_token_command);
+                std::process::exit(2);
+            }
+            std::sync::Arc::new(d)
+        }
         "embedded" => match Embedded::open(&s.store_path) {
             Ok(e) => std::sync::Arc::new(e),
             Err(m) => {
@@ -201,7 +375,7 @@ pub fn open_engine(s: &Settings) -> std::sync::Arc<dyn Engine> {
             }
         },
         other => {
-            eprintln!("{}: store kind '{other}' is not one of sparql, embedded; refusing to start", crate::model::PRODUCT);
+            eprintln!("{}: store kind '{other}' is not one of sparql, embedded, door; refusing to start", crate::model::PRODUCT);
             std::process::exit(2);
         }
     }
@@ -313,6 +487,14 @@ impl Sparql {
     }
 }
 
+impl Sparql {
+    /// #4716 — the predicates a row has now, for a door write that replaces it whole.
+    fn predicates(&self, graph: &str, subject: &str) -> Result<Vec<String>, String> {
+        let rows = self.engine.select(&format!("SELECT DISTINCT ?p WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))?;
+        Ok(rows.iter().filter_map(|r| r.get("p").and_then(|v| v["value"].as_str()).map(String::from)).collect())
+    }
+}
+
 impl RowStore for Sparql {
     fn list(&self, class: &ClassDef, limit: usize, offset: usize) -> Result<(Vec<Row>, usize), String> {
         let count = self.select(&format!(
@@ -340,6 +522,29 @@ impl RowStore for Sparql {
         let mut subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
         subjects.sort();
         Ok((self.rows(class, &subjects)?, total))
+    }
+
+    fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String> {
+        let (g, c) = (class.graph, class.name);
+        let f = format!("{} {}", viewer.map(|v| seen_by(v, g)).unwrap_or_default(), where_pattern(w, g));
+        let count = self.select(&format!("SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }}"))?;
+        let total = count.first().and_then(|r| r["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0);
+        // a sorted read keeps the store's order; an unsorted page is sorted by name, as list does
+        let order = match &w.sort { Some((_, true)) => "ORDER BY DESC(STR(?ord)) ?s", Some((_, false)) => "ORDER BY STR(?ord) ?s", None => "" };
+        let page = self.select(&format!("SELECT DISTINCT ?s ?ord WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} {order} LIMIT {limit} OFFSET {offset}"))?;
+        let mut subjects: Vec<String> = Vec::new();
+        for r in &page {
+            if let Some(s) = r["s"]["value"].as_str() {
+                if !subjects.iter().any(|x| x == s) { subjects.push(s.to_string()); }
+            }
+        }
+        if w.sort.is_none() { subjects.sort(); }
+        let mut rows = self.rows(class, &subjects)?;
+        if w.sort.is_some() {
+            let pos = |r: &Row| subjects.iter().position(|s| r.get("name").and_then(|n| n.as_str()).is_some_and(|n| *s == iri(class, n)));
+            rows.sort_by_key(|r| pos(r));
+        }
+        Ok((rows, total))
     }
 
     fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String> {
@@ -376,10 +581,18 @@ impl RowStore for Sparql {
     }
 
     fn write(&self, graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> Result<(), String> {
+        if let Some(d) = self.engine.as_door() {
+            let existing = if whole { self.predicates(graph, subject)? } else { Vec::new() };
+            return d.batch(graph, &write_lines(subject, type_of, fields, whole, &existing));
+        }
         self.engine.update(&write_update(graph, subject, type_of, fields, whole))
     }
 
     fn delete(&self, graph: &str, subject: &str) -> Result<(), String> {
+        if let Some(d) = self.engine.as_door() {
+            let existing = self.predicates(graph, subject)?;
+            return d.batch(graph, &write_lines(subject, None, &[], true, &existing));
+        }
         self.engine.update(&format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))
     }
 }

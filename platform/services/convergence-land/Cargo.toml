@@ -1,0 +1,20 @@
+# convergence-land — #4091 AC1: the Grafana framework's ops. A role calls one
+# runner MCP tool; this verb reads the Alert row through the door, reads the
+# Grafana ICD's field maps from the graph (icd-instance-grafana.ttl), and lands
+# the rule or a silence in Grafana's HTTP API on loopback with a scoped
+# credential. The Alert rows are the source; Grafana is the edge (review 10-21).
+[package]
+name = "convergence-land"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde_json = "1"
+
+[lib]
+name = "convergence_land"
+path = "src/lib.rs"
+
+[[bin]]
+name = "convergence-land"
+path = "src/main.rs"

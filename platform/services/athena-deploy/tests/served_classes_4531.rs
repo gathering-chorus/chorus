@@ -1,5 +1,5 @@
 // @test-type: unit — signal:api is fixture-data
-// @domain: athena
+// @domain: domains
 //! #4531 — the land's served check skips shape classes. #4515's model deploy
 //! failed 10-14 19:10 with "ToolInput DEPLOYED BUT NOT SERVED": ToolInput's
 //! instances are SHACL shapes (tool arguments), so no collection route serves it.

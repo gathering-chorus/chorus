@@ -8,7 +8,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, add_edges_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{apply, parse_apply_ndjson, add_batch, add_edge, add_edges_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -175,6 +175,13 @@ fn run() -> Result<String, String> {
             let file = get("--file").unwrap_or_default();
             let deploy_set = athena_model::adr::deploy_set_from_script();
             let dry = rest.iter().any(|a| a == "--dry-run");
+            // #4716 — identity FIRST, fail closed, as retire-claim: the ledger's
+            // "who" is the verified token, never a typed DEPLOY_ROLE.
+            let who = if dry {
+                "dry-run".to_string()
+            } else {
+                Identity::resolve(&FusekiStore::new())?.role().to_string()
+            };
 
             let (refusals, turtle) = match v {
                 "class" => {
@@ -313,7 +320,6 @@ fn run() -> Result<String, String> {
             // projection. Fail-loud: an unrecorded bump would be a hand-edit
             // wearing the pen's clothes.
             let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-            let who = std::env::var("DEPLOY_ROLE").or_else(|_| std::env::var("CHORUS_ROLE")).unwrap_or_else(|_| "system".to_string());
             let card = std::env::var("CHORUS_CARD").unwrap_or_default();
             let vv = athena_model::vocab_version::record(&root, v, &format!("{}:{}", v, file), &who, &card)?;
             Ok(format!("appended to {} (vocabVersion -> {}):
@@ -804,6 +810,22 @@ fn run() -> Result<String, String> {
             let code: u16 = code.trim().parse().unwrap_or(0);
             if (200..300).contains(&code) { Ok(format!("patch {} {}: {}", code, path, body.trim())) }
             else { Err(format!("patch refused {} {}: {}", code, path, body.trim())) }
+        }
+        // #4715 AC1 — several changes to one row, one update: apply --kind K --name N --graph G, ops on stdin
+        Some("apply") => {
+            let (req, _) = parse_req(&args[1..])?;
+            let graph = req.graph.clone().ok_or("apply needs --graph")?;
+            let mut input = String::new();
+            std::io::stdin().read_to_string(&mut input).map_err(|e| format!("apply: cannot read stdin: {}", e))?;
+            let (revision, ops) = parse_apply_ndjson(&input)?;
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?;
+            if args[1..].iter().any(|a| a == "--dry-run") {
+                let plan = athena_model::apply_plan(&store, &req.kind, &req.name, &graph, revision.as_ref(), &ops, &id)?;
+                return Ok(format!("# dry-run — nothing written; the one update apply would send:\n{}", plan));
+            }
+            let n = apply(&store, &req.kind, &req.name, &graph, revision.as_ref(), &ops, &id)?;
+            Ok(format!("apply: {} change(s) to {} in one update ({} statement(s))", ops.len(), req.name, n))
         }
         Some("set") => {
             let (req, _) = parse_req(&args[1..])?;

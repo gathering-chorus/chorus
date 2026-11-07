@@ -29,6 +29,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+include!("../../shared/trace_carrier.rs"); // #4771
 include!("../../shared/crate_dirs.rs");
 
 // #3092 — per-role demo env lifecycle (env_start / env_deploy / env_stop).
@@ -63,7 +64,7 @@ pub fn resolve_trace(card: u64) -> String {
             return t.trim().to_string();
         }
     }
-    let p = format!("/tmp/{}-trace", card);
+    let p = trace_carrier(card); // #4771 — shared carrier dir
     if let Ok(t) = fs::read_to_string(&p) {
         if !t.trim().is_empty() {
             return t.trim().to_string();
@@ -609,8 +610,11 @@ pub fn target_class_in(name: &str, werk_root: &Path) -> R<TargetClass> {
             .unwrap_or_else(|| name.to_string());
         let svc = service_for_crate(name);
         // RustService iff a committed plist with that label exists in the repo.
+        // #4652 — a plist naming a UserName is a system daemon Jeff installs as
+        // root (chorus-jeff-signer); a role's deploy never kickstarts it.
         let has_plist = find_plists(werk_root).iter().any(|p| {
             p.file_stem().and_then(|s| s.to_str()).map(|st| st == svc).unwrap_or(false)
+                && !fs::read_to_string(p).is_ok_and(|b| b.contains("<key>UserName</key>"))
         });
         return if has_plist {
             Ok(TargetClass::RustService { svc, bin })
@@ -1232,6 +1236,41 @@ fn live_main(root: &str) -> &'static str {
     live_main_flag(count("HEAD..origin/main"), count("origin/main..HEAD"))
 }
 
+/// #4710 AC4 — prod deploys only what GitHub's main holds. Borg Queen's bypass
+/// 2 (10-23): a prod deploy ran from LOCAL main, so a commit made on this Mac
+/// and never pushed could ship. The deploy now refuses when canonical holds a
+/// commit origin/main does not, or when origin/main holds no commit for this
+/// card. Pure half: `ahead` is origin/main..HEAD on canonical, `origin_subjects`
+/// the subjects of origin/main's recent commits.
+pub fn prod_source_verdict(ahead: u64, origin_subjects: &[&str], card: u64) -> R<()> {
+    if ahead > 0 {
+        return Err(format!(
+            "prod-source: canonical holds {} commit(s) that origin/main does not; a prod deploy ships only what GitHub's main holds (#4710)",
+            ahead
+        ));
+    }
+    if card == 0 || !origin_subjects.iter().any(|s| card_from_subject(s) == card) {
+        return Err(format!(
+            "prod-source: origin/main holds no merge commit for #{}; land it first (#4710)",
+            card
+        ));
+    }
+    Ok(())
+}
+
+/// #4710 AC4 — the thin shell: fetch, then ask canonical's git.
+pub fn prod_source_gate(root: &str, card: u64) -> R<()> {
+    run_env(Some(root), &[], "git", &["-C", root, "fetch", "-q", "origin", "main"])
+        .map_err(|e| format!("prod-source: cannot fetch origin/main, so cannot prove the deploy source: {}", e))?;
+    let ahead = run_env(Some(root), &[], "git", &["-C", root, "rev-list", "--count", "origin/main..HEAD"])
+        .ok().and_then(|s| s.trim().parse::<u64>().ok())
+        .ok_or_else(|| "prod-source: cannot count canonical against origin/main".to_string())?;
+    let log = run_env(Some(root), &[], "git", &["-C", root, "log", "-n", "200", "--format=%s", "origin/main"])
+        .map_err(|e| format!("prod-source: cannot read origin/main: {}", e))?;
+    let subjects: Vec<&str> = log.lines().collect();
+    prod_source_verdict(ahead, &subjects, card)
+}
+
 /// #3181 port — canonical build-source must be synced BEFORE building/installing.
 /// Fast-forward canonical to origin/main; REFUSE (don't force) when it can't ff
 /// cleanly (ahead/diverged/dirty). No-ops without git / origin/main (can't determine
@@ -1250,10 +1289,18 @@ pub fn canonical_ff_sync(root: &str) -> R<()> {
             .ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
     };
     let behind = count("HEAD..origin/main");
+    let ahead = count("origin/main..HEAD");
+    // #4710 AC4 — a canonical ahead of origin/main holds local-only commits;
+    // it used to pass here whenever it was not also behind.
+    if behind == 0 && ahead > 0 {
+        return Err(format!(
+            "canonical holds {} commit(s) that origin/main does not; prod builds only what GitHub's main holds. Run 'werk-sync recover'.",
+            ahead
+        ));
+    }
     if behind == 0 {
         return Ok(());
     }
-    let ahead = count("origin/main..HEAD");
     let dirty = run_env(Some(root), &[], "git", &["-C", root, "status", "--porcelain"])
         .map(|s| !s.trim().is_empty()).unwrap_or(false);
     if ahead > 0 || dirty {
@@ -1494,6 +1541,26 @@ fn restart_when_idle(args: &[String]) -> R<String> {
 // #4515 — the #3320 self-deploy detach is gone: it fired only when the old TS
 // MCP server deployed itself, and that server is retired.
 
+/// #4889 — the card's own store-write script, when this land ships it. Only a script the
+/// diff adds or changes counts: an old card's script on main never runs again. Pure.
+pub fn land_rows_script(canon: &Path, card: u64, diff: &str) -> Option<PathBuf> {
+    let rel = format!("platform/scripts/land-{card}-rows");
+    diff.lines().any(|l| l.trim() == rel).then(|| canon.join(&rel)).filter(|p| p.is_file())
+}
+
+/// Run a land-rows script with --apply; Err with its last lines when it refuses or fails.
+pub fn run_land_rows(script: &Path) -> R<String> {
+    let o = Command::new("python3").arg(script).arg("--apply").output()
+        .map_err(|e| format!("{} could not run: {}", script.display(), e))?;
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    if !o.status.success() {
+        let tail: Vec<&str> = out.lines().rev().take(3).collect();
+        return Err(format!("{} --apply refused (exit {:?}): {}", script.display(), o.status.code(),
+            tail.into_iter().rev().collect::<Vec<_>>().join(" | ")).into());
+    }
+    Ok(out)
+}
+
 /// #4511 — the packages a TS daemon runs are the ones its lockfile pins. The
 /// deploy only ever ran `npm run build`, so a lock change (the 1.31.0 MCP SDK
 /// security pin, #4468) never reached node_modules: canonical ran 1.29.0 for
@@ -1601,8 +1668,11 @@ fn deploy_ts_daemon_canonical(
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-build-fail"), ("failureClass", failure_class("npm-build-fail"))]);
         return Err(died(home, role, card, trace, "npm-build-fail", format!("npm run build failed for {}: {}", name, e)));
     }
-    // bash parity: kickstart is warn-only — the smoke is the gate
-    let (installed, _) = kickstart_prod_reporting(&svc);
+    // #4895 — the smoke alone cannot tell new code from old: the running process answers
+    // healthy either way. #4889's land reported pulse deploy.completed while pid 91234
+    // ran the old code until the next day. The pid must change, or the land is red.
+    let before = service_pid(&svc);
+    let (installed, kicked) = kickstart_prod_reporting(&svc);
     if let Err(e) = smoke() {
         if matches!(installed, Ok(AgentInstall::Installed)) {
             let bootout = |l: &str| run_env(None, &[], "launchctl", &["bootout", &format!("gui/{}/{}", uid(), l)]);
@@ -1610,6 +1680,17 @@ fn deploy_ts_daemon_canonical(
         }
         emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "smoke-timeout"), ("failureClass", failure_class("smoke-timeout"))]);
         return Err(died(home, role, card, trace, "smoke-timeout", format!("{} smoke failed after deploy: {}", name, e)));
+    }
+    if let Err(why) = restart_verdict(before, service_pid(&svc), kicked.as_ref().err().map(String::as_str)) {
+        // the old process still runs: put the disk back to match it, as the npm failures do
+        if Path::new(&prev).is_dir() {
+            let _ = fs::remove_dir_all(&dist);
+            let _ = fs::rename(&prev, &dist);
+        }
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "not-restarted"), ("failureClass", failure_class("not-restarted"))]);
+        // Kade's review: a land run from a role account kickstarts in ITS gui domain, where
+        // the owner's agent is not loaded; the domain is named so that cause reads at once
+        return Err(died(home, role, card, trace, "not-restarted", format!("{} {} [kickstart domain gui/{}/{}]", name, why, uid(), svc)));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"target\":\"canonical\"", name));
     Ok(format!("{} deployed", name))
@@ -1741,6 +1822,22 @@ fn run_crate_mode(args: &[String]) -> R<String> {
 
 /// The card's changed SERVICE crate(s): names under `platform/services/<X>/` in the diff,
 /// de-duplicated, order-stable. These are the only units a prod deploy needs to (re)build
+/// #4838 — the order a land deploys in: the model door (athena-make) first, then
+/// the other crates, then the TS services. A caller that learns a new door query
+/// must never restart before the door that answers it (Kade 15:04: an old door
+/// answers 400 to an unknown filter).
+/// #4838 — the restarts split into the model door's (first, before any TS caller
+/// deploys) and the rest (after, sorted as before).
+pub fn split_door_restarts(restarts: Vec<String>) -> (Vec<String>, Vec<String>) {
+    restarts.into_iter().partition(|l| l == "com.chorus.athena-make")
+}
+
+pub fn deploy_order(crates: &[String], ts: &[String]) -> Vec<String> {
+    let door = crates.iter().filter(|c| c.as_str() == "athena-make");
+    let rest = crates.iter().filter(|c| c.as_str() != "athena-make");
+    door.chain(rest).chain(ts.iter()).cloned().collect()
+}
+
 /// from canonical + install — everything else on main is already built and deployed.
 pub fn changed_service_crates(diff: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -2154,6 +2251,8 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
 }
 
 fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, landed_commit: Option<&str>) -> R<String> {
+    prod_source_gate(&canonical_root_path(home), card)
+        .map_err(|e| died(home, role, card, trace, "prod-source", e))?;
     let _ = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "fetch", "-q", "origin", "main"]);
     let base = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "merge-base", "origin/main", "HEAD"])
         .map(|s| s.trim().to_string())
@@ -2226,6 +2325,35 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
                 return Err(format!(
                     "allow-set gate REFUSED — deploying would leave every door failing closed, \
                      for everyone, including whoever would fix it. {}", e).into());
+            }
+        }
+    }
+
+    // #4915 — the repo root's packages (the review and lint tools: dependency-cruiser,
+    // eslint) are what the root lock pins. Only a TS daemon's dir was ever installed,
+    // so the root sat on its 10-10 tree: #4889 added dependency-cruiser and the
+    // architecture review's depcruise was missing in prod (nightly 11-06, exit 127).
+    // A no-op when `npm ls` already passes; a failed install stops the land.
+    match ensure_installed(&canon.to_string_lossy(), &npm_bin()) {
+        Ok(true) => jsonl(home, role, card, trace, "deploy.root_installed", ",\"target\":\"canonical\""),
+        Ok(false) => {}
+        Err(e) => {
+            emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "npm-ci-fail"), ("failureClass", failure_class("npm-ci-fail"))]);
+            return Err(died(home, role, card, trace, "npm-ci-fail", e));
+        }
+    }
+
+    // #4889 (Kade 20:07: "one touch") — a card that ships platform/scripts/land-<card>-rows
+    // has its store writes applied here, after Jeff's go, in the land: no second ask. The
+    // script's own dry run is what the go was shown. A refused write stops the land.
+    if let Some(script) = land_rows_script(&canon, card, &diff) {
+        match run_land_rows(&script) {
+            Ok(out) => jsonl(home, role, card, trace, "deploy.rows_applied",
+                &format!(",\"target\":\"canonical\",\"script\":\"{}\",\"plan\":\"{}\"",
+                    script.display(), out.lines().last().unwrap_or("").replace('"', "'"))),
+            Err(e) => {
+                emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "land-rows"), ("failureClass", failure_class("land-rows"))]);
+                return Err(died(home, role, card, trace, "land-rows", e));
             }
         }
     }
@@ -2311,9 +2439,34 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         canonical_ff_sync(&home_s)
             .map_err(|e| died(home, role, card, trace, "canonical-ff-fail", e))?;
     }
-    let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
     let mut labels: Vec<String> = Vec::new();
-    for c in &deployed {
+    // #4838 (Kade 15:07) — a binary serves only once its service restarts, and the
+    // door (athena-make) restarts from the `restarts` list, not its install. So the
+    // crates install first, then the DOOR restarts, then the TS callers deploy:
+    // no caller may come up asking a query the old door answers 400.
+    let (door_restarts, restarts) = split_door_restarts(restarts);
+    let mut door_up = false;
+    let mut restart_door = |labels: &mut Vec<String>| -> R<()> {
+        for label in &door_restarts {
+            kickstart_prod(label)
+                .map_err(|e| died(home, role, card, trace, "restart-fail",
+                    format!("restart of {} (the door, before its callers) failed: {}", label, e)))?;
+            jsonl(home, role, card, trace, "deploy.restarted",
+                &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"door-before-callers\"", label));
+            labels.push(format!("restart:{}", label));
+        }
+        Ok(())
+    };
+    for c in &deploy_order(&crates, &[]) {
+        deploy_crate_canonical(home, role, card, trace, c)
+            .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
+                format!("canonical deploy of {} failed: {}", c, e)))?;
+        labels.push(c.clone());
+        // the door is first in deploy_order: restart it before the next crate (chorus-hooks, chorus-principal) can call it
+        if c == "athena-make" { restart_door(&mut labels)?; door_up = true; }
+    }
+    if !door_up { restart_door(&mut labels)?; }
+    for c in &ts {
         deploy_crate_canonical(home, role, card, trace, c)
             .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
                 format!("canonical deploy of {} failed: {}", c, e)))?;
@@ -2800,7 +2953,7 @@ pub fn slots_to_refresh_with(
     is_variant: &dyn Fn(&str, &str) -> bool,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    for role in ["wren", "silas", "kade"] {
+    for role in demo_env::known_roles().iter().copied() {
         let slot = Path::new(werk_base).join(format!("{}-bin", role)).join(bin);
         if !slot.is_file() {
             continue;
@@ -2854,7 +3007,7 @@ fn refresh_role_slots(home: &Path, role: &str, card: u64, trace: &str, crate_nam
         let slot = format!("{}/{}-bin/{}", werk_base, slot_role, bin);
         let tmp = format!("{}.refresh-tmp", slot);
         let ok = fs::copy(canonical_path, &tmp).is_ok()
-            && run_env(None, &[], "chmod", &["+x", &tmp]).is_ok()
+            && run_env(None, &[], "chmod", &["0755", &tmp]).is_ok() // #4853: never 775 under a role umask
             && fs::rename(&tmp, &slot).is_ok();
         if ok {
             jsonl(home, role, card, trace, "slot.refreshed",
@@ -3452,6 +3605,9 @@ pub fn ensure_agent_installed(
     let src = Path::new(canonical_root).join("platform/scripts/launchagents-canonical").join(format!("{}.plist", label));
     if !src.is_file() { return Ok(AgentInstall::Missing(src)); }
     let dst = agents_dir.join(format!("{}.plist", label));
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     fs::copy(&src, &dst).map_err(|e| format!("install {} → {}: {}", src.display(), dst.display(), e))?;
     bootstrap(&dst)?;
     Ok(AgentInstall::Installed)
@@ -3479,6 +3635,28 @@ fn kickstart_prod_reporting(label: &str) -> (R<AgentInstall>, R<String>) {
     (installed, kicked)
 }
 
+/// #4895 — the pid launchd reports for a loaded agent (`pid = N` in `launchctl print`),
+/// None when it is not running or not loaded.
+pub fn pid_from_print(print: &str) -> Option<u32> {
+    print.lines().map(str::trim).find_map(|l| l.strip_prefix("pid = ").and_then(|p| p.trim().parse().ok()))
+}
+
+fn service_pid(label: &str) -> Option<u32> {
+    let out = run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), label)]).ok()?;
+    pid_from_print(&out)
+}
+
+/// #4895 — a deploy restarted the service only if a process runs now that did not run
+/// before. A kickstart error, no process after, or the same pid is not-restarted.
+/// `before` None (it was not running) needs only a process after.
+pub fn restart_verdict(before: Option<u32>, after: Option<u32>, kick_err: Option<&str>) -> Result<(), String> {
+    match (before, after) {
+        (_, None) => Err(format!("not-restarted: no process after the kickstart{}", kick_err.map(|e| format!(" ({})", e)).unwrap_or_default())),
+        (Some(b), Some(a)) if a == b => Err(format!("not-restarted: pid {} still running the old code{}", a, kick_err.map(|e| format!(" (kickstart: {})", e)).unwrap_or_default())),
+        _ => Ok(()),
+    }
+}
+
 /// #4570 — every prod kickstart goes through here: install-if-unloaded, then kickstart.
 fn kickstart_prod(label: &str) -> R<String> {
     let (installed, kicked) = kickstart_prod_reporting(label);
@@ -3487,6 +3665,16 @@ fn kickstart_prod(label: &str) -> R<String> {
 }
 
 fn uid() -> u32 {
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn getuid() -> u32;
+        }
+        let u = unsafe { getuid() };
+        if u != 0 {
+            return u;
+        }
+    }
     // best-effort: $UID or 501 default (the install host).
     env::var("UID").ok().and_then(|s| s.parse().ok()).unwrap_or(501)
 }
@@ -3504,6 +3692,19 @@ case \"${{CHORUS_ROLE:-}}\" in\n\
   *) v=\"WERK_$(printf '%s' \"$CHORUS_ROLE\" | tr 'a-z-' 'A-Z_')_BIN\"; eval \"d=\\${{$v:-}}\"; [ -n \"$d\" ] && slot=\"$d/{name}\" ;;\n\
 esac\n\
 if [ -n \"$slot\" ] && [ -x \"$slot\" ]; then\n\
+  # #4853: a slot runs as whoever calls this wrapper (the runner runs as jeffbridwell).\n\
+  # Refuse a symlink, or a slot or dir that group/other can write or that is owned by\n\
+  # anyone but this account, root, or the owner of the installed binary. That owner\n\
+  # (jeffbridwell, who owns ~/.chorus/bin) lets a role run its runner-installed slot;\n\
+  # it never lets the runner run a role-owned one, the runner's own uid is not a role's.\n\
+  ok=\" $(id -u) 0 $(stat -f %u \"{bin_path}\" 2>/dev/null) \"\n\
+  for p in \"$slot\" \"${{slot%/*}}\"; do\n\
+    if [ -L \"$p\" ]; then echo \"refusing $slot: $p is a symlink (#4853)\" >&2; exit 126; fi\n\
+    um=$(stat -f '%u %Lp' \"$p\" 2>/dev/null) || {{ echo \"refusing $slot: cannot read $p (#4853)\" >&2; exit 126; }}\n\
+    u=${{um% *}}; m=${{um#* }}\n\
+    case \"$ok\" in *\" $u \"*) ;; *) echo \"refusing $slot: $p is owned by uid $u, not this account or the installer (#4853)\" >&2; exit 126 ;; esac\n\
+    if [ $(( 0$m & 022 )) -ne 0 ]; then echo \"refusing $slot: $p is writable by group or other (mode $m) (#4853)\" >&2; exit 126; fi\n\
+  done\n\
   exec \"$slot\" \"$@\"\n\
 fi\n\
 exec \"{bin_path}\" \"$@\"\n",

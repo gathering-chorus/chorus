@@ -1,2 +1,0 @@
-?ac	?statement	?kind	?target	?expect
-<https://jeffbridwell.com/chorus#ac-4438-1>	"card.pulled is served by the spine-events door"	"http"	"http://localhost:3340/api/chorus/spine-events?type=card.pulled&limit=1"	""event":"card.pulled""

@@ -150,6 +150,62 @@ pub fn delivered_presence(mut presence: Value, now: &str) -> Option<Value> {
     Some(presence)
 }
 
+/// #4889 — the pane and tty tmux list-panes answered for the role's session, or why there is none:
+/// an unreadable socket, an empty answer or something that is not a pane id (%N).
+pub fn pane_read(answer: Result<String, String>) -> Result<(String, String), String> {
+    let a = answer.map_err(|e| e.trim().to_string())?;
+    // #4889 (code review, run 14) — the answer lists every pane of the role's session; a
+    // session with more than one is refused, never guessed (the #4362 rule)
+    let lines: Vec<&str> = a.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if lines.len() > 1 { return Err(format!("session has {} panes; refusing to guess the role's", lines.len())); }
+    let one = lines.first().copied().unwrap_or("");
+    let (pane, tty) = one.split_once('|').unwrap_or((one, ""));
+    if is_pane_id(pane) { Ok((pane.to_string(), tty.to_string())) } else { Err(format!("tmux answered no pane id: '{}'", a.trim())) }
+}
+
+/// A tmux pane id: `%` and digits. One definition for every reader and writer.
+pub fn is_pane_id(pane: &str) -> bool {
+    pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit())
+}
+
+/// #4889 — the role's pane moved (a restarted tmux pane keeps the run alive): the
+/// presence takes the pane the role's tmux session shows now. None when the pane is
+/// not a tmux pane id (%N) or is already the one recorded. The principal stays the
+/// only writer of a Presence; pulse only reads it, and a dead pane fails loudly there.
+pub fn repaned_presence(mut presence: Value, pane: &str, tty: &str) -> Option<Value> {
+    presence.get("name")?;
+    if !is_pane_id(pane) || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
+    presence["pane"] = Value::String(pane.into());
+    if !tty.is_empty() { presence["tty"] = Value::String(tty.into()); }
+    // #4895 — a new pane has had no delivery yet: reachable only after one lands there
+    presence["reachability"] = Value::String("unknown".into());
+    Some(presence)
+}
+
+/// #4895 — a delivery to `pane` failed for good (the pane is gone): the presence is
+/// unreachable at once, if it still names that pane. A presence the sweep already moved
+/// to a new pane is left alone: the new pane has not been tried.
+pub fn undelivered_presence(mut presence: Value, pane: &str) -> Option<Value> {
+    presence.get("name")?;
+    if presence.get("pane").and_then(|p| p.as_str()) != Some(pane) { return None; }
+    if presence.get("reachability").and_then(|r| r.as_str()) == Some("unreachable") { return None; }
+    presence["reachability"] = Value::String("unreachable".into());
+    Some(presence)
+}
+
+/// #4895 — the cached Presence with the fields other writers move taken from the door's
+/// row (pane, tty, reachability, lastDeliveredAt). None when the door's row is not an object.
+pub fn with_door_presence(mut cached: Value, door: &Value) -> Option<Value> {
+    let d = door.as_object()?;
+    for k in ["pane", "tty", "reachability", "lastDeliveredAt"] {
+        match d.get(k).and_then(|v| v.as_str()) {
+            Some(v) if !v.is_empty() => { cached[k] = Value::String(v.into()); }
+            _ => {}
+        }
+    }
+    Some(cached)
+}
+
 /// A presence whose run ended can no longer be reached there.
 pub fn gone_presence(mut presence: Value) -> Option<Value> {
     presence.get("name")?;
@@ -215,9 +271,27 @@ pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
 /// produces a turn, so it can never mark the presence reachable.
 pub fn turn_facts(hook_input: &str) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
-    let conv = v.get("session_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let conv = conversation_of(&v);
     let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
     (conv, is_delivery(prompt))
+}
+
+/// #4895 — the conversation a turn belongs to, by the one rule chorus-hooks' shim also
+/// includes (shared/conversation_id.rs, #4785): an agy turn sends "transcript" as its
+/// session_id and its id is the brain folder in `transcript_path`. Abby's and BQ's runs
+/// read "pending" from 11-05 16:19 on because only `session_id` was read.
+mod conv_id { include!("../../shared/conversation_id.rs"); }
+pub fn conversation_of(v: &Value) -> String {
+    conv_id::conversation_id(
+        v.get("chorus_session_id").or_else(|| v.get("session_id")).and_then(|s| s.as_str()),
+        v.get("transcript_path").and_then(|s| s.as_str()),
+    ).unwrap_or_default()
+}
+
+/// #4895 — the hook input is a turn's end (Claude's Stop, Gemini's AfterAgent).
+pub fn is_turn_end(hook_input: &str) -> bool {
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    matches!(v.get("hook_event_name").and_then(|e| e.as_str()), Some("Stop" | "SubagentStop" | "AfterAgent"))
 }
 
 /// #4339 — who a prompt is from. pulse types only WAKE_LINE for a nudge, and
@@ -376,7 +450,20 @@ mod tests {
 /// One variable from `ps eww` output ("... KEY=value ..."). None when absent.
 pub fn env_value(ps_eww: &str, key: &str) -> Option<String> {
     let want = format!("{}=", key);
-    ps_eww.split_whitespace().find(|w| w.starts_with(&want)).map(|w| w[want.len()..].to_string()).filter(|v| !v.is_empty())
+    // the LAST match: ps prints the environment after argv, so a readable env wins over the launch line
+    ps_eww.split_whitespace().rfind(|w| w.starts_with(&want)).map(|w| unquote(&w[want.len()..]).to_string()).filter(|v| !v.is_empty())
+}
+
+/// #4807 AC6 — a role account's pane is launched by a shell line (`CHORUS_ROLE='silas'`), and
+/// another account's environment can't be read, so `ps eww` shows only that line: one matched
+/// pair of quotes is the shell's, not the value's.
+fn unquote(v: &str) -> &str {
+    for q in ['\'', '"'] {
+        if v.len() >= 2 && v.starts_with(q) && v.ends_with(q) {
+            return &v[1..v.len() - 1];
+        }
+    }
+    v
 }
 
 /// #4345 — why the API refused a row, in one short line for the spine. On
@@ -414,6 +501,18 @@ pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Op
         c => Err(format!("could not read {}'s Principal row: the identity API at {} answered {}. Next: agent-state.sh restart athena-make",
             name, api, if c.is_empty() || c == "000" { "nothing".to_string() } else { format!("HTTP {}", c) })),
     }
+}
+
+/// #4845 AC2 — a Claude role's MCP servers come from its role dir's `.mcp.json`;
+/// without one naming chorus-api the role boots with no tools (10-31). Named, never silent.
+pub fn mcp_config_ok(role_dir: &std::path::Path) -> Result<(), String> {
+    let f = role_dir.join(".mcp.json");
+    let txt = std::fs::read_to_string(&f).map_err(|_| format!("no MCP config at {}", f.display()))?;
+    let v: Value = serde_json::from_str(&txt).map_err(|_| format!("MCP config at {} is not JSON", f.display()))?;
+    if v.get("mcpServers").and_then(|m| m.get("chorus-api")).is_none() {
+        return Err(format!("MCP config at {} has no chorus-api server", f.display()));
+    }
+    Ok(())
 }
 
 /// #4432 — the agent roles, from the roles door (`/v1/roles/roles`): every row
@@ -524,6 +623,26 @@ mod person_for_account_4412 {
 #[cfg(test)]
 mod channel_tests_4424 {
     use super::*;
+    #[test] fn a_moved_pane_is_taken_4889_read() {
+        assert_eq!(pane_read(Ok("%31|/dev/ttys020\n".into())), Ok(("%31".into(), "/dev/ttys020".into())));
+        // negative proofs: an account that cannot read the socket, an empty or odd answer — each says why
+        assert!(pane_read(Err("error connecting to /private/tmp/tmux-502/default (Permission denied)".into())).unwrap_err().contains("Permission denied"));
+        assert!(pane_read(Ok("".into())).unwrap_err().contains("no pane id"));
+        assert!(pane_read(Ok("-|/dev/ttys001".into())).unwrap_err().contains("no pane id"));
+        // NEGATIVE PROOF (#4889 code review, run 14): two panes is refused, never the first one taken
+        assert!(pane_read(Ok("%31|/dev/ttys020\n%32|/dev/ttys021\n".into())).unwrap_err().contains("2 panes"));
+    }
+    #[test] fn a_moved_pane_is_taken_4889() {
+        let p = presence_row("abby-normal", "p", "r", "%12", "/dev/ttys013", "chorus-abby-normal", "pane");
+        let v = repaned_presence(p.clone(), "%31", "/dev/ttys020").expect("moved");
+        assert_eq!((v["pane"].as_str(), v["tty"].as_str()), (Some("%31"), Some("/dev/ttys020")));
+        // negative proofs: the same pane, not a pane id, an empty answer — nothing to write
+        assert!(repaned_presence(p.clone(), "%12", "/dev/ttys013").is_none());
+        assert!(repaned_presence(p.clone(), "-", "").is_none());
+        assert!(repaned_presence(p.clone(), "", "").is_none());
+        assert!(repaned_presence(p, "%", "").is_none());
+        assert!(repaned_presence(serde_json::json!({}), "%3", "").is_none());
+    }
     #[test] fn unset_channel_is_pane() { assert_eq!(session_channel(None).unwrap(), "pane"); assert_eq!(session_channel(Some("")).unwrap(), "pane"); }
     #[test] fn agent_channel_is_accepted() { assert_eq!(session_channel(Some("agent")).unwrap(), "agent"); }
     // Negative proof: anything else is refused, never quietly read as pane.
@@ -719,21 +838,27 @@ fn b64(bytes: &[u8]) -> String {
 
 /// The hooks file for a principal on this runtime: every one of our moments the
 /// row names, wired to the hook adapter under the row's native event name; the
-/// before-prompt moment also stamps the session seen. Only the named-hooks
-/// layout is rendered today; any other layout is refused by name.
+/// before-prompt moment also stamps the session seen. Supports `named-hooks`
+/// (`{"chorus": ...}`) and `claude-settings` (`{"hooks": ...}`, #4777); any
+/// other layout is refused by name.
 pub fn runtime_hooks_file(row: &Value, runtime: &str, role: &str, shim: &str, principal: &str) -> Result<Value, String> {
     let layout = rs(row, "runtimeHooksLayout").unwrap_or("");
-    if layout != "named-hooks" { return Err(format!("{runtime}: hooks layout {layout:?} is not rendered yet")); }
+    if layout != "named-hooks" && layout != "claude-settings" {
+        return Err(format!("{runtime}: hooks layout {layout:?} is not rendered yet"));
+    }
     let hook = |native: &str| json!({"type": "command", "command": format!("{shim} runtime-hook {runtime} {native}")});
     let mut events = serde_json::Map::new();
     for (ours, tool) in [("eventSessionStart", false), ("eventBeforePrompt", false), ("eventBeforeTool", true), ("eventAfterTool", true), ("eventOnStop", false)] {
         let Some(native) = rs(row, ours) else { continue };
         let mut handlers = vec![hook(native)];
-        if ours == "eventBeforePrompt" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
-        let entry = if tool { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
+        // #4895 — the turn's end stamps it too: a long turn of tool calls sends no prompt,
+        // and Kade's and Wren's lastSeenAt sat 10-16 minutes old while both worked (11-06)
+        if ours == "eventBeforePrompt" || ours == "eventOnStop" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
+        let entry = if tool || layout == "claude-settings" { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
         events.insert(native.to_string(), entry);
     }
-    Ok(json!({ "chorus": Value::Object(events) }))
+    let top = if layout == "claude-settings" { "hooks" } else { "chorus" };
+    Ok(json!({ top: Value::Object(events) }))
 }
 
 /// The tools file: Chorus's tools through the runner, signed as the principal (#4515).
@@ -762,6 +887,11 @@ pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir
     if rs(row, "runtimeAuth") == Some("api-key") {
         let var = rs(row, "runtimeKeyEnv").filter(|v| v.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')).ok_or(format!("{runtime}: api-key sign-in needs runtimeKeyEnv"))?;
         parts.push(format!("{{ [ ! -f ~/.chorus/secrets/{binary}.key ] || export {var}=\"$(cat ~/.chorus/secrets/{binary}.key)\"; }}"));
+    } else if rs(row, "runtimeAuth") == Some("subscription") && binary == "claude" {
+        // #4777 — dedicated Mac role accounts running Claude Code read their
+        // long-lived setup-token from ~/.chorus/secrets/claude.key so Claude
+        // never calls /usr/bin/security against a locked login keychain.
+        parts.push("{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }".to_string());
     }
     // #4544 — variables the row says this runtime starts with (agy: SSH_CONNECTION,
     // so it keeps its token in a file, not a keychain her account cannot open).
@@ -780,4 +910,22 @@ pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir
     if args.iter().any(|a| a.contains('\'')) { return Err(format!("{runtime}: a launch argument holds a quote")); }
     parts.push(std::iter::once(format!("'{binary}'")).chain(args.iter().map(|a| format!("'{a}'"))).collect::<Vec<_>>().join(" "));
     Ok(parts.join(" && "))
+}
+
+#[cfg(test)]
+mod claude_settings_tests_4777 {
+    use super::*;
+
+    #[test]
+    fn claude_settings_layout_renders_hooks_and_refuses_unknown() {
+        let table = runtime_table();
+        let row = &table["runtimes"]["claude-code"];
+        let h = runtime_hooks_file(row, "claude-code", "silas", "/b/shim", "/b/principal").unwrap();
+        assert_eq!(h["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"], "/b/principal seen silas");
+        assert_eq!(h["hooks"]["PreToolUse"][0]["matcher"], "*");
+
+        let mut bad = row.clone();
+        bad["runtimeHooksLayout"] = json!("unknown-layout");
+        assert!(runtime_hooks_file(&bad, "claude-code", "silas", "/b/shim", "/b/principal").is_err());
+    }
 }

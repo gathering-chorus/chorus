@@ -16,7 +16,7 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    is_test_suite_path, scope_declared_edges, scoped_test_reason, suite_run_payload,
+    is_test_suite_path, scope_declared_edges, scoped_test_reason,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     discover_ts_packages, set_repo_root,
@@ -805,22 +805,25 @@ fn step_run(ctx: &Ctx, test_type: &str) -> Result<i32, String> {
                 // card that edits a nightly-only test binary does not run it
                 let kept = werk_test::only_bins_kept(&only, &ns_bins);
                 cargo_bins = (kept.clone(), ns_bins.clone());
-                let (ok, cases) = if !only.is_empty() && kept.is_empty() {
+                let (ok, cases, text) = if !only.is_empty() && kept.is_empty() {
                     println!("cargo-select: {} → {} changed test binar(y/ies), all nightly only or stack-down: not run", c, only.len());
                     nothing_selected = true;
-                    (true, Vec::new())
+                    (true, Vec::new(), String::new())
                 } else if only.is_empty() {
-                    run_cargo(&werk, c, &q_names, &ns_refs)
+                    run_cargo_sel(&werk, c, &q_names, &ns_refs, &[])
                 } else {
                     let only = kept;
                     println!("cargo-select: {} → only {} (no src change; the tests that changed run)", c, only.join(", "));
                     let only_refs: Vec<&str> = only.iter().map(|s| s.as_str()).collect();
-                    let (ok, cases, _) = run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs);
-                    (ok, cases)
+                    run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs)
                 };
                 let crate_dir = crate_dir(&werk, c);
-                for (path, result) in cases {
-                    match werk_test::match_cargo_case_path(&path, &crate_dir, &rows, &row_names) {
+                // #4685 — a new, not-yet-registered test file keeps its cases
+                let targets: Vec<String> = werk_test::parse_nextest_case_runs(&text).into_iter().map(|(_, t, _)| t).collect();
+                let on_disk = |fp: &str| Path::new(&werk).join(fp).is_file();
+                for (i, (path, result)) in cases.into_iter().enumerate() {
+                    let target = targets.get(i).map(String::as_str).unwrap_or("");
+                    match werk_test::resolve_cargo_case(&path, target, &crate_dir, &rows, &row_names, on_disk) {
                         Some(fp) => all_cases.push(CaseResult {
                             file_path: fp,
                             test_name: werk_test::nextest_bare_name(&path).to_string(),
@@ -1065,9 +1068,8 @@ fn step_report(ctx: &Ctx, steps: bool) -> Result<i32, String> {
     let execution_refs: Vec<(&str, &str)> = execution_extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     emit_spine("test.execution.completed", role, card, trace, &execution_refs);
     let writeback_started = std::time::Instant::now();
-    // #3634 write side — the run becomes a TestSuiteRun instance in the graph,
-    // best-effort and witnessed either way.
-    post_suite_run(role, card, trace, plan_source, plan.len(), failed_count, execution_duration_ms, outcome.label());
+    // #4579 reopen — the run no longer becomes a TestSuiteRun in the graph
+    // (Jeff 10-18 19:10); the run folder and the spine carry it.
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", role, card, trace,
             &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
@@ -1607,8 +1609,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             // #4454 reopen — the build target each case ran under, in case order
             let targets: Vec<String> = werk_test::parse_nextest_case_runs(&text).into_iter().map(|(_, t, _)| t).collect();
             let mut runs: Vec<(String, String)> = Vec::new();
+            // #4685 — a new, not-yet-registered test file keeps its cases
+            let on_disk = |fp: &str| Path::new(&cargo_root).join(fp).is_file();
             for (i, (path, result)) in cases.iter().enumerate() {
-                match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
+                let target = targets.get(i).map(String::as_str).unwrap_or("");
+                match werk_test::resolve_cargo_case(path, target, &crate_dir, &rows, &row_names, on_disk) {
                     Some(fp) => {
                         runs.push((targets.get(i).cloned().unwrap_or_default(), path.clone()));
                         let bare = werk_test::nextest_bare_name(path).to_string();
@@ -1827,8 +1832,14 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             c.arg("-c").arg(&cmd).current_dir(&root)
                 .env("CHORUS_CONTEXT", "")
                 // #4454 — the specs' own events ride the trace like every other unit's
-                .env("CHORUS_TEST_EVENTS", test_events_path(&root))
-                .env("CLEARING_URL", std::env::var("CLEARING_URL").unwrap_or_else(|_| "http://localhost:3470".to_string()));
+                .env("CHORUS_TEST_EVENTS", test_events_path(&root));
+            // #4915 — no live default: the specs refuse the live room and, with CLEARING_URL
+            // unset, start their own Clearing (#4417). Defaulting it to :3470 made every spec
+            // file throw at load, so the whole leg read UNMEASURED each night (11-06).
+            match std::env::var("CLEARING_URL") {
+                Ok(u) if !u.is_empty() => { c.env("CLEARING_URL", u); }
+                _ => { c.env_remove("CLEARING_URL"); }
+            }
             let (rc, out) = werk_test::time_unit("proving/flows", || werk_test::run_capped(c, std::time::Duration::from_secs(1800)));
             forward_test_events(&root);
             let (verdict, summary) = werk_test::ui_lane_verdict(rc, &out);
@@ -1869,8 +1880,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     stored_total.fetch_add(poster.join().unwrap_or(0), Ordering::SeqCst);
     println!("nightly: poster drained in {} ms after the last unit (#4144)", poster_wait.elapsed().as_millis());
     let writeback_started = std::time::Instant::now();
-    post_suite_run(&mint_role, &card, &trace, plan_source, crates.len(), failed_count,
-        execution_duration_ms, outcome.label());
     let unmatched_cargo = unmatched_cargo.load(Ordering::SeqCst);
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", &role, &card, &trace,
@@ -2391,6 +2400,22 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 /// every overridable membrane surface) so a lazy subprocess test never panics
 /// MEMBRANE REFUSED into the werk log. Explicit env wins: a var the caller
 /// already set is left alone, so fixtures/integration setups keep control.
+/// #4889 — the one resolver, compiled in (zero-dep blueprint: a path module, no crate dep).
+#[allow(dead_code)]
+#[path = "../../properties-resolver/src/lib.rs"]
+mod properties_resolver;
+
+/// #4889 — the tool-path properties a suite may need, read once per werk-test process.
+pub const TOOL_PROPERTIES: [(&str, &str); 2] = [("CHORUS_TOOL_SEMGREP", "tool.path.semgrep"), ("CHORUS_TOOL_CLAUDE", "tool.path.claude")];
+
+fn tool_paths() -> &'static Vec<(&'static str, &'static str, Result<String, String>)> {
+    static CELL: std::sync::OnceLock<Vec<(&'static str, &'static str, Result<String, String>)>> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        let door = properties_resolver::door_url();
+        TOOL_PROPERTIES.iter().map(|(var, key)| (*var, *key, properties_resolver::global_value(&door, key))).collect()
+    })
+}
+
 fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // #4130 AC1 — tell the child it is under the nightly, and what its cap is.
     //
@@ -2427,6 +2452,30 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
             cmd.env(k, v);
         }
     }
+    // #4889 (Jeff 20:55; his 08:08 rule: every property in the graph, read through the
+    // resolver) — the tools a suite runs by name come from their property rows, resolved once
+    // per run: CHORUS_TOOL_<NAME> holds the path, or is empty with CHORUS_TOOL_<NAME>_ERROR
+    // saying why (door down, row missing). The suite that needs it fails loudly; no default.
+    for (var, _key, value) in tool_paths() {
+        match value {
+            Ok(v) => { cmd.env(var, v); }
+            Err(e) => { cmd.env(var, ""); cmd.env(format!("{var}_ERROR"), e); }
+        }
+    }
+    // #4785 — werk-test runner env: export CHORUS_STATE_DIR (same source as sessions, #4535)
+    // and CHORUS_HOOKS_RUN_DIR so child test suites reach the shared daemon socket under run-agents/.
+    let state_dir = std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| {
+        let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+        if let Some(user) = home.strip_prefix("/Users/").and_then(|rest| rest.split('/').next()) {
+            format!("/Users/{user}/.chorus")
+        } else {
+            format!("{}/.chorus", std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()))
+        }
+    });
+    cmd.env("CHORUS_STATE_DIR", &state_dir);
+    let hooks_run_dir = std::env::var("CHORUS_HOOKS_RUN_DIR").ok().filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("{state_dir}/run-agents"));
+    cmd.env("CHORUS_HOOKS_RUN_DIR", &hooks_run_dir);
     cmd.env("CHORUS_TEST_EVENTS", test_events_path(werk));
 }
 
@@ -2525,12 +2574,6 @@ fn nextest_gate(werk: &str) -> &'static Result<(), String> {
     })
 }
 
-/// gate; an empty quarantine set leaves the invocation byte-identical.
-fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> (bool, Vec<(String, String)>) {
-    let (ok, cases, _) = run_cargo_sel(werk, name, quarantined, ns_bins, &[]);
-    (ok, cases)
-}
-
 /// #4160 — the nightly's staged cargo run: `only_bins` non-empty runs just
 /// those test binaries (a typed binary in its own stage); otherwise the crate
 /// runs minus `exclude_bins`. A unit run whose every binary moved to another
@@ -2546,8 +2589,13 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     // #4494 — start from prod's build cache when this werk has none
     let canonical = std::env::var("CHORUS_HOME")
         .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+    // #4772 — this account's own build folder: the role's local cargo writes the
+    // crate's target/, and a file another account owns cannot be rewritten (EPERM)
+    let account = werk_test::current_account();
+    let target_dir = werk_test::account_target_dir(&dir, &account);
     if Path::new(werk) != Path::new(&canonical) {
-        println!("build-cache: {}", werk_test::seed_target(werk, &canonical, &crate_dir(werk, name)));
+        let canon_crate = format!("{}/{}", canonical, crate_dir(werk, name));
+        println!("build-cache: {}", werk_test::seed_account_target(&target_dir, &canon_crate, &account, &crate_dir(werk, name)));
     }
     if let Err(reason) = nextest_gate(werk) {
         // #4537 — the toolchain, not the card: UNMEASURED, never a red with no failing case
@@ -2557,7 +2605,7 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     }
     // #4537 — another build holding this crate's build lock: wait up to a cap,
     // then UNMEASURED naming the holder (never an hour of "Blocking waiting")
-    if let Err(why) = wait_for_build_lock(&dir) {
+    if let Err(why) = wait_for_build_lock(&dir, &target_dir) {
         eprintln!("UNMEASURED cargo lane for {}: {}", name, why);
         return (werk_test::lane_unmeasured(why.clone()), Vec::new(), why);
     }
@@ -2582,7 +2630,7 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     let mut cmd = Command::new("cargo");
     // #3918 — test child: cleared, so the membrane still refuses it (see child_context).
     cmd.env("CHORUS_CONTEXT", "");
-    cmd.args(&args).current_dir(&dir);
+    cmd.args(&args).current_dir(&dir).env("CARGO_TARGET_DIR", &target_dir);
     apply_suite_world(&mut cmd, werk);
     match output_with_progress(&mut cmd, name) {
         Ok(o) => {
@@ -2615,9 +2663,9 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
 
 /// #4537 — the processes holding a crate's cargo build lock open, as
 /// "pid N (command)". Empty when free or when it cannot be read.
-fn build_lock_holders(crate_dir: &str) -> Vec<String> {
+fn build_lock_holders(crate_dir: &str, target_dir: &str) -> Vec<String> {
     let target = Command::new("cargo").args(["metadata", "--no-deps", "--format-version", "1"])
-        .current_dir(crate_dir).output().ok()
+        .current_dir(crate_dir).env("CARGO_TARGET_DIR", target_dir).output().ok()
         .and_then(|o| werk_test::json_str_field(&String::from_utf8_lossy(&o.stdout), "target_directory"))
         .unwrap_or_else(|| format!("{}/target", crate_dir));
     let me = std::process::id().to_string();
@@ -2638,11 +2686,11 @@ fn build_lock_holders(crate_dir: &str) -> Vec<String> {
 
 /// #4537 — wait while another process holds the build lock, up to
 /// WERK_TEST_LOCK_CAP seconds (default 600); past it, the reason to report.
-fn wait_for_build_lock(crate_dir: &str) -> Result<(), String> {
+fn wait_for_build_lock(crate_dir: &str, target_dir: &str) -> Result<(), String> {
     let cap = std::env::var("WERK_TEST_LOCK_CAP").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600);
     let start = std::time::Instant::now();
     loop {
-        let holders = build_lock_holders(crate_dir);
+        let holders = build_lock_holders(crate_dir, target_dir);
         if holders.is_empty() {
             return Ok(());
         }
@@ -2747,6 +2795,10 @@ fn quarantined_cases() -> Vec<Quarantined> {
 /// anti-pattern: honest-red beats lying-green).
 fn run_tsc(werk: &str, pkg: &str) -> bool {
     let pkg_dir = format!("{}/{}", werk, pkg);
+    if !werk_test::tsc_applies(Path::new(&pkg_dir)) {
+        eprintln!("-- tsc:{} has no tsconfig.json (JavaScript) — nothing to typecheck", pkg);
+        return true;
+    }
     if !ensure_ts_deps(werk, pkg) {
         // #4537 — deps the runner could not provide: UNMEASURED, not a red
         eprintln!("!! tsc:{} deps unavailable — UNMEASURED", pkg);
@@ -2805,6 +2857,11 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
         eprintln!("!! jest:{} deps unavailable — UNMEASURED", pkg);
         return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new(),
             vec![(String::new(), String::new(), format!("jest:{} deps unavailable", pkg))]);
+    }
+    // #4505 R1-PIPE-2 — scope=all / nightly builds too, or it hits "Cannot find module".
+    if let Err(why) = ensure_built(werk, pkg) {
+        eprintln!("!! jest:{} {}", pkg, why);
+        return (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} {}", pkg, why))]);
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
@@ -3009,7 +3066,11 @@ cases to files; refusing to store package-level rows that can never cross-foot",
     }
     for rel in &files {
         let mut cmd = Command::new(&runner.prog);
-        cmd.args(&runner.args).arg(rel).current_dir(&pkg_dir);
+        cmd.args(&runner.args);
+        if !runner.args.iter().any(|a| a.starts_with("--test-reporter")) {
+            cmd.arg("--test-reporter=tap");
+        }
+        cmd.arg(rel).current_dir(&pkg_dir);
         cmd.envs(runner.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
         apply_suite_world(&mut cmd, werk);
@@ -3064,9 +3125,29 @@ fn npm_test_files(pkg_dir: &str) -> Vec<String> {
 /// repo-relative; jest wants them package-relative.
 fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
+    // #4505 — a test file this card deleted is on the diff but not on disk; handing it
+    // to the runner failed the whole unit with ENOENT. All deleted = run nothing (lib).
+    let (paths, dropped) = werk_test::jest_paths(files, &|f| Path::new(&format!("{}/{}", werk, f)).exists());
+    for f in &dropped {
+        println!("   jest:{} — {} is deleted on this card, not run", pkg, f);
+    }
+    let kept = match paths {
+        werk_test::JestPaths::Run(v) => v,
+        werk_test::JestPaths::Nothing(why) => {
+            println!("   jest:{} — {}; nothing to run", pkg, why);
+            return (true, Vec::new());
+        }
+    };
+    let files: &[String] = &kept;
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} deps unavailable — UNMEASURED", pkg);
         return (werk_test::lane_unmeasured(format!("deps unavailable for {}", pkg)), Vec::new());
+    }
+    // #4505 R1-PIPE-2 — a selected suite's package is built before jest runs it; a
+    // missing build is a loud "not built", never jest's "Cannot find module".
+    if let Err(why) = ensure_built(werk, pkg) {
+        eprintln!("!! jest:{} {}", pkg, why);
+        return (false, Vec::new());
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     let rel: Vec<String> = files
@@ -3263,6 +3344,31 @@ fn ensure_ts_deps(werk: &str, pkg: &str) -> bool {
         }
     }
     Path::new(&format!("{}/node_modules/.bin", pkg_dir)).is_dir()
+}
+
+/// #4505 R1-PIPE-2 — build the package when its `main` entry is missing (lib build_need).
+fn ensure_built(werk: &str, pkg: &str) -> Result<(), String> {
+    let pkg_dir = format!("{}/{}", werk, pkg);
+    let manifest = std::fs::read_to_string(format!("{}/package.json", pkg_dir)).unwrap_or_default();
+    let main_owned = werk_test::package_main(&manifest);
+    let main = main_owned.as_deref();
+    let has_build = werk_test::package_has_build_script(&manifest);
+    let exists = |e: &str| Path::new(&format!("{}/{}", pkg_dir, e)).exists();
+    match werk_test::build_need(main, has_build, &exists) {
+        werk_test::BuildNeed::Ready => Ok(()),
+        werk_test::BuildNeed::NotBuildable(why) => Err(why),
+        werk_test::BuildNeed::Build => {
+            println!("   jest:{} — npm run build", pkg);
+            let out = Command::new("npm").args(["run", "build"]).current_dir(&pkg_dir).output()
+                .map_err(|e| format!("not built: npm run build did not start: {e}"))?;
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr);
+                let tail: Vec<&str> = err.lines().rev().take(5).collect();
+                return Err(format!("not built: {}", tail.into_iter().rev().collect::<Vec<_>>().join(" | ")));
+            }
+            if main.map(exists).unwrap_or(true) { Ok(()) } else { Err(format!("not built: the build ran but {} is still missing", main.unwrap_or(""))) }
+        }
+    }
 }
 
 fn lockfiles_match(a: &str, b: &str) -> bool {
@@ -3537,44 +3643,6 @@ fn store_latest_results(
 
 // #4154 — `werk-test --reconcile` (registered minus executed) retired with the
 // nightly census; the crawler keeps the registry current, the runner trusts it.
-
-/// #3634 write side — POST the run's TestSuiteRun through the generated write
-/// surface with a #3619-scoped token. Token: $CHORUS_WRITE_TOKEN if the runner
-/// provides it, else minted via chorus-identity-token (ES256 identity from the
-/// realm env inside the script — never echoed here). Every outcome is witnessed:
-/// testsuiterun.posted / testsuiterun.post.skipped with the reason.
-#[allow(clippy::too_many_arguments)]
-fn post_suite_run(
-    role: &str,
-    card: &str,
-    trace: &str,
-    plan_source: &str,
-    checks_planned: usize,
-    checks_failed: usize,
-    duration_ms: u128,
-    verdict: &str,
-) {
-    let endpoint = std::env::var("OWL_API_TESTSUITERUNS")
-        .unwrap_or_else(|_| "http://localhost:3360/testsuiteruns".to_string());
-    let Some(token) = write_token(role) else {
-        emit_spine("testsuiterun.post.skipped", role, card, trace,
-            &[("reason", "no-write-token")]);
-        return;
-    };
-    let payload = suite_run_payload(card, role, trace, plan_source, checks_planned,
-        checks_failed, duration_ms, verdict);
-    let args = werk_test::suite_run_post_args(&endpoint, &token, &payload);
-    let ok = Command::new("curl")
-        .args(&args)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if ok {
-        emit_spine("testsuiterun.posted", role, card, trace, &[("verdict", verdict), ("plan_source", plan_source)]);
-    } else {
-        emit_spine("testsuiterun.post.skipped", role, card, trace, &[("reason", "post-failed")]);
-    }
-}
 
 /// Mint a write token — #3689: ES256 CSS IDENTITY, no scope in the token.
 /// Scope is model data now (chorus:hasScope on the Principal, resolved at the
@@ -3925,6 +3993,25 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         apply_suite_world(&mut cmd2, "/tmp/other-werk");
         let root2 = cmd2.get_envs().find(|(k, _)| *k == "CHORUS_ROOT").and_then(|(_, v)| v);
         assert_eq!(root2, Some(std::ffi::OsStr::new("/tmp/other-werk")));
+    }
+
+    /// #4785 — werk-test runner exports CHORUS_STATE_DIR and CHORUS_HOOKS_RUN_DIR
+    #[test]
+    fn every_suite_child_inherits_state_dir_4785() {
+        let mut cmd = Command::new("true");
+        apply_suite_world(&mut cmd, "/tmp/some-werk");
+        let state = cmd.get_envs().find(|(k, _)| *k == "CHORUS_STATE_DIR").and_then(|(_, v)| v);
+        assert!(state.is_some(), "CHORUS_STATE_DIR must be exported");
+        let hooks = cmd.get_envs().find(|(k, _)| *k == "CHORUS_HOOKS_RUN_DIR").and_then(|(_, v)| v);
+        assert!(hooks.is_some(), "CHORUS_HOOKS_RUN_DIR must be exported");
+
+        // NEGATIVE PROOF — explicit override in parent is preserved
+        let mut cmd2 = Command::new("true");
+        std::env::set_var("CHORUS_HOOKS_RUN_DIR", "/custom/run-agents");
+        apply_suite_world(&mut cmd2, "/tmp/some-werk");
+        std::env::remove_var("CHORUS_HOOKS_RUN_DIR");
+        let hooks2 = cmd2.get_envs().find(|(k, _)| *k == "CHORUS_HOOKS_RUN_DIR").and_then(|(_, v)| v);
+        assert_eq!(hooks2, Some(std::ffi::OsStr::new("/custom/run-agents")));
     }
 
     /// NEGATIVE PROOF — the same suite run with the live nudge path fails, so

@@ -248,6 +248,21 @@ assert 'Stack functions' in ctx, 'principles section missing'
 
 # --- AC: Existing Rust orchestration tests remain (no regression) ---
 
+# The tree this file sits in (the werk in a card run, canonical in the nightly).
+TREE="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+# A crate of the tree under test; refuses a directory outside it (#4885).
+crate_under_test() {
+  local d="${2:-$TREE/platform/services/$1}"
+  case "$(cd "$d" 2>/dev/null && pwd)/" in "$TREE"/*) echo "$d" ;; *) echo "not in the tree under test: $d" >&2; return 1 ;; esac
+}
+
+@test "NEGATIVE PROOF (#4885): a crate path outside the tree under test is refused" {
+  crate_under_test chorus-hooks >/dev/null || return 1
+  other="$(mktemp -d)"; mkdir -p "$other/platform/services/chorus-hooks"
+  ! crate_under_test chorus-hooks "$other/platform/services/chorus-hooks" 2>/dev/null || return 1
+  rm -rf "$other"
+}
+
 @test "existing Rust orchestration tests remain in place" {
   # #4336 — was a file-exists check. Now: the test binaries compile and still
   # carry the named cases. (Running them needs RUN_INTEGRATION: they write the
@@ -256,9 +271,15 @@ assert 'Stack functions' in ctx, 'principles section missing'
   # #4022 — debug, not --release: the nightly's cargo lane has already built
   # these test binaries in debug (shared CARGO_TARGET_DIR); --release rebuilt
   # the crate a second time whenever chorus-hooks changed (119s).
-  run bash -c "cd '${CHORUS_ROOT}/platform/services/chorus-hooks' && cargo test --quiet \
-    --test session_start_additional_context --test session_start_pulse --test session_opening_narrative -- --list 2>/dev/null"
-  [ "$status" -eq 0 ]
+  # #4885 — the tree under test, never CHORUS_ROOT: in a card run CHORUS_ROOT is canonical, so
+  # this built canonical's crate into jeffbridwell's target and failed from a role account.
+  crate="$(crate_under_test chorus-hooks)" || return 1
+  # #4885 — the account's own target (the target_seed convention: <crate>/target/<account>), so a
+  # card run under one account never writes another account's build files; and cargo's own
+  # words are kept, so a failure says why (it was 2>/dev/null, and run 8 failed with no reason).
+  run bash -c "cd '$crate' && CARGO_TARGET_DIR='$crate/target/$(id -un)' cargo test --quiet \
+    --test session_start_additional_context --test session_start_pulse --test session_opening_narrative -- --list 2>&1"
+  [ "$status" -eq 0 ] || { echo "$output" | tail -20; return 1; }
   [[ "$output" == *"session_start_emits_additional_context_json: test"* ]] || return 1
   [[ "$output" == *"session_start_writes_done: test"* ]] || return 1
   [[ "$output" == *"session_start_regenerates_pulse: test"* ]] || return 1

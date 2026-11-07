@@ -2,19 +2,14 @@
 
 import { DoorRole } from './models';
 
-const BOSTON_TZ = 'America/New_York';
+// #4885 — every Boston form here comes from the one renderer
+import { bostonDay, bostonFormat, bostonHHMM } from '../../../../platform/chorus-sdk/time/boston';
 
 export function formatBostonTime(isoOrDateString?: string): string {
   if (!isoOrDateString) return 'now';
   const d = new Date(isoOrDateString);
   if (isNaN(d.getTime())) return 'now';
-  return d.toLocaleTimeString('en-US', {
-    timeZone: BOSTON_TZ,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    hourCycle: 'h23',
-  });
+  return bostonHHMM(d);
 }
 
 /** #4566 — a time in Boston: HH:MM when it is the same Boston day as now, else "Thu 13:11". */
@@ -22,19 +17,16 @@ export function formatBostonWhen(iso: string | undefined, now: Date = new Date()
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  const day = (x: Date) => x.toLocaleDateString('en-US', { timeZone: BOSTON_TZ });
-  const hhmm = formatBostonTime(iso);
-  if (day(d) === day(now)) return hhmm;
-  const wd = d.toLocaleDateString('en-US', { timeZone: BOSTON_TZ, weekday: 'short' });
-  return `${wd} ${hhmm}`;
+  const hhmm = bostonHHMM(d);
+  if (bostonDay(d) === bostonDay(now)) return hhmm;
+  return `${bostonFormat(d, { weekday: 'short' })} ${hhmm}`;
 }
 
 export function formatTodayHeader(date = new Date()): string {
-  const weekday = date.toLocaleDateString('en-US', { timeZone: BOSTON_TZ, weekday: 'long' });
-  const month = date.toLocaleDateString('en-US', { timeZone: BOSTON_TZ, month: 'short' });
-  const day = date.toLocaleDateString('en-US', { timeZone: BOSTON_TZ, day: 'numeric' });
-  const time = date.toLocaleTimeString('en-US', { timeZone: BOSTON_TZ, hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23' });
-  return `${weekday}, ${month} ${day} · ${time}`;
+  const weekday = bostonFormat(date, { weekday: 'long' });
+  const month = bostonFormat(date, { month: 'short' });
+  const day = bostonFormat(date, { day: 'numeric' });
+  return `${weekday}, ${month} ${day} · ${bostonHHMM(date)}`;
 }
 
 /** Agent and human rows only; probe rows excluded. */

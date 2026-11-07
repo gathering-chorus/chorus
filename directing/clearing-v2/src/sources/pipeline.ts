@@ -9,7 +9,8 @@ export interface CardPipelineStatus {
   cardId: number;
   output: string;
   isLive: boolean;
-  status: 'running' | 'waiting' | 'failed' | 'succeeded' | 'landed' | 'no-runs' | 'unmeasured' | 'unknown';
+  status: 'running' | 'waiting' | 'failed' | 'succeeded' | 'landed' | 'no-runs' | 'unmeasured' | 'unknown' | 'stale';
+  isStale?: boolean;
   step?: string;
   failedStep?: string;
   failedReason?: string;
@@ -156,6 +157,7 @@ function buildUnmeasuredStatus(cardId: number, rawReason: string): CardPipelineS
       ...parsed,
       isLive: false,
       status: 'unmeasured',
+      isStale: true,
       unmeasuredReason: cleanReason,
       output: `${lastGood}\n\n[unmeasured: ${cleanReason} — showing last good output]`,
     };

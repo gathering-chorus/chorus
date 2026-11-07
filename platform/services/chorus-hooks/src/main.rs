@@ -1,3 +1,4 @@
+// @domain: security — placed by chorus-crawl's domain rules (#4645)
 mod hooks;
 mod hook_obs;
 mod session_cache;
@@ -72,6 +73,15 @@ fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
 /// and final response: it classifies the decision, writes the JSON hooks.log
 /// line, AND emits a `hook.decision` spine event carrying the shared `trace`.
 /// Spine + hooks.log share the formatter's field set, so they can't drift.
+/// #4839 — `turn-ended=3 cycle=0 … inject=731 …`, plus `slowest=<name>`: one line per prompt.
+fn format_route_steps(steps: &[(&str, u64)]) -> String {
+    let mut out: Vec<String> = steps.iter().map(|(n, ms)| format!("{n}={ms}")).collect();
+    if let Some((n, _)) = steps.iter().max_by_key(|(_, ms)| *ms) {
+        out.push(format!("slowest={n}"));
+    }
+    out.join(" ")
+}
+
 async fn emit_hook_decision(hook: &str, input: &HookInput, module: &str, resp: &HookResponse, start: std::time::Instant) {
     let duration_ms = start.elapsed().as_millis() as u64;
     let tool = input.tool_name_str();
@@ -135,9 +145,11 @@ async fn main() {
     // #3631 — durable, off-/tmp socket + pidfile in ~/.chorus/run (0700). The
     // daemon and the shim both resolve state_paths::hook_socket_durable(), so
     // they can never drift onto different paths.
-    let pid_durable = chorus_hooks::shared::state_paths::hook_pid_durable();
-    let socket_path = chorus_hooks::shared::state_paths::hook_socket_durable();
-    let run_dir = chorus_hooks::shared::state_paths::hook_run_dir();
+    // #4849 — the daemon resolves its OWN paths; CHORUS_STATE_DIR (a client
+    // setting) never moves them onto the shared agent socket.
+    let pid_durable = chorus_hooks::shared::state_paths::daemon_pid();
+    let socket_path = chorus_hooks::shared::state_paths::daemon_socket();
+    let run_dir = chorus_hooks::shared::state_paths::daemon_run_dir();
 
     // Run dir exists, owner-only (0700) — the control socket lives here, off
     // world-writable /tmp (the old 0o777-socket-in-/tmp was both the flap source
@@ -202,7 +214,8 @@ async fn main() {
         .route("/pre-tool-use", post(pre_tool_use))
         .route("/post-tool-use", post(post_tool_use))
         .route("/user-prompt-submit", post(user_prompt_submit))
-        .route("/stop", post(stop_hook))
+        .route("/stop", post(stop_hook_bounded))
+        .route("/launchagent-ops", post(launchagent_ops))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024)); // 16MB — tool_response can be large
     let app = routes.clone().with_state(state.clone());
     // #4432 — the same guards for agent principals on their own Mac account,
@@ -332,8 +345,8 @@ async fn shutdown_signal(started_at: std::time::Instant) {
     // flock is released automatically when the process exits (no manual unlock);
     // clearing the socket lets the next start bind without a stale-file race.
     chorus_hooks::cleanup_runtime_files(
-        Path::new(&chorus_hooks::shared::state_paths::hook_socket_durable()),
-        Path::new(&chorus_hooks::shared::state_paths::hook_pid_durable()),
+        Path::new(&chorus_hooks::shared::state_paths::daemon_socket()),
+        Path::new(&chorus_hooks::shared::state_paths::daemon_pid()),
     );
 }
 
@@ -343,7 +356,7 @@ async fn shutdown_signal(started_at: std::time::Instant) {
 /// socket is untouched either way.
 fn spawn_agent_socket(app: Router) {
     use std::os::unix::fs::PermissionsExt;
-    let dir = format!("{}-agents", chorus_hooks::shared::state_paths::hook_run_dir());
+    let dir = chorus_hooks::shared::state_paths::daemon_agent_dir();
     let sock = format!("{dir}/chorus-hooks.sock");
     let Some(gid) = (unsafe { libc::getgrnam(c"chorus".as_ptr()).as_ref() }).map(|g| g.gr_gid) else {
         tracing::warn!("chorus-hooks: no `chorus` group — the agent socket is not opened; agent principals on their own account get no guarded tools");
@@ -356,6 +369,12 @@ fn spawn_agent_socket(app: Router) {
     };
     chown(&dir);
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710));
+    // #4849 — never take a socket another daemon is serving: a live listener
+    // there is someone else's (prod's, if this one was misplaced). Refuse loudly.
+    if std::os::unix::net::UnixStream::connect(&sock).is_ok() {
+        tracing::warn!("chorus-hooks: agent socket {sock} is live under another daemon — not taking it");
+        return;
+    }
     let _ = std::fs::remove_file(&sock);
     let listener = match UnixListener::bind(&sock) {
         Ok(l) => l,
@@ -1019,17 +1038,28 @@ async fn user_prompt_submit(
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
     let start = std::time::Instant::now();
+    // #4839 — each serial step's ms by name, so time outside the context lookups is named
+    let mut steps: Vec<(&str, u64)> = Vec::new();
+    let mut mark = std::time::Instant::now();
+    let mut lap = |name: &'static str, steps: &mut Vec<(&str, u64)>| {
+        steps.push((name, mark.elapsed().as_millis() as u64));
+        mark = std::time::Instant::now();
+    };
     // Generate prompt cycle ID (#2231) — correlates this prompt with all subsequent tool calls
     emit_turn_ended(&input).await;
+    lap("turn-ended", &mut steps);
     let session_id = input.session_id.as_deref().unwrap_or("unknown");
     let cycle_id = format!("{}-{:x}", chrono::Utc::now().timestamp_millis(), std::process::id());
     state.set_cycle_id(session_id, cycle_id.clone()).await;
+    lap("cycle", &mut steps);
 
     // Clock sync on every prompt (#1559, #1849)
     let clock_result = hooks::clock_sync::tick(&input).await;
+    lap("clock", &mut steps);
 
     // Input classifier (#1659) — statement vs command detection
     let classifier_result = hooks::input_classifier::check(&input).await;
+    lap("classifier", &mut steps);
     if classifier_result.stderr.is_some() {
         // Classification signal — pass through (doesn't block)
         // But still run JDI + autonomy guard
@@ -1037,6 +1067,12 @@ async fn user_prompt_submit(
 
     // Context injection (#1838) — search Chorus + memory, inject before role thinks
     let context_result = hooks::context_inject::check(&input, &state).await;
+    lap("inject", &mut steps);
+
+    // #4628 — what Jeff typed reaches Buzz once, through pulse. Spawned, 1 s cap.
+    hooks::terminal_input::record(input.role().as_str(), input.prompt.as_deref().unwrap_or(""), input.entrypoint.as_deref());
+    // #4637 AC4 — the turn names the Jeff line that woke it (or none, by name)
+    hooks::turn_line::record(input.role().as_str(), session_id, &cycle_id, input.prompt.as_deref().unwrap_or(""));
 
     // JDI detector — fire-and-forget (#1598)
     let state_clone = state.clone();
@@ -1051,120 +1087,8 @@ async fn user_prompt_submit(
     // dedicated clearing-card-jeff MCP tool that /card calls. One mechanism,
     // not two. See card #2996 for the retirement rationale.
 
-    // Card-approval responder (#2924 AC3/AC4) — detect `approve`/`deny` in
-    // Jeff's prompt and either replay or cancel the most-recent pending
-    // bouncer-refused card. Fire-and-forget. The subprocess invocation
-    // (cards CLI with DEPLOY_ROLE=jeff) runs on the blocking pool.
-    let approval_role = input.role().as_str().to_string();
-    let approval_prompt = input.prompt.clone().unwrap_or_default();
-    tokio::spawn(async move {
-        use crate::state::chorus_log;
-        use hooks::card_approval_responder::{
-            detect_approval_signal, handle_approval_request_all, sweep_stale_pending,
-            ApprovalOutcome,
-        };
-        use std::path::PathBuf;
-        use std::time::SystemTime;
-
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-        let pending_dir = PathBuf::from(format!("{}/.chorus/pending-approvals", home));
-        let now = SystemTime::now();
-
-        // AC4: sweep stale pending pairs before the keyword pass — emits
-        // card.approval.timeout for each (basename stem captured for trace).
-        let pending_dir_for_sweep = pending_dir.clone();
-        let swept = tokio::task::spawn_blocking(move || sweep_stale_pending(&pending_dir_for_sweep, now))
-            .await
-            .unwrap_or_default();
-        for stem in swept {
-            chorus_log("card.approval.timeout", "system", &[("stem", stem.as_str())]).await;
-        }
-
-        let signal = match detect_approval_signal(&approval_prompt) {
-            Some(s) => s,
-            None => return,
-        };
-
-        // #2964: drain ALL queued pending payloads for the role on a single
-        // approve keystroke. Each outcome emits its own spine event so the
-        // log surface shows "Filed #2959, #2960, #2961" instead of one
-        // event per approve. Today's failure cycle (10 approves → 3 cards
-        // filed) was the most-recent-only behavior; this loops over all.
-        let role_for_blocking = approval_role.clone();
-        let pending_dir_for_blocking = pending_dir.clone();
-        let outcomes = tokio::task::spawn_blocking(move || {
-            handle_approval_request_all(
-                &role_for_blocking,
-                signal,
-                &pending_dir_for_blocking,
-                now,
-                |desc_path, mut argv| {
-                    // Production runner: invoke `cards add` with DEPLOY_ROLE=jeff
-                    // — bypasses the bouncer per #2905 since Jeff is the authority.
-                    // Resolve `cards` CLI by absolute path because launchctl-managed
-                    // processes inherit a minimal PATH that excludes platform/scripts.
-                    // First live replay (2026-05-15) hit this as spawn-failed.
-                    argv.push("--desc-file".to_string());
-                    argv.push(desc_path.to_string_lossy().into_owned());
-                    let cards_bin = hooks::card_approval_responder::resolve_cards_cli_path();
-                    let status = std::process::Command::new(&cards_bin)
-                        .arg("add")
-                        .args(&argv)
-                        .env("DEPLOY_ROLE", "jeff")
-                        .status()?;
-                    Ok(status.success())
-                },
-            )
-        })
-        .await
-        .unwrap_or_else(|_| vec![ApprovalOutcome::SpawnFailed]);
-
-        for outcome in outcomes {
-            match outcome {
-                ApprovalOutcome::Approved { title } => {
-                    chorus_log(
-                        "card.approval.granted",
-                        "jeff",
-                        &[("role", approval_role.as_str()), ("title", title.as_str())],
-                    )
-                    .await;
-                }
-                ApprovalOutcome::Denied { title } => {
-                    chorus_log(
-                        "card.approval.denied",
-                        "jeff",
-                        &[("role", approval_role.as_str()), ("title", title.as_str())],
-                    )
-                    .await;
-                }
-                ApprovalOutcome::TimedOut => {
-                    chorus_log(
-                        "card.approval.timeout",
-                        "system",
-                        &[("role", approval_role.as_str()), ("reason", "matched-but-stale")],
-                    )
-                    .await;
-                }
-                ApprovalOutcome::NoPending => { /* keyword fired with no pending — silent */ }
-                ApprovalOutcome::ReadFailed
-                | ApprovalOutcome::ParseFailed
-                | ApprovalOutcome::SpawnFailed => {
-                    let reason = match outcome {
-                        ApprovalOutcome::ReadFailed => "read-failed",
-                        ApprovalOutcome::ParseFailed => "parse-failed",
-                        ApprovalOutcome::SpawnFailed => "spawn-failed",
-                        _ => "unknown",
-                    };
-                    chorus_log(
-                        "card.approval.failed",
-                        "system",
-                        &[("role", approval_role.as_str()), ("reason", reason)],
-                    )
-                    .await;
-                }
-            }
-        }
-    });
+    // #4505: the chat approve/deny responder is retired. Jeff decides card asks on
+    // the go page's approvals list with his passkey; nothing here reads his prompt for it.
 
     // E2E responder (#1936) — fire-and-forget, detect [e2e-test] nudges, post ack to Clearing
     let input_e2e = input.clone();
@@ -1174,9 +1098,11 @@ async fn user_prompt_submit(
 
     // Interaction pattern detection (#2282) — fire-and-forget, emits on shift only
     let pattern_signal = hooks::interaction_pattern::check(&input, &state).await;
+    lap("pattern", &mut steps);
 
     // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
+    lap("guard", &mut steps);
 
     // #3191 — route the assembled context block to stdout (it INJECTS via
     // additionalContext), ephemeral warnings to stderr. Pure builder in context_inject,
@@ -1194,6 +1120,10 @@ async fn user_prompt_submit(
     );
     // #3252 — uniform hook.decision emit for the prompt pipeline.
     emit_hook_decision("user_prompt_submit", &input, "prompt_pipeline", &response, start).await;
+    lap("decision", &mut steps);
+    let timing = format_route_steps(&steps);
+    crate::state::chorus_log("prompt.route.timing", input.role().as_str(),
+        &[("total_ms", start.elapsed().as_millis().to_string().as_str()), ("steps", timing.as_str())]).await;
     Json(response)
 }
 
@@ -1215,12 +1145,18 @@ async fn stated_intent_block(
     if response.exit_code != 0 || response.stdout.is_some() {
         return None;
     }
-    let tp = raw.get("transcript_path").and_then(|v| v.as_str())?;
-    let text = hooks::inject_force::last_assistant_text(tp)?;
-    let calls = hooks::autonomy_guard::tool_calls_this_turn(tp);
-    let vocab = hooks::autonomy_guard::load_commitments(&state.config.stated_intent_vocabulary);
-    let id = hooks::autonomy_guard::stated_intent_without_action(&text, calls, &vocab)?;
     let role = input.role().as_str().to_string();
+    let vocab = hooks::autonomy_guard::load_commitments(&state.config.stated_intent_vocabulary);
+
+    let id = match hooks::autonomy_guard::stated_intent_from_raw(raw, &vocab) {
+        Ok(Some(id)) => id,
+        Ok(None) => return None,
+        Err(err) => {
+            crate::state::chorus_log(&format!("stated.intent.{err}"), &role, &[]).await;
+            return None;
+        }
+    };
+
     crate::state::chorus_log("stated.intent.stall", &role, &[("commitment", id.as_str())]).await;
     Some(HookResponse::block_with_stderr(
         &hooks::autonomy_guard::stall_refusal(&id),
@@ -1232,6 +1168,51 @@ async fn stated_intent_block(
 /// the verdict; never blocks. Extracted from stop_hook (#3941) — that handler sat at
 /// the clippy cognitive-complexity ceiling, so any new gate tipped the ratchet. Moving
 /// a self-contained observer out is the honest way to make room.
+/// #4817 — a logged-out session: every such turn emits `session.auth.failed`; the
+/// first of a run (and the recovery) goes to Jeff and the other roles.
+async fn session_auth_observe(raw: &serde_json::Value, input: &HookInput) {
+    let Some(path) = raw.get("transcript_path").and_then(|v| v.as_str()).map(str::to_string) else { return };
+    let role = input.role().as_str().to_string();
+    let account = hooks::session_auth::account_of(&path);
+    let failure = {
+        let p = path.clone();
+        tokio::task::spawn_blocking(move || hooks::session_auth::failure(&p)).await.ok().flatten()
+    };
+    if let Some(f) = &failure {
+        crate::state::chorus_log("session.auth.failed", &role,
+            &[("account", account.as_str()), ("since", f.since.as_str()), ("last", f.last.as_str())]).await;
+    }
+    let state_dir = std::env::var("CHORUS_STATE_DIR")
+        .unwrap_or_else(|_| format!("{}/.chorus", std::env::var("HOME").unwrap_or_default()));
+    let t = hooks::session_auth::transition(&state_dir, &role, failure.as_ref());
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let Some(msg) = hooks::session_auth::alert_text(&role, &account, &t, &now) else { return };
+    let roles = tokio::task::spawn_blocking(hooks::session_auth::agent_roles).await.unwrap_or_default();
+    let refs: Vec<&str> = roles.iter().map(String::as_str).collect();
+    let ops_nudge = format!("{}/platform/scripts/ops-nudge",
+        std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into()));
+    let recipients = hooks::session_auth::recipients(&role, &refs);
+    let alert_role = role.clone();
+    let alert_msg = msg.clone();
+    // off the Stop hook's 4 s budget: five sends in a row would outlast it
+    tokio::spawn(async move {
+        let (role, msg) = (alert_role, alert_msg);
+        for to in recipients {
+            // review (abby): an alert that fails to send must leave a trace, and the child is reaped
+            let outcome = match tokio::process::Command::new(&ops_nudge).arg(&to).arg(&msg).status().await {
+                Ok(s) if s.success() => "sent".to_string(),
+                Ok(s) => format!("exit {:?}", s.code()),
+                Err(e) => format!("did not start: {e}"),
+            };
+            if outcome != "sent" {
+                crate::state::chorus_log("session.auth.alert.failed", &role,
+                    &[("to", to.as_str()), ("outcome", outcome.as_str())]).await;
+            }
+        }
+    });
+    crate::state::chorus_log("session.auth.alerted", &role, &[("account", account.as_str()), ("message", msg.as_str())]).await;
+}
+
 async fn inject_force_observe(raw: &serde_json::Value, input: &HookInput) {
 if let Some(session_id) = input.session_id.as_deref() {
     let surfaced = hooks::inject_force::read_surfaced(session_id);
@@ -1267,6 +1248,75 @@ fn attach_debt_advisory(response: &mut HookResponse, advisory: Option<String>) {
     }
 }
 
+/// #3864/#3893 — a reply that stands: stamp reply.emitted with the cross-surface join
+/// key (pulse matches it to the room's row with the same hash and fires
+/// reply.delivery.gap when there is none, #4887), then deliver it over Buzz (Jeff: "do not
+/// build a new custom delivery path" — the relay IS the path). Some(warning) means
+/// the delivery failed and must be LOUD on this role's own terminal.
+async fn emit_and_deliver_reply(role: &str, text: &str, input: &HookInput) -> Option<String> {
+    // #4884 — no role, no key, no room: a headless session's Stop publishes nothing
+    if !hooks::reply_delivery::publishes_reply(role) {
+        return None;
+    }
+    let hash = hooks::reply_delivery::content_hash(text);
+    let words = hooks::word_cap::count_words(text).to_string();
+    let session = input.session_id.as_deref().unwrap_or("");
+    crate::state::chorus_log(
+        "reply.emitted",
+        role,
+        &[
+            ("hash", hash.as_str()),
+            ("words", words.as_str()),
+            ("session", session),
+            ("surface", "claude-code"),
+        ],
+    )
+    .await;
+    hooks::buzz_reply::deliver_and_emit(role, text, &hash).await
+}
+
+/// #4644 — the continuation a stop gate caused ends with the rewritten reply, and
+/// that reply stands. #4429 lets it through every gate; before this it also skipped
+/// delivery, so every bounced-then-rewritten reply never reached the room (Wren's
+/// C4 answer, 10-18 18:33).
+async fn deliver_continuation_reply(raw: &serde_json::Value, input: &HookInput) -> HookResponse {
+    let role = input.role().as_str().to_string();
+    match hooks::reply_delivery::reply_text(raw) {
+        Some(text) => match emit_and_deliver_reply(&role, &text, input).await {
+            Some(warn) => HookResponse::warn_stderr(&warn),
+            None => HookResponse::allow(),
+        },
+        None => {
+            // Review (abby-normal, round 2): never a silent allow — the spine says no
+            // reply text was found, so a missing room message has a trace.
+            crate::state::chorus_log("reply.text.missing", &role, &[("path", "continuation")]).await;
+            HookResponse::allow()
+        }
+    }
+}
+
+/// #4644 — Claude Code kills the Stop hook at its timeout (5s in settings.json), and a
+/// killed hook leaves nothing behind: no reply delivery, no warning, no spine event.
+/// Finish inside a budget instead, and when the budget runs out say so on the role's
+/// own terminal and in the spine.
+const STOP_HOOK_BUDGET: std::time::Duration = std::time::Duration::from_millis(4000);
+
+async fn stop_hook_bounded(
+    state: State<AppState>,
+    raw: Json<serde_json::Value>,
+) -> Json<HookResponse> {
+    let role = serde_json::from_value::<HookInput>(raw.0.clone()).unwrap_or_default().role().as_str().to_string();
+    match tokio::time::timeout(STOP_HOOK_BUDGET, stop_hook(state, raw)).await {
+        Ok(resp) => resp,
+        Err(_) => {
+            crate::state::chorus_log("stop.hook.overrun", &role, &[("budget_ms", "4000")]).await;
+            Json(HookResponse::warn_stderr(
+                "Stop hook ran past its 4s budget and was cut short: this reply may not have reached the room (#4644).",
+            ))
+        }
+    }
+}
+
 async fn stop_hook(
     State(state): State<AppState>,
     Json(raw): Json<serde_json::Value>,
@@ -1277,10 +1327,11 @@ async fn stop_hook(
     // heartbeat goes quiet, and silence now truthfully means idle rather than hidden work.
     emit_turn_ended(&input).await;
     inject_force_observe(&raw, &input).await;
+    session_auth_observe(&raw, &input).await;
  // #4429: one bounce per turn. In a continuation a stop gate already caused, no gate blocks again.
  if raw.get("stop_hook_active").and_then(|v| v.as_bool()) == Some(true) {
  crate::state::chorus_log("stop.gate.yielded", input.role().as_str(), &[]).await;
- return Json(HookResponse::allow());
+ return Json(deliver_continuation_reply(&raw, &input).await);
  }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let mut response = hooks::autonomy_guard::check(&input, &state).await;
@@ -1354,6 +1405,13 @@ async fn stop_hook(
         // #4445 — Gemini has no transcript file: its AfterAgent hook hands the
         // reply itself (prompt_response), forwarded by the runtime hook.
         let text = hooks::reply_delivery::reply_text(&raw);
+        // #4882 — live proof of which source the reply came from.
+        crate::state::chorus_log(
+            "reply.source",
+            input.role().as_str(),
+            &[("source", hooks::reply_delivery::reply_source(&raw))],
+        )
+        .await;
         if let Some(text) = text {
             let role = input.role().as_str().to_string();
             let api_base = std::env::var("CHORUS_API_URL")
@@ -1399,29 +1457,8 @@ async fn stop_hook(
                 }
                 Ok(()) => hooks::word_cap::reset_refusals(&role),
             }
-            // #3864 — the reply STANDS (blocked turns returned above): stamp
-            // reply.emitted with the cross-surface join key. The transcript is
-            // Claude Code delivery; Clearing answers with reply.rendered on the
-            // same hash, and pulse fires reply.delivery.gap on a missing pair.
-            let hash = hooks::reply_delivery::content_hash(&text);
-            let words = hooks::word_cap::count_words(&text).to_string();
-            let session = input.session_id.as_deref().unwrap_or("");
-            crate::state::chorus_log(
-                "reply.emitted",
-                &role,
-                &[
-                    ("hash", hash.as_str()),
-                    ("words", words.as_str()),
-                    ("session", session),
-                    ("surface", "claude-code"),
-                ],
-            )
-            .await;
-            // #3893 — deliver the reply itself over Buzz (Jeff: "do not build
-            // a new custom delivery path" — the relay IS the path). All
-            // branching lives in buzz_reply::deliver_and_emit; Some(warning)
-            // means the failure must be LOUD on this role's own terminal.
-            if let Some(warn) = hooks::buzz_reply::deliver_and_emit(&role, &text, &hash).await {
+            // #3864 — the reply STANDS (blocked turns returned above).
+            if let Some(warn) = emit_and_deliver_reply(&role, &text, &input).await {
                 if response.exit_code == 0 && response.stderr.is_none() {
                     response = HookResponse::warn_stderr(&warn);
                 }
@@ -1434,6 +1471,298 @@ async fn stop_hook(
     // #3252 — uniform hook.decision emit for the stop hook.
     emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
     Json(response)
+}
+
+fn query_label_owners(label: &str) -> Vec<String> {
+    #[cfg(test)]
+    if let Ok(json_str) = std::env::var("CHORUS_TEST_OWNERS") {
+        if let Ok(map) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(arr) = map.get(label).and_then(|v| v.as_array()) {
+                return arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+            }
+        }
+    }
+
+    let fuseki = std::env::var("CHORUS_FUSEKI_QUERY").unwrap_or_else(|_| "http://localhost:3030/pods/query".to_string());
+    let query = format!(
+        "PREFIX chorus: <https://jeffbridwell.com/chorus#> \
+         SELECT DISTINCT ?owner WHERE {{ \
+           {{ ?s chorus:launchdLabel \"{label}\" . ?s chorus:ownedBy ?owner . }} \
+           UNION \
+           {{ ?s chorus:launchdLabel \"{label}\" . ?s chorus:runsService ?svc . ?svc chorus:ownedBy ?owner . }} \
+         }}"
+    );
+    if let Ok(resp) = ureq::get(&fuseki)
+        .query("query", &query)
+        .set("Accept", "application/sparql-results+json")
+        .timeout(std::time::Duration::from_millis(3000))
+        .call()
+    {
+        if let Ok(val) = resp.into_json::<serde_json::Value>() {
+            let mut owners = Vec::new();
+            if let Some(bindings) = val.pointer("/results/bindings").and_then(|v| v.as_array()) {
+                for b in bindings {
+                    if let Some(uri) = b.pointer("/owner/value").and_then(|v| v.as_str()) {
+                        if let Some(role) = uri.split('#').next_back().and_then(|s| s.split(':').next_back()) {
+                            let role_clean = role.trim_start_matches("principal-").trim_start_matches("role-");
+                            owners.push(role_clean.to_string());
+                        }
+                    }
+                }
+            }
+            if !owners.is_empty() {
+                owners.sort();
+                owners.dedup();
+                return owners;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn find_launchagent_plist(label: &str) -> Option<String> {
+    let candidates = [
+        format!("/Users/jeffbridwell/Library/LaunchAgents/{label}.plist"),
+        format!("/Library/LaunchAgents/{label}.plist"),
+        format!("{}/platform/launchagents/{label}.plist", std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into())),
+        format!("{}/platform/scripts/launchagents-canonical/{label}.plist", std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into())),
+    ];
+    for c in &candidates {
+        if std::path::Path::new(c).exists() {
+            return Some(c.clone());
+        }
+    }
+    None
+}
+
+/// #4787 AC2: narrow LaunchAgent ops helper running inside daemon (as launcher/jeffbridwell).
+/// Enforces that caller role owns the label via graph ownedBy, then executes launchctl in gui/501.
+/// #4809 AC2 — a refusal is answered AND recorded: `launchagent.refused`
+/// names the caller role, the label and the reason, so a refused op is
+/// visible on the spine instead of only in the caller's stderr.
+async fn refuse_launchagent_op(
+    status: axum::http::StatusCode,
+    role: &str,
+    label: &str,
+    reason: &str,
+    message: String,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let who = if role.is_empty() { "unknown" } else { role };
+    crate::state::chorus_log("launchagent.refused", who, &[("label", label), ("reason", reason)]).await;
+    (status, Json(serde_json::json!({"error": message}))).into_response()
+}
+
+async fn launchagent_ops(
+    Json(payload): Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let verb = payload.get("verb").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let label = payload.get("label").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let role = payload.get("role").or_else(|| payload.get("deploy_role")).and_then(|v| v.as_str()).unwrap_or("").trim();
+
+    if verb.is_empty() || label.is_empty() {
+        return refuse_launchagent_op(axum::http::StatusCode::BAD_REQUEST, role, label, "missing-verb-or-label",
+            "missing verb or label".to_string()).await;
+    }
+
+    match verb {
+        "kickstart" | "load" | "retire" | "unload" | "status" => {}
+        _ => {
+            return refuse_launchagent_op(axum::http::StatusCode::BAD_REQUEST, role, label, "unknown-verb",
+                format!("launchagent-ops: REFUSED — unknown verb '{verb}'")).await;
+        }
+    }
+
+    static LABEL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^com\.chorus\.[A-Za-z0-9._-]+$").expect("valid label regex")
+    });
+
+    if !LABEL_RE.is_match(label) {
+        return refuse_launchagent_op(axum::http::StatusCode::BAD_REQUEST, role, label, "invalid-label",
+            format!("launchagent-ops: REFUSED — invalid label '{label}'")).await;
+    }
+
+    let owners = query_label_owners(label);
+    if owners.is_empty() {
+        return refuse_launchagent_op(axum::http::StatusCode::FORBIDDEN, role, label, "unowned",
+            format!("launchagent-ops: REFUSED — unowned LaunchAgent label '{label}' (not found in graph)")).await;
+    }
+
+    if role != "jeff" && !owners.iter().any(|o| o == role) {
+        return refuse_launchagent_op(axum::http::StatusCode::FORBIDDEN, role, label, "not-owner",
+            format!("launchagent-ops: REFUSED — role '{role}' does not own '{label}' (ownedBy: {})", owners.join(" "))).await;
+    }
+
+    let domain = std::env::var("LAUNCHCTL_DOMAIN").unwrap_or_else(|_| "gui/501".to_string());
+    let launchctl = std::env::var("LAUNCHCTL_BIN").unwrap_or_else(|_| "launchctl".to_string());
+
+    let (status, output) = match verb {
+        "kickstart" => {
+            let out = std::process::Command::new(&launchctl)
+                .args(["kickstart", "-k", &format!("{domain}/{label}")])
+                .output();
+            match out {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                Err(e) => (false, e.to_string()),
+            }
+        }
+        "retire" | "unload" => {
+            let out = std::process::Command::new(&launchctl)
+                .args(["bootout", &format!("{domain}/{label}")])
+                .output();
+            match out {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                Err(e) => (false, e.to_string()),
+            }
+        }
+        "load" => {
+            let plist = find_launchagent_plist(label);
+            match plist {
+                Some(p) => {
+                    let out = std::process::Command::new(&launchctl)
+                        .args(["bootstrap", &domain, &p])
+                        .output();
+                    match out {
+                        Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                        Err(e) => (false, e.to_string()),
+                    }
+                }
+                None => (false, format!("plist for {label} not found")),
+            }
+        }
+        "status" => {
+            let out = std::process::Command::new(&launchctl)
+                .args(["print", &format!("{domain}/{label}")])
+                .output();
+            match out {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)),
+                Err(e) => (false, e.to_string()),
+            }
+        }
+        _ => (false, "unreachable".into()),
+    };
+
+    if status {
+        (axum::http::StatusCode::OK, Json(serde_json::json!({"ok": true, "output": output.trim()}))).into_response()
+    } else {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": output.trim()}))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod route_steps_4839 {
+    use super::format_route_steps;
+
+    #[test]
+    fn each_step_is_named_with_its_ms_and_the_slowest_is_called_out() {
+        let line = format_route_steps(&[("turn-ended", 3), ("classifier", 1), ("inject", 731), ("guard", 40)]);
+        assert_eq!(line, "turn-ended=3 classifier=1 inject=731 guard=40 slowest=inject");
+    }
+
+    // NEGATIVE PROOF: a step that is not the slowest is never named slowest
+    #[test]
+    fn a_slow_step_outside_inject_is_the_one_named() {
+        let line = format_route_steps(&[("turn-ended", 1200), ("inject", 300)]);
+        assert!(line.ends_with("slowest=turn-ended"), "{line}");
+        assert_eq!(format_route_steps(&[]), "");
+    }
+}
+
+#[cfg(test)]
+mod launchagent_ops_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn negative_proof_launchagent_ops_refuses_unowned_or_mismatched_role() {
+        // 1. Unowned label -> 403
+        let payload_unowned = json!({
+            "verb": "kickstart",
+            "label": "com.chorus.nonexistent-service",
+            "role": "silas"
+        });
+        let resp = launchagent_ops(Json(payload_unowned)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // 2. Mismatched role -> 403 (kade trying to manage clearing owned by silas, wren)
+        std::env::set_var("CHORUS_TEST_OWNERS", r#"{"com.chorus.clearing": ["silas", "wren"]}"#);
+        let payload_mismatched = json!({
+            "verb": "kickstart",
+            "label": "com.chorus.clearing",
+            "role": "kade"
+        });
+        let resp2 = launchagent_ops(Json(payload_mismatched)).await;
+        assert_eq!(resp2.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // 3. Invalid verb -> 400
+        let payload_verb = json!({
+            "verb": "destroy",
+            "label": "com.chorus.clearing",
+            "role": "silas"
+        });
+        let resp3 = launchagent_ops(Json(payload_verb)).await;
+        assert_eq!(resp3.status(), axum::http::StatusCode::BAD_REQUEST);
+
+        // 4. Invalid label syntax / injection attempts -> 400 (#3734 negative proof)
+        let injection_cases = [
+            "com.chorus.clearing; rm -rf /",
+            "com.chorus.clearing\" . ?s chorus:ownedBy ?owner }",
+            "com.chorus.clearing/../../etc/passwd",
+            "org.other.service",
+            "com.chorus.",
+            "com.chorus.foo$bar",
+            "com.chorus.foo\nbar",
+        ];
+        for malformed in &injection_cases {
+            let payload = json!({
+                "verb": "kickstart",
+                "label": malformed,
+                "role": "silas"
+            });
+            let resp = launchagent_ops(Json(payload)).await;
+            assert_eq!(
+                resp.status(),
+                axum::http::StatusCode::BAD_REQUEST,
+                "malformed label '{malformed}' must be refused with 400"
+            );
+        }
+
+        std::env::remove_var("CHORUS_TEST_OWNERS");
+    }
+
+    /// #4809 AC2 — every refusal leaves a `launchagent.refused` spine event
+    /// naming the caller role, the label and the reason.
+    #[tokio::test]
+    async fn refusal_emits_launchagent_refused_with_role_label_reason() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("spine.log");
+        std::env::set_var("CHORUS_LOG_FILE", log.to_string_lossy().to_string());
+        std::env::set_var("CHORUS_TEST_OWNERS", r#"{"com.chorus.clearing": ["silas", "wren"]}"#);
+
+        let cases = [
+            ("com.chorus.not-in-graph-4809", "silas", "unowned"),
+            ("com.chorus.clearing", "kade", "not-owner"),
+            ("org.other.service", "silas", "invalid-label"),
+        ];
+        for (label, role, _) in &cases {
+            let resp = launchagent_ops(Json(json!({"verb": "kickstart", "label": label, "role": role}))).await;
+            assert!(!resp.status().is_success(), "{label} as {role} must be refused");
+        }
+
+        let spine = std::fs::read_to_string(&log).unwrap_or_default();
+        let refused: Vec<&str> = spine.lines().filter(|l| l.contains("launchagent.refused")).collect();
+        for (label, role, reason) in &cases {
+            assert!(
+                refused.iter().any(|l| l.contains(label) && l.contains(&format!("\"role\":\"{role}\"")) && l.contains(reason)),
+                "no launchagent.refused event for {label} as {role} ({reason}); spine:\n{spine}"
+            );
+        }
+
+        std::env::remove_var("CHORUS_TEST_OWNERS");
+        std::env::remove_var("CHORUS_LOG_FILE");
+    }
 }
 
 #[cfg(test)]
@@ -1453,7 +1782,7 @@ mod emit_guard_dispatch_3945 {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None,
             tool_output_is_error: None,
         }

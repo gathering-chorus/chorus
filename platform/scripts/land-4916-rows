@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""#4916 — store writes for #4916 alert retirement, DRY RUN unless --apply.
+# @domain: alerts
+
+Retires alert-ci-main-red from urn:chorus:domains:alerts.
+--apply runs only after Jeff's yes on the dry run (owned by principal-silas).
+"""
+import json, os, subprocess, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+
+def main():
+    apply = "--apply" in sys.argv[1:]
+    try:
+        req = urllib.request.Request(f"{DOOR}/alerts/alerts?limit=100")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r).get("data", [])
+    except Exception as e:
+        print(f"door unreadable at {DOOR}: {e}")
+        return 2
+
+    have = any(a.get("name") == "ci-main-red" for a in data)
+    kind = "DELETE" if have else "SAME"
+    print(f"{kind:<6} alerts/alerts/ci-main-red")
+    if not apply or kind == "SAME":
+        return 0
+
+    r = subprocess.run([RUNNER, "call", "athena-delete", "domain=alerts", "class=alerts", "id=ci-main-red"], capture_output=True, text=True)
+    print(r.stdout)
+    if r.returncode != 0:
+        print(r.stderr, file=sys.stderr)
+        return 1
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

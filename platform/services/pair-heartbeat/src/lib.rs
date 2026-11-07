@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod wtfu;
+
 pub type R<T> = Result<T, String>;
 
 /// Escalation ladder. Ordered Active < Warn < ReNudge < Stall (declaration order),
@@ -116,6 +118,14 @@ pub struct PairEntry {
     pub last_seen_iso: String,
     pub last_active_epoch: i64,
     pub last_level: Level,
+    /// #4752 — `slicing` (a run waits on the navigator) or `handed-off` (cicd
+    /// and the land have the card), written by the pair script; kept every tick
+    pub phase: String,
+    pub handed_off_epoch: i64,
+    /// #4752 AC6 — the attempt run waiting on the navigator, and the werk HEAD
+    /// the pair handed off (a re-run on it is no round): the pair script's, kept
+    pub attempt_run: String,
+    pub handed_off_head: String,
 }
 
 impl PairEntry {
@@ -129,14 +139,29 @@ impl PairEntry {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0),
             last_level: Level::parse(&json_str_field(j, "last_level").unwrap_or_default()),
+            phase: json_str_field(j, "phase").unwrap_or_default(),
+            handed_off_epoch: json_str_field(j, "handed_off_epoch").and_then(|s| s.parse().ok()).unwrap_or(0),
+            attempt_run: json_str_field(j, "attempt_run").unwrap_or_default(),
+            handed_off_head: json_str_field(j, "handed_off_head").unwrap_or_default(),
         })
     }
     fn to_json(&self) -> String {
+        let handed = if self.handed_off_epoch > 0 { self.handed_off_epoch.to_string() } else { String::new() };
         format!(
-            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\"}}",
-            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label()
+            "{{\"card\":\"{}\",\"navigator\":\"{}\",\"driver\":\"{}\",\"last_seen_iso\":\"{}\",\"last_active_epoch\":\"{}\",\"last_level\":\"{}\",\"phase\":\"{}\",\"handed_off_epoch\":\"{}\",\"attempt_run\":\"{}\",\"handed_off_head\":\"{}\"}}",
+            self.card, self.navigator, self.driver, self.last_seen_iso, self.last_active_epoch, self.last_level.label(), self.phase, handed,
+            self.attempt_run, self.handed_off_head
         )
     }
+    fn handed_off(&self) -> bool {
+        self.phase == "handed-off"
+    }
+}
+
+/// #4752 AC11 — how long a hand-off may wait for its prod proof before the pair
+/// ends (a land stranded unproven, #4823): a day, or PAIR_HANDOFF_TIMEOUT_S.
+pub fn handoff_timeout() -> i64 {
+    env::var("PAIR_HANDOFF_TIMEOUT_S").ok().and_then(|s| s.parse().ok()).unwrap_or(86_400)
 }
 
 // --- side-effecting real entry ---
@@ -200,7 +225,7 @@ fn board_wip() -> Option<Vec<String>> {
 }
 
 /// Emit one event to the ONE spine via `chorus-log` — best-effort, never blocks.
-fn emit_spine(home: &Path, event: &str, extras: &[(&str, &str)]) {
+pub(crate) fn emit_spine(home: &Path, event: &str, extras: &[(&str, &str)]) {
     let log = home.join("platform/scripts/chorus-log");
     let log_s = match log.to_str() {
         Some(s) => s.to_string(),
@@ -241,15 +266,19 @@ fn fire(home: &Path, entry: &PairEntry, level: Level, silence: i64) {
 /// and fire each escalation tier once. Returns a one-line summary.
 pub fn run() -> R<String> {
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
-    let dir = registry_dir(&home);
     let now = now_epoch();
-
-    let entries = match fs::read_dir(&dir) {
-        Ok(rd) => rd,
-        Err(_) => return Ok("no active pairs".to_string()), // registry absent => nothing to watch
-    };
-
     let wip = board_wip();
+    let pairs = watch_pairs(&home, wip.as_deref(), now);
+    // #4756 — the same tick wakes an idle actor with work waiting on it
+    let wake = wtfu::run(&home, wip.as_deref(), now)?;
+    Ok(format!("{pairs}\n{wake}"))
+}
+
+fn watch_pairs(home: &Path, wip: Option<&[String]>, now: i64) -> String {
+    let entries = match fs::read_dir(registry_dir(home)) {
+        Ok(rd) => rd,
+        Err(_) => return "no active pairs".to_string(), // registry absent => nothing to watch
+    };
     let mut pruned = 0;
     let mut watched = 0;
     let mut fired = 0;
@@ -268,13 +297,25 @@ pub fn run() -> R<String> {
         };
         // #4577 (Abby, 10-17 09:24) — five pairs on Done cards kept nudging her:
         // a pair whose card left WIP is over, and is dropped here
-        if let Some(wip) = &wip {
+        if let Some(wip) = wip {
             if !wip.contains(&entry.card) {
                 let _ = fs::remove_file(&path);
-                emit_spine(&home, "pair.ended", &[("card", entry.card.as_str()), ("reason", "card-not-in-wip")]);
+                emit_spine(home, "pair.ended", &[("card", entry.card.as_str()), ("reason", "card-not-in-wip")]);
                 pruned += 1;
                 continue;
             }
+        }
+        // #4752 — handed off: the navigator has nothing to answer, so silence is
+        // not a stall; a hand-off past the timeout ends the pair, said on the spine
+        if entry.handed_off() {
+            if now - entry.handed_off_epoch > handoff_timeout() {
+                let _ = fs::remove_file(&path);
+                emit_spine(home, "pair.ended", &[("card", entry.card.as_str()), ("reason", "handoff-timeout")]);
+                pruned += 1;
+            } else {
+                watched += 1;
+            }
+            continue;
         }
         watched += 1;
 
@@ -297,7 +338,7 @@ pub fn run() -> R<String> {
                 let silence = now - entry.last_active_epoch;
                 let cur = silence_level(silence);
                 if let Some(level) = escalation(entry.last_level, cur) {
-                    fire(&home, &entry, level, silence);
+                    fire(home, &entry, level, silence);
                     fired += 1;
                 }
                 entry.last_level = cur;
@@ -306,6 +347,6 @@ pub fn run() -> R<String> {
         let _ = fs::write(&path, entry.to_json());
     }
 
-    Ok(format!("pair-heartbeat: watched {} pair(s), fired {} escalation(s), dropped {} not in WIP{}", watched, fired, pruned,
-        if wip.is_none() { " (board unreadable: none dropped)" } else { "" }))
+    format!("pair-heartbeat: watched {} pair(s), fired {} escalation(s), dropped {} not in WIP{}", watched, fired, pruned,
+        if wip.is_none() { " (board unreadable: none dropped)" } else { "" })
 }

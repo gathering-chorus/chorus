@@ -44,6 +44,14 @@ if [ -z "$sha" ]; then
   exit 0
 fi
 
+# #4710 AC4 — the model deploys only what GitHub's main holds: a canonical with
+# commits origin/main does not hold (made on this Mac, never pushed) is refused.
+ahead="$(git -C "$home" rev-list --count origin/main..HEAD 2>/dev/null || echo unknown)"
+if [ "$ahead" != 0 ]; then
+  echo "athena-land #${card}: canonical holds ${ahead} commit(s) that origin/main does not — model not deployed (#4710)"
+  echo "athena-land #${card}: result=failed"
+  exit 1
+fi
 if ! scope="$("$scope_bin" scope "$home" "${sha}^..${sha}" 2>&1)"; then
   echo "athena-land #${card}: scope failed for ${sha:0:12} — model not deployed: ${scope:0:200}"
   echo "athena-land #${card}: result=failed"

@@ -21,15 +21,16 @@ setup() {
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
   # one role, one window: has-session answers from a marker; registration is
-  # simulated by the cases themselves, so send-keys registers nothing
+  # simulated by the cases themselves, so the launch (respawn-pane) registers nothing
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
 case "\$1" in has-session) [ -f "$T/tmux-session-exists" ]; exit \$? ;; new-session) touch "$T/tmux-session-exists" ;; esac
-# #4432 — the session registers when the pane is launched (send-keys), not
+# #4432 — the session registers when the pane is launched (respawn-pane since
+# #4813; was send-keys), not
 # after a fixed sleep: a 0.3 s timer raced the login's own steps and failed
 # run 15 on unchanged code.
-if [ "\$1" = send-keys ] && [ -f "$T/reg-on-send" ]; then
+if [[ " \$* " == *" respawn-pane "* ]] && [ -f "$T/reg-on-send" ]; then
   read -r pid pane < "$T/reg-on-send"
   printf '{"role":"kade","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%s"}' "\$pid" "\${pid: -1}" "\$pane" > "$T/sessions/kade-\$pid.json"
   echo "\$pid" >> "$T/alive-pids"
@@ -64,9 +65,9 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   file_has "$T/token.log" "token kade"
-  file_has "$T/tmux.log" "send-keys -t chorus-kade"
+  file_has "$T/tmux.log" "respawn-pane -k -t chorus-kade"
   # the pane gets the token FILE, never the token on the command line
-  file_has "$T/tmux.log" "CHORUS_SESSION_TOKEN_FILE='$T/identity/kade/token.cache'"
+  file_has "$T/tmux.log" "CHORUS_SESSION_TOKEN_FILE='$T/homes/chorus-kade/.chorus/identity/kade/token.cache'"
   file_lacks "$T/tmux.log" "eyJhbGciOiJFUzI1NiJ9"
 }
 
@@ -78,7 +79,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   file_has "$T/curl.body" '"ownedBy":"principal-kade"'
   file_has "$T/curl.body" '"tokenId":"jti-kade-0001"'
   file_has "$T/curl.body" '"sessionState":"open"'
-  file_has "$T/curl.body" '"hostAccount":"unit-account"'
+  file_has "$T/curl.body" '"hostAccount":"chorus-kade"'
   # the token travels as a header FILE, not as a curl argument
   file_lacks "$T/curl.log" "eyJhbGciOiJFUzI1NiJ9"
   out_has "login: kade"
@@ -107,7 +108,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
 # `nostart` and `lacks` are simple commands. `! grep` and `[[ ]]` mid-block both
 # pass on bash 3.2 regardless of what they assert.
 nostart() { test ! -f "$T/tmux.log"; }
-started() { grep -q "send-keys -t chorus-kade" "$T/tmux.log"; }
+started() { grep -q "respawn-pane -k -t chorus-kade" "$T/tmux.log"; }
 lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 
 @test "#4215 no token → the role STARTS anyway, degraded and loud" {

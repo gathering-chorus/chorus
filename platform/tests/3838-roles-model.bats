@@ -147,3 +147,51 @@ TTL
   run q "$KEYS_TTL" "$PFX"' ASK { chorus:pk-noSuchCap a chorus:PropertyKey }'
   echo "$output" | grep -qi 'false'
 }
+
+# -------------------------------------------------- #4695 hasProperty ---
+
+@test "RoleShape allows hasProperty targeting Property, described" {
+  [ "$(q "$SHAPE_TTL" "$PFX ASK { chorus:RoleShape sh:property ?p . ?p sh:path chorus:hasProperty ; sh:class chorus:Property }")" = "true" ]
+  desc=$(q "$SHAPE_TTL" "$PFX SELECT ?d WHERE { chorus:RoleShape sh:property ?p . ?p sh:path chorus:hasProperty ; sh:description ?d }")
+  [ -n "$desc" ]
+}
+
+@test "control: hasProperty to a valid Property conforms to SHACL" {
+  cat > "$TMP/valid_property.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:prop-valid a chorus:Property .
+
+chorus:role-valid a chorus:Role ;
+  chorus:label "Valid" ;
+  chorus:comment "Role with valid property" ;
+  chorus:roleKind "agent" ;
+  chorus:hasProperty chorus:prop-valid .
+TTL
+
+  command -v shacl >/dev/null || skip "shacl not installed"
+  out=$(shacl validate --shapes "$SHAPE_TTL" --data "$TMP/valid_property.ttl" 2>/dev/null)
+  echo "$out" | grep -q "sh:conforms *true"
+}
+
+@test "NEGATIVE PROOF: hasProperty to a non-Property is refused by SHACL" {
+  cat > "$TMP/non_property.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:not-a-prop a chorus:Domain .
+
+chorus:role-invalid a chorus:Role ;
+  chorus:label "Invalid" ;
+  chorus:comment "Role with bad property" ;
+  chorus:roleKind "agent" ;
+  chorus:hasProperty chorus:not-a-prop .
+TTL
+
+  command -v shacl >/dev/null || skip "shacl not installed"
+  out=$(shacl validate --shapes "$SHAPE_TTL" --data "$TMP/non_property.ttl" 2>/dev/null)
+  echo "$out" | grep -q "sh:conforms *false"
+}

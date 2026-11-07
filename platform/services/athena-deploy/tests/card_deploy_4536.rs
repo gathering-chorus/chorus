@@ -1,5 +1,5 @@
 // @test-type: unit — signal:api is fixture-data
-// @domain: athena
+// @domain: domains
 //! #4536 run 10 (10-15 14:42) — two causes of 6 "new" issues on the staging
 //! validate. (1) The card deploy loaded every subject in werk-domains.ttl, so
 //! untyped code / pipelines / version-control fragments re-landed in the

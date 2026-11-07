@@ -2416,6 +2416,20 @@
         "verb": "#3270 — emitting verb (deploy)"
       }
     },
+    "deploy.rows_applied": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): the land ran the card's own platform/scripts/land-<card>-rows --apply after Jeff's go, and the store took every write (#4889).",
+      "fields": {
+        "script": "The rows script that ran",
+        "plan": "The script's last line: its add / change / delete counts",
+        "role": "Acting role",
+        "trace_id": "Werk trace join key"
+      }
+    },
     "deploy.restarted": {
       "producer": "deploys",
       "category": "fact",
@@ -3335,6 +3349,19 @@
       "fields": {
         "role": "Acting role",
         "trace_id": "Werk trace join key"
+      }
+    },
+    "merge.go.checked": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — #4710: chorus-go's answer on Jeff's passkey-signed go for this card's round (signed, or no passkey registered yet). A refused go is merge.refused with failureClass go-unsigned.",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key",
+        "go": "chorus-go check output"
       }
     },
     "merge.idempotent": {
@@ -4345,6 +4372,32 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "run.wake.failed": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "#4888: a finished pipeline run's one wake (run-finished, from dagu's exit handler) did not reach a role. The run's own result is unchanged.",
+      "fields": {
+        "card": "Card the run is for",
+        "dag": "Pipeline that finished",
+        "to": "Role the wake was for",
+        "status": "The run's result (succeeded, failed, …)",
+        "run": "dagu run id"
+      }
+    },
+    "reply.delivery.unmeasured": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "description": "#4887: the reply gap watch could not read the room's record (room=unreadable), or can again (room=readable). One event per change, never per scan; while unreadable no reply is called a gap.",
+      "fields": {
+        "room": "unreadable | readable",
+        "unmeasured": "replies the watch could not answer for in that scan",
+        "surface": "clearing"
+      }
+    },
     "reply.emitted": {
       "producer": "messages",
       "category": "diagnostic",
@@ -4363,7 +4416,7 @@
       "producer": "messages",
       "category": "diagnostic",
       "version": "1",
-      "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
+      "description": "RETIRED #4887: Clearing v1's tailer echo of a rendered reply; no writer or reader remains. The gap watch reads the room's own record. Kept so old spine lines still classify.",
       "fields": {}
     },
     "review.floor": {
@@ -4708,6 +4761,23 @@
         "pre_cdhash": "Cdhash of currently-installed binary before deploy",
         "pre_pid": "Running PID before deploy (empty if not running)",
         "service": "Full launchd label, e.g. com.chorus.api"
+      }
+    },
+    "launchagent.refused": {
+      "producer": "infrastructure",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "#4809 — launchagent-ops refused a caller: unknown verb, invalid label, label not in the graph, or a role that does not own the service.",
+      "keys": [
+        "label"
+      ],
+      "envelope": [],
+      "fields": {
+        "label": "The LaunchAgent label the caller asked for",
+        "reason": "unowned | not-owner | invalid-label | unknown-verb | missing-verb-or-label | extra-args",
+        "source": "cli when the shim refused before reaching the daemon; absent when the daemon refused"
       }
     },
     "service.failed": {
@@ -5192,6 +5262,35 @@
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
+    },
+    "door.busy": {
+      "producer": "athena-make",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — the roles door (athena-make serve) refused a caller with 503 busy: in-flight connections at the cap. At most one per 10s; every refusal is also on stderr.",
+      "fields": {
+        "in_flight": "Connections in flight when the caller was refused",
+        "max": "ATHENA_MAKE_MAX_CONN, the cap"
+      }
+    },
+    "door.empty-read": {
+      "producer": "athena-make",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — the roles door read no request line (empty or cut-off read), so routing fell through to Discovery. At most one per 10s; every one is also on stderr.",
+      "fields": {
+        "in_flight": "Connections in flight at the read",
+        "max": "ATHENA_MAKE_MAX_CONN, the cap"
+      }
+    },
+    "stated.intent.missing_prompt_response": {
+      "producer": "policies",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — Gemini / non-transcript runtime hook payload missing prompt_response at stop hook.",
+      "fields": {
+        "role": "Role whose stop hook ran without prompt_response"
+      }
     },
     "stop.gate.yielded": {
       "producer": "policies",
@@ -6397,6 +6496,20 @@
         "patch_id": "Content key of the round"
       }
     },
+    "demo.go.asked": {
+      "producer": "pipelines",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "#4875 — the go reached Jeff: every gate passed and both the owner and the navigator vouched for this round, so the go row was posted and Jeff got one message (show, prove, vouch, then go).",
+      "fields": {
+        "role": "The owner, who asks",
+        "trace_id": "The cicd run the go binds",
+        "round": "The round vouched for",
+        "patch_id": "Content key of the round"
+      }
+    },
     "demo.smoke.result": {
       "producer": "pipelines",
       "category": "fact",
@@ -6422,6 +6535,207 @@
       "fields": {
         "role": "Acting role",
         "trace_id": "Werk trace join key"
+      }
+    },
+    "agent.turn.started": {
+      "producer": "chorus-hooks",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "hooks",
+      "description": "#4637 AC4 — a role's turn began (UserPromptSubmit). woken_by is line (a Jeff jeff-input row woke it: woken_by_line = that pulse row id), none (a nudge, a notification, the role itself) or unmeasured (pulse did not answer). Wren's #4638 tree maps woken_by_line to its prompt.",
+      "fields": {
+        "role": "Acting role",
+        "session_id": "First 8 of the session id",
+        "turn_id": "The prompt cycle id (#2231)",
+        "woken_by": "line | none | unmeasured",
+        "woken_by_line": "pulse jeff-input row id, when woken_by=line"
+      }
+    },
+    "turn.line.unmeasured": {
+      "producer": "chorus-hooks",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "hooks",
+      "description": "#4637 AC4 — the turn hook could not read pulse's jeff-input rows, so the turn's waking line is unmeasured (never guessed).",
+      "fields": {
+        "role": "Acting role",
+        "error": "Why the read failed"
+      }
+    },
+    "pipeline.run.started": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "#4637 AC4 — pipeline-start enqueued a run. started_by is line when the role's current turn was woken by a Jeff line (started_by_line = that pulse row id), else none.",
+      "fields": {
+        "role": "Starting role",
+        "card": "Card number",
+        "pipeline": "cicd, athena, borg-prove ...",
+        "run_id": "dagu run id",
+        "started_by": "line | none",
+        "started_by_line": "pulse jeff-input row id, when started_by=line"
+      }
+    },
+    "land.auth.failed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb (#4771 AC4) — GitHub refused the land's deploy credential (a 401 or no login) or the credential file is missing, open (not 0600) or owned by another account. The land stops with reason auth-fail; `file` is the credential file's PATH only, never its contents. Read by the land-failure alert. Before #4771 werk-merge used Jeff's own gh keyring and a lapsed login stalled #4642's land (11-02 06:02).",
+      "fields": {
+        "card": "Card the land belongs to",
+        "role": "Role whose card is landing",
+        "trace_id": "Werk trace join key",
+        "file": "Path of the deploy credential file (never its contents)"
+      }
+    },
+    "merge.credential.armed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb (#4771 AC4) — the deploy credential file passed its checks (exists, non-empty, mode 0600, owned by the land's account) and is armed for every later gh/git call of this land. jsonl witness only; carries the file's path, never its contents. Verb-substep event (#3513 naming law).",
+      "fields": {
+        "card": "Card the land belongs to",
+        "role": "Role whose card is landing",
+        "trace_id": "Werk trace join key",
+        "file": "Path of the deploy credential file (never its contents)"
+      }
+    },
+    "teardown.auth.failed": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-teardown (#4771 AC4) — the remote branch delete failed on auth: the deploy credential is missing or unusable on this account, or GitHub refused it. The delete stays best-effort (the card still closes) but the failure is said, never covered by Jeff's own keyring. `reason` names the credential file's path, never its contents.",
+      "fields": {
+        "card": "Card being torn down (from the caller's emitter)",
+        "role": "Acting role",
+        "branch": "Card branch whose remote delete failed",
+        "reason": "auth-fail message naming the credential file path"
+      }
+    },
+    "nudge.not_delivered": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-hook-shim",
+      "description": "nudge-send: pulse answered that the nudge did not reach its recipient; the sender was told not-delivered with the reason, never \"sent\" (#4889).",
+      "fields": {
+        "to": "Recipient role",
+        "trace": "The nudge's trace id",
+        "reason": "pulse's reason (e.g. dead-pane %12, undelivered-no-pane)",
+        "role": "Sender"
+      }
+    },
+    "presence.pane.refreshed": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal sweep: the role's tmux pane moved, so its Presence row now records the pane its tmux session shows; the principal is the Presence's only writer (#4889).",
+      "fields": {
+        "was": "The pane the Presence held",
+        "now": "The pane recorded now",
+        "written": "Whether the door took the write",
+        "role": "The role"
+      }
+    },
+    "presence.unreachable": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal undelivered: a delivery to the role's pane failed for good, so its Presence now reads unreachable; reachable again only after a delivery lands (#4895).",
+      "fields": {
+        "pane": "The pane the failed delivery targeted",
+        "reason": "Why it is unreachable (delivery-failed)",
+        "written": "Whether the door took the write",
+        "role": "The role"
+      }
+    },
+    "presence.door.unread": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal skipped a Presence write because the door's current row could not be read first (a write never puts a stale cached copy back; #4895).",
+      "fields": {
+        "presence": "The Presence row name",
+        "why": "Why the door's row could not be read",
+        "role": "The role"
+      }
+    },
+    "presence.undelivered.unwritten": {
+      "producer": "pulse",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "pulse",
+      "description": "pulse could not start chorus-principal undelivered after a delivery failed for good on a dead pane, so the role's Presence was not marked unreachable (#4895).",
+      "fields": {
+        "role": "The role the delivery was for",
+        "pane": "The dead pane",
+        "error": "Why the principal could not be started"
+      }
+    },
+    "announce.cooldown.read": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "pulse",
+      "description": "pulse read its machine-lane cooldown from the property pulse.announce.machine_cooldown_ms (said once per change) (#4889).",
+      "fields": {
+        "key": "The property key",
+        "ms": "The cooldown in ms"
+      }
+    },
+    "announce.cooldown.unread": {
+      "producer": "messages",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "pulse",
+      "description": "pulse could not read its machine-lane cooldown property: a missing or bad row turns dedupe off, a door that does not answer keeps the last value; said once per change, no default (#4889).",
+      "fields": {
+        "key": "The property key",
+        "error": "Why it could not be read",
+        "dedupe": "off, or the last value kept"
+      }
+    },
+    "presence.pane.unreadable": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal sweep could not read the role's tmux pane (no session, an account that cannot read the socket, or no pane id), so its Presence was not refreshed; said once per change, never silent (#4889).",
+      "fields": {
+        "why": "Why the pane could not be read",
+        "role": "The role"
+      }
+    },
+    "deploy.root_installed": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): the repo root's node_modules did not match its lock, so the land installed the root lock (staged npm ci, swapped in, npm ls passed) before anything else ran (#4915).",
+      "fields": {
+        "target": "Always canonical"
       }
     }
   }

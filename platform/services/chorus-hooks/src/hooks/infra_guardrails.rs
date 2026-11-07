@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 use crate::shared::state_paths::chorus_root;
 use crate::state::chorus_log;
 use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};
@@ -91,6 +92,47 @@ static SUDO_ROLE_SECURITY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bsudo\b[^\n]*\s-u\s+chorus-\w+[^\n]*\bsecurity\s").unwrap()
 });
 
+// #4707 — a land is Jeff's go and nothing else (DEC-048). On 10-23 at 06:03 an
+// agent enqueued cicd-land by raw curl and #4704 merged with accepter=jeff while
+// Jeff was away; at 19:17 the day before a bare werk-merge recorded "flow". The
+// go step is the only door: dagu itself enqueues cicd-land from it, and that
+// never passes through a tool call. Same rule for every actor and every model.
+// Defense in depth only: the signed go in werk-merge is the guard (#4707 AC1).
+static LAND_ENQUEUE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bdagu\b[^\n;&|]*\b(enqueue|start|retry|restart)\b[^\n;&|]*\bcicd-land\b").unwrap()
+});
+
+// Matched on the raw command: the URL is usually quoted, and quoted runs are
+// stripped before the command-position checks.
+static LAND_API_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // #4771 — and a retry of an existing land run on dagu's server
+    // (dag-runs/cicd-land/<id>/retry, edit-retry): werk-land-retry asks that of
+    // the server only after checking Jeff's recorded go; a raw POST skips it.
+    Regex::new(r"\b(curl|wget|http)\b[^\n]*(dags/cicd-land/(enqueue|start|retry)|dag-runs/cicd-land/[^/\s'\x22]+/(retry|edit-retry))").unwrap()
+});
+
+static WERK_MERGE_CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(\bchorus-runner\s+call\s+werk-merge\b|(^|[\s;&|/])werk-merge\s+\d)").unwrap()
+});
+
+const LAND_DENY: &str = "BLOCKED: only Jeff's go lands a card (#4707, DEC-048). cicd-land runs from the card's go step, which dagu answers itself; a raw `dagu enqueue cicd-land`, a POST to /dags/cicd-land or /dag-runs/cicd-land/<id>/retry, or a direct werk-merge call skips the go. Same rule for every actor. Bring the demo to Jeff with `/cws <card>`. A land that stopped after his go is retried on that go with `platform/scripts/werk-land-retry <card>` (#4707 reopen), never by hand.";
+
+// #4810 — npm ci / install deletes node_modules before it installs. When a werk's
+// node_modules is a symlink into canonical, that delete empties canonical's live
+// tree: 10-21 (wren-4672/pulse) and 10-30 13:54:37 (cards — the cards CLI broke for
+// every role). A memory note did not stop the second one; a refusal does.
+static NPM_INSTALL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bnpm\s+(ci|install|i|clean-install|add)\b").unwrap()
+});
+
+static CD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|)]+)").unwrap()
+});
+
+static NPM_PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"--prefix[ =]([^\s;&|)]+)").unwrap()
+});
+
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
@@ -104,6 +146,11 @@ fn team_repo_root() -> &'static str { chorus_root() }
 /// Blocks dangerous infra commands for all roles (#1714, #2020, #2119)
 /// All services are LaunchAgents — no container runtime, no Terraform-managed infra.
 pub async fn check(input: &HookInput) -> HookResponse {
+    // #4707 — the werk-merge MCP tool is the same door as the CLI.
+    if input.tool_name_str() == "mcp__chorus-api__werk-merge" {
+        log_guardrail("deny", "land-without-go").await;
+        return HookResponse::deny(&permission_deny_json(LAND_DENY));
+    }
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
     }
@@ -113,7 +160,26 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if cmd.is_empty() {
         return HookResponse::allow();
     }
+
+    // #4707 — before the heredoc/echo skips: a land wrapped in a heredoc is still a land.
+    if is_land_bypass(&cmd) {
+        log_guardrail("deny", "land-without-go").await;
+        return HookResponse::deny(&permission_deny_json(LAND_DENY));
+    }
     tracing::trace!(hook = "infra_guardrails", phase = "receive", cmd_len = cmd.len(), "checking bash command");
+
+    // #4810 — before the heredoc/echo skips: nothing is deleted yet when this refuses.
+    if let Some((dir, target)) = npm_through_symlink(&cmd, cwd) {
+        log_guardrail("deny", "npm-through-symlink").await;
+        return HookResponse::deny(&permission_deny_json(&format!(
+            "BLOCKED: npm would install in {dir} through its node_modules symlink -> {target} (#4810). \
+             npm ci/install deletes node_modules first, so it would empty {target}; on 10-30 that \
+             broke the cards CLI for every role. Remove the link first (`rm {dir}/node_modules` \
+             deletes only the link), then install. werk-pull gives each werk a real node_modules.",
+            dir = dir.display(),
+            target = target.display(),
+        )));
+    }
 
     // Skip heredocs and echo/printf (absorbed from app_state_guard #1862)
     if cmd.contains("<<") {
@@ -289,6 +355,43 @@ pub async fn check(input: &HookInput) -> HookResponse {
     HookResponse::allow()
 }
 
+/// #4707 — a command that lands a card without the go step. Pure.
+fn is_land_bypass(cmd: &str) -> bool {
+    let positional = strip_quoted_runs(cmd);
+    LAND_ENQUEUE_RE.is_match(&positional)
+        || LAND_API_RE.is_match(cmd)
+        || WERK_MERGE_CALL_RE.is_match(&positional)
+}
+
+/// #4810 — the directory an `npm ci/install` in `cmd` installs into, and the
+/// symlink target of its node_modules, when that node_modules is a symlink. The
+/// directory is `--prefix`, else the last `cd` before npm, else `cwd`. Pure but
+/// for the one lstat.
+fn npm_through_symlink(cmd: &str, cwd: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let positional = strip_quoted_runs(cmd);
+    let m = NPM_INSTALL_RE.find(&positional)?;
+    let unquote = |s: &str| s.trim_matches(|c| c == '\'' || c == '"').to_string();
+    let after = cmd.get(m.start()..).unwrap_or("");
+    let before = cmd.get(..m.start()).unwrap_or("");
+    let named = NPM_PREFIX_RE.captures(after)
+        .or_else(|| CD_RE.captures_iter(before).last())
+        .map(|c| unquote(&c[1]));
+    let mut dir = std::path::PathBuf::from(cwd);
+    if let Some(d) = named {
+        let d = match d.strip_prefix("~/") {
+            Some(rest) => format!("{}/{}", std::env::var("HOME").unwrap_or_default(), rest),
+            None => d,
+        };
+        dir.push(d);
+    }
+    let nm = dir.join("node_modules");
+    if !nm.symlink_metadata().ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let target = std::fs::read_link(&nm).ok()?;
+    Some((dir, target))
+}
+
 async fn log_guardrail(decision: &str, pattern: &str) {
     tracing::trace!(
         hook = "infra_guardrails",
@@ -362,7 +465,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -378,8 +481,137 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
+    }
+
+    // === #4707 — a land without Jeff's go is refused, for every actor ===
+
+    fn abby_bash(cmd: &str) -> HookInput {
+        let mut i = kade_bash(cmd);
+        i.cwd = Some(format!("{}/roles/abby-normal", chorus_root()));
+        i.deploy_role = Some("abby-normal".to_string());
+        i
+    }
+
+    fn denied_as_land(r: &HookResponse) -> bool {
+        r.stdout.as_deref().is_some_and(|o| o.contains("\"permissionDecision\":\"deny\"") && o.contains("#4707"))
+    }
+
+    #[tokio::test]
+    async fn test_4707_abbys_0603_curl_replayed_is_refused() {
+        let r = check(&abby_bash("curl -s -X POST 'http://localhost:8526/api/v1/dags/cicd-land/enqueue' -d '{\"params\":\"CARD=4704 ROLE=abby-normal\"}'")).await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_raw_dagu_enqueue_of_the_land_is_refused_for_claude_and_abby() {
+        for input in [
+            kade_bash("env -u CHORUS_ROLE dagu --config platform/config/dagu.yaml enqueue cicd-land -- CARD=4704 ROLE=kade"),
+            abby_bash("dagu --config platform/config/dagu.yaml enqueue cicd-land -- CARD=4704"),
+            silas_bash("dagu --config platform/config/dagu.yaml retry cicd-land --run-id 034x"),
+        ] {
+            let r = check(&input).await;
+            assert!(denied_as_land(&r), "{:?}", r.stdout);
+        }
+    }
+
+    /// #4771 — werk-land-retry now asks dagu's server to retry; the same POST
+    /// typed raw skips the recorded-go check, so it is refused for every actor.
+    #[tokio::test]
+    async fn test_4771_raw_post_to_the_server_retry_of_a_land_is_refused() {
+        for input in [
+            kade_bash("curl -s -X POST 'http://127.0.0.1:8526/api/v1/dag-runs/cicd-land/034qLmzK/retry' -d '{\"dagRunId\":\"034qLmzK\"}'"),
+            abby_bash("curl -s -X POST http://127.0.0.1:8526/api/v2/dag-runs/cicd-land/034qLmzK/retry -H 'Content-Type: application/json' -d '{}'"),
+            silas_bash("curl -s -X POST \"http://127.0.0.1:8526/api/v1/dag-runs/cicd-land/034qLmzK/edit-retry\" -d '{}'"),
+        ] {
+            let r = check(&input).await;
+            assert!(denied_as_land(&r), "{:?}", r.stdout);
+        }
+        // the verb that makes that POST after checking the go still passes
+        let r = check(&kade_bash("platform/scripts/werk-land-retry 4642")).await;
+        assert!(r.stdout.is_none(), "{:?}", r.stdout);
+        // and a retry of a run of another dag is not a land
+        let r = check(&kade_bash("curl -s -X POST 'http://127.0.0.1:8526/api/v1/dag-runs/cicd/034x/retry' -d '{}'")).await;
+        assert!(!denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    /// #4707 reopen — the retry verb is the one way back for a land that stopped
+    /// after the go; it checks the recorded go itself, so the hook lets it through.
+    #[tokio::test]
+    async fn test_4707_the_land_retry_verb_passes_and_the_refusal_names_it() {
+        for input in [silas_bash("platform/scripts/werk-land-retry 4715"), abby_bash("platform/scripts/werk-land-retry 4715 --dry-run")] {
+            let r = check(&input).await;
+            assert!(r.stdout.is_none(), "{:?}", r.stdout);
+        }
+        let r = check(&silas_bash("dagu --config platform/config/dagu.yaml retry --run-id=034x --step=skill-borg-ask --downstream cicd-land")).await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+        assert!(r.stdout.as_deref().unwrap_or("").contains("werk-land-retry <card>"), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_direct_werk_merge_is_refused_cli_and_mcp() {
+        for cmd in ["ROLE=abby-normal ~/.chorus/bin/chorus-runner call werk-merge card=4704",
+                    "/Users/x/CascadeProjects/chorus-werk/wren-bin/werk-merge 4704 wren --atomic"] {
+            let r = check(&abby_bash(cmd)).await;
+            assert!(denied_as_land(&r), "{cmd}: {:?}", r.stdout);
+        }
+        let mut mcp = kade_bash("");
+        mcp.tool_name = Some("mcp__chorus-api__werk-merge".to_string());
+        mcp.tool_input = Some(json!({"card": "4704"}));
+        assert!(denied_as_land(&check(&mcp).await));
+    }
+
+    /// #4707 AC2 — Abby's real path (agy): her native PreToolUse JSON, mapped by
+    /// her AgentRuntime row exactly as the runtime hook maps it, then the land
+    /// guard. `chorus_hooks::` resolves in both the lib and the bin build (lib.rs:
+    /// extern crate self), and keeps runtime names out of runtime_rows.rs (R8).
+    async fn through_agy(command: &str) -> HookResponse {
+        use chorus_hooks::runtime_rows::{canonical, row_in, table, Moment};
+        let t = table();
+        let row = row_in(&t, "agy").expect("agy row in the generated table");
+        let cwd = format!("{}/roles/abby-normal", chorus_root());
+        let raw = json!({"conversationId": "c-4707", "toolCall": {"name": "run_command",
+            "args": {"CommandLine": command, "Cwd": cwd}}});
+        let mut v = canonical(row, Moment::BeforeTool, &raw).expect("agy maps run_command");
+        v["deploy_role"] = json!("abby-normal");
+        let input: HookInput = serde_json::from_value(v).expect("canonical JSON is a HookInput");
+        assert_eq!(input.tool_name_str(), "Bash", "agy run_command reaches the guard as Bash");
+        check(&input).await
+    }
+
+    #[tokio::test]
+    async fn test_4707_abbys_curl_through_her_agy_hook_path_is_refused() {
+        let r = through_agy("curl -s -X POST 'http://localhost:8526/api/v1/dags/cicd-land/enqueue' -d '{}'").await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+        let r = through_agy("dagu --config platform/config/dagu.yaml enqueue cicd-land -- CARD=4704").await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_negative_proof_agy_path_lets_the_sanctioned_enqueue_through() {
+        let r = through_agy("dagu --config platform/config/dagu.yaml enqueue cicd -- CARD=4707 ROLE=abby-normal").await;
+        assert!(r.stdout.is_none(), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_a_land_inside_a_heredoc_is_still_refused() {
+        let r = check(&abby_bash("bash <<EOF\ndagu enqueue cicd-land -- CARD=4704\nEOF")).await;
+        assert!(denied_as_land(&r), "{:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4707_negative_proof_the_sanctioned_paths_still_pass() {
+        for cmd in [
+            "env -u CHORUS_ROLE -u ROLE dagu --config platform/config/dagu.yaml enqueue cicd -- CARD=4707 ROLE=wren",
+            "env -u CHORUS_ROLE -u ROLE dagu --config platform/config/dagu.yaml enqueue pair -- CARD=4707 ROLE=wren NAVIGATOR=silas",
+            "dagu --config platform/config/dagu.yaml status cicd-land --run-id 034kthMf",
+            "grep -n werk-merge platform/pipelines/cicd-land.yaml",
+            "sed -n 1,40p platform/services/werk-merge/src/lib.rs",
+        ] {
+            let r = check(&kade_bash(cmd)).await;
+            assert!(r.stdout.is_none(), "{cmd} must pass: {:?}", r.stdout);
+        }
     }
 
     // === #4025 — restart of the LIVE daemon is refused; deploy + other agents pass ===
@@ -574,7 +806,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input).await;
         assert!(r.stdout.is_none());
@@ -871,5 +1103,63 @@ mod tests {
         let input = silas_bash("sudo -u chorus-silas id -un");
         let r = check(&input).await;
         assert!(r.stdout.is_none(), "sudo to a role account is not itself the problem");
+    }
+
+    // #4810 — npm through a symlinked node_modules. A fixture "canonical" tree and
+    // a fixture werk package whose node_modules links to it.
+    fn npm_world() -> (tempfile::TempDir, String, String) {
+        let t = tempfile::tempdir().unwrap();
+        let canon = t.path().join("canon/node_modules");
+        std::fs::create_dir_all(&canon).unwrap();
+        std::fs::write(canon.join("marker"), "live").unwrap();
+        let linked = t.path().join("werk/linked");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::os::unix::fs::symlink(&canon, linked.join("node_modules")).unwrap();
+        let real = t.path().join("werk/real/node_modules");
+        std::fs::create_dir_all(&real).unwrap();
+        let w = t.path().join("werk").to_string_lossy().into_owned();
+        let c = canon.to_string_lossy().into_owned();
+        (t, w, c)
+    }
+
+    fn bash_in(cmd: &str, cwd: &str) -> HookInput {
+        let mut i = kade_bash(cmd);
+        i.cwd = Some(cwd.to_string());
+        i
+    }
+
+    #[tokio::test]
+    async fn test_4810_deny_npm_ci_through_symlink_naming_target() {
+        let (_t, werk, canon) = npm_world();
+        for cmd in ["npm ci", "npm install --no-audit", "npm i"] {
+            let r = check(&bash_in(cmd, &format!("{werk}/linked"))).await;
+            let out = r.stdout.unwrap_or_default();
+            assert!(out.contains("BLOCKED") && out.contains(&canon), "{cmd}: must refuse naming {canon}: {out}");
+        }
+        assert!(std::path::Path::new(&canon).join("marker").exists(), "canonical untouched");
+    }
+
+    #[tokio::test]
+    async fn test_4810_deny_via_cd_and_prefix() {
+        let (_t, werk, canon) = npm_world();
+        for cmd in [format!("cd {werk}/linked && npm ci"), format!("npm ci --prefix {werk}/linked"), "cd linked; npm install".to_string()] {
+            let r = check(&bash_in(&cmd, &werk)).await;
+            let out = r.stdout.unwrap_or_default();
+            assert!(out.contains(&canon), "{cmd}: must refuse: {out}");
+        }
+    }
+
+    // The separating half: a real node_modules, or a non-installing npm, passes.
+    #[tokio::test]
+    async fn test_4810_allow_real_node_modules_and_read_forms() {
+        let (_t, werk, _canon) = npm_world();
+        let r = check(&bash_in("npm ci", &format!("{werk}/real"))).await;
+        assert!(r.stdout.is_none(), "a real node_modules installs freely");
+        for cmd in ["npm ls --depth=0", "npm test", "npm run build"] {
+            let r = check(&bash_in(cmd, &format!("{werk}/linked"))).await;
+            assert!(r.stdout.is_none(), "{cmd} does not delete node_modules");
+        }
+        let r = check(&bash_in("grep 'npm ci' notes.md", &format!("{werk}/linked"))).await;
+        assert!(r.stdout.is_none(), "quoted text is not a command");
     }
 }

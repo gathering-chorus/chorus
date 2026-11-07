@@ -17,15 +17,15 @@ setup() {
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
 }
-row() { printf '{"data":{"principalKind":"%s"}}\n200\n' "$2" > "$T/principal-$1.json"; }
+row() { printf '{"data":{"principalKind":"%s","hostAccount":"chorus-%s"}}\n200\n' "$2" "$1" > "$T/principal-$1.json"; }
 out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
-nothing_started() { test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"; }
+nothing_started() { test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"; }
 
 @test "#4368 an agent's row lets it log in, and the row was read" {
   run "$SCRIPT" login wren
   test "$status" -eq 0
   grep -q "/v1/identity/principals/wren" "$T/curl.log"
-  grep -q "send-keys -t chorus-wren" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-wren" "$T/tmux.log"
 }
 
 @test "#4368 a service is refused with why, and nothing starts" {
@@ -76,11 +76,11 @@ nothing_started() { test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || tr
 # agy (10-15 05:29). The name here must stay in no list and no runtime table.
 @test "#4368 the list of three is gone: an agent the code never named logs in" {
   row pip-normal agent
-  mkdir -p "$T/roles/pip-normal"
+  mkdir -p "$T/roles/pip-normal"; cp "$T/roles/wren/.mcp.json" "$T/roles/pip-normal/"   # #4845: a Claude role needs its MCP config
   mk_token pip-normal; mkdir -p "$T/identity/pip-normal"
   run "$SCRIPT" login pip-normal
   test "$status" -eq 0
-  grep -q "send-keys -t chorus-pip-normal" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-pip-normal" "$T/tmux.log"
 }
 
 # #4532 reopen 1 — an agent the runtime table names (abby-normal on agy) logs
@@ -100,7 +100,7 @@ grep -qx "\$2" "$T/alive-pids"
 EOS
   chmod +x "$T/bin/tmux2" "$T/bin/pgrep" "$T/bin/ps2"
   echo 701 >> "$T/alive-pids"
-  export TMUX_BIN="$T/bin/tmux2" AWAKE_PGREP="$T/bin/pgrep" AWAKE_PS="$T/bin/ps2" AWAKE_WAIT=1
+  export TMUX_BIN="$T/bin/tmux2" AWAKE_PGREP="$T/bin/pgrep" AWAKE_PS="$T/bin/ps2" AWAKE_WAIT=1 AWAKE_SETTLE=1
   row abby-normal agent
   mkdir -p "$T/roles/abby-normal"
   mk_token abby-normal; mkdir -p "$T/identity/abby-normal"
@@ -110,8 +110,27 @@ EOS
   agy_pane_world
   run "$SCRIPT" login abby-normal
   test "$status" -eq 0
-  grep -q "send-keys -t chorus-abby-normal" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-abby-normal" "$T/tmux.log"
   grep -q '"pid":701' "$T/sessions/abby-normal-701.json"
+}
+
+# #4851 side fix (11-01 18:17): BQ's agy printed "awake … logged in" and quit a
+# second later, and nothing said why. A runtime that dies in its first seconds
+# is not a login: it fails, naming the exit and the pane's last lines.
+@test "#4851 a runtime that exits right after starting is refused, with the pane's last lines" {
+  agy_pane_world
+  # alive for the registration check, gone by the settle check
+  cat > "$T/bin/ps2" <<EOS
+#!/bin/bash
+if [ "\$1" = "-o" ]; then echo "\${PANE_CMD:-/h/.local/bin/agy --session run-1}"; exit 0; fi
+n=\$(cat "$T/ps-calls" 2>/dev/null || echo 0); n=\$((n+1)); echo \$n > "$T/ps-calls"
+[ "\$n" -le 1 ] && grep -qx "\$2" "$T/alive-pids"
+EOS
+  chmod +x "$T/bin/ps2"
+  run "$SCRIPT" login abby-normal
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"then exited within"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"the pane says:"* ]] || { echo "$output"; return 1; }
 }
 
 @test "#4532 NEGATIVE PROOF: a pane running claude is not taken for agy" {

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! NiFi Discipline Hook — enforce native processors, block bash wrappers (#1686)
 //!
 //! At demo/accept time for NiFi cards, query the NiFi API for the process group
@@ -146,7 +147,7 @@ mod tests {
             cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         assert!(check(&input, &state).await.is_none());
     }
@@ -162,7 +163,7 @@ mod tests {
             cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         assert!(check(&input, &state).await.is_none());
     }

@@ -8,6 +8,9 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
+/** #4629 S3 — the one rule for a queued row a drain, scan or requeue may touch: never one held for its room note. */
+export const QUEUED_DELIVERABLE = "delivery_status='queued' AND buzz_hold=0";
+
 // #3615 — CHORUS_MESSAGES_DB is the messages-db world-seam (see
 // designing/schemas/membrane-surfaces.json). This module is the WRITE owner
 // of messages.db, so the membrane is enforced here: a test/build context that
@@ -54,6 +57,9 @@ export interface Message {
   acknowledgedAt?: string;
   dead_lettered_at?: string;
 }
+
+/** Words with every run of whitespace as one space, ends trimmed. */
+const collapse = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
 export class MessageStore {
   private db: Database.Database;
@@ -201,7 +207,31 @@ export class MessageStore {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)');
     this.migrateQueuedState(); // #3700
     this.migrateAgentColumns(); // #4424
+    // #4629 S3 — a nudge held for its room note. A column, not a status: ADD COLUMN rewrites no row,
+    // where a new status would rebuild the table (prod messages.db, Silas 07:44). After the rebuild
+    // migrations above, so they never drop it.
+    if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'buzz_hold')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN buzz_hold INTEGER NOT NULL DEFAULT 0');
+    }
+    // #4637 AC3 — where the message was written (device/app). ADD COLUMN rewrites no row.
+    if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'origin')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN origin TEXT');
+    }
+    // #4889 — a wake the sender marked (run-finished): the announce boundary never dedupes
+    // it. ADD COLUMN rewrites no row; old rows read NULL (an ordinary nudge). Delivery
+    // metadata only: the Buzz note does not carry it (the room sees the words, not routing).
+    if (!(this.db.pragma('table_info(messages)') as Array<{ name: string }>).some((c) => c.name === 'wake')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN wake TEXT');
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
+    // #4629 S2 — a sender-signed note names its nudge by trace (msg tag trace-<uuid>), so one nudge per trace.
+    // Measured on prod 10-21: 0 duplicate trace_ids in 28,070 rows. A store that has duplicates keeps
+    // running without the index (logged), never crashes at start (Kade 07:26).
+    try {
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_nudge_trace_unique ON messages(trace_id) WHERE type = 'nudge' AND trace_id IS NOT NULL AND trace_id <> ''");
+    } catch (e) {
+      process.stderr.write(JSON.stringify({ level: 'warn', event: 'store.trace_index.skipped', reason: (e as Error).message }) + '\n');
+    }
   }
 
   // --- Nudges ---
@@ -214,14 +244,21 @@ export class MessageStore {
     nudgeClass: 'r2r' | 'a2r' = 'r2r',
     expects: 'none' | 'reply' | 'decision' | 'action' = 'none',
     targetSessionId?: string,
+    /** #4629 S3 — insert already held for its room note, in the same statement, so no worker scan can deliver it first */
+    heldForBuzz = false,
+    /** #4637 AC3 — where it was written, in the same INSERT: a row is never stored without it */
+    origin?: string,
+    /** #4889 — a sender-marked wake (run-finished), stored with the row so a requeue keeps it */
+    wake?: string,
   ): number {
     // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, delivery_status, buzz_hold, origin, wake) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null).lastInsertRowid);
+    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null,
+      heldForBuzz ? 'queued' : 'pending', heldForBuzz ? 1 : 0, origin ?? null, wake ?? null).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -229,17 +266,24 @@ export class MessageStore {
   // stays RAW (no [nudge from] framing — that would strip Jeff's authority at
   // the receiving session), and type='jeff-input' keeps nudge queries/folds
   // from ever picking it up.
-  sendJeffInput(to: string, content: string, traceId?: string): number {
-    if (traceId) {
-      const stmt = this.db.prepare(
-        'INSERT INTO messages (type, "from", "to", content, trace_id) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?)'
-      );
-      return Number(stmt.run(to, content, traceId).lastInsertRowid);
-    }
+  /** #4628 — whether these words came from Clearing to `to` in the last
+   *  `minutes`: a delivered Clearing message shows up in the terminal as a
+   *  prompt, and v2 already wrote it to Buzz, so the hook must not again.
+   *  Reopen 3: compared with whitespace collapsed — the terminal gave a
+   *  newline back as a space (10-20 14:18) and the exact match missed it. */
+  jeffInputSentRecently(to: string, content: string, minutes = 10): boolean {
+    const rows = this.db.prepare(
+      'SELECT content FROM messages WHERE type = \'jeff-input\' AND "to" = ? AND created_at >= datetime(\'now\', ?)'
+    ).all(to, `-${minutes} minutes`) as Array<{ content: string }>;
+    const words = collapse(content);
+    return rows.some((r) => collapse(r.content) === words);
+  }
+
+  sendJeffInput(to: string, content: string, traceId?: string, origin?: string): number {
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content) VALUES (\'jeff-input\', \'jeff\', ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, origin) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?, ?)'
     );
-    return Number(stmt.run(to, content).lastInsertRowid);
+    return Number(stmt.run(to, content, traceId || null, origin ?? null).lastInsertRowid);
   }
 
   // #2727 AC1: delivery state surface. Worker drives transitions via
@@ -304,9 +348,28 @@ export class MessageStore {
     // #4424 — rows bound to an agent run are settled by its receipts or its
     // native inbox, never released by the tmux drain.
     const r = this.db.prepare(
-      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ? AND delivery_session_id IS NULL'
+      // #4629 S3 — a row held for its room note is released by the note (or the fallback), never by the drain
+      `UPDATE messages SET delivery_status = 'pending' WHERE ${QUEUED_DELIVERABLE} AND "to" = ? AND delivery_session_id IS NULL`
     ).run(role);
     return r.changes;
+  }
+
+  /** #4629 S3 — one deliverable row by id (pending), for the release path; null when it is gone or not pending. */
+  getPendingDelivery(id: number): ReturnType<MessageStore['getPendingDeliveries']>[number] | null {
+    const row = this.db.prepare(
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id, wake FROM messages WHERE id = ? AND delivery_status = \'pending\''
+    ).get(id);
+    return (row as ReturnType<MessageStore['getPendingDeliveries']>[number] | undefined) ?? null;
+  }
+
+  /** #4629 S3 — release a held row for delivery. True only for the one caller that moved it: exactly once, across restarts. */
+  releaseBuzzHeld(id: number): boolean {
+    return this.db.prepare("UPDATE messages SET delivery_status='pending', buzz_hold=0 WHERE id=? AND delivery_status='queued' AND buzz_hold=1").run(id).changes === 1;
+  }
+
+  /** #4629 S3 — held rows recorded before `before` (sqlite UTC), for the deliver-anyway fallback. */
+  buzzHeldBefore(before: string): number[] {
+    return (this.db.prepare("SELECT id FROM messages WHERE delivery_status='queued' AND buzz_hold=1 AND created_at < ? ORDER BY id").all(before) as Array<{ id: number }>).map((r) => r.id);
   }
 
   /** #4424 — admission is not delivery: keep the row queued, bound to its run. */
@@ -319,7 +382,7 @@ export class MessageStore {
   /** #4424 — rows waiting on an agent run: retried when busy, settled by receipt otherwise. */
   getAgentQueued(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null; last_delivery_error: string }> {
     return this.db.prepare(`SELECT id, "from", "to", content, delivery_attempts, trace_id, type as kind, target_session_id, delivery_session_id, last_delivery_error
-      FROM messages WHERE delivery_status='queued' AND delivery_session_id IS NOT NULL ORDER BY id LIMIT 1000`).all() as ReturnType<MessageStore['getAgentQueued']>;
+      FROM messages WHERE ${QUEUED_DELIVERABLE} AND delivery_session_id IS NOT NULL ORDER BY id LIMIT 1000`).all() as ReturnType<MessageStore['getAgentQueued']>;
   }
 
   /** #4424 — a native hook claims its run's messages at a safe boundary. The
@@ -328,7 +391,7 @@ export class MessageStore {
     return this.db.transaction(() => {
       const rows = this.db.prepare(`SELECT id, "from", content, type as kind FROM messages
         WHERE "to"=? AND type IN ('nudge','jeff-input')
-        AND (delivery_status='pending' OR (delivery_status='queued' AND last_delivery_error IN ('agent-queued','supervisor-unavailable')))
+        AND (delivery_status='pending' OR (${QUEUED_DELIVERABLE} AND last_delivery_error IN ('agent-queued','supervisor-unavailable')))
         AND (target_session_id IS NULL OR target_session_id=?)
         AND (delivery_session_id IS NULL OR delivery_session_id=?)
         AND (inbox_claim_session IS NULL OR inbox_claim_session=?) ORDER BY id LIMIT ?`)
@@ -377,10 +440,36 @@ export class MessageStore {
 
   // #3343: restart-requeue covers BOTH delivery kinds; `kind` tells the worker
   // which spine-event family to emit (jeff.input.* vs nudge.*).
-  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null }> {
+  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null; wake: string | null }> {
     return this.db.prepare(
-      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id, wake FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
     ).all() as ReturnType<MessageStore['getPendingDeliveries']>;
+  }
+
+  /** #4629 — the sender and recipient of one message, for the Buzz shadow join; null when no such row. */
+  getMessageEnds(id: number): { from: string; to: string; type: string; content: string } | null {
+    const row = this.db.prepare('SELECT "from" as "from", "to" as "to", type, content FROM messages WHERE id = ?').get(id);
+    return (row as { from: string; to: string; type: string; content: string } | undefined) ?? null;
+  }
+
+  /** #4629 S2 — the row a sender-signed note names by its trace (msg tag trace-<uuid>); null when none. */
+  getMessageEndsByTrace(trace: string): { id: number; from: string; to: string; type: string; content: string } | null {
+    const row = this.db.prepare('SELECT id, "from" as "from", "to" as "to", type, content FROM messages WHERE trace_id = ? ORDER BY id LIMIT 1').get(trace);
+    return (row as { id: number; from: string; to: string; type: string; content: string } | undefined) ?? null;
+  }
+
+  /**
+   * #4629/#4672 — ids of every delivery recorded in [from, to) (sqlite UTC 'YYYY-MM-DD HH:MM:SS'), for the
+   * shadow's missed sweep. Alerts are stored as type 'nudge' (from system): measured 10-21, the store
+   * holds only 'nudge' and 'jeff-input' since 10-14, so these two types are every delivery (Silas's review).
+   */
+  deliveryIdsBetween(from: string, to: string): number[] {
+    return (this.db.prepare('SELECT id FROM messages WHERE type IN (\'nudge\', \'jeff-input\') AND created_at >= ? AND created_at < ? ORDER BY id').all(from, to) as Array<{ id: number }>).map((r) => r.id);
+  }
+
+  /** #4672 — the rows Clearing v2 handed one Jeff post off as: trace jeff-<note id>-<role>, one per role. */
+  getJeffInputRows(noteId: string): Array<{ id: number; to: string; content: string }> {
+    return this.db.prepare('SELECT id, "to" as "to", content FROM messages WHERE type = \'jeff-input\' AND trace_id GLOB ? ORDER BY id').all(`jeff-${noteId}-*`) as Array<{ id: number; to: string; content: string }>;
   }
 
   getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null; delivery_session_id: string | null; inbox_claim_session: string | null } {
@@ -468,17 +557,16 @@ export class MessageStore {
 
   // --- Queries ---
 
-  queryMessages(opts: { type?: string; from?: string; to?: string; since?: string; trace?: string; limit?: number }): Message[] {
+  queryMessages(opts: { type?: string; from?: string; to?: string; since?: string; limit?: number }): Message[] {
     let sql = 'SELECT * FROM messages WHERE 1=1';
     const params: (string | number)[] = [];
 
     if (opts.type) { sql += ' AND type = ?'; params.push(opts.type); }
     if (opts.from) { sql += ' AND "from" = ?'; params.push(opts.from); }
     if (opts.to) { sql += ' AND "to" = ?'; params.push(opts.to); }
-    if (opts.since) { sql += ' AND created_at >= ?'; params.push(opts.since); }
-    // #4339 — the prompt hook fetches a nudge's full words by the trace the
-    // spine carried; the spine's own copy is a preview cut at the first quote.
-    if (opts.trace) { sql += ' AND trace_id = ?'; params.push(opts.trace); }
+    if (opts.since) { sql += ' AND created_at >= datetime(?)'; params.push(opts.since); }
+    // #4761 — pair, before and trace served only the retired GET /api/messages;
+    // readers use the generated route's fields (sentBy/sentTo, sentAt.lt, trace).
 
     sql += ' ORDER BY created_at DESC';
     if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }

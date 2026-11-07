@@ -1,5 +1,7 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 pub mod jdi_detector;
-pub mod card_approval_responder;
+pub mod terminal_input;
+pub mod turn_line;
 pub mod autonomy_guard;
 pub mod bedroom_nfs_guard;
 pub mod clock_sync;
@@ -48,6 +50,7 @@ pub mod canonical_write_guard;
 pub mod card_add_probe;
 pub mod memory_pressure_guard; // #3625 — refuse Task/Agent fanout under memory pressure
 pub mod reply_delivery; // #3864 — reply.emitted at the Stop hook (delivery correlation)
+pub mod session_auth; // #4817 — a logged-out session alerts at the Stop hook
 pub mod buzz_reply; // #3893 — reply publish to Buzz (Nostr) from the Stop hook
 pub mod bounded_surfaces; // #3424 — the canonical verb/skill bound
 #[cfg(test)]

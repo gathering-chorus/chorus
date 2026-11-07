@@ -87,7 +87,7 @@ fn canon_running_proof_fixture() -> (PathBuf, PathBuf) {
     fs::create_dir_all(origin.join("config/launchagents")).unwrap();
     fs::write(origin.join("config/launchagents/com.chorus.inject.plist"), "<plist><string>chorus-inject</string></plist>").unwrap();
     git(&origin, &["add", "."]);
-    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["commit", "-q", "-m", "#7001 (silas) (#1) — landed, so a prod deploy may ship it (#4710)"]);
     let home = tmp("home");
     assert!(Command::new("git").args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()]).status().unwrap().success());
     let werk_base = tmp("werk");
@@ -192,7 +192,7 @@ fn e2e_deploy_both_slots_and_guards() {
     fs::create_dir_all(origin.join("config/launchagents")).unwrap();
     fs::write(origin.join("config/launchagents/com.chorus.inject.plist"),
         "<plist><string>chorus-inject</string></plist>").unwrap();
-    git(&origin, &["add", "."]); git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["add", "."]); git(&origin, &["commit", "-q", "-m", "#7001 (silas) (#1) — landed, so a prod deploy may ship it (#4710)"]);
     let home = tmp("home");
     assert!(Command::new("git").args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()]).status().unwrap().success());
     let werk_base = tmp("werk");

@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+# @domain: pipelines
+"""mob-open — #4789: is a mob run open, and for which card?
+
+The open-mob state is the live `mob` dagu run itself, never a marker file
+(marker files go stale, #3781). A run that is running, queued or waiting holds
+the floor; a finished one holds nothing.
+
+Prints `<run-id> <card> <driver> <navigators>` for each open mob run (the
+seats come from the run's own params, ROLE and NAVIGATORS), nothing when none
+is open.
+Exit 2 when dagu cannot be read: a gate that reads this must refuse, never
+treat "unreadable" as "no mob open".
+
+dagu is read the way /cws reads it (chorus-werk-status, CWS_DAGU).
+"""
+import importlib.machinery
+import importlib.util
+import os
+import re
+import subprocess
+import sys
+import time
+
+OPEN = ("running", "queued", "waiting")
+
+
+def load_cws():
+    here = os.path.dirname(os.path.abspath(__file__))
+    loader = importlib.machinery.SourceFileLoader("cws", os.path.join(here, "chorus-werk-status"))
+    spec = importlib.util.spec_from_loader("cws", loader)
+    cws = importlib.util.module_from_spec(spec)
+    loader.exec_module(cws)
+    return cws
+
+
+def card_in_wip(card):
+    """True when the board says the card is in WIP; raises when the board
+    cannot be read, so the gate refuses rather than guess (Silas 12:39)."""
+    cards = os.environ.get("MOB_OPEN_CARDS") or os.path.join(
+        os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/scripts/cards")
+    out = subprocess.run([cards, "view", str(card)], capture_output=True, text=True, timeout=30)
+    m = re.search(r"^\s*Status:\s+(\S+)", out.stdout, re.M)
+    if out.returncode != 0 or not m:
+        raise RuntimeError(f"the board did not say #{card}'s status")
+    return m.group(1) == "WIP"
+
+
+def started_at(run):
+    """A run's start (or queue) time as an instant; unreadable sorts oldest."""
+    from datetime import datetime
+    s = run.get("startedAt") or run.get("queuedAt") or ""
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def open_mobs(runs, in_wip=card_in_wip):
+    """(run-id, card, driver, navigators) of every mob still holding the floor.
+    #4789 — a mob holds from its start while its card is worked: a mob run that
+    handed off (succeeded) still holds while the card is in WIP (its cicd and
+    land run). #4862 — once the card leaves WIP (Done, or reopened to Later as
+    #4852 was at 12:00) the floor is free. A failed or stopped mob, or a newer
+    run of the same card, holds nothing."""
+    out, seen = [], set()
+    # #4642 — compare instants, not text: dagu stamps some runs "Z" and others "-05:00", and
+    # "23:40Z" sorts above "19:29-05:00" as text though it is the older run (Silas 19:31).
+    newest = sorted(runs, key=started_at, reverse=True)
+    for r in newest:
+        if r.get("name", "") != "mob":
+            continue
+        params = r.get("params") or ""
+        card = param(params, "CARD") or "unknown"
+        if card in seen:
+            continue
+        seen.add(card)
+        st = r.get("statusLabel")
+        if st not in OPEN and not (st == "succeeded" and in_wip(card)):
+            continue
+        out.append((r.get("dagRunId") or "unknown", card,
+                     param(params, "ROLE") or "-", param(params, "NAVIGATORS") or "-"))
+    return out
+
+
+def param(params, key):
+    """One KEY=value from dagu's space-separated params (quotes allowed)."""
+    m = re.search(r"(?:^|\s)%s=\"?([^\s\"]*)\"?(?:\s|$)" % key, params)
+    return m.group(1) if m else ""
+
+
+def main():
+    try:
+        runs = load_cws().dagu_list("mob", time.time() - 30 * 86400)
+    except Exception as e:
+        print(f"mob-open: could not read dagu: {e}", file=sys.stderr)
+        return 2
+    try:
+        rows = open_mobs(runs)
+    except Exception as e:
+        print(f"mob-open: could not read the board for a handed-off mob: {e}", file=sys.stderr)
+        return 2
+    for row in rows:
+        print(" ".join(row))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

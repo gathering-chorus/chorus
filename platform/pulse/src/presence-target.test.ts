@@ -9,7 +9,7 @@
  * /v1/identity/sessionruns answers (2026-09-27): presenceOf names the run as
  * "session-run-<run name>", and a run is live while runEndedAt is empty.
  */
-import { resolveFromPresence, fetchPresenceResolution, resolveEnds, paneFromTmuxListing, rolePaneFromTmux } from './presence-target';
+import { resolveFromPresence, fetchPresenceResolution, resolveEnds } from './presence-target';
 
 const runs = [
   { name: 'silas-run-old', runEndedAt: '2026-09-26T16:31:00Z' },
@@ -30,6 +30,30 @@ describe('resolveFromPresence (#4361)', () => {
       expect(r.session.tmux).toBe('%15');
       expect(r.session.tty).toBe('/dev/ttys005');
       expect(r.session.role).toBe('silas');
+    }
+  });
+
+  // #4765 — AGY roles (borg-queen, abby-normal) resolve from their Presence rows
+  test('AGY roles (borg-queen, abby-normal) resolve from their Presence rows (#4765)', () => {
+    const agyRuns = [
+      { name: 'borg-queen-run-1', runEndedAt: '' },
+      { name: 'abby-normal-run-1', runEndedAt: '' },
+    ];
+    const agyPresences = [
+      { name: 'borg-queen-presence-1', presenceOf: 'session-run-borg-queen-run-1', pane: '%2', tty: '/dev/ttys008' },
+      { name: 'abby-normal-presence-1', presenceOf: 'session-run-abby-normal-run-1', pane: '%3', tty: '/dev/ttys009' },
+    ];
+    const bq = resolveFromPresence(agyPresences, agyRuns, 'borg-queen');
+    expect(bq.kind).toBe('resolved');
+    if (bq.kind === 'resolved') {
+      expect(bq.session.tmux).toBe('%2');
+      expect(bq.session.role).toBe('borg-queen');
+    }
+    const abby = resolveFromPresence(agyPresences, agyRuns, 'abby-normal');
+    expect(abby.kind).toBe('resolved');
+    if (abby.kind === 'resolved') {
+      expect(abby.session.tmux).toBe('%3');
+      expect(abby.session.role).toBe('abby-normal');
     }
   });
 
@@ -118,19 +142,5 @@ describe('#4362 fetchPresenceResolution / resolveEnds against the API', () => {
   });
 });
 
-// #4362 — Jeff 10-01: "why not fix the issue instead of describing the error
-// better?" A role with no pane on its live run is still in its tmux session.
-describe('#4362 the role\'s own tmux session is its pane when the run has none', () => {
-  test('one pane in chorus-<role> is the target', () => {
-    const asked: string[][] = [];
-    expect(rolePaneFromTmux('silas', (a) => { asked.push(a); return '%63\n'; })).toBe('%63');
-    expect(asked[0]).toEqual(['list-panes', '-t', 'chorus-silas', '-F', '#{pane_id}']);
-  });
-  // NEGATIVE PROOF (#3734): each of these must reach no one.
-  test('no session, several panes, or a non-pane answer is no target', () => {
-    expect(rolePaneFromTmux('silas', () => { throw new Error("can't find session"); })).toBe('');
-    expect(paneFromTmuxListing('%63\n%64\n')).toBe('');
-    expect(paneFromTmuxListing('-\n')).toBe('');
-    expect(paneFromTmuxListing('')).toBe('');
-  });
-});
+// #4889 — the #4362 tmux fallback is retired; its tests went with it (Jeff 07:48).
+

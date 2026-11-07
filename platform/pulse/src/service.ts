@@ -8,17 +8,24 @@
 
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
-import { fetchPeers } from './peers';
+import { fetchPeers, startRolesDoorWatch } from './peers';
+import { attributeSender, markAlert, originFor, isMachineSender } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
+import { fetchPresenceResolution, fetchPresenceView, resolveEnds } from './presence-target';
 import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
 import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
-import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
+import { startReplyGapWatch, parseSpineTail, SpineEv, RoomMsg } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
-import { bostonOffsetIso } from './boston-iso';
+import { bostonMinute, bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
+import { cachedCards, readAlerts, readMessages, registerHeaderRoute, sharedRead } from './pulse-header';
+import { RoleSetupWatch, liveReads } from './role-setup';
+
+// #4919 — set at startup; the header reads its state
+let roleSetupWatch: RoleSetupWatch | undefined;
+import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
 
@@ -28,12 +35,22 @@ type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string 
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { callerRole } from './caller-identity';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
-import { spawn, execFileSync } from 'child_process';
+import { spawn } from 'child_process';
 import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 // #4446 — pulse logs its own start, stop and failure.
-import { BuzzWriter, bridgeSignerFromHome, type BuzzMessage } from './buzz-writer';
+import { BuzzWriter, ownerOnly, injectedDelivery, bridgeSignerFromHome, identitySignerFromHome, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT, type BuzzMessage } from './buzz-writer';
+import { BuzzReader } from './buzz-reader';
+import { NoteKeys } from './note-keys';
+import { BuzzDelivery } from './buzz-delivery';
+
+/** #4629 S3 — deliver sender-signed nudges from the room (off unless PULSE_BUZZ_DELIVER=1). */
+export const deliverFromBuzz = (): boolean => process.env.PULSE_BUZZ_DELIVER === '1';
+/** #4629 S3 — set at startup when delivering from Buzz; the release route and the reader use it. */
+type PendingRow = ReturnType<MessageStore['getPendingDeliveries']>[number];
+let buzzDelivery: BuzzDelivery<PendingRow> | undefined;
+export function setBuzzDelivery(d: BuzzDelivery<PendingRow> | undefined): void { buzzDelivery = d; }
 import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
 
 /** #4609 — what createApp needs from the Buzz writer: fire one post, no answer. */
@@ -153,9 +170,8 @@ function resolveTraceId(header: unknown, bodyTraceId: unknown): string | undefin
  * prefix; nothing re-added it after the #2804 refactor). Idempotent — never
  * double-prefixes.
  */
-function markNudge(from: string, content: string): string {
+function markNudge(from: string, content: string, tsBoston: string = bostonMinute()): string {
   if (content.startsWith('[nudge from')) return content;
-  const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
   return `[nudge from ${from} | ${tsBoston} Boston] ${content}`;
 }
 
@@ -180,6 +196,23 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
   };
 }
 
+/** #4889 — how long the nudge answer waits for its delivery (the worker's backoff is ~9s). */
+const DELIVERY_WAIT_MS = 12_000;
+
+/** #4889 — what the sender is told: a row's delivery state in its words. Pure. */
+export function deliveryVerdict(rec: { delivery_status: string; last_delivery_error: string | null } | null | undefined):
+  { delivery: 'delivered' | 'queued' | 'not-delivered'; reason?: string } {
+  if (!rec) return { delivery: 'not-delivered', reason: 'the message row is gone' };
+  if (rec.delivery_status === 'delivered') return { delivery: 'delivered' };
+  if (rec.delivery_status === 'failed') return { delivery: 'not-delivered', reason: rec.last_delivery_error || 'delivery failed' };
+  return { delivery: 'queued', ...(rec.last_delivery_error ? { reason: rec.last_delivery_error } : {}) };
+}
+
+/** #4889 — the wake a nudge body marks, when it is one the boundary knows; else none. */
+export function wakeOf(body: { wake?: unknown } | null | undefined): string | undefined {
+  return body && body.wake === 'run-finished' ? 'run-finished' : undefined;
+}
+
 /** #3439/#4361 — the destination a nudge resolved to, in words for the sender. */
 function describeResolution(to: string, toRes: Awaited<ReturnType<typeof fetchPresenceResolution>>): string {
   if (toRes.kind === 'resolved') return describeTarget(to, toRes.session);
@@ -197,17 +230,27 @@ async function refuseTarget(to: string, target: string | undefined): Promise<{ e
   return { error: 'target-not-live-run', message: `${target} is not ${to}'s live agent run` };
 }
 
-/** #4432 — everything that can refuse a nudge before it is stored: the roles
- *  door (503) and a target that isn't the recipient's live run (409, #4424). */
-async function admitNudge(body: { class?: unknown; expects?: unknown; target_session_id?: unknown }, from: string, to: string): Promise<
+/** #4432 — everything that can refuse a nudge before it is stored, after the
+ *  roles door (503, read once by the route, #4637): a target that isn't the
+ *  recipient's live run (409, #4424). */
+async function admitNudge(body: { class?: unknown; expects?: unknown; target_session_id?: unknown }, from: string, to: string, peers: string[]): Promise<
   { status: number; refused: object } | { nudgeClass: 'r2r' | 'a2r'; expects: 'none' | 'reply' | 'decision' | 'action'; targetSessionId: string | undefined }
 > {
-  const peers = await peersOrRefusal(from, to);
-  if (typeof peers === 'string') return { status: 503, refused: { error: 'roles door unreadable; nudge not stored', detail: peers } };
   const targetSessionId = typeof body.target_session_id === 'string' ? body.target_session_id : undefined;
   const refusal = await refuseTarget(to, targetSessionId);
   if (refusal) return { status: 409, refused: refusal };
   return { ...readEnvelope(body, from, peers), targetSessionId };
+}
+
+// #4916 — a machine's alert does not ride on the roles door. When the door
+// cannot be read, the alert's recipient stands as its owner; delivery still
+// fails loud on a role with no pane. On 2026-11-06 the door's own alarm died
+// at 17:26 while the door was down.
+async function actorsFor(from: unknown, to: unknown): Promise<string[] | string> {
+  const actors = await peersOrRefusal(typeof from === 'string' ? from : '', to as string);
+  const recipient = typeof to === 'string' ? to.trim() : '';
+  if (typeof actors === 'string' && isMachineSender(from) && recipient !== '') return [recipient];
+  return actors;
 }
 
 /** #4432 — the peer set, or the reason the roles door could not give it (logged). */
@@ -227,6 +270,17 @@ async function nudgeCallerOk(headers: express.Request['headers'], from: unknown)
   return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
 }
 
+/** #4629 S3 — a sender-signed nudge, while pulse delivers from Buzz, waits for its room note. */
+function heldForRoom(body: { buzz?: unknown } | undefined): boolean {
+  return body?.buzz === 'sender' && deliverFromBuzz();
+}
+
+/** #4629 S2 — a sender that signed its own note (buzz=sender) gets no bridge copy, so the room holds it once. */
+function copyToBuzz(buzz: BuzzPoster | undefined, body: { buzz?: unknown } | undefined, m: BuzzMessage): void {
+  if (ownerOnly(m)) return; // #4875 AC10 — the owner's demo brief stays out of #team
+  if (body?.buzz !== 'sender') buzz?.post(m);
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker, buzz?: BuzzPoster): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -243,9 +297,30 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
         message: 'POST /api/nudge accepts only MCP-server calls. Use the clearing-nudge MCP tool from a Claude session.',
       });
     }
-    if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
+    if (!to || !content) return res.status(400).json({ error: 'to, content required' }); // no from is a 422 not-an-actor, below
     const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
-    const marked = markNudge(from, content);
+    // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
+    // The one roles-door read: #4432 already refused every nudge (503) when the
+    // door is down; this read replaces that one, it adds no second dependency.
+    const actors = await actorsFor(from, to);
+    if (typeof actors === 'string') return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: actors });
+    const sender = attributeSender(from, to, req.body.owner, actors);
+    if (sender.kind === 'refused') {
+      log('warn', 'nudge.refused.not-an-actor', { from: String(from ?? ''), to, trace_id: traceId || undefined });
+      return res.status(sender.status).json(sender.body);
+    }
+    // #4885 — one instant per message: the label and the room copy carry the same minute
+    const tsBoston = bostonMinute();
+    const marked = sender.kind === 'alert' ? markAlert(sender.from, sender.source, content, tsBoston) : markNudge(sender.from, content, tsBoston);
+    // the room copy keeps its source: a system alert still reads "[alert → role]" in Buzz (#4609)
+    const forBuzz = sender.kind === 'alert' ? { from: sender.source, content: markNudge(sender.source, content, tsBoston) } : { from: sender.from, content: marked };
+    const origin = originFor(sender.kind === 'alert' ? 'alert' : 'nudge', sender.from, req.body.where);
+    // an alert is a2r by what it is; the caller's body is read, never rewritten (review, run 5)
+    const body = sender.kind === 'alert' ? { ...req.body, class: 'a2r' } : req.body;
+    return storeNudge(body, res, sender.from, to, marked, traceId, forBuzz, origin, actors);
+  });
+
+  async function storeNudge(body: express.Request['body'], res: express.Response, from: string, to: string, marked: string, traceId: string | undefined, forBuzz: { from: string; content: string }, origin: string, peers: string[]) {
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
     if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
@@ -261,18 +336,22 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // answer refuses the nudge loudly rather than guessing who is a peer.
     // #4424 — an explicit target is accepted only when it is the recipient's
     // live agent run (Presence), never a session the sender names freely.
-    const pre = await admitNudge(req.body, from, to);
+    const pre = await admitNudge(body, from, to, peers);
     if ('refused' in pre) return res.status(pre.status).json(pre.refused);
     const { nudgeClass, expects, targetSessionId } = pre;
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId);
+    const held = heldForRoom(body);
+    // #4889 — the sender's wake mark (run-finished), a field, never read from the text
+    const wake = wakeOf(body);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, held, origin, wake);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #4609 — the Buzz note goes out beside delivery, never ahead of it.
-    buzz?.post({ id: Number(id), from, to, content: marked });
-    // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
-    if (worker) {
-      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null }).catch(() => { /* worker handles its own state */ });
-    }
+    copyToBuzz(buzz, body, { id: Number(id), from: forBuzz.from, to, content: forBuzz.content });
+    // #4889 — the sender is told what happened to its nudge, never a blind "sent": the
+    // answer waits for the delivery (up to DELIVERY_WAIT_MS) and says delivered, queued
+    // (not seen yet) or not-delivered with the reason.
+    const delivering = held || !worker ? Promise.resolve()
+      : worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null, wake: wake ?? null }).catch((e: unknown) => { log('error', 'nudge.enqueue.failed', { id, to, error: String(e), trace_id: traceId || undefined }); });
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
@@ -280,8 +359,10 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const toRes = await fetchPresenceResolution(to);
     const resolved = describeResolution(to, toRes);
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
-    res.json({ ok: true, id, traceId, resolved });
-  });
+    await Promise.race([delivering, new Promise((r) => setTimeout(r, DELIVERY_WAIT_MS).unref())]);
+    const { delivery, reason } = deliveryVerdict(store.getDeliveryRecord(Number(id)));
+    res.json({ ok: true, id, traceId, resolved, delivery, ...(reason ? { reason } : {}) });
+  }
 
   // #3700 — the drain: the target role's own turn-boundary hook (stop /
   // session-start) POSTs here after clear_busy; its queued rows go back to
@@ -295,6 +376,13 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const released = store.drainQueued(role);
     if (released > 0) void worker?.scanAndRequeue();
     res.json({ ok: true, role, released });
+  });
+  // #4629 S3 — the sender's publish failed (its note waits in its outbox): deliver now, not after the fallback.
+  app.post('/api/buzz/release', async (req, res) => {
+    const { from, trace } = (req.body ?? {}) as { from?: unknown; trace?: unknown };
+    if (!(await nudgeCallerOk(req.headers, from))) { res.status(403).json({ error: 'unauthorized' }); return; }
+    if (typeof trace !== 'string' || !/^[0-9a-f-]{36}$/.test(trace)) { res.status(400).json({ error: 'trace required' }); return; }
+    res.json({ ok: true, released: buzzDelivery?.publishFailed(trace) ?? false });
   });
   // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
   // the spine fold (nudge.emitted minus nudge.surfaced) via
@@ -328,12 +416,84 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
     if (!to || !content) return res.status(400).json({ error: 'to, content required' });
     const headerTrace = req.headers['x-chorus-trace-id'];
     const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
-    const id = store.sendJeffInput(to, content, traceId);
+    const id = store.sendJeffInput(to, content, traceId, originFor('jeff-input', 'jeff', req.body.where));
     log('info', 'jeff.input.stored', { id, to, chars: content.length, trace_id: traceId || undefined });
     if (worker) {
       worker.enqueue({ id, from: 'jeff', to, content, delivery_attempts: 0, trace_id: traceId || null, kind: 'jeff-input' }).catch(() => { /* worker handles its own state */ });
     }
     res.json({ ok: true, id, traceId });
+  });
+}
+
+// #4628 — one record-only route for what reaches Buzz through pulse without
+// being delivered: kind "jeff" is what Jeff typed in a role's terminal (posted
+// by that role's UserPromptSubmit hook; until 10-19 only Clearing v1's
+// transcript tailer copied it, 393 of his 469 messages that day, and it wrote
+// every double); kind "land" is the "Accepted #N — title" notice `cards done`
+// posts (until now only v1's spine tailer made it). Same secret as /api/nudge.
+// A repeat inside its window is one note; a Clearing message pulse delivered
+// into a terminal is skipped (Clearing v2 already wrote it, #4608).
+const recentRecords = new Map<string, number>();
+const LAND_WINDOW_MS = 10 * 60 * 1000; // the land emits its accept more than once (#4502)
+type RecordResult = { status: number; body: Record<string, unknown> };
+const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+
+/** #4628 reopen 1 — the role panes the roles door lists (not Jeff, who is not a
+ *  pane). Measured 10-19: a headless session with no role posted its JSON prompt
+ *  as pane "unknown" (18:56, 19:27) and Buzz showed it as Jeff. A door that does
+ *  not answer keeps a named pane's words (the miss is logged), but never these. */
+const NEVER_A_PANE = new Set(['', 'unknown', 'jeff']);
+async function isRolePane(to: string): Promise<boolean> {
+  // never a role, whatever the door says — so a door that times out cannot let "unknown" back in (Wren)
+  if (NEVER_A_PANE.has(to)) return false;
+  try { return (await fetchPeers()).includes(to); }
+  catch (e) { log('warn', 'record.jeff.roles-door', { to, error: (e as Error).message }); return true; }
+}
+
+async function recordJeff(b: Record<string, unknown>, store: MessageStore, buzz?: BuzzPoster): Promise<RecordResult> {
+  const to = str(b.to), content = str(b.content);
+  if (!to || !content) return { status: 400, body: { error: 'to, content required' } };
+  if (!(await isRolePane(to))) {
+    log('warn', 'record.jeff.not-a-role-pane', { to, chars: content.length });
+    return { status: 422, body: { error: 'not-a-role-pane', message: `"${to}" is not a role the roles door lists; nothing recorded` } };
+  }
+  // #4875 AC10 — an alert or nudge the role's terminal received is not Jeff's words
+  if (injectedDelivery(content)) { log('info', 'record.jeff.injected-skipped', { to, chars: content.length }); return { status: 200, body: { ok: true, skipped: 'injected' } }; }
+  if (seenRecently(dedupeKey('jeff', to, content), Date.now(), recentRecords, DEDUP_WINDOW_MS)) return { status: 200, body: { ok: true, deduped: true } };
+  if (store.jeffInputSentRecently(to, content)) return { status: 200, body: { ok: true, deduped: 'clearing' } };
+  const id = Date.now(); // unique across pulse restarts, unlike a counter
+  buzz?.post({ id, from: 'jeff', to, content, surface: 'terminal' });
+  log('info', 'record.jeff', { id, to, chars: content.length });
+  return { status: 200, body: { ok: true, id } };
+}
+
+function recordLand(b: Record<string, unknown>, buzz?: BuzzPoster): RecordResult {
+  const card = Number(b.card);
+  if (!Number.isInteger(card) || card <= 0) return { status: 400, body: { error: 'card required' } };
+  if (seenRecently(`land:${card}`, Date.now(), recentRecords, LAND_WINDOW_MS)) return { status: 200, body: { ok: true, deduped: true } };
+  const accepter = str(b.accepter);
+  // #3743 — never a default to Jeff; a land with no accepter is itself a defect (Wren): loud, no note
+  if (!accepter) {
+    log('warn', 'record.land.no-accepter', { card });
+    return { status: 422, body: { error: 'no-accepter', message: `land of #${card} names no accepter; no note written` } };
+  }
+  const title = str(b.title);
+  buzz?.post({ id: card, from: accepter, to: str(b.owner) ?? '', content: `Accepted #${card}${title ? ` — ${title}` : ''}`, surface: 'land' });
+  log('info', 'record.land', { card });
+  return { status: 200, body: { ok: true, id: card } };
+}
+
+function registerRecordRoutes(app: Express, store: MessageStore, buzz?: BuzzPoster): void {
+  app.post('/api/record', async (req, res) => {
+    const secret = req.headers['x-chorus-pulse-secret'];
+    if (!callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) {
+      return res.status(403).json({ error: 'not-canonical-caller', message: 'POST /api/record accepts only chorus callers with the pulse secret.' });
+    }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const r = b.kind === 'jeff' ? await recordJeff(b, store, buzz)
+      : b.kind === 'land' ? recordLand(b, buzz)
+      : { status: 400, body: { error: 'kind must be jeff or land' } };
+    return res.status(r.status).json(r.body);
   });
 }
 
@@ -381,16 +541,9 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   // codebase — no-competing-implementations applied. Source of truth:
   // chorus-hook-shim role-state subcommand → /tmp/claude-team-scan/.
 
-  app.get('/api/messages', (req, res) => {
-    res.json(store.queryMessages({
-      type: req.query.type as string | undefined,
-      from: req.query.from as string | undefined,
-      to: req.query.to as string | undefined,
-      since: req.query.since as string | undefined,
-      trace: req.query.trace as string | undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
-    }));
-  });
+  // #4761: GET /api/messages retired. Messages are read one way, from the
+  // generated pulse API (:3392/pulse/messages/messages); POST stays the writer.
+
   app.get('/api/stats', (_req, res) => {
     res.json(store.getStats());
   });
@@ -403,7 +556,8 @@ export function createApp(
   actorStateService?: { getActorStates: () => unknown },
   changesOvernightService?: { getChanges: () => unknown },
   readingsService?: { getReadings: () => unknown },
-  buzz?: BuzzPoster
+  buzz?: BuzzPoster,
+  spineTreeFacts?: { get: () => import('./pulse-tree').SpineLine[] }
 ): Express {
   const app = express();
   app.use(express.json());
@@ -412,9 +566,16 @@ export function createApp(
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics, worker, buzz);
   registerJeffInputRoutes(app, store, worker);
+  registerRecordRoutes(app, store, buzz);
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
+  // #4895 — where a nudge to this role goes: the one resolution delivery uses (its live
+  // run's Presence). Health checks read it here instead of the retired sessions registry.
+  app.get('/api/where/:role', async (req, res) => {
+    const { resolution: where, reachability } = await fetchPresenceView(req.params.role);
+    res.json({ role: req.params.role, ...where, ...(reachability ? { reachability } : {}), ...(where.kind === 'resolved' ? { pane: where.session.tmux ?? '', tty: where.session.tty } : {}) });
+  });
   // #4560 — actor state derived once in pulse, every surface presents it
   app.get('/api/actor-state', (_req, res) => {
     res.json(
@@ -426,6 +587,18 @@ export function createApp(
             unmeasured: [{ source: 'pulse:service', reason: 'actor-state-service uninitialized' }],
           }
     );
+  });
+  // #4638 — the live tree: prompt → role → turn and card, derived once in pulse from its sources
+  // (#4757: restored; the generated tree read copied rows)
+  registerTreeRoutes(app, store, actorStateService, spineTreeFacts);
+  // #4757 — GET /pulse: the header, each line read from its source now
+  registerHeaderRoute(app, {
+    cards: cachedCards(),
+    actorState: () => actorStateService?.getActorStates(),
+    // #4807 slice 2 — one pulse-api call per 2 s however many prompts ask at once
+    messages: sharedRead(() => readMessages(), 2_000, 4_000, 2_000, '/pulse/messages/messages'),
+    alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/api/alertmanager/grafana/api/v2/alerts'),
+    setup: () => roleSetupWatch?.state(),
   });
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {
@@ -475,13 +648,10 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // target collides with the sender's own session name-matches instead.
     const ends = await resolveEnds(to, from);
     const senderReg = ends.sender;
-    let toRes = ends.toRes;
-    // #4362 — the live run has no pane, but the role runs in its own tmux
-    // session: deliver to that session's pane instead of holding the message.
-    if (toRes.kind === 'no-pane') {
-      const pane = rolePaneFromTmux(to, (args) => execFileSync('tmux', args, { encoding: 'utf8', timeout: 2000 }));
-      if (pane) toRes = { kind: 'resolved', session: { role: to, pid: 0, tty: '', host: 'tmux', tmux: pane } };
-    }
+    const toRes = ends.toRes;
+    // #4889 (Jeff 07:48) — one path: the role's live registration. A run with no pane
+    // is not-delivered to the sender (planDeliveryTyped), never typed into a pane read
+    // from tmux here; the #4362 tmux fallback is retired.
     if (toRes.kind === 'unread') {
       resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-presence-unread', target: `undelivered:${to}:${toRes.why}` });
       return;
@@ -572,6 +742,17 @@ if (require.main === module) {
   const store = new MessageStore();
   const { runInject, emitSpine, selfTest } = buildRuntimeDeps();
   const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
+  // #4889 — the machine-lane cooldown is a property (pulse.announce.machine_cooldown_ms)
+  worker.watchCooldown();
+  // #4895 — a delivery that failed for good on a dead pane: the principal (the Presence's
+  // only writer) marks it unreachable now. Detached: delivery never waits on it.
+  worker.onUndelivered = (role, pane) => {
+    const bin = process.env.CHORUS_PRINCIPAL_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-principal');
+    const p = spawn(bin, ['undelivered', role, pane], { detached: true, stdio: 'ignore' });
+    p.on('error', (e) => { void emitSpine('presence.undelivered.unwritten', { role, pane, error: e.message }); });
+    p.on('exit', (code) => { if (code !== 0) void emitSpine('presence.undelivered.unwritten', { role, pane, error: `chorus-principal undelivered exited ${String(code)}` }); });
+    p.unref();
+  };
 
   // #3485 — generate the shared secret EAGERLY at boot (not lazily on first
   // request), so the secret file exists before nudge-send sends its first
@@ -625,8 +806,9 @@ if (require.main === module) {
       process.stderr.write(JSON.stringify({ event: 'startup.requeue.skipped', reason: 'PULSE_REQUEUE_ON_BOOT unset' }) + '\n');
     }
 
-    // #3864 — reply-delivery gap watch: reply.emitted (Stop hook) without
-    // reply.rendered (Clearing) inside the window fires reply.delivery.gap.
+    // #3864, #4887 — reply-delivery gap watch: a reply.emitted (Stop hook) with no
+    // row in the room's own record (Clearing v2, GET /api/messages) inside the
+    // window fires reply.delivery.gap. A room that cannot be read is unmeasured.
     // Reads the spine TAIL only (last 512KB) — the spine is never rotated
     // (Jeff's ruling) and a full read per tick would grow with it forever.
     const spinePath = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
@@ -645,13 +827,32 @@ if (require.main === module) {
       }
     };
 
+    const roomUrl = process.env.CLEARING_ROOM_MESSAGES_URL || 'http://localhost:3472/api/messages';
+    const readRoom = async (): Promise<RoomMsg[] | null> => {
+      try {
+        const r = await fetch(roomUrl, { signal: AbortSignal.timeout(3000) });
+        if (!r.ok) return null;
+        const body: unknown = await r.json();
+        return Array.isArray(body) ? (body as RoomMsg[]) : null;
+      } catch { return null; }
+    };
+
     {
-      startReplyGapWatch(readTail, async (gap) => {
+      startReplyGapWatch(readTail, readRoom, async (gap) => {
         await emitSpine('reply.delivery.gap', {
           role: gap.role, hash: gap.hash, emittedAt: gap.emittedAt, surface: 'clearing',
         });
+      }, undefined, undefined, undefined, async (s) => {
+        await emitSpine('reply.delivery.unmeasured', { room: s.room, unmeasured: s.unmeasured, surface: 'clearing' });
       });
       process.stderr.write(JSON.stringify({ event: 'startup.replygap.watch', window_ms: 60000 }) + '\n');
+
+      // #4692 — the roles door read the way a nudge reads it, every minute;
+      // a refused read goes to the spine, and the roles-door-unreadable Alert
+      // row (Grafana framework) fires on it.
+      startRolesDoorWatch(async (error) => {
+        await emitSpine('roles-door.read.failed', { error });
+      });
 
       // #3879 — WIP-drift watch: an owner active while their WIP card sits
       // untouched for 4h gets nudged by the SYSTEM (Jeff only on the second
@@ -723,8 +924,55 @@ if (require.main === module) {
     // is configured (the prod plist): a demo or test pulse must never write the
     // team's room. A miss is logged every time and alerted to ops once per 10 min.
     const buzz = startBuzzWriter(store, worker, emitSpine);
+    // #4629 S3 — deliver sender-signed nudges from the room: release by note, by failed publish, or after 30 s
+    if (deliverFromBuzz()) {
+      const d = new BuzzDelivery<PendingRow>({
+        store,
+        rowFor: (id) => store.getPendingDelivery(id),
+        deliver: (row) => { void worker.enqueue(row); },
+        onLost: (id) => { log('error', 'buzz.delivery.lost', { id }); void emitSpine('buzz.delivery.lost', { id: String(id) }); },
+        onRelease: (id, cause) => {
+          log(cause === 'room' ? 'info' : 'warn', 'buzz.delivery.released', { id, cause });
+          void emitSpine(cause === 'fallback' ? 'buzz.delivery.fallback' : 'buzz.delivery.released', { id: String(id), cause });
+        },
+      });
+      setBuzzDelivery(d);
+      d.sweep(); // a restart mid-hold still delivers (Silas 06:42)
+      setInterval(() => d.sweep(), 10_000).unref();
+    }
+    // #4919 AC4 — every role's setup, checked from outside the role every 60 s. A change
+    // (refused ↔ ok) posts one line to Jeff as system, through this pulse's own /api/nudge,
+    // so it reaches #team even when the role's own key or hooks are what broke.
+    {
+      const roles = (process.env.PULSE_SETUP_ROLES || 'silas,wren,kade,borg-queen,abby-normal').split(',').filter(Boolean);
+      roleSetupWatch = new RoleSetupWatch(roles, liveReads(), async content => {
+        const res = await fetch(`http://127.0.0.1:${PORT}/api/nudge`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-chorus-pulse-secret': resolvePulseSecret() ?? '' },
+          body: JSON.stringify({ from: 'system', to: 'jeff', content }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) throw new Error(`nudge HTTP ${res.status}`);
+        log('warn', 'role.setup.changed', { content });
+      });
+      let checking = false;
+      const tick = () => {
+        if (checking) return;
+        checking = true;
+        roleSetupWatch!.tick()
+          .catch((e) => process.stderr.write(JSON.stringify({ event: 'role.setup.check.failed', error: String(e) }) + '\n'))
+          .finally(() => { checking = false; });
+      };
+      setTimeout(tick, 5_000).unref();
+      setInterval(tick, 60_000).unref();
+    }
+    // #4629 S1 — read the room in shadow (judge, never deliver) when PULSE_BUZZ_SHADOW=1
+    startBuzzShadow(store, emitSpine);
 
-    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz);
+    // #4638 — the tree's turns and runs, read from the spine every 30 s
+    const spineTreeFacts = new SpineTreeFacts();
+    spineTreeFacts.start();
+    const app = createApp(store, worker, emitSpine, actorStateService, changesOvernightService, readingsService, buzz, spineTreeFacts);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
       lifecycle.started();  // #4446 — round 1 imported the helper but never called it
@@ -733,6 +981,45 @@ if (require.main === module) {
 }
 
 
+
+/** #4629 AC4 — the key registry pulse checks note signers against (graph-only, as Clearing v2). */
+const KEYS_URL = process.env.PULSE_KEYS_URL || 'http://localhost:3340/owl/v1/identity/keyregistryentries?limit=1000';
+
+/** #4629 S1 — the shadow reader, or none unless PULSE_BUZZ_SHADOW=1 and the relay and principal-pulse's key are there. */
+function startBuzzShadow(store: MessageStore, emit: EmitSpine): BuzzReader | undefined {
+  const relayUrl = process.env.PULSE_BUZZ_RELAY_URL;
+  const { signer, reason } = identitySignerFromHome(os.homedir(), 'pulse');
+  const off = process.env.PULSE_BUZZ_SHADOW !== '1' ? 'PULSE_BUZZ_SHADOW is not 1' : !relayUrl ? 'PULSE_BUZZ_RELAY_URL not set' : !signer ? reason : undefined;
+  if (off || !relayUrl || !signer) {
+    // on the spine, so a day the shadow was off reads unmeasured, never green (Silas 06:22)
+    log('info', 'buzz.shadow.off', { reason: off });
+    void emit('buzz.shadow.off', { reason: off ?? '' });
+    return undefined;
+  }
+  return new BuzzReader({
+    relayUrl,
+    hostHeader: process.env.PULSE_BUZZ_RELAY_HOST || undefined,
+    signer,
+    store,
+    channel: process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT,
+    // #4672 — Jeff's Clearing posts are in #clearing; read it too, or his rows go unjudged
+    extraChannels: [process.env.BUZZ_CLEARING_CHANNEL || CLEARING_CHANNEL_DEFAULT],
+    // #4672 — a reading per sweep: stored, judged, matched, missed, matched/stored
+    onCoverage: (c) => {
+      log(c.pct === null || c.pct === 100 ? 'info' : 'error', 'buzz.shadow.coverage', { ...c });
+      void emit('buzz.shadow.coverage', { ...c });
+    },
+    keys: new NoteKeys(() => fetch(KEYS_URL, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())),
+    onMatch: (id) => { buzzDelivery?.fromRoom(id); },
+    onVerdict: (v) => {
+      if (v.verdict === 'not-a-delivery') return;
+      log(v.verdict === 'match' ? 'info' : 'error', 'buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+      void emit('buzz.delivery.shadow', { msg: v.msg, verdict: v.verdict });
+      // #4629 AC4 — the sender sees the refusal: buzz.note.refused names them (Silas 06:33)
+      if (v.verdict === 'wrong-key' && v.author) void emit('buzz.note.refused', { to: v.author, msg: v.msg, reason: 'signed by a key that is not yours in the key registry' });
+    },
+  });
+}
 
 /** #4609 — the production Buzz writer, or none when PULSE_BUZZ_RELAY_URL is unset. */
 function startBuzzWriter(store: MessageStore, worker: DeliveryWorker | undefined, emit: EmitSpine): BuzzWriter | undefined {

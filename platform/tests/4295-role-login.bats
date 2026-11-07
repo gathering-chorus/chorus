@@ -54,7 +54,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_lacks "registered yes"
   grep -q '"pid":4264' "$T/identity/kade/login.json"
   # never a second copy
-  test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }
 
 @test "NEGATIVE PROOF: a login recorded for an EARLIER pid does not count for this one" {
@@ -85,7 +85,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_has "login pending  via claude -c"
   out_lacks "UNAUTHENTICATED"
   state_is silas pending
-  grep -q "send-keys -t chorus-silas" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log"
   grep -q "status-right  login pending |" "$T/tmux.log"
 }
 
@@ -129,7 +129,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "NEGATIVE PROOF: the same command from Jeff's shell in roles/kade is allowed" {
   run env CHORUS_ROLE=kade "$SCRIPT" on silas
   test "$status" -eq 0
-  grep -q "send-keys -t chorus-silas" "$T/tmux.log"
+  grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log"
 }
 
 @test "two live sessions for one role: refused, and the fix is named" {
@@ -215,24 +215,30 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 # ------------------------------------------------------------------ up
 
 @test "up: all three start logged in and Jeff gets ONE line" {
+  # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
+  printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   run "$SCRIPT" up
   test "$status" -eq 0
-  out_has "wren kade silas up, 3 of 3 logged in"
-  grep -q 'display notification "wren kade silas up, 3 of 3 logged in" with title "Chorus"' "$T/osa.log"
-  grep -q "^roles.up system summary=wren kade silas up, 3 of 3 logged in" "$T/spine.log"
+  out_has "kade silas wren up, 3 of 3 logged in"
+  grep -q 'display notification "kade silas wren up, 3 of 3 logged in" with title "Chorus"' "$T/osa.log"
+  grep -q "^roles.up system summary=kade silas wren up, 3 of 3 logged in" "$T/spine.log"
 }
 
 @test "up with identity down: all three still start, the line says pending, nothing for Jeff to do" {
+  # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
+  printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   touch "$T/down-3001"
   run "$SCRIPT" up
   test "$status" -eq 0
-  out_has "wren kade silas up, 0 of 3 logged in"
+  out_has "kade silas wren up, 0 of 3 logged in"
   out_has "kade login pending (identity not answering"
   out_has "retrying on its own"
-  for r in wren kade silas; do grep -q "send-keys -t chorus-$r" "$T/tmux.log"; done
+  for r in wren kade silas; do grep -q "respawn-pane -k -t chorus-$r" "$T/tmux.log"; done
 }
 
 @test "up --windows: VS Code gets the Wren task, Terminal opens Silas and Kade" {
+  # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
+  printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   run "$SCRIPT" up --windows
   test "$status" -eq 0
   grep -q '"command": "/h/.chorus/bin/chorus-principal login wren"' "$T/vscode/tasks.json"

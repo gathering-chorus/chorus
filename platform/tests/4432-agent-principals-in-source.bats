@@ -12,17 +12,31 @@
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   PRINCIPALS="${PRINCIPALS_TTL:-$ROOT/roles/silas/ontology/identity-principals-3613.ttl}"
-  ROLES="${ROLES_TTL:-$ROOT/roles/wren/ontology/role-instances-3838.ttl}"
+  ROLES_DOOR="${ROLES_DOOR:-$ROOT/platform/tests/fixtures/roles-domain.json}"
 }
 
 check() {
-  python3 - "$PRINCIPALS" "$ROLES" <<'PY'
-import re, sys
-P, R = (open(f).read() for f in sys.argv[1:3])
+  python3 - "$PRINCIPALS" "$ROLES_DOOR" <<'PY'
+import json, os, re, sys, urllib.request
+
+P = open(sys.argv[1]).read()
+roles_source = sys.argv[2]
+
+if os.path.exists(roles_source):
+    with open(roles_source) as fp:
+        roles_doc = json.load(fp)
+else:
+    req = urllib.request.Request(roles_source, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        roles_doc = json.load(resp)
+
+roles = {r.get("name"): r for r in roles_doc.get("data", [])}
+
 def blocks(t):
     t = re.sub(r'(?m)^\s*#.*$', '', t)
     return {m.group(1): m.group(2) for m in re.finditer(r'(?ms)^chorus:([\w-]+) a ([^.]*?(?:"[^"]*"[^.]*?)*)\.\s*$', t)}
-pb, rb = blocks(P), blocks(R)
+
+pb = blocks(P)
 bad = []
 for name, body in pb.items():
     if 'principalKind "agent"' not in body:
@@ -33,24 +47,19 @@ for name, body in pb.items():
     role = m.group(1)
     if 'hostAccount' not in body:
         bad.append(f"{name}: no hostAccount")
-    if role not in rb:
-        bad.append(f"{name}: holds {role}, which is not declared in role-instances"); continue
-    if 'chorus:AgentRole' not in rb[role]:
-        bad.append(f"{role}: not typed chorus:AgentRole")
-    for cap in ('response', 'nudge'):
-        # New rows follow the ADR-040 mint table (property-…); the three
-        # original roles' prop-… names are grandfathered by the seed's iri-guard.
-        names = [f"property-{role}-{cap}-word-cap", f"prop-{role}-{cap}-word-cap"]
-        prop = next((n for n in names if f"chorus:{role} chorus:hasProperty chorus:{n} ." in R), None)
-        if prop is None:
-            bad.append(f"{role}: no hasProperty {names[0]}"); continue
+    role_key = re.sub(r'^role-', '', role)
+    if role_key not in roles and role not in roles:
+        bad.append(f"{name}: holds {role}, which has no row in the roles domain"); continue
+    r = roles.get(role_key) or roles.get(role)
+    if r.get("roleKind") != "agent":
+        bad.append(f"{role}: roleKind is not agent in the roles domain")
 
 print("\n".join(bad) if bad else "ok")
 sys.exit(1 if bad else 0)
 PY
 }
 
-@test "every agent principal in source holds a declared AgentRole with both word caps and a host account" {
+@test "every agent principal in source holds a role in the roles domain and a host account" {
   run check
   echo "$output"
   [ "$status" -eq 0 ]
@@ -59,21 +68,40 @@ PY
 @test "abby-normal is one of them" {
   grep -q '^chorus:principal-abby-normal a chorus:Principal' "$PRINCIPALS"
   grep -q 'holdsRole chorus:role-abby-normal' "$PRINCIPALS"
-  grep -q '^chorus:role-abby-normal a chorus:Role, chorus:AgentRole' "$ROLES"
+  run check
+  [ "$status" -eq 0 ]
 }
 
-@test "NEGATIVE PROOF: a principal whose role block is missing fails the check" {
-  grep -v -e '^chorus:role-abby-normal a' "$ROLES" | sed '/^chorus:role-abby-normal a/,/\.$/d' > "$BATS_TEST_TMPDIR/roles.ttl"
-  python3 - "$ROLES" "$BATS_TEST_TMPDIR/roles.ttl" <<'PY'
-import re, sys
-t = open(sys.argv[1]).read()
-t = re.sub(r'(?ms)^chorus:role-abby-normal a .*?rolePriority 4 \.\n', '', t)
-open(sys.argv[2], 'w').write(t)
-PY
-  ROLES="$BATS_TEST_TMPDIR/roles.ttl" run check
+# #4691 — Borg Queen was minted live 2026-10-22 06:30 (create) and never in
+# source, Abby's #4432 gap again: her live row had no hostAccount, holdsRole or
+# agentRuntime, and a session cannot write a Principal (403 deploy-only).
+@test "borg-queen is one of them, on agy as her own Mac account (#4691)" {
+  b=$(python3 -c 'import re,sys; m=re.search(r"(?ms)^chorus:principal-borg-queen a .*?canSignIn \"false\" \.", open(sys.argv[1]).read()); print(m.group(0) if m else "")' "$PRINCIPALS")
+  [ -n "$b" ] || { echo "no principal-borg-queen block"; return 1; }
+  for want in 'holdsRole chorus:role-borg-queen' 'hostAccount "chorus-borg-queen"' 'agentRuntime chorus:runtime-agy' 'principalKind "agent"' 'webId "https://id.lightlifeurbangardens.com/borg-queen/profile/card#me"'; do
+    [[ "$b" == *"$want"* ]] || { echo "missing: $want"; return 1; }
+  done
+  run check
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "NEGATIVE PROOF: an agent principal with no roles-domain row fails" {
+  python3 -c '
+import json, sys, urllib.request
+src = sys.argv[1]
+if __import__("os").path.exists(src):
+    data = json.load(open(src))
+else:
+    data = json.load(urllib.request.urlopen(src, timeout=5))
+data["data"] = [r for r in data.get("data", []) if r.get("name") != "abby-normal"]
+with open("'"$BATS_TEST_TMPDIR/roles-missing-abby.json"'", "w") as fp:
+    json.dump(data, fp)
+' "$ROLES_DOOR"
+  ROLES_DOOR="$BATS_TEST_TMPDIR/roles-missing-abby.json" run check
   echo "$output"
   [ "$status" -eq 1 ]
-  printf "%s" "$output" | grep -qF "holds role-abby-normal, which is not declared"
+  printf "%s" "$output" | grep -qF "holds role-abby-normal, which has no row in the roles domain"
 }
 
 @test "NEGATIVE PROOF: an agent principal with no hostAccount fails the check" {
@@ -106,14 +134,88 @@ PY
   printf "%s" "$output" | grep -qF "missing hat-engineering-lead"
 }
 
-@test "abby-normal owns nothing and holds no appointment (Jeff 2026-10-05)" {
-  hits=$(cd "$ROOT" && git grep -nE "(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal" -- '*.ttl' | wc -l | tr -d ' ')
-  echo "ownedBy/appointment references to abby-normal: $hits"
-  [ "$hits" -eq 0 ]
+check_abby() {
+  python3 - "$1" <<'PY'
+import os, subprocess, re, sys
+
+target_dir = sys.argv[1]
+allowed_radius = {"chorus:clearing"}
+p_file = os.path.join(target_dir, "designing/data/product-instances.ttl")
+if os.path.exists(p_file):
+    with open(p_file) as fp:
+        p_text = fp.read()
+    m_clr = re.search(r'(?ms)^chorus:clearing a chorus:Product\s*;\s*(.*?)\.\s*$', p_text)
+    if m_clr:
+        m_dom = re.search(r'chorus:hasDomain\s+([^;]+);', m_clr.group(1))
+        if m_dom:
+            allowed_radius.update(d.strip() for d in m_dom.group(1).split(",") if d.strip())
+
+if os.path.exists(os.path.join(target_dir, ".git")):
+    try:
+        out = subprocess.check_output(
+            ["git", "grep", "-nE", r"(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal", "--", "*.ttl"],
+            cwd=target_dir
+        ).decode("utf-8")
+    except subprocess.CalledProcessError:
+        out = ""
+    lines = [l for l in out.splitlines() if l.strip()]
+    files_with_lines = []
+    for l in lines:
+        parts = l.split(":", 2)
+        files_with_lines.append((os.path.join(target_dir, parts[0]), int(parts[1])))
+else:
+    files_with_lines = []
+    for r, ds, fs in os.walk(target_dir):
+        for f in fs:
+            if f.endswith(".ttl"):
+                p = os.path.join(r, f)
+                with open(p, "r", errors="ignore") as fp:
+                    for idx, line in enumerate(fp, 1):
+                        if re.search(r'(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal', line):
+                            files_with_lines.append((p, idx))
+
+if not files_with_lines:
+    print("abby-normal owns nothing (expected Clearing / product-radius)")
+    sys.exit(1)
+
+bad = []
+for p, lno in files_with_lines:
+    with open(p, "r", errors="ignore") as fp:
+        flines = fp.readlines()
+    subj = None
+    for i in range(lno - 1, -1, -1):
+        l = flines[i].strip()
+        if i < lno - 1 and l.endswith("."):
+            break
+        m = re.match(r'^(chorus:[a-zA-Z0-9_-]+)\s+a\s+', l)
+        if m:
+            subj = m.group(1); break
+        m2 = re.match(r'^(chorus:[a-zA-Z0-9_-]+)\s+chorus:(ownedBy|appointee|appointedPrincipal|appointedRole)', l)
+        if m2:
+            subj = m2.group(1); break
+    if subj not in allowed_radius:
+        bad.append(f"outside Clearing product-radius: {subj} at {p}:{lno}")
+
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+
+print(f"ok ({len(files_with_lines)} references in Clearing product-radius)")
+sys.exit(0)
+PY
 }
 
-@test "NEGATIVE PROOF: an ownedBy pointing at abby-normal is caught" {
-  printf 'chorus:x a chorus:Domain ;\n    chorus:ownedBy chorus:principal-abby-normal .\n' > "$BATS_TEST_TMPDIR/x.ttl"
-  run grep -cE "(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal" "$BATS_TEST_TMPDIR/x.ttl"
-  [ "$output" -eq 1 ]
+@test "abby-normal owns Clearing and its product-radius, nothing outside (Jeff 2026-10-21 18:16)" {
+  run check_abby "$ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "NEGATIVE PROOF: an ownedBy outside Clearing radius is caught" {
+  mkdir -p "$BATS_TEST_TMPDIR/repo"
+  printf 'chorus:x a chorus:Domain ;\n    chorus:ownedBy chorus:principal-abby-normal .\n' > "$BATS_TEST_TMPDIR/repo/x.ttl"
+  run check_abby "$BATS_TEST_TMPDIR/repo"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  printf "%s" "$output" | grep -qF "outside Clearing product-radius: chorus:x"
 }

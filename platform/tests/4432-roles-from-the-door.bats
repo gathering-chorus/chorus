@@ -19,7 +19,8 @@ setup() {
 
 @test "abby-normal is a role the command accepts" {
   run bash -c "echo '{\"session_id\":\"c-4432\",\"prompt\":\"hi\"}' | AWAKE_SEEN_SYNC=1 '$SCRIPT' seen abby-normal"
-  printf '%s' "$output" | grep -vqF "unknown role"
+  test "$status" -eq 0
+  printf '%s' "$output" | grep -vqF "unknown role" || true
 }
 
 @test "a name the door does not list is refused, naming the door's roles" {

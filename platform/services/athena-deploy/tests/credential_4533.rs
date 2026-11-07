@@ -1,5 +1,5 @@
 // @test-type: unit — signal:api is fixture-data
-// @domain: athena
+// @domain: domains
 //! #4533 — athena-deploy finds the store's write credential on its own. Since
 //! #4515 the land runs it through the runner, which carries no password, and
 //! #4531's model deploy failed 2026-10-14 20:29 with a bare 401.

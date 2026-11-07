@@ -215,8 +215,8 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
     client.connect();
     mockWs.triggerOpen();
 
-    expect(mockWs.sentMessages.length).toBe(1);
-    const frame = JSON.parse(mockWs.sentMessages[0]);
+    expect(mockWs.sentMessages.length).toBe(2);
+    const frame = JSON.parse(mockWs.sentMessages[1]); // #4652 — the second REQ is the kind 1 history
     expect(frame[0]).toBe('REQ');
     const filter = frame[2];
 

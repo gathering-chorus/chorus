@@ -1,3 +1,4 @@
+// @domain: security — placed by chorus-crawl's domain rules (#4645)
 use crate::shared::state_paths::chorus_root;
 use crate::state::chorus_log;
 use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};
@@ -157,7 +158,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -174,7 +175,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input).await;
         assert_eq!(r.exit_code, 0);

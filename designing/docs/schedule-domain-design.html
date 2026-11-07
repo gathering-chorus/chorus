@@ -44,7 +44,7 @@ domain  schedule  (owner silas, step proving, graph urn:chorus:domains:schedule)
 <pre>one writer        the services crawl writes these rows; there is no second harvester
 measured only     every field comes from the plist or launchctl and none is typed in;
                   a machine that can't be read gives unmeasured, never blank
-no crontab        backup-pods and cost-metrics are launchd units now; crontab is empty
+no crontab        cost-metrics is a launchd unit now (backup-pods retired by #4705); crontab is empty
 moved home        rows created in schedule; the old copies are retired from services in the same land</pre>
 <h2>The page</h2>
 <p>/athena/schedule.html is the generic page that draws any collection from its shape, preset to <code>/v1/schedule/scheduledjobs</code>. No per-class HTML.</p>

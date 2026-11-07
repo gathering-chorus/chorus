@@ -13,6 +13,7 @@
 # (exit 129) unless the call trusts exactly that werk through GIT_CONFIG_*.
 
 setup() {
+  export MOB_OPEN_BIN=/usr/bin/true  # #4789 — no open mob; never read the live dagu from a unit test
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   export CHORUS_HOME="$BATS_TEST_TMPDIR/home" CHORUS_WERK_BASE="$BATS_TEST_TMPDIR/werks"
   W="$CHORUS_WERK_BASE/abby-normal-4591"

@@ -26,6 +26,7 @@ pub mod stores;
 pub mod code_run;
 // #4405 reopen 4 — a sensor pass as a SensorRun record
 pub mod sensor_run;
+pub mod readings;
 pub mod code {
     // #4499 — the one code-unit generator, shared with werk-build/test/deploy
     include!("../../shared/code_units.rs");
@@ -730,6 +731,18 @@ mod plan_4173 {
             actions
         );
         assert_eq!(counts(&actions).unchanged, 2);
+    }
+
+    // #4568 — a land whose commit changed no tracked file is a delta over
+    // nothing: it writes nothing, and the graph it did not look at is kept.
+    // Measured 10-19 18:42: delta 5a62b6a21..5a62b6a21 posted=0 replaced=0 deleted=0.
+    #[test]
+    fn a_land_that_changes_no_tracked_file_writes_nothing() {
+        let graph = [g("a.rs", "aaa"), g("b.ts", "bbb")];
+        assert!(!writes_anything(&plan(&[], &graph, TreeRead::Scoped)));
+        assert!(matches!(scope_for(Some("abc"), "abc", true), Scope::Delta { .. }));
+        // NEGATIVE PROOF: the same empty view read as the whole tree deletes every row
+        assert_eq!(counts(&plan(&[], &graph, TreeRead::Complete)).deleted, 2);
     }
 
     // NEGATIVE PROOF (#3734): the same check must still fire when there IS work,
@@ -1499,6 +1512,71 @@ fn find_str_end(s: &str, from: usize) -> Option<usize> {
     None
 }
 
+/// #4915 — a file update restates the row as served, so an `exercises` edge
+/// to a row deleted since rides along, and the door refuses the whole PUT as
+/// unknown-target. On 2026-11-06 four test files named werk-review's deleted
+/// Cargo.lock, every crawl failed 4 writes, and the watermark held all night.
+/// Keep only the edges whose target is `live` (a served name, with or without
+/// the door's `code-file-` prefix). Other keys are untouched.
+pub fn drop_dead_edges(
+    fields: Vec<(String, String)>,
+    key: &str,
+    live: &dyn Fn(&str) -> bool,
+) -> Vec<(String, String)> {
+    fields
+        .into_iter()
+        .filter(|(k, v)| k != key || live(v.trim_start_matches("chorus:").trim_start_matches("code-file-")))
+        .collect()
+}
+
+#[cfg(test)]
+mod dead_edges_4915 {
+    use super::*;
+
+    fn row() -> Vec<(String, String)> {
+        vec![
+            ("filePath".to_string(), "platform/tests/t.bats".to_string()),
+            ("exercises".to_string(), "code-file-file-a-rs-1".to_string()),
+            ("exercises".to_string(), "code-file-file-platform-services-werk-review-cargo-lock-d9d7d84e".to_string()),
+            ("hasDomain".to_string(), "werk".to_string()),
+        ]
+    }
+
+    #[test]
+    fn an_edge_to_a_deleted_row_is_dropped_and_the_rest_kept() {
+        let live = |n: &str| n == "file-a-rs-1";
+        let out = drop_dead_edges(row(), "exercises", &live);
+        assert_eq!(out, vec![
+            ("filePath".to_string(), "platform/tests/t.bats".to_string()),
+            ("exercises".to_string(), "code-file-file-a-rs-1".to_string()),
+            ("hasDomain".to_string(), "werk".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn a_served_value_with_the_chorus_prefix_is_judged_by_its_bare_name() {
+        let row = vec![("exercises".to_string(), "chorus:file-a-rs-1".to_string())];
+        let live = |n: &str| n == "file-a-rs-1";
+        assert_eq!(drop_dead_edges(row.clone(), "exercises", &live), row, "a live edge in the chorus: form was dropped");
+        let dead = |_: &str| false;
+        assert!(drop_dead_edges(row, "exercises", &dead).is_empty());
+    }
+
+    // NEGATIVE PROOF (#3734): with every target live nothing is dropped, so the
+    // red above is about the dead target, not about edges in general; and a
+    // dead-looking value under another key is never touched.
+    #[test]
+    fn negative_proof_live_edges_and_other_keys_are_kept() {
+        let all = |_: &str| true;
+        assert_eq!(drop_dead_edges(row(), "exercises", &all), row());
+        let none = |_: &str| false;
+        let out = drop_dead_edges(row(), "exercises", &none);
+        assert!(out.iter().all(|(k, _)| k != "exercises"));
+        assert!(out.contains(&("hasDomain".to_string(), "werk".to_string())));
+        assert!(out.contains(&("filePath".to_string(), "platform/tests/t.bats".to_string())));
+    }
+}
+
 /// The row to PUT back: everything the door served, with the crawler's own
 /// fields written over it. Server-managed keys are dropped — restating them is
 /// either refused or a lie about who changed the row.
@@ -1781,6 +1859,20 @@ where
                 }
             }
         }
+    }
+}
+
+/// #4670 — the body a failed door call reports: its first 200 chars, plus the
+/// prefix clause the learner reads when the cut drops it. A long link value
+/// (`code-file-file-building-products-…-icd-instance-documents-ttl-…`) pushed
+/// "already starts with 'code-file-'" past char 200, so nothing was learned,
+/// the write never retried, and every crawl pass from 10-21 09:08 held its
+/// watermark (10-16 lost five files the same way).
+pub fn error_body(payload: &str) -> String {
+    let cut: String = payload.chars().take(200).collect();
+    match named_prefix(payload) {
+        Some(p) if named_prefix(&cut) != Some(p) => format!("{cut}… already starts with '{p}'"),
+        _ => cut,
     }
 }
 
@@ -3061,6 +3153,38 @@ fn jstr(s: &str) -> String {
 }
 
 /// Where the records are kept: `CHORUS_VALIDATE_DIR`, else ~/.chorus/crawler-validate.
+/// #4091 AC4 — the Grafana framework's sync reading as a validate row:
+/// `convergence-land sync` prints `measured tree=N graph=N` then `missing ..`
+/// and `stale ..` lines, or `unmeasured <why>`. Anything else (no binary, a
+/// crash, garbage) is unmeasured, never a clean zero.
+pub fn grafana_rule_row(out: &str) -> ValidateRow {
+    let mut row = ValidateRow {
+        domain: "alerts".to_string(),
+        class: "Grafana rule".to_string(),
+        tree: 0,
+        graph: 0,
+        missing: Vec::new(),
+        stale: Vec::new(),
+        excluded: Vec::new(),
+        measured: false,
+    };
+    let mut lines = out.lines();
+    let Some(head) = lines.next().and_then(|l| l.strip_prefix("measured ")) else { return row };
+    let num = |k: &str| head.split_whitespace().find_map(|w| w.strip_prefix(k)).and_then(|n| n.parse::<usize>().ok());
+    let (Some(tree), Some(graph)) = (num("tree="), num("graph=")) else { return row };
+    row.tree = tree;
+    row.graph = graph;
+    for l in lines {
+        if let Some(m) = l.strip_prefix("missing ") {
+            row.missing.push(m.to_string());
+        } else if let Some(m) = l.strip_prefix("stale ") {
+            row.stale.push(m.to_string());
+        }
+    }
+    row.measured = true;
+    row
+}
+
 pub fn validate_dir() -> String {
     std::env::var("CHORUS_VALIDATE_DIR").unwrap_or_else(|_| {
         format!(
@@ -3175,4 +3299,17 @@ pub fn domain_set<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
     v.sort();
     v.dedup();
     v
+}
+
+/// #4714 — where the Grafana sync check finds convergence-land. The scheduled
+/// sync runs with a PATH that has no ~/.chorus/bin (the LaunchAgent's), so a bare
+/// "convergence-land" was not found and every 03:30 run since 10-22 went
+/// unmeasured ("cannot run convergence-land: No such file or directory",
+/// measured 10-23 21:41Z). CONVERGENCE_LAND wins; else the deployed shim; else PATH.
+pub fn convergence_land_bin(env: Option<String>, home: &str, exists: impl Fn(&str) -> bool) -> String {
+    if let Some(b) = env.filter(|b| !b.trim().is_empty()) {
+        return b;
+    }
+    let deployed = format!("{home}/.chorus/bin/convergence-land");
+    if exists(&deployed) { deployed } else { "convergence-land".to_string() }
 }

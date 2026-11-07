@@ -26,7 +26,8 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
 # instead of a grep quietly still matching a comment.
 crate_test() {  # crate_test <crate> <exact test name>
   command -v cargo >/dev/null 2>&1 || skip "UNMEASURED — cargo absent, cannot run the $1 unit test (#4336)"
-  run bash -c "cd '$ROOT/platform/services/$1' && cargo test --release -q -- --exact '$2' 2>&1"
+  # #4772 — this account's own build folder (EPERM on another account's files)
+  run bash -c "cd '$ROOT/platform/services/$1' && CARGO_TARGET_DIR=\"\${CARGO_TARGET_DIR:-target/\$(id -un)}\" cargo test --release -q -- --exact '$2' 2>&1"
   [ "$status" -eq 0 ]
   [[ "$output" == *"1 passed"* ]] || { echo "$1: $2 did not run as exactly one passing test"; echo "$output" | tail -5; return 1; }
 }

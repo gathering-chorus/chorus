@@ -26,6 +26,7 @@
   --kade: #7b4a86;
   --deb: #8a6a12;
   --abby-normal: #7b4a86;
+  --borg-queen: #0f766e;
   --callout: #c2562f;
   --code: #edf1ee;
 
@@ -65,6 +66,7 @@
     --kade: #c79ad2;
     --deb: #e0bd5a;
     --abby-normal: #c79ad2;
+    --borg-queen: #2dd4bf;
     --callout: #f08a60;
     --code: #202b27;
     color-scheme: dark;
@@ -105,6 +107,7 @@
   --kade: #c79ad2;
   --deb: #e0bd5a;
   --abby-normal: #c79ad2;
+  --borg-queen: #2dd4bf;
   --callout: #f08a60;
   --code: #202b27;
   color-scheme: dark;
@@ -427,12 +430,14 @@ nav.top .n {
 .a-kade { background: var(--kade); }
 .a-deb { background: var(--deb); }
 .a-abby-normal { background: var(--abby-normal); }
+.a-borg-queen { background: var(--borg-queen); }
 
-.who-wren { color: var(--wren); }
-.who-silas { color: var(--silas); }
-.who-kade { color: var(--kade); }
-.who-jeff { color: var(--jeff); }
-.who-abby-normal { color: var(--abby-normal); }
+.who-wren, .message-author.wren { color: var(--wren); }
+.who-silas, .message-author.silas { color: var(--silas); }
+.who-kade, .message-author.kade { color: var(--kade); }
+.who-jeff, .message-author.jeff { color: var(--jeff); }
+.who-abby-normal, .message-author.abby-normal { color: var(--abby-normal); }
+.who-borg-queen, .message-author.borg-queen { color: var(--borg-queen); }
 
 .dot {
   width: 8px;
@@ -480,6 +485,7 @@ nav.top .n {
 .rooms {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -523,6 +529,7 @@ nav.top .n {
 .chat {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   min-width: 0;
   max-width: 100%;
   flex: 1;
@@ -536,7 +543,7 @@ nav.top .n {
   flex: 1;
   overflow: hidden;
 }
-.messages {
+.messages, #messages-stream {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -545,6 +552,7 @@ nav.top .n {
   gap: 2px;
   padding: 8px 0;
   min-width: 0;
+  overflow-anchor: auto;
 }
 .msg, .message {
   display: flex;
@@ -553,6 +561,8 @@ nav.top .n {
   position: relative;
   min-width: 0;
   max-width: 100%;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 .msg:hover {
   background: var(--sunk);
@@ -569,6 +579,42 @@ nav.top .n {
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+.msg .body pre, .message .message-text pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  background: var(--sunk, #161b22);
+  border: 1px solid var(--line2, #30363d);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.msg .body code, .message .message-text code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.msg .body pre code, .message .message-text pre code {
+  white-space: pre;
+}
+.msg .body ul, .message .message-text ul,
+.msg .body ol, .message .message-text ol {
+  margin: 4px 0 6px 18px;
+  padding-left: 0;
+}
+.msg .body li, .message .message-text li {
+  margin: 2px 0;
+  line-height: 1.4;
+}
+.msg .body a, .message .message-text a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg .body a.cid, .message .message-text a.cid {
+  text-decoration: none;
 }
 .msg .nm, .message-author {
   font-weight: 600;
@@ -616,9 +662,14 @@ nav.top .n {
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 13.5px;
+  font-family: inherit;
   background: var(--panel);
   color: var(--ink);
   outline: none;
+  resize: none;
+  min-height: 36px;
+  max-height: 120px;
+  line-height: 1.4;
 }
 #composer-input:focus {
   border-color: var(--accent);
@@ -887,6 +938,19 @@ tr.you td {
   .app-header {
     padding: 4px 10px;
   }
+  /* #4597 / #4617 — status dots sit beside title in app header without word clutter on narrow width */
+  .app-header .trust-strip .chip {
+    font-size: 0;
+  }
+  .app-header .trust-strip .chip .fail-source-name {
+    display: none;
+  }
+  .app-header .trust-strip .chip i {
+    margin-right: 0;
+  }
+  .app-header .trust-strip {
+    gap: 6px;
+  }
   /* #4575 — on a phone the sender line sits above the text, so the text gets the full width */
   .message { flex-direction: column; gap: 2px; }
   /* #4575 — iOS zooms the page when a field under 16px gets focus; that was the "resize" */
@@ -928,13 +992,15 @@ tr.you td {
     padding: 12px;
   }
   .actor-rail {
-    padding: 3px 8px;
-    gap: 6px;
+    padding: 3px 6px;
+    gap: 4px;
   }
   .actor-tile {
-    padding: 2px 7px;
+    padding: 3px 7px;
     font-size: 11px;
     gap: 5px;
+    flex: 0 0 auto;
+    min-width: max-content;
   }
   .actor-tile .av {
     width: 20px;
@@ -966,7 +1032,9 @@ tr.you td {
 .rooms-view {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  /* #4597: a fixed-height frame, not a flex-grow child of an auto-height page —
+     otherwise it grows with the message list and Send ends up thousands of px down */
+  flex: 0 0 auto;
   min-height: 0;
   min-width: 0;
   max-width: 100%;
@@ -975,10 +1043,10 @@ tr.you td {
 }
 .actor-rail {
   display: flex;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 6px 10px;
   background: var(--sunk);
-  border-bottom: 1px solid var(--line2);
+  border-top: 1px solid var(--line2);
   overflow-x: auto;
   align-items: center;
   scrollbar-width: none;
@@ -990,20 +1058,29 @@ tr.you td {
 .actor-tile {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: 6px;
+  padding: 4px 8px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 12px;
-  flex-shrink: 0;
+  font-size: 11.5px;
+  flex: 0 0 auto;
+  min-width: max-content;
   transition: border-color 0.15s ease;
   user-select: none;
+  text-decoration: none;
+  color: inherit;
 }
 .actor-tile:hover {
   border-color: var(--accent);
+}
+.actor-tile.on, .actor-tile.selected, .actor-tile.active-filter {
+  border-color: var(--accent);
+  background: var(--accentbg);
+  box-shadow: 0 0 0 1px var(--accent);
+  font-weight: 600;
 }
 .actor-tile-info {
   display: flex;
@@ -1189,3 +1266,55 @@ tr.you td {
 .presence-working { color: var(--ok); font-weight: 600; }
 .presence-awake { color: var(--info); }
 .presence-quiet { color: var(--faint); }
+
+/* #4597 — the Streams tab: one column per role, newest command first */
+.streams-page { padding: 12px; }
+.streams-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.stream-col { border: 1px solid var(--line2); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.stream-col h3 { margin: 0 0 6px; font-size: 14px; text-transform: capitalize; }
+.stream-line { font-size: 12.5px; line-height: 1.4; padding: 3px 0; border-top: 1px solid var(--line2); overflow-wrap: anywhere; }
+.stream-line .tm { color: var(--meta); margin-right: 4px; }
+/* #4634 — the by-day counts: a day where Buzz kept fewer than were sent reads red */
+.counts-table td.fail { color: var(--bad); font-weight: 600; }
+.counts-table th, .counts-table td { padding: 6px 8px; white-space: nowrap; }
+.counts-table td.num { text-align: right; }
+
+/* #4866 — attach a file or photo from the composer */
+.composer-file { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; cursor: pointer; font-size: 20px; }
+.msg-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.msg-file { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--panel); border: 1px solid var(--line2); border-radius: 6px; font-size: 12px; color: var(--ink); text-decoration: none; }
+.msg-file:hover { border-color: var(--accent); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.msg-photos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.msg-photos img { max-width: min(320px, 100%); max-height: 320px; aspect-ratio: 4 / 3; object-fit: contain; background: var(--sunk); border-radius: 6px; border: 1px solid var(--line2); display: block; }
+.composer-mic { min-width: 40px; font-size: 20px; background: none; border: 0; cursor: pointer; }
+.composer-mic[aria-pressed="true"] { background: var(--badbg, #f7e4df); border-radius: 6px; }
+
+/* #4649 — a message of Jeff's that did not reach its role */
+.message.undelivered { border-left: 3px solid var(--bad); }
+.msg-undelivered { margin-top: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: var(--bad); background: var(--badbg); border-radius: 4px; display: inline-block; }
+
+/* #4751 — responsive room header so Search loaded... does not clip nudges/counts on mobile */
+.chat-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line2);
+  min-width: 0;
+  gap: 6px;
+}
+@media (max-width: 600px) {
+  .chat-header-row {
+    flex-wrap: wrap !important;
+    padding: 4px 8px;
+    gap: 4px;
+  }
+  .chat-header-row #room-search-input {
+    width: 80px !important;
+    min-width: 60px;
+  }
+  .chat-header-row .room-picker {
+    font-size: 12px !important;
+  }
+}

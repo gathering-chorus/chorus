@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: hooks
+// @domain: messages
 //! #3672 — the respond-first gate (#3218) must never trap.
 //!
 //! 2026-07-23, twice in one day: a role owed a reply, its session had no

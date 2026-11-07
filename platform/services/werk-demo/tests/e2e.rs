@@ -1,5 +1,5 @@
 // @test-type: integration
-// @domain: werk
+// @domain: builds
 //! End-to-end (#3116, #4502): PATH-shim every external CLI (cards / werk-build /
 //! werk-deploy / curl / chorus-log / gh), prove the demo steps run as dagu calls
 //! them — validate (AC preflight + evidence + trace) → the gates and peer
@@ -88,8 +88,8 @@ if [ "$1" = "view" ]; then
   Owner: wren
   Desc:
     ## Acceptance Criteria
-    - [x] one ported
-    - [x] two ported
+    - [x] one ported. check: test platform/tests/one.bats
+    - [x] two ported. check: test platform/tests/two.bats
   Domains: domain:chorus, type:fix
 CARDEOF
   exit 0
@@ -114,6 +114,16 @@ exit 0
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
     std::env::remove_var("CHORUS_WERK_BASE");
+    // #4642 — the announce posts the go row to the door as the role: a stand-in mint and a
+    // door that logs argv and stdin apart (the identity must ride stdin, never argv).
+    std::env::set_var("CHORUS_DEMO_HEAD", "5174a0592261bbd5b452ec1287cda4e5e2fda45a");
+    let go_door = tmp("godoor"); // (the refused-row ask is unit-tested: go_row_4642.rs go_ask)
+    write_exec(&bin.join("go-mint"), "#!/bin/sh\necho stand-in-identity\n");
+    write_exec(&bin.join("go-curl"), &format!(
+        "#!/bin/sh\necho \"$@\" >> \"{d}/argv\"\ncat >> \"{d}/stdin\"\nprintf 201\n",
+        d = go_door.display()));
+    std::env::set_var("CHORUS_IDENTITY_TOKEN_BIN", bin.join("go-mint"));
+    std::env::set_var("WERK_DEMO_CURL", bin.join("go-curl"));
     fs::create_dir_all(home.join("ops/logs")).unwrap();
     let witness_path = home.join("ops/logs/werk-demo.jsonl");
 
@@ -122,55 +132,53 @@ exit 0
     assert_eq!(v.exit, 0, "validate: {}", v.message);
     assert!(v.message.contains("AC 2/2"), "validate reports the AC count: {}", v.message);
 
-    // --- step: announce, NEGATIVE PROOF 1: nothing recorded → refused, every step named ---
+    // --- step: announce, NEGATIVE PROOF 1: nothing recorded → refused, every review named ---
     let none = announce_step(3046, "wren", &home).expect("announce returns Ok when it refuses");
-    assert_eq!(none.exit, 1, "announce with no gates/reviews must refuse: {}", none.message);
-    for step in ["gate-product", "gate-code", "gate-quality", "gate-arch", "gate-ops", "review-silas", "review-kade", "review-abby-normal"] {
+    assert_eq!(none.exit, 1, "announce with no reviews must refuse: {}", none.message);
+    for step in ["gate-code", "gate-arch", "gate-quality"] {
         assert!(none.message.contains(step), "refusal names {}: {}", step, none.message);
     }
-
-    // seed the 5 gates + the tests verdict + two of the three peer reviews
-    let mut seed = fs::read_to_string(&witness_path).unwrap_or_default();
-    for g in ["product", "code", "quality", "arch", "ops"] {
-        seed.push_str(&format!(
-            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"round\":\"e2e-r1\",\"result\":\"pass\",\"findings\":\"{} reviewed, no concerns\"}}\n",
-            g, g
-        ));
+    // #4889: the retired steps are never asked for
+    for gone in ["gate-product", "gate-ops", "review-"] {
+        assert!(!none.message.contains(gone), "{} is retired: {}", gone, none.message);
     }
+
+    // seed two of the three reviews + the tests verdict
+    let gate = |ts: u32, g: &str, r: &str| format!("{{\"ts\":{},\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"round\":\"e2e-r1\",\"result\":\"{}\",\"findings\":\"{} reviewed, no concerns\"}}\n", ts, g, r, g);
+    let mut seed = fs::read_to_string(&witness_path).unwrap_or_default();
+    seed.push_str(&gate(1, "code", "pass"));
+    seed.push_str(&gate(1, "arch", "pass"));
     seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
-    seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"verdict\":\"pass\",\"note\":\"ack\"}\n");
-    seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"abby-normal\",\"round\":\"e2e-r1\",\"verdict\":\"pass\",\"note\":\"ack\"}\n");
     fs::write(&witness_path, &seed).unwrap();
 
     // --- NEGATIVE PROOF 2: one review missing → refused, naming only that review ---
     let one = announce_step(3046, "wren", &home).expect("announce returns Ok when it refuses");
     assert_eq!(one.exit, 1, "announce with a review missing must refuse: {}", one.message);
-    assert!(one.message.contains("review-silas") && !one.message.contains("review-kade") && !one.message.contains("review-abby-normal") && !one.message.contains("gate-"),
+    assert!(one.message.contains("gate-quality") && !one.message.contains("gate-code") && !one.message.contains("gate-arch"),
             "names only the missing review: {}", one.message);
     let w = fs::read_to_string(&witness_path).unwrap();
     assert!(!w.contains("\"event\":\"demo.presented\""), "a refused announce presents nothing:\n{}", w);
 
     // an "error" review is no review: it still refuses
     let mut err = fs::read_to_string(&witness_path).unwrap();
-    err.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"verdict\":\"error\",\"note\":\"claude exit 1\"}\n");
+    err.push_str(&gate(1, "quality", "error"));
     fs::write(&witness_path, &err).unwrap();
     let errored = announce_step(3046, "wren", &home).unwrap();
     assert_eq!(errored.exit, 1, "an errored review is missing: {}", errored.message);
 
     // --- happy path: the last review lands → announce presents, exit 0 ---
-    let mut both = fs::read_to_string(&witness_path).unwrap();
-    both.push_str("{\"ts\":2,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"verdict\":\"concerns\",\"note\":\"watch the land\"}\n");
-    fs::write(&witness_path, &both).unwrap();
+    let mut all = fs::read_to_string(&witness_path).unwrap();
+    all.push_str(&gate(2, "quality", "pass"));
+    fs::write(&witness_path, &all).unwrap();
     let result = announce_step(3046, "wren", &home).expect("announce should succeed");
     assert_eq!(result.exit, 0, "#4502 announce step succeeds as a dagu step: {}", result.message);
-    // #3511 — the four things Jeff named: gates, team review, card + AC, a claim
+    // #3511 — what Jeff named: the reviews, card + AC, a claim
     assert!(result.message.contains("#3046"), "(3) names the card: {}", result.message);
     assert!(result.message.contains("AC 2/2"), "(3) AC count: {}", result.message);
     assert!(result.message.contains("AC:"), "(3) the AC items are listed: {}", result.message);
     assert!(result.message.contains("gates:"), "(1) gate status shown: {}", result.message);
     assert!(result.message.contains("feedback:") && result.message.contains("reviewed, no concerns"),
             "per-gate findings shown: {}", result.message);
-    assert!(result.message.contains("team review:"), "(2) role feedback summarized: {}", result.message);
     assert!(result.message.contains("🔬"), "(4) a claim of how to prove it works: {}", result.message);
     assert!(result.message.contains("werk-demo go 3046"), "(5) ends in Jeff's go path: {}", result.message);
 
@@ -193,11 +201,17 @@ exit 0
     }
     // #4502 — ONE message per round (Jeff 11:33 "really noisy and repetitive";
     // #3971 folded): the round's ask went out once, and no room posts at all.
-    let asks = |p: &PathBuf| fs::read_to_string(p).unwrap_or_default().lines().filter(|l| l.contains("Demo ready — #3046")).count();
+    let asks = |p: &PathBuf| fs::read_to_string(p).unwrap_or_default().lines().filter(|l| l.contains("Demo brief for the owner — #3046")).count();
     assert_eq!(asks(&shim_log), 1, "one ask for the round: {}", fs::read_to_string(&shim_log).unwrap_or_default());
     let sent = fs::read_to_string(&shim_log).unwrap_or_default();
-    assert!(sent.contains("gates ✓") && sent.contains("reviews 3/3") && sent.contains("AC 2/2") && sent.contains("go / no / more"),
-            "the one ask carries the tally and the go: {}", sent);
+    assert!(sent.contains("reviews ✓") && sent.contains("AC 2/2"),
+            "the owner's brief carries the tally: {}", sent);
+    // #4875 — the announce is the owner's brief, never Jeff's go: no row on his list, no go link.
+    // The go reaches Jeff only through the owner's vouch (log evidence: 11-03 06:58 #4873).
+    let door_argv = fs::read_to_string(go_door.join("argv")).unwrap_or_default();
+    assert!(!door_argv.contains(r#""approvalKind":"go""#), "the announce posts no go row: {door_argv}");
+    assert!(!sent.contains("/go/") && !sent.contains("decide: ") && !sent.contains("go / no"), "no go in the brief: {sent}");
+    assert!(sent.contains("werk-demo vouch 3046"), "the brief names the owner's next step: {sent}");
     assert!(!curl_calls.contains("/api/message"), "no room posts: {}", curl_calls);
     // NEGATIVE PROOF 1: a second announce for the same round sends nothing
     let again = announce_step(3046, "wren", &home).unwrap();

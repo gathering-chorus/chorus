@@ -1,0 +1,135 @@
+#!/usr/bin/env bats
+# @test-type: unit — the model via SPARQL on the werk ttl; source checks on the bouncer and chorus-go
+# @domain: decisions
+# @card: #4505
+# @owner: wren
+# #4505 round 1 — card asks become ONE Approval row Jeff decides on.
+# Model checks run against the werk's ttl (riot); behaviour checks drive the
+# bouncer (sdk.ts) and the decide path with fakes. Each guard has a negative proof.
+
+setup() {
+  ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  TTL="$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
+  SDK="$ROOT/directing/products/cards/src/sdk.ts"
+}
+
+q() { # SPARQL ASK against the ttl; prints yes/no
+  arq --data "$TTL" --query <(printf 'PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX sh: <http://www.w3.org/ns/shacl#>\nPREFIX owl: <http://www.w3.org/2002/07/owl#>\n%s' "$1") --results=text 2>/dev/null | grep -qi '^yes' && echo yes || echo no
+}
+
+# --- model (R1-L1) -----------------------------------------------------------
+
+@test "R1-L1 model: Approval is a class in the decisions vocabulary" {
+  [ "$(q 'ASK { chorus:decisions chorus:definesVocabulary chorus:Approval . chorus:Approval a owl:Class }')" = yes ] || return 1
+}
+
+@test "R1-L1 model: ApprovalShape serves from the decisions graph" {
+  [ "$(q 'ASK { chorus:ApprovalShape sh:targetClass chorus:Approval ; chorus:instancesGraph "urn:chorus:domains:decisions" }')" = yes ] || return 1
+}
+
+@test "R1-GUARDS model: a decision is its own jeff-owned row; the Approval carries no state" {
+  grep -q 'sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ; sh:in ( chorus:principal-jeff )' "$TTL" || return 1
+  grep -q 'sh:path chorus:decides ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Approval' "$TTL" || return 1
+  [ "$(q 'ASK { chorus:approvalState ?p ?o }')" = no ] || return 1
+}
+
+@test "R1-NEG model: the ASK helper can say no (a class that does not exist)" {
+  [ "$(q 'ASK { chorus:NoSuchApprovalThing a owl:Class }')" = no ] || return 1
+}
+
+# --- bouncer writes the row, not the file (R1-L1, R1-HEADS-UP) ----------------
+
+@test "R1-L1 bouncer: no pending-approvals file or socket write remains in sdk.ts" {
+  ! grep -nE 'argv\.json|pending-approvals|bouncer-pending' "$SDK" || return 1
+}
+
+@test "R1-L1/HEADS-UP/NEG bouncer: the ask posts one row as the role; retry, bad argv, door refusal (jest)" {
+  cd "$ROOT/directing/products/cards" || return 1
+  run npx jest tests/approvals.test.ts
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"5 passed"* ]] || { echo "$output"; return 1; }
+}
+
+# --- one list, Jeff-only decide, replay as data (R1-L2..L4, R1-NEG) ----------
+
+@test "R1-L2..L4/NEG chorus-go: list, passkey-only decide, replay as data, every refusal (cargo)" {
+  cd "$ROOT/platform/services/chorus-go" || return 1
+  run env CARGO_BUILD_JOBS=4 nice cargo test --test approvals_4505 --test serve_approvals_4505
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # #4642 retired the go-nonce case
+  [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +4 stale-go
+}
+
+# --- retire the chat keyword path (R1-L5) ------------------------------------
+
+@test "R1-L5 retire: the chat approve/deny responder and the socket handoff are gone" {
+  ! grep -rnE 'bouncer.pending|card_approval_responder' "$ROOT/platform/services/chorus-hooks/src" || return 1
+}
+
+@test "R1-L5 NEG: the retire check can fail (a planted reference is seen)" {
+  d="$(mktemp -d)"; echo 'route("/bouncer-pending")' > "$d/x.rs"
+  grep -rqnE 'bouncer.pending|card_approval_responder' "$d" || return 1
+  rm -rf "$d"
+}
+
+# --- #4642 (round 2): the go joins the one list --------------------------------
+
+@test "R2-GO-ROW model: an Approval may be kind card, go or step (#4885), and nothing else" {
+  grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" "step" \)' "$TTL" || return 1
+}
+
+@test "R2-GO-ROW model NEGATIVE PROOF (#4885): a kind list widened past card, go and step is caught" {
+  sed 's/sh:in ( "card" "go" "step" )/sh:in ( "card" "go" "step" "anything" )/' "$TTL" > "$BATS_TEST_TMPDIR/wide.ttl"
+  ! cmp -s "$TTL" "$BATS_TEST_TMPDIR/wide.ttl" || return 1
+  ! grep -qE 'sh:path chorus:approvalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in \( "card" "go" "step" \)' "$BATS_TEST_TMPDIR/wide.ttl" || return 1
+}
+
+@test "R2-RECORDS model: a go decision records the round it signed (at most one)" {
+  [ "$(q 'ASK { chorus:signedRound a owl:DatatypeProperty }')" = yes ] || return 1
+  grep -q 'sh:path chorus:signedRound ; sh:maxCount 1' "$TTL" || return 1
+}
+
+@test "R2-GO-DECIDE/LAND-GUARD/NEG chorus-go: go decide, stale round, land re-verify, resend, cross-replay (cargo)" {
+  cd "$ROOT/platform/services/chorus-go" || return 1
+  run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 9 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass
+  [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }
+}
+
+# #4885 — the go-row cases ran and none failed: named cases, not a count (an exact
+# count went stale when the suites were split, 8 → 3 + 6, and the case stayed red).
+GO_ROW_CASES="the_go_row_carries_kind_go_and_an_action_of_exactly_card_run_round
+the_announce_points_at_the_one_list_not_a_per_run_link
+the_go_binds_the_commit_this_run_pushed
+negative_proof_a_short_round_or_a_bad_run_posts_no_row
+e2e_demo_steps"
+go_row_green() {  # $1 = cargo test output
+  [[ "$1" == *"test result: ok."* ]] || return 1
+  ! printf '%s\n' "$1" | grep -qE '^test .* \.\.\. FAILED$|test result: FAILED' || return 1
+  for c in $GO_ROW_CASES; do printf '%s\n' "$1" | grep -qE "^test $c \.\.\. ok$" || { echo "missing: $c"; return 1; }; done
+}
+
+@test "R2-GO-ROW werk-demo: a ready demo posts the go row and points at the list (cargo)" {
+  cd "$ROOT/platform/services/werk-demo" || return 1
+  run nice cargo test -j 4 --test go_row_4642 --test e2e
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  go_row_green "$output" || { echo "$output"; return 1; }
+}
+
+@test "R2-GO-ROW NEGATIVE PROOF (#4885): one failed go-row case, or a missing one, reds the check" {
+  ok="$(for c in $GO_ROW_CASES; do echo "test $c ... ok"; done; echo 'test result: ok. 9 passed; 0 failed')"
+  go_row_green "$ok" || return 1
+  ! go_row_green "$(printf '%s\n' "$ok" | sed 's/^test the_go_binds_the_commit_this_run_pushed ... ok$/test the_go_binds_the_commit_this_run_pushed ... FAILED/')" || return 1
+  ! go_row_green "$(printf '%s\n' "$ok" | grep -v e2e_demo_steps)" || return 1
+}
+
+@test "R2-ONE-GO-PATH: the per-run go page, its decide route and the go record are retired" {
+  ! grep -rnE '/go/api/decide"|/go/api/info"|GoRecord|fn accept\(|go_link\(' "$ROOT/platform/services/chorus-go/src" "$ROOT/platform/services/werk-demo/src" || return 1
+}
+
+@test "R2-ONE-GO-PATH NEG: the retire check can fail (a planted route is seen)" {
+  d="$(mktemp -d)"; echo '("POST", "/go/api/decide") => {' > "$d/x.rs"
+  grep -rqnE '/go/api/decide"' "$d" || return 1
+  rm -rf "$d"
+}

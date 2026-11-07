@@ -45,8 +45,8 @@ chorus:SkillShape a sh:NodeShape ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "what it does" ;
                   sh:description "Required. One sentence: what changes when it runs." ] ;
     sh:property [ sh:path chorus:executor ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:in ( "human" "agent" "deterministic" "http" ) ; sh:name "executor" ;
-                  sh:description "Required. deterministic = a verb (Jeff: an automated deterministic skill); agent = a slash skill a role runs; human = Jeff's go; http = the runner calls a Chorus route, implementedBy \"METHOD {api}/path\" (#4515)." ] ;
+                  sh:in ( "human" "agent" "deterministic" "http" "pipeline" ) ; sh:name "executor" ;
+                  sh:description "Required. deterministic = a verb (Jeff: an automated deterministic skill); agent = a slash skill a role runs; human = Jeff's go; http = the runner calls a Chorus route, implementedBy \"METHOD {api}/path\" (#4515); pipeline = an automated Dagu pipeline run (#4693)." ] ;
     sh:property [ sh:path chorus:implementedBy ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "implemented by" ;
                   sh:description "The binary on PATH that runs it, e.g. werk-deploy. A deterministic skill must have one; chorus-make checks that, not the door, which has no conditional rule (#4465)." ] ;
     sh:property [ sh:path chorus:arguments ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "arguments" ;
@@ -63,7 +63,7 @@ chorus:SkillShape a sh:NodeShape ;
     # #4513 — a tool is a Skill row (Jeff 08-22: a verb is an automated
     # deterministic skill; Services design #4509: tools as model rows). A
     # deterministic skill with an input shape is offered by the tool runner.
-    sh:property [ sh:path chorus:inputShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:name "input shape" ;
+    sh:property [ sh:path chorus:inputShape ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "input shape" ;
                   sh:description "Optional. The chorus:ToolInput shape its arguments must fit. A deterministic skill with one is a tool the runner offers." ] ;
     sh:property [ sh:path chorus:forService ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Service ; sh:name "service" ;
                   sh:description "Optional. The Service this skill runs as part of." ] ;
@@ -89,7 +89,7 @@ chorus:SkillShape a sh:NodeShape ;
 
 chorus:forStreamStep a owl:ObjectProperty ; rdfs:label "for stream step" ;
     rdfs:comment "The value-stream step a tool runs (#4515): borg-intake runs value-stream-step-borg-intake." .
-chorus:inputShape a owl:ObjectProperty ; rdfs:label "input shape" ;
+chorus:inputShape a owl:DatatypeProperty ; rdfs:label "input shape" ;
     rdfs:comment "The shape a tool's arguments must fit (#4513)." .
 chorus:forService a owl:ObjectProperty ; rdfs:label "for service" ;
     rdfs:comment "The Service a skill runs as part of (#4513)." .
@@ -113,7 +113,7 @@ chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
 chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
     rdfs:label "borg-tend-herald input" ;
     sh:property [ sh:path chorus:sensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ;
-                  sh:in ( "files" "code" "services" "stores" "infra" ) ; sh:name "sensor" ;
+                  sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" "sync" ) ; sh:name "sensor" ;
                   sh:description "Which sensor to run." ] ;
     sh:property [ sh:path chorus:target ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "target" ;
                   sh:description "Code sensor only: the repository root to look at. Defaults to chorus." ] ;
@@ -123,6 +123,27 @@ chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
                   sh:description "Run to the end and return the output." ] .
 
 chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a borg-tend-herald call runs (#4513)." .
+
+# #4789 — mob-verify: a mob navigator's verdict, recorded by the runner as a Task
+# (runsAs caller) so WHO verified is the runner's word, never typed text.
+# Arguments: verify {card} {run} {verdict} {note} {head}; the caller is never an argument.
+chorus:MobVerifyInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "mob-verify input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The mob's card." ] ;
+    sh:property [ sh:path chorus:mobRun ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Za-z0-9_-]{6,64}$" ; sh:order 2 ; sh:name "run" ;
+                  sh:description "The open mob run's dagu id, as mob start's nudge names it." ] ;
+    sh:property [ sh:path chorus:mobVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "pass" "fail" ) ; sh:order 3 ; sh:name "verdict" ;
+                  sh:description "pass, or fail to stop the mob and send the driver back to slice." ] ;
+    sh:property [ sh:path chorus:mobNote ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:maxLength 300 ; sh:order 4 ; sh:name "note" ;
+                  sh:description "What you ran from your own account, and what it showed." ] ;
+    sh:property [ sh:path chorus:mobHead ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[0-9a-f]{7,40}$" ; sh:order 5 ; sh:name "head" ;
+                  sh:description "The commit you checked (git rev-parse HEAD in the driver's werk). A verify for any other head is refused (#4850)." ] .
+
+chorus:mobRun a owl:DatatypeProperty ; rdfs:label "mob run" ; rdfs:comment "The dagu run id of the mob a verdict is for (#4789)." .
+chorus:mobVerdict a owl:DatatypeProperty ; rdfs:label "mob verdict" ; rdfs:comment "pass or fail: a mob navigator's verdict (#4789)." .
+chorus:mobNote a owl:DatatypeProperty ; rdfs:label "mob note" ; rdfs:comment "What a mob navigator ran and saw (#4789)." .
+chorus:mobHead a owl:DatatypeProperty ; rdfs:label "mob head" ; rdfs:comment "The commit a mob navigator checked (#4850)." .
 chorus:dryRun a owl:DatatypeProperty ; rdfs:label "dry run" ; rdfs:comment "Plan and print, write nothing (#4513)." .
 chorus:wait a owl:DatatypeProperty ; rdfs:label "wait" ; rdfs:comment "Run to the end and return the output (#4513)." .
 

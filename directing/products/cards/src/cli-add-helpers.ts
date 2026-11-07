@@ -26,6 +26,8 @@ export interface AddArgs {
   origin: string;
   // #2652 AC1+AC2 — new tag axes per cards-service-design v1
   subproduct: string;
+  // #4669 — file the card as a child of this one
+  parent: string;
   // #3682 — run every gate (guest door included) but file nothing
   validateOnly: boolean;
 }
@@ -33,7 +35,7 @@ export interface AddArgs {
 const USAGE =
   'Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] ' +
   '[--product P] [--chunk C] [--sequence S] [--subproduct SP] [--type T] [--origin O] ' +
-  '[--desc D | --desc-file PATH | --desc -] [--validate-only]';
+  '[--parent ID] [--desc D | --desc-file PATH | --desc -] [--validate-only]';
 
 /** String-valued field names. */
 type StringField = Exclude<keyof AddArgs, 'validateOnly'>;
@@ -55,6 +57,8 @@ const STRING_FLAGS: Partial<Record<string, StringField>> = {
   '--origin': 'origin',
   // #2652 AC1+AC2
   '--subproduct': 'subproduct',
+  // #4669
+  '--parent': 'parent',
 };
 
 function resolveDescription(description: string, descFile: string): string {
@@ -70,7 +74,7 @@ export function parseAddArgs(args: string[]): AddArgs {
   const out: AddArgs = {
     title: '', status: 'later', owner: '', priority: '',
     domain: '', description: '', product: '', chunk: '', sequence: '',
-    type: '', origin: '', subproduct: '',
+    type: '', origin: '', subproduct: '', parent: '',
     validateOnly: false,
   };
   let descFile = '';

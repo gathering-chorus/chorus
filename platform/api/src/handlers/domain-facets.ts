@@ -241,6 +241,104 @@ SELECT ?target ?label ?relationship ?direction WHERE {
 }
 
 // --- blast-radius: inward impact walk (#2028) ---
+// #4738: dependents are the whole closure over consumes|dependsOn, not one hop.
+// A mixed chain counts (spine consumes security, security dependsOn
+// infrastructure), so the path alternates predicates. Rings are hop distance,
+// weighted by Fibonacci and capped at ring 6.
+
+const BLAST_RING_WEIGHTS = [1, 1, 2, 3, 5, 8];
+
+export interface BlastRing { ring: number; weight: number; domains: string[] }
+
+type BlastEdge = { from: string; rel: string; to: string };
+
+function reverseAdjacency(edges: BlastEdge[]): Map<string, Array<{ from: string; rel: string }>> {
+  const dependents = new Map<string, Array<{ from: string; rel: string }>>();
+  for (const e of edges) {
+    const list = dependents.get(e.to) ?? [];
+    list.push({ from: e.from, rel: e.rel });
+    dependents.set(e.to, list);
+  }
+  for (const list of dependents.values()) list.sort((a, b) => a.from.localeCompare(b.from) || a.rel.localeCompare(b.rel));
+  return dependents;
+}
+
+function pathToRoot(d: string, root: string, parent: Map<string, string>): string[] {
+  const path = [d];
+  while (path[path.length - 1] !== root) path.push(parent.get(path[path.length - 1]) as string);
+  return path;
+}
+
+function ringsOf(hops: Map<string, number>): { rings: BlastRing[]; score: number } {
+  const byRing = new Map<number, string[]>();
+  for (const [d, n] of hops) {
+    const ring = Math.min(n, BLAST_RING_WEIGHTS.length);
+    byRing.set(ring, [...(byRing.get(ring) ?? []), d]);
+  }
+  const rings = [...byRing.keys()].sort((a, b) => a - b).map((ring) => ({
+    ring, weight: BLAST_RING_WEIGHTS[ring - 1], domains: (byRing.get(ring) as string[]).sort(),
+  }));
+  return { rings, score: rings.reduce((sum, r) => sum + r.weight * r.domains.length, 0) };
+}
+
+/** Breadth-first from the root over reversed edges (x dependsOn y → y hits x):
+ *  nearest hop, the edge that reached it, and the full path back to the root. */
+export function blastClosure(
+  root: string,
+  edges: BlastEdge[],
+): { hops: Map<string, number>; via: Map<string, string>; paths: Record<string, string[]>; rings: BlastRing[]; score: number } {
+  const dependents = reverseAdjacency(edges);
+  const hops = new Map<string, number>([[root, 0]]);
+  const parent = new Map<string, string>();
+  const via = new Map<string, string>();
+  const queue = [root];
+  while (queue.length) {
+    const y = queue.shift() as string;
+    for (const { from, rel } of dependents.get(y) ?? []) {
+      if (hops.has(from)) continue;
+      hops.set(from, (hops.get(y) as number) + 1);
+      parent.set(from, y);
+      via.set(from, rel);
+      queue.push(from);
+    }
+  }
+  hops.delete(root);
+  const paths = Object.fromEntries([...hops.keys()].map((d) => [d, pathToRoot(d, root, parent)]));
+  return { hops, via, paths, ...ringsOf(hops) };
+}
+
+type BlastOut = { target: string; targetUri: string; relationship: string; direction: string; hops?: number };
+
+function parentEdges(result: SparqlResult): BlastOut[] {
+  const seen = new Set<string>();
+  const out: BlastOut[] = [];
+  for (const b of result.results.bindings) {
+    const targetUri = b.target?.value ?? '';
+    const relationship = b.relationship?.value ?? '';
+    const key = `${targetUri}|${relationship}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      target: b.label?.value || targetUri.split('#').pop() || '',
+      targetUri,
+      relationship,
+      direction: b.direction?.value ?? '',
+    });
+  }
+  return out;
+}
+
+function closureEdgesOf(result: SparqlResult, local: (uri: string) => string): { edges: BlastEdge[]; labels: Map<string, string> } {
+  const labels = new Map<string, string>();
+  const edges: BlastEdge[] = [];
+  for (const b of result.results.bindings) {
+    if (!b.x?.value || !b.y?.value || !b.rel?.value) continue;
+    const from = local(b.x.value);
+    if (b.label?.value) labels.set(from, b.label.value);
+    edges.push({ from, rel: local(b.rel.value), to: local(b.y.value) });
+  }
+  return { edges, labels };
+}
 
 export async function fetchDomainBlastRadius(
   deps: DomainFacetDeps,
@@ -250,16 +348,13 @@ export async function fetchDomainBlastRadius(
   const start = now();
   try {
     const sdId = domainName.toLowerCase();
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+    const ns = 'https://jeffbridwell.com/chorus#';
+    const sdUri = `${ns}${sdId}`;
+    const parentQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX borg: <urn:borg:ontology/>
 SELECT ?target ?label ?relationship ?direction WHERE {
   {
-    GRAPH <urn:chorus:domains:domains> {
-      { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("dependent" AS ?direction) }
-    }
-  } UNION {
     GRAPH <urn:chorus:ontology> {
       { ?target chorus:hasDomain <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("ownerProduct" AS ?relationship) BIND("parent" AS ?direction) }
       UNION { ?target chorus:contains <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) }
@@ -270,31 +365,34 @@ SELECT ?target ?label ?relationship ?direction WHERE {
     }
   }
 }`;
-    const result = await deps.sparql(query);
-    const seen = new Set<string>();
-    const edges: Array<{ target: string; targetUri: string; relationship: string; direction: string }> = [];
-    for (const b of result.results.bindings) {
-      const targetUri = b.target?.value || '';
-      const relationship = b.relationship?.value || '';
-      const key = `${targetUri}|${relationship}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        edges.push({
-          target: b.label?.value || targetUri.split('#').pop() || '',
-          targetUri,
-          relationship,
-          direction: b.direction?.value || '',
-        });
-      }
+    // Every edge inside the closure: x reaches the root, x → y is one step, y reaches the root.
+    const closureQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT DISTINCT ?x ?label ?rel ?y WHERE {
+  GRAPH <urn:chorus:domains:domains> {
+    ?x (chorus:consumes|chorus:dependsOn)+ <${sdUri}> .
+    ?x ?rel ?y .
+    FILTER(?rel IN (chorus:consumes, chorus:dependsOn) && ?x != <${sdUri}>)
+    ?y (chorus:consumes|chorus:dependsOn)* <${sdUri}> .
+    OPTIONAL { ?x rdfs:label ?label }
+  }
+}`;
+    const [parentResult, closureResult] = await Promise.all([deps.sparql(parentQuery), deps.sparql(closureQuery)]);
+    const edges = parentEdges(parentResult);
+    const local = (uri: string) => (uri.startsWith(ns) ? uri.slice(ns.length) : uri);
+    const { edges: closureEdges, labels } = closureEdgesOf(closureResult, local);
+    const closure = blastClosure(sdId, closureEdges);
+    for (const [d, n] of [...closure.hops].sort((x, y) => x[1] - y[1] || x[0].localeCompare(y[0]))) {
+      edges.push({ target: labels.get(d) ?? d, targetUri: `${ns}${d}`, relationship: closure.via.get(d) as string, direction: 'dependent', hops: n });
     }
     return {
       status: 200,
-      body: deps.envelope('domain-blast-radius', { domain: sdId, edges }, now() - start, { count: edges.length }),
+      body: deps.envelope('domain-blast-radius', { domain: sdId, edges, rings: closure.rings, score: closure.score, paths: closure.paths }, now() - start, { count: edges.length, score: closure.score }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-blast-radius', { domain: domainName, edges: [] }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-blast-radius', { domain: domainName, edges: [], rings: [], score: 0, paths: {} }, now() - start, { count: 0 }),
     };
   }
 }

@@ -8,7 +8,7 @@ user-invocable: true
 
 `/cw <card-id>` starts **chorus-werk** for the card: the werk v2 pipeline chorus-make generates from the graph (`platform/pipelines/cicd.yaml`, run by dagu). One tool call. The skill does not run any step itself.
 
-The steps are the pipeline's: werk-commit → werk-push → werk-build → werk-test → werk-review → werk-deploy-demo → env-up → /demo → Jeff's go → the land (cicd-land: werk-merge → werk-sync → werk-deploy-prod → werk-accept).
+The steps are the pipeline's: werk-commit → werk-push → werk-build → werk-test → werk-deploy-demo → env-up → /demo (the code, architecture and quality reviews) → Jeff's go → the land (cicd-land: werk-merge → werk-sync → werk-deploy-prod → werk-accept).
 
 ## Argument
 

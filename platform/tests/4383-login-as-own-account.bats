@@ -25,8 +25,8 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   run "$SCRIPT" login wren
   test "$status" -eq 0
   grep -q -- "-n -u chorus-wren true" "$T/sudo.log"
-  grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"
-  grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "umask 002"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "umask 002"
 }
 
 @test "#4383 its credentials move into that account's home, readable by it alone, and the session reads them there" {
@@ -37,7 +37,9 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   cmp -s "$d/wren/cred.json" "$T/identity/wren/cred.json"
   test "$(stat -f %Lp "$d/wren/cred.json")" = "600"
   test "$(stat -f %Lp "$d/wren")" = "700"
-  grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_IDENTITY_DIR='$d'"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_IDENTITY_DIR='$d'"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_SESSIONS_DIR='$T/sessions'"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF ".chorus/secrets/claude.key"
 }
 
 @test "#4383 a launcher that cannot start the account refuses, naming it, and starts nothing" {
@@ -47,7 +49,7 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   test "$status" -eq 2
   out_has "wren runs as the Mac account chorus-wren"
   out_has "/etc/sudoers.d/chorus-principals"
-  test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }
 
 @test "#4383 NEGATIVE PROOF: a principal whose account is the current user starts without sudo" {
@@ -55,5 +57,5 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   run "$SCRIPT" login wren
   test "$status" -eq 0
   test ! -f "$T/sudo.log"
-  test -z "$(grep -F send-keys "$T/tmux.log" | grep -F "sudo -n" || true)"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" | grep -F "sudo -n" || true)"
 }

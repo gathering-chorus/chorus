@@ -15,8 +15,8 @@ fn home() -> String {
 
 fn full_path() -> String {
     format!(
-        "{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-        home()
+        "{}/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        chorus_root()
     )
 }
 
@@ -46,25 +46,53 @@ fn accept_gate_cards_view_passes_with_path() {
     // runs. In a werk, the repo-local cards can lack per-package node deps
     // (the #3915 gate-spine class) and fails for a reason unrelated to PATH —
     // fall back to a runnable client rather than reporting a PATH bug.
+    // #4814 — the second candidate had become the werk path again, so the fallback
+    // was gone and every werk run threw ts-node's TSError. It is canonical (main).
+    let canonical = std::env::var("CHORUS_HOME")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", home()));
     let candidates = [
         format!("{}/platform/scripts/cards", chorus_root()),
-        format!("{}/CascadeProjects/chorus/platform/scripts/cards", home()),
+        format!("{}/platform/scripts/cards", canonical),
     ];
     let mut last_err = String::new();
     for cards in &candidates {
-        let output = Command::new("bash")
-            .args([cards, "view", "1992"])
+        let state_dir = std::env::var("CHORUS_STATE_DIR").unwrap_or_else(|_| format!("{}/.chorus", home()));
+        let mut cmd = Command::new("bash");
+        cmd.args([cards, "view", "1992"])
             .env("CHORUS_ROOT", chorus_root())
             .env("HOME", home())
-            .env("PATH", full_path())
-            .output()
-            .expect("failed to run cards");
+            .env("CHORUS_STATE_DIR", &state_dir)
+            .env("PATH", full_path());
+        if let Ok(tok) = std::fs::read_to_string(format!("{}/secrets/vikunja.token", state_dir)) {
+            cmd.env("VIKUNJA_TOKEN", tok.trim());
+        }
+        let output = cmd.output().expect("failed to run cards");
         if output.status.success() {
             return;
         }
-        last_err = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let combined = format!("{stderr}\n{stdout}");
+
+        // The test is about PATH plumbing (can cards and node execute?).
+        // If PATH is missing, bash fails with "command not found" or "node: not found" (exit 127).
+        // If cards/node ran but authentication/token failed because the runner account
+        // has no Vikunja credential, PATH succeeded.
+        let is_path_failure = combined.contains("command not found")
+            || combined.contains("node: not found")
+            || combined.contains("No such file or directory")
+            || output.status.code() == Some(127);
+
+        // Runner account has no Vikunja credential; cards runs but exits with missing token.
+        let is_token_missing = combined.contains("VIKUNJA_TOKEN not set");
+
+        if !is_path_failure && is_token_missing {
+            return;
+        }
+
+        last_err = format!("stderr: {stderr}, stdout: {stdout}");
     }
-    panic!("cards view failed WITH PATH from every client. stderr: {last_err}");
+    panic!("cards view failed WITH PATH from every client: {last_err}");
 }
 
 // --- icd_write_gate: npx needs PATH ---

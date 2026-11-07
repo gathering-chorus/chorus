@@ -7,6 +7,12 @@ CWS="$(cd "$(dirname "$0")/../scripts" && pwd)/chorus-werk-status"
 fails=0
 # #4341 — the board, the spine and the card CLI all point nowhere: this suite reads only its fixtures
 export CWS_API=http://127.0.0.1:9 CWS_LOKI=http://127.0.0.1:9 CWS_CARDS=/usr/bin/false CWS_DAGU=http://127.0.0.1:9
+# #4875 AC7 — cws reads the demo witness: card 109 was announced and both vouched, so its waiting
+# go step IS Jeff's go. Never the live witness (#3528: the test brings its own world).
+WITNESS_FX=$(mktemp)
+printf '%s\n' '{"ts":1,"event":"demo.announced","role":"kade","card_id":109,"trace_id":"t","round":"r1","patch_id":"p1"}' \
+  '{"ts":2,"event":"demo.go.asked","role":"kade","card_id":109,"trace_id":"t","round":"r1","patch_id":"p1"}' > "$WITNESS_FX"
+export CWS_WITNESS="$WITNESS_FX"
 t() { local name="$1" want="$2" got="$3"; if [[ "$got" == *"$want"* ]]; then echo "ok   $name"; else echo "FAIL $name — wanted '$want' in: $got"; fails=$((fails+1)); fi; }
 
 # 1. NEGATIVE PROOF self-test must pass (and is itself the two-states fixture)
@@ -219,7 +225,9 @@ d["dagRuns"][:0] = [
 json.dump(d, open(p, "w"))
 EOF2
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
-t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-prod · 1 land · dagu L1" "$out"
+# #4734 — the land is a row of the table, like every other pipeline's run
+t "the card's land shows on the land queue" "running     skill-werk-deploy-prod" "$out"
+t "…as a cicd-land row" "  cicd-land    1  " "$out"
 if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
 
 # #4494 — a go can be a no; the go line offers both, and a no reads "rejected"
@@ -337,7 +345,7 @@ EOF6
 echo '{"data":{"cards":[]}}' > "$TD/api3/api/chorus/context/board/wip"
 cws3() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d3" CWS_API="file://$TD/api3" "$CWS" "$@"; }
 t "a land whose model failed says so on the card's line" "#120 wren   landed · athena failed" "$(cws3 120)"
-t "…and in the land line" "v2 land succeeded · athena failed" "$(cws3 120)"
+t "…and under the land rows" "athena failed · land A120" "$(cws3 120)"
 out=$(cws3)
 t "board: a landed card whose model failed stays on the board" "#120 wren   landed · athena failed" "$out"
 if [[ "$out" == *"#121"* ]]; then echo "FAIL a land whose model deployed is on the board"; fails=$((fails+1)); fi
@@ -403,6 +411,42 @@ if [[ "$out" == *"failed at"* ]]; then echo "FAIL a refused run reads failed"; f
 t "a commit failure's nudge names its step" "cicd failed at commit: werk-commit: commit failed" "$(CWS_DAGU="file://$TD/d8" "$CWS" --why cicd r2)"
 CWS_DAGU="file://$TD/d8" "$CWS" --why cicd nope >/dev/null; rc=$?
 [ $rc -eq 2 ] || { echo "FAIL unknown run exit=$rc, wanted 2"; fails=$((fails+1)); }
+
+# #4862 (Jeff 2026-11-01 09:35 "i cant tell if mob is moving"; 12:36 "make sure
+# cws shows all related dagu flows for a card") — a card's line follows its mob,
+# names the seats still to verify at the werk's HEAD, and the table lists every
+# pipeline dagu holds, including one no list in this file names.
+mkdir -p "$TD/d9/api/v1" "$TD/w9/wren-4870" "$TD/rt9" "$TD/api9/api/chorus/context/board"
+git -C "$TD/w9/wren-4870" init -q && git -C "$TD/w9/wren-4870" -c user.email=t@t -c user.name=t commit -q --allow-empty -m one
+H9=$(git -C "$TD/w9/wren-4870" rev-parse HEAD)
+cat > "$TD/d9/api/v1/dag-runs" <<EOF9
+{"dagRuns":[
+ {"name":"mob","dagRunId":"m9","params":"CARD=4870 ROLE=wren NAVIGATORS=silas,kade","statusLabel":"waiting","startedAt":"2026-11-01T12:40:00-05:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-mob-start"}},{"statusLabel":"waiting","step":{"name":"skill-mob-verified","id":"skill_mob_verified"}}]},
+ {"name":"zzz-new-flow","dagRunId":"z9","params":"CARD=4870 ROLE=wren","statusLabel":"succeeded","startedAt":"2026-11-01T12:30:00-05:00","finishedAt":"2026-11-01T12:31:00-05:00","nodes":[]},
+ {"name":"mob","dagRunId":"m8","params":"CARD=48700 ROLE=kade NAVIGATORS=silas,wren","statusLabel":"waiting","startedAt":"2026-11-01T12:41:00-05:00","nodes":[]}
+]}
+EOF9
+echo '{"dags":[{"dag":{"name":"cicd"}},{"dag":{"name":"mob"}},{"dag":{"name":"zzz-new-flow"}}],"pagination":{"hasNextPage":false}}' > "$TD/d9/api/v1/dags"
+# silas verified at the werk's HEAD through the runner; kade has not
+printf '{"binary":"/x/mob","argv":["verify","4870","m9","pass","ok","%s"],"caller":"silas","pid":1,"pidStartedAt":"x","startedAt":1}' "$H9" > "$TD/rt9/t1.json"
+echo "$H9" > "$TD/rt9/t1.head"; echo 0 > "$TD/rt9/t1.exit"
+E9=(CWS_DAGU="file://$TD/d9" CHORUS_WERK_BASE="$TD/w9" CHORUS_RUNNER_TASKS="$TD/rt9")
+out=$(env "${E9[@]}" "$CWS" 4870)
+t "#4862 AC2: an open mob is the card's line, naming who still verifies" "#4870 wren   mob: waiting on kade (silas verified at ${H9:0:9})" "$out"
+t "#4862 AC1: the run table lists the mob run" "  mob " "$out"
+t "#4862 AC3: a pipeline no list names still shows for its card" "zzz-new-flow" "$out"
+if [[ "$out" == *"m8"* || "$out" == *"48700"* ]]; then echo "FAIL #4862: another card's mob (CARD=48700) counted for 4870"; fails=$((fails+1)); fi
+# NEGATIVE PROOF (Silas 12:44): a mob's human step is answered by the last seat's
+# verify, never by Jeff's go; /cws must not offer accepter=jeff or a go/no there
+if [[ "$out" == *"accepter=jeff"* || "$out" == *"go: dagu"* ]]; then echo "FAIL #4862: /cws offers Jeff's go at a mob's verify step"; fails=$((fails+1)); fi
+t "#4862: a waiting mob says how its seats answer" "verify: werk-mob-verify card=4870 run=m9" "$out"
+echo '{"data":{"cards":[{"id":4870,"owner":"Wren"}]}}' > "$TD/api9/api/chorus/context/board/wip"
+out=$(env "${E9[@]}" CWS_API="file://$TD/api9" "$CWS")
+t "#4862 AC2: the no-arg view shows the open mob" "#4870 wren   mob: waiting on kade" "$out"
+# NEGATIVE PROOF: a verdict at an older head does not count as verified
+git -C "$TD/w9/wren-4870" -c user.email=t@t -c user.name=t commit -q --allow-empty -m two
+out=$(env "${E9[@]}" "$CWS" 4870)
+t "#4862 NEGATIVE PROOF: a verdict at an older head is not 'verified'" "mob: waiting on silas, kade" "$out"
 
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi

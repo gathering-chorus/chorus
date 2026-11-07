@@ -261,13 +261,13 @@ fn spine_args_builds_chorus_log_argv_for_build_failed() {
     assert!(a.contains(&"name=chorus-hooks".to_string()));
 }
 
-// --- #3169: build preamble ensures werk node_modules mirror canonical (symlink-replace partials) ---
+// --- #3169/#4810: build preamble ensures werk node_modules mirror canonical (clone-replace partials) ---
 
 #[test]
-fn ensure_node_modules_replaces_partial_with_canonical_symlink() {
+fn ensure_node_modules_replaces_partial_with_canonical_clone() {
     // The bug: a werk package's node_modules is a stale PARTIAL real dir (missing
-    // @types/node), so in-werk tsc fails. ensure must replace it with a symlink to
-    // canonical's COMPLETE tree, so @types resolves — the keystone for #3174/#3171
+    // @types/node), so in-werk tsc fails. ensure must replace it with canonical's
+    // COMPLETE tree (#4810: a clone, never a symlink into it), so @types resolves — the keystone for #3174/#3171
     // (build TS services/chorus-hooks in-werk instead of hand-deploying).
     let root = fixture("ensure-nm");
     let home = root.join("chorus");
@@ -283,10 +283,14 @@ fn ensure_node_modules_replaces_partial_with_canonical_symlink() {
     let n = ensure_node_modules(werk.to_str().unwrap(), &home).unwrap();
     let werk_nm = werk.join("platform/api/node_modules");
     assert_eq!(n, 1, "relinked exactly the one package");
-    assert!(werk_nm.is_symlink(), "werk node_modules is now a symlink, not the partial real dir");
-    assert!(werk_nm.join("@types/node").exists(), "resolves canonical's @types/node through the symlink");
+    assert!(!werk_nm.is_symlink(), "#4810: a real tree, never a symlink into canonical");
+    assert!(werk_nm.join("@types/node").exists(), "has canonical's @types/node");
+    // negative proof (#4810): deleting the werk's tree leaves canonical's intact
+    fs::remove_dir_all(&werk_nm).unwrap();
+    assert!(home.join("platform/api/node_modules/@types/node").exists(), "canonical untouched");
+    assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1, "re-made after the delete");
 
-    // idempotent: a second run is a no-op (already the right symlink)
+    // idempotent: a second run is a no-op (already canonical's tree)
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 0, "idempotent — no relink on re-run");
 }
 
@@ -320,7 +324,7 @@ fn ensure_node_modules_reads_only_the_packages_git_tracks() {
     git_track(&werk, &["platform/api/package.json"]);
 
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
-    assert!(werk.join("platform/api/node_modules").is_symlink(), "the tracked package is linked");
+    assert!(werk.join("platform/api/node_modules").is_dir(), "the tracked package has canonical's tree");
     // negative proof: the old walk would have linked this one too
     assert!(!werk.join("platform/backups/old/node_modules").exists(), "an untracked package.json is never read");
 }

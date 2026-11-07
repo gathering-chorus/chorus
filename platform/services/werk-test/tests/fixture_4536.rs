@@ -139,6 +139,16 @@ fn tools_path(base: &Path, with: &[&str]) -> String {
         let src = real(name);
         assert!(src.is_file(), "the fixture needs {} on this box", name);
         let _ = std::os::unix::fs::symlink(&src, tools.join(name));
+        if *name == "cargo" {
+            let nextest = real("cargo-nextest");
+            if nextest.is_file() {
+                let _ = std::os::unix::fs::symlink(&nextest, tools.join("cargo-nextest"));
+            }
+            let rustc = real("rustc");
+            if rustc.is_file() {
+                let _ = std::os::unix::fs::symlink(&rustc, tools.join("rustc"));
+            }
+        }
     }
     let stub = stub_path(base);
     let stub_dir = stub.split(':').next().unwrap().to_string();
@@ -409,7 +419,9 @@ fn row_lock_a_build_lock_held_past_the_cap_is_unmeasured_and_names_the_holder() 
     let holder = std::sync::Mutex::new(None::<std::process::Child>);
     let r = run_fixture_full("rl", "91014", &crate_files(FX_LIB), &[crate_row()], &["cargo"],
         &[("WERK_TEST_LOCK_CAP", "2".to_string())], None, |werk| {
-            let d = werk.join("platform/services/fx/target/debug");
+            // #4772 — werk-test builds in this account's own folder, so that is where the lock is
+            let me = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
+            let d = werk.join("platform/services/fx/target").join(me.trim()).join("debug");
             std::fs::create_dir_all(&d).unwrap();
             let child = Command::new("sh").arg("-c").arg("exec 9>>.cargo-lock; sleep 60").current_dir(&d).spawn().unwrap();
             std::thread::sleep(std::time::Duration::from_millis(300));

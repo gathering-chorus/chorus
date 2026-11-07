@@ -94,12 +94,12 @@ describe('#4609 v1 shows nudges but leaves writing them to pulse', () => {
     }
   });
 
-  // NEGATIVE PROOF: a role's reply and Jeff's own input are still published by v1.
-  test('negative proof: a reply and Jeff\'s input are still published', () => {
+  // #4628 — since then v1 publishes nothing: replies and Jeff's input have their own one writer too.
+  test('a reply and Jeff\'s input are not published by v1 either (#4628)', () => {
     const router = new MessageRouter();
     router.ingest({ from: 'wren', text: 'a reply', ts: new Date().toISOString(), type: 'role-response' });
-    expect(publishesToRoom(last(router))).toBe(true);
+    expect(publishesToRoom(last(router))).toBe(false);
     router.ingest({ from: 'jeff', text: 'hello', ts: new Date().toISOString(), type: 'jeff-input' });
-    expect(publishesToRoom(last(router))).toBe(true);
+    expect(publishesToRoom(last(router))).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+// @domain: builds — the werk verbs live in builds, like werk-commit/merge/accept (#4880)
 //! #3431 — native worktree teardown, ported from bash `chorus-werk remove`.
 //!
 //! Semantics preserved verbatim from platform/scripts/chorus-werk cmd_remove
@@ -19,6 +20,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+// #4771 AC4 — the remote branch delete reaches GitHub with the land's deploy
+// credential, never a keyring.
+include!("../../shared/deploy_credential.rs");
 
 /// #3638 — pipeline-regenerated files: the run's own gate steps rewrite these in
 /// the werk AFTER werk-commit, so a clean land arrives at teardown "dirty" with
@@ -92,7 +97,9 @@ impl std::fmt::Display for TeardownError {
 }
 
 fn git_out(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output()
+    let mut c = Command::new("git");
+    with_deploy_credential(&mut c, "git"); // #4771 AC4
+    let out = c.arg("-C").arg(dir).args(args).output()
         .map_err(|e| format!("git spawn failed: {}", e))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
@@ -170,6 +177,12 @@ pub fn teardown_werk(
     // only the fields the teardown itself owns (branch, via).
     let werk = werk_base.join(format!("{}-{}", role, card));
     let branch = format!("{}/{}", role, card);
+    // #4771 AC4 — arm the deploy credential when this account has one; with
+    // none, git still never reaches a keyring, so a remote delete that needs
+    // it fails and says so (teardown.auth.failed) instead of using Jeff's login.
+    if armed_credential().is_none() {
+        let _ = arm_deploy_credential();
+    }
 
     let werk_present = werk.is_dir();
     let branch_present = git_ok(home, &["rev-parse", "--verify", &format!("refs/heads/{}", branch)]);
@@ -182,7 +195,12 @@ pub fn teardown_werk(
     if !werk_present && !branch_present {
         let _ = git_out(home, &["worktree", "prune"]);
         if git_ok(home, &["ls-remote", "--exit-code", "--heads", "origin", &branch]) {
-            let _ = git_out(home, &["push", "origin", "--delete", &branch]);
+            if let Err(e) = git_out(home, &["push", "origin", "--delete", &branch]) {
+                // #4771 AC4 — best-effort as before, but a refused credential is said.
+                if is_auth_error(&e) {
+                    emit("teardown.auth.failed", &[("branch", &branch), ("reason", &auth_fail_message(&e))]);
+                }
+            }
             emit("card.branch.closed", &[("branch", &branch), ("via", "orphan-propagate")]);
             return Ok(Teardown::OrphanPropagated);
         }
@@ -267,9 +285,37 @@ pub fn teardown_werk(
     }
 
     // Best-effort remote delete (#3498 — the propagation that used to no-op) + prune.
-    let _ = git_out(home, &["push", "origin", "--delete", &branch]);
+    if let Err(e) = git_out(home, &["push", "origin", "--delete", &branch]) {
+        // #4771 AC4 — best-effort as before, but a refused credential is said.
+        if is_auth_error(&e) {
+            emit("teardown.auth.failed", &[("branch", &branch), ("reason", &auth_fail_message(&e))]);
+        }
+    }
     let _ = git_out(home, &["worktree", "prune"]);
 
     emit("card.branch.closed", &[("branch", &branch)]);
     Ok(Teardown::Removed)
+}
+
+#[cfg(test)]
+mod teardown_credential_4771 {
+    use super::*;
+
+    #[test]
+    fn armed_teardown_git_uses_only_the_deploy_credential_helper() {
+        let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        use std::os::unix::fs::PermissionsExt;
+        let f = std::env::temp_dir().join(format!("td4771-{}", std::process::id()));
+        std::fs::write(&f, "tok").unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::env::set_var(CRED_FILE_ENV, &f);
+        let armed = git_out(Path::new("."), &["config", "--get-all", "credential.helper"]).unwrap_or_default();
+        std::env::remove_var(CRED_FILE_ENV);
+        let unarmed = git_out(Path::new("."), &["config", "--get-all", "credential.helper"]).unwrap_or_default();
+        let _ = std::fs::remove_file(&f);
+        let last = armed.lines().last().unwrap_or("");
+        assert!(last.starts_with("!f()") && last.contains(CRED_FILE_ENV), "armed: {armed:?}");
+        // NEGATIVE PROOF: unarmed, no keyring helper survives.
+        assert_eq!(unarmed.lines().last().unwrap_or("x"), "", "unarmed: {unarmed:?}");
+    }
 }

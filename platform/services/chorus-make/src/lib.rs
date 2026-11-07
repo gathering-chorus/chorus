@@ -93,6 +93,13 @@ pub fn check(rows: &[Row]) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
     let mut names = std::collections::BTreeSet::new();
     for r in rows {
+        for arg in r.with_args.split_whitespace() {
+            if let Some(cond) = arg.strip_prefix("precondition=") {
+                if !cond.contains('=') {
+                    errs.push(format!("{}: precondition '{cond}' missing '=' separator (expected condition=value)", r.skill));
+                }
+            }
+        }
         match r.executor.as_str() {
             "deterministic" if r.implemented_by.is_empty() => errs.push(format!(
                 "{}: a deterministic skill needs implementedBy (the binary that runs it)", r.skill)),
@@ -170,8 +177,30 @@ pub const PARALLEL: &str = "parallel=true";
 /// card's werk file (`dagu start <werk>/platform/pipelines/<dag>.yaml`) instead
 /// of `dag.run` by name, which an enqueued parent resolves on main only.
 pub const FROM_WERK: &str = "from=werk";
+/// #4675 — a pipeline row's withArguments marker: ENQUEUE the child on its own
+/// queue and wait for its verdict (`platform/scripts/dagu-enqueue-wait`), because
+/// a `dag.run` sub-run ignores its queue (#4494). Jeff 2026-10-21: one test run
+/// at a time on Library; the pair's local proof waits its turn behind cicd runs.
+pub const QUEUED: &str = "queued=true";
 pub const CARD_QUEUE: &str = "werk";
 pub const LAND_QUEUE: &str = "werk-land";
+/// #4758 — the go waits on its own wide queue. A run waiting at a human task
+/// frees its queue slot, and on resume re-queues on its own dag's queue: #4747,
+/// signed, then sat "2nd in line" 20 minutes on `werk` (max 1, #4675) behind
+/// two cards' test runs just to run the land enqueue. The go half holds no
+/// test, so it never waits behind one.
+pub const GO_QUEUE: &str = "werk-go";
+
+/// #4758 — the go half's DAG name, `<pipeline>-go`: Jeff's go and the land
+/// enqueue. The card half ends at the demo by enqueueing it BY NAME, with its
+/// own run id as CICD_RUN (the /go link names the card half's run).
+pub fn go_dag(pipeline: &str) -> String {
+    format!("{pipeline}-go")
+}
+
+/// #4758 — the go half's run id: `go-<card half's run id>`. Every reader of a
+/// /go link (which names the card half's run) finds the go by name, no lookup.
+pub const GO_RUN_PREFIX: &str = "go-";
 
 /// The land half's DAG name, `<pipeline>-land`. A card enqueues it BY NAME, so
 /// dagu runs main's copy (its dags_dir is canonical): a card never rewrites how
@@ -206,10 +235,22 @@ pub fn go_less(name: &str) -> bool {
 /// What `athena` does when it succeeds: the card's werk run, through werk-v2
 /// (its slot refresh, then the cicd enqueue). If that enqueue fails, the
 /// builder hears it; the handler goes red.
-pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} \"chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run · dagu ${DAG_RUN_ID}\"; exit 1; }";
+/// #4888 — no nudge of its own: a failed enqueue turns the run failed (dagu runs
+/// success before exit), and the exit handler's one wake says so.
+pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { echo \"chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run\" >&2; exit 1; }";
+
+/// #4888 (Jeff 11-04 14:37: #4887's land woke nobody) — the one wake a run sends,
+/// from dagu's exit handler, pass or fail: run-finished tells the owner and a
+/// paired card's driver and navigator through ops-nudge. Failure handlers only route.
+pub const RUN_FINISHED: &str = "  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n";
 
 /// What every werk-style land does when it succeeds: athena-land, then the crawl.
-pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh";
+/// #4752 — a cicd or land red goes back to the card's pair first (`pair routed`
+/// exits 1 when the card has none, and the builder's nudge or route runs).
+pub const PAIR_ROUTED: &str = "${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ";
+/// #4752 — the land succeeded only after borg-prove recorded it proven in prod:
+/// the card's pair ends there (Jeff 10-30: "pair ends when card is in prod").
+pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh";
 
 fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     let errs = check(rows);
@@ -275,7 +316,7 @@ const GIT_TRUST: &str = concat!(
 );
 
 /// The header both halves share: params, the machine's env, the failure nudge.
-fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str, routes: &str, on_success: Option<&str>) {
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], routes: &str, on_success: Option<&str>) {
     out.push_str(HEADER);
     out.push_str(&format!("description: {}\n", quote(description)));
     out.push_str(&format!("queue: {queue}\n"));
@@ -299,6 +340,7 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
         "  - WERK_WREN_BIN: ${WERK_WREN_BIN}\n",
         "  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}\n",
         "  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}\n",
+        "  - WERK_BORG_QUEEN_BIN: ${CHORUS_WERK_BASE}/borg-queen-bin\n",
         "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
     ));
     out.push_str(GIT_TRUST);
@@ -318,15 +360,16 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // run refused because another is live says "refused: cicd run N is live",
     // not "run failed"; any other failure names its step and reason. dagu
     // unreadable falls back to the plain words.
+    // #4888 — the failure handler only routes (back to the pair, or borg-prove's
+    // route); the exit handler below is the run's one wake, pass or fail.
     if routes.is_empty() {
-        out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo {what} failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
-        ));
+        out.push_str(&format!("handler_on:\n  failure:\n    command: '{PAIR_ROUTED}true'\n"));
     } else {
         out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || ${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed and its route failed too · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+            "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || true'\n"
         ));
     }
+    out.push_str(RUN_FINISHED);
     // #4494 — the land event triggers athena (#4177): a land whose commit
     // carried model sources deploys the model. v1 fired it from the old MCP server's
     // werk-merge case; v2's land never passes through there, so #4496's
@@ -399,7 +442,7 @@ pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
             _ => {}
         }
     }
-    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && *p != PARALLEL && *p != FROM_WERK).map(String::from));
+    pairs.extend(r.with_args.split_whitespace().filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED).map(String::from));
     (pairs, missing)
 }
 
@@ -408,6 +451,21 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(out, prev);
+    if let Some(cond) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("precondition=")) {
+        if let Some((condition, expected)) = cond.split_once('=') {
+            out.push_str(&format!(
+                "    preconditions:\n      - condition: \"{condition}\"\n        expected: \"{expected}\"\n"
+            ));
+        }
+    }
+    if let Some(var) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("output=")) {
+        out.push_str(&format!("    output: {var}\n"));
+    }
+    if let Some(code) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("continue_on_exit=")) {
+        out.push_str(&format!(
+            "    continue_on:\n      exit_code: [{code}]\n      mark_success: true\n"
+        ));
+    }
     // #4540 — a pipeline step runs its child as a dagu sub-run (`dag.run`). The child gets
     // the card, the role and this run's trace (its own run id is another, so
     // the trace rides as a param), plus the step's own pairs (SCOPE=diff).
@@ -419,6 +477,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         // child runs on its own queue as its own run, so it gets no TRACE
         let enqueue = r.with_args.split_whitespace().any(|p| p == "enqueue=true");
         let from_werk = r.with_args.split_whitespace().any(|p| p == FROM_WERK);
+        let queued = r.with_args.split_whitespace().any(|p| p == QUEUED);
         let mut params = vec!["CARD=${CARD}".to_string(), "ROLE=${ROLE}".to_string()];
         if !enqueue {
             params.push("TRACE=${CHORUS_TRACE_ID}".to_string());
@@ -426,7 +485,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
         params.extend(
             r.with_args
                 .split_whitespace()
-                .filter(|p| !p.starts_with("continue_on=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK)
+                .filter(|p| !p.starts_with("continue_on=") && !p.starts_with("continue_on_exit=") && !p.starts_with("output=") && !p.starts_with("precondition=") && *p != "enqueue=true" && *p != PARALLEL && *p != FROM_WERK && *p != QUEUED)
                 .map(String::from),
         );
         if from_werk {
@@ -452,10 +511,40 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String], before
             // as a sub-DAG and refuses it — "human task steps are not allowed
             // in sub-DAGs: cicd". The hand-off is the CLI enqueue instead (the
             // pair's red handler already enqueues this way), a top-level run.
+            // #4753 — one go per card: a new cicd run first supersedes the
+            // card's older run still waiting at the go (pipeline-start does the same).
+            // #4852 — a hand-off to cicd routes on the card's diff instead: a model
+            // change starts athena (staging first; athena hands off to cicd itself),
+            // anything else cicd. pipeline-start owns that rule, the supersede and
+            // the check that this step is a live pair/mob run for the card.
+            if r.implemented_by == "cicd" {
+                out.push_str(&format!(
+                    "    command: {}\n",
+                    quote("env -u CHORUS_ROLE ${CHORUS_HOME}/platform/scripts/pipeline-start handoff ${CARD} ${ROLE}")
+                ));
+                if r.with_args.split_whitespace().any(|p| p == "continue_on=failure") {
+                    out.push_str("    continue_on:\n      failure: true\n");
+                }
+                return;
+            }
             out.push_str(&format!(
                 "    command: {}\n",
                 quote(&format!(
                     "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {} -- {}",
+                    r.implemented_by,
+                    params.join(" ")
+                ))
+            ));
+            if r.with_args.split_whitespace().any(|p| p == "continue_on=failure") {
+                out.push_str("    continue_on:\n      failure: true\n");
+            }
+            return;
+        }
+        if queued {
+            out.push_str(&format!(
+                "    command: {}\n",
+                quote(&format!(
+                    "${{CHORUS_HOME}}/platform/scripts/dagu-enqueue-wait {} {}",
                     r.implemented_by,
                     params.join(" ")
                 ))
@@ -500,48 +589,29 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         return generate_go_less(pipeline, rows);
     }
     let rows = sorted(rows)?;
-    // the card half routes only the steps it runs: up to and including the go
-    let card_end = rows.iter().position(|r| r.executor == "human").map_or(rows.len(), |g| g + 1);
+    // the card half routes only the steps it runs: up to the go (#4758: the
+    // go half routes the go)
+    let card_end = rows.iter().position(|r| r.executor == "human").unwrap_or(rows.len());
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes_in(&rows, &rows[..card_end]), None);
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], &fail_routes_in(&rows, &rows[..card_end]), None);
     let mut prev: Vec<String> = Vec::new();
     let grouped = groups(&rows);
     for (g, group) in grouped.iter().enumerate() {
         let before_a_human = grouped.get(g + 1).is_some_and(|n| n[0].executor == "human");
         let r = &group[0];
-        let id = dagu_name(&rows, r);
         if r.executor == "human" {
-            out.push_str(&format!("  - name: {id}\n"));
-            out.push_str(&format!("    description: {}\n", quote(&r.label)));
+            // #4758 — the card half ends here: it enqueues the go half on the
+            // go queue and succeeds. The go and the land enqueue run there.
+            let go = go_dag(pipeline);
+            out.push_str(&format!("  - name: {go}\n"));
+            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue {} on the {GO_QUEUE} queue", r.label))));
             depends_on(&mut out, &prev);
-            // dagu 2.18 refuses a human.task with no id, and an id takes no
-            // hyphens: the same row name, '-' as '_'.
-            let go = id.replace('-', "_");
-            out.push_str(&format!("    id: {go}\n"));
-            out.push_str("    action: human.task\n    with:\n");
-            out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
-            // the one who gives the go is the accepter (DEC-048): the form
-            // asks who, and the land half reads it as $ACCEPTER
-            out.push_str(concat!(
-                "      form:\n        type: object\n        properties:\n",
-                "          accepter:\n            type: string\n",
-            ));
-            out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
-            // #4494 — a go can be a no: a run waiting here could not be
-            // stopped, dequeued or deleted (dagu 2.18), so "no" is the way
-            // out — the land below is skipped and the run ends.
-            out.push_str("          decision:\n            type: string\n            enum: [go, no]\n");
-            out.push_str("        required: [accepter, decision]\n");
-            let land = land_dag(pipeline);
-            out.push_str(&format!("  - name: {land}\n"));
-            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
-            out.push_str(&format!("    depends: [{id}]\n"));
             out.push_str(&format!(
-                "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
+                "    command: {}\n",
+                quote(&format!(
+                    "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue --run-id {GO_RUN_PREFIX}${{DAG_RUN_ID}} {go} -- CARD=${{CARD}} ROLE=${{ROLE}} CICD_RUN=${{DAG_RUN_ID}}"
+                ))
             ));
-            out.push_str("    action: dag.enqueue\n    with:\n");
-            out.push_str(&format!("      dag: {land}\n"));
-            out.push_str(&format!("      params: \"CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}\"\n"));
             return Ok(out);
         }
         for r in group.iter() {
@@ -550,6 +620,62 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
     Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()])
+}
+
+/// #4758 — the go half: Jeff's go, then one step that enqueues the land half
+/// on the land queue with the go's accepter. On its own wide queue, so a
+/// signed go resumes at once instead of behind the card queue's test runs.
+pub fn generate_go(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    if go_less(pipeline) {
+        return Err(vec![format!("pipeline {pipeline} is go-less: it has no go half")]);
+    }
+    let rows = sorted(rows)?;
+    let Some(g) = rows.iter().position(|r| r.executor == "human") else {
+        return Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()]);
+    };
+    let r = &rows[g];
+    let id = dagu_name(&rows, r);
+    let prev: Vec<String> = Vec::new();
+    let mut out = String::new();
+    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], &fail_routes_in(&rows, &rows[g..=g]), None);
+    out.push_str(&format!("  - name: {id}\n"));
+    out.push_str(&format!("    description: {}\n", quote(&r.label)));
+    depends_on(&mut out, &prev);
+    // dagu 2.18 refuses a human.task with no id, and an id takes no
+    // hyphens: the same row name, '-' as '_'.
+    let go = id.replace('-', "_");
+    out.push_str(&format!("    id: {go}\n"));
+    out.push_str("    action: human.task\n    with:\n");
+    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
+    // the one who gives the go is the accepter (DEC-048): the form
+    // asks who, and the land half reads it as $ACCEPTER
+    out.push_str(concat!(
+        "      form:\n        type: object\n        properties:\n",
+        "          accepter:\n            type: string\n",
+    ));
+    out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
+    // #4494 — a go can be a no: a run waiting here could not be
+    // stopped, dequeued or deleted (dagu 2.18), so "no" is the way
+    // out — the land below is skipped and the run ends.
+    out.push_str("          decision:\n            type: string\n            enum: [go, no]\n");
+    out.push_str("        required: [accepter, decision]\n");
+    let land = land_dag(pipeline);
+    out.push_str(&format!("  - name: {land}\n"));
+    out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
+    out.push_str(&format!("    depends: [{id}]\n"));
+    out.push_str(&format!(
+        "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
+    ));
+    // #4691 — the CLI enqueue, a top-level run: dagu refuses a human task
+    // in a run it started as a sub-DAG (#4577 pair run 1, measured), and
+    // the land has Borg Queen's step
+    out.push_str(&format!(
+        "    command: {}\n",
+        quote(&format!(
+            "env -u CHORUS_ROLE -u ROLE dagu --config ${{CHORUS_HOME}}/platform/config/dagu.yaml enqueue {land} -- CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}"
+        ))
+    ));
+    Ok(out)
 }
 
 /// #4515 — a go-less pipeline (go_less): every step in order, no human step,
@@ -567,7 +693,6 @@ pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<Stri
         &format!("werk v2 — pipeline {pipeline}, generated from the graph"),
         if land { MODEL_LAND_QUEUE } else { CARD_QUEUE },
         &["CARD", "ROLE"],
-        if land { "land" } else { "run" },
         &fail_routes(&rows),
         (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK),
     );
@@ -690,18 +815,18 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
     // measured the double nudge, 10-16). A pipeline with an exit handler tells
     // people there (the nightly's notify names every red to its owner). Else a
     // failure nudges the card's builder.
+    // #4888 — a failure row only routes; a top-level pipeline with no exit of its
+    // own wakes once from run-finished, pass or fail.
     if !pipe.on_failure.is_empty() {
         out.push_str(&format!("  failure:\n    command: {}\n", quote(&pipe.on_failure)));
-    } else if pipe.trace_param.is_empty() && pipe.on_exit.is_empty() {
-        out.push_str(&format!(
-            "  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {pipeline} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
-        ));
     }
     if !pipe.on_abort.is_empty() {
         out.push_str(&format!("  abort:\n    command: {}\n", quote(&pipe.on_abort)));
     }
     if !pipe.on_exit.is_empty() {
         out.push_str(&format!("  exit:\n    command: {}\n", quote(&pipe.on_exit)));
+    } else if pipe.trace_param.is_empty() {
+        out.push_str(RUN_FINISHED);
     }
     out.push_str("steps:\n");
     let mut prev: Vec<String> = Vec::new();
@@ -735,16 +860,36 @@ fn role_task_step(out: &mut String, rows: &[Row], r: &Row, prev: &[String]) {
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(out, prev);
+    if let Some(cond) = r.with_args.split_whitespace().find_map(|p| p.strip_prefix("precondition=")) {
+        if let Some((condition, expected)) = cond.split_once('=') {
+            out.push_str(&format!(
+                "    preconditions:\n      - condition: \"{condition}\"\n        expected: \"{expected}\"\n"
+            ));
+        }
+    }
     out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
     out.push_str("    action: human.task\n    with:\n");
-    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? (${{{by}}} answers)", r.label))));
+    // a param (NAVIGATOR) is read at run time; a role name (borg-queen) is the answerer itself
+    let who = if by.bytes().all(|b| b.is_ascii_uppercase() || b == b'_') { format!("${{{by}}}") } else { by.clone() };
+    out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}? ({who} answers)", r.label))));
     out.push_str(concat!(
         "      form:\n        type: object\n        properties:\n",
         "          by:\n            type: string\n",
         "          decision:\n            type: string\n",
     ));
     out.push_str(&format!("            enum: [{}]\n", choices.join(", ")));
-    out.push_str("        required: [by, decision]\n");
+    let extra_fields: Vec<&str> = r
+        .with_args
+        .split_whitespace()
+        .find_map(|p| p.strip_prefix("fields="))
+        .map(|s| s.split(',').filter(|x| !x.is_empty()).collect())
+        .unwrap_or_default();
+    for f in &extra_fields {
+        out.push_str(&format!("          {f}:\n            type: string\n"));
+    }
+    let mut req = vec!["by", "decision"];
+    req.extend(extra_fields.iter().copied());
+    out.push_str(&format!("        required: [{}]\n", req.join(", ")));
 }
 
 /// The land half: every step after the go, on the land queue, one land at a time.
@@ -757,11 +902,24 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
         return Err(vec!["no human go in the rows: nothing to land".to_string()]);
     };
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
+    // #4691 — a human step after the go is a role's (Borg Queen proves the
+    // land the way a navigator greens a pair): it names who answers and how
+    let errs: Vec<String> = rows[go + 1..].iter().filter(|r| r.executor == "human")
+        .filter(|r| human_by(r).map_or(true, |(_, c)| c.len() < 2))
+        .map(|r| format!("{}: a human step in the land with no by= and choices= (who answers, and how)", r.skill))
+        .collect();
+    if !errs.is_empty() {
+        return Err(errs);
+    }
     let mut prev: Vec<String> = Vec::new();
     for group in groups(&rows[go + 1..]) {
         for r in group {
-            command_step(&mut out, &rows, r, &prev, false);
+            if r.executor == "human" {
+                role_task_step(&mut out, &rows, r, &prev);
+            } else {
+                command_step(&mut out, &rows, r, &prev, false);
+            }
         }
         prev = group.iter().map(|r| dagu_name(&rows, r)).collect();
     }
@@ -773,6 +931,9 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
 pub fn generate_named(name: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     if go_less(name) {
         return generate(name, rows);
+    }
+    if let Some(pipeline) = name.strip_suffix("-go") {
+        return generate_go(pipeline, rows);
     }
     match name.strip_suffix("-land") {
         Some(pipeline) => generate_land(pipeline, rows),
@@ -786,7 +947,7 @@ pub fn pipeline_of(name: &str) -> &str {
     if go_less(name) {
         return name;
     }
-    name.strip_suffix("-land").unwrap_or(name)
+    name.strip_suffix("-land").or_else(|| name.strip_suffix("-go")).unwrap_or(name)
 }
 
 /// The drift check: regenerate from the rows and compare with the file on

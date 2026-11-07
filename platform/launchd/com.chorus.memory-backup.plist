@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.chorus.memory-backup</string>
+	<!-- #4630: yesterday's messages and streams, kept as a dated folder in
+	     Library, Bedroom and Google Drive, checked by sha256. After the 00:00
+	     rsync mirror, before the 03:00 nightly. -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+		<string>com.chorus.memory-backup</string>
+		<string>job</string>
+		<string>/usr/bin/nice</string>
+		<string>-n</string>
+		<string>10</string>
+		<string>/opt/homebrew/bin/python3</string>
+		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/memory-backup.py</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>1</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Chorus/memory-backup.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Chorus/memory-backup.log</string>
+</dict>
+</plist>

@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: borg
+// @domain: code
 // #4456 card AC: each AC is met, not met or unmeasured with evidence; an AC
 // with no runnable check is unmeasured, never met; a known-false AC is not met.
 use borg_prove::*;
@@ -60,16 +60,6 @@ fn a_failure_routes_to_reopen_before_the_land_and_a_ticket_in_operating() {
         Route::Ticket { step: "value-stream-step-borg-surface".into(), key: "silas|skill-borg-verify-in-prod|failed".into() }
     );
     assert_eq!(route_for("skill-nope", &routes, "silas"), Route::Unrouted, "never guessed");
-}
-
-#[test]
-fn cardac_rows_read_from_the_store_answer_in_ac_order() {
-    let tsv = "?ac\t?statement\t?kind\t?target\t?expect\n<https://jeffbridwell.com/chorus#ac-4456-1>\t\"runs each check\"\t\"http\"\t\"/health\"\t\"ok\"\n<https://jeffbridwell.com/chorus#ac-4456-2>\t\"no check\"\t\"none\"\n";
-    let cs = checks_from_tsv(tsv).unwrap();
-    assert_eq!(cs.len(), 2);
-    assert_eq!((cs[0].ac.as_str(), cs[0].kind.as_str(), cs[1].kind.as_str(), cs[1].target.as_str()), ("ac-4456-1", "http", "none", ""));
-    assert!(checks_from_tsv("<html>").is_err());
-    assert!(checks_query(4456).contains("chorus:card-4456"));
 }
 
 #[test]

@@ -65,7 +65,7 @@ fn a_retired_runtime_is_refused_by_its_reason() {
 #[test]
 fn an_unrendered_hooks_layout_is_refused_by_name() {
     let (rt, mut row) = abby();
-    row["runtimeHooksLayout"] = json!("claude-settings");
+    row["runtimeHooksLayout"] = json!("unrendered-layout");
     let why = runtime_hooks_file(&row, &rt, "abby-normal", "/b/s", "/b/p").unwrap_err();
-    assert!(why.contains("hooks layout \"claude-settings\" is not rendered yet"), "{why}");
+    assert!(why.contains("hooks layout \"unrendered-layout\" is not rendered yet"), "{why}");
 }

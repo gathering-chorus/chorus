@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chorus Go</title>
+<style>
+:root { --bg:#f6f5f1; --fg:#1d1c1a; --muted:#6b6862; --card:#ffffff; --line:#dedad2; --go:#1f7a4d; --no:#9a3b2f; --onbtn:#ffffff; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg:#151513; --fg:#ecebe6; --muted:#a19d95; --card:#1f1e1b; --line:#34322e; --go:#2f9e66; --no:#c25543; --onbtn:#ffffff; color-scheme: dark; } }
+* { box-sizing: border-box; }
+/* #4771: author display rules (.row, .card) beat the UA's [hidden]; without this the dead Go/No panel showed, stuck on Loading. */
+[hidden] { display: none !important; }
+body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); }
+main { max-width: 32rem; margin: 0 auto; display:flex; flex-direction:column; gap:16px; }
+h1 { font-size: 1.15rem; margin:0; letter-spacing:.02em; color:var(--muted); font-weight:600; text-transform:uppercase; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+.title { font-size:1.2rem; font-weight:650; text-wrap:balance; }
+.meta { color:var(--muted); font-size:.92rem; font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+.row { display:flex; gap:12px; }
+button { flex:1; font:inherit; font-weight:700; font-size:1.25rem; padding:18px 0; border:0; border-radius:14px; color:var(--onbtn); }
+button.go { background:var(--go); } button.no { background:var(--no); } button.reg { background:var(--go); }
+button:disabled { opacity:.45; }
+#msg { min-height:1.5em; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="head">Jeff's go</h1>
+  <div class="card" id="what"><div class="title" id="title">Loading…</div><div class="meta" id="meta"></div></div>
+  <div class="row" id="regrow" hidden><button class="reg" id="reg">Register this phone</button></div>
+  <div id="asks"></div>
+  <div id="msg"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const q = new URLSearchParams(location.search);
+const say = (t) => { $("msg").textContent = t; };
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
+}
+async function registerPage() {
+  $("head").textContent = "Register Jeff's phone";
+  const token = q.get("token") || "";
+  const opt = await (await fetch(`/go/api/register-options?token=${encodeURIComponent(token)}`)).json();
+  $("title").textContent = opt.registered ? "A phone is already registered. Registering replaces it." : "This phone will sign Jeff's go.";
+  $("regrow").hidden = false;
+  $("reg").onclick = async () => {
+    $("reg").disabled = true; say("Waiting for Face ID…");
+    try {
+      const cred = await navigator.credentials.create({ publicKey: {
+        challenge: unb64(opt.challenge), rp: { id: opt.rpId, name: "Chorus go" },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: "jeff", displayName: "Jeff" },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: { userVerification: "required", residentKey: "preferred" }, attestation: "none", timeout: 60000 } });
+      const res = await post("/go/api/register", { token, credId: b64(cred.rawId),
+        publicKey: b64(cred.response.getPublicKey()), clientDataJSON: b64(cred.response.clientDataJSON) });
+      say(res.text);
+    } catch (e) { say(`Not registered: ${e.message || e}`); $("reg").disabled = false; }
+  };
+}
+// #4505: Jeff's one list of asks. Each decision is its own passkey signature over that ask's exact action.
+async function approvalsPage() {
+  $("head").textContent = "Waiting on you";
+  $("what").hidden = true;
+  const r = await (await fetch("/go/api/approvals")).json();
+  if (r.ok === false) { say(r.text); return; }
+  if (!r.approvals.length) { say("Nothing waiting."); return; }
+  for (const a of r.approvals) {
+    const card = document.createElement("div"); card.className = "card";
+    const t = document.createElement("div"); t.className = "title"; t.textContent = a.title;
+    const m = document.createElement("div"); m.className = "meta";
+    m.textContent = `${a.asker.replace(/^principal-/, "")} asks · ${a.kind} · ${a.at || ""}`;
+    const act = document.createElement("div"); act.className = "meta"; act.textContent = a.action;
+    if (a.kind === "go") {
+      // #4771: say which run and round in words, not the raw action JSON
+      try { const g = JSON.parse(a.action); act.textContent = `run ${String(g.run).slice(0, 8)} · round ${String(g.round).slice(0, 9)}`; } catch (e) {}
+    }
+    const row = document.createElement("div"); row.className = "row";
+    const yes = document.createElement("button"); yes.className = "go"; yes.textContent = "Approve";
+    const no = document.createElement("button"); no.className = "no"; no.textContent = "Decline";
+    const note = document.createElement("div"); note.className = "meta";
+    row.append(yes, no); card.append(t, m, act, row, note); $("asks").append(card);
+    if (a.state && a.state !== "signed-not-sent") { note.textContent = a.state; }
+    if (a.state === "signed-not-sent") {
+      // #4642: Jeff's go is recorded but its run never took it. Re-sending needs no new Face ID:
+      // the server re-verifies the signature it recorded, as the land will.
+      row.innerHTML = "";
+      const send = document.createElement("button"); send.className = "go"; send.textContent = "Send go again";
+      row.append(send);
+      note.textContent = "Your go is signed but the run hasn't taken it yet.";
+      send.onclick = async () => {
+        send.disabled = true; note.textContent = "Sending…";
+        const res = await post("/go/api/approvals/resend", { row: a.row });
+        note.textContent = res.text; if (res.ok === false) send.disabled = false;
+      };
+      continue;
+    }
+    const decide = async (decision) => {
+      yes.disabled = no.disabled = true; note.textContent = "Waiting for Face ID…";
+      try {
+        const ch = await post("/go/api/approvals/challenge", { row: a.row });
+        if (ch.ok === false) { note.textContent = ch.text; return; }
+        const cred = await navigator.credentials.get({ publicKey: {
+          challenge: unb64(decision === "approve" ? ch.challengeApprove : ch.challengeDecline), rpId: ch.rpId,
+          allowCredentials: [{ type: "public-key", id: unb64(ch.credId) }], userVerification: "required", timeout: 60000 } });
+        const res = await post("/go/api/approvals/decide", { row: a.row, nonce: ch.nonce, decision,
+          authData: b64(cred.response.authenticatorData), clientDataJSON: b64(cred.response.clientDataJSON), signature: b64(cred.response.signature) });
+        note.textContent = res.text;
+        if (res.ok === false) { yes.disabled = no.disabled = false; }
+      } catch (e) { note.textContent = `Not sent: ${e.message || e}`; yes.disabled = no.disabled = false; }
+    };
+    yes.onclick = () => decide("approve");
+    no.onclick = () => decide("decline");
+  }
+}
+const here = location.pathname.replace(/\/$/, "");
+(here.endsWith("/register") ? registerPage : approvalsPage)().catch((e) => say(String(e)));
+</script>
+</body>
+</html>

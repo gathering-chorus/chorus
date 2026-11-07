@@ -1,6 +1,6 @@
 #!/bin/bash
 # @test-type: integration — needs the installed LaunchAgent; reports UNMEASURED when it is not on this box.
-# @domain: clearing
+# @domain: messages
 #
 # #4570 — Jeff opens Clearing v2 on his phone at :3472 at any time. This checks the
 # installed com.chorus.clearing-v2 runs the canonical build, and that :3472 answers on

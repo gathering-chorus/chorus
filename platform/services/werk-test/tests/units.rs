@@ -287,42 +287,6 @@ fn completed_extras_names_a_card_that_changes_the_gate_and_never_says_advisory()
 // the plan. UNION with the legacy path-derived units — the model can only ADD
 // coverage in v1, never subtract (the superset AC, proven by construction).
 
-// ── #3634 — TestSuiteRun write-back payload ────────────────────────────────
-#[test]
-fn suite_run_payload_carries_the_run_facts() {
-    use werk_test::suite_run_payload;
-    let p = suite_run_payload("3634", "kade", "trace-x", "model", 5, 1, 1234, "blocked");
-    // #3592 — payload is EXACTLY the deployed TestSuiteRunShape (cardId/ts/result);
-    // off-model props got every prior post 422-refused by the DAL. Run context
-    // lives in the test.started/test.completed spine events.
-    for needle in ["\"cardId\":\"3634\"", "\"result\":\"blocked\"", "\"ts\":\"", "testsuiterun-3634-"] {
-        assert!(p.contains(needle), "payload missing {}: {}", needle, p);
-    }
-    assert!(
-        p.split("\"ts\":").nth(1).is_some_and(|value| value.starts_with('"')),
-        "modeled write values are strings at the governed API boundary: {}",
-        p,
-    );
-    for banned in ["\"card\":", "\"role\":", "\"traceId\":", "\"planSource\":",
-                   "\"checksPlanned\":", "\"durationMs\":", "\"verdict\":"] {
-        assert!(!p.contains(banned), "off-model prop must not be sent {}: {}", banned, p);
-    }
-}
-
-#[test]
-fn suite_run_post_args_pin_the_curl_contract() {
-    use werk_test::suite_run_post_args;
-    let a = suite_run_post_args("http://x/testsuiteruns", "tok", "{\"k\":1}");
-    let joined = a.join(" ");
-    assert!(joined.starts_with("-sf --max-time 10 -X POST"), "fail-fast + bounded: {}", joined);
-    assert!(joined.contains("Authorization: Bearer tok"), "{}", joined);
-    assert!(joined.contains("Content-Type: application/json"), "{}", joined);
-    // #3592 — scoped tokens (#3573) demand the target graph named per request;
-    // without this header every scoped write 403s out-of-scope.
-    assert!(joined.contains("x-target-graph: urn:chorus:domains:tests"), "{}", joined);
-    assert!(joined.ends_with("http://x/testsuiteruns"), "endpoint last: {}", joined);
-}
-
 // ── #3634 gather feedback (silas): JSON payload must survive hostile strings ─
 // (zero-dep crate: validated with the lib's own escaper, not serde)
 #[test]
@@ -332,19 +296,6 @@ fn json_escape_neutralizes_quotes_backslashes_and_control_chars() {
     assert_eq!(json_escape(r#"qu"ote"#), r#"qu\"ote"#);
     assert_eq!(json_escape(r"back\slash"), r"back\\slash");
     assert_eq!(json_escape("new\nline"), r"new\nline");
-}
-
-#[test]
-fn suite_run_payload_escapes_every_string_field() {
-    use werk_test::suite_run_payload;
-    let p = suite_run_payload(r#"36"34"#, "kade", r#"tr"ace"#, "model", 1, 0, 2, r#"block"ed"#);
-    // no RAW interior quotes may survive: every quote inside a value must be escaped
-    // (#3592: trace no longer travels in the payload — shape-exact cardId/ts/result)
-    assert!(p.contains(r#"36\"34"#), "card escaped: {}", p);
-    assert!(p.contains(r#"block\"ed"#), "verdict escaped: {}", p);
-    // structural sanity: after dropping escaped quotes, the raw quotes pair up
-    let unescaped = p.replace(r#"\""#, "");
-    assert_eq!(unescaped.matches('"').count() % 2, 0, "quotes balanced: {}", p);
 }
 
 // ── #3634 gather feedback (wren): fallback labeling is a pure, pinned decision ─

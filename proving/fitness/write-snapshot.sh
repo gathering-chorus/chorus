@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../../platform/scripts/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # Record what the security rows said, so nobody has to ask a role.
 #
 # WHY THIS EXISTS
@@ -59,7 +60,7 @@ run_row() {
 
 json_escape() { sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n' | cut -c1-200; }
 
-taken="$(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
+taken="$(boston_time show)"
 tmp="$OUT.tmp"
 
 {

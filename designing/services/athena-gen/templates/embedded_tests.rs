@@ -200,3 +200,78 @@ fn sign_in_reads_this_store_not_a_remote_one() {
     let ids = chorus_oidc::oidc::resolve_principal_webids(&q).expect("the store answered");
     assert_eq!(ids, vec!["https://id.example/art#me".to_string()]);
 }
+
+/// #4757 — the root header is retired: GET /<product> is an unknown route, never a header.
+#[test]
+fn the_product_root_is_no_header() {
+    let store = Sparql::over(Box::new(seeded()));
+    let (code, out) = crate::route(&ctx(&store), "GET", &format!("/{}", crate::model::PRODUCT), None, "");
+    assert_eq!(code, 404, "{out}");
+    assert_ne!(out["kind"], json!("Header"), "{out}");
+}
+
+/// #4744 AC8 (Jeff 10-26: "filter and search on any domain like a stream") — every
+/// collection takes the same filter (`<field>=<value>`) and text search (`q=`), run in the
+/// store before the page is cut, so the count is the count of matches.
+#[test]
+fn every_collection_filters_and_searches_in_the_store() {
+    let (c, f) = CLASSES.iter()
+        .find_map(|c| c.fields.iter().find(|f| !f.link && !f.many && f.datatype == "string" && f.allowed.is_empty()).map(|f| (c, f.name)))
+        .expect("a class with a free string field");
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    for (n, v) in [("r1", "alpha one"), ("r2", "beta two")] {
+        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
+    }
+    let ctx = ctx(&store);
+    let path = format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment);
+    let get = |q: &str| crate::route(&ctx, "GET", &format!("{path}?{q}"), None, "");
+    let names = |out: &Value| out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+
+    let (code, out) = get(&format!("{f}=alpha%20one"));
+    assert_eq!((code, out["count"].clone(), names(&out)), (200, json!(1), vec!["r1".to_string()]), "{out}");
+    let (code, out) = get("q=BETA");
+    assert_eq!((code, out["count"].clone(), names(&out)), (200, json!(1), vec!["r2".to_string()]), "{out}");
+    // NEGATIVE PROOF: a value no row holds answers zero, so the filter really runs
+    let (code, out) = get(&format!("{f}=gamma"));
+    assert_eq!((code, out["count"].clone()), (200, json!(0)), "{out}");
+    // a field the class does not have is refused by name, never answered empty
+    let (code, out) = get("nosuchfield=x");
+    assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
+    assert!(out["message"].as_str().unwrap().contains("nosuchfield"), "{out}");
+}
+
+/// #4744 (Kade, #4749 scroll-back; AC7 "the latest prompt") — a stream reads newest first
+/// (`sort=-<field>`) and pages back in time (`<field>.lt=<value>`), in the store.
+#[test]
+fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
+    let (c, f) = CLASSES.iter()
+        .find_map(|c| c.fields.iter().find(|f| !f.link && !f.many && f.datatype == "string" && f.allowed.is_empty()).map(|f| (c, f.name)))
+        .expect("a class with a free string field");
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    for (n, v) in [("a", "2026-10-26T09:00:00Z"), ("b", "2026-10-26T10:00:00Z"), ("c", "2026-10-26T08:00:00Z")] {
+        let cells = [(f.to_string(), vec![crate::rules::Cell::Literal(v.into(), "string")])];
+        store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
+    }
+    let ctx = ctx(&store);
+    let path = format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment);
+    let names = |q: &str| {
+        let (code, out) = crate::route(&ctx, "GET", &format!("{path}?{q}"), None, "");
+        assert_eq!(code, 200, "{out}");
+        out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+    };
+    assert_eq!(names(&format!("sort=-{f}")), ["b", "a", "c"]);
+    assert_eq!(names(&format!("sort={f}")), ["c", "a", "b"]);
+    assert_eq!(names(&format!("sort=-{f}&{f}.lt=2026-10-26T10:00:00Z&limit=1")), ["a"]);
+    // NEGATIVE PROOF: a bound below every row leaves nothing, so the bound really runs
+    assert!(names(&format!("{f}.lt=2026-01-01")).is_empty());
+    // a bound on a number would compare as text: refused by name (Kade's review)
+    if let Some((nc, nf)) = CLASSES.iter().find_map(|c| c.fields.iter().find(|f| !f.link && matches!(f.datatype, "integer" | "decimal")).map(|f| (c, f.name))) {
+        let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}?{nf}.lt=5", crate::model::PRODUCT, nc.domain, nc.segment), None, "");
+        assert_eq!((code, out["error"].as_str()), (400, Some("unordered-field")), "{out}");
+    }
+    // sorting by a field the class does not have is refused by name
+    let (code, out) = crate::route(&ctx, "GET", &format!("{path}?sort=-nosuch"), None, "");
+    assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
+}
+

@@ -119,10 +119,92 @@ pub fn owl_upstream_for(role: &str) -> R<String> {
     Ok(format!("http://127.0.0.1:{}", athena.port_for(role)?))
 }
 
+/// The canonical port-slot order for known agent roles (#4458 / #4774).
+pub const FALLBACK_KNOWN_ROLES: [&str; 5] = [
+    "silas",
+    "kade",
+    "wren",
+    "abby-normal",
+    "borg-queen",
+];
+
+fn extract_json_str_field(obj: &str, field: &str) -> Option<String> {
+    let pat = format!("\"{field}\"");
+    let idx = obj.find(&pat)? + pat.len();
+    let rest = obj[idx..].trim_start().strip_prefix(':')?.trim_start();
+    let quoted = rest.strip_prefix('"')?;
+    let end = quoted.find('"')?;
+    Some(quoted[..end].to_string())
+}
+
+/// #4774 — pure parser for `/v1/roles/roles` JSON. Extracts `"roleKind": "agent"`
+/// role names, preserves `FALLBACK_KNOWN_ROLES` slot indices so existing per-role
+/// ports never shift, and appends any newly added agent roles in deterministic order.
+/// Returns `None` if no agent roles are present.
+pub fn roles_from_door_json(body: &str) -> Option<Vec<String>> {
+    let data_idx = body.find("\"data\"")?;
+    let mut rest = &body[data_idx..];
+    let mut found = Vec::new();
+    while let Some(open) = rest.find('{') {
+        let after_open = &rest[open + 1..];
+        let Some(close) = after_open.find('}') else {
+            break;
+        };
+        let obj = &after_open[..close];
+        if extract_json_str_field(obj, "roleKind").as_deref() == Some("agent") {
+            if let Some(name) = extract_json_str_field(obj, "name") {
+                if !name.is_empty() && !found.contains(&name) {
+                    found.push(name);
+                }
+            }
+        }
+        rest = &after_open[close + 1..];
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let mut ordered = Vec::with_capacity(found.len());
+    for slot_role in FALLBACK_KNOWN_ROLES {
+        if found.iter().any(|r| r == slot_role) {
+            ordered.push(slot_role.to_string());
+        }
+    }
+    let mut extras: Vec<String> = found
+        .into_iter()
+        .filter(|r| !FALLBACK_KNOWN_ROLES.contains(&r.as_str()))
+        .collect();
+    extras.sort();
+    ordered.extend(extras);
+    Some(ordered)
+}
+
+/// #4774 — query `{door_url}/v1/roles/roles?limit=500` with a short timeout and fall
+/// back to `FALLBACK_KNOWN_ROLES` when offline or hermetic.
+pub fn resolve_known_roles_from(door_url: &str) -> Vec<String> {
+    let url = format!("{}/v1/roles/roles?limit=500", door_url.trim_end_matches('/'));
+    if let Ok(body) = run_env(None, &[], "curl", &["-s", "-f", "--max-time", "2", &url]) {
+        if let Some(roles) = roles_from_door_json(&body) {
+            return roles;
+        }
+    }
+    FALLBACK_KNOWN_ROLES.iter().map(|s| s.to_string()).collect()
+}
+
 /// The roles that get a demo copy, in port-slot order. #4458 — Abby
 /// (abby-normal) is the fourth: her ports are each service's base + 3.
+/// #4774 — resolved dynamically from the roles graph (`:3360/v1/roles/roles`)
+/// with fallback to `FALLBACK_KNOWN_ROLES`.
 pub fn known_roles() -> &'static [&'static str] {
-    &["silas", "kade", "wren", "abby-normal"]
+    static ROLES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    ROLES.get_or_init(|| {
+        let door = std::env::var("ATHENA_MAKE_URL")
+            .or_else(|_| std::env::var("CHORUS_DOOR"))
+            .unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+        resolve_known_roles_from(&door)
+            .into_iter()
+            .map(|s| -> &'static str { Box::leak(s.into_boxed_str()) })
+            .collect()
+    })
 }
 
 /// The canonical service list for the demo env. #4515 — the old TS MCP server
@@ -221,6 +303,22 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: "/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
         },
+        // #4625 — the werk's own Clearing v2, read-only: it reads the real room
+        // through the relay tunnel and this werk's pulse and door, and refuses
+        // every send. OPTIONAL: only for a card that changes directing/clearing-v2.
+        // 3501-3504: clear of every other variant's ports (test below).
+        EnvService {
+            name: "clearing-v2".to_string(),
+            kind: EnvServiceKind::TsService,
+            base_port: 3501,
+            source_dir_rel: "directing/clearing-v2".to_string(),
+            program_args_template: ProgramArgsTemplate::Node {
+                entry: "dist/server.js".to_string(),
+            },
+            port_env: "PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
+        },
         // #4514 — the werk's own tool runner, so a card that changes it can show
         // a long Task surviving a runner restart on the demo, never on prod's.
         // 3372-3375: clear of every other variant's ports. Binds 127.0.0.1.
@@ -243,7 +341,9 @@ pub fn env_services() -> Vec<EnvService> {
 /// pulse: its nudge gate reads pulse's message store). A service not listed
 /// here is always started, which keeps today's demo for cards touching none.
 pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
-    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/"]),
+    // #4625 — v2 reads pulse, so a v2 card gets the werk's pulse too.
+    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/", "directing/clearing-v2/"]),
+    ("clearing-v2", &["directing/clearing-v2/"]),
     // #4514 — a demo runner only for cards that change the runner
     ("chorus-runner", &["platform/services/chorus-runner/"]),
 ];
@@ -251,8 +351,14 @@ pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
 /// #4514 — the variant runner's environment: its door is the werk's own
 /// athena-make, and its Tasks live in the werk's demo store, never prod's
 /// ~/.chorus/runner-tasks.
-pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
-    Ok(vec![
+/// #4629 — with `staging`, the variant runner's nudge-send signs and publishes to the staging room.
+pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str, staging: Option<&(String, String)>) -> R<Vec<(String, String)>> {
+    let buzz: Vec<(String, String)> = staging.map(|(url, channel)| vec![
+        ("CHORUS_NUDGE_SIGNS".to_string(), "1".to_string()),
+        ("BUZZ_RELAY_URL".to_string(), url.clone()),
+        ("BUZZ_TEAM_CHANNEL".to_string(), channel.clone()),
+    ]).unwrap_or_default();
+    Ok(buzz.into_iter().chain(vec![
         ("CHORUS_DOOR".into(), format!("http://127.0.0.1:{}", env_port_for("athena-make", role)?)),
         // #4515 — the runner's http tools reach the werk's own chorus-api ({api})
         ("CHORUS_API_URL".into(), format!("http://127.0.0.1:{}", env_port_for("chorus-api", role)?)),
@@ -261,7 +367,7 @@ pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chor
         ("CHORUS_HOME".into(), chorus_home.to_string()),
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
-    ])
+    ]).collect())
 }
 
 /// #4398 — the env services a card's demo starts, given the files its diff
@@ -289,9 +395,17 @@ fn werk_changed_files(werk_root: &str) -> Vec<String> {
 /// real person or a prod store is pointed inside the werk: the message store,
 /// the spine, and both delivery binaries (a stub that records what it was
 /// asked to deliver). Returned as owned pairs so env_up can check them.
-pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
+/// #4629 — with `staging` (relay url, team channel), the variant pulse reads and
+/// delivers from the STAGING Buzz room (shadow + deliver on), never the real one.
+pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str, staging: Option<&(String, String)>) -> R<Vec<(String, String)>> {
     let stub = format!("{}/delivery-stub.sh", demo_store_dir);
-    Ok(vec![
+    let buzz: Vec<(String, String)> = staging.map(|(url, channel)| vec![
+        ("PULSE_BUZZ_RELAY_URL".to_string(), url.clone()),
+        ("BUZZ_TEAM_CHANNEL".to_string(), channel.clone()),
+        ("PULSE_BUZZ_SHADOW".to_string(), "1".to_string()),
+        ("PULSE_BUZZ_DELIVER".to_string(), "1".to_string()),
+    ]).unwrap_or_default();
+    Ok(buzz.into_iter().chain(vec![
         ("CHORUS_MESSAGES_DB".into(), format!("{}/messages.db", demo_store_dir)),
         ("CHORUS_LOG_FILE".into(), format!("{}/spine.log", demo_store_dir)),
         ("CHORUS_INJECT_BIN".into(), stub.clone()),
@@ -303,7 +417,83 @@ pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str)
         ("LOKI_URL".into(), "off".into()),
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
-    ])
+    ]).collect())
+}
+
+/// #4629 — the staging Buzz room from clearing-v2.config.json: the relay host of
+/// `buzzRelayHost` on `stagingRelayPort`, and `stagingTeamChannel`. Built from the
+/// config, so no relay address is written anywhere new (#3370). None unless all three are there.
+pub fn staging_buzz_in_config(json: &str) -> Option<(String, String)> {
+    let host = relay_host_in_config(json)?;
+    let host = host.split(':').next()?.to_string();
+    let port: u16 = {
+        let i = json.find("\"stagingRelayPort\"")? + "\"stagingRelayPort\"".len();
+        let rest = json[i..].trim_start().strip_prefix(':')?.trim_start();
+        rest[..rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len())].parse().ok()?
+    };
+    let channel = {
+        let i = json.find("\"stagingTeamChannel\"")? + "\"stagingTeamChannel\"".len();
+        let rest = json[i..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+        rest[..rest.find('"')?].trim().to_string()
+    };
+    (!host.is_empty() && !channel.is_empty()).then(|| (format!("ws://{host}:{port}"), channel))
+}
+
+/// #4625 — the demo v2's environment: read-only, the real room through the
+/// relay tunnel (reading only), and this werk's pulse, door and api.
+pub fn clearing_v2_extra_env(role: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
+    let door = format!("http://localhost:{}", env_port_for("athena-make", role)?);
+    let api = format!("http://localhost:{}", env_port_for("chorus-api", role)?);
+    Ok([
+        ("CLEARING_V2_READONLY".into(), "1".into()),
+        ("HOST".into(), "0.0.0.0".into()),
+        ("PULSE_URL".into(), format!("http://127.0.0.1:{}", env_port_for("pulse", role)?)),
+        ("ROLES_URL".into(), format!("{}/v1/roles/roles", door)),
+        ("CARDS_URL".into(), format!("{}/v1/cards/cards", door)),
+        ("BOARD_URL".into(), format!("{}/api/chorus/context/board", api)),
+        ("ALERTS_URL".into(), format!("{}/api/chorus/context/alerts", api)),
+        ("BUZZ_RELAY_URL".into(), "ws://127.0.0.1:13000".into()),
+        ("HOME".into(), home.to_string()),
+        ("PATH".into(), path.to_string()),
+    ]
+    .into_iter()
+    // #4661 — the relay's Host comes from prod v2's own config (the one place it
+    // is set), never a pinned address here; with no config the demo room reads
+    // the relay as unreachable, loudly, rather than a guessed host
+    .chain(prod_v2_relay_host().map(|h| ("BUZZ_RELAY_HOST_HEADER".to_string(), h)))
+    .collect())
+}
+
+/// #4661 — `buzzRelayHost` from a Clearing v2 config's JSON text.
+pub fn relay_host_in_config(json: &str) -> Option<String> {
+    // a plain scan, as relay_url_in_plist does: this crate carries no JSON parser
+    let i = json.find("\"buzzRelayHost\"")? + "\"buzzRelayHost\"".len();
+    let rest = json[i..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let v = rest[..rest.find('"')?].trim();
+    (!v.is_empty()).then(|| v.to_string())
+}
+
+fn prod_v2_relay_host() -> Option<String> {
+    let root = std::env::var("CHORUS_HOME").ok()?;
+    relay_host_in_config(&std::fs::read_to_string(format!("{root}/directing/clearing-v2/clearing-v2.config.json")).ok()?)
+}
+
+/// #4625 — a demo v2 that could send, or hand Jeff's words to prod pulse.
+pub fn clearing_v2_env_prod_leak(env: &[(String, String)]) -> Option<String> {
+    let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+    if get("CLEARING_V2_READONLY") != Some("1") {
+        return Some("CLEARING_V2_READONLY is not 1, so the demo could post into the real room".into());
+    }
+    match get("PULSE_URL") {
+        Some(u) if u.ends_with(":3475") || u.ends_with(":3475/") => Some(format!("PULSE_URL={u} is prod pulse")),
+        None => Some("PULSE_URL unset: v2 would default to prod pulse".into()),
+        _ => None,
+    }
+}
+
+/// #4629 — the real Buzz room: the prod tunnel (:13000) or the prod relay's own host:port.
+pub fn relay_is_prod(url: &str, prod_host: Option<&str>) -> bool {
+    url.contains(":13000") || prod_host.is_some_and(|h| !h.is_empty() && url.contains(h))
 }
 
 /// #4398 — prod surfaces a variant pulse must never be handed.
@@ -316,6 +506,11 @@ pub fn pulse_env_prod_leak(env: &[(String, String)], home: &str) -> Option<Strin
     for (k, v) in env {
         if (k == "TMUX_BIN" && v == "tmux") || prod.iter().any(|p| v.ends_with(p.as_str())) {
             return Some(format!("{k}={v} reaches a prod surface"));
+        }
+        // #4629 — a demo pulse reads and delivers from the staging room, never the real one
+        // (the prod tunnel on :13000, or the prod relay's own host:port from the config)
+        if k == "PULSE_BUZZ_RELAY_URL" && relay_is_prod(v, prod_v2_relay_host().as_deref()) {
+            return Some(format!("{k}={v} is the real Buzz room"));
         }
     }
     None
@@ -576,7 +771,26 @@ fn run_env(dir: Option<&str>, envs: &[(&str, &str)], cmd: &str, args: &[&str]) -
 }
 
 fn uid() -> u32 {
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn getuid() -> u32;
+        }
+        let u = unsafe { getuid() };
+        if u != 0 {
+            return u;
+        }
+    }
     std::env::var("UID").ok().and_then(|s| s.parse().ok()).unwrap_or(501)
+}
+
+fn launchd_domain() -> String {
+    let u = uid();
+    if run_env(None, &[], "launchctl", &["print", &format!("gui/{}", u)]).is_ok() {
+        format!("gui/{}", u)
+    } else {
+        format!("user/{}", u)
+    }
 }
 
 /// Generate the per-role plist text for a service. Pure (no IO); tested
@@ -694,6 +908,13 @@ pub fn generate_plist(
   <dict>
 {env_xml}
   </dict>
+  <key>LimitLoadToSessionType</key>
+  <array>
+    <string>Aqua</string>
+    <string>Background</string>
+    <string>StandardIO</string>
+    <string>LoginWindow</string>
+  </array>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>{daemon_log}</string>
   <key>StandardErrorPath</key><string>{daemon_log}</string>
@@ -881,6 +1102,10 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             std::env::var("HOME").unwrap_or_default(),
             svc.label(role)
         );
+        if let Some(parent) = Path::new(&plist_path).parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("env_up: mkdir {}: {}", parent.display(), e))?;
+        }
 
         // #3381: per-werk isolated stores. The 2026-06-12 wedge root was every
         // variant opening PRODUCTION's ~/.chorus/index.db + lance (WAL locks,
@@ -932,8 +1157,16 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let prod_relay = fs::read_to_string(format!("{}/Library/LaunchAgents/com.chorus.clearing.plist", home_dir))
             .ok().and_then(|t| relay_url_in_plist(&t));
         let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path, prod_relay.as_deref())?;
-        let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path)?;
-        let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path)?;
+        let staging = fs::read_to_string(format!("{}/directing/clearing-v2/clearing-v2.config.json", werk_root.trim_end_matches('/')))
+            .ok().and_then(|t| staging_buzz_in_config(&t));
+        let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path, staging.as_ref())?;
+        let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path, staging.as_ref())?;
+        let clearing_v2_owned = clearing_v2_extra_env(role, &home_dir, &variant_path)?;
+        if svc.name == "clearing-v2" {
+            if let Some(leak) = clearing_v2_env_prod_leak(&clearing_v2_owned) {
+                return Err(format!("env_up: refusing to start the variant Clearing v2 — {}", leak));
+            }
+        }
         if svc.name == "pulse" {
             if let Some(leak) = pulse_env_prod_leak(&pulse_owned, &home_dir) {
                 return Err(format!("env_up: refusing to start the variant pulse — {}", leak));
@@ -957,6 +1190,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
                 // #4022 — /owl proxies to the werk's athena-make, not prod's.
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
+                // #4838 — the api's own door calls (roles tiles, sessions): the werk's door
+                werk_door_env(&owl_upstream)[0],
+                werk_door_env(&owl_upstream)[1],
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
                 ("WERK_TEST_LOG_PATH", nightly_log.as_str()),
                 // Silas, 2026-09-02, proving #4058: the variant booted without
@@ -1015,8 +1251,11 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("PATH", variant_path.as_str()),
             ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
-            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            // #4838 — pulse reads the door too (actor-state ATHENA_MAKE_URL, changes-overnight ATHENA_URL): the werk's door, never prod's
+            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+                .chain(werk_door_env(&owl_upstream)).collect(),
             "chorus-runner" => runner_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            "clearing-v2" => clearing_v2_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
 
@@ -1028,7 +1267,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             .map_err(|e| format!("env_up: write {}: {}", plist_path, e))?;
 
         let label = svc.label(role);
-        let domain = format!("gui/{}", uid());
+        let domain = launchd_domain();
         let unit = format!("{}/{}", domain, label);
         // Bootout any prior instance for idempotency. Then POLL until the unit
         // is actually out of the domain — bootout returns 0 before launchd has
@@ -1090,6 +1329,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let active = format!("{}/active", marker_dir);
         let port_file = format!("{}/port", marker_dir);
         let label_file = format!("{}/label", marker_dir);
+        let _ = fs::remove_file(&active);
+        let _ = fs::remove_file(&port_file);
+        let _ = fs::remove_file(&label_file);
         fs::write(&active, "")
             .map_err(|e| format!("env_up: write {}: {}", active, e))?;
         fs::write(&port_file, port.to_string())
@@ -1112,7 +1354,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
 /// bootout returned 0 but launchctl list briefly showed the unit lingering).
 pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
-    let domain = format!("gui/{}", uid());
+    let domain = launchd_domain();
     let mut stopped = Vec::new();
     for svc in env_services() {
         let label = svc.label(role);
@@ -1194,8 +1436,28 @@ pub fn css_issuer_for_variant() -> String {
         .unwrap_or_else(|| "https://id.lightlifeurbangardens.com/".to_string())
 }
 
+/// #4838 — the env that points a variant's door calls at the WERK's door: chorus-api
+/// and pulse's actor-state read ATHENA_MAKE_URL, pulse's changes-overnight reads
+/// ATHENA_URL. Unset, the variant asked PROD's door, so a demo of a door change
+/// answered 400 on the new filter (20 of 20 at 15:01) and proved nothing.
+pub fn werk_door_env(owl_upstream: &str) -> [(&'static str, &str); 2] {
+    [("ATHENA_MAKE_URL", owl_upstream), ("ATHENA_URL", owl_upstream)]
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_variant_calls_the_werk_door_never_prods_4838() {
+        let env = werk_door_env("http://127.0.0.1:3363");
+        assert_eq!(env, [("ATHENA_MAKE_URL", "http://127.0.0.1:3363"), ("ATHENA_URL", "http://127.0.0.1:3363")]);
+        // NEGATIVE PROOF: both keys the services read are set; a dropped one would leave that service on :3360
+        assert!(env.iter().all(|(_, v)| !v.contains(":3360")));
+        // and env_up wires it for both services (the call sites, read from the source)
+        let src = include_str!("demo_env.rs");
+        assert_eq!(src.matches(concat!("werk_door_env(&owl_upstream)", "[")).count(), 2, "chorus-api: both keys");
+        assert_eq!(src.matches(concat!(".chain(werk_door_env", "(&owl_upstream))")).count(), 1, "pulse");
+    }
 
     /// #4022 — the athena variant carries the CSS issuer (and CHORUS_HOME) the
     /// way prod's launch script does; the bare-binary default is the 401.
@@ -1237,7 +1499,39 @@ mod tests {
 
     #[test]
     fn known_roles_lists_three_with_stable_order() {
-        assert_eq!(known_roles(), &["silas", "kade", "wren", "abby-normal"]);
+        assert_eq!(known_roles(), &["silas", "kade", "wren", "abby-normal", "borg-queen"]);
+    }
+
+    /// #4774 — dynamic role resolution from `/v1/roles/roles` preserves the 5
+    /// canonical port slots, appends any newly added agent role, and ignores
+    /// human/automation/probe rows.
+    #[test]
+    fn roles_from_door_json_preserves_slots_and_appends_new_agent_roles() {
+        let json = r#"{ "apiVersion": "v1", "kind": "Role", "data": [
+  { "name": "abby-normal", "roleKind": "agent" },
+  { "name": "borg-queen", "roleKind": "agent" },
+  { "name": "crawler", "roleKind": "automation" },
+  { "name": "danzek", "roleKind": "agent" },
+  { "name": "jeff", "roleKind": "human" },
+  { "name": "kade", "roleKind": "agent" },
+  { "name": "silas", "roleKind": "agent" },
+  { "name": "wren", "roleKind": "agent" }
+]}"#;
+        let got = roles_from_door_json(json).expect("must extract agent roles");
+        assert_eq!(
+            got,
+            vec!["silas", "kade", "wren", "abby-normal", "borg-queen", "danzek"]
+        );
+
+        // NEGATIVE PROOF (#3734): a payload with no agent roles returns None (never
+        // human/automation roles), and an unreachable door falls back to the 5 known roles.
+        let non_agent = r#"{ "data": [{ "name": "jeff", "roleKind": "human" }, { "name": "pulse", "roleKind": "automation" }] }"#;
+        assert_eq!(roles_from_door_json(non_agent), None);
+        assert_eq!(roles_from_door_json("not json"), None);
+        assert_eq!(
+            resolve_known_roles_from("http://127.0.0.1:9"),
+            vec!["silas", "kade", "wren", "abby-normal", "borg-queen"]
+        );
     }
 
     #[test]
@@ -1347,6 +1641,25 @@ mod tests {
         assert!(plist.contains("/werk/silas-3092/platform/api"), "WorkingDirectory");
         assert!(plist.contains("dist/server.js"), "program arg entry");
         assert!(plist.contains("X") && plist.contains("y"), "extra env preserved");
+    }
+
+    #[test]
+    fn generate_plist_carries_session_types_for_per_role_accounts_4785() {
+        let api = &env_services()[0];
+        let plist = generate_plist(api, "borg-queen", "/tmp/werk", 3347, &[]);
+        assert!(plist.contains("<key>LimitLoadToSessionType</key>"), "LimitLoadToSessionType missing");
+        assert!(plist.contains("<string>Background</string>"), "Background session missing for headless role accounts");
+        assert!(plist.contains("<string>Aqua</string>"), "Aqua session missing for GUI host");
+    }
+
+    /// NEGATIVE PROOF (#3734): without LimitLoadToSessionType containing Background,
+    /// launchctl bootstrap user/<uid> fails with EIO (code 5).
+    #[test]
+    fn negative_proof_launchd_plist_without_session_type_cannot_separate_aqua_and_background_4785() {
+        let plist_with_bg = generate_plist(&env_services()[0], "borg-queen", "/tmp/werk", 3347, &[]);
+        assert!(plist_with_bg.contains("<string>Background</string>"));
+        let stripped = plist_with_bg.replace("<string>Background</string>", "");
+        assert!(!stripped.contains("<string>Background</string>"));
     }
 
     #[test]
@@ -1524,7 +1837,7 @@ mod services_for_diff_4398 {
     fn a_runner_change_gets_a_demo_runner_on_the_werks_door() {
         assert!(names(&["platform/services/chorus-runner/src/tasks.rs"]).contains(&"chorus-runner".to_string()));
         assert!(!names(&["platform/tests/x.bats"]).contains(&"chorus-runner".to_string()));
-        let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin").unwrap();
+        let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin", None).unwrap();
         let get = |k: &str| env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap();
         assert_eq!(get("CHORUS_DOOR"), format!("http://127.0.0.1:{}", env_port_for("athena-make", "wren").unwrap()));
         assert_eq!(get("CHORUS_API_URL"), format!("http://127.0.0.1:{}", env_port_for("chorus-api", "wren").unwrap()));
@@ -1547,9 +1860,60 @@ mod services_for_diff_4398 {
         assert!(!names(&["platform/tests/chorus-hooks-something.bats"]).contains(&"pulse".to_string()));
     }
 
+    /// #4629 — the staging room comes from the config (host of buzzRelayHost, stagingRelayPort, stagingTeamChannel).
+    #[test]
+    fn the_staging_room_is_built_from_the_config_and_needs_all_three_parts() {
+        let cfg = r#"{"buzzRelayHost":"relay.lan:3000","stagingRelayPort": 3010,"stagingTeamChannel":"chan-1"}"#;
+        assert_eq!(staging_buzz_in_config(cfg), Some(("ws://relay.lan:3010".to_string(), "chan-1".to_string())));
+        assert_eq!(staging_buzz_in_config(r#"{"buzzRelayHost":"relay.lan:3000","stagingRelayPort":3010}"#), None);
+        assert_eq!(staging_buzz_in_config(r#"{"stagingRelayPort":3010,"stagingTeamChannel":"c"}"#), None);
+    }
+
+    /// #4629 — with the staging room, the variant pulse reads and delivers from it; without, nothing changes.
+    #[test]
+    fn the_variant_pulse_reads_and_delivers_from_the_staging_room_only() {
+        let staging = ("ws://relay.lan:3010".to_string(), "chan-1".to_string());
+        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", Some(&staging)).unwrap();
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        assert_eq!(get("PULSE_BUZZ_RELAY_URL").as_deref(), Some("ws://relay.lan:3010"));
+        assert_eq!(get("BUZZ_TEAM_CHANNEL").as_deref(), Some("chan-1"));
+        assert_eq!((get("PULSE_BUZZ_SHADOW").as_deref(), get("PULSE_BUZZ_DELIVER").as_deref()), (Some("1"), Some("1")));
+        assert_eq!(pulse_env_prod_leak(&env, "/Users/x"), None);
+        let off = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", None).unwrap();
+        assert!(off.iter().all(|(k, _)| !k.starts_with("PULSE_BUZZ")));
+    }
+
+    /// NEGATIVE PROOF (Kade 06:51): the prod relay's own host:port is the real room too; the staging port is not.
+    #[test]
+    fn the_prod_relay_host_is_the_real_room_and_the_staging_port_is_not() {
+        assert!(relay_is_prod("ws://relay.lan:3000", Some("relay.lan:3000")));
+        assert!(!relay_is_prod("ws://relay.lan:3010", Some("relay.lan:3000")));
+        assert!(!relay_is_prod("ws://relay.lan:3010", None));
+        assert!(!relay_is_prod("ws://relay.lan:3010", Some("")));
+    }
+
+    /// #4629 — a runner card's demo runner signs into the staging room; without it, no signing.
+    #[test]
+    fn the_variant_runner_signs_into_the_staging_room_only_when_given_one() {
+        let staging = ("ws://relay.lan:3010".to_string(), "chan-1".to_string());
+        let env = runner_extra_env("kade", "/w/.chorus-demo", "iss", "/c", "/Users/x", "/usr/bin", Some(&staging)).unwrap();
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        assert_eq!((get("CHORUS_NUDGE_SIGNS").as_deref(), get("BUZZ_RELAY_URL").as_deref()), (Some("1"), Some("ws://relay.lan:3010")));
+        let off = runner_extra_env("kade", "/w/.chorus-demo", "iss", "/c", "/Users/x", "/usr/bin", None).unwrap();
+        assert!(off.iter().all(|(k, _)| k != "CHORUS_NUDGE_SIGNS"));
+    }
+
+    /// NEGATIVE PROOF: a demo pulse pointed at the real room (the prod tunnel) is refused.
+    #[test]
+    fn a_demo_pulse_on_the_prod_relay_tunnel_is_refused() {
+        let prod = ("ws://127.0.0.1:13000".to_string(), "chan-1".to_string());
+        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", Some(&prod)).unwrap();
+        assert!(pulse_env_prod_leak(&env, "/Users/x").is_some_and(|m| m.contains("real Buzz room")));
+    }
+
     #[test]
     fn the_variant_pulse_never_gets_a_prod_delivery_path_or_store() {
-        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin").unwrap();
+        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", None).unwrap();
         assert_eq!(pulse_env_prod_leak(&env, "/Users/x"), None);
         let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap();
         assert!(get("CHORUS_INJECT_BIN").starts_with("/w/.chorus-demo/"));
@@ -1630,5 +1994,70 @@ mod credential_4451 {
         let bad = "<dict>\n    <key>FUSEKI_ADMIN_PASSWORD</key><string>x</string>\n</dict>";
         assert!(plist_holds_fuseki_credential(bad));
         assert!(!plist_holds_fuseki_credential("<key>FUSEKI_WRITE_ENV</key><string>/p</string>"));
+    }
+}
+
+/// #4625 — a card that changes Clearing v2 gets its own read-only v2 in demo.
+/// Jeff, 2026-10-18 16:37, on #4597's demo: "seems no different/worse" — the
+/// demo's only Clearing was v1, so three v2 cards that day were shown nothing.
+#[cfg(test)]
+mod clearing_v2_demo_4625 {
+    use super::*;
+
+    fn names(changed: &[&str]) -> Vec<String> {
+        let c: Vec<String> = changed.iter().map(|s| s.to_string()).collect();
+        services_for_diff(&c).into_iter().map(|s| s.name).collect()
+    }
+
+    #[test]
+    fn a_v2_card_gets_v2_and_its_pulse_and_other_cards_get_neither() {
+        let v2 = names(&["directing/clearing-v2/public/app.js"]);
+        assert!(v2.contains(&"clearing-v2".to_string()), "{v2:?}");
+        assert!(v2.contains(&"pulse".to_string()), "v2 reads pulse: {v2:?}");
+        let other = names(&["platform/tests/x.bats"]);
+        assert!(!other.contains(&"clearing-v2".to_string()), "{other:?}");
+    }
+
+    #[test]
+    fn the_demo_v2_is_read_only_and_reads_this_werks_pulse_and_door() {
+        let env = clearing_v2_extra_env("kade", "/Users/x", "/usr/bin").unwrap();
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+        assert_eq!(get("CLEARING_V2_READONLY"), "1");
+        assert_eq!(get("PULSE_URL"), format!("http://127.0.0.1:{}", env_port_for("pulse", "kade").unwrap()));
+        assert!(get("ROLES_URL").contains(&format!(":{}/", env_port_for("athena-make", "kade").unwrap())), "{}", get("ROLES_URL"));
+        assert_eq!(clearing_v2_env_prod_leak(&env), None);
+    }
+
+    /// #4661 — the relay host is read from v2's config, never pinned in code.
+    #[test]
+    fn the_relay_host_comes_from_the_v2_config() {
+        assert_eq!(relay_host_in_config(r#"{"buzzRelayHost":"relay.lan:3000"}"#).as_deref(), Some("relay.lan:3000"));
+        // NEGATIVE PROOF: no host in the config is None, never a guessed address
+        assert_eq!(relay_host_in_config(r#"{"buzzRelayUrl":"ws://x"}"#), None);
+        assert_eq!(relay_host_in_config(r#"{"buzzRelayHost":"  "}"#), None);
+        assert_eq!(relay_host_in_config("not json"), None);
+    }
+
+    /// NEGATIVE PROOF: the leak check refuses a v2 that could write or nudge prod.
+    #[test]
+    fn the_leak_check_refuses_a_writable_v2_and_prod_pulse() {
+        let base = clearing_v2_extra_env("kade", "/Users/x", "/usr/bin").unwrap();
+        let without_ro: Vec<_> = base.iter().filter(|(k, _)| k != "CLEARING_V2_READONLY").cloned().collect();
+        assert!(clearing_v2_env_prod_leak(&without_ro).is_some());
+        let prod_pulse: Vec<_> = base.iter().map(|(k, v)| if k == "PULSE_URL" { (k.clone(), "http://127.0.0.1:3475".to_string()) } else { (k.clone(), v.clone()) }).collect();
+        assert!(clearing_v2_env_prod_leak(&prod_pulse).is_some());
+    }
+
+    #[test]
+    fn v2_ports_collide_with_no_other_demo_service() {
+        let mut seen = std::collections::HashSet::new();
+        for svc in env_services() {
+            for role in known_roles() {
+                let p = svc.port_for(role).unwrap();
+                if p == 0 { continue; }
+                assert!(seen.insert(p), "{} {} port {} taken twice", svc.name, role, p);
+                if svc.name == "clearing" { assert!(seen.insert(clearing_https_port(p))); }
+            }
+        }
     }
 }

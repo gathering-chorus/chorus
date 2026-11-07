@@ -6,6 +6,8 @@
  * In-memory SQLite with FTS5, stubs for semantic/sparql/merge/meta fns.
  * Covers each mode + fallback paths + limit + role filter + truncation.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { fetchSearch, type SearchDeps } from '../../src/handlers/chorus-search';
 
@@ -221,5 +223,127 @@ describe('fetchSearch (#2189 /api/chorus/search)', () => {
     const b = r.body as { results: Array<{ enriched: boolean }> };
     expect(b.results.every((x) => x.enriched === true)).toBe(true);
     db.close();
+  });
+
+  test('#4779 channel + order=recent without q returns recent channel rows', async () => {
+    const db = seedDb();
+    const ins = db.prepare(
+      'INSERT INTO messages (source, channel, role, author, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    // Turn without the word "the" or "apple" — must still be returned by channel+order=recent
+    ins.run('claude', 'session:silas', 'jeff', 'user', 'refresh ontology now', '2026-10-28T15:00:00Z');
+    ins.run('claude', 'session:silas', 'silas', 'assistant', 'Done.', '2026-10-28T15:01:00Z');
+    const r = await fetchSearch(deps(db), {
+      channel: 'session:silas',
+      order: 'recent',
+      limit: '30',
+    });
+    expect(r.status).toBe(200);
+    const b = r.body as { results: Array<{ channel: string; content: string; author: string }> };
+    expect(b.results).toHaveLength(2);
+    expect(b.results[0].content).toBe('Done.');
+    expect(b.results[1].content).toBe('refresh ontology now');
+    expect(b.results.every((x) => x.channel === 'session:silas')).toBe(true);
+    db.close();
+  });
+
+  test('#4779 negative proof (#3734): 30 newer session:kade rows never appear in channel=session:silas', async () => {
+    const db = seedDb();
+    const ins = db.prepare(
+      'INSERT INTO messages (source, channel, role, author, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    ins.run('claude', 'session:silas', 'jeff', 'user', 'silas yesterday prompt', '2026-10-27T12:00:00Z');
+    ins.run('claude', 'session:silas', 'silas', 'assistant', 'silas yesterday reply', '2026-10-27T12:01:00Z');
+    for (let i = 0; i < 35; i++) {
+      ins.run(
+        'claude',
+        'session:kade',
+        'kade',
+        'assistant',
+        `the kade turn ${i}`,
+        `2026-10-28T16:${String(i % 60).padStart(2, '0')}:00Z`,
+      );
+    }
+    const r = await fetchSearch(deps(db), {
+      q: 'the',
+      channel: 'session:silas',
+      order: 'recent',
+      limit: '30',
+    });
+    expect(r.status).toBe(200);
+    const b = r.body as { results: Array<{ channel: string; role: string; content: string }> };
+    // Even with q='the' or without q, zero session:kade rows may leak into session:silas
+    expect(b.results.some((x) => x.channel === 'session:kade' || x.role === 'kade')).toBe(false);
+
+    const rRecent = await fetchSearch(deps(db), {
+      channel: 'session:silas',
+      order: 'recent',
+      limit: '30',
+    });
+    const bRecent = rRecent.body as { results: Array<{ channel: string; role: string; content: string }> };
+    expect(bRecent.results).toHaveLength(2);
+    expect(bRecent.results.every((x) => x.channel === 'session:silas')).toBe(true);
+    expect(bRecent.results.some((x) => x.channel === 'session:kade' || x.role === 'kade')).toBe(false);
+    db.close();
+  });
+
+  test('#4784 order=oldest, before/until, after/since, and offset page back to earliest 2026-01/02 turns with negative proof (#3734)', async () => {
+    const db = seedDb();
+    const ins = db.prepare(
+      'INSERT INTO messages (source, channel, role, author, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    ins.run('claude', 'session:kade', 'jeff', 'user', 'review this code base and summarize your findings', '2026-01-31T15:23:00Z');
+    ins.run('claude', 'session:kade', 'kade', 'assistant', 'february architecture review', '2026-02-26T10:00:00Z');
+    ins.run('claude', 'session:kade', 'kade', 'assistant', 'october recent turn', '2026-10-28T15:50:00Z');
+    ins.run('claude', 'session:silas', 'silas', 'assistant', 'silas earliest turn', '2026-01-15T09:00:00Z');
+
+    // 1. order=oldest on channel returns 2026-01-31 first
+    const rOldest = await fetchSearch(deps(db), {
+      channel: 'session:kade',
+      order: 'oldest',
+      limit: '2',
+    } as never);
+    expect(rOldest.status).toBe(200);
+    const bOldest = rOldest.body as { results: Array<{ content: string; timestamp: string; channel: string }> };
+    expect(bOldest.results).toHaveLength(2);
+    expect(bOldest.results[0].timestamp).toBe('2026-01-31T15:23:00Z');
+    expect(bOldest.results[1].timestamp).toBe('2026-02-26T10:00:00Z');
+    // Negative proof (#3734): even though silas has an older 2026-01-15 row, channel=session:kade never leaks it
+    expect(bOldest.results.some((x) => x.channel !== 'session:kade')).toBe(false);
+
+    // 2. before/until and after/since window + offset
+    const rWindow = await fetchSearch(deps(db), {
+      channel: 'session:kade',
+      order: 'oldest',
+      after: '2026-02-01T00:00:00Z',
+      before: '2026-10-01T00:00:00Z',
+      limit: '10',
+    } as never);
+    const bWindow = rWindow.body as { results: Array<{ content: string; timestamp: string }> };
+    expect(bWindow.results).toHaveLength(1);
+    expect(bWindow.results[0].timestamp).toBe('2026-02-26T10:00:00Z');
+
+    // 3. offset pages past the first row
+    const rOffset = await fetchSearch(deps(db), {
+      channel: 'session:kade',
+      order: 'oldest',
+      offset: '1',
+      limit: '1',
+    } as never);
+    const bOffset = rOffset.body as { results: Array<{ timestamp: string }> };
+    expect(bOffset.results).toHaveLength(1);
+    expect(bOffset.results[0].timestamp).toBe('2026-02-26T10:00:00Z');
+    db.close();
+  });
+
+  test('#4784 chorus-query.sh routes search, role, and tail through /api/chorus/search and guards local SQLite init (#3734)', () => {
+    const scriptPath = path.resolve(__dirname, '../../../scripts/chorus-query.sh');
+    const scriptText = fs.readFileSync(scriptPath, 'utf8');
+    expect(scriptText).toContain('if [ -n "${CHORUS_DB:-}" ] && [ ! -f "$DB_PATH" ]; then');
+    expect(scriptText).toContain('/api/chorus/search?q=${ENCODED_Q}');
+    expect(scriptText).toContain('/api/chorus/search?channel=session:${ENCODED_ROLE}&order=recent&limit=20');
+    expect(scriptText).toContain('/api/chorus/search?channel=session:${TAIL_ROLE}&order=recent&limit=${TAIL_LINES}');
+    // Negative proof (#3734): unconditional `if [ ! -f "$DB_PATH" ]; then` that created empty ~/.chorus/index.db is absent
+    expect(scriptText).not.toMatch(/^\s*if \[ ! -f "\$DB_PATH" \]; then/m);
   });
 });

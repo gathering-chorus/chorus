@@ -73,7 +73,7 @@ fn event_id_is_sha256_of_canonical_form_and_sig_verifies() {
     let k = load_key(dir.path(), "kade").unwrap();
     let ev = build_reply_event(&k, "kade", "the reply", "abc123", 1_786_800_000).unwrap();
     // id = sha256 of the NIP-01 canonical serialization
-    let ser = serde_json::json!([0, ev.pubkey, ev.created_at, 1, ev.tags, ev.content]).to_string();
+    let ser = serde_json::json!([0, ev.pubkey, ev.created_at, ev.kind, ev.tags, ev.content]).to_string();
     assert_eq!(ev.id, hexe(sha256::Hash::hash(ser.as_bytes()).as_ref()));
     // schnorr sig verifies against the x-only pubkey
     let secp = Secp256k1::new();
@@ -175,6 +175,25 @@ fn seq_corrupt_counter_restarts_instead_of_wedging() {
     assert_eq!(next_seq(dir.path(), "kade"), 1);
 }
 
+// #4652 — the Buzz app's #team shows only channel messages: kind 9 with an
+// `h` tag naming the channel's id (#team's, measured in the relay's tables
+// 10-20). Replies went out as kind 1 t=reply, stored and never shown.
+#[test]
+fn reply_is_a_clearing_channel_message_keeping_its_reply_tags() {
+    let dir = tempfile::tempdir().unwrap();
+    write_key(dir.path(), "kade", 0o600);
+    let k = load_key(dir.path(), "kade").unwrap();
+    let ev = build_reply_event_seq(&k, "kade", "t", "h", 1, 7).unwrap();
+    assert_eq!(ev.kind, 9, "a kind 1 never shows in the app's #team");
+    assert!(ev.tags.iter().any(|t| t[0] == "h" && t[1] == CLEARING_CHANNEL_DEFAULT), "{:?}", ev.tags);
+    // NEGATIVE PROOF (Jeff 13:01 "a"): a reply never lands in #team, and carries one channel only.
+    assert!(!ev.tags.iter().any(|t| t[0] == "h" && t[1] == TEAM_CHANNEL), "a reply went to #team: {:?}", ev.tags);
+    assert_eq!(ev.tags.iter().filter(|t| t[0] == "h").count(), 1, "{:?}", ev.tags);
+    assert!(ev.tags.iter().any(|t| t[0] == "t" && t[1] == "reply"), "v2 routes replies on t=reply: {:?}", ev.tags);
+    assert!(ev.tags.iter().any(|t| t[0] == "role" && t[1] == "kade"), "{:?}", ev.tags);
+    assert_eq!(CLEARING_CHANNEL_DEFAULT, "03e2b251-240f-47fe-89b5-fe4e7ac648fb");
+}
+
 #[test]
 fn reply_event_carries_seq_tag() {
     let dir = tempfile::tempdir().unwrap();
@@ -241,6 +260,11 @@ fn publish_answers_nip42_auth_challenge() {
         let tags = a[1]["tags"].as_array().unwrap();
         assert!(tags.iter().any(|t| t[0] == "challenge" && t[1] == "chal-123"), "{tags:?}");
         assert!(tags.iter().any(|t| t[0] == "relay"), "{tags:?}");
+        // #4737 NEGATIVE PROOF: the event below is stamped at t=1 (a note queued long ago);
+        // the sign-in must still be stamped now, inside the relay's ±60 s window
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let at = a[1]["created_at"].as_i64().unwrap();
+        assert!((now - at).abs() <= 60, "AUTH stamped {at}, now {now}: an old queued note could never flush");
         // then the EVENT again → accept it
         let second = ws.read().unwrap();
         let v2: serde_json::Value = serde_json::from_str(second.to_text().unwrap()).unwrap();

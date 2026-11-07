@@ -229,7 +229,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -297,7 +297,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None,
             tool_output_is_error: None,
         };
@@ -338,7 +338,7 @@ mod tests {
     fn edit(file: &str, old: &str, new: &str) -> HookInput {
         HookInput {
             tool_use_id: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             tool_name: Some("Edit".into()),
             tool_input: Some(serde_json::json!({
                 "file_path": file, "old_string": old, "new_string": new,
@@ -350,7 +350,7 @@ mod tests {
     fn write(file: &str, content: &str) -> HookInput {
         HookInput {
             tool_use_id: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             tool_name: Some("Write".into()),
             tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
             tool_response: None, session_id: None, cwd: None, prompt: None,

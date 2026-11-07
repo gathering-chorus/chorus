@@ -18,6 +18,24 @@ if [[ ! "$pipeline" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ || ! "$card" =~ ^[0-9]+$ ||
   echo "usage: pipeline-start <pipeline> <card> <role>   (pipeline e.g. cicd, athena, borg-prove)" >&2
   exit 1
 fi
+# #4852 — `handoff`: the pair's or mob's hand-off step starts the card on the
+# pipeline its diff needs (a model change rehearses on athena, which hands off
+# to cicd itself; anything else goes to cicd), one enqueue, never both. Only
+# that step may: DAG_NAME must be pair or mob and DAG_RUN_ID that live run for
+# this card, read from dagu (any shell can export DAG_NAME — Silas 11:11).
+handoff=""
+if [ "$pipeline" = handoff ]; then
+  case "${DAG_NAME:-}" in
+    pair|mob) ;;
+    *) echo "pipeline-start: handoff is the pair or mob hand-off step's alone (DAG_NAME is '${DAG_NAME:-unset}'); nothing was enqueued" >&2; exit 1 ;;
+  esac
+  lrc=0; lout="$("${HANDOFF_LIVE_BIN:-$(dirname "$0")/handoff-live}" "$DAG_NAME" "${DAG_RUN_ID:-}" "$card" 2>&1)" || lrc=$?
+  if [ "$lrc" -ne 0 ]; then
+    echo "pipeline-start: handoff refused, not a live $DAG_NAME run for #$card (${lout:-no message}); nothing was enqueued" >&2
+    exit 1
+  fi
+  handoff="$DAG_NAME"; pipeline=cicd
+fi
 : "${CHORUS_HOME:?pipeline-start: CHORUS_HOME not set}"
 : "${CHORUS_WERK_BASE:?pipeline-start: CHORUS_WERK_BASE not set}"
 werk="$CHORUS_WERK_BASE/$role-$card"
@@ -26,6 +44,22 @@ if [ ! -f "$workflow" ]; then
   echo "pipeline-start: $pipeline has no generated pipeline yet: no workflow at $workflow (chorus-make generates it from the graph); nothing was enqueued" >&2
   exit 1
 fi
+
+# #4789 — one build at a time while a mob is open: the mob's own card builds,
+# every other card is refused by name. The open mob is the live `mob` dagu run
+# (mob-open), never a marker file. dagu unreadable refuses: a gate that cannot
+# see the floor must not pass as "no mob open".
+mrc=0; mobs="$("${MOB_OPEN_BIN:-$(dirname "$0")/mob-open}" 2>&1)" || mrc=$?
+if [ "$mrc" -ne 0 ]; then
+  echo "pipeline-start: could not read dagu for an open mob run (${mobs:-no message}); nothing was enqueued" >&2
+  exit 1
+fi
+while read -r mob_run mob_card _seats; do
+  [ -n "$mob_run" ] || continue
+  [ "$mob_card" = "$card" ] && continue
+  echo "pipeline-start: mob run $mob_run is open for #$mob_card; one build at a time, so #$card waits until it ends; nothing was enqueued" >&2
+  exit 1
+done <<<"$mobs"
 
 # #4492 — every generated workflow puts the role's slot first on PATH (#4474),
 # so a slot copy older than the installed verb judges the card with old code
@@ -42,7 +76,7 @@ changed_verbs() { # the card's changed paths on stdin
       sed -n 's/^name *= *"\(.*\)".*/\1/p' "$werk/$dir/Cargo.toml"
     done
 }
-if [ -d "$slot" ]; then
+if [ -d "$slot" ] || [ "$pipeline" = cicd ]; then
   # #4602 — a werk another user owns (abby-normal's, uid 505) is "dubious
   # ownership" to git: it exited 129 inside the old pipeline here and
   # set -e ended the script before the enqueue, silently (Jeff 10-18 08:18).
@@ -53,6 +87,39 @@ if [ -d "$slot" ]; then
     echo "pipeline-start: git could not read #$card's diff in $werk: ${diff_names:-no message}; nothing was enqueued" >&2
     exit 1
   fi
+fi
+
+# #4579 reopen 2 — a card that changes the model rehearses on staging first:
+# the athena pipeline (copy, deploy-seed, validate) runs it and hands off to
+# cicd itself. Started straight as cicd on 10-18, #4579's retirement emptied 77
+# shapes on prod with no rehearsal. dagu names the handing-off run in DAG_NAME.
+if [ "$pipeline" = cicd ] && [ "${DAG_NAME:-}" != athena ]; then
+  # #4718 — one rule for "model change": athena-deploy scope, which is
+  # shared/model_scope.rs, the rule athena-validate and the land use. A second
+  # rule here (any .ttl) sent a Fuseki config to athena, which then refused it as
+  # "no model change", so the card could start in neither pipeline.
+  athena_deploy="${ATHENA_DEPLOY:-$(command -v athena-deploy || echo "$HOME/.chorus/bin/athena-deploy")}"
+  if ! scope_out="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$werk" \
+        "$athena_deploy" scope "$werk" origin/main...HEAD 2>&1)"; then
+    echo "pipeline-start: athena-deploy scope could not read #$card's diff in $werk: ${scope_out:-no message}; nothing was enqueued" >&2
+    exit 1
+  fi
+  model="$(sed -n 's/^model|//p' <<<"$scope_out" | tr '\n' ' ' | sed 's/ $//' || true)"
+  if [ -n "$model" ] && [ -n "$handoff" ]; then
+    # #4852 — the hand-off routes it: athena only (it hands off to cicd itself)
+    pipeline=athena; workflow="$werk/platform/pipelines/athena.yaml"
+    if [ ! -f "$workflow" ]; then
+      echo "pipeline-start: #$card changes the model ($model) but its werk has no athena workflow at $workflow; nothing was enqueued" >&2
+      exit 1
+    fi
+    echo "pipeline-start: #$card changes the model ($model); the $handoff hand-off starts it on athena (staging first; athena hands off to cicd)" >&2
+  elif [ -n "$model" ]; then
+    echo "pipeline-start: #$card changes the model ($model); start it with chorus-athena so it rehearses on staging first; nothing was enqueued" >&2
+    exit 1
+  fi
+fi
+
+if [ -d "$slot" ]; then
   mine=" $(changed_verbs <<<"$diff_names" | tr '\n' ' ') "
   for f in "$slot"/*; do
     name="$(basename "$f")"
@@ -62,10 +129,55 @@ if [ -d "$slot" ]; then
     [ -f "$src" ] || src="$installed/$name"
     [ -f "$src" ] && [ "$(head -c 2 "$src")" != "#!" ] || continue
     cmp -s "$src" "$f" && continue
-    cp "$src" "$f.refresh.$$" && chmod +x "$f.refresh.$$" && mv -f "$f.refresh.$$" "$f" &&
+    cp "$src" "$f.refresh.$$" && chmod 0755 "$f.refresh.$$" && mv -f "$f.refresh.$$" "$f" &&
       echo "pipeline-start: refreshed $role-bin/$name from the installed verb (the card does not change it)" >&2
   done
 fi
 
-exec "${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
-  enqueue "$workflow" -- "CARD=$card" "ROLE=$role"
+# #4752 AC6 — a paired card: a re-run on the HEAD the pair handed off is no
+# round (the waiting attempt stops, no new green); a fix commit goes back
+# through the navigator's green, so a direct run of it is refused (exit 3)
+# (#4852: the hand-off itself is the round, not a re-run)
+if [ "$pipeline" = cicd ] && [ -z "$handoff" ]; then
+  pair_bin="${PAIR_RERUN_BIN:-$CHORUS_HOME/platform/scripts/pair}"
+  if [ -x "$pair_bin" ]; then
+    prc=0; pout="$("$pair_bin" rerun "$card" "$role" 2>&1)" || prc=$?
+    if [ "$prc" -eq 3 ]; then
+      echo "pipeline-start: $pout; nothing was enqueued" >&2
+      exit 1
+    fi
+    [ -z "$pout" ] || echo "$pout" >&2
+  fi
+fi
+
+# #4753 — one go per card: the card's older cicd run still waiting at Jeff's
+# go is stopped (card.run.superseded), never answered as him.
+if [ "$pipeline" = cicd ]; then
+  "${CICD_SUPERSEDE_BIN:-$CHORUS_HOME/platform/scripts/cicd-supersede}" "$card" "$role" >&2 ||
+    echo "pipeline-start: could not supersede #$card's older runs; enqueueing anyway" >&2
+fi
+
+rc=0
+out="$("${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
+  enqueue "$workflow" -- "CARD=$card" "ROLE=$role" 2>&1)" || rc=$?
+[ -n "$out" ] && printf '%s\n' "$out"
+
+# #4637 AC4 — the run names the Jeff line that started it. chorus-hooks keeps
+# the role's current turn in ~/.chorus/run/turn-<role>.json (turn_line.rs);
+# a run started in a turn a line woke carries that line, any other run says
+# started_by=none by name. Wren's #4638 tree joins the run to the prompt.
+if [ "$rc" -eq 0 ]; then
+  run_id="$(printf '%s' "$out" | grep -o '"run-id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+  turn="${CHORUS_TURN_DIR:-$HOME/.chorus/run}/turn-$role.json"
+  line="$(python3 -I -c 'import json,sys,time
+try:
+    t = json.load(open(sys.argv[1]))
+    l = t.get("woken_by_line")
+    print(l if l and time.time() - t.get("at", 0) < 6 * 3600 else "")
+except Exception:
+    print("")' "$turn" 2>/dev/null || true)"
+  kv=(card="$card" pipeline="$pipeline" run_id="${run_id:-unknown}")
+  if [ -n "$line" ]; then kv+=(started_by=line started_by_line="$line"); else kv+=(started_by=none); fi
+  "${CHORUS_LOG_BIN:-$CHORUS_HOME/platform/scripts/chorus-log}" pipeline.run.started "$role" "${kv[@]}" >/dev/null 2>&1 || true
+fi
+exit "$rc"

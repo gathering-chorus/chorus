@@ -110,6 +110,69 @@ try:
 except Exception: print("")' 2>/dev/null
 }
 
+# #4915 (Silas) — a literal the shape constrains with sh:pattern. The pattern is the
+# generator's, read from the shape itself (athena-make's manifest is frozen and never
+# carried it): ADR.filePath's ^roles/[a-z]+/adr/ADR-[0-9]{3}.*[.]md$ made every invented
+# value 422, and the scope suites read that as a disagreement. The value is a served
+# row's own, with the probe tag before its extension, and must re.fullmatch the pattern.
+# Prints the value; "UNMET <pattern>" when no served row gives one; nothing when the
+# field has no pattern.
+patterned_value() {  # <class> <field> <tag>
+  local class="$1" field="$2" tag="$3" pat path
+  pat="$(curl -sf --max-time 15 -G "$RESIDUE_QUERY" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?p WHERE { GRAPH ?g { ?s sh:targetClass ?c . FILTER(STRENDS(STR(?c), \"#$class\")) ?s sh:property ?pr . ?pr sh:path ?f . FILTER(STRENDS(STR(?f), \"#$field\")) ?pr sh:pattern ?p } } LIMIT 1" 2>/dev/null \
+    | python3 -c 'import json,sys
+b=json.load(sys.stdin)["results"]["bindings"]; print(b[0]["p"]["value"] if b else "")' 2>/dev/null)"
+  [ -n "$pat" ] || return 0
+  path="$("$GEN" generate-tests --class "$class" 2>/dev/null | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin)
+    print(next((r.split(" ",1)[1] for r in d["unit"]["routes"] if r.startswith("GET ") and ":name" not in r and not r.endswith("/batch")), ""))
+except Exception: print("")' 2>/dev/null)"
+  { [ -n "$path" ] && curl -sf --max-time 15 "$API$path" 2>/dev/null || echo '{}'; } | tagged_match "$pat" "$field" "$tag"
+}
+
+# stdin: a served list page. A served row's <field> value that fullmatches <pattern>,
+# with -<tag> before its extension, if that still fullmatches; else "UNMET <pattern>".
+tagged_match() {  # <pattern> <field> <tag>
+  python3 -c 'import json,re,sys,os
+pat, field, tag = sys.argv[1:4]
+try: rows = json.load(sys.stdin).get("data") or []
+except Exception: rows = []
+for r in rows if isinstance(rows, list) else []:
+    v = r.get(field)
+    v = v[0] if isinstance(v, list) and v else v
+    if not isinstance(v, str) or not re.fullmatch(pat, v): continue
+    stem, ext = os.path.splitext(v)
+    t = f"{stem}-{tag}{ext}"
+    if re.fullmatch(pat, t): print(t); sys.exit(0)
+print("UNMET " + pat)' "$1" "$2" "$3"
+}
+
+# #4915 (Silas) — the graphs this owner holds acl:Append on and not acl:Write. Append
+# opens a create only (#4517); on a class with no row owner the update, the delete
+# and the cleanup are all refused, so a create there leaves its probe row in prod
+# every night (111 by 11-06). The manifest's refuseIfNoCleanup decides it: skip.
+# A failed read is not "no Append rows": it would let every ownerless create through and
+# leave its row (review 11-06). The walk refuses instead.
+PERMS_JSON="$(curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" 2>/dev/null)" || {
+  echo "UNMEASURED: $API/v1/security/permissions did not answer — cannot tell which creates would leave a row; nothing walked." >&2
+  exit 3
+}
+APPEND_ONLY="$(printf '%s' "$PERMS_JSON" | python3 -c 'import json,sys
+d=json.load(sys.stdin); rows=d.get("data",d) if isinstance(d,dict) else d
+me=[r for r in rows if r.get("agent")=="principal-"+sys.argv[1]]
+w={r["accessTo"] for r in me if r.get("mode","").endswith("#Write")}
+print(" ".join(sorted({r["accessTo"] for r in me if r.get("mode","").endswith("#Append")}-w)))' "$OWNER" 2>/dev/null)"
+
+# 0 when <manifest> names no ownedBy field and <graph> is one this owner may only append to
+append_only_ownerless() {  # <manifest> <graph>
+  [ -n "$2" ] && case " $APPEND_ONLY " in *" $2 "*) ;; *) return 1 ;; esac || return 1
+  python3 -c 'import json,sys
+f=[x.get("field") for x in json.load(open(sys.argv[1])).get("requiredFields") or []]
+sys.exit(1 if "ownedBy" in f else 0)' "$1"
+}
+
 pass=0; fail=0; unmeasured=0
 echo "owner: $OWNER  api: $API  run: ${RUN_ID:-manifest-subject}"
 printf '%-22s %-8s %s\n' CLASS RESULT DETAIL
@@ -123,6 +186,13 @@ for CLASS in $CLASSES; do
   M="$WORK/$CLASS.json"
   if ! "$GEN" generate-tests --class "$CLASS" >"$M" 2>/dev/null || [ ! -s "$M" ]; then
     emit "$CLASS" UNMEASURED "the generator emitted no manifest"
+    unmeasured=$((unmeasured+1)); continue
+  fi
+  GRAPH="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1])); print(next((r.split(" ",1)[1] for r in d["unit"]["routes"] if r.startswith("GET ") and ":name" not in r and not r.endswith("/batch")), ""))' "$M" 2>/dev/null)"
+  GRAPH="$([ -n "$GRAPH" ] && curl -sf --max-time 20 "$API$GRAPH?limit=1" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("servedFrom",""))' 2>/dev/null)"
+  if append_only_ownerless "$M" "$GRAPH"; then
+    emit "$CLASS" NOT-PERM "append-only on an ownerless class: a create would leave a row (refuseIfNoCleanup) — $GRAPH"
     unmeasured=$((unmeasured+1)); continue
   fi
 
@@ -147,7 +217,7 @@ PYR
   fi
 
   # Fill the body: literals get a marked value, edges get a real subject.
-  BODY="$WORK/$CLASS.body.json"; MISSING=""
+  BODY="$WORK/$CLASS.body.json"; MISSING=""; UNMET=""
   : >"$WORK/$CLASS.pairs"
   # #4282 — fields are joined with '|', not tabs. A tab is whitespace to `read`,
   # so consecutive tabs collapse: a literal field with no targetClass read its
@@ -164,6 +234,9 @@ PYR
       # A constrained literal takes one of the shape's own words. Inventing a
       # value here would 422 forever and read as a broken API.
       V="$ALLOWED"
+    elif PV="$(patterned_value "$CLASS" "$FIELD" "zz-4267-${RUN_ID:-probe}")" && [ -n "$PV" ]; then
+      case "$PV" in "UNMET "*) UNMET="$UNMET $FIELD: pattern ${PV#UNMET } unmet"; continue ;; esac
+      V="$PV"
     else
       # #4269 — send a value of the DECLARED type. Sending a word where the shape
       # says integer makes the door refuse correctly and the suite report it as a
@@ -186,6 +259,10 @@ for f in json.load(open(sys.argv[1])).get("requiredFields") or []:
     av=f.get("allowedValues") or []
     print("|".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else "", f.get("datatype","")]))' "$M")
 
+  if [ -n "$UNMET" ]; then
+    emit "$CLASS" UNMEASURED "no served row gives a value the shape's pattern takes:$UNMET"
+    unmeasured=$((unmeasured+1)); continue
+  fi
   if [ -n "$MISSING" ]; then
     emit "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
     unmeasured=$((unmeasured+1)); continue

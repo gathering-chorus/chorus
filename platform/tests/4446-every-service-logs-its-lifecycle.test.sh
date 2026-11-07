@@ -43,13 +43,17 @@ com.chorus.api	platform/api/src/server.ts
 com.chorus.eventloop-probe	platform/api/src/eventloop-probe.ts
 com.chorus.mcp	GAP: #4515 retired the old MCP server; it is booted out at land (retire-old-mcp-server-4515.sh) and this row goes with it
 com.chorus.pulse	platform/pulse/src/service.ts
+com.chorus.go	platform/services/chorus-go/src/main.rs
 com.chorus.clearing	directing/clearing/src/server.ts
 com.chorus.clearing-v2	GAP: #4525 side-by-side review on :3472 (Abby), installed by hand for the review; wire its lifecycle before it replaces com.chorus.clearing
+com.chorus.log-archive	GAP: #4735 daily archive job, lifecycle wiring owed by Silas (service-run on his next card; this row goes then)
 com.chorus.bridge-subscriber-kade	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-silas	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
 com.chorus.share-guard	platform/scripts/chorus-share-guard.py
 com.chorus.share-guard-path	platform/scripts/chorus-share-guard.py
+com.chorus.shacl-bnodes	platform/scripts/shacl-bnodes
+com.chorus.shacl-census	platform/scripts/shacl-census
 com.chorus.alert-delivery-test	platform/scripts/alert-delivery-test.sh
 com.chorus.alert-runner	proving/scripts/alert-runner.sh
 com.chorus.bedroom-health	platform/scripts/health-check-bedroom.sh
@@ -96,6 +100,11 @@ com.chorus.context-cache-hourly	WRAP: inline bash -c in the plist
 com.chorus.context-cache-weekly	WRAP: inline bash -c in the plist
 com.chorus.index-artifacts	WRAP: inline bash -c in the plist
 com.chorus.perf-baseline	WRAP: inline bash -c in the plist
+com.chorus.memory-backup	WRAP: service-run job, memory-backup.py (card 4630)
+com.chorus.memory-sensors	WRAP: inline sh -c in the plist (herald-run messages, events)
+com.chorus.spine-sensor	WRAP: inline sh -c in the plist (herald-run spine)
+com.chorus.sync-sensor	WRAP: service-run job, inline sh -c (herald-run sync, card 4647)
+com.chorus.log-archive	WRAP: service-run job, inline sh -c (log-archive dagu + chorus-log, card 4735)
 T
 )}"
 

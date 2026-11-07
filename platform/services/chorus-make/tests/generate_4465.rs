@@ -2,7 +2,7 @@
 // @domain: pipelines
 //! #4465 — chorus-make turns a pipeline's rows into the werk v2 workflow, the
 //! same rows always give the same bytes, and a hand edit is caught.
-use chorus_make::{check, drift, generate, generate_land, parse_rows};
+use chorus_make::{check, drift, generate, generate_go, generate_land, parse_rows};
 
 fn fixture(name: &str) -> String {
     // run time, not env!(): the werk-test 4030 guard refuses a compile-time path
@@ -20,6 +20,9 @@ fn the_cicd_rows_generate_the_golden_workflow() {
     assert_eq!(out, fixture("fixtures/cicd-golden.yaml"));
     let land = generate_land("cicd", &cicd()).expect("generates the land");
     assert_eq!(land, fixture("fixtures/cicd-land-golden.yaml"));
+    // #4758 — the go half: Jeff's go and the land enqueue, on their own queue
+    let go = generate_go("cicd", &cicd()).expect("generates the go");
+    assert_eq!(go, fixture("fixtures/cicd-go-golden.yaml"));
 }
 
 #[test]
@@ -34,23 +37,25 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let out = generate("cicd", &cicd()).unwrap();
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(ids.first(), Some(&"skill-werk-commit"));
-    let go = ids.iter().position(|i| *i == "skill-werk-go").expect("the go is a step");
-    assert_eq!(ids[go - 1], "skill-werk-demo-pipeline"); // #4502 — the demo is its own pipeline (Jeff 10-12 21:18), one step here
-    // #4494 — after the go the card enqueues its land; the land steps are in the land half
-    assert_eq!(&ids[go + 1..], &["cicd-land"]);
+    // #4758 — the card half ends at the demo by enqueueing the go half
+    assert_eq!(&ids[ids.len() - 2..], &["skill-werk-demo-pipeline", "cicd-go"]); // #4502 — the demo is its own pipeline (Jeff 10-12 21:18), one step here
+    // #4494 — after the go the go half enqueues the land; the land steps are in the land half
+    let go = generate_go("cicd", &cicd()).unwrap();
+    let go_ids: Vec<&str> = go.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
+    assert_eq!(go_ids, vec!["skill-werk-go", "cicd-land"]);
     let land = generate_land("cicd", &cicd()).unwrap();
     let land_ids: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(land_ids.first(), Some(&"skill-werk-merge"));
-    assert_eq!(land_ids.last(), Some(&"skill-werk-accept"));
-    assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo-pipeline]\n    id: skill_werk_go\n    action: human.task\n"));
-    for half in [&out, &land] {
+    assert_eq!(land_ids.last(), Some(&"skill-clearing-evaluate"));
+    assert!(go.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    id: skill_werk_go\n    action: human.task\n"), "{go}");
+    for half in [&out, &go, &land] {
         assert!(half.starts_with(chorus_make::HEADER));
         // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
         for v in ["CHORUS_HOME: ${CHORUS_HOME}", "CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}"] {
             assert!(half.contains(&format!("  - {v}\n")), "workflow env is missing {v}");
         }
         // Jeff 21:06: DEPLOY_ROLE is identity; a run param must never assert it
-        assert!(!half.contains("DEPLOY_ROLE") && !half.contains("CHORUS_ROLE"), "the workflow claims an identity");
+        assert!(!half.contains("DEPLOY_ROLE: ") && !half.contains("CHORUS_ROLE: "), "the workflow claims an identity");
     }
 }
 
@@ -60,39 +65,51 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
 #[test]
 fn cards_and_lands_run_on_their_own_queues() {
     let card = generate("cicd", &cicd()).unwrap();
+    let go = generate_go("cicd", &cicd()).unwrap();
     let land = generate_land("cicd", &cicd()).unwrap();
     assert!(card.contains("\nqueue: werk\n"), "{card}");
     assert!(land.contains("\nqueue: werk-land\n"), "{land}");
-    let enq = card.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).expect("the card enqueues its land");
-    assert!(enq.contains("    action: dag.enqueue\n    with:\n      dag: cicd-land\n"), "{enq}");
+    // #4758 — the go never waits behind the card queue's test runs
+    assert!(go.contains("\nqueue: werk-go\n"), "{go}");
+    let to_go = card.split("  - name: ").find(|s| s.starts_with("cicd-go\n")).expect("the card enqueues its go");
+    // the go run is named for the card run, so a /go link finds it by name
+    assert!(to_go.contains("dagu.yaml enqueue --run-id go-${DAG_RUN_ID} cicd-go -- CARD=${CARD} ROLE=${ROLE} CICD_RUN=${DAG_RUN_ID}"), "{to_go}");
+    assert!(!to_go.contains("dag.run") && !to_go.contains("dag.enqueue"), "{to_go}");
+    // NEGATIVE PROOF: the card half holds no human task, so nothing resumes on werk
+    assert!(!card.contains("human.task"), "{card}");
+    let enq = go.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).expect("the go enqueues its land");
+    // #4691 — by the CLI (a top-level run on its own queue): dagu refuses a
+    // human task in a dag.enqueue sub-DAG, and the land has Borg Queen's step
+    assert!(enq.contains("dagu.yaml enqueue cicd-land -- CARD=${CARD}"), "{enq}");
     // NEGATIVE PROOF: the land is never a call (dag.run would ignore its queue)
     // and never a file path, which dagu refuses. #4540: the card's test step
     // IS a dag.run (the cicd-test child); the land step still is not.
-    assert!(!enq.contains("dag.run") && !enq.contains(".yaml"), "{enq}");
+    assert!(!enq.contains("dag.run") && !enq.contains("dag.enqueue") && !enq.contains("pipelines/"), "{enq}");
 }
 
 #[test]
 fn every_land_step_runs_after_the_go_and_none_before_it() {
     let rows = cicd();
     let card = generate("cicd", &rows).unwrap();
+    let go = generate_go("cicd", &rows).unwrap();
     let land = generate_land("cicd", &rows).unwrap();
-    let card_names: Vec<&str> = card.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
-    let land_names: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
-    for n in &land_names {
-        assert!(!card_names.contains(n), "{n} runs in both halves");
+    let names = |y: &str| y.lines().filter_map(|l| l.strip_prefix("  - name: ")).map(String::from).collect::<Vec<_>>();
+    let (card_names, go_names, land_names) = (names(&card), names(&go), names(&land));
+    for n in go_names.iter().chain(&land_names) {
+        assert!(!card_names.contains(n), "{n} runs in two halves");
     }
-    // every skill row is a step in exactly one half; the enqueue step is the one extra
-    assert_eq!(card_names.len() + land_names.len(), rows.len() + 1);
-    // NEGATIVE PROOF: rows with no go have no land and are refused, never half-written
+    // every skill row is a step in exactly one half; the two enqueue steps are the extras
+    assert_eq!(card_names.len() + go_names.len() + land_names.len(), rows.len() + 2);
+    // NEGATIVE PROOF: rows with no go have no go or land and are refused, never half-written
     let no_go: Vec<_> = rows.iter().filter(|r| r.executor != "human").cloned().collect();
-    assert!(generate("cicd", &no_go).is_err() && generate_land("cicd", &no_go).is_err());
+    assert!(generate("cicd", &no_go).is_err() && generate_go("cicd", &no_go).is_err() && generate_land("cicd", &no_go).is_err());
 }
 
 #[test]
 fn negative_proof_a_hand_edited_step_goes_red_in_the_drift_check() {
     let expected = generate("cicd", &cicd()).unwrap();
     assert!(drift(&expected, &expected).is_ok(), "an untouched file matches");
-    let edited = expected.replace("chorus-runner call werk-review card=${CARD}", "chorus-runner call werk-review card=${CARD} type=unit");
+    let edited = expected.replace("chorus-runner call werk-build card=${CARD}", "chorus-runner call werk-build card=${CARD} type=unit");
     assert_ne!(edited, expected, "the edit must change the file, or this proves nothing");
     let err = drift(&expected, &edited).expect_err("a hand edit must be caught");
     assert!(err.contains("type=unit"), "the failure names what changed: {err}");
@@ -128,15 +145,16 @@ fn negative_proof_a_skill_sharing_the_go_s_order_and_no_rows_are_refused() {
 fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
     let rows = cicd();
     let skills: Vec<&str> = rows.iter().map(|r| r.skill.as_str()).collect();
-    for half in [generate("cicd", &rows).unwrap(), generate_land("cicd", &rows).unwrap()] {
+    for half in [generate("cicd", &rows).unwrap(), generate_go("cicd", &rows).unwrap(), generate_land("cicd", &rows).unwrap()] {
         for n in half.lines().filter_map(|l| l.strip_prefix("  - name: ")) {
-            // the one step not a skill row is the card's land enqueue, named for the land DAG
-            assert!(skills.contains(&n) || n == "cicd-land", "{n} is not a Skill row name");
+            // the steps not a skill row are the two enqueues, named for the DAG they enqueue
+            assert!(skills.contains(&n) || n == "cicd-land" || n == "cicd-go", "{n} is not a Skill row name");
         }
     }
     // the one id dagu demands (a human.task) is the row name with '_' for '-'
     let out = generate("cicd", &rows).unwrap();
-    let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("    id: ")).collect();
+    let go = generate_go("cicd", &rows).unwrap();
+    let ids: Vec<&str> = go.lines().filter_map(|l| l.strip_prefix("    id: ")).collect();
     assert_eq!(ids, vec!["skill_werk_go"]);
     assert!(out.contains("    description: \"werk-deploy-demo\"\n"), "description is the row's label");
 }
@@ -162,7 +180,7 @@ fn only_the_step_before_the_go_treats_presented_as_success() {
 #[test]
 fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
     // #4474 run 9: werk-merge refused "no-approval" because no step set $ACCEPTER
-    let out = generate("cicd", &cicd()).unwrap();
+    let out = generate_go("cicd", &cicd()).unwrap();
     let go = out.split("  - name: ").find(|s| s.starts_with("skill-werk-go\n")).unwrap();
     assert!(go.contains("        required: [accepter, decision]\n"), "the go asks who and go-or-no: {go}");
     assert!(go.contains("enum: [jeff, wren, kade, silas]"), "{go}");
@@ -172,9 +190,9 @@ fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
     assert!(enq.contains("ACCEPTER=${skill_werk_go.outputs.accepter}"), "{enq}");
     let land = generate_land("cicd", &cicd()).unwrap();
     assert!(land.contains("params:\n  - CARD: \"\"\n  - ROLE: \"\"\n  - ACCEPTER: \"\"\n"), "{land}");
-    // negative proof: no step before the go may claim an accepter
-    let before = out.split("  - name: ").skip(1).take_while(|s| !s.starts_with("skill-werk-go\n")).filter(|s| s.contains("ACCEPTER")).count();
-    assert_eq!(before, 0, "a step before the go reads an accepter nobody gave");
+    // negative proof: no step before the go (the card half) may claim an accepter
+    let card = generate("cicd", &cicd()).unwrap();
+    assert!(!card.contains("ACCEPTER"), "a step before the go reads an accepter nobody gave");
 }
 
 #[test]
@@ -183,7 +201,7 @@ fn a_no_at_the_go_skips_the_land_and_ends_the_run() {
     // deleted (dagu 2.18, measured 2026-10-10 22:2x). "no" is the way out:
     // the enqueue only runs when the decision is go (measured in a scratch
     // dagu 23:40: decision=no → land skipped, run ended; go → landed).
-    let out = generate("cicd", &cicd()).unwrap();
+    let out = generate_go("cicd", &cicd()).unwrap();
     let go = out.split("  - name: ").find(|s| s.starts_with("skill-werk-go\n")).unwrap();
     assert!(go.contains("          decision:\n            type: string\n            enum: [go, no]\n"), "{go}");
     let enq = out.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).unwrap();
@@ -199,7 +217,7 @@ fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
     // #4494 — the land event triggers athena (#4177); v2's land never passed
     // through the old MCP server's werk-merge, so #4496's model never reached the store.
     let land = generate_land("cicd", &cicd()).unwrap();
-    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
+    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
     // #4499 — every land rebuilds the code units the blast radius reads
     // NEGATIVE PROOF: the card half never deploys a model (nothing has landed)
     let card = generate("cicd", &cicd()).unwrap();
@@ -230,20 +248,24 @@ fn the_cards_own_verbs_come_first_on_the_path() {
 }
 
 #[test]
-fn a_failed_run_nudges_the_builder() {
-    // #4474 run 15 failed at 09:25; nobody knew until 10:06
+fn a_finished_run_wakes_the_builder_once() {
+    // #4474 run 15 failed at 09:25; nobody knew until 10:06. #4888: #4887's land
+    // passed at 14:35 and woke nobody — the wake is the run's finish, pass or fail.
     let out = generate("cicd", &cicd()).unwrap();
-    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} ").expect("a failure handler");
+    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || true'\n  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n").expect("a routing failure handler, then the one exit wake");
     assert!(h < out.find("steps:\n").unwrap(), "handler_on is DAG-level, before the steps");
-    // negative proof: the handler is on failure only, never on every exit or success
-    assert!(!out.contains("  success:") && !out.contains("  exit:"), "{out}");
+    // negative proof: one wake, from exit only — never a second from failure or success
+    assert_eq!(out.matches("run-finished").count(), 1, "{out}");
+    assert!(!out.contains("ops-nudge") && !out.contains("  success:"), "{out}");
 }
 
 #[test]
 fn negative_proof_one_skill_called_twice_is_refused() {
     let mut rows = cicd();
-    rows[4].skill = rows[3].skill.clone(); // review now calls the test step's skill again
-    let twice = format!("{}: called twice", rows[3].skill);
+    // #4889 (werk-review retired): env-up now calls the demo step's deploy skill again
+    assert_eq!((rows[4].step.as_str(), rows[5].step.as_str()), ("demo", "demo"), "two skills of one step");
+    rows[5].skill = rows[4].skill.clone();
+    let twice = format!("{}: called twice", rows[4].skill);
     assert!(check(&rows).iter().any(|e| e.contains(&twice)), "{:?}", check(&rows));
 }
 
@@ -255,8 +277,9 @@ fn a_bad_row_is_refused_by_line_never_skipped() {
 }
 
 // Fixtures by their repo path, so the pipeline's test step sees which files these tests read.
-const REPO_FIXTURES: [&str; 5] = [
+const REPO_FIXTURES: [&str; 6] = [
     "platform/services/chorus-make/tests/fixtures/cicd-golden.yaml",
+    "platform/services/chorus-make/tests/fixtures/cicd-go-golden.yaml",
     "platform/services/chorus-make/tests/fixtures/cicd-land-golden.yaml",
     "platform/services/chorus-make/tests/fixtures/cicd-rows.tsv",
     "platform/services/chorus-make/tests/fixtures/cicd-graph.trig",

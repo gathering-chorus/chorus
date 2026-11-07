@@ -25,7 +25,21 @@
     fuseki:endpoint [ fuseki:operation fuseki:query ;  fuseki:name "sparql" ] ;
     fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
     fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ; fuseki:name "data"   ] ;
+    # #4717 — Jena SHACL at the store: the DAL validates each write's scratch
+    # copy here (POST /pods/shacl?graph=<scratch>). Behind authcBasic like
+    # update (shiro `/** =`); the DAL sends the store credential.
+    fuseki:endpoint [ fuseki:operation fuseki:shacl ;  fuseki:name "shacl"  ] ;
     fuseki:dataset :tdbDataset .
 
 :tdbDataset rdf:type tdb2:DatasetTDB2 ;
-    tdb2:location "/Users/jeffbridwell/.gathering/data/fuseki-pods" .
+    tdb2:location "/Users/jeffbridwell/.gathering/data/fuseki-pods" ;
+    # #3732 — the default (unnamed) graph is the UNION of the named graphs.
+    # Before this, a GRAPH-less query read a real, separate default graph
+    # holding a 3901-triple pre-ADR-025 V1 snapshot, so a forgotten GRAPH
+    # clause silently outranked the live model. Union makes an unscoped read
+    # return truth instead of a stale corner. Safe ONLY once no two graphs
+    # disagree about a shape (ADR-051 Addendum II, enforced by
+    # platform/tests/source-exclusivity-3732.bats): union MERGES, so a
+    # surviving duplicate becomes a silent contradiction at read time.
+    # (#4717: the live file had this since #3732; the canonical copy had drifted.)
+    tdb2:unionDefaultGraph true .

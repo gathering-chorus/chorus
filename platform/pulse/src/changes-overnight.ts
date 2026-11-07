@@ -267,12 +267,19 @@ export class ChangesOvernightService {
 
 const MOVES_QUERY = '{job="platform-chorus", appName="cards"} |~ `"event":"card\\.(item\\.moved|accepted)"`';
 
+
+/** #4838 — live sessions, filtered at the door (no endedAt, expiresAt within the last hour or later). */
+function liveSessionsQuery(nowMs: number = Date.now()): string {
+  const after = new Date(nowMs - 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return `endedAt.absent=true&expiresAt.after=${encodeURIComponent(after)}&limit=5000`;
+}
+
 async function fetchLiveSessions(
   athenaBase: string,
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<RawSessionRow[] | undefined> {
   try {
-    const res = await fetch(`${athenaBase}/v1/identity/sessions?limit=500`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${athenaBase}/v1/identity/sessions?${liveSessionsQuery()}`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) {
       unmeasured.push({ source: 'athena:identity:sessions', reason: `HTTP ${res.status}` });
       return undefined;

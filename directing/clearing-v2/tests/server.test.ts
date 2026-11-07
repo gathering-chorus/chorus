@@ -11,7 +11,6 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import fs from 'fs';
 import os from 'os';
 import { createApp, loadConfig } from '../src/server';
-import { loadKnownKeys } from '../src/identity';
 import { TileService } from '../src/tile-service';
 import { serializeEvent, buildEventId, verifyNostrEvent, resolveRoleByPubkey } from '../src/identity';
 import { mintShareSessionCookie } from '../src/share-session';
@@ -48,16 +47,20 @@ describe('Clearing v2: Server App & Tile Service', () => {
   test('TileService initializes known team roles with idle state', () => {
     const tileService = new TileService('http://127.0.0.1:9');
     const tiles = tileService.getTiles();
-    expect(tiles.length).toBe(5);
+    expect(tiles.length).toBe(6);
     const roles = tiles.map(t => t.role);
     expect(roles).toContain('abby-normal');
     expect(roles).toContain('wren');
     expect(roles).toContain('silas');
     expect(roles).toContain('kade');
     expect(roles).toContain('jeff');
+    expect(roles).toContain('borg-queen');
     const abbyTile = tiles.find(t => t.role === 'abby-normal');
     expect(abbyTile?.name).toBe('Abby Normal');
     expect(abbyTile?.state).toBe('idle');
+    const bqTile = tiles.find(t => t.role === 'borg-queen');
+    expect(bqTile?.name).toBe('Borg Queen');
+    expect(bqTile?.state).toBe('idle');
   });
 
   test('TileService updates tile state incrementally', () => {
@@ -73,7 +76,7 @@ describe('Clearing v2: Server App & Tile Service', () => {
     const tileService = new TileService();
     tileService.updateTile('ghost-agent', { state: 'idle' });
     const tiles = tileService.getTiles();
-    expect(tiles.length).toBe(5);
+    expect(tiles.length).toBe(6);
     expect(tiles.find(t => t.role === 'ghost-agent')).toBeUndefined();
   });
 
@@ -339,11 +342,11 @@ describe('Clearing v2: Server App & Tile Service', () => {
       // no relay in this test, so the sent tick stays off: the tick means the relay
       // accepted it (rooms.feature:19), not that the server received it
       expect(recent[0].tick).toBe(false);
-      // #4592 — wait for the four hand-offs, not a fixed 30ms: on a busy box the
-      // fourth POST lands later and a timing assert reads as a product red.
-      for (let i = 0; i < 100 && jeffInputs.length < 4; i++) await new Promise((r) => setTimeout(r, 20));
-      expect(jeffInputs.length).toBe(4);
-      expect(new Set(jeffInputs.map((i: any) => i.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal']));
+      // #4592 — wait for the five hand-offs, not a fixed 30ms: on a busy box the
+      // fifth POST lands later and a timing assert reads as a product red (#4724 adds borg-queen).
+      for (let i = 0; i < 100 && jeffInputs.length < 5; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(jeffInputs.length).toBe(5);
+      expect(new Set(jeffInputs.map((i: any) => i.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal', 'borg-queen']));
       expect(jeffInputs.every((i: any) => i.content === 'Hello team from Jeff browser' && i.caller === '1')).toBe(true);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
@@ -358,39 +361,6 @@ describe('Clearing v2: #4570 Service Run & WiFi Binding', () => {
     expect(cfg.port).toBe(3472);
     expect(cfg.host).toBe('0.0.0.0');
     expect(cfg.pulseUrl).toBe('http://127.0.0.1:3475');
-  });
-});
-
-describe('Clearing v2: #4571 Known Keys from ~/.chorus/identity', () => {
-  test('loadKnownKeys loads every <home>/.chorus/identity/<who>/nostr.json pubkey (pubkey only, never seckey)', () => {
-    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-v2-id-'));
-    try {
-      const idDir = path.join(tmpHome, '.chorus', 'identity');
-      const wrenPriv = new Uint8Array(32).fill(11);
-      const wrenPub = bytesToHex(schnorr.getPublicKey(wrenPriv));
-      const silasPriv = new Uint8Array(32).fill(22);
-      const silasPub = bytesToHex(schnorr.getPublicKey(silasPriv));
-      const seckeyOnlyPriv = new Uint8Array(32).fill(33);
-      const seckeyOnlyPub = bytesToHex(schnorr.getPublicKey(seckeyOnlyPriv));
-
-      fs.mkdirSync(path.join(idDir, 'wren'), { recursive: true });
-      fs.writeFileSync(path.join(idDir, 'wren', 'nostr.json'), JSON.stringify({ pubkey: wrenPub.toUpperCase(), seckey: 'ignored' }));
-
-      fs.mkdirSync(path.join(idDir, 'silas'), { recursive: true });
-      fs.writeFileSync(path.join(idDir, 'silas', 'nostr.json'), JSON.stringify({ pubkey: silasPub }));
-
-      // NEGATIVE PROOF: a file with seckey only (no pubkey) is never derived or loaded
-      fs.mkdirSync(path.join(idDir, 'kade'), { recursive: true });
-      fs.writeFileSync(path.join(idDir, 'kade', 'nostr.json'), JSON.stringify({ seckey: bytesToHex(seckeyOnlyPriv) }));
-
-      const keys = loadKnownKeys(tmpHome);
-      expect(keys.get(wrenPub)).toBe('wren');
-      expect(keys.get(silasPub)).toBe('silas');
-      expect(keys.get(seckeyOnlyPub)).toBeUndefined();
-      expect( resolveRoleByPubkey(wrenPub, keys) ).toBe('wren');
-    } finally {
-      fs.rmSync(tmpHome, { recursive: true, force: true });
-    }
   });
 });
 

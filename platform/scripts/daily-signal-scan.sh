@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # daily-signal-scan.sh — Daily signal integrity scan (#2088)
 # Cron: 6am ET via LaunchAgent. Produces a brief with codebase weather,
 # trust verification, signal-to-noise, doc freshness, backlog coherence,
@@ -34,7 +35,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-log() { echo "$(TZ=America/New_York date '+%H:%M:%S') $*" >&2; }
+log() { echo "$(boston_time clock) $*" >&2; }
 
 # --- AC1: Codebase Weather ---
 codebase_weather() {
@@ -257,7 +258,7 @@ main() {
   {
     echo "# Daily Signal — ${DATE}"
     echo ""
-    echo "Generated: $(TZ=America/New_York date '+%Y-%m-%d %H:%M') Boston"
+    echo "Generated: $(boston_time show) Boston"
     echo ""
     codebase_weather
     trust_verification

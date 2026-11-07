@@ -1,0 +1,8 @@
+#!/bin/sh
+# @domain: cicd — a stub for the verb story (platform/tests/3325-verb-story.bats)
+# #4915 — werk-pull runs $CHORUS_HOME/platform/scripts/borg-prove-intake on every
+# pull since #4760. The story's home is a fresh clone with no such script, so every
+# pull refused and 9 of 11 cases went red from 10-27 on. Intake is not this story's
+# seam (borg-prove's own tests cover it): the stub logs the call and accepts.
+echo "intake $*" >> "$BOARD/calls"
+exit 0

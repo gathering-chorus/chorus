@@ -52,6 +52,8 @@ pub struct Class {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Domain {
     pub name: String,
+    /// #4742 — homed in another product and composed here: served read-only, from the owner's graph.
+    pub composed: bool,
     pub classes: Vec<Class>,
 }
 
@@ -59,6 +61,18 @@ pub struct Domain {
 pub struct Product {
     pub name: String,
     pub domains: Vec<Domain>,
+    /// #4744 — analytical operations (a live computation, not stored rows) the product serves
+    pub operations: Vec<Operation>,
+}
+
+/// #4744 — an Operation row: served at `/<product>/<domain>/<segment>`, computed by the
+/// handler at `handler` (repo-relative), homed in a domain the product owns or composes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Operation {
+    pub name: String,
+    pub domain: String,
+    pub segment: String,
+    pub handler: String,
 }
 
 #[derive(Debug)]
@@ -218,11 +232,11 @@ pub fn segment(domain: &str, class: &str) -> String {
 /// One product: its domains (hasDomain), each domain's classes (definesVocabulary),
 /// each class's fields (its SHACL shape). Everything sorted by name.
 pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
-    let domains = select(store, &format!("SELECT DISTINCT ?d WHERE {{ c:{name} a c:Product ; c:hasDomain ?d }} ORDER BY ?d"))?;
-    if domains.is_empty() {
+    let owned = select(store, &format!("SELECT DISTINCT ?d WHERE {{ c:{name} a c:Product ; c:hasDomain ?d }} ORDER BY ?d"))?;
+    if owned.is_empty() {
         return Err(ModelError(format!("product '{name}' has no domains in the model (c:{name} a c:Product ; c:hasDomain …)")));
     }
-    let mut out = Product { name: name.to_string(), domains: Vec::new() };
+    let mut out = Product { name: name.to_string(), domains: Vec::new(), operations: Vec::new() };
     // #4519 — a class with no instancesGraph lives under the product's own graph
     // prefix, never a Chorus default
     let declared = settings(store, name)?;
@@ -232,9 +246,14 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
     let Some(ns) = declared.iter().find(|(k, _)| k == "model.namespace").map(|(_, v)| v.clone()) else {
         return Err(ModelError(format!("{name} declares no model.namespace: add a Property row (c:{name} c:hasProperty …)")));
     };
-    for d in domains {
+    // #4742 — the product's child routes are the domains it owns, then the ones it composes
+    // (a composition, not an orchestration); a domain it also owns is served once, as owned.
+    let composed = select(store, &format!(
+        "SELECT DISTINCT ?d WHERE {{ c:{name} c:composes ?d FILTER NOT EXISTS {{ c:{name} c:hasDomain ?d }} }} ORDER BY ?d"))?;
+    let domains = owned.into_iter().map(|d| (d, false)).chain(composed.into_iter().map(|d| (d, true)));
+    for (d, composed) in domains {
         let dname = d["d"].clone();
-        let mut domain = Domain { name: dname.clone(), classes: Vec::new() };
+        let mut domain = Domain { name: dname.clone(), composed, classes: Vec::new() };
         for c in select_iri(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
             let iri = &c["c"];
             if !iri.starts_with(&ns) {
@@ -244,6 +263,15 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
             domain.classes.push(class(store, &dname, iri, prefix.as_deref(), name)?);
         }
         out.domains.push(domain);
+    }
+    // #4744 — an operation lives in one of the product's own domains, or it is refused by name
+    for o in select(store, &format!(
+        "SELECT ?o ?d ?seg ?h WHERE {{ c:{name} c:servesOperation ?o . ?o c:homeDomain ?d ; c:operationPath ?seg ; c:handlerPath ?h }} ORDER BY ?o"))? {
+        let (oname, d) = (o["o"].clone(), o["d"].clone());
+        if !out.domains.iter().any(|x| x.name == d) {
+            return Err(ModelError(format!("operation {oname} is homed in {d}, which {name} neither owns nor composes")));
+        }
+        out.operations.push(Operation { name: oname, domain: d, segment: o["seg"].clone(), handler: o["h"].clone() });
     }
     Ok(out)
 }

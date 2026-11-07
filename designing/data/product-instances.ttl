@@ -214,7 +214,7 @@ chorus:clearing a chorus:Product ;
     rdfs:label """The Clearing""" ;
     chorus:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
     rdfs:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
-    chorus:ownedBy chorus:principal-wren ;
+    chorus:ownedBy chorus:principal-abby-normal ;
     chorus:vision """One place where the team and the running system meet: the board, the messages and the record in a single room, readable at a glance from any device.""" ;
     chorus:valueProposition """The owner manages by glancing instead of relaying: tiles show who is building what, the stream shows decisions and demos as they happen, alerts surface without checking terminals.""" ;
     chorus:audience """The owner, watching the team work in real time; the roles, coordinating with one another; and guests observing a session.""" ;
@@ -378,8 +378,8 @@ chorus:pulse a chorus:Product ;
     chorus:gaps """No relation between roles, so who is blocked on whom cannot be answered; machine load is missing from the reading; some activity arrives without a known author; consumers do not yet read the age of what they are shown.""" ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
     chorus:hasDomain chorus:awareness, chorus:streams ;   # #4576: awareness to Loom is its own card (pulse-api serves it)   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
-    chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
-    chorus:consumesEvent chorus:eventtype-card-pulled ;
+    chorus:consumes chorus:alerts, chorus:cards, chorus:events, chorus:identity, chorus:logs, chorus:messages, chorus:metrics, chorus:monitors, chorus:persistence, chorus:pipelines, chorus:roles, chorus:security, chorus:services, chorus:spine ;
+    chorus:composes chorus:alerts, chorus:cards, chorus:messages ;   # #4702 (Jeff 10-22 16:03): pulse composes alerts and messages, like cards
     chorus:publishesPreAuth """true""" ;
     chorus:promise """You look once and know whether your team is working — without asking anyone, and without being lied to. That is the whole product. Its measure is not uptime or latency; it is how many times in a day the owner has to type "are you working?" The day this product was designed the answer was six, and each time the answer was already in the log.
 Who it is for: the owner, at a glance, on a phone, often away from the local network — the one consumer whose time is irreplaceable, so a reading they cannot reach is a reading that does not exist. The roles, for mutual observation: read a peer's state rather than message them to ask. Alerting, as a consumer and never an owner: alerts read the pulse; the pulse never decides what an alert may say.

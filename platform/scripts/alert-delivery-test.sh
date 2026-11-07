@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # alert-delivery-test.sh — E2E alert delivery chain verification
 # Card #2274 | Silas
 #
@@ -34,7 +35,7 @@ PROBE_MARKER="synthetic-delivery-$(date +%s)"
 
 mkdir -p "$(dirname "$LOG")"
 
-TIMESTAMP() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
+TIMESTAMP() { boston_time stamp; }
 log() { echo "[$(TIMESTAMP)] $*" >> "$LOG"; }
 FAILURES=()
 PASSES=()

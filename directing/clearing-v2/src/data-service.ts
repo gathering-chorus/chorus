@@ -2,7 +2,8 @@
 
 import { BuzzRelayClient } from './relay-client';
 import { MessageRouter } from './router';
-import { ClearingMessage } from './types';
+import { ClearingMessage, NostrEvent } from './types';
+import { toClearingMessage } from './converters';
 import { RolesData, TodayData, RoomsData, DoorRolesResponse, TrustStripSource, TodayCardItem } from './sources/models';
 import { fetchJson, failureReason } from './sources/http';
 import { formatBostonTime, formatBostonWhen, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
@@ -20,6 +21,7 @@ export { formatBostonTime, formatTodayHeader } from './sources/format';
 export interface DataServiceOptions {
   rolesUrl?: string;
   pulseUrl?: string;
+  pulseApiUrl?: string;
   cardsUrl?: string;
   athenaCardUrl?: string;
   alertsUrl?: string;
@@ -55,12 +57,35 @@ function firstSet(explicit: string | undefined, fromEnv: string | undefined, fal
   return explicit || fromEnv || fallback;
 }
 
+/** #4597 — Jeff, 10-18 17:42: "i dont want 8 pages worth of chats i want 1 page".
+ *  The room shows its newest messages, about one screen, not the last 100. */
+export const ROOM_PAGE_MESSAGES = 15;
+
+/** One router message as the room shows it (the first page and each older page alike). */
+function toRoomMessage(m: RecentMessage): RoomsData['messages'][number] {
+  const cardMatch = m.text.match(/#(\d+)/);
+  return {
+    id: m.id,
+    from: m.from,
+    text: m.text,
+    time: formatBostonTime(m.ts),
+    ts: m.ts,
+    tick: Boolean(m.tick),
+    cardId: cardMatch ? parseInt(cardMatch[1], 10) : undefined,
+    threadCount: m.threadCount,
+    threadLast: m.threadLast,
+    type: m.type,
+    ...(m.kind ? { kind: m.kind } : {}),
+  };
+}
+
 export class DataService {
   private defaultRolesUrl: string;
   private defaultCardsUrl: string;
   private defaultAthenaCardUrl: string;
   private defaultAlertsUrl: string;
   private defaultPulseUrl: string;
+  private defaultPulseApiUrl: string;
   private runWerkStatus?: (cardId: number) => Promise<string>;
   private relay: BuzzRelayClient;
   private router: MessageRouter;
@@ -72,6 +97,7 @@ export class DataService {
     this.defaultAthenaCardUrl = firstSet(options.athenaCardUrl, process.env.ATHENA_CARD_URL, 'http://localhost:3340/api/athena/card');
     this.defaultAlertsUrl = firstSet(options.alertsUrl, process.env.ALERTS_URL, 'http://localhost:3340/api/chorus/context/alerts');
     this.defaultPulseUrl = firstSet(options.pulseUrl, process.env.PULSE_URL, 'http://127.0.0.1:3475');
+    this.defaultPulseApiUrl = firstSet(options.pulseApiUrl, process.env.PULSE_API_URL, 'http://127.0.0.1:3392');
     this.runWerkStatus = options.runWerkStatus;
     this.relay = options.relay;
     this.router = options.router;
@@ -138,6 +164,68 @@ export class DataService {
    * roles door, and router messages.
    * NO fake seeds, NO hardcoded role names or channels, NO literal card/thread values.
    */
+  /** #4597 — the page of messages just older than `beforeId`, for scrolling up in a room.
+   *  #4749 — fall through to Buzz relay (for room channels) or pulse (for direct threads)
+   *  when the in-memory router buffer is exhausted. Read-through only: does NOT pollute router cache.
+   */
+  async getRoomHistory(room: string, beforeId: string, beforeTs?: number, options?: { pulseApiUrl?: string }): Promise<RoomsData['messages']> {
+    const fromBuffer = this.router.getBefore(beforeId, ROOM_PAGE_MESSAGES, room);
+    if (fromBuffer.length > 0) {
+      return fromBuffer.map(toRoomMessage);
+    }
+
+    if (!beforeTs) {
+      return [];
+    }
+
+    const roomLower = room.toLowerCase();
+    const isDirect = !['team', 'clearing'].includes(roomLower) && !roomLower.startsWith('#');
+
+    if (isDirect) {
+      // #4761 — direct thread from the generated messages route: one read per direction
+      // (the route filters by field, with no OR), merged, newest page before the anchor.
+      const apiUrl = options?.pulseApiUrl || this.defaultPulseApiUrl;
+      const isoBefore = new Date(beforeTs * 1000).toISOString();
+      const one = (from: string, to: string) => fetchJson<{ data?: Array<{ sourceId: string; senderName: string; messageBody: string; sentAt: string }> }>(
+        `${apiUrl}/pulse/messages/messages?sentBy=principal-${encodeURIComponent(from)}&sentTo=principal-${encodeURIComponent(to)}` +
+          `&sentAt.lt=${encodeURIComponent(isoBefore)}&sort=-sentAt&limit=${ROOM_PAGE_MESSAGES}`,
+        5000
+      );
+      const reads = await Promise.all([one('jeff', roomLower), one(roomLower, 'jeff')]);
+      const failed = reads.find((r) => !r.ok);
+      if (failed) {
+        throw new Error(failureReason(failed, 'pulse messages unreadable'));
+      }
+      const rows = reads.flatMap((r) => (r.ok && Array.isArray(r.value.data) ? r.value.data : []))
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+        .slice(0, ROOM_PAGE_MESSAGES)
+        .reverse(); // oldest-first, as room history renders
+      return rows.map((m) => toRoomMessage({
+        id: m.sourceId,
+        from: m.senderName,
+        text: m.messageBody,
+        ts: m.sentAt,
+        type: m.senderName === 'jeff' ? 'jeff-input' : 'role-response',
+        room,
+        visible: true,
+        tick: false,
+      }));
+    }
+
+    // Room channel: query Buzz relay via fetchBefore(until, limit, anchorId)
+    const olderEvents: NostrEvent[] = await this.relay.fetchBefore(beforeTs, ROOM_PAGE_MESSAGES, beforeId);
+    // Pure conversion: toClearingMessage -> toRoomMessage without mutating router buffer
+    return olderEvents
+      .map((ev) => {
+        let role = 'unattributed';
+        const authorTag = ev.tags.find((t) => t[0] === 'author');
+        if (authorTag && authorTag[1]) role = authorTag[1];
+        return toClearingMessage(ev, role, this.relay.isConnected());
+      })
+      .reverse() // fetchBefore returns newest-first; room history expects oldest-first
+      .map(toRoomMessage);
+  }
+
   async getRoomsData(room = 'team', options?: { rolesUrl?: string; pulseUrl?: string }): Promise<RoomsData> {
     const [directRoles, rolesData] = await Promise.all([
       fetchDirectRoles(options?.rolesUrl || this.defaultRolesUrl),
@@ -154,22 +242,8 @@ export class DataService {
       (c) => !directRoles.some((dr) => slug(dr) === c.toLowerCase())
     );
 
-    const recent: RecentMessage[] = this.router.getRecent(100, room);
-    const messages = recent.map((m) => {
-      const cardMatch = m.text.match(/#(\d+)/);
-      return {
-        id: m.id,
-        from: m.from,
-        text: m.text,
-        time: formatBostonTime(m.ts),
-        tick: Boolean(m.tick),
-        cardId: cardMatch ? parseInt(cardMatch[1], 10) : undefined,
-        threadCount: m.threadCount,
-        threadLast: m.threadLast,
-        type: m.type,
-        ...(m.kind ? { kind: m.kind } : {}),
-      };
-    });
+    const recent: RecentMessage[] = this.router.getRecent(ROOM_PAGE_MESSAGES, room);
+    const messages = recent.map(toRoomMessage);
 
     return {
       room,

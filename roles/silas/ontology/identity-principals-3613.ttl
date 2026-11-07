@@ -62,6 +62,20 @@ chorus:principal-abby-normal a chorus:Principal ;
     chorus:agentRuntime chorus:runtime-agy ;
     chorus:canSignIn "false" .
 
+# #4691 — Borg Queen, the prover (borg-prove after every land). Minted live
+# 2026-10-22 06:30 by create, never in source (Abby's #4432 gap again): her
+# live row had no hostAccount, holdsRole or agentRuntime, and a session cannot
+# write a Principal (403 deploy-only). She runs as her own Mac account and on
+# Gemini, like Abby (Jeff 2026-10-22 07:31; values Silas 07:32).
+chorus:principal-borg-queen a chorus:Principal ;
+    rdfs:label "borg-queen (agent principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/borg-queen/profile/card#me" ;
+    chorus:holdsRole chorus:role-borg-queen ;
+    chorus:principalKind "agent" ;
+    chorus:hostAccount "chorus-borg-queen" ;
+    chorus:agentRuntime chorus:runtime-agy ;
+    chorus:canSignIn "false" .
+
 chorus:principal-kade a chorus:Principal ;
     rdfs:label "kade (agent principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/kade/profile/card#me" ;
@@ -75,6 +89,23 @@ chorus:principal-bridge a chorus:Principal ;
     chorus:webId "https://id.lightlifeurbangardens.com/bridge/profile/card#me" ;
     chorus:principalKind "service" ;
     chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
+    chorus:canSignIn "false" .
+
+chorus:principal-pulse a chorus:Principal ;
+    rdfs:label "pulse (non-interactive Buzz reader principal, #4629)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/pulse/profile/card#me" ;
+    chorus:holdsRole chorus:role-pulse ;   # #4716: seeded by Jeff 2026-10-24 17:00 (seed-css), so pulse-api writes through the door as itself
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4629: pulse signs in to the relay as itself to read the room (S1 shadow), never as the bridge
+    chorus:canSignIn "false" .
+
+# #4716 (Jeff 2026-10-24 09:04, option A) — athena-deploy writes the ontology,
+# shapes and staging graphs as itself, never as a typed role. Its Fuseki user is
+# the store side of this row (AC2); the credential VALUE is never modeled.
+chorus:principal-deploy a chorus:Principal ;
+    rdfs:label "deploy (model deploy service principal, #4716)" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;
     chorus:canSignIn "false" .
 
 chorus:principal-chorus-sdk a chorus:Principal ;

@@ -126,8 +126,13 @@ run_instructed() {
 @test "generated CLAUDE.md: every instructed role-state command runs without a card= refusal" {
   [ -x "$SHIM_BIN" ] || skip "UNMEASURED — shim binary not built (#4336)"
   G="$BATS_TEST_TMPDIR/gen"
-  mkdir -p "$G/designing/claudemd" "$G/roles/wren" "$G/roles/silas" "$G/roles/kade" "$G/roles/abby-normal"  # #4432: every manifest role needs its home
+  mkdir -p "$G/designing/claudemd"
   cp -R "$CHORUS_ROOT/designing/claudemd/." "$G/designing/claudemd/"
+  # #4432: every manifest role needs its home. #4691: read from the manifest, so
+  # the next agent role (borg-queen was the one a hard-coded list missed) gets one too.
+  for r in $(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["roles"]))' "$G/designing/claudemd/manifest.json"); do
+    mkdir -p "$G/roles/$r"
+  done
   ( cd "$G" && env -u CLAUDEMD_BUMP python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" \
       "$G/designing/claudemd/manifest.json" "$G/designing/claudemd" generate "" "" ) >/dev/null 2>&1 || true
   for r in wren silas kade; do

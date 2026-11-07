@@ -71,12 +71,40 @@ fn override_emits_renamed_event_with_real_role() {
         tail.contains("gate.test_override.checked"),
         "expected new event name in spine tail; got: {}", tail
     );
+    let expected_role = match chorus_hooks::shared::role::current_account_name() {
+        Some(acct) if acct.starts_with("chorus-") => {
+            acct.strip_prefix("chorus-").unwrap().to_string()
+        }
+        _ => unique_role.clone(),
+    };
     assert!(
-        tail.contains(&unique_role),
-        "expected role={} in spine tail (no hardcoded 'kade'); got: {}", unique_role, tail
+        tail.contains(&format!("\"role\":\"{}\"", expected_role)),
+        "expected role={} in spine tail (no hardcoded 'kade'); got: {}", expected_role, tail
     );
     assert!(
         !tail.contains("gate.bypass.fix_card_override"),
         "old event name must not be re-emitted after #2899; got: {}", tail
+    );
+}
+
+#[test]
+fn pure_resolve_role_from_account_ac1_cases() {
+    use chorus_hooks::shared::role::{resolve_role_from_account, RoleUnresolved};
+    let s = |v: &str| Some(v.to_string());
+
+    // 1) (Some("chorus-kade"), CHORUS_ROLE=wren, DEPLOY_ROLE=wren) -> "kade"
+    assert_eq!(
+        resolve_role_from_account(Some("chorus-kade"), s("wren"), s("wren"), "/").unwrap(),
+        "kade"
+    );
+
+    // 2) (Some("chorus-nope"), ..) -> NotARole
+    let err = resolve_role_from_account(Some("chorus-nope"), s("wren"), s("wren"), "/").unwrap_err();
+    assert!(matches!(err, RoleUnresolved::NotARole { .. }));
+
+    // 3) (None, DEPLOY_ROLE=wren) -> "wren"
+    assert_eq!(
+        resolve_role_from_account(None, None, s("wren"), "/").unwrap(),
+        "wren"
     );
 }

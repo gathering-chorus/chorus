@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# @domain: cards
+# #4760 — intake at pull: werk-pull runs this before any build. Every AC line of
+# the card must carry a check that can fail (`check: <http|sparql|test> <target>`);
+# borg-prove reads the AC from the card itself and names each line without one.
+exec "${BORG_PROVE:-$HOME/.chorus/bin/borg-prove}" intake "$@"

@@ -1,0 +1,13 @@
+{ "apiVersion": "v1", "kind": "Role", "modelVersion": "unclassified", "vocabVersion": "1.30.0", "ontologyVersion": "0.3.0", "self": "/v1/roles/roles", "generatedFrom": { "graph": "urn:chorus:ontology", "shape": "chorus:RoleShape", "shapeVersion": "e9f4155de3a9dd92", "commit": "e9f4155de3a9dd92" }, "servedFrom": "urn:chorus:domains:roles", "data": [
+  { "name": "abby-normal", "label": "role-abby-normal", "status": "", "comment": "", "roleKind": "agent", "rolePriority": "4" },
+  { "name": "borg-queen", "label": "role-borg-queen", "status": "", "comment": "Prover: runs borg-prove after every land, files child cards on red (Jeff 2026-10-21 17:20 lets try to start borg queen)", "roleKind": "agent", "rolePriority": "5" },
+  { "name": "crawler", "label": "crawler", "status": "", "comment": "The code/tests walker identity — one crawler, one row shape (Jeff 2026-09-12). Least privilege: code and tests graphs only.", "roleKind": "automation", "rolePriority": "" },
+  { "name": "jeff", "label": "Jeff", "status": "", "comment": "Owner. Judgment, direction, meaning.", "roleKind": "human", "rolePriority": "0" },
+  { "name": "kade", "label": "Kade", "status": "", "comment": "Engineer. Build and delivery, werk, tests.", "roleKind": "agent", "rolePriority": "1" },
+  { "name": "nightly", "label": "nightly", "status": "", "comment": "The 03:00 automation identity — runs the suites, posts the results. Least-privilege principal (#3975); writes attributed to nightly, never to an agent.", "roleKind": "automation", "rolePriority": "" },
+  { "name": "silas", "label": "Silas", "status": "", "comment": "Architect. Observation layer, identity, authN.", "roleKind": "agent", "rolePriority": "2" },
+  { "name": "wren", "label": "Wren", "status": "", "comment": "Product Manager. Value first, ship small, have a position.", "roleKind": "agent", "rolePriority": "3" },
+  { "name": "zz-probe-20260923t193502z-role", "label": "zz-4267-zz-probe-20260923T193502Z-role-label", "status": "", "comment": "zz-4267-zz-probe-20260923T193502Z-role-comment", "roleKind": "zz-4267-zz-probe-20260923T193502Z-role-roleKind", "rolePriority": "" },
+  { "name": "zz-probe-20260926t120459z-52317-silas-role", "label": "zz-4267-zz-probe-20260926t120459z-52317-silas-role-label", "status": "", "comment": "zz-4267-zz-probe-20260926t120459z-52317-silas-role-comment", "roleKind": "zz-4267-zz-probe-20260926t120459z-52317-silas-role-roleKind", "rolePriority": "" },
+  { "name": "zz-q-role-3883", "label": "zz probe", "status": "", "comment": "zz probe", "roleKind": "zz probe", "rolePriority": "" }
+], "links": {}, "requiresAuth": false, "deprecation": null }

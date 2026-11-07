@@ -156,9 +156,28 @@ chorus:CollectionDomain a owl:Class ;
 # 2c2. DOMAIN COMPLETENESS — Actors, Scenarios, Contracts (#1899)
 # =============================================================================
 
+# #4662 (Jeff 2026-10-20 13:24) — "actor" means whoever acts, as Jeff, the spine
+# and pulse's actor-state already use it. The BDD subject this class used to name
+# is chorus:Persona now. Neither had rows, so nothing moved.
 chorus:Actor a owl:Class ;
     rdfs:label "Actor" ;
-    rdfs:comment "Someone acting in a test scenario (BDD): the subject of a Given/When/Then step. Not a team member; that is a Teammate. #4576." .
+    rdfs:comment "Whoever acts: a person, an agent or a service. Its actorKind says which. A Teammate is one kind of Actor on the team; a test scenario's subject is a Persona, not an Actor. #4662." .
+
+chorus:actorKind a owl:DatatypeProperty ;
+    rdfs:label "actor kind" ;
+    rdfs:comment "person, agent or service — the same three words as principalKind (#4348)." ;
+    rdfs:domain chorus:Actor ;
+    rdfs:range xsd:string .
+
+chorus:Persona a owl:Class ;
+    rdfs:label "Persona" ;
+    rdfs:comment "Someone acting in a test scenario (BDD): the subject of a Given/When/Then step, such as 'Jeff on his phone'. Not a team member and not an Actor. Was chorus:Actor until #4662." .
+
+chorus:playsRole a owl:DatatypeProperty ;
+    rdfs:label "plays role" ;
+    rdfs:comment "The part a Persona plays in a scenario, in words: Jeff, a peer role, an outsider." ;
+    rdfs:domain chorus:Persona ;
+    rdfs:range xsd:string .
 
 chorus:Scenario a owl:Class ;
     rdfs:label "Scenario" ;
@@ -170,8 +189,9 @@ chorus:Contract a owl:Class ;
 
 chorus:hasActor a owl:ObjectProperty ;
     rdfs:label "has actor" ;
+    rdfs:comment "A domain's BDD personas (#1899 completeness). The name predates #4662; it points at Persona. Renaming it to hasPersona changes the served field name, a drop the deploy audit refuses; it goes with the Teammate-as-Actor change." ;
     rdfs:domain chorus:Domain ;
-    rdfs:range chorus:Actor .
+    rdfs:range chorus:Persona .
 
 chorus:hasScenario a owl:ObjectProperty ;
     rdfs:label "has scenario" ;
@@ -185,11 +205,13 @@ chorus:hasContract a owl:ObjectProperty ;
 
 chorus:actorRole a owl:DatatypeProperty ;
     rdfs:label "actor role" ;
-    rdfs:domain chorus:Actor .
+    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662. Optional and not in PersonaShape; playsRole is the required field." ;
+    rdfs:domain chorus:Persona .
 
 chorus:actorAction a owl:DatatypeProperty ;
     rdfs:label "actor action" ;
-    rdfs:domain chorus:Actor .
+    rdfs:comment "BDD vocabulary (#1899): on Persona since #4662. Optional and not in PersonaShape; playsRole is the required field." ;
+    rdfs:domain chorus:Persona .
 
 chorus:scenarioGiven a owl:DatatypeProperty ;
     rdfs:label "given" ;
@@ -788,7 +810,7 @@ chorus:roles chorus:hosts chorus:service-loom .
 chorus:pulse a owl:Class ;
     rdfs:label "pulse" ;
     chorus:comment "Agent vital signs — heartbeats, declared role states, andon, nudge-delivery health." ;
-    chorus:purpose "Carry the team's vital signs — heartbeats, declared states, and delivery health — so liveness is observable, not assumed." ;
+    # #4702 — purpose removed: a Domain field on a Product; ProductShape is closed.
     chorus:ownedBy chorus:principal-wren ;   # #4175 — was role-silas; the store said role-wren and Silas ruled the store right 2026-09-14 ("coordination state, not observation"). Found by #4175's appointment check on its first real run.
     chorus:repoTarget "platform/pulse" .
     
@@ -913,9 +935,6 @@ chorus:video chorus:builtBy chorus:value-stream-gathering .
 # typed Product's definition above (one declaration site per product). Only edges
 # for products without inline lists (gathering, borgProduct) remain in this block.
 
-# Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
-chorus:observability chorus:hasDomain chorus:time .
-
 # (loom-policies, domains-domain, services-domain edges: on the product definitions above — #3603)
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
@@ -942,9 +961,6 @@ chorus:gathering chorus:hasDomain chorus:music, chorus:photos, chorus:books,
 
 # --- Product → Service consumption edges ---
 
-# observability-product consumes moved to borgProduct
-chorus:borg chorus:consumes chorus:infrastructure, chorus:logs-domain,
-                                   chorus:alerts, chorus:monitors, chorus:deploys-domain .
 
 # --- Product → Service provision edges ---
 
@@ -1517,7 +1533,7 @@ chorus:Property a owl:Class ;
 chorus:hasProperty a owl:ObjectProperty ;
     rdfs:label "has property" ;
     rdfs:comment "Attaches a config Property to any structural node it configures — uniform across the model. Effective value resolves by specificity (Service > Domain > Product > ValueStream/Step), nearest override wins. #3433." ;
-    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:Service ) ] ;
+    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:Service chorus:Role ) ] ;
     rdfs:range chorus:Property .
 
 chorus:propertyKey a owl:DatatypeProperty ;
@@ -1801,6 +1817,12 @@ chorus:docState        a owl:DatatypeProperty ; rdfs:label "docState" ; rdfs:ran
     rdfs:comment "One declared word for whether a document can be trusted: draft, current, superseded, retired. #4101: Jeff, 2026-09-03: 'what about state'. Products and services keep their lifecycle status; this is the document's own word." .
 chorus:writeCount      a owl:DatatypeProperty ; rdfs:label "write count" ; rdfs:range xsd:string ;
     rdfs:comment "How many times a row has been written, stamped by the door (#4101). Renamed from chorus:version on #4211: a property called version, beside a class called Version, reads as the same thing and is not. It counts writes; Version holds what the row used to say." .
+chorus:contentHash     a owl:DatatypeProperty ; rdfs:label "content hash" ; rdfs:range xsd:string ;
+    rdfs:comment "A hash of a row's content, stamped by the model deploy so an unchanged row is not rewritten. Named in ignoredProperties and written by athena-model, declared nowhere until #4757 (Silas ok, 2026-10-26)." .
+chorus:instancesGraph  a owl:DatatypeProperty ; rdfs:label "instances graph" ; rdfs:range xsd:string ;
+    rdfs:comment "The named graph that holds a domain's or shape's rows, as a string. DomainShape's sh:path named it; declared nowhere until #4757 (Silas ok, 2026-10-26)." .
+chorus:hasChild        a owl:ObjectProperty ; rdfs:label "has child" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Domain ;
+    rdfs:comment "The composition edge between domains (owns plus composes, Jeff 2026-10-25). DomainShape's sh:path named it; declared nowhere until #4757 (Silas ok, 2026-10-26)." .
 
 # --- #4102 Revision: the prior version of a row, kept by the door at every replace ---
 # Jeff, 2026-09-04: "at staples when we built athena we had a document level and field level
@@ -1860,6 +1882,8 @@ chorus:overview           a owl:DatatypeProperty ; rdfs:label "overview" ; rdfs:
 chorus:implementationPlan a owl:DatatypeProperty ; rdfs:label "implementation plan" ; rdfs:range xsd:string .
 chorus:pathToClose        a owl:DatatypeProperty ; rdfs:label "path to close" ; rdfs:range xsd:string .
 chorus:gaps               a owl:DatatypeProperty ; rdfs:label "gaps" ; rdfs:range xsd:string .
+chorus:pathPattern        a owl:DatatypeProperty ; rdfs:label "pathPattern" ; rdfs:range xsd:string ; rdfs:comment "#4885 — an extended regex; a code line matching it is a use of the domain, found by domain-flow inventory." .
+chorus:lossyPattern       a owl:DatatypeProperty ; rdfs:label "lossyPattern" ; rdfs:range xsd:string ; rdfs:comment "#4885 — an extended regex; a use matching it loses information and is marked lossy in the inventory." .
 
 # --- object props absent from v0.3.0 ---
 chorus:atStep        a owl:ObjectProperty ; rdfs:label "at step" ; rdfs:range chorus:ValueStreamStep ;
@@ -1883,6 +1907,12 @@ chorus:Layer a owl:Class ;
 chorus:inLayer a owl:ObjectProperty , owl:FunctionalProperty ;
     rdfs:label "in layer" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Layer ;
     rdfs:comment "The one layer a domain sits in (#4293). Required on every Domain once all rows carry it; until then minCount 0 on DomainShape and the ratchet is an AC of #4293." .
+# #4702 — Jeff 2026-10-22 16:02: "lets make it a flag these are high dependency
+# domains and services not a product per se". product-radius and domain-radius
+# read this flag instead of a hardcoded list.
+chorus:platform a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:label "platform" ; rdfs:range xsd:boolean ;
+    rdfs:comment "True when nearly every product depends on this domain or service, false when not (#4702, Jeff 2026-10-22). Written explicitly either way: absent means undecided, and product-radius / domain-radius flag it (platform-undecided). Optional on the shapes until every row carries it, then it ratchets to minCount 1, as inLayer does." .
 chorus:layerRank a owl:DatatypeProperty ;
     rdfs:label "layer rank" ; rdfs:domain chorus:Layer ; rdfs:range xsd:integer ;
     rdfs:comment "Order of layers, lowest first (foundation 0, build 1, capability 2). A dependsOn edge from a domain to a domain in a higher-ranked layer is refused." .
@@ -1966,6 +1996,7 @@ chorus:ProductShape a sh:NodeShape ;
     # sh:or, not sh:class: 84 of the live targets are Domains, 21 are Services.
     sh:property [ sh:path chorus:consumes         ; sh:minCount 0 ;
                   sh:or ( [ sh:class chorus:Service ] [ sh:class chorus:Domain ] ) ] ;
+    sh:property [ sh:path chorus:composes         ; sh:minCount 0 ; sh:class chorus:Domain ] ;   # #4702 — builds on a domain homed elsewhere
     sh:property [ sh:path chorus:provides         ; sh:minCount 0 ;
                   sh:or ( [ sh:class chorus:Service ] [ sh:class chorus:Domain ] ) ] ;
     sh:property [ sh:path chorus:hasServiceDesign ; sh:minCount 0 ; sh:class chorus:Document ] ;
@@ -1979,7 +2010,15 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:asIs            ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:toBe            ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:notInScope      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:references      ; sh:minCount 0 ; sh:datatype xsd:string ] .
+    sh:property [ sh:path chorus:references      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:repoTarget      ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4702 — where the product's code lives (pulse: platform/pulse)
+    # #4702 AC5 — closed: a field not on this shape (with its extensions in
+    # product-design-4018.ttl and clearing-domains-3860.ttl), nor a door stamp, is refused.
+    # chorus:label and chorus:comment duplicate rdfs:label and rdfs:comment (CoreShape
+    # serves them as name and description): a one-home miss, ignored here, not fixed.
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment chorus:label chorus:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
+                             chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn ) .
 
 # --- #4481: one parent per row, no links across hierarchies (Jeff 2026-10-10, reviewed with Wren) ---
 # The chain is value stream -> step -> domain -> service -> running unit. Each row stores
@@ -2020,6 +2059,7 @@ chorus:ownedBy       chorus:crossesHierarchy "ownership: every row names the pri
 chorus:hasDesignDoc  chorus:crossesHierarchy "design: a product, domain or service links to the document that holds its design." .
 chorus:hasDomain     chorus:crossesHierarchy "grouping and tag: a product groups domains (not their parent: Chorus is an assemblage, and werk spans two steps); an artifact tags the domain it is about." .
 chorus:consumes      chorus:crossesHierarchy "grouping: a product uses something it does not group." .
+chorus:composes      chorus:crossesHierarchy "grouping: a product builds on a domain another product groups (#4702)." .
 chorus:consumesEvent chorus:crossesHierarchy "event flow: who reads an event type." .
 chorus:producedBy    chorus:crossesHierarchy "event flow: who emits an event type; the pair of consumesEvent." .
 
@@ -2089,6 +2129,26 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDesignDoc      ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path chorus:platform ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;   # #4702 — high-dependency flag; absent = undecided
+    sh:property [ sh:path chorus:consumes ; sh:minCount 0 ; sh:or ( [ sh:class chorus:Domain ] [ sh:class chorus:Service ] ) ] ;   # #4702 — 49 Domain→Domain rows carried it with no shape
+    sh:property [ sh:path chorus:builtBy ; sh:minCount 0 ; sh:class chorus:ValueStream ] ;   # #4702 — 16 rows, no shape
+    sh:property [ sh:path chorus:runsOn ; sh:minCount 0 ; sh:class chorus:Machine ] ;   # #4702 — 7 rows, no shape
+    sh:property [ sh:path chorus:pathPattern ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4885 — extended regex: a code line matching it uses this domain (domain-flow inventory)
+    sh:property [ sh:path chorus:lossyPattern ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4885 — a use matching it loses information (time: Boston wall time with no offset)
+    # #4702 AC5 — kept: fields live rows carry that the shape never listed (shape-drift, 2026-10-22).
+    sh:property [ sh:path chorus:repoTarget ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # 44 rows — where the domain's code lives
+    sh:property [ sh:path chorus:hasRecordClass ; sh:minCount 0 ; sh:class owl:Class ] ;   # 3 rows — the record classes a domain's folds hold
+    sh:property [ sh:path chorus:contains ; sh:minCount 0 ; sh:nodeKind sh:IRI ] ;   # 2 rows — principles, roles hold typed instances
+    sh:property [ sh:path chorus:hasChild ; sh:minCount 0 ; sh:class chorus:Domain ] ;   # 1 row — pipelines hasChild cicd
+    sh:property [ sh:path chorus:hasProperty ; sh:minCount 0 ; sh:class chorus:Property ] ;   # 1 row — cards' gate property
+    # #4702 AC5 — closed: a field not listed above, nor on CoreShape, nor a door stamp, is refused.
+    # sh:closed does not follow sh:node, so CoreShape's paths and the stamps are named here.
+    # chorus:label and chorus:comment duplicate rdfs:label and rdfs:comment (CoreShape
+    # serves them as name and description): a one-home miss, ignored here, not fixed.
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment chorus:label chorus:comment dcterms:created dcterms:modified dcterms:creator dcterms:contributor
+                             chorus:contentHash chorus:provenance chorus:writeOrigin chorus:writeCount chorus:changedAt chorus:changedIn
+                             <urn:borg:ontology/usesEnvironment> ) ;   # #4708 — 9 rows carry it; a slash IRI has no camelCase name, so as a path it drops the door's Domain route
     sh:property [ sh:path chorus:inLayer ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Layer ] ;   # #4293 — ratchets to minCount 1 once every domain row carries a layer
     sh:property [ sh:path chorus:hosts ; sh:minCount 0 ; sh:class chorus:Service ] ;   # #4293 — served, so a domain page shows the services it hosts
     sh:property [ sh:path chorus:dependsOn ; sh:minCount 0 ] ;   # #4293 — served; the range (Domain | Service | Skill) is typed by #4289
@@ -2109,6 +2169,7 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:property [ sh:path chorus:oidcClientId     ; sh:datatype xsd:string ] ;   # #4412 — the OIDC client id people sign in through, when this service is a sign-in surface
+    sh:property [ sh:path chorus:platform         ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;   # #4702 — high-dependency flag; absent = undecided. Public, or the tiered Service read withholds it (#4010)
     sh:property [ sh:path chorus:builtFrom        ; sh:class chorus:CodeUnit ] ;   # #4499 — the code units this service is built from (crawler-written)
     sh:targetClass chorus:Service ; sh:node chorus:CoreShape ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
@@ -2435,9 +2496,19 @@ chorus:contains a owl:ObjectProperty ;
 
 chorus:consumes a owl:ObjectProperty ;
     rdfs:label "consumes" ;
-    rdfs:comment "Cross-cutting dependency — a product uses a shared service. Werk consumes Observability. The value stream step where the value is realized belongs on the consumption edge, not the service." ;
+    rdfs:comment "Cross-cutting dependency — a product or domain reads a domain or service it does not home. Werk consumes Observability. Never a platform domain (#4702): those are implicit for every product, and the radius tools flag consumes-platform. Measured 2026-10-22: Domain→Domain 49, Product→Domain 20, the declared Product→Service had gone stale (#4053 already typed the target as Domain or Service on ProductShape)." ;
+    rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain ) ] ;
+    rdfs:range  [ owl:unionOf ( chorus:Domain chorus:Service ) ] .
+
+# #4702 — Jeff 2026-10-22: "to me pulse is a composition (a message array) of cards
+# streams alerts board session", and 16:03 "yes pulse composes messages imagine the
+# domains u need to render clearing ui". hasDomain is a domain's one home; composes
+# builds on a domain homed elsewhere. Wren + Silas, 15:59.
+chorus:composes a owl:ObjectProperty ;
+    rdfs:label "composes" ;
+    rdfs:comment "A product builds something new out of a domain another product homes: pulse composes cards, messages and alerts into awareness. Not containment (that is hasDomain, the one home) and not a plain read (that is consumes)." ;
     rdfs:domain chorus:Product ;
-    rdfs:range chorus:Service .
+    rdfs:range chorus:Domain .
 
 chorus:provides a owl:ObjectProperty ;
     rdfs:label "provides" ;
@@ -2453,8 +2524,8 @@ chorus:consumptionStep a owl:ObjectProperty ;
 
 chorus:runsOn a owl:ObjectProperty ;
     rdfs:label "runs on" ;
-    rdfs:comment "Service runs on this machine." ;
-    rdfs:domain chorus:Service ;
+    rdfs:comment "Runs on this machine. Measured 2026-10-22 (#4702): 7 Domain rows and 1 Product carry it; the declared Service-only domain had gone stale." ;
+    rdfs:domain [ owl:unionOf ( chorus:Service chorus:Domain chorus:Product ) ] ;
     rdfs:range chorus:Machine .
 
 chorus:ownedBy a owl:ObjectProperty ;
@@ -2644,7 +2715,7 @@ chorus:toolType a owl:ObjectProperty ;
 
 chorus:builtBy a owl:ObjectProperty ;
     rdfs:label "builtBy" ;
-    rdfs:comment "Links a domain to the product that builds/maintains it." ;
+    rdfs:comment "Links a domain to the value stream that builds and maintains it (#4702: the comment said product; all 18 rows point at a ValueStream)." ;
     rdfs:domain chorus:Domain ;
     rdfs:range chorus:ValueStream .
 
@@ -2684,16 +2755,13 @@ chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing 
 # INSTANCE DATA — Tool ↔ Vertebra Feeds
 # =============================================================================
 
-chorus:look chorus:feeds chorus:Capturing .
-chorus:listen chorus:feeds chorus:Capturing .
-chorus:talk chorus:feeds chorus:Directing .
-chorus:clearing-tool chorus:feeds chorus:Directing .   # #3860 — tool edges follow the tool IRI
-chorus:clearing-tool chorus:indexes chorus:chorusTool .
-chorus:borg chorus:feeds chorus:Designing .
-chorus:borg chorus:decomposes chorus:gathering .
+# #4091: the tool edges (feeds, indexes) moved to designing/data/tool-instances.ttl with
+# their rows: an edge from a row belongs with the row, not in the schema graph,
+# where it read as an untyped instance once the rows were renamed tool-*.
+# #4702 — borg feeds Designing and borg decomposes gathering removed (Silas 16:18):
+# off ProductShape, which is closed; backed up before the land.
 
 # /chorus is the memory layer — it indexes everything, doesn't feed a specific vertebra
-chorus:chorusTool chorus:indexes chorus:gathering .
 
 # /werk IS the spine — it orchestrates workflows through all vertebrae
 # (not a feed relationship — it's the container)
@@ -2702,8 +2770,8 @@ chorus:chorusTool chorus:indexes chorus:gathering .
 # INSTANCE DATA — Product Feedback Loop
 # =============================================================================
 
-chorus:gathering chorus:outputOf chorus:Building, chorus:Proving .
-chorus:gathering chorus:inputTo chorus:Capturing .
+# #4702 — gathering outputOf Building, Proving and inputTo Capturing removed (Jeff
+# 2026-10-22 16:51, "yes, drop"): off ProductShape, which is closed; backed up.
 
 
 

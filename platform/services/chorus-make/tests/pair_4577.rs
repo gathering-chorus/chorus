@@ -55,10 +55,15 @@ fn negative_proof_a_human_row_answered_by_a_param_the_pipeline_lacks_is_refused(
 }
 
 #[test]
-fn the_hand_off_enqueues_cicd_and_the_local_proof_waits_for_cicd_test() {
+fn the_hand_off_routes_through_pipeline_start() {
     let y = generate_straight("pair", &pipe(), &rows(), &known()).unwrap();
-    assert!(y.contains("    command: \"env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}\"\n"), "{y}");
-    assert!(y.contains("    action: dag.run\n    with:\n      dag: cicd-test\n      params: \"CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff\"\n"), "{y}");
+    // #4852 — the hand-off routes on the card's diff (model -> athena, else cicd);
+    // pipeline-start owns the rule, #4753's supersede and the live-run check
+    assert!(y.contains("    command: \"env -u CHORUS_ROLE ${CHORUS_HOME}/platform/scripts/pipeline-start handoff ${CARD} ${ROLE}\"\n"), "{y}");
+    // NEGATIVE PROOF (#4852): no bare cicd enqueue is left to skip athena for a model card
+    assert!(!y.contains("enqueue cicd"), "{y}");
+    // #4752 — no local proof: cicd's own test step is the proof (tests/pair_ends_4752.rs)
+    assert!(!y.contains("cicd-test"), "{y}");
 }
 
 /// #4577 pair run 1 (10-18 07:43): dagu ran the dag.enqueue hand-off as a
@@ -77,11 +82,13 @@ fn a_failure_runs_the_pairs_own_handler_not_the_builders_nudge() {
     let y = generate_straight("pair", &pipe(), &rows(), &known()).unwrap();
     assert!(y.contains("  failure:\n    command: \"${CHORUS_HOME}/platform/scripts/pair red ${CARD} ${ROLE} ${NAVIGATOR} ${DAG_RUN_ID}\"\n"), "{y}");
     assert!(!y.contains("ops-nudge"), "{y}");
-    // negative proof: without onFailure the builder's nudge comes back
+    // #4888 — the pair's one wake is its exit handler; the failure row only routes
+    assert_eq!(y.matches("platform/scripts/run-finished").count(), 1, "{y}");
+    // negative proof: without onFailure nothing routes, and still no nudge comes back
     let mut p = pipe();
     p.on_failure.clear();
     let y = generate_straight("pair", &p, &rows(), &known()).unwrap();
-    assert!(y.contains("ops-nudge ${ROLE}") && !y.contains("pair red"), "{y}");
+    assert!(!y.contains("ops-nudge") && !y.contains("pair red") && y.contains("run-finished"), "{y}");
 }
 
 #[test]

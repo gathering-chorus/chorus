@@ -35,11 +35,12 @@ impl Status {
     }
 }
 
-/// Where Tasks keep their files: `$CHORUS_RUNNER_TASKS`, else `~/.chorus/runner-tasks`.
+/// Where Tasks keep their files: `$CHORUS_RUNNER_TASKS`, else `runner-tasks` in the
+/// team's state dir (#4915: was the caller's own HOME, so a role on its own account
+/// read and wrote an empty folder — the mob script already resolved it this way).
 pub fn tasks_dir() -> PathBuf {
-    std::env::var("CHORUS_RUNNER_TASKS").map(PathBuf::from).unwrap_or_else(|_| {
-        PathBuf::from(format!("{}/.chorus/runner-tasks", std::env::var("HOME").unwrap_or_default()))
-    })
+    std::env::var("CHORUS_RUNNER_TASKS").map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(crate::server::state_dir()).join("runner-tasks"))
 }
 
 fn file(dir: &Path, id: &str, ext: &str) -> PathBuf {
@@ -63,7 +64,9 @@ pub fn spawn(dir: &Path, id: &str, binary: &str, argv: &[String], env: &[(&'stat
     // never re-split); the exit code is written once it finishes, runner or not
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c")
-        .arg("\"$0\" \"$@\"; echo $? > \"$CHORUS_TASK_EXIT\"")
+        // #4661 — the code goes to a temp file and is renamed into place, so a
+        // reader never sees an exit file that exists but is still empty
+        .arg("\"$0\" \"$@\"; echo $? > \"$CHORUS_TASK_EXIT.tmp\" && mv \"$CHORUS_TASK_EXIT.tmp\" \"$CHORUS_TASK_EXIT\"")
         .arg(binary)
         .args(argv)
         .env("CHORUS_TASK_EXIT", &exit)
@@ -86,8 +89,10 @@ pub fn spawn(dir: &Path, id: &str, binary: &str, argv: &[String], env: &[(&'stat
 
 /// What a Task is doing now, from its files alone.
 pub fn status(dir: &Path, id: &str) -> Status {
-    if let Ok(code) = std::fs::read_to_string(file(dir, id, "exit")) {
-        return code.trim().parse().map(Status::Done).unwrap_or(Status::Lost);
+    // #4661 — an exit file that does not hold a code yet (being written) is not
+    // an answer: fall through to the process check instead of reading Lost
+    if let Some(code) = std::fs::read_to_string(file(dir, id, "exit")).ok().and_then(|c| c.trim().parse().ok()) {
+        return Status::Done(code);
     }
     let Some(rec) = std::fs::read_to_string(file(dir, id, "json")).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()) else {
         return Status::Unknown;

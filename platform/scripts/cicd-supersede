@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""cicd-supersede <card> <role> — #4753: one go per card.
+
+Before a card's new cicd run is enqueued, every older cicd run of that card
+still waiting (at Jeff's go) is stopped by name and the stop is put on the
+spine as card.run.superseded. It is never answered as Jeff: a stop is not a
+go or a no (Jeff 10-26 12:11: "ask for go with dont go in fine print").
+
+The card's runs are read the way /cws reads them (chorus-werk-status). dagu
+unreadable stops nothing and says so.
+"""
+import os
+import re
+import subprocess
+import sys
+
+
+# #4758 — the go waits in the go half (cicd-go, run go-<cicd run>); a cicd run
+# from before the split still waits at its own go. A land waiting at Borg
+# Queen's step (cicd-land) is never touched (Kade's trap).
+GO_DAGS = ("cicd-go", "cicd")
+
+
+def superseded(runs, card=None):
+    """(dag, run) of the runs that wait at the go: cicd-land and other runs are never touched."""
+    want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card))) if card else None
+    return [(r.get("name"), r.get("dagRunId")) for r in runs
+            if r.get("name") in GO_DAGS and r.get("statusLabel") == "waiting"
+            and (want is None or want.search(r.get("params") or ""))]
+
+
+def end_cmd(dagu, cfg, dag, run_id, role):
+    """#4771 — how an older go is ended. dagu `stop` cannot end a run that waits at a
+    human task (it answers "not running" and the run stays Waiting, measured 10-19 and
+    11-02), so a go half is answered as the superseding role with decision no: the
+    land's precondition (decision go) is unmet and nothing lands. Never as Jeff."""
+    if dag == "cicd-go":
+        return [dagu, "--config", cfg, "human-task", "complete", dag, "--run-id", run_id,
+                "--step", "skill_werk_go", "--input", f"accepter={role}", "--input", "decision=no"]
+    return [dagu, "--config", cfg, "stop", dag, "--run-id", run_id]
+
+
+def still_waiting(dagu, cfg, dag, run_id):
+    """True when dagu still reports the run Waiting after the end — the end did not take."""
+    st = subprocess.run([dagu, "--config", cfg, "status", dag, "--run-id", run_id], capture_output=True, text=True)
+    first = ((st.stdout or "").splitlines() or [""])[0]
+    return first.split(" - ")[0].strip() == "Waiting"
+
+
+def supersede(card, role, runs):
+    if runs is None:
+        print(f"cicd-supersede: #{card}: dagu unreadable — nothing stopped")
+        return
+    home = os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus"))
+    dagu = os.environ.get("DAGU", "/opt/homebrew/bin/dagu")
+    cfg = f"{home}/platform/config/dagu.yaml"
+    log = os.environ.get("CHORUS_LOG_BIN", f"{home}/platform/scripts/chorus-log")
+    for dag, run_id in superseded(runs, card):
+        end = subprocess.run(end_cmd(dagu, cfg, dag, run_id, role), capture_output=True, text=True)
+        if end.returncode != 0:
+            how = f"stop failed ({(end.stderr or end.stdout).strip()[:200]})"
+        elif still_waiting(dagu, cfg, dag, run_id):
+            how = "stop failed (dagu still reports it waiting)"
+        else:
+            how = "stopped"
+        print(f"cicd-supersede: #{card}: older run {run_id} waiting at the go — {how}")
+        subprocess.run([log, "card.run.superseded", role, f"card={card}", f"run_id={run_id}", f"result={how.split(' ')[0]}"],
+                       capture_output=True)
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit("usage: cicd-supersede <card> <role>")
+    import importlib.machinery
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    loader = importlib.machinery.SourceFileLoader("cws", os.path.join(here, "chorus-werk-status"))
+    spec = importlib.util.spec_from_loader("cws", loader)
+    cws = importlib.util.module_from_spec(spec)
+    loader.exec_module(cws)
+    halves = [cws.dagu_runs(sys.argv[1], dag=d) for d in GO_DAGS]
+    supersede(sys.argv[1], sys.argv[2], None if any(h is None for h in halves) else [r for h in halves for r in h])

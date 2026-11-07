@@ -59,6 +59,8 @@ pub fn role_pattern(role: &str) -> Option<&'static str> {
         "wren" => Some("wren"),
         "silas" => Some("silas"),
         "kade" => Some("kade"),
+        "borg-queen" => Some("borg-queen"),
+        "abby-normal" => Some("abby-normal"),
         _ => None,
     }
 }
@@ -653,6 +655,8 @@ mod role_pattern_tests {
         assert_eq!(role_pattern("wren"), Some("wren"));
         assert_eq!(role_pattern("silas"), Some("silas"));
         assert_eq!(role_pattern("kade"), Some("kade"));
+        assert_eq!(role_pattern("borg-queen"), Some("borg-queen"));
+        assert_eq!(role_pattern("abby-normal"), Some("abby-normal"));
     }
 
     #[test]

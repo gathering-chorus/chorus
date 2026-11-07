@@ -56,10 +56,6 @@ pub struct Runner {
     pub collections: Arc<RwLock<Vec<String>>>,
     /// #4513 — the Skill rows offered as tools, re-read on every tools/list.
     pub skills: Arc<RwLock<Vec<SkillTool>>>,
-    /// #4515 — `chorus-runner stdio`: the caller verified once at start (a
-    /// credential minted as the process's own account and checked by the same
-    /// verifier as the gate). None on the HTTP server, where the gate decides.
-    pub stdio_caller: Option<String>,
 }
 
 impl Runner {
@@ -111,22 +107,72 @@ pub fn state_dir() -> String {
 /// Which binary a tool runs. #4514 — the caller's werk bin slot first, as the
 /// cicd pipeline's PATH does today (${CHORUS_WERK_BASE}/<role>-bin first), so a
 /// card that changes a verb runs its own build; then the installed copy.
-pub fn binary_path(name: &str, who: &str) -> String {
+/// #4853 — a slot binary runs as the runner's account, so a slot any other
+/// account could write is refused, never run and never skipped quietly.
+pub fn binary_path(name: &str, who: &str) -> Result<String, String> {
     if let Ok(base) = std::env::var("CHORUS_WERK_BASE") {
         let slot = format!("{base}/{who}-bin/{name}");
         if !who.is_empty() && std::path::Path::new(&slot).is_file() {
-            return slot;
+            slot_trusted(std::path::Path::new(&slot))?;
+            return Ok(slot);
         }
     }
     let installed = format!("{}/bin/{name}", state_dir());
     if std::path::Path::new(&installed).exists() {
-        return installed;
+        return Ok(installed);
     }
     // #4515 — a row naming a Chorus script (cards, agent-state.sh): the
     // runner's launchd PATH has ~/.chorus/bin only.
     let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
     let script = format!("{home}/platform/scripts/{name}");
-    if !name.contains('/') && std::path::Path::new(&script).is_file() { script } else { name.to_string() }
+    Ok(if !name.contains('/') && std::path::Path::new(&script).is_file() { script } else { name.to_string() })
+}
+
+/// #4853 — the account this runner runs as (read once).
+fn runner_uid() -> Option<u32> {
+    static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *UID.get_or_init(|| {
+        let out = Command::new("/usr/bin/id").arg("-u").output().ok()?;
+        String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+    })
+}
+
+/// #4853 — a slot binary and the directory holding it must both be owned by
+/// this account, root or the installer, and not writable by group or other. Otherwise any
+/// account in group chorus could plant code that runs as the runner's account.
+pub fn slot_trusted(slot: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let me = runner_uid().ok_or("could not read the runner's own account, so no slot binary runs")?;
+    // the installer: whoever owns the installed bin dir (~/.chorus/bin, jeffbridwell).
+    // A role running `chorus-runner call` itself may run a slot the installer wrote;
+    // the shared runner (which IS the installer) still refuses a role-owned slot.
+    let installer = std::fs::metadata("/Users/jeffbridwell/.chorus/bin").map(|m| m.uid()).or_else(|_| std::fs::metadata(format!("{}/bin", state_dir())).map(|m| m.uid())).ok();
+    let trusted = [Some(me), Some(0), installer];
+    let dir = slot.parent().unwrap_or(slot);
+    for p in [dir, slot] {
+        // never follow a link: a symlinked slot points at code the slot owner does not vouch for
+        let m = std::fs::symlink_metadata(p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        if m.file_type().is_symlink() {
+            return Err(format!("refusing to run {}: {} is a symlink (#4853)", slot.display(), p.display()));
+        }
+        let owner_ok = trusted.contains(&Some(m.uid()));
+        if let Some(why) = slot_refusal(if owner_ok { me } else { m.uid() }, m.mode(), me) {
+            return Err(format!("refusing to run {}: {} {why} (#4853: a slot must be owned by the runner's account and writable only by it)", slot.display(), p.display()));
+        }
+    }
+    Ok(())
+}
+
+/// #4853 — pure: why a path with this owner and mode may not hold code the
+/// runner runs, or None.
+pub fn slot_refusal(owner_uid: u32, mode: u32, runner_uid: u32) -> Option<String> {
+    if owner_uid != runner_uid {
+        return Some(format!("is owned by uid {owner_uid}, not the runner (uid {runner_uid})"));
+    }
+    if mode & 0o022 != 0 {
+        return Some(format!("is writable by group or other (mode {:o})", mode & 0o7777));
+    }
+    None
 }
 
 /// #4514 — everything a tool call decides before it runs, shared by the MCP
@@ -181,7 +227,8 @@ pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json:
     } else {
         None
     };
-    Ok(Prepared { binary: binary_path(&tool.binary, &who), argv, env: crate::skills::child_env(&who, &token, trace), who, http })
+    let binary = binary_path(&tool.binary, &who).map_err(|e| (e, 403))?;
+    Ok(Prepared { binary, argv, env: crate::skills::child_env(&who, &token, trace), who, http })
 }
 
 /// #4515 — run an http tool. The credential and body go to curl through its
@@ -199,8 +246,8 @@ pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, t
     let config = format!(
         "url = \"{url}\"\nrequest = \"{method}\"\nsilent\nmax-time = {timeout_s}\nwrite-out = \"\\n%{{http_code}}\"\nheader = \"Content-Type: application/json\"\nheader = \"traceparent: {}\"\nheader = \"Authorization: Bearer {token}\"\n{}",
         crate::traceparent(trace),
-        // a GET carries its arguments in the route, never a body
-        if method == "GET" { String::new() } else { format!("data-binary = \"@{}\"\n", body_file.display()) }
+        // a GET or a DELETE (#4762) carries its arguments in the route, never a body
+        if method == "GET" || method == "DELETE" { String::new() } else { format!("data-binary = \"@{}\"\n", body_file.display()) }
     );
     let out = Command::new("curl")
         .args(["-K", "-"])
@@ -225,6 +272,28 @@ pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, t
     (ok, format!("{method} {url} → {code}\n{}", resp.chars().take(4000).collect::<String>()), if code == 0 { 502 } else { code })
 }
 
+/// #4762 review (Wren, Kade, Abby) — a class's generated spec, read once per
+/// minute per door and class, not on every call. Only a readable spec is kept.
+fn spec_for(base: &str, collection: &str) -> String {
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>> = OnceLock::new();
+    let key = format!("{base}{collection}");
+    let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
+    if let Some((at, spec)) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        if at.elapsed() < std::time::Duration::from_secs(60) {
+            return spec;
+        }
+    }
+    let spec = Command::new("curl").args(["-s", "--max-time", "10", &format!("{base}/v1{collection}/openapi.json")]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    if serde_json::from_str::<serde_json::Value>(&spec).is_ok() {
+        if let Ok(mut c) = cache.lock() {
+            c.insert(key, (std::time::Instant::now(), spec.clone()));
+        }
+    }
+    spec
+}
+
 /// #4515 (Jeff 2026-10-14) — one athena-get/-list/-add/-set call, made AS
 /// THE CALLER: the caller's own verified credential when the gate verified
 /// one, else a credential minted for the caller (stdio, the CLI) — never a
@@ -242,6 +311,12 @@ pub fn run_athena(base: &str, tool: &str, args: &serde_json::Map<String, serde_j
     let who = crate::skills::bare(caller);
     if who.is_empty() || who == "unverified" {
         return (false, format!("{tool} needs a verified caller"), 403);
+    }
+    // #4762 — the class's generated spec says which methods it allows
+    let collection: String = path.split(['/', '?']).filter(|s| !s.is_empty()).skip(1).take(2).fold(String::new(), |a, s| format!("{a}/{s}"));
+    let spec = spec_for(&base, &collection);
+    if let Err(b) = crate::declared(&spec, tool, &collection) {
+        return (false, b.reason, b.status);
     }
     let token = match caller_token.map(String::from).or_else(|| identity_token(who)) {
         Some(t) => t,
@@ -337,15 +412,15 @@ pub fn task_status_text(id: &str, caller: &str) -> Result<String, String> {
     Ok(format!("{id}: {}\n{}", crate::tasks::status(&dir, id).word(), crate::tasks::tail(&dir, id, 12)))
 }
 
-fn caller_of(ctx: &RequestContext<RoleServer>, stdio: Option<&str>) -> String {
+fn caller_of(ctx: &RequestContext<RoleServer>) -> String {
     let gated = ctx.extensions.get::<http::request::Parts>().and_then(|p| p.extensions.get::<Caller>()).map(|c| c.0.clone());
-    pick_caller(gated, stdio)
+    pick_caller(gated)
 }
 
-/// #4515 — the gate's verified caller (HTTP), else the stdio process's own
-/// verified caller, else nobody. Pure.
-pub fn pick_caller(gated: Option<String>, stdio: Option<&str>) -> String {
-    gated.or_else(|| stdio.map(String::from)).filter(|c| !c.is_empty()).unwrap_or_else(|| "unverified".into())
+/// The gate's verified caller, else nobody. Pure. #4851: the stdio caller is
+/// gone — stdio forwards to this server, whose gate verifies every call.
+pub fn pick_caller(gated: Option<String>) -> String {
+    gated.filter(|c| !c.is_empty()).unwrap_or_else(|| "unverified".into())
 }
 
 impl ServerHandler for Runner {
@@ -376,7 +451,7 @@ impl ServerHandler for Runner {
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
-        let caller = caller_of(&ctx, self.stdio_caller.as_deref());
+        let caller = caller_of(&ctx);
         let tool = request.name.to_string();
         let trace = new_trace_id();
         let args = request.arguments.unwrap_or_default();
@@ -472,7 +547,7 @@ pub fn refresh_collections(into: &Arc<RwLock<Vec<String>>>) {
 
 /// The whole surface: /mcp behind the gate. Every route, every method.
 pub fn router(verifier: Arc<OidcVerifier>, collections: Arc<RwLock<Vec<String>>>) -> axum::Router {
-    let runner = Runner { collections, skills: Arc::new(RwLock::new(Vec::new())), stdio_caller: None };
+    let runner = Runner { collections, skills: Arc::new(RwLock::new(Vec::new())) };
     let config = StreamableHttpServerConfig::default().with_json_response(true).with_sse_keep_alive(None);
     let service: StreamableHttpService<Runner, LocalSessionManager> =
         StreamableHttpService::new(move || Ok(runner.clone()), Default::default(), config);

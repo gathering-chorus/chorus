@@ -69,7 +69,7 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
     });
   });
 
-  test('unaddressed Jeff message routes to every role (wren, silas, kade, abby-normal, #4604)', () => {
+  test('unaddressed Jeff message routes to every role (wren, silas, kade, abby-normal, borg-queen, #4604, #4724)', () => {
     const r = new MessageRouter();
     const msg: ClearingMessage = {
       id: 'note-jeff-no-mention',
@@ -81,8 +81,8 @@ describe('Clearing v2: Message Router & Nudge Dispatch', () => {
     };
 
     const nudges = r.extractNudges(msg);
-    expect(nudges.length).toBe(4);
-    expect(new Set(nudges.map((n) => n.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal']));
+    expect(nudges.length).toBe(5);
+    expect(new Set(nudges.map((n) => n.to))).toEqual(new Set(['wren', 'silas', 'kade', 'abby-normal', 'borg-queen']));
     expect(nudges.every((n) => n.from === 'jeff' && n.content === 'Status check on the release')).toBe(true);
   });
 

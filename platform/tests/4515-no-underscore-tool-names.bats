@@ -6,7 +6,9 @@
 # pipeline, <product>-<step>[-<object>] runs one step. Every old name must be
 # gone from anything an agent, hook, script or permission reads:
 #   - the underscore names of the old MCP server (chorus_nudge_message, ...),
-#   - the hyphen names they had for a day (chorus-nudge-message, herald-run, ...),
+#   - the hyphen names they had for a day (chorus-nudge-message, ...),
+#     herald-run is live again (the sensor jobs call it, #4634), so only
+#     herald_run is old (#4515 reopen, nightly 10-21 05:03).
 #   - the proving and deploy rows' old names (prove-intake, deploy-demo, ...),
 #   - the retired tools (priorities readout, commit status, design refresh, ...).
 # History (html, jsonl, briefs, journals, ADRs, notes, backups, logs,
@@ -19,7 +21,7 @@ SELF="$(basename "$BATS_TEST_FILENAME")"
 # are the NEW pipeline starters, so only their underscore spellings are old.
 # deploy-demo / deploy-prod are old only as a tool (skill-…, `call …`, mcp__…):
 # /cws shortens werk-deploy-prod to deploy-prod on its board line (Jeff's view).
-OLD='chorus[_-](nudge[_-]message|cards[_-](add|set|view|move|done|tag)|card[_-]add[_-]jeff|wip|sup|logs[_-](for[_-](card|trace|branch)|recent[_-]errors)|flow[_-]report|blast[_-]radius|pain[_-](rollup|card)|service[_-](status|start|stop|restart|deploy|rollback)|decisions[_-](list|get)|principles[_-](list|get|create)|priorities[_-]readout|commit[_-]status|unpull[_-]card|design[_-]refresh|register[_-]feedback)|chorus_(werk|athena)|herald[_-]run|prove-(intake|verify|stage|verdict|in-prod|record)|(skill-|call |mcp__chorus-api__)deploy-(demo|prod)'
+OLD='chorus[_-](nudge[_-]message|cards[_-](add|set|view|move|done|tag)|card[_-]add[_-]jeff|wip|sup|logs[_-](for[_-](card|trace|branch)|recent[_-]errors)|flow[_-]report|blast[_-]radius|pain[_-](rollup|card)|service[_-](status|start|stop|restart|deploy|rollback)|decisions[_-](list|get)|principles[_-](list|get|create)|priorities[_-]readout|commit[_-]status|unpull[_-]card|design[_-]refresh|register[_-]feedback)|chorus_(werk|athena)|herald_run|prove-(intake|verify|stage|verdict|in-prod|record)|(skill-|call |mcp__chorus-api__)deploy-(demo|prod)'
 
 # Prints file:match for every old name in the files git tracks under $1, bare or
 # behind an MCP server prefix (mcp__chorus-api__<name>). Tracked files only (Silas,
@@ -65,21 +67,23 @@ code_comments_dropped() {
   mkdir -p "$scan/skills/x"
   # built from parts so this file never names the old tool itself
   printf 'call mcp__chorus-api__%s({ role: "wren" })\n' "chorus""_wip" > "$scan/skills/x/SKILL.md"
+  printf 'chorus-mcp-call.sh silas %s {}\n' "herald""_run" >> "$scan/skills/x/SKILL.md"
   track "$scan"; hits="$(old_tool_names "$scan")"
   echo "caught: $hits"
   [[ "$hits" == *"chorus""_wip"* ]] || { echo "check missed a planted old name"; false; }
+  [[ "$hits" == *"herald""_run"* ]] || { echo "missed the old underscore sensor tool"; false; }
 }
 
 @test "NEGATIVE PROOF: an old hyphen name, bare or prefixed, is caught" {
   scan="$BATS_TEST_TMPDIR/hyphen"
   mkdir -p "$scan/platform/scripts" "$scan/skills/y"
-  printf 'chorus-mcp-call.sh silas %s {}\n' "herald""-run" > "$scan/platform/scripts/job.sh"
+  printf 'chorus-mcp-call.sh silas %s {}\n' "chorus""-sup" > "$scan/platform/scripts/job.sh"
   printf 'chorus-runner call %s card=1\n' "deploy""-prod" >> "$scan/platform/scripts/job.sh"
   printf 'mcp__chorus-api__%s({ to: "kade" })\n' "chorus-nudge""-message" > "$scan/skills/y/SKILL.md"
   printf 'const ROWS: &str = "intake\\t1\\t%s\\tdeterministic";\n' "prove""-intake" > "$scan/platform/scripts/rows.rs"
   track "$scan"; hits="$(old_tool_names "$scan")"
   echo "caught: $hits"
-  [[ "$hits" == *"herald""-run"* ]] || { echo "missed a bare old hyphen name"; false; }
+  [[ "$hits" == *"chorus""-sup"* ]] || { echo "missed a bare old hyphen name"; false; }
   [[ "$hits" == *"deploy""-prod"* ]] || { echo "missed an old deploy row name"; false; }
   [[ "$hits" == *"chorus-nudge""-message"* ]] || { echo "missed a prefixed old hyphen name"; false; }
   [[ "$hits" == *"prove""-intake"* ]] || { echo "missed an old name after a \\t escape in a string"; false; }
@@ -89,6 +93,7 @@ code_comments_dropped() {
   scan="$BATS_TEST_TMPDIR/clean"
   mkdir -p "$scan/skills/x" "$scan/roles/wren/briefs"
   printf 'mcp__chorus-api__clearing-nudge, mcp__chorus-api__chorus-werk, borg-tend-herald\n' > "$scan/skills/x/SKILL.md"
+  printf 'chorus-mcp-call.sh silas herald-run {"sensor":"messages"}\n' >> "$scan/skills/x/SKILL.md"
   printf 'werk-deploy-demo werk-deploy-prod borg-verify-in-prod clearing-wip ~/CascadeProjects/chorus-werk/wren-1\n' >> "$scan/skills/x/SKILL.md"
   printf 'mcp__chorus-api__%s\n' "chorus""_wip" > "$scan/roles/wren/briefs/old.md"
   track "$scan"; hits="$(old_tool_names "$scan")"

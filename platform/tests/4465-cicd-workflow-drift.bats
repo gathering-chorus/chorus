@@ -17,6 +17,9 @@ setup() {
   [ -f "$WF" ]
   run "$CM" check cicd "$ROWS" "$WF"
   [ "$status" -eq 0 ]
+  # #4758 — the go half (Jeff's go, then the land enqueue) is generated too
+  run "$CM" check cicd-go "$ROWS" "$ROOT/platform/pipelines/cicd-go.yaml"
+  [ "$status" -eq 0 ]
 }
 
 @test "negative proof: a hand-edited workflow is drift" {
@@ -36,11 +39,17 @@ setup() {
   run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$WF"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Result: Succeeded"* ]] || return 1
+  # #4758 — the go half, where the go step now is
+  run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$ROOT/platform/pipelines/cicd-go.yaml"
+  [ "$status" -eq 0 ]
 }
 
 @test "negative proof: dagu refuses a go step with no id" {
   command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
-  grep -v '    id: skill_werk_go' "$WF" > "$BATS_TEST_TMPDIR/noid.yaml"
+  # #4758 — the go step lives in the go half; the edit must remove a line, or this proves nothing
+  GO="$ROOT/platform/pipelines/cicd-go.yaml"
+  grep -q '    id: skill_werk_go' "$GO"
+  grep -v '    id: skill_werk_go' "$GO" > "$BATS_TEST_TMPDIR/noid.yaml"
   run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$BATS_TEST_TMPDIR/noid.yaml"
   [ "$status" -ne 0 ]
 }

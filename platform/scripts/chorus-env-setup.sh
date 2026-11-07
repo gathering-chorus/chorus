@@ -42,14 +42,16 @@ export CHORUS_ROOT="$__chorus_env_root"
 # events a day were written with no owner. The werk slot's owner is the segment
 # before the first "-" — the same rule from_werk_slot() applies (types.rs:48).
 case "$PWD" in
-  */roles/wren*)          export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
-  */roles/silas*)         export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
-  */roles/kade*)          export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
-  */roles/abby-normal*)   export CHORUS_ROLE=abby-normal DEPLOY_ROLE=abby-normal ;;  # #4458
-  */chorus-werk/wren-*)   export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
-  */chorus-werk/silas-*)  export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
-  */chorus-werk/kade-*)   export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
-  */chorus-werk/abby-normal-*) export CHORUS_ROLE=abby-normal DEPLOY_ROLE=abby-normal ;;
+  */roles/wren*)          export CHORUS_ROLE=wren  DEPLOY_ROLE="${DEPLOY_ROLE:-wren}"  ;;
+  */roles/silas*)         export CHORUS_ROLE=silas DEPLOY_ROLE="${DEPLOY_ROLE:-silas}" ;;
+  */roles/kade*)          export CHORUS_ROLE=kade  DEPLOY_ROLE="${DEPLOY_ROLE:-kade}"  ;;
+  */roles/abby-normal*)   export CHORUS_ROLE=abby-normal DEPLOY_ROLE="${DEPLOY_ROLE:-abby-normal}" ;;  # #4458
+  */roles/borg-queen*)    export CHORUS_ROLE=borg-queen  DEPLOY_ROLE="${DEPLOY_ROLE:-borg-queen}"  ;;  # #4780
+  */chorus-werk/wren-*)   export CHORUS_ROLE=wren  DEPLOY_ROLE="${DEPLOY_ROLE:-wren}"  ;;
+  */chorus-werk/silas-*)  export CHORUS_ROLE=silas DEPLOY_ROLE="${DEPLOY_ROLE:-silas}" ;;
+  */chorus-werk/kade-*)   export CHORUS_ROLE=kade  DEPLOY_ROLE="${DEPLOY_ROLE:-kade}"  ;;
+  */chorus-werk/abby-normal-*) export CHORUS_ROLE=abby-normal DEPLOY_ROLE="${DEPLOY_ROLE:-abby-normal}" ;;
+  */chorus-werk/borg-queen-*)  export CHORUS_ROLE=borg-queen  DEPLOY_ROLE="${DEPLOY_ROLE:-borg-queen}"  ;;
 esac
 export DEPLOY_ROLE
 
@@ -111,6 +113,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
       wren)  export WREN_WERK="$__chorus_env_werk_dir"   ;;
       silas) export SILAS_WERK="$__chorus_env_werk_dir"  ;;
       abby-normal) export ABBY_NORMAL_WERK="$__chorus_env_werk_dir" ;;
+      borg-queen)  export BORG_QUEEN_WERK="$__chorus_env_werk_dir"  ;;
     esac
   fi
   unset __chorus_env_werk_dir __chorus_env_werk_count
@@ -140,6 +143,7 @@ fi
 # Prepend to PATH so signed installs override target/release builds.
 # Idempotent: re-sourcing does not duplicate the entry.
 export CHORUS_BIN="$CHORUS_STATE_DIR/bin"
+export CHORUS_HOOKS_RUN_DIR="${CHORUS_HOOKS_RUN_DIR:-$CHORUS_STATE_DIR/run-agents}"
 case ":$PATH:" in
   *":$CHORUS_BIN:"*) ;;  # already present, no-op
   *) export PATH="$CHORUS_BIN:$PATH" ;;
@@ -165,7 +169,8 @@ export WERK_KADE_BIN="$CHORUS_WERK_BASE/kade-bin"
 export WERK_WREN_BIN="$CHORUS_WERK_BASE/wren-bin"
 export WERK_SILAS_BIN="$CHORUS_WERK_BASE/silas-bin"
 export WERK_ABBY_NORMAL_BIN="$CHORUS_WERK_BASE/abby-normal-bin"
-mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" "$WERK_ABBY_NORMAL_BIN" 2>/dev/null || true
+export WERK_BORG_QUEEN_BIN="$CHORUS_WERK_BASE/borg-queen-bin"
+mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" "$WERK_ABBY_NORMAL_BIN" "$WERK_BORG_QUEEN_BIN" 2>/dev/null || true
 
 # PATH-prefix only the CURRENT role's slot — that part IS session-scoped: a role
 # resolves its own in-flight build before canonical. A role-less daemon skips
@@ -176,6 +181,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
     wren)  __chorus_env_role_bin="$WERK_WREN_BIN"  ;;
     silas) __chorus_env_role_bin="$WERK_SILAS_BIN" ;;
     abby-normal) __chorus_env_role_bin="$WERK_ABBY_NORMAL_BIN" ;;
+    borg-queen) __chorus_env_role_bin="$WERK_BORG_QUEEN_BIN" ;;
     *)     __chorus_env_role_bin="" ;;
   esac
   if [ -n "$__chorus_env_role_bin" ]; then
@@ -245,6 +251,79 @@ fi
 # (2026-08-31). Writer and drill both read these; per-box override via env.
 export FUSEKI_BACKUP_REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 export FUSEKI_BACKUP_DEST="${FUSEKI_BACKUP_DEST:-/Volumes/VideosNew/backups/library/fuseki}"
+
+# --- #4785: per-role account workspace parity (git, outbox, skills, MCP) -----
+if [ -z "${GIT_CONFIG_COUNT:-}" ]; then
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0=safe.directory
+  export GIT_CONFIG_VALUE_0='*'
+fi
+
+chorus_verify_git_safe_dir() {
+  if [ "${GIT_CONFIG_KEY_0:-}" = "safe.directory" ] && [ "${GIT_CONFIG_VALUE_0:-}" = "*" ]; then
+    return 0
+  fi
+  if git config --get-all safe.directory 2>/dev/null | grep -Fxq '*'; then
+    return 0
+  fi
+  echo "chorus_verify_git_safe_dir: missing safe.directory=*" >&2
+  return 1
+}
+
+export CHORUS_OUTBOX_DIR="${CHORUS_OUTBOX_DIR:-${CHORUS_STATE_DIR}/outbox}"
+
+chorus_verify_role_outbox() {
+  local __dir="${1:-${CHORUS_OUTBOX_DIR}/${CHORUS_ROLE:-}}"
+  if [ -z "$__dir" ] || [ ! -d "$__dir" ] || [ ! -r "$__dir" ] || [ ! -w "$__dir" ] || ! ls "$__dir" >/dev/null 2>&1; then
+    echo "chorus_verify_role_outbox: unreadable outbox directory: $__dir" >&2
+    return 1
+  fi
+  return 0
+}
+
+export ENABLE_CLAUDEAI_MCP_SERVERS="${ENABLE_CLAUDEAI_MCP_SERVERS:-false}"
+
+chorus_sync_role_skills() {
+  local __target="${1:-$HOME/.claude/skills}"
+  local __src_root="${2:-${CHORUS_HOME:-$CHORUS_ROOT}}"
+  [ -d "$__src_root/skills" ] || __src_root="$CHORUS_ROOT"
+  mkdir -p "$__target" 2>/dev/null || return 1
+  local __skill_dir __name
+  for __skill_dir in "$__src_root"/skills/*/; do
+    [ -d "$__skill_dir" ] || continue
+    if [ -f "${__skill_dir}SKILL.md" ] || [ -f "${__skill_dir}skill.md" ]; then
+      __name="$(basename "$__skill_dir")"
+      [ -e "$__target/$__name" ] || ln -s "${__skill_dir%/}" "$__target/$__name" 2>/dev/null || true
+    fi
+  done
+  return 0
+}
+
+chorus_verify_role_skills() {
+  local __target="${1:-$HOME/.claude/skills}"
+  if [ ! -d "$__target" ]; then
+    echo "chorus_verify_role_skills: missing target directory: $__target" >&2
+    return 1
+  fi
+  local __skill_dir __name __missing=0
+  for __skill_dir in "$CHORUS_ROOT"/skills/*/; do
+    [ -d "$__skill_dir" ] || continue
+    if [ -f "${__skill_dir}SKILL.md" ] || [ -f "${__skill_dir}skill.md" ]; then
+      __name="$(basename "$__skill_dir")"
+      if [ ! -f "$__target/$__name/SKILL.md" ] && [ ! -f "$__target/$__name/skill.md" ]; then
+        echo "chorus_verify_role_skills: missing skill: $__name in $__target" >&2
+        __missing=1
+      fi
+    fi
+  done
+  return "$__missing"
+}
+
+case "${HOME:-}" in
+  /Users/chorus-*)
+    chorus_sync_role_skills "$HOME/.claude/skills" >/dev/null 2>&1 || true
+    ;;
+esac
 
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root

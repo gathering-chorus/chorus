@@ -115,6 +115,8 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/silas/ontology/sensors-4405.ttl"), // #4405 reopen 4
             format!("{root}/roles/kade/ontology/domains-builds-decisions-rcas-4022.ttl"),
             format!("{root}/roles/silas/ontology/alerts-4085.ttl"),
+            format!("{root}/roles/kade/ontology/alerts-grafana-4091.ttl"), // #4091 Alert fields + ToolInputs
+            format!("{root}/roles/kade/ontology/toolchain-4091.ttl"), // #4091 Tool, ToolType, Framework
             format!("{root}/roles/wren/ontology/clearing-domains-3860.ttl"),
             format!("{root}/roles/wren/ontology/memory-4010.ttl"),
             format!("{root}/roles/wren/ontology/board-3654.ttl"),
@@ -166,6 +168,10 @@ pub struct Retirement {
     /// #4338 — merge this subject INTO `into`, within `graph`.
     pub merge_subject: String,
     pub into: String,
+    /// #4716 — one statement, retired alone (no subject or class widening)
+    pub triple_subject: String,
+    pub triple_predicate: String,
+    pub triple_object: String,
     pub status: String,
 }
 
@@ -189,6 +195,8 @@ pub enum RetireAction {
     /// #4338 — one duplicate folded into the real subject in one graph: every
     /// triple pointing at `from` points at `into`, then `from`'s own triples go.
     Merge { from: String, into: String, graph: String },
+    /// #4716 — exactly one statement `<s> <p> <o>` (IRIs), in `graph`.
+    Triple { s: String, p: String, o: String, graph: String },
 }
 
 /// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
@@ -229,6 +237,9 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
         retire_class: field("retire_class")?,
         merge_subject: field("merge_subject")?,
         into: field("into")?,
+        triple_subject: field("triple_subject")?,
+        triple_predicate: field("triple_predicate")?,
+        triple_object: field("triple_object")?,
         status: if status.is_empty() { "staged".into() } else { status },
     }))
 }
@@ -260,6 +271,13 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
         return RetireAction::Skip { status: r.status.clone(), target };
     }
     let graph = if r.graph.is_empty() { default_graph.to_string() } else { r.graph.clone() };
+    // #4716 — checked first: an entry that names any triple part is a triple
+    // retirement, never widened into the subject or class forms below
+    if !(r.triple_subject.is_empty() && r.triple_predicate.is_empty() && r.triple_object.is_empty()) {
+        return RetireAction::Triple {
+            s: r.triple_subject.clone(), p: r.triple_predicate.clone(), o: r.triple_object.clone(), graph,
+        };
+    }
     if !r.retire_graph.is_empty() {
         return RetireAction::WholeGraph { graph: r.retire_graph.clone() };
     }
@@ -281,7 +299,10 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
 
 /// #4064 — the count, backup and delete for retiring one subject, WITH the
 /// blank nodes only it reaches through SHACL structure (sh:property, the
-/// sh:or/and/xone/not lists, sh:in, rdf:first/rest). Retiring a shape by its
+/// sh:or/and/xone/not lists, sh:in, rdf:first/rest, and #4757 the property paths:
+/// sh:path and the inverse/alternative/zeroOrMore/oneOrMore/zeroOrOne paths, and a
+/// property's rdfs:domain/range [ owl:unionOf ( … ) ] lists — both survived a retirement on
+/// staging, athena runs 4 and 8). Retiring a shape by its
 /// IRI alone left its property shapes behind as orphans — the deploy never
 /// removes a dropped sh:property block (2026-09-20, #4250), and a retirement
 /// that did the same would leave the ghosts it exists to clear.
@@ -314,12 +335,25 @@ pub fn subjects_from_answer(body: &str) -> Option<std::collections::BTreeSet<Str
 pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, String) {
     const SH: &str = "http://www.w3.org/ns/shacl#";
     const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-    let path = format!(
-        "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>)+"
+    const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
+    const OWL: &str = "http://www.w3.org/2002/07/owl#";
+    // #4757 — rdfs:domain/range are a FIRST hop only: a shape's sh:path lands on a property
+    // IRI, and a domain hop after it would walk into that property's own domain list (and
+    // the guard below would then see every shape naming the property as a second owner:
+    // athena run 10 kept onCard's Turn∪Note union because TurnShape "reached" it).
+    let structural = format!(
+        "<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>\
+         |<{SH}path>|<{SH}inversePath>|<{SH}alternativePath>|<{SH}zeroOrMorePath>|<{SH}oneOrMorePath>|<{SH}zeroOrOnePath>\
+         |<{OWL}unionOf>|<{OWL}intersectionOf>"
     );
+    let path = format!("(<{RDFS}domain>|<{RDFS}range>|{structural})/({structural})*");
+    // #4579 reopen 2 — a blank node another named subject also reaches (CoreShape's
+    // flattened property nodes, shared by every shape that uses it) is not this
+    // subject's to delete; deleting it emptied 77 shapes on 10-18.
     let body = format!(
         "GRAPH <{graph}> {{ {{ BIND(<{iri}> AS ?s) <{iri}> ?p ?o }} UNION \
-         {{ <{iri}> {path} ?s . FILTER(isBlank(?s)) ?s ?p ?o }} }}"
+         {{ <{iri}> {path} ?s . FILTER(isBlank(?s)) ?s ?p ?o \
+            FILTER NOT EXISTS {{ ?other {path} ?s . FILTER(isIRI(?other) && ?other != <{iri}>) }} }} }}"
     );
     (
         format!("SELECT (COUNT(*) AS ?n) WHERE {{ {body} }}"),
@@ -411,6 +445,13 @@ pub fn route_is_served(served_resp: &str, route: &str) -> bool {
 /// never read as "nothing is served".
 pub fn serve_check_answered(served_resp: &str) -> bool {
     served_resp.contains("\"served\"")
+}
+
+/// #4716 (Jeff 2026-10-24, option A) — the principal every model deploy writes
+/// and signs as. Never DEPLOY_ROLE or CHORUS_ROLE: those are typed strings, and
+/// "deploy" is one named writer the store can tell apart from the door.
+pub fn deploy_principal() -> &'static str {
+    "deploy"
 }
 
 /// #4080 — a bare run from INSIDE A WERK must not default to prod.
@@ -920,6 +961,7 @@ pub fn merge_sparql(staging: &str, ontology: &str) -> String {
 /// predicates are left alone); then EVERY triple of every Domain subject leaves
 /// the ontology graph, the class axioms included. Pure.
 pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
+pub const ROLES_GRAPH: &str = "urn:chorus:domains:roles";
 const ONTOLOGY_DEFAULT: &str = "urn:chorus:ontology";
 pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, additive: bool) -> String {
     let c = "https://jeffbridwell.com/chorus#";
@@ -946,6 +988,56 @@ pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str, a
     )
 }
 
+/// #4695 — a Role lives in urn:chorus:domains:roles and changes there through the
+/// door (#4432: rows live in the store). A role subject staged from a model file
+/// leaves the ontology graph and is written nowhere: never a row file over the store.
+pub fn drop_role_rows_sparql(ontology: &str) -> String {
+    let c = "https://jeffbridwell.com/chorus#";
+    format!("DELETE {{ GRAPH <{ontology}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ontology}> {{ ?s a <{c}Role> ; ?p ?o }} }}")
+}
+
+/// #4695 — the deploy transaction SPARQL: merge, domain rehoming, and role drops.
+/// #4338 — the ontology graph holds the model only: Domain rows go home.
+/// #4695 — Role rows are dropped from urn:chorus:ontology (roles live in
+/// urn:chorus:domains:roles and change through the door). Always drops; no off-switch.
+pub fn deploy_transaction_sparql(
+    staging: &str,
+    ontology: &str,
+    is_card: bool,
+    retire_clause: &str,
+    bnodes: &str,
+) -> String {
+    deploy_transaction_sparql_with_options(
+        staging,
+        ontology,
+        is_card,
+        retire_clause,
+        bnodes,
+        true,
+    )
+}
+
+pub fn deploy_transaction_sparql_with_options(
+    staging: &str,
+    ontology: &str,
+    is_card: bool,
+    retire_clause: &str,
+    bnodes: &str,
+    wire_role_drop: bool,
+) -> String {
+    let rehome_dom = if ontology == ONTOLOGY_DEFAULT {
+        format!(" ; {}", rehome_domain_rows_sparql(staging, ontology, DOMAINS_GRAPH, is_card))
+    } else {
+        String::new()
+    };
+    let drop_roles = if ontology == ONTOLOGY_DEFAULT && wire_role_drop {
+        format!(" ; {}", drop_role_rows_sparql(ontology))
+    } else {
+        String::new()
+    };
+    format!("{retire_clause}{bnodes}{}{rehome_dom}{drop_roles}", merge_sparql(staging, ontology))
+}
+
 fn ok_http(code: &str) -> bool {
     matches!(code, "200" | "201" | "204")
 }
@@ -959,13 +1051,26 @@ fn ok_http(code: &str) -> bool {
 /// verb then reported `staging-load-http-401` — true, and useless: a refusal that
 /// names the store's answer cannot name a missing credential.
 fn fuseki_auth() -> Vec<String> {
-    match fuseki_password() {
-        Some(pw) => {
-            let user = env_or("FUSEKI_ADMIN_USER", "admin");
-            vec!["-u".to_string(), format!("{user}:{pw}")]
-        }
+    match fuseki_login_in(std::path::Path::new(&fuseki_credential_file())) {
+        Some((user, pw)) => vec!["-u".to_string(), format!("{user}:{pw}")],
         None => Vec::new(),
     }
+}
+
+/// #4716 AC2 — who the deploy logs in to the store as. Its own `deploy` user
+/// once `fuseki-deploy.env` sits beside `shared` (minted by fuseki-shiro-deploy),
+/// so the store's log names the writer; until then the shared login, so a land
+/// before Jeff's shiro deploy still works.
+pub fn fuseki_login_in(shared: &std::path::Path) -> Option<(String, String)> {
+    let key_in = |file: &std::path::Path, key: &str| -> Option<String> {
+        std::fs::read_to_string(file).ok()?.lines()
+            .find_map(|l| l.trim().strip_prefix(&format!("{key}=")).map(|v| v.trim().trim_matches('"').to_string()))
+            .filter(|v| !v.is_empty())
+    };
+    if let Some(pw) = shared.parent().and_then(|d| key_in(&d.join("fuseki-deploy.env"), "FUSEKI_DEPLOY_PASSWORD")) {
+        return Some(("deploy".to_string(), pw));
+    }
+    fuseki_password_in(shared).map(|pw| (env_or("FUSEKI_ADMIN_USER", "admin"), pw))
 }
 
 /// #4533 — where the write credential lives when the environment has none:
@@ -985,7 +1090,16 @@ pub fn fuseki_password() -> Option<String> {
             return Some(pw);
         }
     }
-    let body = std::fs::read_to_string(fuseki_credential_file()).ok()?;
+    fuseki_password_in(std::path::Path::new(&fuseki_credential_file()))
+}
+
+fn fuseki_password_in(file: &std::path::Path) -> Option<String> {
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            return Some(pw);
+        }
+    }
+    let body = std::fs::read_to_string(file).ok()?;
     body.lines()
         .find_map(|l| l.trim().strip_prefix("FUSEKI_ADMIN_PASSWORD="))
         .map(|v| v.trim().trim_matches('"').to_string())
@@ -1094,6 +1208,26 @@ pub fn core_stamp_insert_sparql(ontology: &str, prop: &str, limit: u32) -> Strin
     )
 }
 
+/// #4579 reopen 2 — how many shapes point at a property node with nothing in it.
+/// A retirement that reached shared CoreShape nodes left 77 on 10-18 and Actor
+/// lost its route; the deploy only found out from the route check, after.
+pub fn empty_property_nodes_sparql(graph: &str) -> String {
+    format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{graph}> {{ \
+         ?s sh:property ?b . FILTER(isBlank(?b)) FILTER NOT EXISTS {{ ?b ?p ?o }} }} }}"
+    )
+}
+
+/// The deploy goes on only at 0. A count the store did not give is a refusal,
+/// never a pass (#3734: a check that measured nothing cannot be green).
+pub fn empty_property_nodes_verdict(count: Option<u64>) -> Result<(), String> {
+    match count {
+        Some(0) => Ok(()),
+        Some(n) => Err(format!("empty-property-nodes:{n} shape(s) point at a property node with nothing in it (#4579)")),
+        None => Err("empty-property-nodes:unmeasured (the store did not answer the count)".into()),
+    }
+}
+
 fn csv_count(body: &str) -> Option<u64> {
     body.lines().nth(1).and_then(|l| l.trim().trim_matches('"').parse().ok())
 }
@@ -1170,9 +1304,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     let query = env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query");
     let update = env_or("FUSEKI_UPDATE", "http://localhost:3030/pods/update");
     let chorus_log = env_or("CHORUS_LOG", &format!("{root}/platform/scripts/chorus-log"));
-    let role = std::env::var("DEPLOY_ROLE")
-        .or_else(|_| std::env::var("CHORUS_ROLE"))
-        .unwrap_or_else(|_| "system".to_string());
+    let role = deploy_principal().to_string();
     // #4080 — refuse a bare werk run before anything else touches the store.
     let cwd = std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default();
     let in_werk = path_in_werk(&root) || path_in_werk(&cwd);
@@ -1479,9 +1611,8 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     } else {
         String::new()
     };
-    // #4338 — the ontology graph holds the model only: Domain rows go home.
-    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH, plan.is_some())) } else { String::new() };
-    let sparql = format!("{retire_clause}{bnodes}{}{rehome}", merge_sparql(&staging, &ontology));
+    // #4338 / #4695 — merge, domain rehoming, and role drops in one transaction.
+    let sparql = deploy_transaction_sparql(&staging, &ontology, plan.is_some(), &retire_clause, &bnodes);
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
     if !ok_http(&mcode) {
@@ -1494,9 +1625,10 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     // query endpoint either. Ask how many staged subjects are ABSENT after the
     // merge, before staging is dropped, and refuse on an unanswered question
     // (#3726 single-request-truth, #3731 fail-closed).
+    let c = "https://jeffbridwell.com/chorus#";
     let vresp = curl(&["-s", "--data-urlencode",
         &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o }} \
-                  FILTER NOT EXISTS {{ {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{DOMAINS_GRAPH}> {{ ?s ?q ?r }} }} }} }}"),
+                  FILTER NOT EXISTS {{ {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{DOMAINS_GRAPH}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{staging}> {{ ?s a <{c}Role> }} }} }} }}"),
         "-H", "Accept: text/csv", &query]).unwrap_or_default();
     let verdict = verify_missing(&vresp);
     let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
@@ -1597,6 +1729,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         // #3752 reopen 1 — one presence query per graph for every subject
         // retirement; only a subject still there goes through backup + delete.
         let gone = absent_subjects(&ctx, &actions);
+        let retiring = classes_retired(&actions);
         for (n, action) in &actions {
             if let RetireAction::Subject { iri, graph } = action {
                 if gone.contains(&(graph.clone(), iri.clone())) {
@@ -1604,9 +1737,15 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
                     continue;
                 }
             }
-            run_retirement(action, *n, &ctx)?;
+            run_retirement_with(action, *n, &ctx, &retiring)?;
         }
     }
+
+    // #4579 reopen 2 — after every write to the model, before anything restarts on it
+    let empties = curl(&["-s", "--data-urlencode", &format!("query={}", empty_property_nodes_sparql(&ontology)),
+        "-H", "Accept: text/csv", &query]).ok().and_then(|b| csv_count(&b));
+    empty_property_nodes_verdict(empties).map_err(|e| fail(&e))?;
+    println!("athena-deploy: 0 empty property nodes in <{ontology}>");
 
     // #3536 AC2 / #3731 — the SHACL report. Non-gating, three distinguishable
     // states, full deploys only (SHACL_REPORT=1 is the test seam).
@@ -2056,7 +2195,29 @@ fn absent_subjects(ctx: &StoreCtx, actions: &[(usize, RetireAction)]) -> std::co
 /// subject and class retirement get the backup rule the bash gives only to
 /// whole-graph — AC3, and subject retirement is the leg #4216's 226 rows went
 /// through with nothing written down.
+/// #4757 — the classes this deploy's file also retires, by local name: its rows
+/// (retire_class) or the class itself (retire_subject; Kade: Note has a claim and no rows).
+pub fn classes_retired(actions: &[(usize, RetireAction)]) -> std::collections::BTreeSet<String> {
+    actions.iter().filter_map(|(_, a)| match a {
+        RetireAction::Class { class, .. } => Some(class.rsplit('#').next().unwrap_or(class).to_string()),
+        RetireAction::Subject { iri, .. } => Some(iri.rsplit('#').next().unwrap_or(iri).to_string()),
+        _ => None,
+    }).collect()
+}
+
+/// #4757 — may a claim be retired while its class is served? Only when the same deploy
+/// retires the class itself: the door serves a class BECAUSE a domain claims it, so
+/// "unserve first" can never come true for a class whose claim and rows go together.
+/// A served claim with no class retirement beside it still refuses (#3752).
+pub fn served_claim_may_retire(class: &str, retiring: &std::collections::BTreeSet<String>) -> bool {
+    retiring.contains(class)
+}
+
 fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new())
+}
+
+fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>) -> Result<(), String> {
     let refuse = |reason: String| -> String {
         emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
             &[("reason", reason.clone()), ("line", line.to_string())]);
@@ -2095,7 +2256,9 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 return Ok(());
             }
             let route = route_for_class(class);
-            if route_is_served(&served, &route) {
+            if route_is_served(&served, &route) && served_claim_may_retire(class, retiring) {
+                println!("athena-deploy: claim {domain}->{class} retires while /{route} is served: this deploy retires the class too (#4757)");
+            } else if route_is_served(&served, &route) {
                 eprintln!(
                     "athena-deploy: RETIREMENT REFUSED — class {class} is SERVED at /{route} \
                      RIGHT NOW (surface came up since staging); unserve first (#3752)"
@@ -2115,6 +2278,18 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 ctx, line, &label, &graph,
                 &format!("ASK {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
                 &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
+            )
+        }
+        RetireAction::Triple { s, p, o, graph } => {
+            let iri_ok = |x: &str| !x.is_empty() && x.contains(':') && !x.contains(['<', '>', '"', ' ', '{', '}', '\n']);
+            if !(iri_ok(s) && iri_ok(p) && iri_ok(o)) {
+                return Err(refuse("retirement-entry-empty".into()));
+            }
+            let label = format!("triple <{s}> <{p}> <{o}>");
+            ask_delete_verify(
+                ctx, line, &label, graph,
+                &format!("ASK {{ GRAPH <{graph}> {{ <{s}> <{p}> <{o}> }} }}"),
+                &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s}> <{p}> <{o}> }} }}"),
             )
         }
         RetireAction::Subject { iri, graph } => {
@@ -2481,7 +2656,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 36, "the ontology set is 36 files (#4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
+        assert_eq!(s.len(), 38, "the ontology set is 38 files (#4757 took out pulse-tree-4638.ttl, which #4638 added; #4091 added alerts-grafana-4091.ttl and toolchain-4091.ttl; #4576 reopen added borg.ttl; #4576 added core-shape-4576.ttl; #4576 added agent-runtimes-4444.ttl; #4405 added sensors-4405.ttl; #4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl; #4018 added awareness-4018.ttl and product-design-4018.ttl; #4490 added pulse-settings-4490.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
@@ -2802,7 +2977,8 @@ mod subject_closure_runs_4064 {
 <urn:g> {
   x:GoneShape a sh:NodeShape ; sh:targetClass x:Gone ;
     sh:property [ sh:path x:a ; sh:in ( "p" "q" ) ] ;
-    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] .
+    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] ;
+    sh:property [ sh:path ( x:seq1 [ sh:inversePath x:inv ] ) ; sh:minCount 1 ] .
   x:KeptShape a sh:NodeShape ; sh:targetClass x:Kept ;
     sh:property [ sh:path x:k ; sh:minCount 1 ] .
 }"#).unwrap();
@@ -2814,12 +2990,102 @@ mod subject_closure_runs_4064 {
         let after = String::from_utf8_lossy(&o.stdout).to_string();
         assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
         // the dump writes prefixed names (x:a), so the checks read them that way
-        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind"] {
+        // #4757 — a retired property's rdfs:domain [ owl:unionOf ( … ) ] list goes with it
+        let data2 = dir.join("d2.trig");
+        std::fs::write(&data2, r#"@prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix x: <https://x#> .
+<urn:g> {
+  x:onCard rdfs:domain [ owl:unionOf ( x:Turn x:Note ) ] ; rdfs:range x:Card .
+  x:CardUseShape <http://www.w3.org/ns/shacl#property> [ <http://www.w3.org/ns/shacl#path> x:onCard ] .
+  x:kept rdfs:domain [ owl:unionOf ( x:Kept1 x:Kept2 ) ] .
+  x:KeptShape <http://www.w3.org/ns/shacl#property> [ <http://www.w3.org/ns/shacl#path> x:kept ] .
+}"#).unwrap();
+        let (_, _, del2) = subject_retirement_sparql("https://x#onCard", "urn:g");
+        let ru2 = dir.join("u2.ru");
+        std::fs::write(&ru2, &del2).unwrap();
+        let o2 = Command::new(&update).arg(format!("--data={}", data2.display()))
+            .arg(format!("--update={}", ru2.display())).arg("--dump").output().unwrap();
+        let after2 = String::from_utf8_lossy(&o2.stdout).to_string();
+        assert!(!after2.contains("x:Turn") && !after2.contains("x:Note"), "the union list survived:\n{after2}");
+        // NEGATIVE PROOF: another property's union list is not this retirement's
+        assert!(after2.contains("x:Kept1") && after2.contains("x:Kept2"), "a neighbour's list went:\n{after2}");
+        // #4757 — a list path and the inverse path inside it go with the shape; the
+        // walk skipped sh:path, so these survived (negative proof: drop the path
+        // predicates from the walk and x:seq1 / x:inv stay in the dump)
+        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind", "x:seq1", "x:inv"] {
             assert!(!after.contains(gone), "{gone} survived the retirement:\n{after}");
         }
         // NEGATIVE PROOF: the neighbour shape and its own property shape are untouched
         assert!(after.contains("KeptShape") && after.contains("x:k") && after.contains("minCount"),
             "the retirement reached a shape it does not own:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #4579 reopen 2 — the deploy refuses on any empty property node.
+    #[test]
+    fn the_empty_property_node_count_finds_an_emptied_node() {
+        use super::{empty_property_nodes_sparql, empty_property_nodes_verdict};
+        let out = Command::new("sh").args(["-c", "command -v sparql"]).output().expect("sh runs");
+        let sparql = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert!(!sparql.is_empty(), "UNMEASURED: no Jena sparql CLI on this box; this guard cannot run");
+        let dir = std::env::temp_dir().join(format!("empty-4579-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let count = |trig: &str| -> u64 {
+            let d = dir.join("d.trig");
+            std::fs::write(&d, trig).unwrap();
+            let q = dir.join("q.rq");
+            std::fs::write(&q, empty_property_nodes_sparql("urn:g")).unwrap();
+            let o = Command::new(&sparql).arg(format!("--data={}", d.display()))
+                .arg(format!("--query={}", q.display())).args(["--results", "csv"]).output().unwrap();
+            super::csv_count(&String::from_utf8_lossy(&o.stdout)).expect("a count")
+        };
+        let whole = r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> { x:A sh:property _:n . x:B sh:property _:n . _:n sh:path x:label . }"#;
+        assert_eq!(count(whole), 0);
+        assert!(empty_property_nodes_verdict(Some(0)).is_ok());
+        // NEGATIVE PROOF: the 10-18 state, the shared node emptied
+        let emptied = r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> { x:A sh:property _:n . x:B sh:property _:n . x:C sh:property [ sh:path x:c ] . }"#;
+        assert_eq!(count(emptied), 2);
+        assert!(empty_property_nodes_verdict(Some(2)).is_err());
+        // a store that did not answer refuses too
+        assert!(empty_property_nodes_verdict(None).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #4579 reopen 2 — athena-deploy's flatten points every CoreShape user at
+    /// the SAME property nodes. Retiring TestSuiteRunShape (10-18 20:06) deleted
+    /// them and left 77 shapes with empty nodes; Actor lost its route. A blank
+    /// node another named subject also reaches is shared, never the retired one's.
+    #[test]
+    fn retiring_a_shape_keeps_property_nodes_another_shape_shares() {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("sh runs");
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        // #4579 — a guard that cannot run must not read green (#3734)
+        assert!(!update.is_empty(), "UNMEASURED: no Jena update CLI on this box; this guard cannot run");
+        let dir = std::env::temp_dir().join(format!("closure-4579-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        // _:name is CoreShape's node, flattened onto both shapes; _:own is Gone's alone
+        std::fs::write(&data, r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> {
+  x:CoreShape a sh:NodeShape ; sh:property _:name .
+  _:name sh:path x:label ; sh:name "name" ; sh:in ( "n1" "n2" ) .
+  x:GoneShape a sh:NodeShape ; sh:targetClass x:Gone ; sh:property _:name , _:own .
+  _:own sh:path x:gonefield .
+  x:KeptShape a sh:NodeShape ; sh:targetClass x:Kept ; sh:property _:name .
+}"#).unwrap();
+        let (_, _, delete) = subject_retirement_sparql("https://x#GoneShape", "urn:g");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &delete).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(!after.contains("GoneShape") && !after.contains("x:gonefield"), "the retired shape's own nodes survived:\n{after}");
+        // NEGATIVE PROOF: the shared node keeps its content, nested list included
+        for kept in ["x:label", "\"name\"", "\"n1\"", "\"n2\""] {
+            assert!(after.contains(kept), "{kept} was deleted from a node another shape shares:\n{after}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -3017,6 +3283,130 @@ mod rehome_card_4576 {
     }
 }
 
+/// #4695 — Role rows staged into staging leave the ontology graph entirely and
+/// are dropped from ontology rather than written to either graph (#4432).
+#[cfg(test)]
+mod drop_roles_4695 {
+    use super::{deploy_transaction_sparql, drop_role_rows_sparql};
+    use std::process::Command;
+
+    fn get_update_cli() -> String {
+        let out = Command::new("sh").args(["-c", "command -v update"]).output().expect("update check");
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() {
+            panic!("UNMEASURED: no Jena update CLI on PATH (CLAUDE.md #3734)");
+        }
+        update
+    }
+
+    #[test]
+    fn a_role_leaves_the_ontology_graph_and_live_roles_are_preserved() {
+        let update = get_update_cli();
+        let dir = std::env::temp_dir().join(format!("drop-roles-4695-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:stg> { c:role-borg-queen a c:Role ; rdfs:label "Borg Queen" ; c:roleKind "agent" ; c:hasProperty c:prop-borg-queen .
+            c:Role a owl:Class ; rdfs:label "Role" . }
+<urn:chorus:ontology> { c:Role a owl:Class ; rdfs:label "Role" . }
+<urn:chorus:domains:roles> { c:role-kade a c:Role ; rdfs:label "Kade" ; c:doorWritten "true" . }
+"#).unwrap();
+        let q = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", true, "", "");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (ont, roles) = (block("urn:chorus:ontology"), block("urn:chorus:domains:roles"));
+        // ontology retains schema class and 0 role individuals
+        assert!(ont.contains("c:Role") && ont.contains("owl:Class"), "schema class lost from ontology:\n{after}");
+        assert!(!ont.contains("c:role-borg-queen"), "role stayed in ontology:\n{after}");
+        // roles domain is UNTOUCHED by deploy: kade retains door-written property, borg-queen is not written
+        assert!(roles.contains("c:role-kade") && roles.contains("c:doorWritten"), "live role lost door property:\n{after}");
+        assert!(!roles.contains("c:role-borg-queen"), "deploy must not write roles to roles domain (#4432):\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn negative_proof_wiring_omission_leaves_staged_role_in_ontology() {
+        // Negative proof (#3734): when the role drop wiring is omitted (wire_role_drop = false,
+        // simulating run_athena_deploy_plan stopping its call to drop_role_rows_sparql), the staged
+        // role is NOT dropped and remains in urn:chorus:ontology.
+        let update = get_update_cli();
+        let dir = std::env::temp_dir().join(format!("drop-roles-wiring-neg-4695-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:stg> { c:role-borg-queen a c:Role ; c:roleKind "agent" . }
+<urn:chorus:ontology> { }
+<urn:chorus:domains:roles> { }
+"#).unwrap();
+        // The deploy SPARQL wiring MUST contain the drop clause by default
+        let q_wired = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", true, "", "");
+        assert!(q_wired.contains(&drop_role_rows_sparql("urn:chorus:ontology")), "wiring must include role drop");
+
+        // With role drop omitted from the deploy transaction wiring
+        let q_unwired = super::deploy_transaction_sparql_with_options("urn:stg", "urn:chorus:ontology", true, "", "", false);
+        assert!(!q_unwired.contains("a <https://jeffbridwell.com/chorus#Role>"), "unwired transaction must omit role drop");
+
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q_unwired).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let i = after.find("<urn:chorus:ontology>").unwrap_or(0);
+        let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len());
+        let ont = after[i..j].to_string();
+        assert!(ont.contains("c:role-borg-queen"), "without wiring, role should remain in ontology");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn release_with_3838_roles_leaves_zero_roles_in_ontology_and_preserves_live_roles() {
+        let update = get_update_cli();
+        let dir = std::env::temp_dir().join(format!("drop-roles-3838-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:stg> {
+    c:role-jeff a c:Role ; rdfs:label "Jeff" .
+    c:role-wren a c:Role ; rdfs:label "Wren" .
+    c:role-silas a c:Role ; rdfs:label "Silas" .
+    c:role-kade a c:Role ; rdfs:label "Kade" .
+    c:role-abby-normal a c:Role ; rdfs:label "Abby Normal" .
+    c:role-nightly a c:Role ; rdfs:label "nightly" .
+    c:role-crawler a c:Role ; rdfs:label "crawler" .
+    c:Role a owl:Class ; rdfs:label "Role" .
+}
+<urn:chorus:ontology> {
+    c:Role a owl:Class ; rdfs:label "Role" .
+}
+<urn:chorus:domains:roles> {
+    c:role-abby-normal a c:Role ; rdfs:label "role-abby-normal" ; c:hasProperty c:prop-door-written .
+}
+"#).unwrap();
+        let q = deploy_transaction_sparql("urn:stg", "urn:chorus:ontology", false, "", "");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (ont, roles) = (block("urn:chorus:ontology"), block("urn:chorus:domains:roles"));
+        for r in &["role-jeff", "role-wren", "role-silas", "role-kade", "role-abby-normal", "role-nightly", "role-crawler"] {
+            assert!(!ont.contains(r), "{r} stayed in ontology:\n{after}");
+        }
+        // live role-abby-normal in roles domain must NOT be overwritten by 3838's rdfs:label "Abby Normal"
+        assert!(roles.contains("role-abby-normal") && roles.contains("prop-door-written"),
+            "live role-abby-normal door property overwritten:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 /// #4576 — the creator-iri pass, run, not read: a slug that names a Principal
 /// becomes it; one that names no Principal keeps its name and is not counted, so
 /// the pass ends.
@@ -3059,5 +3449,79 @@ mod creator_iri_4576 {
         // the count cannot see a name with no Principal, so the pass loop ends
         assert!(core_stamp_count_sparql("urn:chorus:ontology", "creator-iri").contains("FILTER EXISTS { GRAPH ?pg { ?w0 a chorus:Principal } }"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod run_retirement_triple_4716 {
+    use super::{run_retirement, RetireAction, StoreCtx};
+
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    /// A store nobody answers on: anything that gets past the entry check stops
+    /// at the pre-ask, so no test here can delete a thing.
+    fn dead_store() -> StoreCtx {
+        let dead = "http://127.0.0.1:1".to_string();
+        StoreCtx { gsp: dead.clone(), query: dead.clone(), update: dead, chorus_log: "true".into(), role: "kade".into() }
+    }
+    fn triple(s: &str, p: &str, o: &str) -> RetireAction {
+        RetireAction::Triple { s: s.into(), p: p.into(), o: o.into(), graph: "urn:chorus:ontology".into() }
+    }
+
+    // negative proof: run_retirement itself refuses a triple with an empty part,
+    // before it asks the store anything.
+    #[test]
+    fn negative_proof_run_retirement_refuses_a_triple_with_an_empty_iri() {
+        for a in [
+            triple(&format!("{C}chorus"), &format!("{C}hasDomain"), ""),
+            triple("", &format!("{C}hasDomain"), &format!("{C}tests")),
+            triple(&format!("{C}chorus"), "", &format!("{C}tests")),
+        ] {
+            let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+            assert!(e.contains("retirement-entry-empty"), "{e}");
+        }
+    }
+
+    // negative proof: a part that would break out of <...> in the SPARQL is refused too.
+    #[test]
+    fn negative_proof_run_retirement_refuses_a_part_that_is_not_an_iri() {
+        let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}x> . <{C}y"));
+        let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+        assert!(e.contains("retirement-entry-empty"), "{e}");
+    }
+
+    // the contrast: a whole triple passes the entry check and reaches the pre-ask,
+    // which a dead store leaves unanswered, so it refuses for that reason instead.
+    #[test]
+    fn a_whole_triple_passes_the_entry_check_and_stops_at_the_ask() {
+        let a = triple(&format!("{C}chorus"), &format!("{C}hasDomain"), &format!("{C}tests"));
+        let e = run_retirement(&a, 1, &dead_store()).unwrap_err();
+        assert!(e.contains("retirement-ask-unanswered"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod served_claim_4757 {
+    use super::{classes_retired, served_claim_may_retire, RetireAction};
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    fn class(n: &str) -> RetireAction { RetireAction::Class { class: format!("{C}{n}"), graph: "urn:chorus:domains:awareness".into() } }
+    fn subject(n: &str) -> RetireAction { RetireAction::Subject { iri: format!("{C}{n}"), graph: "urn:chorus:ontology".into() } }
+
+    /// The door serves a class because a domain claims it: a claim whose class this
+    /// deploy retires (rows or the class itself) may go while the route is still up.
+    #[test]
+    fn a_served_claim_retires_when_the_same_deploy_retires_its_class() {
+        let r = classes_retired(&[(1, class("Prompt")), (2, subject("Note")), (3, subject("PromptShape"))]);
+        assert!(served_claim_may_retire("Prompt", &r));
+        assert!(served_claim_may_retire("Note", &r));
+    }
+
+    /// NEGATIVE PROOF: a served claim with no retirement of its class beside it still refuses.
+    #[test]
+    fn negative_proof_a_served_claim_alone_still_refuses() {
+        let r = classes_retired(&[(1, class("Prompt"))]);
+        assert!(!served_claim_may_retire("Turn", &r));
+        assert!(!served_claim_may_retire("Turn", &classes_retired(&[])));
     }
 }

@@ -2,18 +2,18 @@
 
 import { RoleTile } from './types';
 
-const ROLES = ['jeff', 'wren', 'silas', 'kade', 'abby-normal'];
+export const DEFAULT_ROLES = ['jeff', 'wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
 
 export class TileService {
   private pulseUrl: string;
   private tiles: Map<string, RoleTile> = new Map();
 
-  constructor(pulseUrl = 'http://127.0.0.1:3475') {
+  constructor(pulseUrl = 'http://127.0.0.1:3475', roles: string[] = DEFAULT_ROLES) {
     this.pulseUrl = pulseUrl;
-    for (const r of ROLES) {
+    for (const r of roles) {
       this.tiles.set(r, {
         role: r,
-        name: r === 'abby-normal' ? 'Abby Normal' : r.charAt(0).toUpperCase() + r.slice(1),
+        name: r === 'abby-normal' ? 'Abby Normal' : (r === 'borg-queen' ? 'Borg Queen' : r.charAt(0).toUpperCase() + r.slice(1)),
         state: 'idle',
         card: null,
         lastActivity: null,

@@ -3,7 +3,7 @@
 //! Jeff, 2026-10-01: "we have run times for suites now?" — they did not.
 
 use werk_test::run_record::{
-    parse_suite_line, parse_unit_time_line, seconds, suite_row_payload, suite_row_payload_timed, unit_line_key, SuiteRow,
+    parse_suite_line, parse_unit_time_line, seconds, unit_line_key, SuiteRow,
 };
 
 #[test]
@@ -38,17 +38,11 @@ fn the_time_line_and_the_unit_line_share_one_key() {
 }
 
 #[test]
-fn a_timed_row_writes_its_seconds_beside_the_suite_line_and_in_the_graph() {
+fn a_timed_row_writes_its_seconds_beside_the_suite_line() {
     let mut row = SuiteRow::new("bats", "platform/tests/x.bats", "kade", "pass", "3 pass, 0 fail");
     assert_eq!(row.time_line(), None);
     row.millis = Some(12_345);
     assert_eq!(row.time_line().as_deref(), Some("SUITETIME|bats|platform/tests/x.bats|12.3"));
-    let body = suite_row_payload_timed("2026-10-01T16:30:00", 7, &row, 1);
-    assert!(body.ends_with(",\"suiteSeconds\":\"12.3\"}"), "{body}");
-    assert_eq!(body.matches('{').count(), 1, "one object: {body}");
-    // an untimed row's payload is exactly the old one
-    row.millis = None;
-    assert_eq!(suite_row_payload_timed("r", 1, &row, 1), suite_row_payload("r", 1, &row, 1));
 }
 
 #[test]

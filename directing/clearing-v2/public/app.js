@@ -116,26 +116,38 @@ function signEvent(sk, content, options = {}) {
 }
 
 function formatAuthor(role) {
-  return role === 'abby-normal' ? 'Abby Normal' : role;
+  if (role === 'abby-normal') return 'Abby Normal';
+  if (role === 'borg-queen') return 'Borg Queen';
+  return role;
+}
+
+// #4885 — the one Boston renderer: a script tag in the page, the sdk module under node tests
+const boston = typeof chorusBoston !== 'undefined' ? chorusBoston : (typeof require !== 'undefined' ? require('../../../platform/chorus-sdk/time/boston') : null);
+if (!boston && typeof window !== 'undefined') {
+  console.error('[clearing-v2] chorusBoston not loaded; falling back to browser-local time formatting');
 }
 
 function formatMessageTime(ts) {
-  try {
-    return new Date(ts).toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      hourCycle: 'h23',
-    });
-  } catch {
-    return ts;
-  }
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  return (boston && typeof boston.bostonHHMM === 'function') ? boston.bostonHHMM(d) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function stripPromptHeader(text) {
   return String(text || '').replace(/^---\s+[^|\n]+\|[^\n]+---\s*\n*/, '');
 }
+
+function toMs(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : Date.parse(v || ''); }
+
+/** #4646 — same fingerprint as views.ts bodyHash. */
+function bodyHash(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/** #4646 — a second copy of one message arrives within seconds of the first. */
+const COPY_WINDOW_MS = 20000;
 
 function appendMessage(msg) {
   const container = messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
@@ -147,6 +159,12 @@ function appendMessage(msg) {
   const cleanText = stripPromptHeader(msg.text || '');
   const bodyKey = cleanText.trim();
   const children = Array.isArray(container.children) ? container.children : Array.from(container.children || []);
+  // #4646 — the room merges a second copy of a message (same author, same words) and
+  // still pushes it live; the page already shows it, so it is not shown twice.
+  // Only a copy seconds apart is the same message; the same words a minute later are a repeat.
+  const at = typeof msg.ts === 'number' ? msg.ts : Date.parse(msg.ts || '');
+  if (children.some((c) => c && c.dataset && c.dataset.from === msg.from && (c.dataset.body === bodyKey || c.dataset.body === bodyHash(bodyKey))
+    && Math.abs(toMs(c.dataset.ts) - at) < COPY_WINDOW_MS)) return;
   // #4591 — only upgrade a placeholder bridge message if the incoming message has the same body;
   // do not drop distinct messages that happen to share identical text.
   const bridgePlaceholder = (bodyKey && msg.from !== 'bridge')
@@ -169,6 +187,7 @@ function appendMessage(msg) {
   if (!el.dataset) el.dataset = {};
   el.dataset.from = msg.from;
   el.dataset.body = bodyKey;
+  el.dataset.ts = msg.ts || '';
   if (msg.kind) el.dataset.kind = msg.kind; // #4592 — the team nudges toggle hides these
 
   const header = document.createElement('div');
@@ -198,15 +217,26 @@ function appendMessage(msg) {
 
   el.appendChild(header);
   el.appendChild(text);
+  appendPhotos(el, cleanText);
+  appendFiles(el, cleanText);
+
+  // #4732 / #4736 / #4739 / #4749: If actor filter(s) or search query are active, check if incoming message matches filter
+  if ((activeRoleFilters && activeRoleFilters.size > 0) || activeSearchQuery) {
+    const fromRole = (msg.from || '').toLowerCase();
+    const matches = isMessageVisibleWithFilters(fromRole, cleanText);
+    if (!matches) {
+      if (el.style) el.style.display = 'none';
+    }
+  }
 
   container.appendChild(el);
-  container.scrollTop = container.scrollHeight;
+  if (!el.style || el.style.display !== 'none') {
+    container.scrollTop = container.scrollHeight;
+  }
 }
 
-/** #4574/#4575 — #N card links, **bold**, and `code` built from DOM nodes: the message text is
- *  never parsed as HTML, so a message cannot inject markup. */
-function appendLinkedText(parent, text) {
-  const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|#\d+)/g);
+function appendInlineText(parent, text) {
+  const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|https?:\/\/[^\s<>"']+|#\d+)/g);
   for (const tok of tokens) {
     if (!tok) continue;
     if (tok.startsWith('`') && tok.endsWith('`') && tok.length > 2) {
@@ -217,6 +247,19 @@ function appendLinkedText(parent, text) {
       const strong = document.createElement('strong');
       strong.textContent = tok.slice(2, -2);
       parent.appendChild(strong);
+    } else if (/^https?:\/\//.test(tok)) {
+      const m = tok.match(/^(https?:\/\/[^\s<>"']+?)([.,;!?)]*)$/);
+      const url = m ? m[1] : tok;
+      const punct = m ? m[2] : '';
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = url;
+      parent.appendChild(a);
+      if (punct) {
+        parent.appendChild(document.createTextNode(punct));
+      }
     } else if (/^#\d+$/.test(tok)) {
       const id = tok.slice(1);
       const a = document.createElement('a');
@@ -234,6 +277,377 @@ function appendLinkedText(parent, text) {
   }
 }
 
+function appendBlocks(parent, text) {
+  const lines = text.split('\n');
+  let currentUl = null;
+  let currentOl = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)$/);
+
+    if (bulletMatch) {
+      currentOl = null;
+      if (!currentUl) {
+        currentUl = document.createElement('ul');
+        parent.appendChild(currentUl);
+      }
+      const li = document.createElement('li');
+      appendInlineText(li, bulletMatch[1]);
+      currentUl.appendChild(li);
+    } else if (numberedMatch) {
+      currentUl = null;
+      if (!currentOl) {
+        currentOl = document.createElement('ol');
+        parent.appendChild(currentOl);
+      }
+      const li = document.createElement('li');
+      appendInlineText(li, numberedMatch[2]);
+      currentOl.appendChild(li);
+    } else {
+      currentUl = null;
+      currentOl = null;
+      if (i > 0 && parent.children && parent.children.length > 0) {
+        const lastChild = parent.children[parent.children.length - 1];
+        const lastTag = lastChild && (lastChild.tag || lastChild.tagName);
+        if (lastTag !== 'UL' && lastTag !== 'OL' && lastTag !== 'ul' && lastTag !== 'ol') {
+          parent.appendChild(document.createElement('br'));
+        }
+      }
+      if (line.length > 0) {
+        appendInlineText(parent, line);
+      }
+    }
+  }
+}
+
+/** #4574/#4575/#4597 — #N card links, http(s) links, **bold**, lists, code fences and line breaks
+ *  built from DOM nodes: the message text is never parsed as HTML, so a message cannot inject markup. */
+/** #4635 / #4866 — names of uploaded photos a message mentions (both timestamp and timestamp_name formats). */
+function photoNames(text) {
+  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+[-a-zA-Z0-9_.]*\.(?:jpg|jpeg|png|gif|heic|webp))\b/gi), (m) => m[1]);
+}
+
+function appendPhotos(el, text) {
+  const names = photoNames(text);
+  if (names.length === 0 || typeof document === 'undefined') return;
+  const box = document.createElement('div');
+  box.className = 'msg-photos';
+  for (const n of names) {
+    const a = document.createElement('a');
+    a.href = clearingBase() + '/uploads/' + n;
+    a.target = '_blank';
+    const img = document.createElement('img');
+    img.src = clearingBase() + '/uploads/' + n;
+    img.alt = 'photo ' + n;
+    a.appendChild(img);
+    box.appendChild(a);
+  }
+  el.appendChild(box);
+}
+
+/** #4866 — names of uploaded files a message mentions (excluding photo formats). */
+function fileNames(text) {
+  return Array.from(String(text || '').matchAll(/\/clearing-v2-uploads\/(\d+[-a-zA-Z0-9_.]*\.(?!jpg|jpeg|png|gif|heic|webp)[a-zA-Z0-9]{1,10})\b/gi), (m) => m[1]);
+}
+
+function appendFiles(el, text, docImpl) {
+  const names = fileNames(text);
+  if (names.length === 0) return;
+  const doc = docImpl || (typeof document !== 'undefined' ? document : null);
+  if (!doc || !doc.createElement) return;
+  const box = doc.createElement('div');
+  box.className = 'msg-files';
+  for (const n of names) {
+    const a = doc.createElement('a');
+    a.href = clearingBase() + '/uploads/' + n;
+    a.target = '_blank';
+    if (a.setAttribute) a.setAttribute('download', n.replace(/^\d+_/, ''));
+    a.className = 'msg-file';
+    a.textContent = '📎 ' + n;
+    box.appendChild(a);
+  }
+  el.appendChild(box);
+}
+
+function formatUploadError(json) {
+  if (!json) return { isAuth: false, text: 'upload failed', html: 'upload failed' };
+  if (json.error === 'not-signed-in' || json.status === 401) {
+    const signInUrl = json.signInUrl || '';
+    const detail = json.detail || 'Not signed in here.';
+    return {
+      isAuth: true,
+      signInUrl,
+      detail,
+      text: `${detail} Sign in to send: ${signInUrl}`,
+      html: signInUrl ? `${detail} <a href="${signInUrl}">Sign in to send</a>` : detail,
+    };
+  }
+  const reason = json.reason || json.detail || json.error || 'upload failed';
+  return { isAuth: false, text: reason, html: reason };
+}
+
+/** #4866 — upload any file (PDF, code, text, doc), then put its path in the composer. */
+async function uploadFile(file, fetchImpl) {
+  if (!file) return { ok: false, reason: 'no file chosen' };
+  const type = file.type || 'application/octet-stream';
+  const name = file.name || 'file.bin';
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/upload?filename=' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Content-Type': type, 'X-Filename': name },
+      body: file
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+      const err = formatUploadError(body);
+      const resObj = { ok: false, reason: err.text };
+      if (err.isAuth) resObj.errorInfo = err;
+      return resObj;
+    }
+    return { ok: true, path: body.path, name: body.name || name };
+  } catch (e) {
+    return { ok: false, reason: 'upload failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+}
+
+/** #4635 — the composer's camera button: upload the photo, then put its path in the
+ *  message box so Jeff adds words and sends. Failure is named in the composer. */
+async function uploadPhoto(file, fetchImpl) {
+  if (!file) return { ok: false, reason: 'no photo chosen' };
+  const type = /\.hei[cf]$/i.test(file.name || '') ? 'image/heic' : (file.type || 'image/jpeg');
+  const name = file.name || 'photo.jpg';
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/upload?filename=' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Content-Type': type, 'X-Filename': name },
+      body: file
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+      const err = formatUploadError(body);
+      const resObj = { ok: false, reason: err.text };
+      if (err.isAuth) resObj.errorInfo = err;
+      return resObj;
+    }
+    return { ok: true, path: body.path };
+  } catch (e) {
+    return { ok: false, reason: 'upload failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+}
+
+function watchFileButton() {
+  if (typeof document === 'undefined') return;
+  const picker = document.getElementById('composer-file');
+  if (!picker || !picker.addEventListener) return;
+  if (picker.dataset && picker.dataset.wired === 'true') return;
+  if (!picker.dataset) picker.dataset = {};
+  picker.dataset.wired = 'true';
+  const label = document.querySelector ? document.querySelector('.composer-file') : null;
+  if (label && label.addEventListener) {
+    label.addEventListener('click', (e) => {
+      if (e.target !== picker) {
+        e.preventDefault();
+        picker.click();
+      }
+    });
+  }
+  picker.addEventListener('change', async () => {
+    const input = document.getElementById('composer-input');
+    const status = document.getElementById('send-error');
+    const files = Array.from(picker.files || []);
+    const failed = [];
+    for (const [i, file] of files.entries()) {
+      if (status) status.textContent = 'Uploading file ' + (i + 1) + ' of ' + files.length + '…';
+      const out = await uploadFile(file);
+      if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📎 ' + out.path + ' ';
+      if (!out.ok) failed.push(out.errorInfo || { text: out.reason });
+    }
+    if (status) {
+      if (failed.length) {
+        const firstFail = failed[0];
+        if (firstFail && firstFail.html && status.innerHTML !== undefined) {
+          status.innerHTML = failed.length + ' of ' + files.length + ' files not attached: ' + firstFail.html;
+        } else {
+          status.textContent = failed.length + ' of ' + files.length + ' files not attached: ' + (firstFail && firstFail.text ? firstFail.text : firstFail);
+        }
+      } else {
+        if (status.innerHTML !== undefined) status.innerHTML = '';
+        status.textContent = '';
+      }
+    }
+    picker.value = '';
+    if (input && input.focus) input.focus();
+  });
+}
+
+/** #4635 — send a recording to Library for words. Failure is named, never silent. */
+async function transcribeVoice(blob, fetchImpl) {
+  if (!blob || !blob.size) return { ok: false, reason: 'the recording was empty' };
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/voice', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+      const err = formatUploadError(body);
+      const resObj = { ok: false, reason: err.text };
+      if (err.isAuth) resObj.errorInfo = err;
+      return resObj;
+    }
+    return { ok: true, transcript: body.transcript };
+  } catch (e) {
+    return { ok: false, reason: 'voice failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+}
+
+/** #4877 — extract actor roles from tiles already loaded on the page; exclude jeff so voice notes never target @jeff. */
+function getLoadedActorRoles() {
+  if (typeof document === 'undefined') return [];
+  const roles = new Set();
+  if (typeof document.querySelectorAll === 'function') {
+    const tiles = document.querySelectorAll('.actor-tile, #rooms-people-row [data-role], #tiles-container .tile, #tiles-container [data-role]');
+    for (const t of Array.from(tiles || [])) {
+      const r = (t && t.dataset && t.dataset.role)
+        ? t.dataset.role.toLowerCase()
+        : (t && t.id ? t.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  const peopleRow = document.getElementById('rooms-people-row');
+  if (peopleRow && peopleRow.children) {
+    for (const child of Array.from(peopleRow.children || [])) {
+      const r = (child && child.dataset && child.dataset.role)
+        ? child.dataset.role.toLowerCase()
+        : (child && child.id ? child.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont && tilesCont.children) {
+    for (const child of Array.from(tilesCont.children || [])) {
+      const r = (child && child.dataset && child.dataset.role)
+        ? child.dataset.role.toLowerCase()
+        : (child && child.id ? child.id.replace(/^tile-/, '').toLowerCase() : '');
+      if (r && r !== 'jeff') roles.add(r);
+    }
+  }
+  return Array.from(roles);
+}
+
+function resolveVoiceTargetRole(inputRoleFilters) {
+  const loadedRoles = getLoadedActorRoles();
+  const filterRoles = Array.from(inputRoleFilters || [])
+    .map((r) => r.toLowerCase())
+    .filter((r) => r !== 'jeff' && loadedRoles.includes(r));
+  if (filterRoles.length > 0) return filterRoles[0];
+
+  if (typeof document !== 'undefined') {
+    const picker = document.getElementById('room-picker');
+    const val = picker && picker.value && picker.value.toLowerCase();
+    if (val && val !== 'team' && val !== 'jeff' && loadedRoles.includes(val)) {
+      return val;
+    }
+  }
+  return null;
+}
+
+/** #4635 — tap the mic to record, tap again to stop; the words land in the message box. */
+function watchMicButton() {
+  if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
+  const mic = document.getElementById('composer-mic');
+  if (!mic || !mic.addEventListener) return;
+  if (mic.dataset && mic.dataset.wired === 'true') return;
+  if (!mic.dataset) mic.dataset = {};
+  mic.dataset.wired = 'true';
+  let recorder = null;
+  let chunks = [];
+  const say = (t, html) => {
+    const s = document.getElementById('send-error');
+    if (s) {
+      if (html && s.innerHTML !== undefined) {
+        s.innerHTML = html;
+      } else {
+        s.textContent = t;
+      }
+    }
+  };
+  mic.addEventListener('click', async () => {
+    if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      say('Voice not available here: this browser cannot record (it needs https)');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (recErr) {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Voice recorder failed: ' + (recErr && recErr.message ? recErr.message : String(recErr)));
+        return;
+      }
+      recorder.onerror = (e) => {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        say('Voice recording error: ' + (e && e.error ? e.error.message || e.error.name : 'unknown recorder error'));
+      };
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        mic.setAttribute('aria-pressed', 'false');
+        if (chunks.length === 0) {
+          say('Voice not added: no audio recorded (0 bytes)');
+          return;
+        }
+        say('Turning your voice into words…');
+        const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+        say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
+        const input = document.getElementById('composer-input');
+        if (out.ok && input) {
+          let text = out.transcript || '';
+          // #4877 AC1: If actor filter is active or direct room selected, prepend @<role> if not already present
+          const targetRole = resolveVoiceTargetRole(activeRoleFilters);
+          const currentVal = input.value || '';
+          if (targetRole && !currentVal.trim().startsWith('@') && !text.trim().startsWith('@')) {
+            text = '@' + targetRole + ' ' + text;
+          }
+          input.value = (currentVal ? currentVal + ' ' : '') + text;
+          input.focus();
+        }
+      };
+      recorder.start();
+      mic.setAttribute('aria-pressed', 'true');
+      say('Recording… tap the mic again to stop');
+    } catch (e) {
+      mic.setAttribute('aria-pressed', 'false');
+      say('Voice not available: ' + (e && e.message ? e.message : String(e)));
+    }
+  });
+}
+
+function appendLinkedText(parent, text) {
+  const str = String(text);
+  const parts = str.split(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const fenceMatch = part.match(/^```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```$/);
+      const lang = fenceMatch ? fenceMatch[1] : '';
+      const codeContent = fenceMatch ? fenceMatch[2].replace(/\n$/, '') : part.slice(3, -3);
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (lang) code.className = `language-${lang}`;
+      code.textContent = codeContent;
+      pre.appendChild(code);
+      parent.appendChild(pre);
+    } else {
+      appendBlocks(parent, part);
+    }
+  }
+}
+
 /** #4575 — on a phone the room fills exactly what is visible, so Send sits above Safari's
  *  bar. window.innerHeight is the visible height; the header above the room varies (the
  *  trust strip wraps), so a fixed calc() left Send under the bar on Jeff's iPhone. */
@@ -245,9 +659,434 @@ function fitChatToViewport() {
   const top = chat.getBoundingClientRect().top + window.scrollY;
   chat.style.height = Math.max(240, window.innerHeight - top) + 'px';
 }
+/** #4597 — the room's history is rendered by the server and nothing scrolled it, so the
+ *  room opened at the oldest message. Open it at the newest. */
+function scrollRoomToNewest() {
+  if (typeof document === 'undefined') return;
+  const stream = document.getElementById('messages-stream');
+  if (stream) stream.scrollTop = stream.scrollHeight;
+}
+/** #4597 — Jeff 19:11: "i cant scroll up in message history". Near the top of the room,
+ *  fetch the page of messages just older than the oldest shown and put it above, keeping
+ *  the reader's place. Resolves to how many were added (0 = no older messages). */
+let loadingOlder = false;
+async function loadOlderMessages(fetchImpl) {
+  if (typeof document === 'undefined' || loadingOlder) return 0;
+  const stream = document.getElementById('messages-stream');
+  const first = stream && stream.querySelector('[id^="msg-"]');
+  const picker = document.getElementById('room-picker');
+  if (!stream || !first) return 0;
+  const room = (picker && picker.value) || 'team';
+  const fetchFn = (typeof fetchImpl === 'function' ? fetchImpl : null) || (typeof window !== 'undefined' && typeof window._fetchImpl === 'function' ? window._fetchImpl : null) || (typeof fetch === 'function' ? fetch : null);
+  if (!fetchFn) return 0;
+  loadingOlder = true;
+  try {
+    const rawTs = first.dataset && first.dataset.ts;
+    const anchorTs = rawTs ? Math.floor(toMs(rawTs) / 1000) : undefined;
+    let url = clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/history?before=' + encodeURIComponent(first.id.slice(4));
+    if (anchorTs) url += '&ts=' + anchorTs;
+    const res = await fetchFn(url);
+    if (!res.ok) {
+      const banner = document.getElementById('history-status') || document.getElementById('send-error');
+      if (banner) banner.textContent = "couldn't load older";
+      return 0;
+    }
+    const body = await res.json();
+    if (!body || !body.count) return 0;
+    const fromBottom = stream.scrollHeight - stream.scrollTop;
+    first.insertAdjacentHTML('beforebegin', body.html);
+    const banner = document.getElementById('history-status') || document.getElementById('send-error');
+    if (banner && banner.textContent === "couldn't load older") banner.textContent = '';
+    // #4739 — scrolling up in messages-stream applies the active role filter to all prepended history elements immediately
+    if (activeRoleFilters && activeRoleFilters.size > 0) {
+      applyRoleFilters({ skipBackfill: true });
+    }
+    // #4751 — synchronous scroll position restore with overflow-anchor to prevent fighting Safari touch inertia
+    const newScrollTop = stream.scrollHeight - fromBottom;
+    if (Math.abs(stream.scrollTop - newScrollTop) > 1) {
+      stream.scrollTop = newScrollTop;
+    }
+    return body.count;
+  } catch {
+    return 0;
+  } finally {
+    loadingOlder = false;
+  }
+}
+function countVisibleMessages(streamEl) {
+  const stream = streamEl || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
+  if (!stream) return 0;
+  const msgElements = (stream.children && stream.children.length > 0)
+    ? Array.from(stream.children)
+    : (stream.querySelectorAll ? Array.from(stream.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
+  return msgElements.filter((el) => el && el.style && el.style.display !== 'none').length;
+}
+
+// #4741: Auto-backfill older history when actor filter is active until visible viewport is filled
+let backfilling = false;
+async function backfillFilteredHistory(fetchImpl, targetVisible = 15) {
+  if (typeof document === 'undefined' || backfilling) return 0;
+  if (!activeRoleFilters || activeRoleFilters.size === 0) return 0;
+  const stream = document.getElementById('messages-stream');
+  if (!stream) return 0;
+  const fetchFn = (typeof fetchImpl === 'function' ? fetchImpl : null) || (typeof window !== 'undefined' && typeof window._fetchImpl === 'function' ? window._fetchImpl : null) || (typeof fetch === 'function' ? fetch : null);
+  if (!fetchFn) return 0;
+
+  backfilling = true;
+  let totalAdded = 0;
+  let safetyPages = 10;
+  try {
+    while (safetyPages-- > 0 && (countVisibleMessages(stream) < targetVisible || stream.scrollHeight <= stream.clientHeight)) {
+      const added = await loadOlderMessages(fetchFn);
+      if (!added || added === 0) break;
+      totalAdded += added;
+    }
+    return totalAdded;
+  } catch {
+    return totalAdded;
+  } finally {
+    backfilling = false;
+  }
+}
+
+/** #4646 / #4749 — re-fetch the role tiles and diff in-place per person to prevent outerHTML layout jitter. */
+async function refreshPeopleRow(fetchImpl) {
+  if (typeof document === 'undefined') return false;
+  const row = document.getElementById('rooms-people-row');
+  const picker = document.getElementById('room-picker');
+  if (!row) return false;
+  const room = (picker && picker.value) || 'team';
+  try {
+    const res = await (fetchImpl || fetch)(clearingBase() + '/api/rooms/' + encodeURIComponent(room) + '/people');
+    if (!res.ok) return false;
+    const body = await res.json();
+    if (!body || !body.html) return false;
+
+    // If mock/simple row doesn't have child structure or querySelector, fall back to outerHTML
+    if (typeof row.querySelector !== 'function' || !row.children) {
+      if (row.outerHTML !== body.html) row.outerHTML = body.html;
+      return true;
+    }
+
+    // Diff in-place per actor tile to avoid destroying DOM nodes or jumping scroll position
+    let incomingTiles = [];
+    if (typeof DOMParser !== 'undefined') {
+      const doc = new DOMParser().parseFromString(body.html, 'text/html');
+      const tempContainer = doc.getElementById('rooms-people-row') || doc.body.firstElementChild;
+      if (tempContainer) incomingTiles = Array.from(tempContainer.querySelectorAll('.actor-tile'));
+    } else {
+      // Regex-based lightweight parsing for non-browser / node environments
+      const tileMatches = Array.from(body.html.matchAll(/<a[^>]*class="[^"]*actor-tile-([a-z0-9-]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi));
+      for (const m of tileMatches) {
+        const role = m[1];
+        const inner = m[2];
+        const andonMatch = inner.match(/class="([^"]*andon-[^"]*)"/i);
+        const cardMatch = inner.match(/<div class="actor-tile-card">([\s\S]*?)<\/div>/i);
+        incomingTiles.push({
+          role,
+          andonClass: andonMatch ? andonMatch[1] : undefined,
+          cardHtml: cardMatch ? cardMatch[1].trim() : undefined,
+        });
+      }
+    }
+
+    for (const incoming of incomingTiles) {
+      const role = incoming.role || (incoming.dataset && incoming.dataset.role);
+      if (!role) continue;
+      const existing = row.querySelector(`.actor-tile[data-role="${role}"], .actor-tile-${role}`);
+      if (existing) {
+        // Diff andon dot
+        const exAndon = existing.querySelector('.andon-dot');
+        const inAndonClass = incoming.andonClass || (incoming.querySelector && incoming.querySelector('.andon-dot')?.className);
+        if (exAndon && inAndonClass && exAndon.className !== inAndonClass) {
+          exAndon.className = inAndonClass;
+        }
+
+        // Diff card ref
+        const exCard = existing.querySelector('.actor-tile-card');
+        const inCardHtml = incoming.cardHtml !== undefined ? incoming.cardHtml : (incoming.querySelector && incoming.querySelector('.actor-tile-card')?.innerHTML);
+        if (exCard && inCardHtml !== undefined && exCard.innerHTML !== inCardHtml) {
+          exCard.innerHTML = inCardHtml;
+        }
+      }
+    }
+
+    if (activeRoleFilters && activeRoleFilters.size > 0) updateTileSelectionClasses();
+    initTileFilters();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function watchRoomScroll(fetchImpl) {
+  if (typeof document === 'undefined') return;
+  const fn = typeof fetchImpl === 'function' ? fetchImpl : undefined;
+  const stream = document.getElementById('messages-stream');
+  if (stream && stream.addEventListener) {
+    let scrollThrottled = false;
+    stream.addEventListener('scroll', () => {
+      // #4751 — threshold with throttle to prevent rapid-fire requests fighting touch inertia
+      if (stream.scrollTop < 120 && !loadingOlder && !backfilling && !scrollThrottled) {
+        scrollThrottled = true;
+        setTimeout(() => { scrollThrottled = false; }, 150);
+        if (activeRoleFilters && activeRoleFilters.size > 0) {
+          const current = countVisibleMessages(stream);
+          return backfillFilteredHistory(fn, current + 15);
+        } else {
+          return loadOlderMessages(fn);
+        }
+      }
+    }, { passive: true });
+  }
+}
 if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('DOMContentLoaded', scrollRoomToNewest);
+  window.addEventListener('DOMContentLoaded', () => watchRoomScroll());
+  window.addEventListener('DOMContentLoaded', () => { if (document.getElementById('rooms-people-row')) setInterval(refreshPeopleRow, 10000); });
+  window.addEventListener('load', scrollRoomToNewest);
   window.addEventListener('load', fitChatToViewport);
   window.addEventListener('resize', fitChatToViewport);
+}
+
+// #4732 / #4736: Actor tile 0..n stream filtering and composer targeting
+// #4749: Combined with in-memory message text search
+let activeRoleFilters = new Set();
+let activeSearchQuery = '';
+let defaultComposerPlaceholder = null;
+
+function getActiveSearchQuery() {
+  return activeSearchQuery;
+}
+
+function setSearchQuery(q) {
+  activeSearchQuery = String(q || '').trim().toLowerCase();
+  applyRoleFilters();
+  return activeSearchQuery;
+}
+
+function getActiveRoleFilters() {
+  return Array.from(activeRoleFilters);
+}
+
+function getActiveRoleFilter() {
+  if (activeRoleFilters.size === 0) return null;
+  if (activeRoleFilters.size === 1) return Array.from(activeRoleFilters)[0];
+  return Array.from(activeRoleFilters).join(',');
+}
+
+function isOnlyRoleMentions(str) {
+  const trimmed = String(str || '').trim();
+  if (!trimmed) return true;
+  const tokens = trimmed.split(/\s+/);
+  return tokens.length > 0 && tokens.every((tok) => tok.startsWith('@'));
+}
+
+function updateTileSelectionClasses() {
+  if (typeof document === 'undefined') return;
+  const actorTiles = document.querySelectorAll ? document.querySelectorAll('.actor-tile') : [];
+  for (const tile of Array.from(actorTiles)) {
+    const r = (tile.dataset && tile.dataset.role) ? tile.dataset.role.toLowerCase() : '';
+    const isSelected = Boolean(r && activeRoleFilters.has(r));
+    if (tile.classList) {
+      if (isSelected) {
+        tile.classList.add('selected');
+        tile.classList.add('active-filter');
+      } else {
+        tile.classList.remove('selected');
+        tile.classList.remove('active-filter');
+      }
+    }
+  }
+
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont) {
+    const tiles = tilesCont.querySelectorAll ? tilesCont.querySelectorAll('.tile') : [];
+    for (const tile of Array.from(tiles)) {
+      const r = (tile.dataset && tile.dataset.role) ? tile.dataset.role.toLowerCase() : (tile.id ? tile.id.replace(/^tile-/, '').toLowerCase() : '');
+      const isSelected = Boolean(r && activeRoleFilters.has(r));
+      if (tile.classList) {
+        if (isSelected) {
+          tile.classList.add('selected');
+          tile.classList.add('active-filter');
+        } else {
+          tile.classList.remove('selected');
+          tile.classList.remove('active-filter');
+        }
+      }
+    }
+  }
+}
+
+// #4732 / #4736 / #4739 / #4749: Filter matching logic for 1-on-1 dialogue combined with search query
+function isMessageVisibleWithFilters(from, content) {
+  const fromRole = String(from || '').trim().toLowerCase();
+  const text = String(content || '');
+
+  // If search query is active, message MUST match search text
+  if (activeSearchQuery && !text.toLowerCase().includes(activeSearchQuery)) {
+    return false;
+  }
+
+  if (!activeRoleFilters || activeRoleFilters.size === 0) return true;
+
+  // 1. If message is from one of the selected roles ("u"), always visible
+  if (activeRoleFilters.has(fromRole)) return true;
+
+  // 2. If message is from Jeff ("me")
+  if (fromRole === 'jeff') {
+    const filterRoles = Array.from(activeRoleFilters);
+    // If Jeff explicitly mentions any selected role, visible
+    if (filterRoles.some((r) => new RegExp('@' + r + '\\b', 'i').test(text))) {
+      return true;
+    }
+    // Check if Jeff explicitly targeted an unselected role (e.g. "@kade ...", "@silas ...")
+    // Non-mention prompts or broadcast mentions (@team, @all, @everyone, @here) belong to dialogue
+    const mentions = (text.match(/(?:^|\s)@([a-zA-Z0-9_-]+)/g) || []).map((m) => m.trim().slice(1).toLowerCase());
+    if (mentions.length > 0) {
+      const isBroadcast = mentions.some((m) => ['team', 'all', 'everyone', 'here'].includes(m));
+      if (isBroadcast) return true;
+      // All mentions are other specific actors -> Jeff was exclusively talking to someone else
+      return false;
+    }
+    // Untargeted prompt from Jeff (e.g. "what is ur card status", "done") -> part of dialogue with selected actor
+    return true;
+  }
+
+  // 3. Third-party role (fromRole is neither Jeff nor a selected role)
+  // In 1-on-1 dialogue ("only me and u"), third-party chatter is hidden
+  return false;
+}
+
+function applyRoleFilters(opts) {
+  const fetchImpl = (opts && typeof opts === 'function') ? opts : (opts && opts.fetchImpl);
+  const skipBackfill = Boolean(opts && opts.skipBackfill);
+  updateTileSelectionClasses();
+
+  if (typeof document !== 'undefined') {
+    const container = document.getElementById('messages-stream');
+    const filterRoles = Array.from(activeRoleFilters);
+    if (container) {
+      const msgElements = (container.children && container.children.length > 0)
+        ? Array.from(container.children)
+        : (container.querySelectorAll ? Array.from(container.querySelectorAll('.msg, .message, [id^="msg-"]')) : []);
+      for (const el of Array.from(msgElements)) {
+        if (!el || !el.style) continue;
+        const from = (el.dataset && el.dataset.from) ? el.dataset.from.toLowerCase() : '';
+        const content = el.innerText || el.textContent || (el.dataset && el.dataset.body) || '';
+        const matches = isMessageVisibleWithFilters(from, content);
+        el.style.display = matches ? '' : 'none';
+      }
+    }
+
+    const input = document.getElementById('composer-input');
+    if (input) {
+      if (defaultComposerPlaceholder === null) {
+        defaultComposerPlaceholder = input.placeholder || 'Message #team...';
+      }
+      if (filterRoles.length === 0) {
+        input.placeholder = defaultComposerPlaceholder || 'Message #team...';
+        if (input.value && isOnlyRoleMentions(input.value)) {
+          input.value = '';
+        }
+      } else {
+        input.placeholder = 'Message @' + filterRoles.join(', @') + '...';
+        const currentVal = input.value || '';
+        if (!currentVal.trim() || isOnlyRoleMentions(currentVal)) {
+          input.value = filterRoles.map((r) => '@' + r).join(' ') + ' ';
+        }
+        if (input.focus) input.focus();
+      }
+    }
+
+    // #4741: Unfiltering rejoins at latest message; filtering triggers auto-backfill
+    if (filterRoles.length === 0) {
+      scrollRoomToNewest();
+    } else if (!backfilling && !skipBackfill) {
+      const hasHttp = typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
+      if (hasHttp || fetchImpl || (typeof window !== 'undefined' && window._fetchImpl)) {
+        return backfillFilteredHistory(fetchImpl);
+      }
+    }
+  }
+}
+
+function setRoleFilter(role, fetchImpl) {
+  if (!role) {
+    activeRoleFilters.clear();
+  } else if (Array.isArray(role)) {
+    activeRoleFilters = new Set(role.map((r) => String(r).trim().toLowerCase()).filter(Boolean));
+  } else {
+    const parts = String(role).split(',').map((r) => r.trim().toLowerCase()).filter(Boolean);
+    activeRoleFilters = new Set(parts);
+  }
+  return applyRoleFilters(fetchImpl);
+}
+
+function setRoleFilters(roles, fetchImpl) {
+  return setRoleFilter(roles, fetchImpl);
+}
+
+function toggleActorFilter(event, role, fetchImpl) {
+  if (event) {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+  }
+  if (!role) {
+    setRoleFilter(null, fetchImpl);
+    return false;
+  }
+  const cleanRole = String(role).trim().toLowerCase();
+  if (activeRoleFilters.has(cleanRole)) {
+    activeRoleFilters.delete(cleanRole);
+  } else {
+    activeRoleFilters.add(cleanRole);
+  }
+  applyRoleFilters(fetchImpl);
+  return false;
+}
+
+function initTileFilters() {
+  if (typeof document === 'undefined') return;
+  const peopleRow = document.getElementById('rooms-people-row');
+  if (peopleRow && !peopleRow._filterBound && peopleRow.addEventListener) {
+    peopleRow._filterBound = true;
+    peopleRow.addEventListener('click', (e) => {
+      if (e.target && e.target.closest && e.target.closest('.card-ref')) return;
+      const tile = e.target && e.target.closest ? e.target.closest('.actor-tile') : null;
+      if (tile && tile.dataset && tile.dataset.role) {
+        e.preventDefault();
+        toggleActorFilter(e, tile.dataset.role);
+      }
+    });
+  }
+  const tilesCont = document.getElementById('tiles-container');
+  if (tilesCont && !tilesCont._filterBound && tilesCont.addEventListener) {
+    tilesCont._filterBound = true;
+    tilesCont.addEventListener('click', (e) => {
+      const tile = e.target && e.target.closest ? e.target.closest('.tile') : null;
+      if (tile) {
+        const role = (tile.dataset && tile.dataset.role) || (tile.id ? tile.id.replace(/^tile-/, '') : '');
+        if (role) {
+          e.preventDefault();
+          toggleActorFilter(e, role);
+        }
+      }
+    });
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.toggleActorFilter = toggleActorFilter;
+  window.setRoleFilter = setRoleFilter;
+  window.setRoleFilters = setRoleFilters;
+  window.getActiveRoleFilter = getActiveRoleFilter;
+  window.getActiveRoleFilters = getActiveRoleFilters;
+  window.getActiveSearchQuery = getActiveSearchQuery;
+  window.setSearchQuery = setSearchQuery;
+  window.applyRoleFilters = applyRoleFilters;
+  window.isMessageVisibleWithFilters = isMessageVisibleWithFilters;
+  window.backfillFilteredHistory = backfillFilteredHistory;
 }
 
 function updateTiles(tiles) {
@@ -264,23 +1103,46 @@ function updateTiles(tiles) {
   }
 }
 
+// #4649 — a message of Jeff's that did not reach its role says so, instead of
+// looking sent. The server sends the list on connect and each new failure live.
+function markUndelivered(id, roles) {
+  if (typeof document === 'undefined' || !id || !Array.isArray(roles) || roles.length === 0) return;
+  const msg = document.getElementById(`msg-${id}`) || document.getElementById(id);
+  if (!msg) return;
+  if (msg.classList) msg.classList.add('undelivered');
+  let mark = msg.querySelector ? msg.querySelector('.msg-undelivered') : null;
+  if (!mark) {
+    mark = document.createElement('div');
+    mark.className = 'msg-undelivered';
+    // under the words, not beside them: .msg lays header and text out in a row
+    const text = msg.querySelector ? msg.querySelector('.message-text') : null;
+    (text || msg).appendChild(mark);
+  }
+  mark.textContent = `not delivered to ${roles.join(', ')}`;
+}
+
 // Setup EventSource for SSE live stream
-function initStream() {
+function initStream(customContainer) {
+  if (typeof EventSource === 'undefined') return;
+  const container = customContainer || messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
   const evtSource = new EventSource(clearingBase() + '/api/events');
 
   evtSource.addEventListener('init', (e) => {
     try {
       const data = JSON.parse(e.data);
       // #4574 — pages without a message list (Board, Roles) ignore the room's history
-      if (data.messages && messagesContainer) {
-        messagesContainer.innerHTML = '';
+      // #4749 — merge messages by ID into messagesContainer without wiping existing DOM or losing scrolled-back history
+      if (data.messages && container) {
         data.messages.forEach(appendMessage);
       }
+      if (data.undelivered) Object.entries(data.undelivered).forEach(([id, roles]) => markUndelivered(id, roles));
       if (data.tiles) {
         updateTiles(data.tiles);
       }
-      relayIndicator.textContent = 'Connected (SSE)';
-      relayIndicator.className = 'relay-status connected';
+      if (relayIndicator) {
+        relayIndicator.textContent = 'Connected (SSE)';
+        relayIndicator.className = 'relay-status connected';
+      }
     } catch (err) {
       console.error('Error parsing init event', err);
     }
@@ -292,6 +1154,15 @@ function initStream() {
       appendMessage(msg);
     } catch (err) {
       console.error('Error parsing message event', err);
+    }
+  });
+
+  evtSource.addEventListener('delivery', (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d && d.ok === false) markUndelivered(d.id, d.roles || [d.to]);
+    } catch (err) {
+      console.error('Error parsing delivery event', err);
     }
   });
 
@@ -310,17 +1181,42 @@ function initStream() {
   };
 }
 
+/** #4889 — the room a page is: the segment after /rooms/ (any base prefix before it), else 'team'. */
+function roomFromPath(pathname) {
+  const m = /\/rooms\/([^/?#]+)/.exec(pathname || '');
+  if (!m) return 'team';
+  // a malformed escape must not stop Jeff's send: use the segment as typed
+  try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+}
+
 async function handleSendMessage(text, options = {}) {
   const inputEl = options.inputEl || composerInput;
   const statusEl = options.statusEl || (typeof document !== 'undefined' ? document.getElementById('send-error') : null);
   const btnEl = options.btnEl || (typeof document !== 'undefined' && composerForm ? composerForm.querySelector('button[type="submit"]') : null);
   const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
 
-  const cleanText = (text || '').trim();
-  if (!cleanText) return;
+  let cleanText = (text || '').trim();
+
+  // #4877 AC6: refuse sending empty body or bare role mentions (e.g. "@wren")
+  if (!cleanText || isOnlyRoleMentions(cleanText)) {
+    if (statusEl) {
+      statusEl.textContent = 'Add a message before sending';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
+
+  // #4732 / #4736 — if actor tile(s) are selected, automatically target those role(s) without requiring thumb-typing @<role>
+  const filterRoles = Array.from(activeRoleFilters);
+  if (filterRoles.length > 0 && !cleanText.startsWith('@')) {
+    cleanText = filterRoles.map((r) => '@' + r).join(' ') + ' ' + cleanText;
+  }
 
   const savedText = cleanText;
-  if (inputEl) inputEl.value = '';
+  if (inputEl) {
+    inputEl.value = '';
+    if (inputEl.style) inputEl.style.height = 'auto';
+  }
 
   if (btnEl) {
     btnEl.textContent = 'Sending...';
@@ -334,12 +1230,17 @@ async function handleSendMessage(text, options = {}) {
     let signedEvent = null;
     const webid = (typeof window !== 'undefined' && window.CHORUS_WEBID) ? window.CHORUS_WEBID : 'https://id.lightlifeurbangardens.com/jeff/profile/card#me';
 
+    // #4889 — the note carries the room Jeff is in: a post in @ borg-queen was signed
+    // room 'team' and went to the moderator (11-04 row 67493, to: wren)
+    const pathname = options.pathname !== undefined ? options.pathname
+      : (typeof window !== 'undefined' && window.location ? window.location.pathname : '');
+    const room = roomFromPath(pathname);
     if (typeof window !== 'undefined' && window.roomKey && typeof window.roomKey.signEvent === 'function') {
       const { sk } = window.roomKey.loadOrCreate(webid);
-      signedEvent = window.roomKey.signEvent(sk, 1, [['room', 'team']], cleanText);
+      signedEvent = window.roomKey.signEvent(sk, 1, [['room', room]], cleanText);
     } else {
       const { sk } = loadOrCreateRoomKey(webid);
-      signedEvent = signEvent(sk, cleanText, { room: 'team' });
+      signedEvent = signEvent(sk, cleanText, { room });
     }
 
     if (!fetchFn) {
@@ -442,11 +1343,47 @@ function showSignInNeeded(statusEl, json) {
   statusEl.style.display = 'block';
 }
 
-// Form send handler
-if (composerForm && composerInput) {
-  composerForm.addEventListener('submit', async (e) => {
+// Form send handler & Enter for newline (CR) (#4639)
+function initComposerInput() {
+  if (typeof document === 'undefined') return;
+  const form = document.getElementById('composer-form');
+  const input = document.getElementById('composer-input');
+  if (!form || !input) return;
+
+  // Auto-resize textarea
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+
+  // Enter = newline (default textarea behavior). Cmd+Enter or Ctrl+Enter = send!
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleSendMessage(input.value);
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    await handleSendMessage(composerInput.value);
+    await handleSendMessage(input.value);
+  });
+}
+
+if (typeof document !== 'undefined') {
+  initComposerInput();
+  initTileFilters();
+  watchFileButton();
+  watchMicButton();
+}
+
+function initTrustStripTooltips() {
+  if (typeof document === 'undefined') return;
+  const chips = document.querySelectorAll('.app-header .trust-strip .chip');
+  chips.forEach((chip) => {
+    if (!chip.title) {
+      chip.title = chip.textContent.trim().replace(/\s+/g, ' ');
+    }
   });
 }
 
@@ -463,6 +1400,7 @@ if (typeof window !== 'undefined') {
   }, 5000);
 
   initStream();
+  initTrustStripTooltips();
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -470,12 +1408,42 @@ if (typeof module !== 'undefined' && module.exports) {
     formatAuthor,
     formatMessageTime,
     appendMessage,
+    markUndelivered,
+    appendLinkedText,
     updateTiles,
+    scrollRoomToNewest,
+    loadOlderMessages,
+    refreshPeopleRow,
+    uploadPhoto,
+    uploadFile,
+    formatUploadError,
+    watchFileButton,
+    transcribeVoice,
+    photoNames,
+    fileNames,
+    appendFiles,
     initStream,
+    watchRoomScroll,
+    countVisibleMessages,
+    backfillFilteredHistory,
     loadOrCreateRoomKey,
     signEvent,
     handleSendMessage,
+    roomFromPath,
     teamNudgesOn,
     setTeamNudges,
+    getActiveRoleFilter,
+    getActiveRoleFilters,
+    getActiveSearchQuery,
+    setSearchQuery,
+    setRoleFilter,
+    setRoleFilters,
+    toggleActorFilter,
+    applyRoleFilters,
+    isMessageVisibleWithFilters,
+    initTileFilters,
+    watchMicButton,
+    getLoadedActorRoles,
+    resolveVoiceTargetRole,
   };
 }

@@ -408,6 +408,80 @@ fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(St
 /// logs, so this is the complementary half of the forcing function: the live
 /// "what's breaking right now" signal, injected every prompt. Fail-open and
 /// tightly time-boxed (300ms) — a slow or down Loki must never block a prompt.
+/// #4835 — every prompt asked Loki the same thing ("failure events in the last
+/// 15 minutes", over every stream): at 40 prompts at once it was the slowest lookup
+/// on 34 of 40 (p50 335 ms, max 825). One answer is shared for LOGS_TTL; callers
+/// queue on the lock while the one read is in flight and take its answer.
+/// CHORUS_INJECT_LOGS_TTL_SECS=0 turns the sharing off (the negative proof).
+static LOGS_CACHE: SharedSlot<(String, String)> = SharedSlot::new();
+
+fn logs_ttl() -> Duration {
+    Duration::from_secs(std::env::var("CHORUS_INJECT_LOGS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30))
+}
+
+/// How long an EMPTY answer (the source down or silent) is kept. Review (abby):
+/// not keeping it at all made a down source cost one read per waiting prompt;
+/// keeping it briefly caps that at one read per 5 s.
+const EMPTY_TTL: Duration = Duration::from_secs(5);
+
+/// One shared answer and when it was read (#4835), plus whether a refresh is in flight (#4839).
+/// The last answer and when it was read.
+type Entry<T> = Option<(Instant, Vec<T>)>;
+
+pub struct SharedSlot<T> {
+    inner: Mutex<(Entry<T>, bool)>,
+    done: std::sync::Condvar,
+}
+
+impl<T> SharedSlot<T> {
+    pub const fn new() -> Self {
+        Self { inner: Mutex::new((None, false)), done: std::sync::Condvar::new() }
+    }
+}
+
+/// One shared answer per `ttl`. #4839 (review: silas, abby) — the read runs OUTSIDE
+/// the lock: with no timeouts (#3048), a hung source must never hold every prompt.
+/// While one caller refreshes, the others take the last answer (even past its ttl).
+/// Before the first answer exists they wait for that one read: each would otherwise
+/// make the same read itself (40 Loki queries at a cold start, #4835).
+fn shared_for<T: Clone>(slot: &SharedSlot<T>, ttl: Duration, read: impl FnOnce() -> Vec<T>) -> Vec<T> {
+    if ttl.is_zero() {
+        return read();
+    }
+    {
+        let mut g = slot.inner.lock().unwrap_or_else(|p| p.into_inner());
+        while g.0.is_none() && g.1 {
+            g = slot.done.wait(g).unwrap_or_else(|p| p.into_inner()); // the first read is in flight
+        }
+        if let Some((at, v)) = g.0.as_ref() {
+            let keep = if v.is_empty() { ttl.min(EMPTY_TTL) } else { ttl };
+            if at.elapsed() < keep || g.1 {
+                return v.clone(); // fresh, or stale while someone else refreshes
+            }
+        }
+        g.1 = true; // this caller refreshes
+    }
+    // review (abby): if read() panics, the guard still clears the flag and wakes
+    // the waiters, so a cold-start panic never leaves every prompt waiting forever
+    struct Refreshing<'a, T>(&'a SharedSlot<T>);
+    impl<T> Drop for Refreshing<'_, T> {
+        fn drop(&mut self) {
+            let mut g = self.0.inner.lock().unwrap_or_else(|p| p.into_inner());
+            g.1 = false;
+            self.0.done.notify_all();
+        }
+    }
+    let guard = Refreshing(slot);
+    let v = read();
+    slot.inner.lock().unwrap_or_else(|p| p.into_inner()).0 = Some((Instant::now(), v.clone()));
+    drop(guard);
+    v
+}
+
+fn shared_log_errors() -> Vec<(String, String)> {
+    shared_for(&LOGS_CACHE, logs_ttl(), query_recent_log_errors)
+}
+
 fn query_recent_log_errors() -> Vec<(String, String)> {
     let now_ns: u128 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -419,6 +493,8 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
     // event name ending .failed/.error). Match the real failure events, not a
     // level that never appears. (The level=error query returned 0 in prod.)
     let logql = r#"{job=~".+"} |~ "\"event\":\"[a-z._]*\\.(failed|error)\"""#;
+    // #3048 (Jeff): no timeout — wait for the context. A down Loki answers fast
+    // (connection refused) and its empty answer is shared for EMPTY_TTL (#4835).
     let resp = match ureq::get("http://localhost:3102/loki/api/v1/query_range")
         .query("query", logql)
         .query("start", &start_ns.to_string())
@@ -487,20 +563,103 @@ fn read_pulse_snapshot() -> Option<String> {
         let warns = v.pointer("/health/warning_count").and_then(|f| f.as_i64()).unwrap_or(0);
         out.push_str(&format!("  health: {} (failures={}, warnings={})\n", status, failures, warns));
     }
-    if let Some(wip) = v.pointer("/board/wip_cards").and_then(|c| c.as_array()) {
-        // #2234 Step 6 prototype: surface count + pull-pointer instead of inlining card titles.
-        // Full card detail is available at /api/chorus/context/board/wip — agents that need it
-        // fetch and cite. This removes ~5 card-title lines (~300 bytes) per turn.
-        out.push_str(&format!("  board.wip: {} cards → GET /api/chorus/context/board/wip\n", wip.len()));
-    }
-    if let Some(roles) = v.pointer("/roles").and_then(|r| r.as_object()) {
-        for (role, data) in roles.iter().take(3) {
-            let state = data.get("state").and_then(|s| s.as_str()).unwrap_or("?");
-            let card = data.get("card").and_then(|c| c.as_i64()).map(|i| format!("#{}", i)).unwrap_or_default();
-            out.push_str(&format!("  role {}: state={} card={}\n", role, state, card));
-        }
-    }
+    // #4744 — the cards line left with #2234's count: the header (query_pulse_header) now
+    // carries each role's card, composed from the domains pulse composes.
+    // #4638 — the three "role X: state= card=" lines (the first three roles
+    // alphabetically, so never the whole team) gave way to the role's slice of
+    // the live tree, appended by the caller (query_tree_slice).
     if out.is_empty() { None } else { Some(out) }
+}
+
+/// #4638 — the role's slice of pulse's tree (GET :3475/api/tree/<role>):
+/// the prompts this role is in, newest first (#4757: each role's moving or quiet is on the
+/// header). A pulse that cannot be read says so
+/// by name; it never falls back to a guess.
+fn query_tree_slice(role: &str) -> String {
+    // #4757 — pulse's own tree (:3475), derived from its sources (messages, actor-state,
+    // spine); CHORUS_TREE_URL ({role} filled in) points elsewhere for a rollback
+    let url = std::env::var("CHORUS_TREE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:3475/api/tree/{role}".to_string())
+        .replace("{role}", role);
+    // uncapped like every per-prompt context call (#3048); a failure still says so by name
+    match ureq::get(&url).call() {
+        Ok(r) => match r.into_json::<serde_json::Value>() {
+            Ok(v) => format_tree_slice(&v),
+            Err(e) => format!("  tree: unmeasured ({} unreadable: {})\n", url, e),
+        },
+        Err(e) => format!("  tree: unmeasured ({} unreachable: {})\n", url, e),
+    }
+}
+
+/// #4757 — pulse's header from pulse itself (:3475), read from its sources at request time.
+/// A header that cannot be read says so by name.
+fn query_pulse_header() -> String {
+    let url = std::env::var("CHORUS_PULSE_HEADER_URL").unwrap_or_else(|_| "http://127.0.0.1:3475/pulse".to_string());
+    match ureq::get(&url).call() {
+        Ok(r) => match r.into_json::<serde_json::Value>() {
+            Ok(v) => format_pulse_header(&v),
+            Err(e) => format!("  header: unmeasured ({} unreadable: {})\n", url, e),
+        },
+        Err(e) => format!("  header: unmeasured ({} unreachable: {})\n", url, e),
+    }
+}
+
+/// #4757 — pulse's header (GET :3475/pulse): each line read by pulse from the API that holds
+/// it — cards from /cws, roles from actor-state, messages, alerts. This only renders them; a
+/// line pulse could not read says so by name.
+pub fn format_pulse_header(v: &serde_json::Value) -> String {
+    let Some(data) = v["data"].as_object() else {
+        return "  header: unmeasured (no data in the header)\n".to_string();
+    };
+    let ago = |s: i64| if s < 60 { format!("{s}s") } else if s < 3600 { format!("{}m", s / 60) } else { format!("{}h{}m", s / 3600, s % 3600 / 60) };
+    let at = v["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+    let text = |r: &serde_json::Value, k: &str| r[k].as_str().unwrap_or("").to_string();
+    let mut out = String::new();
+    for (name, entry) in data {
+        if let Some(why) = entry["unmeasured"].as_str() {
+            out.push_str(&format!("  {name}: unmeasured ({} — {why})\n", entry["source"].as_str().unwrap_or("?")));
+            continue;
+        }
+        let rows = entry["rows"].as_array().cloned().unwrap_or_default();
+        let shown: Vec<String> = rows.iter().take(8).map(|r| match name.as_str() {
+            "cards" => format!("#{} {} {}{}", text(r, "card"), text(r, "role"), text(r, "step"),
+                r["waitedSeconds"].as_i64().map(|s| format!(" {}", ago(s))).unwrap_or_default()),
+            "roles" => format!("{} {}{}", text(r, "role"), text(r, "state"),
+                r["secondsSinceLastCall"].as_i64().map(|s| format!(" {}", ago(s))).unwrap_or_default()),
+            "messages" => {
+                let when = match (at, chrono::DateTime::parse_from_rfc3339(&text(r, "sentAt").replace(' ', "T")).ok()
+                    .or_else(|| chrono::DateTime::parse_from_rfc3339(&format!("{}Z", text(r, "sentAt").replace(' ', "T"))).ok())) {
+                    (Some(n), Some(t)) => format!(" {}", ago((n - t).num_seconds().max(0))),
+                    _ => String::new(),
+                };
+                format!("{}{}: {}", text(r, "from"), when, text(r, "body").replace('\n', " / ").chars().take(60).collect::<String>())
+            }
+            _ => text(r, "name"),
+        }).collect();
+        let line = if shown.is_empty() { "none".to_string() } else { shown.join(" · ") };
+        // #4807 — rows pulse served from its last read while refreshes fail carry their age
+        let stale = entry["staleSeconds"].as_i64().filter(|s| *s > 0).map(|s| format!(" (stale {})", ago(s))).unwrap_or_default();
+        out.push_str(&format!("  {name}{stale}: {}\n", line.chars().take(300).collect::<String>()));
+    }
+    out
+}
+
+/// Pure formatter for the tree slice: at most 3 prompts of 120 chars. #4757 — the team line
+/// left: each role's moving or quiet is the header's rolestates line, one place, not two.
+pub fn format_tree_slice(v: &serde_json::Value) -> String {
+    let at = v["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+    let mut out = String::new();
+    for p in v["prompts"].as_array().map(|a| a.iter().take(3).collect::<Vec<_>>()).unwrap_or_default() {
+        let ago = match (at, p["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())) {
+            (Some(now), Some(t)) => format!("{}m ago", (now - t).num_minutes()),
+            _ => "?".to_string(),
+        };
+        let text: String = p["text"].as_str().unwrap_or("").replace('\n', " / ").chars().take(120).collect();
+        let by = p["by"].as_str().unwrap_or("?");
+        let cards: Vec<String> = p["mine"]["cards"].as_array().map(|a| a.iter().filter_map(|c| c["card"].as_i64()).map(|c| format!("#{}", c)).collect()).unwrap_or_default();
+        out.push_str(&format!("  prompt {} {}: \"{}\"{}\n", ago, by, text, if cards.is_empty() { String::new() } else { format!(" → {}", cards.join(" ")) }));
+    }
+    out
 }
 
 /// Read the last N spine events directly from chorus.log. The spine is the
@@ -654,48 +813,66 @@ fn chorus_memory_dirs_in(projects: &str) -> Vec<std::path::PathBuf> {
 }
 
 /// Scan memory files for related decisions and feedback
-fn scan_memory(keywords: &[String]) -> Vec<String> {
-    let mut hits = Vec::new();
+/// #4835 — one memory file as the scan needs it: its name, its text lowercased,
+/// and the first line after the frontmatter.
+#[derive(Clone)]
+struct MemDoc {
+    name: String,
+    lower: String,
+    first_line: String,
+}
+
+/// #4835 — the scan read every memory file on every prompt (max 902 ms at 40
+/// prompts at once). The files are read once and shared for MEMORY_TTL; each
+/// prompt then matches its keywords in memory. CHORUS_INJECT_MEMORY_TTL_SECS=0
+/// reads the files every time (the negative proof).
+static MEMORY_CACHE: SharedSlot<MemDoc> = SharedSlot::new();
+
+fn memory_ttl() -> Duration {
+    // #4839 — 60 s expired between real prompts (Wren's, minutes apart, still paid 255–450 ms);
+    // memory files change a few times a day
+    Duration::from_secs(std::env::var("CHORUS_INJECT_MEMORY_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(600))
+}
+
+fn read_memory_docs() -> Vec<MemDoc> {
+    let mut docs = Vec::new();
     let mut seen_files = std::collections::HashSet::new();
-
     for memory_dir in chorus_memory_dirs() {
-        let dir = match std::fs::read_dir(&memory_dir) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-
+        let Ok(dir) = std::fs::read_dir(&memory_dir) else { continue };
         for entry in dir.flatten() {
             let path = entry.path();
-            if path.extension().is_none_or(|e| e != "md") {
+            if path.extension().is_none_or(|e| e != "md") || path.file_name().is_some_and(|n| n == "MEMORY.md") {
                 continue;
             }
-            if path.file_name().is_some_and(|n| n == "MEMORY.md") {
-                continue;
-            }
-            let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            if !seen_files.insert(fname.clone()) {
+            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if !seen_files.insert(name.clone()) {
                 continue; // same filename already scanned in another project dir
             }
-
             if let Ok(content) = std::fs::read_to_string(&path) {
-                let lower = content.to_lowercase();
-                let match_count = keywords.iter().filter(|k| lower.contains(k.as_str())).count();
-                if match_count >= 2 || (keywords.len() == 1 && match_count == 1) {
-                    // Extract the first meaningful line after frontmatter
-                    let body = content
-                        .split("---")
-                        .nth(2)
-                        .unwrap_or(&content)
-                        .trim();
-                    let first_line: String = body.lines().next().unwrap_or("").chars().take(150).collect();
-                    if !first_line.is_empty() {
-                        hits.push(format!("[{}] {}", fname, first_line));
-                    }
-                }
+                // the first meaningful line after frontmatter
+                let body = content.split("---").nth(2).unwrap_or(&content).trim();
+                let first_line: String = body.lines().next().unwrap_or("").chars().take(150).collect();
+                docs.push(MemDoc { name, lower: content.to_lowercase(), first_line });
             }
         }
     }
+    docs
+}
 
+fn scan_memory(keywords: &[String]) -> Vec<String> {
+    let docs = shared_for(&MEMORY_CACHE, memory_ttl(), read_memory_docs);
+    match_memory(&docs, keywords)
+}
+
+fn match_memory(docs: &[MemDoc], keywords: &[String]) -> Vec<String> {
+    let mut hits: Vec<String> = docs.iter()
+        .filter(|d| {
+            let n = keywords.iter().filter(|k| d.lower.contains(k.as_str())).count();
+            n >= 2 || (keywords.len() == 1 && n == 1)
+        })
+        .filter(|d| !d.first_line.is_empty())
+        .map(|d| format!("[{}] {}", d.name, d.first_line))
+        .collect();
     hits.truncate(5);
     hits
 }
@@ -704,12 +881,26 @@ fn scan_memory(keywords: &[String]) -> Vec<String> {
 /// Always built now (#3048); paired with the dynamic search/Loki synthesis.
 /// ~2KB identity + orientation + endpoint list. No pre-synthesized blobs.
 pub fn build_manifest_envelope(role: &str, card: Option<&str>, health: &str, team_wip: usize, role_wip: usize) -> String {
+    let now = chrono::Utc::now().with_timezone(&super::clock_sync::boston_offset_pub());
+    build_manifest_envelope_at(role, card, health, team_wip, role_wip, now)
+}
+
+/// #4885 (folds #4699) — the time a role reads is stamped here, by the system, on every prompt.
+/// The role header copies this line; no agent runs `date` or `wall-clock` for it (536 hand
+/// lookups in the 24h to 2026-11-04 03:55). DST-correct: the offset is the OS's, via clock_sync.
+pub fn now_line(now: chrono::DateTime<chrono::FixedOffset>) -> String {
+    format!("Now: {} Boston", now.format("%Y-%m-%d %H:%M"))
+}
+
+pub fn build_manifest_envelope_at(role: &str, card: Option<&str>, health: &str, team_wip: usize, role_wip: usize,
+                                  now: chrono::DateTime<chrono::FixedOffset>) -> String {
     let wip_line = match card {
         Some(c) => format!("You are {}. You are currently building {}.", role, c),
         None => format!("You are {}. You have no WIP card.", role),
     };
     format!(
         "<chorus-context role=\"{}\">\n\
+        {}\n\
         \n\
         {}\n\
         \n\
@@ -732,7 +923,7 @@ pub fn build_manifest_envelope(role: &str, card: Option<&str>, health: &str, tea
           GET /api/chorus/knowledge/domains/{{name}}   — full domain detail\n\
           GET /api/chorus/knowledge/search?q=...     — graph + FTS\n\
         </chorus-context>",
-        role, wip_line, health, team_wip, role_wip, role
+        role, now_line(now), wip_line, health, team_wip, role_wip, role
     )
 }
 
@@ -845,6 +1036,19 @@ pub struct InjectResponse<'a> {
     pub assembled_bytes: usize,
     pub elapsed_ms: u64,
     pub drops: &'a [&'a str], // sources that returned nothing (the silent-drop class, #3048)
+    pub lookups_ms: &'a [(&'a str, u64)], // #4815 — each lookup's own wall time, by name
+}
+
+/// #4815 — one lookup's wall time alongside its answer.
+fn timed<T>(f: impl FnOnce() -> T) -> (T, u64) {
+    let t = Instant::now();
+    let v = f();
+    (v, t.elapsed().as_millis() as u64)
+}
+
+/// #4815 — the slowest lookup by name, the first place to look when a prompt is slow.
+pub fn slowest<'a>(lookups: &[(&'a str, u64)]) -> Option<&'a str> {
+    lookups.iter().max_by_key(|(_, ms)| *ms).map(|(n, _)| *n)
 }
 
 // Pure + testable. Paired to the response by inject_id (a span the controller's
@@ -889,6 +1093,8 @@ pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
         "athena": r.athena,
         "log_errors": r.log_errors, "logs": logs_json,
         "assembled_bytes": r.assembled_bytes, "elapsed_ms": r.elapsed_ms, "drops": r.drops,
+        "lookups_ms": r.lookups_ms.iter().map(|(n, ms)| ((*n).to_string(), serde_json::json!(ms))).collect::<serde_json::Map<_, _>>(),
+        "slowest": slowest(r.lookups_ms),
     }).to_string()
 }
 
@@ -994,7 +1200,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // drives the query; the WIP card domain (if any) rides along as an optional
     // `&domain=` tag (#3134) — card-as-tag, not card-as-driver. No card → the
     // search runs prompt-only. Cached per (role, keywords-hash, domain-tag).
-    let card_tag = role_wip_domain(&role_name);
+    let (card_tag, wip_ms) = timed(|| role_wip_domain(&role_name));
 
     // #3147 — emit the REQUEST (what we're about to ask for) BEFORE the fan-out, so it
     // lands even if every source drops. The 6 calls mirror the spawn_blocking set below.
@@ -1003,6 +1209,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         ("chorus-semantic", build_semantic_url(prompt, card_tag.as_deref()), true),
         ("memory", keywords.join(" "), legacy_memory),
         ("pulse", "snapshot".to_string(), true),
+        ("pulse-tree", format!("/api/tree/{}", role_name), true),
         ("spine", "recent-8".to_string(), true),
         ("athena", role_name.clone(), true),
         ("logs", "loki-errors-15m".to_string(), true),
@@ -1024,26 +1231,42 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // meaning leg (full prompt, mode=semantic — surfaces meaning-matches the FTS AND drops,
     // e.g. the scarecrow story). They query DIFFERENT forms because FTS ANDs tokens (a full
     // sentence zeroes out) while semantic doesn't. merge_candidates fuses them deduped.
-    let (chorus_fts, chorus_sem, memory_hits, pulse_block, spine_events, athena_block, log_errors) = {
+    let (chorus_fts, chorus_sem, memory_hits, pulse_block, spine_events, athena_block, log_errors, lookups_ms) = {
         let (r1, kw1, q1, tag1) = (role_name.clone(), keywords.clone(), query.clone(), card_tag.clone());
         let (rs, ps, tags) = (role_name.clone(), prompt.to_string(), card_tag.clone());
         let kw2 = keywords.clone();
         let r3 = role_name.clone();
-        let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
-        let t_semantic = tokio::task::spawn_blocking(move || cached_query_chorus_semantic(&rs, &ps, tags.as_deref()));
-        let t_memory = tokio::task::spawn_blocking(move || if legacy_memory { scan_memory(&kw2) } else { Vec::new() });
-        let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
-        let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
-        let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
-        let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
+        let t_chorus = tokio::task::spawn_blocking(move || timed(|| cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref())));
+        let t_semantic = tokio::task::spawn_blocking(move || timed(|| cached_query_chorus_semantic(&rs, &ps, tags.as_deref())));
+        let t_memory = tokio::task::spawn_blocking(move || timed(|| if legacy_memory { scan_memory(&kw2) } else { Vec::new() }));
+        let r4 = role_name.clone();
+        // #4638 — the tree slice is its own task, concurrent with the snapshot read (Abby's review)
+        let t_pulse = tokio::task::spawn_blocking(|| timed(read_pulse_snapshot));
+        let t_tree = tokio::task::spawn_blocking(move || timed(|| query_tree_slice(&r4)));
+        let t_header = tokio::task::spawn_blocking(|| timed(query_pulse_header));
+        let t_spine = tokio::task::spawn_blocking(|| timed(|| query_recent_spine(8)));
+        let t_athena = tokio::task::spawn_blocking(move || timed(|| cached_query_athena_domain(&r3)));
+        let t_logs = tokio::task::spawn_blocking(|| timed(shared_log_errors));
+        let (chorus, chorus_ms) = t_chorus.await.unwrap_or_default();
+        let (semantic, semantic_ms) = t_semantic.await.unwrap_or_default();
+        let (memory, memory_ms) = t_memory.await.unwrap_or_default();
+        let (pulse, pulse_ms) = t_pulse.await.unwrap_or_default();
+        let (header, header_ms) = t_header.await.unwrap_or_default();
+        let (tree, tree_ms) = t_tree.await.unwrap_or_default();
+        let (spine, spine_ms) = t_spine.await.unwrap_or_default();
+        let (athena, athena_ms) = t_athena.await.unwrap_or_default();
+        let (logs, logs_ms) = t_logs.await.unwrap_or_default();
         (
-            t_chorus.await.unwrap_or_default(),
-            t_semantic.await.unwrap_or_default(),
-            t_memory.await.unwrap_or_default(),
-            t_pulse.await.unwrap_or_default(),
-            t_spine.await.unwrap_or_default(),
-            t_athena.await.unwrap_or_default(),
-            t_logs.await.unwrap_or_default(),
+            chorus,
+            semantic,
+            memory,
+            Some(pulse.unwrap_or_default() + &header + &tree).filter(|s| !s.is_empty()),
+            spine,
+            athena,
+            logs,
+            vec![("wip-domain", wip_ms), ("chorus", chorus_ms), ("chorus-semantic", semantic_ms), ("memory", memory_ms),
+                ("pulse", pulse_ms), ("pulse-header", header_ms), ("pulse-tree", tree_ms), ("spine", spine_ms),
+                ("athena", athena_ms), ("logs", logs_ms)],
         )
     };
     // Fuse the two legs: authority (FTS) + meaning (semantic), deduped, top-5.
@@ -1139,7 +1362,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             inject_id: &inject_id, role: &role_name, candidates: &[],
             memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
             spine_events: 0, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
+            log_errors: 0, logs: &[], assembled_bytes: manifest_block.len(), elapsed_ms: elapsed, lookups_ms: &lookups_ms,
             drops: &["chorus", "memory", "pulse", "spine", "athena", "logs"],
         });
         return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
@@ -1186,7 +1409,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         memory_hits: memory_hits.len(), memory: &memory_hits,
         pulse_present: pulse_block.is_some(), pulse: pulse_block.as_deref(),
         spine_events: spine_events.len(), spine: &spine_events, athena: athena_block.as_deref(),
-        log_errors: log_errors.len(), logs: &log_errors, assembled_bytes: out.len(), elapsed_ms: elapsed,
+        log_errors: log_errors.len(), logs: &log_errors, assembled_bytes: out.len(), elapsed_ms: elapsed, lookups_ms: &lookups_ms,
         drops: &drops,
     });
     // #3134: observability — emit the actual outcome (hits + injected bytes) to
@@ -1236,7 +1459,7 @@ mod tests {
             inject_id: "inj-wren-42", role: "wren", candidates: &cands,
             memory_hits: 5, memory: &[], pulse_present: true, pulse: None,
             spine_events: 8, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
+            log_errors: 0, logs: &[], assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"], lookups_ms: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["event"], "context.inject.response");
@@ -1266,7 +1489,7 @@ mod tests {
             inject_id: "inj-wren-99", role: "wren", candidates: &cands,
             memory_hits: 1, memory: &[], pulse_present: true, pulse: None,
             spine_events: 1, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+            log_errors: 0, logs: &[], assembled_bytes: 100, elapsed_ms: 10, drops: &[], lookups_ms: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert!(v["candidates"][0]["score"].is_number(),
@@ -1289,7 +1512,7 @@ mod tests {
             spine_events: 1, spine: &spine,
             athena: Some("domain: chorus"),
             log_errors: 1, logs: &logs,
-            assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+            assembled_bytes: 100, elapsed_ms: 10, drops: &[], lookups_ms: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         // not just counts/bools — the ACTUAL per-source content must be reviewable in the log
@@ -1321,7 +1544,7 @@ mod tests {
             inject_id: "inj-X", role: "wren", candidates: &[],
             memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
             spine_events: 0, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &[],
+            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &[], lookups_ms: &[],
         });
         let rv: serde_json::Value = serde_json::from_str(&req).unwrap();
         let pv: serde_json::Value = serde_json::from_str(&resp).unwrap();
@@ -1360,8 +1583,75 @@ mod tests {
             inject_id: id, role: "wren", candidates: &candidates,
             memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
             spine_events: 0, spine: &[], athena: None,
-            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
+            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &drops, lookups_ms: &[],
         }));
+    }
+
+        // #4638 — the turn-start slice of the live tree
+    #[test]
+    fn tree_slice_names_my_prompts_and_no_team_line() {
+        let v = serde_json::json!({
+            "at": "2026-10-24T20:55:00Z",
+            "team": [{"role": "silas", "state": "quiet", "secondsSinceLastCall": 160},
+                     {"role": "wren", "state": "moving", "secondsSinceLastCall": 11}],
+            "prompts": [{"at": "2026-10-24T20:51:00Z", "by": "jeff", "text": "/pull 4638\ni spent all day",
+                         "mine": {"cards": [{"card": 4638}]}}]
+        });
+        let s = format_tree_slice(&v);
+        // #4757 — the team rides the header now; the slice never repeats it
+        assert!(!s.contains("team:"), "{s}");
+        assert!(s.contains("prompt 4m ago jeff: \"/pull 4638 / i spent all day\" → #4638"), "{s}");
+    }
+
+    // #4757 — the header pulse reads from its sources, in the shape Jeff agreed (20:07)
+    #[test]
+    fn the_header_renders_card_steps_roles_messages_and_alerts_from_pulse() {
+        let v = serde_json::json!({"kind": "Header", "at": "2026-10-27T00:07:00Z", "data": {
+            "cards": {"source": "/cws", "rows": [
+                {"card": "4747", "role": "kade", "step": "land: borg-queen-proves", "waitedSeconds": 120},
+                {"card": "4755", "role": "kade", "step": "no run yet", "waitedSeconds": null}]},
+            "roles": {"source": "/api/actor-state", "rows": [
+                {"role": "wren", "state": "moving", "secondsSinceLastCall": 4},
+                {"role": "jeff", "state": "quiet", "secondsSinceLastCall": 223}]},
+            "messages": {"source": "/pulse/messages/messages", "rows": [
+                {"from": "jeff", "sentAt": "2026-10-27 00:04:00", "body": "i ask for a\nand get b and c"}]},
+            "alerts": {"source": "/pulse/alerts/alerts", "rows": [{"name": "app-down", "label": "x"}]}}});
+        let s = format_pulse_header(&v);
+        assert!(s.contains("  cards: #4747 kade land: borg-queen-proves 2m · #4755 kade no run yet\n"), "{s}");
+        assert!(s.contains("  roles: wren moving 4s · jeff quiet 3m\n"), "{s}");
+        assert!(s.contains("  messages: jeff 3m: i ask for a / and get b and c\n"), "{s}");
+        assert!(s.contains("  alerts: app-down\n"), "{s}");
+    }
+
+    // NEGATIVE PROOF: a line pulse could not read says unmeasured with its source, never rows
+    #[test]
+    fn negative_proof_an_unread_source_says_unmeasured_on_its_line() {
+        let v = serde_json::json!({"kind": "Header", "data": {
+            "cards": {"source": "/cws", "unmeasured": "chorus-werk-status --json: exit 2"},
+            "roles": {"source": "/api/actor-state", "rows": []}}});
+        let s = format_pulse_header(&v);
+        assert!(s.contains("  cards: unmeasured (/cws — chorus-werk-status --json: exit 2)\n"), "{s}");
+        assert!(s.contains("  roles: none\n"), "{s}");
+        assert_eq!(format_pulse_header(&serde_json::json!({"error": "unknown-route"})), "  header: unmeasured (no data in the header)\n");
+    }
+
+    // #4807 — cards pulse serves from its last read while refreshes fail say how old they are
+    #[test]
+    fn stale_cards_say_their_age_and_fresh_ones_do_not() {
+        let rows = serde_json::json!([{"card": "4807", "role": "kade", "step": "no run yet", "waitedSeconds": null}]);
+        let stale = serde_json::json!({"data": {"cards": {"source": "/cws", "rows": rows, "staleSeconds": 240}}});
+        assert!(format_pulse_header(&stale).contains("  cards (stale 4m): #4807 kade no run yet\n"), "{}", format_pulse_header(&stale));
+        for fresh in [serde_json::json!({"data": {"cards": {"source": "/cws", "rows": rows, "staleSeconds": 0}}}),
+                      serde_json::json!({"data": {"cards": {"source": "/cws", "rows": rows}}})] {
+            assert!(format_pulse_header(&fresh).contains("  cards: #4807 kade no run yet\n"), "{}", format_pulse_header(&fresh));
+        }
+    }
+
+    #[test]
+    fn negative_proof_the_slice_is_capped_at_three_prompts() {
+        let p = serde_json::json!({"at": "2026-10-24T20:50:00Z", "by": "jeff", "text": "x", "mine": {"cards": []}});
+        let v = serde_json::json!({"at": "2026-10-24T20:55:00Z", "team": [], "prompts": [p, p, p, p, p]});
+        assert_eq!(format_tree_slice(&v).matches("prompt ").count(), 3);
     }
 
     #[test]
@@ -1508,7 +1798,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("wren".into()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None,
             tool_output_is_error: None,
         };
@@ -1555,5 +1845,106 @@ mod cache_eviction_4562 {
         insert_fresh(&mut c, "new".into(), 1, Duration::from_secs(30));
         assert_eq!(c.len(), 2);
         assert_eq!(c["recent"].1, 7);
+    }
+
+    // #4815 AC3 — negative proof: a lookup that sleeps 3 s is the one named slowest
+    #[test]
+    fn a_three_second_lookup_is_named_slowest_in_the_response_line() {
+        let (_, fast) = super::timed(|| 1 + 1);
+        let (_, slow) = super::timed(|| std::thread::sleep(std::time::Duration::from_secs(3)));
+        assert!(slow >= 3000, "the sleep was timed: {slow}");
+        let lookups = [("chorus", fast), ("fixture-sleep-3s", slow), ("logs", fast)];
+        let line = super::format_inject_response("t", &super::InjectResponse {
+            inject_id: "i", role: "kade", candidates: &[], memory_hits: 0, memory: &[], pulse_present: false,
+            pulse: None, spine_events: 0, spine: &[], athena: None, log_errors: 0, logs: &[],
+            assembled_bytes: 0, elapsed_ms: slow, drops: &[], lookups_ms: &lookups,
+        });
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["slowest"], "fixture-sleep-3s");
+        assert!(v["lookups_ms"]["fixture-sleep-3s"].as_u64().unwrap() >= 3000);
+        assert!(v["lookups_ms"]["chorus"].as_u64().unwrap() < 100, "a fast lookup reads fast");
+    }
+
+    #[test]
+    fn no_lookups_names_no_slowest() {
+        assert_eq!(super::slowest(&[]), None);
+    }
+
+    // #4835 — forty callers at once read once; the rest take the shared answer
+    #[test]
+    fn concurrent_callers_share_one_read_within_the_ttl() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
+        static READS: AtomicUsize = AtomicUsize::new(0);
+        let hs: Vec<_> = (0..40).map(|_| std::thread::spawn(|| super::shared_for(&SLOT, std::time::Duration::from_secs(30), || {
+            READS.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            vec![1u8]
+        }))).collect();
+        for h in hs { assert_eq!(h.join().unwrap(), vec![1u8]); }
+        assert_eq!(READS.load(Ordering::SeqCst), 1, "one read for forty callers");
+    }
+
+    // NEGATIVE PROOF: with the sharing off (ttl 0) every caller reads; an empty answer is never kept
+    #[test]
+    fn ttl_zero_reads_every_time_and_an_empty_answer_is_kept_only_briefly() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
+        static READS: AtomicUsize = AtomicUsize::new(0);
+        for _ in 0..5 { super::shared_for(&SLOT, std::time::Duration::ZERO, || { READS.fetch_add(1, Ordering::SeqCst); vec![1u8] }); }
+        assert_eq!(READS.load(Ordering::SeqCst), 5);
+        // review (abby): a down source is read once per EMPTY_TTL, not once per waiting prompt
+        static EMPTY: super::SharedSlot<u8> = super::SharedSlot::new();
+        static R2: AtomicUsize = AtomicUsize::new(0);
+        for _ in 0..40 { super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); Vec::<u8>::new() }); }
+        assert_eq!(R2.load(Ordering::SeqCst), 1, "forty prompts while Loki is down read it once");
+        // and the empty answer expires after EMPTY_TTL, not the full ttl
+        EMPTY.inner.lock().unwrap().0 = Some((std::time::Instant::now() - super::EMPTY_TTL, Vec::new()));
+        super::shared_for(&EMPTY, std::time::Duration::from_secs(30), || { R2.fetch_add(1, Ordering::SeqCst); vec![7u8] });
+        assert_eq!(R2.load(Ordering::SeqCst), 2, "a source that comes back is read again after EMPTY_TTL");
+    }
+
+    // #4835 — the cached corpus answers exactly as the per-prompt scan did
+    #[test]
+    fn memory_match_needs_two_keywords_or_the_only_one() {
+        let d = |n: &str, t: &str| super::MemDoc { name: n.into(), lower: t.to_lowercase(), first_line: format!("line of {n}") };
+        let docs = vec![d("a.md", "crawler sync drift"), d("b.md", "crawler only"), d("c.md", "nothing")];
+        let kw = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(super::match_memory(&docs, &kw(&["crawler", "sync"])), vec!["[a.md] line of a.md"]);
+        assert_eq!(super::match_memory(&docs, &kw(&["crawler"])).len(), 2, "one keyword: one match is enough");
+        assert!(super::match_memory(&docs, &kw(&["absent", "words"])).is_empty(), "negative: no match, no hit");
+    }
+
+    // #4839 (review: silas, abby) — a hung refresh never holds the other prompts:
+    // they take the last answer while it runs. NEGATIVE PROOF: before any answer
+    // exists, a second caller does read (it is not handed an empty result).
+    #[test]
+    fn a_hung_refresh_does_not_block_other_callers() {
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
+        let ttl = std::time::Duration::from_millis(50);
+        assert_eq!(super::shared_for(&SLOT, ttl, || vec![1u8]), vec![1u8]);
+        std::thread::sleep(std::time::Duration::from_millis(60)); // now stale
+        let hung = std::thread::spawn(move || super::shared_for(&SLOT, ttl, || {
+            std::thread::sleep(std::time::Duration::from_secs(3)); vec![2u8]
+        }));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let t = std::time::Instant::now();
+        assert_eq!(super::shared_for(&SLOT, ttl, || vec![9u8]), vec![1u8], "stale answer while the refresh hangs");
+        assert!(t.elapsed() < std::time::Duration::from_millis(500), "did not wait for the hung read");
+        assert_eq!(hung.join().unwrap(), vec![2u8]);
+        static FIRST: super::SharedSlot<u8> = super::SharedSlot::new();
+        assert_eq!(super::shared_for(&FIRST, ttl, || vec![5u8]), vec![5u8], "no answer yet: the first caller reads, never an empty hand-out");
+    }
+
+    // review (abby): a read that panics at a cold start must not leave the next caller waiting
+    #[test]
+    fn a_panicking_first_read_does_not_hang_the_next_caller() {
+        static SLOT: super::SharedSlot<u8> = super::SharedSlot::new();
+        let ttl = std::time::Duration::from_secs(30);
+        let r = std::panic::catch_unwind(|| super::shared_for(&SLOT, ttl, || -> Vec<u8> { panic!("read blew up") }));
+        assert!(r.is_err());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || tx.send(super::shared_for(&SLOT, ttl, || vec![4u8])).unwrap());
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(2)).expect("next caller hung"), vec![4u8]);
     }
 }

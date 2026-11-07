@@ -26,7 +26,10 @@ ONTOLOGY="$CHORUS_ROOT/designing/products/athena/domains/domains/icd-ontology.tt
 INSTANCES_DIR="$CHORUS_ROOT/building/products/convergence/domains/integrations/icd-instances"
 # CHORUS_MODEL override lets a werk run its own freshly-built binary before
 # the deployed one has the seed/--base surface (deploy lags the land).
-CHORUS_MODEL="${CHORUS_MODEL:-$(command -v chorus-model || echo "$CHORUS_ROOT/platform/services/chorus-model/target/release/chorus-model")}"
+# #4091 (2026-10-21): chorus-model is retired (#3718, a stub that only prints
+# that), and the DAL takes a verified identity only (#3687). Seed with
+# athena-model, as the caller's role, with a minted token.
+CHORUS_MODEL="${CHORUS_MODEL:-$(command -v athena-model || echo "$CHORUS_ROOT/platform/services/athena-model/target/release/athena-model")}"
 
 count_triples() {
   curl -sf --max-time 15 -H "Accept: application/sparql-results+json" \
@@ -65,6 +68,10 @@ trap 'rm -f "$COMBINED"' EXIT
   done
 } | sort -u > "$COMBINED"
 echo "== combined: $(wc -l < "$COMBINED" | tr -d ' ') distinct triples from 10 files"
+if [ -z "${CHORUS_IDENTITY_TOKEN:-}" ]; then
+  CHORUS_IDENTITY_TOKEN="$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" "${CHORUS_ROLE:-${ROLE:-}}")" || { echo "FATAL: no identity for role '${CHORUS_ROLE:-${ROLE:-}}' — nothing loaded" >&2; exit 1; }
+  export CHORUS_IDENTITY_TOKEN
+fi
 "$CHORUS_MODEL" seed --kind domain --ttl "$COMBINED" --graph "$GRAPH" --provenance migrated
 
 echo "== after: $(count_triples) triples in <$GRAPH>"

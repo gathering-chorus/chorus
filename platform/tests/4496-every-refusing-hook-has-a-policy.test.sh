@@ -28,8 +28,8 @@ pair_enforcement	warns: tells the partner to load /pair
 pair_gate	warns: advisory since #3677, always allows
 quality_gate	warns: advisory since #3677, logs only
 sparql_guard	warns: raw SPARQL should use /pods/query and a GRAPH clause
+session_auth	warns: alerts when a role'"'"'s Claude session is logged out (#4817), never refuses
 buzz_reply	plumbing: publishes the reply to Buzz
-card_approval_responder	plumbing: replays or cancels cards on approve or deny
 clock_sync	plumbing: writes the wall-clock time
 context_inject	plumbing: adds Chorus, memory and git context to the prompt
 e2e_responder	plumbing: acknowledges e2e test nudges
@@ -41,7 +41,9 @@ jdi_detector	plumbing: logs "just do it"
 nudge_poll	plumbing: finds unread nudges for the injected context
 observer	plumbing: writes the rolling activity digest
 reply_delivery	plumbing: records the reply hash for delivery matching
+terminal_input	plumbing: posts Jeff'"'"'s terminal prompts to pulse, never refuses
 tool_telemetry	plumbing: logs every tool call
+turn_line	plumbing: stamps the Jeff line that woke a turn on agent.turn.started (#4637), never refuses
 '
 
 check() { # $1 = hooks dir, $2 = policy ttl

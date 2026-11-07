@@ -32,6 +32,7 @@ function autoRoleState(state: string, extra: string = ''): void {
 }
 import { generateBlastRadius, formatBlastComment } from './blast-radius';
 import { countAcDiff } from './ac-tick-detection';
+import { buildApprovalArgv, postApprovalRow, headsUp } from './approvals';
 
 // Paths are `let` so hermetic tests can point them at a temp dir via
 // `__setTestPaths`. Defaults match the pre-override production layout.
@@ -566,9 +567,30 @@ type AddOpts = {
   type?: string; origin?: string;
   // #2652 AC2 — product sub-axis
   subproduct?: string;
+  // #4669 — file the card as a child of this card
+  parent?: string;
   // #3682 — run every gate (guest door included) but file nothing
   validateOnly?: boolean;
 };
+
+/**
+ * #4669 — a parent must be a card number that exists on this board. Returns
+ * the refusal line, or null. Checked before any write so a typo files nothing.
+ */
+async function parentRefusal(client: BoardClient, parent: string): Promise<string | null> {
+  if (!/^\d+$/.test(parent)) return `--parent "${parent}" is not a card number`;
+  try {
+    await client.view(Number(parent));
+    return null;
+  } catch {
+    return `parent #${parent} does not exist on the ${client.boardName} board`;
+  }
+}
+
+/** #4669 — link a card as a child through Vikunja's parenttask relation. */
+async function linkParent(client: BoardClient, index: number, parent: string): Promise<void> {
+  await client.addRelation(index, Number(parent), 'parenttask');
+}
 
 // #2652 AC2 — subproduct closed list. Athena models 7 subproducts today; doc
 // (cards-service-design.md) names 6 user-facing — Quality is intentionally
@@ -736,126 +758,9 @@ async function applyDynamicLabel(
 }
 
 /**
- * #2924 AC3 bridge — write the pickup artifacts the bouncer hands off to the
- * chorus-hooks UserPromptSubmit responder. Two siblings under <pendingDir>:
- *   - <role>-<stamp>.txt        human-readable [card-approval] block
- *   - <role>-<stamp>.argv.json  structured {title, opts} for replay
- *
- * When Jeff types `approve`, the responder reads the .argv.json and replays
- * `cards add` with DEPLOY_ROLE=jeff (bypasses the bouncer cleanly). The .txt
- * remains for human inspection.
- */
-/** #2964: dedupe window — within this many ms, an existing pending payload
- *  for the same role+title is overwritten in place instead of producing a
- *  fresh stamped file. Mirrors the responder's PENDING_TIMEOUT_SECS (10 min). */
-export const PENDING_DEDUPE_WINDOW_MS = 600_000; // 10 minutes
-
-/** #2964: retry-refusal window — within this many ms of a previous write for
- *  the same role+title, refuse the new attempt outright. Prevents agents from
- *  flood-retrying the gated path. */
-export const PENDING_RETRY_REFUSAL_MS = 30_000; // 30 seconds
-
-/**
- * #2964: thrown by writePendingApprovalArtifacts when an agent retries the
- * same role+title within PENDING_RETRY_REFUSAL_MS. The bouncer caller catches
- * this and exits with a clear "already-pending" message instead of stacking
- * a duplicate payload onto Jeff's queue.
- */
-export class PendingRetryTooSoonError extends Error {
-  constructor(public ageMs: number, public existingPath: string) {
-    super(`pending-retry-too-soon: same-role+title written ${ageMs}ms ago at ${existingPath}`);
-    this.name = 'PendingRetryTooSoonError';
-  }
-}
-
-/** #2964: find an existing pending payload for the same role+title. Returns
- *  the path + mtime-age if any matching `<role>-*.argv.json` file holds the
- *  same title, otherwise null. Bouncer uses this for dedupe + retry refusal. */
-export function findExistingPendingByTitle(
-  pendingDir: string, role: string, title: string,
-): { path: string; ageMs: number } | null {
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(pendingDir);
-  } catch {
-    return null;
-  }
-  const prefix = `${role}-`;
-  const now = Date.now();
-  for (const name of entries) {
-    if (!name.startsWith(prefix) || !name.endsWith('.argv.json')) continue;
-    const path = `${pendingDir}/${name}`;
-    let raw: string;
-    try { raw = fs.readFileSync(path, 'utf-8'); } catch { continue; }
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.title === title) {
-        let mtime: number;
-        try { mtime = fs.statSync(path).mtimeMs; } catch { continue; }
-        // Clamp at 0 — on some filesystems mtime can be slightly larger than
-        // Date.now() (sub-millisecond rounding); a negative age is meaningless.
-        return { path, ageMs: Math.max(0, now - mtime) };
-      }
-    } catch { continue; }
-  }
-  return null;
-}
-
-export function writePendingApprovalArtifacts(args: {
-  pendingDir: string;
-  role: string;
-  stamp: string;
-  nudge: string;
-  title: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cardOpts: any;
-}): { txtPath: string; argvPath: string } {
-  fs.mkdirSync(args.pendingDir, { recursive: true });
-
-  // #2964: dedupe + retry refusal. If we've written a pending payload for the
-  // same role+title recently, decide what to do based on age. This stops the
-  // bouncer from piling 24 duplicates on Jeff's queue when an agent retries.
-  const existing = findExistingPendingByTitle(args.pendingDir, args.role, args.title);
-  if (existing) {
-    if (existing.ageMs < PENDING_RETRY_REFUSAL_MS) {
-      throw new PendingRetryTooSoonError(existing.ageMs, existing.path);
-    }
-    if (existing.ageMs < PENDING_DEDUPE_WINDOW_MS) {
-      // Overwrite the existing payload in place so we don't accumulate
-      // duplicates. Use the same stem so the responder treats this as one
-      // pending payload, not a queue depth of two.
-      //
-      // Semantics note (#2964 Kade gate:quality feedback): the dedupe keys on
-      // role+title only. If a second call inside the dedupe window arrives
-      // with different cardOpts (e.g., priority P1 → P2, description edits,
-      // a renamed owner), THIS PATH ABSORBS the new opts silently. That is
-      // deliberate — "one pending per role+title" is the right invariant; the
-      // alternative (refuse the second call's edits, keep stale opts) is
-      // worse. But it means an agent reshaping a card mid-window will see the
-      // new opts land in Jeff's queue without a new approval-ask firing.
-      // Future-Wren: if cardOpts-drift becomes a real surface, surface a
-      // "payload updated" event here so Jeff can see the change.
-      const argvPath = existing.path;
-      const txtPath = argvPath.replace(/\.argv\.json$/, '.txt');
-      fs.writeFileSync(txtPath, args.nudge);
-      fs.writeFileSync(argvPath, JSON.stringify({ title: args.title, opts: args.cardOpts }, null, 2));
-      return { txtPath, argvPath };
-    }
-    // Stale (> dedupe window) — fall through to new-stamp write. Responder's
-    // sweep_stale_pending will clean up the old one on the next pass.
-  }
-
-  const txtPath = `${args.pendingDir}/${args.role}-${args.stamp}.txt`;
-  const argvPath = `${args.pendingDir}/${args.role}-${args.stamp}.argv.json`;
-  fs.writeFileSync(txtPath, args.nudge);
-  fs.writeFileSync(argvPath, JSON.stringify({ title: args.title, opts: args.cardOpts }, null, 2));
-  return { txtPath, argvPath };
-}
-
-/**
  * #2924 AC1 — deliver the structured approval-ask into the requesting agent's
  * session via the pulse messaging API. Best-effort: if pulse is unreachable,
- * the bouncer still refuses and the pickup file remains the fallback surface.
+ * the bouncer still refuses; the Approval row (#4505) is the record.
  *
  * The nudge addresses the *requesting role* (the agent's own session), not
  * Jeff — because Jeff is interacting with that terminal. Nudges injected
@@ -872,6 +777,60 @@ export type FetchLike = (
     signal?: AbortSignal;
   },
 ) => Promise<{ ok: boolean; status: number; text?: () => Promise<string> }>;
+
+/** #4628 — the pulse secret, read by the caller itself (env, then the 0600 file). */
+function pulseSecret(): string | undefined {
+  if (process.env.CHORUS_PULSE_SECRET) return process.env.CHORUS_PULSE_SECRET;
+  try {
+    const p = process.env.CHORUS_PULSE_SECRET_FILE || `${process.env.HOME}/.chorus/pulse-nudge.secret`;
+    return fs.readFileSync(p, 'utf8').trim() || undefined;
+  } catch { return undefined; }
+}
+
+type LandArgs = {
+  card: number; title: string; owner: string; accepter: string | undefined;
+  secret?: string; pulseUrl?: string; fetchImpl?: FetchLike; timeoutMs?: number;
+};
+
+/** The fetch to post a land with, or why there is none. #4131's rule: a test
+ *  brings its own world — under jest or a bats CLI test, `cards done` never
+ *  writes a land note into live Buzz unless it was handed a pulse. */
+function landFetch(args: LandArgs): FetchLike | string {
+  const handed = args.fetchImpl || args.pulseUrl || process.env.CHORUS_PULSE_RECORD_URL;
+  if (!handed && (process.env.JEST_WORKER_ID || process.env.CARDS_BRIEFS_ROOT)) return 'test context: no live pulse';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return args.fetchImpl || ((globalThis as any).fetch as FetchLike | undefined) || 'no-fetch-impl';
+}
+
+/**
+ * #4628 — the land notice ("Accepted #N — title") reaches Buzz once, through
+ * pulse's record route. Until 10-19 only Clearing v1's spine tailer posted it,
+ * with no author. The accepter is whoever gave the go (ACCEPTER); pulse refuses
+ * a land that names none, and that refusal comes back here as a miss, loudly.
+ * Never throws: a land is not undone by a missing notice.
+ */
+export async function recordLand(args: LandArgs): Promise<{ recorded: boolean; error?: string }> {
+  const fetchImpl = landFetch(args);
+  if (typeof fetchImpl === 'string') return { recorded: false, error: fetchImpl };
+  const url = args.pulseUrl || process.env.CHORUS_PULSE_RECORD_URL || 'http://localhost:3475/api/record';
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), args.timeoutMs ?? 2000);
+  try {
+    const resp = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Chorus-Pulse-Secret': args.secret ?? pulseSecret() ?? '' },
+      body: JSON.stringify({ kind: 'land', card: args.card, title: args.title, owner: args.owner.toLowerCase(), accepter: args.accepter }),
+      signal: ctrl.signal,
+    });
+    if (resp.ok) return { recorded: true };
+    const body = resp.text ? await resp.text().catch(() => '') : '';
+    return { recorded: false, error: `${resp.status} ${body.slice(0, 200)}`.trim() };
+  } catch (err) {
+    return { recorded: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export async function sendCardApprovalNudge(args: {
   from: string;
@@ -963,7 +922,7 @@ async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise
   // #2964: label-anchored format. Each section is one line starting with an
   // ALLCAPS label so visual structure survives newline-flattening (osascript
   // keystroke injection, model re-rendering one-paragraph). Long sections
-  // are truncated to ~220 chars with an ellipsis — full text is in the pickup
+  // are truncated to ~220 chars with an ellipsis — full text is in the card description
   // file if Jeff wants depth. Approve/deny line is last and explicit.
   const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
   const nudge = `[card-approval] ${role} → jeff
@@ -975,53 +934,26 @@ HELPS:    ${trunc(whyHelpsChorus, 240)}
 NOT-NIT:  ${trunc(whyNotGold, 200)}
 DEPS:     ${trunc(deps, 200)}
 SCOPE:    ${trunc(scope, 220)}
-APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards add … in your terminal bypasses cleanly. Full description in the pickup file.`;
+DECIDE:   on Jeff's approvals list (go page, passkey). Typing "approve" here does nothing.`;
 
-  // #2910: write the composed ask to a pickup file so the model can surface it
-  // in its next response to Jeff. Previous design relied on the model reading
-  // its own stdout and deciding to forward the nudge — Silas demonstrated that
-  // gap by relaying a summary instead. The pickup file lets the next-response
-  // hook (or model-side discipline per skills/cards/bouncer-flow.md) surface
-  // the ask verbatim. Without this, the only reliable delivery channel to Jeff
-  // (model response text) is opt-in.
-  const pendingDir = `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/pending-approvals`;
+  // #4505: the ask is ONE Approval row on the door, written as this role. Jeff decides it on
+  // the go page with his passkey; chorus-go replays the argv as data. No pickup file, no
+  // chat keyword. A retry of the same role+title is refused by the door's unique name.
   try {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const { txtPath, argvPath } = writePendingApprovalArtifacts({
-      pendingDir, role, stamp, nudge, title, cardOpts: opts,
-    });
-    console.log(`[card-approval pickup written: ${txtPath}]`);
-    console.log(`[card-approval argv sidecar written: ${argvPath}  — read by the AC3 UserPromptSubmit responder on approve]`);
+    const argv = buildApprovalArgv(title, opts);
+    const posted = await postApprovalRow({ role, title, argv });
+    console.log(headsUp(posted, role, title));
   } catch (err) {
-    // #2964: retry-too-soon — agent flood-retrying the gated path. Refuse
-    // outright with the existing pending path so the agent can see its prior
-    // attempt is still queued, and exit non-zero so the retry counts as a
-    // refusal (not a silent success).
-    if (err instanceof PendingRetryTooSoonError) {
-      console.error('---');
-      console.error(`REFUSED: retry-too-soon. Same role+title was queued ${Math.round(err.ageMs / 1000)}s ago at ${err.existingPath}.`);
-      console.error('The bouncer has NOT written a duplicate. The original pending payload is still active and will be processed when Jeff approves.');
-      console.error(`If you're trying to reshape the card, wait at least ${Math.ceil((PENDING_RETRY_REFUSAL_MS - err.ageMs) / 1000)}s and try again.`);
-      process.exit(1);
-    }
-    // Other write failures: log but proceed to the standard refusal exit.
-    console.error(`WARN: failed to write pickup artifacts under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
+    console.error(`REFUSED: the ask was not recorded — ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
   }
 
-  // #3293: the #2924 pulse-nudge delivery was REMOVED. It was a third delivery
-  // path (alongside the pickup file + stdout) and it mis-routed — addressed
-  // to:role but landing in silas's session, and it dressed an intended refusal
-  // as traffic. The canonical channel is the pickup file + stdout + the AC3
-  // "approve" responder; the filing model surfaces the ask verbatim to Jeff in
-  // its next reply (Jeff is in the filing terminal). One path, no mis-route.
-
-  console.log('---');
-  console.log('Agent card creation is refused. The structured ask was written to the pickup file above AND printed below.');
-  console.log('The model contract (per skills/cards/bouncer-flow.md): before your next response to Jeff, surface this [card-approval] block verbatim in your reply text, then delete the pickup file.');
+  // #4505: the row is the ask. The block below is context for the filing model's reply;
+  // Jeff answers on the go page's list, never by typing a keyword here.
   console.log('---');
   console.log(nudge);
   console.log('---');
-  console.error('REFUSED: agent cards add requires Jeff approval. No card filed. The pickup file is the auto-send substrate — the model surfaces the ask in its next response, no agent opt-out.');
+  console.error('REFUSED: agent cards add requires Jeff approval. No card filed. The ask is on his approvals list; he approves or declines it there.');
   process.exit(1);
 }
 
@@ -1068,6 +1000,8 @@ export async function addCard(
 
   const errors = await collectRequiredFieldErrors(opts);
   validateDescription(opts, title, client.boardName, errors);
+  const parentError = opts.parent ? await parentRefusal(client, opts.parent) : null;
+  if (parentError) errors.push(parentError);
   if (errors.length > 0) reportErrorsAndExit(errors, title, client.boardName);
 
   // #3682: --validate-only exercises every refuse-at-source gate above
@@ -1090,7 +1024,20 @@ export async function addCard(
     ...(opts.product ? { product: opts.product } : {}),
   });
 
+  // #4669 — tags first, so a failed link leaves a tagged card that only needs the link
   await applyPostAddTags(client, task, opts);
+
+  if (opts.parent) {
+    // Not best-effort: a child that silently lost its parent is the reopen this replaces.
+    try {
+      await linkParent(client, task.index, opts.parent);
+      console.log(`  Child of #${opts.parent}`);
+    } catch (err: unknown) {
+      console.error(`ERROR: #${task.index} was filed but not linked to parent #${opts.parent}: ${err instanceof Error ? err.message : err}`);
+      console.error(`  Link it with: cards set ${task.index} parent=${opts.parent}`);
+      process.exit(1);
+    }
+  }
   return task;
 }
 
@@ -1325,6 +1272,13 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
   emitSpineEvent('card.accepted', role, {
     card_id: String(index), title, board: client.boardName, hop: '1', source_service: 'board', dest_service: 'role-state', callStack: 'integration',
   });
+  // #4628 — the land notice reaches Buzz once, from pulse (no longer v1's spine tailer)
+  const accepter = process.env.ACCEPTER || process.env.DEPLOY_ROLE || undefined;
+  const land = await recordLand({ card: index, title, owner, accepter });
+  if (!land.recorded) {
+    console.error(`  (land notice not recorded: ${land.error})`);
+    emitSpineEvent('land.record.missed', role, { card_id: String(index), error: land.error ?? '' });
+  }
   autoRoleState('idle');
 
   // #2652 AC3 — single emit function in cards. Was emitChorusEvent (different
@@ -1381,16 +1335,11 @@ export async function demoCard(client: BoardClient, index: number): Promise<void
   const role = detectRole();
   let title = '';
   try {
-    const card = await client.view(index);
-    title = card.title;
-    // #2017: Auto-check AC items — replace - [ ] with - [x] before gates run.
-    // Roles forget to mark boxes; gate:product fails on unchecked boxes, not missing work.
-    if (card.description && card.description.includes('- [ ]')) {
-      const checked = card.description.replace(/- \[ \]/g, '- [x]');
-      await client.update(index, { description: checked });
-      const count = (card.description.match(/- \[ \]/g) || []).length;
-      console.log(`  Auto-checked ${count} AC item${count !== 1 ? 's' : ''} on #${index}`);
-    }
+    // #4660: a demo reads the card and never ticks its boxes. #2017's auto-check
+    // ticked every "- [ ]" before the gates ran, so gate:product passed on work
+    // nobody had shown (#4652's after-land checks, 10-20). The owner ticks a box
+    // when the evidence exists; an unticked box stays a red at the gate.
+    title = (await client.view(index)).title;
   } catch { /* best effort */ }
   emitSpineEvent('card.demo.started', role, {
     card_id: String(index), title, board: client.boardName,
@@ -1574,7 +1523,7 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
 // `product` (gathering|chorus portfolio) added so the taxonomy axes —
 // product / subproduct / domain — are settable on existing cards
 // per Jeff direction 2026-05-02 (board-wide attribute backfill).
-const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'subproduct', 'product']);
+const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'parent', 'subproduct', 'product']);
 // #3267: chunk removed from the static-map tag loop — it now routes through
 // applyLabelByName (auto-create), same as subproduct, so chunk is a
 // dynamic priority axis: a new priority is just a tag, no config.ts/enum edit.
@@ -1623,6 +1572,10 @@ async function applyTagChanges(client: BoardClient, index: number, pairs: Record
 }
 
 async function applyRelationPairs(client: BoardClient, index: number, pairs: Record<string, string>, changes: string[]): Promise<void> {
+  if (pairs.parent) {
+    await linkParent(client, index, pairs.parent);
+    changes.push(`parent=${pairs.parent}`);
+  }
   if (pairs.after) {
     for (const dep of pairs.after.split(',')) {
       const depId = parseInt(dep.trim(), 10);
@@ -1653,6 +1606,8 @@ async function printResultingCard(client: BoardClient, index: number, changes: s
 
 export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
   validateSetKeys(pairs);
+  const parentError = pairs.parent ? await parentRefusal(client, pairs.parent) : null;
+  if (parentError) throw new Error(parentError);
   const changes: string[] = [];
 
   // #2652 AC5 — capture before-state for per-field diff payload.
@@ -1724,7 +1679,7 @@ function buildFieldChanges(
       // Don't include full desc text in spine payload; just signal length delta.
       out.push({ field: 'description', old_value: '(omitted)', new_value: `(${value.length} chars)` });
     }
-    // 'after' / 'gates' relation pairs are not field-set; they emit relation events elsewhere.
+    // 'after' / 'gates' / 'parent' relation pairs are not field-set; they emit relation events elsewhere.
   }
   return out;
 }

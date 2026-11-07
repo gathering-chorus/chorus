@@ -36,6 +36,9 @@ pub struct Touched {
     pub subjects: BTreeSet<String>,
     /// (shape, class) for every `?shape sh:targetClass ?class` in the files.
     pub targets: BTreeSet<(String, String)>,
+    /// #4691 — subjects typed as an instance (`?s a ?c`, ?c not a class, shape or
+    /// property type): rows the seed step deploys, which generate nothing.
+    pub instances: BTreeSet<String>,
 }
 
 /// Read the card's files on their own. A file that does not parse is an error
@@ -59,6 +62,12 @@ pub fn touched(files: &[PathBuf]) -> Result<Touched, ModelError> {
     for r in select_iri(&store, "SELECT DISTINCT ?s ?c WHERE { ?s sh:targetClass ?c FILTER(isIRI(?s) && isIRI(?c)) }")? {
         t.targets.insert((r["s"].clone(), r["c"].clone()));
     }
+    for r in select_iri(&store, "SELECT DISTINCT ?s WHERE { ?s a ?c FILTER(isIRI(?s) && ?c NOT IN (\
+        <http://www.w3.org/2002/07/owl#Class>, rdfs:Class, sh:NodeShape, sh:PropertyShape, \
+        <http://www.w3.org/2002/07/owl#ObjectProperty>, <http://www.w3.org/2002/07/owl#DatatypeProperty>, \
+        <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property>)) }")? {
+        t.instances.insert(r["s"].clone());
+    }
     Ok(t)
 }
 
@@ -71,6 +80,7 @@ pub fn only_changed(t: Touched, changed: &BTreeSet<String>) -> Touched {
         classes: t.classes.iter().filter(|c| changed.contains(*c) || shape_changed(c)).cloned().collect(),
         subjects: t.subjects.iter().filter(|s| changed.contains(*s)).cloned().collect(),
         targets: t.targets.iter().filter(|(s, _)| changed.contains(s)).cloned().collect(),
+        instances: t.instances.iter().filter(|s| changed.contains(*s)).cloned().collect(),
     }
 }
 

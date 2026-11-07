@@ -228,6 +228,41 @@
     ],
     "type": "object"
   },
+  "ConvergenceLandAlertInput": {
+    "additionalProperties": false,
+    "properties": {
+      "alert": {
+        "description": "The Alert row to land in Grafana as a rule (it must carry metricQuery and metricDatasource).",
+        "type": "string"
+      },
+      "dry_run": {
+        "description": "Print the rule it would write; touch nothing.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "alert"
+    ],
+    "type": "object"
+  },
+  "ConvergenceLandSilenceInput": {
+    "additionalProperties": false,
+    "properties": {
+      "alert": {
+        "description": "The landed Alert row to silence.",
+        "type": "string"
+      },
+      "minutes": {
+        "description": "How long, 1 to 10080 minutes.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "alert",
+      "minutes"
+    ],
+    "type": "object"
+  },
   "FlowReportInput": {
     "additionalProperties": false,
     "properties": {
@@ -267,7 +302,11 @@
           "code",
           "services",
           "stores",
-          "infra"
+          "infra",
+          "messages",
+          "events",
+          "spine",
+          "sync"
         ],
         "type": "string"
       },
@@ -356,6 +395,45 @@
     },
     "required": [
       "trace_id"
+    ],
+    "type": "object"
+  },
+  "MobVerifyInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The mob's card.",
+        "type": "integer"
+      },
+      "head": {
+        "description": "The commit you checked (git rev-parse HEAD in the driver's werk). A verify for any other head is refused (#4850).",
+        "pattern": "^[0-9a-f]{7,40}$",
+        "type": "string"
+      },
+      "note": {
+        "description": "What you ran from your own account, and what it showed.",
+        "type": "string"
+      },
+      "run": {
+        "description": "The open mob run's dagu id, as mob start's nudge names it.",
+        "pattern": "^[A-Za-z0-9_-]{6,64}$",
+        "type": "string"
+      },
+      "verdict": {
+        "description": "pass, or fail to stop the mob and send the driver back to slice.",
+        "enum": [
+          "pass",
+          "fail"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card",
+      "run",
+      "verdict",
+      "note",
+      "head"
     ],
     "type": "object"
   },

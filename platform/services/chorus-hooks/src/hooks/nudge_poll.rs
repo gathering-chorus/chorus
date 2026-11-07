@@ -203,20 +203,21 @@ fn full_words(trace_id: &str) -> Option<String> {
     if trace_id.is_empty() {
         return None;
     }
-    let base = std::env::var("PULSE_URL").unwrap_or_else(|_| "http://localhost:3475".to_string());
-    let url = format!("{base}/api/messages?type=nudge&trace={trace_id}&limit=1");
+    // #4761 — the generated messages route; pulse's hand-written /api/messages is retired
+    let base = std::env::var("PULSE_API_URL").unwrap_or_else(|_| "http://localhost:3392".to_string());
+    let url = format!("{base}/pulse/messages/messages?messageKind=nudge&trace={trace_id}&limit=1");
     let body = ureq::get(&url).timeout(std::time::Duration::from_millis(1500)).call().ok()?.into_string().ok()?;
     words_from_listing(&body, trace_id)
 }
 
-/// The content of the row in a pulse /api/messages listing that carries
-/// `trace_id`. A pulse that predates the trace filter ignores it and returns
-/// the newest nudge of all, so the row's own trace is checked: the wrong
-/// message is worse than a cut one.
+/// The body of the row in a generated Message listing (`{"data": [...]}`) that
+/// carries `trace_id`. The row's own trace is checked: a route that ignored
+/// the filter would hand back some other nudge, and the wrong message is worse
+/// than a cut one.
 pub fn words_from_listing(body: &str, trace_id: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    let row = v.as_array()?.iter().find(|r| r.get("trace_id").and_then(|t| t.as_str()) == Some(trace_id))?;
-    let words = row.get("content")?.as_str()?;
+    let row = v.get("data")?.as_array()?.iter().find(|r| r.get("trace").and_then(|t| t.as_str()) == Some(trace_id))?;
+    let words = row.get("messageBody")?.as_str()?;
     Some(words.replace('\n', " "))
 }
 
@@ -672,17 +673,20 @@ mod tests {
     /// spine preview stops at the first quote.
     #[test]
     fn words_come_whole_from_the_pulse_listing() {
-        let body = r#"[{"id":7,"content":"[nudge from silas | 14:15 Boston] the pipeline's headless \"wren\" review","trace_id":"t1"}]"#;
+        let body = r#"{"data":[{"sourceId":"7","messageBody":"[nudge from silas | 14:15 Boston] the pipeline's headless \"wren\" review","trace":"t1"}]}"#;
         assert_eq!(
             words_from_listing(body, "t1").as_deref(),
             Some("[nudge from silas | 14:15 Boston] the pipeline's headless \"wren\" review")
         );
         // NEGATIVE PROOF: nothing to read is None, so the caller keeps the preview
         // rather than injecting an empty message.
-        assert_eq!(words_from_listing("[]", "t1"), None);
+        assert_eq!(words_from_listing(r#"{"data":[]}"#, "t1"), None);
         assert_eq!(words_from_listing("not json", "t1"), None);
         // NEGATIVE PROOF: an old pulse ignores ?trace= and hands back the newest
         // nudge; a row with another trace must never be taken as this one.
         assert_eq!(words_from_listing(body, "t2"), None);
+        // NEGATIVE PROOF (#4761): the retired hand route's bare array is not read
+        let old = r#"[{"id":7,"content":"x","trace_id":"t1"}]"#;
+        assert_eq!(words_from_listing(old, "t1"), None);
     }
 }

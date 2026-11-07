@@ -60,3 +60,6 @@ platform/api/tests/cors-origin-2436.test.ts:3
 # at 2 rather than excluded, so adding a third machine still has to be a decision
 # somebody makes on purpose.
 designing/data/machine-instances.ttl:2
+# #4745 (2026-10-26) — the signer's DIAL address is the Bedroom relay on the home
+# network (it names the public relay in the handshake, #4737); config, not code.
+platform/services/chorus-jeff-signer/com.chorus.jeff-signer.plist:1

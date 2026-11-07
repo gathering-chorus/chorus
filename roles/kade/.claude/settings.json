@@ -48,6 +48,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen kade",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "disableAgentView": true

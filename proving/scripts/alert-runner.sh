@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../../platform/scripts/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # alert-runner.sh — Execute all YAML alert checks and fire actions on failure
 # Card #2000 | Silas
 #
@@ -15,11 +16,13 @@ set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 ALERT_DIR="${CHORUS_ROOT}/proving/domains/alerts"
-ALERT_STATE_DIR="/Users/jeffbridwell/Library/Logs/Gathering/alert-state"
-LOG="/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log"
+# the line above stays plain: alert-runner-paths.test.sh reads it with sed
+ALERT_DIR="${ALERT_RULES_DIR:-$ALERT_DIR}"
+ALERT_STATE_DIR="${ALERT_STATE_DIR:-/Users/jeffbridwell/Library/Logs/Gathering/alert-state}"
+LOG="${ALERT_LOG:-/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log}"
 COOLDOWN_SECONDS="${ALERT_COOLDOWN:-600}"  # 10 minutes default
 CONSECUTIVE_THRESHOLD="${ALERT_THRESHOLD:-2}"  # require 2 failures before firing
-TIMESTAMP() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
+TIMESTAMP() { boston_time stamp; }
 
 mkdir -p "$(dirname "$LOG")" "$ALERT_STATE_DIR"
 
@@ -30,8 +33,10 @@ run_check() {
   local name
   name=$(grep '^name:' "$rule_file" | head -1 | sed 's/name: *//')
 
+  # the block keeps YAML's 2-space indent unless stripped; an indented line in a
+  # multi-line python -c then reads as IndentationError (#4634, live 15:31)
   local check_script
-  check_script=$(awk '/^check: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
+  check_script=$(awk '/^check: \|/{found=1; next} /^[a-z]/{if(found) exit} found{sub(/^  /, ""); print}' "$rule_file")
 
   if [[ -z "$check_script" ]]; then
     log "SKIP $name — no check block"
@@ -47,8 +52,11 @@ run_check() {
   # prints "ok dir=... newest_age_h=...", ci-main-red prints nothing on green).
   # #3571 settled this for test suites: exit-code-is-verdict. Alerts never got it.
   # Output is now EVIDENCE carried into the message; it decides nothing.
-  local result rc
-  result=$(bash -c "$check_script" 2>&1); rc=$?
+  # #4634 — `|| rc=$?`, never `; rc=$?`: under set -e a failing check in a
+  # bare assignment killed the whole runner, so every cycle stopped at its
+  # first red rule and no rule after it ran (no WARN or FIRE logged after 07-30).
+  local result rc=0
+  result=$(bash -c "$check_script" 2>&1) || rc=$?
 
   if [[ $rc -eq 0 ]]; then
     log "OK $name${result:+ — $result}"
@@ -86,7 +94,7 @@ run_check() {
   log "FIRE $name — $result (consecutive: $fail_count)"
 
   local action_script
-  action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
+  action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{sub(/^  /, ""); print}' "$rule_file")
 
   if [[ -n "$action_script" ]]; then
     # #3709 — HAND THE ACTION THE VERDICT. This was a bare `bash -c`: a fresh
@@ -121,7 +129,9 @@ for rule in "$ALERT_DIR"/*.yml; do
     [[ "$name" == "$RULE_FILTER" ]] || continue
   fi
   # Skip manual-only rules unless explicitly requested via --rule
-  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//' | tr -d '"')
+  # a rule with no schedule line fails open (runs every cycle); without
+  # `|| true`, grep's miss under pipefail killed the runner (#4634)
+  schedule=$( { grep '^schedule:' "$rule" || true; } | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//' | tr -d '"')
   if [[ "$schedule" == "manual" ]] && [[ -z "$RULE_FILTER" ]]; then
     log "SKIP $name — manual schedule (use --rule $name to run)"
     continue

@@ -31,7 +31,9 @@ if [ -z "$TARGET" ] || [ -z "$MESSAGE" ]; then
 fi
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-INJECT_BIN="${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject"
+# #4915 — the installed, signed chorus-inject (its TCC grant binds that cdhash), never
+# the build artifact: build-signed now builds per account, so target/release is stale
+INJECT_BIN="${CHORUS_BIN:-$HOME/.chorus/bin}/chorus-inject"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 SENDER="${DEPLOY_ROLE:-system}"
 TRACE_ID="pair-enforce-$(date +%s%N)-$$"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — stubs ssh/scp/tdb2; no live services
-# @domain: backups
+# @domain: tests
 #
 # #4399 — the nightly restore test reds the first night a backup is missed.
 # On 2026-09-28 the drill job had pointed at a deleted script since #4141 and

@@ -14,8 +14,8 @@
  *
  * The relay stores only notes signed by the connection's own AUTH identity
  * (measured 10-18), so this connection AUTHs as the bridge and signs as the
- * bridge. Jeff input is not written here: Clearing v2 writes it once at the
- * source (#4608).
+ * bridge. Jeff input typed in Clearing is not written here: Clearing v2 writes
+ * it once at the source (#4608). What he types in a terminal is (#4628).
  */
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,11 @@ export interface BuzzNote {
 }
 
 /** One message pulse carries, as the room should show it. */
-export interface BuzzMessage { id: number; from: string; to: string; content: string }
+export interface BuzzMessage {
+  id: number; from: string; to: string; content: string;
+  /** #4628 — 'terminal': Jeff typed it in `to`'s terminal; 'land': a land notice, `to` the card's owner. Recorded as given, never framed. */
+  surface?: 'terminal' | 'land';
+}
 
 export interface BuzzWriterOptions {
   relayUrl: string;
@@ -40,15 +44,46 @@ export interface BuzzWriterOptions {
   /** The relay's own address for the AUTH tag when dialled through a tunnel. */
   hostHeader?: string;
   topic?: string;
+  /** #4652 — the #team channel's id; default BUZZ_TEAM_CHANNEL, else #team on the relay. */
+  channel?: string;
   okTimeoutMs?: number;
   alertEveryMs?: number;
   /** Called for every miss; `alert` is true at most once per alert window. */
   onMiss: (note: BuzzNote, reason: string, alert: boolean) => void;
 }
 
+/**
+ * #4652 — the Buzz app's #team shows only channel messages: kind 9 with an `h`
+ * tag naming the channel's id (#team's, measured in the relay's tables 10-20).
+ * The kind 1 t=team notes pulse wrote before were stored and never shown.
+ */
+export const TEAM_CHANNEL_DEFAULT = '160e1f5d-6816-4c68-94b3-b5f1ade75565';
+/** #4667/#4672 — the #clearing room, where Jeff's Clearing posts are stored. */
+export const CLEARING_CHANNEL_DEFAULT = '03e2b251-240f-47fe-89b5-fe4e7ac648fb';
+const CHANNEL_MESSAGE = 9;
+
 /** Pulse stores a nudge with its delivery header; the room carries the words. */
-function body(content: string): string {
+export function body(content: string): string {
   return content.replace(/^\[nudge from [^\]|]+\|[^\]]*\]\s*/, '');
+}
+
+/**
+ * #4875 AC10 (Jeff 09:36 screenshot) — the demo brief is for the owner only ("for you, not Jeff"):
+ * it never goes into #team, where Jeff reads the room. Matched with or without a delivery header.
+ */
+export function ownerOnly(m: Pick<BuzzMessage, 'from' | 'content'>): boolean {
+  if (m.from !== 'system') return false;
+  let t = m.content.trimStart();
+  if (t.startsWith('[')) { const end = t.indexOf(']'); t = end < 0 ? t : t.slice(end + 1).trimStart(); }
+  return t.startsWith('Demo brief for the owner');
+}
+
+/**
+ * #4875 AC10 — text a role's terminal received as a delivery (an alert or a peer nudge), not words
+ * Jeff typed: a prompt hook must never record it as "jeff".
+ */
+export function injectedDelivery(content: string): boolean {
+  return /^\s*\[(alert for |alert → |nudge from )/.test(content);
 }
 
 /** The text and kind the room shows for a message (same as clearing/src/tailer.ts). */
@@ -60,12 +95,24 @@ export function roomText(m: BuzzMessage): { text: string; kind: 'nudge' | 'alert
 }
 
 /** A relay frame as text, whichever buffer shape ws hands over. */
-function frameText(data: WebSocket.RawData): string {
+export function frameText(data: WebSocket.RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
   return Buffer.from(data as ArrayBuffer).toString('utf8');
 }
 
-function signNote(signer: BuzzSigner, createdAt: number, kind: number, tags: string[][], content: string): BuzzNote {
+/**
+ * #4657 — the relay address a NIP-42 AUTH names. The relay accepts one address
+ * (its RELAY_URL), so once it is the public wss:// one, every client that dials
+ * a tunnel must still name it. BUZZ_AUTH_RELAY_URL states it; unset keeps the
+ * old rule (the tunnel's Host as ws://, or the dialed URL).
+ */
+export function authRelayTag(relayUrl: string, hostHeader?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const stated = (env.BUZZ_AUTH_RELAY_URL || '').trim();
+  if (stated) return stated;
+  return hostHeader ? `ws://${hostHeader}` : relayUrl;
+}
+
+export function signNote(signer: BuzzSigner, createdAt: number, kind: number, tags: string[][], content: string): BuzzNote {
   const id = bytesToHex(sha256(utf8ToBytes(JSON.stringify([0, signer.pubkey, createdAt, kind, tags, content]))));
   return { id, pubkey: signer.pubkey, created_at: createdAt, kind, tags, content, sig: signer.sign(id) };
 }
@@ -91,9 +138,17 @@ export class BuzzWriter {
 
   /** Post one message. Never throws and never blocks the caller. */
   post(m: BuzzMessage): void {
-    const { text, kind } = roomText(m);
-    const tags = [['t', this.o.topic ?? 'team'], ['author', m.from], ['kind', kind], ['msg', `pulse-${m.id}`]];
-    const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), 1, tags, text);
+    const topic = this.o.topic ?? 'team';
+    const channel = this.o.channel ?? (process.env.BUZZ_TEAM_CHANNEL || TEAM_CHANNEL_DEFAULT);
+    const { text, kind } = m.surface === 'terminal' ? { text: m.content, kind: 'jeff' }
+      : m.surface === 'land' ? { text: m.content, kind: 'land' } : roomText(m);
+    const tags = m.surface === 'terminal'
+      ? [['h', channel], ['t', topic], ['author', 'jeff'], ['kind', kind], ['to', m.to], ['surface', 'terminal'], ['msg', `pulse-term-${m.id}`]]
+      : m.surface === 'land'
+        ? [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ...(m.to ? [['owner', m.to]] : []), ['msg', `pulse-land-${m.id}`]]
+        // #4629 — the recipient rides as a tag so a reader of the room can deliver it, never parsed from the text
+        : [['h', channel], ['t', topic], ['author', m.from], ['kind', kind], ['to', m.to], ['msg', `pulse-${m.id}`]];
+    const note = signNote(this.o.signer, Math.floor(Date.now() / 1000), CHANNEL_MESSAGE, tags, text);
     if (!this.ws || !this.open) { this.miss(note, 'relay not connected'); return; }
     const timer = setTimeout(() => {
       this.pending.delete(note.id);
@@ -137,7 +192,7 @@ export class BuzzWriter {
     try { f = JSON.parse(raw) as unknown[]; } catch { return; }
     if (f[0] === 'AUTH' && typeof f[1] === 'string') {
       // NIP-42: answer the challenge as the bridge, the identity this connection writes as
-      const relay = this.o.hostHeader ? `ws://${this.o.hostHeader}` : this.o.relayUrl;
+      const relay = authRelayTag(this.o.relayUrl, this.o.hostHeader);
       const auth = signNote(this.o.signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', f[1]]], '');
       this.ws?.send(JSON.stringify(['AUTH', auth]));
       return;
@@ -157,7 +212,12 @@ export class BuzzWriter {
  * the room with. The key stays in that file; callers get a signer, never the key.
  */
 export function bridgeSignerFromHome(home: string): { signer?: BuzzSigner; reason?: string } {
-  const file = path.join(home, '.chorus', 'identity', 'bridge', 'nostr.json');
+  return identitySignerFromHome(home, 'bridge');
+}
+
+/** #4629 — any principal's signer from ~/.chorus/identity/<who>/nostr.json (pulse reads the room as principal-pulse). */
+export function identitySignerFromHome(home: string, who: string): { signer?: BuzzSigner; reason?: string } {
+  const file = path.join(home, '.chorus', 'identity', who, 'nostr.json');
   let parsed: { seckey?: unknown; pubkey?: unknown };
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed filename under the caller's home

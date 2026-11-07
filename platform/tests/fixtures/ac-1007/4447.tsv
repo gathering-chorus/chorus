@@ -1,2 +1,0 @@
-?ac	?statement	?kind	?target	?expect
-<https://jeffbridwell.com/chorus#ac-4447-1>	"no Credential rows remain"	"sparql"	"PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH ?g { ?c a chorus:Credential } }"	"false"

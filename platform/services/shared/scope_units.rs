@@ -76,13 +76,21 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // platform/scripts/werk-code-contract.sh; the suite that runs that script
     // (platform/tests/werk-code-contract.bats) is pulled in by coverage, the
     // same way an edited script pulls in the suites that name it.
-    let contract = f == "platform/config/werk-code-contract.tsv";
+    let contract = f == "platform/config/werk-code-contract.tsv"
+        // #4850 — the #3424 bounded-surface list, read at run time by the
+        // chorus-hooks guard; the_real_platform_config_canonical_surfaces_json_parses
+        // _with_both_axes_4850 (bounded_surfaces_test.rs) parses the real file.
+        || f == "platform/config/canonical-surfaces.json";
     // #4446 — the two launchd job scripts that live outside platform/scripts/
     // are the same kind of file as platform/scripts/: a schedule's body, not a
     // build input. Named exactly: any other proving/ or convergence/ path stays
     // on the loud FULL escape (#4000's negative proof, werk-test units.rs).
+    // #4885 — the fitness job (com.chorus.fitness-security runs run-fitness.sh,
+    // which calls write-snapshot.sh) is the same kind: named exactly, like these.
     let job_script = matches!(f, "proving/scripts/alert-runner.sh"
-                                 | "building/products/convergence/fuseki-maintenance.sh");
+                                 | "building/products/convergence/fuseki-maintenance.sh"
+                                 | "proving/fitness/run-fitness.sh"
+                                 | "proving/fitness/write-snapshot.sh");
     ext || dir || vcs || contract || job_script || f.contains("/public/")
 }
 
@@ -147,6 +155,12 @@ pub fn scope_unit_names(
         // whose unit set has no suites simply filters it out, which is right —
         // a test-only diff builds nothing.
         if is_test_suite_path(f) {
+            names.insert(f.clone());
+            continue;
+        }
+        // #4744 — a file a crate compiles in from outside itself by `#[path]` (an
+        // Operation handler, its fixtures) scopes to that crate, like a shared file
+        if !f.starts_with("platform/services/shared/") && edges.iter().any(|(p, _)| p == f) {
             names.insert(f.clone());
             continue;
         }
@@ -290,6 +304,40 @@ mod scope_refusal_4169 {
     // the same rule the crawler uses. NEGATIVE PROOF: a plain script beside it
     // (not test-named) still refuses as unmapped.
     #[test]
+    fn a_file_a_crate_compiles_in_by_path_scopes_to_that_crate_4744() {
+        let units = vec![u("pulse-api", "directing/products/pulse/api")];
+        let f = "directing/domains/awareness/operations/tree.rs".to_string();
+        let edges = vec![(f.clone(), "pulse-api".to_string())];
+        assert_eq!(scope_unit_names(&[f], &units, &edges, false), ScopeVerdict::Scoped(vec!["pulse-api".to_string()]));
+    }
+
+    /// NEGATIVE PROOF (Kade): a file under operations/ that no crate's `#[path]` names stays unclaimed.
+    #[test]
+    fn negative_proof_an_operations_file_no_crate_names_is_refused_4744() {
+        let units = vec![u("pulse-api", "directing/products/pulse/api")];
+        let f = "directing/domains/awareness/operations/orphan.rs".to_string();
+        let edges = vec![("directing/domains/awareness/operations/tree.rs".to_string(), "pulse-api".to_string())];
+        assert_eq!(scope_unit_names(&[f.clone()], &units, &edges, false), ScopeVerdict::Full(format!("unmapped:{f}")));
+    }
+
+    #[test]
+    fn a_crate_records_its_outside_path_files_and_their_fixtures_4744() {
+        let src = vec!["#[path = \"../../../../domains/awareness/operations/tree.rs\"]\npub mod tree;\n#[path = \"inner.rs\"] mod inner;".to_string()];
+        let read = |p: &str| (p == "directing/domains/awareness/operations/tree.rs")
+            .then(|| "const P: &str = include_str!(\"fixtures/tree-parity-4638.json\");".to_string());
+        assert_eq!(code_units::outside_path_includes("directing/products/pulse/api", &src, &read), vec![
+            "directing/domains/awareness/operations/fixtures/tree-parity-4638.json".to_string(),
+            "directing/domains/awareness/operations/tree.rs".to_string(),
+        ]);
+        assert_eq!(code_units::join_repo("a/b", "../../../c"), None);
+        // a path that only contains "shared/" is still an outside file; a real shared file is not
+        let src2 = vec!["#[path = \"../../../../domains/x/operations/shared/y.rs\"] mod y;\n#[path = \"../../../../../platform/services/shared/z.rs\"] mod z;".to_string()];
+        let none = |_: &str| None;
+        assert_eq!(code_units::outside_path_includes("directing/products/pulse/api", &src2, &none),
+                   vec!["directing/domains/x/operations/shared/y.rs".to_string()]);
+    }
+
+    #[test]
     fn a_shell_suite_outside_tests_scopes_to_itself_4538() {
         let suite = "proving/fitness/test-run-fitness-ceiling.sh";
         assert!(is_test_suite_path(suite));
@@ -300,6 +348,17 @@ mod scope_refusal_4169 {
             panic!("a shell suite must scope to itself")
         };
         assert_eq!(names, vec![suite.to_string()]);
+    }
+
+    // #4850 — the bounded-surface list (#3424) is read at run time by the
+    // chorus-hooks guard; a test in bounded_surfaces_test.rs parses the real file. Named exactly. NEGATIVE PROOF: any other platform/config/ file
+    // still refuses as unmapped, so this cannot hide a real build input.
+    #[test]
+    fn the_canonical_surfaces_list_is_not_a_build_input_4850() {
+        assert!(scope_irrelevant("platform/config/canonical-surfaces.json"));
+        assert!(!scope_irrelevant("platform/config/canonical-surfaces.json.bak"));
+        assert!(!scope_irrelevant("platform/config/agent-onboarding-steps.tsv"));
+        assert!(!scope_irrelevant("platform/config/dagu.yaml"));
     }
 
     #[test]

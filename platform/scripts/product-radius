@@ -1,0 +1,396 @@
+#!/usr/bin/env python3
+# product-radius — product graph inventory and cleanup report (#4682)
+# @domain: ontology
+"""Every product's domains, services, and pipelines with data issues.
+Usage:
+  product-radius [--owner ROLE] [--html [FILE]] [--json [FILE]] [--sparql-endpoint URL] [--check]
+"""
+import argparse
+import glob
+import html
+import json
+import os
+import sys
+import urllib.parse
+import urllib.request
+from collections import Counter
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+import radius_graph as rg  # noqa: E402
+
+# Configurable SPARQL endpoint via env or flag; default to prod Fuseki
+DEFAULT_ENDPOINT = os.environ.get("SPARQL_ENDPOINT", "http://localhost:3030/pods/query")
+CHORUS_HOME = os.environ.get("CHORUS_HOME", os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+PIPELINES_DIR = os.environ.get("CHORUS_PIPELINES_DIR", os.path.join(CHORUS_HOME, "platform/pipelines"))
+
+C = "https://jeffbridwell.com/chorus#"
+PFX = f"PREFIX c: <{C}> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+
+KIND = rg.KIND
+# Fallback map for grouping when no graph link exists (Wren: flag as gap)
+VS_PRODUCT_FALLBACK = {
+    "value-stream-werk": "werk",
+    "value-stream-athena": "athena",
+    "value-stream-clearing": "clearing",
+    "value-stream-proving": "borg",
+    "value-stream-operating": "borg",
+}
+ORDER = [
+    "chorus", "loom", "clearing", "pulse", "athena", "werk", "convergence",
+    "spine", "borg", "gathering", "wine-diary"
+]
+OWNER_ORDER = ["wren", "kade", "silas", "abby-normal", "jeff"]
+
+
+def run_sparql(q, endpoint=DEFAULT_ENDPOINT):
+    data = urllib.parse.urlencode({"query": PFX + q}).encode()
+    req = urllib.request.Request(endpoint, data=data, headers={"Accept": "application/sparql-results+json"})
+    rows = json.load(urllib.request.urlopen(req, timeout=30))["results"]["bindings"]
+    return [{k: v["value"].replace(C, "") for k, v in r.items()} for r in rows]
+
+
+def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_dir=PIPELINES_DIR):
+    """Inventory from a raw graph (#4700: the same edges domain-radius reads).
+
+    fixture_data may be a raw graph ({"types", "edges"}); then every flag is
+    computed. A legacy pre-computed inventory is passed through unchanged."""
+    if fixture_data is not None and not rg.is_raw(fixture_data):
+        return fixture_data
+    raw = fixture_data if fixture_data is not None else rg.fetch_graph(endpoint)
+    g = rg.Graph(raw)
+    d = rg.derive(g)
+    issues = list(d["issues"])
+    products = g.of("Product")
+    has_domain, consumes = d["owns"], d["consumes"]
+    part_of = g.pairs("partOf", "Product")
+    automates = d["automates"]
+    pipe_status = d["pipeStatus"]
+    pipelines = g.of("Pipeline")
+    streams = g.of("ValueStream")
+
+    def issue(kind, subject, text):
+        issues.append({"kind": kind, "subject": subject, "text": text})
+
+    for p in sorted(products):
+        if not any(x == p for x, _ in has_domain) and not any(o == p for _, o in part_of):
+            issue("product-no-domains", p, "owns no domains and has no parts")
+
+    # Dynamic NO_ROW derivation: compare platform/pipelines/*.yaml with Pipeline labels
+    on_disk_yaml = []
+    if fixture_data is None and os.path.isdir(pipelines_dir):
+        on_disk_yaml = [os.path.basename(yf) for yf in glob.glob(os.path.join(pipelines_dir, "*.yaml"))]
+    graph_pipe_labels = {p.replace("pipeline-", "") for p in pipelines} | set(pipelines)
+    for yf in sorted(on_disk_yaml):
+        if yf[:-5] not in graph_pipe_labels:
+            issue("yaml-no-rows", yf, f"pipeline file {yf} exists on disk but has no matching Pipeline row in graph")
+
+    parts = {}
+    for s, o in part_of:
+        parts.setdefault(o, []).append(s)
+
+    def product_view(p):
+        rows = []
+        for dom in sorted(x for q, x in has_domain if q == p):
+            r = d["domains"].get(dom, {})
+            rows.append({
+                "domain": dom,
+                "owner": r.get("owner", ""),
+                "status": r.get("status", ""),
+                "step": r.get("step", "").replace("value-stream-step-", ""),
+                "valueStream": r.get("valueStream", ""),
+                "services": r.get("services", []),
+                "pipelines": r.get("pipelines", []),
+                "skills": r.get("skills", []),
+                "flags": sorted({i["kind"] for i in issues if i["subject"] == dom}),
+            })
+        owned = {r["domain"] for r in rows}
+        pipes = {pl for r in rows for pl in r["pipelines"]}
+        pipes |= {pl for pl, vs in automates.items() if VS_PRODUCT_FALLBACK.get(vs) == p}
+        # #4682's rule kept: a pipeline named for the product belongs to it.
+        pipes |= {pl for pl in pipelines if pl == "pipeline-" + p}
+        return {
+            "product": p,
+            "owner": g.owner(p),
+            "parts": sorted(parts.get(p, [])),
+            "valueStreams": sorted({r["valueStream"] for r in rows if r["valueStream"]}),
+            "steps": sorted({r["step"] for r in rows if r["step"]}),
+            "domains": rows,
+            "consumes": sorted(x for q, x in consumes if q == p),
+            "consumeLayers": {x: d["domains"].get(x, {}).get("layer", "") for q, x in consumes if q == p},
+            "composes": sorted(x for q, x in g.pairs("composes", "Product") if q == p),
+            "usedBy": sorted({f"{q} (via {x})" for q, x in consumes if x in owned and q != p}),
+            "pipelines": [{"pipeline": x, "status": pipe_status.get(x, ""), "stream": automates.get(x, "")}
+                          for x in sorted(pipes)],
+            "flags": sorted({i["kind"] for i in issues if i["subject"] == p}),
+        }
+
+    order = [p for p in ORDER if p in products] + sorted(products - set(ORDER))
+    services = g.of("Service")
+    hosts = g.pairs("hosts", "Domain")
+    return {
+        "counts": {
+            "products": len(products),
+            "domains": len(g.of("Domain")),
+            "services": len(services),
+            "pipelines": len(pipelines),
+            "valueStreams": len(streams),
+        },
+        "products": [product_view(p) for p in order],
+        "unplacedDomains": sorted(x for x, r in d["domains"].items() if not r["products"]),
+        "services": [{"service": s, "owner": g.owner(s),
+                      "hostedBy": sorted(x for x, y in hosts if y == s)} for s in sorted(services)],
+        "pipelines": [{"pipeline": p, "status": pipe_status.get(p, ""), "stream": automates.get(p, "")}
+                      for p in sorted(pipelines)],
+        "issues": issues,
+    }
+
+
+def product_tree(p):
+    """The tree shape Jeff fixed on #4700 (10-22 11:44)."""
+    lines = [(0, f"product-radius {p['product']}"),
+             (1, f"owner {p['owner'] or '—'} · value stream "
+                 f"{rg.join([v.replace('value-stream-', '') for v in p.get('valueStreams', [])])} · "
+                 f"step {rg.join(p.get('steps', []))}")]
+    for r in p["domains"]:
+        lines.append((1, f"owns         {r['domain']}"))
+        lines.append((2, f"services {rg.join([s.replace('service-', '') for s in r['services']])} · "
+                         f"pipelines {rg.join([x.replace('pipeline-', '') for x in r.get('pipelines', [])])} · "
+                         f"skills {rg.join([s.replace('skill-', '') for s in r.get('skills', [])])}"))
+    if p.get("parts"):
+        lines.append((1, f"parts        {rg.join(p['parts'])}"))
+    layers = p.get("consumeLayers", {})
+    lines.append((1, f"composes     {rg.join(p.get('composes', []))}"))
+    lines.append((1, "consumes     " + rg.join([f"{x} ({layers.get(x) or 'no layer'})" for x in p["consumes"]])))
+    lines.append((1, f"used by      {rg.join(p.get('usedBy', []))}"))
+    return rg.tree(lines)
+
+
+def render_html(data, target_owner=None):
+    e = html.escape
+    fixes = {}
+    for i in data["issues"]:
+        s = i["subject"]
+        matched_prod = None
+        for p in data["products"]:
+            if s == p["product"] or any(r["domain"] == s for r in p["domains"]) or any(x["pipeline"] == s for x in p["pipelines"]):
+                matched_prod = p["product"]
+                break
+        if not matched_prod:
+            if s.startswith("service-wine-diary"):
+                matched_prod = "wine-diary"
+            elif "bedroom-log" in s or s.startswith("pipeline-zz"):
+                matched_prod = "borg"
+            elif s.endswith(".yaml"):
+                # Pipeline file mapping (matches NO_ROW attribution in inventory)
+                base = s.replace(".yaml", "")
+                if base == "nightly":
+                    matched_prod = "chorus"
+                elif any(p["product"] == base.split("-")[0] for p in data["products"]):
+                    matched_prod = base.split("-")[0]
+                elif base.startswith("cicd"):
+                    matched_prod = "werk"
+
+        if i["kind"] == "domain-two-products":
+            for p2 in i["text"].replace("listed by ", "").split(", "):
+                fixes.setdefault(p2, []).append(i)
+        else:
+            fixes.setdefault(matched_prod or "unplaced", []).append(i)
+
+    owners = {}
+    for p in data["products"]:
+        if target_owner and p["owner"] != target_owner:
+            continue
+        owners.setdefault(p["owner"] or "unowned", []).append(p)
+
+    def chips(items, cls=""):
+        return "".join(f'<span class="chip {cls}">{e(x)}</span>' for x in items) or '<span class="none">none</span>'
+
+    def product_card(p):
+        prod_issues = fixes.get(p["product"], [])
+        rows = "".join(
+            f"<tr><td class='mono'>{e(r['domain'])}</td><td>{e(r['owner'])}</td><td>{e(r['status'] or '—')}</td><td>"
+            f"{', '.join(e(s.replace('service-', '')) for s in r['services']) or '—'}</td></tr>"
+            for r in p["domains"]
+        )
+        pipes = "".join(
+            f"<li><span class='mono'>{e(x['pipeline'].replace('pipeline-', ''))}</span> <span class='st'>{e(x['status'])}</span></li>"
+            for x in p["pipelines"]
+        ) or "<li class='none'>none linked</li>"
+        iss = "".join(
+            f"<li><span class='kind'>{e(KIND.get(i['kind'], i['kind']))}</span> <span class='mono'>{e(i['subject'])}</span>"
+            f"<span class='why'>{e(i['text'])}</span></li>"
+            for i in prod_issues
+        )
+        badge = f'<span class="count bad">{len(prod_issues)} to fix</span>' if prod_issues else '<span class="count ok">clean</span>'
+        return f"""
+<article class="product" id="{e(p['product'])}">
+  <header><h3>{e(p['product'])}</h3>{badge}</header>
+  {'<p class="parts">parts: ' + chips(p['parts']) + '</p>' if p['parts'] else ''}
+  <pre class="tree">{e(product_tree(p))}</pre>
+  {'<ul class="issues">' + iss + '</ul>' if iss else ''}
+  <details{' open' if len(p['domains']) <= 6 else ''}>
+    <summary>{len(p['domains'])} domains · {len(p['pipelines'])} pipelines · consumes {len(p['consumes'])}</summary>
+    <div class="scroll"><table><thead><tr><th>domain</th><th>owner</th><th>status</th><th>services</th></tr></thead><tbody>{rows}</tbody></table></div>
+    <p class="sub">pipelines</p><ul class="pipes">{pipes}</ul>
+    <p class="sub">consumes</p><p>{chips(p['consumes'])}</p>
+  </details>
+</article>"""
+
+    sections = []
+    for o in OWNER_ORDER + sorted(set(owners) - set(OWNER_ORDER)):
+        if o not in owners:
+            continue
+        ps = owners[o]
+        n = sum(len(fixes.get(p["product"], [])) for p in ps)
+        sections.append(f"""
+<section class="owner">
+  <h2>{e(o)} <span class="meta">{len(ps)} product{'s' if len(ps) != 1 else ''} · {n} to fix</span></h2>
+  <div class="grid">{''.join(product_card(p) for p in ps)}</div>
+</section>""")
+
+    c = data["counts"]
+    total = sum(len(fixes.get(p["product"], [])) for ps in owners.values() for p in ps)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Graph Cleanup by Owner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {{
+  --bg: #f6f7f4; --panel: #ffffff; --ink: #1d2320; --muted: #5d6862; --rule: #d9ded9;
+  --accent: #2f6f5e; --bad: #a23b2a; --bad-bg: #f7e6e2; --ok: #2f6f5e; --ok-bg: #e3f0eb; --chip: #eef1ee;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}}
+@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{
+  --bg: #141816; --panel: #1c211f; --ink: #e6ebe8; --muted: #9aa6a0; --rule: #2e3532;
+  --accent: #7cc4ad; --bad: #f08a76; --bad-bg: #3a2420; --ok: #7cc4ad; --ok-bg: #1f3029; --chip: #262d2a; color-scheme: dark }} }}
+body {{ background: var(--bg); color: var(--ink); font-family: var(--body); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; }}
+.wrap {{ max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }}
+h1, h2, h3 {{ font-family: var(--display); text-wrap: balance; margin: 0; }}
+h1 {{ font-size: 1.75rem; }} h2 {{ font-size: 1.2rem; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }}
+h3 {{ font-size: 1.02rem; }}
+.lede {{ max-width: 65ch; color: var(--muted); margin: 6px 0 0; }}
+.tally {{ display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--mono); font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }}
+.tally b {{ color: var(--ink); font-weight: 500; }}
+.meta {{ font-family: var(--mono); font-size: .78rem; color: var(--muted); font-weight: 400; }}
+.owner {{ display: grid; gap: 12px; border-top: 1px solid var(--rule); padding-top: 18px; }}
+.grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }}
+.product {{ background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; display: grid; gap: 10px; min-width: 0; align-content: start; }}
+.product header {{ display: flex; justify-content: space-between; align-items: center; gap: 8px; }}
+.count {{ font-family: var(--mono); font-size: .74rem; padding: 2px 8px; border-radius: 99px; }}
+.count.bad {{ background: var(--bad-bg); color: var(--bad); }} .count.ok {{ background: var(--ok-bg); color: var(--ok); }}
+.issues {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }}
+.issues li {{ border-left: 3px solid var(--bad); padding-left: 8px; font-size: .9rem; display: grid; }}
+.kind {{ font-family: var(--display); font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--bad); }}
+.why {{ color: var(--muted); font-size: .84rem; }}
+.mono {{ font-family: var(--mono); font-size: .82rem; overflow-wrap: anywhere; }}
+details summary {{ cursor: pointer; font-family: var(--mono); font-size: .8rem; color: var(--accent); }}
+details summary:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+.scroll {{ overflow-x: auto; margin-top: 8px; }}
+table {{ border-collapse: collapse; width: 100%; font-size: .82rem; }}
+th, td {{ text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }}
+th {{ font-family: var(--display); font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }}
+.sub {{ font-family: var(--display); font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 4px; }}
+.pipes {{ margin: 0; padding-left: 18px; font-size: .85rem; }} .st {{ color: var(--muted); font-size: .78rem; }}
+.chip {{ display: inline-block; background: var(--chip); font-family: var(--mono); font-size: .74rem; padding: 1px 6px; border-radius: 4px; margin: 0 4px 4px 0; }}
+.none {{ color: var(--muted); font-size: .82rem; }}
+.parts {{ margin: 0; font-size: .85rem; color: var(--muted); }}
+.tree {{ margin: 0; font-family: var(--mono); font-size: .76rem; white-space: pre-wrap; overflow-wrap: anywhere; }}
+footer {{ color: var(--muted); font-size: .8rem; font-family: var(--mono); }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Graph Cleanup by Owner</h1>
+    <p class="lede">Every product with its domains, services and pipelines, read from the live graph. Each product owner fixes the red items on their own products, then presents the result.</p>
+  </header>
+  <div class="tally"><span><b>{c['products']}</b> products</span><span><b>{c['domains']}</b> domains</span><span><b>{c['services']}</b> services</span><span><b>{c['pipelines']}</b> pipeline rows</span><span><b>{total}</b> to fix</span></div>
+  {''.join(sections)}
+  <footer>Generated by product-radius (#4682) from store {e(DEFAULT_ENDPOINT)}.</footer>
+</div>
+</body>
+</html>
+"""
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Product radius graph inventory and HTML reporting")
+    ap.add_argument("--owner", help="Filter report to a specific owner (e.g. wren, kade, silas, abby-normal)")
+    ap.add_argument("--html", nargs="?", const="-", help="Output HTML to path or stdout ('-')")
+    ap.add_argument("--json", nargs="?", const="-", help="Output JSON to path or stdout ('-')")
+    ap.add_argument("products", nargs="*", help="Products to show as trees (default: all)")
+    ap.add_argument("--from-fixture", help="Raw graph JSON (radius_graph) or a pre-collected inventory, instead of querying SPARQL")
+    ap.add_argument("--sparql-endpoint", default=DEFAULT_ENDPOINT, help="SPARQL endpoint URL")
+    ap.add_argument("--check", action="store_true", help="Exit non-zero if issues exist for target owner / all")
+    args = ap.parse_args()
+
+    if args.from_fixture:
+        with open(args.from_fixture) as f:
+            data = collect_inventory(fixture_data=json.load(f))
+    else:
+        try:
+            data = collect_inventory(endpoint=args.sparql_endpoint)
+        except Exception as ex:
+            sys.stderr.write(f"FATAL: SPARQL query failed against {args.sparql_endpoint}: {ex}\n")
+            sys.exit(1)
+
+    if args.products:
+        known = {p["product"] for p in data["products"]}
+        missing = [x for x in args.products if x not in known]
+        if missing:
+            sys.stderr.write(f"no such product: {', '.join(missing)}\n")
+            sys.exit(1)
+        data = dict(data, products=[p for p in data["products"] if p["product"] in args.products])
+
+    relevant_issues = data["issues"]
+    if args.owner:
+        owner_prods = {p["product"] for p in data["products"] if p["owner"] == args.owner}
+        owner_doms = {d["domain"] for p in data["products"] if p["owner"] == args.owner for d in p["domains"]}
+        relevant_issues = [
+            i for i in data["issues"]
+            if i["subject"] in owner_prods or i["subject"] in owner_doms
+        ]
+
+    if args.json:
+        payload = json.dumps(data, indent=2)
+        if args.json == "-":
+            sys.stdout.write(payload + "\n")
+        else:
+            with open(args.json, "w") as f:
+                f.write(payload + "\n")
+
+    if args.html:
+        html_out = render_html(data, target_owner=args.owner)
+        if args.html == "-":
+            sys.stdout.write(html_out + "\n")
+        else:
+            with open(args.html, "w") as f:
+                f.write(html_out + "\n")
+
+    if not args.html and not args.json:
+        shown = [p for p in data["products"] if not args.owner or p["owner"] == args.owner]
+        for p in shown:
+            print(product_tree(p) + "\n")
+        c = data["counts"]
+        print(f"Products: {c['products']} | Domains: {c['domains']} | Services: {c['services']} | Pipelines: {c['pipelines']}")
+        counts = Counter(i["kind"] for i in relevant_issues)
+        if counts:
+            print(f"Issues ({len(relevant_issues)} total):")
+            for kind, cnt in sorted(counts.items()):
+                print(f"  {kind}: {cnt}")
+        else:
+            print("No issues found! Clean.")
+
+    if args.check and len(relevant_issues) > 0:
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,6 @@
 ---
 name: demo
-description: The proving ceremony — the demo is its own dagu pipeline (validate, 5 gates + 3 peer reviews in parallel, session-smoke, announce) that cicd calls as one step, then Jeff's go (#4502).
+description: The proving ceremony — the demo is its own dagu pipeline (validate, the code, architecture and quality reviews in parallel, announce) that cicd calls as one step, then Jeff's go (#4502).
 user-invocable: true
 ---
 
@@ -23,9 +23,7 @@ runs its own. The demo is then its own "demo" run, its TRACE the cicd run's id.
 
 ```
 cicd:  … env-up ─► demo ─────────────────────────────────────────────► Jeff's go ─► land
-demo:  validate ─► [gate-product, gate-code, gate-quality, gate-arch, gate-ops,
-                    review-1, review-2, review-3]   (in parallel)
-                ─► session-smoke ─► announce
+demo:  validate ─► [gate-code, gate-arch, gate-quality]   (in parallel) ─► announce
 ```
 
 On "more", the demo reruns alone against the card's deployed variant, with no rebuild:
@@ -33,23 +31,26 @@ On "more", the demo reruns alone against the card's deployed variant, with no re
 (an empty TRACE gets a fresh trace; once demo.yaml is on main, `enqueue demo -- …` by name
 works too). A stopped demo inside a card's run is retried with the cicd demo step
 (`dagu retry --run-id=<cicd run> --step=skill-werk-demo-pipeline --downstream cicd`): the
-gates and reviews already recorded for the round are kept, so only the stopped step works again.
+reviews already recorded for the round are kept, so only the stopped step works again.
 
 | step | command | exit |
 |---|---|---|
 | validate | `werk-demo validate <card> <role>` | 1 when the card is not WIP/Now or has no AC |
-| gate | `werk-demo run-gate <card> <role> <product\|code\|quality\|arch\|ops>` | 0 when a verdict is recorded (pass or concerns); 1 only when the gate could not run |
-| review | `werk-demo run-review <card> <role> <1\|2\|3>` | same rule; the peers are every agent role but the builder (wren, silas, kade, abby-normal → 3 each) |
-| session-smoke | `werk-demo session-smoke <card> <role>` | 1 when a changed role's session cannot start from the werk build and make one tool call; "nothing to smoke" is a named pass |
-| announce | `werk-demo announce <card> <role>` | 1 when any gate or review has no result this round |
+| review | `werk-demo run-gate <card> <role> <code\|arch\|quality>` | 0 when a verdict is recorded (pass or fail); 1 only when the review could not run |
+| announce | `werk-demo announce <card> <role>` | 1 when any review has no usable result this round |
 
-Gates and reviews are headless runs (one `claude -p` each, fed the gate's
-`skills/gate-<g>/SKILL.md`, or the peer's persona, plus the card AC and the branch diff).
-They **inform**; Jeff's go decides (#3263). A gate saying "concerns" never stops the run.
+The reviews are headless runs (one `claude -p` each, fed `skills/gate-<g>/SKILL.md` plus
+the card and the branch diff). They read the **diff**, never the AC boxes (Jeff 11-04
+18:11). A failed review does not stop the run: the owner's brief names it, and nothing
+goes to Jeff while a review is red (the owner's vouch refuses). Jeff's go decides (#3263).
+
+#4889 (Jeff 11-04 18:21) retired the product and ops gates, the three peer reviews and
+the session smoke. Where each of their checks went is in the "Where the old checks went"
+table of `/gate-code`, `/gate-arch` and `/gate-quality`.
 
 ## One ask per round (Jeff 11:33 "really noisy and repetitive"; #3971)
 
-`announce` sends ONE message for the round: card, round, gates, reviews x/3, tests, AC,
+`announce` sends ONE message for the round: card, round, reviews, tests, AC,
 where to look, go / no / more. A second announce for the same round sends nothing, and
 nothing is sent after Jeff's go is recorded. Nobody is asked to reply: there is no
 feedback gather and no waiting on peers.
@@ -68,6 +69,6 @@ stays enforced in `werk-accept`.
 ## Rules still enforced
 
 - Validate: card exists, status WIP/Now, has AC.
-- Every gate and every peer review has a result for this round before the announce.
+- Every review has a result for this round before the announce.
 - The announce is the ready-gate: if prework fails, there is no announce.
-- Jeff's go stays sovereign: gates and reviews inform it, never decide it.
+- Jeff's go stays sovereign: the reviews inform it, never decide it.

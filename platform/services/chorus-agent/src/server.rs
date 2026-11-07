@@ -1,3 +1,4 @@
+// @domain: roles — placed by chorus-crawl's domain rules (#4645)
 use crate::{
     config::{self, Config},
     contract::*,

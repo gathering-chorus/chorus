@@ -93,7 +93,11 @@ export function planDelivery(
   // that collides with the SENDER is treated as STALE DATA and ignored, so
   // resolution falls through to the legacy role name-match — still a keystroke,
   // never a skip.
-  if (target && sender && sameSession(target, sender)) {
+  // #4878 — a sender of the target's own role is not stale data: an alert is
+  // stored with `from` = its owning role, so "alert for silas" always collided
+  // with silas's own pane and failed no-window-found. Only a DIFFERENT role
+  // claiming the target's session is the stale registration this rule guards.
+  if (target && sender && sender.role !== role && sameSession(target, sender)) {
     // #3608 review: Wren proposed defer-to-fold here (the 07-03 boomerang case);
     // Jeff KEPT unconditional keystroke (2026-07-04): "nudge has a way of
     // breaking and if it goes to the wrong terminal i want to see it." A

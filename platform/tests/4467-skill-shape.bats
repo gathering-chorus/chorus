@@ -37,6 +37,10 @@ chorus:skill-clearing-wip a chorus:Skill ;
     rdfs:label "clearing-wip" ; rdfs:comment "Reads a role's WIP cards." ;
     chorus:executor "http" ; chorus:implementedBy "GET {api}/api/chorus/context/board/wip?role={role=@caller}" ;
     chorus:runsAs "caller" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+chorus:skill-clearing-evaluate a chorus:Skill ;
+    rdfs:label "clearing-evaluate" ; rdfs:comment "Evaluates chunk sequence or lane switch." ;
+    chorus:executor "pipeline" ; chorus:implementedBy "clearing-evaluate" ;
+    chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
 chorus:stepskill-cicd-demo-1 a chorus:StepSkill ;
     chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ;
     chorus:skillOrder 1 ; chorus:ownedBy chorus:principal-wren .
@@ -175,3 +179,4 @@ TTL
   [[ "$output" == *"skill-borg-verify"* ]] || { echo "$output"; false; }
   [[ "$output" == *"forStreamStep"* ]] || false
 }
+

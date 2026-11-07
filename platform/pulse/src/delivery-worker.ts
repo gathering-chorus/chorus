@@ -80,6 +80,8 @@ export interface DeliveryRow {
   // admission bound this row to.
   target_session_id?: string | null;
   delivery_session_id?: string | null;
+  // #4889 — a wake the sender marked (run-finished): the boundary never dedupes it.
+  wake?: string | null;
 }
 
 // #3343 — spine-event family per delivery kind. Pure so the mapping is pinned
@@ -123,7 +125,8 @@ export function deliveredEvent(kind?: 'nudge' | 'jeff-input'): string {
 // (markDelivered — the row is handled, not failed) and METERED via
 // terminal.announced / terminal.suppressed spine events so interruptions
 // become a queryable budget. The boundary never eats a first occurrence.
-import { decide, AnnounceState } from './announce-boundary';
+import { decide, AnnounceState, COOLDOWN_KEY, parseCooldown } from './announce-boundary';
+import { readGlobal, GlobalRead } from '../../chorus-sdk/properties/global';
 
 
 // Per Kade gemba review 2026-05-07: chorus-inject classifies exactly ONE
@@ -145,6 +148,12 @@ export const PERMANENT_REASONS = new Set([
 export function classifyInjectResult(r: InjectResult): { kind: 'success' | 'permanent' | 'transient'; reason: string } {
   if (r.rc === 0) return { kind: 'success', reason: 'ok' };
   const stderr = (r.stderr || '').toLowerCase();
+  // #4889 (Jeff 07:48: break decisively, never branch to an old path) — the registered
+  // pane is gone. Guessing another pane is never done; the worker re-reads the one
+  // registration after the principal's sweep (every ~60s) and fails loudly only if it
+  // still names a dead pane (DeliveryWorker.deadPaneWaitsMs).
+  const dead = /can't find pane: (%\d+)/.exec(stderr);
+  if (dead) return { kind: 'permanent', reason: `dead-pane ${dead[1]}` };
   for (const reason of PERMANENT_REASONS) {
     if (stderr.includes(reason)) {
       return { kind: 'permanent', reason: 'no-window-found' };
@@ -157,8 +166,27 @@ export type SelfTest = () => Promise<InjectResult>;
 
 export class DeliveryWorker {
   private chains: Map<string, Promise<void>> = new Map();
-  // #3357 — boundary dedup windows (machine-lane class signatures)
+  // #3357 — boundary dedup windows (machine-lane class signatures). #4889: the
+  // cooldown comes from the property, read by watchCooldown; unread = no dedupe.
   private announce: AnnounceState = new AnnounceState();
+  private cooldownSeen = '';
+  // #4889 (code review, run 14) — the first cooldown read, awaited before any announce
+  // decision, so a pulse start never runs a window with dedupe off
+  private firstCooldownRead: Promise<void> = Promise.resolve();
+  /** #4889 (code review, run 14) — a dead pane is re-resolved through the role's live
+   *  registration after each wait (together longer than the principal's ~63s sweep), so
+   *  Jeff's message to a role whose pane just changed still arrives; then not-delivered. */
+  deadPaneWaitsMs: number[] = [30_000, 45_000];
+  /** #4895 — a delivery failed for good on a dead pane: the role's Presence must read
+   *  unreachable now. Pulse never writes a Presence; this asks the principal (its only
+   *  writer). Wired in service.ts; a no-op by default so tests opt in. */
+  onUndelivered: (role: string, pane: string) => void = () => {};
+
+  /** #4895 — a permanent dead-pane failure names the pane the principal marks unreachable */
+  private askUndelivered(role: string, reason: string, permanent: boolean): void {
+    const dead = permanent ? /^dead-pane (%\d+)$/.exec(reason) : null;
+    if (dead) this.onUndelivered(role, dead[1]);
+  }
 
   constructor(
     private store: MessageStore,
@@ -184,6 +212,44 @@ export class DeliveryWorker {
     }
     await this.emitSpine('nudge.health.smoke_ok', {});
   }
+
+  /** #4889 — the machine-lane cooldown, read now and every `everyMs` (a TTL, never per
+   *  announce). A row that is missing or bad leaves the boundary with no cooldown (it
+   *  dedupes nothing); a door that does not answer keeps the last value read. Either
+   *  failure is said on the spine once per change (announce.cooldown.unread), and a
+   *  recovery once (announce.cooldown.read). No default value exists. */
+  async readCooldown(read: () => Promise<GlobalRead> = () => readGlobal(COOLDOWN_KEY)): Promise<void> {
+    const r = await read();
+    const parsed = r.ok ? parseCooldown(r.value) : r;
+    const [seen, event, fields] = parsed.ok ? this.cooldownRead(parsed.ms) : this.cooldownUnread(parsed);
+    if (seen !== this.cooldownSeen) await this.emitSpine(event, fields);
+    this.cooldownSeen = seen;
+  }
+
+  private cooldownRead(ms: number): [string, string, Record<string, unknown>] {
+    this.announce.cooldownMs = ms;
+    return [`read:${ms}`, 'announce.cooldown.read', { key: COOLDOWN_KEY, ms }];
+  }
+
+  /** a row that is missing or bad turns dedupe off; a door that does not answer keeps the last value */
+  private cooldownUnread(e: { error: string; where?: 'row' | 'door' }): [string, string, Record<string, unknown>] {
+    if (e.where !== 'door') this.announce.cooldownMs = undefined;
+    const kept = this.announce.cooldownMs;
+    return [`unread:${e.error}`, 'announce.cooldown.unread',
+      { key: COOLDOWN_KEY, error: e.error, dedupe: kept === undefined ? 'off' : `last value ${kept}ms` }];
+  }
+
+  watchCooldown(everyMs = 5 * 60_000, read?: () => Promise<GlobalRead>): () => void {
+    this.firstCooldownRead = this.readCooldown(read).catch((e: unknown) => {
+      void this.emitSpine('announce.cooldown.unread', { key: COOLDOWN_KEY, error: String(e), dedupe: 'off' });
+    });
+    const t = setInterval(() => { void this.readCooldown(read); }, everyMs);
+    if (typeof t.unref === 'function') t.unref();
+    return () => clearInterval(t);
+  }
+
+  /** the cooldown the boundary is using now (undefined = dedupe off); for tests and /health */
+  cooldownMs(): number | undefined { return this.announce.cooldownMs; }
 
   /**
    * Enqueue a row for delivery. Returns a promise that resolves when
@@ -223,8 +289,11 @@ export class DeliveryWorker {
    */
   private async announceOrSuppress(row: DeliveryRow): Promise<boolean> {
     if (row.kind === 'jeff-input') return true;
-    const d = decide(row.from, row.to, row.content, Date.now(), this.announce);
-    const traceF = row.trace_id ? { trace_id: row.trace_id } : {};
+    await this.firstCooldownRead;
+    const d = decide(row.from, row.to, row.content, Date.now(), this.announce, row.wake);
+    // #4889 — the wake mark rides the boundary's spine events, so prod can prove a
+    // run-finish wake was announced and never suppressed (run-finish-wake-prod.bats)
+    const traceF = { ...(row.trace_id ? { trace_id: row.trace_id } : {}), ...(row.wake ? { wake: row.wake } : {}) };
     if (!d.deliver) {
       await this.emitSpine('terminal.suppressed', {
         ...traceF,
@@ -295,8 +364,17 @@ export class DeliveryWorker {
     return existing.delivery_attempts > 0 || this.announceOrSuppress(row);
   }
 
+  /** #4889 — a dead pane waits out the principal's sweep (true), until the waits are spent */
+  private async waitedForSweep(c: { kind: string; reason: string }, done: number): Promise<boolean> {
+    if (c.kind !== 'permanent' || !c.reason.startsWith('dead-pane') || done >= this.deadPaneWaitsMs.length) return false;
+    // eslint-disable-next-line security/detect-object-injection -- bounded counter
+    await this.sleep(this.deadPaneWaitsMs[done]);
+    return true;
+  }
+
   private async deliverOne(row: DeliveryRow): Promise<void> {
     const maxAttempts = this.backoffMs.length + 1;
+    let deadPaneWaits = 0;
     // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
     const prefix = eventPrefix(row.kind);
     // #4424 — a row the supervisor already admitted (or whose admission is
@@ -346,21 +424,15 @@ export class DeliveryWorker {
         return;
       }
 
-      if (classified.kind === 'permanent') {
-        await this.emitSpine(`${prefix}.surface.failed`, {
-          ...traceFields,
-          id: row.id,
-          from: row.from,
-          to: row.to,
-          attempt,
-          reason: classified.reason,
-          permanent: true,
-        });
-        this.store.markFailed(row.id, classified.reason);
-        return;
+      if (await this.waitedForSweep(classified, deadPaneWaits)) {
+        // the next attempt resolves the registration afresh (runInject reads Presence)
+        deadPaneWaits += 1;
+        attempt -= 1;
+        continue;
       }
 
-      // transient — emit per-attempt failure event, retry if attempts left
+      const permanent = classified.kind === 'permanent';
+      // permanent: one failure event and the row fails; transient: per-attempt event, retry if attempts left
       await this.emitSpine(`${prefix}.surface.failed`, {
         ...traceFields,
         id: row.id,
@@ -368,10 +440,11 @@ export class DeliveryWorker {
         to: row.to,
         attempt,
         reason: classified.reason,
-        permanent: false,
+        permanent,
       });
 
-      if (attempt >= maxAttempts) {
+      if (permanent || attempt >= maxAttempts) {
+        this.askUndelivered(row.to, classified.reason, permanent);
         this.store.markFailed(row.id, classified.reason);
         return;
       }

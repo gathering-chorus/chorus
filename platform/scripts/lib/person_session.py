@@ -16,6 +16,13 @@ import time
 import urllib.parse
 
 
+
+def live_sessions_query(now):
+    """#4838 — live sessions, filtered at the door: no endedAt, expiresAt within the last hour or later."""
+    import time as _t, urllib.parse as _u
+    after = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(now - 3600))
+    return f"endedAt.absent=true&expiresAt.after={_u.quote(after)}&limit=5000"
+
 def iso(secs):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(secs))
 
@@ -117,7 +124,7 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
         return None
     id_token = tok.get("id_token", "")
     try:
-        status, listing = http("GET", f"{api}/v1/identity/sessions?limit=5000", None, None)
+        status, listing = http("GET", f"{api}/v1/identity/sessions?{live_sessions_query(now)}", None, None)
         roles = open_role_sessions(listing) if status == 200 else []
     except Exception:
         roles = []

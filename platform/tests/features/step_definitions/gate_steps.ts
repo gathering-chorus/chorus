@@ -1,3 +1,4 @@
+// @domain: cicd — the product domain this suite guards (#4334)
 import { Given, When, Then, Before, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
@@ -5,10 +6,11 @@ import * as path from 'path';
 import * as os from 'os';
 import assert from 'assert';
 
-const HOOK_SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
+const HOOK_SHIM = `${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim`;
 const STATE_DIR = '/tmp/claude-team-scan';
-const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs';
-const HOME = process.env.HOME || '/Users/jeffbridwell';
+const BRIEFS_DIR = `${CHORUS_ROOT}/roles/wren/briefs`;
+const HOME = process.env.HOME || path.resolve(CHORUS_ROOT, '../../..');
 const TEST_CARD_ID = '99998';
 
 // #3598 — HERMETIC target paths. The steps used to edit ABSOLUTE CANONICAL paths
@@ -48,7 +50,7 @@ Before(function () {
     stateBackups: new Map(),
     targetFile: sandboxPath('platform/services/smoke-test.rs'),
     targetTool: 'Edit',
-    cwd: '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade',
+    cwd: `${CHORUS_ROOT}/roles/kade`,
   };
 
   // Backup AND clear ALL role state files for deterministic tests.
@@ -67,10 +69,18 @@ Before(function () {
 });
 
 After(function () {
+  // #4915 — a scenario an earlier Before skipped (clearing-v2 with no test instance:
+  // UNMEASURED by design, #4574) never ran this file's Before, so there is nothing of
+  // ours to restore. It crashed here on an unset ctx and every honest skip in 4 feature
+  // files read as a failure (nightly 11-06). And a ctx left from an earlier scenario
+  // must never restore its stale backups over live state, so it is cleared below.
+  const c = ctx as TestContext | undefined;
+  if (!c) return;
+  ctx = undefined as unknown as TestContext;
   // Restore ALL role state files
   for (const role of ALL_ROLES) {
     const statePath = path.join(STATE_DIR, `${role}-declared.json`);
-    const backup = ctx.stateBackups.get(role);
+    const backup = c.stateBackups.get(role);
     if (backup !== null && backup !== undefined) {
       fs.writeFileSync(statePath, backup);
     } else if (fs.existsSync(statePath)) {
@@ -79,8 +89,8 @@ After(function () {
   }
 
   // Clean up session JSONL
-  const projectKey = ctx.cwd.replace(/\//g, '-').replace(/^-/, '');
-  const jsonlPath = path.join(HOME, '.claude', 'projects', `-${projectKey}`, `${ctx.sessionId}.jsonl`);
+  const projectKey = c.cwd.replace(/\//g, '-').replace(/^-/, '');
+  const jsonlPath = path.join(HOME, '.claude', 'projects', `-${projectKey}`, `${c.sessionId}.jsonl`);
   if (fs.existsSync(jsonlPath)) {
     fs.unlinkSync(jsonlPath);
   }
@@ -358,7 +368,7 @@ Given('they have not edited any test files', function () {
 Given('they have edited a test file', function () {
   // Session shows a test file was edited before production code
   ctx.sessionLines.push(
-    '{"type":"tool_use","name":"Edit","input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}',
+    `{"type":"tool_use","name":"Edit","input":{"file_path":"${CHORUS_ROOT}/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}`,
     '{"type":"tool_result","content":"File updated successfully"}'
   );
   writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
@@ -366,7 +376,7 @@ Given('they have edited a test file', function () {
 
 When('they try to edit a test file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature';
+  ctx.targetFile = `${CHORUS_ROOT}/platform/tests/features/gates/tdd.feature`;
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',

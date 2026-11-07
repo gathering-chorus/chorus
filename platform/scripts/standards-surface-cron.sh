@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # standards-surface-cron.sh — Nightly auto-regeneration of standards surface
 # Card #2268: Runs via LaunchAgent, only regenerates when sources changed.
 #
@@ -42,7 +43,7 @@ MEMORY_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory"
 # Chorus log helper
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 
-log() { echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $*"; }
+log() { echo "$(boston_time stamp) [$LOG_TAG] $*"; }
 
 # --- Compute current source checksums ---
 compute_checksums() {
@@ -127,7 +128,8 @@ main() {
   else
     _gen_args=()
   fi
-  if bash "$GEN_SCRIPT" "${_gen_args[@]}" 2>&1; then
+  # #4722 — guarded: an empty array is "unbound" under set -u on bash 3.2
+  if bash "$GEN_SCRIPT" ${_gen_args[@]+"${_gen_args[@]}"} 2>&1; then
     log "Regeneration complete"
     mkdir -p "$(dirname "$STATE_FILE")"
     echo "$current_checksums" > "$STATE_FILE"

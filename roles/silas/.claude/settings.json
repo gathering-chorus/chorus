@@ -47,6 +47,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "disableAgentView": true

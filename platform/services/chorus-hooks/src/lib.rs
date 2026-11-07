@@ -11,6 +11,8 @@
 // Suppress dead_code crate-wide; the real clippy lints stay on.
 #![allow(dead_code)]
 
+// #4707 — lets a module compiled into both the lib and the bin name the lib the same way.
+extern crate self as chorus_hooks;
 pub mod agent_socket;
 pub mod runtime_tools;
 pub mod runtime_hook;
@@ -37,6 +39,8 @@ pub use hooks::session_init_gate;
 // #3677 — the ADR-056 advisory pins (tests/adr056_advisory_3677.rs) exercise
 // these from outside the crate; advisory-ness is a PUBLIC contract now.
 pub use hooks::{pair_gate, quality_gate};
+// #4916 — expose autonomy_guard commitment loading and stated_intent check for unit tests.
+pub use hooks::autonomy_guard::{load_commitments, stated_intent_from_raw, stated_intent_without_action};
 // #3134 — expose the pure per-prompt search URL-builder for its integration
 // test (tests/context_inject_card_tag_3134.rs). Stateless helper, narrow surface.
 pub use hooks::context_inject::build_search_url;
@@ -45,6 +49,8 @@ pub use hooks::context_inject::format_spine_line;
 // #3191 — expose the pure UserPromptSubmit response router for its delivery test
 // (tests/prompt_response_3191.rs): context block → stdout additionalContext, warnings → stderr.
 pub use hooks::context_inject::build_user_prompt_response;
+// #4885 — the system-stamped Now line, pub for tests/now_line_4885.rs
+pub use hooks::context_inject::{build_manifest_envelope, build_manifest_envelope_at, now_line};
 // #3191 (relevance half) — the semantic leg (full-prompt query) + the FTS/semantic
 // merge, pub for tests/relevance_3191.rs (AC6/AC7/AC8). Pure, stateless helpers.
 pub use hooks::context_inject::{build_semantic_url, merge_candidates};
@@ -78,7 +84,7 @@ pub mod word_cap {
 // with Clearing's TS hasher).
 pub mod reply_delivery {
     pub use crate::hooks::reply_delivery::content_hash;
-    pub use crate::hooks::reply_delivery::reply_text;
+    pub use crate::hooks::reply_delivery::{enrich_stop_prompt_response, publishes_reply, reply_text, turn_text_from_transcript};
 }
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.

@@ -15,6 +15,7 @@ const RULES: &str = include_str!("../templates/rules.rs");
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 const MODEL_TEST: &str = include_str!("../templates/model_test.rs");
 const EMBEDDED_TESTS: &str = include_str!("../templates/embedded_tests.rs");
+const DOOR_TESTS: &str = include_str!("../templates/door_tests.rs");
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
@@ -97,14 +98,14 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     s.push_str("];\n\n");
     s.push_str(
         "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
+         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
     for d in &p.domains {
         for c in &d.classes {
             s.push_str(&format!(
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph)
+                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {}, composed: {},\n        fields: &[\n",
+                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph), d.composed
             ));
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
@@ -115,7 +116,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
                     lit(match &f.kind { Kind::Literal { datatype } => datatype.as_str(), Kind::Link { .. } => "" }),
                     f.required,
                     f.many,
-                    allowed.join(", ")
+                    allowed.join(", "),
                 ));
             }
             s.push_str("        ],\n    },\n");
@@ -151,6 +152,11 @@ pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String
 
 /// The same, with the verifier's path worked out from where the crate is written.
 pub fn crate_files_with(p: &Product, model_version: &str, settings: &[(String, String)], oidc: &str) -> BTreeMap<String, String> {
+    crate_files_ops(p, model_version, settings, oidc, &[])
+}
+
+/// The same, with each operation's handler path (from `handler_path`).
+pub fn crate_files_ops(p: &Product, model_version: &str, settings: &[(String, String)], oidc: &str, handlers: &[(String, String)]) -> BTreeMap<String, String> {
     let domain = p.domains.first().map(|d| d.name.as_str()).unwrap_or("domains");
     let mut out = BTreeMap::new();
     out.insert("Cargo.toml".into(), cargo_toml(p, oidc));
@@ -159,10 +165,12 @@ pub fn crate_files_with(p: &Product, model_version: &str, settings: &[(String, S
     out.insert("src/rules.rs".into(), retag(RULES, domain));
     out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
     out.insert("src/embedded_tests.rs".into(), retag(EMBEDDED_TESTS, domain));
+    out.insert("src/door_tests.rs".into(), retag(DOOR_TESTS, domain));
     out.insert("tests/model.rs".into(), retag(MODEL_TEST, domain));
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
+    out.insert("src/ops.rs".into(), format!("// @domain: {domain}\n{}", ops_rs(p, handlers)));
     out
 }
 
@@ -227,4 +235,74 @@ pub fn agent_runtimes_json(t: &crate::model::RuntimeTable) -> String {
     let mut s = serde_json::to_string_pretty(&json!({ "runtimes": runtimes, "runsOn": t.runs_on })).unwrap_or_default();
     s.push('\n');
     s
+}
+
+/// #4742 — every route the product serves: `/<product>/<domain>/<collection>`.
+pub fn routes(p: &Product) -> Vec<String> {
+    // #4757 — no root header: pulse serves its header from its sources (:3475/pulse)
+    p.domains.iter().flat_map(|d| d.classes.iter().map(move |c| format!("/{}/{}/{}", p.name, d.name, c.segment)))
+        .chain(p.operations.iter().map(|o| format!("/{}/{}/{}", p.name, o.domain, o.segment)))
+        .collect()
+}
+
+/// #4744 — an operation's handler, as a path from the crate's `src/` (where `ops.rs` names
+/// it). A handler that is not in the repo is refused by name: nothing is generated around it.
+pub fn handler_path(root: &std::path::Path, out: &std::path::Path, op: &crate::model::Operation) -> Result<String, String> {
+    // a handler is a repo file: a path that climbs out of the repo is refused (Silas's review)
+    if op.handler.starts_with('/') || op.handler.split('/').any(|c| c == "..") {
+        return Err(format!("operation {} names handler {}, which is not a path inside the repo", op.name, op.handler));
+    }
+    let h = root.join(&op.handler);
+    if !h.is_file() {
+        return Err(format!("operation {} names handler {}, which does not exist", op.name, op.handler));
+    }
+    let h = std::fs::canonicalize(&h).map_err(|e| format!("handler: {e}"))?;
+    std::fs::create_dir_all(out.join("src")).map_err(|e| format!("out: {e}"))?;
+    let src = std::fs::canonicalize(out.join("src")).map_err(|e| format!("out: {e}"))?;
+    let (a, b): (Vec<_>, Vec<_>) = (src.components().collect(), h.components().collect());
+    let common = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let down: Vec<String> = b[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+    Ok(format!("{}{}", "../".repeat(a.len() - common), down.join("/")))
+}
+
+/// #4744 — `src/ops.rs`: one module per operation, from its handler's path, and the
+/// dispatch the product's routes call. Each handler is `pub fn run(ctx, rest, query)`.
+pub fn ops_rs(p: &Product, handler_paths: &[(String, String)]) -> String {
+    let mut s = String::from("//! The product's operations. Generated by athena-gen — DO NOT EDIT; change the model.\n\nuse serde_json::Value;\n\n");
+    for (name, path) in handler_paths {
+        s.push_str(&format!("#[path = {}]\npub mod {};\n", lit(path), name.replace('-', "_")));
+    }
+    // an operation generated with no handler path fails the crate's build by name, never routes to nothing
+    for o in p.operations.iter().filter(|o| !handler_paths.iter().any(|(n, _)| *n == o.name.replace('-', "_"))) {
+        s.push_str(&format!("compile_error!({});\n", lit(&format!("operation {} has no handler: generate with its handlerPath", o.name))));
+    }
+    let pairs: Vec<String> = p.operations.iter().map(|o| format!("({}, {})", lit(&o.domain), lit(&o.segment))).collect();
+    s.push_str(&format!("\n/// Is `/<product>/<domain>/<segment>` an operation?\npub fn has(domain: &str, segment: &str) -> bool {{\n    let ops: &[(&str, &str)] = &[{}];\n    ops.contains(&(domain, segment))\n}}\n", pairs.join(", ")));
+    s.push_str("\n/// The operation served at `/<product>/<domain>/<segment>[/<rest>…]`, if any.\npub fn route(ctx: &crate::Ctx, domain: &str, segment: &str, rest: &[&str], query: &str) -> Option<(u16, Value)> {\n    match (domain, segment) {\n");
+    for o in &p.operations {
+        s.push_str(&format!("        ({}, {}) => Some({}::run(ctx, rest, query)),\n", lit(&o.domain), lit(&o.segment), o.name.replace('-', "_")));
+    }
+    s.push_str("        _ => { let _ = (ctx, rest, query); None }\n    }\n}\n");
+    s
+}
+
+/// #4742 gap 8 (#4708) — the routes an already generated crate serves (read from its
+/// model.rs) that `p` would no longer serve. A class that falls out of the model is named,
+/// never dropped silently.
+pub fn dropped_routes(old_model_rs: &str, p: &Product) -> Vec<String> {
+    let now = routes(p);
+    old_routes(old_model_rs, &p.name).into_iter().filter(|r| !now.contains(r)).collect()
+}
+
+/// The routes a generated model.rs serves, read from its ClassDef lines. Empty when the text
+/// holds none it can read; generate treats that as a refusal, never as "nothing dropped".
+pub fn old_routes(model_rs: &str, product: &str) -> Vec<String> {
+    let quoted = |line: &str, key: &str| {
+        let rest = &line[line.find(&format!("{key}: \""))? + key.len() + 3..];
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    model_rs
+        .lines()
+        .filter_map(|l| Some(format!("/{product}/{}/{}", quoted(l, "domain")?, quoted(l, "segment")?)))
+        .collect()
 }

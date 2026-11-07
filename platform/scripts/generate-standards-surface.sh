@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # generate-standards-surface.sh — Produce live HTML from decisions, hooks, and gate logs
 # Card #2266/#2267: Replace hardcoded counts with real data from three sources
 #
@@ -121,7 +122,7 @@ else
   echo "Warning: hooks metrics API unreachable, using zero values" >&2
 fi
 
-GENERATED_DATE=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+GENERATED_DATE=$(boston_time show)
 
 # --- Generate chorus-standards.html ---
 # Strategy: read the existing curated HTML, replace the data-driven sections

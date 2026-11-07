@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/lib/boston-time.sh" 2>/dev/null || . "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/lib/boston-time.sh"  # boston_time: the one Boston renderer (#4885)
 # authz-coverage.sh — does each protected action actually ENFORCE the
 # authorization it should? The authZ companion to authn-coverage.sh (#3960).
 #
@@ -78,7 +79,7 @@ FP=$(grep -E '^FUSEKI_ADMIN_PASSWORD=' "$CRED_FILE" 2>/dev/null | cut -d= -f2- |
 _code() { curl -s -o /dev/null -w '%{http_code}' --max-time 6 "$@" 2>/dev/null || echo 000; }
 _query() { curl -s -G --max-time 8 -u "${FU}:${FP}" "$FUSEKI" --data-urlencode "query=$1" -H 'Accept: application/json' 2>/dev/null; }
 
-echo "=== authz coverage — under-privileged (valid identity, missing scope) probes ($(TZ=America/New_York date '+%Y-%m-%d %H:%M')) ==="
+echo "=== authz coverage — under-privileged (valid identity, missing scope) probes ($(boston_time show)) ==="
 
 # --- the declared-secured surface set, from the model ---
 # #4265 — this pinned GRAPH <urn:chorus:ontology> and read 0 rows, so the whole

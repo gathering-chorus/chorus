@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""#4683 — the store writes that put borg-prove in the land, DRY RUN unless --apply.
+# @domain: pipelines
+
+The cicd-land rows in chorus-make's fixture (cicd-rows.tsv, cicd-graph.trig)
+are what platform/pipelines/cicd-land.yaml is generated from; this writes the
+same rows to the store so `chorus-make graph cicd` gives the committed file:
+
+  Skill      borg-verify-in-prod  (borg-prove prod, domain tests)
+  Skill      borg-record          (borg-prove record, domain cards: it writes
+                                   the card comment and the child cards)
+  StepSkill  cicd-land-4  werk-accept -> borg-verify-in-prod, continue_on=failure
+  StepSkill  cicd-land-5  borg-record (new)
+  StepSkill  cicd-land-6  werk-accept, atomic=true (new)
+
+Each write prints ADD / CHANGE / SAME against the door. Nothing is written
+without --apply, and --apply is a prod write: only after Jeff's yes on the dry
+run (OWL_URL=http://localhost:3368 rehearses on staging). Skills go first so
+no StepSkill names a skill that is not there yet; land-4 changes before 5 and
+6 are added, so accept is never named twice. Exit 0 = plan printed (or
+applied); 1 = a write was refused; 2 = the door could not be read.
+"""
+import json, os, subprocess, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+OWNER = "principal-kade"
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+
+SKILLS = [
+    {"name": "borg-verify-in-prod", "label": "borg-verify-in-prod", "executor": "deterministic",
+     "implementedBy": "borg-prove", "arguments": "prod ${CARD} ${ROLE}", "hasDomain": "tests",
+     "comment": "Checks every CardAC of the card against prod after its land; red on any AC not met or not measured.",
+     "ownedBy": OWNER},
+    {"name": "borg-record", "label": "borg-record", "executor": "deterministic",
+     "implementedBy": "borg-prove", "arguments": "record ${CARD} ${ROLE}", "hasDomain": "cards",
+     "comment": "Records the prod verdict (prover borg-queen) on the spine and the card, files one child card per red AC, and fails unless Proven.",
+     "ownedBy": OWNER},
+]
+STEPSKILLS = [
+    {"name": "cicd-land-4", "label": "cicd land 4: borg-verify-in-prod", "callsSkill": "borg-verify-in-prod",
+     "forStep": "cicd-land", "skillOrder": "4", "withArguments": "continue_on=failure", "ownedBy": OWNER},
+    {"name": "cicd-land-5", "label": "cicd land 5: borg-record", "callsSkill": "borg-record",
+     "forStep": "cicd-land", "skillOrder": "5", "withArguments": "", "ownedBy": OWNER},
+    {"name": "cicd-land-6", "label": "cicd land 6: werk-accept", "callsSkill": "werk-accept",
+     "forStep": "cicd-land", "skillOrder": "6", "withArguments": "atomic=true", "ownedBy": OWNER},
+]
+PLAN = [("skills", "skills", SKILLS), ("skills", "stepskills", STEPSKILLS)]
+
+
+def bare(v):
+    """The door serves a reference with its minted prefix; the plan sends it bare."""
+    v = str(v).removeprefix("chorus:")
+    for p in ("pipeline-step-", "skill-", "principal-"):
+        v = " ".join(x.removeprefix(p) for x in str(v).split())
+    return str(v)
+
+
+def get(path):
+    with urllib.request.urlopen(f"{DOOR}{path}", timeout=15) as r:
+        return json.load(r)
+
+
+def row(dom, cls, name):
+    try:
+        r = get(f"/{dom}/{cls}/{name}")
+        # a single row serves its fields in data and its references in links
+        return {"name": name, **(r.get("links") or {}), **(r.get("data") or {})}
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def write(verb, dom, cls, w):
+    args = [RUNNER, "call", verb, f"domain={dom}", f"class={cls}"]
+    if verb == "athena-set":
+        args.append(f"id={w['name']}")
+        w = {k: v for k, v in w.items() if k != "name"}
+    try:
+        r = subprocess.run(args + [f"fields={json.dumps(w)}"], capture_output=True, text=True)
+    except OSError as e:
+        return False, [f"the runner did not run: {e}"]
+    ok = " → 201" if verb == "athena-add" else " → 200"
+    return r.returncode == 0 and ok in r.stdout + r.stderr, (r.stdout + r.stderr).strip().splitlines()[-1:]
+
+
+def main():
+    apply = "--apply" in sys.argv[1:]
+    counts, refused = {"ADD": 0, "CHANGE": 0, "SAME": 0}, 0
+    for dom, cls, rows in PLAN:
+        for w in rows:
+            try:
+                have = row(dom, cls, w["name"])
+            except Exception as e:
+                print(f"door unreadable at {DOOR}: {e} — no plan")
+                return 2
+            if have is None:
+                kind, detail, verb = "ADD", json.dumps(w, sort_keys=True), "athena-add"
+            else:
+                diff = {k: f"{have.get(k, '')!r} -> {v!r}" for k, v in w.items() if bare(have.get(k, "")) != bare(v)}
+                kind, detail, verb = ("SAME", "", None) if not diff else ("CHANGE", json.dumps(diff), "athena-set")
+            counts[kind] += 1
+            print(f"{kind:<6} {dom}/{cls}/{w['name']}  {detail}")
+            if apply and verb:
+                ok, why = write(verb, dom, cls, w)
+                if not ok:
+                    refused += 1
+                    print(f"  REFUSED {dom}/{cls}/{w['name']}: {why}")
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change; {counts['SAME']} same — {verb}")
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

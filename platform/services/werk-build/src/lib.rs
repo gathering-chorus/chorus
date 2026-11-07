@@ -24,6 +24,7 @@ use std::thread::sleep;
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 // Single source under services/shared, compiled into every verb. Not a crate, not a verb.
 include!("../../shared/failure_class.rs");
+include!("../../shared/trace_carrier.rs"); // #4771
 // #3821 — the ONE diff→units scoping core, shared with werk-test (source-include).
 include!("../../shared/scope_units.rs");
 include!("../../shared/crate_dirs.rs");
@@ -32,6 +33,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
+    // #4810 — APFS copy-on-write clone of a whole tree in one call (macOS libc).
+    fn clonefile(src: *const std::os::raw::c_char, dst: *const std::os::raw::c_char, flags: u32) -> i32;
 }
 const LOCK_EX_NB: i32 = 0x02 | 0x04; // LOCK_EX | LOCK_NB
 const LOCK_UN: i32 = 0x08;
@@ -59,7 +62,7 @@ pub fn resolve_trace(card: u64) -> String {
             return t.trim().to_string();
         }
     }
-    let p = format!("/tmp/{}-trace", card);
+    let p = trace_carrier(card); // #4771 — shared carrier dir
     if let Ok(t) = fs::read_to_string(&p) {
         if !t.trim().is_empty() {
             return t.trim().to_string();
@@ -501,9 +504,13 @@ fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     // #4494 — start from prod's build cache when this werk has none
     seed_from_canonical(werk_s, &crate_rel_dir(Path::new(werk_s), crate_name));
     let build_signed = format!("{}/platform/scripts/build-signed.sh", werk_s);
+    // #4915 — a werk is one account's, and werk-deploy reads <crate>/target/release
+    // (lib.rs:1701, 2204, 2595, 3028). build-signed now defaults to a per-account
+    // target dir for canonical's shared tree; in a werk the crate's own target stays.
+    let target = format!("{}/target", crate_dir);
     let out = run_in_env(
         werk_s,
-        &[("BUILD_SKIP_INSTALL", "1")],
+        &[("BUILD_SKIP_INSTALL", "1"), ("CARGO_TARGET_DIR", target.as_str())],
         &build_signed,
         &[&crate_dir, &identifier, &binary],
     )?;
@@ -924,11 +931,12 @@ fn build_unit(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, uni
     })
 }
 
-/// #3169 — node_modules ensure (the build preamble, single owner): make every werk
-/// package's node_modules a SYMLINK to canonical's complete tree, replacing a stale
-/// partial real dir or a wrong/broken symlink. Idempotent. The werk never keeps its own
-/// (partial) node_modules — it mirrors canonical, so in-werk tsc resolves @types exactly
-/// like canonical. This is what lets the verbs build TS services/chorus-hooks in-werk
+/// #3169 — node_modules ensure (the build preamble, single owner): give every werk
+/// package canonical's complete tree, replacing a stale partial real dir or a symlink.
+/// Idempotent. #4810: a CLONE of canonical's tree (APFS copy-on-write), never a
+/// symlink into it — `npm ci` through the symlink emptied canonical twice (10-21,
+/// 10-30). A tree stamped with the werk's lock (werk-pull's clone) is kept. In-werk
+/// tsc still resolves @types exactly like canonical. This is what lets the verbs build TS services/chorus-hooks in-werk
 /// instead of being hand-deployed. Returns the count of (re)linked packages.
 /// (Open item flagged on #3169: build_shared_lib's cascade `npm install` fights a
 /// symlinked consumer when chorus-sdk actually changes — rare path, not resolved here.)
@@ -976,19 +984,35 @@ pub fn ensure_node_modules(werk_s: &str, home: &Path) -> R<usize> {
             }
             continue;
         }
-        if fs::read_link(&werk_nm).ok().as_deref() == Some(canon_nm.as_path()) {
-            continue; // already the right symlink — idempotent
+        // The stamp is the lock the tree was made from (empty for a package with none);
+        // an unstamped real dir is a stale partial and is replaced.
+        let want = werk_lock.clone().unwrap_or_default();
+        let stamp = fs::read(werk_nm.join(".chorus-installed-lock")).ok();
+        if !werk_nm.is_symlink() && werk_nm.is_dir() && stamp.as_ref() == Some(&want) {
+            continue; // already canonical's tree, from this lock — idempotent
         }
         if werk_nm.is_symlink() {
             let _ = fs::remove_file(&werk_nm);
         } else if werk_nm.exists() {
             let _ = fs::remove_dir_all(&werk_nm);
         }
-        if std::os::unix::fs::symlink(&canon_nm, &werk_nm).is_ok() {
+        if clone_tree(&canon_nm, &werk_nm) {
+            let _ = fs::write(werk_nm.join(".chorus-installed-lock"), &want);
+            linked += 1;
+        } else if werk_lock.is_some() && install_from_own_lock(werk_s, rel, &werk_nm)? {
             linked += 1;
         }
     }
     Ok(linked)
+}
+
+fn clone_tree(src: &Path, dst: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let (Ok(s), Ok(d)) = (
+        std::ffi::CString::new(src.as_os_str().as_bytes()),
+        std::ffi::CString::new(dst.as_os_str().as_bytes()),
+    ) else { return false };
+    unsafe { clonefile(s.as_ptr(), d.as_ptr(), 0) == 0 }
 }
 
 /// The unit's name (crate / TS-package / shared-lib name) — the filter key for `only`.
@@ -1049,8 +1073,8 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
             jsonl(home, role, card, &trace, "build.refused", &fail_extra("branch-mismatch"));
             return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
         }
-        // #3169 — node_modules ensure (werk only): symlink each werk package's node_modules
-        // to canonical's complete tree so in-werk tsc resolves @types. Canonical builds from
+        // #3169/#4810 — node_modules ensure (werk only): clone canonical's complete tree
+        // into each werk package so in-werk tsc resolves @types. Canonical builds from
         // its own real node_modules, so this is skipped for target=canonical.
         let nm_linked = ensure_node_modules(&werk_s, home).map_err(|e| {
             jsonl(home, role, card, &trace, "build.refused", &fail_extra("package-list-unreadable"));

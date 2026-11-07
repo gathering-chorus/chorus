@@ -69,7 +69,7 @@ fn main() {
         // #4345 — one binary. The session lifecycle (on/off/status/up/relogin,
         // and the hooks' seen/seen-write/sweep/project-messages) was chorus-awake;
         // it is this crate's library now, so the verbs run here, not forwarded.
-        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials") => chorus_principal::run(&args),
+        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials" | "undelivered") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
         Some("move") => match args.get(1) { Some(n) => cmd_move(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: move needs a name"); 2 } },
         Some("one-webid") => cmd_one_webid(args.get(1).map(String::as_str).unwrap_or("jeff")),
@@ -446,9 +446,22 @@ fn cmd_census() -> i32 {
         println!("{:<22} {:<6} {}", name, st, webid);
     }
     println!();
-    if incomplete.is_empty() {
-        println!("census: {} users, all complete", rows.len());
+    // #4691 — the onboarding steps, for every agent principal on its own Mac
+    // account. A clean register said nothing about these: on 2026-10-22 this
+    // printed "all complete" while Borg Queen lacked seven of them.
+    let onboarding = onboarding_census();
+    if onboarding.is_none() {
+        eprintln!("chorus-principal: census could not read the onboarding facts — refusing to report them complete");
+        return 2;
+    }
+    let short = onboarding.unwrap_or(0);
+    if incomplete.is_empty() && short == 0 {
+        println!("census: {} users, all complete; every agent onboarded (Jeff's steps named above)", rows.len());
         return 0;
+    }
+    if incomplete.is_empty() {
+        println!("census: {} users have profile cards; {short} agent principal(s) missing onboarding steps", rows.len());
+        return 1;
     }
     println!(
         "census: {} of {} INCOMPLETE — a principal row exists for a pod the register does not have",
@@ -459,6 +472,71 @@ fn cmd_census() -> i32 {
         println!("  {n} — profile card {st}");
     }
     1
+}
+
+/// One SPARQL SELECT against the pods dataset, as JSON bindings.
+fn sparql(q: &str) -> Option<Vec<serde_json::Value>> {
+    let body = curl(&["-s", "--max-time", "40", "-G", &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
+        "--data-urlencode", &format!("query={q}"), "-H", "Accept: application/sparql-results+json"])?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    v["results"]["bindings"].as_array().cloned()
+}
+
+fn bound(b: &serde_json::Value, k: &str) -> Option<String> {
+    b.get(k).and_then(|x| x["value"].as_str()).map(|s| s.rsplit('#').next().unwrap_or(s).to_string())
+}
+
+/// #4691 — measure every onboarding step for each agent principal that runs
+/// on its own Mac account (hostAccount not the launcher's, or none yet), print
+/// its gaps, and return how many are short. None when the store cannot be read.
+fn onboarding_census() -> Option<usize> {
+    use chorus_principal::onboarding::{gaps, Facts};
+    let launcher = env_or("USER", "jeffbridwell");
+    let rows = sparql("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?s ?h ?r ?rt WHERE { GRAPH <urn:chorus:domains:security> \
+        { ?s a c:Principal ; c:principalKind \"agent\" . OPTIONAL { ?s c:hostAccount ?h } OPTIONAL { ?s c:holdsRole ?r } \
+        OPTIONAL { ?s c:agentRuntime ?rt } } }")?;
+    let root = env_or("CHORUS_HOME", &format!("{}/CascadeProjects/chorus", env_or("HOME", "")));
+    let table = chorus_principal::rows::runtime_table();
+    let mut short = 0;
+    println!("ONBOARDING (platform/services/chorus-principal/config/agent-onboarding-steps.tsv)");
+    for b in &rows {
+        let Some(principal) = bound(b, "s") else { continue };
+        let name = principal.trim_start_matches("principal-").to_string();
+        let host = bound(b, "h");
+        // a principal on the launcher's own account (the Claude roles) is not on this list
+        if host.as_deref() == Some(launcher.as_str()) { continue; }
+        // nothing on its own account and no account of that name: not an agent of this kind
+        let account = host.clone().unwrap_or_else(|| format!("chorus-{name}"));
+        let groups = Command::new("id").args(["-Gn", &account]).output().ok().filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
+        if host.is_none() && groups.is_none() { continue; }
+        let role = format!("role-{name}");
+        // roleKind, the field the store has: the AgentRole type is source-only (3838 never deploys)
+        let kinds = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?k WHERE {{ GRAPH ?g {{ c:{role} c:roleKind ?k }} }}"))?;
+        let caps = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?p WHERE {{ GRAPH ?g {{ c:{role} c:hasProperty ?p }} \
+            GRAPH ?h {{ ?p a c:Property ; c:propertyValue ?v }} FILTER(CONTAINS(STR(?p), \"word-cap\")) }}"))?;
+        let webid = sparql(&format!("PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?w WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:{principal} c:webId ?w }} }}"))?;
+        let card = webid.first().and_then(|w| w.get("w")).and_then(|w| w["value"].as_str()).map(|w| status_of(w.split('#').next().unwrap_or(w))).unwrap_or_else(|| "000".into());
+        let f = Facts {
+            host_account: host,
+            holds_role: bound(b, "r"),
+            agent_runtime: bound(b, "rt"),
+            role_is_agent: kinds.iter().any(|k| bound(k, "k").as_deref() == Some("agent")),
+            word_caps: caps.len(),
+            in_group: groups.map(|g| g.split_whitespace().any(|x| x == "chorus")).unwrap_or(false),
+            runs_on: chorus_principal::rows::runtime_for(&table, &name).map(|(r, _)| r),
+            role_home: std::path::Path::new(&format!("{root}/roles/{name}/AGENTS.md")).is_file(),
+            webid_card: card,
+        };
+        let g = gaps(&f);
+        let missing: Vec<_> = g.iter().filter(|s| s.owner != "jeff").collect();
+        if !missing.is_empty() { short += 1; }
+        println!("  {name}: {}", if missing.is_empty() { "every create step done".to_string() } else { format!("{} step(s) missing", missing.len()) });
+        for s in &g {
+            println!("    {} {:<18} {}", if s.owner == "jeff" { "jeff" } else { "MISS" }, s.id, s.what);
+        }
+    }
+    Some(short)
 }
 
 /// What provisioning WOULD do, writing nothing.
@@ -648,6 +726,25 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
                         eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
                         eprintln!("  and signing in with the password this tool saved for {} did not reach a pod of that name.", p.email);
                         eprintln!("  nothing was written. Pick another name, or have the DBA path remove the card.");
+                        return 2;
+                    }
+                },
+                (None, _) => match agent_half(&css, name) {
+                    // #4686 — an agent's pod hangs off the service account, so
+                    // the proof is that account's own link, not a saved password.
+                    Ok(Some((acct, webid))) => {
+                        eprintln!("chorus-principal: '{name}' is HALF-PROVISIONED — the service account ({acct}) links {webid},");
+                        eprintln!("  and no row names it. Completing the missing half.");
+                        resume = Some((acct, webid));
+                    }
+                    Ok(None) => {
+                        eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
+                        eprintln!("  and the service account links no WebID under that pod name. nothing was written.");
+                        return 2;
+                    }
+                    Err(why) => {
+                        eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it;");
+                        eprintln!("  whether this tool made it is UNMEASURED ({why}). nothing was written.");
                         return 2;
                     }
                 },
@@ -976,9 +1073,9 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
         let hc = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
                         &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
                         "--data-binary", &up]).unwrap_or_default().trim().to_string();
-        let got = hats_held(name);
-        if got != 4 {
-            eprintln!("chorus-principal: FAILED at step 3c (hats) — store answered HTTP {hc} but '{name}' wears {got} of 4 — rolling back");
+        if let Err(got) = chorus_principal::wears_all_hats(&hats_answer(name)) {
+            let wears = got.map_or("an unreadable count".to_string(), |n| format!("{n}"));
+            eprintln!("chorus-principal: FAILED at step 3c (hats) — store answered HTTP {hc} but '{name}' wears {wears} of {} — rolling back", chorus_principal::HATS);
             led.rollback(&css, &acct, &api, &token, &collection);
             return 1;
         }
@@ -1098,6 +1195,7 @@ fn place_credential(name: &str, id: &str, secret: &str, webid: &str, issuer: &st
     let body = cred_body(name, id, secret, webid, issuer, &acct);
     std::fs::write(&path, body).map_err(|e| format!("cannot write {path}: {e}"))?;
     // Owner and mode before anyone else can look: the secret is on disk now.
+    let _ = Command::new("chmod").args(["700", &dir]).status();
     let _ = Command::new("chmod").args(["600", &path]).status();
     let _ = Command::new("chown").args(["-R", &format!("{acct}:staff"), &format!("{home}/.chorus")]).status();
     // hostAccount is what chorus-identity-token checks (#4202): a credential
@@ -1211,6 +1309,25 @@ fn css_login_person(css: &str, jar: &str, email: &str, password: &str) -> Option
     }
     ACCOUNT_TOKEN.with(|t| *t.borrow_mut() = token);
     Some((acct, webid))
+}
+
+/// #4686 — (service account id, WebID) when the service account links a pod
+/// named `name`: the half an agent create left when its rollback could not
+/// delete the pod. Ok(None): the account answered and links no such pod.
+/// Err: the account could not be read, so whether it does is UNMEASURED.
+fn agent_half(css: &str, name: &str) -> Result<Option<(String, String)>, &'static str> {
+    let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
+    let local = |u: &str| u.replacen(issuer.trim_end_matches('/'), css, 1);
+    let jar = jar_path();
+    let acct = css_login(css, &jar).ok_or("could not sign in to the service account")?;
+    let read = |u: &str| curl_css(None, &["-s", "--max-time", "20", "-b", &jar, "-H", "Accept: application/json", &local(u)]).unwrap_or_default();
+    let links_url = between(&read(&format!("{css}/.account/")), "\"webId\":\"", "\"")
+        .ok_or("the service account answered without its controls")?;
+    let links = read(&links_url);
+    if !links.contains("\"webIdLinks\"") {
+        return Err("the service account's WebID links did not answer");
+    }
+    Ok(chorus_principal::links::half_made_webid(&links, name).map(|w| (acct, w)))
 }
 
 /// Create a human's OWN CSS account: account → password login (email + a
@@ -1533,18 +1650,18 @@ fn role_state(role: &str) -> Option<bool> {
 /// How many of the four hats this principal wears. Counted from the store,
 /// never assumed — the check that the appointments landed is the same question
 /// anyone else would ask of the graph.
-fn hats_held(name: &str) -> usize {
+/// The store's raw answer to "how many hats does this principal wear".
+fn hats_answer(name: &str) -> String {
     let q = format!(
         "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE {{ \
          GRAPH ?g {{ c:principal-{name} c:wearsHat ?h }} }}"
     );
-    let body = curl(&[
+    curl(&[
         "-s", "--max-time", "30", "-G",
         &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
         "--data-urlencode", &format!("query={q}"),
         "-H", "Accept: application/sparql-results+json",
-    ]).unwrap_or_default();
-    between(&body, "\"value\":\"", "\"").and_then(|v| v.parse().ok()).unwrap_or(0)
+    ]).unwrap_or_default()
 }
 
 

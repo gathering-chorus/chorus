@@ -25,7 +25,7 @@ pub struct RoleKey {
     seckey: [u8; 32],
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NostrEvent {
     pub id: String,
     pub pubkey: String,
@@ -95,7 +95,25 @@ pub fn next_seq(dir: &std::path::Path, role: &str) -> u64 {
     next
 }
 
-/// Build + schnorr-sign a kind-1 reply event. Deterministic given inputs —
+/// #4652 — the Buzz app shows only channel messages: kind 9 with an `h` tag
+/// naming the channel's id. Replies went out as kind 1 t=reply, stored and never
+/// shown; t=reply stays, since Clearing v2 routes replies on it.
+/// Jeff 2026-10-20 13:01 ("a"): a reply is what Jeff reads, so every reply goes
+/// to #clearing; nudges, alerts and lands stay in #team (pulse writes those).
+pub const CLEARING_CHANNEL_DEFAULT: &str = "03e2b251-240f-47fe-89b5-fe4e7ac648fb";
+/// #team, where replies went before 13:01. Named so a test can prove they no longer do.
+pub const TEAM_CHANNEL: &str = "160e1f5d-6816-4c68-94b3-b5f1ade75565";
+const CHANNEL_MESSAGE: u32 = 9;
+
+/// The #clearing channel's id: BUZZ_CLEARING_CHANNEL (the daemon's env), else #clearing.
+pub fn clearing_channel() -> String {
+    std::env::var("BUZZ_CLEARING_CHANNEL")
+        .ok()
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| CLEARING_CHANNEL_DEFAULT.to_string())
+}
+
+/// Build + schnorr-sign a reply event (a #clearing channel message). Deterministic given inputs —
 /// the caller owns the clock (created_at is an argument, never read here).
 pub fn build_reply_event(
     key: &RoleKey,
@@ -120,7 +138,8 @@ pub fn build_reply_event_seq(
 }
 
 /// Sign an arbitrary-kind event with the given tags (NIP-01 id + schnorr).
-fn sign_event(
+/// #4629 — public so nudge-send signs with the same code path (one signer).
+pub fn sign_event(
     key: &RoleKey,
     kind: u32,
     tags: Vec<Vec<String>>,
@@ -157,6 +176,7 @@ fn build_reply_event_tags(
     seq: Option<u64>,
 ) -> Result<NostrEvent, String> {
     let mut tags = vec![
+        vec!["h".to_string(), clearing_channel()],
         vec!["t".to_string(), "reply".to_string()],
         vec!["role".to_string(), role.to_string()],
         vec!["hash".to_string(), content_hash.to_string()],
@@ -165,7 +185,7 @@ fn build_reply_event_tags(
         tags.push(vec!["seq".to_string(), n.to_string()]);
     }
     // NIP-01 canonical serialization: [0, pubkey, created_at, kind, tags, content]
-    let ser = serde_json::json!([0, key.pubkey, created_at, 1, tags, text]).to_string();
+    let ser = serde_json::json!([0, key.pubkey, created_at, CHANNEL_MESSAGE, tags, text]).to_string();
     let digest = sha256::Hash::hash(ser.as_bytes());
     let id = hex_encode(digest.as_ref());
     let secp = Secp256k1::new();
@@ -179,11 +199,22 @@ fn build_reply_event_tags(
         id,
         pubkey: key.pubkey.clone(),
         created_at,
-        kind: 1,
+        kind: CHANNEL_MESSAGE,
         tags,
         content: text.to_string(),
         sig: hex_encode(sig.as_ref()),
     })
+}
+
+/// #4657 — the relay address a NIP-42 AUTH names. The relay accepts only its
+/// RELAY_URL; once that is the public wss:// one, BUZZ_AUTH_RELAY_URL states it
+/// while this client still dials (and sends its Host to) the LAN/tunnel address.
+/// Unset or blank keeps the dial address, as before.
+pub fn auth_relay_tag(relay_url: &str, stated: Option<&str>) -> String {
+    match stated.map(str::trim) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => relay_url.to_string(),
+    }
 }
 
 /// Publish over the relay websocket; Ok only on the relay's ["OK", id, true].
@@ -266,10 +297,14 @@ fn pump<S: std::io::Read + std::io::Write>(
                     continue; // one answer per connection; don't loop
                 }
                 let tags = vec![
-                    vec!["relay".to_string(), relay_url.to_string()],
+                    vec!["relay".to_string(), auth_relay_tag(relay_url, std::env::var("BUZZ_AUTH_RELAY_URL").ok().as_deref())],
                     vec!["challenge".to_string(), chal.to_string()],
                 ];
-                let auth_ev = sign_event(key, 22242, tags, "", event.created_at)?;
+                // stamped now, not with the event's time: the relay refuses a sign-in more than
+                // ±60 s off, so a note queued in the outbox during an outage could never flush
+                // (#4737, measured 10-25: 11 of Wren's notes stuck, "relay read: connection closed")
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(event.created_at);
+                let auth_ev = sign_event(key, 22242, tags, "", now)?;
                 ws.send(tungstenite::Message::Text(
                     serde_json::json!(["AUTH", auth_ev]).to_string(),
                 ))
@@ -356,7 +391,11 @@ pub async fn deliver_and_emit(role: &str, text: &str, content_hash: &str) -> Opt
 /// Blocking half: env + clock + key → signed event → relay accept.
 fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let identity_dir = std::path::PathBuf::from(home).join(".chorus/identity");
+    let identity_dir = std::env::var("CHORUS_IDENTITY_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(&home).join(".chorus/identity"));
     let relay = std::env::var("BUZZ_RELAY_URL")
         .unwrap_or_else(|_| "ws://192.168.86.242:3000".to_string());
     let tunnel = std::env::var("BUZZ_RELAY_TUNNEL").ok();
@@ -365,10 +404,11 @@ fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, S
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let key = load_key(&identity_dir, role)?;
-    let state_dir = std::path::PathBuf::from(
-        std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()),
-    )
-    .join(".chorus/state");
+    let state_dir = std::env::var("CHORUS_STATE_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(&home).join(".chorus/state"));
     let seq = next_seq(&state_dir, role);
     let ev = build_reply_event_seq(&key, role, text, content_hash, created_at, seq)?;
     publish_authed(&relay, tunnel.as_deref(), &key, &ev).map(|()| ev.id)

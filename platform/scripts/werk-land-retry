@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""werk-land-retry <card> [--dry-run] — #4707 reopen: retry a card's stopped land
+on the go Jeff already gave, never on a new one.
+
+The hook refuses a raw `dagu retry cicd-land` for every actor (#4707 AC1), so a
+land that stopped after the go (on 10-23 #4715 stopped at borg-ask while the
+roles door restarted) had no way back but a new go. This verb retries it only
+when the go is on record:
+
+  1. the card's newest cicd-land run stopped (failed, partly done or aborted),
+  2. its params carry ACCEPTER=jeff,
+  3. a go run of the same card (cicd-go since #4758; a cicd run from before
+     the split held its own go) answered its go step with accepter=jeff,
+     decision=go, and that run's cicd-land step enqueued this very land run
+     (dagu prints the run id it enqueued; the step's stdout holds it),
+  4. no other land is running or queued (lands go one at a time).
+
+Then it asks dagu's server to retry the land from its stopped step, downstream
+(#4771): the land runs as dagu's account with launchd's env, whoever asked, and
+a refusal or an unreachable server fails loud. A land that any actor enqueued
+by hand matches no go step and is refused.
+
+Read from dagu's own run files (data_dir/dag-runs), since the run API leaves
+out the go step's inputs. WLR_DATA, WLR_DAGU_URL and WLR_LOG_DIR point it at a
+fixture. The retry itself is a POST to dagu's server (#4771).
+"""
+import glob, json, os, re, sys, urllib.error, urllib.request
+
+# #4771 AC3 (was #4864) — no default comes from the caller's HOME: a role
+# account has no dagu data under it. The repo is where this script lives, and
+# data_dir / log_dir are what dagu.yaml says, the same dirs dagu itself uses.
+CHORUS_HOME = os.environ.get("CHORUS_HOME") or os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+DAGU_CONFIG = os.environ.get("WLR_DAGU_CONFIG", f"{CHORUS_HOME}/platform/config/dagu.yaml")
+
+
+def dagu_dir(key):
+    """`key` (data_dir, log_dir) from dagu.yaml; missing key or missing config is fatal, by path."""
+    try:
+        with open(DAGU_CONFIG) as f:
+            for line in f:
+                m = re.match(r"^%s:\s*(\S+)\s*$" % key, line)
+                if m:
+                    return m.group(1).strip("\"'")
+    except OSError as e:
+        sys.exit(f"werk-land-retry: FAILED — cannot read dagu config {DAGU_CONFIG}: {e.strerror}")
+    sys.exit(f"werk-land-retry: FAILED — dagu config {DAGU_CONFIG} has no {key}")
+
+
+DATA = os.environ.get("WLR_DATA") or dagu_dir("data_dir")
+LOG_DIR = os.environ.get("WLR_LOG_DIR") or dagu_dir("log_dir")
+# #4771 — the retry is asked of dagu's server, never run in the caller's
+# process: the land then runs as dagu's account with launchd's env, whoever
+# asked. On 11-01 wren's `dagu retry` ran the land under /Users/chorus-wren and
+# found no chorus-runner there.
+DAGU_URL = os.environ.get("WLR_DAGU_URL") or f"http://{dagu_dir('host')}:{dagu_dir('port')}"
+
+
+def ask_retry(lid, step):
+    """POST the retry to dagu's server; dagu answers 200 once the retry is queued."""
+    body = {"dagRunId": lid}
+    if step:
+        body.update(stepName=step, includeDownstream=True)
+    req = urllib.request.Request(f"{DAGU_URL}/api/v1/dag-runs/cicd-land/{lid}/retry", method="POST",
+                                 data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, r.read().decode(errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(errors="replace")
+    except (urllib.error.URLError, OSError) as e:
+        return 0, str(getattr(e, "reason", e))
+STOPPED = ("failed", "partially_succeeded", "aborted")
+# dagu's status numbers (2.18): what a run file holds when the label is absent
+LABELS = {0: "not_started", 1: "running", 2: "failed", 3: "aborted", 4: "succeeded", 5: "queued", 6: "partially_succeeded", 7: "waiting"}
+
+
+def label(x):
+    return x.get("statusLabel") or LABELS.get(x.get("status"), "?")
+
+
+def runs(dag):
+    """Every run of `dag` as dagu last wrote it: the newest attempt's last status line."""
+    out = []
+    for d in glob.glob(f"{DATA}/dag-runs/{dag}/dag-runs/*/*/*/dag-run_*"):
+        attempts = sorted(glob.glob(f"{d}/a_*/status.jsonl"))
+        if not attempts:
+            continue
+        try:
+            with open(attempts[-1]) as f:
+                lines = [l for l in f.read().splitlines() if l.strip()]
+            out.append(json.loads(lines[-1]))
+        except (OSError, ValueError, IndexError):
+            continue
+    return out
+
+
+def of_card(rs, card):
+    want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card)))
+    return sorted((r for r in rs if want.search(r.get("params") or "")),
+                  key=lambda r: r.get("queuedAt") or r.get("startedAt") or "", reverse=True)
+
+
+def node(run, name):
+    return next((n for n in run.get("nodes") or [] if n.get("step", {}).get("name") == name), None)
+
+
+def enqueued_id(n):
+    """The land run id a cicd-land step enqueued, from its output. dagu logs the
+    enqueue on stderr (measured 10-27 on cicd-go: stdout empty), so both are read."""
+    for k in ("stdout", "stderr"):
+        try:
+            with open(n.get(k) or "") as f:
+                m = re.search(r'"run-id":"([^"]+)"', f.read())
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+    return None
+
+
+def the_go(cicd_runs, land_id):
+    """The go run (cicd-go, or a pre-#4758 cicd) whose recorded go enqueued `land_id`, or None."""
+    for r in cicd_runs:
+        go, enq = node(r, "skill-werk-go"), node(r, "cicd-land")
+        if not go or not enq or label(enq) != "succeeded":
+            continue
+        said = go.get("humanTaskInput") or {}
+        if said.get("accepter") == "jeff" and said.get("decision") == "go" and enqueued_id(enq) == land_id:
+            return r
+    return None
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith("--")]
+    dry = "--dry-run" in argv
+    if len(args) != 1 or not args[0].isdigit():
+        print("usage: werk-land-retry <card> [--dry-run]", file=sys.stderr)
+        return 2
+    card = args[0]
+    if not os.path.isdir(f"{DATA}/dag-runs"):
+        print(f"werk-land-retry: FAILED — dagu data_dir {DATA} has no dag-runs (config {DAGU_CONFIG})", file=sys.stderr)
+        return 1
+    all_lands = runs("cicd-land")
+    lands = of_card(all_lands, card)
+    if not lands:
+        print(f"werk-land-retry: REFUSED — #{card} has no land run to retry in {DATA}", file=sys.stderr)
+        return 1
+    land = lands[0]
+    lid, state = land.get("dagRunId"), label(land)
+    # #4540 — a run that reads succeeded with steps never run did not finish
+    if state == "succeeded" and any(label(n) in ("aborted", "not_started") for n in land.get("nodes") or []):
+        state = "aborted"
+    if state not in STOPPED:
+        print(f"werk-land-retry: REFUSED — #{card}'s land {lid} is {state}, not stopped", file=sys.stderr)
+        return 1
+    if not re.search(r"(?:^|\s)ACCEPTER=\"?jeff\"?(?:\s|$)", land.get("params") or ""):
+        print(f"werk-land-retry: REFUSED — #{card}'s land {lid} carries no ACCEPTER=jeff", file=sys.stderr)
+        return 1
+    # #4758 — the go waits in the go half; older runs held it in cicd itself
+    go = the_go(of_card(runs("cicd-go") + runs("cicd"), card), lid)
+    if not go:
+        print(f"werk-land-retry: REFUSED — no recorded go enqueued #{card}'s land {lid}: "
+              "only a land started by Jeff's go step is retried. Bring the demo to Jeff (/cws "
+              f"{card}).", file=sys.stderr)
+        return 1
+    busy = [r for r in all_lands if r is not land and label(r) in ("running", "queued")]
+    if busy:
+        b = busy[0]
+        print(f"werk-land-retry: REFUSED — land {b.get('dagRunId')} ({b.get('params')}) is {label(b)}; "
+              "lands go one at a time, retry after it ends", file=sys.stderr)
+        return 1
+    step = next((n["step"]["name"] for n in land.get("nodes") or [] if label(n) in ("failed", "aborted", "not_started")), None)
+    where = f"{DAGU_URL}/api/v1/dag-runs/cicd-land/{lid}/retry" + (f" from {step}, downstream" if step else "")
+    print(f"#{card} land {lid} stopped at {step or 'its start'}; the go is {go.get('name') or 'cicd'} run {go.get('dagRunId')} "
+          f"(accepter=jeff, decision=go)")
+    if dry:
+        print("dry run: POST " + where)
+        return 0
+    code, text = ask_retry(lid, step)
+    os.makedirs(LOG_DIR, exist_ok=True)
+    log = f"{LOG_DIR}/werk-land-retry-{card}.log"
+    with open(log, "a") as f:
+        f.write(f"POST {where} -> {code} {text.strip()[:500]}\n")
+    if code != 200:
+        print(f"werk-land-retry: FAILED — dagu's server refused the retry: POST {where} -> {code or 'unreachable'} "
+              f"{text.strip()[:300]} · log {log}", file=sys.stderr)
+        return 1
+    print(f"retrying from {step or 'the start'} on dagu's server: POST {where} · log {log} · /cws {card}")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

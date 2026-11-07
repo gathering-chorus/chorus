@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4645)
 //! #4499 — the code crawl's decisions, as data: which unit rows to write,
 //! which units each running service is built from, and the writes in the
 //! order the door needs them. `run_code` in main.rs only does the I/O.

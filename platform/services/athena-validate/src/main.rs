@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4645)
 //! athena-validate — the post-write conformance sweep over the live graph.
 //!
 //! #4167: Rust, like its three athena-* siblings. Jeff asked for this on
@@ -15,7 +16,7 @@ mod ported;
 mod registry;
 mod store;
 
-use checks::{Verdict, ALLOWED_VALUES, COMPLETENESS, DOMAIN_CLAIMS_VOCABULARY, EXERCISES_FROM_A_TEST, PATTERN, SURVIVES_THE_DOOR, TOOL_NAME};
+use checks::{Verdict, ALERT_PROVENANCE, ALLOWED_VALUES, COMPLETENESS, DOMAIN_CLAIMS_VOCABULARY, EXERCISES_FROM_A_TEST, PATTERN, SURVIVES_THE_DOOR, TOOL_NAME};
 use std::io::Write;
 
 /// Every line the run produced, printed AND written to the report file.
@@ -226,6 +227,8 @@ fn main() {
     store_checks.push(&DOMAIN_CLAIMS_VOCABULARY);
     // #4515 — a tool is named for a Product row and linked to the step it runs
     store_checks.push(&TOOL_NAME);
+    // #4671 — every alert traces to its file or its Grafana rule
+    store_checks.push(&ALERT_PROVENANCE);
     // #4481 — one parent per row, position read up the chain, no unlisted links across hierarchies
     store_checks.extend(hierarchy::all());
     if matches!(&exact, Some(g) if g.is_empty()) {

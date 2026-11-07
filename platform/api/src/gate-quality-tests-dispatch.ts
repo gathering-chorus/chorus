@@ -5,7 +5,7 @@
 //
 // This module is the PURE selection core (hermetic, no live fetch — see the
 // fetch wiring below it). It mirrors gate-test-type.ts: a tested core + a thin
-// caller. The skill (platform/skills/gate-quality) invokes it to scope its
+// caller. The skill (skills/gate-quality) invokes it to scope its
 // checks to the tests covering the card's domain instead of the whole suite.
 
 /** One test record as athena-make serves it at /tests (the real key set). */

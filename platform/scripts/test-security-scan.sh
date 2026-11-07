@@ -10,6 +10,8 @@
 #   SCA   — trivy fs over the repo: dependency CVEs (npm + cargo) + secrets + config.
 #           (trivy is already installed and covers osv-scanner's job; osv-scanner is
 #            the documented alternative — same SCA role.)
+#           The SCA leg is what exercises a lockfile-only bump such as #4745's
+#           platform/api/package-lock.json (body-parser, zod CVEs).
 #
 # Exits non-zero if EITHER leg reports a finding, so it can gate. FAIL-OPEN on a
 # missing tool (dev-setup gap) mirrors the gitleaks convention — SKIP, don't block.
@@ -138,6 +140,13 @@ assert_no_tracked_env() {
   fi
   return 0
 }
+
+# #4879 — cargo's build caches (.fingerprint, incremental) churn while builds
+# run: the 11-01 deep scan stopped on "walk dir error …
+# athena-gen/target/release/.fingerprint" and measured nothing. They hold no
+# lockfile or source; the rest of target/ stays in the deep scan (#4034).
+# Passed through trivy's env, not $(sca_flags), so the shell never globs it.
+export TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.fingerprint,**/incremental}"
 
 sca_flags() {
   # Cached DB: skip the update when the local DB is <24h old — the nightly

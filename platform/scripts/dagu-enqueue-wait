@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# dagu-enqueue-wait <dag> [KEY=VALUE ...] — #4675: run a child pipeline ON ITS
+# QUEUE and wait for its verdict.
+#
+# A dagu sub-run (`action: dag.run`) ignores its queue (#4494), so a pair's local
+# proof ran cicd-test beside every cicd run. Jeff 2026-10-21 11:05: one test run
+# at a time on Library ("tortoise and hare"); Kade 11:13 chose this over a second
+# lock (#4008 retired werk-test's): the queue is the one single-flight. So the
+# step ENQUEUES the child (it waits its turn on the child's own queue) and polls
+# its status, the athena-land pattern. Exit 0 only when the child succeeded.
+#
+# Env: DAGU (binary), DAGU_CONFIG, ENQUEUE_WAIT_TIMEOUT_S (default 3600),
+# ENQUEUE_WAIT_POLL_S (default 15). The last line is
+# "dagu-enqueue-wait <dag>: result=<succeeded|failed>".
+set -uo pipefail
+dag="${1:?usage: dagu-enqueue-wait <dag> [KEY=VALUE ...]}"
+shift
+home="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}"
+dagu="${DAGU:-/opt/homebrew/bin/dagu}"
+config="${DAGU_CONFIG:-$home/platform/config/dagu.yaml}"
+timeout_s="${ENQUEUE_WAIT_TIMEOUT_S:-3600}"
+poll_s="${ENQUEUE_WAIT_POLL_S:-15}"
+
+run_id="${dag}-$(date +%Y%m%d%H%M%S)-$$"
+if ! out="$(env -u CHORUS_ROLE -u ROLE "$dagu" --config "$config" enqueue --run-id "$run_id" "$dag" -- "$@" 2>&1)"; then
+  echo "dagu-enqueue-wait ${dag}: dagu would not enqueue: ${out:0:300}"
+  echo "dagu-enqueue-wait ${dag}: result=failed"
+  exit 1
+fi
+echo "dagu-enqueue-wait ${dag}: enqueued ${run_id} on its queue; waiting for it"
+
+waited=0
+while :; do
+  state="$("$dagu" --config "$config" status --run-id "$run_id" "$dag" 2>/dev/null | head -1 | awk '{print tolower($1)}')"
+  case "$state" in
+    succeeded|success)
+      echo "dagu-enqueue-wait ${dag}: ${run_id} succeeded"
+      echo "dagu-enqueue-wait ${dag}: result=succeeded"
+      exit 0 ;;
+    failed|aborted|cancelled|canceled|partially|rejected)
+      echo "dagu-enqueue-wait ${dag}: ${run_id} ${state}"
+      echo "dagu-enqueue-wait ${dag}: result=failed"
+      exit 1 ;;
+  esac
+  if [ "$waited" -ge "$timeout_s" ]; then
+    echo "dagu-enqueue-wait ${dag}: ${run_id} still '${state:-unknown}' after ${timeout_s}s"
+    echo "dagu-enqueue-wait ${dag}: result=failed"
+    exit 1
+  fi
+  sleep "$poll_s"
+  waited=$((waited + (poll_s > 0 ? poll_s : 1)))
+done

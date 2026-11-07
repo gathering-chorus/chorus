@@ -21,7 +21,7 @@ use serde_json::json;
 fn make_input(tool: &str, input_json: serde_json::Value) -> HookInput {
     HookInput {
         tool_use_id: None,
-        card_type: None,
+        card_type: None, entrypoint: None,
         tool_name: Some(tool.to_string()),
         tool_input: Some(input_json),
         tool_response: None,

@@ -18,6 +18,8 @@ write should be let in. This compares that with what the door actually does.
   verdict <plan.txt> <runner.out>
           reads the 4267 runner's lines for those classes and prints every class
           where the door disagrees with the rows. Exit 1 if any, 0 if none.
+          A NOT-PERM the door gives as door-managed or deploy-only (#4661) is
+          not a scope question: no principal writes those classes.
 
 Wren, 2026-10-13: take the expected denials from the Permission rows and let it
 go red; two sources disagreeing on who may write is the product bug.
@@ -85,13 +87,17 @@ def verdict(planned, results):
         got, detail = results.get(cls, ("MISSING", "the runner printed no line"))
         if "door-managed" in detail:
             continue  # no principal may write it, either way; not a scope question
+        if got == "NOT-PERM" and '"deploy-only"' in detail:
+            continue  # #4661 — written only by the model deploy (#4220): not a scope question either
+        if got == "NOT-PERM" and detail.startswith("append-only on an ownerless class") and want in ("allow", "append"):
+            continue  # #4915 — Append opens a create only; with no row owner nothing could clean it up
         if want == "deny":
             if got == "NOT-PERM":
                 continue
-            wrong.append(f"{cls}: rows deny, door answered {got} {detail[:80]}".rstrip())
+            wrong.append(f"{cls}: rows deny, door answered {got} {detail}".rstrip())
         elif got != "PASS":
             rows = "rows append (own row)" if want == "append" else "rows allow"
-            wrong.append(f"{cls}: {rows}, door answered {got} {detail[:80]}".rstrip())
+            wrong.append(f"{cls}: {rows}, door answered {got} {detail}".rstrip())
     return wrong
 
 

@@ -59,9 +59,11 @@ fn athena_initiates_the_cards_werk_run_on_success_only() {
     // Jeff: "if chorus-athena requires chorus-werk, it initiates chorus-werk"
     let (failure, success) = handlers(&athena());
     assert!(success.contains("command: '${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || "), "{success}");
-    // NEGATIVE PROOF: a failed athena run enqueues nothing; it only nudges
+    // NEGATIVE PROOF: a failed athena run enqueues nothing; it only routes, and
+    // the exit handler's one wake (#4888) tells the builder
     assert!(!failure.contains("werk-v2") && !failure.contains("enqueue"), "{failure}");
-    assert!(failure.contains("platform/scripts/ops-nudge ${ROLE}"), "{failure}");
+    assert!(!failure.contains("ops-nudge") && !success.contains("ops-nudge"), "{failure}{success}");
+    assert!(athena().contains("  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n"));
     // and no other pipeline starts a werk run when it succeeds
     let land = generate_land("cicd", &rows("cicd-rows.tsv")).unwrap();
     assert!(!land.contains("werk-v2"), "{land}");
@@ -76,7 +78,9 @@ fn athena_land_is_one_prod_step_on_its_own_queue_that_never_enqueues_itself() {
     assert!(y.contains("params:\n  - CARD: \"\"\n  - ROLE: \"\"\nenv:"), "CARD and ROLE only: {y}");
     let (failure, success) = handlers(&y);
     assert!(success.is_empty(), "the model land has no success handler: {success}");
-    assert!(failure.contains("land failed"), "{failure}");
+    // #4888 — the failure routes; the exit handler is the land's one wake
+    assert!(!failure.contains("ops-nudge"), "{failure}");
+    assert!(y.contains("platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}"), "{y}");
     assert_eq!(y.matches("  - name: ").count(), 1, "{y}");
 }
 

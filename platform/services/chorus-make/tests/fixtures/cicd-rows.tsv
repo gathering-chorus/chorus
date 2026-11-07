@@ -2,13 +2,15 @@
 # and crawl-delta are inline bash in werk.yml today, not verbs, so they are not rows yet (design §5).
 # #4514 reopen 2: refreshed from the graph 2026-10-13 21:26 (inputShape, withArgs columns added).
 # #4540: the test step runs the cicd-test child pipeline (werk-test as steps), SCOPE=diff.
+# #4683: the land proves the card in prod (borg-prove prod) before accept.
+# #4691: the proof is Borg Queen's: ask nudges her, the land waits at her step, check is the gate.
 # #4502: the demo step calls the demo pipeline (its own DAG, Jeff 10-12 21:18), then Jeff's go.
+# #4889: werk-review (the floor) is retired; the code review is the demo's /code-review (Jeff 19:00 via Kade).
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 commit	1	1	skill-werk-commit	werk-commit	deterministic	werk-commit	{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]		WerkCommitInput	atomic=true
 commit	1	2	skill-werk-push	werk-push	deterministic	werk-push	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
 build	2	1	skill-werk-build	werk-build	deterministic	werk-build	{card} {caller} [--target {target}] [--atomic {atomic}]		WerkBuildInput	target=werk
 test	3	1	skill-werk-test-pipeline	the tests: cicd-test, scope diff	pipeline	cicd-test				SCOPE=diff
-test	3	2	skill-werk-review	werk-review	deterministic	werk-review	{card} {caller}		WerkCardOnlyInput	
 demo	4	1	skill-werk-deploy-demo	werk-deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
 demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up {caller} {card}		WerkCardOnlyInput	
 demo	4	3	skill-werk-demo-pipeline	the demo: its own pipeline, called as one step	pipeline	demo				from=werk
@@ -16,4 +18,7 @@ demo	4	4	skill-werk-go	Jeff's go	human
 land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
 land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	{mode}		WerkSyncInput	mode=ff
 land	5	3	skill-werk-deploy-prod	werk-deploy-prod	deterministic	werk-deploy	{card} {caller} --target canonical		WerkCardOnlyInput	
-land	5	4	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
+land	5	4	skill-borg-verify-in-prod	borg-verify-in-prod	deterministic	borg-prove	prod ${CARD} ${ROLE}			continue_on=failure
+land	5	5	skill-borg-record	borg-record	deterministic	borg-prove	record ${CARD} ${ROLE}			
+land	5	6	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
+land	5	7	skill-clearing-evaluate	post-land: evaluate chunk sequence or lane switch	pipeline	clearing-evaluate				continue_on=failure enqueue=true

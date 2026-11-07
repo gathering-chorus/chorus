@@ -23,6 +23,11 @@ EOF
   printf '#!/usr/bin/env python3\nprint("failed at local-proof · verdict: RED")\n' > "$S/chorus-werk-status"
   printf '#!/usr/bin/env bash\necho "$*" >> %s/dagu\n' "$L" > "$BATS_TEST_TMPDIR/dagu"; chmod +x "$BATS_TEST_TMPDIR/dagu"
   export PAIR_DAGU="$BATS_TEST_TMPDIR/dagu" DAG_RUN_ID=run1
+  D="$BATS_TEST_TMPDIR/door/identity/principals"; mkdir -p "$D"
+  for r in kade:jeffbridwell silas:jeffbridwell wren:chorus-wren abby-normal:chorus-abby-normal; do
+    printf '{"data":{"hostAccount":"%s"}}' "${r#*:}" > "$D/${r%%:*}"
+  done
+  export PAIR_DOOR="file://$BATS_TEST_TMPDIR/door"
   unset CHORUS_ROLE
 }
 
@@ -61,13 +66,13 @@ EOF
   [[ "$output" == *"must come from the navigator silas"* ]] || return 1
 }
 
-@test "a red sends the pair back to slice: a new run is enqueued and both roles hear it" {
+@test "a red sends the pair back to slice: a new run is enqueued, and red itself wakes nobody (#4888: the exit handler does)" {
   bash "$PAIR" start 4577 kade silas >/dev/null
   run bash "$PAIR" red 4577 kade silas run1
   [ "$status" -eq 0 ]
   grep -q 'enqueue pair -- CARD=4577 ROLE=kade NAVIGATOR=silas' "$L/dagu"
-  grep -q '^kade|pair #4577 red: failed at local-proof' "$L/nudges"
-  grep -q '^silas|pair #4577 red: failed at local-proof' "$L/nudges"
+  ! grep -q " red: \| start refused\| is over" "$L/nudges" 2>/dev/null || { cat "$L/nudges"; return 1; }
+  [[ "$output" == *"back to slice: failed at local-proof"* ]] || return 1
   # the next run's start is back to slice, not a new pair
   run bash "$PAIR" start 4577 kade silas
   grep -q '^## Back to slice' "$PAIR_DIR/pair-4577.md"
@@ -95,7 +100,7 @@ EOF
   bash "$PAIR" review 4577 "next" >/dev/null
   run bash "$PAIR" end 4577 kade silas
   [ "$status" -eq 0 ]
-  grep -q '^4577|pair #4577 ended: kade drove, silas navigated · 1 slices, 1 reviews · AC 1 of 2 checked' "$L/comments"
+  grep -q '^4577|pair #4577 ended: kade drove, silas navigated · rounds 1 · 1 slices, 1 reviews · AC 1 of 2 checked' "$L/comments"
   grep -q '^## For Jeff' "$PAIR_DIR/pair-4577.md"
   grep -q 'slice: AC two green' "$PAIR_DIR/pair-4577.md"
   [ ! -e "$CHORUS_HOME/ops/active-pairs/4577.json" ]
@@ -125,4 +130,215 @@ EOF
   [ "$status" -eq 0 ]
   head -1 "$PAIR_DIR/pair-4577.md" | grep -q '^# notes Wren kept'
   grep -q '^# Pair #4577 — kade drives, silas navigates' "$PAIR_DIR/pair-4577.md"
+}
+
+# #4663 — `pair end` grepped the pair file into itself: grep read what the same
+# block appended, never reached the end, and #4652's end wrote 540 GB to /tmp
+# (disk 97%, 2026-10-20 13:20). The end is bounded by a 10 MB file cap and a
+# 5 s watchdog here, so the old code fails fast instead of filling the disk.
+@test "end with 500 slices finishes within 5 s and appends exactly one copy of them (#4663)" {
+  bash "$PAIR" start 4663 kade silas >/dev/null
+  pf="$PAIR_DIR/pair-4663.md"
+  for i in $(seq 1 500); do echo "- 12:00 slice: piece $i" >> "$pf"; done
+  before=$(wc -l < "$pf")
+  # a watchdog: the end gets 5 s, then it is killed (a hang reads red, never a full disk)
+  # ulimit -f caps any file the end (and its children) writes at 10 MB, so a
+  # runaway grep dies on its own instead of outliving the watchdog's kill
+  ( ulimit -f 20480; bash "$PAIR" end 4663 kade silas > "$BATS_TEST_TMPDIR/end.out" 2>&1; echo $? > "$BATS_TEST_TMPDIR/end.rc" ) &
+  pid=$!
+  for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null
+    echo "pair end still running after 5 s; the file is $(wc -l < "$pf") lines"; return 1
+  fi
+  [ "$(cat "$BATS_TEST_TMPDIR/end.rc")" -eq 0 ] || { cat "$BATS_TEST_TMPDIR/end.out"; return 1; }
+  # the file grew by: a blank line, the heading, the summary, and the 500 slices once
+  after=$(wc -l < "$pf")
+  [ "$after" -eq $((before + 3 + 500)) ] || { echo "grew by $((after - before)), want 503"; return 1; }
+  [ "$(grep -c -- '^- .* slice: ' "$pf")" -eq 1000 ] || { echo "slice lines: $(grep -c -- '^- .* slice: ' "$pf"), want 1000 (500 + one copy)"; return 1; }
+  [ "$(grep -c '^## For Jeff' "$pf")" -eq 1 ] || return 1
+}
+
+# #4683 AC5 — the pair file is written by every member's macOS user and nobody
+# else (Abby runs as chorus-abby-normal; a 0644 file owned by jeffbridwell
+# silently dropped her appends), and an append that cannot write fails loudly.
+acl_users() { ls -le "$1" | sed -nE 's/^ *[0-9]+: user:([^ ]+) allow.*/\1/p' | sort | tr '\n' ' '; }
+
+@test "start: a member on her own account gets exactly one ACL entry; the file is owner-only (#4683)" {
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 0 ]
+  [ "$(stat -f '%Lp' "$PAIR_DIR/pair-4683.md")" = 600 ]
+  [ "$(acl_users "$PAIR_DIR/pair-4683.md")" = "chorus-abby-normal " ]
+  ls -le "$PAIR_DIR/pair-4683.md" | grep -q 'user:chorus-abby-normal allow .*append'
+}
+
+@test "negative proof: an outsider on her own account is not listed, and a rerun adds no second entry (#4683)" {
+  bash "$PAIR" start 4683 kade abby-normal
+  bash "$PAIR" start 4683 kade abby-normal
+  [ "$(acl_users "$PAIR_DIR/pair-4683.md")" = "chorus-abby-normal " ]
+  bash "$PAIR" start 4684 kade silas
+  [ -z "$(acl_users "$PAIR_DIR/pair-4684.md")" ]
+  [ "$(stat -f '%Lp' "$PAIR_DIR/pair-4684.md")" = 600 ]
+}
+
+@test "negative proof: review on a pair file it cannot write exits non-zero and logs nothing (#4683)" {
+  bash "$PAIR" start 4683 kade silas
+  chmod 444 "$PAIR_DIR/pair-4683.md"
+  run bash "$PAIR" review 4683 "next: AC 1"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"could not write"* ]] || return 1
+  ! grep -q '^pair.review' "$L/spine" || return 1
+}
+
+@test "negative proof: a member the door has no hostAccount for refuses the start (#4683)" {
+  rm "${PAIR_DOOR#file://}/identity/principals/silas"
+  run bash "$PAIR" start 4683 kade silas
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no hostAccount for silas"* ]] || return 1
+  [ ! -e "$CHORUS_HOME/ops/active-pairs/4683.json" ]
+}
+
+# #4683 reopen 1 — #4682's start went red 4 times: share() ran chmod on a pair
+# file Abby owned ("Operation not permitted"), and each red re-enqueued a run.
+other_owner() {  # the file reads as another member's: stat reports her, the rest is real
+  B="$BATS_TEST_TMPDIR/bin"; mkdir -p "$B"
+  printf '#!/bin/sh\n[ "$1 $2" = "-f %%Su" ] && { echo chorus-abby-normal; exit 0; }\nexec /usr/bin/stat "$@"\n' > "$B/stat"
+  chmod +x "$B/stat"; export PATH="$B:$PATH"
+}
+
+@test "start on a pair file another member owns leaves its mode alone and writes when it can (#4683 R1)" {
+  printf '# kept\n' > "$PAIR_DIR/pair-4683.md"; chmod 644 "$PAIR_DIR/pair-4683.md"
+  other_owner
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 0 ]
+  [ "$(/usr/bin/stat -f '%Lp' "$PAIR_DIR/pair-4683.md")" = 644 ]
+  grep -q '^# kept' "$PAIR_DIR/pair-4683.md"
+  grep -q '^## AC' "$PAIR_DIR/pair-4683.md"
+}
+
+@test "negative proof: a pair file another member owns that the caller cannot write refuses, naming the owner (#4683 R1, R2)" {
+  printf '# kept\n' > "$PAIR_DIR/pair-4683.md"; chmod 444 "$PAIR_DIR/pair-4683.md"
+  other_owner
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"chorus-abby-normal"* ]] || return 1
+  [ "$(/usr/bin/stat -f '%Lp' "$PAIR_DIR/pair-4683.md")" = 444 ]
+  [ ! -e "$CHORUS_HOME/ops/active-pairs/4683.json" ]
+}
+
+@test "negative proof: a red after a refused start enqueues no second run (#4683 R3)" {
+  printf '# kept\n' > "$PAIR_DIR/pair-4683.md"; chmod 444 "$PAIR_DIR/pair-4683.md"
+  other_owner
+  mkdir -p "$CHORUS_HOME/ops/active-pairs"
+  echo '{"card":"4683","navigator":"abby-normal","driver":"kade"}' > "$CHORUS_HOME/ops/active-pairs/4683.json"
+  run bash "$PAIR" start 4683 kade abby-normal
+  [ "$status" -eq 1 ]
+  run bash "$PAIR" red 4683 kade abby-normal run1
+  [ "$status" -eq 0 ]
+  [ ! -e "$L/dagu" ] || ! grep -q 'enqueue pair' "$L/dagu" || return 1
+  [[ "$output" == *"start refused"* ]] || return 1
+  ! grep -q " red: \| start refused\| is over" "$L/nudges" 2>/dev/null || { cat "$L/nudges"; return 1; }
+}
+
+# #4852 — the pair's hand-off routes on the one model-change rule (athena-deploy
+# scope, #4718): a model change rehearses on staging (athena), anything else goes
+# to cicd. Before, the hand-off enqueued cicd for every card and #4579 refused
+# a model card. Stand-in git answers the diff; stand-in dagu records the enqueue.
+handoff_world() { # PATHS... — the card's diff
+  export MOB_OPEN_BIN=/usr/bin/true PAIR_RERUN_BIN=/nonexistent CICD_SUPERSEDE_BIN=/usr/bin/true
+  export CHORUS_WERK_BASE="$BATS_TEST_TMPDIR/werks"
+  HW="$CHORUS_WERK_BASE/kade-4852"; mkdir -p "$HW/platform/pipelines" "$BATS_TEST_TMPDIR/hbin"
+  touch "$HW/platform/pipelines/cicd.yaml" "$HW/platform/pipelines/athena.yaml"
+  export DAGU="$BATS_TEST_TMPDIR/hdagu"
+  printf '#!/bin/sh\necho "$@" >> "%s/enq"\n' "$L" > "$DAGU"; chmod +x "$DAGU"
+  printf '#!/bin/sh\nprintf "%%s\\n" %s\n' "$*" > "$BATS_TEST_TMPDIR/hbin/git"; chmod +x "$BATS_TEST_TMPDIR/hbin/git"
+  export PATH="$BATS_TEST_TMPDIR/hbin:$PATH"; export DAG_NAME=pair DAG_RUN_ID=run1
+  # dagu's run list, read by the real handoff-live: run1 is a live pair run for #4852
+  HF="$BATS_TEST_TMPDIR/hdagu-api"; mkdir -p "$HF/api/v1"; export CWS_DAGU="file://$HF"
+  live_run pair running "CARD=4852 ROLE=kade NAVIGATOR=silas"
+}
+live_run() { # DAG STATUS PARAMS — the one run dagu lists
+  printf '{"dagRuns":[{"name":"%s","dagRunId":"run1","statusLabel":"%s","params":"%s","startedAt":"2026-11-01T11:00:00-05:00"}]}\n' "$1" "$2" "$3" > "$HF/api/v1/dag-runs"
+}
+
+@test "#4852 AC1: the pair's generated hand-off starts the card through pipeline-start handoff, not a bare cicd enqueue" {
+  step="$(awk '/name: skill-pair-hand-off$/{f=1} f&&/command:/{print; exit}' "$ROOT/platform/pipelines/pair.yaml")"
+  [[ "$step" == *"platform/scripts/pipeline-start handoff \${CARD} \${ROLE}"* ]] || { echo "hand-off: $step"; return 1; }
+  [[ "$step" != *"enqueue cicd"* ]] || { echo "still a bare cicd enqueue: $step"; return 1; }
+}
+
+@test "#4852 AC1: hand-off of a model-changing card enqueues athena; of any other card, cicd" {
+  handoff_world roles/kade/ontology/werk-domains.ttl platform/scripts/pair
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(wc -l < "$L/enq")" -eq 1 ] || { echo "not exactly one enqueue: $(cat "$L/enq")"; return 1; }
+  [[ "$(cat "$L/enq")" == *" enqueue $HW/platform/pipelines/athena.yaml -- CARD=4852 ROLE=kade" ]] || { cat "$L/enq"; return 1; }
+  [[ "$output" == *"changes the model"*"athena"* ]] || { echo "$output"; return 1; }
+  rm -f "$L/enq"; handoff_world platform/scripts/pair
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$(cat "$L/enq")" == *" enqueue $HW/platform/pipelines/cicd.yaml -- CARD=4852 ROLE=kade" ]] || { cat "$L/enq"; return 1; }
+}
+
+@test "#4852 AC2 NEGATIVE PROOF: a hand-off whose diff touches an ontology .ttl never enqueues cicd" {
+  handoff_world roles/kade/ontology/werk-domains.ttl
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q "cicd.yaml" "$L/enq" || { echo "cicd enqueued for a model card: $(cat "$L/enq")"; return 1; }
+  # and a retirement line alone, the #4579 case, is a model change too
+  rm -f "$L/enq"; handoff_world designing/schemas/model-retirements.jsonl
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  ! grep -q "cicd.yaml" "$L/enq" || { echo "cicd enqueued for a retirement: $(cat "$L/enq")"; return 1; }
+}
+
+@test "#4852 NEGATIVE PROOF: a model card with no athena workflow in its werk is refused, never sent to cicd" {
+  handoff_world roles/kade/ontology/werk-domains.ttl; rm "$HW/platform/pipelines/athena.yaml"
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  [ ! -e "$L/enq" ] || { echo "enqueued: $(cat "$L/enq")"; return 1; }
+}
+
+@test "#4852 NEGATIVE PROOF (Silas): handoff from a shell, or from any pipeline but pair or mob, is refused and enqueues nothing" {
+  handoff_world platform/scripts/pair
+  unset DAG_NAME
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -ne 0 ] && [[ "$output" == *"pair or mob"* ]] || { echo "shell handoff ran: $output"; return 1; }
+  DAG_NAME=cicd run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -ne 0 ] || { echo "cicd handoff ran: $output"; return 1; }
+  [ ! -e "$L/enq" ] || { echo "enqueued: $(cat "$L/enq")"; return 1; }
+}
+
+@test "#4852: a mob's hand-off routes the same way" {
+  handoff_world roles/kade/ontology/werk-domains.ttl; export DAG_NAME=mob
+  live_run mob running "CARD=4852 ROLE=kade NAVIGATORS=silas,wren"
+  run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(wc -l < "$L/enq")" -eq 1 ] && grep -q "athena.yaml" "$L/enq" || { cat "$L/enq"; return 1; }
+}
+
+@test "#4852 NEGATIVE PROOF (Silas 11:11): a spoofed DAG_NAME=pair with no live pair run for the card is refused" {
+  handoff_world roles/kade/ontology/werk-domains.ttl
+  for case in "pair succeeded CARD=4852 ROLE=kade" "pair running CARD=4853 ROLE=kade" "cicd running CARD=4852 ROLE=kade" "none"; do
+    rm -f "$L/enq"
+    if [ "$case" = none ]; then printf '{"dagRuns":[]}\n' > "$HF/api/v1/dag-runs"; else set -- $case; d=$1 s=$2; shift 2; live_run "$d" "$s" "$*"; fi
+    run "$ROOT/platform/scripts/pipeline-start" handoff 4852 kade
+    [ "$status" -ne 0 ] && [[ "$output" == *"not a live pair run for #4852"* ]] || { echo "[$case] spoof ran: $output"; return 1; }
+    [ ! -e "$L/enq" ] || { echo "[$case] enqueued: $(cat "$L/enq")"; return 1; }
+  done
+}
+
+@test "#4852 (Silas 11:17): platform/scripts/handoff-live itself — live 0, finished or another card's run 1, nameless row 1, unreadable dagu 2" {
+  HL="$ROOT/platform/scripts/handoff-live"
+  HF="$BATS_TEST_TMPDIR/hl-api"; mkdir -p "$HF/api/v1"; export CWS_DAGU="file://$HF"
+  row() { printf '{"dagRuns":[{%s"dagRunId":"run1","statusLabel":"%s","params":"%s","startedAt":"2026-11-01T11:00:00-05:00"}]}\n' "$1" "$2" "$3" > "$HF/api/v1/dag-runs"; }
+  row '"name":"pair",' running "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 0 ] || { echo "live: $output"; return 1; }
+  run "$HL" pair run1 48520; [ "$status" -eq 1 ] || { echo "CARD=4852 matched 48520: $output"; return 1; }
+  row '"name":"pair",' succeeded "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 1 ] && [[ "$output" == *"succeeded, not running"* ]] || { echo "finished: $output"; return 1; }
+  row '' running "CARD=4852 ROLE=kade"
+  run "$HL" pair run1 4852;  [ "$status" -eq 1 ] || { echo "nameless row counted: $output"; return 1; }
+  rm -rf "$HF"; export CWS_DAGU="http://127.0.0.1:9"
+  run "$HL" pair run1 4852;  [ "$status" -eq 2 ] && [[ "$output" == *"could not read dagu"* ]] || { echo "unreadable: $status $output"; return 1; }
+  run "$HL" cicd run1 4852;  [ "$status" -eq 1 ] || { echo "cicd accepted: $output"; return 1; }
 }

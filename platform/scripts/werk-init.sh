@@ -99,7 +99,7 @@ if $SCAN_MODE; then
   mkdir -p "$CACHE_DIR"
 
   echo "$(date +%s)" >> "$CACHE_DIR/${ROLE}-prompt-times.log"
-  "$SCRIPT_DIR/wall-clock" --write >/dev/null 2>&1 || true
+  "$SCRIPT_DIR/wall-clock" >/dev/null 2>&1 || true  # #4885: clock_sync writes the clock file
 
   # Session PID for andon
   _CPID=$PPID

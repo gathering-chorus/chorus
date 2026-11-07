@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: identity — the product domain this suite guards (#4334)
 # login-harness.bash — #4367. The fixture world the login scenarios run in: stub
 # tmux, claude, ps, token minter, curl, service probe, osascript and open, all
 # writing into $T; no live services, no live panes. Moved out of
@@ -15,19 +16,26 @@ login_harness_stubs() {
 #!/bin/bash
 grep -qx "\$2" "$T/alive-pids"
 EOS
-  # stub tmux: records calls; a session exists once created; send-keys "starts"
-  # the role, which registers itself like the real SessionStart hook does
+  # stub tmux: records calls; a session exists once created; the launch "starts"
+  # the role, which registers itself like the real SessionStart hook does.
+  # #4813 (2026-11-01) launches with one chained call (new-session ; set-option ;
+  # respawn-pane -t <session> ... <launch>), not send-keys: the stub registers on
+  # respawn-pane too, or every login here reads "registered NO" (#4505 run 2).
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
+register() { role="\${1#chorus-}"; pid=\$(( 800 + \$(ls "$T/sessions" | wc -l) ))
+  [ -f "$T/no-register" ] || { printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%%s"}' "\$role" "\$pid" "\${pid: -1}" "\${pid: -1}" > "$T/sessions/\$role-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; }; }
+args=("\$@"); for ((i=0; i<\${#args[@]}; i++)); do
+  [ "\${args[i]}" = respawn-pane ] || continue
+  for ((j=i+1; j<\${#args[@]}; j++)); do [ "\${args[j]}" = -t ] && { touch "$T/tmux-\${args[j+1]}"; register "\${args[j+1]}"; exit 0; }; done
+done
 case "\$1" in
   has-session) [ -f "$T/tmux-\$3" ]; exit \$? ;;
   new-session) touch "$T/tmux-\$4" ;;
   kill-session) rm -f "$T/tmux-\$3" ;;
   list-clients) cat "$T/clients-\$3" 2>/dev/null ;;
-  send-keys)
-    role="\${3#chorus-}"; pid=\$(( 800 + \$(ls "$T/sessions" | wc -l) ))
-    [ -f "$T/no-register" ] || { printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%%s"}' "\$role" "\$pid" "\${pid: -1}" "\${pid: -1}" > "$T/sessions/\$role-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; } ;;
+  send-keys) register "\$3" ;;
 esac
 exit 0
 EOS
@@ -53,9 +61,10 @@ EOS
 #!/bin/bash
 echo "curl \$*" >> "$T/curl.log"
 case "\${@: -1}" in *"/v1/identity/sessions?channel=browser"*) if [ -f "$T/api-down" ]; then printf '\n000\n'; elif [ -f "$T/nobody-signed-in" ]; then printf '{"data":[]}\n200\n'; else printf '{"data":[{"name":"jeff-browser-1","ownedBy":"principal-jeff","actsAs":"jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\n200\n'; fi; exit 0 ;; esac   # #4412: who is signed in
-case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then printf 'upstream down\n'; else printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}\n'; fi; exit 0 ;; esac
+case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then printf 'upstream down\n'; elif [ -f "$T/roles-door.json" ]; then cat "$T/roles-door.json"; else printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}\n'; fi; exit 0 ;; esac
 case "\${@: -1}" in */v1/identity/principals\?*) acct=jeff-fixture-account; [ -f "$T/jeff-at-terminal" ] && acct=\$USER; printf '{"data":[{"name":"jeff","principalKind":"person","hostAccount":"%s"},{"name":"wren","principalKind":"agent","hostAccount":"%s"}]}\n' "\$acct" "\$USER"; exit 0 ;; esac   # #4412: who is at this terminal
-case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade) printf '{"data":{"principalKind":"agent"}}\n200\n' ;; jeff) printf '{"data":{"principalKind":"person"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
+case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade|borg-queen|abby-normal) printf '{"data":{"principalKind":"agent","hostAccount":"chorus-%s"}}\n200\n' "\$pn" ;; jeff) printf '{"data":{"principalKind":"person","hostAccount":"jeffbridwell"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
+case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
 if [ -n "\$m" ]; then
@@ -98,6 +107,8 @@ EOS
   printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
   chmod +x "$T/bin/"*
   for r in wren kade silas; do mk_token "$r"; mkdir -p "$T/identity/$r"; done
+  # #4845 — every Claude role home carries its MCP config, as the repo's do
+  for r in wren kade silas; do printf '{"mcpServers":{"chorus-api":{"command":"chorus-runner","args":["stdio"]}}}\n' > "$T/roles/$r/.mcp.json"; done
   printf '' > "$T/spine-read.log"
 }
 

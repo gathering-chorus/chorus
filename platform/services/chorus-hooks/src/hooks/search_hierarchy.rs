@@ -494,7 +494,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input, &state).await;
         assert!(r.stdout.is_none());
@@ -515,7 +515,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input, &state).await;
         assert!(r.stdout.is_none());
@@ -555,7 +555,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some(role.to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
 
         let r = check(&input, &state).await;

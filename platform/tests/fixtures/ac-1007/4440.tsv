@@ -1,2 +1,0 @@
-?ac	?statement	?kind	?target	?expect
-<https://jeffbridwell.com/chorus#ac-4440-1>	"the 03:00 nightly records npm (mcp-server) test results"	"sparql"	"PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH ?g { ?r a chorus:TestResult ; chorus:filePath ?f ; chorus:runTs ?t . FILTER(STRSTARTS(STR(?f),\"platform/mcp-server\") && CONTAINS(STR(?t),\"T03:\")) } }"	"true"

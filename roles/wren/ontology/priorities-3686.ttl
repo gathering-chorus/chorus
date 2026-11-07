@@ -112,7 +112,11 @@ chorus:RoleShape a sh:NodeShape ;
   sh:property [ sh:path chorus:roleKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^(agent|human|automation)$" ] ;
   sh:property [ sh:path chorus:rolePriority ; sh:maxCount 1 ; sh:datatype xsd:integer ;
-                chorus:uniqueGlobal true ] .
+                chorus:uniqueGlobal true ] ;
+  # #4695 — RoleShape allows hasProperty (→ Property), described.
+  sh:property [ sh:path chorus:hasProperty ; sh:minCount 0 ; sh:class chorus:Property ;
+                sh:name "has property" ;
+                sh:description "Optional Property attachments (e.g. word caps)." ] .
 
 chorus:roleKind a owl:DatatypeProperty ;
     rdfs:domain chorus:Role ;

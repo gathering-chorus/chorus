@@ -18,6 +18,8 @@ env:
 handler_on:
   failure:
     command: "${CHORUS_HOME}/platform/scripts/pair red ${CARD} ${ROLE} ${NAVIGATOR} ${DAG_RUN_ID}"
+  exit:
+    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'
 steps:
   - name: skill-pair-start
     description: "pair start: a WIP card, the pair file from its AC, the navigator told"
@@ -42,18 +44,11 @@ steps:
     description: "the green came from the navigator"
     depends: [skill-pair-green]
     command: "${CHORUS_HOME}/platform/scripts/pair check ${CARD} ${NAVIGATOR} ${skill_pair_green.outputs.by} ${skill_pair_green.outputs.decision}"
-  - name: skill-pair-local-proof
-    description: "local proof: the tests on the werk, scope diff"
+  - name: skill-pair-handoff
+    description: "pair hands off: cicd has the card; the pair stays open until it is proven in prod (#4752)"
     depends: [skill-pair-check]
-    action: dag.run
-    with:
-      dag: cicd-test
-      params: "CARD=${CARD} ROLE=${ROLE} TRACE=${CHORUS_TRACE_ID} SCOPE=diff"
+    command: "${CHORUS_HOME}/platform/scripts/pair handoff ${CARD} ${ROLE} ${NAVIGATOR}"
   - name: skill-pair-hand-off
     description: "hand off: one cicd run"
-    depends: [skill-pair-local-proof]
-    command: "env -u CHORUS_ROLE -u ROLE dagu --config ${CHORUS_HOME}/platform/config/dagu.yaml enqueue cicd -- CARD=${CARD} ROLE=${ROLE}"
-  - name: skill-pair-end
-    description: "pair end: the For-Jeff summary, deregister"
-    depends: [skill-pair-hand-off]
-    command: "${CHORUS_HOME}/platform/scripts/pair end ${CARD} ${ROLE} ${NAVIGATOR}"
+    depends: [skill-pair-handoff]
+    command: "env -u CHORUS_ROLE ${CHORUS_HOME}/platform/scripts/pipeline-start handoff ${CARD} ${ROLE}"

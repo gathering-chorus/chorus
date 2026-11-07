@@ -1,0 +1,1 @@
+fn main() { let s = std::fs::read_to_string(std::env::args().nth(1).unwrap()).unwrap(); let sk = secp256k1::SecretKey::from_slice(&hex::decode(s.trim()).unwrap()).unwrap(); println!("{}", hex::encode(sk.x_only_public_key(secp256k1::SECP256K1).0.serialize())); }

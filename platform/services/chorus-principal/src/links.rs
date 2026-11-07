@@ -128,3 +128,11 @@ pub fn sign_in_choice_refusal(links_json: &str, person: &str) -> Option<String> 
         }
     }
 }
+
+/// #4686 — the WebID an agent's half-made pod links on the service account:
+/// the one link whose pod name is exactly `name`. A rollback that cannot delete
+/// a pod (step 3c on borg-queen, 10-21 18:08) leaves it linked here, and this is
+/// the proof the tool made it. None: no link names it, so nothing is resumed.
+pub fn half_made_webid(links_json: &str, name: &str) -> Option<String> {
+    webid_links(links_json).into_iter().map(|(w, _)| w).find(|w| webid_name(w) == Some(name))
+}

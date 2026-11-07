@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4645)
 //! Accept Gate (#1657, #1671, #2864)
 //!
 //! PreToolUse hook on Skill tool when skill="acp".
@@ -343,7 +344,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -367,7 +368,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            card_type: None,
+            card_type: None, entrypoint: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input).await;
         assert_eq!(r.exit_code, 0);

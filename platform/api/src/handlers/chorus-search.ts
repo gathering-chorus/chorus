@@ -21,7 +21,7 @@
  * The injection is fine for one or two consumers; don't propagate further.
  */
 import type Database from 'better-sqlite3';
-import { toFtsMatchQuery, runFtsQueryOnDb } from '../lib/fts-query';
+import { toFtsMatchQuery, runFtsQueryOnDb, type FtsFilterOptions } from '../lib/fts-query';
 
 export type SemanticSearchFn = (
   query: string,
@@ -64,7 +64,14 @@ export interface SearchDeps {
    * async fn (the worker_threads pool). Absent → falls back to the in-process sync
    * query (runFtsQueryOnDb); tests inject neither and stay sync + fast.
    */
-  ftsSearch?: (q: string, fetchLimit: number, role: string | undefined, mode: string) => Promise<unknown[]>;
+  ftsSearch?: (
+    q: string,
+    fetchLimit: number,
+    role: string | undefined,
+    mode: string,
+    channel?: string,
+    opts?: FtsFilterOptions,
+  ) => Promise<unknown[]>;
   now?: () => number;
 }
 
@@ -73,6 +80,15 @@ export interface SearchInput {
   limit?: string;
   role?: string;
   mode?: string;
+  channel?: string;
+  order?: string;
+  before?: string;
+  until?: string;
+  to?: string;
+  after?: string;
+  since?: string;
+  from?: string;
+  offset?: string;
 }
 
 export interface SearchResult {
@@ -148,17 +164,43 @@ async function tryHybridMode(
   } catch { return null; }
 }
 
+function resolveSearchMode(modeRaw: string | undefined, order: string | undefined): string {
+  if (modeRaw) return modeRaw.toLowerCase();
+  return order === 'recent' ? 'recency' : 'fts';
+}
+
+function buildFilterFields(
+  role: string | undefined,
+  channel: string | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (role) out.role_filter = role;
+  if (channel) out.channel_filter = channel;
+  return out;
+}
+
+function buildFilterOpts(input: SearchInput): FtsFilterOptions {
+  const before = input.before || input.until || input.to;
+  const after = input.after || input.since || input.from;
+  const parsedOffset = input.offset ? parseInt(input.offset, 10) : 0;
+  const offset = parsedOffset > 0 ? parsedOffset : 0;
+  return { order: input.order, before, after, offset };
+}
+
 export async function fetchSearch(
   deps: SearchDeps,
-  { q, limit: limitRaw, role, mode: modeRaw }: SearchInput,
+  input: SearchInput,
 ): Promise<SearchResult> {
-  if (!q) return { status: 400, body: { error: 'Missing required parameter: q' } };
+  const { q: rawQ, limit: limitRaw, role, mode: modeRaw, channel, order } = input;
+  if (!rawQ && !channel) return { status: 400, body: { error: 'Missing required parameter: q' } };
+  const q = rawQ ?? '';
 
   const { db, emitSearchEvent = () => {}, buildSearchMeta, enrichHit, resolveSearchLimit, now = Date.now } = deps;
   const { limit, explicit: limitExplicit } = resolveSearchLimit(limitRaw);
-  const mode = (modeRaw || 'fts').toLowerCase();
+  const mode = resolveSearchMode(modeRaw, order);
   const searchStart = now();
   const fetchLimit = limit + 1;
+  const filterOpts = buildFilterOpts(input);
 
   const format: FormatFn = (rawResults, resolvedMode, includeDb, extra = {}) => {
     const truncated = rawResults.length > limit;
@@ -172,9 +214,10 @@ export async function fetchSearch(
 
   let ftsMs = 0; // #3051 AC4: per-request FTS time, so the next stall is attributable
   const emit: EmitFn = (m, count, extra = {}) => emitSearchEvent({
-    system: 'chorus-api', query: q.slice(0, 200), mode: m,
+    system: 'chorus-api', query: (q || `channel:${channel}`).slice(0, 200), mode: m,
     result_count: count, duration_ms: now() - searchStart, fts_ms: ftsMs,
-    ...(role ? { role_filter: role } : {}), ...extra,
+    ...buildFilterFields(role, channel),
+    ...extra,
   });
 
   if (mode === 'semantic') {
@@ -183,8 +226,8 @@ export async function fetchSearch(
 
   const ftsStart = now();
   const ftsResults = deps.ftsSearch
-    ? await deps.ftsSearch(q, fetchLimit, role, mode)
-    : runFtsQueryOnDb(db, q, fetchLimit, role, mode);
+    ? await deps.ftsSearch(q, fetchLimit, role, mode, channel, filterOpts)
+    : runFtsQueryOnDb(db, q, fetchLimit, role, mode, channel, filterOpts);
   ftsMs = now() - ftsStart;
 
   if (mode === 'unified') {

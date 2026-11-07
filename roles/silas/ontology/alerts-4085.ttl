@@ -68,9 +68,16 @@ chorus:AlertShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:domains:alerts" ;
     sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:alertSource ; sh:minCount 1 ; sh:in ( "grafana" "script" ) ] ;
-    sh:property [ sh:path chorus:alertFile   ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    # #4671 — a named node, optional: a Grafana-sourced row has no yml. The old
+    # minCount-1 blank node is deleted by path once (scripts/alertfile-optional-4671.sh);
+    # athena-validate alert-without-provenance keeps "script needs a file" and
+    # "a file or a rule uid" (the door has no sh:or).
+    sh:property chorus:AlertShape-alertFile ;
     sh:property [ sh:path chorus:alertRoute  ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] .
+
+chorus:AlertShape-alertFile a sh:PropertyShape ;
+    sh:path chorus:alertFile ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string .
 
 # ---------------------------------------------------------------------------
 # 3. The two domain rows that replace alerts-monitors.

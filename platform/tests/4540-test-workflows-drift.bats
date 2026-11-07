@@ -1,14 +1,14 @@
 #!/usr/bin/env bats
 # @test-type: fitness — generated-file drift, no live service
 # @domain: pipelines — the test child and the nightly are generated from their rows (#4540)
-# What Jeff sees: platform/pipelines/cicd-test.yaml, nightly.yaml, pair.yaml (#4577) and demo.yaml (#4502) are exactly
+# What Jeff sees: platform/pipelines/cicd-test.yaml, nightly.yaml, pair.yaml (#4577), demo.yaml (#4502) and card.yaml (#4654) are exactly
 # what chorus-make writes from their rows; a hand edit is caught before it lands,
 # and dagu itself loads both.
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   F="$ROOT/platform/services/chorus-make/tests/fixtures"
-  KNOWN=cicd,cicd-test,nightly,athena,pair,demo
+  KNOWN=cicd,cicd-test,nightly,athena,pair,demo,card
   CM="$BATS_TEST_TMPDIR/target/debug/chorus-make"
   CARGO_TARGET_DIR="$BATS_TEST_TMPDIR/target" cargo build -q \
     --manifest-path "$ROOT/platform/services/chorus-make/Cargo.toml" >/dev/null
@@ -22,8 +22,14 @@ setup() {
   # #4577 — the pair pipeline
   run "$CM" check-straight pair "$F/pair-rows.tsv" "$F/pair-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/pair.yaml"
   [ "$status" -eq 0 ]
+  # #4789 — the mob pipeline (one driver, every other role verifies)
+  run "$CM" check-straight mob "$F/mob-rows.tsv" "$F/mob-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/mob.yaml"
+  [ "$status" -eq 0 ]
   # #4502 — the demo, its own pipeline that cicd calls as one step (Jeff 10-12 21:18)
   run "$CM" check-straight demo "$F/demo-rows.tsv" "$F/demo-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/demo.yaml"
+  [ "$status" -eq 0 ]
+  # #4654 — a card's pull and its coding, ahead of athena or cicd
+  run "$CM" check-straight card "$F/card-rows.tsv" "$F/card-pipe.tsv" "$KNOWN" "$ROOT/platform/pipelines/card.yaml"
   [ "$status" -eq 0 ]
   # #4578 — athena builds the card's tools first and releases staging last
   run "$CM" check athena "$F/athena-rows.tsv" "$ROOT/platform/pipelines/athena.yaml"
@@ -37,6 +43,13 @@ setup() {
   [ "$status" -eq 1 ]
 }
 
+@test "negative proof (#4789): a mob whose verdict a hand edit gave to the driver is drift" {
+  sed 's/(${NAVIGATORS} answers)/(${ROLE} answers)/' "$ROOT/platform/pipelines/mob.yaml" > "$BATS_TEST_TMPDIR/mob.yaml"
+  ! cmp -s "$ROOT/platform/pipelines/mob.yaml" "$BATS_TEST_TMPDIR/mob.yaml" || return 1
+  run "$CM" check-straight mob "$F/mob-rows.tsv" "$F/mob-pipe.tsv" "$KNOWN" "$BATS_TEST_TMPDIR/mob.yaml"
+  [ "$status" -ne 0 ]
+}
+
 @test "negative proof: a pair whose green a hand edit gave to the driver is drift" {
   sed 's/(${NAVIGATOR} answers)/(${ROLE} answers)/' "$ROOT/platform/pipelines/pair.yaml" > "$BATS_TEST_TMPDIR/pair.yaml"
   ! cmp -s "$ROOT/platform/pipelines/pair.yaml" "$BATS_TEST_TMPDIR/pair.yaml" || return 1
@@ -44,8 +57,15 @@ setup() {
   [ "$status" -eq 1 ]
 }
 
+@test "negative proof: a card whose done a hand edit gave to Jeff is drift (#4654)" {
+  sed 's/(${ROLE} answers)/(jeff answers)/' "$ROOT/platform/pipelines/card.yaml" > "$BATS_TEST_TMPDIR/card.yaml"
+  ! cmp -s "$ROOT/platform/pipelines/card.yaml" "$BATS_TEST_TMPDIR/card.yaml" || return 1
+  run "$CM" check-straight card "$F/card-rows.tsv" "$F/card-pipe.tsv" "$KNOWN" "$BATS_TEST_TMPDIR/card.yaml"
+  [ "$status" -eq 1 ]
+}
+
 @test "negative proof: a demo with a gate dropped by hand is drift (#4502)" {
-  grep -v 'skill-werk-demo-gate-ops' "$ROOT/platform/pipelines/demo.yaml" > "$BATS_TEST_TMPDIR/demo.yaml"
+  grep -v 'skill-werk-demo-gate-arch' "$ROOT/platform/pipelines/demo.yaml" > "$BATS_TEST_TMPDIR/demo.yaml"
   ! cmp -s "$ROOT/platform/pipelines/demo.yaml" "$BATS_TEST_TMPDIR/demo.yaml" || return 1
   run "$CM" check-straight demo "$F/demo-rows.tsv" "$F/demo-pipe.tsv" "$KNOWN" "$BATS_TEST_TMPDIR/demo.yaml"
   [ "$status" -eq 1 ]
@@ -60,8 +80,16 @@ setup() {
 
 @test "dagu itself validates both" {
   command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
-  for f in cicd-test nightly pair demo cicd; do
+  for f in cicd-test nightly pair demo cicd card mob; do
     run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu validate "$ROOT/platform/pipelines/$f.yaml"
     [ "$status" -eq 0 ] || { echo "$f: $output"; return 1; }
   done
+}
+
+@test "clearing-plan.yaml and clearing-evaluate.yaml match what chorus-make generates (#4682)" {
+  KNOWN_CLEARING="$KNOWN,clearing-plan,clearing-evaluate"
+  run "$CM" check-straight clearing-plan "$F/clearing-plan-rows.tsv" "$F/clearing-plan-pipe.tsv" "$KNOWN_CLEARING" "$ROOT/platform/pipelines/clearing-plan.yaml"
+  [ "$status" -eq 0 ]
+  run "$CM" check-straight clearing-evaluate "$F/clearing-evaluate-rows.tsv" "$F/clearing-evaluate-pipe.tsv" "$KNOWN_CLEARING" "$ROOT/platform/pipelines/clearing-evaluate.yaml"
+  [ "$status" -eq 0 ]
 }

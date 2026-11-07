@@ -1,3 +1,4 @@
+// @domain: identity — the product domain this service guards (#4538)
 //! chorus-principal <verb> <role> — the session lifecycle (was chorus-awake, #4184; folded in by #4345).
 //!
 //! Jeff, 2026-09-16: "i feel like i need a standard script to start each of u
@@ -41,6 +42,7 @@ pub mod lifecycle;
 pub mod rows;
 pub mod msgs;
 pub mod links;
+pub mod onboarding;
 
 use serde_json::Value;
 use std::env;
@@ -53,7 +55,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// Refuses loudly when the door does not answer; never falls back to three.
 fn agent_roles(ctx: &Ctx) -> Result<Vec<String>, String> {
     let url = format!("{}/v1/roles/roles?limit=500", ctx.api);
-    let body = sh(&ctx.curl, &["-s", "--max-time", "10", &url]).map_err(|e| format!("could not read {}: {}", url, e.trim()))?;
+    let body = door(ctx, &["-s", "--max-time", "10", &url]).map_err(|e| format!("could not read {}: {}", url, e.trim()))?;
     rows::agent_roles(&body).map_err(|e| format!("{} ({})", e, url))
 }
 
@@ -417,6 +419,17 @@ fn alive(ps: &str, pid: u64) -> bool {
     Command::new(ps).arg("-p").arg(pid.to_string()).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
+/// #4851 — the runtime is still running after AWAKE_SETTLE seconds (default 5),
+/// checked once a second; Err names when it went away.
+fn settled(ctx: &Ctx, pid: u64) -> Result<(), String> {
+    let secs: u64 = envd("AWAKE_SETTLE", "5").parse().unwrap_or(5);
+    for i in 0..=secs {
+        if !alive(&ctx.ps, pid) { return Err(format!("exited within {}s", i.max(1))); }
+        if i < secs { std::thread::sleep(Duration::from_secs(1)); }
+    }
+    Ok(())
+}
+
 fn live_entries(sessions_dir: &Path, role: &str, ps: &str) -> Vec<Live> {
     let mut out = Vec::new();
     if let Ok(rd) = fs::read_dir(sessions_dir) {
@@ -432,9 +445,78 @@ fn live_entries(sessions_dir: &Path, role: &str, ps: &str) -> Vec<Live> {
     out
 }
 
+/// #4845 AC3 — every door call a login makes carries its trace: the door logs
+/// x-chorus-trace-id as the request's trace (athena-make effective_trace).
+fn door(ctx: &Ctx, args: &[&str]) -> Result<String, String> {
+    let hdr = env::var("CHORUS_TRACE_ID").ok().filter(|t| !t.is_empty()).map(|t| format!("x-chorus-trace-id: {}", t));
+    let mut a: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    if let Some(h) = hdr.as_deref() { a.push("-H"); a.push(h); }
+    a.extend_from_slice(args);
+    sh(&ctx.curl, &a)
+}
+
 fn sh(bin: &str, args: &[&str]) -> Result<String, String> {
     let o = Command::new(bin).args(args).output().map_err(|e| format!("{} {}: {}", bin, args.join(" "), e))?;
     if o.status.success() { Ok(String::from_utf8_lossy(&o.stdout).to_string()) } else { Err(String::from_utf8_lossy(&o.stderr).chars().take(200).collect()) }
+}
+
+/// #4813 — the tmux argv that starts `launch` as the pane's own process, never as
+/// keystrokes. On 10-30 a message typed into BQ's pane mid-launch left the shell at
+/// `dquote>`, and every retry's send-keys line was swallowed as more of that
+/// unfinished command. A fresh session runs it directly; an existing pane is
+/// respawned (-k ends whatever stuck shell is there). remain-on-exit is set
+/// BEFORE the launch runs, so a launch that dies at once still leaves its last
+/// lines readable (AC3); setting it after lost that race. One tmux call, run in order.
+pub fn start_in_pane_args(session: &str, dir: &str, launch: &str, exists: bool) -> Vec<String> {
+    let s = |x: &str| x.to_string();
+    let mut a: Vec<String> = Vec::new();
+    if !exists {
+        // a placeholder process holds the pane until the respawn below replaces it
+        a.extend([s("new-session"), s("-d"), s("-s"), s(session), s("-c"), s(dir), s("sleep"), s("600"), s(";")]);
+    }
+    a.extend([s("set-option"), s("-t"), s(session), s("remain-on-exit"), s("on"), s(";")]);
+    a.extend([s("respawn-pane"), s("-k"), s("-t"), s(session), s("-c"), s(dir), s("bash"), s("-lc"), s(launch)]);
+    a
+}
+
+/// Start the role's runtime in its pane (#4813). Refuses to respawn over a live
+/// registry entry: a respawn kills the pane's process, and that must never be a
+/// running role.
+fn start_in_pane(ctx: &Ctx, role: &str, dir: &str, launch: &str) -> Result<(), (i32, String)> {
+    let session = Ctx::tmux_session(role);
+    let mut exists = ctx.has_tmux(role);
+    if exists && !live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() {
+        return Err((1, format!("{} has a live session in {}; not respawning over it", role, session)));
+    }
+    // #4845 — a session with nothing live in it is left from an earlier run (10-31:
+    // panes from 10-28 came back after the crash); end it and start a fresh one
+    if exists {
+        let _ = sh(&ctx.tmux, &["kill-session", "-t", &session]);
+        exists = false;
+    }
+    let args = start_in_pane_args(&session, dir, launch, exists);
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    sh(&ctx.tmux, &refs).map(|_| ()).map_err(|e| (1, format!("tmux could not start {}: {}", role, e.trim())))
+}
+
+/// #4813 AC3 — the pane's last lines, for a launch that did not start.
+fn pane_tail(ctx: &Ctx, role: &str) -> String {
+    let out = sh(&ctx.tmux, &["capture-pane", "-p", "-S", "-20", "-t", &Ctx::tmux_session(role)]).unwrap_or_default();
+    pane_tail_summary(&out)
+}
+
+/// The last non-empty lines of a pane capture, joined for one stderr line.
+pub fn pane_tail_summary(capture: &str) -> String {
+    let lines: Vec<&str> = capture.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect();
+    let tail = &lines[lines.len().saturating_sub(5)..];
+    if tail.is_empty() { "the pane printed nothing".into() } else { tail.join(" | ") }
+}
+
+/// #4845 AC3 — one login's trace: the verb, who, and when (ms + pid keep two
+/// logins in the same millisecond apart). Pure.
+pub fn login_trace(verb: &str, role: Option<&str>, ms: u128, pid: u32) -> String {
+    let who = role.filter(|r| !r.starts_with('-')).unwrap_or("all");
+    format!("login-{}-{}-{}-{}", verb, who, ms, pid)
 }
 
 fn now_ms() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) }
@@ -555,6 +637,26 @@ fn wait_for_services(ctx: &Ctx, bound: u64, show: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// #4786 AC3 — the Mac account the role runs as: read from the principal's
+/// own hostAccount at the identity door. Missing or unbound is refused loudly.
+fn role_host_account(ctx: &Ctx, role: &str) -> Result<String, String> {
+    let url = format!("{}/v1/identity/principals/{}", ctx.api, role);
+    let ans = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url])
+        .map_err(|e| format!("curl {url} failed: {e}"))?;
+    let (body, code) = ans.trim_end().rsplit_once('\n').unwrap_or(("", ans.trim()));
+    if code.trim() != "200" {
+        return Err(format!("identity API answered HTTP {} for principal {role}", code.trim()));
+    }
+    let row: Value = serde_json::from_str(body)
+        .map_err(|e| format!("invalid JSON from {url}: {e}"))?;
+    let acct = row.get("data")
+        .and_then(|d| d.get("hostAccount"))
+        .and_then(|h| h.as_str())
+        .filter(|h| !h.trim().is_empty())
+        .ok_or_else(|| format!("principal {role} has no hostAccount bound in the identity door"))?;
+    Ok(acct.to_string())
+}
+
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
 /// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
@@ -587,7 +689,13 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         },
     };
     let token = token.unwrap_or_default();
-    let host_account = envd("USER", "unknown");
+    let host_account = match role_host_account(ctx, role) {
+        Ok(a) => a,
+        Err(why) => {
+            eprintln!("chorus-principal: REFUSED — {} for {}; nothing was started.", why, role);
+            return Err(());
+        }
+    };
     let start_id = format!("{:x}", now_ms());
     let (session_name, body) = session_row(role, &login, &host_account, &start_id);
     // #4328 — the row says which role it acts as and when it started
@@ -607,7 +715,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let url = format!("{}/v1/identity/sessions", ctx.api);
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
-    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
+    let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
     let _ = fs::remove_file(&hdr);
     let (reply, code) = match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (b.to_string(), c.trim().to_string()), None => (String::new(), answer.trim().to_string()) };
     // #4295 — the stored name is the one the API hands back, not the one sent
@@ -615,7 +723,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     // #4215 — a 409 on a per-start name means something real: ask WHOSE row it is.
     if code == "409" {
         let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
-        let existing = sh(&ctx.curl, &["-s", "--max-time", "10", &get]).unwrap_or_default();
+        let existing = door(ctx, &["-s", "--max-time", "10", &get]).unwrap_or_default();
         let mine = format!("principal-{}", role);
         if existing.contains(&mine) {
             eprintln!("chorus-principal: session {} already open and owned by {} — reusing it", session_name, mine);
@@ -665,12 +773,12 @@ const CLEARING_SIGN_IN: &str = "https://clearing.lightlifeurbangardens.com";
 /// is a refusal too: nobody can be shown to be present.
 fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     let url = format!("{}/v1/identity/sessions?channel=browser&limit=1000", ctx.api);
-    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
+    let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
     let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
     if code.trim() != "200" { return Err(format!("could not read who is signed in (chorus-api answered {}).\n  fix: agent-state.sh restart chorus-api, then sign in at {}", code.trim(), CLEARING_SIGN_IN)); }
     for who in rows::signed_in_owners(body, &iso_utc(now_ms() as u64 / 1000)) {
         let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
-        let pa = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
+        let pa = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
         if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
     }
     // #4412 — Jeff 2026-10-01: "both use cases are valid". A person typing in
@@ -695,7 +803,7 @@ fn person_at_terminal(ctx: &Ctx) -> Option<String> {
     let user = env::var("USER").ok().filter(|u| !u.is_empty())
         .or_else(|| sh("id", &["-un"]).ok().map(|u| u.trim().to_string()))?;
     let url = format!("{}/v1/identity/principals?limit=1000", ctx.api);
-    let body = sh(&ctx.curl, &["-s", "--max-time", "5", &url]).unwrap_or_default();
+    let body = door(ctx, &["-s", "--max-time", "5", &url]).unwrap_or_default();
     rows::person_for_account(&body, &user)
 }
 
@@ -775,6 +883,61 @@ fn attach_to(ctx: &Ctx, role: &str) {
     else { let _ = Command::new(&ctx.tmux).args(["attach", "-t", &s]).status(); }
 }
 
+/// #4777 — the inner command run inside `sudo -n -u <acct> -H bash -c` when a
+/// principal runs as its own Mac account (#4383). Exports `CHORUS_SESSIONS_DIR`
+/// so `SessionStart` registers `<role>-<pid>.json` in the shared sessions
+/// directory read by `chorus-principal` and `nudge-health-check.sh`, and reads
+/// `CLAUDE_CODE_OAUTH_TOKEN` from `~/.chorus/secrets/claude.key` when present
+/// so `claude` never touches macOS Keychain.
+pub fn own_account_inner_cmd(
+    role_dir: &str,
+    root: &str,
+    own_dir: &str,
+    own_token: &str,
+    sessions_dir: &str,
+    role: &str,
+    cmd: &str,
+) -> String {
+    format!(
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && {}",
+        role_dir, root, own_dir, own_token, sessions_dir, role, cmd
+    )
+}
+
+/// #4784 — Resolve a role's own project memory directory (`-roles-<role>/memory`),
+/// refusing any path that does not end with `/roles/<role>` or contains `..`.
+pub fn role_memory_source_dir(home: &str, role_dir: &str, role: &str) -> Option<PathBuf> {
+    let trimmed = role_dir.trim_end_matches('/');
+    if role.is_empty()
+        || trimmed.contains("..")
+        || !trimmed.ends_with(&format!("/roles/{role}"))
+    {
+        return None;
+    }
+    Some(projects_dir_for(home, trimmed).join("memory"))
+}
+
+/// #4784 — The memory directories handed to `<role>`'s macOS account on login:
+/// (1) the shared chorus memory set (`<root>/memory`, e.g. `-Users-jeffbridwell-CascadeProjects-chorus/memory`)
+/// and (2) the role's own project memory dir (`-roles-<role>/memory`), while
+/// refusing any other role's directory (`-roles-<other>/memory`).
+pub fn role_memory_handoff_dirs(
+    home: &str,
+    root: &str,
+    role_dir: &str,
+    role: &str,
+) -> Option<Vec<(PathBuf, String)>> {
+    let own_mem = role_memory_source_dir(home, role_dir, role)?;
+    let clean_root = root.trim_end_matches('/');
+    if clean_root.is_empty() || clean_root.contains("..") {
+        return None;
+    }
+    let shared_mem = projects_dir_for(home, clean_root).join("memory");
+    let shared_slug = clean_root.replace('/', "-");
+    let own_slug = role_dir.trim_end_matches('/').replace('/', "-");
+    Some(vec![(shared_mem, shared_slug), (own_mem, own_slug)])
+}
+
 /// `on <role>`: start it logged in, or, when it is already running, make sure
 /// THIS session is logged in and go to its window. Never a second copy.
 /// The shell line that starts `cmd` in the role's pane, as the role's own
@@ -789,7 +952,8 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
             // the principal's identity lives in its own home: its credentials
             // (and current token) are handed over at login, readable by it alone,
             // and every mint and renewal from then on happens as that account
-            let own_dir = format!("{}/{}/.chorus/identity", envd("AWAKE_ACCOUNT_HOMES", "/Users"), acct);
+            let homes = envd("AWAKE_ACCOUNT_HOMES", "/Users");
+            let own_dir = format!("{}/{}/.chorus/identity", homes, acct);
             let own = format!("{}/{}/token.cache", own_dir, role);
             for f in ["cred.json", "nostr.json", "token.cache"] {
                 let Ok(bytes) = fs::read(PathBuf::from(&ctx.identity_dir).join(role).join(f)) else { continue };
@@ -802,7 +966,41 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
                     return Err((1, format!("could not hand {} its {}", acct, f)));
                 }
             }
-            let inner = format!("umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, own_dir, own, role, cmd);
+            // #4784 — hand the shared chorus memory set and the role's own memory/
+            // folder into the role account's ~/.claude/projects/<slug>/memory/
+            // (0700, non-clobbering via tar -k) so Claude auto-memory works.
+            if let Some(mem_dirs) = role_memory_handoff_dirs(&ctx.home, &ctx.root, role_dir, role) {
+                for (src_mem, slug) in mem_dirs {
+                    if !src_mem.is_dir() {
+                        continue;
+                    }
+                    let Ok(tar_out) = Command::new("tar")
+                        .args(["-cf", "-", "-C", &src_mem.to_string_lossy(), "."])
+                        .output()
+                    else {
+                        continue;
+                    };
+                    if !tar_out.status.success() || tar_out.stdout.is_empty() {
+                        continue;
+                    }
+                    let dest_mem = format!("{}/{}/.claude/projects/{}/memory", homes, acct, slug);
+                    let unpack = format!(
+                        "umask 077 && mkdir -p '{}' && tar -xkf - -C '{}' 2>/dev/null || true",
+                        dest_mem, dest_mem
+                    );
+                    if let Ok(mut child) = Command::new(&ctx.sudo)
+                        .args(["-n", "-u", acct, "-H", "sh", "-c", &unpack])
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                    {
+                        if let Some(mut i) = child.stdin.take() {
+                            let _ = std::io::Write::write_all(&mut i, &tar_out.stdout);
+                        }
+                        let _ = child.wait();
+                    }
+                }
+            }
+            let inner = own_account_inner_cmd(role_dir, &ctx.root, &own_dir, &own, &ctx.sessions_dir.to_string_lossy(), role, cmd);
             format!("{} -n -u {} -H bash -c \"{}\"", ctx.sudo, acct, inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$"))
         }
     };
@@ -863,6 +1061,12 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         eprintln!("  a pid and a registry entry are not an answer; ending it so a fresh conversation can start.");
         let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
         let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+    }
+
+    // #4845 AC2 — a Claude role is launched with its MCP servers or not at all, named
+    if let Err(why) = rows::mcp_config_ok(Path::new(&role_dir)) {
+        eprintln!("chorus-principal: {} NOT started — {}", role, why);
+        return Err((1, why));
     }
 
     // 2/7 — the real conversation (#4215: an unreadable list continues, never refuses).
@@ -930,10 +1134,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         let _ = Command::new("bash").arg("-c").arg(&launch).status();
         return Ok(came_of(&st));
     }
-    if !ctx.has_tmux(role) {
-        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { eprintln!("chorus-principal: tmux new-session failed: {}", e); return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
-    }
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { eprintln!("chorus-principal: tmux send-keys failed: {}", e); return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    if let Err(e) = start_in_pane(ctx, role, &role_dir, &launch) { eprintln!("chorus-principal: {}", e.1); return Err(e); }
 
     // 3 — prove it: wait for a live tmux-hosted registry entry.
     let mut found: Option<Live> = None;
@@ -948,7 +1149,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     // proof: its claude process, tty and pane id are written as the entry.
     let found = found.or_else(|| register_from_pane(ctx, role, rows::PaneRuntime::Claude));
     let Some(l) = found else {
-        eprintln!("awake: {}  registered NO after {}s  via {} — look at the pane: {} attach -t {}", role, ctx.wait, how, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  registered NO after {}s  via {} — the pane says: {} — look: {} attach -t {}", role, ctx.wait, how, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("did not register in {}s", ctx.wait)));
     };
     // #4337 — a process carrying another role's env is not this role logged in
@@ -1009,7 +1210,7 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
     let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut enrolled = false;
     for i in 0..=ctx.wait {
         // #4432 — ask the supervisor of the account the agent runs as (Abby's
@@ -1024,7 +1225,7 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     }
     if !enrolled {
         end_run(ctx, role, "agent-not-enrolled");
-        eprintln!("awake: {}  agent run {} NOT enrolled after {}s — look at the pane: {} attach -t {}", role, run, ctx.wait, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  agent run {} NOT enrolled after {}s — the pane says: {} — look: {} attach -t {}", role, run, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("agent run {} did not enroll", run)));
     }
     ctx.spine(&["session.agent.enrolled", role, &format!("run={}", run)]);
@@ -1071,7 +1272,7 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
     let allow_rules = envd("CHORUS_ALLOW_RULES_FILE", &format!("{}/.claude/settings.json", ctx.home));
     let cmd = rows::gemini_pane_cmd(&agent_bin, &gemini_bin, &allow_rules, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
     let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut found: Option<Live> = None;
     for i in 0..=ctx.wait {
         found = register_from_pane(ctx, role, rows::PaneRuntime::Gemini);
@@ -1079,7 +1280,7 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
         std::thread::sleep(Duration::from_secs(1));
     }
     let Some(l) = found else {
-        eprintln!("awake: {}  gemini did not start in {}s — look at the pane: {} attach -t {}", role, ctx.wait, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  gemini did not start in {}s — the pane says: {} — look: {} attach -t {}", role, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("gemini did not start in {}s", ctx.wait)));
     };
     ctx.spine(&["session.gemini.started", role, &format!("run={}", run), &format!("pid={}", l.pid)]);
@@ -1124,7 +1325,7 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
     let hooks_run_dir = envd("CHORUS_HOOKS_RUN_DIR", &format!("{}/.chorus/run-agents", ctx.home));
     let cmd = rows::runtime_pane_cmd(row, runtime, &bin_dir, &hooks_run_dir, &run, &hooks, &mcp).map_err(|e| (1, e))?;
     let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    start_in_pane(ctx, role, &role_dir, &launch)?;
     let binary = row.get("runtimeBinary").and_then(|b| b.as_str()).unwrap_or("").to_string();
     let mut found: Option<Live> = None;
     for i in 0..=ctx.wait {
@@ -1133,9 +1334,16 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         std::thread::sleep(Duration::from_secs(1));
     }
     let Some(l) = found else {
-        eprintln!("awake: {}  {} did not start in {}s — look at the pane: {} attach -t {}", role, runtime, ctx.wait, ctx.tmux, tmux_session);
+        eprintln!("awake: {}  {} did not start in {}s — the pane says: {} — look: {} attach -t {}", role, runtime, ctx.wait, pane_tail(ctx, role), ctx.tmux, tmux_session);
         return Err((1, format!("{} did not start in {}s", runtime, ctx.wait)));
     };
+    // #4851 side fix (Jeff 11-01 18:17: BQ said "awake … logged in" then quit a
+    // second later, and nothing said why) — a runtime that dies in its first
+    // seconds is not a login: say so with the pane's last lines.
+    if let Err(why) = settled(ctx, l.pid) {
+        eprintln!("awake: {}  {} started (pid {}) then {} — the pane says: {} — look: {} attach -t {}", role, runtime, l.pid, why, pane_tail(ctx, role), ctx.tmux, tmux_session);
+        return Err((1, format!("{} exited right after starting", runtime)));
+    }
     ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
@@ -1161,13 +1369,34 @@ fn api_send(ctx: &Ctx, role: &str, route: &str, name: Option<&str>, body: &Value
     let (method, url) = match name { Some(n) => ("PUT", format!("{}/v1/{}/{}", ctx.api, route, n)), None => ("POST", format!("{}/v1/{}", ctx.api, route)) };
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
-    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", method, "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_default();
+    let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", method, "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_default();
     let _ = fs::remove_file(&hdr);
     match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (c.trim().to_string(), b.to_string()), None => (answer.trim().to_string(), String::new()) }
 }
 
 fn ok_code(c: &str) -> bool { matches!(c, "200" | "201" | "204") }
 fn row_path(ctx: &Ctx, role: &str, kind: &str) -> PathBuf { PathBuf::from(&ctx.identity_dir).join(role).join(format!("{}.row.json", kind)) }
+/// #4895 (code review) — the Presence as the door holds it now, for a write. Two accounts
+/// write it from their own cached copy (the role's turn as the role account; the sweep and
+/// `undelivered` as jeffbridwell), and a PUT sends the whole row: a stale copy put back
+/// would undo the other writer's pane or reachability. The fields another writer moves
+/// are taken from the door; an unreadable door writes nothing (never a guess).
+fn presence_now(ctx: &Ctx, role: &str) -> Option<Value> {
+    let cached = read_row(ctx, role, "presence")?;
+    let name = row_name(&cached);
+    let url = format!("{}/v1/identity/presences/{}", ctx.api, name);
+    let read = door(ctx, &["-sf", "--max-time", "3", &url])
+        .and_then(|b| serde_json::from_str::<Value>(&b).map_err(|e| format!("not JSON: {e}")))
+        .and_then(|v| v.get("data").cloned().ok_or_else(|| "no data".to_string()))
+        .and_then(|d| rows::with_door_presence(cached, &d).ok_or_else(|| "data is not a row".to_string()));
+    // code review (run 6): a write skipped because the door's row could not be read says so,
+    // as the PUT it replaces did (session.row.failed), never silently
+    read.map_err(|why| {
+        eprintln!("chorus-principal: {role}'s Presence {name} not written: the door's current row could not be read ({why})");
+        ctx.spine(&["presence.door.unread", role, &format!("presence={name}"), &format!("why={why}")]);
+    }).ok()
+}
+
 fn read_row(ctx: &Ctx, role: &str, kind: &str) -> Option<Value> { fs::read_to_string(row_path(ctx, role, kind)).ok().and_then(|t| serde_json::from_str(&t).ok()) }
 fn save_row(ctx: &Ctx, role: &str, kind: &str, v: &Value) { let _ = write_private(&row_path(ctx, role, kind), &v.to_string()); }
 fn row_name(v: &Value) -> String { v.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string() }
@@ -1199,14 +1428,24 @@ fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool 
 
 /// End the role's saved run (and its presence) if it is still live.
 fn end_run(ctx: &Ctx, role: &str, reason: &str) {
-    let Some(run) = read_row(ctx, role, "run") else { return };
-    if run.get("runEndedAt").and_then(|e| e.as_str()).map(|e| !e.is_empty()).unwrap_or(false) { return; }
-    if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
-        if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
-            ctx.spine(&["session.run.ended", role, &format!("run={}", row_name(&ended)), &format!("reason={}", reason)]);
+    if let Some(run) = read_row(ctx, role, "run") {
+        if run.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() {
+            if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
+                if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
+                    ctx.spine(&["session.run.ended", role, &format!("run={}", row_name(&ended)), &format!("reason={}", reason)]);
+                }
+            }
         }
     }
-    if let Some(p) = read_row(ctx, role, "presence").and_then(rows::gone_presence) { put_row(ctx, role, "identity/presences", "presence", &p); }
+    if let Some(p) = presence_now(ctx, role) {
+        if p.get("reachability").and_then(|r| r.as_str()) != Some("unreachable") {
+            if let Some(gone) = rows::gone_presence(p) {
+                if put_row(ctx, role, "identity/presences", "presence", &gone) {
+                    ctx.spine(&["session.presence.retired", role, &format!("presence={}", row_name(&gone)), &format!("reason={}", reason)]);
+                }
+            }
+        }
+    }
 }
 
 /// #4344 — the role's credential files as Credential rows. #4447: written by
@@ -1266,9 +1505,49 @@ fn ensure_conversation(ctx: &Ctx, role: &str, run: &str, conversation: &str) {
     ctx.spine(&["session.conversation.recorded", role, &format!("run={}", run), &format!("conversation={}", name)]);
 }
 
+/// #4745 — one role's run is recorded by one process at a time. Three hooks at
+/// one start each read "no live run" before any had saved one, and wrote three
+/// live runs in 600 ms (wren, 2026-10-25 15:21:51). A held lock older than
+/// `stale` is a dead holder's and is taken over. Each holder signs the lock
+/// with its own token and releases only a lock that still carries it, so a slow
+/// holder that was taken over never removes its successor's lock (Kade, #4745 review).
+pub struct RunLock { dir: PathBuf, token: String }
+impl Drop for RunLock {
+    fn drop(&mut self) {
+        let owner = self.dir.join("owner");
+        if fs::read_to_string(&owner).ok().as_deref() == Some(self.token.as_str()) {
+            let _ = fs::remove_file(&owner);
+            let _ = fs::remove_dir(&self.dir);
+        }
+    }
+}
+fn clear_lock(lock: &Path) { let _ = fs::remove_file(lock.join("owner")); let _ = fs::remove_dir(lock); }
+pub fn run_lock(dir: &Path, wait: Duration, stale: Duration) -> Option<RunLock> {
+    let _ = fs::create_dir_all(dir);
+    let lock = dir.join("run.lock");
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let token = format!("{}-{:x}-{}", std::process::id(), now_ms(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let until = std::time::Instant::now() + wait;
+    loop {
+        if fs::create_dir(&lock).is_ok() {
+            if fs::write(lock.join("owner"), &token).is_ok() { return Some(RunLock { dir: lock, token }); }
+            clear_lock(&lock);
+        }
+        let age = fs::metadata(&lock).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+        if age.map(|a| a > stale).unwrap_or(false) { clear_lock(&lock); continue; }
+        if std::time::Instant::now() >= until { return None; }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// A recorded login's run: the previous live run ends as a restart, then this
 /// run, its presence and its boot context are written.
 fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str) {
+    let dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let Some(_held) = run_lock(&dir, Duration::from_secs(20), Duration::from_secs(60)) else {
+        ctx.spine(&["session.row.failed", role, "kind=run", "why=another process is recording this role's run"]);
+        return;
+    };
     let previous = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r));
     if previous.is_some() { end_run(ctx, role, "restart"); }
     let started = iso_utc(now_ms() as u64 / 1000);
@@ -1276,7 +1555,14 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
     let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
     ensure_conversation(ctx, role, &run, conversation);
-    let host_account = envd("USER", "unknown");
+    let host_account = match role_host_account(ctx, role) {
+        Ok(a) => a,
+        Err(why) => {
+            eprintln!("chorus-principal: the presence row for {} was not written ({})", role, why);
+            ctx.spine(&["session.row.failed", role, "kind=presence", &format!("why={}", why)]);
+            return;
+        }
+    };
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
@@ -1291,7 +1577,7 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
 /// no longer an agent). An API that does not answer revokes nothing.
 fn revoked_now(ctx: &Ctx, role: &str) -> Option<String> {
     let url = format!("{}/v1/identity/principals/{}", ctx.api, role);
-    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "3", &url]).unwrap_or_default();
+    let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "3", &url]).unwrap_or_default();
     let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
     let code = code.trim();
     if code != "200" && code != "404" { return None; }
@@ -1313,6 +1599,10 @@ fn end_revoked(ctx: &Ctx, role: &str, why: &str) {
 fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    // #4895 (code review) — at the turn's end only the time is stamped: no revocation
+    // check (exit 2 on a Stop hook means "keep going", and its curl would sit on every
+    // turn end) and no second read of a prompt already handled when it arrived
+    if rows::is_turn_end(&input) { return stamp_seen(ctx, role, &rows::turn_facts(&input).0, "turn", false); }
     // #4385 — revocation bites on the next turn, not at the next login: the
     // turn is refused (exit 2 stops the prompt), and it says why once
     let marker = PathBuf::from(&ctx.identity_dir).join(role).join("revoked");
@@ -1333,13 +1623,19 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     // #4340 — keep what actually arrived, so the projector can tell a message
     // that landed cut from one that landed whole (pulse cannot see that)
     log_received(ctx, role, &input);
+    let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
+    stamp_seen(ctx, role, &conv, flag, delivered || jeff)
+}
+
+/// The rate-limited stamp both turn edges share: due → a detached `seen-write`.
+fn stamp_seen(ctx: &Ctx, role: &str, conv: &str, flag: &str, force: bool) -> i32 {
+    let conv = conv.to_string();
     let at = PathBuf::from(&ctx.identity_dir).join(role).join("seen.at");
     let now = now_ms() as u64 / 1000;
     let last = fs::read_to_string(&at).ok().and_then(|t| t.trim().parse::<u64>().ok());
     let every: u64 = envd("AWAKE_SEEN_EVERY", "60").parse().unwrap_or(60);
-    if !rows::seen_due(last, now, every, delivered || jeff) { return 0; }
+    if !rows::seen_due(last, now, every, force) { return 0; }
     let _ = fs::write(&at, now.to_string());
-    let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
     if envd("AWAKE_SEEN_SYNC", "0") == "1" { return seen_write(ctx, role, &conv, flag); }
     if let Ok(me) = env::current_exe() {
         // #4520 reopen 2 — its own process group: Gemini's hook runner ends the
@@ -1378,10 +1674,10 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         }
     }
     if delivered {
-        if let Some(p) = read_row(ctx, role, "presence").and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
+        if let Some(p) = presence_now(ctx, role).and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
     }
     // #4339 — is his terminal on this role's pane right now
-    if let Some(p) = read_row(ctx, role, "presence") {
+    if let Some(p) = presence_now(ctx, role) {
         let pane = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
         let clients = Command::new(&ctx.tmux).args(["list-clients", "-F", "#{client_flags}|#{pane_id}"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
         if let Some(p) = rows::focused_presence(p, rows::pane_shown(&clients, &pane), &now) { put_row(ctx, role, "identity/presences", "presence", &p); }
@@ -1430,7 +1726,7 @@ fn received_log(ctx: &Ctx, role: &str) -> Vec<(String, String)> {
 }
 
 fn api_list(ctx: &Ctx, route: &str) -> Value {
-    serde_json::from_str(&sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/{}?limit=5000", ctx.api, route)]).unwrap_or_default()).unwrap_or(Value::Null)
+    serde_json::from_str(&door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/{}?limit=5000", ctx.api, route)]).unwrap_or_default()).unwrap_or(Value::Null)
 }
 
 /// `project-messages` — one pass of messages.db into the store: new messages
@@ -1446,7 +1742,7 @@ fn project_messages(ctx: &Ctx) -> i32 {
     let watermark = state.get("watermark").and_then(|w| w.as_u64()).unwrap_or(0);
     let open: Vec<u64> = state.get("open").and_then(|o| o.as_object()).map(|o| o.keys().filter_map(|k| k.parse().ok()).collect()).unwrap_or_default();
     let open_list = if open.is_empty() { "0".to_string() } else { open.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",") };
-    let q = format!("select id,type,\"from\",\"to\",content,created_at,delivery_status,delivered_at,last_delivery_error from messages where (id > {} and created_at >= '{}') or id in ({}) order by id limit 500", watermark, since, open_list);
+    let q = format!("select id,type,\"from\",\"to\",content,created_at,delivery_status,delivered_at,last_delivery_error,trace_id from messages where (id > {} and created_at >= '{}') or id in ({}) order by id limit 500", watermark, since, open_list);
     let out = sh(&sqlite, &["-json", &db, &q]).unwrap_or_default();
     let srcs = msgs::parse_rows(if out.trim().is_empty() { "[]" } else { &out });
     if srcs.is_empty() { println!("project-messages: nothing new"); return 0; }
@@ -1536,7 +1832,7 @@ fn ensure_channels(ctx: &Ctx) {
 
 /// `sweep` — close the sessions still reading open long after their token died.
 fn sweep(ctx: &Ctx) -> i32 {
-    let listing = sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
+    let listing = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838: open rows, at the door
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
     let keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
     let now = iso_utc(now_ms() as u64 / 1000);
@@ -1566,6 +1862,9 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
     let (mut kept, mut failed) = (0, 0);
     for role in roles {
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { continue; }
+        // #4889 — an idle role is never woken by a nudge to a dead pane, so the sweep
+        // keeps its address current too, not only its turns
+        refresh_pane(ctx, role);
         if live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() { continue; }
         let Some(session) = read_row(ctx, role, "session") else { continue };
         let exp = current_login_expiry(ctx, role);
@@ -1576,6 +1875,60 @@ fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
         }
     }
     (kept, failed)
+}
+
+/// #4889 (Jeff 07:48: a role's address follows the role, like a phone number) — the
+/// Presence takes the pane the role's tmux session shows now, the same read a login
+/// makes. Run by the sweep (every ~60s, as jeffbridwell, whose tmux socket holds every
+/// role's session): a role's own account cannot read that socket (mode 700), so a
+/// turn could not do it (Kade 07:57). A sweep that cannot read the pane says so once
+/// per change (presence.pane.unreadable), never silently. Pulse never writes a
+/// Presence and never guesses a pane: a pane that is gone is a loud not-delivered there.
+fn refresh_pane(ctx: &Ctx, role: &str) {
+    let Some(p) = presence_now(ctx, role) else { return };
+    let answer = if ctx.has_tmux(role) {
+        sh(&ctx.tmux, &["list-panes", "-t", &Ctx::tmux_session(role), "-F", "#{pane_id}|#{pane_tty}"])
+    } else {
+        Err(format!("no tmux session {} readable from account {}", Ctx::tmux_session(role), env::var("USER").unwrap_or_default()))
+    };
+    let marker = PathBuf::from(&ctx.identity_dir).join(role).join("pane.unreadable");
+    let (pane, tty) = match rows::pane_read(answer) {
+        Ok(pt) => { let _ = fs::remove_file(&marker); pt }
+        Err(why) => {
+            if !marker.exists() {
+                // the marker makes the event once per change; without its dir it would fire every sweep
+                if let Err(e) = marker.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(&marker, &why)) {
+                    eprintln!("chorus-principal: pane.unreadable marker for {role} not written: {e}");
+                }
+                ctx.spine(&["presence.pane.unreadable", role, &format!("why={}", why)]);
+            }
+            return;
+        }
+    };
+    repane(ctx, role, p, &pane, &tty);
+}
+
+/// #4889 — write the pane the role really runs in onto its Presence, when it moved.
+fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
+    let was = presence.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if let Some(np) = rows::repaned_presence(presence, pane, tty) {
+        let ok = put_row(ctx, role, "identity/presences", "presence", &np);
+        ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
+    }
+}
+
+/// #4895 — a delivery to the role's pane failed for good: its Presence reads unreachable
+/// now, not at the next sweep, and says so on the spine.
+fn undelivered(ctx: &Ctx, role: &str, pane: &str) -> i32 {
+    let Some(p) = presence_now(ctx, role) else { return 1 };
+    match rows::undelivered_presence(p, pane) {
+        None => 0,
+        Some(np) => {
+            let ok = put_row(ctx, role, "identity/presences", "presence", &np);
+            ctx.spine(&["presence.unreachable", role, &format!("pane={}", pane), "reason=delivery-failed", &format!("written={}", ok)]);
+            if ok { 0 } else { 1 }
+        }
+    }
 }
 
 /// Ids of the role's background sessions (`claude agents --json --cwd <role dir>`).
@@ -1612,6 +1965,10 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
     let _ = fs::create_dir_all(&ctx.sessions_dir);
     fs::write(ctx.sessions_dir.join(format!("{}-{}.json", role, pid)), entry.to_string()).ok()?;
     ctx.spine(&["session.registered.from_pane", role, &format!("pid={}", pid), &format!("pane={}", pane)]);
+    // #4889 (measured 11-05 11:20: Abby %16→%17, BQ %14→%15) — the run's Presence was
+    // written before start_in_pane replaced the session (#4845), so it names a pane that
+    // no longer exists; the pane the runtime is found in is its address
+    if let Some(p) = presence_now(ctx, role) { repane(ctx, role, p, &pane, &tty); }
     parse_registry(&entry.to_string())
 }
 
@@ -1657,7 +2014,7 @@ fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
     let hdr = role_id_dir.join("session.hdr");
     if write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())).is_err() { return; }
     let url = format!("{}/v1/identity/sessions?channel={}&limit=1000", ctx.api, channel);
-    let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]).unwrap_or_default();
+    let list = door(ctx, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]).unwrap_or_default();
     let _ = fs::remove_file(&hdr);
     let stale = rows::superseded_sessions(&list, role, channel, keep);
     if stale.is_empty() { return; }
@@ -1694,7 +2051,7 @@ fn close_row_from(ctx: &Ctx, role: &str, session: &str, kept: Option<&str>) -> R
     // the row saved at login; else the listing (the single-row GET lacks name/ownedBy)
     let saved = match kept { Some(k) => k.to_string(), None => fs::read_to_string(role_id_dir.join("session.row.json")).unwrap_or_default() };
     let row = lifecycle::closed_row(&saved, session, &ended).or_else(|| {
-        let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?limit=1000", ctx.api)]).unwrap_or_default();
+        let list = door(ctx, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838: the open row being ended
         lifecycle::closed_row(&list, session, &ended)
     });
     let result = match row {
@@ -1705,7 +2062,7 @@ fn close_row_from(ctx: &Ctx, role: &str, session: &str, kept: Option<&str>) -> R
             if let Ok(p) = env::var("CHORUS_ENDED_BY") { if !p.is_empty() { row["endedBy"] = Value::String(p); } }
             write_private(&body_path, &row.to_string())?;
             let body_arg = format!("@{}", body_path.display());
-            let code = sh(&ctx.curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "PUT", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_default();
+            let code = door(ctx, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "PUT", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_default();
             if code == "200" || code == "201" || code == "204" { Ok(()) } else { Err(format!("the identity API answered HTTP {}", code)) }
         }
     };
@@ -1765,8 +2122,8 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
 }
 
 fn status(ctx: &Ctx) -> i32 {
-    let listing = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
-    let presences = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
+    let listing = door(ctx, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838
+    let presences = door(ctx, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
     for role in roles.iter().map(String::as_str) {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
@@ -1831,8 +2188,14 @@ fn up(ctx: &mut Ctx, windows: bool) -> i32 {
     // services are waited for ONCE, with the countdown; each role after that probes once
     if let Err(why) = wait_for_services(ctx, ctx.service_wait, true) { eprintln!("chorus-principal: {}", why); }
     ctx.service_wait = 0;
+    // #4845 — every agent role the roles door lists (Abby and Borg Queen too), never
+    // a list of three; a door that does not answer starts nobody and says so
+    let roles = match agent_roles(ctx) {
+        Ok(r) => r,
+        Err(why) => { eprintln!("chorus-principal up: started nobody — the roles door did not name the roles: {}", why); return 1; }
+    };
     let mut results = Vec::new();
-    for role in ["wren", "kade", "silas"] {
+    for role in roles.iter().map(String::as_str) {
         let came = match on(ctx, role, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
         results.push((role.to_string(), came));
     }
@@ -1857,7 +2220,7 @@ pub fn is_principal_name(n: &str) -> bool {
 /// does not answer is refused with one next command, never a guess from a list.
 fn principal_gate(ctx: &Ctx, name: &str) -> Result<Option<String>, String> {
     let url = format!("{}/v1/identity/principals/{}", ctx.api, name);
-    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
+    let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
     let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
     let host = rows::login_verdict(name, code.trim(), body, &ctx.api)?;
     let home = ctx.role_dir(name);
@@ -1892,8 +2255,17 @@ const USAGE: &str = "usage: chorus-principal login|logout|status|up|relogin [nam
 
 /// The whole command. Returns the exit code.
 pub fn run(args: &[String]) -> i32 {
-    let mut ctx = Ctx::from_env();
     let verb = args.first().map(String::as_str).unwrap_or("");
+    // #4845 AC3 (Jeff 11-03 18:11: one trace ID per login) — a login mints one trace
+    // and every step it takes carries it: chorus-log reads CHORUS_TRACE_ID, and the
+    // retry it spawns inherits it. A caller's trace is kept, never replaced.
+    if matches!(verb, "login" | "on" | "up" | "relogin" | "logout" | "off") {
+        let trace = env::var("CHORUS_TRACE_ID").ok().filter(|t| !t.is_empty())
+            .unwrap_or_else(|| login_trace(verb, args.get(1).map(String::as_str), now_ms(), std::process::id()));
+        env::set_var("CHORUS_TRACE_ID", &trace);
+        println!("trace: {}", trace);
+    }
+    let mut ctx = Ctx::from_env();
     let role_arg = |i: usize| -> Result<String, i32> {
         match args.get(i) {
             Some(r) => match agent_roles(&ctx) {
@@ -1931,6 +2303,13 @@ pub fn run(args: &[String]) -> i32 {
             Err(c) => c,
         },
         "sweep" => sweep(&ctx),
+        // #4895 — pulse, after a delivery failed for good on a dead pane; the principal
+        // stays the only writer of a Presence
+        "undelivered" => match (name_arg(1), args.get(2).filter(|p| rows::is_pane_id(p))) {
+            (Ok(r), Some(pane)) => undelivered(&ctx, &r, pane),
+            (Ok(_), None) => { eprintln!("chorus-principal: undelivered <role> <pane %N>"); 2 }
+            (Err(c), _) => c,
+        },
         // #4447 — the identity owner writes a role's Credential rows, once
         // #4455 — the writer is the caller's own role; none set is refused, never a teammate's name
         "credentials" => match (role_arg(1), credentials_writer(env::var("CHORUS_ROLE").ok())) { (Ok(r), Ok(w)) => record_credentials(&ctx, &r, &w), (Err(c), _) | (_, Err(c)) => c },
@@ -1972,5 +2351,101 @@ pub fn run(args: &[String]) -> i32 {
         }
         "" => { eprintln!("{}", USAGE); 2 }
         other => { eprintln!("chorus-principal: unknown verb '{}'", other); eprintln!("{}", USAGE); 2 }
+    }
+}
+
+/// #4686 — a SPARQL COUNT answer read as JSON, not by needle. Step 3c matched
+/// `"value":"` and Fuseki answers `"value": "4"`, so every create read 0 of 4
+/// hats and rolled back. None: not a results document, or no number in it.
+pub fn sparql_count(body: &str, var: &str) -> Option<usize> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.pointer("/results/bindings/0")?.get(var)?.get("value")?.as_str()?.parse().ok()
+}
+
+/// The hats every principal wears (step 3c writes and reads back all of them).
+pub const HATS: usize = 4;
+
+/// #4686 — step 3c's verdict: Ok when the store's answer shows all HATS,
+/// Err(Some(n)) with the count it read otherwise, Err(None) when the answer
+/// is unreadable (never reported as "0 hats").
+pub fn wears_all_hats(body: &str) -> Result<usize, Option<usize>> {
+    match sparql_count(body, "n") {
+        Some(n) if n == HATS => Ok(n),
+        other => Err(other),
+    }
+}
+
+#[cfg(test)]
+mod own_account_launch_tests_4777 {
+    use super::*;
+
+    #[test]
+    fn own_account_inner_cmd_exports_shared_sessions_dir_and_claude_key_hook() {
+        let cmd = own_account_inner_cmd(
+            "/repo/roles/silas",
+            "/repo",
+            "/Users/chorus-silas/.chorus/identity",
+            "/Users/chorus-silas/.chorus/identity/silas/token.cache",
+            "/Users/jeffbridwell/.chorus/sessions",
+            "silas",
+            "claude -c",
+        );
+        assert!(cmd.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{cmd}");
+        assert!(cmd.contains("CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\""), "{cmd}");
+        assert!(cmd.contains("GIT_CONFIG_KEY_0='safe.directory'"), "{cmd}");
+        assert!(cmd.contains("ENABLE_CLAUDEAI_MCP_SERVERS='false'"), "{cmd}");
+        assert!(cmd.contains("CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\""), "{cmd}");
+    }
+
+    #[test]
+    fn role_memory_dir_hands_only_own_role_memory_and_refuses_other_roles_4784() {
+        let own = role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas", "silas");
+        assert_eq!(
+            own.as_deref(),
+            Some(std::path::Path::new("/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-silas/memory"))
+        );
+
+        let dirs = role_memory_handoff_dirs(
+            "/Users/jeffbridwell",
+            "/Users/jeffbridwell/CascadeProjects/chorus",
+            "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas",
+            "silas",
+        )
+        .unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert_eq!(
+            dirs[0].0,
+            std::path::PathBuf::from("/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory")
+        );
+        assert_eq!(dirs[0].1, "-Users-jeffbridwell-CascadeProjects-chorus");
+        assert_eq!(
+            dirs[1].0,
+            std::path::PathBuf::from("/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-silas/memory")
+        );
+        assert_eq!(dirs[1].1, "-Users-jeffbridwell-CascadeProjects-chorus-roles-silas");
+
+        // Negative proofs (#3734): another role's dir, shared root dir as role_dir, or traversal is refused
+        assert!(
+            role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren", "silas").is_none(),
+            "NEGATIVE (#3734): silas must never receive wren's memory folder"
+        );
+        assert!(
+            role_memory_handoff_dirs(
+                "/Users/jeffbridwell",
+                "/Users/jeffbridwell/CascadeProjects/chorus",
+                "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren",
+                "silas"
+            )
+            .is_none(),
+            "NEGATIVE (#3734): handoff_dirs refuses another role's role_dir"
+        );
+        assert!(
+            role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus", "silas").is_none(),
+            "NEGATIVE (#3734): shared root as role_dir must be refused"
+        );
+        assert!(
+            role_memory_source_dir("/Users/jeffbridwell", "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/../kade", "silas").is_none(),
+            "NEGATIVE (#3734): path traversal must be refused"
+        );
     }
 }

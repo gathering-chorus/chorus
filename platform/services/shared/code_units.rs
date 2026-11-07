@@ -96,6 +96,57 @@ pub fn shared_includes(sources: &[String]) -> Vec<String> {
     out
 }
 
+/// #4744 — a repo path: `rel` joined to the directory `base`, `.` and `..` resolved.
+/// None when it climbs out of the repo.
+pub fn join_repo(base: &str, rel: &str) -> Option<String> {
+    let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
+    for seg in rel.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => { parts.pop()?; }
+            s => parts.push(s),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+/// #4744 — the files a crate compiles in from OUTSIDE itself by `#[path]` (an Operation's
+/// handler in its domain's home, named by the generated src/ops.rs), as repo paths, with
+/// the files each of those pulls in by `include!`/`include_str!` (its fixtures). Shared
+/// files are shared_includes' job. A crate's sources are its src/*.rs, so a `#[path]`
+/// resolves from `<crate>/src`; a `#[path]` in a nested module (src/a/b.rs) is not
+/// scanned and is missed (Kade's review, #4744) — the generated ops.rs sits in src/.
+pub fn outside_path_includes(crate_path: &str, sources: &[String], read: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
+    let quoted = |line: &str, open: &str| -> Option<String> {
+        let rest = &line[line.find(open)? + open.len()..];
+        rest.find('"').map(|q| rest[..q].to_string())
+    };
+    let mut out: Vec<String> = Vec::new();
+    let inside = format!("{crate_path}/");
+    for text in sources {
+        for line in text.lines() {
+            let Some(t) = quoted(line, "#[path = \"") else { continue };
+            let Some(file) = join_repo(&format!("{crate_path}/src"), &t) else { continue };
+            // shared files are shared_includes' (matched by where they resolve, Kade's review:
+            // an operations path that merely contains "shared/" is still ours)
+            if file.starts_with(&format!("{SHARED}/")) || file.starts_with(&inside) || out.contains(&file) {
+                continue;
+            }
+            let dir = file.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+            for l in read(&file).unwrap_or_default().lines() {
+                if let Some(inc) = quoted(l, "include_str!(\"").or_else(|| quoted(l, "include!(\"")) {
+                    if let Some(f) = join_repo(&dir, &inc) {
+                        if !out.contains(&f) { out.push(f); }
+                    }
+                }
+            }
+            out.push(file);
+        }
+    }
+    out.sort();
+    out
+}
+
 /// #4499 reopen 2026-10-14 — the shared files a shared file compiles in, so a
 /// crate's includes are closed: scope_units.rs carries `include!("code_units.rs")`
 /// (a name relative to shared/, no `shared/` in it), and werk-build, werk-test
@@ -282,11 +333,14 @@ pub fn units(
         let path = dir(f);
         let toml = read(f).unwrap_or_default();
         let mut deps = crate_deps(&path, &toml);
-        let includes = shared_closure(shared_includes(&crate_sources(&path)), read);
+        let sources = crate_sources(&path);
+        let mut includes = shared_closure(shared_includes(&sources), read);
         if !includes.is_empty() {
             deps.push(SHARED.to_string());
             shared_used = true;
         }
+        // #4744 — and what it compiles in from outside itself (an Operation handler)
+        includes.extend(outside_path_includes(&path, &sources, read));
         if is_generated(&toml) {
             deps.extend(MODEL_DIRS.iter().map(|m| m.to_string()));
             deps.push(GENERATOR.to_string());

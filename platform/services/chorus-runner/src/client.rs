@@ -33,6 +33,25 @@ pub fn run(tool: &str, args: &Value) -> i32 {
         eprintln!("chorus-runner call: no ROLE to run as");
         return 2;
     }
+    // #4851 (from #4853 AC4): only the installer's account runs a call in
+    // process; any other account's call goes to the shared runner.
+    {
+        use std::os::unix::fs::MetadataExt;
+        // Fail closed (review: Kade, Abby): an account that cannot tell who it is,
+        // or who installed, never runs the call in its own process.
+        let bin = format!("{}/bin", crate::server::state_dir());
+        let Ok(installer) = std::fs::metadata(&bin).map(|m| m.uid()) else {
+            eprintln!("chorus-runner call: cannot read {bin}, so who installed is unknown; nothing ran");
+            return 2;
+        };
+        let Some(me) = own_uid() else {
+            eprintln!("chorus-runner call: cannot read this account's uid; nothing ran");
+            return 2;
+        };
+        if crate::forward::forwards(me, Some(installer)) {
+            return crate::forward::call(&role, tool, args);
+        }
+    }
     // #4515 — athena-get/-list/-add/-set: the same check and the same door
     // call as the server, as $ROLE with a credential minted for $ROLE
     if crate::is_athena_tool(tool) {
@@ -95,4 +114,10 @@ pub fn run(tool: &str, args: &Value) -> i32 {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+/// This process's uid (no libc): `id -u`.
+fn own_uid() -> Option<u32> {
+    let out = Command::new("/usr/bin/id").arg("-u").output().ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }

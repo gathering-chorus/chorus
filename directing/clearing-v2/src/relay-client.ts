@@ -6,6 +6,18 @@ import { buildEventId, serializeEvent } from './identity';
 /** The room's reader key (Silas 2026-10-15 13:41: the bridge signer v1 registered,
  *  reads only, not a member). Key material stays outside the room: the caller
  *  injects a signer, never a key. */
+/**
+ * #4657 — the relay accepts one address in a NIP-42 AUTH (its RELAY_URL). When
+ * that is the public wss:// one, BUZZ_AUTH_RELAY_URL states it; unset keeps the
+ * old rule: the tunnel's Host (same scheme as the dial), or the dial address.
+ */
+export function authRelayFor(relayUrl: string, hostHeader?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const stated = (env.BUZZ_AUTH_RELAY_URL || '').trim();
+  if (stated) return stated;
+  if (!hostHeader) return relayUrl;
+  return `${relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${hostHeader}`;
+}
+
 export interface RelaySigner {
   pubkey: string;
   /** Schnorr signature (hex) over the 32-byte event id (hex). */
@@ -69,9 +81,20 @@ export class MockWebSocket implements WebSocketLike {
   }
 }
 
+/** #4652 — the relay's #team channel id. The Buzz app shows kind 9 posts tagged
+ *  h=<this id>; kind 1 notes tagged t=team never appear there (measured 10-19). */
+export const TEAM_CHANNEL = process.env.BUZZ_TEAM_CHANNEL || '160e1f5d-6816-4c68-94b3-b5f1ade75565';
+/** #4652 — Jeff 10-20 13:01 (a): his Clearing posts and the replies to him live in
+ *  #clearing; nudges, alerts and lands stay in #team. The room reads both as one. */
+export const CLEARING_CHANNEL = process.env.BUZZ_CLEARING_CHANNEL || '03e2b251-240f-47fe-89b5-fe4e7ac648fb';
+
 export interface BuzzRelayClientOptions {
   relayUrl: string;
   topic?: string;
+  /** #4652 — the #team channel (default TEAM_CHANNEL). */
+  channel?: string;
+  /** #4652 — the #clearing channel, where Jeff's Clearing posts go (default CLEARING_CHANNEL). */
+  clearingChannel?: string;
   wsFactory?: () => WebSocketLike;
   onEvent?: (event: NostrEvent) => void;
   subId?: string;
@@ -88,6 +111,8 @@ export interface BuzzRelayClientOptions {
 export class BuzzRelayClient {
   private relayUrl: string;
   private topic: string;
+  private channel: string;
+  private clearingChannel: string;
   private wsFactory?: () => WebSocketLike;
   private onEventCallback?: (event: NostrEvent) => void;
   private subId: string;
@@ -111,6 +136,8 @@ export class BuzzRelayClient {
   constructor(options: BuzzRelayClientOptions) {
     this.relayUrl = options.relayUrl;
     this.topic = options.topic || 'team';
+    this.channel = options.channel || TEAM_CHANNEL;
+    this.clearingChannel = options.clearingChannel || CLEARING_CHANNEL;
     this.wsFactory = options.wsFactory;
     this.onEventCallback = options.onEvent;
     this.subId = options.subId || 'team-sub';
@@ -131,6 +158,11 @@ export class BuzzRelayClient {
 
   getTopic(): string {
     return this.topic;
+  }
+
+  /** #4652 — the #clearing channel id, where Jeff's Clearing posts are stored. */
+  getClearingChannel(): string {
+    return this.clearingChannel;
   }
 
   connect(): void {
@@ -192,8 +224,7 @@ export class BuzzRelayClient {
   /** The relay's own address for the AUTH relay tag (v1 authRelayUrl): dialing through
    *  the tunnel, the relay only accepts a tag naming the Host it serves. */
   private authRelayTag(): string {
-    if (!this.hostHeader) return this.relayUrl;
-    return `${this.relayUrl.startsWith('wss://') ? 'wss://' : 'ws://'}${this.hostHeader}`;
+    return authRelayFor(this.relayUrl, this.hostHeader);
   }
 
   getBufferedCount(): number {
@@ -209,14 +240,13 @@ export class BuzzRelayClient {
     return true;
   }
 
+  /** #4652 — one filter per subscription: Buzz routes live posts by channel and
+   *  registers a REQ that mixes filters under none (measured 10-20 09:12). */
   private subscribe(): void {
     if (!this.ws) return;
-    const filter = {
-      kinds: [1],
-      '#t': [this.topic, 'reply'],
-      limit: 200,
-    };
-    this.ws.send(JSON.stringify(['REQ', this.subId, filter]));
+    const [channel, older] = this.filters({ limit: 200 });
+    this.ws.send(JSON.stringify(['REQ', this.subId, channel]));
+    this.ws.send(JSON.stringify(['REQ', `${this.subId}-kind1`, older]));
   }
 
   private flushBuffer(): void {
@@ -255,6 +285,34 @@ export class BuzzRelayClient {
    */
   fetchSince(since: number, timeoutMs = 10000): Promise<NostrEvent[]> {
     if (!this.ws || !this.isConnected()) return Promise.reject(new Error('relay not connected'));
+    // #4652 — one read per filter (a mixed REQ is not served), done when both end
+    return Promise.all(this.filters({ since, limit: 10000 }).map((f) => this.fetchOne(f, timeoutMs))).then((parts) => parts.flat());
+  }
+
+  /**
+   * #4749 — every note older than `until` (epoch seconds), as one read that ends
+   * at the relay's EOSE. Merges kind 9 and kind 1 filters, dedupes by id, drops
+   * any note matching anchorId, sorts descending by created_at, and slices to limit.
+   */
+  async fetchBefore(until: number, limit = 15, anchorId?: string, timeoutMs = 10000): Promise<NostrEvent[]> {
+    if (!this.ws || !this.isConnected()) return Promise.reject(new Error('relay not connected'));
+    const parts = await Promise.all(this.filters({ until, limit }).map((f) => this.fetchOne(f, timeoutMs)));
+    const all = parts.flat();
+    const seen = new Set<string>();
+    const deduped: NostrEvent[] = [];
+    for (const ev of all) {
+      if (!seen.has(ev.id)) {
+        seen.add(ev.id);
+        if (ev.id !== anchorId) {
+          deduped.push(ev);
+        }
+      }
+    }
+    deduped.sort((a, b) => b.created_at - a.created_at);
+    return deduped.slice(0, limit);
+  }
+
+  private fetchOne(filter: object, timeoutMs: number): Promise<NostrEvent[]> {
     const id = `fetch-${++this.fetchSeq}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -263,8 +321,17 @@ export class BuzzRelayClient {
         reject(new Error(`relay sent no EOSE within ${timeoutMs}ms`));
       }, timeoutMs);
       this.fetches.set(id, { events: [], done: (events) => { clearTimeout(timer); resolve(events); } });
-      this.ws!.send(JSON.stringify(['REQ', id, { kinds: [1], '#t': [this.topic, 'reply'], since, limit: 10000 }]));
+      this.ws!.send(JSON.stringify(['REQ', id, filter]));
     });
+  }
+
+  /** #4652 — the channel's kind 9 posts, plus the kind 1 notes written before the
+   *  switch so the room's history stays. */
+  private filters(extra: { since?: number; until?: number; limit: number }): object[] {
+    return [
+      { kinds: [9], '#h': [this.channel, this.clearingChannel], ...extra },
+      { kinds: [1], '#t': [this.topic, 'reply'], ...extra },
+    ];
   }
 
   /** #4608 — the relay's OK for a publishConfirmed note. True when the frame was one. */
@@ -301,8 +368,10 @@ export class BuzzRelayClient {
    */
   signAsReader(content: string, tags: string[][], createdAt: number): NostrEvent | null {
     if (!this.signer) return null;
-    const id = buildEventId(serializeEvent(this.signer.pubkey, createdAt, 1, tags, content));
-    return { id, pubkey: this.signer.pubkey, created_at: createdAt, kind: 1, tags, content, sig: this.signer.sign(id) };
+    // #4652 — a kind 9 channel post, so the Buzz app's #team shows it.
+    const all = tags.some((t) => t[0] === 'h') ? tags : [['h', this.channel], ...tags];
+    const id = buildEventId(serializeEvent(this.signer.pubkey, createdAt, 9, all, content));
+    return { id, pubkey: this.signer.pubkey, created_at: createdAt, kind: 9, tags: all, content, sig: this.signer.sign(id) };
   }
 
   /** #4592 — EVENT/EOSE for a fetchSince subscription. True when the frame was one. */

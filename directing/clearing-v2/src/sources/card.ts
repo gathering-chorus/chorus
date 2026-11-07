@@ -11,24 +11,33 @@ export interface DrawerCard {
   status?: string;
   priority?: string;
   domain?: string;
+  created?: string;
+  updated?: string;
   description?: string;
   acItems?: Array<{ text: string; checked: boolean }>;
+  comments?: Array<{ author?: string; text: string; time?: string }>;
 }
 
 export interface CardPayload {
   kind?: string;
   servedFrom?: string;
+  comments?: Array<{ author?: string; text?: string; body?: string; time?: string; created?: string }>;
   data?: {
     label?: string;
     title?: string;
     status?: string;
     priority?: string;
     domain?: string;
+    domains?: string[];
     description?: string;
     creator?: string;
     owner?: string;
+    created?: string;
+    modified?: string;
+    updated?: string;
     ac_items?: Array<{ text?: string; label?: string; checked?: boolean }>;
     acItems?: Array<{ text?: string; label?: string; checked?: boolean }>;
+    comments?: Array<{ author?: string; text?: string; body?: string; time?: string; created?: string }>;
   };
   links?: {
     assignee?: string;
@@ -57,7 +66,7 @@ function parseAcItems(description: string | undefined): Array<{ text: string; ch
 function extractAcItems(data: CardPayload['data']): Array<{ text: string; checked: boolean }> | undefined {
   if (!data) return undefined;
   const rawList = data.ac_items ?? data.acItems;
-  if (Array.isArray(rawList)) {
+  if (Array.isArray(rawList) && rawList.length > 0) {
     return rawList.map((item) => ({
       text: String(item.text ?? item.label ?? ''),
       checked: Boolean(item.checked),
@@ -70,9 +79,20 @@ function extractAcItems(data: CardPayload['data']): Array<{ text: string; checke
   return undefined;
 }
 
+function extractComments(json: CardPayload): Array<{ author?: string; text: string; time?: string }> | undefined {
+  const rawList = json.data?.comments ?? json.comments;
+  if (!Array.isArray(rawList)) return undefined;
+  const recent = rawList.slice(-3);
+  return recent.map((c) => ({
+    author: c.author,
+    text: String(c.text ?? c.body ?? ''),
+    time: c.time ?? c.created,
+  }));
+}
+
 function extractOwner(json: CardPayload): string | undefined {
   const data = json.data;
-  const raw = json.links?.assignee ?? json.links?.ownedBy ?? data?.creator ?? data?.owner ?? json.owner;
+  const raw = json.links?.assignee ?? json.links?.ownedBy ?? data?.owner ?? data?.creator ?? json.owner;
   return drawerOwner(raw);
 }
 
@@ -87,15 +107,18 @@ export function toDrawerCard(cardId: number, json: CardPayload | null): DrawerCa
     owner: extractOwner(json),
     status: data.status,
     priority: data.priority,
-    domain: json.servedFrom ?? data.domain,
+    domain: json.servedFrom ?? data.domain ?? (Array.isArray(data.domains) ? data.domains.join(', ') : undefined),
+    created: data.created,
+    updated: data.modified ?? data.updated,
     description: data.description,
     acItems: extractAcItems(data),
+    comments: extractComments(json),
   };
 }
 
 async function fetchFromAthena(athenaUrl: string, cardId: number): Promise<DrawerCard | null> {
   try {
-    return await withTimeout(1500, async (signal) => {
+    return await withTimeout(5000, async (signal) => {
       const res = await fetch(`${athenaUrl}/${cardId}`, { signal });
       const r = await readJson<CardPayload | null>(res);
       return r.ok ? toDrawerCard(cardId, r.value) : null;

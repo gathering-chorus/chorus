@@ -42,7 +42,8 @@ import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athe
 import { classAtlasHandler } from './handlers/class-atlas';
 import { vocabularyHandler } from './handlers/vocabulary';
 import { renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
-import { loadRunsFromGraph, fusekiCsv } from './handlers/nightly-graph';
+import { fusekiCsv } from './handlers/nightly-graph';
+import { loadRunsFromLog } from './handlers/nightly-log';
 import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/crawler-validate';
 import { loadSensors, renderSensorsSection } from './handlers/sensors-panel';
 import { findRun, buildReadout, renderReadoutText, previousFinished, type NightlyRunRecord } from './handlers/nightly-readout';
@@ -211,6 +212,8 @@ app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
 
 // Serve Borg shaping surface — #2099
 app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
+// #4885 — the one Boston renderer, for the browser runtime too
+app.use('/vendor/chorus-time', express.static(path.join(__dirname, '..', '..', 'chorus-sdk', 'time'), { extensions: ['js'] }));
 
 // #3656 — Quality Service reparented borg→werk (Jeff: quality is part of werk —
 // the gates fire in the werk pipeline). Old borg path redirects so links survive.
@@ -454,13 +457,12 @@ app.get('/clearing', (req: Request, res: Response) =>
 // the same object, and nightly-suites.sh delivers the text form to Jeff by
 // nudge when a run finishes. A role asked "was last night green" reads this
 // route (`nightly-suites.sh --readout`), so two roles give the same numbers.
-// #4156 — the runs come from the graph rows the run wrote (TestSuiteRun per
-// SUITE row, PipelineRun for the tail). Nothing here reads nightly-suites.log:
-// a store that does not answer is a 503, never a quiet fallback to the file.
-const WERK_TEST_UNREAD = 'the nightly run record could not be read from the graph (the store did not answer); '
-  + 'refusing to report numbers from anywhere else';
+// #4579 reopen — the runs come from the run log (nightly-suites.log), the one
+// place the runner writes the whole run; the graph no longer carries them
+// (Jeff 10-18 19:10). A log that cannot be read is a 503, never an empty green.
+const WERK_TEST_UNREAD = 'the nightly run log could not be read; refusing to report numbers from anywhere else';
 const nightlyFuseki = (): string => process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
-const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromGraph(fusekiCsv(nightlyFuseki()));
+const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromLog();
 
 function readoutFor(runs: NightlyRunRecord[], runId: string) {
   const run = findRun(runs, runId);
@@ -472,7 +474,7 @@ app.get('/api/chorus/nightly/runs', async (_req: Request, res: Response) => {
   const runs = await nightlyRuns();
   if (!runs) { res.status(503).json({ error: WERK_TEST_UNREAD }); return; }
   res.json({
-    source: 'graph',
+    source: 'log',
     runs: [...runs].reverse().map((r) => ({
       runId: r.runId, startedAt: r.startedAt, completedAt: r.completedAt ?? null, completed: r.completed,
       suites: r.rows.length, failed: r.rows.filter((x) => x.status === 'fail').length,
@@ -1152,7 +1154,16 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         enrichHit,
         resolveSearchLimit,
         ...(ftsPool
-          ? { ftsSearch: (q: string, fetchLimit: number, role: string | undefined, mode: string) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode }) }
+          ? {
+              ftsSearch: (
+                q: string,
+                fetchLimit: number,
+                role: string | undefined,
+                mode: string,
+                channel?: string,
+                opts?: import('./lib/fts-query').FtsFilterOptions,
+              ) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode, channel, ...opts }),
+            }
           : {}),
       },
       {
@@ -1160,6 +1171,15 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         limit: req.query.limit as string | undefined,
         role: req.query.role as string | undefined,
         mode: req.query.mode as string | undefined,
+        channel: req.query.channel as string | undefined,
+        order: req.query.order as string | undefined,
+        before: req.query.before as string | undefined,
+        until: req.query.until as string | undefined,
+        to: req.query.to as string | undefined,
+        after: req.query.after as string | undefined,
+        since: req.query.since as string | undefined,
+        from: req.query.from as string | undefined,
+        offset: req.query.offset as string | undefined,
       },
     );
     res.status(r.status).json(r.body);
@@ -1283,6 +1303,37 @@ app.post('/api/chorus/identity/verify', async (req: Request, res: Response) => {
   });
   res.setHeader('Cache-Control', 'no-store');
   res.status(result.status).json(result.body);
+});
+
+// #4779 — Verified session turn push across macOS accounts and model runtimes.
+// Each role session pushes its own user + assistant turns authenticated by its
+// CSS ES256 credential; channel is derived from roleForWebId(webId), never from
+// folder names or cross-home file reads.
+import { handleSessionTurnPush, type SessionTurnPushBody } from './handlers/chorus-session-turn';
+app.post('/api/chorus/session/turns', async (req: Request, res: Response) => {
+  let db: Database.Database | null = null;
+  try {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('busy_timeout = 5000');
+    const d = await handleSessionTurnPush(
+      {
+        authorization: req.headers.authorization ?? '',
+        body: (req.body ?? {}) as SessionTurnPushBody,
+      },
+      {
+        db,
+        verify: verifyIdentity,
+        roleForWebId,
+      },
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(d.status).json(d.body);
+  } catch (err) {
+    res.status(500).json({ error: 'session-turn-write-failed', message: errMsg(err) });
+  } finally {
+    if (db) db.close();
+  }
 });
 
 app.get('/api/nudge/:role/pending', async (req: Request, res: Response) => {
@@ -1631,7 +1682,7 @@ import { fetchContextQualitySummary } from './handlers/context-quality-summary';
 import { fetchContextBoardNext } from './handlers/context-board-next';
 import { fetchContextCoverage } from './handlers/context-coverage';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
-import { fetchContextRoles, loggedInRoles } from './handlers/context-roles';
+import { fetchContextRoles, liveSessionsQuery, loggedInRoles } from './handlers/context-roles';
 import type { SpineLine, WipCardEntry } from './derive-role-state';
 import { fetchContextHealth } from './handlers/context-health';
 
@@ -1844,7 +1895,7 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
       listAgentRoles: async () => {
         const [roles, sessions] = await Promise.all([
           fetch(`${ATHENA_MAKE_BASE}/v1/roles/roles?limit=500`, { signal: AbortSignal.timeout(3000) }),
-          fetch(`${ATHENA_MAKE_BASE}/v1/identity/sessions?limit=5000`, { signal: AbortSignal.timeout(3000) }),
+          fetch(`${ATHENA_MAKE_BASE}/v1/identity/sessions?${liveSessionsQuery()}`, { signal: AbortSignal.timeout(3000) }),
         ]);
         if (!roles.ok) throw new Error(`the roles door answered HTTP ${roles.status}`);
         if (!sessions.ok) throw new Error(`the sessions door answered HTTP ${sessions.status}`);
@@ -2029,6 +2080,29 @@ app.post('/api/chorus/alert', (req: Request, res: Response) => {
     },
     chorusLogPath: LIFECYCLE_LOG,
   });
+});
+
+// --- POST /api/alerts/grafana — Grafana's webhook contact point (#4666) ---
+// Until 10-20 Grafana sent every alert to receiver `empty`. A firing alert
+// whose rule names a `role` label becomes one ops nudge to that role (trigger
+// and values only); an unlabeled one is written to the spine as unrouted.
+import { routeGrafanaAlerts } from './handlers/grafana-alerts';
+app.post('/api/alerts/grafana', (req: Request, res: Response) => {
+  const scripts = path.join(CHORUS_ROOT, 'platform/scripts');
+  // ops-nudge refuses a caller with a role (#4532): the API is an ops caller
+  const env = { ...process.env };
+  delete env.CHORUS_ROLE;
+  const r = routeGrafanaAlerts(req.body || {}, {
+    nudge: (to, text) => {
+      execFile('bash', [path.join(scripts, 'ops-nudge'), to, text], { env }, (err) => {
+        if (err) console.error(`grafana alert to ${to} not delivered: ${err.message}`);
+      });
+    },
+    spine: (event, fields) => {
+      execFile('bash', [path.join(scripts, 'chorus-log'), event, 'system', ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)], { env }, () => {});
+    },
+  });
+  res.status(200).json(r);
 });
 
 // --- GET /api/chorus/voice-analytics ---

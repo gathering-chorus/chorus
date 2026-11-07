@@ -7,6 +7,7 @@
 # chorus-make writes from their rows, and a hand edit is caught before it lands.
 
 setup() {
+  export MOB_OPEN_BIN=/usr/bin/true  # #4789 — no open mob; never read the live dagu from a unit test
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   FIX="$ROOT/platform/services/chorus-make/tests/fixtures"
   CM="$BATS_TEST_TMPDIR/target/debug/chorus-make"
@@ -29,12 +30,13 @@ handler() { awk -v h="  $1:" '$0==h {f=1; next} f && (/^  [a-z]+:$/ || /^steps:/
   grep -q 'call athena-validate args=--staging"' "$ROOT/platform/pipelines/athena.yaml" || return 1
 }
 
-@test "a passing athena run starts the card's werk run; a failing one only nudges" {
+@test "a passing athena run starts the card's werk run; a failing one only routes (#4888: exit is the wake)" {
   handler success "$ROOT/platform/pipelines/athena.yaml" | grep -q 'platform/scripts/werk-v2 ${CARD} ${ROLE} ||' || return 1
   # NEGATIVE PROOF: the failure handler enqueues nothing
   run handler failure "$ROOT/platform/pipelines/athena.yaml"
-  [[ "$output" == *"ops-nudge"* ]] || return 1
-  [[ "$output" != *"werk-v2"* && "$output" != *"enqueue"* ]] || return 1
+  [[ "$output" == *"pair routed"* ]] || return 1
+  [[ "$output" != *"werk-v2"* && "$output" != *"enqueue"* && "$output" != *"ops-nudge"* ]] || return 1
+  handler exit "$ROOT/platform/pipelines/athena.yaml" | grep -q 'platform/scripts/run-finished ${CARD} ${ROLE}' || return 1
 }
 
 @test "the land writes prod from the landed commit, on its own queue, and never enqueues itself" {
@@ -59,8 +61,8 @@ handler() { awk -v h="  $1:" '$0==h {f=1; next} f && (/^  [a-z]+:$/ || /^steps:/
 @test "negative proof: the handler check catches a werk start moved to failure" {
   # the check above must be able to go red: a workflow whose failure handler
   # starts werk is caught by the same lines
-  # (#4553 reworded the failure nudge; the plant must fail loud if it stops matching)
-  sed 's#ops-nudge ${ROLE} "werk v2 \#${CARD} #werk-v2 ${CARD} ${ROLE}; ops-nudge ${ROLE} "x #' \
+  # (#4888 made the failure route only; the plant must fail loud if it stops matching)
+  sed 's#${DAG_RUN_ID} || true#${DAG_RUN_ID} || werk-v2 ${CARD} ${ROLE}#' \
     "$ROOT/platform/pipelines/athena.yaml" > "$BATS_TEST_TMPDIR/bad.yaml"
   ! cmp -s "$ROOT/platform/pipelines/athena.yaml" "$BATS_TEST_TMPDIR/bad.yaml" \
     || { echo "plant did not apply: the failure handler text changed"; return 1; }

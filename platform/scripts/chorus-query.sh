@@ -34,7 +34,13 @@ release_lock() {
 # Clean up lock on exit
 trap release_lock EXIT
 
-if [ ! -f "$DB_PATH" ]; then
+CHORUS_API_URL="${CHORUS_API_URL:-http://localhost:3340}"
+
+# #4784: Roles on their own macOS accounts read history through the search API
+# (localhost:3340/api/chorus/search), never by creating an empty ~/.chorus/index.db
+# or opening a shared SQLite file directly. Only initialize local DB when CHORUS_DB
+# is explicitly set and the search API is unreachable.
+if [ -n "${CHORUS_DB:-}" ] && [ ! -f "$DB_PATH" ]; then
   echo "Index not found. Initializing and running first index..."
   bash "$SCRIPT_DIR/chorus-init-db.sh" >/dev/null 2>&1
   if acquire_lock; then
@@ -295,7 +301,39 @@ PYEOF
       exit 1
     fi
 
-    python3 -c "
+    ENCODED_ROLE=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1].strip()))" "$ARGS")
+    API_TMP="/tmp/chorus-role-$$.json"
+    if curl -sf "${CHORUS_API_URL}/api/chorus/search?channel=session:${ENCODED_ROLE}&order=recent&limit=20" -o "$API_TMP" 2>/dev/null; then
+      python3 - "$API_TMP" "$ARGS" <<'PYEOF'
+import json, sys
+
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+role = sys.argv[2].strip()
+results = data.get('results', [])
+
+print(f'## Activity for {role}')
+print()
+if results:
+    print(f'Last {len(results)} messages:')
+    print()
+    for r in results:
+        source = r.get('source', '')
+        channel = r.get('channel', '')
+        content = r.get('content', '').replace('\n', ' ')[:250]
+        ts = r.get('timestamp', '')[:16]
+        author = r.get('author', '')
+        label = f'[{source}] #{channel}' if source == 'slack' else f'[{source}] {channel}'
+        print(f'**{label}** ({ts}) {author}:')
+        print(f'  {content}')
+        print()
+else:
+    print(f'No messages found for role: {role}')
+PYEOF
+      rm -f "$API_TMP"
+    else
+      rm -f "$API_TMP"
+      python3 -c "
 import sqlite3, os
 
 db_path = os.environ.get('CHORUS_DB', os.path.expanduser('~/.chorus/index.db'))
@@ -330,6 +368,7 @@ else:
 
 conn.close()
 " 2>/dev/null
+    fi
     ;;
 
   stats)
@@ -403,6 +442,27 @@ conn.close()
     fi
 
     tail_query() {
+      API_TMP="/tmp/chorus-tail-$$.json"
+      if curl -sf "${CHORUS_API_URL}/api/chorus/search?channel=session:${TAIL_ROLE}&order=recent&limit=${TAIL_LINES}" -o "$API_TMP" 2>/dev/null; then
+        python3 - "$API_TMP" "$TAIL_ROLE" <<'PYEOF'
+import json, sys
+
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+role = sys.argv[2]
+results = list(reversed(data.get('results', [])))
+
+for r in results:
+    author = r.get('author', '')
+    content = r.get('content', '').replace('\n', ' ')[:300]
+    ts = r.get('timestamp', '')[:19]
+    tag = 'user' if author == 'user' else role
+    print(f'[{ts}] {tag}: {short if "short" in locals() else content}')
+PYEOF
+        rm -f "$API_TMP"
+        return 0
+      fi
+      rm -f "$API_TMP"
       python3 -c "
 import sqlite3, os
 

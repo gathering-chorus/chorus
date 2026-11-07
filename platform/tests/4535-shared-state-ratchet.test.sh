@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # @test-type: unit — ratchet over role-side source; no live services.
 # @card: #4535
-# @domain: chorus
+# @domain: tests
 #
 # #4535 — a role on its own Mac account (Abby, chorus-abby-normal) has its own
 # HOME, so every $HOME/.chorus read in code her processes run finds an empty

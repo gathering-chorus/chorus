@@ -2,7 +2,7 @@
 
 import { ClearingMessage, PulseNudgePayload } from './types';
 
-const KNOWN_ROLES: Set<string> = new Set(['jeff', 'wren', 'silas', 'kade', 'abby-normal']);
+export const DEFAULT_KNOWN_ROLES = ['jeff', 'wren', 'silas', 'kade', 'abby-normal', 'borg-queen'];
 
 /** #4575 — strip the Chorus Prompt header ("--- Role | ... ---") so a role's signed reply
  *  and v1's bridge-signed mirror share one clean body and match as the same message. */
@@ -14,9 +14,29 @@ export class MessageRouter {
   private messages: ClearingMessage[] = [];
   private seenIds: Set<string> = new Set();
   private maxMessages: number;
+  private knownRoles: Set<string>;
+  private moderator?: string;
 
-  constructor(maxMessages = 200) {
+  constructor(maxMessages = 200, knownRoles: Iterable<string> = DEFAULT_KNOWN_ROLES) {
     this.maxMessages = maxMessages;
+    this.knownRoles = new Set(Array.from(knownRoles).map((r) => r.toLowerCase()));
+  }
+
+  setKnownRoles(roles: Iterable<string>): void {
+    this.knownRoles = new Set(Array.from(roles).map((r) => r.toLowerCase()));
+  }
+
+  /** #4875 AC5 — the role that alone receives unaddressed Jeff messages (the `room.moderator` property). */
+  setModerator(role: string | undefined): void {
+    this.moderator = role ? role.toLowerCase() : undefined;
+  }
+
+  addKnownRole(role: string): void {
+    if (role) this.knownRoles.add(role.toLowerCase());
+  }
+
+  getKnownRoles(): string[] {
+    return Array.from(this.knownRoles);
   }
 
   private trimIfFull(): void {
@@ -94,6 +114,33 @@ export class MessageRouter {
   }
 
   /**
+   * #4597 — the page of visible messages just older than `beforeId` in a room, oldest first,
+   * so scrolling up in the room loads history one page at a time. Unknown id → none.
+   */
+  getBefore(beforeId: string, limit: number, room = 'team'): ClearingMessage[] {
+    const inRoom = this.messages.filter((m) => m.visible && (m.room || 'team') === room);
+    const idx = inRoom.findIndex((m) => m.id === beforeId);
+    if (idx <= 0) return [];
+    return inRoom.slice(Math.max(0, idx - limit), idx);
+  }
+
+  private resolveUnaddressedJeffNudges(msg: ClearingMessage): PulseNudgePayload[] {
+    const roomRole = msg.room && msg.room !== 'team' ? msg.room.toLowerCase() : undefined;
+    // #4877 AC3: direct role room targets room role alone
+    if (roomRole && this.knownRoles.has(roomRole)) {
+      return [{ from: 'jeff', to: roomRole, content: msg.text }];
+    }
+    // #4875 AC5: unaddressed #team input goes to moderator alone
+    if (this.moderator && this.knownRoles.has(this.moderator)) {
+      return [{ from: 'jeff', to: this.moderator, content: msg.text }];
+    }
+    // #4604: fallback broadcast to all known non-jeff roles
+    return Array.from(this.knownRoles)
+      .filter((r) => r !== 'jeff')
+      .map((r) => ({ from: 'jeff', to: r, content: msg.text }));
+  }
+
+  /**
    * Extract @role mentions to generate Pulse nudge dispatch payloads.
    */
   extractNudges(msg: ClearingMessage): PulseNudgePayload[] {
@@ -106,7 +153,7 @@ export class MessageRouter {
 
     for (const match of matches) {
       const targetRole = match[1].toLowerCase();
-      if (KNOWN_ROLES.has(targetRole) && targetRole !== msg.from && !seenRoles.has(targetRole)) {
+      if (this.knownRoles.has(targetRole) && targetRole !== msg.from && !seenRoles.has(targetRole)) {
         seenRoles.add(targetRole);
         nudges.push({
           from: msg.from,
@@ -116,17 +163,8 @@ export class MessageRouter {
       }
     }
 
-    // #4604: unaddressed Jeff input routes to every role as in v1 (#3833).
     if (nudges.length === 0 && msg.from === 'jeff') {
-      for (const role of KNOWN_ROLES) {
-        if (role !== 'jeff') {
-          nudges.push({
-            from: 'jeff',
-            to: role,
-            content: msg.text,
-          });
-        }
-      }
+      return this.resolveUnaddressedJeffNudges(msg);
     }
 
     return nudges;

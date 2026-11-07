@@ -56,6 +56,11 @@ printf '%s\n' "$CLEAN" > "$FX/old.log"; touch -t 202601010000 "$FX/old.log"
 RC=$(run_check "$ALERT_DIR/crawler-stale.yml" "$FX/old.log" "$FX/root")
 [ "$RC" = "1" ] && p "crawler-stale: FIRES when the log has not been written in 26h" || f "crawler-stale: expected rc=1 on an old log, got $RC"
 
+# #4568 — NEGATIVE PROOF: a land crawl refused after a clean pass fires
+{ printf '%s\n' "$CLEAN"; echo "chorus-runner call: kade may not run herald-run: it runs as silas with their write rights; only silas and jeff may call it"; } > "$FX/refused.log"
+RC=$(run_check "$ALERT_DIR/crawler-stale.yml" "$FX/refused.log" "$FX/root")
+[ "$RC" = "1" ] && p "crawler-stale: FIRES when the last land crawl was refused" || f "crawler-stale: expected rc=1 on a refused land crawl, got $RC"
+
 RC=$(run_check "$ALERT_DIR/crawler-stale.yml" "$FX/does-not-exist.log" "$FX/root")
 [ "$RC" = "1" ] && p "crawler-stale: FIRES when there is no crawl log at all" || f "crawler-stale: expected rc=1 with no log, got $RC"
 
