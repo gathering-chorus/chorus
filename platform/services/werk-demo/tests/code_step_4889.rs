@@ -75,6 +75,9 @@ case "$*" in
 esac
 "#, log = log.display(), h = home.display()));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);
+    // #4921 — the gate runs claude as the card's role account; the stand-in
+    // runs here, so the test is that account (no sudo hop)
+    std::env::set_var("USER", "chorus-silas");
     // no properties door until the breaks rounds below: never the live one
     std::env::set_var("OWL_URL", "http://127.0.0.1:9");
     std::env::remove_var("CHORUS_GATE_PROFILE");

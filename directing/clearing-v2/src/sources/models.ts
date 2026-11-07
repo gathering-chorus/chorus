@@ -27,6 +27,8 @@ export interface ActorRow {
   sessions: string[];
   /** pulse's unmeasuredSource for this actor, as "source: reason". */
   unmeasured?: string;
+  /** #4895 — pulse's reachability for this actor (its delivery Presence), verbatim. */
+  reachability?: string;
 }
 
 export interface RolesData {
@@ -185,6 +187,8 @@ export interface PulseActor {
   waitingOn?: { on?: string; what?: string; since?: string };
   sessions?: Array<{ id?: string; channel?: string; live?: boolean; lastActionAt?: string }>;
   unmeasuredSource?: PulseUnmeasured[];
+  /** #4895 — reachable | unreachable | unknown | offline, from the delivery Presence. */
+  reachability?: string;
 }
 
 export interface ActorStateEnvelope {

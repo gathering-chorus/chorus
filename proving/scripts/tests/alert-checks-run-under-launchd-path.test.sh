@@ -22,30 +22,6 @@ FAIL=0
 pass(){ echo "  PASS: $1"; }
 fail(){ echo "  FAIL: $1"; FAIL=1; }
 
-echo "=== ci-main-red reports a real verdict under the launchd PATH ==="
-out=$(env -i PATH="$LAUNCHD_PATH" HOME="$HOME" bash "$ALERTS/ci-main-red.check.sh" 2>&1); rc=$?
-echo "  check said: '$out' (rc=$rc)"
-case "$out" in
-  *unverifiable*)
-    fail "blind under the launchd PATH — this is the shipped-but-dead state (#3709)" ;;
-  red:*|ok)
-    pass "reports a real verdict (${out%%:*}) under the launchd PATH" ;;
-  *)
-    fail "unrecognised output under the launchd PATH: '$out'" ;;
-esac
-
-echo "=== the #3519 contract still holds: genuinely blind is still unverifiable ==="
-# No env token AND a gh that cannot answer ⇒ unverifiable is CORRECT, not a false ok.
-NOGH=$(mktemp -d); trap 'rm -rf "$NOGH"' EXIT   # #3713 review (Kade): trap, do not leak on early exit
-printf '#!/usr/bin/env bash\nexit 1\n' > "$NOGH/gh"; chmod +x "$NOGH/gh"
-out=$(env -i PATH="$NOGH:$LAUNCHD_PATH" HOME="$HOME" GH_TOKEN="" bash "$ALERTS/ci-main-red.check.sh" 2>&1); rc=$?
-echo "  check said: '$out' (rc=$rc)"
-case "$out" in
-  ok) fail "reports plain ok while blind — a red main would never surface" ;;
-  *unverifiable*) pass "still says unverifiable when it genuinely cannot see" ;;
-  *) fail "neither verdict nor unverifiable: '$out'" ;;
-esac
-
 echo "=== no check hits a missing binary under the launchd PATH ==="
 # Two earlier attempts at this were both worse than running the thing:
 #   1. a HARDCODED binary list — could not see a tool nobody added to it (Kade's

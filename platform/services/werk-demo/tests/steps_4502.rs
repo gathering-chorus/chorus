@@ -73,6 +73,9 @@ fn each_step_exits_by_what_it_recorded() {
         fail_flag.display(), home.join("red").display()
     ));
     std::env::set_var("CHORUS_CLAUDE_BIN", &claude);
+    // #4921 — the gate runs claude as the card's role account; the stand-in
+    // runs here, so the test is that account (no sudo hop)
+    std::env::set_var("USER", "chorus-wren");
     std::env::remove_var("CHORUS_GATE_PROFILE");
     std::env::set_var("CHORUS_WERK_BASE", &base);
     std::env::set_var("CHORUS_MEM_FLOOR_DISABLE", "1");

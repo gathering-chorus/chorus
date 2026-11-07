@@ -22,7 +22,9 @@ pub fn should_seed_target(werk_target_exists: bool, canonical_target_exists: boo
 /// `seed-failed <rel>: …` (the build goes on cold; a failed seed never fails it).
 pub fn seed_target(werk: &str, canonical: &str, crate_rel: &str) -> String {
     let dst = format!("{}/{}/target", werk, crate_rel);
-    let src = format!("{}/{}/target", canonical, crate_rel);
+    let user = current_account();
+    let own = format!("{}/{}/target/{}", canonical, crate_rel, user);
+    let src = if std::path::Path::new(&own).is_dir() { own } else { format!("{}/{}/target", canonical, crate_rel) };
     let (have, can) = (std::path::Path::new(&dst).exists(), std::path::Path::new(&src).is_dir());
     if !should_seed_target(have, can) {
         return format!("{} {}", if have { "kept" } else { "cold" }, crate_rel);

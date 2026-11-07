@@ -19,6 +19,8 @@ export interface Sources {
   actorState: () => unknown;
   messages: Read<Array<{ senderName: string; messageBody: string; sentAt: string }>>;
   alerts: Read<Array<{ name: string; label?: string }>>;
+  /** #4919 — each role's setup failures from pulse's outside check; a role with any is refused */
+  setup?: () => Record<string, string[]> | undefined;
 }
 
 const why = (e: unknown) => (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 160);
@@ -45,13 +47,15 @@ export async function composeHeader(src: Sources, now = new Date()): Promise<Hea
       return actors.map(role => {
         const last = calls.get(role);
         const s = last ? Math.max(0, Math.round((now.getTime() - Date.parse(last)) / 1000)) : null;
+        const refused = new Map(Object.entries(src.setup?.() ?? {})).get(role) ?? [];
+        if (refused.length) return { role, state: 'refused', secondsSinceLastCall: s, refused };
         return { role, state: s !== null && s < QUIET_AFTER_S ? 'moving' : 'quiet', secondsSinceLastCall: s };
       });
     }),
     line('/pulse/messages/messages', src.messages, ms => ms.map(m => ({
       from: m.senderName, sentAt: m.sentAt, body: m.messageBody,
     }))),
-    line('/pulse/alerts/alerts', src.alerts, as => as.map(a => ({ name: a.name, label: a.label ?? '' }))),
+    line('/api/alertmanager/grafana/api/v2/alerts', src.alerts, as => as.map(a => ({ name: a.name, label: a.label ?? '' }))),
   ]);
   // #4807 — cards served from the last read while refreshes fail say how old they are
   const stale = src.cards.staleSeconds?.() ?? 0;
@@ -116,11 +120,17 @@ export function sharedRead<T>(
   }, { staleSeconds });
 }
 
-export async function readAlerts(base = process.env.PULSE_API_URL || 'http://127.0.0.1:3392'): Promise<Array<{ name: string; label?: string }>> {
-  const res = await fetch(`${base}/pulse/alerts/alerts?limit=50`, { signal: AbortSignal.timeout(4000) });
+/**
+ * #4916 — reads live firing alerts from Grafana's alertmanager API.
+ */
+export async function readAlerts(base = process.env.GRAFANA_ALERTS_URL || 'http://127.0.0.1:3100/api/alertmanager/grafana'): Promise<Array<{ name: string; label?: string }>> {
+  const res = await fetch(`${base}/api/v2/alerts?active=true`, { signal: AbortSignal.timeout(4000) });
   if (!res.ok) throw new Error(`alerts stream: HTTP ${res.status}`);
-  const body = await res.json() as { data?: Array<{ name?: unknown; label?: unknown }> };
-  return (body.data ?? []).map(a => ({ name: typeof a.name === 'string' ? a.name : '', label: typeof a.label === 'string' ? a.label : '' }));
+  const body = (await res.json() || []) as Array<{ labels?: { alertname?: unknown; __alert_rule_uid__?: unknown }; annotations?: { summary?: unknown } }>;
+  return body.map(a => ({
+    name: typeof a.labels?.__alert_rule_uid__ === 'string' ? a.labels.__alert_rule_uid__ : (typeof a.labels?.alertname === 'string' ? a.labels.alertname : ''),
+    label: typeof a.annotations?.summary === 'string' ? a.annotations.summary : (typeof a.labels?.alertname === 'string' ? a.labels.alertname : ''),
+  }));
 }
 
 /** #4761 — the newest messages, from the generated route (the hand-written /api/messages is retired). */

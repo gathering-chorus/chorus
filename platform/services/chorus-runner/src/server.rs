@@ -146,7 +146,7 @@ pub fn slot_trusted(slot: &std::path::Path) -> Result<(), String> {
     // the installer: whoever owns the installed bin dir (~/.chorus/bin, jeffbridwell).
     // A role running `chorus-runner call` itself may run a slot the installer wrote;
     // the shared runner (which IS the installer) still refuses a role-owned slot.
-    let installer = std::fs::metadata(format!("{}/bin", state_dir())).map(|m| m.uid()).ok();
+    let installer = std::fs::metadata("/Users/jeffbridwell/.chorus/bin").map(|m| m.uid()).or_else(|_| std::fs::metadata(format!("{}/bin", state_dir())).map(|m| m.uid())).ok();
     let trusted = [Some(me), Some(0), installer];
     let dir = slot.parent().unwrap_or(slot);
     for p in [dir, slot] {

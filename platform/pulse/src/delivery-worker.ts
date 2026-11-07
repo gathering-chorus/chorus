@@ -177,6 +177,16 @@ export class DeliveryWorker {
    *  registration after each wait (together longer than the principal's ~63s sweep), so
    *  Jeff's message to a role whose pane just changed still arrives; then not-delivered. */
   deadPaneWaitsMs: number[] = [30_000, 45_000];
+  /** #4895 — a delivery failed for good on a dead pane: the role's Presence must read
+   *  unreachable now. Pulse never writes a Presence; this asks the principal (its only
+   *  writer). Wired in service.ts; a no-op by default so tests opt in. */
+  onUndelivered: (role: string, pane: string) => void = () => {};
+
+  /** #4895 — a permanent dead-pane failure names the pane the principal marks unreachable */
+  private askUndelivered(role: string, reason: string, permanent: boolean): void {
+    const dead = permanent ? /^dead-pane (%\d+)$/.exec(reason) : null;
+    if (dead) this.onUndelivered(role, dead[1]);
+  }
 
   constructor(
     private store: MessageStore,
@@ -434,6 +444,7 @@ export class DeliveryWorker {
       });
 
       if (permanent || attempt >= maxAttempts) {
+        this.askUndelivered(row.to, classified.reason, permanent);
         this.store.markFailed(row.id, classified.reason);
         return;
       }

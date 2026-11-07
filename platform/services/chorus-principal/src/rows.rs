@@ -177,7 +177,33 @@ pub fn repaned_presence(mut presence: Value, pane: &str, tty: &str) -> Option<Va
     if !is_pane_id(pane) || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
     presence["pane"] = Value::String(pane.into());
     if !tty.is_empty() { presence["tty"] = Value::String(tty.into()); }
+    // #4895 — a new pane has had no delivery yet: reachable only after one lands there
+    presence["reachability"] = Value::String("unknown".into());
     Some(presence)
+}
+
+/// #4895 — a delivery to `pane` failed for good (the pane is gone): the presence is
+/// unreachable at once, if it still names that pane. A presence the sweep already moved
+/// to a new pane is left alone: the new pane has not been tried.
+pub fn undelivered_presence(mut presence: Value, pane: &str) -> Option<Value> {
+    presence.get("name")?;
+    if presence.get("pane").and_then(|p| p.as_str()) != Some(pane) { return None; }
+    if presence.get("reachability").and_then(|r| r.as_str()) == Some("unreachable") { return None; }
+    presence["reachability"] = Value::String("unreachable".into());
+    Some(presence)
+}
+
+/// #4895 — the cached Presence with the fields other writers move taken from the door's
+/// row (pane, tty, reachability, lastDeliveredAt). None when the door's row is not an object.
+pub fn with_door_presence(mut cached: Value, door: &Value) -> Option<Value> {
+    let d = door.as_object()?;
+    for k in ["pane", "tty", "reachability", "lastDeliveredAt"] {
+        match d.get(k).and_then(|v| v.as_str()) {
+            Some(v) if !v.is_empty() => { cached[k] = Value::String(v.into()); }
+            _ => {}
+        }
+    }
+    Some(cached)
 }
 
 /// A presence whose run ended can no longer be reached there.
@@ -245,9 +271,27 @@ pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
 /// produces a turn, so it can never mark the presence reachable.
 pub fn turn_facts(hook_input: &str) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
-    let conv = v.get("session_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let conv = conversation_of(&v);
     let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
     (conv, is_delivery(prompt))
+}
+
+/// #4895 — the conversation a turn belongs to, by the one rule chorus-hooks' shim also
+/// includes (shared/conversation_id.rs, #4785): an agy turn sends "transcript" as its
+/// session_id and its id is the brain folder in `transcript_path`. Abby's and BQ's runs
+/// read "pending" from 11-05 16:19 on because only `session_id` was read.
+mod conv_id { include!("../../shared/conversation_id.rs"); }
+pub fn conversation_of(v: &Value) -> String {
+    conv_id::conversation_id(
+        v.get("chorus_session_id").or_else(|| v.get("session_id")).and_then(|s| s.as_str()),
+        v.get("transcript_path").and_then(|s| s.as_str()),
+    ).unwrap_or_default()
+}
+
+/// #4895 — the hook input is a turn's end (Claude's Stop, Gemini's AfterAgent).
+pub fn is_turn_end(hook_input: &str) -> bool {
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    matches!(v.get("hook_event_name").and_then(|e| e.as_str()), Some("Stop" | "SubagentStop" | "AfterAgent"))
 }
 
 /// #4339 — who a prompt is from. pulse types only WAKE_LINE for a nudge, and
@@ -807,7 +851,9 @@ pub fn runtime_hooks_file(row: &Value, runtime: &str, role: &str, shim: &str, pr
     for (ours, tool) in [("eventSessionStart", false), ("eventBeforePrompt", false), ("eventBeforeTool", true), ("eventAfterTool", true), ("eventOnStop", false)] {
         let Some(native) = rs(row, ours) else { continue };
         let mut handlers = vec![hook(native)];
-        if ours == "eventBeforePrompt" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
+        // #4895 — the turn's end stamps it too: a long turn of tool calls sends no prompt,
+        // and Kade's and Wren's lastSeenAt sat 10-16 minutes old while both worked (11-06)
+        if ours == "eventBeforePrompt" || ours == "eventOnStop" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
         let entry = if tool || layout == "claude-settings" { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
         events.insert(native.to_string(), entry);
     }

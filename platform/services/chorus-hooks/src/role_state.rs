@@ -20,6 +20,7 @@
 //!   chorus-hook-shim role-state query <role|all>              → reads the derived rows
 //!   chorus-hook-shim role-state cleanup                       → no-op (nothing stored)
 
+#[cfg(test)]
 use std::fs;
 use std::process::ExitCode;
 
@@ -158,6 +159,40 @@ mod tests {
         v.iter().map(|s| s.to_string()).collect()
     }
 
+    /// #4916 — a stand-in roles door. run() enrolls the role through the roles
+    /// door (#4444); these tests read :3360 and went red with it 2026-11-06
+    /// 17:22-19:40. Every case brings its own door, never prod's.
+    fn stand_in_door() {
+        use std::io::{Read, Write};
+        static URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let url = URL.get_or_init(|| {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            std::thread::spawn(move || {
+                let body = serde_json::json!({"data":[
+                    {"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"}]}).to_string();
+                for mut stream in listener.incoming().flatten() {
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                }
+            });
+            url
+        });
+        std::env::set_var("ATHENA_MAKE_URL", url);
+    }
+
+    #[test]
+    fn a_dead_roles_door_refuses_and_the_stand_in_door_admits() {
+        // Negative proof (#3734): with no door the call is refused, so the two
+        // tests below pass because of the stand-in door, not in spite of it.
+        std::env::set_var("ATHENA_MAKE_URL", "http://127.0.0.1:9");
+        assert!(chorus_hooks::runtime_hook::agent_role_enrolled("silas").is_err());
+        stand_in_door();
+        assert!(chorus_hooks::runtime_hook::agent_role_enrolled("silas").is_ok());
+        assert!(chorus_hooks::runtime_hook::agent_role_enrolled("borg-queen").is_err(), "a role the door does not list is refused");
+    }
+
     #[test]
     fn detail_is_parsed_and_quotes_stripped() {
         assert_eq!(parse_detail(&args(&["detail=\"why not\"", "gemba=kade"])).unwrap(), "why not");
@@ -187,6 +222,7 @@ mod tests {
         let legacy = std::path::Path::new("/tmp/claude-team-scan/wren-declared.json");
         let mtime = |p: &std::path::Path| fs::metadata(p).and_then(|m| m.modified()).ok();
         let before = mtime(legacy);
+        stand_in_door();
         let code = run(&args(&["wren", "building"]));
         assert_eq!(code, ExitCode::SUCCESS);
         assert!(!scan.join("wren-declared.json").exists(), "no declared file may be written");
@@ -201,6 +237,7 @@ mod tests {
         let log = dir.join("chorus.log");
         let _ = fs::remove_file(&log);
         std::env::set_var("CHORUS_LOG_FILE", log.to_string_lossy().to_string());
+        stand_in_door();
         let code = run(&args(&["silas", "blocked", "detail=\"waiting on the DAL cred\""]));
         std::env::remove_var("CHORUS_LOG_FILE");
         assert_eq!(code, ExitCode::SUCCESS);

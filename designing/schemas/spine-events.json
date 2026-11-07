@@ -5263,6 +5263,35 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "door.busy": {
+      "producer": "athena-make",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — the roles door (athena-make serve) refused a caller with 503 busy: in-flight connections at the cap. At most one per 10s; every refusal is also on stderr.",
+      "fields": {
+        "in_flight": "Connections in flight when the caller was refused",
+        "max": "ATHENA_MAKE_MAX_CONN, the cap"
+      }
+    },
+    "door.empty-read": {
+      "producer": "athena-make",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — the roles door read no request line (empty or cut-off read), so routing fell through to Discovery. At most one per 10s; every one is also on stderr.",
+      "fields": {
+        "in_flight": "Connections in flight at the read",
+        "max": "ATHENA_MAKE_MAX_CONN, the cap"
+      }
+    },
+    "stated.intent.missing_prompt_response": {
+      "producer": "policies",
+      "category": "diagnostic",
+      "version": "1",
+      "description": "#4916 — Gemini / non-transcript runtime hook payload missing prompt_response at stop hook.",
+      "fields": {
+        "role": "Role whose stop hook ran without prompt_response"
+      }
+    },
     "stop.gate.yielded": {
       "producer": "policies",
       "category": "fact",
@@ -6619,6 +6648,46 @@
         "now": "The pane recorded now",
         "written": "Whether the door took the write",
         "role": "The role"
+      }
+    },
+    "presence.unreachable": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal undelivered: a delivery to the role's pane failed for good, so its Presence now reads unreachable; reachable again only after a delivery lands (#4895).",
+      "fields": {
+        "pane": "The pane the failed delivery targeted",
+        "reason": "Why it is unreachable (delivery-failed)",
+        "written": "Whether the door took the write",
+        "role": "The role"
+      }
+    },
+    "presence.door.unread": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal skipped a Presence write because the door's current row could not be read first (a write never puts a stale cached copy back; #4895).",
+      "fields": {
+        "presence": "The Presence row name",
+        "why": "Why the door's row could not be read",
+        "role": "The role"
+      }
+    },
+    "presence.undelivered.unwritten": {
+      "producer": "pulse",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "pulse",
+      "description": "pulse could not start chorus-principal undelivered after a delivery failed for good on a dead pane, so the role's Presence was not marked unreachable (#4895).",
+      "fields": {
+        "role": "The role the delivery was for",
+        "pane": "The dead pane",
+        "error": "Why the principal could not be started"
       }
     },
     "announce.cooldown.read": {

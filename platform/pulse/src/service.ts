@@ -9,10 +9,10 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { fetchPeers, startRolesDoorWatch } from './peers';
-import { attributeSender, markAlert, originFor } from './sender';
+import { attributeSender, markAlert, originFor, isMachineSender } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution, resolveEnds } from './presence-target';
+import { fetchPresenceResolution, fetchPresenceView, resolveEnds } from './presence-target';
 import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
 import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
@@ -21,6 +21,10 @@ import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonMinute, bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
 import { cachedCards, readAlerts, readMessages, registerHeaderRoute, sharedRead } from './pulse-header';
+import { RoleSetupWatch, liveReads } from './role-setup';
+
+// #4919 — set at startup; the header reads its state
+let roleSetupWatch: RoleSetupWatch | undefined;
 import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
@@ -238,6 +242,17 @@ async function admitNudge(body: { class?: unknown; expects?: unknown; target_ses
   return { ...readEnvelope(body, from, peers), targetSessionId };
 }
 
+// #4916 — a machine's alert does not ride on the roles door. When the door
+// cannot be read, the alert's recipient stands as its owner; delivery still
+// fails loud on a role with no pane. On 2026-11-06 the door's own alarm died
+// at 17:26 while the door was down.
+async function actorsFor(from: unknown, to: unknown): Promise<string[] | string> {
+  const actors = await peersOrRefusal(typeof from === 'string' ? from : '', to as string);
+  const recipient = typeof to === 'string' ? to.trim() : '';
+  if (typeof actors === 'string' && isMachineSender(from) && recipient !== '') return [recipient];
+  return actors;
+}
+
 /** #4432 — the peer set, or the reason the roles door could not give it (logged). */
 async function peersOrRefusal(from: string, to: string): Promise<string[] | string> {
   try { return await fetchPeers(); }
@@ -287,7 +302,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
     // The one roles-door read: #4432 already refused every nudge (503) when the
     // door is down; this read replaces that one, it adds no second dependency.
-    const actors = await peersOrRefusal(String(from ?? ''), to);
+    const actors = await actorsFor(from, to);
     if (typeof actors === 'string') return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: actors });
     const sender = attributeSender(from, to, req.body.owner, actors);
     if (sender.kind === 'refused') {
@@ -555,6 +570,12 @@ export function createApp(
   registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
+  // #4895 — where a nudge to this role goes: the one resolution delivery uses (its live
+  // run's Presence). Health checks read it here instead of the retired sessions registry.
+  app.get('/api/where/:role', async (req, res) => {
+    const { resolution: where, reachability } = await fetchPresenceView(req.params.role);
+    res.json({ role: req.params.role, ...where, ...(reachability ? { reachability } : {}), ...(where.kind === 'resolved' ? { pane: where.session.tmux ?? '', tty: where.session.tty } : {}) });
+  });
   // #4560 — actor state derived once in pulse, every surface presents it
   app.get('/api/actor-state', (_req, res) => {
     res.json(
@@ -576,7 +597,8 @@ export function createApp(
     actorState: () => actorStateService?.getActorStates(),
     // #4807 slice 2 — one pulse-api call per 2 s however many prompts ask at once
     messages: sharedRead(() => readMessages(), 2_000, 4_000, 2_000, '/pulse/messages/messages'),
-    alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/pulse/alerts/alerts'),
+    alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/api/alertmanager/grafana/api/v2/alerts'),
+    setup: () => roleSetupWatch?.state(),
   });
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {
@@ -722,6 +744,15 @@ if (require.main === module) {
   const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
   // #4889 — the machine-lane cooldown is a property (pulse.announce.machine_cooldown_ms)
   worker.watchCooldown();
+  // #4895 — a delivery that failed for good on a dead pane: the principal (the Presence's
+  // only writer) marks it unreachable now. Detached: delivery never waits on it.
+  worker.onUndelivered = (role, pane) => {
+    const bin = process.env.CHORUS_PRINCIPAL_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-principal');
+    const p = spawn(bin, ['undelivered', role, pane], { detached: true, stdio: 'ignore' });
+    p.on('error', (e) => { void emitSpine('presence.undelivered.unwritten', { role, pane, error: e.message }); });
+    p.on('exit', (code) => { if (code !== 0) void emitSpine('presence.undelivered.unwritten', { role, pane, error: `chorus-principal undelivered exited ${String(code)}` }); });
+    p.unref();
+  };
 
   // #3485 — generate the shared secret EAGERLY at boot (not lazily on first
   // request), so the secret file exists before nudge-send sends its first
@@ -908,6 +939,32 @@ if (require.main === module) {
       setBuzzDelivery(d);
       d.sweep(); // a restart mid-hold still delivers (Silas 06:42)
       setInterval(() => d.sweep(), 10_000).unref();
+    }
+    // #4919 AC4 — every role's setup, checked from outside the role every 60 s. A change
+    // (refused ↔ ok) posts one line to Jeff as system, through this pulse's own /api/nudge,
+    // so it reaches #team even when the role's own key or hooks are what broke.
+    {
+      const roles = (process.env.PULSE_SETUP_ROLES || 'silas,wren,kade,borg-queen,abby-normal').split(',').filter(Boolean);
+      roleSetupWatch = new RoleSetupWatch(roles, liveReads(), async content => {
+        const res = await fetch(`http://127.0.0.1:${PORT}/api/nudge`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-chorus-pulse-secret': resolvePulseSecret() ?? '' },
+          body: JSON.stringify({ from: 'system', to: 'jeff', content }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) throw new Error(`nudge HTTP ${res.status}`);
+        log('warn', 'role.setup.changed', { content });
+      });
+      let checking = false;
+      const tick = () => {
+        if (checking) return;
+        checking = true;
+        roleSetupWatch!.tick()
+          .catch((e) => process.stderr.write(JSON.stringify({ event: 'role.setup.check.failed', error: String(e) }) + '\n'))
+          .finally(() => { checking = false; });
+      };
+      setTimeout(tick, 5_000).unref();
+      setInterval(tick, 60_000).unref();
     }
     // #4629 S1 — read the room in shadow (judge, never deliver) when PULSE_BUZZ_SHADOW=1
     startBuzzShadow(store, emitSpine);

@@ -192,6 +192,7 @@ fn defer_open(card: u32, r: &[(Check, Outcome)]) {
 
 /// At every land: re-run every other card's open deferred checks against prod. Met clears
 /// the line; not met reopens that card (slice 5's path); unmeasured stays open.
+/// #4916 — deduplicated per card so multiple red ACs on a card trigger only one reopen.
 fn rerun_deferred(this: u32, base: &str) {
     let Ok(entries) = std::fs::read_dir(deferred_dir()) else { return };
     let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
@@ -200,6 +201,7 @@ fn rerun_deferred(this: u32, base: &str) {
         if card == this { continue; }
         let text = std::fs::read_to_string(e.path()).unwrap_or_default();
         let mut keep = Vec::new();
+        let mut red_acs = Vec::new();
         for line in text.lines().filter(|l| !l.trim().is_empty()) {
             let mut f = line.splitn(3, '\t');
             let (ac, statement, target) = (f.next().unwrap_or(""), f.next().unwrap_or(""), f.next().unwrap_or(""));
@@ -210,12 +212,24 @@ fn rerun_deferred(this: u32, base: &str) {
             match rerun_action(&o) {
                 Rerun::Cleared => { let _ = Command::new("bash").arg(&cards).args(["comment", &card.to_string(),
                     &format!("borg-prove: deferred {ac} met at the land of #{this}: {}", o.evidence())]).status(); }
-                // a reopen that did not take keeps the deferral, so the next land tries again
                 Rerun::Reopen => {
-                    let ok = reopen(card, &format!("Not met on deferred {ac} (at the land of #{this})"));
-                    if keeps_deferral(&Rerun::Reopen, ok) { keep.push(line.to_string()) }
+                    red_acs.push((ac.to_string(), line.to_string()));
                 }
                 Rerun::KeepOpen => keep.push(line.to_string()),
+            }
+        }
+        if !red_acs.is_empty() {
+            // #4916 (Wren): A card already in Later gets a new comment every land. Skip it when nothing changed.
+            let cur_status = card_view(card).and_then(|v| v.lines().find_map(|l| l.trim().strip_prefix("Status:").map(|s| s.trim().to_string())));
+            let already_later = matches!(cur_status.as_deref(), Some("Later"));
+            let ok = if already_later {
+                true
+            } else {
+                let names = red_acs.iter().map(|(ac, _)| ac.as_str()).collect::<Vec<_>>().join(", ");
+                reopen(card, "Later", &format!("Not met on deferred {names} (at the land of #{this})"))
+            };
+            for (_, line) in red_acs {
+                if keeps_deferral(&Rerun::Reopen, ok) { keep.push(line); }
             }
         }
         let _ = if keep.is_empty() { std::fs::remove_file(e.path()) } else { std::fs::write(e.path(), keep.join("\n") + "\n") };
@@ -291,15 +305,15 @@ fn record(card: u32, role: &str, v: &str, r: &[(Check, Outcome)]) {
     }
 }
 
-/// #4889 — a red in prod reopens the card: back to WIP (it was merged, so the fix is a new
-/// round on the same card), with the verdict said on the card. A move that fails is said
-/// on stderr; the step fails either way, so accept never runs.
-/// Moves the card back to WIP with the verdict as a comment. true only when both took.
-fn reopen(card: u32, verdict: &str) -> bool {
+/// #4889 / #4916 — a red in prod reopens the card:
+/// - The landing card stays in WIP for its fix round (target="WIP").
+/// - Other cards re-run from deferred checks move to Later (target="Later").
+/// Moves the card to target with the verdict as a comment. true only when both took.
+fn reopen(card: u32, target: &str, verdict: &str) -> bool {
     let cards = env("BORG_CARDS", &format!("{}/platform/scripts/cards", env("CHORUS_HOME", "")));
-    let moved = Command::new("bash").arg(&cards).args(["move", &card.to_string(), "WIP"]).env("DEPLOY_ROLE", "borg-queen").status();
+    let moved = Command::new("bash").arg(&cards).args(["move", &card.to_string(), target]).env("DEPLOY_ROLE", "borg-queen").status();
     let said = Command::new("bash").arg(&cards)
-        .args(["comment", &card.to_string(), &format!("borg-prove: reopened — prod reads {verdict}; accept held until a new round proves it")]).status();
+        .args(["comment", &card.to_string(), &format!("borg-prove: reopened to {target} — prod reads {verdict}; accept held until a new round proves it")]).status();
     let done = matches!(moved, Ok(s) if s.success()) && matches!(said, Ok(s) if s.success());
     if !done {
         eprintln!("#{card} record: reopen did not complete (move {moved:?}, comment {said:?})");
@@ -413,7 +427,7 @@ fn main() {
                 if !r.is_empty() && r.iter().all(|(c, _)| c.kind == "after") {
                     eprintln!("#{card} record: every AC is `check: after`, so nothing proved it before the land; validate should have refused it");
                 }
-                reopen(card, word);
+                reopen(card, "WIP", word);
                 exit(1)
             }
         }
