@@ -11,8 +11,31 @@
 #   POST_SETTINGS_SOURCE settings.json in git       (default: unset = settings check FAILs as unmeasured)
 #   POST_PRINCIPALS_CMD  prints the principals JSON (default: curl the roles door)
 #   POST_REACH_CMD       exits 0 when reachable     (default: curl pulse health)
+#   POST_STATE_DIR       where the refusal marker lives (default: $HOME/.chorus/post)
+#
+# Modes (wired in the role's settings.json):
+#   role-post          SessionStart: run the checks; on fail write <state>/<role>.failed
+#                      (the FAIL lines), on pass remove it.
+#   role-post --gate   PreToolUse: read the hook JSON on stdin; while the marker exists,
+#                      refuse every tool except reads and re-running role-post (exit 2,
+#                      reason on stderr, which Claude Code shows the role).
 set -u
 role="${POST_ROLE:-${CHORUS_ROLE:-}}"
+state_dir="${POST_STATE_DIR:-$HOME/.chorus/post}"
+
+if [ "${1:-}" = "--gate" ]; then
+  marker="$state_dir/$role.failed"
+  [ -n "$role" ] && [ -f "$marker" ] || exit 0
+  in=$(cat)
+  tool=$(printf '%s' "$in" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("tool_name",""))' 2>/dev/null)
+  cmd=$(printf '%s' "$in" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null)
+  # reads, and the nudge so the refused role can say what failed
+  case "$tool" in Read|Grep|Glob|mcp__chorus-api__clearing-nudge) exit 0 ;; esac
+  # re-running the POST itself, and only that: the whole command must be role-post
+  if [ "$tool" = Bash ] && printf '%s' "$cmd" | grep -qE '^[[:space:]]*([^[:space:];&|]*/)?role-post[[:space:]]*$'; then exit 0; fi
+  { echo "POST refused (#4919): this session's power-on self test failed — fix these, then re-run role-post:"; cat "$marker"; } >&2
+  exit 2
+fi
 acct="${POST_ACCOUNT:-$(id -un)}"
 idd="${POST_IDENTITY_DIR:-/Users/jeffbridwell/.chorus/identity}"
 home="${POST_HOME:-$HOME}"
@@ -20,7 +43,9 @@ src="${POST_SETTINGS_SOURCE:-}"
 principals_cmd="${POST_PRINCIPALS_CMD:-curl -sf --max-time 5 http://localhost:3360/v1/identity/principals?limit=500}"
 reach_cmd="${POST_REACH_CMD:-curl -sf --max-time 5 -o /dev/null http://localhost:3340/api/chorus/context/health}"
 fails=0
-fail() { echo "FAIL $1"; fails=$((fails+1)); }
+failed_lines=""
+fail() { echo "FAIL $1"; fails=$((fails+1)); failed_lines="${failed_lines}FAIL $1
+"; }
 ok()   { echo "ok   $1"; }
 
 [ -n "$role" ] || { echo "FAIL role: no role (set CHORUS_ROLE)"; exit 1; }
@@ -65,5 +90,10 @@ else fail "login: no saved Claude login in $home/.claude.json"; fi
 if sh -c "$reach_cmd" >/dev/null 2>&1; then ok "reach: chorus reachable"
 else fail "reach: chorus not reachable"; fi
 
-if [ "$fails" -gt 0 ]; then echo "POST refused: $fails check(s) failed — fix these before working"; exit 1; fi
+mkdir -p "$state_dir" 2>/dev/null && chmod 700 "$state_dir" 2>/dev/null
+if [ "$fails" -gt 0 ]; then
+  printf '%s' "$failed_lines" > "$state_dir/$role.failed" 2>/dev/null
+  echo "POST refused: $fails check(s) failed — fix these before working"; exit 1
+fi
+rm -f "$state_dir/$role.failed"
 echo "POST ok ($role as $acct)"

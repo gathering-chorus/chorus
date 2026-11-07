@@ -18,7 +18,7 @@ setup() {
   echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
   export POST_ROLE=silas POST_ACCOUNT=chorus-silas
   export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"
-  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true"
+  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true" POST_STATE_DIR="$T/post"
 }
 
 @test "control: a sound setup passes every check and says POST ok" {
@@ -74,4 +74,43 @@ setup() {
   run "$POST"
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   echo "$output" | grep -q "FAIL reach" || { echo "$output"; return 1; }
+}
+
+# ── the refusal: role-post --gate is the PreToolUse hook that holds a failed POST
+
+gate() { printf '%s' "$1" | "$POST" --gate; }
+
+@test "control: after a passing POST the gate lets a write through" {
+  run "$POST"; [ "$status" -eq 0 ] || return 1
+  run gate '{"tool_name":"Write","tool_input":{"file_path":"/x"}}'
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "negative proof: after a failed POST the gate refuses Bash and Write, naming the failure" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 1 ] || return 1
+  run gate '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "POST refused" || return 1
+  echo "$output" | grep -q "mode 0660, want 0600" || { echo "$output"; return 1; }
+  run gate '{"tool_name":"Write","tool_input":{"file_path":"/x"}}'
+  [ "$status" -eq 2 ] || return 1
+}
+
+@test "a failed POST still allows reads and re-running role-post, and a fixed POST clears the refusal" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 1 ] || return 1
+  run gate '{"tool_name":"Read","tool_input":{"file_path":"/x"}}'; [ "$status" -eq 0 ] || return 1
+  run gate '{"tool_name":"Bash","tool_input":{"command":"role-post"}}'; [ "$status" -eq 0 ] || return 1
+  chmod 600 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 0 ] || return 1
+  run gate '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "negative proof: a command that only mentions role-post is still refused (role-post; rm …)" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 1 ] || return 1
+  run gate '{"tool_name":"Bash","tool_input":{"command":"role-post; touch /tmp/x"}}'
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
 }

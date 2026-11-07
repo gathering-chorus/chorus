@@ -20,6 +20,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-post --gate",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim pre-tool-use",
             "timeout": 5
           }
@@ -80,6 +89,15 @@
             "type": "command",
             "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-post",
+            "timeout": 20
           }
         ]
       }
