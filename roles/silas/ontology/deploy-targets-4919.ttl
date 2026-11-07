@@ -15,6 +15,10 @@
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
 @prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
 
+# Homed in the deploys domain (Silas's; "deploy targets, rollback paths…"), which
+# domains-wren-silas.ttl:103 flagged as having "no chorus:Deploy vocab class yet".
+chorus:deploys chorus:definesVocabulary chorus:DeployTarget , chorus:TargetKind .
+
 chorus:DeployTarget a owl:Class ;
     rdfs:label "Deploy Target" ;
     rdfs:comment "What a deploy must leave in prod: one file, service, plist, config, secret or model graph, with its path, owner account, file mode, source and health check (#4919)." .
