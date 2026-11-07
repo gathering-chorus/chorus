@@ -1,0 +1,37 @@
+# loki-refusing.yml — Alert when Loki refuses queries (429 too many outstanding / 5xx)
+# Card #4623 | AC (Wren/Jeff 2026-11-07 14:48: "an alert when Loki refuses")
+#
+# Pulse, borg-prove and the demo all read Loki. On 2026-11-07 its refusals made
+# borg-prove call #4921's AC unmeasured (13:24) and dropped Wren's queries three
+# times; nobody was told until a land failed. This watches Loki's own counters.
+
+name: loki-refusing
+description: Loki is refusing queries (429/5xx) — pulse, borg-prove and demos read unmeasured
+severity: warning
+schedule: "*/10 * * * *"  # every 10 minutes
+
+check: |
+  PROM_URL="${PROM_URL:-http://localhost:9090}"
+  WINDOW="${LOKI_REFUSE_WINDOW:-15m}"
+  MIN_REFUSED="${LOKI_REFUSE_MIN:-10}"
+  q() { curl -sf --max-time 5 "$PROM_URL/api/v1/query" --data-urlencode "query=$1" \
+        | python3 -c 'import sys,json; r=json.load(sys.stdin)["data"]["result"]; print(round(float(r[0]["value"][1])) if r else 0)'; }
+  REFUSED=$(q "sum(increase(loki_request_duration_seconds_count{route=~\"loki_api_v1_query.*\",status_code=~\"429|5..\"}[$WINDOW]))") \
+    || { echo "loki-refusing unmeasured: prometheus at $PROM_URL did not answer"; exit 1; }
+  TOTAL=$(q "sum(increase(loki_request_duration_seconds_count{route=~\"loki_api_v1_query.*\"}[$WINDOW]))") \
+    || { echo "loki-refusing unmeasured: prometheus at $PROM_URL did not answer"; exit 1; }
+  if [ "$REFUSED" -ge "$MIN_REFUSED" ]; then
+    echo "loki-refusing refused=$REFUSED of $TOTAL queries in $WINDOW (threshold $MIN_REFUSED)"
+    exit 1
+  fi
+  echo "ok refused=$REFUSED of $TOTAL queries in $WINDOW (threshold $MIN_REFUSED)"
+  exit 0
+
+action: |
+  COOLDOWN="/tmp/alert-loki-refusing-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "loki-refusing: $STATUS — pulse, borg-prove and demo reads go unmeasured while this lasts" 2>/dev/null || true
