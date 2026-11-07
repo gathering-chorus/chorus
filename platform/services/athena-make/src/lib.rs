@@ -6237,6 +6237,97 @@ pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
 /// read — which made every >4KB /batch body fail 4-field validation).
 /// Never hangs: the caller sets a read timeout; EOF/timeout returns what
 /// arrived. Generic over Read so the loop is unit-tested with chunked mocks.
+/// #4916 — admit one connection, or refuse with the in-flight count when the door is
+/// full. Ok carries the count after admitting; Err carries the count that refused it.
+pub fn door_admit(active: &std::sync::atomic::AtomicUsize, max_conn: usize) -> Result<usize, usize> {
+    let now = active.load(std::sync::atomic::Ordering::SeqCst);
+    if now >= max_conn {
+        return Err(now);
+    }
+    Ok(active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1)
+}
+
+/// #4916 — true when the read carried no request line (empty, or cut off before the
+/// path). Such a request routes to "/" and is answered with Discovery.
+pub fn is_empty_read(req: &str) -> bool {
+    req.lines().next().and_then(|l| l.split_whitespace().nth(1)).is_none()
+}
+
+/// #4916 — the door's overload log line: kind (busy | empty-read) and in-flight count.
+pub fn door_overload_line(kind: &str, in_flight: usize, max_conn: usize) -> String {
+    format!("athena-make: door.{} in_flight={} max={}", kind, in_flight, max_conn)
+}
+
+/// #4916 — one spine event per 10s at most, so an overloaded door is not also
+/// spawning a chorus-log process for every refused caller.
+pub fn overload_spine_due(last: &std::sync::Mutex<Option<std::time::Instant>>, now: std::time::Instant) -> bool {
+    let mut g = match last.lock() { Ok(g) => g, Err(p) => p.into_inner() };
+    match *g {
+        Some(t) if now.duration_since(t) < std::time::Duration::from_secs(10) => false,
+        _ => { *g = Some(now); true }
+    }
+}
+
+/// #4916 — log every overload (stderr → athena-make.log) and put it on the spine,
+/// rate-limited, off the accept thread.
+fn door_overload(kind: &str, in_flight: usize, max_conn: usize, last: &std::sync::Mutex<Option<std::time::Instant>>) {
+    eprintln!("{}", door_overload_line(kind, in_flight, max_conn));
+    if overload_spine_due(last, std::time::Instant::now()) {
+        let (kind, n, m) = (kind.to_string(), in_flight, max_conn);
+        std::thread::spawn(move || {
+            let home = std::env::var("CHORUS_HOME")
+                .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+            let log = format!("{}/platform/scripts/chorus-log", home);
+            let _ = Command::new("bash").args([
+                log.as_str(), &format!("door.{}", kind), "system",
+                &format!("in_flight={}", n), &format!("max={}", m),
+            ]).output();
+        });
+    }
+}
+
+#[cfg(test)]
+mod door_overload_4916 {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn a_full_door_refuses_with_the_in_flight_count_and_admits_after_a_release() {
+        let active = AtomicUsize::new(0);
+        assert_eq!(door_admit(&active, 2), Ok(1));
+        assert_eq!(door_admit(&active, 2), Ok(2));
+        // negative proof: the third caller is refused, and the refusal names 2 in flight
+        assert_eq!(door_admit(&active, 2), Err(2));
+        active.fetch_sub(1, Ordering::SeqCst);
+        assert_eq!(door_admit(&active, 2), Ok(2));
+    }
+
+    #[test]
+    fn an_empty_or_cut_read_is_detected_and_a_real_request_is_not() {
+        assert!(is_empty_read(""));
+        assert!(is_empty_read("GET"));
+        assert!(is_empty_read("\r\n"));
+        // negative proof: the request that failed on 2026-11-06 is not an empty read
+        assert!(!is_empty_read("GET /v1/roles/roles?limit=500 HTTP/1.1\r\nHost: localhost:3360\r\n\r\n"));
+    }
+
+    #[test]
+    fn the_log_line_names_the_kind_and_in_flight_count() {
+        assert_eq!(door_overload_line("busy", 16, 16), "athena-make: door.busy in_flight=16 max=16");
+        assert_eq!(door_overload_line("empty-read", 3, 16), "athena-make: door.empty-read in_flight=3 max=16");
+    }
+
+    #[test]
+    fn the_spine_event_is_rate_limited_to_one_per_ten_seconds() {
+        let last = std::sync::Mutex::new(None);
+        let t0 = std::time::Instant::now();
+        assert!(overload_spine_due(&last, t0));
+        // negative proof: a second overload 1s later does not spawn another event
+        assert!(!overload_spine_due(&last, t0 + std::time::Duration::from_secs(1)));
+        assert!(overload_spine_due(&last, t0 + std::time::Duration::from_secs(11)));
+    }
+}
+
 pub fn read_http_request<Rd: std::io::Read>(r: &mut Rd, max_body: usize) -> String {
     let mut data: Vec<u8> = Vec::with_capacity(8192);
     let mut buf = [0u8; 4096];
@@ -6416,6 +6507,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let surfaces = &surfaces;
     let req_counter = &req_counter;
     let active_ref = &active;
+    let overload_last: &std::sync::Mutex<Option<std::time::Instant>> = &std::sync::Mutex::new(None);
     struct InFlight<'a>(&'a std::sync::atomic::AtomicUsize);
     impl Drop for InFlight<'_> {
         fn drop(&mut self) { self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst); }
@@ -6423,12 +6515,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     std::thread::scope(|sc| {
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
-        if active_ref.load(std::sync::atomic::Ordering::SeqCst) >= max_conn {
+        if let Err(in_flight) = door_admit(active_ref, max_conn) {
+            // #4916 — every busy 503 is logged with the in-flight count. The door
+            // refused every caller 17:22-19:40 on 2026-11-06 and nothing said so.
+            door_overload("busy", in_flight, max_conn, overload_last);
             let resp = http_response_ct(status_line(503), "{ \"error\": \"busy\", \"message\": \"athena-make: too many in-flight connections\" }", "application/json");
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
-        active_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         sc.spawn(move || {
             let _in_flight = InFlight(active_ref);
                 let started = std::time::Instant::now();
@@ -6438,6 +6532,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
                 let req_string = read_http_request(&mut stream, MAX_WRITE_BYTES);
                 let req = req_string.as_str();
+                if is_empty_read(req) {
+                    // #4916 — no request line arrived, so routing falls through to "/" and
+                    // the caller gets Discovery for whatever it asked. Logged, every time.
+                    door_overload("empty-read", active_ref.load(std::sync::atomic::Ordering::SeqCst), max_conn, overload_last);
+                }
                 let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
                 // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
                 // breaks select_table at serve level); carry it to handle for pagination.

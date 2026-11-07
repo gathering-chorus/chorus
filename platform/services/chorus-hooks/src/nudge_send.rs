@@ -132,6 +132,11 @@ pub fn peers_from(body: &Value) -> Result<Vec<String>, String> {
     Ok(peers)
 }
 
+/// #4916 — the senders that raise alerts on a role's behalf (pulse's MACHINE_SENDERS).
+pub fn machine_sender(from: &str) -> bool {
+    matches!(from, "system" | "pulse" | "alert" | "grafana" | "herald" | "sensor" | "ops")
+}
+
 fn read_peers(door: &str) -> Result<Vec<String>, String> {
     let url = format!("{door}/v1/roles/roles?limit=500");
     let resp = ureq::get(&url).timeout(Duration::from_secs(2)).call().map_err(|e| format!("the roles door did not answer ({url}): {e}"))?;
@@ -163,9 +168,17 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
     if message.trim().is_empty() {
         return Err("the message is empty".into());
     }
-    let peers = read_peers(&deps.door)?;
-    if !peers.iter().any(|p| p == to) {
-        return Err(format!("Unknown recipient '{to}' — the roles door lists {}", peers.join(" | ")));
+    match read_peers(&deps.door) {
+        Ok(peers) => {
+            if !peers.iter().any(|p| p == to) {
+                return Err(format!("Unknown recipient '{to}' — the roles door lists {}", peers.join(" | ")));
+            }
+        }
+        // #4916 — a machine's alert does not ride on the roles door: when the door
+        // cannot be read it goes on to pulse, which owns delivery and fails loud on a
+        // role with no pane. On 2026-11-06 the door's own alarm died here at 17:26.
+        Err(why) if !machine_sender(from) => return Err(why),
+        Err(_) => {}
     }
     let cap = resolve_cap_for(from, &deps.api, CAP_KEY_NUDGE);
     if let Err(over) = check_cap(message, cap) {
