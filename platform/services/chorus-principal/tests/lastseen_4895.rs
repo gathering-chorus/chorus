@@ -44,7 +44,8 @@ fn negative_proof_tool_moments_do_not_stamp() {
 // .gemini/settings.json), not rendered: each must stamp at the turn's end too.
 #[test]
 fn every_tracked_role_settings_stamps_at_the_turn_end() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let root = std::path::Path::new(&manifest).join("../../..");
     for (role, file, ev) in [("wren", ".claude/settings.json", "Stop"), ("kade", ".claude/settings.json", "Stop"),
                              ("silas", ".claude/settings.json", "Stop"), ("abby-normal", ".gemini/settings.json", "AfterAgent")] {
         let s = std::fs::read_to_string(root.join("roles").join(role).join(file)).unwrap();
