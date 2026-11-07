@@ -15,15 +15,13 @@ setup() {
   TTL="$REPO/roles/silas/ontology/deploy-targets-4919.ttl"
   SHAPES="$BATS_TEST_TMPDIR/shapes.nt"
   riot --output=nt "$TTL" 2>/dev/null \
-    | grep -E '^<https://jeffbridwell\.com/chorus#(DeployTarget|TargetKind)Shape>|^_:' \
+    | grep -E '^<https://jeffbridwell\.com/chorus#DeployTargetShape>|^_:' \
     | grep -vE 'shacl#(sparql|node)>' > "$SHAPES" || true
   PREFIX='@prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-chorus:target-kind-secret a chorus:TargetKind ; rdfs:label "secret" .
-chorus:target-kind-config a chorus:TargetKind ; rdfs:label "config" .
 '
-  KEY='chorus:path "/var/chorus/identity/silas/nostr.json" ; chorus:ownerAccount "jeffbridwell" ; chorus:source "minted, never in git" ; chorus:targetKind chorus:target-kind-secret'
+  KEY='chorus:path "/var/chorus/identity/silas/nostr.json" ; chorus:ownerAccount "jeffbridwell" ; chorus:source "minted, never in git" ; chorus:targetKind "secret"'
 }
 
 verdict() {
@@ -62,16 +60,16 @@ fixture() { printf '%s%s\n' "$PREFIX" "$1" > "$BATS_TEST_TMPDIR/$2.ttl"; echo "$
 }
 
 @test "negative proof: a target with no owner account is refused" {
-  f=$(fixture "chorus:t a chorus:DeployTarget ; chorus:path \"/x\" ; chorus:source \"git\" ; chorus:targetKind chorus:target-kind-config ; chorus:fileMode \"0644\" ; chorus:healthCheck \"test -f /x\" ." noowner)
+  f=$(fixture "chorus:t a chorus:DeployTarget ; chorus:path \"/x\" ; chorus:source \"git\" ; chorus:targetKind \"config\" ; chorus:fileMode \"0644\" ; chorus:healthCheck \"test -f /x\" ." noowner)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
-@test "negative proof: a target kind with no label is refused" {
-  f=$(fixture "chorus:target-kind-odd a chorus:TargetKind ." nolabel)
+@test "negative proof: a target whose kind is not one of the six is refused" {
+  f=$(fixture "chorus:t a chorus:DeployTarget ; chorus:path \"/x\" ; chorus:ownerAccount \"a\" ; chorus:fileMode \"0644\" ; chorus:source \"git\" ; chorus:healthCheck \"true\" ; chorus:targetKind \"gizmo\" ." badkind)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
-@test "negative proof: a target whose kind is not a TargetKind is refused" {
-  f=$(fixture "chorus:t a chorus:DeployTarget ; chorus:path \"/x\" ; chorus:ownerAccount \"a\" ; chorus:fileMode \"0644\" ; chorus:source \"git\" ; chorus:healthCheck \"true\" ; chorus:targetKind chorus:not-a-kind ." badkind)
-  [ "$(verdict "$f")" = VIOLATES ] || return 1
+@test "the model file holds no DeployTarget rows (rows live in platform/config/deploy-targets.ttl)" {
+  ! riot --output=nt "$TTL" 2>/dev/null | grep -q '22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#DeployTarget> \.$' || { echo "a DeployTarget instance is in the model file"; return 1; }
+  riot --output=nt "$REPO/platform/config/deploy-targets.ttl" | grep -q '22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#DeployTarget> \.$' || return 1
 }

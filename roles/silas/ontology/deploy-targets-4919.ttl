@@ -5,7 +5,9 @@
 # 2026-11-07 nobody could say what "right" was when principals drifted to
 # hostAccount=jeffbridwell (01:18) and identity keys drifted to mode 660 (07:10).
 # A DeployTarget is that declaration: what goes where, owned by which account,
-# with which mode, from which source, and how to tell it is healthy. The drift
+# with which mode, from which source, and how to tell it is healthy. The target ROWS
+# live in platform/config/deploy-targets.ttl (data, read by deploy-drift), not here:
+# instances in the model graph are v1-rows (athena-validate, run 3). The drift
 # check (AC3) and the session POST (AC4) read these rows; the deploy API (AC2)
 # is generated from them. Navigator borg-queen agreed the split 08:09.
 
@@ -17,22 +19,14 @@
 
 # Homed in the deploys domain (Silas's; "deploy targets, rollback paths…"), which
 # domains-wren-silas.ttl:103 flagged as having "no chorus:Deploy vocab class yet".
-chorus:deploys chorus:definesVocabulary chorus:DeployTarget , chorus:TargetKind .
+chorus:deploys chorus:definesVocabulary chorus:DeployTarget .
 
 chorus:DeployTarget a owl:Class ;
     rdfs:label "Deploy Target" ;
     rdfs:comment "What a deploy must leave in prod: one file, service, plist, config, secret or model graph, with its path, owner account, file mode, source and health check (#4919)." .
 
-chorus:TargetKind a owl:Class ;
-    rdfs:label "Target Kind" .
-chorus:target-kind-binary  a chorus:TargetKind ; rdfs:label "binary" .
-chorus:target-kind-service a chorus:TargetKind ; rdfs:label "service" .
-chorus:target-kind-plist   a chorus:TargetKind ; rdfs:label "LaunchAgent plist" .
-chorus:target-kind-config  a chorus:TargetKind ; rdfs:label "config" .
-chorus:target-kind-secret  a chorus:TargetKind ; rdfs:label "secret" .
-chorus:target-kind-model   a chorus:TargetKind ; rdfs:label "model graph" .
-
-chorus:targetKind a owl:ObjectProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range chorus:TargetKind .
+chorus:targetKind a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "One of: binary, service, plist, config, secret, model." .
 chorus:ownerAccount a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
     rdfs:comment "The macOS account that must own the target." .
 chorus:fileMode a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
@@ -49,52 +43,6 @@ chorus:DeployTargetShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileMode ;     sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^0[0-7]{3}$" ] ;
     sh:property [ sh:path chorus:source ;       sh:minCount 1 ] ;
     sh:property [ sh:path chorus:healthCheck ;  sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:TargetKind ] .
+    sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "binary" "service" "plist" "config" "secret" "model" ) ] .
 
-chorus:TargetKindShape a sh:NodeShape ;
-    sh:targetClass chorus:TargetKind ;
-    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] .
 
-# ── Real targets: the role identity keys (the 07:10 drift). Mode 0600, owned by the runner account.
-chorus:target-identity-abby-normal-nostr a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/.chorus/identity/abby-normal/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind chorus:target-kind-secret ;
-    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/abby-normal/nostr.json" .
-chorus:target-identity-borg-queen-nostr a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/.chorus/identity/borg-queen/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind chorus:target-kind-secret ;
-    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/borg-queen/nostr.json" .
-chorus:target-identity-kade-nostr a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/.chorus/identity/kade/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind chorus:target-kind-secret ;
-    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/kade/nostr.json" .
-chorus:target-identity-silas-nostr a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/.chorus/identity/silas/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind chorus:target-kind-secret ;
-    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/silas/nostr.json" .
-chorus:target-identity-wren-nostr a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/.chorus/identity/wren/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind chorus:target-kind-secret ;
-    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/wren/nostr.json" .
-
-# ── Real targets: role settings (Jeff 09:12: the live versions are the source of truth). Drift = uncommitted live edit.
-chorus:target-settings-silas a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/.claude/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/silas/.claude/settings.json" ; chorus:targetKind chorus:target-kind-config ;
-    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/silas/.claude/settings.json" .
-chorus:target-settings-kade a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/.claude/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/kade/.claude/settings.json" ; chorus:targetKind chorus:target-kind-config ;
-    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/kade/.claude/settings.json" .
-chorus:target-settings-wren a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/.claude/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/wren/.claude/settings.json" ; chorus:targetKind chorus:target-kind-config ;
-    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/wren/.claude/settings.json" .
-chorus:target-settings-borg-queen a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/borg-queen/.gemini/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/borg-queen/.gemini/settings.json" ; chorus:targetKind chorus:target-kind-config ;
-    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/borg-queen/.gemini/settings.json" .
-chorus:target-settings-abby-normal a chorus:DeployTarget ;
-    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/abby-normal/.gemini/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
-    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/abby-normal/.gemini/settings.json" ; chorus:targetKind chorus:target-kind-config ;
-    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/abby-normal/.gemini/settings.json" .

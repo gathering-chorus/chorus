@@ -1,0 +1,47 @@
+# deploy-targets.ttl — #4919: the live DeployTarget rows deploy-drift checks prod against.
+# The class and its shape are in roles/silas/ontology/deploy-targets-4919.ttl.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+
+# ── Real targets: the role identity keys (the 07:10 drift). Mode 0600, owned by the runner account.
+chorus:target-identity-abby-normal-nostr a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/.chorus/identity/abby-normal/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind "secret" ;
+    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/abby-normal/nostr.json" .
+chorus:target-identity-borg-queen-nostr a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/.chorus/identity/borg-queen/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind "secret" ;
+    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/borg-queen/nostr.json" .
+chorus:target-identity-kade-nostr a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/.chorus/identity/kade/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind "secret" ;
+    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/kade/nostr.json" .
+chorus:target-identity-silas-nostr a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/.chorus/identity/silas/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind "secret" ;
+    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/silas/nostr.json" .
+chorus:target-identity-wren-nostr a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/.chorus/identity/wren/nostr.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0600" ; chorus:source "minted per role, never in git" ; chorus:targetKind "secret" ;
+    chorus:healthCheck "test -s /Users/jeffbridwell/.chorus/identity/wren/nostr.json" .
+
+# ── Real targets: role settings (Jeff 09:12: the live versions are the source of truth). Drift = uncommitted live edit.
+chorus:target-settings-silas a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/.claude/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/silas/.claude/settings.json" ; chorus:targetKind "config" ;
+    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/silas/.claude/settings.json" .
+chorus:target-settings-kade a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/.claude/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/kade/.claude/settings.json" ; chorus:targetKind "config" ;
+    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/kade/.claude/settings.json" .
+chorus:target-settings-wren a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/.claude/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/wren/.claude/settings.json" ; chorus:targetKind "config" ;
+    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/wren/.claude/settings.json" .
+chorus:target-settings-borg-queen a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/borg-queen/.gemini/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/borg-queen/.gemini/settings.json" ; chorus:targetKind "config" ;
+    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/borg-queen/.gemini/settings.json" .
+chorus:target-settings-abby-normal a chorus:DeployTarget ;
+    chorus:path "/Users/jeffbridwell/CascadeProjects/chorus/roles/abby-normal/.gemini/settings.json" ; chorus:ownerAccount "jeffbridwell" ;
+    chorus:fileMode "0644" ; chorus:source "git HEAD:roles/abby-normal/.gemini/settings.json" ; chorus:targetKind "config" ;
+    chorus:healthCheck "git -C /Users/jeffbridwell/CascadeProjects/chorus diff --quiet HEAD -- roles/abby-normal/.gemini/settings.json" .

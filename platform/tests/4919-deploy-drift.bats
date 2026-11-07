@@ -20,13 +20,13 @@ setup() {
   cat > "$T/targets.ttl" <<EOF
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:t-key a chorus:DeployTarget ; chorus:path "$T/identity/silas/nostr.json" ; chorus:ownerAccount "$ME" ;
-  chorus:fileMode "0600" ; chorus:source "minted" ; chorus:targetKind chorus:target-kind-secret ;
+  chorus:fileMode "0600" ; chorus:source "minted" ; chorus:targetKind "secret" ;
   chorus:healthCheck "true" .
 chorus:t-settings a chorus:DeployTarget ; chorus:path "$T/live/settings.json" ; chorus:ownerAccount "$ME" ;
-  chorus:fileMode "0644" ; chorus:source "$T/git/settings.json" ; chorus:targetKind chorus:target-kind-config ;
+  chorus:fileMode "0644" ; chorus:source "$T/git/settings.json" ; chorus:targetKind "config" ;
   chorus:healthCheck "true" .
 chorus:t-principals a chorus:DeployTarget ; chorus:path "$T/principals.json" ; chorus:ownerAccount "$ME" ;
-  chorus:fileMode "0644" ; chorus:source "model" ; chorus:targetKind chorus:target-kind-model ;
+  chorus:fileMode "0644" ; chorus:source "model" ; chorus:targetKind "model" ;
   chorus:healthCheck "grep -q 'hostAccount\": \"chorus-silas' $T/principals.json" .
 EOF
   chmod 644 "$T/principals.json"
