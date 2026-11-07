@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: chorus
+# @domain: roles
 # @card: #4917 · owner: borg-queen
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"

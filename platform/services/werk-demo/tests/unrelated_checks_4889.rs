@@ -1,5 +1,5 @@
 // @test-type: unit — pure: AC check headers over card text; files read through a stand-in.
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! AC8: the code review flags an AC whose check is an unrelated test (its header never
 //! names the card) or a missing file. Exercises werk-demo src/lib.rs unrelated_checks.

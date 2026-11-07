@@ -1,5 +1,5 @@
 // @test-type: unit — pure: diff splitting and verdict combining; no model, no git.
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! Kade 2026-11-04 19:00: "Skipping diffs over 60k is hollow. Review big diffs per file;
 //! can't read it all → unmeasured, never pass." The old gate cut the diff at 60k and

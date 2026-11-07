@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — runs platform/scripts/deploy-drift over DeployTarget fixtures
 # and files in BATS_TEST_TMPDIR; no store, no network.
-# @domain: werk
+# @domain: deploys
 # #4919 AC3 — after a deploy, every DeployTarget is compared with what is really
 # in prod; any difference fails, naming the target and what differs. The
 # negative proofs are the two drifts of 2026-11-07: a key at mode 660 (07:10)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — prove in prod: each AC's own check against prod; whole newest run; a red reopens
-# @domain: proving
+# @domain: cicd
 # @card: #4889 · owner: silas
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 BP="$ROOT/platform/services/borg-prove"

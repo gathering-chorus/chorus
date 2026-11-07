@@ -1,5 +1,5 @@
 // @test-type: unit — pure: the built-in reviews' verdict from their own reply; no model.
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! Jeff 19:04 ("fine do that"): the code review is Claude Code's /code-review, with
 //! /security-review beside it. Kade 19:19: the verdict comes from the findings.
