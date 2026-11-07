@@ -1145,12 +1145,18 @@ async fn stated_intent_block(
     if response.exit_code != 0 || response.stdout.is_some() {
         return None;
     }
-    let tp = raw.get("transcript_path").and_then(|v| v.as_str())?;
-    let text = hooks::inject_force::last_assistant_text(tp)?;
-    let calls = hooks::autonomy_guard::tool_calls_this_turn(tp);
-    let vocab = hooks::autonomy_guard::load_commitments(&state.config.stated_intent_vocabulary);
-    let id = hooks::autonomy_guard::stated_intent_without_action(&text, calls, &vocab)?;
     let role = input.role().as_str().to_string();
+    let vocab = hooks::autonomy_guard::load_commitments(&state.config.stated_intent_vocabulary);
+
+    let id = match hooks::autonomy_guard::stated_intent_from_raw(raw, &vocab) {
+        Ok(Some(id)) => id,
+        Ok(None) => return None,
+        Err(err) => {
+            crate::state::chorus_log(&format!("stated.intent.{err}"), &role, &[]).await;
+            return None;
+        }
+    };
+
     crate::state::chorus_log("stated.intent.stall", &role, &[("commitment", id.as_str())]).await;
     Some(HookResponse::block_with_stderr(
         &hooks::autonomy_guard::stall_refusal(&id),

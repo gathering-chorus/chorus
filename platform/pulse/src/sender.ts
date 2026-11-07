@@ -18,6 +18,11 @@
 /** Senders that are machines raising an alert on a role's behalf. */
 export const MACHINE_SENDERS = ['system', 'pulse', 'alert', 'grafana', 'herald', 'sensor', 'ops'] as const;
 
+/** #4916 — a sender that raises alerts on a role's behalf. */
+export function isMachineSender(from: unknown): boolean {
+  return typeof from === 'string' && (MACHINE_SENDERS as readonly string[]).includes(from.trim());
+}
+
 export type Sender =
   | { kind: 'actor'; from: string }
   | { kind: 'alert'; from: string; source: string }
@@ -28,7 +33,7 @@ export function attributeSender(from: unknown, to: unknown, owner: unknown, acto
   const t = typeof to === 'string' ? to.trim() : '';
   const isActor = (x: string) => x !== '' && (x === 'jeff' || actors.includes(x));
   if (isActor(f)) return { kind: 'actor', from: f };
-  if ((MACHINE_SENDERS as readonly string[]).includes(f)) {
+  if (isMachineSender(f)) {
     const o = typeof owner === 'string' ? owner.trim() : '';
     const who = isActor(o) ? o : isActor(t) ? t : '';
     if (who) return { kind: 'alert', from: who, source: f };

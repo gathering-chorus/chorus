@@ -186,8 +186,10 @@ test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)
     setTimeout(() => { res.setHeader('Content-Type', 'application/json'); res.end('{"data":[]}'); }, 30);
   });
   await new Promise<void>(r => fake.listen(0, '127.0.0.1', r));
-  const prev = process.env.PULSE_API_URL;
+  const prevPulse = process.env.PULSE_API_URL;
+  const prevGrafana = process.env.GRAFANA_ALERTS_URL;
   process.env.PULSE_API_URL = `http://127.0.0.1:${fake.address().port}`;
+  process.env.GRAFANA_ALERTS_URL = `http://127.0.0.1:${fake.address().port}/api/alertmanager/grafana`;
   try {
     const request = require('supertest');
     const { createApp } = require('./service');
@@ -196,9 +198,10 @@ test('GET /pulse x20 at once reaches pulse-api once per line (service.ts wiring)
     const res = await Promise.all(Array.from({ length: 20 }, () => request(app).get('/pulse')));
     expect(res.every((r: { status: number }) => r.status === 200)).toBe(true);
     expect(hits.get('/pulse/messages/messages')).toBe(1);
-    expect(hits.get('/pulse/alerts/alerts')).toBe(1);
+    expect(hits.get('/api/alertmanager/grafana/api/v2/alerts')).toBe(1);
   } finally {
-    if (prev === undefined) delete process.env.PULSE_API_URL; else process.env.PULSE_API_URL = prev;
+    if (prevPulse === undefined) delete process.env.PULSE_API_URL; else process.env.PULSE_API_URL = prevPulse;
+    if (prevGrafana === undefined) delete process.env.GRAFANA_ALERTS_URL; else process.env.GRAFANA_ALERTS_URL = prevGrafana;
     await new Promise(r => fake.close(r));
   }
 // slow-by-design (#4915): 20 concurrent GET /pulse through createApp measured 2.4 s idle (11-06); 60 s covers the nightly's load

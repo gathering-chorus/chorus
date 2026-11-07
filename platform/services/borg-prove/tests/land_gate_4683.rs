@@ -108,7 +108,7 @@ fn a_red_in_prod_reopens_the_card_and_says_why_on_it() {
     assert!(!r.status.success(), "{}", out(&r));
     let log = fx.log("cards.log");
     assert!(log.contains("DEPLOY_ROLE=borg-queen move 4683 WIP"), "{log}");
-    assert!(log.contains("reopened — prod reads Not met"), "{log}");
+    assert!(log.contains("reopened to WIP — prod reads Not met"), "{log}");
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn record_as(fx: &Fx, sudo_exit: u8) -> Output {
     Command::new(env!("CARGO_BIN_EXE_borg-prove"))
         .args(["record", "4683", "kade"])
         .env("BORG_SUDO", &sudo)
-        .env("BORG_QUEEN_ACCOUNT", "chorus-borg-queen")
+        .env("BORG_QUEEN_ACCOUNT", "targeted-queen-account")
         .env("DAG_RUN_ID", "run7")
         .env("CHORUS_HOME", "/h")
         .output()
@@ -276,7 +276,7 @@ fn record_by_the_pipeline_runs_as_borg_queen_through_sudo() {
     let r = record_as(&fx, 0);
     assert!(r.status.success(), "{}", out(&r));
     let args = fx.log("sudo.args");
-    assert!(args.starts_with("-n -u chorus-borg-queen ") && args.contains(" record 4683 kade run7 /h"), "{args}");
+    assert!(args.starts_with("-n -u targeted-queen-account ") && args.contains(" record 4683 kade run7 /h"), "{args}");
 }
 
 // NEGATIVE PROOF: sudo refused (no sudoers line) holds accept, never records as the pipeline
@@ -330,8 +330,25 @@ fn negative_proof_the_next_land_reopens_the_card_when_its_deferred_check_is_red(
     std::fs::write(fx.dir.join("prod/later.txt"), "nope\n").unwrap();
     let next = fx.run_card("prod", "4900");
     assert!(out(&next).contains("#4683 deferred ac-4683-2: not met"), "{}", out(&next));
-    assert!(fx.log("cards.log").contains("DEPLOY_ROLE=borg-queen move 4683 WIP"), "reopened: {}", fx.log("cards.log"));
+    assert!(fx.log("cards.log").contains("DEPLOY_ROLE=borg-queen move 4683 Later"), "reopened: {}", fx.log("cards.log"));
     assert!(!fx.dir.join("results/deferred/4683.tsv").exists(), "handled, no longer open");
+}
+
+// #4916 (Wren) — a card already in Later is not moved or commented again at every land.
+#[test]
+fn negative_proof_a_red_deferred_card_already_in_later_gets_no_new_move_or_comment() {
+    let fx = after_fx("after-later");
+    let _ = fx.run("prod");
+    let _ = fx.run("record");
+    std::fs::write(fx.dir.join("prod/later.txt"), "nope\n").unwrap();
+    let view = std::fs::read_to_string(fx.dir.join("view.txt")).unwrap().replace("Status:   WIP", "Status:   Later");
+    std::fs::write(fx.dir.join("view.txt"), view).unwrap();
+    let before = fx.log("cards.log");
+    let next = fx.run_card("prod", "4900");
+    assert!(out(&next).contains("#4683 deferred ac-4683-2: not met"), "{}", out(&next));
+    let after = fx.log("cards.log");
+    let new = &after[before.len()..];
+    assert!(!new.contains("move 4683") && !new.contains("comment 4683"), "already Later, yet: {new}");
 }
 
 #[test]

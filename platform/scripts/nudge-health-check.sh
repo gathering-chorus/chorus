@@ -50,27 +50,25 @@ else
 fi
 
 FAILURES=0
+UNMEASURED_ROLES=0
 
-# #4895 — where a nudge to the role goes: pulse's own answer (/api/where/<role>, the
-# resolution delivery uses: the live run's Presence). The ~/.chorus/sessions registry
-# this read before is retired for routing (#4361) and kept dead panes alive here
-# (11-05/06: "can't find pane %16/%14" long after the roles had moved). Prints
-# kind|pane|why; a failed read prints unread|| with the reason.
+# #4895 / #4916 — where a nudge to the role goes: pulse's own answer (/api/where/<role>,
+# the resolution delivery uses: the live run's Presence with reachability). Prints
+# kind|pane|reachability|why; an unreadable source prints unread|||why.
+# #4916: direct tmux inspection retired (Jeff 11-05; non-jeff accounts lack socket access).
+# Silas 16:50 note: gap to name: a dead pane nobody nudges stays "reachable" (Pulse reachability
+# is cached until the next delivery attempt).
 WHERE_URL="${WHERE_URL:-${PULSE_URL}/api/where}"
 where_of() {
   local body
-  body=$(curl -sf --max-time 3 "${WHERE_URL}/$1" 2>/dev/null) || { echo "unread||${WHERE_URL}/$1 did not answer"; return; }
+  body=$(curl -sf --max-time 3 "${WHERE_URL}/$1" 2>/dev/null) || { echo "unread|||${WHERE_URL}/$1 did not answer"; return; }
   printf '%s' "$body" | python3 -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
 except Exception:
-    print("unread||not JSON"); sys.exit(0)
-print("|".join([str(d.get("kind", "unread")), str(d.get("pane", "")), str(d.get("why", d.get("run", "")))]))'
-}
-# the panes tmux has now (TMUX_PANES_OVERRIDE is the test seam: tmux is not in a test)
-live_panes() {
-  if [ -n "${TMUX_PANES_OVERRIDE+x}" ]; then printf '%s\n' $TMUX_PANES_OVERRIDE; else tmux list-panes -a -F '#{pane_id}' 2>/dev/null; fi
+    print("unread|||not JSON"); sys.exit(0)
+print("|".join([str(d.get("kind", "unread")), str(d.get("pane", "")), str(d.get("reachability", "")), str(d.get("why", d.get("run", "")))]))'
 }
 
 # Fetch online status from Pulse actor-state (must be reachable, otherwise UNMEASURED)
@@ -131,10 +129,14 @@ for role in "${ROLES[@]}"; do
   fi
 
   where="$(where_of "$role")"
-  kind="${where%%|*}"
-  rest="${where#*|}"
-  rpane="${rest%%|*}"
-  why="${rest#*|}"
+  IFS='|' read -r kind rpane reachability why <<< "$where"
+
+  if [ "$kind" = "unread" ]; then
+    echo "UNMEASURED — where/${role} is unreadable (${why})"
+    UNMEASURED_ROLES=$((UNMEASURED_ROLES + 1))
+    log_canary "role=${role} where=unread"
+    continue
+  fi
 
   # Pulse online state for this role
   pulse_online="unknown"
@@ -159,12 +161,14 @@ PY
 
   case "$kind" in
     resolved)
-      # the pane delivery would type into: it must exist now
-      if [ -n "$rpane" ] && live_panes | grep -qx "$rpane"; then
-        echo "OK: ${role} — live run's Presence pane ${rpane} exists → delivery can land"
+      if [ "$reachability" = "reachable" ]; then
+        echo "OK: ${role} — live run resolved and reachable (${rpane})"
+      elif [ "$reachability" = "unknown" ] || [ -z "$reachability" ]; then
+        echo "UNMEASURED: ${role} — reachability unknown (not yet delivered)"
+        UNMEASURED_ROLES=$((UNMEASURED_ROLES + 1))
       else
-        echo "ALERT: ${role} — live run's Presence names pane ${rpane:-<none>}, which tmux does NOT have — delivery cannot land"
-        [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=tmux-pane-gone,pane=${rpane:-none}" 2>/dev/null || true
+        echo "ALERT: ${role} — live run on pane ${rpane:-<none>} is unreachable"
+        [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=unreachable,pane=${rpane:-none}" 2>/dev/null || true
         FAILURES=$((FAILURES + 1))
       fi
       log_canary "role=${role} where=pane pane=${rpane:-none}" ;;
@@ -188,9 +192,8 @@ PY
       fi
       log_canary "role=${role} where=none status=offline" ;;
     *)
-      echo "ALERT: ${role} — where it is could not be read (${why:-$kind}); unmeasured, never a pass"
-      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=where-unread" 2>/dev/null || true
-      FAILURES=$((FAILURES + 1))
+      echo "UNMEASURED: ${role} — where it is could not be read (${why:-$kind})"
+      UNMEASURED_ROLES=$((UNMEASURED_ROLES + 1))
       log_canary "role=${role} where=unread" ;;
   esac
 done
@@ -198,6 +201,9 @@ done
 if [ "$FAILURES" -gt 0 ]; then
   echo "NUDGE HEALTH: ${FAILURES} role(s) have issues"
   exit 1
+elif [ "$UNMEASURED_ROLES" -gt 0 ]; then
+  echo "NUDGE HEALTH: ${UNMEASURED_ROLES} role(s) unmeasured"
+  exit 2
 else
   echo "NUDGE HEALTH: all roles reachable"
   exit 0

@@ -39,6 +39,8 @@ pub use hooks::session_init_gate;
 // #3677 — the ADR-056 advisory pins (tests/adr056_advisory_3677.rs) exercise
 // these from outside the crate; advisory-ness is a PUBLIC contract now.
 pub use hooks::{pair_gate, quality_gate};
+// #4916 — expose autonomy_guard commitment loading and stated_intent check for unit tests.
+pub use hooks::autonomy_guard::{load_commitments, stated_intent_from_raw, stated_intent_without_action};
 // #3134 — expose the pure per-prompt search URL-builder for its integration
 // test (tests/context_inject_card_tag_3134.rs). Stateless helper, narrow surface.
 pub use hooks::context_inject::build_search_url;

@@ -117,7 +117,7 @@ JSON
   # #4895 — where each role is comes from pulse's /api/where (its live run's Presence)
   mkdir -p "$W/where"; n=40
   for r in wren silas kade borg-queen abby-normal; do
-    n=$((n + 1)); printf '{"role":"%s","kind":"resolved","pane":"%%%s"}' "$r" "$n" > "$W/where/$r"
+    n=$((n + 1)); printf '{"role":"%s","kind":"resolved","pane":"%%%s","reachability":"reachable"}' "$r" "$n" > "$W/where/$r"
   done
 
   # Stub Pulse returning live actors
@@ -131,7 +131,7 @@ JSON
 
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           pulse_actors="$PULSE_JSON" \
           MESSAGES_DB="/dev/null" \
@@ -152,18 +152,18 @@ JSON
 {"data":[{"name":"silas","roleKind":"agent"}]}
 JSON
 
-  mkdir -p "$W/where"; printf '{"role":"silas","kind":"resolved","pane":"%%42"}' > "$W/where/silas"
+  mkdir -p "$W/where"; printf '{"role":"silas","kind":"resolved","pane":"%%42","reachability":"reachable"}' > "$W/where/silas"
 
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
           MESSAGES_DB="/dev/null" \
           bash "$HEALTH"
   test "$status" -eq 0
-  out_has "OK: silas — live run's Presence pane %42 exists → delivery can land"
+  out_has "OK: silas — live run resolved and reachable (%42)"
   out_has "NUDGE HEALTH: all roles reachable"
 }
 
@@ -195,7 +195,7 @@ JSON
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="borg-queen" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-borg-queen","sessions":[{"live":true}]}]}' \
@@ -207,7 +207,7 @@ JSON
   # Case B: delivery path refuses unknown actor
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="unregistered-intruder" \
           pulse_actors='{"actors":[]}' \
@@ -228,7 +228,7 @@ JSON
 {"data":[{"name":"silas","roleKind":"agent"}]}
 JSON
 
-  mkdir -p "$W/where"; printf '{"role":"silas","kind":"resolved","pane":"%%42"}' > "$W/where/silas"
+  mkdir -p "$W/where"; printf '{"role":"silas","kind":"resolved","pane":"%%42","reachability":"reachable"}' > "$W/where/silas"
 
   DB="$W/messages.db"
   sqlite3 "$DB" "
@@ -252,7 +252,7 @@ JSON
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
@@ -269,7 +269,7 @@ JSON
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="file://$W/roles.json" \
           CHORUS_MESSAGES_DB="$DB" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           ROLES_OVERRIDE="silas" \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
@@ -288,7 +288,7 @@ JSON
 
   run env CHORUS_ROOT="$ROOT" \
           CHORUS_ROLES_URL="http://127.0.0.1:9/unreachable-roles-door" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           bash "$HEALTH"
   test "$status" -eq 2
@@ -304,7 +304,7 @@ JSON
   # Pulse URL unreadable / failing -> must exit 2 UNMEASURED
   run env CHORUS_ROOT="$ROOT" \
           PULSE_URL="http://127.0.0.1:9/unreachable-pulse" \
-          WHERE_URL="file://$W/where" TMUX_PANES_OVERRIDE="%41 %42 %43 %44 %45" \
+          WHERE_URL="file://$W/where" \
           CANARY_DIR="$W/canary" \
           bash "$HEALTH"
   test "$status" -eq 2
