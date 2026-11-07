@@ -115,6 +115,18 @@ impl Deps<'_> {
     }
 }
 
+/// Core roles that receive machine/system alerts even when the roles door is down (#4916).
+pub const CORE_ROLES: &[&str] = &["silas", "wren", "kade", "jeff", "abby-normal", "borg-queen"];
+
+/// #4916 — alerts about the roles door or about delivery itself reach their owner
+/// without going through the roles door (when the door is dead, its alarm cannot ride on it).
+pub fn is_door_or_delivery_alert(from: &str, message: &str) -> bool {
+    let m = message.to_lowercase();
+    let is_machine = matches!(from, "system" | "pulse" | "alert" | "grafana" | "herald" | "sensor" | "ops");
+    let is_door_or_delivery = m.contains("roles door") || m.contains("roles-door") || m.contains("delivery");
+    is_door_or_delivery && (is_machine || from.is_empty())
+}
+
 /// Every agent or human role the roles door lists (peers.ts roleSetsFrom).
 pub fn peers_from(body: &Value) -> Result<Vec<String>, String> {
     let rows = body.get("data").and_then(Value::as_array).ok_or("the roles door answered with no data list")?;
@@ -163,9 +175,15 @@ pub fn send(args: &[String], deps: &Deps) -> Result<String, String> {
     if message.trim().is_empty() {
         return Err("the message is empty".into());
     }
-    let peers = read_peers(&deps.door)?;
-    if !peers.iter().any(|p| p == to) {
-        return Err(format!("Unknown recipient '{to}' — the roles door lists {}", peers.join(" | ")));
+    if is_door_or_delivery_alert(from, message) {
+        if !CORE_ROLES.contains(&to) {
+            return Err(format!("Unknown recipient '{to}' — expected core role"));
+        }
+    } else {
+        let peers = read_peers(&deps.door)?;
+        if !peers.iter().any(|p| p == to) {
+            return Err(format!("Unknown recipient '{to}' — the roles door lists {}", peers.join(" | ")));
+        }
     }
     let cap = resolve_cap_for(from, &deps.api, CAP_KEY_NUDGE);
     if let Err(over) = check_cap(message, cap) {

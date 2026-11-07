@@ -9,7 +9,7 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { fetchPeers, startRolesDoorWatch } from './peers';
-import { attributeSender, markAlert, originFor } from './sender';
+import { attributeSender, markAlert, originFor, CORE_ROLES, isDoorOrDeliveryAlert } from './sender';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
 import { fetchPresenceResolution, fetchPresenceView, resolveEnds } from './presence-target';
@@ -287,7 +287,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // #4637 AC1/AC2 — only real actors send; a machine's alert is its owning role's.
     // The one roles-door read: #4432 already refused every nudge (503) when the
     // door is down; this read replaces that one, it adds no second dependency.
-    const actors = await peersOrRefusal(String(from ?? ''), to);
+    // #4916 — an alert about the roles door or about delivery itself reaches its
+    // owner without going through the roles door (when the door is dead, its alarm cannot ride on it).
+    const actors = isDoorOrDeliveryAlert(from, content)
+      ? (CORE_ROLES as readonly string[])
+      : await peersOrRefusal(String(from ?? ''), to);
     if (typeof actors === 'string') return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: actors });
     const sender = attributeSender(from, to, req.body.owner, actors);
     if (sender.kind === 'refused') {
