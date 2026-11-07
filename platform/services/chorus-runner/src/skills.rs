@@ -319,6 +319,10 @@ pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, St
         ("CHORUS_TRACE", trace.to_string()),
         // #4535 — a tool run under a role's own Mac account finds the shared state.
         ("CHORUS_STATE_DIR", crate::server::state_dir()),
+        // #4780 / #4917 — git operations across worktrees with different owners
+        ("GIT_CONFIG_COUNT", "1".to_string()),
+        ("GIT_CONFIG_KEY_0", "safe.directory".to_string()),
+        ("GIT_CONFIG_VALUE_0", "*".to_string()),
     ]
 }
 
