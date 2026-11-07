@@ -362,6 +362,7 @@ impl Picks {
 fn step_scope(ctx: &Ctx) -> Result<Option<i32>, String> {
     let (args, werk, changed, role, card, trace) = (&ctx.args[..], ctx.werk.as_str(), &ctx.changed, ctx.role.as_str(), ctx.card.as_str(), ctx.trace.as_str());
 
+    refuse_unlisted_domains(werk, changed, role, card, trace);
     let legacy_units = affected_units(&changed);
     // #3634 — stage 2: derive the plan from the tests domain. Model rows (filePath,
     // covers) widen the legacy path-derived units to every unit holding tests that
@@ -3514,6 +3515,49 @@ pub(crate) fn use_type_order(dir: &werk_test::run_dir::RunDir) {
     if let Some(names) = dir.get("type-order") {
         std::env::set_var(werk_test::TYPE_ORDER_ENV, names.join(","));
     }
+}
+
+/// #4915 round 2 (Jeff's go 11-07 08:47) — a changed test whose `@domain:` names
+/// a domain the store does not list is refused before anything runs, naming each
+/// file. The store's list unreadable is said as UNMEASURED, never a silent pass.
+fn refuse_unlisted_domains(werk: &str, changed: &[String], role: &str, card: &str, trace: &str) {
+    let files: Vec<(String, String)> = changed.iter()
+        .filter(|f| werk_test::is_test_file(f))
+        .filter_map(|f| std::fs::read_to_string(Path::new(werk).join(f)).ok().map(|c| (f.clone(), c)))
+        .collect();
+    if files.is_empty() {
+        return;
+    }
+    let Some(listed) = fetch_domain_names() else {
+        println!("domain-check: UNMEASURED — the store did not list its Domains; {} changed test file(s) not checked", files.len());
+        return;
+    };
+    let bad = werk_test::unlisted_test_domains(&files, &listed);
+    if bad.is_empty() {
+        return;
+    }
+    for (f, d) in &bad {
+        eprintln!("domain-check: REFUSED — {f} declares @domain: {d}, which the store does not list. Use a listed domain (GET /v1/domains/domains) and re-run.");
+    }
+    eprintln!("  Nothing ran. A test filed under an unlisted domain lands outside every domain's run (#4915).");
+    emit_spine("test.scope.refused", role, card, trace,
+        &[("reason", "unlisted-domain"), ("path", bad[0].0.as_str()), ("count", &bad.len().to_string())]);
+    std::process::exit(2);
+}
+
+/// #4915 round 2 — the Domain names the store lists; None when the door or jq failed.
+fn fetch_domain_names() -> Option<Vec<String>> {
+    let base = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let body = Command::new("curl").args(["-sf", "--max-time", "10", &format!("{base}/v1/domains/domains?limit=500")]).output().ok()?;
+    if !body.status.success() {
+        return None;
+    }
+    let mut jq = Command::new("jq").args(["-r", ".data[].name"])
+        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().ok()?;
+    std::io::Write::write_all(&mut jq.stdin.take()?, &body.stdout).ok()?;
+    let out = jq.wait_with_output().ok()?;
+    let names: Vec<String> = String::from_utf8_lossy(&out.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect();
+    (out.status.success() && !names.is_empty()).then_some(names)
 }
 
 /// #4540 — the registry read as jq TSV; None when the door or jq failed.

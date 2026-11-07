@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: e2e — after land: reads the live demo witness, no fixture
-# @domain: proving
+# @domain: cicd
 # @card: #4889 · owner: silas
 # @needs: nightly — after land: reads the next card's review; the card's AC says `check: after test` (borg-prove re-runs it at the next land)
 # Kade 19:53: after #4889 lands, the next card's architecture review must show that

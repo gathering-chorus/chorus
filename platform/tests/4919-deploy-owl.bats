@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — runs SHACL over fixtures written to BATS_TEST_TMPDIR against
 # the repo's DeployTarget shape (roles/silas/ontology/deploy-targets-4919.ttl); no store, no network.
-# @domain: werk
+# @domain: deploys
 # #4919 AC1 — a deploy target declares what should exist in prod: path, owner
 # account, file mode, source, health check and kind. 2026-11-07 showed the cost
 # of not declaring it: principals drifted to hostAccount=jeffbridwell (01:18) and

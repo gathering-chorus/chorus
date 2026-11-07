@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: autonomy
+# @domain: roles
 # @card: #4916 · owner: silas
 # #4916 — the stated-intent check reads platform/config/stated-intent-vocabulary.json.
 # The check's logic is proved in chorus-hooks tests/stated_intent_gemini_4916.rs;

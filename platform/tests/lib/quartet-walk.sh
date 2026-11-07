@@ -157,13 +157,18 @@ print("UNMET " + pat)' "$1" "$2" "$3"
 # leave its row (review 11-06). The walk refuses instead.
 PERMS_JSON="$(curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" 2>/dev/null)" || {
   echo "UNMEASURED: $API/v1/security/permissions did not answer — cannot tell which creates would leave a row; nothing walked." >&2
-  exit 3
+  exit 2  # the measurement itself failed (rc=3 is a deliberate skip, header above)
 }
+# a body that is not the rows list (non-JSON, no data) is the same refusal, never "no Append rows"
 APPEND_ONLY="$(printf '%s' "$PERMS_JSON" | python3 -c 'import json,sys
 d=json.load(sys.stdin); rows=d.get("data",d) if isinstance(d,dict) else d
-me=[r for r in rows if r.get("agent")=="principal-"+sys.argv[1]]
+if not isinstance(rows,list): sys.exit(1)
+me=[r for r in rows if isinstance(r,dict) and r.get("agent")=="principal-"+sys.argv[1]]
 w={r["accessTo"] for r in me if r.get("mode","").endswith("#Write")}
-print(" ".join(sorted({r["accessTo"] for r in me if r.get("mode","").endswith("#Append")}-w)))' "$OWNER" 2>/dev/null)"
+print(" ".join(sorted({r["accessTo"] for r in me if r.get("mode","").endswith("#Append")}-w)))' "$OWNER" 2>/dev/null)" || {
+  echo "UNMEASURED: $API/v1/security/permissions answered something that is not the Permission rows; nothing walked." >&2
+  exit 2
+}
 
 # 0 when <manifest> names no ownedBy field and <graph> is one this owner may only append to
 append_only_ownerless() {  # <manifest> <graph>

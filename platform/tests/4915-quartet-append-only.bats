@@ -45,10 +45,18 @@ setup() {
 }
 
 @test "negative proof: when the Permission rows cannot be read the walk refuses, never creates" {
-  block="$(sed -n '/^PERMS_JSON="\$(curl/,/^}/p' "$ROOT/platform/tests/lib/quartet-walk.sh")"
+  block="$(sed -n '/^PERMS_JSON="\$(curl/,/^append_only_ownerless() {/p' "$ROOT/platform/tests/lib/quartet-walk.sh" | sed '$d')"
   [ -n "$block" ] || { echo "the refusal block is gone from quartet-walk.sh"; return 1; }
   mkdir -p "$BATS_TEST_TMPDIR/bin"; printf '#!/bin/sh\nexit 22\n' > "$BATS_TEST_TMPDIR/bin/curl"; chmod +x "$BATS_TEST_TMPDIR/bin/curl"
   run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" API=http://x bash -c "$block; echo SENTINEL-CONTINUED-4915"
-  [ "$status" -eq 3 ] || { echo "$output"; return 1; }
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  [[ "$output" != *SENTINEL-CONTINUED-4915* ]] || return 1
+}
+
+@test "negative proof: a 200 whose body is not the Permission rows also refuses (review 11-06)" {
+  block="$(sed -n '/^PERMS_JSON="\$(curl/,/^append_only_ownerless() {/p' "$ROOT/platform/tests/lib/quartet-walk.sh" | sed '$d')"
+  mkdir -p "$BATS_TEST_TMPDIR/bin"; printf '#!/bin/sh\necho "<html>proxy error</html>"\n' > "$BATS_TEST_TMPDIR/bin/curl"; chmod +x "$BATS_TEST_TMPDIR/bin/curl"
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" API=http://x OWNER=quartet bash -c "$block; echo SENTINEL-CONTINUED-4915"
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
   [[ "$output" != *SENTINEL-CONTINUED-4915* ]] || return 1
 }

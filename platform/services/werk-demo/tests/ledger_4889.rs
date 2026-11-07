@@ -1,5 +1,5 @@
 // @test-type: unit — the review ledger over recorded findings; no model, no git
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! Jeff 11-05 10:06 ("isnt there just a new commit to review?"): a round reads only what
 //! changed since the last reviewed commit, and settled findings stay settled. Kade 10:07:

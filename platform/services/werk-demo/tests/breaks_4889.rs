@@ -1,5 +1,5 @@
 // @test-type: unit — pure: the breaks/notes split over recorded findings; no model
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! Jeff 2026-11-05 16:05 ("Yes, certainly"): a finding that breaks something Jeff uses
 //! blocks the land; every other finding is a note on his go page, and ships.
