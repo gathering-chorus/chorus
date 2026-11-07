@@ -34,7 +34,7 @@ out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
           CANARY_DIR="$W/canary" ROLES_OVERRIDE="silas" MESSAGES_DB=/dev/null \
           pulse_actors='{"actors":[{"aboutPrincipal":"principal-silas","sessions":[{"live":true}]}]}' \
           bash "$HEALTH"
-  test "$status" -ne 0
+  test "$status" -eq 1   # FAILURES, not UNMEASURED (2): kills the FAILURES→UNMEASURED mutant
   out_has "ALERT: silas — live run on pane %3 is unreachable"
 }
 
