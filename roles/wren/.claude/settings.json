@@ -98,7 +98,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-post",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-post --session-start",
             "timeout": 20
           }
         ]

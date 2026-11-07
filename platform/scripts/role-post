@@ -20,6 +20,23 @@
 #                      refuse every tool except reads and re-running role-post (exit 2,
 #                      reason on stderr, which Claude Code shows the role).
 set -u
+# --session-start (Jeff 09:27: "why cant i just see the error in claude code"): run the
+# POST and answer as a Claude Code SessionStart hook — on fail a systemMessage the person
+# at the terminal sees, plus the FAILs as context for the role; on pass, one context line.
+if [ "${1:-}" = "--session-start" ]; then
+  out=$("$0" 2>&1); rc=$?
+  python3 -c '
+import json,sys
+out,rc=sys.argv[1],int(sys.argv[2])
+fails=[l[5:] for l in out.splitlines() if l.startswith("FAIL ")]
+if rc==0:
+    print(json.dumps({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"POST ok: "+out.splitlines()[-1]}}))
+else:
+    msg="POST refused — this role will not work until fixed: "+"; ".join(fails)
+    print(json.dumps({"systemMessage":msg,"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":msg+"\nRe-run role-post after fixing. Reads and clearing-nudge still work."}}))
+' "$out" "$rc"
+  exit 0
+fi
 role="${POST_ROLE:-${CHORUS_ROLE:-}}"
 state_dir="${POST_STATE_DIR:-$HOME/.chorus/post}"
 
@@ -103,9 +120,18 @@ if sh -c "$reach_cmd" >/dev/null 2>&1; then ok "reach: chorus reachable"
 else fail "reach: chorus not reachable"; fi
 
 mkdir -p "$state_dir" 2>/dev/null && chmod 700 "$state_dir" 2>/dev/null
+# Tell Jeff on every CHANGE between refused and ok (Jeff 09:21/09:27: the #team room, one
+# line), sent as system so a role whose own key is broken (660) is still heard (Wren 09:27).
+# The same message is what the pulse roles line reads back (senderName=system, body
+# "POST refused (<role>)" / "POST ok (<role>)"), so there is one path, not two.
+notify() { ${POST_NOTIFY_CMD:-/Users/jeffbridwell/.chorus/bin/chorus-hook-shim nudge-send system jeff} "$1" >/dev/null 2>&1 \
+  || echo "WARN could not tell Jeff: $1" >&2; }
+was_refused=0; [ -f "$state_dir/$role.failed" ] && was_refused=1
 if [ "$fails" -gt 0 ]; then
   printf '%s' "$failed_lines" > "$state_dir/$role.failed" 2>/dev/null
+  [ "$was_refused" = 1 ] || notify "POST refused ($role): $(printf '%s' "$failed_lines" | head -3 | sed 's/^FAIL //' | tr '\n' ';' | cut -c1-200)"
   echo "POST refused: $fails check(s) failed — fix these before working"; exit 1
 fi
 rm -f "$state_dir/$role.failed"
+[ "$was_refused" = 1 ] && notify "POST ok ($role): refusal cleared"
 echo "POST ok ($role as $acct)"

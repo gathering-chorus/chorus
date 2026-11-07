@@ -18,8 +18,9 @@ setup() {
   echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
   export POST_ROLE=silas POST_ACCOUNT=chorus-silas
   export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"
-  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true" POST_STATE_DIR="$T/post" POST_LOG_CMD="$T/log"
+  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true" POST_STATE_DIR="$T/post" POST_LOG_CMD="$T/log" POST_NOTIFY_CMD="$T/notify"
   printf '#!/bin/sh\necho "$@" >> %s/log.out\n' "$T" > "$T/log"; chmod 755 "$T/log"
+  printf '#!/bin/sh\necho "$@" >> %s/notify.out\n' "$T" > "$T/notify"; chmod 755 "$T/notify"
 }
 
 @test "control: a sound setup passes every check and says POST ok" {
@@ -131,4 +132,36 @@ gate() { printf '%s' "$1" | "$POST" --gate; }
   run "$POST" --waive "the door check is wrong"
   [ "$status" -eq 2 ] || return 1
   [ -f "$BATS_TEST_TMPDIR/post/silas.failed" ] || return 1
+}
+
+@test "Jeff is told once when a role is refused, not on every re-run, and once when it clears" {
+  N="$BATS_TEST_TMPDIR/notify.out"
+  run "$POST"; [ "$status" -eq 0 ] || return 1
+  [ ! -s "$N" ] || { echo "told Jeff on a plain pass"; cat "$N"; return 1; }
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; run "$POST"
+  [ "$(grep -c '^POST refused (silas): key:' "$N")" -eq 1 ] || { cat "$N"; return 1; }
+  chmod 600 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"; [ "$status" -eq 0 ] || return 1
+  [ "$(grep -c '^POST ok (silas): refusal cleared' "$N")" -eq 1 ] || { cat "$N"; return 1; }
+}
+
+@test "negative proof: Jeff cannot be told is a warning, never a pass of the refusal" {
+  export POST_NOTIFY_CMD=false
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || return 1
+  echo "$output" | grep -q "WARN could not tell Jeff" || { echo "$output"; return 1; }
+}
+
+@test "session-start mode: a failed POST shows the person at the terminal a systemMessage naming the failure" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST" --session-start
+  [ "$status" -eq 0 ] || return 1
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d["systemMessage"]; assert "POST refused" in m and "mode 0660, want 0600" in m, m' || { echo "$output"; return 1; }
+}
+
+@test "negative proof: a passing POST shows no systemMessage (nothing to alarm on)" {
+  run "$POST" --session-start
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "systemMessage" not in d and "POST ok" in d["hookSpecificOutput"]["additionalContext"]' || { echo "$output"; return 1; }
 }
