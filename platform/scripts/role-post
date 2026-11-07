@@ -1,0 +1,69 @@
+#!/bin/bash
+# role-post — #4919 AC4: a role's power-on self test at session start.
+# Checks the role's own setup and refuses (exit 1) naming every check that failed.
+# A check that cannot be measured is a FAIL, never a pass (#3734).
+#
+# Defaults are the live setup; each POST_* variable overrides one input (tests).
+#   POST_ROLE            role name                  (default: $CHORUS_ROLE)
+#   POST_ACCOUNT         macOS account it runs as   (default: id -un)
+#   POST_IDENTITY_DIR    identity key dir           (default: /Users/jeffbridwell/.chorus/identity)
+#   POST_HOME            the role's home            (default: $HOME)
+#   POST_SETTINGS_SOURCE settings.json in git       (default: unset = settings check FAILs as unmeasured)
+#   POST_PRINCIPALS_CMD  prints the principals JSON (default: curl the roles door)
+#   POST_REACH_CMD       exits 0 when reachable     (default: curl pulse health)
+set -u
+role="${POST_ROLE:-${CHORUS_ROLE:-}}"
+acct="${POST_ACCOUNT:-$(id -un)}"
+idd="${POST_IDENTITY_DIR:-/Users/jeffbridwell/.chorus/identity}"
+home="${POST_HOME:-$HOME}"
+src="${POST_SETTINGS_SOURCE:-}"
+principals_cmd="${POST_PRINCIPALS_CMD:-curl -sf --max-time 5 http://localhost:3360/v1/identity/principals?limit=500}"
+reach_cmd="${POST_REACH_CMD:-curl -sf --max-time 5 -o /dev/null http://localhost:3340/api/chorus/context/health}"
+fails=0
+fail() { echo "FAIL $1"; fails=$((fails+1)); }
+ok()   { echo "ok   $1"; }
+
+[ -n "$role" ] || { echo "FAIL role: no role (set CHORUS_ROLE)"; exit 1; }
+
+# identity: the roles door has a principal running as this account
+if p=$(sh -c "$principals_cmd" 2>/dev/null) && [ -n "$p" ]; then
+  if printf '%s' "$p" | grep -qE "\"hostAccount\": *\"$acct\""; then ok "identity: a principal runs as $acct"
+  else fail "identity: no principal runs as account $acct"; fi
+else fail "identity: principals door unreadable"; fi
+
+# identity dir readable, own key 0600
+if [ -d "$idd" ] && [ -r "$idd" ] && [ -x "$idd" ]; then ok "identity-dir: $idd readable"
+else fail "identity-dir: $idd not readable"; fi
+key="$idd/$role/nostr.json"
+if [ -e "$key" ]; then
+  m=$(stat -f '%Lp' "$key" 2>/dev/null); m=$(printf '0%03d' "$m")
+  [ "$m" = 0600 ] && ok "key: $key 0600" || fail "key: $key mode $m, want 0600"
+else fail "key: $key missing"; fi
+
+# settings match git. Live default: the role's project settings in canonical, compared
+# with the same file at git HEAD (a live edit that was never committed is drift).
+live="${POST_SETTINGS_LIVE:-$home/.claude/settings.json}"
+if [ -z "$src" ] && [ -z "${POST_SETTINGS_LIVE:-}" ]; then
+  canon="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  rel="roles/$role/.claude/settings.json"
+  live="$canon/$rel"
+  src=$(mktemp -t role-post-settings) && trap 'rm -f "$src"' EXIT
+  git -C "$canon" show "HEAD:$rel" > "$src" 2>/dev/null || { rm -f "$src"; src=""; }
+  src_label="HEAD:$rel"
+fi
+src_label="${src_label:-$src}"
+if [ -z "$src" ]; then fail "settings: no git source declared for $live (unmeasured)"
+elif [ ! -f "$live" ] || [ ! -f "$src" ]; then fail "settings: $live or $src missing"
+elif cmp -s "$live" "$src"; then ok "settings: $live matches git"
+else fail "settings: $live differs from git $src_label"; fi
+
+# Claude login saved
+if grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then ok "login: Claude login saved"
+else fail "login: no saved Claude login in $home/.claude.json"; fi
+
+# reachable
+if sh -c "$reach_cmd" >/dev/null 2>&1; then ok "reach: chorus reachable"
+else fail "reach: chorus not reachable"; fi
+
+if [ "$fails" -gt 0 ]; then echo "POST refused: $fails check(s) failed — fix these before working"; exit 1; fi
+echo "POST ok ($role as $acct)"

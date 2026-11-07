@@ -1,0 +1,77 @@
+#!/usr/bin/env bats
+# @test-type: contract — runs platform/scripts/role-post against a stand-in roles door
+# and fixture files in BATS_TEST_TMPDIR; no real store, no network beyond localhost.
+# @domain: werk
+# #4919 AC4 — at session start a role checks its own setup and refuses to work,
+# naming what failed. Each check has a negative proof (#3734): the 2026-11-07
+# lockout (no principal for the account), the 660 key, an unreadable identity
+# dir, a live-edited settings.json, a missing Claude login, an unreachable door.
+
+setup() {
+  REPO="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+  POST="$REPO/platform/scripts/role-post"
+  T="$BATS_TEST_TMPDIR"
+  mkdir -p "$T/identity/silas" "$T/git" "$T/home/.claude"
+  echo '{"k":1}' > "$T/identity/silas/nostr.json"; chmod 600 "$T/identity/silas/nostr.json"
+  echo '{"model":"opus"}' > "$T/git/settings.json"; cp "$T/git/settings.json" "$T/home/.claude/settings.json"
+  echo '{"oauthAccount":{"emailAddress":"x"}}' > "$T/home/.claude.json"
+  echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
+  export POST_ROLE=silas POST_ACCOUNT=chorus-silas
+  export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"
+  export POST_PRINCIPALS_CMD="cat $T/principals.json" POST_REACH_CMD="true"
+}
+
+@test "control: a sound setup passes every check and says POST ok" {
+  run "$POST"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "POST ok" || return 1
+}
+
+@test "negative proof: no principal for this account (the 01:18 lockout) refuses, named" {
+  echo '{"data":[{"name":"silas","hostAccount": "jeffbridwell"}]}' > "$BATS_TEST_TMPDIR/principals.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL identity: no principal runs as account chorus-silas" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: the principals door unreadable refuses, never passes" {
+  export POST_PRINCIPALS_CMD="false"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL identity" || return 1
+}
+
+@test "negative proof: own key at mode 660 refuses, named" {
+  chmod 660 "$BATS_TEST_TMPDIR/identity/silas/nostr.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL key: .*nostr.json mode 0660, want 0600" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: identity dir not readable refuses, named" {
+  export POST_IDENTITY_DIR="$BATS_TEST_TMPDIR/no-such-dir"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL identity-dir" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: settings.json edited live refuses, named" {
+  echo '{"model":"other"}' > "$BATS_TEST_TMPDIR/home/.claude/settings.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL settings: .* differs from git" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: no saved Claude login refuses, named" {
+  echo '{}' > "$BATS_TEST_TMPDIR/home/.claude.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL login" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: unreachable refuses, named" {
+  export POST_REACH_CMD="false"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL reach" || { echo "$output"; return 1; }
+}
