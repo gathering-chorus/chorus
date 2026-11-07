@@ -19,11 +19,17 @@
 
 # Homed in the deploys domain (Silas's; "deploy targets, rollback paths…"), which
 # domains-wren-silas.ttl:103 flagged as having "no chorus:Deploy vocab class yet".
-chorus:deploys chorus:definesVocabulary chorus:DeployTarget .
+chorus:deploys chorus:definesVocabulary chorus:DeployTarget , chorus:TargetKind .
 
 chorus:DeployTarget a owl:Class ;
     rdfs:label "Deploy Target" ;
     rdfs:comment "What a deploy must leave in prod: one file, service, plist, config, secret or model graph, with its path, owner account, file mode, source and health check (#4919)." .
+
+# TargetKind stays a class (staging already serves its route from run 3; dropping it reads as a
+# lost route, #4590). Its six values are the literal set below; it holds no rows in the model.
+chorus:TargetKind a owl:Class ;
+    rdfs:label "Target Kind" ;
+    rdfs:comment "What a deploy target is: binary, service, plist, config, secret or model (the values of chorus:targetKind)." .
 
 chorus:targetKind a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
     rdfs:comment "One of: binary, service, plist, config, secret, model." .
@@ -45,4 +51,6 @@ chorus:DeployTargetShape a sh:NodeShape ;
     sh:property [ sh:path chorus:healthCheck ;  sh:minCount 1 ] ;
     sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "binary" "service" "plist" "config" "secret" "model" ) ] .
 
-
+chorus:TargetKindShape a sh:NodeShape ;
+    sh:targetClass chorus:TargetKind ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] .
