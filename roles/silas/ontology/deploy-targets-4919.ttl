@@ -33,6 +33,8 @@ chorus:TargetKind a owl:Class ;
 
 chorus:targetKind a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
     rdfs:comment "One of: binary, service, plist, config, secret, model." .
+chorus:path a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "The absolute path of the target in prod." .
 chorus:ownerAccount a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
     rdfs:comment "The macOS account that must own the target." .
 chorus:fileMode a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
