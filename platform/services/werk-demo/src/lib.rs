@@ -2075,7 +2075,7 @@ fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<Stri
     let err = diagnostics.join().unwrap_or_default();
     let bytes = output.join().map_err(|_| "chorus-agent output reader failed")?;
     if !status?.success() {
-        return Err(crashed_reviewer("chorus-agent", "failed", &String::from_utf8_lossy(&err)));
+        return Err(crashed_reviewer("chorus-agent", "failed", &String::from_utf8_lossy(&err), &String::from_utf8_lossy(&bytes)));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
@@ -2637,17 +2637,28 @@ pub fn combine_verdicts(parts: &[(String, String)], unread: &[String]) -> (Strin
 }
 
 /// One headless review of one context; ("error", why) when it could not run.
-/// #4921 — a reviewer that exits non-zero: its whole stderr goes to the step
-/// log, and the finding carries the LAST lines, where the real error sits. The
-/// first 160 chars were a settings warning on 11-07 and hid why gate-quality
-/// crashed under jeffbridwell.
-pub fn crashed_reviewer(who: &str, how: &str, stderr: &str) -> String {
+/// #4921 — a reviewer that exits non-zero: its whole stdout and stderr go to
+/// the step log, and the finding carries the LAST part of each, where the real
+/// error sits. On 11-07 the first 160 chars of stderr were a settings warning;
+/// with all of stderr kept, the warning was ALL of it (12:33): claude -p prints
+/// its error on stdout, which the finding used to drop.
+pub fn crashed_reviewer(who: &str, how: &str, stderr: &str, stdout: &str) -> String {
+    eprintln!("werk-demo: {who} {how} — full stdout follows ({} bytes)\n{stdout}", stdout.len());
     eprintln!("werk-demo: {who} {how} — full stderr follows ({} bytes)\n{stderr}", stderr.len());
-    const TAIL: usize = 600;
-    let flat = stderr.trim().lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" | ");
+    format!("{who} {how}: stdout: {} · stderr: {}", tail(stdout), tail(stderr))
+}
+
+/// The last 400 chars of a stream, blank lines dropped, lines joined by " | ";
+/// "(empty)" when there was nothing, "… " in front when it was cut.
+fn tail(text: &str) -> String {
+    const TAIL: usize = 400;
+    let flat = text.trim().lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" | ");
+    if flat.is_empty() {
+        return "(empty)".to_string();
+    }
     let n = flat.chars().count();
     let last: String = flat.chars().skip(n.saturating_sub(TAIL)).collect();
-    format!("{who} {how}: {}{last}", if n > TAIL { "… " } else { "" })
+    format!("{}{last}", if n > TAIL { "… " } else { "" })
 }
 
 /// One review by claude -p (or chorus-agent when CHORUS_GATE_PROFILE is set):
@@ -2735,7 +2746,7 @@ pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (Strin
         let _ = e.read_to_string(&mut stderr);
     }
     if !status.success() {
-        return ("error".to_string(), crashed_reviewer("claude", &format!("exit {:?}", status.code()), &stderr));
+        return ("error".to_string(), crashed_reviewer("claude", &format!("exit {:?}", status.code()), &stderr, &stdout));
     }
     gate_verdict(&stdout, fail_on)
 }
