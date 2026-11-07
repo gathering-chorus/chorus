@@ -21,6 +21,10 @@ import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonMinute, bostonOffsetIso } from './boston-iso';
 import { ActorStateService, buildLiveActorFactFetcher } from './actor-state';
 import { cachedCards, readAlerts, readMessages, registerHeaderRoute, sharedRead } from './pulse-header';
+import { RoleSetupWatch, liveReads } from './role-setup';
+
+// #4919 — set at startup; the header reads its state
+let roleSetupWatch: RoleSetupWatch | undefined;
 import { registerTreeRoutes, SpineTreeFacts } from './pulse-tree';
 import { ChangesOvernightService, buildLiveChangesOvernightFetcher } from './changes-overnight';
 import { ReadingsService, buildLiveReadingsFetcher } from './source-readings';
@@ -594,6 +598,7 @@ export function createApp(
     // #4807 slice 2 — one pulse-api call per 2 s however many prompts ask at once
     messages: sharedRead(() => readMessages(), 2_000, 4_000, 2_000, '/pulse/messages/messages'),
     alerts: sharedRead(() => readAlerts(), 2_000, 4_000, 2_000, '/api/alertmanager/grafana/api/v2/alerts'),
+    setup: () => roleSetupWatch?.state(),
   });
   // #4563 — changes overnight derived once in pulse
   app.get('/api/changes-overnight', (_req, res) => {
@@ -934,6 +939,32 @@ if (require.main === module) {
       setBuzzDelivery(d);
       d.sweep(); // a restart mid-hold still delivers (Silas 06:42)
       setInterval(() => d.sweep(), 10_000).unref();
+    }
+    // #4919 AC4 — every role's setup, checked from outside the role every 60 s. A change
+    // (refused ↔ ok) posts one line to Jeff as system, through this pulse's own /api/nudge,
+    // so it reaches #team even when the role's own key or hooks are what broke.
+    {
+      const roles = (process.env.PULSE_SETUP_ROLES || 'silas,wren,kade,borg-queen,abby-normal').split(',').filter(Boolean);
+      roleSetupWatch = new RoleSetupWatch(roles, liveReads(), async content => {
+        const res = await fetch(`http://127.0.0.1:${PORT}/api/nudge`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-chorus-pulse-secret': resolvePulseSecret() ?? '' },
+          body: JSON.stringify({ from: 'system', to: 'jeff', content }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) throw new Error(`nudge HTTP ${res.status}`);
+        log('warn', 'role.setup.changed', { content });
+      });
+      let checking = false;
+      const tick = () => {
+        if (checking) return;
+        checking = true;
+        roleSetupWatch!.tick()
+          .catch((e) => process.stderr.write(JSON.stringify({ event: 'role.setup.check.failed', error: String(e) }) + '\n'))
+          .finally(() => { checking = false; });
+      };
+      setTimeout(tick, 5_000).unref();
+      setInterval(tick, 60_000).unref();
     }
     // #4629 S1 — read the room in shadow (judge, never deliver) when PULSE_BUZZ_SHADOW=1
     startBuzzShadow(store, emitSpine);

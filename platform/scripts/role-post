@@ -1,0 +1,137 @@
+#!/bin/bash
+# role-post — #4919 AC4: a role's power-on self test at session start.
+# Checks the role's own setup and refuses (exit 1) naming every check that failed.
+# A check that cannot be measured is a FAIL, never a pass (#3734).
+#
+# Defaults are the live setup; each POST_* variable overrides one input (tests).
+#   POST_ROLE            role name                  (default: $CHORUS_ROLE)
+#   POST_ACCOUNT         macOS account it runs as   (default: id -un)
+#   POST_IDENTITY_DIR    identity key dir           (default: /Users/jeffbridwell/.chorus/identity)
+#   POST_HOME            the role's home            (default: $HOME)
+#   POST_SETTINGS_SOURCE settings.json in git       (default: unset = settings check FAILs as unmeasured)
+#   POST_PRINCIPALS_CMD  prints the principals JSON (default: curl the roles door)
+#   POST_REACH_CMD       exits 0 when reachable     (default: curl pulse health)
+#   POST_STATE_DIR       where the refusal marker lives (default: $HOME/.chorus/post)
+#
+# Modes (wired in the role's settings.json):
+#   role-post          SessionStart: run the checks; on fail write <state>/<role>.failed
+#                      (the FAIL lines), on pass remove it.
+#   role-post --gate   PreToolUse: read the hook JSON on stdin; while the marker exists,
+#                      refuse every tool except reads and re-running role-post (exit 2,
+#                      reason on stderr, which Claude Code shows the role).
+set -u
+# --session-start (Jeff 09:27: "why cant i just see the error in claude code"): run the
+# POST and answer as a Claude Code SessionStart hook — on fail a systemMessage the person
+# at the terminal sees, plus the FAILs as context for the role; on pass, one context line.
+if [ "${1:-}" = "--session-start" ]; then
+  out=$("$0" 2>&1); rc=$?
+  python3 -c '
+import json,sys
+out,rc=sys.argv[1],int(sys.argv[2])
+fails=[l[5:] for l in out.splitlines() if l.startswith("FAIL ")]
+if rc==0:
+    print(json.dumps({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"POST ok: "+out.splitlines()[-1]}}))
+else:
+    msg="POST refused — this role will not work until fixed: "+"; ".join(fails)
+    print(json.dumps({"systemMessage":msg,"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":msg+"\nRe-run role-post after fixing. Reads and clearing-nudge still work."}}))
+' "$out" "$rc"
+  exit 0
+fi
+role="${POST_ROLE:-${CHORUS_ROLE:-}}"
+state_dir="${POST_STATE_DIR:-$HOME/.chorus/post}"
+
+if [ "${1:-}" = "--gate" ]; then
+  marker="$state_dir/$role.failed"
+  [ -n "$role" ] && [ -f "$marker" ] || exit 0
+  in=$(cat)
+  tool=$(printf '%s' "$in" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("tool_name",""))' 2>/dev/null)
+  cmd=$(printf '%s' "$in" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null)
+  # the gate never refuses on its own error: unparseable hook input passes (a broken
+  # gate must not become the 01:17 lockout)
+  [ -n "$tool" ] || exit 0
+  # reads, and the nudge so the refused role can say what failed
+  case "$tool" in Read|Grep|Glob|mcp__chorus-api__clearing-nudge) exit 0 ;; esac
+  # re-running the POST itself, and only that: the whole command must be role-post
+  if [ "$tool" = Bash ] && printf '%s' "$cmd" | grep -qE '^[[:space:]]*([^[:space:];&|]*/)?role-post[[:space:]]*$'; then exit 0; fi
+  { echo "POST refused (#4919): this session's power-on self test failed — fix these, then re-run role-post"
+    echo "(if the POST itself is wrong, nudge a peer: only a different role may waive it):"; cat "$marker"; } >&2
+  exit 2
+fi
+
+# No self-waive (Wren 09:20): a role cannot clear its own refusal except by passing the
+# POST. A peer waiver needs a place a peer can write and this role can read; it is not
+# built yet (#4919 open item), so there is deliberately no --waive here.
+if [ "${1:-}" = "--waive" ]; then
+  echo "role-post --waive: a role cannot waive its own POST; ask a peer (peer waiver not built yet)" >&2
+  exit 2
+fi
+acct="${POST_ACCOUNT:-$(id -un)}"
+idd="${POST_IDENTITY_DIR:-/Users/jeffbridwell/.chorus/identity}"
+home="${POST_HOME:-$HOME}"
+src="${POST_SETTINGS_SOURCE:-}"
+principals_cmd="${POST_PRINCIPALS_CMD:-curl -sf --max-time 5 http://localhost:3360/v1/identity/principals?limit=500}"
+reach_cmd="${POST_REACH_CMD:-curl -sf --max-time 5 -o /dev/null http://localhost:3340/api/chorus/context/health}"
+fails=0
+failed_lines=""
+fail() { echo "FAIL $1"; fails=$((fails+1)); failed_lines="${failed_lines}FAIL $1
+"; }
+ok()   { echo "ok   $1"; }
+
+[ -n "$role" ] || { echo "FAIL role: no role (set CHORUS_ROLE)"; exit 1; }
+
+# identity: the roles door has a principal running as this account
+if p=$(sh -c "$principals_cmd" 2>/dev/null) && [ -n "$p" ]; then
+  if printf '%s' "$p" | grep -qE "\"hostAccount\": *\"$acct\""; then ok "identity: a principal runs as $acct"
+  else fail "identity: no principal runs as account $acct"; fi
+else fail "identity: principals door unreadable"; fi
+
+# identity dir readable, own key 0600
+if [ -d "$idd" ] && [ -r "$idd" ] && [ -x "$idd" ]; then ok "identity-dir: $idd readable"
+else fail "identity-dir: $idd not readable"; fi
+key="$idd/$role/nostr.json"
+if [ -e "$key" ]; then
+  m=$(stat -f '%Lp' "$key" 2>/dev/null); m=$(printf '0%03d' "$m")
+  [ "$m" = 0600 ] && ok "key: $key 0600" || fail "key: $key mode $m, want 0600"
+else fail "key: $key missing"; fi
+
+# settings match git. Live default: the role's project settings in canonical, compared
+# with the same file at git HEAD (a live edit that was never committed is drift).
+live="${POST_SETTINGS_LIVE:-$home/.claude/settings.json}"
+if [ -z "$src" ] && [ -z "${POST_SETTINGS_LIVE:-}" ]; then
+  canon="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  rel="roles/$role/.claude/settings.json"
+  live="$canon/$rel"
+  src=$(mktemp -t role-post-settings) && trap 'rm -f "$src"' EXIT
+  git -C "$canon" show "HEAD:$rel" > "$src" 2>/dev/null || { rm -f "$src"; src=""; }
+  src_label="HEAD:$rel"
+fi
+src_label="${src_label:-$src}"
+if [ -z "$src" ]; then fail "settings: no git source declared for $live (unmeasured)"
+elif [ ! -f "$live" ] || [ ! -f "$src" ]; then fail "settings: $live or $src missing"
+elif cmp -s "$live" "$src"; then ok "settings: $live matches git"
+else fail "settings: $live differs from git $src_label"; fi
+
+# Claude login saved
+if grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then ok "login: Claude login saved"
+else fail "login: no saved Claude login in $home/.claude.json"; fi
+
+# reachable
+if sh -c "$reach_cmd" >/dev/null 2>&1; then ok "reach: chorus reachable"
+else fail "reach: chorus not reachable"; fi
+
+mkdir -p "$state_dir" 2>/dev/null && chmod 700 "$state_dir" 2>/dev/null
+# Tell Jeff on every CHANGE between refused and ok (Jeff 09:21/09:27: the #team room, one
+# line), sent as system so a role whose own key is broken (660) is still heard (Wren 09:27).
+# The same message is what the pulse roles line reads back (senderName=system, body
+# "POST refused (<role>)" / "POST ok (<role>)"), so there is one path, not two.
+notify() { ${POST_NOTIFY_CMD:-/Users/jeffbridwell/.chorus/bin/chorus-hook-shim nudge-send system jeff} "$1" >/dev/null 2>&1 \
+  || echo "WARN could not tell Jeff: $1" >&2; }
+was_refused=0; [ -f "$state_dir/$role.failed" ] && was_refused=1
+if [ "$fails" -gt 0 ]; then
+  printf '%s' "$failed_lines" > "$state_dir/$role.failed" 2>/dev/null
+  [ "$was_refused" = 1 ] || notify "POST refused ($role): $(printf '%s' "$failed_lines" | head -3 | sed 's/^FAIL //' | tr '\n' ';' | cut -c1-200)"
+  echo "POST refused: $fails check(s) failed — fix these before working"; exit 1
+fi
+rm -f "$state_dir/$role.failed"
+[ "$was_refused" = 1 ] && notify "POST ok ($role): refusal cleared"
+echo "POST ok ($role as $acct)"

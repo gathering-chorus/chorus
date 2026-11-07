@@ -1,0 +1,58 @@
+# deploy-targets-4919.ttl — #4919 AC1: a deploy TARGET is a row.
+#
+# chorus:Deployment (roles/kade/ontology/werk-domains.ttl) is an EVENT: a deploy
+# happened, with cdhash proof. Nothing declared what SHOULD exist in prod, so on
+# 2026-11-07 nobody could say what "right" was when principals drifted to
+# hostAccount=jeffbridwell (01:18) and identity keys drifted to mode 660 (07:10).
+# A DeployTarget is that declaration: what goes where, owned by which account,
+# with which mode, from which source, and how to tell it is healthy. The target ROWS
+# live in platform/config/deploy-targets.ttl (data, read by deploy-drift), not here:
+# instances in the model graph are v1-rows (athena-validate, run 3). The drift
+# check (AC3) and the session POST (AC4) read these rows; the deploy API (AC2)
+# is generated from them. Navigator borg-queen agreed the split 08:09.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# Homed in the deploys domain (Silas's; "deploy targets, rollback paths…"), which
+# domains-wren-silas.ttl:103 flagged as having "no chorus:Deploy vocab class yet".
+chorus:deploys chorus:definesVocabulary chorus:DeployTarget , chorus:TargetKind .
+
+chorus:DeployTarget a owl:Class ;
+    rdfs:label "Deploy Target" ;
+    rdfs:comment "What a deploy must leave in prod: one file, service, plist, config, secret or model graph, with its path, owner account, file mode, source and health check (#4919)." .
+
+# TargetKind stays a class (staging already serves its route from run 3; dropping it reads as a
+# lost route, #4590). Its six values are the literal set below; it holds no rows in the model.
+chorus:TargetKind a owl:Class ;
+    rdfs:label "Target Kind" ;
+    rdfs:comment "What a deploy target is: binary, service, plist, config, secret or model (the values of chorus:targetKind)." .
+
+chorus:targetKind a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "One of: binary, service, plist, config, secret, model." .
+chorus:path a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "The absolute path of the target in prod." .
+chorus:ownerAccount a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "The macOS account that must own the target." .
+chorus:fileMode a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "Four octal digits, e.g. 0600 for a key, 0755 for a directory." .
+chorus:healthCheck a owl:DatatypeProperty ; rdfs:domain chorus:DeployTarget ; rdfs:range xsd:string ;
+    rdfs:comment "A command whose exit 0 means the target is right in prod." .
+chorus:deploysTarget a owl:ObjectProperty ; rdfs:domain chorus:Deployment ; rdfs:range chorus:DeployTarget ;
+    rdfs:comment "Links a deploy event to the target it put in place." .
+
+chorus:DeployTargetShape a sh:NodeShape ;
+    sh:targetClass chorus:DeployTarget ;
+    sh:property [ sh:path chorus:path ;         sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:ownerAccount ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:fileMode ;     sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^0[0-7]{3}$" ] ;
+    sh:property [ sh:path chorus:source ;       sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:healthCheck ;  sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "binary" "service" "plist" "config" "secret" "model" ) ] .
+
+chorus:TargetKindShape a sh:NodeShape ;
+    sh:targetClass chorus:TargetKind ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] .

@@ -19,6 +19,8 @@ export interface Sources {
   actorState: () => unknown;
   messages: Read<Array<{ senderName: string; messageBody: string; sentAt: string }>>;
   alerts: Read<Array<{ name: string; label?: string }>>;
+  /** #4919 — each role's setup failures from pulse's outside check; a role with any is refused */
+  setup?: () => Record<string, string[]> | undefined;
 }
 
 const why = (e: unknown) => (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 160);
@@ -45,6 +47,8 @@ export async function composeHeader(src: Sources, now = new Date()): Promise<Hea
       return actors.map(role => {
         const last = calls.get(role);
         const s = last ? Math.max(0, Math.round((now.getTime() - Date.parse(last)) / 1000)) : null;
+        const refused = new Map(Object.entries(src.setup?.() ?? {})).get(role) ?? [];
+        if (refused.length) return { role, state: 'refused', secondsSinceLastCall: s, refused };
         return { role, state: s !== null && s < QUIET_AFTER_S ? 'moving' : 'quiet', secondsSinceLastCall: s };
       });
     }),
