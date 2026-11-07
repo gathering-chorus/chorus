@@ -73,8 +73,10 @@ describe('RoleSetupWatch', () => {
       posted.push(line); return Promise.resolve();
     });
     await w.tick();
+    expect(w.postErrors.get('silas')).toBe('pulse down');
     fail = false;
     await w.tick();
+    expect(w.postErrors.has('silas')).toBe(false);
     expect(posted).toEqual(['role setup broken (silas): key: nostr.json mode 0660, want 0600']);
   });
 });

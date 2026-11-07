@@ -51,6 +51,8 @@ export async function checkRoleSetup(role: string, r: SetupReads): Promise<strin
 export class RoleSetupWatch {
   private told = new Map<string, string>(); // role → last state told to Jeff ('' = ok)
   private now = new Map<string, string[]>();
+  /** the last post that failed, per role — the next tick retries it; kept so the failure is visible */
+  readonly postErrors = new Map<string, string>();
   constructor(private roles: string[], private reads: SetupReads, private post: (line: string) => Promise<void>) {}
 
   async tick(): Promise<void> {
@@ -65,8 +67,10 @@ export class RoleSetupWatch {
       try {
         await this.post(line);
         this.told.set(role, key);
-      } catch {
-        // not told: the next tick tries again
+        this.postErrors.delete(role);
+      } catch (e) {
+        // not told: kept as a post error, and the next tick tries again
+        this.postErrors.set(role, why(e));
       }
     }
   }
