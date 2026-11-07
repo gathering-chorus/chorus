@@ -1,7 +1,7 @@
 // @test-type: unit — in-memory store, peers lookup mocked to fail with Discovery fixture
 // @domain: messages
 // @card: #4916
-// @owner: borg-queen
+// @owner: silas
 /**
  * #4916 — an alert about the roles door, or about delivery itself, must reach its owner
  * without going through the roles door (when the door is dead, its alarm cannot ride on it).
@@ -11,7 +11,6 @@ import { MessageStore } from './store';
 import { createApp, resetNudgeDedup } from './service';
 
 // Door answers Discovery fixture (no data list of roles)
-const DISCOVERY_FIXTURE = { apiVersion: 'v1', service: 'athena-make', kind: 'Discovery', count: 105, primitives: [] };
 jest.mock('./peers', () => ({
   fetchPeers: () => Promise.reject(new Error('the roles door answered with no data list')),
   startRolesDoorWatch: () => () => {},
@@ -65,5 +64,11 @@ describe('#4916 roles door alert reaches owner without using the door', () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.id).toBeDefined();
     expect(store.getStats().total).toBe(1);
+  });
+
+  test('NEGATIVE PROOF: door down, a role cannot pass itself off by naming a recipient', async () => {
+    const res = await request(app).post('/api/nudge').send({ from: 'mallory', to: 'silas', content: 'roles door is down' });
+    expect(res.status).toBe(503);
+    expect(store.getStats().total).toBe(0);
   });
 });

@@ -18,18 +18,9 @@
 /** Senders that are machines raising an alert on a role's behalf. */
 export const MACHINE_SENDERS = ['system', 'pulse', 'alert', 'grafana', 'herald', 'sensor', 'ops'] as const;
 
-/**
- * #4916 — alerts about the roles door or about delivery itself reach their owner
- * without going through the roles door (when the door is dead, its alarm cannot ride on it).
- */
-export const CORE_ROLES = ['silas', 'wren', 'kade', 'jeff', 'abby-normal', 'borg-queen'] as const;
-
-export function isDoorOrDeliveryAlert(from: unknown, content: unknown): boolean {
-  const f = typeof from === 'string' ? from.trim().toLowerCase() : '';
-  const c = typeof content === 'string' ? content.toLowerCase() : '';
-  const mentionsDoorOrDelivery = c.includes('roles door') || c.includes('roles-door') || c.includes('delivery');
-  const isMachine = (MACHINE_SENDERS as readonly string[]).includes(f);
-  return mentionsDoorOrDelivery && (isMachine || f === '' || f === 'system');
+/** #4916 — a sender that raises alerts on a role's behalf. */
+export function isMachineSender(from: unknown): boolean {
+  return typeof from === 'string' && (MACHINE_SENDERS as readonly string[]).includes(from.trim());
 }
 
 export type Sender =

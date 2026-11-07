@@ -1,10 +1,11 @@
 // @test-type: unit
 // @domain: messages
 // @card: #4916
+// @owner: silas
 //! #4916 — an alert about the roles door, or about delivery itself, must reach its owner
 //! without going through the roles door (when the door is dead, its alarm cannot ride on it).
 
-use chorus_hooks::nudge_send::{is_door_or_delivery_alert, send, Deps};
+use chorus_hooks::nudge_send::{machine_sender, send, Deps};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
@@ -56,13 +57,10 @@ fn stub(roles: &'static str, pulse_status: u16, pulse_body: &'static str) -> (St
 fn args(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
 
 #[test]
-fn helper_recognizes_door_and_delivery_alerts() {
-    assert!(is_door_or_delivery_alert("system", "Roles door: pulse could not read the peer list"));
-    assert!(is_door_or_delivery_alert("grafana", "grafana: Roles door: pulse could not read the peer list"));
-    assert!(is_door_or_delivery_alert("ops", "alert delivery failed: connection reset"));
-    assert!(is_door_or_delivery_alert("alert", "roles-door unreadable"));
-    assert!(!is_door_or_delivery_alert("wren", "hey kade check this out"));
-    assert!(!is_door_or_delivery_alert("system", "disk space 90%"));
+fn only_machine_senders_skip_the_door() {
+    for m in ["system", "pulse", "alert", "grafana", "herald", "sensor", "ops"] { assert!(machine_sender(m), "{m}"); }
+    // negative proof: a role is never a machine sender, so a role's nudge still needs the door
+    for r in ["wren", "silas", "kade", "jeff", "borg-queen", ""] { assert!(!machine_sender(r), "{r}"); }
 }
 
 #[test]
@@ -87,7 +85,7 @@ fn door_answering_discovery_refuses_regular_nudge() {
 }
 
 #[test]
-fn negative_proof_door_down_and_alert_still_lands_without_calling_door() {
+fn negative_proof_door_down_and_a_machine_alert_still_reaches_pulse() {
     let (base, seen) = stub(DISCOVERY_FIXTURE, 200, r#"{"resolved":"silas @ /dev/ttys012","delivery":"delivered"}"#);
     let deps = Deps {
         door: base.clone(),
@@ -104,8 +102,8 @@ fn negative_proof_door_down_and_alert_still_lands_without_calling_door() {
     let line = res.unwrap();
     assert!(line.contains("nudge delivered: system → silas @ /dev/ttys012"));
 
-    // Verify negative proof: door was NOT called!
+    // the door was read and could not answer; the alert went on to pulse anyway
     let calls = seen.lock().unwrap().clone();
-    assert!(!calls.iter().any(|c| c.contains("/v1/roles/roles")), "door should not be called: {:?}", calls);
+    assert!(calls.iter().any(|c| c.contains("/v1/roles/roles")), "the door is still asked first: {:?}", calls);
     assert!(calls.iter().any(|c| c.contains("/api/nudge")), "pulse should be called: {:?}", calls);
 }
