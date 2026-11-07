@@ -45,7 +45,11 @@ chorus:DeployTargetShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileMode ;     sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^0[0-7]{3}$" ] ;
     sh:property [ sh:path chorus:source ;       sh:minCount 1 ] ;
     sh:property [ sh:path chorus:healthCheck ;  sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ] .
+    sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:TargetKind ] .
+
+chorus:TargetKindShape a sh:NodeShape ;
+    sh:targetClass chorus:TargetKind ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] .
 
 # ── Real targets: the role identity keys (the 07:10 drift). Mode 0600, owned by the runner account.
 chorus:target-identity-abby-normal-nostr a chorus:DeployTarget ;
