@@ -2075,7 +2075,7 @@ fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<Stri
     let err = diagnostics.join().unwrap_or_default();
     let bytes = output.join().map_err(|_| "chorus-agent output reader failed")?;
     if !status?.success() {
-        return Err(format!("chorus-agent failed: {}", String::from_utf8_lossy(&err).chars().take(160).collect::<String>()));
+        return Err(crashed_reviewer("chorus-agent", "failed", &String::from_utf8_lossy(&err)));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
@@ -2637,7 +2637,22 @@ pub fn combine_verdicts(parts: &[(String, String)], unread: &[String]) -> (Strin
 }
 
 /// One headless review of one context; ("error", why) when it could not run.
-fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, String) {
+/// #4921 — a reviewer that exits non-zero: its whole stderr goes to the step
+/// log, and the finding carries the LAST lines, where the real error sits. The
+/// first 160 chars were a settings warning on 11-07 and hid why gate-quality
+/// crashed under jeffbridwell.
+pub fn crashed_reviewer(who: &str, how: &str, stderr: &str) -> String {
+    eprintln!("werk-demo: {who} {how} — full stderr follows ({} bytes)\n{stderr}", stderr.len());
+    const TAIL: usize = 600;
+    let flat = stderr.trim().lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" | ");
+    let n = flat.chars().count();
+    let last: String = flat.chars().skip(n.saturating_sub(TAIL)).collect();
+    format!("{who} {how}: {}{last}", if n > TAIL { "… " } else { "" })
+}
+
+/// One review by claude -p (or chorus-agent when CHORUS_GATE_PROFILE is set):
+/// (verdict, finding). Public for the #4921 fake-claude test.
+pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, String) {
     if let Some(job) = gate_via_agent(ctx, sys, GATE_OUTPUT_SCHEMA, round) {
         return match job {
             Ok(out) => gate_verdict(&out, fail_on),
@@ -2720,7 +2735,7 @@ fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32]) -> (String, S
         let _ = e.read_to_string(&mut stderr);
     }
     if !status.success() {
-        return ("error".to_string(), (format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>())).to_string());
+        return ("error".to_string(), crashed_reviewer("claude", &format!("exit {:?}", status.code()), &stderr));
     }
     gate_verdict(&stdout, fail_on)
 }
