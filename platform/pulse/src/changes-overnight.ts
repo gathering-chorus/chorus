@@ -344,8 +344,7 @@ async function fetchLiveLokiMoves(
     const values = (json.data?.result || []).flatMap((st) => st.values || []);
     const lines = new Map(prior ? prior.lines : []);
     for (const [ts, line] of values) {
-      const [move] = parseLokiMoveLines([[ts, line]]);
-      if (move) lines.set(`${ts}|${line}`, move);
+      for (const move of parseLokiMoveLines([[ts, line]])) lines.set(`${ts}|${line}`, move);
     }
     cache.current = { watermark, readEndMs: endMs, lines };
     return [...lines.values()];

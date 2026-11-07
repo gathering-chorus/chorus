@@ -1925,7 +1925,7 @@ mod services_for_diff_4398 {
     /// and each demo pulse doubled pulse's load on it.
     #[test]
     fn the_variant_pulse_runs_with_loki_off() {
-        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin").unwrap();
+        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", None).unwrap();
         let loki = env.iter().find(|(n, _)| n == "LOKI_URL").map(|(_, v)| v.as_str());
         assert_eq!(loki, Some("off"));
     }

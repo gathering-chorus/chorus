@@ -35,7 +35,7 @@ describe('#4623 actor state reads the 30-minute count at most once per refresh',
       const third = await fetcher();
       expect(loki.windows.filter((w) => w === '5m').length).toBe(3);
       expect(loki.windows.filter((w) => w === '30m').length).toBe(1);
-      expect(third.actions?.kade?.recent30mCount).toBe(9);
+      expect(third.actions).toMatchObject({ kade: { recent30mCount: 9 } });
       expect(ACTION_30M_REFRESH_MS).toBeLessThanOrEqual(2 * 60_000);
     } finally {
       await loki.close();
