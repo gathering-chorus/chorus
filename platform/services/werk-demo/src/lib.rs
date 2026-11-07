@@ -2681,7 +2681,9 @@ pub fn gate_command(me: &str, role: &str, bin: &str, model: &str, sys: &str) -> 
     }
     let quoted: Vec<String> = claude.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect();
     let inner = format!(
-        "{{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && export CHORUS_HEADLESS=1 CHORUS_ROLE='{role}' && exec {}",
+        // the role's own sign-in (~/.claude under -H); never ~/.chorus/secrets/claude.key,
+        // whose Oct 28 token was revoked (13:02 run: "OAuth token revoked")
+        "export CHORUS_HEADLESS=1 CHORUS_ROLE='{role}' && exec {}",
         quoted.join(" ")
     );
     ("sudo".to_string(), ["-n", "-u", &account, "-H", "bash", "-c", &inner].iter().map(|s| s.to_string()).collect(), format!("claude as {account}"))

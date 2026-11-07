@@ -18,6 +18,7 @@ fn from_the_runner_the_gate_hops_to_the_role_account() {
     assert!(inner.contains(&format!("exec '{BIN}' '-p'")), "{inner}");
     assert!(inner.contains("'it'\\''s the prompt'"), "a quote in the prompt must survive the shell: {inner}");
     assert!(inner.contains("CHORUS_HEADLESS=1"), "sudo drops the env, so headless is set inside: {inner}");
+    assert!(!inner.contains("claude.key") && !inner.contains("CLAUDE_CODE_OAUTH_TOKEN"), "the role's own sign-in, never the revoked key file (13:02): {inner}");
     let ok = std::process::Command::new("bash").args(["-n", "-c", inner]).status().unwrap();
     assert!(ok.success(), "the hop's shell line must parse");
 }
