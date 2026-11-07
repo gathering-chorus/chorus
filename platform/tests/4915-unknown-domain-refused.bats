@@ -35,18 +35,18 @@ run_wt() {
   change nowhere
   run_wt
   [ "$status" -eq 2 ]
-  [[ "$output" == *"domain-check: REFUSED — platform/tests/zz.bats declares @domain: nowhere"* ]]
+  [[ "$output" == *"domain-check: REFUSED — platform/tests/zz.bats declares @domain: nowhere"* ]] || return 1
 }
 
 @test "a listed domain passes the check" {
   change cicd
   run_wt
-  [[ "$output" != *"domain-check: REFUSED"* ]]
-  [[ "$output" == *"select-only: platform/tests/zz.bats"* ]]   # it got past the check
+  [[ "$output" != *"domain-check: REFUSED"* ]] || return 1
+  [[ "$output" == *"select-only: platform/tests/zz.bats"* ]] || return 1  # it got past the check
 }
 
 @test "the store unreadable is said, never a silent pass" {
   change nowhere
   run env PATH="$T/bin:$PATH" WERK_TEST_TREE="$T/werk" ATHENA_MAKE_URL="file://$T/no-door" WERK_TEST_OWN_BUILD=1 "$BIN" 4915 kade --select-only
-  [[ "$output" == *"domain-check: UNMEASURED"* ]]
+  [[ "$output" == *"domain-check: UNMEASURED"* ]] || return 1
 }
