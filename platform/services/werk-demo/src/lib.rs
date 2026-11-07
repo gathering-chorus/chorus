@@ -2038,10 +2038,10 @@ fn headless_job_request(profile: &str, input: &str, instructions: &str, schema: 
 }
 
 /// Drain both pipes while writing input, bound the whole process group.
-fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<String> {
+fn bounded_headless(mut command: Command, input: String, timeout: u64, who: &str) -> R<String> {
     use std::os::unix::process::CommandExt;
     command.process_group(0).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
-    let mut child = command.spawn().map_err(|e| format!("chorus-agent spawn failed: {e}"))?;
+    let mut child = command.spawn().map_err(|e| format!("{who} spawn failed: {e}"))?;
     let pid = child.id() as i32;
     let mut stdin = child.stdin.take().ok_or("chorus-agent stdin missing")?;
     let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
@@ -2064,10 +2064,16 @@ fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<Stri
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
             Ok(None) if started.elapsed() < Duration::from_secs(timeout) => sleep(Duration::from_millis(25)),
-            Ok(None) => break Err(format!("chorus-agent timed out after {timeout}s (bounded, fail-loud)")),
-            Err(e) => break Err(format!("chorus-agent wait failed: {e}")),
+            Ok(None) => break Err(format!("{who} timed out after {timeout}s (bounded, fail-loud)")),
+            Err(e) => break Err(format!("{who} wait failed: {e}")),
         }
     };
+    // #4921 — through the role hop the leader is sudo: it relays SIGTERM to claude,
+    // while SIGKILL would orphan it, so a timed-out run gets TERM first
+    if status.is_err() {
+        unsafe { kill(-pid, 15); }
+        sleep(Duration::from_secs(2));
+    }
     // Descendants must not keep inherited pipes open after the runner exits.
     unsafe { kill(-pid, 9); }
     let _ = child.wait();
@@ -2075,7 +2081,7 @@ fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<Stri
     let err = diagnostics.join().unwrap_or_default();
     let bytes = output.join().map_err(|_| "chorus-agent output reader failed")?;
     if !status?.success() {
-        return Err(crashed_reviewer("chorus-agent", "failed", &String::from_utf8_lossy(&err), &String::from_utf8_lossy(&bytes)));
+        return Err(crashed_reviewer(who, "failed", &String::from_utf8_lossy(&err), &String::from_utf8_lossy(&bytes)));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
@@ -2091,7 +2097,7 @@ fn gate_via_agent(input: &str, instructions: &str, schema: &str, revision: &str)
     let mut command = Command::new(agent_bin());
     command.args(["run", "--text"]).env("CHORUS_HEADLESS", "1").env_remove("CLAUDECODE");
     // chorus-agent enforces the job timeout; this outer bound also reaps a wedged runner.
-    Some(bounded_headless(command, payload, timeout + 5))
+    Some(bounded_headless(command, payload, timeout + 5, "chorus-agent"))
 }
 
 
@@ -2204,7 +2210,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     if gate == "code" {
         let mut all = vec![(result.clone(), format!("gate-code: {}", findings))];
         for skill in BUILTIN_CODE_REVIEWS {
-            let (r, f) = builtin_review(skill, &werk, since.as_deref());
+            let (r, f) = builtin_review(skill, &werk, since.as_deref(), role);
             all.push((r, format!("/{}: {}", skill, f)));
         }
         // #4889 AC8 — an AC whose check is an unrelated test fails the code review
@@ -2223,7 +2229,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // uses fails the gate; every other finding is a note on his go page, and ships
     if result == "fail" {
         let open = open_findings(&findings);
-        (result, findings) = apply_breaks(&result, &findings, classify_breaks(&werk, &open).as_deref());
+        (result, findings) = apply_breaks(&result, &findings, classify_breaks(&werk, &open, role).as_deref());
     }
     // an unmeasured round reviewed nothing: the next round starts from the last one that did
     let reviewed = if result == "error" { "" } else { head.as_str() };
@@ -2386,20 +2392,21 @@ pub fn breaks_answer(stdout: &str) -> Option<Vec<bool>> {
 
 /// One headless question per red round: which open findings break something Jeff uses.
 /// No tools, user settings only; None when it could not be asked or answered.
-fn classify_breaks(werk: &str, open: &[String]) -> Option<Vec<bool>> {
+fn classify_breaks(werk: &str, open: &[String], role: &str) -> Option<Vec<bool>> {
     if open.is_empty() { return None; }
     let jeff_uses = properties_resolver::global_value(&properties_resolver::door_url(), JEFF_USES_KEY)
         .map_err(|e| eprintln!("werk-demo: no breaks question asked, the red stands: {e}")).ok()?;
     let bin = claude_bin()?;
-    let mut command = Command::new(&bin);
-    // in the card's werk, read-only, so it reads the code each finding names (Kade 16:26)
-    command.current_dir(werk).env("CHORUS_HEADLESS", "1").args(["-p", &breaks_prompt(open, &jeff_uses), "--permission-mode", "dontAsk",
+    // in the card's werk, read-only, so it reads the code each finding names (Kade 16:26);
+    // as the card's role account (#4921, defects row 16)
+    let args: Vec<String> = ["-p", &breaks_prompt(open, &jeff_uses), "--permission-mode", "dontAsk",
         "--setting-sources", "user", "--no-session-persistence", "--output-format", "text",
-        "--allowedTools", "Read,Grep,Glob", "--disallowedTools", REVIEW_DENIED_TOOLS]);
+        "--allowedTools", "Read,Grep,Glob", "--disallowedTools", REVIEW_DENIED_TOOLS].iter().map(|s| s.to_string()).collect();
+    let (command, who) = role_command(role, &bin, &args, Some(werk));
     // the answer goes to the step's log either way, so a red that stood can be read (run 15)
     // run 15: the question reads the code each finding names; 12 arch findings took ~8 min,
     // past a 300s bound, and the red stood. It gets the reviews' own bound.
-    match bounded_headless(command, String::new(), review_timeout_secs()) {
+    match bounded_headless(command, String::new(), review_timeout_secs(), &who) {
         Ok(out) => {
             let a = breaks_answer(&out);
             eprintln!("werk-demo: breaks question on {} finding(s) answered {:?}{}", open.len(), a,
@@ -2453,7 +2460,7 @@ pub const BUILTIN_CODE_REVIEWS: [&str; 2] = ["code-review", "security-review"];
 /// #4889 — run one built-in review headless in the card's werk over `origin/main...HEAD`,
 /// bounded (CHORUS_CODE_REVIEW_TIMEOUT_SECS, default 900). It reads the repo with its own
 /// tools, so the whole diff is read; ("error", why) when it could not run.
-fn builtin_review(skill: &str, werk: &str, since: Option<&str>) -> (String, String) {
+fn builtin_review(skill: &str, werk: &str, since: Option<&str>, role: &str) -> (String, String) {
     let Some(bin) = claude_bin() else { return ("error".to_string(), "claude binary not resolvable".to_string()) };
     let base = match review_base(werk, since) {
         Ok(b) => b,
@@ -2461,12 +2468,11 @@ fn builtin_review(skill: &str, werk: &str, since: Option<&str>) -> (String, Stri
     };
     let prompt = builtin_review_prompt(skill, &base);
     let timeout = review_timeout_secs();
-    let mut command = Command::new(&bin);
-    command.current_dir(werk).env("CHORUS_HEADLESS", "1")
-        .args(builtin_review_args(skill, &prompt));
-    match bounded_headless(command, String::new(), timeout) {
+    // as the card's role account (#4921)
+    let (command, who) = role_command(role, &bin, &builtin_review_args(skill, &prompt), Some(werk));
+    match bounded_headless(command, String::new(), timeout, &who) {
         Ok(out) => builtin_review_verdict(&out),
-        Err(e) => ("error".to_string(), e.replace("chorus-agent", &format!("/{skill}"))),
+        Err(e) => ("error".to_string(), format!("/{skill}: {e}")),
     }
 }
 
@@ -2663,32 +2669,38 @@ fn tail(text: &str) -> String {
 
 /// One review by claude -p (or chorus-agent when CHORUS_GATE_PROFILE is set):
 /// (verdict, finding). Public for the #4921 fake-claude test.
-/// #4921 (Jeff 12:53: "run as one of u / why am i needed") — the gate's claude
-/// runs as the card's role account, under that role's own login, never under
-/// the runner's (jeffbridwell's login expired at 12:48 and every demo crashed).
-/// The hop is the one chorus-principal starts role panes with (#4777), covered
-/// by /etc/sudoers.d/chorus-principals. Already that account: no hop. Returns
-/// (program, args, who) — `who` names the account in a crash finding.
-pub fn gate_command(me: &str, role: &str, bin: &str, model: &str, sys: &str) -> (String, Vec<String>, String) {
-    let claude: Vec<String> = [
-        bin, "-p", "--model", model, "--permission-mode", "dontAsk", "--no-session-persistence",
-        "--output-format", "text", "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-        "--system-prompt", sys,
-    ].iter().map(|s| s.to_string()).collect();
+/// #4921 (Jeff 12:53: "run as one of u / why am i needed") — every claude a gate
+/// starts (the review, the breaks question, /code-review, /security-review) runs as
+/// the card's role account under that role's own sign-in, never under the runner's
+/// (jeffbridwell's login expired at 12:48 and every demo crashed). The hop is the one
+/// chorus-principal starts role panes with (#4777, /etc/sudoers.d/chorus-principals).
+/// Never ~/.chorus/secrets/claude.key: its Oct 28 token was revoked (13:02 run).
+/// Already that account: no hop. Returns (program, args, who); `who` names the
+/// account in every finding.
+pub fn role_hop(me: &str, role: &str, bin: &str, args: &[String], cwd: Option<&str>) -> (String, Vec<String>, String) {
     let account = format!("chorus-{role}");
     if role.is_empty() || me == account {
-        return (claude[0].clone(), claude[1..].to_vec(), format!("claude as {me}"));
+        return (bin.to_string(), args.to_vec(), format!("claude as {me}"));
     }
-    let quoted: Vec<String> = claude.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect();
-    let inner = format!(
-        // the role's own sign-in (~/.claude under -H); never ~/.chorus/secrets/claude.key,
-        // whose Oct 28 token was revoked (13:02 run: "OAuth token revoked")
-        "export CHORUS_HEADLESS=1 CHORUS_ROLE='{role}' && exec {}",
-        quoted.join(" ")
-    );
+    let q = |a: &str| format!("'{}'", a.replace('\'', "'\\''"));
+    let cd = cwd.map(|d| format!("cd {} && ", q(d))).unwrap_or_default();
+    let line: Vec<String> = std::iter::once(bin).chain(args.iter().map(String::as_str)).map(q).collect();
+    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE='{role}' && exec {}", line.join(" "));
     ("sudo".to_string(), ["-n", "-u", &account, "-H", "bash", "-c", &inner].iter().map(|s| s.to_string()).collect(), format!("claude as {account}"))
 }
 
+/// The claude a gate review runs, hopped to the role account (#4921).
+fn role_command(role: &str, bin: &str, args: &[String], cwd: Option<&str>) -> (Command, String) {
+    let me = env::var("USER").unwrap_or_default();
+    let (program, args, who) = role_hop(&me, role, bin, args, cwd);
+    let mut c = Command::new(program);
+    c.env("CHORUS_HEADLESS", "1").args(args);
+    if let Some(d) = cwd { c.current_dir(d); }
+    (c, who)
+}
+
+/// One review by claude -p (or chorus-agent when CHORUS_GATE_PROFILE is set):
+/// (verdict, finding). Public for the #4921 fake-claude test.
 pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32], role: &str) -> (String, String) {
     if let Some(job) = gate_via_agent(ctx, sys, GATE_OUTPUT_SCHEMA, round) {
         return match job {
@@ -2703,14 +2715,13 @@ pub fn review_once(sys: &str, ctx: &str, round: &str, fail_on: &[u32], role: &st
             return ("error".to_string(), ("claude binary not resolvable").to_string());
         }
     };
-    let me = env::var("USER").unwrap_or_default();
-    let (program, args, who) = gate_command(&me, role, &bin, &model, sys);
-    // #3471 — CHORUS_HEADLESS marks the gate's claude -p as headless so
-    // chorus-hooks' RESPOND-FIRST block exempts it (also set inside the hop,
-    // since sudo drops the environment).
-    let child = Command::new(&program)
-        .env("CHORUS_HEADLESS", "1")
-        .args(&args)
+    let args: Vec<String> = [
+        "-p", "--model", &model, "--permission-mode", "dontAsk", "--no-session-persistence",
+        "--output-format", "text", "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
+        "--system-prompt", sys,
+    ].iter().map(|s| s.to_string()).collect();
+    let (mut command, who) = role_command(role, &bin, &args, None);
+    let child = command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

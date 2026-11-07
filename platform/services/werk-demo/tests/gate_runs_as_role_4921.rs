@@ -4,17 +4,20 @@
 //! #4921 (Jeff 12:53: "run as one of u / why am i needed"): a gate reviewer's claude
 //! runs as the card's role account, under that role's login, never as the runner.
 //! At 12:48 the runner's (jeffbridwell's) claude login had expired and every demo crashed.
-use werk_demo::{gate_command, review_once};
+use werk_demo::{review_once, role_hop};
 
 const BIN: &str = "/Users/jeffbridwell/.local/bin/claude";
 
+fn args(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
+
 #[test]
 fn from_the_runner_the_gate_hops_to_the_role_account() {
-    let (prog, args, who) = gate_command("jeffbridwell", "kade", BIN, "m", "it's the prompt");
+    let (prog, a, who) = role_hop("jeffbridwell", "kade", BIN, &args(&["-p", "it's the prompt"]), Some("/w/kade-1"));
     assert_eq!(prog, "sudo");
-    assert_eq!(&args[..6], &["-n", "-u", "chorus-kade", "-H", "bash", "-c"]);
+    assert_eq!(&a[..6], &["-n", "-u", "chorus-kade", "-H", "bash", "-c"]);
     assert_eq!(who, "claude as chorus-kade");
-    let inner = &args[6];
+    let inner = &a[6];
+    assert!(inner.starts_with("cd '/w/kade-1' && "), "the breaks question and /code-review read the werk: {inner}");
     assert!(inner.contains(&format!("exec '{BIN}' '-p'")), "{inner}");
     assert!(inner.contains("'it'\\''s the prompt'"), "a quote in the prompt must survive the shell: {inner}");
     assert!(inner.contains("CHORUS_HEADLESS=1"), "sudo drops the env, so headless is set inside: {inner}");
@@ -26,17 +29,17 @@ fn from_the_runner_the_gate_hops_to_the_role_account() {
 #[test]
 fn negative_proof_the_runner_never_runs_claude_bare() {
     for role in ["kade", "silas", "wren", "abby-normal"] {
-        let (prog, args, _) = gate_command("jeffbridwell", role, BIN, "m", "s");
+        let (prog, a, _) = role_hop("jeffbridwell", role, BIN, &args(&["-p", "x"]), None);
         assert_ne!(prog, BIN, "{role}: claude would run as the runner");
-        assert!(!args.iter().any(|a| a == "-p"), "{role}: claude args outside the hop");
+        assert!(!a.iter().any(|x| x == "-p"), "{role}: claude args outside the hop");
     }
 }
 
 #[test]
 fn already_the_role_account_runs_claude_directly() {
-    let (prog, args, who) = gate_command("chorus-kade", "kade", BIN, "m", "s");
+    let (prog, a, who) = role_hop("chorus-kade", "kade", BIN, &args(&["-p"]), Some("/w"));
     assert_eq!(prog, BIN);
-    assert_eq!(args[0], "-p");
+    assert_eq!(a, args(&["-p"]));
     assert_eq!(who, "claude as chorus-kade");
 }
 
