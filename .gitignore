@@ -190,3 +190,5 @@ platform/backups/graph-retirements/
 
 # #4747 — llvm-cov raw profiles written beside a crate when its binary runs under coverage
 *.profraw
+target.seeding/
+target.seeding
