@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — the quality review's Semgrep rules against their own fixtures
-# @domain: proving
+# @domain: cicd
 # @card: #4889 · owner: silas
 # Jeff 2026-11-04 19:04 ("fine do that"): Semgrep in the quality review. Each rule must
 # fire on the shape it names and stay quiet on the fixed shape (#3734 negative proof).

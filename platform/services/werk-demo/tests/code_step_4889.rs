@@ -1,5 +1,5 @@
 // @test-type: integration — a stand-in claude, a real git werk; no model, no network.
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! AC4 + AC7: the code step runs Claude Code's existing /code-review (uncapped) and
 //! /security-review in the card's werk over its whole branch, plus /gate-code for the

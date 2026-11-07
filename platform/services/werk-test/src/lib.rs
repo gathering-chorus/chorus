@@ -7005,3 +7005,41 @@ mod uncovered_4539 {
         assert_eq!(uncovered_changes(&sel.untagged, &[]), vec!["platform/config/x.yaml".to_string()]);
     }
 }
+
+/// #4915 round 2 (Jeff's go 11-07 08:47) — the domain a test file declares in its
+/// `@domain:` header: the first such comment line (`#`, `//`, `*`) or a JSON
+/// `"@domain":` key in the first 2,000 chars. The same rule chorus-crawl's
+/// validate reads (#4334, domain.rs `declared_domain`), so the two can never
+/// disagree about what a file declares.
+pub fn declared_domain(content: &str) -> Option<String> {
+    let head: String = content.chars().take(2000).collect();
+    for line in head.lines() {
+        let t = line.trim_start();
+        let json = t.strip_prefix("\"@domain\"").map(|r| format!("@domain:{}", r.trim_start().trim_start_matches(':').trim_start().trim_start_matches('"')));
+        let Some(t) = json.as_deref().or_else(|| t.strip_prefix("//").or_else(|| t.strip_prefix('#')).or_else(|| t.strip_prefix('*'))) else { continue };
+        let t = t.trim_start();
+        const TAG: &str = "@domain:";
+        if t.len() < TAG.len() || !t.is_char_boundary(TAG.len()) || !t[..TAG.len()].eq_ignore_ascii_case(TAG) {
+            continue;
+        }
+        let word: String = t[TAG.len()..].trim_start().chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>().to_ascii_lowercase();
+        if !word.is_empty() {
+            return Some(word);
+        }
+    }
+    None
+}
+
+/// #4915 round 2 — the changed test files whose `@domain:` names a domain the
+/// store does not list, as (path, domain). On 11-07, 19 such files landed
+/// (`proving`, `chorus`, `autonomy`, then `werk`) and the crawler alerted for
+/// hours; werk-test refuses them before the land instead. A file with no header
+/// is not judged here (the crawler places it by its rules).
+pub fn unlisted_test_domains(changed: &[(String, String)], listed: &[String]) -> Vec<(String, String)> {
+    changed.iter()
+        .filter(|(f, _)| is_test_file(f) && !f.contains("/fixtures/"))
+        .filter_map(|(f, c)| declared_domain(c).map(|d| (f.clone(), d)))
+        .filter(|(_, d)| !listed.iter().any(|l| l == d))
+        .collect()
+}

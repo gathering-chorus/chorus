@@ -8,7 +8,7 @@
 # nightly's own `nightly-unit|<kind>|<suite>|<status>|<summary>` lines in its run log.
 # An unmeasured suite is not green either (#4562): it counts against zero.
 
-# the repo owner's home (two levels above the checkout), not a role account's $HOME
+# the repo owner's home (found from the main .git below), not a role account's $HOME
 # (review 11-06: "../" counts differ between canonical and a werk; the main checkout's
 # .git sits at <home>/CascadeProjects/chorus/.git from both)
 OWNER_HOME="$(cd "$BATS_TEST_DIRNAME/../.." && cd "$(git rev-parse --git-common-dir)/../../.." && pwd)"

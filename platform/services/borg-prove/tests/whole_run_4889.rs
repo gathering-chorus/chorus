@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: proving
+// @domain: cicd
 //! #4889 (Kade 18:08) — an AC's test check reads the whole newest run of its
 //! test, not one case. Loki answered limit=1 before, so the newest single case
 //! decided: a pass hid a fail, and a skip was never read.

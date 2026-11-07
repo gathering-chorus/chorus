@@ -1,5 +1,5 @@
 // @test-type: unit — pure: AC check parsing over card text; no cards CLI.
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! AC9: no two AC point to the same check file, and every AC names one (AC6: a card with
 //! no checks fails). validate refuses before any review runs.

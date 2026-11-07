@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — the architecture review's dependency-cruiser rules on a planted tree
-# @domain: proving
+# @domain: cicd
 # @card: #4889 · owner: silas
 # Jeff 2026-11-04 19:04 ("fine do that"): dependency-cruiser in the architecture review.
 # Kade 19:47: "a planted boundary break that goes red". The rules: platform/quality/depcruise/boundaries.cjs

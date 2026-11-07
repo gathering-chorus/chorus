@@ -1,5 +1,5 @@
 // @test-type: unit — pure: Loki answers and the card's window; no Loki, no board
-// @domain: proving
+// @domain: cicd
 // @card: #4889
 //! Land 11-05: borg-verify read Loki's 429 ("too many outstanding requests") as "no result
 //! yet" for all 19 now-checks, twice, and asked 30 days per check. Now the window starts at

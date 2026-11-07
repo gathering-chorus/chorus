@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — no two AC on a card share one check file
-# @domain: proving
+# @domain: cicd
 # @card: #4889 · owner: silas
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 

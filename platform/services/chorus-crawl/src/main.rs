@@ -3406,7 +3406,10 @@ fn main() {
         .filter(|g| !gone.contains(g.path.as_str()))
         .filter_map(|g| g.other.iter().find(|(k, v)| k == "name" && !v.is_empty()).map(|(_, v)| v.clone()))
         .chain(actions.iter().filter_map(|a| match a {
-            Action::Post { path } => Some(chorus_crawl::file_row_name(&home_repo, path, !foreign)),
+            // only a Post this pass will really send (review 11-06): a known, classified file
+            Action::Post { path } if by_path.contains_key(path.as_str())
+                && matches!(verdict_for(&root, path), Verdict::Classified(..)) =>
+                Some(chorus_crawl::file_row_name(&home_repo, path, !foreign)),
             _ => None,
         }))
         .collect();

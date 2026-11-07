@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — the crawler's newest pass in prod wrote every row
-# @domain: proving
+# @domain: code
 # @card: #4915 · owner: kade
 # @needs: machine — reads prod after the land (AC check: after); a card run leaves it to borg-prove and the nightly (#4539)
 # After #4889 retired werk-review, four test rows still named its deleted
@@ -8,7 +8,7 @@
 # them as unknown-target, and the watermark held all night (11-06). The fix
 # (chorus-crawl drop_dead_edges, unit-tested in src/lib.rs dead_edges_4915)
 # drops an edge to a row that is gone. This reads the crawler's own log.
-# the crawler writes under the repo owner's home (two levels above the checkout),
+# the crawler writes under the repo owner's home (found from the main .git below),
 # which is not $HOME when a role account runs this
 # (review 11-06: "../" counts differ between canonical and a werk; the main checkout's
 # .git sits at <home>/CascadeProjects/chorus/.git from both)

@@ -75,6 +75,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path=="/": return self._send(200,{"primitives":[{"kind":"Widget"}]})
         if self.path=="/health": return self._send(200,{"ok":True})
+        # the walker reads the Permission rows as a list; a non-list is refused (#4915 round 2)
+        if self.path.startswith("/v1/security/permissions"): return self._send(200,{"data":[]})
         return self._send(200,{"data":{"name":"zz-fixture-widget"}})
     def do_POST(self):
         n=int(self.headers.get("Content-Length","0")); open(rec,"wb").write(self.rfile.read(n))
