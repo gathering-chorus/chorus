@@ -115,19 +115,18 @@ fn negative_proof_other_repo_path_remains_refused_under_scoped_safe_directory() 
         std::fs::metadata(p).map(|m| m.uid() != my_uid).unwrap_or(false)
     });
 
-    if let Some(&foreign_path) = foreign {
-        let output = std::process::Command::new("git")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", "safe.directory")
-            .env("GIT_CONFIG_VALUE_0", "/tmp")
-            .args(["-C", foreign_path, "status"])
-            .output()
-            .expect("git status execution");
+    let foreign_path = foreign.expect("negative proof requires finding a repository owned by a foreign UID");
+    let output = std::process::Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "safe.directory")
+        .env("GIT_CONFIG_VALUE_0", "/tmp")
+        .args(["-C", foreign_path, "status"])
+        .output()
+        .expect("git status execution");
 
-        assert!(!output.status.success(), "git must fail on dubious ownership for un-scoped path {foreign_path}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("fatal: detected dubious ownership"), "must refuse dubious ownership: {stderr}");
-    }
+    assert!(!output.status.success(), "git must fail on dubious ownership for un-scoped path {foreign_path}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("fatal: detected dubious ownership"), "must refuse dubious ownership: {stderr}");
 }
