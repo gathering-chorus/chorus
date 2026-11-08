@@ -50,3 +50,18 @@ start_line() { grep -F "respawn-pane -k -t chorus-$1" "$T/tmux.log" | tail -1; }
   test -n "$up_line"
   test "$(printf '%s' "$up_line" | grep -oE 'sudo -n -u chorus-kade -H bash -c|launchctl asuser [0-9]+')" = "$(printf '%s' "$login_line" | grep -oE 'sudo -n -u chorus-kade -H bash -c|launchctl asuser [0-9]+')"
 }
+
+@test "#4929 up at login still starts roles when nobody is signed in yet (roles-up runs before the Clearing)" {
+  touch "$T/nobody-signed-in"
+  run "$SCRIPT" up
+  for r in kade silas wren; do
+    start_line "$r" | grep -qF -- "-u chorus-$r -H bash -c" || { echo "$r did not start: $output"; return 1; }
+  done
+}
+
+@test "#4929 NEGATIVE PROOF: login by hand still needs a signed-in person" {
+  touch "$T/nobody-signed-in"
+  run "$SCRIPT" login kade
+  test "$status" -eq 2
+  test -z "$(start_line kade)"
+}

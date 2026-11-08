@@ -2036,7 +2036,10 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
         let mut next = Vec::new();
         for p in &level {
             for k in sh(&pgrep, &["-P", p]).unwrap_or_default().lines().filter_map(|k| k.trim().parse::<u64>().ok()) {
-                if sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).map(|c| is(&c)).unwrap_or(false) { found = Some(k); break; }
+                let cmd = sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).unwrap_or_default();
+                // the wrappers an own-account start puts in between are never the session,
+                // whatever their arguments say (Gemini and agy roles match by substring)
+                if !rows::is_launch_wrapper(&cmd) && is(&cmd) { found = Some(k); break; }
                 next.push(k.to_string());
             }
             if found.is_some() { break; }
@@ -2270,15 +2273,19 @@ fn open_windows(ctx: &Ctx) {
 /// #4929 — the ONE way a role starts, used by `on`/`login` and by `up`. The
 /// principal gate sets the role's own account before anything launches, and a
 /// person must be signed in. Jeff 2026-11-08: "i expect the boot up to be the same".
-fn start_role(ctx: &mut Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
+fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Result<Came, (i32, String)> {
     match principal_gate(ctx, role) {
         Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(role).join("revoked")); }
         Err(why) => return Err((2, why)),
     }
-    // #4412 — a person starts it
-    match person_signed_in(ctx) {
-        Ok(p) => std::env::set_var("CHORUS_STARTED_BY", p),
-        Err(why) => return Err((2, why)),
+    // #4412 — a person starts it. `up` runs from the roles-up LaunchAgent at
+    // login, before anyone is signed in, and never required a person; it keeps
+    // that, and only the account choice is shared (#4929 review, run 3).
+    if by_person {
+        match person_signed_in(ctx) {
+            Ok(p) => std::env::set_var("CHORUS_STARTED_BY", p),
+            Err(why) => return Err((2, why)),
+        }
     }
     on(ctx, role, attach)
 }
@@ -2299,7 +2306,7 @@ fn up(ctx: &mut Ctx, windows: bool) -> i32 {
         // #4929 — `up` starts each role through the same path as `on`: the
         // principal gate picks the role's own account. Before this, `up` called
         // on() with run_as unset, so Kade and Borg Queen booted as jeffbridwell.
-        let came = match start_role(ctx, role, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
+        let came = match start_role(ctx, role, false, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
         results.push((role.to_string(), came));
     }
     let line = lifecycle::summary_line(&results);
@@ -2441,7 +2448,7 @@ pub fn run(args: &[String]) -> i32 {
             let r = match name_arg(1) { Ok(r) => r, Err(c) => return c };
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";
-            match start_role(&mut ctx, &r, attach) {
+            match start_role(&mut ctx, &r, attach, true) {
                 Ok(_) => 0,
                 Err((2, why)) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); 2 }
                 Err((c, _)) => c,

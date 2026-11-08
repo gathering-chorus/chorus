@@ -750,6 +750,13 @@ pub fn gemini_auth_is_google(settings_json: &str) -> Result<(), String> {
     }
 }
 
+/// #4929 — sudo, launchctl and shells sit between the pane and the session in an
+/// own-account start; none of them is the session.
+pub fn is_launch_wrapper(command: &str) -> bool {
+    let prog = command.split_whitespace().next().unwrap_or("");
+    matches!(prog.rsplit('/').next().unwrap_or(""), "sudo" | "launchctl" | "bash" | "sh" | "zsh")
+}
+
 /// #4444 — does a process in the role's pane run the program that was started?
 pub fn pane_process_is(command: &str, runtime: PaneRuntime) -> bool {
     match runtime {
