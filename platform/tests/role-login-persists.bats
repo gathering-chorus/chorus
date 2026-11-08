@@ -36,6 +36,31 @@ setup() {
   }
 }
 
+@test "AC1: asuser pre-flight probe matches repo sudoers pinned rule" {
+  source "$REPO/platform/tests/lib/login-harness.bash"
+  login_harness
+  printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"
+
+  run "$PRINCIPAL_BIN" login silas
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+  rule_prefix=$(grep "chorus-silas" "$REPO/platform/config/chorus-role-asuser.sudoers" | sed -E 's/.*NOPASSWD: //; s/ \*$//')
+  [ -n "$rule_prefix" ] || { echo "Missing rule in platform/config/chorus-role-asuser.sudoers"; return 1; }
+
+  grep -F -- "sudo -n $rule_prefix true" "$T/sudo.log" || {
+    echo "sudo.log did not record probe matching repo sudoers rule ($rule_prefix true):"
+    cat "$T/sudo.log"
+    return 1
+  }
+
+  # Negative proof (#3734): bare sudo must NOT appear in probe args after asuser
+  ! grep -E "sudo -n .* asuser [0-9]+ sudo " "$T/sudo.log" || {
+    echo "sudo.log recorded bare sudo in asuser probe:"
+    cat "$T/sudo.log"
+    return 1
+  }
+}
+
 @test "AC1: real account chorus-silas has persistent credentials file with mode 0600" {
   role_acct="chorus-silas"
   CRED_FILE="/Users/$role_acct/.claude/.credentials.json"

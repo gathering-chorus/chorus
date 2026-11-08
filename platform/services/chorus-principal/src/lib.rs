@@ -541,7 +541,7 @@ struct Ctx {
     /// #4383 — sudo, for starting a principal as its own Mac account
     sudo: String,
     /// #4924 — launchctl, for session bootstrap isolation
-    launchctl: String,
+    _launchctl: String,
     /// #4383 — the principal's own account, when it is not the current user
     run_as: Option<String>,
     log_bin: String,
@@ -568,7 +568,7 @@ impl Ctx {
             api: envd("CHORUS_API_URL", "http://localhost:3360"),
             curl: envd("AWAKE_CURL", "curl"),
             sudo: envd("AWAKE_SUDO", "sudo"),
-            launchctl: envd("AWAKE_LAUNCHCTL", "/bin/launchctl"),
+            _launchctl: envd("AWAKE_LAUNCHCTL", "/bin/launchctl"),
             run_as: None,
             log_bin: log_bin_for(&root),
             probe: envd("AWAKE_PROBE_BIN", "curl"),
@@ -953,6 +953,14 @@ fn account_uid(acct: &str) -> String {
     format!("$(id -u {})", acct)
 }
 
+/// #4928 (#4924) — pre-flight probe arguments for `launchctl asuser`.
+/// Must match the pinned rule in /etc/sudoers.d/chorus-role-asuser:
+/// `/bin/launchctl asuser <uid> /usr/bin/sudo -n -u <acct> -H bash -c *`
+/// Silas pinned form: /bin/launchctl and /usr/bin/sudo are strictly required.
+pub fn asuser_probe_args<'a>(uid: &'a str, acct: &'a str) -> [&'a str; 12] {
+    ["-n", "/bin/launchctl", "asuser", uid, "/usr/bin/sudo", "-n", "-u", acct, "-H", "bash", "-c", "true"]
+}
+
 /// `on <role>`: start it logged in, or, when it is already running, make sure
 /// THIS session is logged in and go to its window. Never a second copy.
 /// The shell line that starts `cmd` in the role's pane, as the role's own
@@ -1021,11 +1029,13 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
             // namespace (gui/501). Silas pinned form: /bin/launchctl asuser <uid> /usr/bin/sudo -n -u <acct> -H bash -c ...
             // If the sudoers rule is not configured, fall back to today's start line with a warning.
             let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$");
-            let asuser_check = sh(&ctx.sudo, &["-n", &ctx.launchctl, "asuser", &uid, &ctx.sudo, "-n", "-u", acct, "-H", "bash", "-c", "true"]);
+            let probe_args = asuser_probe_args(&uid, acct);
+            let asuser_check = sh(&ctx.sudo, &probe_args);
             if asuser_check.is_ok() {
+                let launch_prefix = probe_args[1..11].join(" ");
                 format!(
-                    "{} -n /bin/launchctl asuser {} /usr/bin/sudo -n -u {} -H bash -c \"{}\"",
-                    ctx.sudo, uid, acct, escaped_inner
+                    "{} -n {} \"{}\"",
+                    ctx.sudo, launch_prefix, escaped_inner
                 )
             } else {
                 eprintln!("chorus-principal: warning: sudo launchctl asuser {} not permitted; falling back to unisolated start for {}", uid, acct);
