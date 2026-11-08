@@ -1881,6 +1881,13 @@ fn sweep(ctx: &Ctx) -> i32 {
     }
     ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("closed={}", closed), &format!("skipped={}", skipped), &format!("failed={}", failed)]);
     println!("sweep: {} live session(s) kept open, {} expired session(s) closed, {} not an agent's (left to their own door), {} failed", kept, closed, skipped, failed);
+
+    // #4924 AC2: scan for 401 expired Claude logins and alert Jeff within 60s
+    let scan_script = format!("{}/platform/scripts/role-401-scan", envd("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"));
+    if Path::new(&scan_script).exists() {
+        let _ = Command::new("bash").args([&scan_script, "--all", "--notify"]).status();
+    }
+
     if failed > 0 { 1 } else { 0 }
 }
 

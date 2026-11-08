@@ -58,10 +58,21 @@ fn a_refused_hop_is_named_never_a_silent_fall_back() {
 
 #[test]
 fn non_claude_role_hops_to_reviewer() {
+    std::env::remove_var("CHORUS_REVIEWER");
     let (prog, a, who) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p", "prompt"]), None);
     assert_eq!(prog, "sudo");
     assert_eq!(&a[..6], &["-n", "-u", "chorus-wren", "-H", "bash", "-c"]);
     assert_eq!(who, "claude as chorus-wren");
+}
+
+#[test]
+fn non_claude_role_hops_to_reviewer_override() {
+    std::env::set_var("CHORUS_REVIEWER", "silas");
+    let (prog, a, who) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p", "prompt"]), None);
+    std::env::remove_var("CHORUS_REVIEWER");
+    assert_eq!(prog, "sudo");
+    assert_eq!(&a[..6], &["-n", "-u", "chorus-silas", "-H", "bash", "-c"]);
+    assert_eq!(who, "claude as chorus-silas");
 }
 
 #[test]
