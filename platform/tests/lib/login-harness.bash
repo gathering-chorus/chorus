@@ -89,16 +89,20 @@ EOS
   # this user (the harness has no second account), refused when $T/sudo-deny exists
   cat > "$T/bin/sudo" <<EOS
 #!/bin/bash
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 echo "sudo \$*" >> "$T/sudo.log"
 [ -f "$T/sudo-deny" ] && { echo "sudo: a password is required" >&2; exit 1; }
 while [ \$# -gt 0 ]; do case "\$1" in -n|-H) shift ;; -u) shift 2 ;; *) break ;; esac; done
+case "\$1" in /bin/launchctl) shift; set -- "\$DIR/launchctl" "\$@" ;; esac
 exec "\$@"
 EOS
   cat > "$T/bin/launchctl" <<EOS
 #!/bin/bash
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 echo "launchctl \$*" >> "$T/launchctl.log"
 [ -f "$T/launchctl-deny" ] && { echo "launchctl: Operation not permitted" >&2; exit 1; }
 while [ \$# -gt 0 ]; do case "\$1" in asuser) shift 2 ;; *) break ;; esac; done
+case "\$1" in /usr/bin/sudo) shift; set -- "\$DIR/sudo" "\$@" ;; esac
 exec "\$@"
 EOS
   # #4445 stub relay projection: records the call, never reaches the relay;
