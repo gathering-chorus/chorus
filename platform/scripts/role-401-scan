@@ -66,8 +66,12 @@ if [ -n "$MATCH_LINE" ]; then
     fi
   fi
 
-  # Don't re-alert on the exact same error line once alerted
-  if [ -f "$SEEN_STATE" ] && [ "$(cat "$SEEN_STATE" 2>/dev/null)" = "$MATCH_LINE" ]; then
+  SRC_ID=$(echo -n "$SCAN_FILE" | md5)
+  LINE_HASH=$(echo -n "$MATCH_LINE" | md5)
+  KEY="${SRC_ID}:${LINE_HASH}"
+
+  # Don't re-alert on the exact same error line in this source once alerted
+  if [ -f "$SEEN_STATE" ] && grep -qF "$KEY" "$SEEN_STATE" 2>/dev/null; then
     exit 0
   fi
 
@@ -80,7 +84,7 @@ if [ -n "$MATCH_LINE" ]; then
   if [ -n "$STATE" ]; then
     mkdir -p "$(dirname "$STATE")" 2>/dev/null
     echo "$NOW" > "$STATE" 2>/dev/null
-    echo "$MATCH_LINE" > "$SEEN_STATE" 2>/dev/null
+    echo "$KEY" >> "$SEEN_STATE" 2>/dev/null
   fi
 
   MSG="ALERT: role $ROLE Claude login expired (401)"
