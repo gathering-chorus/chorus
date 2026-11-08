@@ -65,10 +65,19 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qv "launchctl asuser"
 }
 
-@test "#4383 NEGATIVE PROOF: a principal whose account is the current user starts without sudo" {
+@test "#4931 NEGATIVE PROOF: an agent whose account is the launcher's own is refused, never started as it" {
+  # was #4383's "starts without sudo" — the fallback Jeff ruled out 2026-11-08 11:05
   row wren "$USER"
   run "$SCRIPT" login wren
-  test "$status" -eq 0
-  test ! -f "$T/sudo.log"
-  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" | grep -F "sudo -n" || true)"
+  test "$status" -eq 2
+  printf '%s' "$output" | grep -qF "would run as the launcher's own account"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
+}
+
+@test "#4931 NEGATIVE PROOF: an agent with no account of its own is refused, never started as the launcher" {
+  row wren ""
+  run "$SCRIPT" login wren
+  test "$status" -eq 2
+  printf '%s' "$output" | grep -qF "has no Mac account of its own"
+  test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }

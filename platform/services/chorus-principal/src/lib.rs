@@ -987,7 +987,8 @@ pub fn asuser_probe_args<'a>(uid: &'a str, acct: &'a str) -> [&'a str; 12] {
 /// account when one is configured (#4383). Shared by the Claude and agent paths.
 fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &str) -> Result<String, (i32, String)> {
     let launch = match &ctx.run_as {
-        None => format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd),
+        // #4931 — fail closed: no account means no start, never a start as the launcher
+        None => { let _ = (role_dir, token_file, cmd); return Err((2, format!("{} has no account to run as; refusing to start it as {} (#4931)", role, env::var("USER").unwrap_or_default()))); }
         // #4383 — the session runs as the principal's own account: its token is
         // copied into that account's home, readable by it alone, and files it
         // writes in the werk stay group-writable (umask 002).
@@ -2341,6 +2342,14 @@ fn principal_gate(ctx: &Ctx, name: &str) -> Result<Option<String>, String> {
     // account, so no other principal can read its token. The launcher must be
     // able to start it without a password.
     let me = env::var("USER").unwrap_or_default();
+    // #4931 — fail closed (Jeff 2026-11-08 11:05: "i dont want fall backs to the thing we
+    // are trying to remove"). An agent with no account of its own, or one that would run
+    // as the launcher's account, is refused, never started as that account.
+    match host.as_deref() {
+        None | Some("") => return Err(format!("{} has no Mac account of its own (hostAccount empty); refusing to start it as {}", name, me)),
+        Some(h) if h == me => return Err(format!("{} would run as the launcher's own account {}; refusing (each agent runs as its own account)", name, me)),
+        _ => {}
+    }
     match host.filter(|h| !h.is_empty() && *h != me) {
         None => Ok(None),
         Some(acct) => {

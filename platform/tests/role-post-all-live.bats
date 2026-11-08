@@ -7,10 +7,8 @@
 # has started once with the self test wired in, and red whenever any check fails.
 
 @test "#4931 live: every agent principal green on every self-test check" {
-  # Before the land the running roles were started without the self test, so this can
-  # only be measured after the land and one start of each role. It is run then, by hand
-  # and by the post-land prove, with CHORUS_LIVE_POST=1; the output goes on the card.
-  [ "${CHORUS_LIVE_POST:-0}" = 1 ] || skip "post-land only: run with CHORUS_LIVE_POST=1 after the land and a start of each role"
+  # Reads the live roles wherever it runs (pipeline or prove); it never skips, so the
+  # prove after the land sees a real measurement (a skip read as "unmeasured", 11:05).
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   run "$ROOT/platform/scripts/role-post-all"
   echo "$output"
