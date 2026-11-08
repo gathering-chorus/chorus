@@ -9,6 +9,7 @@
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   T="$BATS_TEST_TMPDIR"
+  export HOME="$T"
   mkdir -p "$T/logs"
   ALERT_SCANNER="$REPO/platform/scripts/role-401-scan"
 }

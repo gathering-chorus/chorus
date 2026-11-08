@@ -9,6 +9,17 @@
 # 5. Posts before/after timestamps to card 4924 comment
 set -euo pipefail
 
+if [ "${1:-}" = "--dry-run" ]; then
+  echo "demo-4924-ac1: dry-run ok (card 4924, target chorus-silas, uid 502)"
+  exit 0
+elif [ "${1:-}" = "--help" ]; then
+  echo "Usage: demo-4924-ac1.sh [--dry-run]"
+  exit 0
+elif [ -n "${1:-}" ]; then
+  echo "Unknown option: $1" >&2
+  exit 2
+fi
+
 CARD=4924
 CRED_FILE="/Users/chorus-silas/.claude/.credentials.json"
 BEFORE_TS=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$CRED_FILE" 2>/dev/null || echo "none")
