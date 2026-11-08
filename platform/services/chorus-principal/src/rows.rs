@@ -753,7 +753,11 @@ pub fn gemini_auth_is_google(settings_json: &str) -> Result<(), String> {
 /// #4444 — does a process in the role's pane run the program that was started?
 pub fn pane_process_is(command: &str, runtime: PaneRuntime) -> bool {
     match runtime {
-        PaneRuntime::Claude => command.contains("claude"),
+        // #4929 — the program itself must be claude. A wrapper whose arguments
+        // mention claude (`sudo -n /bin/launchctl asuser … bash -c "… claude -c"`)
+        // was registered as the session, so every own-account role counted two.
+        PaneRuntime::Claude => command.split_whitespace().next()
+            .map(|p| p.rsplit('/').next() == Some("claude")).unwrap_or(false),
         PaneRuntime::Gemini => command.contains("gemini"),
     }
 }
