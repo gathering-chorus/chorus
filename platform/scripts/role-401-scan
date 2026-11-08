@@ -25,7 +25,11 @@ done
 if [ "$ALL" -eq 1 ]; then
   ANY_FAIL=0
   for r in kade silas wren; do
-    TRANSCRIPT=$(find "${HOME:-/Users/jeffbridwell}/.claude/projects" -maxdepth 2 -name "*.jsonl" 2>/dev/null | grep -E "chorus-.*$r" | xargs ls -t 2>/dev/null | head -1 || echo "")
+    ROLE_DIR="/Users/chorus-$r/.claude/projects"
+    if [ ! -d "$ROLE_DIR" ] && [ -d "${HOME:-}/.claude/projects" ]; then
+      ROLE_DIR="${HOME}/.claude/projects"
+    fi
+    TRANSCRIPT=$(find "$ROLE_DIR" -type f -name "*.jsonl" -exec ls -t {} + 2>/dev/null | head -1 || echo "")
     if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
       "$0" --scan-file "$TRANSCRIPT" --role "$r" $([ "$NOTIFY" -eq 1 ] && echo "--notify") || ANY_FAIL=1
     fi
