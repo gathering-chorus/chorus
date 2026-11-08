@@ -2,7 +2,7 @@
 # @test-type: contract — runs platform/scripts/role-post against a stand-in roles door
 # and fixture files in BATS_TEST_TMPDIR; no real store, no network beyond localhost.
 # @domain: roles
-# #4919 AC4 — at session start a role checks its own setup and refuses to work,
+# #4919 AC4 / #4924 AC3 — at session start a role checks its own setup and refuses to work,
 # naming what failed. Each check has a negative proof (#3734): the 2026-11-07
 # lockout (no principal for the account), the 660 key, an unreadable identity
 # dir, a live-edited settings.json, a missing Claude login, an unreachable door.
