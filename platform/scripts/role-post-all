@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# role-post-all — #4931 AC3: one table, every agent principal by self-test check.
+# Each role runs role-post as itself at session start (it alone can read its own login)
+# and writes <account home>/.chorus/post/<role>.result; this reads those results, so the
+# table is the roles' own measurements, gathered in one place. A role with no result, or
+# a result older than its running session, is FAIL (unmeasured), never a pass (#3734).
+# Exit 1 if any cell is FAIL.
+#   POST_ALL_PRINCIPALS_CMD  prints the principals JSON (default: the identity door)
+#   POST_ALL_HOMES           where account homes live   (default: /Users)
+#   POST_ALL_PS              ps output file             (default: live ps)
+set -u
+principals_cmd="${POST_ALL_PRINCIPALS_CMD:-curl -sf --max-time 5 http://127.0.0.1:3360/v1/identity/principals?limit=500}"
+homes="${POST_ALL_HOMES:-/Users}"
+if [ -n "${POST_ALL_PS:-}" ]; then ps_out="$(cat "$POST_ALL_PS")"; else ps_out="$(ps -axo user=,etime=,command=)"; fi
+agents=$(sh -c "$principals_cmd" 2>/dev/null | python3 -c '
+import json,sys
+for p in json.load(sys.stdin).get("data",[]):
+    if p.get("principalKind")=="agent": print(p["name"], p.get("hostAccount",""))
+') || agents=""
+[ -n "$agents" ] || { echo "FAIL principals door unreadable — no table"; exit 1; }
+
+checks="identity identity-dir key settings login reach"
+printf '%-12s' role; for c in $checks; do printf ' %-12s' "$c"; done; printf ' %s\n' "measured"
+bad=0
+while read -r role acct; do
+  res="$homes/$acct/.chorus/post/$role.result"
+  printf '%-12s' "$role"
+  if [ ! -r "$res" ]; then
+    for c in $checks; do printf ' %-12s' "-"; done; echo " FAIL no result (role-post never ran as $acct)"; bad=1; continue
+  fi
+  at=$(head -1 "$res" | awk '{print $2}')
+  # the session must not be newer than the result: a result from before this session is stale
+  et=$(printf '%s\n' "$ps_out" | awk -v a="$acct" '$1==a && ($3 ~ /(^|\/)claude$/ || $3 ~ /(^|\/)agy$/) {print $2; exit}')
+  for c in $checks; do
+    line=$(grep -E "^(ok|FAIL) +$c:" "$res" | head -1)
+    case "$line" in ok*) printf ' %-12s' ok ;; FAIL*) printf ' %-12s' FAIL; bad=1 ;; *) printf ' %-12s' "?"; bad=1 ;; esac
+  done
+  now=$(date +%s); age=$(( (now - ${at:-0}) / 60 ))
+  if [ -z "$et" ]; then echo " ${age}m ago · FAIL no running session"; bad=1; continue; fi
+  secs=$(printf '%s' "$et" | awk -F'[-:]' '{n=NF; s=$n+$(n-1)*60; if(n>=3)s+=$(n-2)*3600; if(n>=4)s+=$(n-3)*86400; print s}')
+  # the start writes the result just before the session starts (role-post runs first in
+  # the launch line), so a result up to 5 minutes before the session's start is current
+  if [ $(( now - secs - 300 )) -gt "${at:-0}" ]; then echo " ${age}m ago · FAIL older than the running session"; bad=1
+  else echo " ${age}m ago"; fi
+  grep '^FAIL' "$res" | sed 's/^/    /'
+done <<< "$agents"
+exit $bad

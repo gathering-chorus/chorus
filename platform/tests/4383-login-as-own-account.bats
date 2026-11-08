@@ -39,7 +39,9 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   test "$(stat -f %Lp "$d/wren")" = "700"
   grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_IDENTITY_DIR='$d'"
   grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "CHORUS_SESSIONS_DIR='$T/sessions'"
-  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF ".chorus/secrets/claude.key"
+  # #4931: the stale claude.key override is retired; the start runs the self test instead
+  ! grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF ".chorus/secrets/claude.key" || return 1
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "platform/scripts/role-post"
 }
 
 @test "#4383 a launcher that cannot start the account refuses, naming it, and starts nothing" {

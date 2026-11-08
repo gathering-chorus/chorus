@@ -907,9 +907,11 @@ fn attach_to(ctx: &Ctx, role: &str) {
 /// #4777 — the inner command run inside `sudo -n -u <acct> -H bash -c` when a
 /// principal runs as its own Mac account (#4383). Exports `CHORUS_SESSIONS_DIR`
 /// so `SessionStart` registers `<role>-<pid>.json` in the shared sessions
-/// directory read by `chorus-principal` and `nudge-health-check.sh`, and reads
-/// `CLAUDE_CODE_OAUTH_TOKEN` from `~/.chorus/secrets/claude.key` when present
-/// so `claude` never touches macOS Keychain.
+/// directory read by `chorus-principal` and `nudge-health-check.sh`. #4931: runs the
+/// role's power-on self test (role-post) as the role before the session starts, so
+/// every start writes the result the five-role table reads (in the background, so a slow
+/// identity door or a refusal message to Jeff never holds up the start); and no longer exports a
+/// token from ~/.chorus/secrets/claude.key, which overrode every fresh login.
 pub fn own_account_inner_cmd(
     role_dir: &str,
     root: &str,
@@ -920,8 +922,8 @@ pub fn own_account_inner_cmd(
     cmd: &str,
 ) -> String {
     format!(
-        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }} && {}",
-        role_dir, root, own_dir, own_token, sessions_dir, role, cmd
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ ( bash '{}/platform/scripts/role-post' >/dev/null 2>&1 & ) ; }} && {}",
+        role_dir, root, own_dir, own_token, sessions_dir, role, root, cmd
     )
 }
 
@@ -2499,7 +2501,12 @@ mod own_account_launch_tests_4777 {
         assert!(cmd.contains("CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\""), "{cmd}");
         assert!(cmd.contains("GIT_CONFIG_KEY_0='safe.directory'"), "{cmd}");
         assert!(cmd.contains("ENABLE_CLAUDEAI_MCP_SERVERS='false'"), "{cmd}");
-        assert!(cmd.contains("CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\""), "{cmd}");
+        // #4931 — the self test runs as the role at every start, before the session
+        assert!(cmd.contains("bash '/repo/platform/scripts/role-post'"), "{cmd}");
+        assert!(cmd.find("role-post").unwrap() < cmd.find("claude -c").unwrap(), "{cmd}");
+        // #4931 negative proof — a stale key file can no longer override the role's login
+        assert!(!cmd.contains("claude.key"), "{cmd}");
+        assert!(!cmd.contains("CLAUDE_CODE_OAUTH_TOKEN"), "{cmd}");
     }
 
     #[test]

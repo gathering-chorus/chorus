@@ -898,12 +898,10 @@ pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir
     if rs(row, "runtimeAuth") == Some("api-key") {
         let var = rs(row, "runtimeKeyEnv").filter(|v| v.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')).ok_or(format!("{runtime}: api-key sign-in needs runtimeKeyEnv"))?;
         parts.push(format!("{{ [ ! -f ~/.chorus/secrets/{binary}.key ] || export {var}=\"$(cat ~/.chorus/secrets/{binary}.key)\"; }}"));
-    } else if rs(row, "runtimeAuth") == Some("subscription") && binary == "claude" {
-        // #4777 — dedicated Mac role accounts running Claude Code read their
-        // long-lived setup-token from ~/.chorus/secrets/claude.key so Claude
-        // never calls /usr/bin/security against a locked login keychain.
-        parts.push("{ [ ! -s ~/.chorus/secrets/claude.key ] || export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat ~/.chorus/secrets/claude.key)\"; }".to_string());
     }
+    // #4931 — no claude.key override: on 2026-11-08 a revoked Oct-28 token in that file
+    // beat every fresh /login ("OAuth token revoked"). Claude reads its own saved login,
+    // which #4924/#4928 now save in the role's account.
     // #4544 — variables the row says this runtime starts with (agy: SSH_CONNECTION,
     // so it keeps its token in a file, not a keychain her account cannot open).
     for pair in rlist(row, "runtimeEnv") {
