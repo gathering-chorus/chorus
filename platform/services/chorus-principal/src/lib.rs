@@ -144,6 +144,24 @@ pub fn awake_verdict(has_live_entry: bool, spoke_recently: bool, liveness_on: bo
     if spoke_recently { Awake::AlreadyAwake } else { Awake::ReplaceMute }
 }
 
+/// #4929 AC2 — a session younger than the silence window has not had the chance
+/// to speak, so it is not mute. At the 2026-11-08 boot Kade's own-account session
+/// (pid 44433) was replaced as "not spoken in 900s" when it was about 27s old, and
+/// the replacement came up as jeffbridwell. `age_secs` None (unreadable) = judge it
+/// as before (#4215's mute rule), never silently exempt.
+pub fn too_young_to_judge(age_secs: Option<u64>, mute_secs: u64) -> bool {
+    age_secs.map(|a| a < mute_secs).unwrap_or(false)
+}
+
+/// `ps -o etime=` → seconds: `[[dd-]hh:]mm:ss`.
+pub fn parse_etime(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (days, rest) = match s.split_once('-') { Some((d, r)) => (d.parse::<u64>().ok()?, r), None => (0, s) };
+    let parts: Vec<u64> = rest.split(':').map(|p| p.parse::<u64>().ok()).collect::<Option<_>>()?;
+    let (h, m, sec) = match parts.as_slice() { [m, s] => (0, *m, *s), [h, m, s] => (*h, *m, *s), _ => return None };
+    Some(days * 86400 + h * 3600 + m * 60 + sec)
+}
+
 /// #4215 — DID IT ANSWER? A registry entry and a live pid say a process exists,
 /// not that the session can respond. On 2026-09-18/19 Kade had both for over an
 /// hour while every one of his turns came back an API refusal; `chorus-awake`
@@ -1078,7 +1096,10 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     }
     if let Some(l) = live.first() {
         let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
-        if awake_verdict(true, ctx.answered(role), liveness_on) == Awake::AlreadyAwake {
+        let mute_window: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
+        let age = sh(&ctx.ps, &["-o", "etime=", "-p", &l.pid.to_string()]).ok().and_then(|e| parse_etime(&e));
+        let young = too_young_to_judge(age, mute_window);
+        if young || awake_verdict(true, ctx.answered(role), liveness_on) == Awake::AlreadyAwake {
             // #4295 — "already awake" is earned by a login too, not only a pid.
             let st = ctx.read_state(role);
             let st = match &st {
@@ -2006,10 +2027,27 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
     let mut it = out.lines().next()?.split_whitespace();
     let (pane, tty, shell_pid) = (it.next()?.to_string(), it.next()?.to_string(), it.next()?.to_string());
     let pgrep = envd("AWAKE_PGREP", "pgrep");
-    let kids = sh(&pgrep, &["-P", &shell_pid]).unwrap_or_default();
-    let pid = kids.lines().filter_map(|k| k.trim().parse::<u64>().ok()).find(|k| {
-        sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).map(|c| is(&c)).unwrap_or(false)
-    })?;
+    // #4929 — an own-account start puts sudo, launchctl, sudo and bash between the
+    // pane and claude, so search the pane's descendants (a few levels), not only
+    // its direct children.
+    let mut level = vec![shell_pid.clone()];
+    let mut found = None;
+    for _ in 0..6 {
+        let mut next = Vec::new();
+        for p in &level {
+            for k in sh(&pgrep, &["-P", p]).unwrap_or_default().lines().filter_map(|k| k.trim().parse::<u64>().ok()) {
+                let cmd = sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).unwrap_or_default();
+                // the wrappers an own-account start puts in between are never the session,
+                // whatever their arguments say (Gemini and agy roles match by substring)
+                if !rows::is_launch_wrapper(&cmd) && is(&cmd) { found = Some(k); break; }
+                next.push(k.to_string());
+            }
+            if found.is_some() { break; }
+        }
+        if found.is_some() || next.is_empty() { break; }
+        level = next;
+    }
+    let pid = found?;
     let entry = serde_json::json!({"role": role, "pid": pid, "tty": tty, "host": "tmux", "tmux": pane, "source": "chorus-principal (attach, #4328)"});
     let _ = fs::create_dir_all(&ctx.sessions_dir);
     fs::write(ctx.sessions_dir.join(format!("{}-{}.json", role, pid)), entry.to_string()).ok()?;
@@ -2232,7 +2270,27 @@ fn open_windows(ctx: &Ctx) {
     }
 }
 
-/// `up [--windows]` — after a reboot: all three roles, logged in, one line.
+/// #4929 — the ONE way a role starts, used by `on`/`login` and by `up`. The
+/// principal gate sets the role's own account before anything launches, and a
+/// person must be signed in. Jeff 2026-11-08: "i expect the boot up to be the same".
+fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Result<Came, (i32, String)> {
+    match principal_gate(ctx, role) {
+        Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(role).join("revoked")); }
+        Err(why) => return Err((2, why)),
+    }
+    // #4412 — a person starts it. `up` runs from the roles-up LaunchAgent at
+    // login, before anyone is signed in, and never required a person; it keeps
+    // that, and only the account choice is shared (#4929 review, run 3).
+    if by_person {
+        match person_signed_in(ctx) {
+            Ok(p) => std::env::set_var("CHORUS_STARTED_BY", p),
+            Err(why) => return Err((2, why)),
+        }
+    }
+    on(ctx, role, attach)
+}
+
+/// `up [--windows]` — after a reboot: all roles, each through start_role, one line.
 fn up(ctx: &mut Ctx, windows: bool) -> i32 {
     // services are waited for ONCE, with the countdown; each role after that probes once
     if let Err(why) = wait_for_services(ctx, ctx.service_wait, true) { eprintln!("chorus-principal: {}", why); }
@@ -2245,7 +2303,10 @@ fn up(ctx: &mut Ctx, windows: bool) -> i32 {
     };
     let mut results = Vec::new();
     for role in roles.iter().map(String::as_str) {
-        let came = match on(ctx, role, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
+        // #4929 — `up` starts each role through the same path as `on`: the
+        // principal gate picks the role's own account. Before this, `up` called
+        // on() with run_as unset, so Kade and Borg Queen booted as jeffbridwell.
+        let came = match start_role(ctx, role, false, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
         results.push((role.to_string(), came));
     }
     let line = lifecycle::summary_line(&results);
@@ -2386,17 +2447,12 @@ pub fn run(args: &[String]) -> i32 {
         "login" | "on" => {
             let r = match name_arg(1) { Ok(r) => r, Err(c) => return c };
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
-            match principal_gate(&ctx, &r) {
-                Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(&r).join("revoked")); }
-                Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
-            }
-            // #4412 — a person starts it
-            match person_signed_in(&ctx) {
-                Ok(p) => std::env::set_var("CHORUS_STARTED_BY", p),
-                Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
-            }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";
-            match on(&ctx, &r, attach) { Ok(_) => 0, Err((c, _)) => c }
+            match start_role(&mut ctx, &r, attach, true) {
+                Ok(_) => 0,
+                Err((2, why)) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); 2 }
+                Err((c, _)) => c,
+            }
         }
         "" => { eprintln!("{}", USAGE); 2 }
         other => { eprintln!("chorus-principal: unknown verb '{}'", other); eprintln!("{}", USAGE); 2 }

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# #4929 AC4 — after a boot or a land: which account each role's session runs as.
+# One line per role; exit 1 if any role runs as the launcher's account (the
+# 2026-11-08 boot ran Kade and Borg Queen as jeffbridwell) or has no session.
+# ROLE_BOOT_PS=<file> reads `ps -axo user=,command=` output from a fixture (tests).
+set -u
+ROLES="${ROLE_BOOT_ROLES:-silas wren kade abby-normal borg-queen}"
+if [ -n "${ROLE_BOOT_PS:-}" ]; then PS_OUT="$(cat "$ROLE_BOOT_PS")"; else PS_OUT="$(ps -axo user=,command=)"; fi
+bad=0
+for r in $ROLES; do
+  # the session program itself (claude or agy), started in the role's directory chain
+  line="$(printf '%s\n' "$PS_OUT" | awk -v r="$r" '
+    { prog=$2; n=split(prog,a,"/"); base=a[n] }
+    (base=="claude" || base=="agy") && $1=="chorus-" r { print; exit }
+  ')"
+  if [ -z "$line" ]; then
+    stray="$(printf '%s\n' "$PS_OUT" | awk -v r="$r" '$0 ~ "roles/" r "\x27" && $0 ~ /bash -lc/ { print $1; exit }')"
+    if [ -n "$stray" ]; then echo "$r  RUNS AS $stray (not chorus-$r)"; else echo "$r  NO SESSION in chorus-$r"; fi
+    bad=1; continue
+  fi
+  cred="${ROLE_BOOT_HOMES:-/Users}/chorus-$r/.claude/.credentials.json"
+  if [ -f "$cred" ]; then age="login file $(( ( $(date +%s) - $(stat -f %m "$cred") ) / 60 ))m old"; else age="no claude login file (ok for a Gemini role)"; fi
+  echo "$r  own account chorus-$r · $age"
+done
+exit $bad
