@@ -78,6 +78,6 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   row wren ""
   run "$SCRIPT" login wren
   test "$status" -eq 2
-  printf '%s' "$output" | grep -qF "has no Mac account of its own"
+  printf '%s' "$output" | grep -qF "has no hostAccount bound"
   test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }

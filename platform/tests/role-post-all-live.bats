@@ -7,8 +7,11 @@
 # has started once with the self test wired in, and red whenever any check fails.
 
 @test "#4931 live: every agent principal green on every self-test check" {
-  # Reads the live roles wherever it runs (pipeline or prove); it never skips, so the
-  # prove after the land sees a real measurement (a skip read as "unmeasured", 11:05).
+  # Reads the live roles wherever it runs (pipeline, nightly or the prove after a land).
+  # Since #4931's first land every role writes its self-test result at each start, so this
+  # passes whenever all agents are up and healthy, and goes red when one is not: a role
+  # down or broken at 3am is exactly what the nightly should report. It never skips (a skip
+  # read as "unmeasured" and failed the prove at 11:05).
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   run "$ROOT/platform/scripts/role-post-all"
   echo "$output"

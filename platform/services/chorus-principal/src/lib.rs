@@ -2281,6 +2281,15 @@ fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Resul
         Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(role).join("revoked")); }
         Err(why) => return Err((2, why)),
     }
+    // #4931 — fail closed (Jeff 2026-11-08 11:05: "i dont want fall backs to the thing we
+    // are trying to remove"). No account of its own means no start: a missing hostAccount
+    // is refused by role_host_account's own message; one equal to the launcher's account
+    // is refused here. Only starting is gated — logout/off never are.
+    if ctx.run_as.is_none() {
+        let me = env::var("USER").unwrap_or_default();
+        let acct = role_host_account(ctx, role).map_err(|e| (2, e))?;
+        return Err((2, format!("{} would run as the launcher's own account {}; refusing (each agent runs as its own account, #4931)", role, if acct.is_empty() { me } else { acct })));
+    }
     // #4412 — a person starts it. `up` runs from the roles-up LaunchAgent at
     // login, before anyone is signed in, and never required a person; it keeps
     // that, and only the account choice is shared (#4929 review, run 3).
@@ -2342,14 +2351,6 @@ fn principal_gate(ctx: &Ctx, name: &str) -> Result<Option<String>, String> {
     // account, so no other principal can read its token. The launcher must be
     // able to start it without a password.
     let me = env::var("USER").unwrap_or_default();
-    // #4931 — fail closed (Jeff 2026-11-08 11:05: "i dont want fall backs to the thing we
-    // are trying to remove"). An agent with no account of its own, or one that would run
-    // as the launcher's account, is refused, never started as that account.
-    match host.as_deref() {
-        None | Some("") => return Err(format!("{} has no Mac account of its own (hostAccount empty); refusing to start it as {}", name, me)),
-        Some(h) if h == me => return Err(format!("{} would run as the launcher's own account {}; refusing (each agent runs as its own account)", name, me)),
-        _ => {}
-    }
     match host.filter(|h| !h.is_empty() && *h != me) {
         None => Ok(None),
         Some(acct) => {
