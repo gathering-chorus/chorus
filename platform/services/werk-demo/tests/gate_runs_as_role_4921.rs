@@ -4,8 +4,8 @@
 //! #4921 (Jeff 12:53: "run as one of u / why am i needed"): a gate reviewer's claude
 //! runs as the card's role account, under that role's login, never as the runner.
 //! At 12:48 the runner's (jeffbridwell's) claude login had expired and every demo crashed.
-//! #4924 AC4 (Wren 20:08): when the owner doesn't run Claude, gate reviews hop to the
-//! card's reviewer (Silas here, or CHORUS_REVIEWER).
+//! #4924 AC4 (Wren 20:08, Jeff 20:26): when the owner doesn't run Claude, gate reviews hop to the
+//! card's reviewer (wren per Jeff decision, or CHORUS_REVIEWER).
 use werk_demo::{review_once, role_hop};
 
 const BIN: &str = "/Users/jeffbridwell/.local/bin/claude";
@@ -60,8 +60,8 @@ fn a_refused_hop_is_named_never_a_silent_fall_back() {
 fn non_claude_role_hops_to_reviewer() {
     let (prog, a, who) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p", "prompt"]), None);
     assert_eq!(prog, "sudo");
-    assert_eq!(&a[..6], &["-n", "-u", "chorus-silas", "-H", "bash", "-c"]);
-    assert_eq!(who, "claude as chorus-silas");
+    assert_eq!(&a[..6], &["-n", "-u", "chorus-wren", "-H", "bash", "-c"]);
+    assert_eq!(who, "claude as chorus-wren");
 }
 
 #[test]

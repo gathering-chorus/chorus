@@ -2692,10 +2692,11 @@ pub fn claude_reviewer_for(role: &str) -> String {
             return rev.trim().to_string();
         }
     }
+    // #4924 (Jeff decision, Wren 20:26): non-Claude roles fallback to wren
     match role {
-        "borg-queen" => "silas".to_string(),
-        "abby-normal" => "silas".to_string(),
-        _ => "silas".to_string(),
+        "borg-queen" => "wren".to_string(),
+        "abby-normal" => "wren".to_string(),
+        _ => "wren".to_string(),
     }
 }
 
@@ -2708,7 +2709,7 @@ pub fn role_hop(me: &str, role: &str, bin: &str, args: &[String], cwd: Option<&s
     let q = |a: &str| format!("'{}'", a.replace('\'', "'\\''"));
     let cd = cwd.map(|d| format!("cd {} && ", q(d))).unwrap_or_default();
     let line: Vec<String> = std::iter::once(bin).chain(args.iter().map(String::as_str)).map(q).collect();
-    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE='{role}' && exec {}", line.join(" "));
+    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE='{reviewer}' && exec {}", line.join(" "));
     ("sudo".to_string(), ["-n", "-u", &account, "-H", "bash", "-c", &inner].iter().map(|s| s.to_string()).collect(), format!("claude as {account}"))
 }
 
