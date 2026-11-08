@@ -90,15 +90,14 @@ EOF
 
 @test "AC1 control: sudoers allows pinned launchctl asuser for chorus-silas" {
   if [ "$(id -un)" != "jeffbridwell" ]; then skip "requires runner jeffbridwell"; fi
-  run sudo -n -l /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true
+  run sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true
   [ "$status" -eq 0 ] || { echo "control failed: sudoers rule missing or broken: $output" >&2; return 1; }
-  [[ "$output" == *"NOPASSWD"* ]] || { echo "control failed: rule not NOPASSWD: $output" >&2; return 1; }
 }
 
 @test "AC1 negative proof: sudoers refuses launchctl asuser for root (uid 0)" {
   if [ "$(id -un)" != "jeffbridwell" ]; then skip "requires runner jeffbridwell"; fi
   # The control case keeps the negative honest: control must pass first
-  sudo -n -l /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true >/dev/null 2>&1 || { echo "control failed: sudoers not active" >&2; return 1; }
+  sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true >/dev/null 2>&1 || { echo "control failed: sudoers not active" >&2; return 1; }
   run sudo -n /bin/launchctl asuser 0 /bin/sh -c id
   [ "$status" -ne 0 ]
   [[ "$output" == *"password is required"* || "$output" == *"not allowed"* ]] || { echo "refusal output unexpected: $output" >&2; return 1; }
@@ -107,8 +106,8 @@ EOF
 @test "AC1 negative proof: sudoers refuses unpinned command for uid 502" {
   if [ "$(id -un)" != "jeffbridwell" ]; then skip "requires runner jeffbridwell"; fi
   # The control case keeps the negative honest: control must pass first
-  sudo -n -l /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true >/dev/null 2>&1 || { echo "control failed: sudoers not active" >&2; return 1; }
-  run sudo -n /bin/launchctl asuser 502 /bin/sh
+  sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true >/dev/null 2>&1 || { echo "control failed: sudoers not active" >&2; return 1; }
+  run sudo -n /bin/launchctl asuser 502 /bin/sh -c true
   [ "$status" -ne 0 ]
   [[ "$output" == *"password is required"* || "$output" == *"not allowed"* ]] || { echo "refusal output unexpected: $output" >&2; return 1; }
 }
@@ -116,7 +115,7 @@ EOF
 @test "AC1 negative proof: sudoers refuses uid / account mismatch (uid 502 with chorus-wren)" {
   if [ "$(id -un)" != "jeffbridwell" ]; then skip "requires runner jeffbridwell"; fi
   # The control case keeps the negative honest: control must pass first
-  sudo -n -l /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true >/dev/null 2>&1 || { echo "control failed: sudoers not active" >&2; return 1; }
+  sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c true >/dev/null 2>&1 || { echo "control failed: sudoers not active" >&2; return 1; }
   run sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-wren -H bash -c true
   [ "$status" -ne 0 ]
   [[ "$output" == *"password is required"* || "$output" == *"not allowed"* ]] || { echo "refusal output unexpected: $output" >&2; return 1; }
