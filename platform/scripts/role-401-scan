@@ -66,8 +66,8 @@ if [ -n "$MATCH_LINE" ]; then
     fi
   fi
 
-  SRC_ID=$(echo -n "$SCAN_FILE" | md5)
-  LINE_HASH=$(echo -n "$MATCH_LINE" | md5)
+  SRC_ID=$(echo -n "$SCAN_FILE" | cksum | awk '{print $1}')
+  LINE_HASH=$(echo -n "$MATCH_LINE" | cksum | awk '{print $1}')
   KEY="${SRC_ID}:${LINE_HASH}"
 
   # Don't re-alert on the exact same error line in this source once alerted
