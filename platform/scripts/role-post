@@ -76,7 +76,7 @@ home="${POST_HOME:-}"
 if [ -z "$home" ]; then
   if [ -n "$acct" ] && [ -d "/Users/$acct" ]; then home="/Users/$acct"; else home="$HOME"; fi
 fi
-idd="${POST_IDENTITY_DIR:-/Users/jeffbridwell/.chorus/identity}"
+idd="${POST_IDENTITY_DIR:-${CHORUS_IDENTITY_DIR:-/Users/jeffbridwell/.chorus/identity}}"
 src="${POST_SETTINGS_SOURCE:-}"
 principals_cmd="${POST_PRINCIPALS_CMD:-curl -sf --max-time 5 http://localhost:3360/v1/identity/principals?limit=500}"
 reach_cmd="${POST_REACH_CMD:-curl -sf --max-time 5 -o /dev/null http://localhost:3340/api/chorus/context/health}"

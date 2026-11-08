@@ -921,7 +921,7 @@ pub fn own_account_inner_cmd(
     cmd: &str,
 ) -> String {
     format!(
-        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ bash '{}/platform/scripts/role-post' >/dev/null 2>&1 || true; }} && {}",
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ POST_NOTIFY_CMD=true bash '{}/platform/scripts/role-post' >/dev/null 2>&1 || true; }} && {}",
         role_dir, root, own_dir, own_token, sessions_dir, role, root, cmd
     )
 }

@@ -58,3 +58,11 @@ result() {  # role acct [fail-check]
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF "principals door unreadable"
 }
+
+@test "#4931 a result written just before its session started is current, and plain 'claude' is a session" {
+  result a chorus-a; result b chorus-b
+  sed -i '' "1s/^at [0-9]*/at $(( $(date +%s) - 20 ))/" "$T/homes/chorus-a/.chorus/post/a.result"
+  printf 'chorus-a 00:10 claude -c\nchorus-b 00:10 agy\n' > "$T/ps.txt"
+  run "$ALL"
+  [ "$status" -eq 0 ]
+}

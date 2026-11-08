@@ -30,7 +30,7 @@ while read -r role acct; do
   fi
   at=$(head -1 "$res" | awk '{print $2}')
   # the session must not be newer than the result: a result from before this session is stale
-  et=$(printf '%s\n' "$ps_out" | awk -v a="$acct" '$1==a && ($3 ~ /\/claude$/ || $3 ~ /(^|\/)agy$/) {print $2; exit}')
+  et=$(printf '%s\n' "$ps_out" | awk -v a="$acct" '$1==a && ($3 ~ /(^|\/)claude$/ || $3 ~ /(^|\/)agy$/) {print $2; exit}')
   for c in $checks; do
     line=$(grep -E "^(ok|FAIL) +$c:" "$res" | head -1)
     case "$line" in ok*) printf ' %-12s' ok ;; FAIL*) printf ' %-12s' FAIL; bad=1 ;; *) printf ' %-12s' "?"; bad=1 ;; esac
@@ -38,7 +38,9 @@ while read -r role acct; do
   now=$(date +%s); age=$(( (now - ${at:-0}) / 60 ))
   if [ -z "$et" ]; then echo " ${age}m ago · FAIL no running session"; bad=1; continue; fi
   secs=$(printf '%s' "$et" | awk -F'[-:]' '{n=NF; s=$n+$(n-1)*60; if(n>=3)s+=$(n-2)*3600; if(n>=4)s+=$(n-3)*86400; print s}')
-  if [ $(( now - secs )) -gt "${at:-0}" ]; then echo " ${age}m ago · FAIL older than the running session"; bad=1
+  # the start writes the result just before the session starts (role-post runs first in
+  # the launch line), so a result up to 5 minutes before the session's start is current
+  if [ $(( now - secs - 300 )) -gt "${at:-0}" ]; then echo " ${age}m ago · FAIL older than the running session"; bad=1
   else echo " ${age}m ago"; fi
   grep '^FAIL' "$res" | sed 's/^/    /'
 done <<< "$agents"
