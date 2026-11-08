@@ -52,6 +52,17 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }
 
+@test "#4924 a launcher without launchctl asuser permission falls back to unisolated start with a warning" {
+  row wren chorus-wren
+  touch "$T/launchctl-deny"
+  run "$SCRIPT" login wren
+  test "$status" -eq 0
+  out_has "launchctl asuser"
+  out_has "falling back to unisolated start"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qv "launchctl asuser"
+}
+
 @test "#4383 NEGATIVE PROOF: a principal whose account is the current user starts without sudo" {
   row wren "$USER"
   run "$SCRIPT" login wren

@@ -540,6 +540,8 @@ struct Ctx {
     curl: String,
     /// #4383 — sudo, for starting a principal as its own Mac account
     sudo: String,
+    /// #4924 — launchctl, for session bootstrap isolation
+    launchctl: String,
     /// #4383 — the principal's own account, when it is not the current user
     run_as: Option<String>,
     log_bin: String,
@@ -566,6 +568,7 @@ impl Ctx {
             api: envd("CHORUS_API_URL", "http://localhost:3360"),
             curl: envd("AWAKE_CURL", "curl"),
             sudo: envd("AWAKE_SUDO", "sudo"),
+            launchctl: envd("AWAKE_LAUNCHCTL", "/bin/launchctl"),
             run_as: None,
             log_bin: log_bin_for(&root),
             probe: envd("AWAKE_PROBE_BIN", "curl"),
@@ -938,6 +941,18 @@ pub fn role_memory_handoff_dirs(
     Some(vec![(shared_mem, shared_slug), (own_mem, own_slug)])
 }
 
+fn account_uid(acct: &str) -> String {
+    if let Ok(out) = Command::new("id").args(["-u", acct]).output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) {
+                return s;
+            }
+        }
+    }
+    format!("$(id -u {})", acct)
+}
+
 /// `on <role>`: start it logged in, or, when it is already running, make sure
 /// THIS session is logged in and go to its window. Never a second copy.
 /// The shell line that starts `cmd` in the role's pane, as the role's own
@@ -1001,7 +1016,24 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
                 }
             }
             let inner = own_account_inner_cmd(role_dir, &ctx.root, &own_dir, &own, &ctx.sessions_dir.to_string_lossy(), role, cmd);
-            format!("{} -n -u {} -H bash -c \"{}\"", ctx.sudo, acct, inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$"))
+            let uid = account_uid(acct);
+            // #4924 — launchctl asuser isolates the role session from Jeff's Aqua Mach bootstrap
+            // namespace (gui/501). Silas pinned form: /bin/launchctl asuser <uid> /usr/bin/sudo -n -u <acct> -H bash -c ...
+            // If the sudoers rule is not configured, fall back to today's start line with a warning.
+            let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$");
+            let asuser_check = sh(&ctx.sudo, &["-n", &ctx.launchctl, "asuser", &uid, &ctx.sudo, "-n", "-u", acct, "-H", "bash", "-c", "true"]);
+            if asuser_check.is_ok() {
+                format!(
+                    "{} -n /bin/launchctl asuser {} /usr/bin/sudo -n -u {} -H bash -c \"{}\"",
+                    ctx.sudo, uid, acct, escaped_inner
+                )
+            } else {
+                eprintln!("chorus-principal: warning: sudo launchctl asuser {} not permitted; falling back to unisolated start for {}", uid, acct);
+                format!(
+                    "{} -n -u {} -H bash -c \"{}\"",
+                    ctx.sudo, acct, escaped_inner
+                )
+            }
         }
     };
     Ok(launch)
@@ -1849,6 +1881,13 @@ fn sweep(ctx: &Ctx) -> i32 {
     }
     ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("closed={}", closed), &format!("skipped={}", skipped), &format!("failed={}", failed)]);
     println!("sweep: {} live session(s) kept open, {} expired session(s) closed, {} not an agent's (left to their own door), {} failed", kept, closed, skipped, failed);
+
+    // #4924 AC2: scan for 401 expired Claude logins and alert Jeff within 60s
+    let scan_script = format!("{}/platform/scripts/role-401-scan", envd("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"));
+    if Path::new(&scan_script).exists() {
+        let _ = Command::new("bash").args([&scan_script, "--all", "--notify"]).status();
+    }
+
     if failed > 0 { 1 } else { 0 }
 }
 

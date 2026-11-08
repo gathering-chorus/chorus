@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# role-401-scan — #4924 AC2: scans transcripts / session logs for Claude 401 expiration errors
+# and alerts Jeff within 60s naming the role.
+# Wired into com.chorus.session-sweep / chorus-principal sweep every 60s.
+
+set -euo pipefail
+
+SCAN_FILE=""
+ROLE=""
+STATE_FILE=""
+NOTIFY=0
+ALL=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --scan-file) SCAN_FILE="$2"; shift 2 ;;
+    --role) ROLE="$2"; shift 2 ;;
+    --state-file) STATE_FILE="$2"; shift 2 ;;
+    --notify) NOTIFY=1; shift ;;
+    --all) ALL=1; shift ;;
+    *) echo "unknown arg $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$ALL" -eq 1 ]; then
+  ANY_FAIL=0
+  for r in kade silas wren; do
+    ROLE_DIR="/Users/chorus-$r/.claude/projects"
+    if [ ! -d "$ROLE_DIR" ] && [ -d "${HOME:-}/.claude/projects" ]; then
+      ROLE_DIR="${HOME}/.claude/projects"
+    fi
+    TRANSCRIPT=$(find "$ROLE_DIR" -type f -name "*.jsonl" -exec ls -t {} + 2>/dev/null | head -1 || echo "")
+    if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+      "$0" --scan-file "$TRANSCRIPT" --role "$r" $([ "$NOTIFY" -eq 1 ] && echo "--notify") || ANY_FAIL=1
+    fi
+    TMUX_PANE=$(tmux capture-pane -p -t "$r" 2>/dev/null || tmux capture-pane -p -t "chorus-$r" 2>/dev/null || echo "")
+    if [ -n "$TMUX_PANE" ]; then
+      TMP_PANE=$(mktemp -t "pane-$r")
+      echo "$TMUX_PANE" > "$TMP_PANE"
+      "$0" --scan-file "$TMP_PANE" --role "$r" $([ "$NOTIFY" -eq 1 ] && echo "--notify") || ANY_FAIL=1
+      rm -f "$TMP_PANE"
+    fi
+  done
+  exit "$ANY_FAIL"
+fi
+
+if [ -z "$SCAN_FILE" ] || [ -z "$ROLE" ]; then
+  echo "usage: role-401-scan [--all] | [--scan-file <path> --role <role>] [--state-file <path>] [--notify]" >&2
+  exit 2
+fi
+
+if [ ! -f "$SCAN_FILE" ]; then
+  exit 0
+fi
+
+# Check for 401 error pattern in recent session tail
+# "API Error: 401 OAuth access token has expired" or "401" + "access token has expired"
+MATCH_LINE=$(tail -n 200 "$SCAN_FILE" | grep -E "API Error: 401.*OAuth access token has expired|401 OAuth access token has expired" | tail -1 || true)
+if [ -n "$MATCH_LINE" ]; then
+  NOW=$(date +%s)
+  STATE_DIR="${HOME:-/tmp}/.chorus/401-alerts"
+  STATE="${STATE_FILE:-$STATE_DIR/$ROLE.last_alert}"
+  SEEN_STATE="${STATE}.seen"
+
+  LAST=0
+  if [ -n "$STATE" ] && [ -f "$STATE" ]; then
+    VAL=$(cat "$STATE" 2>/dev/null || echo 0)
+    if [[ "$VAL" =~ ^[0-9]+$ ]]; then
+      LAST="$VAL"
+    fi
+  fi
+
+  LINE_HASH=$(echo -n "$MATCH_LINE" | cksum | awk '{print $1}')
+  if [ -n "$LINE_HASH" ]; then
+    KEY="${ROLE}:${LINE_HASH}"
+  else
+    KEY="${ROLE}:${MATCH_LINE}"
+  fi
+
+  # Trim seen entries older than 1 hour (3600s) so future 401s on this role alert again
+  if [ -f "$SEEN_STATE" ]; then
+    TMP_SEEN=$(mktemp 2>/dev/null || echo "${SEEN_STATE}.tmp")
+    awk -v now="$NOW" '{
+      ts = ($2 ~ /^[0-9]+$/) ? $2 : now;
+      if ((now - ts) < 3600) { print $1 " " ts }
+    }' "$SEEN_STATE" > "$TMP_SEEN" 2>/dev/null && mv "$TMP_SEEN" "$SEEN_STATE" 2>/dev/null || true
+
+    if awk '{print $1}' "$SEEN_STATE" 2>/dev/null | grep -qxF "$KEY"; then
+      exit 0
+    fi
+  fi
+
+  DIFF=$((NOW - LAST))
+  if [ "$DIFF" -lt 60 ]; then
+    # Deduped within 60s
+    exit 0
+  fi
+
+  if [ -n "$STATE" ]; then
+    mkdir -p "$(dirname "$STATE")" 2>/dev/null
+    echo "$NOW" > "$STATE" 2>/dev/null
+    echo "$KEY $NOW" >> "$SEEN_STATE" 2>/dev/null
+  fi
+
+  MSG="ALERT: role $ROLE Claude login expired (401)"
+  echo "$MSG"
+
+  if [ "$NOTIFY" -eq 1 ]; then
+    SHIM="${CHORUS_HOOK_SHIM:-/Users/jeffbridwell/.chorus/bin/chorus-hook-shim}"
+    if [ -x "$SHIM" ]; then
+      "$SHIM" nudge-send system jeff "$MSG" >/dev/null 2>&1
+    else
+      echo "WARN: $SHIM not executable; cannot notify Jeff" >&2
+    fi
+  fi
+
+  exit 1
+fi
+
+exit 0

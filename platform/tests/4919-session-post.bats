@@ -2,19 +2,20 @@
 # @test-type: contract — runs platform/scripts/role-post against a stand-in roles door
 # and fixture files in BATS_TEST_TMPDIR; no real store, no network beyond localhost.
 # @domain: roles
-# #4919 AC4 — at session start a role checks its own setup and refuses to work,
+# #4919 AC4 / #4924 AC3 — at session start a role checks its own setup and refuses to work,
 # naming what failed. Each check has a negative proof (#3734): the 2026-11-07
 # lockout (no principal for the account), the 660 key, an unreadable identity
 # dir, a live-edited settings.json, a missing Claude login, an unreachable door.
 
 setup() {
-  REPO="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+  REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   POST="$REPO/platform/scripts/role-post"
   T="$BATS_TEST_TMPDIR"
   mkdir -p "$T/identity/silas" "$T/git" "$T/home/.claude"
   echo '{"k":1}' > "$T/identity/silas/nostr.json"; chmod 600 "$T/identity/silas/nostr.json"
   echo '{"model":"opus"}' > "$T/git/settings.json"; cp "$T/git/settings.json" "$T/home/.claude/settings.json"
   echo '{"oauthAccount":{"emailAddress":"x"}}' > "$T/home/.claude.json"
+  echo '{"claudeAiOauth":{"accessToken":"tok","refreshToken":"ref"}}' > "$T/home/.claude/.credentials.json"
   echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
   export POST_ROLE=silas POST_ACCOUNT=chorus-silas
   export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"
@@ -62,6 +63,33 @@ setup() {
   run "$POST"
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   echo "$output" | grep -q "FAIL settings: .* differs from git" || { echo "$output"; return 1; }
+}
+
+@test "control: POST check includes Claude login valid" {
+  run "$POST"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "ok   login: Claude login valid" || { echo "$output"; return 1; }
+}
+
+@test "AC3: POST check includes Claude login valid from outside the role" {
+  unset CHORUS_ROLE POST_ROLE
+  run "$POST" silas
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "ok   login: Claude login valid" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: invalid credentials file refuses, named" {
+  echo '{"claudeAiOauth":{}}' > "$BATS_TEST_TMPDIR/home/.claude/.credentials.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL login: invalid Claude credentials" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: missing credentials file refuses, named" {
+  rm -f "$BATS_TEST_TMPDIR/home/.claude/.credentials.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL login: missing credentials file" || { echo "$output"; return 1; }
 }
 
 @test "negative proof: no saved Claude login refuses, named" {

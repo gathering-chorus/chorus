@@ -1,0 +1,8 @@
+# #4924 (Jeff chose option A, 2026-11-07 18:58): start each role session in its own bootstrap so
+# Claude's keychain calls never reach jeffbridwell's login keychain. Pinned: one uid, one account,
+# and the only command is the role start Jeff can already run with sudo -u today.
+jeffbridwell ALL=(root) NOPASSWD: /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c *
+jeffbridwell ALL=(root) NOPASSWD: /bin/launchctl asuser 503 /usr/bin/sudo -n -u chorus-wren -H bash -c *
+jeffbridwell ALL=(root) NOPASSWD: /bin/launchctl asuser 504 /usr/bin/sudo -n -u chorus-kade -H bash -c *
+jeffbridwell ALL=(root) NOPASSWD: /bin/launchctl asuser 505 /usr/bin/sudo -n -u chorus-abby-normal -H bash -c *
+jeffbridwell ALL=(root) NOPASSWD: /bin/launchctl asuser 507 /usr/bin/sudo -n -u chorus-borg-queen -H bash -c *
