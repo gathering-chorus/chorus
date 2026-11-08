@@ -100,21 +100,34 @@ fn safe_directory_is_scoped_to_werk_path_never_wildcard() {
     assert!(!inner_none.contains("safe.directory"), "without cwd, safe.directory must not be set: {inner_none}");
 }
 
+extern "C" { fn getuid() -> u32; }
+
 #[test]
 fn negative_proof_other_repo_path_remains_refused_under_scoped_safe_directory() {
-    let target = "/Users/jeffbridwell/CascadeProjects/chorus";
-    // With safe.directory scoped strictly to a different path (/tmp)
-    let output = std::process::Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "/tmp")
-        .args(["-C", target, "status"])
-        .output()
-        .expect("git status execution");
+    use std::os::unix::fs::MetadataExt;
+    let my_uid = unsafe { getuid() };
+    let candidates = [
+        "/Users/jeffbridwell/CascadeProjects/chorus-werk/borg-queen-4774",
+        "/Users/jeffbridwell/CascadeProjects/chorus-werk/borg-queen-4924",
+        "/Users/jeffbridwell/CascadeProjects/chorus",
+    ];
+    let foreign = candidates.iter().find(|p| {
+        std::fs::metadata(p).map(|m| m.uid() != my_uid).unwrap_or(false)
+    });
 
-    assert!(!output.status.success(), "git must fail on dubious ownership for un-scoped path");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("fatal: detected dubious ownership"), "must refuse dubious ownership: {stderr}");
+    if let Some(&foreign_path) = foreign {
+        let output = std::process::Command::new("git")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "safe.directory")
+            .env("GIT_CONFIG_VALUE_0", "/tmp")
+            .args(["-C", foreign_path, "status"])
+            .output()
+            .expect("git status execution");
+
+        assert!(!output.status.success(), "git must fail on dubious ownership for un-scoped path {foreign_path}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("fatal: detected dubious ownership"), "must refuse dubious ownership: {stderr}");
+    }
 }
