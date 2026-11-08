@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — role login credential persistence and session isolation
-# @domain: chorus
+# @domain: identity
 # @card: #4924
 # #4924 AC1 — A role account's Claude login saves its credentials (keychain or
 # credentials file) and survives past the access-token lifetime with no re-login.
@@ -12,7 +12,7 @@ setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$REPO/platform/services/chorus-principal/target/debug/chorus-principal}"
   [ -x "$PRINCIPAL_BIN" ] || PRINCIPAL_BIN="$REPO/platform/services/chorus-principal/target/release/chorus-principal"
-  [ -x "$PRINCIPAL_BIN" ] || skip "chorus-principal not built at $PRINCIPAL_BIN"
+  [ -x "$PRINCIPAL_BIN" ] || { echo "FAIL: chorus-principal not built at $PRINCIPAL_BIN" >&2; return 1; }
   T="$BATS_TEST_TMPDIR"
 }
 

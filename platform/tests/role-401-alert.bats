@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — 401 expiration detector and alert delivery
-# @domain: chorus
+# @domain: alerts
 # @card: #4924
 # #4924 AC2 — A role session that hits a 401 or expired login raises one alert
 # to Jeff naming the role, within 60s.
