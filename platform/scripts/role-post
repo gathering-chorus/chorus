@@ -82,9 +82,12 @@ principals_cmd="${POST_PRINCIPALS_CMD:-curl -sf --max-time 5 http://localhost:33
 reach_cmd="${POST_REACH_CMD:-curl -sf --max-time 5 -o /dev/null http://localhost:3340/api/chorus/context/health}"
 fails=0
 failed_lines=""
+all_lines=""
 fail() { echo "FAIL $1"; fails=$((fails+1)); failed_lines="${failed_lines}FAIL $1
+"; all_lines="${all_lines}FAIL $1
 "; }
-ok()   { echo "ok   $1"; }
+ok()   { echo "ok   $1"; all_lines="${all_lines}ok   $1
+"; }
 
 [ -n "$role" ] || { echo "FAIL role: no role (set CHORUS_ROLE)"; exit 1; }
 
@@ -103,12 +106,21 @@ if [ -e "$key" ]; then
   [ "$m" = 0600 ] && ok "key: $key 0600" || fail "key: $key mode $m, want 0600"
 else fail "key: $key missing"; fi
 
+# #4931 — which runtime this role runs: a Gemini (agy) role keeps its project settings in
+# .gemini/, a Claude role in .claude/. The self test judged Abby and Borg Queen by Claude's
+# folder and login, so both always failed for the wrong reason.
+canon="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+runtime="${POST_RUNTIME:-}"
+if [ -z "$runtime" ]; then
+  if [ -f "$canon/roles/$role/.gemini/settings.json" ] && [ ! -f "$canon/roles/$role/.claude/settings.json" ]; then runtime=gemini; else runtime=claude; fi
+fi
+sdir=".claude"; [ "$runtime" = gemini ] && sdir=".gemini"
+
 # settings match git. Live default: the role's project settings in canonical, compared
 # with the same file at git HEAD (a live edit that was never committed is drift).
-live="${POST_SETTINGS_LIVE:-$home/.claude/settings.json}"
+live="${POST_SETTINGS_LIVE:-$home/$sdir/settings.json}"
 if [ -z "$src" ] && [ -z "${POST_SETTINGS_LIVE:-}" ]; then
-  canon="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
-  rel="roles/$role/.claude/settings.json"
+  rel="roles/$role/$sdir/settings.json"
   live="$canon/$rel"
   src=$(mktemp -t role-post-settings) && trap 'rm -f "$src"' EXIT
   git -C "$canon" show "HEAD:$rel" > "$src" 2>/dev/null || { rm -f "$src"; src=""; }
@@ -120,22 +132,52 @@ elif [ ! -f "$live" ] || [ ! -f "$src" ]; then fail "settings: $live or $src mis
 elif cmp -s "$live" "$src"; then ok "settings: $live matches git"
 else fail "settings: $live differs from git $src_label"; fi
 
-# Claude login saved and valid
-if grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then
-  if [ ! -f "$home/.claude/.credentials.json" ]; then
-    fail "login: missing credentials file in $home/.claude/.credentials.json"
-  elif ! grep -qE '"(refreshToken|accessToken)"' "$home/.claude/.credentials.json" 2>/dev/null; then
-    fail "login: invalid Claude credentials in $home/.claude/.credentials.json"
+# Login, judged per runtime and read as the role itself (#4931). Another account cannot
+# read a role's login files (0600), so a run from outside is a FAIL that says so, never a
+# guess. A Claude login that refuses after it was saved (401: expired or revoked) is FAIL.
+if [ "$runtime" = gemini ]; then
+  tok="$home/.gemini/antigravity-cli/antigravity-oauth-token"
+  if [ -s "$tok" ]; then ok "login: Gemini (agy) sign-in present"
+  else fail "login: no Gemini (agy) sign-in at $tok"; fi
+else
+  cred="$home/.claude/.credentials.json"
+  me="$(id -un)"
+  if [ "$me" != "$acct" ] && [ -e "$cred" ] && [ ! -r "$cred" ]; then
+    fail "login: unmeasured from $me — run role-post as $acct (login files are readable only by the role)"
+  elif ! grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then
+    fail "login: no saved Claude login in $home/.claude.json"
+  elif [ ! -f "$cred" ]; then
+    fail "login: missing credentials file in $cred"
+  elif ! grep -qE '"(refreshToken|accessToken)"' "$cred" 2>/dev/null; then
+    fail "login: invalid Claude credentials in $cred"
   else
-    ok "login: Claude login valid"
+    tdir="${POST_TRANSCRIPTS:-$home/.claude/projects}"
+    # only Claude's own API-error entries count (a conversation that merely mentions a
+    # 401 is not one), and only those after the login was saved
+    since=$(stat -f %m "$cred" 2>/dev/null || echo 0)
+    t=$(find "$tdir" -maxdepth 2 -name '*.jsonl' -newer "$cred" 2>/dev/null | while read -r f; do
+      grep -h '"apiErrorStatus":401' "$f" 2>/dev/null | python3 -c "
+import sys,json,datetime
+for l in sys.stdin:
+    try: ts=json.loads(l).get('timestamp','')
+    except Exception: continue
+    try: s=datetime.datetime.fromisoformat(ts.replace('Z','+00:00')).timestamp()
+    except Exception: continue
+    if s > $since: print(1); break" | grep -q 1 && { echo "$f"; break; }
+    done)
+    if [ -n "$t" ]; then fail "login: Claude refused it after it was saved (401 in $t)"
+    else ok "login: Claude login valid"; fi
   fi
-else fail "login: no saved Claude login in $home/.claude.json"; fi
+fi
 
 # reachable
 if sh -c "$reach_cmd" >/dev/null 2>&1; then ok "reach: chorus reachable"
 else fail "reach: chorus not reachable"; fi
 
-mkdir -p "$state_dir" 2>/dev/null && chmod 700 "$state_dir" 2>/dev/null
+mkdir -p "$state_dir" 2>/dev/null && chmod 755 "$state_dir" 2>/dev/null
+# #4931 — the result, readable by the five-role table (role-post-all). It names checks
+# and paths only, never a secret.
+{ echo "at $(date +%s) role $role account $acct runtime $runtime"; printf '%s' "$all_lines"; } > "$state_dir/$role.result" 2>/dev/null && chmod 644 "$state_dir/$role.result" 2>/dev/null
 # Tell Jeff on every CHANGE between refused and ok (Jeff 09:21/09:27: the #team room, one
 # line), sent as system so a role whose own key is broken (660) is still heard (Wren 09:27).
 # The same message is what the pulse roles line reads back (senderName=system, body

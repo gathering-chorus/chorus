@@ -2,7 +2,7 @@
 // @domain: identity
 //! #4777 — Dedicated Mac role accounts (`chorus-silas`, `chorus-wren`, `chorus-kade`)
 //! running Claude Code:
-//! 1. Export `CLAUDE_CODE_OAUTH_TOKEN` from `~/.chorus/secrets/claude.key` when present
+//! 1. (retired by #4931) no longer export `CLAUDE_CODE_OAUTH_TOKEN` from `~/.chorus/secrets/claude.key`
 //!    and non-empty so `claude` never touches macOS Keychain (`#4202` / `#4544`).
 //! 2. Render `claude-settings` hooks layout (`{"hooks": ...}`) in `runtime_hooks_file`.
 //! 3. Export `CHORUS_SESSIONS_DIR` in `own_account_inner_cmd` (`launch_line` under `Some(acct)`)
@@ -45,11 +45,13 @@ fn run_claude_pane(secret: Option<&str>, tag: &str) -> String {
 }
 
 #[test]
-fn claude_pane_exports_oauth_token_when_claude_key_exists() {
+fn claude_pane_ignores_a_claude_key_file_4931() {
+    // #4931 — retired #4777's override: a revoked token in claude.key beat every fresh
+    // /login on 2026-11-08. A key file present is now ignored; Claude reads its own login.
     let env = run_claude_pane(Some("sk-ant-oat01-fixture-4777\n"), "with-key");
     assert!(
-        env.lines().any(|l| l == "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture-4777"),
-        "expected CLAUDE_CODE_OAUTH_TOKEN from ~/.chorus/secrets/claude.key, got:\n{env}"
+        !env.lines().any(|l| l.starts_with("CLAUDE_CODE_OAUTH_TOKEN=")),
+        "a claude.key file must no longer override the role's login, got:\n{env}"
     );
 }
 
@@ -85,7 +87,7 @@ fn claude_settings_hooks_layout_renders_hooks_object_and_refuses_unknown() {
 }
 
 #[test]
-fn own_account_launch_line_exports_shared_sessions_dir_and_claude_key() {
+fn own_account_launch_line_exports_shared_sessions_dir_runs_post_no_key() {
     let inner = own_account_inner_cmd(
         "/repo/roles/silas",
         "/repo",
@@ -96,6 +98,7 @@ fn own_account_launch_line_exports_shared_sessions_dir_and_claude_key() {
         "claude -c",
     );
     assert!(inner.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{inner}");
-    assert!(inner.contains(".chorus/secrets/claude.key"), "{inner}");
-    assert!(inner.contains("CLAUDE_CODE_OAUTH_TOKEN"), "{inner}");
+    assert!(!inner.contains(".chorus/secrets/claude.key"), "{inner}");
+    assert!(!inner.contains("CLAUDE_CODE_OAUTH_TOKEN"), "{inner}");
+    assert!(inner.contains("platform/scripts/role-post"), "{inner}");
 }
