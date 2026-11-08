@@ -987,7 +987,8 @@ pub fn asuser_probe_args<'a>(uid: &'a str, acct: &'a str) -> [&'a str; 12] {
 /// account when one is configured (#4383). Shared by the Claude and agent paths.
 fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &str) -> Result<String, (i32, String)> {
     let launch = match &ctx.run_as {
-        None => format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd),
+        // #4931 — fail closed: no account means no start, never a start as the launcher
+        None => { let _ = (role_dir, token_file, cmd); return Err((2, format!("{} has no account to run as; refusing to start it as {} (#4931)", role, env::var("USER").unwrap_or_default()))); }
         // #4383 — the session runs as the principal's own account: its token is
         // copied into that account's home, readable by it alone, and files it
         // writes in the werk stay group-writable (umask 002).
@@ -2279,6 +2280,15 @@ fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Resul
     match principal_gate(ctx, role) {
         Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(role).join("revoked")); }
         Err(why) => return Err((2, why)),
+    }
+    // #4931 — fail closed (Jeff 2026-11-08 11:05: "i dont want fall backs to the thing we
+    // are trying to remove"). No account of its own means no start: a missing hostAccount
+    // is refused by role_host_account's own message; one equal to the launcher's account
+    // is refused here. Only starting is gated — logout/off never are.
+    if ctx.run_as.is_none() {
+        let me = env::var("USER").unwrap_or_default();
+        let acct = role_host_account(ctx, role).map_err(|e| (2, e))?;
+        return Err((2, format!("{} would run as the launcher's own account {}; refusing (each agent runs as its own account, #4931)", role, if acct.is_empty() { me } else { acct })));
     }
     // #4412 — a person starts it. `up` runs from the roles-up LaunchAgent at
     // login, before anyone is signed in, and never required a person; it keeps
