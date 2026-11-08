@@ -57,11 +57,28 @@ EOF
   STATE_FILE="$T/prefix-test.state"
   mkdir -p "$T"
   # Simulate an existing stored key that has this key as a substring prefix
-  SRC_ID=$(echo -n "$T/logs/prefix-test.log" | cksum | awk '{print $1}')
   LINE_HASH=$(echo -n "2026-11-07 14:30:00 [error] API Error: 401 OAuth access token has expired. Please run /login" | cksum | awk '{print $1}')
-  echo "${SRC_ID}:${LINE_HASH}999_longer_suffix" > "${STATE_FILE}.seen"
+  echo "kade:${LINE_HASH}999_longer_suffix" > "${STATE_FILE}.seen"
 
   run "$ALERT_SCANNER" --scan-file "$T/logs/prefix-test.log" --role kade --state-file "$STATE_FILE"
   [ "$status" -eq 1 ] || return 1
   echo "$output" | grep -q "ALERT: role kade Claude login expired (401)" || return 1
+}
+
+@test "rescanning the same pane across different temp files stays quiet" {
+  TMP1="$T/pane1.log"
+  TMP2="$T/pane2.log"
+  cat <<'EOF' > "$TMP1"
+2026-11-07 14:35:00 [error] API Error: 401 OAuth access token has expired. Please run /login
+EOF
+  cp "$TMP1" "$TMP2"
+
+  STATE_FILE="$T/pane-test.state"
+  # First scan with TMP1 alerts
+  run "$ALERT_SCANNER" --scan-file "$TMP1" --role silas --state-file "$STATE_FILE"
+  [ "$status" -eq 1 ] || return 1
+
+  # Second scan with different file path TMP2 (e.g. fresh mktemp) for the same role stays quiet
+  run "$ALERT_SCANNER" --scan-file "$TMP2" --role silas --state-file "$STATE_FILE"
+  [ "$status" -eq 0 ] || return 1
 }

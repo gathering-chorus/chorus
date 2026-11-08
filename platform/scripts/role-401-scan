@@ -66,12 +66,11 @@ if [ -n "$MATCH_LINE" ]; then
     fi
   fi
 
-  SRC_ID=$(echo -n "$SCAN_FILE" | cksum | awk '{print $1}')
   LINE_HASH=$(echo -n "$MATCH_LINE" | cksum | awk '{print $1}')
-  if [ -n "$SRC_ID" ] && [ -n "$LINE_HASH" ]; then
-    KEY="${SRC_ID}:${LINE_HASH}"
+  if [ -n "$LINE_HASH" ]; then
+    KEY="${ROLE}:${LINE_HASH}"
   else
-    KEY="$MATCH_LINE"
+    KEY="${ROLE}:${MATCH_LINE}"
   fi
 
   # Don't re-alert on the exact same error line in this source once alerted
