@@ -60,11 +60,14 @@ out_has() { printf '%s' "$output" | grep -q -- "$1"; }
 file_has() { grep -q -- "$2" "$1"; }
 file_lacks() { ! grep -q -- "$2" "$1"; }
 
-@test "login happens BEFORE the pane is started: token asked for the role, then claude launched" {
+@test "the launcher signs in as nobody: no token asked, no row written; the pane is still launched" {
+  # #4933 (FLIP): the role's own wrapper signs in (establish), never the launcher
   reg_on_launch 777 %5
+  : > "$T/token.log"; : > "$T/curl.log"
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  file_has "$T/token.log" "token kade"
+  lacks "$T/token.log" "token kade"
+  test -z "$(grep -E -- '-X (POST|PUT)' "$T/curl.log" || true)"
   file_has "$T/tmux.log" "respawn-pane -k -t chorus-kade"
   # the pane gets the token FILE, never the token on the command line
   file_has "$T/tmux.log" "CHORUS_SESSION_TOKEN_FILE='$T/homes/chorus-kade/.chorus/identity/kade/token.cache'"
@@ -72,14 +75,15 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
 }
 
 @test "the login is recorded as a Session row through the security API, owned by the principal" {
-  reg_on_launch 778 %5
-  run "$SCRIPT" kade
+  # #4933 (MOVE): the role's own establish records it, as the role's account
+  est kade
+  run "$SCRIPT" establish kade
   [ "$status" -eq 0 ]
   file_has "$T/curl.log" "http://stub:1/v1/identity/sessions"
   file_has "$T/curl.body" '"ownedBy":"principal-kade"'
   file_has "$T/curl.body" '"tokenId":"jti-kade-0001"'
   file_has "$T/curl.body" '"sessionState":"open"'
-  file_has "$T/curl.body" '"hostAccount":"chorus-kade"'
+  file_has "$T/curl.body" "\"hostAccount\":\"$(id -un)\""
   # the token travels as a header FILE, not as a curl argument
   file_lacks "$T/curl.log" "eyJhbGciOiJFUzI1NiJ9"
   out_has "login: kade"
@@ -87,8 +91,8 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
 }
 
 @test "session.login is on the spine with the WebID and the token id, never the token" {
-  reg_on_launch 779 %5
-  run "$SCRIPT" kade
+  est kade
+  run "$SCRIPT" establish kade
   [ "$status" -eq 0 ]
   file_has "$T/spine.log" "^session.login kade "
   file_has "$T/spine.log" "webid=https://id.lightlifeurbangardens.com/kade/profile/card#me"
@@ -110,33 +114,46 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
 nostart() { test ! -f "$T/tmux.log"; }
 started() { grep -q "respawn-pane -k -t chorus-kade" "$T/tmux.log"; }
 lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
+lacks_out() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 
-@test "#4215 no token → the role STARTS anyway, degraded and loud" {
+# #4933 — Jeff 2026-11-08 17:24, asked "if a role's sign-in fails, does it still
+# start?": "no". #4215's "starts anyway" is superseded: the role's wrapper runs
+# `establish --run`, which fails with its reason, and the runtime never starts
+# (establish_wrapper_4933.rs proves the wrapper half). A turn's establish (no
+# --run) still degrades loudly and retries on the next turn.
+no_run() { test "$status" -ne 0 && lacks_out "kade-run-1a2b"; }
+
+@test "#4215→#4933 no token → the role does NOT start, and says why" {
   touch "$T/token-fail"
-  reg_on_launch 781 %5
-  run "$SCRIPT" kade
-  # #4295 — the words changed: a failed sign-in says it is PENDING and handles
-  # itself, not "UNAUTHENTICATED ... any write will be refused" at Jeff
-  out_has "login: kade  pending"
+  est kade
+  run "$SCRIPT" establish kade --run 1a2b
   out_has "no credential for 'kade'"
-  out_has "logs itself in"
-  started
+  no_run
+}
+
+@test "#4215 no token on a turn: degraded and loud, retried next turn" {
+  touch "$T/token-fail"
+  est kade
+  run "$SCRIPT" establish kade
+  test "$status" -eq 0
+  out_has "pending"
+  out_has "no credential for 'kade'"
+  out_has "next turn retries"
 }
 
 @test "#4215 a degraded login is on the spine as session.login.degraded" {
   touch "$T/token-fail"
-  reg_on_launch 782 %5
-  run "$SCRIPT" kade
+  est kade
+  run "$SCRIPT" establish kade
   grep -q "^session.login.degraded kade " "$T/spine.log"
 }
 
-@test "#4215 the security API refusing the row does NOT stop the start" {
+@test "#4215→#4933 the security API refusing the row stops the start, and says so" {
   echo 403 > "$T/curl.status"
-  reg_on_launch 783 %5
-  run "$SCRIPT" kade
-  out_has "login: kade  pending"
+  est kade
+  run "$SCRIPT" establish kade --run 1a2b
   out_has "403"
-  started
+  no_run
   # #4215 — found in the live pair: this line used to say "recorded yes" two
   # lines under the error. A start line that contradicts the error above it is
   # worse than no line.
@@ -145,57 +162,67 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   grep -q "^session.login.degraded kade " "$T/spine.log"
 }
 
-@test "#4215 an expired token degrades: it is a stale credential, not someone else's" {
+@test "#4215→#4933 an expired token stops the start: a stale credential, not someone else's" {
   one_token kade $(( $(date +%s) - 5 ))
-  reg_on_launch 784 %5
-  run "$SCRIPT" kade
+  est kade
+  run "$SCRIPT" establish kade --run 1a2b
   out_has "expired"
-  out_has "login: kade  pending"
-  started
+  lacks_out "wrong principal"
+  no_run
 }
 
 @test "#4215 a 409 on a row this principal owns is a login, not a failure — the role starts" {
-  echo 409 > "$T/curl.status"
+  echo 409 > "$T/curl.status.identity_sessions"   # the session row is the one that collides
   printf '{"name":"kade-0001-x","ownedBy":"principal-kade","sessionState":"open"}' > "$T/existing.json"
-  reg_on_launch 785 %5
-  run "$SCRIPT" kade
+  est kade
+  # #4933 (MOVE): "starts" is the wrapper's establish succeeding with a run to start on
+  run "$SCRIPT" establish kade --run 1a2b
+  [ "$status" -eq 0 ]
   out_has "already open and owned by principal-kade"
   out_has "reusing it"
-  started
+  out_has "kade-run-1a2b"
 }
 
 @test "#4215 a 409 on ANOTHER principal's row still refuses, and says whose" {
   echo 409 > "$T/curl.status"
   printf '{"name":"kade-0001-x","ownedBy":"principal-silas","sessionState":"open"}' > "$T/existing.json"
-  run "$SCRIPT" kade
+  est kade
+  run "$SCRIPT" establish kade --run 1a2b
   test "$status" -eq 1
   out_has "REFUSED"
   out_has "is NOT yours"
   out_has "principal-silas"
-  nostart
+  no_run
+  test -z "$(grep -F 'identity/sessionruns' "$T/curl.log" | grep -E -- '-X POST' || true)"
 }
 
 @test "#4215 THE ONE REFUSAL — another role's WebID is refused and nothing is started" {
   one_token silas
-  run "$SCRIPT" kade
+  est kade
+  : > "$T/curl.log"
+  run "$SCRIPT" establish kade --run 1a2b
   test "$status" -eq 1
   out_has "REFUSED"
   out_has "wrong principal"
   out_has "silas"
   out_has "file this work as theirs"
-  nostart
+  no_run
+  test -z "$(grep -E -- '-X POST' "$T/curl.log" || true)"
 }
 
-@test "#4215 NEGATIVE PROOF — under the OLD posture the SAME input starts nothing" {
-  # AWAKE_REFUSE_ON_LOGIN_FAILURE=1 is the pre-#4215 behaviour, kept only so this
-  # proof can show the two differ on the input that cost Jeff an hour of Kade.
-  # If this test ever passes with a pane started, the degrade branch is dead code.
+@test "#4933 one posture: the retired AWAKE_REFUSE_ON_LOGIN_FAILURE switch changes nothing" {
+  # Jeff 2026-11-08 17:24 ("no"): a failed sign-in does not start the role. The
+  # old toggle back to another posture is removed; setting it must not matter.
   touch "$T/token-fail"
-  run env AWAKE_REFUSE_ON_LOGIN_FAILURE=1 "$SCRIPT" kade
-  test "$status" -eq 1
-  out_has "REFUSED"
-  out_has "pre-#4215 posture"
-  nostart
+  est kade
+  run "$SCRIPT" establish kade --run 1a2b
+  plain_status=$status; plain_out=$output
+  rm -f "$T/identity/kade/login.json"
+  run env AWAKE_REFUSE_ON_LOGIN_FAILURE=1 "$SCRIPT" establish kade --run 1a2b
+  test "$plain_status" -ne 0
+  test "$status" -eq "$plain_status"
+  test "$output" = "$plain_out"
+  lacks_out "pre-#4215 posture"
 }
 
 @test "idempotent: a role that is awake AND talking is not logged in again (nothing sent)" {

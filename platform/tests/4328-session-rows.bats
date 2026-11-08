@@ -18,6 +18,9 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes its session (as the account running
+  # the test); the launcher writes nothing, so every row below is the role's own
+  for r in silas kade wren; do est "$r"; done
 }
 
 out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
@@ -184,6 +187,8 @@ EOS
 @test "#4342 a login whose conversation is not known yet writes no Conversation row (negative proof)" {
   run "$SCRIPT" on silas
   test "$status" -eq 0
+  # #4933 — not vacuous: the role's own establish wrote its run first
+  test -n "$(bodies | grep -F POST-identity_sessionruns || true)"
   test -z "$(bodies | grep -F POST-memory_conversations || true)"
 }
 
@@ -212,7 +217,9 @@ EOS
 
 @test "NEGATIVE PROOF: a SessionStart with no session_id writes no Conversation row" {
   run "$SCRIPT" on silas
-  echo '{"hook_event_name":"SessionStart","source":"startup"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  echo "${VIOLATE_4933:-'{"hook_event_name":"SessionStart","source":"startup"}'}" | tr -d "'" | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  # #4933 — not vacuous: the role's own establish wrote its run first
+  test -n "$(bodies | grep -F POST-identity_sessionruns || true)"
   test "$(bodies | grep -c POST-memory_conversations || true)" -eq 0
 }
 

@@ -21,6 +21,9 @@ setup() {
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
 case "\$1" in has-session) [ -f "$T/tmux-session-exists" ]; exit \$? ;; new-session) touch "$T/tmux-session-exists" ;; esac
+# #4933 — the pane's wrapper establishes the role's session first (harness pane-establish)
+# the launched runtime registers itself only once its wrapper's establish succeeded
+case " \$* " in *" respawn-pane "*) "$T/bin/pane-establish" "\$@" && [ -f "$T/reg-on-send" ] && { read -r pid pane < "$T/reg-on-send"; printf '{"role":"kade","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%s"}' "\$pid" "\${pid: -1}" "\$pane" > "$T/sessions/kade-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; } ;; esac
 exit 0
 EOS
   chmod +x "$T/bin/tmux"
@@ -31,9 +34,13 @@ EOS
   # #4215 — the mute check reads the spine. Point it at a fixture that says kade
   # answered a moment ago, so "already awake" means the same thing on every box.
   printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
-  printf '{"data":{"principalKind":"agent","hostAccount":"unit-account"}}\n200\n' > "$T/principal-kade.json"
+  # #4933 — kade's account is not the launcher's (USER=unit-account): #4931 refused
+  # the old fixture on main. It is the test's own account, so kade's wrapper can
+  # establish (est); the launcher still runs as unit-account.
+  est kade
 }
 
+reg_on_launch() { echo "$1 ${2:-%0}" > "$T/reg-on-send"; }
 reg() { # reg <pid> [pane]
   printf '{"role":"kade","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%s","registered_at":"1"}' "$1" "${1: -1}" "${2:-%0}" > "$T/sessions/kade-$1.json"
   echo "$1" >> "$T/alive-pids"
@@ -49,6 +56,10 @@ reg() { # reg <pid> [pane]
 
 @test "idempotent: one live tmux session → the proof line, and NOTHING is sent" {
   reg 56344 %0
+  # #4933 — its login is on file for THIS pid (the role established it); a live role
+  # with no login is told to establish on its next turn (launch_hop_writes_nothing_4933)
+  mkdir -p "$T/identity/kade"
+  printf '{"state":"recorded","session":"kade-x-1","pid":56344}' > "$T/identity/kade/login.json"
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   # #4295 — the line names the login, never "registered yes"; nothing is LAUNCHED
@@ -73,7 +84,7 @@ reg() { # reg <pid> [pane]
 @test "a dead registry entry is not a live session — cold start proceeds" {
   printf '{"role":"kade","pid":999,"tty":"/dev/ttys009","host":"tmux","tmux":"%%3"}' > "$T/sessions/kade-999.json"
   # pid 999 is NOT in alive-pids; simulate the launched claude registering itself
-  ( sleep 0.3; reg 777 %5 ) &
+  reg_on_launch 777 %5   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   grep -q "tmux new-session -d -s chorus-kade" "$T/tmux.log"
@@ -90,7 +101,7 @@ reg() { # reg <pid> [pane]
 [{"pid":"87866","id":"79906dc2","cwd":"$T/roles/kade","kind":"background","startedAt":"$(( $(date +%s) * 1000 - 60000 ))","sessionId":"79906dc2-1681","name":"test-verification-workflow","state":"working"}]
 EOS
   touch "$T/projects/79906dc2-1681.jsonl"
-  ( sleep 0.3; reg 88 %2 ) &
+  reg_on_launch 88 %2   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   grep -q -- "claude --resume 79906dc2" "$T/tmux.log"
@@ -112,13 +123,13 @@ EOS
 [{"id":"aaaa1111","cwd":"$T/roles/kade","kind":"background","startedAt":"$old","sessionId":"aaaa","name":"old-one","state":"blocked"},
  {"id":"bbbb2222","cwd":"$T/roles/kade","kind":"background","startedAt":"$old","sessionId":"bbbb","name":"old-two","state":"blocked"}]
 EOS
-  ( sleep 0.3; reg 5 %0 ) &
+  reg_on_launch 5 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   [[ "$output" == *"stale: 2 background agent(s)"*"aaaa1111,bbbb2222"* ]] || return 1
   ! grep -q "claude rm" "$T/claude.log" || return 1
   rm -f "$T/sessions/kade-5.json"; : > "$T/alive-pids"; rm -f "$T/tmux.log"
-  ( sleep 0.3; reg 6 %0 ) &
+  reg_on_launch 6 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   export AWAKE_END_STALE=1
   run "$SCRIPT" kade
   unset AWAKE_END_STALE
@@ -128,7 +139,7 @@ EOS
 }
 
 @test "the picker is never used: no bare 'claude' and no 'claude agents' is ever sent to the pane" {
-  ( sleep 0.3; reg 9 %0 ) &
+  reg_on_launch 9 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   ! grep -qE "claude'? Enter|claude agents" "$T/tmux.log" || return 1
@@ -139,7 +150,7 @@ EOS
   # "never guess -c". The guess costs a duplicate pane Jeff can close; the
   # refusal costs him the role, which is the failure this card exists to end.
   touch "$T/agents-fail"
-  ( sleep 0.3; reg 91 %0 ) &
+  reg_on_launch 91 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   printf '%s' "$output" | grep -q "could not list kade's background sessions"
   printf '%s' "$output" | grep -q "unknown option --cwd"
@@ -154,7 +165,7 @@ EOS
 [{"pid":"1","id":"8faa3fa4","cwd":"$T/roles/kade","kind":"background","startedAt":"$(( $(date +%s) * 1000 - 3600000 ))","sessionId":"8faa3fa4-80ae","name":"old-helper","state":"working"}]
 EOS
   touch "$T/projects/8faa3fa4-80ae.jsonl"; sleep 1; touch "$T/projects/38b6cebe-6041.jsonl"
-  ( sleep 0.3; reg 44 %0 ) &
+  reg_on_launch 44 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   ! grep -q -- "claude attach" "$T/tmux.log" || return 1
@@ -171,7 +182,7 @@ _poison() { printf '{"content":"API Error: safeguards flagged this message"}\n' 
 
 @test "#4219 a conversation ending in API refusals is NOT resumed — a fresh one starts" {
   touch "$T/projects/dead-conv.jsonl"; _poison dead-conv
-  ( sleep 0.3; reg 71 %0 ) &
+  reg_on_launch 71 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   printf '%s' "$output" | grep -q "ends in API refusals"
   printf '%s' "$output" | grep -q "fresh conversation"
@@ -181,7 +192,7 @@ _poison() { printf '{"content":"API Error: safeguards flagged this message"}\n' 
 
 @test "#4219 a healthy conversation is still resumed with -c" {
   printf '{"type":"assistant","text":"fine"}\n' > "$T/projects/live-conv.jsonl"
-  ( sleep 0.3; reg 72 %0 ) &
+  reg_on_launch 72 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run "$SCRIPT" kade
   grep -q -- "claude -c" "$T/tmux.log"
   test -z "$(printf '%s' "$output" | grep -F "ends in API refusals" || true)"
@@ -189,7 +200,7 @@ _poison() { printf '{"content":"API Error: safeguards flagged this message"}\n' 
 
 @test "#4219 NEGATIVE PROOF: with the check off, the SAME poisoned conversation is resumed" {
   touch "$T/projects/dead-conv.jsonl"; _poison dead-conv
-  ( sleep 0.3; reg 73 %0 ) &
+  reg_on_launch 73 %0   # #4933: on launch, not a 0.3 s timer that raced the start
   run env AWAKE_TRANSCRIPT_CHECK=0 "$SCRIPT" kade
   grep -q -- "claude -c" "$T/tmux.log"
   test -z "$(printf '%s' "$output" | grep -F "fresh conversation" || true)"

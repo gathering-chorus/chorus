@@ -95,6 +95,24 @@ pub fn status_line(role: &str, live_pid: Option<u64>, st: &LoginState, answering
     line
 }
 
+/// #4933 — the launcher's read-back never hides why a start is pending: a pending
+/// launch (services not answering) keeps its reason ahead of the read-back's.
+pub fn keep_launch_reason(launch: &LoginState, read_back: LoginState) -> LoginState {
+    match (launch, read_back) {
+        (_, rec @ LoginState::Recorded { .. }) => rec,
+        (LoginState::Pending { why: first, .. }, LoginState::Pending { why, pid }) if !first.contains("establishes its own session") => LoginState::Pending { why: format!("{}; {}", first, why), pid },
+        (_, other) => other,
+    }
+}
+
+/// #4933 AC3 — only the role's own account establishes its session: the one
+/// that the Principal row's hostAccount names. Anyone else (Jeff's launcher,
+/// another role) is refused, so no process writes a session on a role's behalf.
+pub fn establish_refusal(role: &str, host_account: &str, me: &str) -> Option<String> {
+    if !me.is_empty() && me == host_account { return None; }
+    Some(format!("establish {} runs as {}, not {}; a role establishes only its own session", role, host_account, if me.is_empty() { "an unknown account" } else { me }))
+}
+
 /// Only Jeff's shell, or the role's own session, may start or stop a role.
 /// `in_agent` is true inside a Claude Code session (CLAUDECODE set); the 09-25
 /// case is Kade's session running `chorus-awake silas` from roles/silas.

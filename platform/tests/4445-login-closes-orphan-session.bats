@@ -19,6 +19,9 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes its session (as the account running
+  # the test); the launcher writes nothing, so every row below is the role's own
+  for r in silas kade wren; do est "$r"; done
 }
 
 # the session listing the API answers: silas's orphan, a closed silas row, kade's
@@ -34,7 +37,8 @@ ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenI
   test "$status" -eq 0
   ls "$T/bodies" | grep -q 'PUT-identity_sessions_session-silas-orphan'
   grep -q '"sessionState":"closed"' "$T"/bodies/*-PUT-identity_sessions_session-silas-orphan.json
-  printf '%s' "$output" | grep -qF "closed 1 older open session"
+  # #4933 — the role's own establish closes it, so the line is in the role's output
+  grep -qF "closed 1 older open session" "$T/establish.log"
   grep -q 'session.superseded silas' "$T/spine.log"
 }
 
@@ -42,6 +46,8 @@ ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenI
   listing "$(ROW session-silas-old silas pane closed),$(ROW session-kade-live kade pane open),$(ROW session-silas-agent silas agent open)"
   run "$SCRIPT" on silas
   test "$status" -eq 0
+  # not vacuous (#4933): silas's own establish ran and opened its session
+  ls "$T/bodies" | grep -q 'POST-identity_sessions.json'
   test -z "$(ls "$T/bodies" | grep PUT-identity_sessions || true)"
   test "$(grep -c 'session.superseded' "$T/spine.log" || true)" -eq 0
 }

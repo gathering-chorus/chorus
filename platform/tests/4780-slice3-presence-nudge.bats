@@ -33,16 +33,19 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 }
 
 @test "NEGATIVE PROOF: launcher USER is rejected from contaminating hostAccount" {
+  # #4933 — the row names the account (here the test's own, the only one that may
+  # establish); USER is set to anything else and must not reach either row
+  est silas; acct=$(id -un)
   export USER="attacker-or-launcher"
-  run "$SCRIPT" on silas
+  run "$SCRIPT" establish silas --run 4780a
   test "$status" -eq 0
 
   s=$(body POST identity_sessions)
-  has "$s" '"hostAccount":"chorus-silas"'
+  has "$s" "\"hostAccount\":\"$acct\""
   test -z "$(printf '%s' "$s" | grep -F 'attacker-or-launcher' || true)"
 
   p=$(body POST identity_presences)
-  has "$p" '"hostAccount":"chorus-silas"'
+  has "$p" "\"hostAccount\":\"$acct\""
   test -z "$(printf '%s' "$p" | grep -F 'attacker-or-launcher' || true)"
 }
 
@@ -70,25 +73,29 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 }
 
 @test "NEGATIVE PROOF: a retired presence does not stay reachable or unknown" {
+  est wren   # #4933 — wren's own wrapper establishes, so a presence exists to retire
   run "$SCRIPT" on wren
   run "$SCRIPT" off wren
 
+  # not vacuous: logout really wrote the retired presence
   p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1)
+  test -n "$p"
   test -z "$(printf '%s' "$p" | grep -F '"reachability":"reachable"' || true)"
   test -z "$(printf '%s' "$p" | grep -F '"reachability":"unknown"' || true)"
 }
 
 @test "NEGATIVE PROOF: CHORUS_ROLE_ACCOUNT=chorus-kade for silas -> still chorus-silas" {
+  est silas; acct=$(id -un)
   export CHORUS_ROLE_ACCOUNT="chorus-kade"
-  run "$SCRIPT" on silas
+  run "$SCRIPT" establish silas --run 4780b
   test "$status" -eq 0
 
   s=$(body POST identity_sessions)
-  has "$s" '"hostAccount":"chorus-silas"'
+  has "$s" "\"hostAccount\":\"$acct\""
   test -z "$(printf '%s' "$s" | grep -F '"hostAccount":"chorus-kade"' || true)"
 
   p=$(body POST identity_presences)
-  has "$p" '"hostAccount":"chorus-silas"'
+  has "$p" "\"hostAccount\":\"$acct\""
   test -z "$(printf '%s' "$p" | grep -F '"hostAccount":"chorus-kade"' || true)"
 }
 
