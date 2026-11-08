@@ -48,3 +48,20 @@ EOF
   run "$ALERT_SCANNER" --scan-file "$T/logs/silas-401.log" --role silas --state-file "$STATE_FILE"
   [ "$status" -eq 0 ] || return 1
 }
+
+@test "exact-line matching does not falsely suppress alert when KEY is prefix of stored entry" {
+  cat <<'EOF' > "$T/logs/prefix-test.log"
+2026-11-07 14:30:00 [error] API Error: 401 OAuth access token has expired. Please run /login
+EOF
+
+  STATE_FILE="$T/prefix-test.state"
+  mkdir -p "$T"
+  # Simulate an existing stored key that has this key as a substring prefix
+  SRC_ID=$(echo -n "$T/logs/prefix-test.log" | cksum | awk '{print $1}')
+  LINE_HASH=$(echo -n "2026-11-07 14:30:00 [error] API Error: 401 OAuth access token has expired. Please run /login" | cksum | awk '{print $1}')
+  echo "${SRC_ID}:${LINE_HASH}999_longer_suffix" > "${STATE_FILE}.seen"
+
+  run "$ALERT_SCANNER" --scan-file "$T/logs/prefix-test.log" --role kade --state-file "$STATE_FILE"
+  [ "$status" -eq 1 ] || return 1
+  echo "$output" | grep -q "ALERT: role kade Claude login expired (401)" || return 1
+}

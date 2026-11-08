@@ -68,10 +68,14 @@ if [ -n "$MATCH_LINE" ]; then
 
   SRC_ID=$(echo -n "$SCAN_FILE" | cksum | awk '{print $1}')
   LINE_HASH=$(echo -n "$MATCH_LINE" | cksum | awk '{print $1}')
-  KEY="${SRC_ID}:${LINE_HASH}"
+  if [ -n "$SRC_ID" ] && [ -n "$LINE_HASH" ]; then
+    KEY="${SRC_ID}:${LINE_HASH}"
+  else
+    KEY="$MATCH_LINE"
+  fi
 
   # Don't re-alert on the exact same error line in this source once alerted
-  if [ -f "$SEEN_STATE" ] && grep -qF "$KEY" "$SEEN_STATE" 2>/dev/null; then
+  if [ -f "$SEEN_STATE" ] && grep -qxF "$KEY" "$SEEN_STATE" 2>/dev/null; then
     exit 0
   fi
 
