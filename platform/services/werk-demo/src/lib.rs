@@ -2677,8 +2677,31 @@ fn tail(text: &str) -> String {
 /// Never ~/.chorus/secrets/claude.key: its Oct 28 token was revoked (13:02 run).
 /// Already that account: no hop. Returns (program, args, who); `who` names the
 /// account in every finding.
+/// #4924 (Wren 20:08): when the owner doesn't run Claude (Borg Queen, Abby Normal),
+/// gate reviews hop to the card's reviewer (Silas here, or CHORUS_REVIEWER).
+pub fn runs_claude(role: &str) -> bool {
+    !matches!(role, "borg-queen" | "abby-normal")
+}
+
+pub fn claude_reviewer_for(role: &str) -> String {
+    if runs_claude(role) {
+        return role.to_string();
+    }
+    if let Ok(rev) = env::var("CHORUS_REVIEWER") {
+        if !rev.trim().is_empty() {
+            return rev.trim().to_string();
+        }
+    }
+    match role {
+        "borg-queen" => "silas".to_string(),
+        "abby-normal" => "silas".to_string(),
+        _ => "silas".to_string(),
+    }
+}
+
 pub fn role_hop(me: &str, role: &str, bin: &str, args: &[String], cwd: Option<&str>) -> (String, Vec<String>, String) {
-    let account = format!("chorus-{role}");
+    let reviewer = claude_reviewer_for(role);
+    let account = format!("chorus-{reviewer}");
     if role.is_empty() || me == account {
         return (bin.to_string(), args.to_vec(), format!("claude as {me}"));
     }
