@@ -85,3 +85,36 @@ fn negative_proof_non_claude_role_never_hops_to_own_account() {
         assert!(!a.contains(&format!("chorus-{role}")), "{role} account must not be sudo target");
     }
 }
+
+#[test]
+fn safe_directory_is_scoped_to_werk_path_never_wildcard() {
+    let werk_path = "/Users/jeffbridwell/CascadeProjects/chorus-werk/test-123";
+    let (_, a, _) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p"]), Some(werk_path));
+    let inner = &a[6];
+    assert!(inner.contains(&format!("GIT_CONFIG_VALUE_0='{werk_path}'")), "must scope safe.directory to werk: {inner}");
+    assert!(!inner.contains("GIT_CONFIG_VALUE_0='*'"), "must never use wildcard * for safe.directory: {inner}");
+
+    // Negative proof: when no cwd is given, safe.directory is not set at all
+    let (_, a_none, _) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p"]), None);
+    let inner_none = &a_none[6];
+    assert!(!inner_none.contains("safe.directory"), "without cwd, safe.directory must not be set: {inner_none}");
+}
+
+#[test]
+fn negative_proof_other_repo_path_remains_refused_under_scoped_safe_directory() {
+    let target = "/Users/jeffbridwell/CascadeProjects/chorus";
+    // With safe.directory scoped strictly to a different path (/tmp)
+    let output = std::process::Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "safe.directory")
+        .env("GIT_CONFIG_VALUE_0", "/tmp")
+        .args(["-C", target, "status"])
+        .output()
+        .expect("git status execution");
+
+    assert!(!output.status.success(), "git must fail on dubious ownership for un-scoped path");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("fatal: detected dubious ownership"), "must refuse dubious ownership: {stderr}");
+}

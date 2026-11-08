@@ -2705,8 +2705,9 @@ pub fn role_hop(me: &str, role: &str, bin: &str, args: &[String], cwd: Option<&s
     }
     let q = |a: &str| format!("'{}'", a.replace('\'', "'\\''"));
     let cd = cwd.map(|d| format!("cd {} && ", q(d))).unwrap_or_default();
+    let safe_git = cwd.map(|d| format!("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0={} ", q(d))).unwrap_or_default();
     let line: Vec<String> = std::iter::once(bin).chain(args.iter().map(String::as_str)).map(q).collect();
-    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE={} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' && exec {}", q(&reviewer), line.join(" "));
+    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE={} {safe_git}&& exec {}", q(&reviewer), line.join(" "));
     ("sudo".to_string(), ["-n", "-u", &account, "-H", "bash", "-c", &inner].iter().map(|s| s.to_string()).collect(), format!("claude as {account}"))
 }
 
