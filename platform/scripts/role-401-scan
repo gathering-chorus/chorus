@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# role-401-scan — #4924 AC2: scans transcripts / session logs for Claude 401 expiration errors
+# and alerts Jeff within 60s naming the role.
+
+set -euo pipefail
+
+SCAN_FILE=""
+ROLE=""
+STATE_FILE=""
+NOTIFY=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --scan-file) SCAN_FILE="$2"; shift 2 ;;
+    --role) ROLE="$2"; shift 2 ;;
+    --state-file) STATE_FILE="$2"; shift 2 ;;
+    --notify) NOTIFY=1; shift ;;
+    *) echo "unknown arg $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ -z "$SCAN_FILE" ] || [ -z "$ROLE" ]; then
+  echo "usage: role-401-scan --scan-file <path> --role <role> [--state-file <path>] [--notify]" >&2
+  exit 2
+fi
+
+if [ ! -f "$SCAN_FILE" ]; then
+  exit 0
+fi
+
+# Check for 401 error pattern in file
+# "API Error: 401 OAuth access token has expired" or "401" + "access token has expired"
+if grep -qE "API Error: 401.*OAuth access token has expired|401 OAuth access token has expired" "$SCAN_FILE"; then
+  NOW=$(date +%s)
+  STATE_DIR="${HOME:-/tmp}/.chorus/401-alerts"
+  STATE="${STATE_FILE:-$STATE_DIR/$ROLE.last_alert}"
+
+  if [ -n "$STATE" ] && [ -f "$STATE" ]; then
+    LAST=$(cat "$STATE" 2>/dev/null || echo 0)
+    DIFF=$((NOW - LAST))
+    if [ "$DIFF" -lt 60 ]; then
+      # Deduped within 60s
+      exit 0
+    fi
+  fi
+
+  if [ -n "$STATE" ]; then
+    mkdir -p "$(dirname "$STATE")" 2>/dev/null || true
+    echo "$NOW" > "$STATE" 2>/dev/null || true
+  fi
+
+  MSG="ALERT: role $ROLE Claude login expired (401)"
+  echo "$MSG"
+
+  if [ "$NOTIFY" -eq 1 ]; then
+    SHIM="${CHORUS_HOOK_SHIM:-/Users/jeffbridwell/.chorus/bin/chorus-hook-shim}"
+    if [ -x "$SHIM" ]; then
+      "$SHIM" nudge-send system jeff "$MSG" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  exit 1
+fi
+
+exit 0

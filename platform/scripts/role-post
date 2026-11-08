@@ -38,6 +38,9 @@ else:
   exit 0
 fi
 role="${POST_ROLE:-${CHORUS_ROLE:-}}"
+if [ -n "${1:-}" ] && [ "${1:0:2}" != "--" ]; then
+  role="$1"
+fi
 state_dir="${POST_STATE_DIR:-$HOME/.chorus/post}"
 
 if [ "${1:-}" = "--gate" ]; then
@@ -65,9 +68,15 @@ if [ "${1:-}" = "--waive" ]; then
   echo "role-post --waive: a role cannot waive its own POST; ask a peer (peer waiver not built yet)" >&2
   exit 2
 fi
-acct="${POST_ACCOUNT:-$(id -un)}"
+acct="${POST_ACCOUNT:-}"
+if [ -z "$acct" ]; then
+  if [ -n "$role" ] && [ "$role" != "jeff" ]; then acct="chorus-$role"; else acct="$(id -un)"; fi
+fi
+home="${POST_HOME:-}"
+if [ -z "$home" ]; then
+  if [ -n "$acct" ] && [ -d "/Users/$acct" ]; then home="/Users/$acct"; else home="$HOME"; fi
+fi
 idd="${POST_IDENTITY_DIR:-/Users/jeffbridwell/.chorus/identity}"
-home="${POST_HOME:-$HOME}"
 src="${POST_SETTINGS_SOURCE:-}"
 principals_cmd="${POST_PRINCIPALS_CMD:-curl -sf --max-time 5 http://localhost:3360/v1/identity/principals?limit=500}"
 reach_cmd="${POST_REACH_CMD:-curl -sf --max-time 5 -o /dev/null http://localhost:3340/api/chorus/context/health}"
@@ -111,8 +120,13 @@ elif [ ! -f "$live" ] || [ ! -f "$src" ]; then fail "settings: $live or $src mis
 elif cmp -s "$live" "$src"; then ok "settings: $live matches git"
 else fail "settings: $live differs from git $src_label"; fi
 
-# Claude login saved
-if grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then ok "login: Claude login saved"
+# Claude login saved and valid
+if grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then
+  if [ -f "$home/.claude/.credentials.json" ] && ! grep -qE '"(refreshToken|accessToken)"' "$home/.claude/.credentials.json" 2>/dev/null; then
+    fail "login: invalid Claude credentials in $home/.claude/.credentials.json"
+  else
+    ok "login: Claude login valid"
+  fi
 else fail "login: no saved Claude login in $home/.claude.json"; fi
 
 # reachable

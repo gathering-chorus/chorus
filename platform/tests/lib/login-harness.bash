@@ -94,6 +94,13 @@ echo "sudo \$*" >> "$T/sudo.log"
 while [ \$# -gt 0 ]; do case "\$1" in -n|-H) shift ;; -u) shift 2 ;; *) break ;; esac; done
 exec "\$@"
 EOS
+  cat > "$T/bin/launchctl" <<EOS
+#!/bin/bash
+echo "launchctl \$*" >> "$T/launchctl.log"
+[ -f "$T/launchctl-deny" ] && { echo "launchctl: Operation not permitted" >&2; exit 1; }
+while [ \$# -gt 0 ]; do case "\$1" in asuser) shift 2 ;; *) break ;; esac; done
+exec "\$@"
+EOS
   # #4445 stub relay projection: records the call, never reaches the relay;
   # fails like a dropped ssh when $T/relay-fail exists
   cat > "$T/bin/relay" <<EOS
@@ -125,6 +132,8 @@ login_harness_env() {
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
   export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
   export AWAKE_SUDO="$T/bin/sudo" AWAKE_ACCOUNT_HOMES="$T/homes"
+  export AWAKE_LAUNCHCTL="$T/bin/launchctl"
+  export PATH="$T/bin:$PATH"
   export CHORUS_LOG_FILE="$T/spine-read.log"
   unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
 }

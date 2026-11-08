@@ -8,7 +8,7 @@
 # dir, a live-edited settings.json, a missing Claude login, an unreachable door.
 
 setup() {
-  REPO="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+  REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   POST="$REPO/platform/scripts/role-post"
   T="$BATS_TEST_TMPDIR"
   mkdir -p "$T/identity/silas" "$T/git" "$T/home/.claude"
@@ -62,6 +62,26 @@ setup() {
   run "$POST"
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   echo "$output" | grep -q "FAIL settings: .* differs from git" || { echo "$output"; return 1; }
+}
+
+@test "control: POST check includes Claude login valid" {
+  run "$POST"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "ok   login: Claude login valid" || { echo "$output"; return 1; }
+}
+
+@test "AC3: POST check includes Claude login valid from outside the role" {
+  unset CHORUS_ROLE POST_ROLE
+  run "$POST" silas
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "ok   login: Claude login valid" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: invalid credentials file refuses, named" {
+  echo '{"claudeAiOauth":{}}' > "$BATS_TEST_TMPDIR/home/.claude/.credentials.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL login: invalid Claude credentials" || { echo "$output"; return 1; }
 }
 
 @test "negative proof: no saved Claude login refuses, named" {

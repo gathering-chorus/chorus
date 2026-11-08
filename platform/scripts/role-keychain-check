@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# role-keychain-check — #4924: verifies that a role account is isolated from Jeff's login keychain.
+# If TEST_MOCK_KEYCHAIN is set (tests) or security list-keychains contains Jeff's login.keychain-db,
+# it exits 1 with a refusal reason. Otherwise exits 0.
+
+set -euo pipefail
+
+ROLE_ACCT="${1:-${CHORUS_ROLE:-}}"
+if [ -z "$ROLE_ACCT" ]; then
+  echo "usage: role-keychain-check <account>" >&2
+  exit 2
+fi
+
+if [ -n "${TEST_MOCK_KEYCHAIN:-}" ]; then
+  KC="$TEST_MOCK_KEYCHAIN"
+else
+  KC=$(security list-keychains 2>/dev/null || true)
+fi
+
+if echo "$KC" | grep -q "/Users/jeffbridwell/Library/Keychains/login.keychain"; then
+  echo "REFUSED: session inherits caller login keychain /Users/jeffbridwell/Library/Keychains/login.keychain-db" >&2
+  exit 1
+fi
+
+echo "ok: session isolated from caller login keychain"
+exit 0
