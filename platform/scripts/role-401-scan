@@ -73,9 +73,17 @@ if [ -n "$MATCH_LINE" ]; then
     KEY="${ROLE}:${MATCH_LINE}"
   fi
 
-  # Don't re-alert on the exact same error line in this source once alerted
-  if [ -f "$SEEN_STATE" ] && grep -qxF "$KEY" "$SEEN_STATE" 2>/dev/null; then
-    exit 0
+  # Trim seen entries older than 1 hour (3600s) so future 401s on this role alert again
+  if [ -f "$SEEN_STATE" ]; then
+    TMP_SEEN=$(mktemp 2>/dev/null || echo "${SEEN_STATE}.tmp")
+    awk -v now="$NOW" '{
+      ts = ($2 ~ /^[0-9]+$/) ? $2 : now;
+      if ((now - ts) < 3600) { print $1 " " ts }
+    }' "$SEEN_STATE" > "$TMP_SEEN" 2>/dev/null && mv "$TMP_SEEN" "$SEEN_STATE" 2>/dev/null || true
+
+    if awk '{print $1}' "$SEEN_STATE" 2>/dev/null | grep -qxF "$KEY"; then
+      exit 0
+    fi
   fi
 
   DIFF=$((NOW - LAST))
@@ -87,7 +95,7 @@ if [ -n "$MATCH_LINE" ]; then
   if [ -n "$STATE" ]; then
     mkdir -p "$(dirname "$STATE")" 2>/dev/null
     echo "$NOW" > "$STATE" 2>/dev/null
-    echo "$KEY" >> "$SEEN_STATE" 2>/dev/null
+    echo "$KEY $NOW" >> "$SEEN_STATE" 2>/dev/null
   fi
 
   MSG="ALERT: role $ROLE Claude login expired (401)"

@@ -2678,7 +2678,7 @@ fn tail(text: &str) -> String {
 /// Already that account: no hop. Returns (program, args, who); `who` names the
 /// account in every finding.
 /// #4924 (Wren 20:08): when the owner doesn't run Claude (Borg Queen, Abby Normal),
-/// gate reviews hop to the card's reviewer (Silas here, or CHORUS_REVIEWER).
+/// gate reviews hop to the card's reviewer (wren per Jeff decision, or CHORUS_REVIEWER).
 pub fn runs_claude(role: &str) -> bool {
     !matches!(role, "borg-queen" | "abby-normal")
 }
@@ -2688,16 +2688,13 @@ pub fn claude_reviewer_for(role: &str) -> String {
         return role.to_string();
     }
     if let Ok(rev) = env::var("CHORUS_REVIEWER") {
-        if !rev.trim().is_empty() {
-            return rev.trim().to_string();
+        let trimmed = rev.trim();
+        if !trimmed.is_empty() && runs_claude(trimmed) {
+            return trimmed.to_string();
         }
     }
     // #4924 (Jeff decision, Wren 20:26): non-Claude roles fallback to wren
-    match role {
-        "borg-queen" => "wren".to_string(),
-        "abby-normal" => "wren".to_string(),
-        _ => "wren".to_string(),
-    }
+    "wren".to_string()
 }
 
 pub fn role_hop(me: &str, role: &str, bin: &str, args: &[String], cwd: Option<&str>) -> (String, Vec<String>, String) {
@@ -2709,7 +2706,7 @@ pub fn role_hop(me: &str, role: &str, bin: &str, args: &[String], cwd: Option<&s
     let q = |a: &str| format!("'{}'", a.replace('\'', "'\\''"));
     let cd = cwd.map(|d| format!("cd {} && ", q(d))).unwrap_or_default();
     let line: Vec<String> = std::iter::once(bin).chain(args.iter().map(String::as_str)).map(q).collect();
-    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE='{reviewer}' && exec {}", line.join(" "));
+    let inner = format!("{cd}export CHORUS_HEADLESS=1 CHORUS_ROLE={} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' && exec {}", q(&reviewer), line.join(" "));
     ("sudo".to_string(), ["-n", "-u", &account, "-H", "bash", "-c", &inner].iter().map(|s| s.to_string()).collect(), format!("claude as {account}"))
 }
 

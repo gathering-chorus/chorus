@@ -78,7 +78,28 @@ EOF
   run "$ALERT_SCANNER" --scan-file "$TMP1" --role silas --state-file "$STATE_FILE"
   [ "$status" -eq 1 ] || return 1
 
+  # Reset 60s rate limit to prove dedupe is caused by seen state, not 60s rate limit
+  echo 0 > "$STATE_FILE"
+
   # Second scan with different file path TMP2 (e.g. fresh mktemp) for the same role stays quiet
   run "$ALERT_SCANNER" --scan-file "$TMP2" --role silas --state-file "$STATE_FILE"
   [ "$status" -eq 0 ] || return 1
+}
+
+@test "expired seen entries (> 3600s) allow alerting again on subsequent 401" {
+  TMP="$T/pane-expire.log"
+  cat <<'EOF' > "$TMP"
+2026-11-07 14:35:00 [error] API Error: 401 OAuth access token has expired. Please run /login
+EOF
+  STATE_FILE="$T/expire-test.state"
+  LINE_HASH=$(echo -n "2026-11-07 14:35:00 [error] API Error: 401 OAuth access token has expired. Please run /login" | cksum | awk '{print $1}')
+  mkdir -p "$T"
+  # Write expired timestamp (2 hours ago)
+  OLD_TIME=$(($(date +%s) - 7200))
+  echo "silas:${LINE_HASH} $OLD_TIME" > "${STATE_FILE}.seen"
+  echo "0" > "$STATE_FILE"
+
+  run "$ALERT_SCANNER" --scan-file "$TMP" --role silas --state-file "$STATE_FILE"
+  [ "$status" -eq 1 ] || return 1
+  echo "$output" | grep -q "ALERT: role silas Claude login expired (401)" || return 1
 }
