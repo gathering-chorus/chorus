@@ -14,7 +14,7 @@ fi
 if [ -n "${TEST_MOCK_KEYCHAIN:-}" ]; then
   KC="$TEST_MOCK_KEYCHAIN"
 else
-  KC=$(security list-keychains 2>/dev/null || true)
+  KC=$(security list-keychains 2>/dev/null || echo "")
 fi
 
 if echo "$KC" | grep -q "/Users/jeffbridwell/Library/Keychains/login.keychain"; then

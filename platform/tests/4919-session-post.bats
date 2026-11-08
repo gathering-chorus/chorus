@@ -15,6 +15,7 @@ setup() {
   echo '{"k":1}' > "$T/identity/silas/nostr.json"; chmod 600 "$T/identity/silas/nostr.json"
   echo '{"model":"opus"}' > "$T/git/settings.json"; cp "$T/git/settings.json" "$T/home/.claude/settings.json"
   echo '{"oauthAccount":{"emailAddress":"x"}}' > "$T/home/.claude.json"
+  echo '{"claudeAiOauth":{"accessToken":"tok","refreshToken":"ref"}}' > "$T/home/.claude/.credentials.json"
   echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
   export POST_ROLE=silas POST_ACCOUNT=chorus-silas
   export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"
@@ -82,6 +83,13 @@ setup() {
   run "$POST"
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   echo "$output" | grep -q "FAIL login: invalid Claude credentials" || { echo "$output"; return 1; }
+}
+
+@test "negative proof: missing credentials file refuses, named" {
+  rm -f "$BATS_TEST_TMPDIR/home/.claude/.credentials.json"
+  run "$POST"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "FAIL login: missing credentials file" || { echo "$output"; return 1; }
 }
 
 @test "negative proof: no saved Claude login refuses, named" {

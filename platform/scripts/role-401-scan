@@ -45,8 +45,8 @@ if grep -qE "API Error: 401.*OAuth access token has expired|401 OAuth access tok
   fi
 
   if [ -n "$STATE" ]; then
-    mkdir -p "$(dirname "$STATE")" 2>/dev/null || true
-    echo "$NOW" > "$STATE" 2>/dev/null || true
+    mkdir -p "$(dirname "$STATE")" 2>/dev/null
+    echo "$NOW" > "$STATE" 2>/dev/null
   fi
 
   MSG="ALERT: role $ROLE Claude login expired (401)"
@@ -55,7 +55,9 @@ if grep -qE "API Error: 401.*OAuth access token has expired|401 OAuth access tok
   if [ "$NOTIFY" -eq 1 ]; then
     SHIM="${CHORUS_HOOK_SHIM:-/Users/jeffbridwell/.chorus/bin/chorus-hook-shim}"
     if [ -x "$SHIM" ]; then
-      "$SHIM" nudge-send system jeff "$MSG" >/dev/null 2>&1 || true
+      "$SHIM" nudge-send system jeff "$MSG" >/dev/null 2>&1
+    else
+      echo "WARN: $SHIM not executable; cannot notify Jeff" >&2
     fi
   fi
 

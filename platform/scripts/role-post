@@ -122,7 +122,9 @@ else fail "settings: $live differs from git $src_label"; fi
 
 # Claude login saved and valid
 if grep -q '"oauthAccount" *: *{' "$home/.claude.json" 2>/dev/null; then
-  if [ -f "$home/.claude/.credentials.json" ] && ! grep -qE '"(refreshToken|accessToken)"' "$home/.claude/.credentials.json" 2>/dev/null; then
+  if [ ! -f "$home/.claude/.credentials.json" ]; then
+    fail "login: missing credentials file in $home/.claude/.credentials.json"
+  elif ! grep -qE '"(refreshToken|accessToken)"' "$home/.claude/.credentials.json" 2>/dev/null; then
     fail "login: invalid Claude credentials in $home/.claude/.credentials.json"
   else
     ok "login: Claude login valid"

@@ -28,7 +28,7 @@ echo "=== #4924 AC1 Demo: Live Throwaway Start ==="
 echo "Before timestamp: $BEFORE_TS"
 
 # 1. Run live isolated keychain check
-KC_OUT=$(sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H security list-keychains -d user 2>&1 || true)
+KC_OUT=$(sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H security list-keychains -d user 2>&1 || echo "")
 echo "Keychain list: '${KC_OUT}'"
 if [ -n "$(echo "$KC_OUT" | tr -d '[:space:]\"')" ]; then
   echo "FAIL: Expected empty keychain list in isolated bootstrap, got: $KC_OUT" >&2
@@ -37,11 +37,22 @@ fi
 
 # 2. Run throwaway sign-in / start
 echo "Running throwaway claude session as chorus-silas..."
-sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c "umask 002 && cd /Users/jeffbridwell/CascadeProjects/chorus/roles/silas && /Users/jeffbridwell/.local/bin/claude -c 'exit' 2>&1 || true"
+if ! sudo -n /bin/launchctl asuser 502 /usr/bin/sudo -n -u chorus-silas -H bash -c "umask 002 && cd /Users/jeffbridwell/CascadeProjects/chorus/roles/silas && /Users/jeffbridwell/.local/bin/claude -c 'exit'"; then
+  echo "WARN: claude returned non-zero (verifying credentials file)" >&2
+fi
+
+if [ ! -f "$CRED_FILE" ]; then
+  echo "FAIL: Credentials file $CRED_FILE does not exist" >&2
+  exit 1
+fi
 
 # 3. Measure after timestamp
 AFTER_TS=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$CRED_FILE" 2>/dev/null || echo "none")
 echo "After timestamp: $AFTER_TS"
+if [ "$AFTER_TS" = "none" ]; then
+  echo "FAIL: Could not measure after timestamp on $CRED_FILE" >&2
+  exit 1
+fi
 
 MODE=$(stat -f "%OLp" "$CRED_FILE" 2>/dev/null || stat -c "%a" "$CRED_FILE")
 OWNER=$(stat -f "%Su" "$CRED_FILE" 2>/dev/null || stat -c "%U" "$CRED_FILE")
