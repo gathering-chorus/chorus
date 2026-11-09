@@ -83,6 +83,19 @@ case "\${@: -1}" in *"/v1/identity/sessions?channel=browser"*) if [ -f "$T/api-d
 case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then printf 'upstream down\n'; elif [ -f "$T/roles-door.json" ]; then cat "$T/roles-door.json"; else printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}\n'; fi; exit 0 ;; esac
 case "\${@: -1}" in */v1/identity/principals\?*) acct=jeff-fixture-account; [ -f "$T/jeff-at-terminal" ] && acct=\$USER; printf '{"data":[{"name":"jeff","principalKind":"person","hostAccount":"%s"},{"name":"wren","principalKind":"agent","hostAccount":"%s"}]}\n' "\$acct" "\$USER"; exit 0 ;; esac   # #4412: who is at this terminal
 case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade|borg-queen|abby-normal) printf '{"data":{"principalKind":"agent","hostAccount":"chorus-%s"}}\n200\n' "\$pn" ;; jeff) printf '{"data":{"principalKind":"person","hostAccount":"jeffbridwell"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
+# #4933 — a listing of runs or presences answers with the rows written so far (newest state of each)
+case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/sessionruns?"*|*"/v1/identity/presences?"*) case "\${@: -1}" in *presences*) [ -f "$T/presence-door-down" ] && exit 22 ;; esac; r="\${@: -1}"; r="\${r%%\?*}"; r="\${r##*/v1/}"; r="\${r//\//_}"; python3 -c '
+import json,sys,glob,os
+rows={}
+for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-"+sys.argv[2]+"*.json"))):
+    try: b=json.load(open(f))
+    except Exception: continue
+    n=b.get("name")
+    if not n: continue
+    kind=sys.argv[2].split("_")[-1].rstrip("s")
+    stored=n if n.startswith(kind+"-") else kind+"-"+n   # the door hands rows back under the name it stored (POST answers "<kind>-<name>")
+    b=dict(b, name=stored); rows[stored]=b
+print(json.dumps({"data":list(rows.values())}))' "$T" "\$r"; exit 0 ;; esac
 case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/sessionruns/"*) rn="\${@: -1}"; rn="\${rn##*/}"; hit=\$(grep -l "\"name\": *\"\$rn\"" "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | tail -1); if [ -n "\$hit" ]; then printf '{"data":%s}\n200\n' "\$(cat "\$hit")"; else printf '{"data":{}}\n404\n'; fi; exit 0 ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"

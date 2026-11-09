@@ -121,3 +121,34 @@ fn a_row_back_means_served_and_no_row_means_not() {
     // NEGATIVE PROOF: an inverted reading (the mutant the review named) goes red here
     assert!(!serves_from(none));
 }
+
+// --- code review 20:26: AC2 read through the write path's own parsers ---
+
+#[test]
+fn negative_proof_an_escaped_actsas_key_is_still_checked() {
+    // the strict parser decodes a → a, so this IS actsAs to the write
+    let r = acts_as_refusal(SESSION, &WriteOp::CreateEntity, r#"{"name":"s5","actsAs":"role-wren"}"#, "kade", kade_only);
+    assert_eq!(r.map(|(c, _)| c), Some(403), "an escaped key must not get past role activation");
+}
+
+#[test]
+fn negative_proof_every_element_of_an_actsas_array_is_checked() {
+    let r = acts_as_refusal(SESSION, &WriteOp::CreateEntity, r#"{"name":"s6","actsAs":["role-kade","role-wren"]}"#, "kade", kade_only);
+    assert_eq!(r.map(|(c, _)| c), Some(403), "the second element must be checked too");
+}
+
+#[test]
+fn a_patch_that_clears_actsas_with_null_is_not_a_role_claim() {
+    let never = |_: &str, _: &str| -> Result<bool, String> { panic!("a clear claims no role") };
+    assert_eq!(acts_as_refusal(SESSION, &WriteOp::PatchEntity { name: "s1".into() }, r#"{"actsAs":null,"label":"x"}"#, "kade", never), None);
+}
+
+#[test]
+fn negative_proof_create_linked_cannot_open_a_session_for_a_role_not_served() {
+    let class_of = |p: &str| if p.ends_with("identity/sessions") { Some(SESSION.to_string()) } else { Some("https://jeffbridwell.com/chorus#SessionRun".to_string()) };
+    let body = "/identity/sessions\t{\"name\":\"s7\",\"actsAs\":\"role-wren\"}\n/identity/sessionruns\t{\"name\":\"r7\"}";
+    let r = athena_make::linked_acts_as_refusal(body, class_of, "kade", kade_only);
+    assert_eq!(r.map(|(c, _)| c), Some(403));
+    let ok = "/identity/sessions\t{\"name\":\"s8\",\"actsAs\":\"role-kade\"}";
+    assert_eq!(athena_make::linked_acts_as_refusal(ok, class_of, "kade", kade_only), None);
+}

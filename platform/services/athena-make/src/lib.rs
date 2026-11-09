@@ -287,9 +287,14 @@ pub fn telemetry_path(home: &str, ts_ms: u128) -> String {
 pub fn decision_line(ts_ms: u128, trace_id: &str, principal: &str, action: &str, class: &str, entity: &str, code: u16, body: &str) -> String {
     let reason = json_field(body, "error").or_else(|| json_field(body, "status")).unwrap_or_default();
     let decision = match code { 401 | 403 => "deny", 503 => "undecided", _ => "allow" };
+    decision_record(ts_ms, trace_id, principal, action, class, entity, decision, &reason, &code.to_string())
+}
+
+/// The one shape every decision line has (decision_line and allow_ahead_line).
+fn decision_record(ts_ms: u128, trace_id: &str, principal: &str, action: &str, class: &str, entity: &str, decision: &str, reason: &str, outcome: &str) -> String {
     format!(
         "{{\"ts\":{},\"event\":\"authz.decision\",\"service\":\"athena-make\",\"decision\":\"{}\",\"reason\":\"{}\",\"outcome\":\"{}\",\"principal\":\"{}\",\"action\":\"{}\",\"class\":\"{}\",\"entity\":\"{}\",\"trace_id\":\"{}\"}}\n",
-        ts_ms, decision, json_escape(&reason), code, json_escape(principal), json_escape(action), json_escape(class), json_escape(entity), json_escape(trace_id)
+        ts_ms, decision, json_escape(reason), json_escape(outcome), json_escape(principal), json_escape(action), json_escape(class), json_escape(entity), json_escape(trace_id)
     )
 }
 
@@ -308,6 +313,41 @@ pub fn outcome_line(ts_ms: u128, trace_id: &str, principal: &str, action: &str, 
 pub fn decision_for(ts_ms: u128, trace_id: &str, principal: &str, action: &str, class: &str, entity: &str, code: u16, body: &str) -> Option<String> {
     if action == "GET" { return None; }
     Some(decision_line(ts_ms, trace_id, principal, action, class, entity, code, body))
+}
+
+/// #4933 AC4 — the decision log for one cross-class write (/batch, /create-linked):
+/// opened and armed for write-ahead before anything is decided, refusing when it
+/// cannot log, then closed with exactly one decision or outcome line.
+pub struct CrossClassLog { sink: std::io::Result<std::fs::File>, trace: String, opened: u128 }
+impl CrossClassLog {
+    pub fn open(trace: String, opened: u128) -> Self {
+        let mut sink = open_decision_sink(&decision_home(), opened);
+        // a handle that cannot be cloned for the write-ahead refuses the write, never skips the log
+        if let Ok(f) = sink.as_ref() {
+            match f.try_clone() { Ok(c) => arm_write_ahead(c, String::new()), Err(e) => sink = Err(e) }
+        }
+        CrossClassLog { sink, trace, opened }
+    }
+    /// Some(refusal) when this write cannot be logged: nothing may be written then.
+    pub fn refusal(&self) -> Option<(u16, String)> { unlogged_refusal(&self.sink) }
+    /// Name the allow line once authN has named the principal (before the store is touched).
+    pub fn allow(&self, principal: &str, class: &str, entity: &str) {
+        set_write_ahead_line(allow_ahead_line(self.opened, &self.trace, principal, "POST", class, entity));
+    }
+    /// One line: the decision (deny, or an allow that never reached the store), or the
+    /// outcome of an allow that was written ahead but failed.
+    pub fn close(&mut self, principal: &str, class: &str, entity: &str, code: u16, body: &str) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let went_ahead = disarm_write_ahead();
+        if let Ok(f) = self.sink.as_mut() {
+            let line = if went_ahead {
+                if (200..300).contains(&code) { String::new() } else { outcome_line(now, &self.trace, principal, "POST", class, entity, code, body) }
+            } else {
+                decision_line(now, &self.trace, principal, "POST", class, entity, code, body)
+            };
+            let _ = f.write_all(line.as_bytes());
+        }
+    }
 }
 
 /// #4933 — where the decision log lives: the same home the request telemetry uses
@@ -2060,7 +2100,7 @@ pub fn set_write_ahead_line(line: String) {
 
 /// The allow line written ahead of the store write (its outcome is not known yet).
 pub fn allow_ahead_line(ts_ms: u128, trace_id: &str, principal: &str, action: &str, class: &str, entity: &str) -> String {
-    decision_line(ts_ms, trace_id, principal, action, class, entity, 0, "").replace("\"outcome\":\"0\"", "\"outcome\":\"pending\"")
+    decision_record(ts_ms, trace_id, principal, action, class, entity, "allow", "", "pending")
 }
 
 /// End the request's write-ahead; true when its allow line went ahead.
@@ -2354,9 +2394,13 @@ pub fn create_refusal(op: &WriteOp, graph: &str, scope: &[String], caller: &str)
 /// #4933 AC2 (ADR-054: authZ is Wren's) — a session acts as a Role only when the
 /// caller's Teammate signs in as the caller's Principal and serves as that Role.
 /// Establishing a session IS role activation, so it is decided here, at the door,
-/// for every write that sets actsAs: a create, every row of a batch, a replace, a
-/// patch, or an added actsAs edge. `serves(caller, role)` is the Teammate read
-/// (the policy data); an unanswered read is 503, never an allow and never a 403.
+/// for every write that sets actsAs: a create, every row of a batch, a replace or a
+/// patch. The body is read by the write path's OWN parsers (review 11-08 20:26), so an
+/// escaped key or an array value is seen exactly as the write will store it; a null
+/// in a patch clears the field and claims no role. (An actsAs edge cannot be added:
+/// the edge route accepts only partof/contains/has-child/consumes-event.)
+/// `serves(caller, role)` is the Teammate read; an unanswered read is 503, never an
+/// allow and never a 403.
 pub fn acts_as_refusal(
     class: &str,
     op: &WriteOp,
@@ -2367,14 +2411,7 @@ pub fn acts_as_refusal(
     if !class.ends_with("#Session") {
         return None;
     }
-    let roles: Vec<String> = match op {
-        WriteOp::AddEdge { edge, .. } if edge == "actsAs" => parse_body_target(body).into_iter().collect(),
-        WriteOp::CreateEntity | WriteOp::CreateBatch | WriteOp::ReplaceEntity { .. } | WriteOp::PatchEntity { .. } => {
-            all_string_fields(body, "actsAs")
-        }
-        _ => Vec::new(),
-    };
-    for role in roles {
+    for role in acts_as_values(op, body) {
         match serves(caller, &role) {
             Ok(true) => {}
             Ok(false) => {
@@ -2383,6 +2420,42 @@ pub fn acts_as_refusal(
             }
             Err(e) => {
                 return Some(write_resp("unavailable", &format!("could not read the caller's Teammate row — the store did not answer ({}); retry, this is not a refusal", e)));
+            }
+        }
+    }
+    None
+}
+
+/// The actsAs values a write would store, read with the write path's parsers. A body
+/// those parsers refuse yields nothing here, and the write itself is refused (422).
+fn acts_as_values(op: &WriteOp, body: &str) -> Vec<String> {
+    let of = |m: std::collections::BTreeMap<String, Vec<String>>| m.get("actsAs").cloned().unwrap_or_default();
+    match op {
+        WriteOp::CreateEntity | WriteOp::ReplaceEntity { .. } => parse_create_object(body).map(of).unwrap_or_default(),
+        WriteOp::PatchEntity { .. } => parse_patch_object(body).map(of).unwrap_or_default(),
+        WriteOp::CreateBatch => split_json_array_objects(body)
+            .map(|objs| objs.into_iter().flat_map(|o| parse_create_object(o).map(of).unwrap_or_default()).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+/// #4933 AC2 (review 11-08 20:26) — POST /create-linked creates rows of several classes
+/// in one batch; every Session row in it is held to the same role-activation rule.
+/// `class_of(path)` is the route table's class for a row's collection path.
+pub fn linked_acts_as_refusal(
+    body: &str,
+    class_of: impl Fn(&str) -> Option<String>,
+    caller: &str,
+    serves: impl Fn(&str, &str) -> Result<bool, String>,
+) -> Option<(u16, String)> {
+    for line in body.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let Some((path, row)) = line.split_once('\t') else { continue };
+        let path = path.trim();
+        let path = path.strip_prefix("/v1").unwrap_or(path);
+        if let Some(class) = class_of(path) {
+            if let Some(refused) = acts_as_refusal(&class, &WriteOp::CreateEntity, row, caller, &serves) {
+                return Some(refused);
             }
         }
     }
@@ -2410,21 +2483,6 @@ pub fn batch_acts_as_refusal(
         }
     }
     None
-}
-
-/// Every string value of `key` in a flat object or an array of flat objects (a
-/// create-batch body), so no row of a batch can carry an unchecked actsAs.
-fn all_string_fields(body: &str, key: &str) -> Vec<String> {
-    let needle = format!("\"{}\"", key);
-    let mut out = Vec::new();
-    let mut rest = body;
-    while let Some(i) = rest.find(&needle) {
-        if let Some(v) = json_field(&rest[i..], key) {
-            out.push(v);
-        }
-        rest = &rest[i + needle.len()..];
-    }
-    out
 }
 
 /// #4933 AC2 — the Teammate read behind acts_as_refusal: does a Teammate in the
@@ -3076,6 +3134,11 @@ pub fn handle_create_linked(body: &str, tables: &[RouteTable], caller_role: &str
             return resp;
         }
     };
+    // #4933 AC2 — a linked create is no way around role activation
+    if let Some(refused) = linked_acts_as_refusal(body, |p| select_table(p, tables).map(|t| t.class.clone()), caller_role, teammate_serves) {
+        emit_write_spine(caller_role, "create-linked", "", "", if refused.0 == 503 { "unavailable" } else { "authz" });
+        return refused;
+    }
     match dal_add_batch(&prepared_create_ndjson(&reqs), token) {
         Ok(_) => {
             emit_write_spine(caller_role, "create-linked", &reqs.len().to_string(), "", "ok");
@@ -6895,7 +6958,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");
                     let token = bearer_token(&auth_hdr);
-                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                    // #4933 AC4 — one decision line for the linked create, written ahead
+                    let opened = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+                    let mut log = CrossClassLog::open(effective_trace(&header("x-chorus-trace-id"), opened, req_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1), opened);
+                    let mut principal = String::new();
+                    let (code, body) = if let Some(refused) = log.refusal() { refused } else { match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (
                             401u16,
                             "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer token is required for a linked create\" }".to_string(),
@@ -6907,9 +6974,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                             let landed_commit = header("x-landed-commit");
                             set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
+                            principal = role.clone();
+                            log.allow(&role, "create-linked", "");
                             with_write_lock(|| handle_create_linked(body_str, tables, &role, token, &landed_commit, &claims.scope))
                         }
-                    };
+                    } };
+                    log.close(&principal, "create-linked", "", code, &body);
                     let resp = http_response_ct(status_line(code), &body, "application/json");
                     let _ = stream.write_all(resp.as_bytes());
                     return;
@@ -6920,13 +6990,8 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let token = bearer_token(&auth_hdr);
                     let mut batch_principal = String::new();
                     let opened = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                    let mut batch_sink = open_decision_sink(&decision_home(), opened);
-                    let batch_trace = effective_trace(&header("x-chorus-trace-id"), opened, req_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
-                    // as above: a handle that cannot be cloned refuses the write, never skips the log
-                    if let Ok(f) = batch_sink.as_ref() {
-                        match f.try_clone() { Ok(c) => arm_write_ahead(c, String::new()), Err(e) => batch_sink = Err(e) }
-                    }
-                    let (code, body) = if let Some(refused) = unlogged_refusal(&batch_sink) { refused } else { match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                    let mut log = CrossClassLog::open(effective_trace(&header("x-chorus-trace-id"), opened, req_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1), opened);
+                    let (code, body) = if let Some(refused) = log.refusal() { refused } else { match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (
                             401u16,
                             "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
@@ -6954,22 +7019,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                     .principal_for(&claims.web_id, now_secs)
                                     .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                                set_write_ahead_line(allow_ahead_line(opened, &batch_trace, &role, "POST", "batch", &target_graph));
+                                log.allow(&role, "batch", &target_graph);
                                 with_write_lock(|| handle_batch_checked(&target_graph, body_str, &role, token, tables))
                             }
                         }
                     } };
                     // #4933 AC4 — the batch's decision, allow or deny, on its own line
-                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                    let went_ahead = disarm_write_ahead();
-                    if let Ok(f) = batch_sink.as_mut() {
-                        let line = if went_ahead {
-                            if (200..300).contains(&code) { String::new() } else { outcome_line(now, &batch_trace, &batch_principal, "POST", "batch", &header("x-target-graph"), code, &body) }
-                        } else {
-                            decision_line(now, &batch_trace, &batch_principal, "POST", "batch", &header("x-target-graph"), code, &body)
-                        };
-                        let _ = f.write_all(line.as_bytes());
-                    }
+                    log.close(&batch_principal, "batch", &header("x-target-graph"), code, &body);
                     let resp = http_response_ct(status_line(code), &body, "application/json");
                     let _ = stream.write_all(resp.as_bytes());
                     return;

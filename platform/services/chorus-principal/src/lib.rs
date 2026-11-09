@@ -680,11 +680,26 @@ fn role_host_account(ctx: &Ctx, role: &str) -> Result<String, String> {
 
 extern "C" { fn dup(fd: i32) -> i32; fn dup2(from: i32, to: i32) -> i32; }
 
+/// This process's terminal, read with stdin inherited (sh() gives a child no stdin,
+/// so `tty` there always says "not a tty"). None when there is no terminal.
+fn own_tty() -> Option<String> {
+    let out = Command::new("tty").stdin(std::process::Stdio::inherit()).output().ok()?;
+    let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if out.status.success() && t.starts_with("/dev/") { Some(t) } else { None }
+}
+
 /// #4933 — while establishing for the wrapper, everything the login prints goes to
 /// stderr: the wrapper captures stdout as CHORUS_RUN, so it must hold the run alone.
 struct StdoutToStderr(i32);
 impl StdoutToStderr {
-    fn new() -> Self { let _ = std::io::Write::flush(&mut std::io::stdout()); StdoutToStderr(unsafe { let s = dup(1); dup2(2, 1); s }) }
+    /// Err when stdout cannot be set aside: then nothing is printed for the wrapper at all
+    fn new() -> Result<Self, String> {
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let saved = unsafe { dup(1) };
+        if saved < 0 { return Err("cannot set stdout aside (dup failed)".into()); }
+        if unsafe { dup2(2, 1) } < 0 { return Err("cannot send login output to stderr (dup2 failed)".into()); }
+        Ok(StdoutToStderr(saved))
+    }
 }
 impl Drop for StdoutToStderr {
     fn drop(&mut self) { let _ = std::io::Write::flush(&mut std::io::stdout()); if self.0 >= 0 { unsafe { dup2(self.0, 1); } } }
@@ -698,9 +713,26 @@ impl Drop for StdoutToStderr {
 /// With `--run` (the launch wrapper) it also writes the run for this pane and
 /// prints only the run's name on stdout, for the runtime's CHORUS_RUN; a pending
 /// login is a failure then, so the wrapper never starts a runtime with no session.
-fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>) -> i32 {
+fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<String>, tty_arg: Option<String>) -> i32 {
     let with_run = run_stamp.is_some();
-    let quiet = if with_run { Some(StdoutToStderr::new()) } else { None };
+    // #4933 (review 20:26) — the pane and tty come from the pane's own shell, outside
+    // sudo (which drops TMUX_PANE). The tty is checked against this process's own:
+    // a role never records another's terminal as its own (Silas 20:27).
+    let own_tty = own_tty();
+    if let Some(claimed) = &tty_arg {
+        if own_tty.as_deref() != Some(claimed.as_str()) {
+            eprintln!("chorus-principal: REFUSED — establish {}: --tty {} is not this process's terminal ({}); a role records only its own", role, claimed, own_tty.as_deref().unwrap_or("none"));
+            return 2;
+        }
+    }
+    let pane = pane_arg.or_else(|| env::var("TMUX_PANE").ok()).unwrap_or_default();
+    let tty = own_tty.unwrap_or_default();
+    let quiet = if with_run {
+        match StdoutToStderr::new() {
+            Ok(q) => Some(q),
+            Err(why) => { eprintln!("chorus-principal: establish {}: {}; not establishing", role, why); return 1; }
+        }
+    } else { None };
     let acct = match role_host_account(ctx, role) {
         Ok(a) => a,
         Err(why) => { eprintln!("chorus-principal: REFUSED — {}; no session established.", why); return 2; }
@@ -722,11 +754,14 @@ fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>) -> i32 {
             ctx.write_state(role, &st);
             match &st {
                 LoginState::Recorded { session, .. } if with_run => {
-                    let pane = env::var("TMUX_PANE").unwrap_or_default();
-                    let tty = sh("tty", &[]).map(|t| t.trim().to_string()).unwrap_or_default();
-                    record_run_stamped(ctx, role, session, &Live { pid: 0, tty, host: "tmux".into(), pane }, "pending", run_stamp.as_deref().unwrap_or_default());
+                    record_run_stamped(ctx, role, session, &Live { pid: 0, tty: tty.clone(), host: "tmux".into(), pane: pane.clone() }, "pending", run_stamp.as_deref().unwrap_or_default());
                     let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
-                    if run.is_empty() { eprintln!("chorus-principal: establish {}: session {} open, but its run was not written", role, session); return 1; }
+                    // the run the launch named, or nothing: the runtime starts on that run only (review 20:26)
+                    let named = run_name(role, run_stamp.as_deref().unwrap_or_default());
+                    if run.is_empty() || !(run == named || run.ends_with(&format!("-{}", named))) {
+                        eprintln!("chorus-principal: establish {}: session {} open, but the run {} the launch named was not written (found '{}')", role, session, named, run);
+                        return 1;
+                    }
                     eprintln!("establish: {}  session {}  run {}  (as {})", role, session, run, acct);
                     drop(quiet);
                     println!("{}", run);
@@ -990,7 +1025,7 @@ pub fn own_account_inner_cmd(
     // #4412 — who started it crosses the account boundary too (sudo drops the env)
     let started_by = clean("CHORUS_STARTED_BY");
     format!(
-        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_TRACE_ID='{}' CHORUS_STARTED_BY='{}' CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ ( bash '{}/platform/scripts/role-post' >/dev/null 2>&1 & ) ; }} && {{ CHORUS_RUN=$('{}' establish '{}' --run '{}') || {{ echo \"chorus-principal: establish failed for {}; not starting {}\" >&2; exit 1; }} ; }} && export CHORUS_RUN && {}",
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_TRACE_ID='{}' CHORUS_STARTED_BY='{}' CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ ( bash '{}/platform/scripts/role-post' >/dev/null 2>&1 & ) ; }} && {{ CHORUS_RUN=$('{}' establish '{}' --run '{}' --pane '__CHORUS_PANE__' --tty '__CHORUS_TTY__') || {{ echo \"chorus-principal: establish failed for {}; not starting {}\" >&2; exit 1; }} ; }} && export CHORUS_RUN && {}",
         role_dir, root, trace, started_by, own_dir, own_token, sessions_dir, role, root, principal_bin, role, run_stamp, role, role, cmd
     )
 }
@@ -1119,7 +1154,10 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, run_sta
             // #4924 — launchctl asuser isolates the role session from Jeff's Aqua Mach bootstrap
             // namespace (gui/501). Silas pinned form: /bin/launchctl asuser <uid> /usr/bin/sudo -n -u <acct> -H bash -c ...
             // If the sudoers rule is not configured, fall back to today's start line with a warning.
-            let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$");
+            // #4933 — the pane's id and tty are filled in by the pane's own shell, before
+            // sudo drops its environment (these two are the only unescaped expansions)
+            let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$")
+                .replace("__CHORUS_PANE__", "$TMUX_PANE").replace("__CHORUS_TTY__", "$(tty)");
             let probe_args = asuser_probe_args(&uid, acct);
             let asuser_check = sh(&ctx.sudo, &probe_args);
             // #4933 — no fallback (Jeff 11-08 11:05): a role that cannot be started
@@ -1174,10 +1212,14 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             let st = ctx.read_state(role);
             let st = match &st {
                 LoginState::Recorded { .. } if lifecycle::login_belongs_to(&st, l.pid) => st.with_pid(l.pid),
-                _ => {
-                    // #4933 AC3 — never logged in from here: the role establishes its own session on its next turn
-                    println!("{} is running without a session; it establishes its own on its next turn", role);
-                    LoginState::Pending { why: format!("{} establishes its own session on its next turn", role), pid: Some(l.pid) }
+                _ => match door_open_row(ctx, role, "identity/sessionruns", "run", "runEndedAt").ok().flatten().and_then(|r| r.get("runOf").and_then(|s| s.as_str()).map(String::from)).filter(|s| !s.is_empty()) {
+                    // #4933 — read back, never written: the role's own open run names its session
+                    Some(session) => LoginState::Recorded { session, pid: Some(l.pid) },
+                    None => {
+                        // never logged in from here: the role establishes its own session on its next turn
+                        println!("{} is running without a session; it establishes its own on its next turn", role);
+                        LoginState::Pending { why: format!("{} establishes its own session on its next turn", role), pid: Some(l.pid) }
+                    }
                 }
             };
             ctx.write_state(role, &st);
@@ -1221,8 +1263,8 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         let tail = fs::read_to_string(projects.join(format!("{}.jsonl", id))).unwrap_or_default();
         transcript_is_poisoned(&tail, window, threshold)
     }).unwrap_or(false);
-    // #4328 — the transcript this run continues, when known at start
-    let conversation = if poisoned { "pending".to_string() } else { dec.attach.clone().or_else(|| latest.clone()).unwrap_or_else(|| "pending".to_string()) };
+    // #4933 — the run is written by the role's own establish ("pending"); its first turn's
+    // seen-write records the transcript it continues (#4328), so nothing is stamped here
     let (cmd, how) = if poisoned {
         let id = latest.clone().unwrap_or_default();
         eprintln!("chorus-principal: the last conversation ({}) ends in API refusals — not resuming it", id);
@@ -1303,7 +1345,6 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         return Err((1, format!("pid {} carries {}", l.pid, other)));
     }
     // read back, never written: the run the launch named, established by the role
-    let _ = &conversation;
     // the launch's own reason (e.g. "identity not answering") is kept when the read-back
     // finds nothing, so a cold start still says WHY it is pending
     let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run_name(role, &stamp), Some(l.pid)));
@@ -1335,7 +1376,7 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
         if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
     }
     let agent_bin = envd("CHORUS_AGENT_BIN", &format!("{}/.chorus/bin/chorus-agent", ctx.home));
-    let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
+    let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("refusing to launch on run {:?}: {}", run, e)))?;
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
     let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
     start_in_pane(ctx, role, &role_dir, &launch)?;
@@ -1394,7 +1435,7 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
     let agent_bin = envd("CHORUS_AGENT_BIN", &format!("{}/.chorus/bin/chorus-agent", ctx.home));
     let gemini_bin = envd("CHORUS_GEMINI_BIN", &format!("{}/.chorus/runtimes/bin/gemini", ctx.home));
     let allow_rules = envd("CHORUS_ALLOW_RULES_FILE", &format!("{}/.claude/settings.json", ctx.home));
-    let cmd = rows::gemini_pane_cmd(&agent_bin, &gemini_bin, &allow_rules, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
+    let cmd = rows::gemini_pane_cmd(&agent_bin, &gemini_bin, &allow_rules, &run).map_err(|e| (1, format!("refusing to launch on run {:?}: {}", run, e)))?;
     let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
     start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut found: Option<Live> = None;
@@ -1550,8 +1591,30 @@ fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool 
 }
 
 /// End the role's saved run (and its presence) if it is still live.
+/// #4933 — the role's open run or presence, read from the door: the one source for
+/// ending a run (the rows live in the role's own account, written by establish, so a
+/// local copy in whoever runs this is not the record). The newest open row of `route`
+/// whose name is `<role>-<kind>-…` (the names establish mints).
+fn door_open_row(ctx: &Ctx, role: &str, route: &str, kind: &str, open_field: &str) -> Result<Option<Value>, String> {
+    let url = if open_field.is_empty() { format!("{}/v1/{}?limit=5000", ctx.api, route) } else { format!("{}/v1/{}?{}.absent=true&limit=5000", ctx.api, route, open_field) };
+    let body = door(ctx, &["-sf", "--max-time", "10", &url]).map_err(|e| format!("the door did not answer: {}", e.trim()))?;
+    let v: Value = serde_json::from_str(&body).map_err(|e| format!("not JSON: {e}"))?;
+    let prefix = format!("{}-{}-", role, kind);
+    Ok(v.get("data").and_then(|d| d.as_array()).into_iter().flatten()
+        .filter(|r| { let n = row_name(r); n.starts_with(&prefix) || n.contains(&format!("-{}", prefix)) })
+        // open, checked here too, not only by the door's filter
+        .filter(|r| open_field.is_empty() || r.get(open_field).and_then(|x| x.as_str()).unwrap_or("").is_empty())
+        .filter(|r| r.get("reachability").and_then(|x| x.as_str()) != Some("unreachable"))
+        .max_by_key(|r| row_name(r))
+        .cloned())
+}
+
 fn end_run(ctx: &Ctx, role: &str, reason: &str) {
-    if let Some(run) = read_row(ctx, role, "run") {
+    // the door is the only source (Jeff 11-08: no fallbacks): never a local copy first
+    // a door that cannot be read is named, never a silent skip (#4895)
+    let run = door_open_row(ctx, role, "identity/sessionruns", "run", "runEndedAt")
+        .map_err(|why| ctx.spine(&["session.row.failed", role, "kind=run", &format!("why={}", why)])).ok().flatten();
+    if let Some(run) = run {
         if run.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() {
             if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
                 if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
@@ -1560,7 +1623,9 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
             }
         }
     }
-    if let Some(p) = presence_now(ctx, role) {
+    let presence = door_open_row(ctx, role, "identity/presences", "presence", "")
+        .map_err(|why| ctx.spine(&["presence.door.unread", role, &format!("why={}", why)])).ok().flatten();
+    if let Some(p) = presence {
         if p.get("reachability").and_then(|r| r.as_str()) != Some("unreachable") {
             if let Some(gone) = rows::gone_presence(p) {
                 if put_row(ctx, role, "identity/presences", "presence", &gone) {
@@ -1784,7 +1849,14 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     // #4933 AC3 — no session yet (the start's establish failed, or a role running from
     // before): the role establishes its own here, as itself; establish refuses any other account
     if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) && read_row(ctx, role, "session").is_none() {
-        let _ = establish(ctx, role, None);
+        // the per-turn hook stays fast (review 20:26): at most one establish a minute
+        let tried = PathBuf::from(&ctx.identity_dir).join(role).join("establish.tried");
+        let recent = fs::metadata(&tried).and_then(|m| m.modified()).ok()
+            .and_then(|t| t.elapsed().ok()).map(|age| age.as_secs() < envd("AWAKE_ESTABLISH_EVERY", "60").parse().unwrap_or(60)).unwrap_or(false);
+        if recent { return 0; }
+        let _ = fs::create_dir_all(tried.parent().unwrap_or(Path::new("/")));
+        let _ = fs::write(&tried, "");
+        let _ = establish(ctx, role, None, None, None);
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { return 0; }
     }
     let now = iso_utc(now_ms() as u64 / 1000);
@@ -2414,7 +2486,7 @@ fn caller_refusal(role: &str, verb: &str) -> Option<String> {
     lifecycle::caller_may_act(in_agent, caller.as_deref(), role, verb).err()
 }
 
-const USAGE: &str = "usage: chorus-principal login|logout|status|up|relogin [name]   (an agent principal: its Principal row decides)
+const USAGE: &str = "usage: chorus-principal login|logout|status|up [name]   (an agent principal: its Principal row decides)
   login <role>   start it logged in, or log in the running one and go to its window (was: on)
   logout <role>  stop it and close its login (was: off)
   status         one line per role: running, logged in, answering
@@ -2464,7 +2536,10 @@ pub fn run(args: &[String]) -> i32 {
         "establish" => match name_arg(1) {
             Ok(r) => match args.iter().position(|a| a == "--run").map(|i| args.get(i + 1).cloned().unwrap_or_default()) {
                 Some(st) if st.is_empty() || !st.bytes().all(|b| b.is_ascii_hexdigit()) => { eprintln!("chorus-principal: establish {} --run needs the launch's hex stamp", r); 2 }
-                stamp => establish(&ctx, &r, stamp),
+                stamp => {
+                    let opt = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1).cloned()).filter(|v| !v.is_empty() && !v.starts_with("__CHORUS_"));
+                    establish(&ctx, &r, stamp, opt("--pane"), opt("--tty"))
+                }
             },
             Err(c) => c,
         },

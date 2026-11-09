@@ -116,11 +116,11 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-fx"}}\n200\n' > "$T/principal-fx.json"
   mk_token fx; mkdir -p "$T/identity/fx"
   : > "$T/curl.log"
-  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 "$SCRIPT" seen fx
+  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 AWAKE_ESTABLISH_EVERY=0 "$SCRIPT" seen fx
   test -z "$(grep -E -- '-X POST.*/v1/identity/sessions' "$T/curl.log" || true)"
   # and the same turn with fx's row naming this account does establish (the pair differs)
   printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
-  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 "$SCRIPT" seen fx
+  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 AWAKE_ESTABLISH_EVERY=0 "$SCRIPT" seen fx
   grep -qE -- '-X POST.*/v1/identity/sessions' "$T/curl.log"
 }
 

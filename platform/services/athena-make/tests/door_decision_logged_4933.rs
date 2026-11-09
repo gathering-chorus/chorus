@@ -136,3 +136,50 @@ fn a_request_that_never_armed_write_ahead_is_not_refused_by_it() {
     // the deploy and tests call the DAL outside a served request
     assert!(write_ahead().is_ok());
 }
+
+// --- code review 20:26: /create-linked (and /batch) get exactly one decision line ---
+
+use athena_make::{CrossClassLog, open_decision_sink as _ods};
+
+fn lines_in(home: &std::path::Path) -> Vec<String> {
+    let logs = home.join("ops/logs");
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(&logs).into_iter().flatten().flatten() {
+        out.extend(std::fs::read_to_string(e.path()).unwrap_or_default().lines().map(String::from));
+    }
+    out
+}
+
+#[test]
+fn a_cross_class_write_leaves_exactly_one_line_allow_or_deny_and_refuses_when_unloggable() {
+    let _ = _ods; // same sink the entity path opens
+    let home = std::env::temp_dir().join(format!("xlog-4933-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    std::env::set_var("CHORUS_HOME", &home);
+
+    // allowed and written: the allow line goes ahead of the store write, nothing after
+    let mut log = CrossClassLog::open("t-allow".into(), 1_700_000_000_000);
+    assert!(log.refusal().is_none());
+    log.allow("kade", "create-linked", "");
+    athena_make::write_ahead().unwrap();                 // the store write's first call
+    log.close("kade", "create-linked", "", 201, r#"{ "status": "created" }"#);
+    // refused before any store write: one deny line
+    let mut log = CrossClassLog::open("t-deny".into(), 1_700_000_000_000);
+    log.allow("kade", "create-linked", "");
+    log.close("kade", "create-linked", "", 403, r#"{ "error": "not-served" }"#);
+    let l = lines_in(&home);
+    assert_eq!(l.len(), 2, "{l:?}");
+    assert!(l[0].contains("\"decision\":\"allow\"") && l[0].contains("t-allow"), "{}", l[0]);
+    assert!(l[1].contains("\"decision\":\"deny\"") && l[1].contains("not-served") && l[1].contains("t-deny"), "{}", l[1]);
+
+    // NEGATIVE PROOF: an unloggable home refuses the write (503), nothing written
+    let blocked = home.join("blocked"); std::fs::create_dir_all(&blocked).unwrap();
+    std::fs::write(blocked.join("ops"), "not a dir").unwrap();
+    std::env::set_var("CHORUS_HOME", &blocked);
+    let log = CrossClassLog::open("t-x".into(), 1_700_000_000_000);
+    assert_eq!(log.refusal().map(|(c, _)| c), Some(503));
+    let _ = athena_make::disarm_write_ahead();
+    std::env::remove_var("CHORUS_HOME");
+    let _ = std::fs::remove_dir_all(&home);
+}

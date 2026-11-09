@@ -39,7 +39,9 @@ fn the_runtime_starts_only_after_establish_and_carries_its_run() {
     let (d, cmd) = world(0);
     let out = Command::new("bash").args(["-c", &cmd]).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(fs::read_to_string(d.path("est.args")).unwrap().trim(), "establish fx --run 18f2a");
+    // the pane and tty placeholders are filled by the pane's outer shell (launch_line);
+    // run directly here, they arrive as written and establish ignores them
+    assert_eq!(fs::read_to_string(d.path("est.args")).unwrap().trim(), "establish fx --run 18f2a --pane __CHORUS_PANE__ --tty __CHORUS_TTY__");
     assert_eq!(fs::read_to_string(d.path("started")).unwrap().trim(), "fx-run-1");
 }
 
@@ -126,4 +128,11 @@ fn negative_proof_an_unknown_account_is_refused_even_against_an_empty_row() {
     // `!me.is_empty()` matters: an empty id must never match an empty hostAccount
     assert!(establish_refusal("fx", "", "").is_some());
     assert!(establish_refusal("fx", "chorus-fx", "").is_some());
+}
+
+#[test]
+fn the_wrapper_hands_establish_the_panes_own_id_and_tty_from_outside_sudo() {
+    let _g = env_lock();
+    let cmd = own_account_inner_cmd("/r/roles/fx", "/r", "/h/id", "/h/id/fx/token.cache", "/s", "fx", "/b/chorus-principal", "1a2b", "true");
+    assert!(cmd.contains("--pane '__CHORUS_PANE__' --tty '__CHORUS_TTY__'"), "{cmd}");
 }

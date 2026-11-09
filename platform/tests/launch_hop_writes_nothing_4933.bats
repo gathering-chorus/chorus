@@ -104,3 +104,41 @@ signins() { grep -c "token fx" "$T/token.log" 2>/dev/null || true; }
   test "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" -eq 1
   printf '%s' "$out" | grep -qE '^[a-z-]*fx-run-1a2b$'
 }
+
+@test "logout (Jeff's act) ends the role's run and retires its presence even with no local copy of the rows" {
+  # the rows were written by the role's own establish, into the role's account: the
+  # launcher holds no run.row.json / presence.row.json, so it finds them through the door
+  printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
+  run "$SCRIPT" establish fx --run 1a2b
+  test "$status" -eq 0
+  rm -f "$T/identity/fx/run.row.json" "$T/identity/fx/presence.row.json"
+  run "$SCRIPT" off fx
+  echo "$output"
+  r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* 2>/dev/null | tail -1); printf '%s' "$r" | grep -q '"endReason":"logout"'
+  p=$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | tail -1); printf '%s' "$p" | grep -q '"reachability":"unreachable"'
+}
+
+@test "the pane the launch names reaches the role's presence row (sudo drops TMUX_PANE, so it travels as an argument)" {
+  printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
+  run env -u TMUX_PANE "$SCRIPT" establish fx --run 1a2b --pane %7
+  test "$status" -eq 0
+  p=$(cat "$T"/bodies/*POST-identity_presences*.json | tail -1); printf '%s' "$p" | grep -q '"pane":"%7"'
+}
+
+@test "NEGATIVE PROOF: a role cannot claim another terminal: a --tty that is not its own is refused" {
+  printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
+  : > "$T/curl.log"
+  run "$SCRIPT" establish fx --run 1a2b --pane %7 --tty /dev/ttys999
+  test "$status" -ne 0
+  printf '%s' "$output" | grep -q "tty"
+  test -z "$(grep -E -- '-X POST' "$T/curl.log" || true)"
+}
+
+@test "a turn with no session tries establish at most once a minute (the per-turn hook stays fast)" {
+  # fx's row names chorus-fx, so each establish that runs is refused and says so
+  turn() { echo "{\"prompt\":\"$1\"}" | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 "${@:2}" "$SCRIPT" seen fx 2>&1 | grep -c "REFUSED — establish fx" || true; }
+  test "$(turn a env)" -eq 1
+  test "$(turn b env)" -eq 0
+  # NEGATIVE PROOF: with the bound at 0 the next turn tries again
+  test "$(turn c env AWAKE_ESTABLISH_EVERY=0)" -eq 1
+}
