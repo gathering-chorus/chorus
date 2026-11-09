@@ -156,10 +156,73 @@ fn commit_time(sha: &str) -> Option<u64> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
+fn read_codesign_cdhash(codesign_bin: &str, bin: &str) -> Option<String> {
+    let bin_dir = env("CHORUS_BIN_DIR", &format!("{}/.chorus/bin", env("HOME", "")));
+    let p = format!("{bin_dir}/{bin}");
+    let out = Command::new(codesign_bin)
+        .args(["--display", "--verbose=3", &p])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stderr);
+    text.lines().find_map(|l| l.strip_prefix("CDHash=").map(|s| s.trim().to_string()))
+}
+
+fn check_manifest(
+    card: u32,
+    expected_override: Option<&[String]>,
+    deploy_log_path: Option<&str>,
+    codesign_bin: Option<&str>,
+) -> Outcome {
+    let door = env("CHORUS_DOOR", "http://127.0.0.1:3360");
+    let url = format!("{}/v1/cicd/deployments", door.trim_end_matches('/'));
+    let Some(body) = curl(&[&url]) else {
+        return Outcome::Unmeasured(format!("door did not answer at {url}"));
+    };
+    let records = match parse_deployments_for_card_checked(&body, card) {
+        Ok(r) => r,
+        Err(e) => return Outcome::Unmeasured(format!("door returned unparseable manifest: {e}")),
+    };
+
+    let expected = if let Some(exp) = expected_override {
+        exp.to_vec()
+    } else {
+        let home = env("CHORUS_HOME", "");
+        let default_log = format!("{home}/ops/logs/werk-deploy.jsonl");
+        let log_path = deploy_log_path.unwrap_or(&default_log);
+        let log_text = match std::fs::read_to_string(log_path) {
+            Ok(t) => t,
+            Err(e) => return Outcome::Unmeasured(format!("deploy log is unreadable at {log_path}: {e}")),
+        };
+        let land_trace = std::env::var("CHORUS_TRACE_ID").ok().filter(|s| !s.trim().is_empty())
+            .or_else(|| std::fs::read_to_string(format!("/tmp/{card}-trace")).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()));
+        units_from_deploy_log(&log_text, card, land_trace.as_deref())
+    };
+
+    let codesign = codesign_bin.unwrap_or("codesign");
+    let reader = |bin: &str| read_codesign_cdhash(codesign, bin);
+    match verify_manifest_records(&records, &expected, card, reader) {
+        Ok(0) => Outcome::Met("no binaries deployed for this card".into()),
+        Ok(n) => Outcome::Met(format!("verified {n} deployment record(s)")),
+        Err(why) => Outcome::NotMet(why),
+    }
+}
+
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     println!("#{card} against {base}");
     let cs = checks(card);
-    let results: Vec<(Check, Outcome)> = cs.into_iter().map(|c| { let o = judge(&c, &probe(&c, base, card)); (c, o) }).collect();
+    let mut results: Vec<(Check, Outcome)> = cs.into_iter().map(|c| { let o = judge(&c, &probe(&c, base, card)); (c, o) }).collect();
+
+    // #4773 AC4 / AC5 — manifest step after the card's own checks (runs even if cs is empty)
+    let manifest_check = Check {
+        ac: format!("ac-{card}-manifest"),
+        statement: "deployment manifest matches running cdhash".to_string(),
+        kind: "manifest".to_string(),
+        target: "cicd/deployments".to_string(),
+        expect: "verified".to_string(),
+    };
+    let manifest_outcome = check_manifest(card, None, None, None);
+    results.push((manifest_check, manifest_outcome));
+
     for (c, o) in &results {
         println!("{:<12} {:<10} {}\n             {}", c.ac, o.word(), c.statement, o.evidence());
     }
@@ -337,6 +400,32 @@ fn main() {
     };
     let role = a.get(2).cloned().unwrap_or_default();
     match mode.as_str() {
+        // #4773 AC4 / AC5 — read manifest from door, assert prod running hashes match
+        "manifest" => {
+            let expected_arg: Option<Vec<String>> = a.get(2).and_then(|s| {
+                if s == "-" || s == "auto" {
+                    None
+                } else {
+                    Some(s.split(',').map(|u| u.trim().to_string()).filter(|u| !u.is_empty()).collect())
+                }
+            });
+            let log_arg = a.get(3).and_then(|s| if s == "-" { None } else { Some(s.as_str()) });
+            let codesign_arg = a.get(4).map(|s| s.as_str());
+            match check_manifest(card, expected_arg.as_deref(), log_arg, codesign_arg) {
+                Outcome::Met(ev) => {
+                    println!("#{card} manifest: {ev}");
+                    exit(0);
+                }
+                Outcome::NotMet(why) => {
+                    eprintln!("#{card} manifest: REFUSED: {why}");
+                    exit(1);
+                }
+                Outcome::Unmeasured(why) | Outcome::Deferred(why) => {
+                    eprintln!("#{card} manifest: {why}");
+                    exit(1);
+                }
+            }
+        }
         // #4875 — the card's AC as the go message shows them: one line each, box state from the
         // same parser borg-prove proves with. Exit 1 (named) when the board does not answer.
         "ac" => {
@@ -380,7 +469,8 @@ fn main() {
                 exit(1);
             }
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
-            let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
+            let card_has_ac = !checks(card).is_empty();
+            let v = if !card_has_ac { NO_ROWS } else { verdict(&r) };
             println!("#{card} verify in prod: {v}");
             if !prod_passes(v) { exit(1) }
         }
@@ -407,7 +497,8 @@ fn main() {
                 eprintln!("#{card} record: prod's results are not readable at {} ({e}): nothing recorded, accept held", path.display());
                 exit(1)
             });
-            let v = if r.is_empty() { NO_ROWS } else { verdict(&r) };
+            let card_has_ac = !checks(card).is_empty();
+            let v = if !card_has_ac { NO_ROWS } else { verdict(&r) };
             println!("#{card} record: {v}");
             record(card, &role, v, &r);
             // #4889 — a Proven card with `after` checks lands Done; they stay open, named on it

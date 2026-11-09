@@ -6,6 +6,7 @@ edition = "2021"
 # Zero-dep blueprint (ADR-032 §1): std only; werk-build, chorus-bin-install,
 # launchctl, codesign all invoked as subprocesses, never code dependencies.
 [dependencies]
+serde_json = "1"
 
 [[bin]]
 name = "werk-deploy"

@@ -1769,6 +1769,13 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
         ("cdhash", &cdhash), ("deploy_target", "canonical"), ("live_main", live_main(&root)),
         ("duration_ms", &ms),
     ]);
+    // #4773 AC3: record deployment manifest to door
+    let bin = match target_class_in(name, Path::new(&root)) {
+        Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => bin,
+        _ => name.to_string(),
+    };
+    let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+    let _ = record_deployment(home, card, &commit, name, &bin, role, &machine, false, trace);
     Ok(name.to_string())
 }
 
@@ -1810,6 +1817,15 @@ fn run_crate_mode(args: &[String]) -> R<String> {
             wait_for_service_up(&svc)?;
         }
         emit_spine(&home, "deploy.rolled_back", &role, card, &trace, &[("crate", &name)]);
+        // #4773 AC7 / AC3: post rollback manifest to door
+        let bin = match target_class_in(&name, Path::new(&root)) {
+            Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => bin,
+            _ => name.clone(),
+        };
+        let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+        let commit = run_env(Some(&root), &[], "git", &["-C", &root, "rev-parse", "--short", "HEAD"])
+            .map(|s| s.trim().to_string()).unwrap_or_else(|_| "unknown".to_string());
+        let _ = record_deployment(&home, card, &commit, &name, &bin, &role, &machine, true, &trace);
         return Ok(format!("{} rolled back target=canonical", name));
     }
     jsonl(&home, &role, card, &trace, "deploy.started", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"crate\":\"{}\"", name));
@@ -2538,6 +2554,15 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             deployed_commit, landed_commit.unwrap_or("")
         ));
     }
+    // #4773 AC3: post deployment manifest for each deployed crate
+    let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+    for c in &crates {
+        let bin = match target_class_in(c, Path::new(root.as_str())) {
+            Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => bin,
+            _ => c.to_string(),
+        };
+        let _ = record_deployment(home, card, &deployed_commit, c, &bin, role, &machine, false, trace);
+    }
     Ok(format!("{} target=canonical", only))
 }
 
@@ -2566,6 +2591,231 @@ fn now_epoch() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// #4773 AC3 — compute sha256 of installed binary file
+pub fn file_sha256(path: &str) -> Option<String> {
+    if !Path::new(path).is_file() {
+        return None;
+    }
+    run_env(None, &[], "shasum", &["-a", "256", path])
+        .ok()
+        .and_then(|out| out.split_whitespace().next().map(|s| s.to_string()))
+}
+
+/// #4773 AC3 — format current UTC timestamp in ISO 8601
+pub fn iso8601_now() -> String {
+    run_env(None, &[], "date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+/// #4773 AC8 — resolve deployer token (mint via chorus-identity-token deployer)
+pub fn resolve_deployer_token(home: &Path) -> Option<String> {
+    let script = home.join("platform/scripts/chorus-identity-token");
+    if script.is_file() {
+        run_env(None, &[], script.to_str().unwrap(), &["deployer"])
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+    } else {
+        None
+    }
+}
+
+/// #4773 AC3 / AC6 — look up latest Deployment row for this binary
+pub fn latest_deployment_for_binary(door_url: &str, bin: &str) -> Option<String> {
+    let url = format!("{}/v1/cicd/deployments", door_url.trim_end_matches('/'));
+    let out = Command::new("curl")
+        .args(["-s", "-S", "-m", "5", &url])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let data = v.get("data")?.as_array()?;
+
+    let mut matching: Vec<&serde_json::Value> = data
+        .iter()
+        .filter(|row| {
+            if let Some(unit) = row.get("deployedUnit").and_then(|u| u.as_str()) {
+                unit == bin
+            } else if let Some(name) = row.get("name").and_then(|n| n.as_str()) {
+                let parts: Vec<&str> = name.split('-').collect();
+                parts.len() >= 3 && parts[parts.len() - 2] == bin
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    matching.sort_by_key(|row| row.get("deployedAt").and_then(|d| d.as_str()).unwrap_or(""));
+    matching.last().and_then(|row| row.get("name")?.as_str().map(|s| s.to_string()))
+}
+
+/// #4773 AC3 — post verifiable deployment manifest to the door (/v1/cicd/deployments)
+pub fn post_deployment_manifest(
+    door_url: &str,
+    token: Option<&str>,
+    card: u64,
+    commit: &str,
+    bin_name: &str,
+    cdhash: &str,
+    sha256: &str,
+    role: &str,
+    target_machine: &str,
+    previous: Option<&str>,
+    rollback_of: Option<&str>,
+) -> R<String> {
+    let url = format!("{}/v1/cicd/deployments", door_url.trim_end_matches('/'));
+    let now = iso8601_now();
+    let epoch = now_epoch();
+    let dep_id = format!("dep-{}-{}-{}", card, bin_name, epoch);
+    let landed_for = if role.starts_with("role-") {
+        role.to_string()
+    } else {
+        format!("role-{}", role)
+    };
+    let machine = if target_machine.is_empty() { "library" } else { target_machine };
+
+    let mut obj = serde_json::Map::new();
+    obj.insert("name".into(), serde_json::Value::String(dep_id.clone()));
+    obj.insert("cardId".into(), serde_json::Value::String(card.to_string()));
+    obj.insert("deployedCommit".into(), serde_json::Value::String(commit.to_string()));
+    obj.insert("deployedUnit".into(), serde_json::Value::String(bin_name.to_string()));
+    obj.insert("cdhash".into(), serde_json::Value::String(cdhash.to_string()));
+    obj.insert("sha256".into(), serde_json::Value::String(sha256.to_string()));
+    obj.insert("deployedAt".into(), serde_json::Value::String(now));
+    obj.insert("deployedBy".into(), serde_json::Value::String("principal-deployer".to_string()));
+    obj.insert("landedFor".into(), serde_json::Value::String(landed_for));
+    obj.insert("targetMachine".into(), serde_json::Value::String(machine.to_string()));
+    if let Some(prev) = previous {
+        if !prev.is_empty() {
+            obj.insert("previous".into(), serde_json::Value::String(prev.to_string()));
+        }
+    }
+    if let Some(rb) = rollback_of {
+        if !rb.is_empty() {
+            obj.insert("rollbackOf".into(), serde_json::Value::String(rb.to_string()));
+        }
+    }
+    let body = serde_json::Value::Object(obj).to_string();
+
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-s",
+        "-S",
+        "-m",
+        "5",
+        "-X",
+        "POST",
+        "-H",
+        "Content-Type: application/json",
+        "-w",
+        "\n%{http_code}",
+    ]);
+    let stdin_payload = match token {
+        Some(tok) if !tok.is_empty() => {
+            cmd.args(["-K", "-"]);
+            Some(format!("header = \"Authorization: Bearer {}\"\n", tok))
+        }
+        _ => None,
+    };
+    cmd.args(["-d", &body, &url]);
+
+    let out = if let Some(cfg) = stdin_payload {
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| format!("curl spawn failed: {}", e))?;
+        if let Some(mut si) = child.stdin.take() {
+            use std::io::Write;
+            let _ = si.write_all(cfg.as_bytes());
+        }
+        child.wait_with_output().map_err(|e| format!("curl wait failed: {}", e))?
+    } else {
+        cmd.output().map_err(|e| format!("curl output failed: {}", e))?
+    };
+
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let lines: Vec<&str> = text.trim().rsplitn(2, '\n').collect();
+    let code = lines.first().and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
+    let resp_body = if lines.len() > 1 { lines[1] } else { "" };
+    if code != 200 && code != 201 {
+        return Err(format!("POST {} returned {}: {}", url, code, resp_body));
+    }
+    Ok(dep_id)
+}
+
+/// #4773 AC3 — record deployment manifest for a deployed binary (new deploy or rollback)
+pub fn record_deployment(
+    home: &Path,
+    card: u64,
+    commit: &str,
+    crate_name: &str,
+    bin: &str,
+    role: &str,
+    target_machine: &str,
+    rollback: bool,
+    trace: &str,
+) -> R<String> {
+    let bin_path = installed_path("canonical", role, bin);
+    let cdhash = file_cdhash(&bin_path).unwrap_or_default();
+    let sha256 = file_sha256(&bin_path).unwrap_or_default();
+    let door = env::var("CHORUS_DOOR").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
+    let token = resolve_deployer_token(home);
+
+    let latest = latest_deployment_for_binary(&door, bin);
+    let (previous, rollback_of) = if rollback {
+        (None, latest.as_deref())
+    } else {
+        (latest.as_deref(), None)
+    };
+
+    match post_deployment_manifest(
+        &door,
+        token.as_deref(),
+        card,
+        commit,
+        bin,
+        &cdhash,
+        &sha256,
+        role,
+        target_machine,
+        previous,
+        rollback_of,
+    ) {
+        Ok(dep_id) => {
+            emit_spine(
+                home,
+                "deployment.manifest.posted",
+                role,
+                card,
+                trace,
+                &[
+                    ("crate", crate_name),
+                    ("deployment_id", &dep_id),
+                    ("cdhash", &cdhash),
+                    ("rollback", if rollback { "true" } else { "false" }),
+                ],
+            );
+            Ok(dep_id)
+        }
+        Err(e) => {
+            emit_spine(
+                home,
+                "deployment.manifest.failed",
+                role,
+                card,
+                trace,
+                &[("crate", crate_name), ("reason", &e), ("failureClass", "tooling")],
+            );
+            eprintln!("werk-deploy: warning: failed to post deployment manifest: {}", e);
+            Err(e)
+        }
+    }
 }
 
 /// #3517 inc2 — did the daemon's LIVE process restart onto the just-installed file? Impure
@@ -4025,5 +4275,118 @@ mod rollback_stop_4446 {
         assert!(f.contains(&("service", "com.chorus.hooks".to_string())));
         assert!(f.contains(&("reason", "rollback: cdhash-mismatch".to_string())));
         assert!(f.contains(&("by", "werk-deploy".to_string())));
+    }
+}
+
+#[cfg(test)]
+mod manifest_4773 {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn start_stub_door(expect_fail: bool) -> (String, std::sync::mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub door");
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{}", port);
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if let Ok(mut s) = stream {
+                    let mut buf = [0u8; 4096];
+                    let n = s.read(&mut buf).unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = tx.send(req.clone());
+
+                    if req.starts_with("GET ") {
+                        let body = r#"{"apiVersion":"v1","kind":"Deployment","data":[{"name":"dep-prior-testbin"}]}"#;
+                        let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                        let _ = s.write_all(resp.as_bytes());
+                    } else if expect_fail {
+                        let body = r#"{"error":"validation","message":"rejected by stub"}"#;
+                        let resp = format!("HTTP/1.1 422 Unprocessable Entity\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                        let _ = s.write_all(resp.as_bytes());
+                    } else {
+                        let body = r#"{"status":"created","name":"dep-new"}"#;
+                        let resp = format!("HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                        let _ = s.write_all(resp.as_bytes());
+                    }
+                }
+            }
+        });
+
+        (url, rx)
+    }
+
+    #[test]
+    fn test_post_deployment_manifest_to_stub_door() {
+        let (door, rx) = start_stub_door(false);
+        let res = post_deployment_manifest(&door, Some("mock-token"), 4773, "commit123", "testbin", "cdhash123", "sha256abc", "silas", "library", Some("dep-prior"), None);
+        assert!(res.is_ok(), "posting manifest to stub door should succeed: {:?}", res);
+        let req = rx.recv().expect("receive request");
+        assert!(req.contains("Authorization: Bearer mock-token"), "request must carry token: {req}");
+        assert!(req.contains("\"previous\":\"dep-prior\""), "request must carry previous: {req}");
+        assert!(req.contains("\"targetMachine\":\"library\""), "request must carry targetMachine: {req}");
+        assert!(req.contains("\"deployedBy\":\"principal-deployer\""), "request must carry deployedBy=principal-deployer: {req}");
+        assert!(req.contains("\"landedFor\":\"role-silas\""), "request must carry landedFor=role-silas: {req}");
+    }
+
+    #[test]
+    fn test_record_deployment_to_door() {
+        if let Ok(door) = env::var("CHORUS_DOOR") {
+            let res = post_deployment_manifest(&door, Some("mock-token"), 4773, "commit123", "testbin", "cdhash123", "sha256abc", "silas", "library", Some("dep-prior"), None);
+            assert!(res.is_ok(), "posting manifest to CHORUS_DOOR should succeed: {:?}", res);
+        }
+    }
+
+    #[test]
+    fn test_post_rollback_manifest_to_stub_door() {
+        let (door, rx) = start_stub_door(false);
+        let res = post_deployment_manifest(&door, Some("mock-token"), 4773, "commit123", "testbin", "cdhash123", "sha256abc", "silas", "library", None, Some("dep-prior"));
+        assert!(res.is_ok(), "posting rollback manifest to stub door should succeed: {:?}", res);
+        let req = rx.recv().expect("receive request");
+        assert!(req.contains("\"rollbackOf\":\"dep-prior\""), "request must carry rollbackOf: {req}");
+    }
+
+    #[test]
+    fn test_post_manifest_rejection_returns_error() {
+        let (door, _) = start_stub_door(true);
+        let res = post_deployment_manifest(&door, Some("mock-token"), 4773, "commit123", "testbin", "cdhash123", "sha256abc", "silas", "library", None, None);
+        assert!(res.is_err(), "posting to rejected stub door must return Err: {:?}", res);
+    }
+
+    #[test]
+    fn test_latest_deployment_filters_exact_unit_and_picks_newest() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if let Ok(mut s) = stream {
+                    let mut buf = [0u8; 1024];
+                    let _ = s.read(&mut buf);
+                    let body = r#"{
+                        "apiVersion": "v1",
+                        "kind": "Deployment",
+                        "data": [
+                            {"name": "dep-old-werk", "deployedUnit": "werk", "deployedAt": "2026-11-09T10:00:00Z"},
+                            {"name": "dep-old-wd", "deployedUnit": "werk-deploy", "deployedAt": "2026-11-09T10:15:00Z"},
+                            {"name": "dep-new-wd", "deployedUnit": "werk-deploy", "deployedAt": "2026-11-09T11:00:00Z"}
+                        ]
+                    }"#;
+                    let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                    let _ = s.write_all(resp.as_bytes());
+                }
+            }
+        });
+
+        // Exact match for "werk" must NOT return "dep-new-wd"
+        let latest_werk = latest_deployment_for_binary(&url, "werk");
+        assert_eq!(latest_werk, Some("dep-old-werk".into()));
+
+        // Exact match for "werk-deploy" must return the newest one ("dep-new-wd")
+        let latest_wd = latest_deployment_for_binary(&url, "werk-deploy");
+        assert_eq!(latest_wd, Some("dep-new-wd".into()));
     }
 }

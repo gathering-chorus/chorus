@@ -2430,6 +2430,33 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "deployment.manifest.posted": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "#4773 AC3 — deployment manifest record posted to door on deploy or rollback.",
+      "fields": {
+        "crate": "Cargo crate name",
+        "deployment_id": "Minted Deployment entity ID",
+        "cdhash": "Installed binary cdhash",
+        "rollback": "true|false — whether this manifest records a rollback"
+      }
+    },
+    "deployment.manifest.failed": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "#4773 AC3 — posting deployment manifest to door failed.",
+      "fields": {
+        "crate": "Cargo crate name",
+        "reason": "Failure error message",
+        "failureClass": "change|tooling discriminator (#3513)"
+      }
+    },
     "deploy.restarted": {
       "producer": "deploys",
       "category": "fact",
