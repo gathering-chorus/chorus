@@ -276,9 +276,10 @@ chorus:HumanRole owl:deprecated true ;
 # --- #4576 Teammate (Jeff 2026-10-17 07:38: the page word names the class) --------------
 # Someone on the team, a person or an agent: Jeff, Silas, Kade, Wren, Abby Normal.
 # Not a Principal (the identity a credential proves, in security) and not a Role (a job).
-# chorus:Actor keeps its own meaning: an actor in a test scenario.
+# A Teammate is an Actor (decided #4662, built #4933): whoever acts, with an actorKind.
 
 chorus:Teammate a owl:Class ;
+    rdfs:subClassOf chorus:Actor ;
     rdfs:label "Teammate" ;
     rdfs:comment "Someone on the team who does work, a person or an agent. Signs in as exactly one Principal and serves in one or more Roles." .
 chorus:roles chorus:definesVocabulary chorus:Teammate .

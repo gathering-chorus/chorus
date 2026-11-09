@@ -18,7 +18,7 @@ setup() {
   # SHACL cannot parse would make every verdict "not conforming" for the wrong
   # reason. sh:node CoreShape is dropped too: CoreShape's fields are optional.
   riot --output=nt "$REPO/roles/kade/ontology/werk-domains.ttl" 2>/dev/null \
-    | grep -E '^<https://jeffbridwell\.com/chorus#(Actor|Persona)Shape' \
+    | grep -E '^(_:|<https://jeffbridwell\.com/chorus#(Actor|Persona)Shape)' \
     | grep -vE 'shacl#(sparql|node)>' > "$SHAPES"
   PREFIX='@prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .

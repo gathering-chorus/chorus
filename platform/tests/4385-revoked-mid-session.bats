@@ -17,6 +17,9 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes its session (as the account running
+  # the test); the launcher writes nothing, so every row below is the role's own
+  for r in silas kade wren; do est "$r"; done
 }
 turn() { run bash -c "echo '{\"session_id\":\"c-4385\",\"prompt\":\"<task-notification>x</task-notification>\"}' | AWAKE_SEEN_SYNC=1 '$SCRIPT' seen wren"; }
 revoke() { printf '{}\n404\n' > "$T/principal-wren.json"; }
@@ -72,7 +75,7 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
 @test "#4385 a principal that is restored can log in again and its turns run" {
   "$SCRIPT" login wren >/dev/null 2>&1
   revoke; turn
-  rm -f "$T/principal-wren.json"      # the harness answers agent again
+  est wren      # restored: the row answers agent again, naming wren's account (#4933: stated, not the default)
   run "$SCRIPT" login wren
   test "$status" -eq 0
   turn

@@ -19,6 +19,9 @@ setup() {
   # #4409 — the shared fixture world (lib/login-harness.bash), not a copy of it
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes its session (as the account running
+  # the test); the launcher writes nothing, so every row below is the role's own
+  for r in silas kade wren; do est "$r"; done
 }
 
 out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }

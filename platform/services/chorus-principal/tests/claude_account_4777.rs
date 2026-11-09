@@ -95,6 +95,8 @@ fn own_account_launch_line_exports_shared_sessions_dir_runs_post_no_key() {
         "/Users/chorus-silas/.chorus/identity/silas/token.cache",
         "/Users/jeffbridwell/.chorus/sessions",
         "silas",
+        "/b/chorus-principal",
+        "18f2a",
         "claude -c",
     );
     assert!(inner.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{inner}");

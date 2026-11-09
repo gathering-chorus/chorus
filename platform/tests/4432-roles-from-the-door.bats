@@ -24,7 +24,8 @@ setup() {
 }
 
 @test "a name the door does not list is refused, naming the door's roles" {
-  run "$SCRIPT" relogin nobody
+  # #4933 — relogin is retired; credentials is the verb that still reads the door's roles
+  CHORUS_ROLE=silas run "$SCRIPT" credentials nobody
   test "$status" -eq 2
   printf '%s' "$output" | grep -qF "unknown role 'nobody' (abby-normal | kade | silas | wren)"
 }
@@ -35,7 +36,7 @@ setup() {
 # it here exited 0 and reddened main from 10-14.
 @test "NEGATIVE PROOF: with the door down even wren is refused, loudly" {
   touch "$T/roles-door-down"
-  run "$SCRIPT" relogin wren
+  CHORUS_ROLE=silas run "$SCRIPT" credentials wren
   test "$status" -eq 2
   printf '%s' "$output" | grep -qF "REFUSED"
 }

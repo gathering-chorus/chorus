@@ -629,10 +629,16 @@ chorus:PersonaShape-playsRole a sh:PropertyShape ;
 chorus:ActorShape a sh:NodeShape ;
     sh:targetClass chorus:Actor ; sh:node chorus:CoreShape ;
     sh:property chorus:ActorShape-label ;
-    sh:property chorus:ActorShape-actorKind .
+    sh:property chorus:ActorShape-actorKind ;
+    # #4933: an Actor states its kind, or signs in as a Principal that carries one
+    # (principalKind, in security). The requirement sits in sh:or so the generator,
+    # which reads sh:property paths only, keeps one plain optional actorKind field.
+    sh:or ( [ sh:path chorus:actorKind ; sh:minCount 1 ] [ sh:path chorus:signsInAs ; sh:minCount 1 ] ) .
 chorus:ActorShape-label a sh:PropertyShape ;
-    sh:path rdfs:label ; sh:minCount 1 .
+    # #4933 — a string, as every subclass's label is (Teammate inherits this shape; a
+    # plain label beside TeammateShape's string label is refused by #4163)
+    sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string .
 chorus:ActorShape-actorKind a sh:PropertyShape ;
-    sh:path chorus:actorKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:path chorus:actorKind ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(person|agent|service)$" ;
     sh:message "actorKind is one of person / agent / service" .

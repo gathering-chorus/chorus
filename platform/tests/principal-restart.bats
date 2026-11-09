@@ -77,6 +77,7 @@ trace_log() { printf '#!/bin/bash\necho "trace=${CHORUS_TRACE_ID:-} $*" >> "%s/s
 
 @test "one login, one trace: every event it writes carries the trace it printed" {
   trace_log
+  est silas   # #4933 — silas's own wrapper establishes (stated account); its events must join this trace too
   run "$SCRIPT" login silas
   [ "$status" -eq 0 ]
   t=$(printf '%s\n' "$output" | sed -n 's/^trace: //p' | head -1)

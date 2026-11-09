@@ -22,7 +22,12 @@ setup() {
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"
 
   run "$PRINCIPAL_BIN" login silas
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # #4933 — this case pins silas's real account (chorus-silas, uid 502) to match the
+  # sudoers rule, so silas's own establish cannot run here and the role does not come
+  # up. What it guards is the launch line: the pane was launched, and the only refusal
+  # is establish's account check (never the launcher's).
+  grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log" || { echo "$output"; return 1; }
+  grep -q "runs as chorus-silas" "$T/establish.log" || { echo "$output"; cat "$T/establish.log"; return 1; }
 
   # Shared source of truth: platform/config/chorus-role-asuser.sudoers
   # Extract the pinned rule for silas (uid 502) and match prefix against emitted command line
@@ -42,7 +47,12 @@ setup() {
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"
 
   run "$PRINCIPAL_BIN" login silas
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # #4933 — this case pins silas's real account (chorus-silas, uid 502) to match the
+  # sudoers rule, so silas's own establish cannot run here and the role does not come
+  # up. What it guards is the launch line: the pane was launched, and the only refusal
+  # is establish's account check (never the launcher's).
+  grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log" || { echo "$output"; return 1; }
+  grep -q "runs as chorus-silas" "$T/establish.log" || { echo "$output"; cat "$T/establish.log"; return 1; }
 
   rule_prefix=$(grep "chorus-silas" "$REPO/platform/config/chorus-role-asuser.sudoers" | sed -E 's/.*NOPASSWD: //; s/ \*$//')
   [ -n "$rule_prefix" ] || { echo "Missing rule in platform/config/chorus-role-asuser.sudoers"; return 1; }

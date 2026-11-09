@@ -17,6 +17,9 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes its session (as the account running
+  # the test); the launcher writes nothing, so every row below is the role's own
+  for r in silas kade wren; do est "$r"; done
 }
 
 out_has() { printf '%s' "$output" | grep -qF -- "$1"; }

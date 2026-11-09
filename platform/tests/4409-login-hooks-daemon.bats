@@ -14,6 +14,7 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  est wren   # #4933 — wren's wrapper establishes as the account running the test (stated)
   SOCK="/tmp/h4409-$$-$BATS_TEST_NUMBER.sock"   # short: unix socket paths cap near 104 bytes
   rm -f "$SOCK"
 }

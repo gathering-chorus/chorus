@@ -22,6 +22,7 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
 nothing_started() { test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"; }
 
 @test "#4368 an agent's row lets it log in, and the row was read" {
+  est wren   # #4933 — the row names the account running the test, so wren's wrapper establishes
   run "$SCRIPT" login wren
   test "$status" -eq 0
   grep -q "/v1/identity/principals/wren" "$T/curl.log"
@@ -75,7 +76,7 @@ nothing_started() { test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>
 # the code never named and the nightly went red on a pane that never showed
 # agy (10-15 05:29). The name here must stay in no list and no runtime table.
 @test "#4368 the list of three is gone: an agent the code never named logs in" {
-  row pip-normal agent
+  est pip-normal   # an agent row naming the account running the test (#4933)
   mkdir -p "$T/roles/pip-normal"; cp "$T/roles/wren/.mcp.json" "$T/roles/pip-normal/"   # #4845: a Claude role needs its MCP config
   mk_token pip-normal; mkdir -p "$T/identity/pip-normal"
   run "$SCRIPT" login pip-normal

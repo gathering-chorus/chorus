@@ -20,6 +20,9 @@ setup() {
   # #4409 — the shared fixture world (lib/login-harness.bash), not a copy of it
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes its session (as the account running
+  # the test); the launcher writes nothing, so every row below is the role's own
+  for r in silas kade wren; do est "$r"; done
 }
 # the last POST/PUT body login sent (the harness keeps every one under bodies/)
 curlbody() { cat "$(ls "$T"/bodies/*.json | tail -1)"; }
@@ -31,10 +34,12 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 # ------------------------------------------------------------------ on
 
 @test "on: a stopped role starts logged in, and the line says logged in" {
+  : > "$T/curl.log"
   run "$SCRIPT" on silas
   test "$status" -eq 0
-  out_has "login: silas"
-  out_has "recorded yes"
+  # #4933 — the role's own establish (in its pane) signs in and records; the launcher only reads it back
+  grep -q "login: silas" "$T/establish.log"
+  grep -q "recorded yes" "$T/establish.log"
   out_has "logged in  via claude -c"
   out_lacks "registered yes"
   state_is silas recorded
@@ -45,12 +50,14 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 
 @test "on: a RUNNING role with no login is logged in, not blessed (the 09:45 case)" {
   running kade 4264
+  : > "$T/token.log"; : > "$T/curl.log"
   run "$SCRIPT" on kade
   test "$status" -eq 0
-  out_has "kade is running without a login; logging it in now"
-  grep -q "token kade" "$T/token.log"
-  grep -q -- "-X POST" "$T/curl.log"
-  out_has "pane %0  logged in  via already awake"
+  # #4933 (FLIP) — never logged in from the launcher: the role establishes on its next turn
+  out_has "kade is running without a session; it establishes its own on its next turn"
+  test -z "$(grep "token kade" "$T/token.log" || true)"
+  test -z "$(grep -E -- '-X (POST|PUT)' "$T/curl.log" || true)"
+  out_has "pane %0  login pending  via already awake"
   out_lacks "registered yes"
   grep -q '"pid":4264' "$T/identity/kade/login.json"
   # never a second copy
@@ -60,10 +67,13 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "NEGATIVE PROOF: a login recorded for an EARLIER pid does not count for this one" {
   running kade 46809
   printf '{"state":"recorded","session":"kade-old-1","pid":4264}' > "$T/identity/kade/login.json"
+  : > "$T/token.log"
   run "$SCRIPT" on kade
-  out_has "kade is running without a login"
-  grep -q "token kade" "$T/token.log"
+  # the login on file is for pid 4264, so pid 46809 is NOT logged in by it (#4933: and not by the launcher)
+  out_has "kade is running without a session"
+  test -z "$(grep "token kade" "$T/token.log" || true)"
   grep -q '"pid":46809' "$T/identity/kade/login.json"
+  state_is kade pending
 }
 
 @test "on: a running role whose login is on file for this pid is left alone" {
@@ -75,47 +85,43 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_has "logged in  via already awake"
 }
 
-@test "on: a service still down counts down, names it, and the role STARTS with the login pending" {
+@test "on: identity still down counts down, names it, and the role does NOT start (Jeff 11-08: a failed sign-in does not start)" {
   touch "$T/down-3001"
   run "$SCRIPT" on silas
-  test "$status" -eq 0
   out_has "waiting for identity :3001"
-  out_has "login: silas  pending — identity not answering after 0:02"
-  out_has "logs itself in when that answers; nothing for you to do"
-  out_has "login pending  via claude -c"
-  out_lacks "UNAUTHENTICATED"
-  state_is silas pending
   grep -q "respawn-pane -k -t chorus-silas" "$T/tmux.log"
-  grep -q "status-right  login pending |" "$T/tmux.log"
+  # the role's own establish could not sign in, so its runtime never started
+  grep -q "identity not answering" "$T/establish.log"
+  out_has "registered NO"
+  out_has "identity not answering after 0:02"
+  out_lacks "UNAUTHENTICATED"
+  test "$status" -ne 0
 }
 
-@test "relogin: once the service answers, the pending login records itself" {
-  touch "$T/down-3001"
-  run "$SCRIPT" on silas
-  state_is silas pending
-  rm "$T/down-3001"
-  run env AWAKE_RETRY_EVERY=1 AWAKE_RETRY_SECS=5 "$SCRIPT" relogin silas
-  test "$status" -eq 0
+# #4933 RETIRED (three cases): relogin's background retry ("once the service answers
+# the pending login records itself", "gives up at its bound", "a pending login starts
+# the retry by itself"). The launcher no longer signs in or retries; relogin exits 2
+# and names its replacement (retirement gate: launch_hop_writes_nothing_4933.bats).
+# Recovery is the role's own next turn, below.
+@test "#4933 recovery is the role's next turn: a turn with no session establishes it, as the role" {
+  est silas
+  : > "$T/curl.log"
+  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 "$SCRIPT" seen silas
   state_is silas recorded
-  grep -q "^session.login.recovered silas " "$T/spine.log"
-  grep -q "status-right  logged in |" "$T/tmux.log"
+  grep -qE -- '-X POST.*/v1/identity/sessions' "$T/curl.log"
 }
 
-@test "relogin gives up at its bound and says so on the spine" {
-  touch "$T/down-3001"
-  run "$SCRIPT" on silas
-  run env AWAKE_RETRY_EVERY=1 AWAKE_RETRY_SECS=1 "$SCRIPT" relogin silas
-  test "$status" -eq 1
-  grep -q "^session.login.gave_up silas " "$T/spine.log"
-}
-
-@test "a pending login starts the background retry by itself" {
-  touch "$T/down-3001"
-  run env AWAKE_NO_RETRY=0 AWAKE_RETRY_EVERY=1 AWAKE_RETRY_SECS=6 "$SCRIPT" on silas
-  state_is silas pending
-  rm "$T/down-3001"
-  for i in 1 2 3 4 5 6 7 8; do grep -q '"state":"recorded"' "$T/identity/silas/login.json" && break; sleep 1; done
-  state_is silas recorded
+@test "#4933 NEGATIVE PROOF: a turn by an account that is not the role's establishes nothing" {
+  # fixture role fx's row names chorus-fx, not the account running this
+  printf '{"data":{"principalKind":"agent","hostAccount":"chorus-fx"}}\n200\n' > "$T/principal-fx.json"
+  mk_token fx; mkdir -p "$T/identity/fx"
+  : > "$T/curl.log"
+  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 AWAKE_ESTABLISH_EVERY=0 "$SCRIPT" seen fx
+  test -z "$(grep -E -- '-X POST.*/v1/identity/sessions' "$T/curl.log" || true)"
+  # and the same turn with fx's row naming this account does establish (the pair differs)
+  printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
+  echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 AWAKE_ESTABLISH_EVERY=0 "$SCRIPT" seen fx
+  grep -qE -- '-X POST.*/v1/identity/sessions' "$T/curl.log"
 }
 
 @test "a role session cannot start another role (Kade started Silas, 09:50)" {
@@ -224,16 +230,16 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   grep -q "^roles.up system summary=kade silas wren up, 3 of 3 logged in" "$T/spine.log"
 }
 
-@test "up with identity down: all three still start, the line says pending, nothing for Jeff to do" {
+@test "up with identity down: no role starts (Jeff 11-08), and the line says why" {
   # #4845 — up starts every agent the roles door lists; this world lists the three Claude roles
   printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"}]}\n' > "$T/roles-door.json"
   touch "$T/down-3001"
   run "$SCRIPT" up
-  test "$status" -eq 0
-  out_has "kade silas wren up, 0 of 3 logged in"
-  out_has "kade login pending (identity not answering"
-  out_has "retrying on its own"
+  # #4933 — each pane was launched, each role's own sign-in failed, so none started
   for r in wren kade silas; do grep -q "respawn-pane -k -t chorus-$r" "$T/tmux.log"; done
+  test "$(grep -c "identity not answering" "$T/establish.log")" -ge 3
+  out_has "no role started"
+  for r in kade silas wren; do out_has "$r  not started: its sign-in could not happen — identity not answering"; done
 }
 
 @test "up --windows: VS Code gets the Wren task, Terminal opens Silas and Kade" {

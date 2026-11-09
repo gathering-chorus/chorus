@@ -120,14 +120,14 @@ fn log_bin_for(root: &str) -> String {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Start { Go, Degraded(String), Refuse(String) }
 
-pub fn login_posture(failure: Option<&str>, refuse_on_any: bool) -> Start {
+pub fn login_posture(failure: Option<&str>) -> Start {
     match failure {
         None => Start::Go,
         // "wrong principal: the token names X not Y" — login_check's own words.
         Some(w) if w.contains("wrong principal") => Start::Refuse(w.to_string()),
-        // refuse_on_any is the OLD behaviour, kept only so the negative proof can
-        // show the two postures differ on the same input.
-        Some(w) if refuse_on_any => Start::Refuse(w.to_string()),
+        // #4933 — one posture (Jeff 2026-11-08 17:24, "no": a failed sign-in does
+        // not start the role). Degraded is a pending login; the start itself is
+        // refused by the wrapper's `establish --run`, which fails on pending.
         Some(w) => Start::Degraded(w.to_string()),
     }
 }
@@ -678,6 +678,109 @@ fn role_host_account(ctx: &Ctx, role: &str) -> Result<String, String> {
     Ok(acct.to_string())
 }
 
+extern "C" { fn dup(fd: i32) -> i32; fn dup2(from: i32, to: i32) -> i32; }
+
+/// This process's terminal, read with stdin inherited (sh() gives a child no stdin,
+/// so `tty` there always says "not a tty"). None when there is no terminal.
+fn own_tty() -> Option<String> {
+    let out = Command::new("tty").stdin(std::process::Stdio::inherit()).output().ok()?;
+    let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if out.status.success() && t.starts_with("/dev/") { Some(t) } else { None }
+}
+
+/// #4933 — while establishing for the wrapper, everything the login prints goes to
+/// stderr: the wrapper captures stdout as CHORUS_RUN, so it must hold the run alone.
+struct StdoutToStderr(i32);
+impl StdoutToStderr {
+    /// Err when stdout cannot be set aside: then nothing is printed for the wrapper at all
+    fn new() -> Result<Self, String> {
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let saved = unsafe { dup(1) };
+        if saved < 0 { return Err("cannot set stdout aside (dup failed)".into()); }
+        if unsafe { dup2(2, 1) } < 0 { return Err("cannot send login output to stderr (dup2 failed)".into()); }
+        Ok(StdoutToStderr(saved))
+    }
+}
+impl Drop for StdoutToStderr {
+    fn drop(&mut self) { let _ = std::io::Write::flush(&mut std::io::stdout()); if self.0 >= 0 { unsafe { dup2(self.0, 1); } } }
+}
+
+/// #4933 AC3 — a role establishes its own session. Run by the role's start hook
+/// (Claude's SessionStart, agy's hooks.json), as the role's own account: it signs
+/// in with the role's own credential and writes the Session through the door, so
+/// the door decides (AC2) and every row is the role's. The launcher writes nothing.
+/// The account is the OS's answer (`id -un`), never the environment's.
+/// With `--run` (the launch wrapper) it also writes the run for this pane and
+/// prints only the run's name on stdout, for the runtime's CHORUS_RUN; a pending
+/// login is a failure then, so the wrapper never starts a runtime with no session.
+fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<String>, tty_arg: Option<String>) -> i32 {
+    let with_run = run_stamp.is_some();
+    // #4933 (review 20:26, Silas 21:27) — the pane and tty come from the pane's own
+    // shell, outside sudo (which drops TMUX_PANE and, with use_pty, gives the inner
+    // shell a tty of its own, so no equality check can hold). They are taken only with
+    // --run: the launch line the launcher wrote passes them; anything else is refused.
+    if (pane_arg.is_some() || tty_arg.is_some()) && !with_run {
+        eprintln!("chorus-principal: REFUSED — establish {}: --pane/--tty come only from the launch line, with --run", role);
+        return 2;
+    }
+    let pane = pane_arg.or_else(|| env::var("TMUX_PANE").ok()).unwrap_or_default();
+    let tty = tty_arg.or_else(own_tty).unwrap_or_default();
+    let quiet = if with_run {
+        match StdoutToStderr::new() {
+            Ok(q) => Some(q),
+            Err(why) => { eprintln!("chorus-principal: establish {}: {}; not establishing", role, why); return 1; }
+        }
+    } else { None };
+    let acct = match role_host_account(ctx, role) {
+        Ok(a) => a,
+        Err(why) => { eprintln!("chorus-principal: REFUSED — {}; no session established.", why); return 2; }
+    };
+    let me = sh("id", &["-un"]).map(|u| u.trim().to_string()).unwrap_or_default();
+    if let Some(why) = lifecycle::establish_refusal(role, &acct, &me) {
+        eprintln!("chorus-principal: REFUSED — {}", why);
+        return 2;
+    }
+    // a login after /exit goes back to its own still-open session (#4406), as the role
+    let resumed = match ctx.read_state(role) {
+        LoginState::Recorded { session, .. } => read_row(ctx, role, "session")
+            .filter(|r| row_name(r) == session && r.get("sessionState").and_then(|v| v.as_str()).unwrap_or("open") != "closed")
+            .map(|_| { ctx.spine(&["session.resumed", role, &format!("session={}", session)]); LoginState::Recorded { session, pid: None } }),
+        _ => None,
+    };
+    match resumed.map(Ok).unwrap_or_else(|| do_login(ctx, role)) {
+        Ok(st) => {
+            ctx.write_state(role, &st);
+            match &st {
+                LoginState::Recorded { session, .. } if with_run => {
+                    record_run_stamped(ctx, role, session, &Live { pid: 0, tty: tty.clone(), host: "tmux".into(), pane: pane.clone() }, "pending", run_stamp.as_deref().unwrap_or_default());
+                    let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
+                    // the run the launch named, or nothing: the runtime starts on that run only (review 20:26)
+                    let named = run_name(role, run_stamp.as_deref().unwrap_or_default());
+                    if run.is_empty() || !(run == named || run.ends_with(&format!("-{}", named))) {
+                        eprintln!("chorus-principal: establish {}: session {} open, but the run {} the launch named was not written (found '{}')", role, session, named, run);
+                        return 1;
+                    }
+                    eprintln!("establish: {}  session {}  run {}  (as {})", role, session, run, acct);
+                    drop(quiet);
+                    println!("{}", run);
+                }
+                LoginState::Recorded { session, .. } => {
+                    // the run follows once the pane is registered (seen-write records it then)
+                    if let Some(l) = live_entries(&ctx.sessions_dir, role, &ctx.ps).into_iter().next() {
+                        record_run(ctx, role, session, &l, "pending");
+                    }
+                    eprintln!("establish: {}  session {}  (as {})", role, session, acct);
+                }
+                LoginState::Pending { why, .. } if with_run => { eprintln!("chorus-principal: establish {}: login pending — {}", role, why); return 1; }
+                LoginState::Pending { why, .. } => eprintln!("establish: {}  pending — {}; the next turn retries", role, why),
+                _ => {}
+            }
+            0
+        }
+        Err(()) => 1,
+    }
+}
+
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
 /// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
@@ -685,7 +788,6 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         Ok(c) => c,
         Err(why) => { eprintln!("chorus-principal: REFUSED — {} for {}; nothing was started.", why, role); return Err(()); }
     };
-    let refuse_on_any = envd("AWAKE_REFUSE_ON_LOGIN_FAILURE", "0") == "1";
     let token = sh(&ctx.token_bin, &[role]).map(|t| t.trim().to_string());
     let login = match &token {
         Ok(t) => login_check(role, t, (now_ms() / 1000) as u64),
@@ -693,14 +795,10 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     };
     let login = match login {
         Ok(l) => l,
-        Err(why) => match login_posture(Some(&why), refuse_on_any) {
+        Err(why) => match login_posture(Some(&why)) {
             Start::Refuse(w) => {
                 eprintln!("chorus-principal: REFUSED — {} for {}", w, role);
-                if w.contains("wrong principal") {
-                    eprintln!("  nothing was started; starting on another principal's credential would file this work as theirs.");
-                } else {
-                    eprintln!("  nothing was started (AWAKE_REFUSE_ON_LOGIN_FAILURE=1 — the pre-#4215 posture).");
-                }
+                eprintln!("  nothing was started; starting on another principal's credential would file this work as theirs.");
                 return Err(());
             }
             _ => {
@@ -848,21 +946,28 @@ fn project_relay(ctx: &Ctx, role: &str) {
     }
 }
 
-fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
+/// #4933 AC3 — what the launcher does in place of a login: wait for the services
+/// and mint the launch's stamp. It signs in as nobody and writes no row; the
+/// role's wrapper establishes the session and run (fail closed) as the role.
+fn launch_ready(ctx: &Ctx, role: &str) -> (LoginState, String) {
     project_relay(ctx, role);
-    if let LoginState::Recorded { session, .. } = ctx.read_state(role) {
-        let open = read_row(ctx, role, "session")
-            .filter(|r| row_name(r) == session)
-            .map(|r| r.get("sessionState").and_then(|v| v.as_str()).unwrap_or("open") != "closed")
-            .unwrap_or(false);
-        if open {
-            ctx.spine(&["session.resumed", role, &format!("session={}", session)]);
-            println!("login: {}  session {}  resumed (still open; logout ends it)", role, session);
-            return Ok(LoginState::Recorded { session, pid: None });
-        }
-    }
-    login_after_services(ctx, role, ctx.service_wait)
+    if let Some(line) = hooks_down(ctx, role) { eprintln!("{}", line); }
+    let why = match wait_for_services(ctx, ctx.service_wait, true) { Ok(()) => format!("{} establishes its own session at start", role), Err(w) => w };
+    (LoginState::Pending { why, pid: None }, format!("{:x}", now_ms()))
 }
+
+/// #4933 AC3 — the launcher reads the role's session back through the door (a
+/// GET, never a write): the run the launch named, open, and its session.
+fn established(ctx: &Ctx, role: &str, run: &str, pid: Option<u64>) -> LoginState {
+    let url = format!("{}/v1/identity/sessionruns/{}", ctx.api, run);
+    let ans = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
+    let (body, code) = ans.trim_end().rsplit_once('\n').unwrap_or(("", ans.trim()));
+    let row: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    let session = row.get("data").and_then(|d| d.get("runOf")).and_then(|s| s.as_str()).unwrap_or("").to_string();
+    if code.trim() == "200" && !session.is_empty() { LoginState::Recorded { session, pid } }
+    else { LoginState::Pending { why: format!("{}'s run {} is not established (HTTP {})", role, run, code.trim()), pid } }
+}
+
 
 /// #4409 — the hooks daemon answers on a unix socket, not a URL, so it is not
 /// in AWAKE_SERVICES. Down is loud, never a refusal: the role starts and Jeff
@@ -874,25 +979,10 @@ fn hooks_down(ctx: &Ctx, role: &str) -> Option<String> {
     Some(format!("hooks: the hooks daemon is not answering ({}); gates and nudges are off until it is.\n  fix: launchctl kickstart -k gui/$(id -u)/com.chorus.hooks", path))
 }
 
-fn login_after_services(ctx: &Ctx, role: &str, bound: u64) -> Result<LoginState, ()> {
-    if let Some(line) = hooks_down(ctx, role) { eprintln!("{}", line); }
-    match wait_for_services(ctx, bound, true) {
-        Ok(()) => do_login(ctx, role),
-        Err(why) => { ctx.spine(&["session.login.degraded", role, &format!("reason={}", why)]); Ok(LoginState::Pending { why, pid: None }) }
-    }
-}
-
 fn pending_line(role: &str, why: &str) -> String {
     format!("login: {}  pending — {}. {} is starting and logs itself in when that answers; nothing for you to do.", role, why, role)
 }
 
-/// A pending login keeps trying in the background, so Jeff never has to.
-fn spawn_retry(role: &str) {
-    if envd("AWAKE_NO_RETRY", "0") == "1" { return; }
-    if let Ok(me) = env::current_exe() {
-        let _ = Command::new(me).args(["relogin", role]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
-    }
-}
 
 fn came_of(st: &LoginState) -> Came {
     match st { LoginState::Recorded { .. } => Came::LoggedIn, LoginState::Pending { why, .. } => Came::Pending(why.clone()), _ => Came::Pending("no login".into()) }
@@ -919,11 +1009,22 @@ pub fn own_account_inner_cmd(
     own_token: &str,
     sessions_dir: &str,
     role: &str,
+    principal_bin: &str,
+    run_stamp: &str,
     cmd: &str,
 ) -> String {
+    // #4933 AC3 — one wrapper, every runtime: the role's own shell establishes its
+    // session and run (as the role, through the door) before the runtime starts,
+    // and hands the run on as CHORUS_RUN. Fail closed: no session, no runtime.
+    // #4933 AC4 — the login's trace crosses the account boundary (sudo drops the env),
+    // so establish's door calls and the door's decision lines join this login's trace
+    let clean = |v: &str| -> String { env::var(v).unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')).collect() };
+    let trace = clean("CHORUS_TRACE_ID");
+    // #4412 — who started it crosses the account boundary too (sudo drops the env)
+    let started_by = clean("CHORUS_STARTED_BY");
     format!(
-        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ ( bash '{}/platform/scripts/role-post' >/dev/null 2>&1 & ) ; }} && {}",
-        role_dir, root, own_dir, own_token, sessions_dir, role, root, cmd
+        "umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_TRACE_ID='{}' CHORUS_STARTED_BY='{}' CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_SESSIONS_DIR='{}' CHORUS_OUTBOX_DIR=\"$HOME/.chorus/outbox\" CHORUS_ROLE='{}' GIT_CONFIG_COUNT='1' GIT_CONFIG_KEY_0='safe.directory' GIT_CONFIG_VALUE_0='*' ENABLE_CLAUDEAI_MCP_SERVERS='false' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {{ ( bash '{}/platform/scripts/role-post' >/dev/null 2>&1 & ) ; }} && {{ CHORUS_RUN=$('{}' establish '{}' --run '{}' --pane '__CHORUS_PANE__' --tty '__CHORUS_TTY__') || {{ echo \"chorus-principal: establish failed for {}; not starting {}\" >&2; exit 1; }} ; }} && export CHORUS_RUN && {}",
+        role_dir, root, trace, started_by, own_dir, own_token, sessions_dir, role, root, principal_bin, role, run_stamp, role, role, cmd
     )
 }
 
@@ -985,10 +1086,10 @@ pub fn asuser_probe_args<'a>(uid: &'a str, acct: &'a str) -> [&'a str; 12] {
 /// THIS session is logged in and go to its window. Never a second copy.
 /// The shell line that starts `cmd` in the role's pane, as the role's own
 /// account when one is configured (#4383). Shared by the Claude and agent paths.
-fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &str) -> Result<String, (i32, String)> {
+fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, run_stamp: &str, cmd: &str) -> Result<String, (i32, String)> {
     let launch = match &ctx.run_as {
         // #4931 — fail closed: no account means no start, never a start as the launcher
-        None => { let _ = (role_dir, token_file, cmd); return Err((2, format!("{} has no account to run as; refusing to start it as {} (#4931)", role, env::var("USER").unwrap_or_default()))); }
+        None => { let _ = (role_dir, token_file, run_stamp, cmd); return Err((2, format!("{} has no account to run as; refusing to start it as {} (#4931)", role, env::var("USER").unwrap_or_default()))); }
         // #4383 — the session runs as the principal's own account: its token is
         // copied into that account's home, readable by it alone, and files it
         // writes in the werk stay group-writable (umask 002).
@@ -1044,27 +1145,29 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &s
                     }
                 }
             }
-            let inner = own_account_inner_cmd(role_dir, &ctx.root, &own_dir, &own, &ctx.sessions_dir.to_string_lossy(), role, cmd);
+            // the installed path the role hooks run (never current_exe: a werk-slot copy can shadow it, #4933 defect 41)
+            let principal_bin = envd("CHORUS_PRINCIPAL_BIN", &format!("{}/.chorus/bin/chorus-principal", ctx.home));
+            let inner = own_account_inner_cmd(role_dir, &ctx.root, &own_dir, &own, &ctx.sessions_dir.to_string_lossy(), role, &principal_bin, run_stamp, cmd);
             let uid = account_uid(acct);
             // #4924 — launchctl asuser isolates the role session from Jeff's Aqua Mach bootstrap
             // namespace (gui/501). Silas pinned form: /bin/launchctl asuser <uid> /usr/bin/sudo -n -u <acct> -H bash -c ...
             // If the sudoers rule is not configured, fall back to today's start line with a warning.
-            let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$");
+            // #4933 — the pane's id and tty are filled in by the pane's own shell, before
+            // sudo drops its environment (these two are the only unescaped expansions)
+            let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$")
+                .replace("__CHORUS_PANE__", "$TMUX_PANE").replace("__CHORUS_TTY__", "$(tty)");
             let probe_args = asuser_probe_args(&uid, acct);
             let asuser_check = sh(&ctx.sudo, &probe_args);
-            if asuser_check.is_ok() {
-                let launch_prefix = probe_args[1..11].join(" ");
-                format!(
-                    "{} -n {} \"{}\"",
-                    ctx.sudo, launch_prefix, escaped_inner
-                )
-            } else {
-                eprintln!("chorus-principal: warning: sudo launchctl asuser {} not permitted; falling back to unisolated start for {}", uid, acct);
-                format!(
-                    "{} -n -u {} -H bash -c \"{}\"",
-                    ctx.sudo, acct, escaped_inner
-                )
+            // #4933 — no fallback (Jeff 11-08 11:05): a role that cannot be started
+            // isolated in its own session is refused, never started unisolated
+            if asuser_check.is_err() {
+                return Err((2, format!("{} cannot be started isolated: sudo launchctl asuser {} is not permitted for {}; refusing (never an unisolated start). fix: the asuser rule in platform/config/chorus-role-asuser.sudoers", role, uid, acct)));
             }
+            let launch_prefix = probe_args[1..11].join(" ");
+            format!(
+                "{} -n {} \"{}\"",
+                ctx.sudo, launch_prefix, escaped_inner
+            )
         }
     };
     Ok(launch)
@@ -1107,15 +1210,19 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             let st = ctx.read_state(role);
             let st = match &st {
                 LoginState::Recorded { .. } if lifecycle::login_belongs_to(&st, l.pid) => st.with_pid(l.pid),
-                _ => {
-                    println!("{} is running without a login; logging it in now", role);
-                    let s = match login_or_resume(ctx, role) { Ok(s) => s.with_pid(l.pid), Err(()) => return Err((1, "login refused".into())) };
-                    if let LoginState::Recorded { session, .. } = &s { record_run(ctx, role, session, l, "pending"); }
-                    s
+                _ => match door_open_row(ctx, role, "identity/sessionruns", "run", "runEndedAt")
+                    .map_err(|why| ctx.spine(&["session.row.failed", role, "kind=run", &format!("why={}", why)])).ok().flatten().and_then(|r| r.get("runOf").and_then(|s| s.as_str()).map(String::from)).filter(|s| !s.is_empty()) {
+                    // #4933 — read back, never written: the role's own open run names its session
+                    Some(session) => LoginState::Recorded { session, pid: Some(l.pid) },
+                    None => {
+                        // never logged in from here: the role establishes its own session on its next turn
+                        println!("{} is running without a session; it establishes its own on its next turn", role);
+                        LoginState::Pending { why: format!("{} establishes its own session on its next turn", role), pid: Some(l.pid) }
+                    }
                 }
             };
             ctx.write_state(role, &st);
-            if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); spawn_retry(role); }
+            if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
             let word = lifecycle::login_word(&st, Some(l.pid));
             ctx.set_bar(role, word);
             println!("{}", proof_line(role, l, word, "already awake"));
@@ -1155,8 +1262,8 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         let tail = fs::read_to_string(projects.join(format!("{}.jsonl", id))).unwrap_or_default();
         transcript_is_poisoned(&tail, window, threshold)
     }).unwrap_or(false);
-    // #4328 — the transcript this run continues, when known at start
-    let conversation = if poisoned { "pending".to_string() } else { dec.attach.clone().or_else(|| latest.clone()).unwrap_or_else(|| "pending".to_string()) };
+    // #4933 — the run is written by the role's own establish ("pending"); its first turn's
+    // seen-write records the transcript it continues (#4328), so nothing is stamped here
     let (cmd, how) = if poisoned {
         let id = latest.clone().unwrap_or_default();
         eprintln!("chorus-principal: the last conversation ({}) ends in API refusals — not resuming it", id);
@@ -1185,15 +1292,14 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     }
 
     // 8 — LOGIN before anything is started (#4202), after the services answer (#4295).
-    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
-    ctx.write_state(role, &st);
-    if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
+    // #4933 AC3 — no login here: the role's wrapper establishes it, as the role
+    let (st, stamp) = launch_ready(ctx, role);
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
 
     // 1 — the pane, then launch inside it.
     // #4337 — CLAUDE_CODE_DISABLE_AGENT_VIEW=1: no on-demand daemon, no warm
     // spares, no exit handoff to the background (the role settings say the same)
-    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
     let in_own_pane = env::var("TMUX").is_ok() && sh(&ctx.tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
     if in_own_pane && attach {
         println!("awake: {}  starting here via {}", role, how);
@@ -1216,6 +1322,8 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let found = found.or_else(|| register_from_pane(ctx, role, rows::PaneRuntime::Claude));
     let Some(l) = found else {
         eprintln!("awake: {}  registered NO after {}s  via {} — the pane says: {} — look: {} attach -t {}", role, ctx.wait, how, pane_tail(ctx, role), ctx.tmux, tmux_session);
+        // #4933 — a role whose sign-in could not happen does not start (Jeff 11-08): say why
+        if let LoginState::Pending { why, .. } = &st { if !why.contains("establishes its own session") { eprintln!("awake: {}  not started: its sign-in could not happen — {}", role, why); } }
         return Err((1, format!("did not register in {}s", ctx.wait)));
     };
     // #4337 — a process carrying another role's env is not this role logged in
@@ -1235,10 +1343,11 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         eprintln!("awake: {}  WRONG ROLE — pid {} still runs as {} after one restart; not logged in. Next: chorus-principal login {}", role, l.pid, other, role);
         return Err((1, format!("pid {} carries {}", l.pid, other)));
     }
-    let st = st.with_pid(l.pid);
+    // read back, never written: the run the launch named, established by the role
+    // the launch's own reason (e.g. "identity not answering") is kept when the read-back
+    // finds nothing, so a cold start still says WHY it is pending
+    let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run_name(role, &stamp), Some(l.pid)));
     ctx.write_state(role, &st);
-    if let LoginState::Recorded { session, .. } = &st { record_run(ctx, role, session, &l, &conversation); }
-    if matches!(st, LoginState::Pending { .. }) { spawn_retry(role); }
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
     println!("{}", proof_line(role, &l, word, &how));
@@ -1258,24 +1367,17 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
         eprintln!("  run `chorus-principal logout {}` first, then start it on its other runtime.", role);
         return Err((1, "a Claude session is live".into()));
     }
-    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
-    ctx.write_state(role, &st);
-    let LoginState::Recorded { session, .. } = &st else {
-        eprintln!("chorus-principal: REFUSED — {}'s login is pending; an agent session needs a recorded login (its run is the session id).", role);
-        return Err((1, "login pending".into()));
-    };
+    // #4933 AC3 — the run is named here and written by the role's own wrapper
+    // (establish --run, fail closed) before the runtime starts; nothing is written here
+    let (st, stamp) = launch_ready(ctx, role);
+    let run = run_name(role, &stamp);
     if !ctx.has_tmux(role) {
         if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
     }
-    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &tmux_session, "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
-    let (pane, tty) = where_.trim().split_once('|').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
-    let l = Live { pid: 0, tty, host: envd("HOST", "localhost"), pane };
-    record_run(ctx, role, session, &l, "pending");
-    let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
     let agent_bin = envd("CHORUS_AGENT_BIN", &format!("{}/.chorus/bin/chorus-agent", ctx.home));
-    let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
+    let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("refusing to launch on run {:?}: {}", run, e)))?;
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
-    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
     start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut enrolled = false;
     for i in 0..=ctx.wait {
@@ -1295,6 +1397,9 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
         return Err((1, format!("agent run {} did not enroll", run)));
     }
     ctx.spine(&["session.agent.enrolled", role, &format!("run={}", run)]);
+    // #4933 — read back, never written: the run this launch named, established by the role
+    let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, None));
+    ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, None);
     ctx.set_bar(role, word);
     println!("awake: {}  agent run {} enrolled  login {}", role, run, word);
@@ -1318,26 +1423,19 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
         if attach { attach_to(ctx, role); }
         return Ok(came_of(&st));
     }
-    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
-    ctx.write_state(role, &st);
-    // the run is the session id the guard hook needs, so it is written before Gemini starts
-    let LoginState::Recorded { session, .. } = &st else {
-        eprintln!("chorus-principal: REFUSED — {}'s login is pending; Gemini needs a recorded login (its run is the session id).", role);
-        return Err((1, "login pending".into()));
-    };
+    // #4933 AC3 — the run is named here and written by the role's own wrapper
+    // (establish --run, fail closed) before the runtime starts; nothing is written here
+    let (st, stamp) = launch_ready(ctx, role);
+    let run = run_name(role, &stamp);
     if !ctx.has_tmux(role) {
         if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
     }
-    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &tmux_session, "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
-    let (pane, tty) = where_.trim().split_once('|').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
-    record_run(ctx, role, session, &Live { pid: 0, tty, host: "tmux".into(), pane }, "pending");
-    let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
     let agent_bin = envd("CHORUS_AGENT_BIN", &format!("{}/.chorus/bin/chorus-agent", ctx.home));
     let gemini_bin = envd("CHORUS_GEMINI_BIN", &format!("{}/.chorus/runtimes/bin/gemini", ctx.home));
     let allow_rules = envd("CHORUS_ALLOW_RULES_FILE", &format!("{}/.claude/settings.json", ctx.home));
-    let cmd = rows::gemini_pane_cmd(&agent_bin, &gemini_bin, &allow_rules, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
-    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
+    let cmd = rows::gemini_pane_cmd(&agent_bin, &gemini_bin, &allow_rules, &run).map_err(|e| (1, format!("refusing to launch on run {:?}: {}", run, e)))?;
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
     start_in_pane(ctx, role, &role_dir, &launch)?;
     let mut found: Option<Live> = None;
     for i in 0..=ctx.wait {
@@ -1350,6 +1448,9 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
         return Err((1, format!("gemini did not start in {}s", ctx.wait)));
     };
     ctx.spine(&["session.gemini.started", role, &format!("run={}", run), &format!("pid={}", l.pid)]);
+    // #4933 — read back, never written: the run this launch named, established by the role
+    let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, Some(l.pid)));
+    ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
     println!("{}", proof_line(role, &l, word, "gemini in its own pane"));
@@ -1370,27 +1471,20 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         if attach { attach_to(ctx, role); }
         return Ok(came_of(&st));
     }
-    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
-    ctx.write_state(role, &st);
-    // the run is the session id the guard hook needs, so it is written before Gemini starts
-    let LoginState::Recorded { session, .. } = &st else {
-        eprintln!("chorus-principal: REFUSED — {}'s login is pending; its runtime needs a recorded login (its run is the session id).", role);
-        return Err((1, "login pending".into()));
-    };
+    // #4933 AC3 — the run is named here and written by the role's own wrapper
+    // (establish --run, fail closed) before the runtime starts; nothing is written here
+    let (st, stamp) = launch_ready(ctx, role);
+    let run = run_name(role, &stamp);
     if !ctx.has_tmux(role) {
         if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
     }
-    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &tmux_session, "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
-    let (pane, tty) = where_.trim().split_once('|').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
-    record_run(ctx, role, session, &Live { pid: 0, tty, host: "tmux".into(), pane }, "pending");
-    let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
     let bin_dir = envd("CHORUS_BIN", &format!("{}/.chorus/bin", ctx.home));
     let hooks = rows::runtime_hooks_file(row, runtime, role, &format!("{bin_dir}/chorus-hook-shim"), &format!("{bin_dir}/chorus-principal")).map_err(|e| (1, e))?;
     let mcp = rows::runtime_mcp_file(&format!("{bin_dir}/chorus-runner"), role, &ctx.root);
     let hooks_run_dir = envd("CHORUS_HOOKS_RUN_DIR", &format!("{}/.chorus/run-agents", ctx.home));
     let cmd = rows::runtime_pane_cmd(row, runtime, &bin_dir, &hooks_run_dir, &run, &hooks, &mcp).map_err(|e| (1, e))?;
-    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
     start_in_pane(ctx, role, &role_dir, &launch)?;
     let binary = row.get("runtimeBinary").and_then(|b| b.as_str()).unwrap_or("").to_string();
     let mut found: Option<Live> = None;
@@ -1411,6 +1505,9 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         return Err((1, format!("{} exited right after starting", runtime)));
     }
     ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
+    // #4933 — read back, never written: the run this launch named, established by the role
+    let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, Some(l.pid)));
+    ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
     println!("{}", proof_line(role, &l, word, &format!("{runtime} in its own pane")));
@@ -1492,9 +1589,32 @@ fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool 
     }
 }
 
-/// End the role's saved run (and its presence) if it is still live.
+/// #4933 — the role's open run or presence, read from the door: the one source for
+/// ending a run (the rows live in the role's own account, written by establish, so a
+/// local copy in whoever runs this is not the record). The newest open row of `route`
+/// whose name is `<role>-<kind>-…` (the names establish mints).
+fn door_open_row(ctx: &Ctx, role: &str, route: &str, kind: &str, open_field: &str) -> Result<Option<Value>, String> {
+    let url = if open_field.is_empty() { format!("{}/v1/{}?limit=5000", ctx.api, route) } else { format!("{}/v1/{}?{}.absent=true&limit=5000", ctx.api, route, open_field) };
+    let body = door(ctx, &["-sf", "--max-time", "10", &url]).map_err(|e| format!("the door did not answer: {}", e.trim()))?;
+    let v: Value = serde_json::from_str(&body).map_err(|e| format!("not JSON: {e}"))?;
+    let prefix = format!("{}-{}-", role, kind);
+    let stored = format!("{}-{}", route.rsplit('/').next().unwrap_or(route).trim_end_matches('s'), prefix);
+    Ok(v.get("data").and_then(|d| d.as_array()).into_iter().flatten()
+        .filter(|r| { let n = row_name(r); n.starts_with(&prefix) || n.starts_with(&stored) })
+        // open, checked here too, not only by the door's filter
+        .filter(|r| open_field.is_empty() || r.get(open_field).and_then(|x| x.as_str()).unwrap_or("").is_empty())
+        .filter(|r| r.get("reachability").and_then(|x| x.as_str()) != Some("unreachable"))
+        .max_by_key(|r| row_name(r))
+        .cloned())
+}
+
+/// End the role's open run (and retire its presence), read from the door.
 fn end_run(ctx: &Ctx, role: &str, reason: &str) {
-    if let Some(run) = read_row(ctx, role, "run") {
+    // the door is the only source (Jeff 11-08: no fallbacks): never a local copy first
+    // a door that cannot be read is named, never a silent skip (#4895)
+    let run = door_open_row(ctx, role, "identity/sessionruns", "run", "runEndedAt")
+        .map_err(|why| ctx.spine(&["session.row.failed", role, "kind=run", &format!("why={}", why)])).ok().flatten();
+    if let Some(run) = run {
         if run.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() {
             if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
                 if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
@@ -1503,7 +1623,9 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
             }
         }
     }
-    if let Some(p) = presence_now(ctx, role) {
+    let presence = door_open_row(ctx, role, "identity/presences", "presence", "")
+        .map_err(|why| ctx.spine(&["presence.door.unread", role, &format!("why={}", why)])).ok().flatten();
+    if let Some(p) = presence {
         if p.get("reachability").and_then(|r| r.as_str()) != Some("unreachable") {
             if let Some(gone) = rows::gone_presence(p) {
                 if put_row(ctx, role, "identity/presences", "presence", &gone) {
@@ -1609,6 +1731,14 @@ pub fn run_lock(dir: &Path, wait: Duration, stale: Duration) -> Option<RunLock> 
 /// A recorded login's run: the previous live run ends as a restart, then this
 /// run, its presence and its boot context are written.
 fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str) {
+    record_run_stamped(ctx, role, session, l, conversation, &format!("{:x}", now_ms()))
+}
+
+/// #4933 AC3 — the run a launch will carry: the launcher mints only this NAME (no
+/// write); the role's own `establish --run <stamp>` writes the row under it.
+pub fn run_name(role: &str, stamp: &str) -> String { slug(&format!("{}-run-{}", role, stamp)) }
+
+fn record_run_stamped(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str, stamp: &str) {
     let dir = PathBuf::from(&ctx.identity_dir).join(role);
     let Some(_held) = run_lock(&dir, Duration::from_secs(20), Duration::from_secs(60)) else {
         ctx.spine(&["session.row.failed", role, "kind=run", "why=another process is recording this role's run"]);
@@ -1617,8 +1747,7 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     let previous = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r));
     if previous.is_some() { end_run(ctx, role, "restart"); }
     let started = iso_utc(now_ms() as u64 / 1000);
-    let stamp = format!("{:x}", now_ms());
-    let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
+    let run_body = rows::run_row(role, &run_name(role, stamp), session, conversation, &started, previous.as_deref());
     let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
     ensure_conversation(ctx, role, &run, conversation);
     let host_account = match role_host_account(ctx, role) {
@@ -1717,6 +1846,19 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     let delivered = flag == "delivered";
     // after a logout the saved row is closed; a late turn must not reopen it
     if matches!(ctx.read_state(role), LoginState::Closed) { return 0; }
+    // #4933 AC3 — no session yet (the start's establish failed, or a role running from
+    // before): the role establishes its own here, as itself; establish refuses any other account
+    if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) && read_row(ctx, role, "session").is_none() {
+        // the per-turn hook stays fast (review 20:26): at most one establish a minute
+        let tried = PathBuf::from(&ctx.identity_dir).join(role).join("establish.tried");
+        let recent = fs::metadata(&tried).and_then(|m| m.modified()).ok()
+            .and_then(|t| t.elapsed().ok()).map(|age| age.as_secs() < envd("AWAKE_ESTABLISH_EVERY", "60").parse().unwrap_or(60)).unwrap_or(false);
+        if recent { return 0; }
+        let _ = fs::create_dir_all(tried.parent().unwrap_or(Path::new("/")));
+        let _ = fs::write(&tried, "");
+        let _ = establish(ctx, role, None, None, None);
+        if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { return 0; }
+    }
     let now = iso_utc(now_ms() as u64 / 1000);
     // a login from before #4328 carries no role or start: add them on its first turn
     let session = read_row(ctx, role, "session").map(|s| {
@@ -2064,35 +2206,11 @@ fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool)
 
 /// `relogin <role>` — the background retry a pending login starts. Ends when
 /// the login is recorded, when the role is gone, or at AWAKE_RETRY_SECS.
-fn relogin(ctx: &Ctx, role: &str) -> i32 {
-    let total: u64 = envd("AWAKE_RETRY_SECS", "1800").parse().unwrap_or(1800);
-    let every: u64 = envd("AWAKE_RETRY_EVERY", "10").parse().unwrap_or(10).max(1);
-    let start = std::time::Instant::now();
-    loop {
-        let Some(l) = live_entries(&ctx.sessions_dir, role, &ctx.ps).into_iter().next() else { return 0 };
-        let st = ctx.read_state(role);
-        if matches!(st, LoginState::Recorded { .. }) && lifecycle::login_belongs_to(&st, l.pid) { return 0; }
-        if matches!(st, LoginState::Closed) { return 0; }
-        if wait_for_services(ctx, 0, false).is_ok() {
-            match do_login(ctx, role) {
-                Ok(LoginState::Recorded { session, .. }) => {
-                    let st = LoginState::Recorded { session: session.clone(), pid: Some(l.pid) };
-                    ctx.write_state(role, &st);
-                    record_run(ctx, role, &session, &l, "pending");
-                    ctx.set_bar(role, "logged in");
-                    ctx.spine(&["session.login.recovered", role, &format!("session={}", session), &format!("after_secs={}", start.elapsed().as_secs())]);
-                    return 0;
-                }
-                Ok(_) => {}
-                Err(()) => return 1,
-            }
-        }
-        if start.elapsed().as_secs() >= total {
-            ctx.spine(&["session.login.gave_up", role, &format!("after_secs={}", total)]);
-            return 1;
-        }
-        std::thread::sleep(Duration::from_secs(every));
-    }
+fn relogin(_ctx: &Ctx, role: &str) -> i32 {
+    // #4933 AC3 — the launcher no longer signs a role in or retries it: the role
+    // establishes its own session at start, and its next turn retries a failed one.
+    eprintln!("chorus-principal: relogin is retired (#4933): {} establishes its own session; its next turn retries", role);
+    2
 }
 
 /// #4445 — close the role's other open sessions on this channel, left by a
@@ -2368,7 +2486,7 @@ fn caller_refusal(role: &str, verb: &str) -> Option<String> {
     lifecycle::caller_may_act(in_agent, caller.as_deref(), role, verb).err()
 }
 
-const USAGE: &str = "usage: chorus-principal login|logout|status|up|relogin [name]   (an agent principal: its Principal row decides)
+const USAGE: &str = "usage: chorus-principal login|logout|status|up [name]   (an agent principal: its Principal row decides)
   login <role>   start it logged in, or log in the running one and go to its window (was: on)
   logout <role>  stop it and close its login (was: off)
   status         one line per role: running, logged in, answering
@@ -2413,7 +2531,18 @@ pub fn run(args: &[String]) -> i32 {
             if let Some(why) = caller_refusal("all roles", "start") { eprintln!("chorus-principal: REFUSED — {}", why); return 2; }
             up(&mut ctx, args.iter().any(|a| a == "--windows"))
         }
-        "relogin" => match role_arg(1) { Ok(r) => relogin(&ctx, &r), Err(c) => c },
+        "relogin" => match name_arg(1) { Ok(r) => relogin(&ctx, &r), Err(c) => c },
+        // #4933 AC3 — the role's start hook, as the role's own account
+        "establish" => match name_arg(1) {
+            Ok(r) => match args.iter().position(|a| a == "--run").map(|i| args.get(i + 1).cloned().unwrap_or_default()) {
+                Some(st) if st.is_empty() || !st.bytes().all(|b| b.is_ascii_hexdigit()) => { eprintln!("chorus-principal: establish {} --run needs the launch's hex stamp", r); 2 }
+                stamp => {
+                    let opt = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1).cloned()).filter(|v| !v.is_empty() && !v.starts_with("__CHORUS_"));
+                    establish(&ctx, &r, stamp, opt("--pane"), opt("--tty"))
+                }
+            },
+            Err(c) => c,
+        },
         // #4328 — the UserPromptSubmit hook, every turn; never refused, never slow
         // #4520 reopen 1 — the per-turn stamp takes the role by name. Reading
         // the whole roles door on every prompt (and exiting 2 when it was slow)
@@ -2505,6 +2634,8 @@ mod own_account_launch_tests_4777 {
             "/Users/chorus-silas/.chorus/identity/silas/token.cache",
             "/Users/jeffbridwell/.chorus/sessions",
             "silas",
+            "/b/chorus-principal",
+            "18f2a",
             "claude -c",
         );
         assert!(cmd.contains("CHORUS_SESSIONS_DIR='/Users/jeffbridwell/.chorus/sessions'"), "{cmd}");

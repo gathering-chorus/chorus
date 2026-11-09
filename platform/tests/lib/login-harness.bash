@@ -21,6 +21,21 @@ EOS
   # #4813 (2026-11-01) launches with one chained call (new-session ; set-option ;
   # respawn-pane -t <session> ... <launch>), not send-keys: the stub registers on
   # respawn-pane too, or every login here reads "registered NO" (#4505 run 2).
+  # #4933 — what a role's pane does first: its wrapper runs `establish <role> --run
+  # <stamp>` as the role, exactly as the launch line names it (any suite's own tmux
+  # stub calls this on respawn-pane). In a real pane the wrapper inherits that pane's
+  # id: here it is the world's pane, or the id the default stub registers it under.
+  cat > "$T/bin/pane-establish" <<EOS
+#!/bin/bash
+args=("\$@"); last="\${args[\${#args[@]}-1]}"
+est=\$(printf '%s' "\$last" | grep -oE "'[^']+' establish '[^']+' --run '[0-9a-f]+'" | head -1)
+[ -n "\$est" ] || exit 0
+eval "set -- \$est"
+pane=\$("\${TMUX_BIN:-$T/bin/tmux}" list-panes 2>/dev/null | awk '{print \$1}' | head -1)
+[ -n "\$pane" ] || { n=\$(( 800 + \$(ls "$T/sessions" | wc -l) )); pane="%\${n: -1}"; }
+TMUX_PANE="\$pane" "\${LOGIN_HARNESS_PRINCIPAL:-\$1}" establish "\$3" --run "\$5" >> "$T/establish.out" 2>> "$T/establish.log"
+EOS
+  chmod +x "$T/bin/pane-establish"
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
@@ -28,6 +43,9 @@ register() { role="\${1#chorus-}"; pid=\$(( 800 + \$(ls "$T/sessions" | wc -l) )
   [ -f "$T/no-register" ] || { printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%%s"}' "\$role" "\$pid" "\${pid: -1}" "\${pid: -1}" > "$T/sessions/\$role-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; }; }
 args=("\$@"); for ((i=0; i<\${#args[@]}; i++)); do
   [ "\${args[i]}" = respawn-pane ] || continue
+  # #4933 — the pane runs the role's wrapper (bin/pane-establish); refused, the
+  # runtime never starts, so nothing registers
+  "$T/bin/pane-establish" "\$@" || exit 0
   for ((j=i+1; j<\${#args[@]}; j++)); do [ "\${args[j]}" = -t ] && { touch "$T/tmux-\${args[j+1]}"; register "\${args[j+1]}"; exit 0; }; done
 done
 case "\$1" in
@@ -51,6 +69,7 @@ EOS
 echo "token \$*" >> "$T/token.log"
 [ -f "$T/token-slow" ] && sleep "\$(cat "$T/token-slow")"   # #4403: widen a race on purpose
 [ -f "$T/token-fail" ] && { echo "chorus-identity-token: no credential for '\$1'" >&2; exit 3; }
+[ -f "$T/down-3001" ] && { echo "chorus-identity-token: identity not answering (:3001)" >&2; exit 3; }   # #4933: the issuer is identity
 [ -f "$T/token.fixture" ] && { cat "$T/token.fixture"; exit 0; }   # one token for every role, when a case sets it
 cat "$T/token-\$1.fixture"
 EOS
@@ -64,7 +83,20 @@ case "\${@: -1}" in *"/v1/identity/sessions?channel=browser"*) if [ -f "$T/api-d
 case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then printf 'upstream down\n'; elif [ -f "$T/roles-door.json" ]; then cat "$T/roles-door.json"; else printf '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}\n'; fi; exit 0 ;; esac
 case "\${@: -1}" in */v1/identity/principals\?*) acct=jeff-fixture-account; [ -f "$T/jeff-at-terminal" ] && acct=\$USER; printf '{"data":[{"name":"jeff","principalKind":"person","hostAccount":"%s"},{"name":"wren","principalKind":"agent","hostAccount":"%s"}]}\n' "\$acct" "\$USER"; exit 0 ;; esac   # #4412: who is at this terminal
 case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade|borg-queen|abby-normal) printf '{"data":{"principalKind":"agent","hostAccount":"chorus-%s"}}\n200\n' "\$pn" ;; jeff) printf '{"data":{"principalKind":"person","hostAccount":"jeffbridwell"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
-case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
+# #4933 — a listing of runs or presences answers with the rows written so far (newest state of each)
+case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/sessionruns?"*|*"/v1/identity/presences?"*) case "\${@: -1}" in *presences*) [ -f "$T/presence-door-down" ] && exit 22 ;; esac; r="\${@: -1}"; r="\${r%%\?*}"; r="\${r##*/v1/}"; r="\${r//\//_}"; python3 -c '
+import json,sys,glob,os
+rows={}
+for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-"+sys.argv[2]+"*.json"))):
+    try: b=json.load(open(f))
+    except Exception: continue
+    n=b.get("name")
+    if not n: continue
+    kind=sys.argv[2].split("_")[-1].rstrip("s")
+    stored=n if n.startswith(kind+"-") else kind+"-"+n   # the door hands rows back under the name it stored (POST answers "<kind>-<name>")
+    b=dict(b, name=stored); rows[stored]=b
+print(json.dumps({"data":list(rows.values())}))' "$T" "\$r"; exit 0 ;; esac
+case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/sessionruns/"*) rn="\${@: -1}"; rn="\${rn##*/}"; hit=\$(grep -l "\"name\": *\"\$rn\"" "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | tail -1); if [ -n "\$hit" ]; then printf '{"data":%s}\n200\n' "\$(cat "\$hit")"; else printf '{"data":{}}\n404\n'; fi; exit 0 ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
 if [ -n "\$m" ]; then
@@ -73,7 +105,8 @@ if [ -n "\$m" ]; then
   case "\$b" in *session.body) cp "\$b" "$T/curl.body" ;; esac   # the last Session body, by its old name
   [ "\$m" = POST ] && { kind=\$(echo "\$url" | sed -E 's#.*/##; s#s\$##'); name=\$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "\$b"); printf '{"data":{"name":"%s-%s"}}\n' "\$kind" "\$name"; }
   cat "$T/curl.reply" 2>/dev/null   # #4367: a refusal's body, when a case sets one
-  cat "$T/curl.status" 2>/dev/null || echo 201
+  # #4933 — a status for one route only (curl.status.<route>, e.g. identity_sessions), else for all
+  cat "$T/curl.status.\$route" 2>/dev/null || cat "$T/curl.status" 2>/dev/null || echo 201
 else
   cat "$T/existing.json" 2>/dev/null || cat "$T/row.json" 2>/dev/null   # existing.json: the row a 409 re-read finds (#4215)
 fi
@@ -133,6 +166,9 @@ login_harness_env() {
   export AWAKE_SERVICE_WAIT=2 AWAKE_NO_RETRY=1
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:3360"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
+  # #4933 — the stub pane runs the wrapper's establish with the binary under test
+  # (read only by the stub tmux; the launch line itself names the installed path)
+  export LOGIN_HARNESS_PRINCIPAL="${PRINCIPAL:-${SCRIPT:-${PRINCIPAL_BIN:-}}}"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
   export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
   export AWAKE_SUDO="$T/bin/sudo" AWAKE_ACCOUNT_HOMES="$T/homes"
@@ -142,6 +178,10 @@ login_harness_env() {
 }
 
 login_harness() { login_harness_stubs; login_harness_env; }
+
+# #4933 — EST: the role's Principal names the account running the test, so the role's
+# own establish (run by its wrapper, or by a case directly) is that account's to run
+est() { printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-$1.json"; }
 
 mk_token() {
   local role="$1" exp="${2:-$(( $(date +%s) + 600 ))}" payload

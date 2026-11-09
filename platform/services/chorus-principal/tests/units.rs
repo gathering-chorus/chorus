@@ -223,7 +223,7 @@ fn without_the_liveness_check_the_same_mute_session_is_blessed() {
 #[test]
 fn the_api_being_down_still_starts_the_role() {
     // no token because chorus-identity-token could not reach the API
-    match login_posture(Some("no token: connection refused"), false) {
+    match login_posture(Some("no token: connection refused")) {
         Start::Degraded(w) => assert!(w.contains("connection refused")),
         other => panic!("the API being down must not stop a start, got {:?}", other),
     }
@@ -232,7 +232,7 @@ fn the_api_being_down_still_starts_the_role() {
 #[test]
 fn a_shape_complaint_or_5xx_still_starts_the_role() {
     for why in ["http=422 duplicate 'tokenId'", "http=500", "curl failed: timeout"] {
-        match login_posture(Some(why), false) {
+        match login_posture(Some(why)) {
             Start::Degraded(_) => {}
             other => panic!("{} must degrade, not refuse; got {:?}", why, other),
         }
@@ -243,7 +243,7 @@ fn a_shape_complaint_or_5xx_still_starts_the_role() {
 fn a_credential_naming_another_principal_still_refuses() {
     // the ONE refusal: starting here would file kade's work under silas
     let why = "wrong principal: the token names https://x/kade/profile/card#me not silas";
-    match login_posture(Some(why), false) {
+    match login_posture(Some(why)) {
         Start::Refuse(w) => assert!(w.contains("wrong principal")),
         other => panic!("a wrong-principal credential must refuse, got {:?}", other),
     }
@@ -251,22 +251,17 @@ fn a_credential_naming_another_principal_still_refuses() {
 
 #[test]
 fn a_clean_login_is_just_go() {
-    assert_eq!(login_posture(None, false), Start::Go);
+    assert_eq!(login_posture(None), Start::Go);
 }
 
+// #4933 — retired: the old refuse-everything toggle (AWAKE_REFUSE_ON_LOGIN_FAILURE)
+// is gone; Jeff 2026-11-08 17:24 chose one posture, a failed sign-in does not
+// start the role. 4202-principal-login.bats proves the variable changes nothing.
 #[test]
-fn negative_proof_the_old_refuse_everything_posture_would_have_blocked_the_same_start() {
-    // The two postures must DIFFER on the input that cost Jeff an hour of Kade.
-    // If this ever passes with them equal, the degrade branch is decorative.
-    let why = "http=422 duplicate 'tokenId' across all session";
-    let now = login_posture(Some(why), false);
-    let before = login_posture(Some(why), true);
-    assert_eq!(before, Start::Refuse(why.to_string()));
-    assert_ne!(now, before);
-
-    // and the one real refusal is NOT the thing that changed
+fn only_the_wrong_principal_refuses_at_login_everything_else_is_pending() {
     let wrong = "wrong principal: the token names kade not silas";
-    assert_eq!(login_posture(Some(wrong), false), login_posture(Some(wrong), true));
+    assert_eq!(login_posture(Some(wrong)), Start::Refuse(wrong.to_string()));
+    assert!(matches!(login_posture(Some("http=422 duplicate 'tokenId'")), Start::Degraded(_)));
 }
 
 
