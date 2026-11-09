@@ -1543,6 +1543,20 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
 /// the role, the token passed as a 0600 header FILE, never an argv. Returns
 /// (http code, reply body).
 fn api_send(ctx: &Ctx, role: &str, route: &str, name: Option<&str>, body: &Value, tag: &str) -> (String, String) {
+    let (method, url) = match name { Some(n) => ("PUT", format!("{}/v1/{}/{}", ctx.api, route, n)), None => ("POST", format!("{}/v1/{}", ctx.api, route)) };
+    api_call(ctx, role, method, &url, body, tag)
+}
+
+/// #4934 AC1 — change only `body`'s fields on the row (PATCH). The row the door holds
+/// is the record; nothing is cached here. A refusal is named, as put_row names it.
+fn patch_row(ctx: &Ctx, role: &str, route: &str, kind: &str, name: &str, body: &Value) -> bool {
+    let (code, reply) = api_call(ctx, role, "PATCH", &format!("{}/v1/{}/{}", ctx.api, route, name), body, kind);
+    if ok_code(&code) { return true; }
+    ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("row={}", name), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]);
+    false
+}
+
+fn api_call(ctx: &Ctx, role: &str, method: &str, url: &str, body: &Value, tag: &str) -> (String, String) {
     let Ok(token) = sh(&ctx.token_bin, &[role]) else { return ("no-token".into(), String::new()) };
     let dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&dir);
@@ -1551,7 +1565,6 @@ fn api_send(ctx: &Ctx, role: &str, route: &str, name: Option<&str>, body: &Value
     if write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())).and_then(|_| write_private(&body_path, &body.to_string())).is_err() {
         return ("no-file".into(), String::new());
     }
-    let (method, url) = match name { Some(n) => ("PUT", format!("{}/v1/{}/{}", ctx.api, route, n)), None => ("POST", format!("{}/v1/{}", ctx.api, route)) };
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
     let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", method, "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_default();
@@ -1631,9 +1644,10 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
         .map_err(|why| ctx.spine(&["session.row.failed", role, "kind=run", &format!("why={}", why)])).ok().flatten();
     if let Some(run) = run {
         if run.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() {
-            if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
-                if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
-                    ctx.spine(&["session.run.ended", role, &format!("run={}", row_name(&ended)), &format!("reason={}", reason)]);
+            // #4934 AC1 — only what ending changes; the listing row put back whole was 422
+            if let Some((name, body)) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason).and_then(|e| rows::patch_of(&e, &["runEndedAt", "endReason"])) {
+                if patch_row(ctx, role, "identity/sessionruns", "run", &name, &body) {
+                    ctx.spine(&["session.run.ended", role, &format!("run={}", name), &format!("reason={}", reason)]);
                 }
             }
         }
@@ -1642,9 +1656,9 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
         .map_err(|why| ctx.spine(&["presence.door.unread", role, &format!("why={}", why)])).ok().flatten();
     if let Some(p) = presence {
         if p.get("reachability").and_then(|r| r.as_str()) != Some("unreachable") {
-            if let Some(gone) = rows::gone_presence(p) {
-                if put_row(ctx, role, "identity/presences", "presence", &gone) {
-                    ctx.spine(&["session.presence.retired", role, &format!("presence={}", row_name(&gone)), &format!("reason={}", reason)]);
+            if let Some((name, body)) = rows::gone_presence(p).and_then(|g| rows::patch_of(&g, &["reachability"])) {
+                if patch_row(ctx, role, "identity/presences", "presence", &name, &body) {
+                    ctx.spine(&["session.presence.retired", role, &format!("presence={}", name), &format!("reason={}", reason)]);
                 }
             }
         }

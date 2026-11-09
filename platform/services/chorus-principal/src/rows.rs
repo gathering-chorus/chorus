@@ -414,11 +414,22 @@ pub fn login_domains(listing: &str, role: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// #4934 AC1 — a write of only the fields that changed: (row name, body). A listing
+/// row put back whole carries what the listing adds — `status`, "" for absent
+/// fields, and minted links (`runOf: session-…`, `presenceOf: session-run-…`) the
+/// door refuses as double-prefix. Logout on 11-09 08:52:31 was 422 on the run and
+/// the presence for exactly that; the demo door then refused `runOf` too.
+pub fn patch_of(row: &Value, fields: &[&str]) -> Option<(String, Value)> {
+    let name = row.get("name")?.as_str()?.to_string();
+    let mut body = serde_json::Map::new();
+    for f in fields { body.insert((*f).to_string(), row.get(*f)?.clone()); }
+    Some((name, Value::Object(body)))
+}
+
 /// #4933/#4934 — the role's newest open row of `route` in a door listing, whose
 /// name is `<role>-<kind>-…` (the names establish mints) or the store's
 /// `<class>-<role>-<kind>-…`. `open_field` empty means "any row not unreachable".
-/// #4934 AC1: returned fit to PUT back (`putable`): the listing adds `status`, and
-/// a logout that sent it back was 422 on the run and the presence (11-09 08:52:31).
+/// The row is as the listing returns it: write back only with `patch_of`.
 pub fn open_row_from_listing(listing: &str, role: &str, route: &str, kind: &str, open_field: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(listing).ok()?;
     let name = |r: &Value| r.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
@@ -430,7 +441,6 @@ pub fn open_row_from_listing(listing: &str, role: &str, route: &str, kind: &str,
         .filter(|r| r.get("reachability").and_then(|x| x.as_str()) != Some("unreachable"))
         .max_by_key(|r| name(r))
         .cloned()
-        .map(putable)
 }
 
 /// Sessions to close in the sweep: open, past expiry, and not a live login.
