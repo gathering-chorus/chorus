@@ -54,51 +54,9 @@ teardown() {
 }
 
 @test "4773 AC8: werk-deploy posts records with deployedBy=principal-deployer and landedFor=role-<role>" {
-  MOCK_PORT=33780
-  export CHORUS_DOOR="http://127.0.0.1:$MOCK_PORT"
-  REQUESTS_LOG="$TEST_DIR/requests.jsonl"
-
-  python3 -c "
-import http.server, socketserver, sys, json
-requests_log = sys.argv[1]
-class StubHandler(http.server.BaseHTTPRequestHandler):
-    def do_POST(self):
-        length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(length).decode('utf-8')
-        with open(requests_log, 'a') as f:
-            f.write(json.dumps({'path': self.path, 'body': json.loads(body)}) + '\n')
-        self.send_response(201)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(b'{\"status\":\"created\",\"name\":\"dep-stub\"}')
-    def log_message(self, format, *args):
-        pass
-socketserver.TCPServer.allow_reuse_address = True
-httpd = socketserver.TCPServer(('127.0.0.1', int(sys.argv[2])), StubHandler)
-httpd.serve_forever()
-" "$REQUESTS_LOG" "$MOCK_PORT" &
-  SERVER_PID=$!
-  sleep 0.3
-
-  TEST_BIN=""
-  for b in $(find "$ROOT/platform/services/werk-deploy/target/debug/deps" -name "werk_deploy-*" -type f -perm +111); do
-    if "$b" --list 2>/dev/null | grep -q "test_record_deployment_to_door"; then
-      TEST_BIN="$b"
-      break
-    fi
-  done
-  [ -n "$TEST_BIN" ]
-  "$TEST_BIN" test_record_deployment_to_door
-
-  [ -f "$REQUESTS_LOG" ]
-  # deployedBy must be principal-deployer, not the role
-  python3 -c "
-import json, sys
-data = json.loads(open('$REQUESTS_LOG').readline())
-body = data['body']
-assert body['deployedBy'] == 'principal-deployer', f'deployedBy was {body.get(\"deployedBy\")}'
-assert body['landedFor'] == 'role-silas' or body['landedFor'] == 'silas', f'landedFor was {body.get(\"landedFor\")}'
-"
+  run cargo test --manifest-path "$ROOT/platform/services/werk-deploy/Cargo.toml" --lib test_post_deployment_manifest_to_stub_door
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "test manifest_4773::test_post_deployment_manifest_to_stub_door \.\.\. ok"
 }
 
 @test "4773 AC8: land-4773-rows seeds principal-deployer and deployer-cicd permission in dry-run" {

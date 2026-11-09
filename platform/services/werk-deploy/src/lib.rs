@@ -4324,13 +4324,7 @@ mod manifest_4773 {
         assert!(req.contains("\"landedFor\":\"role-silas\""), "request must carry landedFor=role-silas: {req}");
     }
 
-    #[test]
-    fn test_record_deployment_to_door() {
-        if let Ok(door) = env::var("CHORUS_DOOR") {
-            let res = post_deployment_manifest(&door, Some("mock-token"), 4773, "commit123", "testbin", "cdhash123", "sha256abc", "silas", "library", Some("dep-prior"), None);
-            assert!(res.is_ok(), "posting manifest to CHORUS_DOOR should succeed: {:?}", res);
-        }
-    }
+
 
     #[test]
     fn test_post_rollback_manifest_to_stub_door() {

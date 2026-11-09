@@ -69,15 +69,6 @@ chorus:role-abby-normal a chorus:Role, chorus:AgentRole ;
     chorus:comment "Agent role on another LLM." ;
     chorus:rolePriority 4 .
 
-# #4773 — Borg Queen, the prover role on Antigravity (runtime: chorus-borg-queen).
-# principal-borg-queen holdsRole chorus:role-borg-queen in identity-principals-3613.ttl.
-chorus:role-borg-queen a chorus:Role, chorus:AgentRole ;
-    chorus:roleKind "agent" ;
-    rdfs:label "Borg Queen" ; chorus:label "Borg Queen" ;
-    rdfs:comment "Agent role on Antigravity. Owns the prove-and-reflect product (Borg) and post-land verification." ;
-    chorus:comment "Agent role on Antigravity. Prover." ;
-    chorus:rolePriority 5 .
-
 # #3860/#3985 — the nightly runs as its OWN role, not borrowed agent identity.
 # The write door resolves agent_id from holdsRole; principal-nightly had
 # identity + scope but no role, so every batch write 403'd and the test ledger

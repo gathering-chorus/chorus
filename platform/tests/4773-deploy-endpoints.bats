@@ -30,15 +30,4 @@ setup_file() {
   [ "$output" = "404" ]
 }
 
-@test "4773 AC2 guard: direct writes to prod :3360 / :3365 are blocked by test harness" {
-  case "$OWL_URL" in
-    *:3360*|*:3365*)
-      # Safe: we assert the guard skips/refuses writes to live store
-      pass="true"
-      ;;
-    *)
-      pass="true"
-      ;;
-  esac
-  [ "$pass" = "true" ]
-}
+
