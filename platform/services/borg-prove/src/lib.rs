@@ -677,6 +677,15 @@ pub fn units_from_deploy_log(log_content: &str, card: u32, land_trace: Option<&s
     let mut units = Vec::new();
     if let Some(deployed) = last_event.get("deployed").and_then(|v| v.as_str()) {
         for item in deployed.split(',') {
+            let item = item.trim();
+            // Filter out operational/metadata labels (restart:*, athena-handoff[*])
+            if item.is_empty() || item.contains(':') || item.contains('[') {
+                continue;
+            }
+            // Skip TS daemons — they are npm-built in canonical, not codesigned binaries
+            if matches!(item, "chorus-api" | "pulse" | "clearing" | "clearing-v2") {
+                continue;
+            }
             let unit = item.split('=').next().unwrap_or("").trim();
             if !unit.is_empty() && !units.iter().any(|u| u == unit) {
                 units.push(unit.to_string());
@@ -821,15 +830,15 @@ mod tests_4773 {
 
     #[test]
     fn test_units_from_deploy_log() {
-        let log = r#"{"ts":1794241046155,"event":"deploy.completed","role":"wren","card_id":4773,"trace_id":"xyz","target":"canonical","deployed":"chorus-api,werk-deploy"}
+        let log = r#"{"ts":1794241046155,"event":"deploy.completed","role":"wren","card_id":4773,"trace_id":"xyz","target":"canonical","deployed":"chorus-hooks,werk-deploy,restart:com.chorus.inject,athena-handoff[model=1]"}
 {"ts":1794241046156,"event":"deploy.completed","role":"wren","card_id":9999,"trace_id":"xyz","target":"canonical","deployed":"other-bin"}
 {"ts":1794241046157,"event":"deploy.completed","role":"wren","card_id":4773,"trace_id":"xyz","target":"werk","deployed":"ignore-me"}
 "#;
         let units = units_from_deploy_log(log, 4773, None);
-        assert_eq!(units, vec!["chorus-api".to_string(), "werk-deploy".to_string()]);
+        assert_eq!(units, vec!["chorus-hooks".to_string(), "werk-deploy".to_string()]);
 
         let units_traced = units_from_deploy_log(log, 4773, Some("xyz"));
-        assert_eq!(units_traced, vec!["chorus-api".to_string(), "werk-deploy".to_string()]);
+        assert_eq!(units_traced, vec!["chorus-hooks".to_string(), "werk-deploy".to_string()]);
 
         let units_other_trace = units_from_deploy_log(log, 4773, Some("diff-trace"));
         assert!(units_other_trace.is_empty());

@@ -1769,13 +1769,11 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
         ("cdhash", &cdhash), ("deploy_target", "canonical"), ("live_main", live_main(&root)),
         ("duration_ms", &ms),
     ]);
-    // #4773 AC3: record deployment manifest to door
-    let bin = match target_class_in(name, Path::new(&root)) {
-        Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => bin,
-        _ => name.to_string(),
-    };
-    let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
-    let _ = record_deployment(home, card, &commit, name, &bin, role, &machine, false, trace);
+    // #4773 AC3: record deployment manifest to door for binary crates
+    if let Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) = target_class_in(name, Path::new(&root)) {
+        let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+        let _ = record_deployment(home, card, &commit, name, &bin, role, &machine, false, trace);
+    }
     Ok(name.to_string())
 }
 
@@ -2554,15 +2552,6 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             deployed_commit, landed_commit.unwrap_or("")
         ));
     }
-    // #4773 AC3: post deployment manifest for each deployed crate
-    let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
-    for c in &crates {
-        let bin = match target_class_in(c, Path::new(root.as_str())) {
-            Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => bin,
-            _ => c.to_string(),
-        };
-        let _ = record_deployment(home, card, &deployed_commit, c, &bin, role, &machine, false, trace);
-    }
     Ok(format!("{} target=canonical", only))
 }
 
@@ -2673,10 +2662,12 @@ pub fn post_deployment_manifest(
     let now = iso8601_now();
     let epoch = now_epoch();
     let dep_id = format!("dep-{}-{}-{}", card, bin_name, epoch);
-    let landed_for = if role.starts_with("role-") {
-        role.to_string()
+    let landed_for = if role.is_empty() || role == "system" {
+        None
+    } else if role.starts_with("role-") {
+        Some(role.to_string())
     } else {
-        format!("role-{}", role)
+        Some(format!("role-{}", role))
     };
     let machine = if target_machine.is_empty() { "library" } else { target_machine };
 
@@ -2689,7 +2680,9 @@ pub fn post_deployment_manifest(
     obj.insert("sha256".into(), serde_json::Value::String(sha256.to_string()));
     obj.insert("deployedAt".into(), serde_json::Value::String(now));
     obj.insert("deployedBy".into(), serde_json::Value::String("principal-deployer".to_string()));
-    obj.insert("landedFor".into(), serde_json::Value::String(landed_for));
+    if let Some(lf) = landed_for {
+        obj.insert("landedFor".into(), serde_json::Value::String(lf));
+    }
     obj.insert("targetMachine".into(), serde_json::Value::String(machine.to_string()));
     if let Some(prev) = previous {
         if !prev.is_empty() {

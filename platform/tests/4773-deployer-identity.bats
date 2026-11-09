@@ -80,7 +80,13 @@ httpd.serve_forever()
   SERVER_PID=$!
   sleep 0.3
 
-  TEST_BIN=$(ls -t $(find "$ROOT/platform/services/werk-deploy/target/debug/deps" -name "werk_deploy-*" -type f -perm +111) | head -1)
+  TEST_BIN=""
+  for b in $(find "$ROOT/platform/services/werk-deploy/target/debug/deps" -name "werk_deploy-*" -type f -perm +111); do
+    if "$b" --list 2>/dev/null | grep -q "test_record_deployment_to_door"; then
+      TEST_BIN="$b"
+      break
+    fi
+  done
   [ -n "$TEST_BIN" ]
   "$TEST_BIN" test_record_deployment_to_door
 
