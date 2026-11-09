@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api
-# @domain: werk
+# @domain: cicd
 # #4773 AC2: athena-gen produces /cicd/deployments POST and GET endpoints
 # served through the door.
 # Negative proof: unmodeled routes return 404. Guard: test refuses to POST to prod door (3360).

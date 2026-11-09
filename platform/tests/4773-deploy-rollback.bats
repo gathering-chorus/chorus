@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
-# @domain: werk
+# @domain: cicd
 # #4773 AC7: werk-deploy-crate rollback / chorus-bin-install --rollback
 # reinstalls the kept binary, kickstarts the service.
 # Negative proof: a rollback with no kept binary refuses naming the crate,

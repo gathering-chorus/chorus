@@ -1,5 +1,5 @@
 // @test-type: unit
-// @domain: werk
+// @domain: cicd
 // #4773 AC2: POST /cicd/deployments door proof with spy store.
 // Valid Deployment -> 201; missing cdhash -> 422.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
-# @domain: werk
+# @domain: cicd
 # #4773 AC1: Define DeploymentManifest / Deployment shape in OWL
 # (chorus:DeploymentShape) with cardId, commitSha, sha256, targetMachine,
 # deployedBy, deployedAt, previous, rollbackOf.

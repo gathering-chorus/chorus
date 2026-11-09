@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
-# @domain: werk
+# @domain: cicd
 # #4773 AC8: deployment records are posted by principal-deployer, not the landing role.
 # One Principal row (hostAccount "runner"), one Permission (Write on urn:chorus:domains:cicd only),
 # its credential readable only by the runner account (0600).

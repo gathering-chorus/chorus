@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
-# @domain: werk
+# @domain: cicd
 # #4773 AC5: Negative proof: a deployment with mismatched or missing manifest is rejected by borg-prove.
 
 setup() {

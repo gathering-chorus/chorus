@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
-# @domain: werk
+# @domain: cicd
 # #4773 AC4: borg-prove reads the manifest on land and asserts prod running hashes match the manifest exactly.
 
 setup() {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api
-# @domain: werk
+# @domain: cicd
 # #4773 AC3: werk-deploy / cicd-land posts the signed manifest as the final deployment step.
 # Tests use a stub door — never hitting live prod :3360 or :3365.
 

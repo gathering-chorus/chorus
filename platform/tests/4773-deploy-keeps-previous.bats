@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
-# @domain: werk
+# @domain: cicd
 # #4773 AC6: every deploy keeps the previous installed binary per crate
 # (path + sha recorded). Regression suite for 2026-11-09 rollback outage.
 
