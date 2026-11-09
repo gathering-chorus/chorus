@@ -635,7 +635,9 @@ chorus:ActorShape a sh:NodeShape ;
     # which reads sh:property paths only, keeps one plain optional actorKind field.
     sh:or ( [ sh:path chorus:actorKind ; sh:minCount 1 ] [ sh:path chorus:signsInAs ; sh:minCount 1 ] ) .
 chorus:ActorShape-label a sh:PropertyShape ;
-    sh:path rdfs:label ; sh:minCount 1 .
+    # #4933 — a string, as every subclass's label is (Teammate inherits this shape; a
+    # plain label beside TeammateShape's string label is refused by #4163)
+    sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string .
 chorus:ActorShape-actorKind a sh:PropertyShape ;
     sh:path chorus:actorKind ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(person|agent|service)$" ;

@@ -21,11 +21,12 @@ row() { printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$
 out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
 
 @test "#4383 a principal with its own account starts as that account" {
-  row wren chorus-wren
+  # #4933 — the account is stated: the test's own, so the role's wrapper can establish
+  acct=$(id -un); row wren "$acct"
   run "$SCRIPT" login wren
   test "$status" -eq 0
-  grep -q -- "-n -u chorus-wren true" "$T/sudo.log"
-  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"
+  grep -q -- "-n -u $acct true" "$T/sudo.log"
+  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u $acct -H bash -c"
   grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "umask 002"
 }
 
@@ -54,15 +55,16 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   test -z "$(grep -E 'respawn-pane|send-keys' "$T/tmux.log" 2>/dev/null || true)"
 }
 
-@test "#4924 a launcher without launchctl asuser permission falls back to unisolated start with a warning" {
+@test "#4924→#4933 a launcher without launchctl asuser permission refuses: never an unisolated start" {
+  # Jeff 2026-11-08 11:05: no fallbacks. The unisolated start is deleted.
   row wren chorus-wren
   touch "$T/launchctl-deny"
   run "$SCRIPT" login wren
-  test "$status" -eq 0
-  out_has "launchctl asuser"
-  out_has "falling back to unisolated start"
-  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"
-  grep -F "respawn-pane -k -t chorus-wren" "$T/tmux.log" | grep -qv "launchctl asuser"
+  test "$status" -eq 2
+  out_has "cannot be started isolated"
+  out_has "never an unisolated start"
+  out_has "chorus-role-asuser.sudoers"
+  test -z "$(grep -F "respawn-pane" "$T/tmux.log" 2>/dev/null || true)"
 }
 
 @test "#4931 NEGATIVE PROOF: an agent whose account is the launcher's own is refused, never started as it" {

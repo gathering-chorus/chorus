@@ -155,7 +155,7 @@ login_harness_env() {
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
   # #4933 — the stub pane runs the wrapper's establish with the binary under test
   # (read only by the stub tmux; the launch line itself names the installed path)
-  export LOGIN_HARNESS_PRINCIPAL="${PRINCIPAL:-${SCRIPT:-}}"
+  export LOGIN_HARNESS_PRINCIPAL="${PRINCIPAL:-${SCRIPT:-${PRINCIPAL_BIN:-}}}"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
   export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
   export AWAKE_SUDO="$T/bin/sudo" AWAKE_ACCOUNT_HOMES="$T/homes"

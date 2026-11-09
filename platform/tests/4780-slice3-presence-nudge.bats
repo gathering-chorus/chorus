@@ -13,23 +13,29 @@ setup() {
   T="$BATS_TEST_TMPDIR"
   source "$ROOT/platform/tests/lib/login-harness.bash"
   login_harness
+  # #4933 — each role's own wrapper establishes as the account running the test
+  # (stated, never the harness default: chorus-wren passed only for chorus-wren)
+  for r in silas kade wren; do est "$r"; done
 }
 
 out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
 out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 
 @test "AC3: login records role account in hostAccount, not launcher USER" {
-  export USER="jeffbridwell"
+  # #4933 — the role's account is the one its row names (the test's own, which may
+  # establish); the launcher is a different account, and its name never reaches a row
+  acct=$(id -un)
+  export USER="launcher-fixture"
   run "$SCRIPT" on wren
   test "$status" -eq 0
 
   s=$(body POST identity_sessions)
-  has "$s" '"hostAccount":"chorus-wren"'
-  test -z "$(printf '%s' "$s" | grep -F '"hostAccount":"jeffbridwell"' || true)"
+  has "$s" "\"hostAccount\":\"$acct\""
+  test -z "$(printf '%s' "$s" | grep -F '"hostAccount":"launcher-fixture"' || true)"
 
   p=$(body POST identity_presences)
-  has "$p" '"hostAccount":"chorus-wren"'
-  test -z "$(printf '%s' "$p" | grep -F '"hostAccount":"jeffbridwell"' || true)"
+  has "$p" "\"hostAccount\":\"$acct\""
+  test -z "$(printf '%s' "$p" | grep -F '"hostAccount":"launcher-fixture"' || true)"
 }
 
 @test "NEGATIVE PROOF: launcher USER is rejected from contaminating hostAccount" {

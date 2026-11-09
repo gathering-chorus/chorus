@@ -75,7 +75,7 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
 @test "#4385 a principal that is restored can log in again and its turns run" {
   "$SCRIPT" login wren >/dev/null 2>&1
   revoke; turn
-  rm -f "$T/principal-wren.json"      # the harness answers agent again
+  est wren      # restored: the row answers agent again, naming wren's account (#4933: stated, not the default)
   run "$SCRIPT" login wren
   test "$status" -eq 0
   turn

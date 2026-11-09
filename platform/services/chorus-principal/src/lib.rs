@@ -1122,19 +1122,16 @@ fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, run_sta
             let escaped_inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$");
             let probe_args = asuser_probe_args(&uid, acct);
             let asuser_check = sh(&ctx.sudo, &probe_args);
-            if asuser_check.is_ok() {
-                let launch_prefix = probe_args[1..11].join(" ");
-                format!(
-                    "{} -n {} \"{}\"",
-                    ctx.sudo, launch_prefix, escaped_inner
-                )
-            } else {
-                eprintln!("chorus-principal: warning: sudo launchctl asuser {} not permitted; falling back to unisolated start for {}", uid, acct);
-                format!(
-                    "{} -n -u {} -H bash -c \"{}\"",
-                    ctx.sudo, acct, escaped_inner
-                )
+            // #4933 — no fallback (Jeff 11-08 11:05): a role that cannot be started
+            // isolated in its own session is refused, never started unisolated
+            if asuser_check.is_err() {
+                return Err((2, format!("{} cannot be started isolated: sudo launchctl asuser {} is not permitted for {}; refusing (never an unisolated start). fix: the asuser rule in platform/config/chorus-role-asuser.sudoers", role, uid, acct)));
             }
+            let launch_prefix = probe_args[1..11].join(" ");
+            format!(
+                "{} -n {} \"{}\"",
+                ctx.sudo, launch_prefix, escaped_inner
+            )
         }
     };
     Ok(launch)
