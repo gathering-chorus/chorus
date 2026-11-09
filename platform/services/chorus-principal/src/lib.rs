@@ -497,6 +497,13 @@ pub fn start_in_pane_args(session: &str, dir: &str, launch: &str, exists: bool) 
     a
 }
 
+/// #4934 AC3 — once the runtime has settled, its pane closes when it exits. The
+/// remain-on-exit set before the launch (#4813 AC3) is only for a launch that dies
+/// at once; left on, every role Jeff closed sat as a dead pane (11-09 08:53).
+pub fn settled_pane_args(session: &str) -> Vec<String> {
+    ["set-option", "-t", session, "remain-on-exit", "off"].iter().map(|s| s.to_string()).collect()
+}
+
 /// Start the role's runtime in its pane (#4813). Refuses to respawn over a live
 /// registry entry: a respawn kills the pane's process, and that must never be a
 /// running role.
@@ -864,6 +871,17 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+    // #4934 AC2 — the domains this login establishes, read through the door on its trace
+    let perms = door(ctx, &["-sf", "--max-time", "10", &format!("{}/v1/security/permissions?agent=principal-{}&limit=500", ctx.api, role)])
+        .map_err(|e| format!("the door did not answer: {}", e.trim()))
+        .and_then(|body| rows::login_domains(&body, role));
+    match perms {
+        Ok(d) => {
+            ctx.spine(&["session.domains.established", role, &format!("session={}", session_name), &format!("domains={}", d.join(","))]);
+            println!("login: {}  domains {}", role, if d.is_empty() { "none".to_string() } else { d.join(" ") });
+        }
+        Err(why) => ctx.spine(&["session.domains.unread", role, &format!("session={}", session_name), &format!("why={}", why)]),
+    }
     close_superseded(ctx, role, channel, &session_name);
     Ok(LoginState::Recorded { session: session_name, pid: None })
 }
@@ -1505,6 +1523,10 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         return Err((1, format!("{} exited right after starting", runtime)));
     }
     ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
+    // #4934 AC3 — settled: from here a quit closes the pane, never leaves it dead
+    let settle = settled_pane_args(&tmux_session);
+    let refs: Vec<&str> = settle.iter().map(|s| s.as_str()).collect();
+    if let Err(e) = sh(&ctx.tmux, &refs) { ctx.spine(&["session.pane.unsettled", role, &format!("why={}", e.trim())]); }
     // #4933 — read back, never written: the run this launch named, established by the role
     let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, Some(l.pid)));
     ctx.write_state(role, &st);
@@ -1596,16 +1618,9 @@ fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool 
 fn door_open_row(ctx: &Ctx, role: &str, route: &str, kind: &str, open_field: &str) -> Result<Option<Value>, String> {
     let url = if open_field.is_empty() { format!("{}/v1/{}?limit=5000", ctx.api, route) } else { format!("{}/v1/{}?{}.absent=true&limit=5000", ctx.api, route, open_field) };
     let body = door(ctx, &["-sf", "--max-time", "10", &url]).map_err(|e| format!("the door did not answer: {}", e.trim()))?;
-    let v: Value = serde_json::from_str(&body).map_err(|e| format!("not JSON: {e}"))?;
-    let prefix = format!("{}-{}-", role, kind);
-    let stored = format!("{}-{}", route.rsplit('/').next().unwrap_or(route).trim_end_matches('s'), prefix);
-    Ok(v.get("data").and_then(|d| d.as_array()).into_iter().flatten()
-        .filter(|r| { let n = row_name(r); n.starts_with(&prefix) || n.starts_with(&stored) })
-        // open, checked here too, not only by the door's filter
-        .filter(|r| open_field.is_empty() || r.get(open_field).and_then(|x| x.as_str()).unwrap_or("").is_empty())
-        .filter(|r| r.get("reachability").and_then(|x| x.as_str()) != Some("unreachable"))
-        .max_by_key(|r| row_name(r))
-        .cloned())
+    serde_json::from_str::<Value>(&body).map_err(|e| format!("not JSON: {e}"))?;
+    // open, checked here too, not only by the door's filter; fit to PUT back (#4934 AC1)
+    Ok(rows::open_row_from_listing(&body, role, route, kind, open_field))
 }
 
 /// End the role's open run (and retire its presence), read from the door.
