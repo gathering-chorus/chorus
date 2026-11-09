@@ -82,7 +82,17 @@ EOF
 cat > "$STUB/launchctl" <<EOF
 #!/bin/sh
 echo "\$@" >> "$LOGS/launchctl"
-if [ "\$1" = print ]; then echo 'state = running'; echo 'pid = 123'; fi
+case "\$1" in
+  kickstart)
+    pid=\$(cat "$T/current_pid" 2>/dev/null || echo 123)
+    echo \$((pid + 1)) > "$T/current_pid"
+    ;;
+  print)
+    pid=\$(cat "$T/current_pid" 2>/dev/null || echo 123)
+    echo 'state = running'
+    echo "pid = \$pid"
+    ;;
+esac
 exit 0
 EOF
 # #4111 — the fixture needs a RESOLVABLE running process, or the deploy
@@ -101,7 +111,7 @@ EOF
 cat > "$STUB/ps" <<EOF
 #!/bin/sh
 case "\$*" in
-  *-p\ 123*lstart*) LC_ALL=C date '+%a %b %e %H:%M:%S %Y' ;;
+  *-p\ *lstart*) LC_ALL=C date '+%a %b %e %H:%M:%S %Y' ;;
   *) exec /bin/ps "\$@" ;;
 esac
 EOF

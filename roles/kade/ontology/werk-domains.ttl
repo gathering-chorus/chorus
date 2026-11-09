@@ -222,9 +222,6 @@ chorus:cdhash a owl:DatatypeProperty ;
 
 # --- Deployment properties (#4773) -------------------------------------------
 # Note: chorus:deployedCommit reused from chorus.ttl:3114 for source git commit.
-chorus:deployedCommit a owl:DatatypeProperty ;
-    rdfs:range xsd:string ;
-    rdfs:comment "Source git commit deployed (#4773)." .
 
 chorus:deployedUnit a owl:DatatypeProperty ;
     rdfs:domain chorus:Deployment ; rdfs:range xsd:string ;
