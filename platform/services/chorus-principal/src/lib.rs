@@ -504,6 +504,17 @@ pub fn settled_pane_args(session: &str) -> Vec<String> {
     ["set-option", "-t", session, "remain-on-exit", "off"].iter().map(|s| s.to_string()).collect()
 }
 
+/// #4934 AC3 — every way a role is confirmed running (claude, agent, gemini, a model
+/// runtime, or already awake) ends here: the bar shows its login word, and its pane is
+/// settled so a quit closes it. On 11-09 10:31 only the model-runtime path settled, and
+/// kade's pane (claude) died on every quit.
+fn mark_running(ctx: &Ctx, role: &str, word: &str) {
+    ctx.set_bar(role, word);
+    let settle = settled_pane_args(&Ctx::tmux_session(role));
+    let refs: Vec<&str> = settle.iter().map(|s| s.as_str()).collect();
+    if let Err(e) = sh(&ctx.tmux, &refs) { ctx.spine(&["session.pane.unsettled", role, &format!("why={}", e.trim())]); }
+}
+
 /// Start the role's runtime in its pane (#4813). Refuses to respawn over a live
 /// registry entry: a respawn kills the pane's process, and that must never be a
 /// running role.
@@ -1250,7 +1261,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             ctx.write_state(role, &st);
             if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
             let word = lifecycle::login_word(&st, Some(l.pid));
-            ctx.set_bar(role, word);
+            mark_running(ctx, role, word);
             println!("{}", proof_line(role, l, word, "already awake"));
             if attach { attach_to(ctx, role); }
             return Ok(came_of(&st));
@@ -1375,7 +1386,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run_name(role, &stamp), Some(l.pid)));
     ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, Some(l.pid));
-    ctx.set_bar(role, word);
+    mark_running(ctx, role, word);
     println!("{}", proof_line(role, &l, word, &how));
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
@@ -1427,7 +1438,7 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, None));
     ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, None);
-    ctx.set_bar(role, word);
+    mark_running(ctx, role, word);
     println!("awake: {}  agent run {} enrolled  login {}", role, run, word);
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
@@ -1478,7 +1489,7 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
     let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, Some(l.pid)));
     ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, Some(l.pid));
-    ctx.set_bar(role, word);
+    mark_running(ctx, role, word);
     println!("{}", proof_line(role, &l, word, "gemini in its own pane"));
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
@@ -1531,15 +1542,11 @@ fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -
         return Err((1, format!("{} exited right after starting", runtime)));
     }
     ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
-    // #4934 AC3 — settled: from here a quit closes the pane, never leaves it dead
-    let settle = settled_pane_args(&tmux_session);
-    let refs: Vec<&str> = settle.iter().map(|s| s.as_str()).collect();
-    if let Err(e) = sh(&ctx.tmux, &refs) { ctx.spine(&["session.pane.unsettled", role, &format!("why={}", e.trim())]); }
     // #4933 — read back, never written: the run this launch named, established by the role
     let st = lifecycle::keep_launch_reason(&st, established(ctx, role, &run, Some(l.pid)));
     ctx.write_state(role, &st);
     let word = lifecycle::login_word(&st, Some(l.pid));
-    ctx.set_bar(role, word);
+    mark_running(ctx, role, word);
     println!("{}", proof_line(role, &l, word, &format!("{runtime} in its own pane")));
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
