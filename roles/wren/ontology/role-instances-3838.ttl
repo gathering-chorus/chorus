@@ -69,6 +69,15 @@ chorus:role-abby-normal a chorus:Role, chorus:AgentRole ;
     chorus:comment "Agent role on another LLM." ;
     chorus:rolePriority 4 .
 
+# #4691 / #4773 — Borg Queen, the prover on the Chorus team, operating as
+# the prover actor behind Borg (Jeff 2026-10-21: "lets try to start borg queen").
+chorus:role-borg-queen a chorus:Role, chorus:AgentRole ;
+    chorus:roleKind "agent" ;
+    rdfs:label "Borg Queen" ; chorus:label "Borg Queen" ;
+    rdfs:comment "Prover role. Checks card acceptance criteria against prod after every land." ;
+    chorus:comment "Prover role. Acceptance verification in prod." ;
+    chorus:rolePriority 5 .
+
 # #3860/#3985 — the nightly runs as its OWN role, not borrowed agent identity.
 # The write door resolves agent_id from holdsRole; principal-nightly had
 # identity + scope but no role, so every batch write 403'd and the test ledger

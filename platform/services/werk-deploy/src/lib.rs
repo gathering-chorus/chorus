@@ -1769,11 +1769,6 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
         ("cdhash", &cdhash), ("deploy_target", "canonical"), ("live_main", live_main(&root)),
         ("duration_ms", &ms),
     ]);
-    // #4773 AC3: record deployment manifest to door for binary crates
-    if let Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) = target_class_in(name, Path::new(&root)) {
-        let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
-        let _ = record_deployment(home, card, &commit, name, &bin, role, &machine, false, trace);
-    }
     Ok(name.to_string())
 }
 
@@ -1828,6 +1823,13 @@ fn run_crate_mode(args: &[String]) -> R<String> {
     }
     jsonl(&home, &role, card, &trace, "deploy.started", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"crate\":\"{}\"", name));
     deploy_crate_canonical(&home, &role, card, &trace, &name)?;
+    // #4773 AC3: record deployment manifest to door for binary crate in crate-mode
+    if let Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) = target_class_in(&name, Path::new(&root)) {
+        let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+        let commit = run_env(Some(&root), &[], "git", &["-C", &root, "rev-parse", "--short", "HEAD"])
+            .map(|s| s.trim().to_string()).unwrap_or_else(|_| "unknown".to_string());
+        let _ = record_deployment(&home, card, &commit, &name, &bin, &role, &machine, false, &trace);
+    }
     // Witness the standalone crate deploy in the jsonl (the in-flow path writes its own
     // whole-deploy deploy.completed in deploy_canonical; this is the crate-mode analogue).
     jsonl(&home, &role, card, &trace, "deploy.completed", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"deployed\":\"{}\"", name));
@@ -2551,6 +2553,15 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             "one-sha gate RED: deployed origin/main HEAD '{}' != landedCommit '{}' (commit drift, or empty = werk.yml capture failed) — card not verified against its landed sha; runtime left valid, re-run to self-heal",
             deployed_commit, landed_commit.unwrap_or("")
         ));
+    }
+    // #4773 AC3: post deployment manifest for each deployed crate
+    let machine = env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+    for c in &crates {
+        let bin = match target_class_in(c, Path::new(root.as_str())) {
+            Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => bin,
+            _ => c.to_string(),
+        };
+        let _ = record_deployment(home, card, &deployed_commit, c, &bin, role, &machine, false, trace);
     }
     Ok(format!("{} target=canonical", only))
 }
