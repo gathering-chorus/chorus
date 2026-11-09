@@ -757,6 +757,9 @@ fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<
     match resumed.map(Ok).unwrap_or_else(|| do_login(ctx, role)) {
         Ok(st) => {
             ctx.write_state(role, &st);
+            // #4934 AC2 reopen — both ways in (a fresh login AND a resumed session) name the
+            // domains; prod 09:48:40 borg-queen resumed and the event was never written
+            if let LoginState::Recorded { session, .. } = &st { establish_domains(ctx, role, session); }
             match &st {
                 LoginState::Recorded { session, .. } if with_run => {
                     record_run_stamped(ctx, role, session, &Live { pid: 0, tty: tty.clone(), host: "tmux".into(), pane: pane.clone() }, "pending", run_stamp.as_deref().unwrap_or_default());
@@ -790,6 +793,21 @@ fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<
 
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
 /// Recorded or Pending; Err is a refusal (wrong principal), already printed.
+/// #4934 AC2 — the domains this login establishes (the role's Principal's Permission
+/// rows), read through the door on the login's trace and named in one event.
+fn establish_domains(ctx: &Ctx, role: &str, session: &str) {
+    let perms = door(ctx, &["-sf", "--max-time", "10", &format!("{}/v1/security/permissions?agent=principal-{}&limit=500", ctx.api, role)])
+        .map_err(|e| format!("the door did not answer: {}", e.trim()))
+        .and_then(|body| rows::login_domains(&body, role));
+    match perms {
+        Ok(d) => {
+            ctx.spine(&["session.domains.established", role, &format!("session={}", session), &format!("domains={}", d.join(","))]);
+            eprintln!("login: {}  domains {}", role, if d.is_empty() { "none".to_string() } else { d.join(" ") });
+        }
+        Err(why) => ctx.spine(&["session.domains.unread", role, &format!("session={}", session), &format!("why={}", why)]),
+    }
+}
+
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let channel = match rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()) {
         Ok(c) => c,
@@ -871,17 +889,6 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
-    // #4934 AC2 — the domains this login establishes, read through the door on its trace
-    let perms = door(ctx, &["-sf", "--max-time", "10", &format!("{}/v1/security/permissions?agent=principal-{}&limit=500", ctx.api, role)])
-        .map_err(|e| format!("the door did not answer: {}", e.trim()))
-        .and_then(|body| rows::login_domains(&body, role));
-    match perms {
-        Ok(d) => {
-            ctx.spine(&["session.domains.established", role, &format!("session={}", session_name), &format!("domains={}", d.join(","))]);
-            println!("login: {}  domains {}", role, if d.is_empty() { "none".to_string() } else { d.join(" ") });
-        }
-        Err(why) => ctx.spine(&["session.domains.unread", role, &format!("session={}", session_name), &format!("why={}", why)]),
-    }
     close_superseded(ctx, role, channel, &session_name);
     Ok(LoginState::Recorded { session: session_name, pid: None })
 }
