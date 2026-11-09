@@ -1,0 +1,14 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+<urn:chorus:machine:library> a chorus:Machine .
+<urn:chorus:rogue:attacker> a chorus:Machine . # NOT a chorus:Principal!
+
+<urn:chorus:deployment:bad-deployedby> a chorus:Deployment ;
+    chorus:cdhash "1234567890123456789012345678901234567890" ;
+    chorus:cardId 4773 ;
+    chorus:deployedCommit "123456789" ;
+    chorus:sha256 "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb" ;
+    chorus:deployedAt "2026-11-09T11:00:00Z"^^xsd:dateTime ;
+    chorus:deployedBy <urn:chorus:rogue:attacker> ; # fails sh:class chorus:Principal
+    chorus:targetMachine <urn:chorus:machine:library> .

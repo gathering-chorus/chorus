@@ -414,3 +414,12 @@ chorus:permission-borg-queen-cards a chorus:Permission ;
     chorus:accessTo "urn:chorus:domains:cards"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
+
+# #4773 — deployer writes the cicd domain (AC8).
+# Posts Deployment manifest records to urn:chorus:domains:cicd on land.
+chorus:permission-deployer-cicd a chorus:Permission ;
+    rdfs:label "deployer may write urn:chorus:domains:cicd" ;
+    chorus:agent chorus:principal-deployer ;
+    chorus:accessTo "urn:chorus:domains:cicd"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .

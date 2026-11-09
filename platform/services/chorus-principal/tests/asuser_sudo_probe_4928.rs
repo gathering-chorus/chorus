@@ -33,7 +33,7 @@ fn matches_sudoers_rule(probe_args: &[&str], sudoers: &str) -> bool {
 
 #[test]
 fn asuser_probe_matches_repo_sudoers_line_by_line() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../..");
     let sudoers_path = repo_root.join("platform/config/chorus-role-asuser.sudoers");
     let sudoers = fs::read_to_string(&sudoers_path)
         .expect("should read platform/config/chorus-role-asuser.sudoers");
@@ -59,7 +59,7 @@ fn asuser_probe_matches_repo_sudoers_line_by_line() {
 
 #[test]
 fn negative_proof_bare_sudo_does_not_match_sudoers() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../..");
     let sudoers_path = repo_root.join("platform/config/chorus-role-asuser.sudoers");
     let sudoers = fs::read_to_string(&sudoers_path)
         .expect("should read platform/config/chorus-role-asuser.sudoers");

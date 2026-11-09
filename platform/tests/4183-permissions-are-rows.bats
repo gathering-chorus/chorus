@@ -53,7 +53,8 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # They overrode the row-owner check, so every role could edit every login.
   # 47 since #4916 (2026-11-06): permission-borg-queen-cards, on Jeff's go (16:03).
   # borg-prove moves a red-deferred card to Later as borg-queen and 403'd.
-  test "$n" -eq 47
+  # 48 since #4773 (2026-11-09): permission-deployer-cicd, on Jeff's go.
+  test "$n" -eq 48
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {

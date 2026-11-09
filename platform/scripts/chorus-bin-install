@@ -32,9 +32,11 @@ set -uo pipefail
 
 usage() {
   cat <<EOF >&2
-Usage: chorus-bin-install <built-binary-path> <installed-name>
+Usage: chorus-bin-install [--target werk|canonical] <built-binary-path> <installed-name>
+       chorus-bin-install [--target werk|canonical] --rollback <installed-name>
 
-Installs a built+signed binary to ~/.chorus/bin/<installed-name>.
+Installs a built+signed binary to ~/.chorus/bin/<installed-name>, keeping
+the superseded binary as <installed-name>.prev. With --rollback, restores the .prev binary.
 EOF
 }
 
@@ -45,31 +47,52 @@ EOF
 # contents into canonical. The .werk-bin/ dir is inside the role's werk and
 # tears down with it on /unpull or /acp.
 TARGET="canonical"
-if [ "${1:-}" = "--target" ]; then
-  TARGET="${2:-}"
-  shift 2
-  case "$TARGET" in
-    werk|canonical) ;;
-    *) echo "chorus-bin-install: --target must be 'werk' or 'canonical' (got '$TARGET')" >&2; exit 2 ;;
+ROLLBACK=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --target)
+      TARGET="${2:-}"
+      shift 2
+      case "$TARGET" in
+        werk|canonical) ;;
+        *) echo "chorus-bin-install: --target must be 'werk' or 'canonical' (got '$TARGET')" >&2; exit 2 ;;
+      esac
+      ;;
+    --rollback)
+      ROLLBACK=1
+      shift
+      ;;
+    *)
+      break
+      ;;
   esac
-fi
+done
 
-if [ $# -lt 2 ]; then
-  usage
-  exit 2
-fi
+if [ "$ROLLBACK" = "1" ]; then
+  if [ $# -lt 1 ]; then
+    usage
+    exit 2
+  fi
+  NAME="$1"
+  SRC=""
+else
+  if [ $# -lt 2 ]; then
+    usage
+    exit 2
+  fi
+  SRC="$1"
+  NAME="$2"
 
-SRC="$1"
-NAME="$2"
+  if [ ! -f "$SRC" ]; then
+    echo "chorus-bin-install: source not found: $SRC" >&2
+    exit 3
+  fi
 
-if [ ! -f "$SRC" ]; then
-  echo "chorus-bin-install: source not found: $SRC" >&2
-  exit 3
-fi
-
-if [ ! -x "$SRC" ]; then
-  echo "chorus-bin-install: source not executable: $SRC" >&2
-  exit 4
+  if [ ! -x "$SRC" ]; then
+    echo "chorus-bin-install: source not executable: $SRC" >&2
+    exit 4
+  fi
 fi
 
 # #2995 — resolve install target. canonical = $HOME/.chorus/bin (existing).
@@ -96,6 +119,21 @@ else
 fi
 DEST="$BIN_DIR/$NAME"
 DEST_TMP="$DEST.tmp.$$"
+ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+
+# #4773 AC7 — rollback mode: restore <name>.prev into place
+if [ "$ROLLBACK" = "1" ]; then
+  DEST_PREV="$DEST.prev"
+  if [ ! -f "$DEST_PREV" ]; then
+    echo "chorus-bin-install: rollback refused: no previous binary found for $NAME ($DEST_PREV missing)" >&2
+    exit 12
+  fi
+  if [ ! -x "$DEST_PREV" ]; then
+    echo "chorus-bin-install: rollback refused: previous binary not executable for $NAME ($DEST_PREV)" >&2
+    exit 13
+  fi
+  SRC="$DEST_PREV"
+fi
 
 mkdir -p "$BIN_DIR"
 # #4853: a werk slot runs as the runner's account, which refuses a slot dir or
@@ -108,13 +146,22 @@ if [ "$TARGET" = "werk" ]; then chmod 0755 "$BIN_DIR"; fi
 # dies at this door instead of in Jeff's land. A refusal keeps the previous
 # binary untouched and emits binary.install.refused. CHORUS_BIN_SKIP_SMOKE=1
 # is the bootstrap escape (verb-smoke itself broken) — loud, never silent.
+spine_emit() {
+  local event="$1"; shift
+  local role="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+  if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
+    echo "$event | $role $*" >> "$CHORUS_BIN_SPINE_LOG"
+  elif command -v chorus-log >/dev/null 2>&1; then
+    chorus-log "$event" "$role" "$@" >/dev/null 2>&1 || true
+  elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
+    "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
+      "$event" "$role" "$@" >/dev/null 2>&1 || true
+  fi
+}
+
 smoke_refuse_emit() {
   local reason="$1"
-  if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-    echo "binary.install.refused | ${DEPLOY_ROLE:-${CHORUS_ROLE:-system}} binary=$NAME reason=$reason" >> "$CHORUS_BIN_SPINE_LOG"
-  elif command -v chorus-log >/dev/null 2>&1; then
-    chorus-log binary.install.refused "${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}" "binary=$NAME" "reason=$reason" >/dev/null 2>&1 || true
-  fi
+  spine_emit "binary.install.refused" "binary=$NAME" "reason=$reason"
 }
 SMOKE="$(cd "$(dirname "$0")" && pwd)/verb-smoke"
 case "$NAME" in
@@ -198,6 +245,20 @@ if ! cp -p "$SRC" "$DEST_TMP" 2>/dev/null; then
 fi
 chmod 0755 "$DEST_TMP"  # #4853: cp -p keeps a 775 built under umask 002; slot or ~/.chorus/bin, the runner runs it as jeffbridwell
 
+# #4773 AC6: keep superseded binary as <name>.prev
+PREV_SHA=""
+if [ "$ROLLBACK" = "0" ] && [ -f "$DEST" ]; then
+  PREV_SHA="$(shasum -a 256 "$DEST" 2>/dev/null | awk '{print $1}')"
+  PREV_TMP="$DEST.prev.tmp.$$"
+  if cp -p "$DEST" "$PREV_TMP" 2>/dev/null && mv -f "$PREV_TMP" "$DEST.prev" 2>/dev/null; then
+    chmod 0755 "$DEST.prev" 2>/dev/null || true
+  else
+    rm -f "$PREV_TMP"
+    echo "chorus-bin-install: WARNING — failed to preserve previous binary for $NAME as .prev" >&2
+    spine_emit "binary.prev.failed" "binary=$NAME" "reason=copy-or-move-failed"
+  fi
+fi
+
 if ! mv -f "$DEST_TMP" "$DEST" 2>/dev/null; then
   echo "chorus-bin-install: atomic move failed" >&2
   rm -f "$DEST_TMP"
@@ -215,7 +276,6 @@ CDHASH="${CDHASH:-unknown}"
 COMMIT=$(git -C "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 # Extract card_id from commit message (pattern: "role: acp #NNNN"). First match; empty on hand-edited commits.
 CARD_ID=$(git -C "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
-ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
 # Emit spine event. Test fixture overrides via $CHORUS_BIN_SPINE_LOG so we
 # don't depend on a working chorus-log in the test temp $HOME.
@@ -223,16 +283,13 @@ ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 # distinguish "shipped to werk slot for live demo" from "promoted to
 # canonical at /acp." chorus-health's deployed-equals-running check (which
 # matches against canonical) ignores werk-targeted installs.
-if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-  echo "binary.deployed | $ROLE binary=$NAME cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET" >> "$CHORUS_BIN_SPINE_LOG"
-elif command -v chorus-log >/dev/null 2>&1; then
-  chorus-log binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" "target=$TARGET" >/dev/null 2>&1 || true
-elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
-  "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
-    binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" "target=$TARGET" >/dev/null 2>&1 || true
+if [ "$ROLLBACK" = "1" ]; then
+  spine_emit "binary.deployed" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" "target=$TARGET" "rollback=true"
+  echo "chorus-bin-install: rolled back $NAME ← $DEST.prev (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET)"
+else
+  spine_emit "binary.deployed" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" "target=$TARGET" ${PREV_SHA:+"prev_sha=$PREV_SHA"}
+  echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET${PREV_SHA:+ prev=$PREV_SHA})"
 fi
-
-echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET)"
 
 # #4251 — a SCHEDULED job that runs this binary must be reloaded too.
 #
@@ -276,11 +333,7 @@ if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n 
       fi
       if [ -n "$SKIP_WHY" ]; then
         echo "chorus-bin-install: $LABEL runs $DEST and is $SKIP_WHY — left alone; it starts on the installed binary at its next launch (#4283)"
-        if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-          echo "binary.job.reloaded | $ROLE binary=$NAME unit=$LABEL result=skipped-${SKIP_WHY%% *}" >> "$CHORUS_BIN_SPINE_LOG"
-        elif command -v chorus-log >/dev/null 2>&1; then
-          chorus-log binary.job.reloaded "$ROLE" "binary=$NAME" "unit=$LABEL" "result=skipped-${SKIP_WHY%% *}" >/dev/null 2>&1 || true
-        fi
+        spine_emit "binary.job.reloaded" "binary=$NAME" "unit=$LABEL" "result=skipped-${SKIP_WHY%% *}"
         continue
       fi
       RELOAD_RESULT="ok"
@@ -291,11 +344,7 @@ if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n 
         RELOAD_RESULT="failed"
         echo "chorus-bin-install: WARNING — $LABEL runs $DEST and could NOT be reloaded; launchd still holds the PREVIOUS signature and the job may refuse to start" >&2
       fi
-      if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-        echo "binary.job.reloaded | $ROLE binary=$NAME unit=$LABEL result=$RELOAD_RESULT" >> "$CHORUS_BIN_SPINE_LOG"
-      elif command -v chorus-log >/dev/null 2>&1; then
-        chorus-log binary.job.reloaded "$ROLE" "binary=$NAME" "unit=$LABEL" "result=$RELOAD_RESULT" >/dev/null 2>&1 || true
-      fi
+      spine_emit "binary.job.reloaded" "binary=$NAME" "unit=$LABEL" "result=$RELOAD_RESULT"
     done
   fi
 fi
@@ -331,10 +380,6 @@ elif [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -
       echo "chorus-bin-install: WARNING — $UNIT is loaded but kickstart FAILED; the running process is now STALE relative to $DEST" >&2
       RESTART_RESULT="failed"
     fi
-    if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-      echo "binary.restarted | $ROLE binary=$NAME unit=$UNIT result=$RESTART_RESULT" >> "$CHORUS_BIN_SPINE_LOG"
-    elif command -v chorus-log >/dev/null 2>&1; then
-      chorus-log binary.restarted "$ROLE" "binary=$NAME" "unit=$UNIT" "result=$RESTART_RESULT" >/dev/null 2>&1 || true
-    fi
+    spine_emit "binary.restarted" "binary=$NAME" "unit=$UNIT" "result=$RESTART_RESULT"
   fi
 fi

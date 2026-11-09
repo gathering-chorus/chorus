@@ -220,6 +220,42 @@ chorus:cdhash a owl:DatatypeProperty ;
     rdfs:comment "Code-directory hash of the installed binary (the identity macOS TCC actually trusts, #2734). From binary.deployed; lets drift between installed and running binaries be asked as a query. No rdfs:domain — shared by ServiceInstance and Deployment, the deployed==running discriminator (#4250)." ;
     rdfs:range xsd:string .
 
+# --- Deployment properties (#4773) -------------------------------------------
+# Note: chorus:deployedCommit reused from chorus.ttl:3114 for source git commit.
+
+chorus:deployedUnit a owl:DatatypeProperty ;
+    rdfs:domain chorus:Deployment ; rdfs:range xsd:string ;
+    rdfs:comment "The deployed binary or unit name (e.g. werk-deploy, chorus-api) (#4773)." .
+
+chorus:sha256 a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "SHA-256 hash of the deployed artifact binary (#4773)." .
+
+chorus:deployedAt a owl:DatatypeProperty ;
+    rdfs:range xsd:dateTime ;
+    rdfs:comment "Timestamp when the deployment occurred (#4773)." .
+
+chorus:previous a owl:ObjectProperty ;
+    rdfs:domain chorus:Deployment ; rdfs:range chorus:Deployment ;
+    rdfs:comment "Points to the prior Deployment row superseded by this deploy (#4773)." .
+
+chorus:rollbackOf a owl:ObjectProperty ;
+    rdfs:domain chorus:Deployment ; rdfs:range chorus:Deployment ;
+    rdfs:comment "Points to the Deployment row that this rollback restores (#4773)." .
+
+chorus:targetMachine a owl:ObjectProperty ;
+    rdfs:domain chorus:Deployment ; rdfs:range chorus:Machine ;
+    rdfs:comment "The target machine where this binary was deployed (#4773)." .
+
+chorus:deployedBy a owl:ObjectProperty ;
+    rdfs:domain chorus:Deployment ; rdfs:range chorus:Principal ;
+    rdfs:comment "The Principal who deployed this binary (#4773)." .
+
+chorus:landedFor a owl:ObjectProperty ;
+    rdfs:label "landedFor" ;
+    rdfs:domain chorus:Deployment ; rdfs:range chorus:Role ;
+    rdfs:comment "The role that landed the card (#4773 AC8)." .
+
 # =============================================================================
 # DOMAIN: version-control
 # Query: "where is card N's code — werk, branch, PR, main — and how did it move?"
@@ -513,7 +549,17 @@ chorus:DemoVerdictShape a sh:NodeShape ;
 
 chorus:DeploymentShape a sh:NodeShape ;
     sh:targetClass chorus:Deployment ; sh:node chorus:CoreShape ;
-    sh:property [ sh:path chorus:cdhash ; sh:minCount 1 ]  .
+    sh:property [ sh:path chorus:cdhash ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:cardId ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:deployedCommit ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:deployedUnit ; sh:datatype xsd:string ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:sha256 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:deployedAt ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:deployedBy ; sh:class chorus:Principal ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:landedFor ; sh:class chorus:Role ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:targetMachine ; sh:class chorus:Machine ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:previous ; sh:class chorus:Deployment ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:rollbackOf ; sh:class chorus:Deployment ; sh:maxCount 1 ] .
 
 chorus:WerkSlotShape a sh:NodeShape ;
     sh:targetClass chorus:WerkSlot ; sh:node chorus:CoreShape ;

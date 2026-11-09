@@ -600,3 +600,253 @@ pub fn queen_hop(me: &str, queen: &str, exe: &str, card: &str, role: &str, run: 
     }
     Some(["-n", "-u", queen, exe, "record", card, role, run, home].iter().map(|s| s.to_string()).collect())
 }
+
+/// #4773 AC4 / AC5 — Deployment manifest record verified by borg-prove
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeploymentRecord {
+    pub name: String,
+    pub card_id: String,
+    pub deployed_unit: String,
+    pub deployed_commit: String,
+    pub cdhash: String,
+    pub sha256: String,
+    pub target_machine: String,
+}
+
+/// #4773 AC4 / AC5 — Parse deployment rows for a card from door JSON response, returning Err if JSON is invalid
+pub fn parse_deployments_for_card_checked(json: &str, card: u32) -> Result<Vec<DeploymentRecord>, String> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let data = v.get("data").and_then(|d| d.as_array())
+        .ok_or_else(|| "missing data array in response".to_string())?;
+    let card_str = card.to_string();
+
+    let records = data.iter().filter_map(|row| {
+        let card_id = row.get("cardId")?.as_str()?;
+        if card_id != card_str { return None; }
+        let deployed_unit = row.get("deployedUnit").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        Some(DeploymentRecord {
+            name: row.get("name")?.as_str()?.to_string(),
+            card_id: card_id.to_string(),
+            deployed_unit,
+            deployed_commit: row.get("deployedCommit").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            cdhash: row.get("cdhash").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            sha256: row.get("sha256").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            target_machine: row.get("targetMachine").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+        })
+    }).collect();
+    Ok(records)
+}
+
+pub fn parse_deployments_for_card(json: &str, card: u32) -> Vec<DeploymentRecord> {
+    parse_deployments_for_card_checked(json, card).unwrap_or_default()
+}
+
+/// #4773 AC4 / AC5 — Extract deployed binary units for a card from werk-deploy logs.
+/// Keys on the card's land: matches land_trace if provided, else the latest canonical deploy for this card.
+pub fn units_from_deploy_log(log_content: &str, card: u32, land_trace: Option<&str>) -> Vec<String> {
+    let mut matching_lines = Vec::new();
+    for line in log_content.lines() {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let event = val.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        if event != "deploy.completed" { continue; }
+
+        let card_id_matches = match val.get("card_id") {
+            Some(serde_json::Value::Number(n)) => n.as_u64() == Some(card as u64),
+            Some(serde_json::Value::String(s)) => s.parse::<u32>().ok() == Some(card),
+            _ => false,
+        };
+        if !card_id_matches { continue; }
+
+        let target = val.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        if target != "canonical" { continue; }
+
+        let trace_id = val.get("trace_id").and_then(|v| v.as_str()).unwrap_or("");
+        if let Some(tr) = land_trace {
+            if trace_id == tr {
+                matching_lines.push(val);
+            }
+        } else {
+            matching_lines.push(val);
+        }
+    }
+
+    let Some(last_event) = matching_lines.last() else {
+        return Vec::new();
+    };
+
+    let mut units = Vec::new();
+    if let Some(deployed) = last_event.get("deployed").and_then(|v| v.as_str()) {
+        for item in deployed.split(',') {
+            let item = item.trim();
+            // Filter out operational/metadata labels (restart:*, athena-handoff[*])
+            if item.is_empty() || item.contains(':') || item.contains('[') {
+                continue;
+            }
+            // Skip TS daemons — they are npm-built in canonical, not codesigned binaries
+            if matches!(item, "chorus-api" | "pulse" | "clearing" | "clearing-v2") {
+                continue;
+            }
+            let unit = item.split('=').next().unwrap_or("").trim();
+            if !unit.is_empty() && !units.iter().any(|u| u == unit) {
+                units.push(unit.to_string());
+            }
+        }
+    }
+    units
+}
+
+/// #4773 AC4 / AC5 — Verify deployment records against actual installed/running hashes.
+/// Expects rows only for units the land's deploy.completed lists.
+pub fn verify_manifest_records<F>(
+    records: &[DeploymentRecord],
+    expected_units: &[String],
+    card: u32,
+    read_running_cdhash: F,
+) -> Result<usize, String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if expected_units.is_empty() {
+        return Ok(0);
+    }
+    let mut verified = 0;
+    for unit in expected_units {
+        let matching: Vec<&DeploymentRecord> = records.iter().filter(|r| &r.deployed_unit == unit).collect();
+        if matching.is_empty() {
+            return Err(format!("card #{card}: missing deployment manifest for expected unit '{unit}' (0 Deployment rows found)"));
+        }
+        let rec = matching.last().unwrap();
+        if rec.cdhash.trim().is_empty() {
+            return Err(format!("card #{card}: manifest record for '{unit}' has empty cdhash"));
+        }
+        let running_cdhash = read_running_cdhash(unit)
+            .ok_or_else(|| format!("card #{card}: binary '{unit}' is not running or cdhash cannot be read"))?;
+
+        if running_cdhash != rec.cdhash {
+            return Err(format!(
+                "card #{card}: manifest verification failed for '{unit}': running cdhash '{}' != manifest cdhash '{}'",
+                running_cdhash, rec.cdhash
+            ));
+        }
+        verified += 1;
+    }
+    Ok(verified)
+}
+
+#[cfg(test)]
+mod tests_4773 {
+    use super::*;
+
+    #[test]
+    fn parse_and_verify_valid_manifest_passes() {
+        let json = r#"{
+            "data": [
+                {
+                    "name": "dep-4773-werk-deploy-1731170000",
+                    "cardId": "4773",
+                    "deployedUnit": "werk-deploy",
+                    "deployedCommit": "abcdef",
+                    "cdhash": "hash123",
+                    "sha256": "sha123",
+                    "targetMachine": "library"
+                }
+            ]
+        }"#;
+        let records = parse_deployments_for_card(json, 4773);
+        assert_eq!(records.len(), 1);
+        let expected = vec!["werk-deploy".to_string()];
+        let res = verify_manifest_records(&records, &expected, 4773, |bin| {
+            assert_eq!(bin, "werk-deploy");
+            Some("hash123".into())
+        });
+        assert_eq!(res, Ok(1));
+    }
+
+    #[test]
+    fn zero_expected_units_passes_with_zero_records() {
+        let json = r#"{"data": []}"#;
+        let records = parse_deployments_for_card(json, 4773);
+        let expected: Vec<String> = vec![];
+        let res = verify_manifest_records(&records, &expected, 4773, |_| None);
+        assert_eq!(res, Ok(0));
+    }
+
+    #[test]
+    fn negative_proof_missing_manifest_is_refused() {
+        let json = r#"{"data": []}"#;
+        let records = parse_deployments_for_card(json, 4773);
+        let expected = vec!["werk-deploy".to_string()];
+        let res = verify_manifest_records(&records, &expected, 4773, |_| Some("hash123".into()));
+        assert!(res.is_err(), "empty manifest must fail when unit expected");
+        assert!(res.unwrap_err().contains("missing deployment manifest for expected unit 'werk-deploy'"));
+    }
+
+    #[test]
+    fn negative_proof_empty_cdhash_is_refused() {
+        let json = r#"{
+            "data": [
+                {
+                    "name": "dep-4773-werk-deploy-1731170000",
+                    "cardId": "4773",
+                    "deployedUnit": "werk-deploy",
+                    "deployedCommit": "abcdef",
+                    "cdhash": "",
+                    "sha256": "sha123",
+                    "targetMachine": "library"
+                }
+            ]
+        }"#;
+        let records = parse_deployments_for_card(json, 4773);
+        let expected = vec!["werk-deploy".to_string()];
+        let res = verify_manifest_records(&records, &expected, 4773, |_| Some("hash123".into()));
+        assert!(res.is_err(), "empty cdhash must fail");
+        assert!(res.unwrap_err().contains("empty cdhash"));
+    }
+
+    #[test]
+    fn negative_proof_hash_mismatch_is_refused() {
+        let json = r#"{
+            "data": [
+                {
+                    "name": "dep-4773-werk-deploy-1731170000",
+                    "cardId": "4773",
+                    "deployedUnit": "werk-deploy",
+                    "deployedCommit": "abcdef",
+                    "cdhash": "hash123",
+                    "sha256": "sha123",
+                    "targetMachine": "library"
+                }
+            ]
+        }"#;
+        let records = parse_deployments_for_card(json, 4773);
+        let expected = vec!["werk-deploy".to_string()];
+        let res = verify_manifest_records(&records, &expected, 4773, |bin| {
+            assert_eq!(bin, "werk-deploy");
+            Some("mismatch_hash".into())
+        });
+        assert!(res.is_err(), "mismatched hash must fail");
+        assert!(res.unwrap_err().contains("running cdhash 'mismatch_hash' != manifest cdhash 'hash123'"));
+    }
+
+    #[test]
+    fn test_units_from_deploy_log() {
+        let log = r#"{"ts":1794241046155,"event":"deploy.completed","role":"wren","card_id":4773,"trace_id":"xyz","target":"canonical","deployed":"chorus-hooks,werk-deploy,restart:com.chorus.inject,athena-handoff[model=1]"}
+{"ts":1794241046156,"event":"deploy.completed","role":"wren","card_id":9999,"trace_id":"xyz","target":"canonical","deployed":"other-bin"}
+{"ts":1794241046157,"event":"deploy.completed","role":"wren","card_id":4773,"trace_id":"xyz","target":"werk","deployed":"ignore-me"}
+"#;
+        let units = units_from_deploy_log(log, 4773, None);
+        assert_eq!(units, vec!["chorus-hooks".to_string(), "werk-deploy".to_string()]);
+
+        let units_traced = units_from_deploy_log(log, 4773, Some("xyz"));
+        assert_eq!(units_traced, vec!["chorus-hooks".to_string(), "werk-deploy".to_string()]);
+
+        let units_other_trace = units_from_deploy_log(log, 4773, Some("diff-trace"));
+        assert!(units_other_trace.is_empty());
+    }
+
+    #[test]
+    fn test_parse_deployments_for_card_checked_invalid_json() {
+        assert!(parse_deployments_for_card_checked("not-json", 4773).is_err());
+        assert!(parse_deployments_for_card_checked("{}", 4773).is_err());
+    }
+}
