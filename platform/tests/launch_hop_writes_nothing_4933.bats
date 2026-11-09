@@ -125,13 +125,22 @@ signins() { grep -c "token fx" "$T/token.log" 2>/dev/null || true; }
   p=$(cat "$T"/bodies/*POST-identity_presences*.json | tail -1); printf '%s' "$p" | grep -q '"pane":"%7"'
 }
 
-@test "NEGATIVE PROOF: a role cannot claim another terminal: a --tty that is not its own is refused" {
+@test "NEGATIVE PROOF: --pane/--tty come only with --run (the launch line's); on their own they are refused" {
   printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
   : > "$T/curl.log"
-  run "$SCRIPT" establish fx --run 1a2b --pane %7 --tty /dev/ttys999
+  run "$SCRIPT" establish fx --pane %7 --tty /dev/ttys999
   test "$status" -ne 0
-  printf '%s' "$output" | grep -q "tty"
+  printf '%s' "$output" | grep -q "only from the launch line"
   test -z "$(grep -E -- '-X POST' "$T/curl.log" || true)"
+}
+
+@test "with --run, the tty the launch line passes is the one recorded (sudo's own pty never replaces it)" {
+  printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
+  run "$SCRIPT" establish fx --run 1a2b --pane %7 --tty /dev/ttys042
+  test "$status" -eq 0
+  p=$(cat "$T"/bodies/*POST-identity_presences*.json | tail -1)
+  printf '%s' "$p" | grep -q '"pane":"%7"'
+  printf '%s' "$p" | grep -q '"tty":"/dev/ttys042"'
 }
 
 @test "a turn with no session tries establish at most once a minute (the per-turn hook stays fast)" {

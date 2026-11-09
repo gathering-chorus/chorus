@@ -139,7 +139,7 @@ fn a_request_that_never_armed_write_ahead_is_not_refused_by_it() {
 
 // --- code review 20:26: /create-linked (and /batch) get exactly one decision line ---
 
-use athena_make::{CrossClassLog, open_decision_sink as _ods};
+use athena_make::CrossClassLog;
 
 fn lines_in(home: &std::path::Path) -> Vec<String> {
     let logs = home.join("ops/logs");
@@ -152,7 +152,6 @@ fn lines_in(home: &std::path::Path) -> Vec<String> {
 
 #[test]
 fn a_cross_class_write_leaves_exactly_one_line_allow_or_deny_and_refuses_when_unloggable() {
-    let _ = _ods; // same sink the entity path opens
     let home = std::env::temp_dir().join(format!("xlog-4933-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();

@@ -715,18 +715,16 @@ impl Drop for StdoutToStderr {
 /// login is a failure then, so the wrapper never starts a runtime with no session.
 fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<String>, tty_arg: Option<String>) -> i32 {
     let with_run = run_stamp.is_some();
-    // #4933 (review 20:26) — the pane and tty come from the pane's own shell, outside
-    // sudo (which drops TMUX_PANE). The tty is checked against this process's own:
-    // a role never records another's terminal as its own (Silas 20:27).
-    let own_tty = own_tty();
-    if let Some(claimed) = &tty_arg {
-        if own_tty.as_deref() != Some(claimed.as_str()) {
-            eprintln!("chorus-principal: REFUSED — establish {}: --tty {} is not this process's terminal ({}); a role records only its own", role, claimed, own_tty.as_deref().unwrap_or("none"));
-            return 2;
-        }
+    // #4933 (review 20:26, Silas 21:27) — the pane and tty come from the pane's own
+    // shell, outside sudo (which drops TMUX_PANE and, with use_pty, gives the inner
+    // shell a tty of its own, so no equality check can hold). They are taken only with
+    // --run: the launch line the launcher wrote passes them; anything else is refused.
+    if (pane_arg.is_some() || tty_arg.is_some()) && !with_run {
+        eprintln!("chorus-principal: REFUSED — establish {}: --pane/--tty come only from the launch line, with --run", role);
+        return 2;
     }
     let pane = pane_arg.or_else(|| env::var("TMUX_PANE").ok()).unwrap_or_default();
-    let tty = own_tty.unwrap_or_default();
+    let tty = tty_arg.or_else(own_tty).unwrap_or_default();
     let quiet = if with_run {
         match StdoutToStderr::new() {
             Ok(q) => Some(q),
@@ -1212,7 +1210,8 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             let st = ctx.read_state(role);
             let st = match &st {
                 LoginState::Recorded { .. } if lifecycle::login_belongs_to(&st, l.pid) => st.with_pid(l.pid),
-                _ => match door_open_row(ctx, role, "identity/sessionruns", "run", "runEndedAt").ok().flatten().and_then(|r| r.get("runOf").and_then(|s| s.as_str()).map(String::from)).filter(|s| !s.is_empty()) {
+                _ => match door_open_row(ctx, role, "identity/sessionruns", "run", "runEndedAt")
+                    .map_err(|why| ctx.spine(&["session.row.failed", role, "kind=run", &format!("why={}", why)])).ok().flatten().and_then(|r| r.get("runOf").and_then(|s| s.as_str()).map(String::from)).filter(|s| !s.is_empty()) {
                     // #4933 — read back, never written: the role's own open run names its session
                     Some(session) => LoginState::Recorded { session, pid: Some(l.pid) },
                     None => {
@@ -1590,7 +1589,6 @@ fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool 
     }
 }
 
-/// End the role's saved run (and its presence) if it is still live.
 /// #4933 — the role's open run or presence, read from the door: the one source for
 /// ending a run (the rows live in the role's own account, written by establish, so a
 /// local copy in whoever runs this is not the record). The newest open row of `route`
@@ -1600,8 +1598,9 @@ fn door_open_row(ctx: &Ctx, role: &str, route: &str, kind: &str, open_field: &st
     let body = door(ctx, &["-sf", "--max-time", "10", &url]).map_err(|e| format!("the door did not answer: {}", e.trim()))?;
     let v: Value = serde_json::from_str(&body).map_err(|e| format!("not JSON: {e}"))?;
     let prefix = format!("{}-{}-", role, kind);
+    let stored = format!("{}-{}", route.rsplit('/').next().unwrap_or(route).trim_end_matches('s'), prefix);
     Ok(v.get("data").and_then(|d| d.as_array()).into_iter().flatten()
-        .filter(|r| { let n = row_name(r); n.starts_with(&prefix) || n.contains(&format!("-{}", prefix)) })
+        .filter(|r| { let n = row_name(r); n.starts_with(&prefix) || n.starts_with(&stored) })
         // open, checked here too, not only by the door's filter
         .filter(|r| open_field.is_empty() || r.get(open_field).and_then(|x| x.as_str()).unwrap_or("").is_empty())
         .filter(|r| r.get("reachability").and_then(|x| x.as_str()) != Some("unreachable"))
@@ -1609,6 +1608,7 @@ fn door_open_row(ctx: &Ctx, role: &str, route: &str, kind: &str, open_field: &st
         .cloned())
 }
 
+/// End the role's open run (and retire its presence), read from the door.
 fn end_run(ctx: &Ctx, role: &str, reason: &str) {
     // the door is the only source (Jeff 11-08: no fallbacks): never a local copy first
     // a door that cannot be read is named, never a silent skip (#4895)
