@@ -791,10 +791,9 @@ fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<
     }
 }
 
-/// The login (#4202, #4215): token, principal check, Session row. Ok is
-/// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 /// #4934 AC2 — the domains this login establishes (the role's Principal's Permission
-/// rows), read through the door on the login's trace and named in one event.
+/// rows), read through the door on the login's trace and named in one event. To
+/// stderr: establish --run keeps stdout for the run name alone.
 fn establish_domains(ctx: &Ctx, role: &str, session: &str) {
     let perms = door(ctx, &["-sf", "--max-time", "10", &format!("{}/v1/security/permissions?agent=principal-{}&limit=500", ctx.api, role)])
         .map_err(|e| format!("the door did not answer: {}", e.trim()))
@@ -808,6 +807,8 @@ fn establish_domains(ctx: &Ctx, role: &str, session: &str) {
     }
 }
 
+/// The login (#4202, #4215): token, principal check, Session row. Ok is
+/// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let channel = match rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()) {
         Ok(c) => c,
