@@ -91,3 +91,33 @@ fn control_cross_class_batch_inserting_actsas_role_kade_as_kade_is_allowed() {
     )];
     assert_eq!(athena_make::batch_acts_as_refusal(&ins, "kade", kade_only), None);
 }
+
+// --- quality review 19:32, item 7: the real rule, not only the injected stand-in ---
+
+use athena_make::{serves_from, teammate_serves_query};
+
+#[test]
+fn the_teammate_query_asks_for_this_callers_principal_serving_this_role() {
+    let q = teammate_serves_query("principal-kade", "https://jeffbridwell.com/chorus#role-kade").expect("safe names");
+    assert!(q.contains("GRAPH <urn:chorus:domains:roles>"), "{q}");
+    assert!(q.contains("?t a chorus:Teammate"), "{q}");
+    assert!(q.contains("chorus:signsInAs chorus:principal-kade"), "caller normalized once: {q}");
+    assert!(q.contains("chorus:servesAs chorus:role-kade"), "role as its local name: {q}");
+    assert!(!q.contains("principal-principal-"), "{q}");
+    assert!(teammate_serves_query("kade", "role-kade").unwrap().contains("chorus:principal-kade"));
+}
+
+#[test]
+fn negative_proof_an_unsafe_name_is_never_put_in_the_query() {
+    assert_eq!(teammate_serves_query("kade> } INSERT {", "role-kade"), None);
+    assert_eq!(teammate_serves_query("kade", "role-kade> ."), None);
+}
+
+#[test]
+fn a_row_back_means_served_and_no_row_means_not() {
+    let one = r#"{"head":{"vars":["v"]},"results":{"bindings":[{"v":{"type":"literal","value":"y"}}]}}"#;
+    let none = r#"{"head":{"vars":["v"]},"results":{"bindings":[]}}"#;
+    assert!(serves_from(one));
+    // NEGATIVE PROOF: an inverted reading (the mutant the review named) goes red here
+    assert!(!serves_from(none));
+}

@@ -8,8 +8,14 @@
 //
 // The wrapper string is executed for real here with a stub establish and a stub
 // runtime; fixture role `fx` only.
+use chorus_principal::lifecycle::establish_refusal;
 use chorus_principal::own_account_inner_cmd;
-use std::{fs, process::Command};
+use std::{fs, process::Command, sync::Mutex};
+
+// cases that set CHORUS_TRACE_ID / CHORUS_STARTED_BY run one at a time: the wrapper
+// reads process env, and cargo runs tests in parallel threads (review 19:32, note 8)
+static ENV: Mutex<()> = Mutex::new(());
+fn env_lock() -> std::sync::MutexGuard<'static, ()> { ENV.lock().unwrap_or_else(|p| p.into_inner()) }
 
 fn world(establish_exit: i32) -> (tempdir::Dir, String) {
     let d = tempdir::Dir::new();
@@ -29,6 +35,7 @@ fn world(establish_exit: i32) -> (tempdir::Dir, String) {
 
 #[test]
 fn the_runtime_starts_only_after_establish_and_carries_its_run() {
+    let _g = env_lock();
     let (d, cmd) = world(0);
     let out = Command::new("bash").args(["-c", &cmd]).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -38,6 +45,7 @@ fn the_runtime_starts_only_after_establish_and_carries_its_run() {
 
 #[test]
 fn the_login_trace_crosses_into_the_role_shell_and_quotes_cannot_escape() {
+    let _g = env_lock();
     std::env::set_var("CHORUS_TRACE_ID", "login-on-fx-17-1';touch /tmp/x;'");
     let (d, cmd) = world(0);
     std::env::remove_var("CHORUS_TRACE_ID");
@@ -49,6 +57,7 @@ fn the_login_trace_crosses_into_the_role_shell_and_quotes_cannot_escape() {
 
 #[test]
 fn who_started_it_crosses_into_the_role_shell() {
+    let _g = env_lock();
     std::env::set_var("CHORUS_STARTED_BY", "jeff");
     let (d, cmd) = world(0);
     std::env::remove_var("CHORUS_STARTED_BY");
@@ -59,6 +68,10 @@ fn who_started_it_crosses_into_the_role_shell() {
 
 #[test]
 fn negative_proof_establish_refused_means_the_runtime_never_starts() {
+    // the WRAPPER half: whatever establish refuses for, the runtime never starts. The
+    // refusal itself (only the role's own account) is establish_refusal, proven below
+    // and through the binary in launch_hop_writes_nothing_4933.bats case 3.
+    let _g = env_lock();
     let (d, cmd) = world(2);
     let out = Command::new("bash").args(["-c", &cmd]).output().unwrap();
     assert!(!out.status.success());
@@ -92,4 +105,25 @@ fn a_cold_start_keeps_why_it_is_pending() {
     // a recorded read-back wins: the role did establish
     let rec = LoginState::Recorded { session: "s".into(), pid: Some(7) };
     assert_eq!(keep_launch_reason(&launch, rec.clone()), rec);
+}
+
+// --- review 19:32, item 7: the account gate itself ---
+
+#[test]
+fn establish_is_allowed_only_for_the_account_the_principal_row_names() {
+    assert_eq!(establish_refusal("fx", "chorus-fx", "chorus-fx"), None);
+}
+
+#[test]
+fn negative_proof_any_other_account_is_refused_and_named() {
+    let r = establish_refusal("fx", "chorus-fx", "jeffbridwell").expect("the launcher's account is refused");
+    assert!(r.contains("runs as chorus-fx") && r.contains("jeffbridwell"), "{r}");
+    assert!(establish_refusal("fx", "chorus-fx", "chorus-kade").is_some(), "another role's account is refused");
+}
+
+#[test]
+fn negative_proof_an_unknown_account_is_refused_even_against_an_empty_row() {
+    // `!me.is_empty()` matters: an empty id must never match an empty hostAccount
+    assert!(establish_refusal("fx", "", "").is_some());
+    assert!(establish_refusal("fx", "chorus-fx", "").is_some());
 }

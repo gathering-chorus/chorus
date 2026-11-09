@@ -310,6 +310,12 @@ pub fn decision_for(ts_ms: u128, trace_id: &str, principal: &str, action: &str, 
     Some(decision_line(ts_ms, trace_id, principal, action, class, entity, code, body))
 }
 
+/// #4933 — where the decision log lives: the same home the request telemetry uses
+/// (emit_telemetry), in one place rather than repeated at each serve path.
+fn decision_home() -> String {
+    std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
+}
+
 /// #4933 AC4 / B1 — the decision log, opened BEFORE a write is attempted (same
 /// file and shipper as the request telemetry).
 pub fn open_decision_sink(home: &str, ts_ms: u128) -> std::io::Result<std::fs::File> {
@@ -2422,19 +2428,34 @@ fn all_string_fields(body: &str, key: &str) -> Vec<String> {
 }
 
 /// #4933 AC2 — the Teammate read behind acts_as_refusal: does a Teammate in the
-/// roles graph sign in as principal-<caller> and serve as <role>?
+/// roles graph sign in as principal-<caller> and serve as <role>? The query and
+/// the reading of its answer are pure (teammate_serves_query / serves_from), so the
+/// rule itself is tested, not only a stand-in for it.
 fn teammate_serves(caller: &str, role: &str) -> Result<bool, String> {
+    match teammate_serves_query(caller, role) {
+        None => Ok(false),
+        Some(q) => sparql_json(&q).map(|b| serves_from(&b)),
+    }
+}
+
+/// The ASK-shaped SELECT for "this caller's Teammate serves this role", or None when
+/// either name is not a safe local name (then nothing is served). The caller may come
+/// as `kade` or `principal-kade`; the role as `role-kade` or its full IRI.
+pub fn teammate_serves_query(caller: &str, role: &str) -> Option<String> {
     let role = role.rsplit(['#', '/']).next().unwrap_or(role);
-    // the verified caller arrives as a name (`kade`) or a Principal (`principal-kade`)
     let caller = caller.strip_prefix("principal-").unwrap_or(caller);
     if !is_safe_local(caller) || !is_safe_local(role) {
-        return Ok(false);
+        return None;
     }
-    let q = format!(
+    Some(format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:roles> {{ ?t a chorus:Teammate ; chorus:signsInAs chorus:principal-{c} ; chorus:servesAs chorus:{r} . BIND('y' AS ?v) }} }} LIMIT 1",
         ns = NS, c = caller, r = role
-    );
-    sparql_json(&q).map(|b| !select_v(&b).is_empty())
+    ))
+}
+
+/// The store's answer to teammate_serves_query: served only when a row came back.
+pub fn serves_from(body: &str) -> bool {
+    !select_v(body).is_empty()
 }
 
 /// #4517 reopen 1 — the caller holds an acl:Append row on this graph.
@@ -6898,11 +6919,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let auth_hdr = header("authorization");
                     let token = bearer_token(&auth_hdr);
                     let mut batch_principal = String::new();
-                    let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
                     let opened = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                    let mut batch_sink = open_decision_sink(&home, opened);
+                    let mut batch_sink = open_decision_sink(&decision_home(), opened);
                     let batch_trace = effective_trace(&header("x-chorus-trace-id"), opened, req_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
-                    if let Ok(f) = batch_sink.as_ref() { if let Ok(c) = f.try_clone() { arm_write_ahead(c, String::new()); } }
+                    // as above: a handle that cannot be cloned refuses the write, never skips the log
+                    if let Ok(f) = batch_sink.as_ref() {
+                        match f.try_clone() { Ok(c) => arm_write_ahead(c, String::new()), Err(e) => batch_sink = Err(e) }
+                    }
                     let (code, body) = if let Some(refused) = unlogged_refusal(&batch_sink) { refused } else { match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (
                             401u16,
@@ -6981,9 +7004,8 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 let now_secs = unix_now_secs();
                 // #4933 B1 — the decision log is opened before any write is attempted
                 let mut decision_sink = if method != "GET" {
-                    let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
                     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                    Some(open_decision_sink(&home, now))
+                    Some(open_decision_sink(&decision_home(), now))
                 } else { None };
                 let trace = {
                     let n = req_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -6996,8 +7018,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 let class_local = table.class.rsplit('#').next().unwrap_or("").to_string();
                 // #4933 (Silas 17:03) — write-ahead: the allow line is appended before the
                 // store is touched; the principal is filled in once authN has named it
+                // a handle that cannot be cloned for the write-ahead is an unloggable write:
+                // refused below exactly like a log that cannot be opened (never skipped)
                 if let Some(Ok(f)) = decision_sink.as_ref() {
-                    if let Ok(clone) = f.try_clone() { arm_write_ahead(clone, String::new()); }
+                    match f.try_clone() {
+                        Ok(clone) => arm_write_ahead(clone, String::new()),
+                        Err(e) => decision_sink = Some(Err(e)),
+                    }
                 }
                 let ((code, body), meta) = if let Some(refused) = decision_sink.as_ref().and_then(unlogged_refusal) {
                     (refused, ReqMeta { route: "write-unlogged".into(), ..Default::default() })
