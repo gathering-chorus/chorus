@@ -152,3 +152,38 @@ fn negative_proof_create_linked_cannot_open_a_session_for_a_role_not_served() {
     let ok = "/identity/sessions\t{\"name\":\"s8\",\"actsAs\":\"role-kade\"}";
     assert_eq!(athena_make::linked_acts_as_refusal(ok, class_of, "kade", kade_only), None);
 }
+
+// --- #4933 reopen 1 (prod 2026-11-09 05:06): writers send the BARE role name ---
+// chorus-principal's rows::with_role_and_start sends `"actsAs": "wren"` (#4343);
+// the store mints the edge `role-wren` and refuses a value that already has the
+// prefix (422 double-prefix). The door must check the Role the write will store.
+// Before the fix, the bare body asked `serves("kade", "kade")`, every role's
+// session write was 403 not-served, and these went red.
+
+#[test]
+fn a_bare_role_name_session_write_like_the_real_writer_is_allowed() {
+    let body = r#"{"name":"kade-s94suie6-1a1b371f17b","sessionState":"open","actsAs":"kade","startedAt":"2026-11-09T10:06:00Z","lastSeenAt":"2026-11-09T10:06:00Z"}"#;
+    assert_eq!(acts_as_refusal(SESSION, &WriteOp::CreateEntity, body, "kade", kade_only), None);
+    let put = WriteOp::ReplaceEntity { name: "kade-s94suie6-1a1b371f17b".into() };
+    assert_eq!(acts_as_refusal(SESSION, &put, body, "kade", kade_only), None, "the PUT a turn sends");
+    let patch = WriteOp::PatchEntity { name: "kade-s94suie6-1a1b371f17b".into() };
+    assert_eq!(acts_as_refusal(SESSION, &patch, r#"{"actsAs":"kade"}"#, "kade", kade_only), None);
+}
+
+#[test]
+fn negative_proof_a_bare_name_for_another_role_is_still_403_naming_the_minted_role() {
+    let (code, body) = acts_as_refusal(SESSION, &WriteOp::CreateEntity, r#"{"name":"s9","actsAs":"wren"}"#, "kade", kade_only)
+        .expect("kade must not open a session as wren, bare or prefixed");
+    assert_eq!(code, 403, "{body}");
+    assert!(body.contains("servesAs role-wren"), "checks the Role the store would mint: {body}");
+}
+
+#[test]
+fn the_store_read_for_a_bare_name_asks_for_the_minted_role() {
+    let asked = std::cell::RefCell::new(Vec::new());
+    let spy = |c: &str, r: &str| { asked.borrow_mut().push(teammate_serves_query(c, r).unwrap()); Ok(true) };
+    acts_as_refusal(SESSION, &WriteOp::CreateEntity, r#"{"name":"s10","actsAs":"wren"}"#, "wren", spy);
+    let q = asked.borrow();
+    assert_eq!(q.len(), 1);
+    assert!(q[0].contains("chorus:servesAs chorus:role-wren"), "{}", q[0]);
+}

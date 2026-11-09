@@ -2428,8 +2428,13 @@ pub fn acts_as_refusal(
 
 /// The actsAs values a write would store, read with the write path's parsers. A body
 /// those parsers refuse yields nothing here, and the write itself is refused (422).
+/// #4933 reopen 1 — writers send actsAs as the BARE role name (#4343: `wren`), and the
+/// store mints the edge as `role-wren`. The check must name the Role the write will
+/// store, so a bare name gets the same `role-` the mint adds. Prod 2026-11-09 05:06:
+/// without it every role's session write was 403 not-served.
 fn acts_as_values(op: &WriteOp, body: &str) -> Vec<String> {
-    let of = |m: std::collections::BTreeMap<String, Vec<String>>| m.get("actsAs").cloned().unwrap_or_default();
+    let minted = |v: String| if v.starts_with("role-") { v } else { format!("role-{v}") };
+    let of = |m: std::collections::BTreeMap<String, Vec<String>>| m.get("actsAs").cloned().unwrap_or_default().into_iter().map(minted).collect::<Vec<_>>();
     match op {
         WriteOp::CreateEntity | WriteOp::ReplaceEntity { .. } => parse_create_object(body).map(of).unwrap_or_default(),
         WriteOp::PatchEntity { .. } => parse_patch_object(body).map(of).unwrap_or_default(),
