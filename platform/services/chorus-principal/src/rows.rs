@@ -392,6 +392,57 @@ pub fn putable(mut row: Value) -> Value {
     row
 }
 
+/// #4934 AC2 — the domains a login establishes: the role's Principal's Permission
+/// rows (agent + accessTo + mode, #4183) from the door's listing, as
+/// `<domain>:<mode>`, sorted. Another principal's row is never named; a listing
+/// that cannot be read is an Err, never "no domains".
+pub fn login_domains(listing: &str, role: &str) -> Result<Vec<String>, String> {
+    let v: Value = serde_json::from_str(listing).map_err(|e| format!("not JSON: {e}"))?;
+    let rows = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| "no data in the permissions listing".to_string())?;
+    let principal = format!("principal-{}", role.strip_prefix("principal-").unwrap_or(role));
+    let last = |s: &str| s.rsplit([':', '#', '/']).next().unwrap_or(s).to_string();
+    let mut out: Vec<String> = rows.iter()
+        .filter(|r| r.get("agent").and_then(|a| a.as_str()) == Some(principal.as_str()))
+        .filter_map(|r| {
+            let to = r.get("accessTo").and_then(|a| a.as_str()).filter(|s| !s.is_empty())?;
+            let mode = r.get("mode").and_then(|m| m.as_str()).filter(|s| !s.is_empty())?;
+            Some(format!("{}:{}", last(to), last(mode)))
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+/// #4934 AC1 — a write of only the fields that changed: (row name, body). A listing
+/// row put back whole carries what the listing adds — `status`, "" for absent
+/// fields, and minted links (`runOf: session-…`, `presenceOf: session-run-…`) the
+/// door refuses as double-prefix. Logout on 11-09 08:52:31 was 422 on the run and
+/// the presence for exactly that; the demo door then refused `runOf` too.
+pub fn patch_of(row: &Value, fields: &[&str]) -> Option<(String, Value)> {
+    let name = row.get("name")?.as_str()?.to_string();
+    let mut body = serde_json::Map::new();
+    for f in fields { body.insert((*f).to_string(), row.get(*f)?.clone()); }
+    Some((name, Value::Object(body)))
+}
+
+/// #4933/#4934 — the role's newest open row of `route` in a door listing, whose
+/// name is `<role>-<kind>-…` (the names establish mints) or the store's
+/// `<class>-<role>-<kind>-…`. `open_field` empty means "any row not unreachable".
+/// The row is as the listing returns it: write back only with `patch_of`.
+pub fn open_row_from_listing(listing: &str, role: &str, route: &str, kind: &str, open_field: &str) -> Option<Value> {
+    let v: Value = serde_json::from_str(listing).ok()?;
+    let name = |r: &Value| r.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+    let prefix = format!("{}-{}-", role, kind);
+    let stored = format!("{}-{}", route.rsplit('/').next().unwrap_or(route).trim_end_matches('s'), prefix);
+    v.get("data").and_then(|d| d.as_array()).into_iter().flatten()
+        .filter(|r| { let n = name(r); n.starts_with(&prefix) || n.starts_with(&stored) })
+        .filter(|r| open_field.is_empty() || r.get(open_field).and_then(|x| x.as_str()).unwrap_or("").is_empty())
+        .filter(|r| r.get("reachability").and_then(|x| x.as_str()) != Some("unreachable"))
+        .max_by_key(|r| name(r))
+        .cloned()
+}
+
 /// Sessions to close in the sweep: open, past expiry, and not a live login.
 /// The 80+ rows from before #4302 read "open" long after their token died.
 pub fn expired_open(sessions_listing: &str, now_iso: &str, keep: &[String]) -> Vec<Value> {
