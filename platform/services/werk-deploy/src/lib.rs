@@ -2753,6 +2753,17 @@ pub fn post_deployment_manifest(
     Ok(dep_id)
 }
 
+/// #4773 — resolve binary target path for codesign cdhash: prefers `<bin_path>-bin` if that file exists,
+/// falling back to `<bin_path>`. Unsigned wrapper scripts hand off to compiled Mach-O `<bin>-bin` binaries.
+pub fn resolve_binary_target_path(bin_path: &str) -> String {
+    let candidate = format!("{}-bin", bin_path);
+    if Path::new(&candidate).is_file() {
+        candidate
+    } else {
+        bin_path.to_string()
+    }
+}
+
 /// #4773 AC3 — record deployment manifest for a deployed binary (new deploy or rollback)
 pub fn record_deployment(
     home: &Path,
@@ -2766,8 +2777,9 @@ pub fn record_deployment(
     trace: &str,
 ) -> R<String> {
     let bin_path = installed_path("canonical", role, bin);
-    let cdhash = file_cdhash(&bin_path).unwrap_or_default();
-    let sha256 = file_sha256(&bin_path).unwrap_or_default();
+    let target_path = resolve_binary_target_path(&bin_path);
+    let cdhash = file_cdhash(&target_path).unwrap_or_default();
+    let sha256 = file_sha256(&target_path).unwrap_or_default();
     let door = env::var("CHORUS_DOOR").unwrap_or_else(|_| "http://127.0.0.1:3360".to_string());
     let token = resolve_deployer_token(home);
 
@@ -4364,6 +4376,24 @@ mod manifest_4773 {
     }
 
 
+
+    #[test]
+    fn test_resolve_binary_target_path_prefers_bin_suffix() {
+        let tmp = std::env::temp_dir().join(format!("test_target_path_{}", now_epoch()));
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let script = tmp.join("tool_x");
+        let binary = tmp.join("tool_x-bin");
+        std::fs::write(&script, "#!/bin/sh\nexec tool_x-bin\n").expect("write script");
+        std::fs::write(&binary, "mach-o-binary-content").expect("write binary");
+
+        let resolved = resolve_binary_target_path(script.to_str().unwrap());
+        assert_eq!(resolved, binary.to_str().unwrap(), "must prefer <bin>-bin when present");
+
+        let _ = std::fs::remove_file(&binary);
+        let resolved_fallback = resolve_binary_target_path(script.to_str().unwrap());
+        assert_eq!(resolved_fallback, script.to_str().unwrap(), "must fall back to <bin> when -bin absent");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn test_post_rollback_manifest_to_stub_door() {

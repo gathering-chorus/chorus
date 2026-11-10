@@ -189,3 +189,102 @@ httpd.serve_forever()
   [ "$status" -ne 0 ]
   [[ "$output" =~ "unreadable" ]] || [[ "$output" =~ "REFUSED" ]]
 }
+
+@test "4773 AC5 NEGATIVE PROOF: unset CHORUS_BIN is unmeasured naming CHORUS_BIN" {
+  MOCK_PORT=33782
+  export CHORUS_DOOR="http://127.0.0.1:$MOCK_PORT"
+
+  python3 -c "
+import http.server, socketserver, sys
+
+class StubHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = '''{
+            \"apiVersion\": \"v1\",
+            \"kind\": \"Deployment\",
+            \"data\": [
+                {
+                    \"name\": \"dep-4773-tool_b-1731170000\",
+                    \"cardId\": \"4773\",
+                    \"deployedUnit\": \"tool_b\",
+                    \"deployedCommit\": \"abc1234\",
+                    \"cdhash\": \"expected_hash_123\",
+                    \"sha256\": \"sha_xyz\",
+                    \"targetMachine\": \"library\"
+                }
+            ]
+        }'''
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(body.encode('utf-8'))
+
+    def log_message(self, format, *args):
+        pass
+
+socketserver.TCPServer.allow_reuse_address = True
+httpd = socketserver.TCPServer(('127.0.0.1', int(sys.argv[1])), StubHandler)
+httpd.serve_forever()
+" "$MOCK_PORT" &
+  SERVER_PID=$!
+  sleep 0.3
+
+  # Unset both CHORUS_BIN and CHORUS_BIN_DIR
+  env -u CHORUS_BIN -u CHORUS_BIN_DIR "$BORG_PROVE" manifest 4773 tool_b 2>"$TEST_DIR/err.out" || STATUS=$?
+  [ "$STATUS" -ne 0 ]
+  run cat "$TEST_DIR/err.out"
+  [[ "$output" =~ "CHORUS_BIN environment variable is not set" ]] || return 1
+}
+
+@test "4773 AC5 NEGATIVE PROOF: wrapper-only path (unsigned script without -bin) cdhash cannot be read and reads Not met" {
+  MOCK_PORT=33783
+  export CHORUS_DOOR="http://127.0.0.1:$MOCK_PORT"
+  export CHORUS_BIN="$CHORUS_BIN_DIR"
+
+  python3 -c "
+import http.server, socketserver, sys
+
+class StubHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = '''{
+            \"apiVersion\": \"v1\",
+            \"kind\": \"Deployment\",
+            \"data\": [
+                {
+                    \"name\": \"dep-4773-tool_b-1731170000\",
+                    \"cardId\": \"4773\",
+                    \"deployedUnit\": \"tool_b\",
+                    \"deployedCommit\": \"abc1234\",
+                    \"cdhash\": \"expected_hash_123\",
+                    \"sha256\": \"sha_xyz\",
+                    \"targetMachine\": \"library\"
+                }
+            ]
+        }'''
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(body.encode('utf-8'))
+
+    def log_message(self, format, *args):
+        pass
+
+socketserver.TCPServer.allow_reuse_address = True
+httpd = socketserver.TCPServer(('127.0.0.1', int(sys.argv[1])), StubHandler)
+httpd.serve_forever()
+" "$MOCK_PORT" &
+  SERVER_PID=$!
+  sleep 0.3
+
+  # Place an unsigned shell script at $CHORUS_BIN_DIR/tool_b, and no tool_b-bin
+  cat <<'EOF' > "$CHORUS_BIN_DIR/tool_b"
+#!/bin/sh
+echo "wrapper script only"
+EOF
+  chmod +x "$CHORUS_BIN_DIR/tool_b"
+  rm -f "$CHORUS_BIN_DIR/tool_b-bin"
+
+  run "$BORG_PROVE" manifest 4773 tool_b
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "cdhash cannot be read" ]] || [[ "$output" =~ "REFUSED" ]] || return 1
+}

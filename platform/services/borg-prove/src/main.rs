@@ -156,9 +156,15 @@ fn commit_time(sha: &str) -> Option<u64> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
-fn read_codesign_cdhash(codesign_bin: &str, bin: &str) -> Option<String> {
-    let bin_dir = env("CHORUS_BIN_DIR", &format!("{}/.chorus/bin", env("HOME", "")));
-    let p = format!("{bin_dir}/{bin}");
+fn get_chorus_bin_dir() -> Result<String, String> {
+    match std::env::var("CHORUS_BIN").or_else(|_| std::env::var("CHORUS_BIN_DIR")) {
+        Ok(d) if !d.trim().is_empty() => Ok(d),
+        _ => Err("CHORUS_BIN environment variable is not set".to_string()),
+    }
+}
+
+fn read_codesign_cdhash(codesign_bin: &str, bin_dir: &str, bin: &str) -> Option<String> {
+    let p = resolve_running_binary_path(bin_dir, bin);
     let out = Command::new(codesign_bin)
         .args(["--display", "--verbose=3", &p])
         .output()
@@ -198,8 +204,17 @@ fn check_manifest(
         units_from_deploy_log(&log_text, card, land_trace.as_deref())
     };
 
+    if expected.is_empty() {
+        return Outcome::Met("no binaries deployed for this card".into());
+    }
+
+    let bin_dir = match get_chorus_bin_dir() {
+        Ok(d) => d,
+        Err(e) => return Outcome::Unmeasured(e),
+    };
+
     let codesign = codesign_bin.unwrap_or("codesign");
-    let reader = |bin: &str| read_codesign_cdhash(codesign, bin);
+    let reader = |bin: &str| read_codesign_cdhash(codesign, &bin_dir, bin);
     match verify_manifest_records(&records, &expected, card, reader) {
         Ok(0) => Outcome::Met("no binaries deployed for this card".into()),
         Ok(n) => Outcome::Met(format!("verified {n} deployment record(s)")),

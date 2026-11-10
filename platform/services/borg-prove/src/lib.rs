@@ -695,6 +695,17 @@ pub fn units_from_deploy_log(log_content: &str, card: u32, land_trace: Option<&s
     units
 }
 
+/// #4773 — resolve running binary path for codesign cdhash: prefers `<bin_dir>/<bin>-bin` if that file exists,
+/// falling back to `<bin_dir>/<bin>`. Unsigned wrapper scripts (like `werk-deploy`) delegate to `<bin>-bin`.
+pub fn resolve_running_binary_path(bin_dir: &str, bin: &str) -> String {
+    let candidate = format!("{bin_dir}/{bin}-bin");
+    if std::path::Path::new(&candidate).is_file() {
+        candidate
+    } else {
+        format!("{bin_dir}/{bin}")
+    }
+}
+
 /// #4773 AC4 / AC5 — Verify deployment records against actual installed/running hashes.
 /// Expects rows only for units the land's deploy.completed lists.
 pub fn verify_manifest_records<F>(
@@ -848,5 +859,23 @@ mod tests_4773 {
     fn test_parse_deployments_for_card_checked_invalid_json() {
         assert!(parse_deployments_for_card_checked("not-json", 4773).is_err());
         assert!(parse_deployments_for_card_checked("{}", 4773).is_err());
+    }
+
+    #[test]
+    fn test_resolve_running_binary_path_prefers_bin_suffix() {
+        let tmp = std::env::temp_dir().join(format!("test_running_path_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let script = tmp.join("tool_z");
+        let binary = tmp.join("tool_z-bin");
+        std::fs::write(&script, "#!/bin/sh\nexec tool_z-bin\n").expect("write script");
+        std::fs::write(&binary, "mach-o-binary").expect("write binary");
+
+        let resolved = resolve_running_binary_path(tmp.to_str().unwrap(), "tool_z");
+        assert_eq!(resolved, binary.to_str().unwrap(), "must prefer <bin>-bin when present");
+
+        let _ = std::fs::remove_file(&binary);
+        let resolved_fallback = resolve_running_binary_path(tmp.to_str().unwrap(), "tool_z");
+        assert_eq!(resolved_fallback, script.to_str().unwrap(), "must fall back to <bin> when -bin absent");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
