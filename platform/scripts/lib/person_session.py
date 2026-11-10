@@ -17,11 +17,12 @@ import urllib.parse
 
 
 
-def live_sessions_query(now):
-    """#4838 — live sessions, filtered at the door: no endedAt, expiresAt within the last hour or later."""
-    import time as _t, urllib.parse as _u
-    after = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(now - 3600))
-    return f"endedAt.absent=true&expiresAt.after={_u.quote(after)}&limit=5000"
+def role_sessions_query():
+    """#4948 — the open role (pane) sessions his sign-in binds: no endedAt and no expiry
+    filter. A role's session lasts from login to logout; its expiresAt is written once at
+    login and never renewed, so an expiresAt.after filter (#4838) emptied binds an hour
+    after each role's login (Silas, pair 4948)."""
+    return "endedAt.absent=true&channel=pane&limit=5000"
 
 def iso(secs):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(secs))
@@ -124,7 +125,7 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
         return None
     id_token = tok.get("id_token", "")
     try:
-        status, listing = http("GET", f"{api}/v1/identity/sessions?{live_sessions_query(now)}", None, None)
+        status, listing = http("GET", f"{api}/v1/identity/sessions?{role_sessions_query()}", None, None)
         roles = open_role_sessions(listing) if status == 200 else []
     except Exception:
         roles = []
