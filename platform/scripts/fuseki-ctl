@@ -6,8 +6,8 @@
 #   fuseki-ctl start           start if not running, wait for ping
 #   fuseki-ctl restart         kickstart -k, wait for ping, print the outage (blips the door)
 #   fuseki-ctl stop            stop it (both products lose the store)
-#   fuseki-ctl config-check    runtime server config == canonical (fuseki-config-deploy.sh --check)
-#   fuseki-ctl config-deploy   install the canonical server config (live on the next start)
+#   fuseki-ctl config-check    runtime server + log configs == canonical (fuseki-config-deploy.sh --check)
+#   fuseki-ctl config-deploy   install the canonical server + log configs (live on the next start)
 set -euo pipefail
 
 LABEL="${FUSEKI_LABEL:-com.gathering.fuseki}"
@@ -27,8 +27,8 @@ case "${1:-status}" in
     running && echo "fuseki-ctl: $LABEL running" || echo "fuseki-ctl: $LABEL not running"
     ping_ok && echo "fuseki-ctl: $URL answers" || { echo "fuseki-ctl: $URL does not answer"; exit 1; }
     "$SCRIPT_DIR/fuseki-config-deploy.sh" --check >/dev/null 2>&1 \
-      && echo "fuseki-ctl: server config matches canonical" \
-      || echo "fuseki-ctl: server config differs from canonical (fuseki-ctl config-check)"
+      && echo "fuseki-ctl: server and log configs match canonical" \
+      || echo "fuseki-ctl: server or log config differs from canonical (fuseki-ctl config-check)"
     ;;
   start)
     # KeepAlive: a loaded job runs; a booted-out one comes back by bootstrap

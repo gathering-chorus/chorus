@@ -44,7 +44,7 @@ ctl() { run env PATH="$T/bin:$PATH" FUSEKI_LAUNCHCTL="$T/bin/launchctl" FUSEKI_P
 }
 
 # platform/scripts/fuseki-config-deploy.sh — the canonical server config, put in place
-deploy() { run env FUSEKI_SERVER_RUNTIME="$T/config.ttl" bash "$ROOT/platform/scripts/fuseki-config-deploy.sh" "$@"; }
+deploy() { run env FUSEKI_SERVER_RUNTIME="$T/config.ttl" FUSEKI_LOG_RUNTIME="$T/log4j2.properties" bash "$ROOT/platform/scripts/fuseki-config-deploy.sh" "$@"; }
 
 @test "config-deploy installs the canonical server config, keeping the old one beside it" {
   echo "old" > "$T/config.ttl"
