@@ -59,14 +59,12 @@ teardown() {
   echo "$output" | grep -q "test manifest_4773::test_post_deployment_manifest_to_stub_door \.\.\. ok"
 }
 
-@test "4773 AC8: land-4773-rows seeds principal-deployer and deployer-cicd permission in dry-run" {
-  SCRIPT="$ROOT/platform/scripts/land-4773-rows"
-  [ -x "$SCRIPT" ]
-  run "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [[ "$output" =~ "identity/principals/deployer" ]] || return 1
-  [[ "$output" =~ "security/permissions/deployer-cicd" ]] || return 1
-  [[ "$output" =~ "nothing written (dry run)" ]] || return 1
+@test "4773 AC8 (#4940): the model seeds principal-deployer and deployer-cicd; no land-rows script duplicates them" {
+  # Principal is deploy-only at the door (the 11-09 17:05 refusal), so the rows live in the
+  # model files and the model deploy writes them; a land-rows copy ran first and was refused.
+  grep -q '^chorus:principal-deployer a chorus:Principal' "$ROOT/roles/silas/ontology/identity-principals-3613.ttl"
+  grep -q '^chorus:permission-deployer-cicd a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl"
+  [ ! -e "$ROOT/platform/scripts/land-4773-rows" ]
 }
 
 @test "4773 AC8 NEGATIVE PROOF: deployer credential (0600 runner-bound) cannot be read by role accounts" {
@@ -98,9 +96,10 @@ EOF
 @test "4773 AC8 NEGATIVE PROOF: principal-deployer is refused write access outside urn:chorus:domains:cicd" {
   # Door DAL authz: deployer only holds Write on urn:chorus:domains:cicd.
   # Calling handle_write_scoped on another graph (e.g. urn:chorus:domains:cards) returns 403.
-  TEST_BIN=$(ls -t $(find "$ROOT/platform/services/athena-make/target/debug/deps" -name "deployments_door_4773-*" -type f -perm +111) | head -1)
-  [ -n "$TEST_BIN" ]
-  "$TEST_BIN" deployer_refused_outside_cicd
+  # #4940: build what it runs; a prebuilt binary in target/ exists only when this run built athena-make
+  run cargo test --manifest-path "$ROOT/platform/services/athena-make/Cargo.toml" --test deployments_door_4773 deployer_refused_outside_cicd
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "test deployer_refused_outside_cicd ... ok"
 }
 
 @test "4773 AC8 NEGATIVE PROOF: missing deployer credential causes POST refusal and borg-prove reads Unmeasured" {
@@ -131,7 +130,9 @@ httpd.serve_forever()
   sleep 0.3
 
   # borg-prove manifest should read Unmeasured (not Met) and exit 1
-  BORG_PROVE="$ROOT/platform/services/borg-prove/target/debug/borg-prove"
+  # #4940: build what it runs; target/debug/borg-prove exists only when this run built borg-prove
+  cargo build -q --manifest-path "$ROOT/platform/services/borg-prove/Cargo.toml"
+  BORG_PROVE="${CARGO_TARGET_DIR:-$ROOT/platform/services/borg-prove/target}/debug/borg-prove"
   run "$BORG_PROVE" manifest 4773 "['fake-unit']" "-" "codesign"
   kill "$FAIL_PID" 2>/dev/null || true
 
