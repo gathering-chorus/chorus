@@ -8,8 +8,9 @@ setup() {
   TEST_DIR="$(mktemp -d)"
   export HOME="$TEST_DIR"
   export CHORUS_HOME="$ROOT"
-  export CHORUS_BIN_DIR="$TEST_DIR/.chorus/bin"
-  mkdir -p "$CHORUS_BIN_DIR"
+  export CHORUS_BIN="$TEST_DIR/.chorus/bin"
+  export CHORUS_BIN_DIR="$CHORUS_BIN"
+  mkdir -p "$CHORUS_BIN"
 
   # Find an unused port for stub door
   MOCK_PORT=33776
@@ -83,4 +84,28 @@ EOF
   run "$BORG_PROVE" manifest 4773 ""
   [ "$status" -eq 0 ]
   [[ "$output" =~ "no binaries deployed for this card" ]] || return 1
+}
+
+@test "4773 AC4: borg-prove checks <bin>-bin when present alongside wrapper" {
+  mkdir -p "$TEST_DIR/bin"
+  # codesign mock asserts that target is tool_a-bin, not the tool_a wrapper
+  cat <<'EOF' > "$TEST_DIR/bin/codesign_bin"
+#!/bin/bash
+target="$3"
+if [ "$(basename "$target")" != "tool_a-bin" ]; then
+  echo "expected tool_a-bin, got: $target" >&2
+  exit 1
+fi
+echo "CDHash=mock_cdhash_good" >&2
+EOF
+  chmod +x "$TEST_DIR/bin/codesign_bin"
+
+  # Create wrapper and -bin binary in CHORUS_BIN_DIR
+  touch "$CHORUS_BIN_DIR/tool_a"
+  touch "$CHORUS_BIN_DIR/tool_a-bin"
+
+  BORG_PROVE="$ROOT/platform/services/borg-prove/target/debug/borg-prove"
+  run "$BORG_PROVE" manifest 4773 tool_a - "$TEST_DIR/bin/codesign_bin"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "verified 1 deployment record" ]] || return 1
 }
