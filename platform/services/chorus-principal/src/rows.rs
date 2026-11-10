@@ -371,11 +371,8 @@ pub fn seen_due(last_write_secs: Option<u64>, now_secs: u64, every_secs: u64, de
     delivered || last_write_secs.map(|l| now_secs.saturating_sub(l) >= every_secs).unwrap_or(true)
 }
 
-/// A row as the listing returns it, made fit to PUT back: the listing adds
-/// "status" (not in any shape; 422 "off-model property") and reports every
-/// absent field as "" (an empty edge is refused as a name). Both go.
 /// #4343 — actsAs as the bare role name, whatever form a row was saved in. A
-/// login saved before the fix carries "role-wren"; sent back, every PUT is a 422.
+/// login saved before the fix carries "role-wren".
 pub fn bare_role(mut row: Value) -> Value {
     if let Some(a) = row.get("actsAs").and_then(|a| a.as_str()).and_then(|a| a.strip_prefix("role-")).map(String::from) {
         row["actsAs"] = Value::String(a);
@@ -383,13 +380,28 @@ pub fn bare_role(mut row: Value) -> Value {
     row
 }
 
-pub fn putable(mut row: Value) -> Value {
-    row = bare_role(row);
-    if let Some(o) = row.as_object_mut() {
-        o.remove("status");
-        o.retain(|_, v| !matches!(v, Value::String(s) if s.is_empty()));
-    }
-    row
+/// #4944 — a Session write as a PATCH of only the fields our code changed: (name, body).
+/// `before` is the cached row, `after` the same row with our change applied. The cache
+/// is stale once the door's row moves on, so it is never sent back whole (the 422s of
+/// 11-09/10). None when nothing changed or the row has no name.
+pub fn changed_fields(before: &Value, after: &Value) -> Option<(String, Value)> {
+    let name = after.get("name")?.as_str()?.to_string();
+    let a = after.as_object()?;
+    let body: serde_json::Map<String, Value> = a.iter()
+        .filter(|(k, v)| k.as_str() != "name" && before.get(k.as_str()) != Some(*v))
+        .map(|(k, v)| (k.clone(), v.clone())).collect();
+    if body.is_empty() { None } else { Some((name, Value::Object(body))) }
+}
+
+/// #4944 — closing a Session: (owner role, name, PATCH body). Only `sessionState` and
+/// `endedAt` (and `endedBy` when given) are sent; the listing row is never put back.
+/// None without a name or a `principal-` owner.
+pub fn session_close(row: &Value, ended_at: &str, ended_by: Option<&str>) -> Option<(String, String, Value)> {
+    let name = row.get("name")?.as_str()?.to_string();
+    let owner = row.get("ownedBy")?.as_str()?.strip_prefix("principal-")?.to_string();
+    let mut body = serde_json::json!({"sessionState": "closed", "endedAt": ended_at});
+    if let Some(by) = ended_by.filter(|b| !b.is_empty()) { body["endedBy"] = Value::String(by.into()); }
+    Some((owner, name, body))
 }
 
 /// #4934 AC2 — the domains a login establishes: the role's Principal's Permission
