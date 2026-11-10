@@ -493,6 +493,8 @@ pub fn start_in_pane_args(session: &str, dir: &str, launch: &str, exists: bool) 
         a.extend([s("new-session"), s("-d"), s("-s"), s(session), s("-c"), s(dir), s("sleep"), s("600"), s(";")]);
     }
     a.extend([s("set-option"), s("-t"), s(session), s("remain-on-exit"), s("on"), s(";")]);
+    // #4943 — mouse off, so Jeff selects and copies a role pane's text with a plain drag
+    a.extend([s("set-option"), s("-t"), s(session), s("mouse"), s("off"), s(";")]);
     a.extend([s("respawn-pane"), s("-k"), s("-t"), s(session), s("-c"), s(dir), s("bash"), s("-lc"), s(launch)]);
     a
 }
