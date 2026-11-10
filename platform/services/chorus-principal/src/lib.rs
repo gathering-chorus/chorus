@@ -413,6 +413,8 @@ pub fn session_row(role: &str, l: &Login, host_account: &str, start: &str) -> (S
         "ownedBy": format!("principal-{}", role),
         "tokenId": l.jti,
         "issuedAt": iso_utc(l.iat),
+        // the shape requires it (SessionShape-expiresAt minCount 1); #4948: written once, never
+        // renewed, and ignored by every reader of an agent session (login to logout, Jeff 14:34)
         "expiresAt": iso_utc(l.exp),
         "sessionState": "open",
         "hostAccount": host_account,
@@ -1926,9 +1928,7 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     });
     // #4339 — a prompt from Jeff: the session records who attended it and when
     let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "jeff", &now)) } else { session };
-    // #4377 — the login renewed since the row was written: its expiry follows,
-    // so a live session never reads as expired (one PUT with the turn's, not two)
-    let session = session.map(|s| { let exp = current_login_expiry(ctx, role); rows::renewed_session(s.clone(), &exp).unwrap_or(s) });
+    // #4948 — an agent session lasts from login to logout: a turn never renews its expiresAt
     if let (Some(before), Some(s)) = (cached.as_ref(), session.clone().and_then(|s| rows::seen_session(s, &now))) { patch_changed(ctx, role, "identity/sessions", "session", before, &s); }
     // ... and no run: this running session gets its run, presence and boot context now
     let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
@@ -1952,15 +1952,6 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         ensure_conversation(ctx, role, &row_name(&run), conv);
     }
     0
-}
-
-/// #4377 — the expiry of the role's current login: the same token the row write
-/// will carry (chorus-identity-token renews it when the cached one lapsed),
-/// only if it names this role. "" when there is none. Reading token.cache
-/// directly saw the lapsed token from before the renewal (demo, 09-27 09:07).
-fn current_login_expiry(ctx: &Ctx, role: &str) -> String {
-    let Ok(tok) = sh(&ctx.token_bin, &[role]) else { return String::new() };
-    match login_check(role, tok.trim(), now_ms() as u64 / 1000) { Ok(l) => iso_utc(l.exp), Err(_) => String::new() }
 }
 
 /// "store: session <name> open, acts as role-x, since <t>, last seen <t>".
@@ -2097,27 +2088,35 @@ fn ensure_channels(ctx: &Ctx) {
 
 /// `sweep` — close the sessions still reading open long after their token died.
 fn sweep(ctx: &Ctx) -> i32 {
-    let listing = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838: open rows, at the door
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
-    let mut keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
-    let now = iso_utc(now_ms() as u64 / 1000);
-    let (kept, mut failed) = keep_live_sessions(ctx, &roles);
-    let (mut closed, mut skipped) = (0, 0);
-    // #4944 — a session a live run points at is never closed; unreadable runs close nothing
-    let runs = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessionruns?runEndedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default();
-    let expired = match rows::live_run_sessions(&runs) {
-        Ok(live) => { keep.extend(live); rows::expired_open(&listing, &now, &keep) }
-        Err(why) => { failed += 1; eprintln!("  closing nothing this pass: {}", why); vec![] }
+    let mut failed = 0;
+    // #4948 — liveness from the session registry's pids, never from a role's files: the
+    // sweep runs as Jeff, and each role's login.json is in its own 700 home (Silas, pair 4948)
+    let live = match live_roles(ctx, &roles) {
+        Ok(l) => Some(l),
+        Err(why) => { failed += 1; eprintln!("  keeping and ending nothing this pass: {}", why); None }
     };
-    for row in expired {
-        let Some((owner, name, body)) = rows::session_close(&row, &now, None) else { failed += 1; eprintln!("  {} not closed: the row could not be read", row_name(&row)); continue };
-        // a person's sign-in (Jeff's browser) is closed by its own door, never by an agent's credential
-        if !roles.iter().any(|r| *r == owner) { skipped += 1; continue; }
-        // #4944 — a PATCH of the two fields; a refusal is named on the spine by patch_row
-        if patch_row(ctx, &owner, "identity/sessions", "session", &name, &body) { closed += 1 } else { failed += 1; eprintln!("  {} not closed (the door refused the PATCH; see session.row.failed)", name) }
+    let kept = live.as_ref().map_or(0, |l| l.len());
+    let mut ended = 0;
+    if let Some(live) = &live {
+        // #4889 — an idle role is never woken by a nudge to a dead pane: keep its address current
+        for role in live { refresh_pane(ctx, role); }
+        // #4948 — a crash ends the RUN; a session ends only at logout (Jeff 14:34)
+        let runs = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessionruns?runEndedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default();
+        let grace: u64 = envd("SWEEP_RUN_GRACE_SECS", "120").parse().unwrap_or(120);
+        match rows::crashed_runs(&runs, &roles, live, now_ms() as u64 / 1000, grace) {
+            Ok(crashed) => for (role, name) in crashed {
+                let body = serde_json::json!({"runEndedAt": iso_utc(now_ms() as u64 / 1000), "endReason": "crash"});
+                if patch_row(ctx, &role, "identity/sessionruns", "run", &name, &body) {
+                    ended += 1;
+                    ctx.spine(&["session.run.ended", &role, &format!("run={}", name), "reason=crash"]);
+                } else { failed += 1; eprintln!("  {} not ended (the door refused the PATCH; see session.row.failed)", name) }
+            },
+            Err(why) => { failed += 1; eprintln!("  ending nothing this pass: {}", why) }
+        }
     }
-    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("closed={}", closed), &format!("skipped={}", skipped), &format!("failed={}", failed)]);
-    println!("sweep: {} live session(s) kept open, {} expired session(s) closed, {} not an agent's (left to their own door), {} failed", kept, closed, skipped, failed);
+    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("ended={}", ended), &format!("failed={}", failed)]);
+    println!("sweep: {} live session(s) kept open, {} crashed run(s) ended, {} failed", kept, ended, failed);
 
     // #4924 AC2: scan for 401 expired Claude logins and alert Jeff within 60s
     let scan_script = format!("{}/platform/scripts/role-401-scan", envd("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"));
@@ -2128,29 +2127,11 @@ fn sweep(ctx: &Ctx) -> i32 {
     if failed > 0 { 1 } else { 0 }
 }
 
-/// #4377 reopen 1 — a session whose process is running stays open, idle or
-/// not (Jeff 2026-10-14: "see no sessions for wren and abby" — both running,
-/// both dropped 10 minutes after their last turn). Its login is renewed and
-/// the row's expiry follows, the same renewal a turn makes. A role whose
-/// process has exited is not renewed: its run already ended at exit, and its
-/// row drops from view at its expiry as before (#4500).
-fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
-    let (mut kept, mut failed) = (0, 0);
-    for role in roles {
-        if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { continue; }
-        // #4889 — an idle role is never woken by a nudge to a dead pane, so the sweep
-        // keeps its address current too, not only its turns
-        refresh_pane(ctx, role);
-        if live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() { continue; }
-        let Some(session) = read_row(ctx, role, "session") else { continue };
-        let exp = current_login_expiry(ctx, role);
-        match rows::renewed_session(session.clone(), &exp) {
-            None if exp.is_empty() => { failed += 1; eprintln!("  {} not kept: no current login", role) }
-            None => kept += 1,
-            Some(s) => if patch_changed(ctx, role, "identity/sessions", "session", &session, &s) { kept += 1 } else { failed += 1; eprintln!("  {} not kept: the row write was refused", role) },
-        }
-    }
-    (kept, failed)
+/// #4948 — the agent roles with a live process in the session registry. An unreadable
+/// registry is an Err, never "nobody is running": that would end every run.
+fn live_roles(ctx: &Ctx, roles: &[String]) -> Result<Vec<String>, String> {
+    fs::read_dir(&ctx.sessions_dir).map_err(|e| format!("the session registry {} is unreadable: {}", ctx.sessions_dir.display(), e))?;
+    Ok(roles.iter().filter(|r| !live_entries(&ctx.sessions_dir, r, &ctx.ps).is_empty()).cloned().collect())
 }
 
 /// #4889 (Jeff 07:48: a role's address follows the role, like a phone number) — the

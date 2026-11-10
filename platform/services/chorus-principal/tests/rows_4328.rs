@@ -131,19 +131,6 @@ fn the_real_conversation_id_replaces_pending_once() {
 }
 
 #[test]
-fn the_sweep_closes_only_dead_open_sessions() {
-    let listing = json!({"data":[
-        {"name":"dead","sessionState":"open","expiresAt":"2026-09-20T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},
-        {"name":"live-login","sessionState":"open","expiresAt":"2026-09-26T08:10:00Z","tokenId":"j","ownedBy":"principal-silas"},
-        {"name":"recent-turn","sessionState":"open","expiresAt":"2026-09-26T08:10:00Z","lastSeenAt":"2026-09-26T08:55:00Z","tokenId":"j","ownedBy":"principal-wren"},
-        {"name":"closed","sessionState":"closed","expiresAt":"2026-09-20T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},
-        {"name":"not-expired","sessionState":"open","expiresAt":"2026-09-26T09:30:00Z","tokenId":"j","ownedBy":"principal-kade"}
-    ]}).to_string();
-    let names: Vec<String> = expired_open(&listing, "2026-09-26T09:00:00Z", &["live-login".to_string()]).iter().map(|r| r["name"].as_str().unwrap().to_string()).collect();
-    assert_eq!(names, vec!["dead"]);
-}
-
-#[test]
 fn conversation_row_4342_only_for_a_known_transcript() {
     let c = conversation_row("silas", "silas-run-a", "4d39d28c-37a5-4139").unwrap();
     assert_eq!(c["conversationOf"], "silas-run-a");
@@ -248,14 +235,3 @@ fn an_unchanged_focus_is_rechecked_after_ten_minutes() {
     assert!(focused_presence(p, true, "2026-09-27T08:05:00Z").is_none(), "5 minutes → no PUT");
 }
 
-/// #4377 — the login renews every 10 minutes; the session's expiry follows it,
-/// so a live session never reads as expired, and only moves forward.
-#[test]
-fn a_renewed_login_moves_the_session_expiry_forward_only() {
-    use chorus_principal::rows::renewed_session;
-    let s = serde_json::json!({"name": "wren-x", "expiresAt": "2026-09-26T16:38:09Z"});
-    let r = renewed_session(s.clone(), "2026-09-27T08:55:00Z").expect("later expiry → moved");
-    assert_eq!(r["expiresAt"], "2026-09-27T08:55:00Z");
-    assert!(renewed_session(s.clone(), "2026-09-26T16:00:00Z").is_none(), "an older token never pulls it back");
-    assert!(renewed_session(s, "").is_none(), "no token → no change");
-}
