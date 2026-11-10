@@ -171,28 +171,6 @@ pub fn summary_line(results: &[(String, Came)]) -> String {
 /// new conversation in the same session and must not log the role out.
 pub fn exit_reason_logs_out(reason: &str) -> bool { matches!(reason, "prompt_input_exit" | "logout") }
 
-/// The Session row with its end written in, for the PUT that closes it. The
-/// PUT replaces the whole row and the shape requires every field (a PUT of
-/// just the state answered 422 "requires 'tokenId'"), so the source must be a
-/// full row: the one `on` saved at login, or the collection listing. The
-/// single-row GET is NOT one: it carries no name and no ownedBy.
-pub fn closed_row(source: &str, session: &str, ended_at: &str) -> Option<Value> {
-    let v: Value = serde_json::from_str(source).ok()?;
-    let named = |r: &Value| r.get("name").and_then(|n| n.as_str()) == Some(session);
-    let row = match v.get("data") {
-        Some(Value::Array(rows)) => rows.iter().find(|r| named(r)).cloned()?,
-        Some(d) if named(d) => d.clone(),
-        _ if named(&v) => v.clone(),
-        _ => return None,
-    };
-    let mut row = crate::rows::putable(row);
-    let o = row.as_object_mut()?;
-    for k in ["tokenId", "ownedBy"] { o.get(k)?; }
-    o.insert("sessionState".into(), Value::String("closed".into()));
-    o.insert("endedAt".into(), Value::String(ended_at.into()));
-    Some(row)
-}
-
 /// The tmux bar's right side for a role pane.
 pub fn tmux_status_right(word: &str) -> String {
     let w = if word.is_empty() { "off" } else { word };

@@ -144,25 +144,6 @@ fn the_sweep_closes_only_dead_open_sessions() {
 }
 
 #[test]
-fn a_listing_row_is_made_putable() {
-    // live 09-26 09:31: the sweep's 86 PUTs all answered 422 "off-model property 'status'"
-    let r = putable(json!({"name":"s","status":"","actsAs":"","tokenId":"j","sessionState":"open"}));
-    assert!(r.get("status").is_none());
-    assert!(r.get("actsAs").is_none(), "an empty edge is dropped, not sent as a name");
-    assert_eq!(r["tokenId"], "j");
-    assert_eq!(r["sessionState"], "open");
-}
-
-#[test]
-fn a_closed_row_from_the_listing_carries_no_status() {
-    let listing = json!({"data":[{"name":"s1","status":"","tokenId":"j","ownedBy":"principal-kade","sessionState":"open","actsAs":""}]}).to_string();
-    let c = chorus_principal::lifecycle::closed_row(&listing, "s1", "2026-09-26T10:00:00Z").unwrap();
-    assert!(c.get("status").is_none());
-    assert!(c.get("actsAs").is_none());
-    assert_eq!(c["sessionState"], "closed");
-}
-
-#[test]
 fn conversation_row_4342_only_for_a_known_transcript() {
     let c = conversation_row("silas", "silas-run-a", "4d39d28c-37a5-4139").unwrap();
     assert_eq!(c["conversationOf"], "silas-run-a");
@@ -177,7 +158,6 @@ fn a_login_saved_before_the_bare_name_fix_is_sent_back_bare_4343() {
     // live 09-26: Wren's session saved at 11:06 said role-wren; every seen PUT answered 422
     let old = json!({"name":"wren-s","actsAs":"role-wren","tokenId":"j","ownedBy":"principal-wren"});
     assert_eq!(seen_session(old.clone(), "t").unwrap()["actsAs"], "wren");
-    assert_eq!(putable(old)["actsAs"], "wren");
     // negative proof: an already-bare role is left alone
     assert_eq!(seen_session(json!({"name":"s","actsAs":"kade"}), "t").unwrap()["actsAs"], "kade");
 }

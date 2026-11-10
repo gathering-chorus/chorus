@@ -32,7 +32,7 @@ fn world(tag: &str, pid: u32) -> PathBuf {
     // the door: roles list, an empty sessions listing, and every write accepted
     // (each write's body is kept so the test can read what was sent)
     script(&home.join("curl"), &format!(r#"case "$*" in
-  *" -X PUT "*) for a in "$@"; do case "$a" in @*body) cat "${{a#@}}" >> '{w}';; esac; done; printf '{{}}\n200';;
+  *" -X PATCH "*|*" -X PUT "*) for a in "$@"; do case "$a" in @*body) cat "${{a#@}}" >> '{w}';; http*) printf '%s ' "$a" >> '{w}';; esac; done; printf '\n' >> '{w}'; printf '{{}}\n200';;
   */v1/roles/roles*) printf '{{"data":[{{"name":"wren","roleKind":"agent"}},{{"name":"jeff","roleKind":"human"}}]}}';;
   *) printf '{{"data":[]}}';;
 esac"#, w = home.join("writes").display()));
@@ -63,7 +63,8 @@ fn an_idle_session_whose_process_runs_is_kept_open_past_its_expiry() {
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("1 live session(s) kept open"), "{out}");
     let sent = writes(&home);
-    assert!(sent.contains(r#""name":"wren-s1""#), "the session row was written: {sent}");
+    assert!(sent.contains("/identity/sessions/wren-s1"), "the session row was written: {sent}");
+    assert!(sent.contains(r#""expiresAt":"#) && !sent.contains(r#""lastSeenAt""#), "#4944: only the expiry is sent, never the cached row: {sent}");
     assert!(!sent.contains(&format!(r#""expiresAt":"{EXPIRED}""#)), "its expiry moved forward to the renewed login: {sent}");
 }
 
