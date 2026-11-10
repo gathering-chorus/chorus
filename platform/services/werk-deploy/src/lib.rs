@@ -2675,10 +2675,10 @@ pub fn post_deployment_manifest(
     let dep_id = format!("dep-{}-{}-{}", card, bin_name, epoch);
     let landed_for = if role.is_empty() || role == "system" {
         None
-    } else if role.starts_with("role-") {
-        Some(role.to_string())
+    } else if let Some(stripped) = role.strip_prefix("role-") {
+        Some(stripped.to_string())
     } else {
-        Some(format!("role-{}", role))
+        Some(role.to_string())
     };
     let machine = if target_machine.is_empty() { "library" } else { target_machine };
 
@@ -2690,7 +2690,7 @@ pub fn post_deployment_manifest(
     obj.insert("cdhash".into(), serde_json::Value::String(cdhash.to_string()));
     obj.insert("sha256".into(), serde_json::Value::String(sha256.to_string()));
     obj.insert("deployedAt".into(), serde_json::Value::String(now));
-    obj.insert("deployedBy".into(), serde_json::Value::String("principal-deployer".to_string()));
+    obj.insert("deployedBy".into(), serde_json::Value::String("deployer".to_string()));
     if let Some(lf) = landed_for {
         obj.insert("landedFor".into(), serde_json::Value::String(lf));
     }
@@ -4310,6 +4310,10 @@ mod manifest_4773 {
                         let body = r#"{"error":"validation","message":"rejected by stub"}"#;
                         let resp = format!("HTTP/1.1 422 Unprocessable Entity\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
                         let _ = s.write_all(resp.as_bytes());
+                    } else if req.contains("\"deployedBy\":\"principal-") || req.contains("\"landedFor\":\"role-") {
+                        let body = r#"{"error":"validation","message":"athena-model: double-prefix: pass the bare name; the mint adds the prefix (ADR-040 Rule 0)"}"#;
+                        let resp = format!("HTTP/1.1 422 Unprocessable Entity\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                        let _ = s.write_all(resp.as_bytes());
                     } else {
                         let body = r#"{"status":"created","name":"dep-new"}"#;
                         let resp = format!("HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
@@ -4331,8 +4335,32 @@ mod manifest_4773 {
         assert!(req.contains("Authorization: Bearer mock-token"), "request must carry token: {req}");
         assert!(req.contains("\"previous\":\"dep-prior\""), "request must carry previous: {req}");
         assert!(req.contains("\"targetMachine\":\"library\""), "request must carry targetMachine: {req}");
-        assert!(req.contains("\"deployedBy\":\"principal-deployer\""), "request must carry deployedBy=principal-deployer: {req}");
-        assert!(req.contains("\"landedFor\":\"role-silas\""), "request must carry landedFor=role-silas: {req}");
+        assert!(req.contains("\"deployedBy\":\"deployer\""), "request must carry deployedBy=deployer: {req}");
+        assert!(req.contains("\"landedFor\":\"silas\""), "request must carry landedFor=silas: {req}");
+    }
+
+    #[test]
+    fn test_post_manifest_double_prefix_negative_proof() {
+        let (door, rx) = start_stub_door(false);
+        // 1. Role passed with role- prefix is stripped to bare name so it succeeds
+        let res = post_deployment_manifest(&door, Some("mock-token"), 4773, "commit123", "testbin", "cdhash123", "sha256abc", "role-silas", "library", None, None);
+        assert!(res.is_ok(), "role with role- prefix should be stripped to bare name: {:?}", res);
+        let req = rx.recv().expect("receive request");
+        assert!(req.contains("\"landedFor\":\"silas\""), "landedFor must be bare: {req}");
+
+        // 2. Direct POST with double-prefixed value is refused with 422 double-prefix by stub door
+        let mut cmd = Command::new("curl");
+        cmd.args([
+            "-s", "-S", "-m", "5", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-w", "\n%{http_code}",
+            "-d", r#"{"deployedBy":"principal-deployer","landedFor":"role-silas"}"#,
+            &format!("{}/v1/cicd/deployments", door),
+        ]);
+        let out = cmd.output().expect("curl stub door");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains("422"), "stub door must return 422 for double-prefix: {text}");
+        assert!(text.contains("double-prefix"), "error must mention double-prefix: {text}");
     }
 
 
