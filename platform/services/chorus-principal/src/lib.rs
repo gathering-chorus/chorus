@@ -2099,11 +2099,17 @@ fn ensure_channels(ctx: &Ctx) {
 fn sweep(ctx: &Ctx) -> i32 {
     let listing = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838: open rows, at the door
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
-    let keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
+    let mut keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
     let now = iso_utc(now_ms() as u64 / 1000);
     let (kept, mut failed) = keep_live_sessions(ctx, &roles);
     let (mut closed, mut skipped) = (0, 0);
-    for row in rows::expired_open(&listing, &now, &keep) {
+    // #4944 — a session a live run points at is never closed; unreadable runs close nothing
+    let runs = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessionruns?runEndedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default();
+    let expired = match rows::live_run_sessions(&runs) {
+        Ok(live) => { keep.extend(live); rows::expired_open(&listing, &now, &keep) }
+        Err(why) => { failed += 1; eprintln!("  closing nothing this pass: {}", why); vec![] }
+    };
+    for row in expired {
         let Some((owner, name, body)) = rows::session_close(&row, &now, None) else { failed += 1; eprintln!("  {} not closed: the row could not be read", row_name(&row)); continue };
         // a person's sign-in (Jeff's browser) is closed by its own door, never by an agent's credential
         if !roles.iter().any(|r| *r == owner) { skipped += 1; continue; }

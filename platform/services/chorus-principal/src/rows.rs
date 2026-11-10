@@ -393,6 +393,24 @@ pub fn changed_fields(before: &Value, after: &Value) -> Option<(String, Value)> 
     if body.is_empty() { None } else { Some((name, Value::Object(body))) }
 }
 
+/// #4944 (Silas, pair) — the Sessions an open SessionRun (no `runEndedAt`) points at by
+/// `runOf`. The sweep never closes one: on 11-10 abby-normal's session read expired
+/// while her run was live and Jeff's browser session bound to it. `runOf` comes back
+/// minted (`session-<name>`), so both forms are returned. An unreadable listing is an
+/// Err, never "no live runs".
+pub fn live_run_sessions(runs_listing: &str) -> Result<Vec<String>, String> {
+    let v: Value = serde_json::from_str(runs_listing).map_err(|_| "the runs listing is not JSON".to_string())?;
+    let rows = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| "the runs listing has no data list".to_string())?;
+    let mut out = vec![];
+    for r in rows {
+        if !r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() { continue; }
+        let Some(of) = r.get("runOf").and_then(|o| o.as_str()).filter(|o| !o.is_empty()) else { continue };
+        out.push(of.to_string());
+        if let Some(bare) = of.strip_prefix("session-") { out.push(bare.to_string()); }
+    }
+    Ok(out)
+}
+
 /// #4944 — closing a Session: (owner role, name, PATCH body). Only `sessionState` and
 /// `endedAt` (and `endedBy` when given) are sent; the listing row is never put back.
 /// None without a name or a `principal-` owner.

@@ -59,3 +59,35 @@ fn keep_sends_only_the_new_expiry_and_nothing_when_nothing_moved() {
     assert_eq!(changed_fields(&cached, &cached), None, "no change, no write");
     assert_eq!(changed_fields(&json!({}), &json!({"lastSeenAt":"t"})), None, "no name, no write");
 }
+
+/// Silas (pair 4944), measured 07:54: abby-normal's session read expired while her run was
+/// live (runOf = "session-<name>", the minted form the door returns). A live run blocks the close.
+#[test]
+fn a_session_a_live_run_points_at_is_never_closed() {
+    let home = tempdir("live-run");
+    door_with_runs(&home, "wren", "200", r#"{"data":[{"name":"wren-run-1","runOf":"session-wren-s-1","runEndedAt":""}]}"#);
+    let (code, out) = sweep(&home);
+    assert_eq!(code, 0, "{out}");
+    assert!(read(home.join("calls.log")).is_empty(), "no write to a live run's session: {}", read(home.join("calls.log")));
+    assert!(out.contains("0 expired session(s) closed"), "{out}");
+}
+
+/// Negative proof: the same run, ended, no longer blocks the close.
+#[test]
+fn negative_proof_an_ended_run_does_not_block_the_close() {
+    let home = tempdir("ended-run");
+    door_with_runs(&home, "wren", "200", r#"{"data":[{"name":"wren-run-1","runOf":"session-wren-s-1","runEndedAt":"2026-11-10T11:00:00Z"}]}"#);
+    let (_, out) = sweep(&home);
+    assert!(read(home.join("calls.log")).contains("PATCH http://door.test/v1/identity/sessions/wren-s-1"), "{out}");
+}
+
+/// Fail closed: an unreadable runs listing closes nothing and counts as a failure.
+#[test]
+fn an_unreadable_runs_listing_closes_nothing() {
+    let home = tempdir("runs-down");
+    door_with_runs(&home, "wren", "200", "not json");
+    let (code, out) = sweep(&home);
+    assert_eq!(code, 1, "{out}");
+    assert!(read(home.join("calls.log")).is_empty(), "nothing closed blind");
+    assert!(out.contains("closing nothing this pass"), "{out}");
+}

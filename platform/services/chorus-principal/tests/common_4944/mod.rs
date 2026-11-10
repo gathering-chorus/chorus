@@ -24,7 +24,10 @@ pub fn expired_row(role: &str) -> String {
 }
 
 /// The fake door. `write_code` is what it answers every PATCH/PUT with.
-pub fn door(home: &Path, role: &str, write_code: &str) {
+pub fn door(home: &Path, role: &str, write_code: &str) { door_with_runs(home, role, write_code, r#"{"data":[]}"#) }
+
+/// The fake door with `runs` as its open-runs listing (identity/sessionruns).
+pub fn door_with_runs(home: &Path, role: &str, write_code: &str, runs: &str) {
     let roles = format!(r#"{{"data":[{{"name":"{role}","roleKind":"agent"}}]}}"#);
     let sessions = format!(r#"{{"data":[{}]}}"#, expired_row(role));
     let log = home.join("calls.log");
@@ -44,11 +47,12 @@ case "$method" in
     if [ '{code}' = 200 ]; then printf '{{}}\n200'; else printf '{{"error":"shape","why":"off-model property status"}}\n{code}'; fi ;;
   *) case "$url" in
        *roles/roles*) printf '%s' '{roles}' ;;
+       *identity/sessionruns*) printf '%s' '{runs}' ;;
        *identity/sessions*) printf '%s' '{sessions}' ;;
        *) printf '{{"data":[]}}' ;;
      esac ;;
 esac
-"#, log = log.display(), code = write_code, roles = roles, sessions = sessions));
+"#, log = log.display(), code = write_code, roles = roles, sessions = sessions, runs = runs));
     exe(&home.join("token-bin"), "#!/bin/sh\necho tok\n");
     exe(&home.join("log-bin"), &format!("#!/bin/sh\necho \"$*\" >> '{}'\n", home.join("spine.log").display()));
 }
