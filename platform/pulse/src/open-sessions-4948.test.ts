@@ -7,10 +7,10 @@ type Answer = { ok: boolean; status: number; body: unknown };
 
 function stub(answer: (url: string) => Answer): string[] {
   const asked: string[] = [];
-  (global as unknown as { fetch: unknown }).fetch = async (url: string) => {
+  (global as unknown as { fetch: unknown }).fetch = (url: string) => {
     asked.push(url);
     const a = answer(url);
-    return { ok: a.ok, status: a.status, json: async () => a.body };
+    return Promise.resolve({ ok: a.ok, status: a.status, json: () => Promise.resolve(a.body) });
   };
   return asked;
 }
