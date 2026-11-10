@@ -59,14 +59,12 @@ teardown() {
   echo "$output" | grep -q "test manifest_4773::test_post_deployment_manifest_to_stub_door \.\.\. ok"
 }
 
-@test "4773 AC8: land-4773-rows seeds principal-deployer and deployer-cicd permission in dry-run" {
-  SCRIPT="$ROOT/platform/scripts/land-4773-rows"
-  [ -x "$SCRIPT" ]
-  run "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [[ "$output" =~ "identity/principals/deployer" ]] || return 1
-  [[ "$output" =~ "security/permissions/deployer-cicd" ]] || return 1
-  [[ "$output" =~ "nothing written (dry run)" ]] || return 1
+@test "4773 AC8 (#4940): the model seeds principal-deployer and deployer-cicd; no land-rows script duplicates them" {
+  # Principal is deploy-only at the door (the 11-09 17:05 refusal), so the rows live in the
+  # model files and the model deploy writes them; a land-rows copy ran first and was refused.
+  grep -q '^chorus:principal-deployer a chorus:Principal' "$ROOT/roles/silas/ontology/identity-principals-3613.ttl"
+  grep -q '^chorus:permission-deployer-cicd a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl"
+  [ ! -e "$ROOT/platform/scripts/land-4773-rows" ]
 }
 
 @test "4773 AC8 NEGATIVE PROOF: deployer credential (0600 runner-bound) cannot be read by role accounts" {
