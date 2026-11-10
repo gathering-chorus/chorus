@@ -678,6 +678,103 @@ pub fn vanished_subjects(previous: &str, current: &str) -> Vec<String> {
         .collect()
 }
 
+/// #4942 — the file that holds the identity rule, relative to the tree's root.
+pub const IDENTITY_RULE_FILE: &str = "roles/silas/ontology/security-model-3618.ttl";
+
+/// #4942 — the shapes graph for the identity gate: the shipped
+/// AgentRunsAsItsOwnAccount constraint, cut from the security model's own text and
+/// targeted at every Principal. None when the rule is not in the text, so a
+/// deleted or renamed rule is a refusal, never a pass.
+pub fn identity_rule_shapes(security_ttl: &str) -> Option<String> {
+    let start = security_ttl.find("chorus:AgentRunsAsItsOwnAccount a sh:SPARQLConstraint")?;
+    let rest = &security_ttl[start..];
+    let end = rest.find("\"\"\" .")? + "\"\"\" .".len();
+    Some(format!(
+        "@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix sh: <http://www.w3.org/ns/shacl#> .\n\
+         chorus:IdentityGate4942 a sh:NodeShape ; sh:targetClass chorus:Principal ; sh:sparql chorus:AgentRunsAsItsOwnAccount .\n{}\n",
+        &rest[..end]
+    ))
+}
+
+/// #4942 — "<focus node> = \"<value>\"" for each violation in a Jena shacl report
+/// (Turtle, one sh:ValidationResult block per hit). Empty means conforms.
+pub fn identity_gate_hits(report: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let (mut focus, mut value): (Option<String>, String) = (None, String::new());
+    let mut flush = |f: &mut Option<String>, v: &mut String| {
+        if let Some(n) = f.take() { out.push(format!("{n} = \"{v}\"")); }
+        v.clear();
+    };
+    for line in report.lines() {
+        let t = line.trim();
+        if t.contains("sh:ValidationResult") { flush(&mut focus, &mut value); }
+        if let Some(r) = t.strip_prefix("sh:focusNode") {
+            focus = Some(r.trim().trim_end_matches([';', '.']).trim().to_string());
+        }
+        if let Some(r) = t.strip_prefix("sh:value") {
+            value = r.trim().trim_end_matches([';', '.', ']']).trim().trim_matches('"').to_string();
+        }
+    }
+    flush(&mut focus, &mut value);
+    out
+}
+
+/// #4942 — run the identity rule over the files a land would write. Ok when no
+/// file states a principalKind (nothing to check) or every agent conforms; Err names
+/// each offending principal, or why the check could not run (a missing rule, an
+/// absent or crashed validator: a gate that cannot ask refuses, #3734).
+pub fn identity_gate(root: &str, files: &[(String, String)]) -> Result<(), String> {
+    let about_principals = |t: &str| t.contains("principalKind") || t.contains("hostAccount");
+    if !files.iter().any(|(_, t)| about_principals(t)) {
+        return Ok(());
+    }
+    // A card land carries only its changed files: a hostAccount here may belong to a
+    // principal whose principalKind lives in an untouched file (Wren, pair 4942). So
+    // the check reads every principal file in the tree's ontology dirs as well. The
+    // tree is the werk, so a changed file reads the same either way; RDF union of a
+    // triple stated twice is one triple.
+    let mut files: Vec<(String, String)> = files.to_vec();
+    if let Ok(roles) = std::fs::read_dir(format!("{root}/roles")) {
+        for r in roles.flatten() {
+            let Ok(ents) = std::fs::read_dir(r.path().join("ontology")) else { continue };
+            for e in ents.flatten() {
+                let p = e.path();
+                if p.extension().and_then(|x| x.to_str()) != Some("ttl") { continue; }
+                let Ok(t) = std::fs::read_to_string(&p) else { continue };
+                if about_principals(&t) { files.push((p.display().to_string(), t)); }
+            }
+        }
+    }
+    let rule = std::fs::read_to_string(format!("{root}/{IDENTITY_RULE_FILE}")).unwrap_or_default();
+    let shapes = identity_rule_shapes(&rule).ok_or_else(|| {
+        format!("this land writes principals, but the rule AgentRunsAsItsOwnAccount is not in {IDENTITY_RULE_FILE}")
+    })?;
+    let tmp = std::env::temp_dir();
+    let (sp, dp) = (
+        tmp.join(format!("athena-deploy-identity-shapes-{}.ttl", std::process::id())),
+        tmp.join(format!("athena-deploy-identity-data-{}.ttl", std::process::id())),
+    );
+    let mut body = String::new();
+    for (_, t) in &files {
+        body.push_str(strip_bom(t));
+        body.push('\n');
+    }
+    std::fs::write(&sp, shapes).and_then(|_| std::fs::write(&dp, body))
+        .map_err(|e| format!("could not write the gate's temp files: {e}"))?;
+    let out = Command::new(env_or("SHACL_BIN", "shacl"))
+        .args(["validate", "--shapes"]).arg(&sp).arg("--data").arg(&dp).output();
+    let _ = std::fs::remove_file(&sp);
+    let _ = std::fs::remove_file(&dp);
+    let o = out.map_err(|e| format!("the SHACL validator could not run ({e}); the gate cannot ask, so it refuses"))?;
+    if !o.status.success() {
+        return Err(format!("the SHACL validator failed: {}", String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("")));
+    }
+    let hits = identity_gate_hits(&String::from_utf8_lossy(&o.stdout));
+    if hits.is_empty() { Ok(()) } else {
+        Err(format!("an agent principal must run as its own account, hostAccount chorus-<name>:\n  {}", hits.join("\n  ")))
+    }
+}
+
 /// #3536 AC2 / #3731 — the SHACL report. Report-only, never a gate: the model
 /// is mid-migration, so a hard gate would refuse every deploy.
 ///
@@ -1389,6 +1486,17 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
              two mean different things, they are a name collision: rename one."
         );
         return Err(fail(&format!("duplicate-property-declaration:{}", dupes.len())));
+    }
+
+    // #4942 — the identity gate, before any store call. The SHACL leg below is
+    // report-only (#3536), so a land setting an agent to "jeffbridwell" (#4773)
+    // went through and locked every role out. This runs ONLY the PrincipalShape
+    // rule AgentRunsAsItsOwnAccount, read from this tree's own TTL, over the files
+    // this land would write, and refuses with exit 2 on any hit.
+    if let Err(why) = identity_gate(&src, &loaded) {
+        eprintln!("athena-deploy: REFUSED — identity gate (#4942): {why}");
+        let _ = fail(&format!("identity-gate:{}", why.lines().count()));
+        std::process::exit(2);
     }
 
     // #4338 — a domain set's merge REPLACES every subject its files name. A file

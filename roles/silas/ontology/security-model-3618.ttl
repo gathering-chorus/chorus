@@ -280,7 +280,24 @@ chorus:PrincipalShape a sh:NodeShape ;
     sh:property chorus:PrincipalShape-canSignIn ;
     sh:property chorus:PrincipalShape-holdsRole ;
     sh:property chorus:PrincipalShape-wearsHat ;
-    sh:property chorus:PrincipalShape-agentRuntime .
+    sh:property chorus:PrincipalShape-agentRuntime ;
+    sh:sparql chorus:AgentRunsAsItsOwnAccount .
+# #4942 — an agent principal runs as its own macOS account, chorus-<name>. On #4773 a
+# model land set the agents' hostAccount to "jeffbridwell" and locked every role out
+# with no deploy-time error. Scoped to principalKind "agent": services run as
+# jeffbridwell by design and persons may have none. A missing hostAccount is a
+# violation too (OPTIONAL + !BOUND), not only a wrong one. athena-deploy reads this
+# select as its pre-write identity gate, so the rule has one home.
+chorus:AgentRunsAsItsOwnAccount a sh:SPARQLConstraint ;
+    sh:message "an agent principal runs as its own macOS account: hostAccount must be chorus-<name> (#4942)" ;
+    sh:select """
+        SELECT $this ?value WHERE {
+          $this <https://jeffbridwell.com/chorus#principalKind> "agent" .
+          BIND(CONCAT("chorus-", STRAFTER(STR($this), "https://jeffbridwell.com/chorus#principal-")) AS ?want)
+          OPTIONAL { $this <https://jeffbridwell.com/chorus#hostAccount> ?h }
+          FILTER(!BOUND(?h) || STR(?h) != ?want)
+          BIND(COALESCE(STR(?h), "") AS ?value)
+        }""" .
 # #3830 — where a person's NAME goes: rdfs:label, the one required text field,
 # which Jeff's row had carried a description in for three months ("jeff (human
 # principal - root authority)") because nothing said otherwise. foaf:name is

@@ -1,0 +1,10 @@
+# #4942 — fixture for the AgentRunsAsItsOwnAccount rule: three agents that must be
+# refused (the #4773 replay, a dropped hostAccount, another agent's account) and
+# three principals it must leave alone (a correct agent, a service and a person).
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+chorus:principal-good   a chorus:Principal ; chorus:principalKind "agent" ;   chorus:hostAccount "chorus-good" .
+chorus:principal-wrongv a chorus:Principal ; chorus:principalKind "agent" ;   chorus:hostAccount "jeffbridwell" .
+chorus:principal-nohost a chorus:Principal ; chorus:principalKind "agent" .
+chorus:principal-other  a chorus:Principal ; chorus:principalKind "agent" ;   chorus:hostAccount "chorus-good" .
+chorus:principal-svc    a chorus:Principal ; chorus:principalKind "service" ; chorus:hostAccount "jeffbridwell" .
+chorus:principal-person a chorus:Principal ; chorus:principalKind "person" .
