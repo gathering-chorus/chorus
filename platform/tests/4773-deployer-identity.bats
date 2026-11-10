@@ -53,10 +53,16 @@ teardown() {
   grep -A 4 'chorus:landedFor a owl:ObjectProperty' "$TTL" | grep -q 'rdfs:range chorus:Role'
 }
 
-@test "4773 AC8: werk-deploy posts records with deployedBy=principal-deployer and landedFor=role-<role>" {
+@test "4773 AC8: werk-deploy posts records with bare names deployedBy=deployer and landedFor=<role>" {
   run cargo test --manifest-path "$ROOT/platform/services/werk-deploy/Cargo.toml" --lib test_post_deployment_manifest_to_stub_door
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "test manifest_4773::test_post_deployment_manifest_to_stub_door \.\.\. ok"
+}
+
+@test "4773 AC8 NEGATIVE PROOF: double-prefixed values (principal-*, role-*) are refused by door double-prefix rule" {
+  run cargo test --manifest-path "$ROOT/platform/services/werk-deploy/Cargo.toml" --lib test_post_manifest_double_prefix_negative_proof
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "test manifest_4773::test_post_manifest_double_prefix_negative_proof \.\.\. ok"
 }
 
 @test "4773 AC8 (#4940): the model seeds principal-deployer and deployer-cicd; no land-rows script duplicates them" {
