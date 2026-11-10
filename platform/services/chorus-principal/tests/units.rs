@@ -156,6 +156,7 @@ mod login_4202 {
         assert_eq!(body["sessionState"], "open");
         assert_eq!(body["hostAccount"], "chorus-kade");
         assert_eq!(body["issuedAt"], "2025-09-17T16:00:00Z");
+        // the shape requires it; #4948: written once at login, never renewed, ignored by readers
         assert_eq!(body["expiresAt"], "2025-09-17T16:10:00Z");
         assert!(!body.to_string().contains("eyJ"));
     }

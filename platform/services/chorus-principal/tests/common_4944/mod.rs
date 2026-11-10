@@ -65,6 +65,8 @@ pub fn sweep(home: &Path) -> (i32, String) {
         .env("CHORUS_TOKEN_BIN", home.join("token-bin"))
         .env("CHORUS_LOG_BIN", home.join("log-bin"))
         .env("CHORUS_IDENTITY_DIR", home.join("identity"))
+        // #4948 — the registry is the test's own, never the caller's live one
+        .env("CHORUS_SESSIONS_DIR", home.join(".chorus/sessions"))
         .env("CHORUS_ROOT", home)
         .env("CHORUS_API_URL", "http://door.test")
         .output().unwrap();

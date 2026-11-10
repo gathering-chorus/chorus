@@ -1682,7 +1682,7 @@ import { fetchContextQualitySummary } from './handlers/context-quality-summary';
 import { fetchContextBoardNext } from './handlers/context-board-next';
 import { fetchContextCoverage } from './handlers/context-coverage';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
-import { fetchContextRoles, liveSessionsQuery, loggedInRoles } from './handlers/context-roles';
+import { agentSessionsQuery, fetchContextRoles, liveSessionsQuery, loggedInRoles, mergeSessionListings } from './handlers/context-roles';
 import type { SpineLine, WipCardEntry } from './derive-role-state';
 import { fetchContextHealth } from './handlers/context-health';
 
@@ -1893,13 +1893,16 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
       // the roles door for order (Jeff 2026-10-05: "dynamically render logged
       // in principals"). Either door down → refused, never guessed.
       listAgentRoles: async () => {
-        const [roles, sessions] = await Promise.all([
+        // #4948 — agent sessions (no expiry) and browser sign-ins (expiry window) are two queries
+        const [roles, sessions, agentSessions] = await Promise.all([
           fetch(`${ATHENA_MAKE_BASE}/v1/roles/roles?limit=500`, { signal: AbortSignal.timeout(3000) }),
           fetch(`${ATHENA_MAKE_BASE}/v1/identity/sessions?${liveSessionsQuery()}`, { signal: AbortSignal.timeout(3000) }),
+          fetch(`${ATHENA_MAKE_BASE}/v1/identity/sessions?${agentSessionsQuery()}`, { signal: AbortSignal.timeout(3000) }),
         ]);
         if (!roles.ok) throw new Error(`the roles door answered HTTP ${roles.status}`);
         if (!sessions.ok) throw new Error(`the sessions door answered HTTP ${sessions.status}`);
-        return loggedInRoles(await sessions.json(), await roles.json());
+        if (!agentSessions.ok) throw new Error(`the sessions door answered HTTP ${agentSessions.status} for agent sessions`);
+        return loggedInRoles(mergeSessionListings(await sessions.json(), await agentSessions.json()), await roles.json());
       },
     },
     req.originalUrl,

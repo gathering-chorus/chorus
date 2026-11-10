@@ -70,7 +70,31 @@ export function liveSessionsQuery(nowMs: number = Date.now()): string {
   return `endedAt.absent=true&expiresAt.after=${encodeURIComponent(after)}&limit=5000`;
 }
 
-function sessionLive(r: { expiresAt?: string; lastSeenAt?: string }, nowMs: number): boolean {
+/**
+ * #4948 — the door query for agent sessions: every open pane session, with no expiry
+ * filter. An agent's session lasts from login to logout (Jeff 2026-11-10 14:34); a row
+ * with no expiresAt never matched the expiresAt.after filter above (Silas, pair 4948).
+ */
+export function agentSessionsQuery(): string {
+  return 'endedAt.absent=true&channel=pane&limit=5000';
+}
+
+/** #4948 — the two sessions listings as one, each row once (by name). A listing with
+ *  no data list is refused, never read as "nobody is logged in". */
+export function mergeSessionListings(...bodies: unknown[]): { data: unknown[] } {
+  const seen = new Map<string, unknown>();
+  for (const b of bodies) {
+    const rows = (b as { data?: unknown } | null)?.data;
+    if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
+    for (const r of rows as Array<{ name?: string }>) seen.set(String(r.name ?? JSON.stringify(r)), r);
+  }
+  return { data: [...seen.values()] };
+}
+
+function sessionLive(r: { expiresAt?: string; lastSeenAt?: string; endedAt?: string }, nowMs: number, agent: boolean): boolean {
+  if (r.endedAt) return false;
+  // #4948 — an agent session ends only at logout: any expiresAt on it is ignored
+  if (agent) return true;
   if (!r.expiresAt || Date.parse(r.expiresAt) > nowMs) return true;
   return !!r.lastSeenAt && nowMs - Date.parse(r.lastSeenAt) < SEEN_KEEPS_LIVE_MS;
 }
@@ -92,17 +116,19 @@ export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown, nowMs: 
   // roles): every agent or human role row, Jeff first by rolePriority 0.
   const body = rolesBody as { data?: unknown } | null;
   if (!Array.isArray(body?.data)) throw new Error('the roles door answered with no data list');
-  const names = ((body as { data: unknown[] }).data as Array<AgentRoleRow & { roleKind?: string }>)
-    .filter((r) => (r.roleKind === 'agent' || r.roleKind === 'human') && r.name)
+  const kinded = ((body as { data: unknown[] }).data as Array<AgentRoleRow & { roleKind?: string }>)
+    .filter((r) => (r.roleKind === 'agent' || r.roleKind === 'human') && r.name);
+  const agents = new Set(kinded.filter((r) => r.roleKind === 'agent').map((r) => r.name));
+  const names = kinded
     .sort((a, b) => (Number(a.rolePriority ?? 99) - Number(b.rolePriority ?? 99)) || a.name.localeCompare(b.name))
     .map((r) => r.name);
   const rows = (sessionsBody as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
   const open = new Map<string, OpenSession[]>();
-  for (const r of rows as Array<Partial<OpenSession> & { sessionState?: string; ownedBy?: string; expiresAt?: string }>) {
+  for (const r of rows as Array<Partial<OpenSession> & { sessionState?: string; ownedBy?: string; expiresAt?: string; endedAt?: string }>) {
     if (r.sessionState !== 'open' || !r.ownedBy) continue;
-    if (!sessionLive(r, nowMs)) continue;
     const role = String(r.ownedBy).replace(/^principal-/, '');
+    if (!sessionLive(r, nowMs, agents.has(role))) continue;
     const list = open.get(role) ?? [];
     list.push({ channel: r.channel ?? '', startedAt: r.startedAt ?? '', lastSeenAt: r.lastSeenAt ?? '' });
     open.set(role, list);

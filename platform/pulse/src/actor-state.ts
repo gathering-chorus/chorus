@@ -6,6 +6,7 @@
  * Exposes pure deriveActorState() plus ActorStateService with 15s cache.
  */
 
+import { fetchOpenSessionRows } from './open-sessions';
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -28,7 +29,8 @@ export interface SessionInfo {
   id: string;
   principal: string;
   channel: 'pane' | 'browser' | string;
-  expiresAt: string;
+  /** #4948 — ignored on a pane (agent) session: it lasts from login to logout. */
+  expiresAt?: string;
   lastSeenAt: string;
   endedAt?: string;
   sessionState?: string;
@@ -175,9 +177,11 @@ function deriveSessions(
   let hasLiveSession = false;
 
   for (const s of mySessions) {
-    const expiresMs = new Date(s.expiresAt).getTime();
     const lastSeenMs = new Date(s.lastSeenAt).getTime();
-    const isExpired = isNaN(expiresMs) || nowMs > expiresMs;
+    // #4948 — an agent's (pane) session lasts from login to logout: its expiresAt, written once
+    // at login because the shape requires it, is ignored (Silas, pair 4948). A sign-in still expires.
+    const expiresMs = new Date(s.expiresAt ?? '').getTime();
+    const isExpired = s.channel !== 'pane' && (isNaN(expiresMs) || nowMs > expiresMs);
     const isClosed = Boolean(s.endedAt) || s.sessionState === 'closed';
 
     const lastActivityMs = Math.max(isNaN(lastSeenMs) ? 0 : lastSeenMs, lastActionMs);
@@ -723,12 +727,6 @@ export class ActorStateService {
 }
 
 
-/** #4838 — live sessions, filtered at the door (no endedAt, expiresAt within the last hour or later). */
-function liveSessionsQuery(nowMs: number = Date.now()): string {
-  const after = new Date(nowMs - 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
-  return `endedAt.absent=true&expiresAt.after=${encodeURIComponent(after)}&limit=5000`;
-}
-
 async function fetchRolesFact(
   athenaBase: string,
   unmeasured: Array<{ source: string; reason: string }>
@@ -754,28 +752,13 @@ async function fetchRolesFact(
   }
 }
 
-interface RawSessionRow {
-  name: string;
-  ownedBy?: string;
-  channel?: string;
-  expiresAt?: string;
-  lastSeenAt?: string;
-  endedAt?: string;
-  sessionState?: string;
-}
-
 async function fetchSessionsFact(
   athenaBase: string,
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<SessionInfo[]> {
   try {
-    const res = await fetch(`${athenaBase}/v1/identity/sessions?${liveSessionsQuery()}`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) {
-      unmeasured.push({ source: 'athena:identity:sessions', reason: `HTTP ${res.status}` });
-      return [];
-    }
-    const json = (await res.json()) as { data?: RawSessionRow[] };
-    return (json.data || []).map((s) => ({
+    // #4948 — sign-ins and agent (pane) sessions, one shared read
+    return (await fetchOpenSessionRows(athenaBase, 2000)).map((s) => ({
       id: s.name,
       principal: s.ownedBy || '',
       channel: s.channel || 'pane',

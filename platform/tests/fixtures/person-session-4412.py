@@ -64,6 +64,10 @@ check("the row is his: ownedBy and actsAs jeff, browser, open",
       row.get("ownedBy") == "jeff" and row.get("actsAs") == "jeff"
       and row.get("channel") == "browser" and row.get("sessionState") == "open")
 check("it binds only the open ROLE sessions", row.get("binds") == ["silas-pane-1"])
+gets = [c[1] for c in door.calls if c[0] == "GET"]
+# #4948 — a role's expiresAt is never renewed: an expiry filter would empty binds an hour after its login
+check("it asks the door for open pane sessions with no expiry filter",
+      len(gets) == 1 and "channel=pane" in gets[0] and "endedAt.absent=true" in gets[0] and "expiresAt" not in gets[0])
 check("it names the token, never holds it", row.get("tokenId") == "tok-1" and TOK["id_token"] not in str(row))
 check("it carries the hostAccount the shape requires", row.get("hostAccount") == "jeffbridwell")
 check("it lasts as long as the door's cookie", row.get("expiresAt") == ps.iso(NOW + 12 * 3600))

@@ -393,20 +393,23 @@ pub fn changed_fields(before: &Value, after: &Value) -> Option<(String, Value)> 
     if body.is_empty() { None } else { Some((name, Value::Object(body))) }
 }
 
-/// #4944 (Silas, pair) — the Sessions an open SessionRun (no `runEndedAt`) points at by
-/// `runOf`. The sweep never closes one: on 11-10 abby-normal's session read expired
-/// while her run was live and Jeff's browser session bound to it. `runOf` comes back
-/// minted (`session-<name>`), so both forms are returned. An unreadable listing is an
-/// Err, never "no live runs".
-pub fn live_run_sessions(runs_listing: &str) -> Result<Vec<String>, String> {
+/// #4948 — the open runs a crash ended: (role, run name) for each open SessionRun owned
+/// by an agent role with no live process in the registry, started more than `grace_secs`
+/// ago (a run is written before its registry file exists; Silas, pair 4948). A crash
+/// ends the RUN, never the session. An unreadable listing is an Err, never "no runs".
+pub fn crashed_runs(runs_listing: &str, agent_roles: &[String], live_roles: &[String], now_secs: u64, grace_secs: u64) -> Result<Vec<(String, String)>, String> {
     let v: Value = serde_json::from_str(runs_listing).map_err(|_| "the runs listing is not JSON".to_string())?;
     let rows = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| "the runs listing has no data list".to_string())?;
     let mut out = vec![];
     for r in rows {
-        if !r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty() { continue; }
-        let Some(of) = r.get("runOf").and_then(|o| o.as_str()).filter(|o| !o.is_empty()) else { continue };
-        out.push(of.to_string());
-        if let Some(bare) = of.strip_prefix("session-") { out.push(bare.to_string()); }
+        let s = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if !s("runEndedAt").is_empty() || s("name").is_empty() { continue; }
+        let Some(role) = s("ownedBy").strip_prefix("principal-").map(str::to_string) else { continue };
+        if !agent_roles.contains(&role) || live_roles.contains(&role) { continue; }
+        // an unreadable start is never old enough to end
+        let Ok(started) = crate::chrono_secs(&s("startedAt")) else { continue };
+        if now_secs.saturating_sub(started) <= grace_secs { continue; }
+        out.push((role, s("name")));
     }
     Ok(out)
 }
@@ -473,35 +476,6 @@ pub fn open_row_from_listing(listing: &str, role: &str, route: &str, kind: &str,
         .cloned()
 }
 
-/// Sessions to close in the sweep: open, past expiry, and not a live login.
-/// The 80+ rows from before #4302 read "open" long after their token died.
-pub fn expired_open(sessions_listing: &str, now_iso: &str, keep: &[String]) -> Vec<Value> {
-    let v: Value = serde_json::from_str(sessions_listing).unwrap_or(Value::Null);
-    let Some(rows) = v.get("data").and_then(|d| d.as_array()) else { return vec![] };
-    rows.iter().filter(|r| {
-        let s = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("");
-        s("sessionState") == "open" && !s("expiresAt").is_empty() && s("expiresAt") < now_iso
-            && !keep.iter().any(|k| k == s("name")) && !s("tokenId").is_empty() && s("ownedBy").starts_with("principal-")
-            // the token behind a live login expires every 10 minutes; a session
-            // that took a turn in the last hour is live whatever its expiresAt says
-            && !(!s("lastSeenAt").is_empty() && s("lastSeenAt") >= hour_before(now_iso).as_str())
-    }).cloned().collect()
-}
-
-/// The ISO time one hour before `iso` (same YYYY-MM-DDTHH:MM:SSZ form), for the
-/// string compare above. A malformed time gives "" (so nothing counts as recent).
-fn hour_before(iso: &str) -> String { secs_before(iso, 3600) }
-
-/// #4377 — the login renews every 10 minutes; the session's expiry follows the
-/// current token, forward only. None when nothing moves (no PUT for it).
-pub fn renewed_session(mut session: Value, token_exp_iso: &str) -> Option<Value> {
-    if token_exp_iso.is_empty() { return None; }
-    let have = session.get("expiresAt").and_then(|e| e.as_str()).unwrap_or("");
-    if token_exp_iso <= have { return None; }
-    session["expiresAt"] = Value::String(token_exp_iso.into());
-    Some(session)
-}
-
 /// `iso` minus `back` seconds, same YYYY-MM-DDTHH:MM:SSZ form; "" if malformed.
 fn secs_before(iso: &str, back: i64) -> String {
     let p = |a: usize, b: usize| iso.get(a..b).and_then(|x| x.parse::<i64>().ok());
@@ -525,7 +499,7 @@ fn secs_before(iso: &str, back: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn hour_before_crosses_midnight() { assert_eq!(hour_before("2026-09-26T00:30:00Z"), "2026-09-25T23:30:00Z"); assert_eq!(hour_before("2026-03-01T00:10:00Z"), "2026-02-28T23:10:00Z"); }
+    #[test] fn an_hour_before_crosses_midnight() { assert_eq!(secs_before("2026-09-26T00:30:00Z", 3600), "2026-09-25T23:30:00Z"); assert_eq!(secs_before("2026-03-01T00:10:00Z", 3600), "2026-02-28T23:10:00Z"); }
 }
 
 /// One variable from `ps eww` output ("... KEY=value ..."). None when absent.

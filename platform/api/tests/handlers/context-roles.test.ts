@@ -99,9 +99,10 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
 
   it('#4500 NEGATIVE PROOF: a principal whose only session expired has no tile', () => {
     const now = Date.parse('2026-10-12T12:00:00Z');
-    const expired = { data: [{ ownedBy: 'principal-kade', sessionState: 'open', expiresAt: '2026-10-12T11:59:59Z' }] };
+    // #4948 — a person's sign-in: an agent's session has no expiry (context-roles-4948.test.ts)
+    const expired = { data: [{ ownedBy: 'principal-jeff', sessionState: 'open', channel: 'browser', expiresAt: '2026-10-12T11:59:59Z' }] };
     expect(loggedInRoles(expired, DOOR, now)).toEqual([]);
-    expect(loggedInRoles(expired, DOOR, Date.parse('2026-10-12T11:59:00Z')).map((r) => r.name)).toEqual(['kade']);
+    expect(loggedInRoles(expired, DOOR, Date.parse('2026-10-12T11:59:00Z')).map((r) => r.name)).toEqual(['jeff']);
   });
 
   it('#4500 reopen: an agent seen in the last hour keeps its tile though its 10-minute expiry lapsed (Kade 10-12 09:42: Jeff could not see Wren or Silas)', () => {
@@ -110,9 +111,9 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
     expect(loggedInRoles(live, DOOR, now).map((r) => r.name)).toEqual(['silas']);
   });
 
-  it('#4500 reopen NEGATIVE PROOF: lapsed and not seen for over an hour has no tile', () => {
+  it('#4500 reopen NEGATIVE PROOF: a sign-in lapsed and not seen for over an hour has no tile (#4948: a person, not an agent)', () => {
     const now = Date.parse('2026-10-12T13:43:00Z');
-    const gone = { data: [{ ownedBy: 'principal-silas', sessionState: 'open', channel: 'pane', lastSeenAt: '2026-10-12T12:42:59Z', expiresAt: '2026-10-12T12:52:59Z' }] };
+    const gone = { data: [{ ownedBy: 'principal-jeff', sessionState: 'open', channel: 'browser', lastSeenAt: '2026-10-12T12:42:59Z', expiresAt: '2026-10-12T12:52:59Z' }] };
     expect(loggedInRoles(gone, DOOR, now)).toEqual([]);
   });
 

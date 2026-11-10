@@ -6,6 +6,7 @@
  * Exposes pure deriveChangesOvernight() plus ChangesOvernightService with 15s cache.
  */
 
+import { fetchOpenSessionRows } from './open-sessions';
 export interface RawSessionRow {
   name: string;
   ownedBy?: string;
@@ -268,24 +269,13 @@ export class ChangesOvernightService {
 const MOVES_QUERY = '{job="platform-chorus", appName="cards"} |~ `"event":"card\\.(item\\.moved|accepted)"`';
 
 
-/** #4838 — live sessions, filtered at the door (no endedAt, expiresAt within the last hour or later). */
-function liveSessionsQuery(nowMs: number = Date.now()): string {
-  const after = new Date(nowMs - 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
-  return `endedAt.absent=true&expiresAt.after=${encodeURIComponent(after)}&limit=5000`;
-}
-
 async function fetchLiveSessions(
   athenaBase: string,
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<RawSessionRow[] | undefined> {
   try {
-    const res = await fetch(`${athenaBase}/v1/identity/sessions?${liveSessionsQuery()}`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) {
-      unmeasured.push({ source: 'athena:identity:sessions', reason: `HTTP ${res.status}` });
-      return undefined;
-    }
-    const json = (await res.json()) as { data?: RawSessionRow[] };
-    return json.data || [];
+    // #4948 — sign-ins and agent (pane) sessions, one shared read
+    return (await fetchOpenSessionRows(athenaBase, 2000)) as RawSessionRow[];
   } catch (e: unknown) {
     unmeasured.push({ source: 'athena:identity:sessions', reason: e instanceof Error ? e.message : String(e) });
     return undefined;
