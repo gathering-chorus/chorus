@@ -33,7 +33,7 @@ if [ "${1:-}" = "--check" ]; then
       echo "fuseki-config-deploy: $r matches canonical"
     else
       echo "fuseki-config-deploy: $r differs from canonical" >&2
-      diff -u "$r" "$c" >&2 || true
+      diff -u "$r" "$c" >&2 || true   # diff exits 1 on a difference; rc=1 below carries it
       rc=1
     fi
   done

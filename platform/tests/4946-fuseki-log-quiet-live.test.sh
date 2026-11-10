@@ -3,7 +3,7 @@
 # @domain: persistence
 # @needs: machine — prod after the land, the config deploy and one Fuseki restart
 # @card: #4946 · owner: silas
-# #4946 AC3 — in prod, fuseki.log grows by fewer than 34 lines in 5 minutes (under
+# #4946 AC2 — in prod, fuseki.log grows by fewer than 34 lines in 5 minutes (under
 # 100 per 15m; before the fix it wrote ~700 lines in 20 s). 5 minutes, not 15, so
 # the after-land prove is not held for a quarter hour.
 # Fuseki's lines carry only HH:MM:SS, so the window is read from the log's lines,
@@ -22,7 +22,7 @@ curl -sf -o /dev/null --max-time 5 "$URL/\$/ping" || { echo "RED: Fuseki at $URL
 grep -qE '^logger\.fuseki-fuseki\.level[[:space:]]*=[[:space:]]*WARN' "$CONF" \
   || { echo "RED: $CONF still has the Fuseki action logger below WARN (not deployed)"; exit 1; }
 a=$(wc -l < "$LOG")
-sleep "$WINDOW"
+sleep "$WINDOW" || { echo "RED: the ${WINDOW}s wait was cut short; nothing measured"; exit 1; }
 b=$(wc -l < "$LOG")
 [ "$b" -ge "$a" ] || { echo "RED: $LOG shrank ($a -> $b lines); it was rotated mid-window, run again"; exit 1; }
 n=$((b - a))
