@@ -35,6 +35,15 @@ pub fn exec_problems(src: &str, file: &str) -> Vec<String> {
 /// Constants chorus-go uses for its programs; each must itself be an allowed literal (checked below).
 const ALLOWED_CONSTS: &[&str] = &["CURL", "OPENSSL", "GIT"];
 
+/// Env names that choose a program (the knobs the go page had before #4710).
+pub fn knob_problems(src: &str, file: &str) -> Vec<String> {
+    let shipped = src.split("#[cfg(test)]").next().unwrap_or(src);
+    shipped.lines().enumerate().filter(|(_, l)| !l.trim_start().starts_with("//"))
+        .filter(|(_, l)| ["CHORUS_GO_CURL", "CHORUS_GO_DAGU\"", "CHORUS_GO_CARDS", "_BIN\""].iter().any(|k| l.contains(k)))
+        .map(|(n, l)| format!("{file}:{}: an env knob names a program: {}", n + 1, l.trim()))
+        .collect()
+}
+
 #[test]
 fn chorus_go_runs_only_root_owned_programs() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -48,6 +57,10 @@ fn chorus_go_runs_only_root_owned_programs() {
                 if !ALLOWED.iter().any(|ok| v.starts_with(ok)) { problems.push(format!("{f}: const {c} = \"{v}\" is not under /usr/bin or /bin")); }
             }
         }
+    }
+    // Silas 18:24 — no env knob may name a program (a URL knob may stay: the root-owned plist sets it)
+    for f in ["src/lib.rs", "src/serve.rs", "src/main.rs", "src/github.rs", "src/identity.rs", "src/mcp.rs"] {
+        problems.extend(knob_problems(&std::fs::read_to_string(dir.join(f)).unwrap(), f));
     }
     assert!(problems.is_empty(), "the lander would run programs others can write:\n{}", problems.join("\n"));
 }
@@ -63,4 +76,12 @@ fn a_bare_name_an_env_default_and_a_home_path_are_all_caught() {
     // a comment or a unit test is not the shipped binary; code after them still is
     assert_eq!(exec_problems("// Command::new(tool)\n#[cfg(test)]\nCommand::new(\"git\")", "x").len(), 0);
     assert_eq!(exec_problems("let a = 1;\nCommand::new(\"git\")\n#[cfg(test)]", "x").len(), 1);
+}
+
+// NEGATIVE PROOF (Silas 18:24): a program env knob is caught; a URL knob is not.
+#[test]
+fn a_program_env_knob_is_caught_and_a_url_knob_is_not() {
+    assert_eq!(knob_problems(r#"let d = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");"#, "x").len(), 1);
+    assert_eq!(knob_problems(r#"env_or("CHORUS_GO_IDENTITY_TOKEN_BIN", "x")"#, "x").len(), 1);
+    assert_eq!(knob_problems(r#"env_or("CHORUS_GO_DAGU_API", "http://127.0.0.1:8526/api/v1")"#, "x").len(), 0);
 }

@@ -163,7 +163,9 @@ mod app_credential_4710 {
         let b = s.as_bytes(); let mut out = Vec::new();
         for c in b.chunks(4) {
             let n = c.iter().enumerate().fold(0u32, |a, (i, &x)| a | v(x) << (18 - 6 * i));
-            out.push((n >> 16) as u8); if c.len() > 2 { out.push((n >> 8) as u8); } if c.len() > 3 { out.push(n as u8); }
+            out.push((n >> 16) as u8);
+            if c.len() > 2 { out.push((n >> 8) as u8); }
+            if c.len() > 3 { out.push(n as u8); }
         }
         out
     }

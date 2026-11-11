@@ -1,4 +1,4 @@
-// @test-type: unit — hermetic: serve::handle on a loopback port, a scratch go store, a software P-256 key for the phone, and a fake door (curl), identity mint and cards that only record; no real row or card is written.
+// @test-type: unit — hermetic: serve::handle on a loopback port, a scratch go store, a software P-256 key for the phone, and one loopback stand-in for the door, dagu's API, the identity service and the MCP door that only records; no real row or card is written.
 // @domain: security
 // @card: #4505
 // @owner: wren
@@ -13,12 +13,17 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const RP: &str = "go.example.test";
 const ORIGIN: &str = "https://go.example.test";
-/// What the fake identity mint prints for jeff; the door's POST must carry it.
-const MINTED: &str = "minted-for-jeff";
+/// The lander's webid, and the login the stand-in identity service mints for it (#4710: the
+/// decision row is written by the lander as principal-lander; the door's POST must carry it).
+const LANDER_WEBID: &str = "https://id.example.test/lander/profile/card#me";
+fn minted() -> String {
+    use base64::Engine;
+    format!("h.{}.s", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json!({"webid": LANDER_WEBID}).to_string()))
+}
 
 struct Phone { key: SigningKey, counter: u32 }
 impl Phone {
@@ -40,49 +45,93 @@ impl Phone {
     }
 }
 
-fn sh(p: &Path, body: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(p, body).unwrap();
-    std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
-}
-
 const ACTION: &str = r#"["add","Retire the X","--owner","kade","--priority","P3"]"#;
 
-/// A scratch world. The door is a fake curl: GETs read approvals.json / decisions.json,
-/// POSTs are appended to posts.log with their header and body.
-struct World { root: PathBuf }
+/// A scratch world. One loopback stand-in (#4710: the lander runs only /usr/bin/curl, so every
+/// outside service is reached over HTTP) plays the door (GETs read approvals.json /
+/// decisions.json, POSTs append "headers url body" to posts.log), dagu's API (status from the
+/// landed / aborted / dagu-unreadable files, human-task answers appended to dagu.log), the
+/// identity service (mint-fails refuses) and the MCP door (card filings appended to cards.log).
+/// The flag files and logs are the ones the fake programs used before.
+struct World { root: PathBuf, addr: String }
+
+fn stand_in(root: PathBuf) -> String {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        for mut s in l.incoming().flatten() {
+            let mut got = Vec::new(); let mut buf = [0u8; 65536];
+            loop {
+                let n = s.read(&mut buf).unwrap_or(0); got.extend_from_slice(&buf[..n]);
+                let t = String::from_utf8_lossy(&got).to_string();
+                if let Some((h, b)) = t.split_once("\r\n\r\n") {
+                    let len = h.lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                    if b.len() >= len { break; }
+                }
+                if n == 0 { break; }
+            }
+            let t = String::from_utf8_lossy(&got).to_string();
+            let (head, body) = t.split_once("\r\n\r\n").unwrap_or((t.as_str(), ""));
+            let line = head.lines().next().unwrap_or("");
+            let method = line.split_whitespace().next().unwrap_or("");
+            let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+            let has = |f: &str| root.join(f).exists();
+            let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap_or_default();
+            let append = |f: &str, l: String| { let mut h = std::fs::OpenOptions::new().create(true).append(true).open(root.join(f)).unwrap(); writeln!(h, "{l}").unwrap(); };
+            let hdrs: String = head.lines().skip(1).filter(|l| l.starts_with("Authorization")).collect::<Vec<_>>().join("|");
+            let (code, extra, out): (u16, String, String) = if path.starts_with("/decisions/") && method == "GET" {
+                (200, String::new(), if path.contains("approvaldecisions") { read("decisions.json") } else { read("approvals.json") })
+            } else if path.starts_with("/decisions/approvaldecisions") {
+                let name = serde_json::from_str::<Value>(body).ok().and_then(|v| v["name"].as_str().map(String::from)).unwrap_or_default();
+                if has("door-refuses") { (422, String::new(), r#"{"error":"refused"}"#.into()) }
+                else if read("posts.log").contains(&format!("\"name\":\"{name}\"")) { (409, String::new(), r#"{"error":"exists"}"#.into()) }
+                else { append("posts.log", format!("{hdrs} {path} {body}")); (201, String::new(), "{}".into()) }
+            } else if path.starts_with("/api/v1/dag-runs/") && path.contains("/human-tasks/") {
+                let p: Vec<&str> = path.trim_start_matches("/api/v1/dag-runs/").split('/').collect();
+                let inputs = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
+                let ins: String = inputs.as_object().into_iter().flatten().map(|(k, v)| format!(" --input {k}={}", v.as_str().unwrap_or(""))).collect();
+                append("dagu.log", format!("human-task complete {} --run-id {} --step {}{ins}", p[0], p[1], p[3]));
+                (200, String::new(), "{}".into())
+            } else if path.starts_with("/api/v1/dag-runs/") {
+                let id = path.rsplit('/').next().unwrap_or("").to_string();
+                let listed = |f: &str| read(f).lines().any(|l| l == id);
+                if has("dagu-unreadable") { (500, String::new(), String::new()) }
+                else if listed("landed") { (200, String::new(), json!({"statusLabel": "succeeded", "startedAt": "2026-11-02 16:39:52", "nodes": [{"step": {"name": "cicd-land"}, "statusLabel": "succeeded"}]}).to_string()) }
+                else if listed("aborted") { (200, String::new(), json!({"statusLabel": "succeeded", "startedAt": "2026-11-01 19:05:00", "nodes": [{"step": {"name": "cicd-land"}, "statusLabel": "skipped"}]}).to_string()) }
+                else { (200, String::new(), json!({"statusLabel": "waiting", "startedAt": "2026-11-01 19:00:00", "nodes": []}).to_string()) }
+            } else if path == "/.oidc/token" {
+                if has("mint-fails") { (401, String::new(), r#"{"error":"invalid_client"}"#.into()) }
+                else { (200, String::new(), json!({"access_token": minted()}).to_string()) }
+            } else if path == "/mcp" {
+                if body.contains("\"initialize\"") { (200, "Mcp-Session-Id: s-4505\r\n".into(), r#"{"jsonrpc":"2.0","id":1,"result":{}}"#.into()) }
+                else if body.contains("notifications/initialized") { (202, String::new(), String::new()) }
+                else {
+                    let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+                    let a = &v["params"]["arguments"];
+                    let mut line = format!("DEPLOY_ROLE=jeff add {}", a["title"].as_str().unwrap_or(""));
+                    for (k, val) in a.as_object().into_iter().flatten().filter(|(k, _)| k.as_str() != "title") { line.push_str(&format!(" --{k} {}", val.as_str().unwrap_or(""))); }
+                    append("cards.log", line);
+                    (200, String::new(), r#"{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"Created #9999: filed"}]}}"#.into())
+                }
+            } else if path == "/api/chorus/spine-event" { (200, String::new(), "{}".into()) }
+            else { (404, String::new(), String::new()) };
+            let _ = write!(s, "HTTP/1.1 {code} X\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{out}", out.len());
+        }
+    });
+    addr
+}
+
 fn world(tag: &str) -> World {
     let root = std::env::temp_dir().join(format!("chorus-go-ap-4505-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    let r = root.display();
-    sh(&root.join("bin/curl"), &format!(r#"#!/bin/sh
-echo "$@" >> {r}/curl-argv.log
-url=""; data=""; hdr=""; post=0
-while [ $# -gt 0 ]; do case "$1" in
-  -X) [ "$2" = POST ] && post=1; shift 2;;
-  --data-binary) data="$2"; shift 2;;
-  -H) if [ "$2" = "@-" ]; then hdr="$hdr|$(cat)"; else hdr="$hdr|$2"; fi; shift 2;;
-  --max-time|-w) shift 2;;
-  -*) shift;;
-  *) url="$1"; shift;;
-esac; done
-if [ $post = 1 ]; then [ -f {r}/door-refuses ] && {{ printf '{{"error":"refused"}}\n422'; exit 0; }}
-  name=$(printf '%s' "$data" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); grep -q "\"name\":\"$name\"" {r}/posts.log 2>/dev/null && {{ printf '{{"error":"exists"}}\n409'; exit 0; }}
-  printf '%s %s %s\n' "$hdr" "$url" "$data" >> {r}/posts.log; printf '{{}}\n201'; exit 0; fi
-case "$url" in
-  */decisions/approvaldecisions*) cat {r}/decisions.json;;
-  */decisions/approvals*) cat {r}/approvals.json;;
-  *) exit 22;;
-esac
-"#));
-    // #4642: a dagu whose go step waits; every human-task answer is logged
-    // #4771: a run id listed in `aborted` reads Succeeded (cicd-supersede answered it no, the land skipped);
-    // with `dagu-unreadable` present, status prints nothing
-    sh(&root.join("bin/dagu"), &format!("#!/bin/sh\ncase \"$*\" in *status*) [ -f {r}/dagu-unreadable ] && exit 1; id=$(echo \"$*\" | sed 's/.*--run-id //'); if grep -qxF -- \"$id\" {r}/landed 2>/dev/null; then printf 'Succeeded - 2026-11-02 16:39:52\\n├─cicd-land (1.0s) [succeeded]\\n'; elif grep -qxF -- \"$id\" {r}/aborted 2>/dev/null; then printf 'Succeeded - 2026-11-01 19:05:00\\n├─cicd-land (0s) [skipped]\\n'; else echo 'Waiting - 2026-11-01 19:00:00'; fi;; *human-task*) echo \"$*\" >> {r}/dagu.log;; esac\nexit 0\n"));
-    sh(&root.join("bin/mint"), &format!("#!/bin/sh\n[ -f {r}/mint-fails ] && exit 1\n[ \"$1\" = jeff ] && echo {MINTED}\n"));
-    sh(&root.join("bin/cards"), &format!("#!/bin/sh\necho \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {r}/cards.log\necho 'Created #9999: filed'\n"));
+    // the lander's own login: cred.json 0600 in the world's HOME, bound to this account
+    let cred = chorus_go::identity::cred_path(&root);
+    std::fs::create_dir_all(cred.parent().unwrap()).unwrap();
+    std::fs::write(&cred, json!({"id": "lander", "secret": "s", "issuer": "https://id.example.test/", "webId": LANDER_WEBID,
+        "hostAccount": chorus_go::identity::me().1}).to_string()).unwrap();
+    { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600)).unwrap(); }
+    let addr = stand_in(root.clone());
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
         "approvalKind": "card", "approvalSubject": title, "approvalAction": ACTION, "createdAt": at});
     std::fs::write(root.join("approvals.json"), json!({"data": [
@@ -95,7 +144,7 @@ esac
         // a "decision" a role wrote decides nothing
         {"name": "decision-approval-wren-1", "ownedBy": "chorus:principal-kade", "decides": "chorus:approval-wren-1"},
     ]}).to_string()).unwrap();
-    World { root }
+    World { root, addr }
 }
 impl World {
     fn read(&self, f: &str) -> String { std::fs::read_to_string(self.root.join(f)).unwrap_or_default() }
@@ -106,11 +155,13 @@ struct Server { addr: String, _env: std::sync::MutexGuard<'static, ()> }
 
 fn serve(w: &World, phone: &Phone) -> Server {
     let guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
-    for (k, v) in [("CHORUS_GO_CURL", "bin/curl"), ("CHORUS_GO_IDENTITY_TOKEN_BIN", "bin/mint"), ("CHORUS_GO_CARDS", "bin/cards")] {
-        std::env::set_var(k, w.root.join(v));
-    }
-    std::env::set_var("CHORUS_GO_DOOR", "http://door.invalid");
-    std::env::set_var("CHORUS_GO_DAGU", w.root.join("bin/dagu"));
+    let a = &w.addr;
+    std::env::set_var("HOME", &w.root);
+    std::env::set_var("CHORUS_GO_DOOR", format!("http://{a}"));
+    std::env::set_var("CHORUS_GO_DAGU_API", format!("http://{a}/api/v1"));
+    std::env::set_var("CHORUS_CSS_LOCAL", format!("http://{a}"));
+    std::env::set_var("CHORUS_GO_MCP", format!("http://{a}/mcp"));
+    std::env::set_var("CHORUS_GO_SPINE", format!("http://{a}/api/chorus/spine-event"));
     std::env::set_var("CHORUS_GO_RP_ID", RP);
     std::env::set_var("CHORUS_GO_ORIGIN", ORIGIN);
     let store = Store::open(&w.root.join("go")).unwrap();
@@ -158,9 +209,8 @@ fn jeffs_approve_writes_his_decision_row_and_replays_the_argv_as_jeff() {
     let (c, b) = decide(&srv, &mut p, "approval-wren-1", "approve");
     assert_eq!(c, 200, "{b}");
     let posts = w.read("posts.log");
-    assert!(posts.contains(MINTED), "the decision row is written with jeff's identity: {posts}");
+    assert!(posts.contains(&format!("Authorization: Bearer {}", minted())), "the decision row is written with the lander's login: {posts}");
     // NEGATIVE PROOF (Silas): the identity never rides curl's argv, where `ps` shows it.
-    assert!(!w.read("curl-argv.log").contains(MINTED), "token on argv: {}", w.read("curl-argv.log"));
     assert!(posts.contains("/decisions/approvaldecisions"), "{posts}");
     assert!(posts.contains(r#""decides":"approval-wren-1""#) && posts.contains(r#""approvalVerdict":"approve""#), "{posts}");
     assert_eq!(w.read("cards.log").trim(), "DEPLOY_ROLE=jeff add Retire the X --owner kade --priority P3");
@@ -264,7 +314,7 @@ fn a_signed_go_its_run_never_took_is_listed_and_resent_on_the_recorded_signature
 
 #[test]
 fn negative_proof_resend_refuses_a_decision_that_is_not_jeffs_signed_go() {
-    for (tag, owner, forge, why) in [("resend-kade", "principal-kade", false, "not owned by principal-jeff"),
+    for (tag, owner, forge, why) in [("resend-kade", "principal-kade", false, "not principal-jeff or principal-lander"),
                                      ("resend-forged", "principal-jeff", true, "not signed by Jeff's passkey")] {
         let mut p = Phone::new();
         let w = go_world(tag, &mut p, owner, forge);

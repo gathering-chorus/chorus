@@ -19,7 +19,7 @@ fn service_label() -> String {
 /// #4446 — every service logs its lifecycle; #4710 — over the spine's HTTP route (spine_post),
 /// since the lander runs no chorus-log or bash.
 fn emit_lifecycle((event, fields): service_lifecycle::LifecycleEvent) {
-    let mut f: Vec<(&str, String)> = fields.iter().map(|(k, v)| (k.as_ref(), v.to_string())).collect();
+    let mut f: Vec<(&str, String)> = fields.iter().map(|(k, v)| (*k, v.to_string())).collect();
     if event == "service.failed" { f.push(("level", "error".into())); }
     spine_post(event, &f);
 }
