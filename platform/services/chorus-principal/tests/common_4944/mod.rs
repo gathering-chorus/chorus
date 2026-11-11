@@ -48,6 +48,9 @@ while [ $# -gt 0 ]; do
 done
 case "$method" in
   PATCH|PUT|POST) printf '%s %s %s\n' "$method" "$url" "$body" >> '{log}'
+    # #4950 — endedBy is a Principal link: like the real door, refuse one no Principal row names
+    by=$(printf '%s' "$body" | sed -n 's/.*"endedBy":"\([^"]*\)".*/\1/p')
+    if [ -n "$by" ] && [ "$by" != jeff ] && [ "$by" != '{role}' ]; then printf '{{"error":"unknown-endpoint","why":"principal-%s does not exist"}}\n422' "$by"; exit 0; fi
     if [ '{code}' = 200 ]; then printf '{{}}\n200'; else printf '{{"error":"shape","why":"off-model property status"}}\n{code}'; fi ;;
   *) case "$url" in
        *roles/roles*) printf '%s' '{roles}' ;;
@@ -56,7 +59,7 @@ case "$method" in
        *) printf '{{"data":[]}}' ;;
      esac ;;
 esac
-"#, log = log.display(), code = write_code, roles = roles, sessions = sessions, runs = runs));
+"#, log = log.display(), code = write_code, roles = roles, sessions = sessions, runs = runs, role = role));
     exe(&home.join("token-bin"), "#!/bin/sh\necho tok\n");
     exe(&home.join("log-bin"), &format!("#!/bin/sh\necho \"$*\" >> '{}'\n", home.join("spine.log").display()));
 }

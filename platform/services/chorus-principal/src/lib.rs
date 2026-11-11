@@ -2119,7 +2119,9 @@ fn sweep(ctx: &Ctx) -> i32 {
         let sessions = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&channel=pane&limit=5000", ctx.api)]).unwrap_or_default();
         match rows::superseded_pane_sessions(&sessions, &runs, &roles) {
             Ok(old) => for row in old {
-                let Some((role, name, body)) = rows::session_close(&row, &iso_utc(now_ms() as u64 / 1000), Some("superseded")) else { continue };
+                // no endedBy: nobody ended it, and endedBy must name a Principal (#4950, prod 08:27
+                // refused "superseded" 5 times); the spine line below says the sweep closed it
+                let Some((role, name, body)) = rows::session_close(&row, &iso_utc(now_ms() as u64 / 1000), None) else { continue };
                 if patch_row(ctx, &role, "identity/sessions", "session", &name, &body) {
                     superseded += 1;
                     ctx.spine(&["session.superseded", &role, &format!("closed={}", name), "by=sweep"]);

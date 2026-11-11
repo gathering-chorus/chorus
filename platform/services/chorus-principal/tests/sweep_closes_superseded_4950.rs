@@ -4,7 +4,9 @@
 //! open pane sessions: the 11-08 one stayed open after the 11-09 login (and a seen-write
 //! run as Jeff kept bumping its lastSeenAt). The sweep closes a role's older open pane
 //! sessions when a newer one exists, newest by issuedAt (required, one per row; never
-//! lastSeenAt, which seen-write keeps moving), endedBy=superseded, by PATCH (#4944).
+//! lastSeenAt, which seen-write keeps moving), by PATCH (#4944), with no endedBy: nobody
+//! ended it, and endedBy must name a Principal (prod 11-11 08:27: 5 x 422 on "superseded").
+//! The spine's session.superseded by=sweep records why.
 //! It never closes the newest one, one an open run points at, another role's, or a browser
 //! session.
 mod common_4944;
@@ -43,7 +45,8 @@ fn ac2_the_older_pane_session_is_closed_as_superseded_newest_by_issued_at() {
     assert!(c[0].starts_with("PATCH ") && c[0].contains("/identity/sessions/wren-old "), "{c:?}");
     let body: serde_json::Value = serde_json::from_str(c[0].splitn(3, ' ').nth(2).unwrap()).unwrap();
     assert_eq!(body["sessionState"], "closed", "{body}");
-    assert_eq!(body["endedBy"], "superseded", "{body}");
+    assert!(body.get("endedBy").is_none(), "a superseded close names no ender: {body}");
+    assert!(read(home.join("spine.log")).contains("session.superseded wren closed=wren-old by=sweep"), "{out}");
     assert!(body["endedAt"].as_str().unwrap_or("").ends_with('Z'), "{body}");
 }
 
