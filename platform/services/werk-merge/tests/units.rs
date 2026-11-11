@@ -7,7 +7,7 @@
 //! loud. Resolving by the current HEAD oid is what makes the merge land the real work.
 
 use werk_merge::{
-    branch_name, classify_merge_error, failure_class, jsonl_line, parse_merge_args, pr_number_for_sha,
+    branch_name, failure_class, jsonl_line, parse_merge_args, pr_number_for_sha,
     require_approval, units_from_files,
 };
 
@@ -88,23 +88,6 @@ fn pr_number_for_sha_handles_empty_list() {
 fn pr_number_for_sha_tolerates_field_order_and_whitespace() {
     let json = r#"[ { "headRefOid": "xyz", "number": 7 } ]"#;
     assert_eq!(pr_number_for_sha(json, "xyz"), Some(7));
-}
-
-// ── merge-error classification: typed refusal taxonomy from gh stderr ──
-
-#[test]
-fn classify_merge_error_detects_conflict() {
-    assert_eq!(classify_merge_error("merge conflict between base and head"), "merge-conflict");
-}
-
-#[test]
-fn classify_merge_error_detects_not_mergeable() {
-    assert_eq!(classify_merge_error("Pull request is not mergeable"), "not-mergeable");
-}
-
-#[test]
-fn classify_merge_error_falls_back_to_merge_fail() {
-    assert_eq!(classify_merge_error("some unexpected gh error"), "merge-fail");
 }
 
 // ── #3495 — failure_class: the DORA change-failure-rate discriminator ──
@@ -193,39 +176,6 @@ fn head_content_merged_maps_diff_quiet_to_merged() {
     assert!(!head_content_merged(false), "diff present => not yet merged, proceed to merge");
 }
 
-// ── #3932 — an already-MERGED PR is landed, not a failure ────────────────────
-//
-// #3928's land printed "Failure - Main merge" while PR 1020 was MERGED and its
-// commit was on origin/main. The work HAD landed; the pipeline stopped anyway,
-// skipping sync/deploy/accept — which is what made six of Jeff's gos look like
-// they did nothing. `gh pr merge` on an already-merged PR errors, and every
-// error was treated as "nothing landed".
-//
-// The classifier must separate "this PR is already in" from a real refusal.
-// The refusal path is UNCHANGED: recognising already-merged only routes to the
-// existing post-merge content-verify, which still demands state==MERGED and the
-// merge commit present on origin/main before returning success.
+// #3932 / #3926 / gh merge-error classification: retired by #4710 — werk-merge never merges
+// (the lander squash-merges as the App); its 405 stale-flag retry is tested in chorus-go.
 
-#[test]
-fn already_landed_recognises_ghs_already_merged() {
-    assert!(werk_merge::already_landed("! Pull request #1020 is already merged"));
-    assert!(werk_merge::already_landed("GraphQL: Pull request is not open (mergePullRequest)"));
-    assert!(werk_merge::already_landed("X Pull request #1013 is closed"));
-}
-
-#[test]
-fn already_landed_does_not_swallow_real_refusals() {
-    // NEGATIVE PROOF (#3734): the states this must still refuse. If any of
-    // these read as "already landed", a genuine failure becomes a green land.
-    assert!(!werk_merge::already_landed("merge conflict between base and head"));
-    assert!(!werk_merge::already_landed("Pull request is not mergeable"));
-    assert!(!werk_merge::already_landed("some unexpected gh error"));
-    assert!(!werk_merge::already_landed(""));
-}
-
-#[test]
-fn classify_still_labels_an_already_merged_error_when_asked() {
-    // already_landed is a separate question from failure classification: the
-    // classifier keeps its existing contract so refusal labels do not shift.
-    assert_eq!(classify_merge_error("! Pull request #1020 is already merged"), "merge-fail");
-}

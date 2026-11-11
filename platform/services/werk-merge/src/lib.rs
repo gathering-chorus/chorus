@@ -127,36 +127,7 @@ pub fn pr_number_for_sha(json: &str, head_sha: &str) -> Option<u64> {
     None
 }
 
-/// Does this `gh pr merge` failure mean the PR is ALREADY IN, rather than that
-/// nothing landed?
-///
-/// #3932 — on #3928's land the PR was MERGED and its commit was on origin/main,
-/// yet the step reported failure and skipped sync/deploy/accept. `gh pr merge`
-/// errors on an already-merged PR, and every error was read as "nothing landed".
-///
-/// This only ROUTES: a true answer sends the run to the post-merge content
-/// verify it would have reached anyway, which still requires state == MERGED and
-/// the merge commit present on origin/main. Nothing is taken on trust here.
-pub fn already_landed(stderr: &str) -> bool {
-    let s = stderr.to_lowercase();
-    // "not open" / "is closed" reach the verify, which refuses a PR that closed
-    // without merging — so a closed-unmerged PR still fails, and fails loudly.
-    s.contains("already merged") || s.contains("not open") || s.contains("is closed")
-}
 
-/// Map a failed `gh pr merge` stderr to a typed refusal reason.
-pub fn classify_merge_error(stderr: &str) -> &'static str {
-    let s = stderr.to_lowercase();
-    if s.starts_with("auth-fail") || is_auth_error(&s) {
-        "auth-fail"
-    } else if s.contains("conflict") {
-        "merge-conflict"
-    } else if s.contains("not mergeable") || s.contains("not in mergeable") || s.contains("mergeable state") {
-        "not-mergeable"
-    } else {
-        "merge-fail"
-    }
-}
 
 // #3513 — failure_class + refused_extra (renamed fail_extra) were lifted to the
 // shared classifier at services/shared/failure_class.rs (include!d above). One
@@ -211,28 +182,7 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// #3926 — run a command and keep the EXIT CODE and stdout. `run_in` throws the
-/// code away, but `git merge-tree` says "clean" vs "conflicted" in exactly that
-/// code, so the verification needs it.
-fn run_capture(dir: &str, cmd: &str, args: &[&str]) -> (i32, String) {
-    match tool(cmd).args(args).current_dir(dir).output() {
-        Ok(out) => (
-            out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-        ),
-        Err(_) => (-1, String::new()),
-    }
-}
 
-/// #3926 — ask GIT what the trees actually do, independent of GitHub's cache.
-pub fn verify_merge_against_trees(werk: &str, base: &str, head: &str) -> TreeVerdict {
-    let (rc, out) = run_capture(
-        werk,
-        "git",
-        &["merge-tree", "--write-tree", "--name-only", base, head],
-    );
-    parse_merge_tree(rc, &out)
-}
 
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
@@ -265,27 +215,7 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
-/// True iff `oid` is present on origin/main (i.e., the merge commit landed).
-fn oid_on_main(werk_s: &str, oid: &str) -> bool {
-    // `git merge-base --is-ancestor <oid> origin/main` exits 0 iff oid is reachable.
-    tool("git")
-        .args(["merge-base", "--is-ancestor", oid, "origin/main"])
-        .current_dir(werk_s)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
 
-/// Resolve the OPEN PR for `head_sha`, or None. (gh pr list filtered to open + branch;
-/// we re-filter by oid in Rust so the by-oid contract is ours, not jq's.)
-fn open_pr_for_sha(werk_s: &str, branch: &str, head_sha: &str) -> R<Option<u64>> {
-    let json = run_in(
-        werk_s,
-        "gh",
-        &["pr", "list", "--state", "open", "--head", branch, "--json", "number,headRefOid"],
-    )?;
-    Ok(pr_number_for_sha(&json, head_sha))
-}
 
 /// #3336 — content-verify idempotency decision. `git diff --quiet origin/main HEAD`
 /// exits 0 (-> diff_quiet_ok=true) iff the two trees are IDENTICAL, i.e. HEAD's content
@@ -473,7 +403,7 @@ fn merge_steps(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     let trace = trace.to_string();
     // #3297 — approval gate up front (ADR-037): --atomic demands an accepter or refuses;
     // in the flow the demo→GO already authorized, so this returns "flow".
-    let approver = require_approval(atomic, accepter)?;
+    require_approval(atomic, accepter)?;
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
     let werk_s = path(&werk)?.to_string();
@@ -536,324 +466,17 @@ fn merge_steps(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         return Ok(main_sha);
     }
 
-    // #3476 — PUSH local HEAD to origin BEFORE the by-oid PR-resolve. The #3175
-    // header assumed an already-pushed branch, but a post-present werk-commit
-    // advances LOCAL HEAD without pushing — so origin's branch sits at the OLD oid,
-    // gh pr list returns the open PR at that stale headRefOid, the by-oid match
-    // misses, and the create-fallback hits "a pull request for this branch already
-    // exists" → pr-create-fail. (Jeff: "happens almost every cw"; Wren root-caused
-    // it on #3466.) Pushing first makes origin == local, so the open PR's
-    // headRefOid == HEAD and the resolve finds it — no spurious create. --force is
-    // safe: it's the role's own per-card branch (one werk, one writer), and it
-    // covers the rebase-onto-advancing-main (round-churn) case where a plain push
-    // would be non-fast-forward. Best-effort + witnessed: a push failure degrades to
-    // the existing resolve/create path (no regression), never strands silently.
-    match run_in(&werk_s, "git", &["push", "--force", "origin", &format!("HEAD:{}", branch)]) {
-        Ok(_) => jsonl(home, role, card, &trace, "merge.branch.pushed",
-            &format!(",\"sha\":\"{}\",\"branch\":\"{}\"", head_sha, branch)),
-        Err(e) => jsonl(home, role, card, &trace, "merge.branch.push.failed",
-            &format!("{},\"branch\":\"{}\",\"err\":\"{}\"", fail_extra("push-rejected"), branch, e.replace('"', "'"))),
-    }
-
-    // Resolve the OPEN PR for the current HEAD oid — NOT the branch name. Create one
-    // if none open for this oid (covers never-PR'd AND the stale-merged-PR case that
-    // generated the false-green). This is the #3175 fix.
-    let pr = match open_pr_for_sha(&werk_s, &branch, &head_sha)? {
-        Some(n) => n,
-        None => {
-            jsonl(home, role, card, &trace, "merge.pr.create", &format!(",\"sha\":\"{}\"", head_sha));
-            run_in(
-                &werk_s,
-                "gh",
-                &[
-                    "pr", "create", "--base", "main", "--head", &branch,
-                    "--title", &format!("#{} ({})", card, role),
-                    "--body", &format!("werk-merge #{} — role={} trace={} sha={}", card, role, trace, head_sha),
-                ],
-            )
-            .map_err(|e| {
-                jsonl(home, role, card, &trace, "merge.refused", &fail_extra("pr-create-fail"));
-                format!("pr-create-fail: {}", e)
-            })?;
-            // re-resolve by oid. GitHub's list API lags its create API — tonight's
-            // #3269 land hit exactly this (create succeeded, immediate re-list missed
-            // it, land went red while the PR sat open). A bounded backoff kills that
-            // false-red class (#3266 AC1); a PR still invisible after ~14s is real.
-            let mut found = None;
-            for (attempt, wait_s) in [0u64, 2, 4, 8].iter().enumerate() {
-                if *wait_s > 0 {
-                    std::thread::sleep(Duration::from_secs(*wait_s));
-                    jsonl(home, role, card, &trace, "merge.pr.resolve.retry",
-                        &format!(",\"attempt\":{}", attempt));
-                }
-                found = open_pr_for_sha(&werk_s, &branch, &head_sha)?;
-                if found.is_some() {
-                    break;
-                }
-            }
-            found.ok_or_else(|| {
-                jsonl(home, role, card, &trace, "merge.refused", &fail_extra("no-open-pr"));
-                // #3336 — if you hit this on a MANUAL resume, the usual cause is operator
-                // discipline, not a bug: the local HEAD commit was not PUSHED before go, so
-                // no PR matches the oid (and the content-verify above found nothing on main
-                // either, because the unpushed work never merged). PUSH first, then resume.
-                "no-open-pr: created a PR but none open matches HEAD oid (after 4 resolve attempts over ~14s). \
-                 If resuming a manual land: push HEAD first (the content isn't on main and no PR matches the oid)."
-                    .to_string()
-            })?
-        }
-    };
-
-    // #3499 — the demo-facts gate is GONE from this verb. werk-merge is a PURE
-    // STEP: it does its own work (resolve the PR by HEAD oid, squash-merge,
-    // content-verify) and NEVER audits whether the demo step ran. A downstream
-    // step checking an upstream step's completion is the anti-pattern that built
-    // the witness wall — merge grepping werk-demo.jsonl for a `demo.presented`
-    // event that failed to emit for a dozen independent reasons broke every land
-    // 2026-06-18/19 while the work was actually proven.
-    //
-    // Ordering is the ORCHESTRATOR's job (werk.yml): it runs `demo` and only on
-    // the human GO runs `merge` (the go-invocation is the only-door). Reaching
-    // merge MEANS the demo presented and Jeff gave go — structurally, not because
-    // the verb re-derives it. The override and the per-round demo check are gone,
-    // not relocated (that check WAS the churn). (Retired with this block: the
-    // #3365/#3459/#3461 round_check / patch-id / demo.presented scaffolding.)
-
-    // #3297 — record the approval on the spine BEFORE the irreversible merge (ADR-037
-    // {who, what, when} — kills "invisible"). Flow approvals carry accepter="flow".
-    jsonl(home, role, card, &trace, "merge.approved",
-        &format!(",\"accepter\":\"{}\",\"pr\":{},\"atomic\":{}", approver, pr, atomic));
-    emit_spine(home, "merge.approved", role, card, &trace,
-        &[("accepter", &approver), ("pr", &pr.to_string()), ("atomic", &atomic.to_string())]);
-
-    // ── merge, serialized under one flock. ONE mechanism: squash. ──
-    {
-        let _lock = lock(home, Duration::from_secs(30))?;
-        jsonl(home, role, card, &trace, "lock.acquired", &format!(",\"pr\":{}", pr));
-        // #3926 — a conflict REPORTED by gh is a claim about a cached field, not
-        // proof about the trees. Verify it with git before it becomes a refusal:
-        // a stale flag was blocking clean branches and sending roles to rebase
-        // work that was never needed. One bounded retry; everything else refuses
-        // exactly as before.
-        let mut attempt = 0;
-        loop {
-            let err = match run_in(&werk_s, "gh", &["pr", "merge", &pr.to_string(), "--squash"]) {
-                Ok(_) => break,
-                Err(e) => e,
-            };
-            // #3932 — already in? Fall through to the content-verify below,
-            // which proves it (state == MERGED + merge commit on origin/main)
-            // before this run claims anything. Refusing here was what turned a
-            // successful land into "Failure - Main merge" on #3928.
-            if already_landed(&err) {
-                jsonl(home, role, card, &trace, "merge.already_landed", &format!(",\"pr\":{}", pr));
-                emit_spine(home, "merge.already_landed", role, card, &trace,
-                    &[("pr", &pr.to_string())]);
-                break;
-            }
-            let reason = classify_merge_error(&err);
-            if reason == "merge-conflict" && attempt == 0 {
-                let _ = run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]);
-                let head_ref = format!("origin/{}/{}", role, card);
-                let verdict = verify_merge_against_trees(&werk_s, "origin/main", &head_ref);
-                match verdict {
-                    TreeVerdict::Clean => {
-                        // The trees merge. GitHub's mergeable field was stale.
-                        jsonl(home, role, card, &trace, "merge.stale_flag", &format!(",\"pr\":{}", pr));
-                        emit_spine(home, "merge.stale_flag", role, card, &trace,
-                            &[("pr", &pr.to_string()), ("verdict", "clean-trees-retrying")]);
-                        attempt += 1;
-                        continue;
-                    }
-                    TreeVerdict::Conflicted(files) => {
-                        jsonl(home, role, card, &trace, "merge.refused", &fail_extra(reason));
-                        return Err(verified_conflict_message(pr, &files));
-                    }
-                    TreeVerdict::Unmeasurable => {
-                        // #3753 — absence of evidence is not evidence of clean.
-                        jsonl(home, role, card, &trace, "merge.refused", &fail_extra(reason));
-                        return Err(format!(
-                            "{}: pr #{} did not merge; nothing landed (could not verify against trees): {}",
-                            reason, pr, err
-                        ));
-                    }
-                }
-            }
-            jsonl(home, role, card, &trace, "merge.refused", &fail_extra(reason));
-            return Err(format!("{}: pr #{} did not merge; nothing landed: {}", reason, pr, err));
-        }
-        jsonl(home, role, card, &trace, "merged", &format!(",\"pr\":{}", pr));
-    }
-
-    // ── POST-MERGE CONTENT-VERIFY (#3175): the PR is MERGED and its merge commit is
-    // on origin/main. Never assumed. This is the guard that catches the false-green:
-    // gh reporting success while ZERO commits landed. ──
-    let _ = run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]);
-    let view = run_in(&werk_s, "gh", &["pr", "view", &pr.to_string(), "--json", "state,mergeCommit"])
-        .map_err(|e| format!("merge-fail: cannot verify pr #{} state: {}", pr, e))?;
-    let state = json_str_field(&view, "state").unwrap_or_default();
-    let merge_oid = json_str_field(&view, "oid").unwrap_or_default();
-    if state != "MERGED" {
-        jsonl(home, role, card, &trace, "merge.refused", &fail_extra("merge-fail"));
-        return Err(format!("merge-fail: pr #{} state is '{}', not MERGED — content did not land", pr, state));
-    }
-    if merge_oid.is_empty() || !oid_on_main(&werk_s, &merge_oid) {
-        jsonl(home, role, card, &trace, "merge.refused", &fail_extra("merge-fail"));
-        return Err(format!(
-            "merge-fail: pr #{} reports MERGED but merge commit {} is not on origin/main (false-green guard)",
-            pr, merge_oid
-        ));
-    }
-    jsonl(home, role, card, &trace, "content.verified", &format!(",\"merge_commit\":\"{}\"", merge_oid));
-
-    let main_sha = run_in(&werk_s, "git", &["rev-parse", "origin/main"]).unwrap_or_default().trim().to_string();
-
-    // gh chorus/merge/<card> status on the merged main HEAD (best-effort, like push).
-    let endpoint = format!("repos/{{owner}}/{{repo}}/statuses/{}", main_sha);
-    let desc = format!("role={} trace={} pr={} sha={} status=merged", role, trace, pr, main_sha);
-    let _ = run_in(
-        &werk_s,
-        "gh",
-        &[
-            "api", &endpoint,
-            "-f", "state=success",
-            "-f", &format!("context=chorus/merge/{}", card),
-            "-f", &format!("description={}", desc),
-        ],
-    );
-
-    jsonl(home, role, card, &trace, "merge.completed", &format!(",\"pr\":{},\"sha\":\"{}\"", pr, main_sha));
-    emit_landed_trigger(home, role, card, &trace, &werk_s, &main_sha); // #3517 — real-merge land fires the deploy trigger
-    Ok(main_sha)
+    // #4710 — werk-merge never merges (Silas + Wren 17:48; Jeff's yes 17:45). The lander
+    // (chorus-go, in chorus-lander's own account) squash-merged this PR as the GitHub App on
+    // Jeff's signed go, pinned to the signed round, before the go step was answered. Here the
+    // land only confirms it: HEAD's content already on origin/main returned Ok above (#3336's
+    // content-verify, now against the lander's squash). Anything else is refused: no push, no
+    // PR create, no merge, and no fallback to merging here.
+    jsonl(home, role, card, &trace, "merge.refused", &fail_extra("not-on-main"));
+    emit_spine(home, "merge.refused", role, card, &trace, &[("reason", "not-on-main")]);
+    Err(format!("#{} is not on main: the lander merges on Jeff's signed go (#4710); werk-merge only confirms, it never merges", card))
 }
 
-// ---------------------------------------------------------------------------
-// #3926 — a reported conflict is a CLAIM, not proof.
-//
-// werk-merge already refuses to trust `gh` in the SUCCESS direction: the
-// post-merge content-verify exists because gh once reported success while zero
-// commits landed. The FAILURE direction had no such skepticism — stderr
-// containing "conflict" became a refusal, full stop.
-//
-// GitHub's `mergeable` is an async cached computation. After a push to the base
-// branch it goes stale and can report CONFLICTING for a branch that merges
-// clean. On 2026-08-18 that blocked PR #1013 twice while `git merge-tree`
-// reported zero conflicted files and the head OID never changed. The refusal
-// then sent a role to rebase and regenerate a branch that was fine.
-// ---------------------------------------------------------------------------
+// #3926 stale-mergeable handling retired with the merge path (#4710): the lander retries a
+// 405 once (chorus-go/tests/github_4710.rs).
 
-/// What the REAL trees say about a merge, independent of GitHub's cache.
-#[derive(Debug, PartialEq, Eq)]
-pub enum TreeVerdict {
-    /// git merged the trees with no conflicts — a reported conflict was stale.
-    Clean,
-    /// git hit real conflicts, in these files.
-    Conflicted(Vec<String>),
-    /// git could not answer (old git, missing ref). NOT a licence to retry —
-    /// an unanswerable check must never silently become a pass (#3753).
-    Unmeasurable,
-}
-
-/// Parse `git merge-tree --write-tree --name-only <base> <head>`.
-///
-/// Success (exit 0): first line is the written tree OID, and any following
-/// lines are informational — there are NO conflicts. Conflict (exit 1): the
-/// first line is the tree OID, subsequent lines are the conflicted paths.
-pub fn parse_merge_tree(exit_code: i32, stdout: &str) -> TreeVerdict {
-    let mut lines = stdout.lines().map(str::trim).filter(|l| !l.is_empty());
-    let oid = match lines.next() {
-        Some(o) if o.len() >= 7 && o.chars().all(|c| c.is_ascii_hexdigit()) => o,
-        _ => return TreeVerdict::Unmeasurable,
-    };
-    let _ = oid;
-    match exit_code {
-        0 => TreeVerdict::Clean,
-        1 => {
-            let files: Vec<String> = lines.map(|s| s.to_string()).collect();
-            if files.is_empty() {
-                // Exit 1 with no named files is not something we can act on.
-                TreeVerdict::Unmeasurable
-            } else {
-                TreeVerdict::Conflicted(files)
-            }
-        }
-        _ => TreeVerdict::Unmeasurable,
-    }
-}
-
-/// Should werk-merge retry the merge after `gh` reported a conflict?
-///
-/// ONLY when git itself proves the trees merge clean. An unmeasurable verdict
-/// refuses — we do not retry on the absence of evidence.
-pub fn should_retry_after_reported_conflict(reason: &str, verdict: &TreeVerdict) -> bool {
-    reason == "merge-conflict" && matches!(verdict, TreeVerdict::Clean)
-}
-
-/// The refusal message for a VERIFIED conflict — names the files, so the role
-/// knows what to fix instead of guessing (the cost that made #3926 expensive).
-pub fn verified_conflict_message(pr: u64, files: &[String]) -> String {
-    format!(
-        "merge-conflict: pr #{} has REAL conflicts in {} file(s), verified against the trees: {}",
-        pr,
-        files.len(),
-        files.join(", ")
-    )
-}
-
-#[cfg(test)]
-mod stale_mergeable_3926 {
-    // #4771 AC4 — the seam's own tests live in shared/deploy_credential.rs.
-    #[test]
-    fn a_401_classifies_as_auth_fail_and_the_others_still_separate() {
-        assert_eq!(classify_merge_error("HTTP 401: Requires authentication"), "auth-fail");
-        assert_eq!(classify_merge_error("merge conflict in a.txt"), "merge-conflict");
-        assert_eq!(classify_merge_error("something else broke"), "merge-fail");
-    }
-
-    use super::*;
-
-    #[test]
-    fn clean_merge_tree_means_the_reported_conflict_was_stale() {
-        let out = "ee9a6dd9c49c82ae8e6676dd907d636e703b9264\n";
-        assert_eq!(parse_merge_tree(0, out), TreeVerdict::Clean);
-        assert!(should_retry_after_reported_conflict("merge-conflict", &TreeVerdict::Clean));
-    }
-
-    /// NEGATIVE PROOF (#3734): a REAL conflict must still refuse. If this ever
-    /// retries, the fix has deleted the check it was meant to make honest.
-    #[test]
-    fn a_real_conflict_still_refuses_and_names_the_files() {
-        let out = "abc1234567890abc\nknowledge/doc-coherence.md\nplatform/api/src/server.ts\n";
-        let v = parse_merge_tree(1, out);
-        assert_eq!(
-            v,
-            TreeVerdict::Conflicted(vec![
-                "knowledge/doc-coherence.md".to_string(),
-                "platform/api/src/server.ts".to_string(),
-            ])
-        );
-        assert!(!should_retry_after_reported_conflict("merge-conflict", &v));
-        let msg = verified_conflict_message(1013, &["knowledge/doc-coherence.md".to_string()]);
-        assert!(msg.contains("knowledge/doc-coherence.md"), "must name the file: {}", msg);
-        assert!(msg.contains("REAL"));
-    }
-
-    /// An unanswerable check must not become a pass (#3753).
-    #[test]
-    fn unmeasurable_never_retries() {
-        for (rc, out) in [(0, ""), (1, "abc1234567890abc\n"), (128, "fatal: bad ref\n")] {
-            let v = parse_merge_tree(rc, out);
-            assert_eq!(v, TreeVerdict::Unmeasurable, "rc={} out={:?}", rc, out);
-            assert!(!should_retry_after_reported_conflict("merge-conflict", &v));
-        }
-    }
-
-    /// The verification is scoped to conflict claims — other refusals are
-    /// untouched, so this cannot become a general retry-everything loop.
-    #[test]
-    fn other_refusals_are_not_retried() {
-        for r in ["merge-fail", "not-mergeable", "no-open-pr", "pr-create-fail"] {
-            assert!(!should_retry_after_reported_conflict(r, &TreeVerdict::Clean), "{}", r);
-        }
-    }
-}

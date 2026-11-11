@@ -1,11 +1,8 @@
 // @domain: builds — placed by chorus-crawl's domain rules (#4538)
-//! Real end-to-end for the atomic MERGE verb (#3175): actual `git` on temp repos +
-//! a STATEFUL PATH-shimmed `gh` that records PRs and performs real squash-merges into
-//! the temp origin. Proves the #3175 fix: resolve the PR by HEAD oid (not branch
-//! name), land the CURRENT work, and content-verify the merge actually happened.
-//!
-//! One env-mutating test fn (PATH / ORIGIN / GH_STATE / GH_FAKE_MERGE), sequential
-//! scenarios on fresh repos — same shape as werk-push's e2e.
+//! Real end-to-end for werk-merge after #4710: actual `git` on temp repos + a PATH-shimmed
+//! `gh` that logs every call. werk-merge never merges: the lander squash-merges the PR as
+//! the GitHub App on Jeff's signed go. Here the land only confirms the card's content is on
+//! origin/main, and refuses otherwise without a push, a PR create or a merge.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -98,510 +95,59 @@ fn arm_cred(token: &str, expect: &str) -> PathBuf {
     f
 }
 
-#[test]
-fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    // #3365 — these scenarios test merge mechanics; the announce gate has its own
-    // scenario below. Use the explicit witnessed override everywhere else.
-    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-merge-mechanics");
-    // ── stateful gh shim on PATH ───────────────────────────────────────────────
-    let bin = tmp("bin");
-    // #4710 — these tests are about merge mechanics; the signed-go check answers "no passkey"
-    let go = bin.join("chorus-go");
-    fs::write(&go, "#!/bin/sh\necho 'chorus-go: no passkey registered'\n").unwrap();
-    { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&go, fs::Permissions::from_mode(0o755)).unwrap(); }
-    std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
-    write_exec(&bin.join("gh"), GH_SHIM);
-    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
-    arm_cred("deploy-cred-e2e", "deploy-cred-e2e");
 
-    // ── Scenario A: no PR exists → create, squash-merge, content-verify ─────────
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9101);
-        let sha = commit_and_push(&werk, "kade/9101", "a.txt", "alpha");
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::remove_var("GH_FAKE_MERGE");
+/// gh shim: log every call; `pr list` answers no PR (the confirm runs on content).
+const GH_SHIM: &str = "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\n[ \"$1 $2\" = \"pr list\" ] && echo '[]'\nexit 0\n";
 
-        let main_sha = merge(9101, "kade", &home, &werk_base).expect("merge creates PR, squashes, verifies");
-        assert!(main_sha.len() >= 7, "returns the merged main sha");
-        assert!(origin_main_has(&origin, "a.txt"), "scenario A: the work landed on origin/main");
-        assert_ne!(sha, main_sha, "main moved to a NEW squash commit (not the branch tip)");
-    }
-
-    // ── Scenario #3476: POST-PRESENT COMMIT NOT PUSHED. An OPEN PR exists at the
-    //    pushed oid; a post-present werk-commit advances LOCAL HEAD without pushing,
-    //    so origin's branch (and the PR's live headRefOid) sit at the OLD oid. The
-    //    by-oid resolve misses → create-fallback hits "branch PR already exists" →
-    //    pr-create-fail (Jeff: "happens almost every cw"; Wren root-caused on #3466).
-    //    The fix: push HEAD→origin BEFORE the resolve, so the PR's headRefOid == HEAD
-    //    and the resolve finds it. RED without push-before-resolve; GREEN with it. ──
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9476);
-        let old = commit_and_push(&werk, "kade/9476", "one.txt", "v1");
-        let state = tmp("ghstate");
-        // An OPEN PR for the branch at the pushed oid.
-        fs::write(
-            state.join("pr-476"),
-            format!("PR_NUM=476\nPR_HEAD={}\nPR_BRANCH=kade/9476\nPR_STATE=open\nPR_MERGE=\n", old),
-        ).unwrap();
-        // Post-present commit — advances LOCAL HEAD, NOT pushed (origin branch still at `old`).
-        let new = commit_no_push(&werk, "two.txt", "v2");
-        assert_ne!(old, new, "local HEAD advanced past the pushed oid");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::remove_var("GH_FAKE_MERGE");
-
-        merge(9476, "kade", &home, &werk_base)
-            .expect("#3476: push-before-resolve lands the post-present commit — no pr-create-fail on the existing branch PR");
-        assert!(origin_main_has(&origin, "two.txt"), "#3476: the unpushed post-present work landed");
-        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
-        assert!(witness.contains("merge.branch.pushed"), "#3476: the push-before-resolve is witnessed");
-    }
-
-    // ── Scenario B: Wren's bug — a STALE already-merged PR matches the branch NAME
-    //    at an OLD sha. Resolving by name would false-green (reuse it, land nothing).
-    //    Resolving by the current HEAD oid must create a FRESH PR and land the NEW
-    //    work. ──────────────────────────────────────────────────────────────────
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9102);
-        let _old = commit_and_push(&werk, "kade/9102", "first.txt", "v1");
-        // Simulate the first PR already merged (state record at the OLD sha) WITHOUT
-        // having advanced main for it — the point is merge() must not reuse it.
-        let state = tmp("ghstate");
-        fs::write(
-            state.join("pr-440"),
-            format!("PR_NUM=440\nPR_HEAD={}\nPR_BRANCH=kade/9102\nPR_STATE=merged\nPR_MERGE=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n", _old),
-        ).unwrap();
-        // New work on the SAME branch → new HEAD oid.
-        let new_sha = commit_and_push(&werk, "kade/9102", "second.txt", "v2");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::remove_var("GH_FAKE_MERGE");
-
-        let main_sha = merge(9102, "kade", &home, &werk_base)
-            .expect("merge must create a fresh PR for the new HEAD oid, not reuse the stale #440");
-        assert!(origin_main_has(&origin, "second.txt"), "scenario B: the NEW work landed (no false-green)");
-        assert_ne!(new_sha, main_sha, "main advanced via squash, not just pointed at the branch");
-
-        // ── Scenario B.2 idempotent: re-run on the same now-merged HEAD → no-op ──
-        let again = merge(9102, "kade", &home, &werk_base).expect("idempotent re-merge is a no-op success");
-        assert_eq!(again, main_sha, "idempotent re-run returns the same main sha, merges nothing new");
-    }
-
-    // ── Scenario D (#3266): GitHub's list API lags its create API — the #3269
-    //    false-red. With a 2-call lag the bounded resolve-retry must absorb the
-    //    race and land; the witness records the retries. ───────────────────────
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9104);
-        commit_and_push(&werk, "kade/9104", "d.txt", "delta");
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::set_var("GH_LIST_LAG", "2");
-        std::env::remove_var("GH_FAKE_MERGE");
-
-        let main_sha = merge(9104, "kade", &home, &werk_base)
-            .expect("resolve-retry must absorb the create->list lag instead of refusing no-open-pr");
-        assert!(main_sha.len() >= 7);
-        assert!(origin_main_has(&origin, "d.txt"), "scenario D: the work landed despite list lag");
-        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
-        assert!(witness.contains("merge.pr.resolve.retry"), "the retry is witnessed, not silent");
-        std::env::remove_var("GH_LIST_LAG");
-    }
-
-    // ── Scenario C: content-verify guard — gh LIES (reports MERGED, lands nothing).
-    //    The post-merge content-verify must catch it and REFUSE. ─────────────────
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9103);
-        commit_and_push(&werk, "kade/9103", "c.txt", "gamma");
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::set_var("GH_FAKE_MERGE", "1"); // gh reports merged with a bogus commit, lands nothing
-
-        let r = merge(9103, "kade", &home, &werk_base);
-        assert!(r.is_err(), "content-verify must REFUSE when gh reports MERGED but nothing landed");
-        assert!(r.unwrap_err().contains("merge-fail"), "typed merge-fail refusal");
-        assert!(!origin_main_has(&origin, "c.txt"), "guard held: nothing actually landed on main");
-        std::env::remove_var("GH_FAKE_MERGE");
-    }
-
-    // ── Scenario D: branch-mismatch — werk on the wrong branch → refuse. ─────────
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9104);
-        commit_and_push(&werk, "kade/9104", "d.txt", "delta");
-        git(&werk, &["checkout", "-q", "-b", "kade/wrong"]);
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        assert!(merge(9104, "kade", &home, &werk_base).is_err(), "wrong branch => refuse");
-    }
-
-    // ── Scenario E: no-werk — never pulled → refuse, no merge. ──────────────────
-    {
-        let (origin, home, werk_base, _werk) = scenario("kade", 9105);
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        assert!(merge(9999, "kade", &home, &werk_base).is_err(), "no werk => refuse");
-        // #3495 — the refusal witness carries the failureClass discriminator at the
-        // source: no-werk is a TOOLING failure, never a change failure (must not
-        // count against change-failure-rate).
-        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
-        assert!(
-            witness.contains("\"reason\":\"no-werk\"") && witness.contains("\"failureClass\":\"tooling\""),
-            "#3495: merge.refused witness must carry failureClass=tooling alongside reason — got: {}",
-            witness
-        );
-    }
-
-    // ── Scenario G (#3499): the verb is a PURE STEP. It lands WITHOUT any
-    //    demo.presented witness — werk-merge no longer audits the demo step.
-    //    Ordering is the orchestrator's job (werk.yml runs demo before merge,
-    //    fail-stop). Pre-#3499 this refused "announce-missing-this-round"; the
-    //    whole demo-facts gate is gone, so the merge proceeds on its own work. ──
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9365);
-        commit_and_push(&werk, "kade/9365", "g.txt", "golf");
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::remove_var("GH_FAKE_MERGE");
-
-        // NO demo.presented seeded anywhere. The merge still lands — the verb does
-        // not read the demo witness or gate on it.
-        let landed = merge(9365, "kade", &home, &werk_base)
-            .expect("#3499: merge lands with no demo witness — the verb doesn't audit the demo step");
-        assert!(landed.len() >= 7);
-        assert!(origin_main_has(&origin, "g.txt"), "the work landed");
-
-        // SAME-ROUND RESUME ≠ double-merge: a re-run on the already-merged sha
-        // (the #3336/#3364 recovery path) no-op-passes via idempotency.
-        let again = merge(9365, "kade", &home, &werk_base)
-            .expect("same-round resume passes (idempotent)");
-        assert_eq!(again, landed, "resume returns the same landed sha");
-    }
-
-    // ── Scenario F (#3336): CONTENT-VERIFY idempotency — a dropped-land resume where PR
-    //    resolution MISSES (squash orphaned the oid AND the branch's PR records are gone,
-    //    as if GitHub deleted the branch on merge). by-oid + open both return None, so the
-    //    old code would refuse no-open-pr and strand the card in WIP. The content of HEAD
-    //    is already on origin/main, so the new content-verify must NO-OP success. ─────────
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9106);
-        commit_and_push(&werk, "kade/9106", "f.txt", "foxtrot");
-        let state = tmp("ghstate");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::remove_var("GH_FAKE_MERGE");
-
-        // First land: real squash-merge → f.txt is on origin/main (new squash sha).
-        let landed = merge(9106, "kade", &home, &werk_base).expect("first land squash-merges");
-        assert!(origin_main_has(&origin, "f.txt"), "scenario F: work landed on origin/main");
-
-        // Simulate the dropped-land + branch deletion: wipe ALL PR state so neither the
-        // merged-by-oid nor the open-PR resolution can find anything for this branch.
-        for entry in fs::read_dir(&state).unwrap() {
-            let p = entry.unwrap().path();
-            if p.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with("pr-")).unwrap_or(false) {
-                fs::remove_file(p).unwrap();
-            }
-        }
-
-        // Re-run (the dropped-land resume): no PR resolvable, but content IS on main →
-        // content-verify no-ops to the SAME main sha instead of refusing no-open-pr.
-        let again = merge(9106, "kade", &home, &werk_base)
-            .expect("content-verify resume: no PR resolvable, but work is on main → no-op success");
-        assert_eq!(again, landed, "resume returns the same main sha, merges nothing new");
-        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
-        assert!(witness.contains(r#""reason":"content-on-main""#),
-            "the content-verify idempotency is witnessed, not a silent pass");
-    }
-}
-
-/// Stateful `gh` shim. Emulates the narrow surface werk-merge uses, over a real temp
-/// ORIGIN repo. State lives in $GH_STATE/pr-<n> files.
-const GH_SHIM: &str = r#"#!/bin/sh
-# env: GH_STATE (dir), ORIGIN (origin repo), GH_FAKE_MERGE (optional)
-# #4771 AC4 — GitHub answers 401 unless the land's deploy credential arrives in
-# GH_TOKEN (never a keyring): every gh call in these tests proves it does.
-if [ "$GH_TOKEN" != "$GH_EXPECT_TOKEN" ] || [ -z "$GH_TOKEN" ]; then
-  echo "HTTP 401: Requires authentication (https://api.github.com/graphql)" >&2
-  echo "Try authenticating with:  gh auth login" >&2
-  exit 1
-fi
-cmd="$1"; sub="$2"; shift 2 2>/dev/null
-case "$cmd" in
-pr)
-  case "$sub" in
-  list)
-    state=""; head=""
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --state) state="$2"; shift 2;;
-        --head)  head="$2";  shift 2;;
-        --json)  shift 2;;
-        *) shift;;
-      esac
-    done
-    # GH_LIST_LAG: emulate GitHub's list API lagging create — return [] for the
-    # first N list calls made AFTER a create (the #3269/#3266 false-red race).
-    if [ -n "$GH_LIST_LAG" ] && [ -f "$GH_STATE/created" ]; then
-      lagged=$(cat "$GH_STATE/lagged" 2>/dev/null || echo 0)
-      if [ "$lagged" -lt "$GH_LIST_LAG" ]; then
-        echo $((lagged+1)) > "$GH_STATE/lagged"
-        printf '[]'
-        exit 0
-      fi
-    fi
-    out="["; first=1
-    for f in "$GH_STATE"/pr-*; do
-      [ -e "$f" ] || continue
-      PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
-      [ "$PR_BRANCH" = "$head" ] || continue
-      [ "$PR_STATE" = "$state" ] || continue
-      # #3476 — an OPEN PR's headRefOid follows the branch (real GitHub updates it on
-      # push), so push-before-resolve makes the by-oid resolve find it. A MERGED PR's
-      # headRefOid is FROZEN at the merged sha (branch may be gone) — live tip would
-      # falsely match a new HEAD and break merged-PR idempotency. Live only for open.
-      if [ "$PR_STATE" = "open" ]; then
-        oid=$(git -C "$ORIGIN" rev-parse "refs/heads/$PR_BRANCH" 2>/dev/null || echo "$PR_HEAD")
-      else
-        oid="$PR_HEAD"
-      fi
-      [ $first -eq 1 ] || out="$out,"
-      out="$out{\"number\":$PR_NUM,\"headRefOid\":\"$oid\"}"
-      first=0
-    done
-    printf '%s]' "$out"
-    ;;
-  create)
-    head=""
-    while [ $# -gt 0 ]; do
-      case "$1" in --head) head="$2"; shift 2;; *) shift;; esac
-    done
-    # #3476 — real GitHub refuses a SECOND open PR for the same branch; the create
-    # fallback hitting this is the pr-create-fail the unpushed-commit case triggers.
-    for f in "$GH_STATE"/pr-*; do
-      [ -e "$f" ] || continue
-      PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
-      if [ "$PR_BRANCH" = "$head" ] && [ "$PR_STATE" = "open" ]; then
-        echo "a pull request for branch \"$head\" into branch \"main\" already exists" 1>&2
-        exit 1
-      fi
-    done
-    sha=$(git -C "$ORIGIN" rev-parse "refs/heads/$head")
-    n=$(cat "$GH_STATE/counter" 2>/dev/null || echo 100); n=$((n+1)); echo "$n" > "$GH_STATE/counter"
-    {
-      echo "PR_NUM=$n"
-      echo "PR_HEAD=$sha"
-      echo "PR_BRANCH=$head"
-      echo "PR_STATE=open"
-      echo "PR_MERGE="
-    } > "$GH_STATE/pr-$n"
-    : > "$GH_STATE/created"
-    echo "https://github.test/pr/$n"
-    ;;
-  merge)
-    num="$1"; f="$GH_STATE/pr-$num"
-    PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
-    if [ -n "$GH_FAKE_MERGE" ]; then
-      PR_MERGE=$(printf 'fake%s' "$num" | git hash-object --stdin)
-    else
-      git -C "$ORIGIN" checkout -q main
-      git -C "$ORIGIN" merge --squash "$PR_BRANCH" >/dev/null 2>&1
-      git -C "$ORIGIN" -c user.name=gh -c user.email=gh@x commit -q -m "Squash merge #$num" >/dev/null 2>&1
-      PR_MERGE=$(git -C "$ORIGIN" rev-parse HEAD)
-    fi
-    {
-      echo "PR_NUM=$PR_NUM"
-      echo "PR_HEAD=$PR_HEAD"
-      echo "PR_BRANCH=$PR_BRANCH"
-      echo "PR_STATE=merged"
-      echo "PR_MERGE=$PR_MERGE"
-    } > "$f"
-    echo "merged"
-    ;;
-  view)
-    num="$1"
-    PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$GH_STATE/pr-$num"
-    up=$(printf '%s' "$PR_STATE" | tr 'a-z' 'A-Z')
-    printf '{"state":"%s","mergeCommit":{"oid":"%s"}}' "$up" "$PR_MERGE"
-    ;;
-  esac
-  ;;
-api) exit 0;;
-esac
-exit 0
-"#;
-
-// #3330 (#3324 matrix, werk-merge gaps) — the --atomic approval gate proven to
-// refuse BEFORE any side effect, merge.approved spine emit captured with the
-// accepter, and the two PR-creation refusals (pr-create-fail / no-open-pr).
-#[test]
-fn atomic_gate_orders_before_side_effects_and_pr_refusals_are_typed() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-
-    // #3365 — mechanics test; the announce gate is covered by Scenario G.
-    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-atomic-mechanics");    // knob-wrapping gh shim: logs every call, fails/no-ops `pr create` on demand,
-    // otherwise delegates to the stateful GH_SHIM (real squash into ORIGIN).
-    let bin = tmp("bin2");
-    // #4710 — these tests are about merge mechanics; the signed-go check answers "no passkey"
-    let go = bin.join("chorus-go");
-    fs::write(&go, "#!/bin/sh\necho 'chorus-go: no passkey registered'\n").unwrap();
-    { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&go, fs::Permissions::from_mode(0o755)).unwrap(); }
-    std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
-    write_exec(&bin.join("gh-real"), GH_SHIM);
-    write_exec(&bin.join("gh"),
-        "#!/bin/sh\necho \"$@\" >> \"$GH_CALLS\"\nif [ \"$1 $2\" = \"pr create\" ]; then\n  [ -n \"$GH_PR_CREATE_EXIT\" ] && exit \"$GH_PR_CREATE_EXIT\"\n  [ -n \"$GH_CREATE_NOOP\" ] && { echo noop; exit 0; }\nfi\nexec \"$(dirname \"$0\")/gh-real\" \"$@\"\n");
-    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
-    std::env::remove_var("GH_PR_CREATE_EXIT");
-    std::env::remove_var("GH_CREATE_NOOP");
-    std::env::remove_var("GH_FAKE_MERGE");
-    arm_cred("deploy-cred-e2e", "deploy-cred-e2e");
-
-    // ── --atomic with NO accepter refuses BEFORE any side effect: zero gh calls,
-    // zero jsonl events for the card (the gate is FIRST in merge_inner — pin it).
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9401);
-        let _sha = commit_and_push(&werk, "kade/9401", "a.txt", "alpha");
-        let calls = tmp("calls1").join("log");
-        std::env::set_var("GH_CALLS", calls.to_str().unwrap());
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate1").to_str().unwrap());
-        let err = werk_merge::merge_atomic(9401, "kade", &home, &werk_base, None)
-            .expect_err("--atomic without an accepter must refuse");
-        assert!(err.to_lowercase().contains("accepter"), "names the missing accepter: {err}");
-        assert!(fs::read_to_string(&calls).unwrap_or_default().is_empty(),
-            "refusal ordered BEFORE side effects — zero gh calls");
-        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
-        assert!(!witness.contains("9401"), "no witness events before the gate: {witness}");
-    }
-
-    // ── --atomic WITH an accepter lands, and merge.approved reaches the SPINE
-    // carrying {accepter, pr, atomic} (ADR-037 {who,what,when} — was unasserted).
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9402);
-        let _sha = commit_and_push(&werk, "kade/9402", "b.txt", "beta");
-        std::env::set_var("GH_CALLS", tmp("calls2").join("log").to_str().unwrap());
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate2").to_str().unwrap());
-        let log = home.join("platform/scripts/chorus-log");
-        fs::create_dir_all(log.parent().unwrap()).unwrap();
-        let cap = home.join("spine-capture.txt");
-        write_exec(&log, &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display()));
-
-        let main_sha = werk_merge::merge_atomic(9402, "kade", &home, &werk_base, Some("jeff".into()))
-            .expect("--atomic with accepter lands");
-        assert!(main_sha.len() >= 7);
-        assert!(origin_main_has(&origin, "b.txt"), "work really landed on origin main");
-        let emitted = fs::read_to_string(&cap).unwrap_or_default();
-        assert!(emitted.contains("merge.approved") && emitted.contains("accepter=jeff")
-            && emitted.contains("atomic=true"),
-            "merge.approved on the spine with {{who,what,when}}: {emitted}");
-    }
-
-    // ── pr-create-fail: gh pr create exits non-zero → typed refusal, nothing merged.
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9403);
-        let _sha = commit_and_push(&werk, "kade/9403", "c.txt", "gamma");
-        std::env::set_var("GH_CALLS", tmp("calls3").join("log").to_str().unwrap());
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate3").to_str().unwrap());
-        std::env::set_var("GH_PR_CREATE_EXIT", "1");
-        let err = merge(9403, "kade", &home, &werk_base).expect_err("pr create failure must refuse");
-        std::env::remove_var("GH_PR_CREATE_EXIT");
-        assert!(err.contains("pr-create-fail"), "typed pr-create-fail: {err}");
-        assert!(!origin_main_has(&origin, "c.txt"), "nothing landed");
-    }
-
-    // ── no-open-pr: create 'succeeds' but no PR is resolvable by oid → typed refusal.
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9404);
-        let _sha = commit_and_push(&werk, "kade/9404", "d.txt", "delta");
-        std::env::set_var("GH_CALLS", tmp("calls4").join("log").to_str().unwrap());
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate4").to_str().unwrap());
-        std::env::set_var("GH_CREATE_NOOP", "1");
-        let err = merge(9404, "kade", &home, &werk_base).expect_err("unresolvable PR must refuse");
-        std::env::remove_var("GH_CREATE_NOOP");
-        assert!(err.contains("no-open-pr"), "typed no-open-pr: {err}");
-        assert!(!origin_main_has(&origin, "d.txt"), "nothing landed");
-    }
-}
-
-// #4771 AC4 — the land merges with the deploy credential and nothing else. On
-// 11-02 06:02 #4642's land stopped on a 401 from Jeff's own lapsed gh login.
-#[test]
-fn land_uses_the_deploy_credential_and_an_auth_failure_is_loud_and_names_the_file() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-4771-credential");
-    let bin = tmp("bin4771");
+fn setup(tag: &str) -> PathBuf {
+    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-confirm-4710");
+    let bin = tmp(tag);
     let go = bin.join("chorus-go");
     write_exec(&go, "#!/bin/sh\necho 'chorus-go: no passkey registered'\n");
     std::env::set_var("CHORUS_GO_BIN", go.to_str().unwrap());
     write_exec(&bin.join("gh"), GH_SHIM);
+    let log = bin.join("gh.log");
+    std::env::set_var("GH_LOG", log.to_str().unwrap());
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
-    std::env::remove_var("GH_FAKE_MERGE");
+    arm_cred("deploy-cred-e2e", "deploy-cred-e2e");
+    log
+}
 
-    // The credential GitHub accepts → the work lands.
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9771);
-        commit_and_push(&werk, "kade/9771", "a.txt", "alpha");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate").to_str().unwrap());
-        arm_cred("good-token", "good-token");
-        merge(9771, "kade", &home, &werk_base).expect("lands with the deploy credential");
-        assert!(origin_main_has(&origin, "a.txt"));
-    }
-    // NEGATIVE PROOF: GitHub refuses the credential (revoked/expired) → auth-fail,
-    // naming the file's path, never its contents; nothing lands.
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9772);
-        commit_and_push(&werk, "kade/9772", "b.txt", "beta");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate").to_str().unwrap());
-        let f = arm_cred("revoked-token", "good-token");
-        let err = merge(9772, "kade", &home, &werk_base).expect_err("a refused credential must not land");
-        assert!(err.starts_with("auth-fail"), "typed auth-fail: {err}");
-        assert!(err.contains(f.to_str().unwrap()), "names the credential file: {err}");
-        assert!(!err.contains("revoked-token"), "never prints the credential: {err}");
-        assert!(!origin_main_has(&origin, "b.txt"), "nothing landed");
-        let log = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
-        assert!(log.contains("\"reason\":\"auth-fail\""), "witnessed as auth-fail: {log}");
-        assert!(!log.contains("revoked-token"), "the witness never holds the credential");
-    }
-    // NEGATIVE PROOF: no credential configured → refused before any GitHub call,
-    // naming the config that should name the file.
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9773);
-        commit_and_push(&werk, "kade/9773", "c.txt", "gamma");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        let state = tmp("ghstate");
-        std::env::set_var("GH_STATE", state.to_str().unwrap());
-        std::env::remove_var("WERK_DEPLOY_CREDENTIAL_FILE");
-        // an account with no credential file: a scratch HOME
-        let real_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", tmp("nocred-home"));
-        let err = merge(9773, "kade", &home, &werk_base).expect_err("no credential, no land");
-        if let Some(h) = real_home { std::env::set_var("HOME", h); }
-        assert!(err.starts_with("auth-fail") && err.contains(".chorus/secrets/github-deploy"), "{err}");
-        assert!(!origin_main_has(&origin, "c.txt"));
-        assert_eq!(fs::read_dir(&state).unwrap().count(), 0, "no PR was opened");
-    }
-    // NEGATIVE PROOF: a credential file others can read is refused, by path and mode.
-    {
-        let (origin, home, werk_base, werk) = scenario("kade", 9774);
-        commit_and_push(&werk, "kade/9774", "d.txt", "delta");
-        std::env::set_var("ORIGIN", origin.to_str().unwrap());
-        std::env::set_var("GH_STATE", tmp("ghstate").to_str().unwrap());
-        let f = arm_cred("good-token", "good-token");
-        fs::set_permissions(&f, fs::Permissions::from_mode(0o644)).unwrap();
-        let err = merge(9774, "kade", &home, &werk_base).expect_err("an open credential file is refused");
-        assert!(err.contains("must be 0600") && err.contains(f.to_str().unwrap()), "{err}");
-        assert!(!origin_main_has(&origin, "d.txt"));
-    }
-    std::env::remove_var("WERK_DEPLOY_CREDENTIAL_FILE");
+/// The lander's squash, done to the temp origin as GitHub would: the branch's content lands
+/// on main as one commit titled `#<card> (<role>) (#<pr>)`.
+fn lander_squash(origin: &Path, branch: &str, card: u64, role: &str) {
+    git(origin, &["merge", "--squash", "-q", branch]);
+    git(origin, &["commit", "-q", "-m", &format!("#{} ({}) (#7)", card, role)]);
+}
+
+#[test]
+fn the_landers_squash_on_main_is_confirmed_and_werk_merge_calls_no_merge() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let log = setup("bin-ok");
+    let (origin, home, werk_base, werk) = scenario("wren", 9201);
+    commit_and_push(&werk, "wren/9201", "a.txt", "card work");
+    lander_squash(&origin, "wren/9201", 9201, "wren");
+    let sha = merge(9201, "wren", &home, &werk_base).expect("the lander merged it: confirmed");
+    assert_eq!(sha, git_out(&origin, &["rev-parse", "main"]), "returns main's sha");
+    let calls = fs::read_to_string(&log).unwrap_or_default();
+    assert!(!calls.contains("pr merge") && !calls.contains("pr create"), "werk-merge merged or opened a PR: {calls}");
+}
+
+// NEGATIVE PROOF: with the card not on main, werk-merge refuses `not-on-main` and does not
+// push, open a PR or merge — there is no fallback to merging here.
+#[test]
+fn not_on_main_is_refused_and_nothing_is_pushed_opened_or_merged() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let log = setup("bin-no");
+    let (origin, home, werk_base, werk) = scenario("wren", 9202);
+    commit_no_push(&werk, "b.txt", "card work");
+    let e = merge(9202, "wren", &home, &werk_base).unwrap_err();
+    assert!(e.contains("not on main") && e.contains("never merges"), "{e}");
+    assert!(!origin_main_has(&origin, "b.txt"), "the card reached main");
+    let branches = git_out(&origin, &["branch", "--list", "wren/9202"]);
+    assert!(branches.is_empty(), "werk-merge pushed the branch: {branches}");
+    let calls = fs::read_to_string(&log).unwrap_or_default();
+    assert!(!calls.contains("pr merge") && !calls.contains("pr create"), "{calls}");
+    let w = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+    assert!(w.contains("\"reason\":\"not-on-main\""), "{w}");
 }
