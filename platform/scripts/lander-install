@@ -1,0 +1,133 @@
+#!/bin/bash
+# @domain: security
+# lander-install — #4710 AC3 slice 3 (Silas 18:30): install the lander, the one program that
+# merges a card as the GitHub App on Jeff's Face ID go. Jeff runs it once with sudo, in the same
+# sitting as #4710's go (after-land step 1); updates go through him too.
+#
+#   sudo platform/scripts/lander-install <path to the chorus-go the land built>
+#
+# What it does, refusing at the first thing that is not right:
+#   1 the lander account (chorus-lander) exists
+#   2 <lander home>/bin is created lander-owned 0755, or refused if it exists owned by anyone else
+#   3 the binary is copied there, lander-owned 0755; its sha256 is printed
+#   4 /Library/LaunchDaemons/com.chorus.lander.plist is written root:wheel 0644: UserName
+#     chorus-lander, the binary, `serve`, PATH /usr/bin:/bin, URL settings only, logs in the
+#     lander's home
+#   5 com.chorus.go (Jeff's LaunchAgent) is booted out and its plist removed; the lander is
+#     bootstrapped; exactly one listener on :3490 is proven
+# Idempotent: a second run with the same binary changes nothing it does not have to.
+#
+# ROOT (default "") prefixes every path, LANDER_HOME/LANDER_UID/LANDER_GID stand in for the account
+# lookup, and LAUNCHCTL/CHOWN/LISTENERS stand in for the system tools — only for the fake-root
+# proof (platform/tests/4710-lander-install.bats). Jeff runs it with none of them set.
+set -euo pipefail
+
+ACCOUNT=chorus-lander
+LABEL=com.chorus.lander
+SRC="${1:-}"
+ROOT="${ROOT:-}"
+LAUNCHCTL="${LAUNCHCTL:-/bin/launchctl}"
+CHOWN="${CHOWN:-/usr/sbin/chown}"
+LISTENERS="${LISTENERS:-/usr/sbin/lsof -nP -iTCP:3490 -sTCP:LISTEN -t}"
+JEFF_HOME="${JEFF_HOME:-$(/usr/bin/dscl . -read /Users/jeffbridwell NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')}"
+JEFF_GO_PLIST="${JEFF_GO_PLIST:-$JEFF_HOME/Library/LaunchAgents/com.chorus.go.plist}"
+JEFF_UID="${JEFF_UID:-$(/usr/bin/id -u jeffbridwell 2>/dev/null || echo 501)}"
+
+die() { echo "lander-install: refused — $*" >&2; exit 1; }
+
+[ -n "$SRC" ] && [ -f "$SRC" ] && [ -x "$SRC" ] || die "give the path to the chorus-go the land built"
+
+# 1 — the account
+if [ -z "${LANDER_HOME:-}" ]; then
+  /usr/bin/id "$ACCOUNT" >/dev/null 2>&1 || die "no $ACCOUNT account (Jeff's step 1 creates it)"
+  LANDER_HOME="$(/usr/bin/dscl . -read "/Users/$ACCOUNT" NFSHomeDirectory | /usr/bin/awk '{print $2}')"
+  LANDER_UID="$(/usr/bin/id -u "$ACCOUNT")"
+  LANDER_GID="$(/usr/bin/id -g "$ACCOUNT")"
+fi
+H="$ROOT$LANDER_HOME"
+[ -d "$H" ] || die "$ACCOUNT has no home at $H"
+
+owner() { /usr/bin/stat -f '%u' "$1"; }
+mode() { /usr/bin/stat -f '%Lp' "$1"; }
+
+# 2 — the bin dir: ours, or refused (a dir another account owns could hold a swapped binary)
+BIN="$H/bin"
+if [ -e "$BIN" ]; then
+  [ "$(owner "$BIN")" = "$LANDER_UID" ] || die "$BIN is owned by uid $(owner "$BIN"), not $ACCOUNT"
+else
+  /bin/mkdir "$BIN"
+  $CHOWN "$LANDER_UID:$LANDER_GID" "$BIN"
+fi
+/bin/chmod 0755 "$BIN"
+
+# 3 — the binary
+DST="$BIN/chorus-go"
+SUM="$(/usr/bin/shasum -a 256 "$SRC" | /usr/bin/awk '{print $1}')"
+if [ -f "$DST" ] && [ "$(/usr/bin/shasum -a 256 "$DST" | /usr/bin/awk '{print $1}')" = "$SUM" ]; then
+  echo "lander-install: binary already installed ($SUM)"
+else
+  /bin/cp "$SRC" "$DST.new"
+  $CHOWN "$LANDER_UID:$LANDER_GID" "$DST.new"
+  /bin/chmod 0755 "$DST.new"
+  /bin/mv -f "$DST.new" "$DST"
+  echo "lander-install: installed $DST sha256 $SUM"
+fi
+[ "$(owner "$DST")" = "$LANDER_UID" ] && [ "$(mode "$DST")" = 755 ] || die "$DST is not $ACCOUNT's 0755 after install"
+
+# 4 — the LaunchDaemon (root:wheel 0644)
+LOGS="$H/Library/Logs"
+/bin/mkdir -p "$LOGS"
+$CHOWN "$LANDER_UID:$LANDER_GID" "$H/Library" "$LOGS" 2>/dev/null || true
+PLIST="$ROOT/Library/LaunchDaemons/$LABEL.plist"
+/bin/mkdir -p "$(/usr/bin/dirname "$PLIST")"
+TMP="$PLIST.new"
+/bin/cat > "$TMP" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>UserName</key><string>$ACCOUNT</string>
+  <key>ProgramArguments</key><array><string>$LANDER_HOME/bin/chorus-go</string><string>serve</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>$LANDER_HOME</string>
+    <key>PATH</key><string>/usr/bin:/bin</string>
+    <key>CHORUS_GO_ADDR</key><string>127.0.0.1:3490</string>
+    <key>CHORUS_WERK_BASE</key><string>$JEFF_HOME/CascadeProjects/chorus-werk</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$LANDER_HOME/Library/Logs/chorus-lander.log</string>
+  <key>StandardErrorPath</key><string>$LANDER_HOME/Library/Logs/chorus-lander.log</string>
+</dict>
+</plist>
+PL
+$CHOWN 0:0 "$TMP"
+/bin/chmod 0644 "$TMP"
+if [ -f "$PLIST" ] && /usr/bin/cmp -s "$TMP" "$PLIST"; then
+  /bin/rm -f "$TMP"; CHANGED=0
+else
+  /bin/mv -f "$TMP" "$PLIST"; CHANGED=1
+fi
+
+# 5 — one go page: Jeff's old one off, the lander on, one listener on :3490
+if [ -f "$ROOT$JEFF_GO_PLIST" ]; then
+  $LAUNCHCTL bootout "gui/$JEFF_UID/com.chorus.go" 2>/dev/null || true
+  /bin/rm -f "$ROOT$JEFF_GO_PLIST"
+  echo "lander-install: retired com.chorus.go"
+fi
+if [ "$CHANGED" = 1 ]; then
+  $LAUNCHCTL bootout "system/$LABEL" 2>/dev/null || true
+  $LAUNCHCTL bootstrap system "$PLIST"
+fi
+$LAUNCHCTL kickstart -k "system/$LABEL" >/dev/null 2>&1 || true
+n=0; pids=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  pids="$($LISTENERS 2>/dev/null | /usr/bin/sort -u || true)"
+  n="$(printf '%s\n' "$pids" | /usr/bin/grep -c . || true)"
+  [ "$n" = 1 ] && break
+  /bin/sleep 1
+done
+[ "$n" = 1 ] || die "expected one listener on :3490, found $n"
+echo "lander-install: done — $LABEL serves :3490 (pid $pids) as $ACCOUNT, binary sha256 $SUM"
