@@ -57,6 +57,7 @@ pub fn spine_post(event: &str, fields: &[(&str, String)]) {
 
 pub mod github;
 pub mod identity;
+pub mod mcp;
 
 pub type R<T> = Result<T, String>;
 
