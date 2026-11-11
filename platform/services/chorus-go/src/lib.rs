@@ -277,9 +277,46 @@ pub fn stale_go_refusal(card: u64, why: &str, newest_row: Option<&str>) -> Strin
     }
 }
 
-/// The go store: the passkey, outstanding challenges, and the signed gos.
+/// The go store: outstanding challenges and the signed gos in `dir` (0700, the lander's own), and
+/// Jeff's passkey public key in `public` (#4710 slice 2, Silas 18:27): a 0644 file in a 0755 dir,
+/// both owned by the lander and writable by no one else, so the land (which runs as jeffbridwell)
+/// can read it and no other account can swap it.
 pub struct Store {
     pub dir: PathBuf,
+    pub public: PathBuf,
+}
+
+/// The lander's account (getpwnam): its uid and home. The land, running as jeffbridwell, finds
+/// the passkey through this, never through a path anyone can point elsewhere.
+pub fn account(name: &str) -> Option<(u32, PathBuf)> {
+    #[repr(C)]
+    struct Passwd {
+        pw_name: *const std::os::raw::c_char, pw_passwd: *const std::os::raw::c_char,
+        pw_uid: u32, pw_gid: u32, pw_change: i64, pw_class: *const std::os::raw::c_char,
+        pw_gecos: *const std::os::raw::c_char, pw_dir: *const std::os::raw::c_char,
+    }
+    extern "C" { fn getpwnam(name: *const std::os::raw::c_char) -> *const Passwd; }
+    let c = std::ffi::CString::new(name).ok()?;
+    unsafe {
+        let p = getpwnam(c.as_ptr());
+        if p.is_null() || (*p).pw_dir.is_null() { return None; }
+        Some(((*p).pw_uid, PathBuf::from(std::ffi::CStr::from_ptr((*p).pw_dir).to_string_lossy().into_owned())))
+    }
+}
+
+/// The lander's account name.
+pub const LANDER_ACCOUNT: &str = "chorus-lander";
+
+/// The passkey file must be owned by `owner` and writable by no one else, in a directory that is
+/// also owned by `owner` and writable by no one else (else a rename swaps the file).
+pub fn public_problem(dir: &Path, owner: u32) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    for p in [dir.to_path_buf(), dir.join("passkey.json")] {
+        let Ok(m) = fs::metadata(&p) else { continue };
+        if m.uid() != owner { return Some(format!("{} is owned by uid {}, not the lander", p.display(), m.uid())); }
+        if m.mode() & 0o022 != 0 { return Some(format!("{} is writable by others (mode {:o})", p.display(), m.mode() & 0o777)); }
+    }
+    None
 }
 
 fn write_private(path: &Path, body: &str) -> R<()> {
@@ -309,25 +346,49 @@ impl Store {
         })
     }
 
-    pub fn open(dir: &Path) -> R<Store> {
+    /// The lander's public dir: <lander home>/public, found by account name.
+    pub fn lander_public() -> Option<PathBuf> {
+        account(LANDER_ACCOUNT).map(|(_, h)| h.join("public"))
+    }
+
+    /// A store whose passkey sits in `dir/public` (tests, and any store not the lander's).
+    pub fn open(dir: &Path) -> R<Store> { Store::open_with(dir, &dir.join("public")) }
+
+    pub fn open_with(dir: &Path, public: &Path) -> R<Store> {
         use std::os::unix::fs::PermissionsExt;
         for d in [dir.to_path_buf(), dir.join("approvals")] {
             fs::create_dir_all(&d).map_err(|e| format!("mkdir {}: {e}", d.display()))?;
             fs::set_permissions(&d, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
         }
-        Ok(Store { dir: dir.to_path_buf() })
+        Ok(Store { dir: dir.to_path_buf(), public: public.to_path_buf() })
     }
 
+    /// Jeff's passkey, from the public dir, only if the dir and the file are owned by the dir's
+    /// owner-to-be (this account for its own store; the lander for the land's check) and writable
+    /// by no one else.
     pub fn passkey(&self) -> R<Option<Passkey>> {
-        match read_json(&self.dir.join("passkey.json")) {
-            None if !self.dir.join("passkey.json").exists() => Ok(None),
+        use std::os::unix::fs::MetadataExt;
+        let f = self.public.join("passkey.json");
+        if !f.exists() { return Ok(None); }
+        let owner = fs::metadata(&self.public).map(|m| m.uid()).map_err(|e| e.to_string())?;
+        let expect = if self.public == Store::lander_public().unwrap_or_default() { account(LANDER_ACCOUNT).map(|(u, _)| u).unwrap_or(u32::MAX) } else { owner };
+        if let Some(why) = public_problem(&self.public, expect) { return Err(why); }
+        match read_json(&f) {
             None => Err("passkey.json is unreadable".into()),
             Some(v) => Passkey::from_json(&v).map(Some),
         }
     }
 
+    /// Write the public key 0644 into the public dir (0755), atomically by rename.
     pub fn save_passkey(&self, pk: &Passkey) -> R<()> {
-        write_private(&self.dir.join("passkey.json"), &pk.to_json().to_string())
+        use std::os::unix::fs::PermissionsExt;
+        fs::create_dir_all(&self.public).map_err(|e| format!("mkdir {}: {e}", self.public.display()))?;
+        fs::set_permissions(&self.public, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        let f = self.public.join("passkey.json");
+        let tmp = f.with_extension(format!("tmp.{}", std::process::id()));
+        fs::write(&tmp, pk.to_json().to_string()).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o644)).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &f).map_err(|e| format!("rename {}: {e}", f.display()))
     }
 
     pub fn mint_register_token(&self) -> R<String> {

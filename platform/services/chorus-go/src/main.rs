@@ -26,7 +26,11 @@ fn emit_lifecycle((event, fields): service_lifecycle::LifecycleEvent) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let store = match Store::open(&Store::default_dir()) {
+    // #4710 slice 2 — the lander's store: challenges in ~/.chorus/go (0700), Jeff's public key in
+    // the lander's public dir (found by account, not env). `check` runs as jeffbridwell in the land
+    // and reads the same public dir.
+    let public = Store::lander_public().unwrap_or_else(|| Store::default_dir().join("public"));
+    let store = match Store::open_with(&Store::default_dir(), &public) {
         Ok(s) => s,
         Err(e) => { eprintln!("chorus-go: {e}"); std::process::exit(1) }
     };
@@ -41,7 +45,8 @@ fn main() {
             let round = args.get(2).cloned().unwrap_or_default();
             match chorus_go::serve::land_go(&store, card, &round) {
                 Ok(LandGo::Signed) => { println!("chorus-go: #{card} round {} — go signed by Jeff's passkey", short(&round)); 0 }
-                Ok(LandGo::NoPasskey) => { println!("chorus-go: no passkey registered — the go is not signed yet (#4710)"); 0 }
+                // #4710 slice 2 — fail closed: no readable passkey on the lander is no go
+                Ok(LandGo::NoPasskey) => { eprintln!("chorus-go: refused: no passkey registered on the lander — the go is not signed (#4710)"); 1 }
                 Err(e) => { eprintln!("chorus-go: refused: {e}"); 1 }
             }
         }
