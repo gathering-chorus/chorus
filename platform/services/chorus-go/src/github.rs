@@ -116,6 +116,13 @@ pub fn go_then_complete(verb: &str, merge: impl FnOnce() -> R<u64>, complete: im
     Ok(pr)
 }
 
+/// How long before the one 405 retry (tests set LANDER_RETRY_WAIT_SECS=0). Log evidence
+/// (werk-merge.jsonl, 11-11): 1,464 merges, 29 refused merge-conflict — real conflicts are
+/// common, so one retry, never a loop.
+fn retry_wait_secs() -> u64 {
+    std::env::var("LANDER_RETRY_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(5)
+}
+
 /// The whole land half the lander owns: arm the App, find the PR at the signed round, post
 /// `jeff-go`, squash-merge pinned to that sha. Call only after the passkey go verified.
 pub fn land_as_app(card: u64, round: &str) -> R<u64> {
@@ -126,7 +133,14 @@ pub fn land_as_app(card: u64, round: &str) -> R<u64> {
     let role = role.as_str();
     let (code, _) = run(&status_call(round, card))?;
     if code != 201 { return Err(format!("GitHub answered {code} to the jeff-go status on {}", crate::short(round))); }
-    let (code, body) = run(&merge_call(pr, round, card, role))?;
+    let mut answer = run(&merge_call(pr, round, card, role))?;
+    // #3926 — GitHub's mergeable flag can be stale right after a push: 405 "not mergeable".
+    // Retry that once. Never a 409: that is the PR head moving off the signed sha (Silas 18:01).
+    if answer.0 == 405 {
+        std::thread::sleep(std::time::Duration::from_secs(retry_wait_secs()));
+        answer = run(&merge_call(pr, round, card, role))?;
+    }
+    let (code, body) = answer;
     if code != 200 {
         let why = serde_json::from_str::<Value>(&body).ok().and_then(|v| v.get("message").and_then(Value::as_str).map(String::from)).unwrap_or_default();
         return Err(format!("GitHub refused the merge of PR #{pr} ({code}): {why}"));

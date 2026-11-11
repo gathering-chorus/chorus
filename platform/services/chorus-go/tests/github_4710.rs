@@ -49,7 +49,7 @@ case "$url" in
   */access_tokens) printf '{{"token":"ghs_FAKE4710"}}';;
   */pulls\?*) printf '[{{"number":1967,"head":{{"ref":"wren/4953","sha":"{head}"}}}}]\n200';;
   */statuses/*) printf '{{}}\n201';;
-  */merge) printf '{{"message":"x"}}\n{merge_code}';;
+  */merge) codes=$(cat {log}/../merge-codes 2>/dev/null || echo {merge_code}); first=${{codes%% *}}; rest=${{codes#* }}; [ "$rest" = "$codes" ] || echo "$rest" > {log}/../merge-codes; printf '{{"message":"x"}}\n%s' "$first";;
 esac
 "#, log = log.display());
     let f = bin.join("curl");
@@ -75,6 +75,7 @@ fn with_env<T>(app: &Path, bin: &Path, f: impl FnOnce() -> T) -> T {
     let mut p = std::ffi::OsString::from(bin.as_os_str()); p.push(":"); p.push(&old);
     std::env::set_var("PATH", &p);
     std::env::set_var("WERK_GITHUB_APP_DIR", app);
+    std::env::set_var("LANDER_RETRY_WAIT_SECS", "0");
     let r = f();
     std::env::set_var("PATH", old);
     std::env::remove_var("WERK_GITHUB_APP_DIR");
@@ -170,4 +171,27 @@ fn a_refused_merge_leaves_the_go_step_open_and_a_no_never_merges() {
     let merged = Cell::new(false);
     assert_eq!(github::go_then_complete("no", || { merged.set(true); Ok(1) }, || Ok(())), Ok(None));
     assert!(!merged.get(), "a no merged");
+}
+
+// #3926 — a stale "not mergeable" (405) is retried once and then merges; a 409 (the head
+// moved off the signed sha) is never retried: one merge call, an error.
+#[test]
+fn a_405_is_retried_once_and_a_409_never() {
+    let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let d = tmp("r405");
+    let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
+    let bin = stand_in_github(&d, ROUND, 200);
+    std::fs::write(d.join("merge-codes"), "405 200").unwrap();
+    assert_eq!(with_env(&app, &bin, || github::land_as_app(4953, ROUND)), Ok(1967));
+    let merges = calls(&d).iter().filter(|(a, _, _)| a.lines().last().unwrap_or("").ends_with("/merge")).count();
+    assert_eq!(merges, 2, "405 then 200 is two merge calls");
+
+    // NEGATIVE PROOF: 409 is not retried
+    let d = tmp("r409");
+    let bin = stand_in_github(&d, ROUND, 409);
+    std::fs::write(d.join("merge-codes"), "409 200").unwrap();
+    let e = with_env(&app, &bin, || github::land_as_app(4953, ROUND)).unwrap_err();
+    assert!(e.contains("409"), "{e}");
+    let merges = calls(&d).iter().filter(|(a, _, _)| a.lines().last().unwrap_or("").ends_with("/merge")).count();
+    assert_eq!(merges, 1, "a 409 was retried");
 }
