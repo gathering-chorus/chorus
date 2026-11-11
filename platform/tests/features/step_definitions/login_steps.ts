@@ -62,7 +62,7 @@ const waiting = (_card: number): 'pending' => 'pending';
 Given(/^a fixture world with the principals jeff \(person\), wren, silas and kade \(agents\), and bridge \(service\)$/, STEP, function () {
   if (!fs.existsSync(BIN)) throw new Error(`chorus-principal is not built at ${BIN}`);
   // #4933 — each role's own wrapper establishes its session, as the account running the
-  // test (the bats suites' setup does the same); without it no login writes a row
+  // suite, like the bats setup does; without it no login writes a row
   sh('login_harness_stubs; for r in silas kade wren; do est "$r"; done');
 });
 
