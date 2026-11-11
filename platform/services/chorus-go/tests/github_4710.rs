@@ -47,7 +47,7 @@ for a in "$@"; do case "$a" in @*) cp "${{a#@}}" $c/body 2>/dev/null;; esac; don
 url=""; for a in "$@"; do url="$a"; done
 case "$url" in
   */access_tokens) printf '{{"token":"ghs_FAKE4710"}}';;
-  */pulls\?*) printf '[{{"number":1967,"head":{{"sha":"{head}"}}}}]\n200';;
+  */pulls\?*) printf '[{{"number":1967,"head":{{"ref":"wren/4953","sha":"{head}"}}}}]\n200';;
   */statuses/*) printf '{{}}\n201';;
   */merge) printf '{{"message":"x"}}\n{merge_code}';;
 esac
@@ -97,12 +97,16 @@ fn the_merge_is_a_squash_pinned_to_the_signed_sha_titled_like_main() {
 // NEGATIVE PROOF: a PR whose head moved after Jeff signed is refused before any merge call.
 #[test]
 fn a_moved_head_is_refused_and_one_pr_is_required() {
-    let list = |sha: &str| format!(r#"[{{"number":1967,"head":{{"sha":"{sha}"}}}}]"#);
-    assert_eq!(pr_from_list(&list(ROUND), ROUND), Ok(1967));
-    assert!(pr_from_list(&list("0000000000000000000000000000000000000000"), ROUND).unwrap_err().contains("head moved"));
-    assert!(pr_from_list("[]", ROUND).unwrap_err().contains("no open PR"));
-    let two = format!("[{},{}]", &list(ROUND)[1..list(ROUND).len() - 1], &list(ROUND)[1..list(ROUND).len() - 1]);
-    assert!(pr_from_list(&two, ROUND).unwrap_err().contains("more than one"));
+    let pr = |n: u64, r: &str, sha: &str| format!(r#"{{"number":{n},"head":{{"ref":"{r}","sha":"{sha}"}}}}"#);
+    let other = pr(1, "kade/4800", ROUND);
+    assert_eq!(pr_from_list(&format!("[{other},{}]", pr(1967, "wren/4953", ROUND)), 4953, ROUND), Ok((1967, "wren".into())));
+    assert!(pr_from_list(&format!("[{}]", pr(1967, "wren/4953", "0000000000000000000000000000000000000000")), 4953, ROUND).unwrap_err().contains("head moved"));
+    assert!(pr_from_list(&format!("[{other}]"), 4953, ROUND).unwrap_err().contains("no open PR"));
+    // a branch that merely ends in the number is not the card's (wren/14953, a/b/4953)
+    assert!(pr_from_list(&format!("[{}]", pr(2, "wren/14953", ROUND)), 4953, ROUND).is_err());
+    assert!(pr_from_list(&format!("[{}]", pr(2, "a/b/4953", ROUND)), 4953, ROUND).is_err());
+    let two = format!("[{},{}]", pr(1967, "wren/4953", ROUND), pr(1968, "silas/4953", ROUND));
+    assert!(pr_from_list(&two, 4953, ROUND).unwrap_err().contains("more than one"));
 }
 
 #[test]
@@ -111,12 +115,12 @@ fn a_signed_round_lands_as_the_app_status_then_squash_merge_no_credential_on_arg
     let d = tmp("land");
     let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
     let bin = stand_in_github(&d, ROUND, 200);
-    let r = with_env(&app, &bin, || github::land_as_app(4953, "wren", ROUND));
+    let r = with_env(&app, &bin, || github::land_as_app(4953, ROUND));
     assert_eq!(r, Ok(1967));
     let seen = calls(&d);
     let urls: Vec<&str> = seen.iter().map(|(a, _, _)| a.lines().last().unwrap_or("")).collect();
     assert!(urls[0].ends_with("/app/installations/456/access_tokens"), "{urls:?}");
-    assert!(urls[1].contains("/pulls?state=open&head=gathering-chorus:wren/4953"), "{urls:?}");
+    assert!(urls[1].contains("/pulls?state=open"), "{urls:?}");
     assert!(urls[2].ends_with(&format!("/statuses/{ROUND}")), "{urls:?}");
     assert!(urls[3].ends_with("/pulls/1967/merge"), "{urls:?}");
     assert!(seen[2].2.contains("\"context\":\"jeff-go\"") && seen[2].2.contains("\"state\":\"success\""), "{}", seen[2].2);
@@ -135,7 +139,7 @@ fn a_moved_head_posts_nothing_and_merges_nothing() {
     let d = tmp("moved");
     let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
     let bin = stand_in_github(&d, "1111111111111111111111111111111111111111", 200);
-    let e = with_env(&app, &bin, || github::land_as_app(4953, "wren", ROUND)).unwrap_err();
+    let e = with_env(&app, &bin, || github::land_as_app(4953, ROUND)).unwrap_err();
     assert!(e.contains("head moved"), "{e}");
     let urls: Vec<String> = calls(&d).iter().map(|(a, _, _)| a.lines().last().unwrap_or("").to_string()).collect();
     assert!(!urls.iter().any(|u| u.contains("/statuses/") || u.ends_with("/merge")), "{urls:?}");
@@ -147,6 +151,23 @@ fn a_refused_merge_is_an_error_naming_the_pr() {
     let d = tmp("refused");
     let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
     let bin = stand_in_github(&d, ROUND, 409);
-    let e = with_env(&app, &bin, || github::land_as_app(4953, "wren", ROUND)).unwrap_err();
+    let e = with_env(&app, &bin, || github::land_as_app(4953, ROUND)).unwrap_err();
     assert!(e.contains("PR #1967") && e.contains("409"), "{e}");
+}
+
+// NEGATIVE PROOF (Silas 17:48): a merge the lander could not make leaves the run's go step
+// open; only a merge that happened answers it. A "no" never merges and still answers.
+#[test]
+fn a_refused_merge_leaves_the_go_step_open_and_a_no_never_merges() {
+    use std::cell::Cell;
+    let completed = Cell::new(false);
+    let e = github::go_then_complete("go", || Err("409".into()), || { completed.set(true); Ok(()) }).unwrap_err();
+    assert!(e.contains("did not merge") && e.contains("stays open"), "{e}");
+    assert!(!completed.get(), "the go step was answered after a refused merge");
+    let merged = Cell::new(false);
+    assert_eq!(github::go_then_complete("go", || { merged.set(true); Ok(1967) }, || Ok(())), Ok(Some(1967)));
+    assert!(merged.get());
+    let merged = Cell::new(false);
+    assert_eq!(github::go_then_complete("no", || { merged.set(true); Ok(1) }, || Ok(())), Ok(None));
+    assert!(!merged.get(), "a no merged");
 }

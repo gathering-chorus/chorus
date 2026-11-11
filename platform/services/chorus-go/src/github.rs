@@ -29,10 +29,9 @@ pub struct Call {
     pub body: Option<Value>,
 }
 
-/// The card's open PR, by its head branch `<role>/<card>`.
-pub fn find_pr_call(role: &str, card: u64) -> Call {
-    let owner = REPO.split('/').next().unwrap_or("");
-    Call { method: "GET", path: format!("/repos/{REPO}/pulls?state=open&head={owner}:{role}/{card}"), body: None }
+/// The open PRs (a card's branch is `<role>/<card>`; the go names the card, not the role).
+pub fn find_pr_call() -> Call {
+    Call { method: "GET", path: format!("/repos/{REPO}/pulls?state=open&per_page=100"), body: None }
 }
 
 /// The `jeff-go` status on the signed round sha.
@@ -54,21 +53,29 @@ pub fn merge_call(pr: u64, round: &str, card: u64, role: &str) -> Call {
     }
 }
 
-/// The PR number from the pulls list, only if exactly one open PR has that head and its head sha
-/// is the signed round (a moved head is refused here before GitHub refuses it).
-pub fn pr_from_list(body: &str, round: &str) -> R<u64> {
+/// The card's PR from the open list: exactly one whose head branch is `<role>/<card>`, and whose
+/// head sha is the signed round (a moved head is refused here before GitHub refuses it).
+/// Returns (PR number, role).
+pub fn pr_from_list(body: &str, card: u64, round: &str) -> R<(u64, String)> {
     let v: Value = serde_json::from_str(body).map_err(|_| "GitHub's PR list is not JSON".to_string())?;
     let prs = v.as_array().ok_or("GitHub's PR list is not a list")?;
-    match prs.as_slice() {
+    let suffix = format!("/{card}");
+    let mine: Vec<&Value> = prs.iter().filter(|p| {
+        let r = p.pointer("/head/ref").and_then(Value::as_str).unwrap_or("");
+        r.ends_with(&suffix) && r.matches('/').count() == 1
+    }).collect();
+    match mine.as_slice() {
         [one] => {
             let head = one.pointer("/head/sha").and_then(Value::as_str).unwrap_or("");
             if head != round {
                 return Err(format!("the PR head is {} but Jeff signed {}: the head moved, no merge", crate::short(head), crate::short(round)));
             }
-            one.get("number").and_then(Value::as_u64).ok_or_else(|| "the PR has no number".into())
+            let role = one.pointer("/head/ref").and_then(Value::as_str).unwrap_or("").split('/').next().unwrap_or("").to_string();
+            let n = one.get("number").and_then(Value::as_u64).ok_or("the PR has no number")?;
+            Ok((n, role))
         }
-        [] => Err("no open PR for this card".into()),
-        _ => Err("more than one open PR for this card's branch".into()),
+        [] => Err(format!("no open PR for #{card}")),
+        _ => Err(format!("more than one open PR for #{card}")),
     }
 }
 
@@ -97,13 +104,26 @@ pub fn run(call: &Call) -> R<(u16, String)> {
     Ok((code.trim().parse().unwrap_or(0), body.to_string()))
 }
 
+/// #4710 — the go's order (Silas 17:48): Jeff's signed go merges first; only a merge that
+/// happened answers the run's go step, so a run never lands unmerged. A "no" merges nothing.
+pub fn go_then_complete(verb: &str, merge: impl FnOnce() -> R<u64>, complete: impl FnOnce() -> R<()>) -> R<Option<u64>> {
+    let pr = if verb == "go" {
+        Some(merge().map_err(|e| format!("signed, but the lander did not merge: {e}; the go step stays open"))?)
+    } else {
+        None
+    };
+    complete()?;
+    Ok(pr)
+}
+
 /// The whole land half the lander owns: arm the App, find the PR at the signed round, post
 /// `jeff-go`, squash-merge pinned to that sha. Call only after the passkey go verified.
-pub fn land_as_app(card: u64, role: &str, round: &str) -> R<u64> {
+pub fn land_as_app(card: u64, round: &str) -> R<u64> {
     arm_app_credential()?;
-    let (code, body) = run(&find_pr_call(role, card))?;
+    let (code, body) = run(&find_pr_call())?;
     if code != 200 { return Err(format!("GitHub answered {code} to the PR lookup for #{card}")); }
-    let pr = pr_from_list(&body, round)?;
+    let (pr, role) = pr_from_list(&body, card, round)?;
+    let role = role.as_str();
     let (code, _) = run(&status_call(round, card))?;
     if code != 201 { return Err(format!("GitHub answered {code} to the jeff-go status on {}", crate::short(round))); }
     let (code, body) = run(&merge_call(pr, round, card, role))?;

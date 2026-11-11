@@ -313,7 +313,8 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
             alert_unrecorded(&d.row, &why);
         }
         let verb = if d.decision == "approve" { "go" } else { "no" };
-        complete_go(&g.run, verb)?;
+        // #4710 — the lander merges as the App before the go step is answered (Silas 17:48)
+        crate::github::go_then_complete(verb, || crate::github::land_as_app(g.card, &g.round), || complete_go(&g.run, verb))?;
         return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
     }
     if let Some(st) = &d.step {
