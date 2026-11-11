@@ -105,7 +105,13 @@ pub fn status(dir: &Path, id: &str) -> Status {
     let pid = rec["pid"].as_u64().unwrap_or(0) as u32;
     match (pid_started(pid), rec["pidStartedAt"].as_str()) {
         (Some(now), Some(then)) if now == then => Status::Running,
-        _ => Status::Lost,
+        // #4951 — the Task is reaped now, so its pid vanishes the moment it exits. It may
+        // have finished between the exit-file read above and the pid check: read the exit
+        // file again before calling it Lost (a zombie used to hold the pid and hide this).
+        _ => match std::fs::read_to_string(file(dir, id, "exit")).ok().and_then(|c| c.trim().parse().ok()) {
+            Some(code) => Status::Done(code),
+            None => Status::Lost,
+        },
     }
 }
 
