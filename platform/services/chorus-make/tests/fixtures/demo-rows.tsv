@@ -4,9 +4,10 @@
 # Jeff's go stays in cicd: dagu refuses a human task in a sub-DAG (measured 10-18 07:43, #4577).
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
 validate	1	1	skill-werk-demo-validate	demo: validate (WIP, has AC)	deterministic	werk-demo	validate ${CARD} ${ROLE}			
-# #4889 (Jeff 11-05 10:06): the demo stops at its first red review and wakes the owner; only an
-# all-green demo reaches Jeff. The reviews run in turn, cheapest first, so a red one stops the rest.
-gates	2	1	skill-werk-demo-gate-quality	demo: gate quality	deterministic	werk-demo	run-gate ${CARD} ${ROLE} quality			
-gates	2	2	skill-werk-demo-gate-arch	demo: gate arch	deterministic	werk-demo	run-gate ${CARD} ${ROLE} arch			
-gates	2	3	skill-werk-demo-gate-code	demo: gate code	deterministic	werk-demo	run-gate ${CARD} ${ROLE} code			
+# #4889 (Jeff 11-05 10:06): only an all-green demo reaches Jeff; a red review wakes the owner.
+# #4953 (Jeff 11-11 16:08 yes): the three reviews run together, so Jeff waits for the slowest one,
+# not all three in turn. Any red still fails the demo and announce never runs.
+gates	2	1	skill-werk-demo-gate-quality	demo: gate quality	deterministic	werk-demo	run-gate ${CARD} ${ROLE} quality			parallel=true
+gates	2	1	skill-werk-demo-gate-arch	demo: gate arch	deterministic	werk-demo	run-gate ${CARD} ${ROLE} arch			parallel=true
+gates	2	1	skill-werk-demo-gate-code	demo: gate code	deterministic	werk-demo	run-gate ${CARD} ${ROLE} code			parallel=true
 announce	3	1	skill-werk-demo-announce	demo: announce (one ask per round)	deterministic	werk-demo	announce ${CARD} ${ROLE}			
