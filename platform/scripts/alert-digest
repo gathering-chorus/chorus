@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# alert-digest — #4957 AC2. A role's open AlertCases as one digest file, written on a
+# schedule and read by the role's context on its next turn. Nothing is typed into a
+# pane: Jeff 2026-11-11 09:50, "if the alerts come to a queue and you check alerts
+# every five minutes via dagu… I could accept that."
+#
+#   alert-digest [<role> …]   writes $ALERT_DIGEST_DIR/<role>.md for each role (none named: every agent role)
+#
+# A door that does not answer leaves the last digest in place and says so on stderr,
+# with a non-zero exit: an empty digest would read as "nothing is wrong".
+#
+# Env: ALERT_DOOR (default http://localhost:3360), ALERT_CURL (curl), ALERT_DIGEST_DIR
+# (default ~/.chorus/alerts).
+set -uo pipefail
+
+DOOR="${ALERT_DOOR:-http://localhost:3360}"
+CURL="${ALERT_CURL:-curl}"
+DIR="${ALERT_DIGEST_DIR:-$HOME/.chorus/alerts}"
+# no roles named: every agent role the roles door lists (a list typed here would drift)
+if [ $# -eq 0 ]; then
+  roles=$("$CURL" -s --max-time 10 "$DOOR/v1/roles/roles?limit=200" 2>/dev/null | python3 -c '
+import json,sys
+try: print(" ".join(r["name"] for r in json.loads(sys.stdin.read().split("\n")[0])["data"] if r.get("roleKind")=="agent"))
+except Exception: pass') || true
+  [ -n "$roles" ] || { echo "alert-digest: no roles named and the roles door listed none; no digest written" >&2; exit 1; }
+  set -- $roles
+fi
+mkdir -p "$DIR"
+
+rc=0
+for role in "$@"; do
+  if ! out=$("$CURL" -s --max-time 10 "$DOOR/v1/alerts/alertcases?ownedBy=principal-$role&caseClosedAt.absent=true&limit=500" 2>&1); then
+    echo "alert-digest: the door did not answer for $role; the last digest stays: $out" >&2; rc=1; continue
+  fi
+  tmp="$DIR/.$role.md.tmp"
+  if ! printf '%s' "$out" | python3 -c '
+import json,sys
+role,at=sys.argv[1],sys.argv[2]
+try: rows=json.loads(sys.stdin.read().split("\n")[0])["data"]
+except Exception: sys.exit(1)
+rows=[r for r in rows if r.get("ownedBy")=="principal-"+role and not r.get("caseClosedAt")]
+rows.sort(key=lambda r: r.get("firstSeen",""))
+print(f"# Open alert cases for {role} — {len(rows)} (as of {at})")
+for r in rows:
+    of,sub,cause,first,last=(r.get(k,"") for k in ("caseOf","caseSubject","caseCause","firstSeen","lastSeen"))
+    print(f"- {of} / {sub}: {cause} · open since {first} · last seen {last}")
+' "$role" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"; then
+    rm -f "$tmp"; echo "alert-digest: the door's answer for $role was not a listing; the last digest stays" >&2; rc=1; continue
+  fi
+  mv "$tmp" "$DIR/$role.md"
+done
+exit $rc

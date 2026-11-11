@@ -90,67 +90,9 @@ else
   pass "nudge states no threshold the check does not"
 fi
 
-echo "=== ci-main-red: exhaust the ways to see before reporting blind ==="
-# #3519 made a token-less check report "unverifiable" instead of a false "ok" —
-# correct, but it stopped there. alert-runner.sh sources no environment, so
-# GH_TOKEN is NEVER set and the check blinded itself every night while
-# quality.yml on main sat red for 39 consecutive runs (Jun 21 → Jul 29).
-# `gh` is authenticated on this machine and holds a token in the keyring; a
-# check that gives up without asking it is not unverifiable, it is unasked.
-CI_SH="$ALERTS/ci-main-red.check.sh"
-# #3713 — this assertion used to be `grep -q "gh auth token" "$CI_SH"`: it checked
-# that a STRING was present in the file. That proves the author typed it, nothing
-# about whether it runs — and it did not run, because the bare `gh` was unresolvable
-# under launchd's PATH. The check shipped dead and this test said PASS. Run the
-# thing instead. (Env-specific coverage lives in
-# alert-checks-run-under-launchd-path.test.sh; here we assert it ASKS at all.)
-out=$(env -u GH_TOKEN bash "$CI_SH" 2>&1)
-case "$out" in
-  red:*|ok) pass "obtains a token without GH_TOKEN in env and reports a verdict: ${out%%:*}" ;;
-  *unverifiable*) fail "does not obtain a token when GH_TOKEN is unset — reports '$out'" ;;
-  *) fail "unrecognised output with GH_TOKEN unset: '$out'" ;;
-esac
-
-# With no env token AND gh unable to produce one, unverifiable is the honest
-# answer. Shadow gh with a failing stub rather than emptying PATH (that would
-# take bash itself with it).
-NOGH=$(mktemp -d)
-printf '#!/usr/bin/env bash\nexit 1\n' > "$NOGH/gh"; chmod +x "$NOGH/gh"
-out=$(GH_TOKEN="" PATH="$NOGH:$PATH" bash "$CI_SH" 2>&1); rc=$?
-echo "  no token, gh cannot answer: '$out' (rc=$rc)"
-case "$out" in
-  ok) fail "reports plain 'ok' while genuinely blind — a red main never surfaces" ;;
-  *unverifiable*) pass "still reports unverifiable when it truly cannot see" ;;
-  *) fail "neither a verdict nor unverifiable: '$out'" ;;
-esac
-rm -rf "$NOGH"
-
-# An answer it cannot READ is also unverifiable, never ok. The repo moved to
-# gathering-chorus/chorus; the stale slug made GitHub reply 301, curl -sf did
-# not follow it, the parser choked, and the catch-all branch exited 0 printing
-# nothing. Three defects stacked into a silent green over a 39-run-red main.
-BADAPI=$(mktemp -d)
-cat > "$BADAPI/curl" <<'STUB'
-#!/usr/bin/env bash
-echo '{"message":"Moved Permanently","url":"https://api.github.com/repositories/1158715556"}'
-exit 0
-STUB
-chmod +x "$BADAPI/curl"
-out=$(GH_TOKEN=stub PATH="$BADAPI:$PATH" bash "$CI_SH" 2>&1); rc=$?
-echo "  unreadable API answer: '$out' (rc=$rc)"
-if [ "$rc" -eq 0 ]; then
-  fail "swallowed an unreadable answer and exited 0 — silent green over a red main"
-else
-  pass "an unreadable answer reports unverifiable (rc=$rc), not a silent pass"
-fi
-rm -rf "$BADAPI"
-
-# The slug must be the repo we actually have, or every query 301s.
-if grep -q "gathering-chorus/chorus" "$CI_SH"; then
-  pass "queries the repo this actually is"
-else
-  fail "queries a stale repo slug — GitHub 301s and the check learns nothing"
-fi
+# #4957 — the ci-main-red section is deleted: #4916 retired that alert and deleted
+# ci-main-red.check.sh, so the section read a file that no longer exists and went red
+# every night (11-07 onward) on an alarm that cannot fire.
 
 echo "=== every alert's check must survive the PRODUCTION extractor ==="
 # alert-runner.sh:31 extracts a check with:

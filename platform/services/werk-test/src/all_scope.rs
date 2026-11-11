@@ -100,6 +100,12 @@ struct Ctx {
     owlapi: String,
     api: String,
     ops_nudge: String,
+    /// #4957 — a red suite is an AlertCase for its owner, read in their context, never
+    /// typed into their pane; a later green run of that suite closes it
+    alert_case: String,
+    /// the suites with an open nightly case, read once per run, so a green suite closes
+    /// only a case it has (never ~650 lookups)
+    open_cases: std::cell::RefCell<Option<std::collections::HashSet<String>>>,
     no_nudge: bool,
     owners: HashMap<String, String>,
     /// #4540 — under dagu stdout is the step's log, not the run log: a step
@@ -202,6 +208,38 @@ impl Ctx {
             return;
         }
         let _ = Command::new(&self.ops_nudge).arg(to).arg(msg).arg("system").stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    /// #4957 — the alert the nightly's red cases belong to (the #4071 rule)
+    const NIGHTLY_ALERT: &'static str = "test-nightly-first-red-nudge-4071";
+    /// A red suite opens (or keeps open) its owner's case. Gated like the nudge it
+    /// replaces: a werk-rooted run never touches the team's cases.
+    fn alert_red(&self, row: &SuiteRow) {
+        if self.no_nudge || !Path::new(&self.alert_case).is_file() {
+            return;
+        }
+        let ok = Command::new(&self.alert_case)
+            .args(["open", Self::NIGHTLY_ALERT, &row.path, &row.owner, &format!("nightly RED: {} — {}", row.path, row.summary)])
+            .stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+        if !ok {
+            eprintln!("nightly: could not record the alert case for {} (alert-case open failed)", row.path);
+        }
+    }
+    /// A green suite with an open case is the measured fix: close it.
+    fn alert_green(&self, row: &SuiteRow) {
+        if self.no_nudge || !Path::new(&self.alert_case).is_file() {
+            return;
+        }
+        let mut cache = self.open_cases.borrow_mut();
+        let open = cache.get_or_insert_with(|| {
+            Command::new(&self.alert_case).args(["subjects", Self::NIGHTLY_ALERT]).output().ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::to_string).collect())
+                .unwrap_or_default()
+        });
+        if open.remove(&row.path) {
+            let _ = Command::new(&self.alert_case).args(["close", Self::NIGHTLY_ALERT, &row.path])
+                .stdout(Stdio::null()).stderr(Stdio::null()).status();
+        }
     }
     fn owner(&self, path: &str) -> String {
         owner_for(path, &self.owners, &self.root, &self.app_root)
@@ -582,9 +620,12 @@ fn run_runner(ctx: &Ctx, box_over_load: bool, pick: Option<&str>) -> LaneResult 
                 eprintln!("nightly: REPORTER CONTRADICTION — row says pass with failures; recording fail (#3753 AC4, row-level)");
                 ctx.spine("nightly.reporter.contradiction", &[("suite".into(), row.suite_name().into()), ("kind".into(), row.kind.clone())]);
             }
-            // #4071 — a red row nudges its owner the moment it lands, once per unit
+            // #4071 — a red row reaches its owner the moment it lands, once per unit;
+            // #4957 — as an open AlertCase in their context, not a nudge into their pane
             if row.status == "fail" && nudged.insert(row.path.clone()) {
-                ctx.nudge(&row.owner, &format!("nightly RED now: {} — {} (run still going; read it now, not at the end)", row.path, row.summary));
+                ctx.alert_red(&row);
+            } else if row.status == "pass" {
+                ctx.alert_green(&row);
             }
             // append ONLY: under launchd stdout is the log itself, so a println
             // here doubled every row (400 duplicates on the 2026-09-11 19:16 run)
@@ -764,6 +805,8 @@ fn build_ctx(root: &str) -> Ctx {
         owlapi: env_or("OWLAPI", "http://localhost:3360"),
         api: env_or("WERK_TEST_API", "http://localhost:3340"),
         ops_nudge: env_or("OPS_NUDGE", &format!("{}/platform/scripts/ops-nudge", root)),
+        alert_case: env_or("ALERT_CASE", &format!("{}/platform/scripts/alert-case", root)),
+        open_cases: Default::default(),
         no_nudge: std::env::var("WERK_TEST_NO_NUDGE").map(|v| v == "1").unwrap_or(false),
         owners: HashMap::new(),
         tee_log: false,
@@ -1467,7 +1510,7 @@ mod lanes_4278 {
             log: format!("{}/nightly.log", root), fail_dir: format!("{}/fails", root),
             lockdir: format!("{}/lock.d", root), role: "kade".into(), run_id: "test".into(),
             owlapi: "http://localhost:1".into(), api: "http://localhost:1".into(),
-            ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(), tee_log: false,
+            ops_nudge: "/usr/bin/true".into(), alert_case: "/usr/bin/true".into(), open_cases: Default::default(), no_nudge: true, owners: HashMap::new(), tee_log: false,
             graph: GraphRows::default(),
         }
     }

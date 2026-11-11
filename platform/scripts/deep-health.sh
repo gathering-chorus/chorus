@@ -834,6 +834,20 @@ fi
   echo -n '],"timestamp":"'"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"'"}'
 } > "${HEALTH_JSON_OUT:-/tmp/deep-health-latest.json}"
 
+# #4957 — no failures left: every failure the last degraded run recorded is measured
+# fixed, so close its case before the healthy/warning exits below (gate-code, 11-11:
+# the close loop sat after them, so a fully-cleared set never closed its cases)
+if [ ${#FAILURES[@]} -eq 0 ]; then
+  _sf="${HEALTH_STATE_FILE:-/tmp/deep-health-last-failures.txt}"
+  _ac="${HEALTH_ALERT_CASE:-${CHORUS_ROOT}/platform/scripts/alert-case}"
+  if [ -x "$_ac" ] && [ -s "$_sf" ]; then
+    while IFS= read -r gone; do
+      [ -n "$gone" ] && { "$_ac" close deep-health "$gone" >/dev/null || echo "deep-health: could not close the case for: $gone" >&2; }
+    done < "$_sf"
+    : > "$_sf"
+  fi
+fi
+
 if [ "$STATUS" = "healthy" ]; then
   _SUMMARY_PRINTED=1
   echo "deep-health: all checks passed"
@@ -870,12 +884,27 @@ LAST=""
 [ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE")
 printf '%s' "$CURRENT" > "$STATE_FILE"
 
+# #4957 — each failure is one AlertCase (alert deep-health, subject = the failure
+# without its changing detail): a standing failure moves lastSeen on its open case,
+# and a failure in LAST that is gone from CURRENT is measured fixed and closed. The
+# role reads its cases in its context; nothing is typed into its pane.
+ALERT_CASE="${HEALTH_ALERT_CASE:-${CHORUS_ROOT}/platform/scripts/alert-case}"
+if [ -x "$ALERT_CASE" ]; then
+  for f in "${FAILURES[@]}"; do
+    "$ALERT_CASE" open deep-health "${f%% — *}" "$ALERT_ROLE" "$f" >/dev/null || echo "deep-health: could not record the case for: ${f%% — *}" >&2
+  done
+  while IFS= read -r gone; do
+    [ -n "$gone" ] || continue
+    printf '%s\n' "$CURRENT" | grep -qxF -- "$gone" || "$ALERT_CASE" close deep-health "$gone" >/dev/null || echo "deep-health: could not close the case for: $gone" >&2
+  done <<< "$LAST"
+fi
+
 if [ "$CURRENT" = "$LAST" ]; then
   # #3753: "deduped", not "suppressed" — the alert-suppress.bats contract asserts
 # "suppressed" appears ONLY for the /tmp suppress-file path; this dedup line
 # sharing the word made those tests fail on any box with a standing failure set.
 echo "deep-health: failure set unchanged — alert deduped (see $STATE_FILE)"
-else
+elif [ ! -x "$ALERT_CASE" ]; then
   "$OPS_NUDGE" "$ALERT_ROLE" "$MSG" 2>/dev/null || true
 fi
 "$CHORUS_LOG" ops.health.deep_check_failed system failures="${#FAILURES[@]}" 2>/dev/null || true

@@ -164,3 +164,48 @@ chorus:MonitorShape a sh:NodeShape ;
 chorus:alerts   chorus:inLayer chorus:layer-capability ; chorus:dependsOn chorus:metrics , chorus:monitors ;
                 chorus:hosts chorus:service-observability .
 chorus:monitors chorus:inLayer chorus:layer-capability .
+
+# ---------------------------------------------------------------------------
+# #4957 — an AlertCase: one OPEN PROBLEM, not the rule that found it.
+#
+# Jeff 2026-11-11 09:50: "I feel like we're hiding the issue… if the alerts come
+# to a queue and you check alerts every five minutes via dagu… I could accept
+# that." 116 alerts were typed into role panes 04:50–09:50. An Alert (above) is
+# the rule; an AlertCase is what the rule found, one row per (alert, subject):
+# a second firing of the same condition moves lastSeen on the same row, and the
+# row stays open until its source measures the cause fixed (stillTrue false).
+# Roles read open cases on a schedule; nothing is typed into a pane.
+# ---------------------------------------------------------------------------
+
+chorus:AlertCase a owl:Class ;
+    rdfs:label "Alert case" ;
+    rdfs:comment "One open problem an alert found: what, since when, whose, and whether it is still true. One row per alert and subject; it closes only when its source measures the cause fixed, never by mute or timeout." .
+
+chorus:alerts chorus:definesVocabulary chorus:AlertCase .
+
+chorus:caseOf a owl:ObjectProperty ; rdfs:label "case of" ; rdfs:domain chorus:AlertCase ; rdfs:range chorus:Alert ;
+    rdfs:comment "The alert rule that found this case." .
+chorus:caseSubject a owl:DatatypeProperty ; rdfs:label "case subject" ; rdfs:domain chorus:AlertCase ; rdfs:range xsd:string ;
+    rdfs:comment "What the case is about, in the source's own key (a disk, a suite, a service): with caseOf it names one case." .
+chorus:firstSeen a owl:DatatypeProperty ; rdfs:label "first seen" ; rdfs:domain chorus:AlertCase ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the source first found this case open." .
+chorus:lastSeen a owl:DatatypeProperty ; rdfs:label "last seen" ; rdfs:domain chorus:AlertCase ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the source last measured this case still true. A second firing moves this, never makes a second row." .
+chorus:stillTrue a owl:DatatypeProperty ; rdfs:label "still true" ; rdfs:domain chorus:AlertCase ; rdfs:range xsd:boolean ;
+    rdfs:comment "Whether the source's last measure found the condition still true. Only the source sets it false." .
+chorus:caseCause a owl:DatatypeProperty ; rdfs:label "cause" ; rdfs:domain chorus:AlertCase ; rdfs:range xsd:string ;
+    rdfs:comment "What is wrong, in one line, as the source measured it (Bedroom external disk at 98%)." .
+chorus:caseClosedAt a owl:DatatypeProperty ; rdfs:label "closed at" ; rdfs:domain chorus:AlertCase ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When the source measured the cause fixed and closed the case. Absent while open." .
+
+chorus:AlertCaseShape a sh:NodeShape ;
+    sh:targetClass chorus:AlertCase ; sh:node chorus:CoreShape ;
+    chorus:instancesGraph "urn:chorus:domains:alerts" ;
+    sh:property [ sh:path chorus:caseOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Alert ] ;
+    sh:property [ sh:path chorus:caseSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:firstSeen ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+    sh:property [ sh:path chorus:lastSeen ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+    sh:property [ sh:path chorus:stillTrue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path chorus:caseCause ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:caseClosedAt ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .

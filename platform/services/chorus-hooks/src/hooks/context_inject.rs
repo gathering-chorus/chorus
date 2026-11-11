@@ -1156,6 +1156,11 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             )
         }
     };
+    // #4957 — the role's open alert cases, from the 5-minute digest: read on the turn,
+    // never typed into the pane
+    let manifest_block = crate::hooks::alert_digest::augment_envelope_with_alert_digest(
+        &role_name, &manifest_block, &crate::hooks::alert_digest::digest_dir(), std::time::SystemTime::now(),
+    );
 
     // #3854 — the cap belongs at WRITE time, not only at stop time: the Stop
     // gate cannot unprint a streamed draft (Jeff watched a bounced 158-word
