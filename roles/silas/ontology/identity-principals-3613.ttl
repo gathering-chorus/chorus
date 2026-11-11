@@ -177,6 +177,19 @@ chorus:principal-alerts a chorus:Principal ;
     chorus:hasScope "urn:chorus:domains:alerts"^^<http://www.w3.org/2001/XMLSchema#anyURI> ;
     chorus:canSignIn "false" .
 
+# #4710 — the lander: the one service that merges a card as the GitHub App on Jeff's Face ID go.
+# It runs as its own Mac account (chorus-lander) and writes Jeff's ApprovalDecision rows as itself,
+# his passkey signature inside each row being the authority the land re-verifies. Its credential
+# is seeded into the lander's home by Silas's seed (cred.json 0600, hostAccount chorus-lander); its
+# VALUE is never modeled. Write reaches only the decisions graph (permissions-4183.ttl).
+chorus:principal-lander a chorus:Principal ;
+    rdfs:label "lander (merges on Jeff's signed go; writes his decision rows)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/lander/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "chorus-lander" ;
+    chorus:hasScope "urn:chorus:domains:decisions"^^<http://www.w3.org/2001/XMLSchema#anyURI> ;
+    chorus:canSignIn "false" .
+
 # #3653 — Jeff joins his own security model. The human is a Principal like every
 # other actor (ADR-052: one identity mechanism for human, agent, service). Root
 # authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is

@@ -361,6 +361,14 @@ chorus:permission-alerts-alerts a chorus:Permission ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+# #4710 — the lander writes Jeff's signed ApprovalDecisions, and only in the decisions graph
+chorus:permission-lander-decisions a chorus:Permission ;
+    rdfs:label "lander may write urn:chorus:domains:decisions" ;
+    chorus:agent chorus:principal-lander ;
+    chorus:accessTo "urn:chorus:domains:decisions"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
 chorus:permission-crawler-code a chorus:Permission ;
     rdfs:label "crawler may write urn:chorus:domains:code" ;
     chorus:agent chorus:principal-crawler ;

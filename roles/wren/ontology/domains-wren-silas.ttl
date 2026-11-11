@@ -386,7 +386,7 @@ chorus:ApprovalDecisionShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:domains:decisions" ;
     sh:property
       [ sh:path rdfs:label ; sh:minCount 1 ] ,
-      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ; sh:in ( chorus:principal-jeff ) ] ,
+      [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ; sh:in ( chorus:principal-jeff chorus:principal-lander ) ] , # #4710: the lander writes them
       [ sh:path chorus:decides ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Approval ] ,
       [ sh:path chorus:approvalVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "approve" "decline" ) ] ,
       [ sh:path chorus:decidedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ,
@@ -397,8 +397,11 @@ chorus:ApprovalDecisionShape a sh:NodeShape ;
 # Routes: GET /owl/v1/decisions/approvals  ·  GET /owl/v1/decisions/approvaldecisions
 # Pending list = approvals minus those a decision `decides` (computed by chorus-go / the list endpoint).
 # Writers: Approval — the asking role, as itself (graph-sync's per-role mint). ApprovalDecision —
-#   chorus-go only, as principal-jeff, only after verify_assertion passes. Neither is ever PATCHed.
-# Negative proofs: an ApprovalDecision written by any principal but jeff is refused · a second
+#   the lander only (chorus-go as chorus-lander, #4710), as principal-lander, only after
+#   verify_assertion passes; rows from before #4710 are principal-jeff's. Jeff's passkey signature
+#   in passkeyProof is the authority: the land re-verifies it whoever wrote the row. Neither is
+#   ever PATCHed.
+# Negative proofs: an ApprovalDecision written by any principal but the lander or jeff is refused · a second
 #   decision for one Approval is refused · a PATCH to an Approval or ApprovalDecision is refused ·
 #   a decision whose actionSha ≠ sha(approvalAction) is refused · a disallowed flag in the argv is
 #   refused at post and at replay · a second pending Approval sends no second ping.

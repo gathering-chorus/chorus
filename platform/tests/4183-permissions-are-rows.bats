@@ -56,7 +56,9 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # 48 since #4773 (2026-11-09): permission-deployer-cicd, on Jeff's go.
   # 49 since #4957 (2026-11-11): permission-alerts-alerts, on Jeff's 14:46 "ok" to the
   # alerts service principal. The door refuses AlertCase writes without it (401/403).
-  test "$n" -eq 49
+  # 50 since #4710 (2026-11-11): permission-lander-decisions — the lander writes Jeff's signed
+  # ApprovalDecisions as principal-lander (lands only with Jeff's go on #4710).
+  test "$n" -eq 50
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
