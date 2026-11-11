@@ -105,6 +105,10 @@ pub use types::is_fix_card;
 pub mod canonical_write_guard {
     pub use crate::hooks::canonical_write_guard::check;
 }
+// #4957 — the alert digest block, for its tests
+pub mod alert_digest {
+    pub use crate::hooks::alert_digest::{augment_envelope_with_alert_digest, digest_dir};
+}
 // #2177 — accept_gate test surface (demo evidence reads card comment, not brief file)
 pub mod accept_gate {
     pub use crate::hooks::accept_gate::demo_evidence_exists;
