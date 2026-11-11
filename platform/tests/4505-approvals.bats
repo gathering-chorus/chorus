@@ -27,8 +27,8 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   [ "$(q 'ASK { chorus:ApprovalShape sh:targetClass chorus:Approval ; chorus:instancesGraph "urn:chorus:domains:decisions" }')" = yes ] || return 1
 }
 
-@test "R1-GUARDS model: a decision is its own jeff-owned row; the Approval carries no state" {
-  grep -q 'sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ; sh:in ( chorus:principal-jeff )' "$TTL" || return 1
+@test "R1-GUARDS model: a decision is its own row, the lander's (or jeff's before #4710); the Approval carries no state" {
+  grep -q 'sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ; sh:in ( chorus:principal-jeff chorus:principal-lander )' "$TTL" || return 1
   grep -q 'sh:path chorus:decides ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Approval' "$TTL" || return 1
   [ "$(q 'ASK { chorus:approvalState ?p ?o }')" = no ] || return 1
 }
@@ -93,7 +93,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   cd "$ROOT/platform/services/chorus-go" || return 1
   run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 9 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass
+  [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass, +1 lander-owned row (#4710)
   [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }
 }
 
