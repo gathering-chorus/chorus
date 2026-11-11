@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: smoke — live: after the land, a real demo runs its three reviews together
 # @domain: pipelines
+# @needs: machine — prod after the land and the 3 StepSkill rows
 # @card: #4953 · owner: wren
 # What Jeff sees: the demo's review phase lasts as long as its slowest review, not the sum.
 # Read from prod dagu's API: the newest demo run whose reviews all finished. Red before the land
