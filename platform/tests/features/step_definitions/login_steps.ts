@@ -34,11 +34,12 @@ After({ tags: '@login' }, function () {
 // fails the step with the world's output attached.
 function sh(script: string, stdin = ''): string {
   const pre = [
-    'set -eu', `source "${HARNESS}"`, 'login_harness_env',
+    // #4933 — SCRIPT before login_harness_env: the stub pane runs the role's establish
+    // with the binary it names (LOGIN_HARNESS_PRINCIPAL), never the installed /h/ path
+    'set -eu', `SCRIPT="${BIN}"`, `source "${HARNESS}"`, 'login_harness_env',
     '[ -f "$T/env.extra" ] && source "$T/env.extra"',
     'run() { set +e; "$@" > "$T/out" 2>&1; echo $? > "$T/status"; set -e; }',
     'out_has() { grep -qF -- "$1" "$T/out"; }',
-    `SCRIPT="${BIN}"`,
   ].join('\n');
   try {
     return execFileSync('bash', ['-c', `${pre}\n${script}`], {
@@ -60,7 +61,9 @@ const waiting = (_card: number): 'pending' => 'pending';
 
 Given(/^a fixture world with the principals jeff \(person\), wren, silas and kade \(agents\), and bridge \(service\)$/, STEP, function () {
   if (!fs.existsSync(BIN)) throw new Error(`chorus-principal is not built at ${BIN}`);
-  sh('login_harness_stubs');
+  // #4933 — each role's own wrapper establishes its session, as the account running the
+  // test (the bats suites' setup does the same); without it no login writes a row
+  sh('login_harness_stubs; for r in silas kade wren; do est "$r"; done');
 });
 
 Given('{word} is logged out', STEP, function (role: string) {
@@ -72,13 +75,7 @@ Given('{word} is logged in', STEP, function (role: string) {
 });
 
 Given("wren's login token has been renewed", STEP, function () {
-  sh('later=$(( $(date +%s) + 3000 )); mk_token wren "$later"; rm -f "$T/identity/wren/seen.at"\n' +
-     'python3 -c \'import sys,time;print(time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(int(sys.argv[1]))))\' "$later" > "$T/want-expiry"');
-});
-
-Given("wren's token names kade", STEP, function () {
-  sh('python3 -c \'import json,sys;print(json.load(open(sys.argv[1]))["expiresAt"])\' "$T/identity/wren/session.row.json" > "$T/want-expiry"\n' +
-     'mk_token kade $(( $(date +%s) + 3000 )); cp "$T/token-kade.fixture" "$T/token-wren.fixture"; rm -f "$T/identity/wren/seen.at"');
+  sh('mk_token wren $(( $(date +%s) + 3000 )); rm -f "$T/identity/wren/seen.at"');
 });
 
 Given("wren's presence was checked more than ten minutes ago and the focus has not changed", STEP, function () {
@@ -134,7 +131,14 @@ When('Jeff runs {string}', STEP, function (cmd: string) {
 });
 
 When('wren takes a turn', STEP, function () {
-  // a harness notice: a turn that is neither Jeff speaking nor a delivery
+  // a harness notice: a turn that is neither Jeff speaking nor a delivery.
+  // #4950 — since #4944 a turn PATCHes only the fields that moved, and lastSeenAt moves by
+  // the second: age the stored row so the turn's write is certain, not clock luck
+  sh(`python3 - "$T/identity/wren/session.row.json" <<'PY'
+import json,sys,os
+p=sys.argv[1]
+if os.path.exists(p): d=json.load(open(p)); d["lastSeenAt"]="2026-01-01T00:00:00Z"; json.dump(d,open(p,"w"))
+PY`);
   seen('wren', { session_id: 'conv-turn', prompt: '<task-notification>x</task-notification>' });
 });
 
@@ -174,7 +178,7 @@ Then("wren's session says jeff started it", STEP, function () {
 });
 
 Then("wren's session says jeff ended it", STEP, function () {
-  sh('test "$(cat "$T"/bodies/*PUT-identity_sessions_* 2>/dev/null | grep -F \'"sessionState":"closed"\' | grep -cF \'"endedBy":"jeff"\')" -ge 1');
+  sh('test "$(cat "$T"/bodies/*PATCH-identity_sessions_* 2>/dev/null | grep -F \'"sessionState":"closed"\' | grep -cF \'"endedBy":"jeff"\')" -ge 1');
 });
 
 When("wren's session ends with \\/exit", STEP, function () {
@@ -206,7 +210,8 @@ has "$(body POST identity_presences)" '"presenceOf":"sessionrun-wren-run-'`);
 });
 
 Then('the command says wren is logged in', STEP, function () {
-  sh('out_has "login: wren"; out_has "logged in"');
+  // #4933 — the launcher's line reads "awake: <role> … logged in"
+  sh('out_has "awake: wren "; out_has "  logged in  "');
 });
 
 Then("wren's conversation is recorded against the run", STEP, function () {
@@ -220,19 +225,17 @@ Then('nobody is recorded as having spoken', STEP, function () {
 Then("wren's first line to Jeff names where wren left off, before Jeff types anything", STEP, function () { return waiting(4378); });
 
 Then("the same session row's last-seen time moves to the turn's time", STEP, function () {
-  sh('sess=$(row_name wren session); s=$(body PUT "identity_sessions_$sess"); has "$s" \'"lastSeenAt":"20\'; has "$s" "\\"name\\":\\"$sess\\""');
+  // #4944 — a PATCH of the fields that moved; the route names the row
+  sh('sess=$(row_name wren session); s=$(body PATCH "identity_sessions_$sess"); has "$s" \'"lastSeenAt":"20\'');
 });
 
 Then('no second session row is written', STEP, function () {
   sh(`test "$(bodies | grep -c '^POST-identity_sessions.json$')" -eq 1`);
 });
 
-Then("the session's expiry moves forward to the renewed token's expiry", STEP, function () {
-  sh('s=$(body PUT "identity_sessions_$(row_name wren session)"); has "$s" "\\"expiresAt\\":\\"$(cat "$T/want-expiry")\\""');
-});
-
-Then("the session's expiry does not move", STEP, function () {
-  sh('s=$(body PUT "identity_sessions_$(row_name wren session)"); test -n "$s"; has "$s" "\\"expiresAt\\":\\"$(cat "$T/want-expiry")\\""');
+Then("the turn's session write carries no expiry", STEP, function () {
+  // not vacuous: the turn did write the session (lastSeenAt), and that write moves no expiry
+  sh('s=$(body PATCH "identity_sessions_$(row_name wren session)"); has "$s" \'"lastSeenAt":"20\'; test -z "$(printf \'%s\' "$s" | grep -F expiresAt || true)"');
 });
 
 Then("the presence's checked time moves to now", STEP, function () {
@@ -241,7 +244,7 @@ test -z "$(printf '%s' "$pr" | grep -F '"checkedAt":"2026-01-01' || true)"`);
 });
 
 Then("wren's session is attended by jeff, with the time he spoke", STEP, function () {
-  sh('s=$(body PUT "identity_sessions_$(row_name wren session)"); has "$s" \'"attendedBy":"jeff"\'; has "$s" \'"lastAttendedAt":"20\'');
+  sh('s=$(body PATCH "identity_sessions_$(row_name wren session)"); has "$s" \'"attendedBy":"jeff"\'; has "$s" \'"lastAttendedAt":"20\'');
 });
 
 Then('no session is owned by jeff', STEP, function () {
@@ -299,12 +302,18 @@ Then('that pane is ended and wren starts again', STEP, function () {
   sh(`test "$(cat "$T/status")" -eq 0; out_has "runs as kade, not wren"; grep -q "kill-session -t chorus-wren" "$T/tmux.log"; grep -q "session.wrong_role wren" "$T/spine.log"`);
 });
 
+// login-journey: the hooks daemon down does not stop a start
 Then('wren starts anyway', STEP, function () {
   sh(`grep -qE '(send-keys|respawn-pane -k) -t chorus-wren' "$T/tmux.log"`);
 });
 
-Then('the command says the login is pending, and why', STEP, function () {
-  sh(`out_has "login: wren  pending"; out_has "no credential for 'wren'"`);
+Then('wren does not start', STEP, function () {
+  // the launch was tried (not vacuous), and the role never registered
+  sh(`grep -qE '(send-keys|respawn-pane -k) -t chorus-wren' "$T/tmux.log"; out_has "awake: wren  registered NO"; test -z "$(ls "$T/sessions" | grep '^wren-' || true)"`);
+});
+
+Then("wren's establish says it has no credential", STEP, function () {
+  sh(`grep -qF "no credential for 'wren'" "$T/establish.log"`);
 });
 
 Then("the spine says the session row failed, with the store's reason", STEP, function () {
@@ -330,28 +339,25 @@ Then('nothing is started', STEP, function () {
 
 Then('the run ends as logout, the presence is unreachable, and the session is closed, in that order', STEP, function () {
   sh(`test "$(cat "$T/status")" -eq 0
-has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"logout"'
-has "$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1)" '"reachability":"unreachable"'
-has "$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1)" '"sessionState":"closed"'
-test "$(bodies | grep -n PUT-identity_sessionruns | cut -d: -f1)" -lt "$(bodies | grep -n PUT-identity_sessions_ | cut -d: -f1)"`);
+has "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1)" '"endReason":"logout"'
+has "$(cat "$T"/bodies/*PATCH-identity_presences_* | tail -1)" '"reachability":"unreachable"'
+has "$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1)" '"sessionState":"closed"'
+test "$(bodies | grep -n PATCH-identity_sessionruns | cut -d: -f1)" -lt "$(bodies | grep -n PATCH-identity_sessions_ | cut -d: -f1)"`);
 });
 
 Then('the run ends with the reason exit, not logout', STEP, function () {
-  sh(`r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'`);
+  sh(`r=$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'`);
 });
 
-Then("kade's lapsed session is closed", STEP, function () {
-  sh(`out_has "1 expired session(s) closed"
-has "$(cat "$T"/bodies/*PUT-identity_sessions_session-kade-dead.json)" '"sessionState":"closed"'
-test -z "$(grep -F '"status"' "$T"/bodies/*PUT-identity_sessions_session-kade-dead.json || true)"`);
-});
-
-Then("wren's live session is left alone", STEP, function () {
-  sh('test -z "$(bodies | grep -F "PUT-identity_sessions_$(row_name wren session)" || true)"');
+Then('no session is closed', STEP, function () {
+  // not vacuous: the sweep ran and read the listing
+  sh(`out_has "0 superseded session(s) closed, 0 failed"; test -z "$(bodies | grep -E '(PUT|PATCH)-identity_sessions_' || true)"`);
 });
 
 Then('wren starts as chorus-wren', STEP, function () {
-  sh(`test "$(cat "$T/status")" -eq 0; grep -E '(send-keys|respawn-pane -k) -t chorus-wren' "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"`);
+  // #4933 — the launch runs as chorus-wren; the stub world is not that account, so its
+  // establish refuses there (4383's bats proves the start with the test's own account)
+  sh(`grep -E '(send-keys|respawn-pane -k) -t chorus-wren' "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"`);
 });
 
 Then("wren's credentials are in chorus-wren's home, readable by that account alone", STEP, function () {
@@ -366,12 +372,12 @@ When('wren exits Claude and Jeff logs wren in again', STEP, function () {
 });
 Then('wren is back in the same session with a new run', STEP, function () {
   sh(`test "$(row_name wren session)" = "$(cat "$T/old-session")"; grep -q "session.resumed wren" "$T/spine.log"
-has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"exit"'`);
+has "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1)" '"endReason":"exit"'`);
 });
 Then("the turn is refused, wren's run ends as revoked and wren's session is closed", STEP, function () {
   sh(`test "$(cat "$T/turn.status")" -eq 2; grep -q "session.revoked wren" "$T/spine.log"
-has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
-has "$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1)" '"sessionState":"closed"'`);
+has "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
+has "$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1)" '"sessionState":"closed"'`);
 });
 const SHIM = process.env.CHORUS_HOOK_SHIM_TEST_BIN || path.join(ROOT, 'platform/services/chorus-hooks/target/release/chorus-hook-shim');
 When(/^wren's pane writes a spine event for (wren|kade)$/, STEP, function (who: string) {
