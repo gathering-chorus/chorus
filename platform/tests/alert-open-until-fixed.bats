@@ -15,16 +15,24 @@ setup() {
   mkdir -p "$T/bin" "$T/digests"
   cat > "$T/bin/curl" <<EOS
 #!/bin/bash
-m=GET; body=""; url=""
-while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=\$(cat "\${2#@}"); shift ;; -H|-o|-w|--max-time) shift ;; http*) url="\$1" ;; esac; shift; done
+m=GET; body=""; url=""; auth=0
+while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=\$(cat "\${2#@}"); shift ;; -H) case "\$2" in @*) grep -q '^Authorization: Bearer .' "\${2#@}" && auth=1 ;; esac; shift ;; -o|-w|--max-time) shift ;; http*) url="\$1" ;; esac; shift; done
+export FAKE_AUTH=\$auth
 python3 - "$T/rows.json" "\$m" "\$url" "\$body" <<'PY'
-import json,sys,urllib.parse as u
+import json,sys,os,urllib.parse as u
 p,m,url,body=sys.argv[1:5]; rows=json.load(open(p))
+# #4957 — like the real door: only the routes it serves answer, and a listing is
+# pretty-printed over many lines (a first-line parse and a wrong path both went live)
+path=u.urlparse(url).path
+if not (path.startswith("/v1/alerts/cases") or path.startswith("/v1/roles/roles")):
+    print(json.dumps({"error":"not-found","detail":"no such route: "+path}, indent=1)); print(404); sys.exit()
 if m=="GET":
     q=dict(u.parse_qsl(u.urlparse(url).query))
     out=[r for r in rows if all(r.get(k)==v for k,v in q.items() if k in("caseOf","caseSubject","ownedBy"))
          and (q.get("caseClosedAt.absent")!="true" or not r.get("caseClosedAt"))]
-    print(json.dumps({"data":out})); print(200); sys.exit()
+    print(json.dumps({"data":out}, indent=1)); print(200); sys.exit()
+if m!="GET" and os.environ.get("FAKE_AUTH")!="1":
+    print(json.dumps({"error":"authn-missing"}, indent=1)); print(401); sys.exit()
 b=json.loads(body)
 if m=="POST": rows.append(b)
 else:
@@ -36,6 +44,9 @@ PY
 EOS
   chmod +x "$T/bin/curl"
   export ALERT_CURL="$T/bin/curl" ALERT_DOOR="http://door.test" ALERT_DIGEST_DIR="$T/digests"
+  # the alerts principal's token (a stub minter: asked for "alerts", it answers one)
+  printf '#!/bin/bash\n[ "$1" = alerts ] && echo tok-alerts || { echo "no credential for $1" >&2; exit 3; }\n' > "$T/token"; chmod +x "$T/token"
+  export ALERT_TOKEN_BIN="$T/token"
   CASE="$ROOT/platform/scripts/alert-case"; DIGEST="$ROOT/platform/scripts/alert-digest"
   # an open case first seen 25h ago, last seen 25h ago: nothing has re-fired since
   old=$(python3 -c 'import time;print(time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(time.time()-25*3600)))')

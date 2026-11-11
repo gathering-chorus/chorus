@@ -19,17 +19,25 @@ setup() {
   # Every write is logged as "<METHOD> <url> <body>" to writes.log.
   cat > "$T/curl" <<EOS
 #!/bin/bash
-m=GET; body=""; url=""
-while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=\$(cat "\${2#@}"); shift ;; -H|-o|-w|--max-time) shift ;; http*) url="\$1" ;; esac; shift; done
+m=GET; body=""; url=""; auth=0
+while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=\$(cat "\${2#@}"); shift ;; -H) case "\$2" in @*) grep -q '^Authorization: Bearer .' "\${2#@}" && auth=1 ;; esac; shift ;; -o|-w|--max-time) shift ;; http*) url="\$1" ;; esac; shift; done
+export FAKE_AUTH=\$auth
 [ "\$m" = GET ] || printf '%s %s %s\n' "\$m" "\$url" "\$body" >> "$T/writes.log"
 python3 - "$T/rows.json" "\$m" "\$url" "\$body" <<'PY'
-import json,sys,urllib.parse as u
+import json,sys,os,urllib.parse as u
 p,m,url,body=sys.argv[1:5]; rows=json.load(open(p))
+# #4957 — like the real door: only the routes it serves answer, and a listing is
+# pretty-printed over many lines (a first-line parse and a wrong path both went live)
+path=u.urlparse(url).path
+if not (path.startswith("/v1/alerts/cases") or path.startswith("/v1/roles/roles")):
+    print(json.dumps({"error":"not-found","detail":"no such route: "+path}, indent=1)); print(404); sys.exit()
 if m=="GET":
     q=dict(u.parse_qsl(u.urlparse(url).query))
     out=[r for r in rows if all(r.get(k)==v for k,v in q.items() if k in("caseOf","caseSubject"))
          and (q.get("caseClosedAt.absent")!="true" or not r.get("caseClosedAt"))]
-    print(json.dumps({"data":out})); print(200); sys.exit()
+    print(json.dumps({"data":out}, indent=1)); print(200); sys.exit()
+if m!="GET" and os.environ.get("FAKE_AUTH")!="1":
+    print(json.dumps({"error":"authn-missing"}, indent=1)); print(401); sys.exit()
 b=json.loads(body)
 if m=="POST": rows.append(b)
 else:
@@ -41,6 +49,9 @@ PY
 EOS
   chmod +x "$T/curl"
   export ALERT_CURL="$T/curl" ALERT_DOOR="http://door.test"
+  # the alerts principal's token (a stub minter: asked for "alerts", it answers one)
+  printf '#!/bin/bash\n[ "$1" = alerts ] && echo tok-alerts || { echo "no credential for $1" >&2; exit 3; }\n' > "$T/token"; chmod +x "$T/token"
+  export ALERT_TOKEN_BIN="$T/token"
 }
 
 rows()  { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$T/rows.json"; }
@@ -84,4 +95,30 @@ field() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))[int(sys
   run "$SCRIPT" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
   test "$status" -ne 0
   printf '%s' "$output" | grep -qF "alert-case: the door did not answer"
+}
+
+@test "NEGATIVE PROOF: with no token for the alerts principal, nothing is written and it says why" {
+  export ALERT_PRINCIPAL=nobody
+  run "$SCRIPT" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
+  test "$status" -ne 0
+  printf '%s' "$output" | grep -qF "no token for nobody"
+  test "$(rows)" -eq 0
+}
+
+@test "NEGATIVE PROOF: a minter that answers nothing is no token: it stops before the door" {
+  printf '#!/bin/bash\necho ""\n' > "$T/token"
+  run "$SCRIPT" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
+  test "$status" -ne 0
+  printf '%s' "$output" | grep -qF "no token for alerts"
+  test "$(rows)" -eq 0
+}
+
+@test "NEGATIVE PROOF: the minter's stderr never rides inside the token" {
+  printf '#!/bin/bash\necho "warning: refreshing" >&2\necho tok-alerts\n' > "$T/token"
+  printf '#!/bin/bash\nfor a in "$@"; do case "$a" in @*) cat "${a#@}" >> "%s/hdr.seen";; esac; done\nexec "%s/curl.real" "$@"\n' "$T" "$T" > "$T/curl.wrap"
+  mv "$T/curl" "$T/curl.real"; mv "$T/curl.wrap" "$T/curl"; chmod +x "$T/curl"
+  run "$SCRIPT" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
+  test "$status" -eq 0
+  test -z "$(grep -F warning "$T/hdr.seen" || true)"
+  grep -qxF 'Authorization: Bearer tok-alerts' "$T/hdr.seen"
 }

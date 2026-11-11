@@ -13,17 +13,27 @@
 # A door that does not answer is a non-zero exit with the reason, never a guess
 # (a guess would open a second row for one condition).
 #
-# Env: ALERT_DOOR (the model door, default http://localhost:3360), ALERT_CURL
-# (curl), ALERT_AUTH_HEADER (a file holding the Authorization header line; when
-# unset, writes go unauthenticated, as the door's own tests run).
+# Env: ALERT_DOOR (the model door, default http://localhost:3360), ALERT_CURL (curl),
+# ALERT_PRINCIPAL (default alerts) and ALERT_TOKEN_BIN (default chorus-identity-token).
+# Every call carries the alerts service principal's token: the door refuses any write
+# without a verified service credential (#4957 land, 11-11 14:22). No token is a
+# non-zero exit with the reason, never an unauthenticated try.
 set -uo pipefail
 
 DOOR="${ALERT_DOOR:-http://localhost:3360}"
 CURL="${ALERT_CURL:-curl}"
-ROUTE="$DOOR/v1/alerts/alertcases"
+ROUTE="$DOOR/v1/alerts/cases"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 die() { echo "alert-case: $*" >&2; exit 1; }
-auth() { [ -n "${ALERT_AUTH_HEADER:-}" ] && printf '%s\n' -H "@$ALERT_AUTH_HEADER"; }
+TOKEN_BIN="${ALERT_TOKEN_BIN:-$(dirname "$0")/chorus-identity-token}"
+HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
+# stdout is the token, stderr is the minter's own talk: never mix them, and an empty
+# token is no token (gate-code 11-11: 2>&1 would put a warning inside the bearer)
+TOKERR=$(mktemp); tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>"$TOKERR"); rc=$?
+if [ $rc -ne 0 ] || [ -z "$tok" ]; then echo "alert-case: no token for ${ALERT_PRINCIPAL:-alerts}: $(cat "$TOKERR")" >&2; rm -f "$TOKERR"; exit 1; fi
+rm -f "$TOKERR"
+printf 'Authorization: Bearer %s\n' "$tok" > "$HDR"; unset tok
+auth() { printf '%s\n' -H "@$HDR"; }
 enc()  { python3 -c 'import sys,urllib.parse as u;print(u.quote(sys.argv[1],safe=""))' "$1"; }
 
 # the open case for (alert, subject): prints its name, or nothing; exit 1 when the door did not answer
@@ -33,8 +43,8 @@ open_case() {
     || { echo "$out" >&2; return 1; }
   python3 -c '
 import json,sys
-txt=sys.stdin.read().split("\n")[0]
-try: rows=json.loads(txt)["data"]
+txt=sys.stdin.read().lstrip()
+try: rows=json.JSONDecoder().raw_decode(txt)[0]["data"]
 except Exception: sys.exit(1)
 print(rows[0]["name"] if rows else "")' <<<"$out"
 }
@@ -82,7 +92,7 @@ print(json.dumps({"name":n,"label":a+": "+s,"caseOf":a,"caseSubject":s,"ownedBy"
     out=$("$CURL" -s --max-time 10 $(auth) "$ROUTE?caseOf=$(enc "$1")&caseClosedAt.absent=true&limit=5000" 2>&1) || die "the door did not answer the case listing at $ROUTE: $out"
     python3 -c '
 import json,sys
-try: rows=json.loads(sys.stdin.read().split("\n")[0])["data"]
+try: rows=json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())[0]["data"]
 except Exception: sys.exit("alert-case: the case listing was not a listing")
 for r in rows: print(r.get("caseSubject",""))' <<<"$out" ;;
   *) die "usage: alert-case open <alert> <subject> <owner-role> <cause> | close <alert> <subject> | subjects <alert>" ;;
