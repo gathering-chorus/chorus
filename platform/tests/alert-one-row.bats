@@ -105,9 +105,20 @@ field() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))[int(sys
   test "$(rows)" -eq 0
 }
 
-@test "NEGATIVE PROOF: a write without the Authorization header is refused by the door, as the real door does" {
-  printf '#!/bin/bash\necho ""\n' > "$T/token"   # a minter that answers nothing usable
+@test "NEGATIVE PROOF: a minter that answers nothing is no token: it stops before the door" {
+  printf '#!/bin/bash\necho ""\n' > "$T/token"
   run "$SCRIPT" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
   test "$status" -ne 0
+  printf '%s' "$output" | grep -qF "no token for alerts"
   test "$(rows)" -eq 0
+}
+
+@test "NEGATIVE PROOF: the minter's stderr never rides inside the token" {
+  printf '#!/bin/bash\necho "warning: refreshing" >&2\necho tok-alerts\n' > "$T/token"
+  printf '#!/bin/bash\nfor a in "$@"; do case "$a" in @*) cat "${a#@}" >> "%s/hdr.seen";; esac; done\nexec "%s/curl.real" "$@"\n' "$T" "$T" > "$T/curl.wrap"
+  mv "$T/curl" "$T/curl.real"; mv "$T/curl.wrap" "$T/curl"; chmod +x "$T/curl"
+  run "$SCRIPT" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
+  test "$status" -eq 0
+  test -z "$(grep -F warning "$T/hdr.seen" || true)"
+  grep -qxF 'Authorization: Bearer tok-alerts' "$T/hdr.seen"
 }

@@ -19,7 +19,11 @@ CURL="${ALERT_CURL:-curl}"
 # see, not what an anonymous caller is shown; no token is a loud exit, the last digest stays
 TOKEN_BIN="${ALERT_TOKEN_BIN:-$(dirname "$0")/chorus-identity-token}"
 HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
-tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>&1) || { echo "alert-digest: no token for ${ALERT_PRINCIPAL:-alerts}; the last digest stays: $tok" >&2; exit 1; }
+# stdout is the token, stderr is the minter's own talk: never mix them, and an empty
+# token is no token (gate-code 11-11: 2>&1 would put a warning inside the bearer)
+TOKERR=$(mktemp); tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>"$TOKERR"); rc=$?
+if [ $rc -ne 0 ] || [ -z "$tok" ]; then echo "alert-digest: no token for ${ALERT_PRINCIPAL:-alerts}; the last digest stays: $(cat "$TOKERR")" >&2; rm -f "$TOKERR"; exit 1; fi
+rm -f "$TOKERR"
 printf 'Authorization: Bearer %s\n' "$tok" > "$HDR"; unset tok
 DIR="${ALERT_DIGEST_DIR:-$HOME/.chorus/alerts}"
 # no roles named: every agent role the roles door lists (a list typed here would drift)

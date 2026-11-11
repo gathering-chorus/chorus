@@ -123,3 +123,13 @@ EOS
   # a scheduled run has no card: its exit wakes no one (run-finished refuses an empty card)
   test -z "$(grep -F run-finished "$Y" || true)"
 }
+
+@test "NEGATIVE PROOF: with no token for the alerts principal, no digest is written and it says why" {
+  "$CASE" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
+  "$DIGEST" silas
+  printf '#!/bin/bash\necho "no credential" >&2; exit 3\n' > "$T/token"
+  run "$DIGEST" silas
+  test "$status" -ne 0
+  printf '%s' "$output" | grep -qF "no token for alerts; the last digest stays"
+  grep -qF "bedroom-disk / bedroom-external" "$T/digests/silas.md"
+}

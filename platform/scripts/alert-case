@@ -27,7 +27,11 @@ now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 die() { echo "alert-case: $*" >&2; exit 1; }
 TOKEN_BIN="${ALERT_TOKEN_BIN:-$(dirname "$0")/chorus-identity-token}"
 HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
-tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>&1) || { echo "alert-case: no token for ${ALERT_PRINCIPAL:-alerts}: $tok" >&2; exit 1; }
+# stdout is the token, stderr is the minter's own talk: never mix them, and an empty
+# token is no token (gate-code 11-11: 2>&1 would put a warning inside the bearer)
+TOKERR=$(mktemp); tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>"$TOKERR"); rc=$?
+if [ $rc -ne 0 ] || [ -z "$tok" ]; then echo "alert-case: no token for ${ALERT_PRINCIPAL:-alerts}: $(cat "$TOKERR")" >&2; rm -f "$TOKERR"; exit 1; fi
+rm -f "$TOKERR"
 printf 'Authorization: Bearer %s\n' "$tok" > "$HDR"; unset tok
 auth() { printf '%s\n' -H "@$HDR"; }
 enc()  { python3 -c 'import sys,urllib.parse as u;print(u.quote(sys.argv[1],safe=""))' "$1"; }
