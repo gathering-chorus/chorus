@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# alert-case — #4957. An alert is one AlertCase row per (alert, subject), never a
+# pane interrupt. Jeff 2026-11-11 09:50: "if the alerts come to a queue and you
+# check alerts every five minutes via dagu… I could accept that."
+#
+#   alert-case open  <alert> <subject> <owner-role> <cause>
+#       the first firing POSTs the case (firstSeen = lastSeen = now, stillTrue);
+#       a firing of an OPEN case PATCHes lastSeen, stillTrue and cause on that
+#       same row, never a second row
+#   alert-case close <alert> <subject>
+#       the source measured the cause fixed: stillTrue false, caseClosedAt now
+#
+# A door that does not answer is a non-zero exit with the reason, never a guess
+# (a guess would open a second row for one condition).
+#
+# Env: ALERT_DOOR (the model door, default http://localhost:3360), ALERT_CURL
+# (curl), ALERT_AUTH_HEADER (a file holding the Authorization header line; when
+# unset, writes go unauthenticated, as the door's own tests run).
+set -uo pipefail
+
+DOOR="${ALERT_DOOR:-http://localhost:3360}"
+CURL="${ALERT_CURL:-curl}"
+ROUTE="$DOOR/v1/alerts/alertcases"
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+die() { echo "alert-case: $*" >&2; exit 1; }
+auth() { [ -n "${ALERT_AUTH_HEADER:-}" ] && printf '%s\n' -H "@$ALERT_AUTH_HEADER"; }
+enc()  { python3 -c 'import sys,urllib.parse as u;print(u.quote(sys.argv[1],safe=""))' "$1"; }
+
+# the open case for (alert, subject): prints its name, or nothing; exit 1 when the door did not answer
+open_case() {
+  local out
+  out=$("$CURL" -s --max-time 10 $(auth) "$ROUTE?caseOf=$(enc "$1")&caseSubject=$(enc "$2")&caseClosedAt.absent=true&limit=10" 2>&1) \
+    || { echo "$out" >&2; return 1; }
+  python3 -c '
+import json,sys
+txt=sys.stdin.read().split("\n")[0]
+try: rows=json.loads(txt)["data"]
+except Exception: sys.exit(1)
+print(rows[0]["name"] if rows else "")' <<<"$out"
+}
+
+# write <METHOD> <url> <json>
+write() {
+  local f out
+  f=$(mktemp); printf '%s' "$3" > "$f"
+  out=$("$CURL" -s --max-time 10 -X "$1" $(auth) -H "Content-Type: application/json" --data-binary "@$f" -w '\n%{http_code}' "$2" 2>&1)
+  local rc=$?; rm -f "$f"
+  [ $rc -eq 0 ] || die "the door did not answer the $1: $out"
+  case "$(printf '%s' "$out" | tail -1)" in 2*) ;; *) die "the door refused the $1: $out" ;; esac
+}
+
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  open)
+    [ $# -eq 4 ] || die "usage: alert-case open <alert> <subject> <owner-role> <cause>"
+    alert="$1"; subject="$2"; owner="$3"; cause="$4"; t=$(now)
+    name=$(open_case "$alert" "$subject") || die "the door did not answer the case lookup at $ROUTE"
+    if [ -n "$name" ]; then
+      write PATCH "$ROUTE/$name" "$(python3 -c 'import json,sys;print(json.dumps({"lastSeen":sys.argv[1],"stillTrue":True,"caseCause":sys.argv[2]}))' "$t" "$cause")"
+      echo "alert-case: $alert/$subject still open ($name), lastSeen $t"
+    else
+      name="$alert-$(printf '%s' "$subject" | tr -c 'A-Za-z0-9-' '-')-$(date -u +%Y%m%d%H%M%S)"
+      write POST "$ROUTE" "$(python3 -c '
+import json,sys
+n,a,s,o,c,t=sys.argv[1:7]
+print(json.dumps({"name":n,"label":a+": "+s,"caseOf":a,"caseSubject":s,"ownedBy":"principal-"+o,
+  "firstSeen":t,"lastSeen":t,"stillTrue":True,"caseCause":c}))' "$name" "$alert" "$subject" "$owner" "$cause" "$t")"
+      echo "alert-case: $alert/$subject opened ($name)"
+    fi ;;
+  close)
+    [ $# -eq 2 ] || die "usage: alert-case close <alert> <subject>"
+    name=$(open_case "$1" "$2") || die "the door did not answer the case lookup at $ROUTE"
+    [ -n "$name" ] || { echo "alert-case: $1/$2 has no open case"; exit 0; }
+    t=$(now)
+    write PATCH "$ROUTE/$name" "$(python3 -c 'import json,sys;print(json.dumps({"stillTrue":False,"caseClosedAt":sys.argv[1],"lastSeen":sys.argv[1]}))' "$t")"
+    echo "alert-case: $1/$2 closed ($name) — the source measured it fixed" ;;
+  *) die "usage: alert-case open <alert> <subject> <owner-role> <cause> | close <alert> <subject>" ;;
+esac
