@@ -20,11 +20,16 @@ while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=
 python3 - "$T/rows.json" "\$m" "\$url" "\$body" <<'PY'
 import json,sys,urllib.parse as u
 p,m,url,body=sys.argv[1:5]; rows=json.load(open(p))
+# #4957 — like the real door: only the routes it serves answer, and a listing is
+# pretty-printed over many lines (a first-line parse and a wrong path both went live)
+path=u.urlparse(url).path
+if not (path.startswith("/v1/alerts/cases") or path.startswith("/v1/roles/roles")):
+    print(json.dumps({"error":"not-found","detail":"no such route: "+path}, indent=1)); print(404); sys.exit()
 if m=="GET":
     q=dict(u.parse_qsl(u.urlparse(url).query))
     out=[r for r in rows if all(r.get(k)==v for k,v in q.items() if k in("caseOf","caseSubject","ownedBy"))
          and (q.get("caseClosedAt.absent")!="true" or not r.get("caseClosedAt"))]
-    print(json.dumps({"data":out})); print(200); sys.exit()
+    print(json.dumps({"data":out}, indent=1)); print(200); sys.exit()
 b=json.loads(body)
 if m=="POST": rows.append(b)
 else:

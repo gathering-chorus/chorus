@@ -20,7 +20,7 @@ DIR="${ALERT_DIGEST_DIR:-$HOME/.chorus/alerts}"
 if [ $# -eq 0 ]; then
   roles=$("$CURL" -s --max-time 10 "$DOOR/v1/roles/roles?limit=200" 2>/dev/null | python3 -c '
 import json,sys
-try: print(" ".join(r["name"] for r in json.loads(sys.stdin.read().split("\n")[0])["data"] if r.get("roleKind")=="agent"))
+try: print(" ".join(r["name"] for r in json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())[0]["data"] if r.get("roleKind")=="agent"))
 except Exception: pass') || true
   [ -n "$roles" ] || { echo "alert-digest: no roles named and the roles door listed none; no digest written" >&2; exit 1; }
   set -- $roles
@@ -29,14 +29,14 @@ mkdir -p "$DIR"
 
 rc=0
 for role in "$@"; do
-  if ! out=$("$CURL" -s --max-time 10 "$DOOR/v1/alerts/alertcases?ownedBy=principal-$role&caseClosedAt.absent=true&limit=500" 2>&1); then
+  if ! out=$("$CURL" -s --max-time 10 "$DOOR/v1/alerts/cases?ownedBy=principal-$role&caseClosedAt.absent=true&limit=500" 2>&1); then
     echo "alert-digest: the door did not answer for $role; the last digest stays: $out" >&2; rc=1; continue
   fi
   tmp="$DIR/.$role.md.tmp"
   if ! printf '%s' "$out" | python3 -c '
 import json,sys
 role,at=sys.argv[1],sys.argv[2]
-try: rows=json.loads(sys.stdin.read().split("\n")[0])["data"]
+try: rows=json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())[0]["data"]
 except Exception: sys.exit(1)
 rows=[r for r in rows if r.get("ownedBy")=="principal-"+role and not r.get("caseClosedAt")]
 rows.sort(key=lambda r: r.get("firstSeen",""))

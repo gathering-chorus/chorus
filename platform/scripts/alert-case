@@ -20,7 +20,7 @@ set -uo pipefail
 
 DOOR="${ALERT_DOOR:-http://localhost:3360}"
 CURL="${ALERT_CURL:-curl}"
-ROUTE="$DOOR/v1/alerts/alertcases"
+ROUTE="$DOOR/v1/alerts/cases"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 die() { echo "alert-case: $*" >&2; exit 1; }
 auth() { [ -n "${ALERT_AUTH_HEADER:-}" ] && printf '%s\n' -H "@$ALERT_AUTH_HEADER"; }
@@ -33,8 +33,8 @@ open_case() {
     || { echo "$out" >&2; return 1; }
   python3 -c '
 import json,sys
-txt=sys.stdin.read().split("\n")[0]
-try: rows=json.loads(txt)["data"]
+txt=sys.stdin.read().lstrip()
+try: rows=json.JSONDecoder().raw_decode(txt)[0]["data"]
 except Exception: sys.exit(1)
 print(rows[0]["name"] if rows else "")' <<<"$out"
 }
@@ -82,7 +82,7 @@ print(json.dumps({"name":n,"label":a+": "+s,"caseOf":a,"caseSubject":s,"ownedBy"
     out=$("$CURL" -s --max-time 10 $(auth) "$ROUTE?caseOf=$(enc "$1")&caseClosedAt.absent=true&limit=5000" 2>&1) || die "the door did not answer the case listing at $ROUTE: $out"
     python3 -c '
 import json,sys
-try: rows=json.loads(sys.stdin.read().split("\n")[0])["data"]
+try: rows=json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())[0]["data"]
 except Exception: sys.exit("alert-case: the case listing was not a listing")
 for r in rows: print(r.get("caseSubject",""))' <<<"$out" ;;
   *) die "usage: alert-case open <alert> <subject> <owner-role> <cause> | close <alert> <subject> | subjects <alert>" ;;

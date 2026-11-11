@@ -19,8 +19,8 @@ setup() {
 }
 
 @test "the AlertCase route answers with a listing (the queue exists)" {
-  run curl -sf --max-time 10 "$DOOR/v1/alerts/alertcases?limit=5"
-  [ "$status" -eq 0 ] || { echo "the alertcases route did not answer"; false; }
+  run curl -sf --max-time 10 "$DOOR/v1/alerts/cases?limit=5"
+  [ "$status" -eq 0 ] || { echo "the cases route did not answer"; false; }
   printf '%s' "$output" | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin)["data"], list)'
 }
 
