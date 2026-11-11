@@ -397,6 +397,37 @@ pub fn changed_fields(before: &Value, after: &Value) -> Option<(String, Value)> 
 /// by an agent role with no live process in the registry, started more than `grace_secs`
 /// ago (a run is written before its registry file exists; Silas, pair 4948). A crash
 /// ends the RUN, never the session. An unreadable listing is an Err, never "no runs".
+/// #4950 — the agent pane sessions a newer login superseded: for each agent role with
+/// more than one open pane session, every one but the newest by issuedAt (required, one
+/// per row; never lastSeenAt, which a seen-write keeps moving), except one an open run
+/// still points at (`runOf`, minted `session-<name>` or bare). Returns the rows, for
+/// session_close. A listing that cannot be read is an Err, never "nothing superseded".
+pub fn superseded_pane_sessions(sessions_listing: &str, runs_listing: &str, agent_roles: &[String]) -> Result<Vec<Value>, String> {
+    let rows = |body: &str, what: &str| -> Result<Vec<Value>, String> {
+        let v: Value = serde_json::from_str(body).map_err(|_| format!("the {what} listing is not JSON"))?;
+        v.get("data").and_then(|d| d.as_array()).cloned().ok_or_else(|| format!("the {what} listing has no data list"))
+    };
+    let sessions = rows(sessions_listing, "sessions")?;
+    let runs = rows(runs_listing, "runs")?;
+    let s = |r: &Value, k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let held: Vec<String> = runs.iter()
+        .filter(|r| s(r, "runEndedAt").is_empty())
+        .map(|r| { let of = s(r, "runOf"); of.strip_prefix("session-").map(str::to_string).unwrap_or(of) })
+        .collect();
+    let mut out = Vec::new();
+    for role in agent_roles {
+        let mut mine: Vec<&Value> = sessions.iter().filter(|r| {
+            s(r, "ownedBy") == format!("principal-{role}") && s(r, "channel") == "pane"
+                && s(r, "sessionState") != "closed" && !s(r, "name").is_empty() && !s(r, "issuedAt").is_empty()
+        }).collect();
+        if mine.len() < 2 { continue; }
+        mine.sort_by_key(|r| s(r, "issuedAt"));
+        mine.pop(); // the newest login's session stays
+        out.extend(mine.into_iter().filter(|r| !held.contains(&s(r, "name"))).cloned());
+    }
+    Ok(out)
+}
+
 pub fn crashed_runs(runs_listing: &str, agent_roles: &[String], live_roles: &[String], now_secs: u64, grace_secs: u64) -> Result<Vec<(String, String)>, String> {
     let v: Value = serde_json::from_str(runs_listing).map_err(|_| "the runs listing is not JSON".to_string())?;
     let rows = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| "the runs listing has no data list".to_string())?;

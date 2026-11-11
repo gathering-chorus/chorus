@@ -73,7 +73,7 @@ echo "token \$*" >> "$T/token.log"
 [ -f "$T/token.fixture" ] && { cat "$T/token.fixture"; exit 0; }   # one token for every role, when a case sets it
 cat "$T/token-\$1.fixture"
 EOS
-  # stub curl (#4328): every POST/PUT body is kept as bodies/<n>-<METHOD>-<route>.json;
+  # stub curl (#4328): every POST/PUT/PATCH body is kept (PATCH since #4944, #4950) as bodies/<n>-<METHOD>-<route>.json;
   # a POST answers {"data":{"name":"<route-kind>-<name sent>"}} the way the API stores it
   mkdir -p "$T/bodies"
   cat > "$T/bin/curl" <<EOS
@@ -84,7 +84,7 @@ case "\${@: -1}" in */v1/roles/roles\?*) if [ -f "$T/roles-door-down" ]; then pr
 case "\${@: -1}" in */v1/identity/principals\?*) acct=jeff-fixture-account; [ -f "$T/jeff-at-terminal" ] && acct=\$USER; printf '{"data":[{"name":"jeff","principalKind":"person","hostAccount":"%s"},{"name":"wren","principalKind":"agent","hostAccount":"%s"}]}\n' "\$acct" "\$USER"; exit 0 ;; esac   # #4412: who is at this terminal
 case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade|borg-queen|abby-normal) printf '{"data":{"principalKind":"agent","hostAccount":"chorus-%s"}}\n200\n' "\$pn" ;; jeff) printf '{"data":{"principalKind":"person","hostAccount":"jeffbridwell"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
 # #4933 — a listing of runs or presences answers with the rows written so far (newest state of each)
-case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/sessionruns?"*|*"/v1/identity/presences?"*) case "\${@: -1}" in *presences*) [ -f "$T/presence-door-down" ] && exit 22 ;; esac; r="\${@: -1}"; r="\${r%%\?*}"; r="\${r##*/v1/}"; r="\${r//\//_}"; python3 -c '
+case "\$* \${@: -1}" in *" PUT "*|*" POST "*|*" PATCH "*) ;; *"/v1/identity/sessionruns?"*|*"/v1/identity/presences?"*) case "\${@: -1}" in *presences*) [ -f "$T/presence-door-down" ] && exit 22 ;; esac; r="\${@: -1}"; r="\${r%%\?*}"; r="\${r##*/v1/}"; r="\${r//\//_}"; python3 -c '
 import json,sys,glob,os
 rows={}
 for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-"+sys.argv[2]+"*.json"))):
@@ -96,8 +96,8 @@ for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-"+sys.argv[2]+"*.
     stored=n if n.startswith(kind+"-") else kind+"-"+n   # the door hands rows back under the name it stored (POST answers "<kind>-<name>")
     b=dict(b, name=stored); rows[stored]=b
 print(json.dumps({"data":list(rows.values())}))' "$T" "\$r"; exit 0 ;; esac
-case "\$* \${@: -1}" in *" PUT "*|*" POST "*) ;; *"/v1/identity/sessionruns/"*) rn="\${@: -1}"; rn="\${rn##*/}"; hit=\$(grep -l "\"name\": *\"\$rn\"" "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | tail -1); if [ -n "\$hit" ]; then printf '{"data":%s}\n200\n' "\$(cat "\$hit")"; else printf '{"data":{}}\n404\n'; fi; exit 0 ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
-m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
+case "\$* \${@: -1}" in *" PUT "*|*" POST "*|*" PATCH "*) ;; *"/v1/identity/sessionruns/"*) rn="\${@: -1}"; rn="\${rn##*/}"; hit=\$(grep -l "\"name\": *\"\$rn\"" "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | tail -1); if [ -n "\$hit" ]; then printf '{"data":%s}\n200\n' "\$(cat "\$hit")"; else printf '{"data":{}}\n404\n'; fi; exit 0 ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
+m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT|PATCH) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
@@ -105,6 +105,9 @@ if [ -n "\$m" ]; then
   case "\$b" in *session.body) cp "\$b" "$T/curl.body" ;; esac   # the last Session body, by its old name
   [ "\$m" = POST ] && { kind=\$(echo "\$url" | sed -E 's#.*/##; s#s\$##'); name=\$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "\$b"); printf '{"data":{"name":"%s-%s"}}\n' "\$kind" "\$name"; }
   cat "$T/curl.reply" 2>/dev/null   # #4367: a refusal's body, when a case sets one
+  # #4950 (Wren) — sessions are written by PATCH since #4944: a whole-row PUT of a Session
+  # is refused here as the door would, so a PUT regression goes red instead of passing
+  case "\$m \$route" in "PUT identity_sessions_"*) echo 405; exit 0 ;; esac
   # #4933 — a status for one route only (curl.status.<route>, e.g. identity_sessions), else for all
   cat "$T/curl.status.\$route" 2>/dev/null || cat "$T/curl.status" 2>/dev/null || echo 201
 else

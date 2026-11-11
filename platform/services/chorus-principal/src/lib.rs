@@ -2097,7 +2097,7 @@ fn sweep(ctx: &Ctx) -> i32 {
         Err(why) => { failed += 1; eprintln!("  keeping and ending nothing this pass: {}", why); None }
     };
     let kept = live.as_ref().map_or(0, |l| l.len());
-    let mut ended = 0;
+    let (mut ended, mut superseded) = (0, 0);
     if let Some(live) = &live {
         // #4889 — an idle role is never woken by a nudge to a dead pane: keep its address current
         for role in live { refresh_pane(ctx, role); }
@@ -2114,9 +2114,22 @@ fn sweep(ctx: &Ctx) -> i32 {
             },
             Err(why) => { failed += 1; eprintln!("  ending nothing this pass: {}", why) }
         }
+        // #4950 — a role has one session, login to logout: close its older open pane
+        // sessions a newer login superseded (newest by issuedAt; a run-held one stays)
+        let sessions = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&channel=pane&limit=5000", ctx.api)]).unwrap_or_default();
+        match rows::superseded_pane_sessions(&sessions, &runs, &roles) {
+            Ok(old) => for row in old {
+                let Some((role, name, body)) = rows::session_close(&row, &iso_utc(now_ms() as u64 / 1000), Some("superseded")) else { continue };
+                if patch_row(ctx, &role, "identity/sessions", "session", &name, &body) {
+                    superseded += 1;
+                    ctx.spine(&["session.superseded", &role, &format!("closed={}", name), "by=sweep"]);
+                } else { failed += 1; eprintln!("  {} not closed (the door refused the PATCH; see session.row.failed)", name) }
+            },
+            Err(why) => { failed += 1; eprintln!("  closing no superseded session this pass: {}", why) }
+        }
     }
-    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("ended={}", ended), &format!("failed={}", failed)]);
-    println!("sweep: {} live session(s) kept open, {} crashed run(s) ended, {} failed", kept, ended, failed);
+    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("ended={}", ended), &format!("superseded={}", superseded), &format!("failed={}", failed)]);
+    println!("sweep: {} live session(s) kept open, {} crashed run(s) ended, {} superseded session(s) closed, {} failed", kept, ended, superseded, failed);
 
     // #4924 AC2: scan for 401 expired Claude logins and alert Jeff within 60s
     let scan_script = format!("{}/platform/scripts/role-401-scan", envd("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"));
@@ -2259,13 +2272,23 @@ fn relogin(_ctx: &Ctx, role: &str) -> i32 {
 /// login that wrote its row and was interrupted before recording it. Loud, never
 /// a refusal: the new session is already recorded.
 fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
-    let Ok(token) = sh(&ctx.token_bin, &[role]) else { return };
+    // #4950 — every way out names itself: on 11-09 four logins closed nothing and said
+    // nothing, and a silent return cannot be told from "there was nothing to close"
+    let skipped = |why: &str| {
+        eprintln!("login: closing older sessions skipped — {}", why);
+        ctx.spine(&["session.supersede.skipped", role, &format!("why={}", why), &format!("keep={}", keep)]);
+    };
+    let token = match sh(&ctx.token_bin, &[role]) { Ok(t) => t, Err(e) => return skipped(&format!("no token: {e}")) };
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let hdr = role_id_dir.join("session.hdr");
-    if write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())).is_err() { return; }
+    if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())) { return skipped(&format!("header file: {e}")); }
     let url = format!("{}/v1/identity/sessions?channel={}&limit=1000", ctx.api, channel);
-    let list = door(ctx, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]).unwrap_or_default();
+    let list = door(ctx, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]);
     let _ = fs::remove_file(&hdr);
+    let list = match list { Ok(l) => l, Err(e) => return skipped(&format!("listing unreadable: {e}")) };
+    if serde_json::from_str::<Value>(&list).ok().and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).is_none() {
+        return skipped(&format!("listing has no data list: {}", list.chars().take(120).collect::<String>()));
+    }
     let stale = rows::superseded_sessions(&list, role, channel, keep);
     if stale.is_empty() { return; }
     let mut closed = Vec::new();

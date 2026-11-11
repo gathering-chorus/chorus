@@ -35,8 +35,8 @@ ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenI
   listing "$(ROW session-silas-orphan silas pane open),$(ROW session-silas-old silas pane closed),$(ROW session-kade-live kade pane open),$(ROW session-silas-agent silas agent open)"
   run "$SCRIPT" on silas
   test "$status" -eq 0
-  ls "$T/bodies" | grep -q 'PUT-identity_sessions_session-silas-orphan'
-  grep -q '"sessionState":"closed"' "$T"/bodies/*-PUT-identity_sessions_session-silas-orphan.json
+  ls "$T/bodies" | grep -q 'PATCH-identity_sessions_session-silas-orphan'
+  grep -q '"sessionState":"closed"' "$T"/bodies/*-PATCH-identity_sessions_session-silas-orphan.json
   # #4933 — the role's own establish closes it, so the line is in the role's output
   grep -qF "closed 1 older open session" "$T/establish.log"
   grep -q 'session.superseded silas' "$T/spine.log"
@@ -48,6 +48,6 @@ ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenI
   test "$status" -eq 0
   # not vacuous (#4933): silas's own establish ran and opened its session
   ls "$T/bodies" | grep -q 'POST-identity_sessions.json'
-  test -z "$(ls "$T/bodies" | grep PUT-identity_sessions || true)"
+  test -z "$(ls "$T/bodies" | grep -E "(PUT|PATCH)-identity_sessions_" || true)"
   test "$(grep -c 'session.superseded' "$T/spine.log" || true)" -eq 0
 }
