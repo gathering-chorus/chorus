@@ -15,6 +15,7 @@ credentials() {
   [ -n "${GH_TOKEN:-}" ] && echo "GH_TOKEN is set"
   [ -n "${GITHUB_TOKEN:-}" ] && echo "GITHUB_TOKEN is set"
   if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then echo "gh is logged in"; fi
+  grep -qs 'oauth_token' "${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml" && echo "gh's hosts file holds a token"
   local cred
   cred="$(printf 'protocol=https\nhost=github.com\n\n' | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null | grep -c '^password=' || true)"
   [ "${cred:-0}" -gt 0 ] && echo "git has a credential for github.com"
@@ -40,4 +41,12 @@ credentials() {
 @test "AC1 negative proof: a set GH_TOKEN (the 10-23 state, Jeff's admin login) is caught" {
   out="$(GH_TOKEN=x credentials)"
   [[ "$out" == *"GH_TOKEN is set"* ]] || { echo "$out"; return 1; }
+}
+
+@test "AC1 negative proof: a planted gh hosts file with a token in a fixture home is caught" {
+  h="$BATS_TEST_TMPDIR/home"; mkdir -p "$h/.config/gh"
+  printf 'github.com:\n    oauth_token: PLANTED\n    user: x\n' > "$h/.config/gh/hosts.yml"
+  out="$(HOME="$h" GH_CONFIG_DIR="$h/.config/gh" credentials)"
+  [[ "$out" == *"gh's hosts file holds a token"* ]] || { echo "$out"; return 1; }
+  [[ "$out" != *PLANTED* ]] || { echo "the token reached the output"; return 1; }
 }
