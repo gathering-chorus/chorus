@@ -139,7 +139,10 @@ $PRE
 chorus:principal-fixture-agent a chorus:Principal ;
   rdfs:label "fixture agent" ;
   chorus:principalKind "agent" ;
+  chorus:hostAccount "chorus-fixture-agent" ;
   chorus:canSignIn "false" .
 EOF
+  # #4942: an agent must run as its own account (AgentRunsAsItsOwnAccount), so the
+  # fixture carries one; webId is still absent, which is what this test proves.
   conforms "$WORK/ok.ttl"
 }
