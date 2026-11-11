@@ -23,10 +23,18 @@ pub fn cred_path(home: &Path) -> PathBuf {
     home.join(".chorus/identity").join(PRINCIPAL).join("cred.json")
 }
 
-fn me() -> (u32, String) {
-    extern "C" { fn geteuid() -> u32; }
+/// This process's account, from the user database (getpwuid of the effective uid) — never from
+/// $USER, which the environment can rename (Silas 18:22).
+pub fn me() -> (u32, String) {
+    extern "C" {
+        fn geteuid() -> u32;
+        fn getpwuid(uid: u32) -> *const *const std::os::raw::c_char; // struct passwd: pw_name first
+    }
     let uid = unsafe { geteuid() };
-    let name = std::env::var("USER").unwrap_or_default();
+    let name = unsafe {
+        let pw = getpwuid(uid);
+        if pw.is_null() || (*pw).is_null() { String::new() } else { std::ffi::CStr::from_ptr(*pw).to_string_lossy().into_owned() }
+    };
     (uid, name)
 }
 

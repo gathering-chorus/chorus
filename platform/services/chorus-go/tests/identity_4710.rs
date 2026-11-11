@@ -11,10 +11,7 @@ use std::sync::Mutex;
 static ENV: Mutex<()> = Mutex::new(());
 const WEBID: &str = "https://id.lightlifeurbangardens.com/lander/profile/card#me";
 
-fn me() -> (u32, String) {
-    extern "C" { fn geteuid() -> u32; }
-    (unsafe { geteuid() }, std::env::var("USER").unwrap_or_default())
-}
+fn me() -> (u32, String) { identity::me() }
 fn home(tag: &str, mode: u32, host: &str) -> std::path::PathBuf {
     let h = std::env::temp_dir().join(format!("id4710-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&h);
@@ -91,4 +88,18 @@ fn the_lander_mints_its_login_from_a_stand_in_css() {
     assert!(req.starts_with("POST /.oidc/token"), "{req}");
     assert!(req.contains("Authorization: Basic ") && req.contains("X-Forwarded-Host: id.lightlifeurbangardens.com"), "{req}");
     assert!(req.contains("grant_type=client_credentials"), "{req}");
+}
+
+// NEGATIVE PROOF (Silas 18:22): the account comes from the user database, so a renamed $USER
+// does not change who the lander thinks it is.
+#[test]
+fn the_account_is_not_read_from_user() {
+    let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (_, real) = identity::me();
+    let old = std::env::var_os("USER");
+    std::env::set_var("USER", "chorus-lander-impostor");
+    let (_, seen) = identity::me();
+    if let Some(o) = old { std::env::set_var("USER", o); }
+    assert_eq!(seen, real);
+    assert_ne!(seen, "chorus-lander-impostor");
 }
