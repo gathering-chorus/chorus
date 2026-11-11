@@ -151,3 +151,19 @@ fn not_on_main_is_refused_and_nothing_is_pushed_opened_or_merged() {
     let w = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
     assert!(w.contains("\"reason\":\"not-on-main\""), "{w}");
 }
+
+// #4771 AC4 — werk-merge still arms the deploy credential (it fetches origin and reads the PR),
+// so a credential GitHub would reject is refused loudly by path, before any git or gh call.
+#[test]
+fn a_bad_deploy_credential_is_refused_by_path_before_any_call() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let log = setup("bin-cred");
+    let (_origin, home, werk_base, werk) = scenario("wren", 9203);
+    commit_no_push(&werk, "c.txt", "card work");
+    let f = arm_cred("deploy-cred-e2e", "deploy-cred-e2e");
+    fs::set_permissions(&f, fs::Permissions::from_mode(0o644)).unwrap();
+    let e = merge(9203, "wren", &home, &werk_base).unwrap_err();
+    assert!(e.starts_with("auth-fail") && e.contains("must be 0600") && e.contains(f.to_str().unwrap()), "{e}");
+    assert!(!e.contains("deploy-cred-e2e"), "the credential reached the refusal: {e}");
+    assert!(fs::read_to_string(&log).unwrap_or_default().is_empty(), "gh was called with a bad credential");
+}
