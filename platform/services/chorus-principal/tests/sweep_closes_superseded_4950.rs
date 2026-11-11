@@ -89,3 +89,20 @@ fn ac2_a_seen_write_never_reopens_a_superseded_session() {
     assert!(keys.contains(&&"lastSeenAt".to_string()), "{body}");
     for k in ["sessionState", "endedAt", "endedBy"] { assert!(!keys.iter().any(|x| x.as_str() == k), "{k} sent: {body}"); }
 }
+
+/// NEGATIVE PROOF (carried from #4838 AC5, whose expiry cases #4950 deleted): a door that
+/// refuses the close makes the sweep fail loudly, a non-zero exit with failed > 0, never a
+/// quiet 0.
+#[test]
+fn ac2_negative_a_refused_close_makes_the_sweep_fail_loudly() {
+    let home = tempdir("4950-refused");
+    let sessions = format!(r#"{{"data":[{},{}]}}"#,
+        sess("wren-old", "wren", "pane", "2026-11-08T16:00:00Z", "2026-11-11T10:50:00Z"),
+        sess("wren-new", "wren", "pane", "2026-11-09T16:15:00Z", "2026-11-11T10:40:00Z"));
+    door_with(&home, "wren", "422", r#"{"data":[]}"#, &sessions);
+    live(&home, "wren");
+    let (code, out) = sweep(&home);
+    assert_eq!(closes(&read(home.join("calls.log"))).len(), 1, "the close was tried: {out}");
+    assert_ne!(code, 0, "{out}");
+    assert!(out.contains("0 superseded session(s) closed, 1 failed"), "{out}");
+}

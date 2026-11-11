@@ -175,7 +175,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "could not be closed"
-  out_has "until the next login closes it as superseded"
+  out_has "until the next login or sweep closes it as superseded"
   out_lacks "expires on its own"
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
 }

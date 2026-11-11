@@ -2362,7 +2362,7 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
     if !from_exit && std::io::IsTerminal::is_terminal(&std::io::stdout()) { print!("\x1b[2J\x1b[3J\x1b[H"); }
     match closed {
         Some((s, Ok(()))) => println!("{} logged out: login closed (session {})", role, s),
-        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the next login closes it as superseded", role, s, why),
+        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the next login or sweep closes it as superseded", role, s, why),
         None => println!("{} logged out: stopped; it had no recorded login to close", role),
     }
     0
