@@ -160,6 +160,25 @@ pub fn go_run_open(status_line: &str) -> Result<(), String> {
     }
 }
 
+/// #4710 — the lander reads dagu over its HTTP API (it runs no dagu binary: a program anyone
+/// can write would run as the lander). This renders GET /api/v1/dag-runs/{dag}/{run} in the
+/// shape `dagu status` printed, so go_run_open and superseded_status read it unchanged:
+/// "<Label> - <startedAt>", then one "<step> [<label>]" line per step. Empty when no run.
+pub fn status_text_from_api(body: &str) -> String {
+    let Ok(v) = serde_json::from_str::<Value>(body) else { return String::new() };
+    let r = v.get("dagRunDetails").unwrap_or(&v);
+    let Some(label) = r.get("statusLabel").and_then(Value::as_str).filter(|l| !l.is_empty()) else { return String::new() };
+    let mut cap = label.to_string();
+    if let Some(f) = cap.get_mut(0..1) { f.make_ascii_uppercase(); }
+    let mut out = format!("{cap} - {}", r.get("startedAt").and_then(Value::as_str).unwrap_or(""));
+    for n in r.get("nodes").and_then(Value::as_array).into_iter().flatten() {
+        let name = n.pointer("/step/name").and_then(Value::as_str).unwrap_or("");
+        let st = n.get("statusLabel").and_then(Value::as_str).unwrap_or("");
+        out.push_str(&format!("\n{name} [{st}]"));
+    }
+    out
+}
+
 /// #4771 AC2 — `dagu status` (the whole answer) says this go run was superseded: stopped
 /// (Aborted), or answered no by cicd-supersede (Succeeded with its land step skipped). A go
 /// Jeff signed also reads Succeeded, but its land ran — that is never called superseded.
@@ -342,29 +361,41 @@ pub enum LandGo {
     NoPasskey,
 }
 
-/// The commit a role's werk holds (the round a go is for). Abby's and Borg
-/// Queen's werks belong to their own Mac accounts, so git refuses them to this
-/// service ("dubious ownership") and the go page said "no werk" until Jeff
-/// added each werk to his global safe.directory (10-25: #4732, #4736, #4739).
-/// git ignores safe.directory given with `-c` (measured: the first cut failed
-/// its own test), so this one call reads a global config naming only this
-/// werk; Jeff's ~/.gitconfig is not touched.
+/// The commit a role's werk holds (the round a go is for), read from git's own files —
+/// never by running git. #4710: the lander runs as chorus-lander and holds the App key; a werk
+/// belongs to a role, and a role's `.git/config` can make git run a program (core.fsmonitor,
+/// hooks, aliases), which would run as the lander. Reading the files needs no trust of the werk
+/// (this also retires the #4735 safe.directory workaround). Handles a linked worktree
+/// (`.git` is a file naming its gitdir; refs live in the common dir), loose and packed refs.
 pub fn werk_head(werk: &str) -> Result<String, String> {
-    let cfg = std::env::temp_dir().join(format!("chorus-go-safe-{}-{}", std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
-    // git compares the resolved path (/var → /private/var on macOS)
-    let real = fs::canonicalize(werk).map_err(|e| e.to_string())?;
-    fs::write(&cfg, format!("[safe]\n\tdirectory = {}\n", real.display())).map_err(|e| e.to_string())?;
-    let o = std::process::Command::new("/usr/bin/git")
-        .env("GIT_CONFIG_GLOBAL", &cfg)
-        .args(["-C", werk, "rev-parse", "HEAD"])
-        .output();
-    let _ = fs::remove_file(&cfg);
-    let o = o.map_err(|e| e.to_string())?;
-    if !o.status.success() {
-        return Err(String::from_utf8_lossy(&o.stderr).trim().to_string());
-    }
-    Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    let w = Path::new(werk);
+    let dotgit = w.join(".git");
+    let gitdir = if dotgit.is_file() {
+        let t = fs::read_to_string(&dotgit).map_err(|e| e.to_string())?;
+        let g = t.trim().strip_prefix("gitdir:").ok_or("a .git file without gitdir")?.trim();
+        let g = Path::new(g);
+        if g.is_absolute() { g.to_path_buf() } else { w.join(g) }
+    } else if dotgit.is_dir() { dotgit } else { return Err(format!("{werk} is not a git werk")) };
+    let common = match fs::read_to_string(gitdir.join("commondir")) {
+        Ok(c) => { let c = Path::new(c.trim()); if c.is_absolute() { c.to_path_buf() } else { gitdir.join(c) } }
+        Err(_) => gitdir.clone(),
+    };
+    let head = fs::read_to_string(gitdir.join("HEAD")).map_err(|e| format!("{werk}: no HEAD: {e}"))?;
+    let head = head.trim();
+    let sha = match head.strip_prefix("ref:") {
+        None => head.to_string(),
+        Some(r) => {
+            let r = r.trim();
+            if r.contains("..") || !r.starts_with("refs/") { return Err(format!("{werk}: HEAD names an odd ref")); }
+            match fs::read_to_string(gitdir.join(r)).or_else(|_| fs::read_to_string(common.join(r))) {
+                Ok(v) => v.trim().to_string(),
+                Err(_) => fs::read_to_string(common.join("packed-refs")).unwrap_or_default().lines()
+                    .find_map(|l| l.split_once(' ').filter(|(_, n)| *n == r).map(|(s, _)| s.to_string()))
+                    .ok_or(format!("{werk}: {r} not found"))?,
+            }
+        }
+    };
+    if sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()) { Ok(sha) } else { Err(format!("{werk}: HEAD is not a commit")) }
 }
 
 // ---- #4505: approvals — one row Jeff decides on, signed by his passkey ----

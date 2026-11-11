@@ -10,7 +10,10 @@ const ALLOWED: &[&str] = &["/usr/bin/", "/bin/"];
 /// Every `Command::new(<arg>)` in the source text and why its program is not allowed, if not.
 pub fn exec_problems(src: &str, file: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for (n, line) in src.lines().enumerate() {
+    // what runs in the shipped binary: code lines, before the source's unit tests
+    let shipped = src.split("#[cfg(test)]").next().unwrap_or(src);
+    for (n, line) in shipped.lines().enumerate() {
+        if line.trim_start().starts_with("//") { continue; }
         let mut rest = line;
         while let Some(i) = rest.find("Command::new(") {
             let arg = &rest[i + "Command::new(".len()..];
@@ -57,4 +60,7 @@ fn a_bare_name_an_env_default_and_a_home_path_are_all_caught() {
     assert_eq!(exec_problems(r#"Command::new(env_or("CHORUS_GO_CARDS", &format!("{}/platform/scripts/cards", chorus_home())))"#, "x").len(), 1);
     assert_eq!(exec_problems(r#"let o = Command::new(&dagu)"#, "x").len(), 1);
     assert_eq!(exec_problems(r#"Command::new("/Users/jeffbridwell/.chorus/bin/x")"#, "x").len(), 1);
+    // a comment or a unit test is not the shipped binary; code after them still is
+    assert_eq!(exec_problems("// Command::new(tool)\n#[cfg(test)]\nCommand::new(\"git\")", "x").len(), 0);
+    assert_eq!(exec_problems("let a = 1;\nCommand::new(\"git\")\n#[cfg(test)]", "x").len(), 1);
 }

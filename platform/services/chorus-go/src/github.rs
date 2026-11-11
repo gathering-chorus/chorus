@@ -79,26 +79,38 @@ pub fn pr_from_list(body: &str, card: u64, round: &str) -> R<(u64, String)> {
     }
 }
 
+/// curl's argv for one API call: what `ps` shows. Holds no credential — the Authorization
+/// header is read from stdin (`-H @-`) and a body from a 0600 file (`body`).
+pub fn call_argv(api: &str, call: &Call, body: Option<&std::path::Path>) -> Vec<String> {
+    let mut a: Vec<String> = ["-sS", "--max-time", "30", "-o", "-", "-w", "\n%{http_code}", "-X", call.method, "-H", "@-",
+        "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"]
+        .iter().map(|s| s.to_string()).collect();
+    if let (Some(_), Some(f)) = (&call.body, body) {
+        a.extend(["-H".into(), "Content-Type: application/json".into(), "--data-binary".into(), format!("@{}", f.display())]);
+    }
+    a.push(format!("{api}{}", call.path));
+    a
+}
+
 /// Run one call with the armed installation credential. Returns (http code, body).
 pub fn run(call: &Call) -> R<(u16, String)> {
+    use std::os::unix::fs::OpenOptionsExt;
     let file = armed_credential().ok_or("auth-fail: no App credential armed")?;
     let tok = std::fs::read_to_string(&file).map_err(|e| format!("auth-fail: {}: {}", std::path::Path::new(&file).display(), e))?;
     let api = std::env::var(GITHUB_API_ENV).unwrap_or_else(|_| "https://api.github.com".into());
-    let stdin = format!("Authorization: {} {}\n", "token", credential_line(&tok));
-    let mut c = Command::new("/usr/bin/curl");
-    c.args(["-sS", "--max-time", "30", "-o", "-", "-w", "\n%{http_code}", "-X", call.method, "-H", "@-",
-            "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"]);
+    let bf = std::path::Path::new(&file).with_file_name("request.json");
     if let Some(b) = &call.body {
-        // curl takes one stdin; the body goes in a 0600 file next to the credential, removed after
-        let bf = std::path::Path::new(&file).with_file_name("request.json");
-        std::fs::write(&bf, b.to_string()).map_err(|e| e.to_string())?;
-        c.args(["-H", "Content-Type: application/json", "--data-binary"]).arg(format!("@{}", bf.display()));
+        let _ = std::fs::remove_file(&bf);
+        std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&bf)
+            .and_then(|mut f| f.write_all(b.to_string().as_bytes())).map_err(|e| e.to_string())?;
     }
-    c.arg(format!("{api}{}", call.path)).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child = c.spawn().map_err(|e| format!("curl did not start: {e}"))?;
-    child.stdin.take().ok_or("curl stdin")?.write_all(stdin.as_bytes()).map_err(|e| e.to_string())?;
+    let mut child = Command::new("/usr/bin/curl").args(call_argv(&api, call, Some(&bf)))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
+        .spawn().map_err(|e| format!("curl did not start: {e}"))?;
+    child.stdin.take().ok_or("curl stdin")?
+        .write_all(format!("Authorization: {} {}\n", "token", credential_line(&tok)).as_bytes()).map_err(|e| e.to_string())?;
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_file(std::path::Path::new(&file).with_file_name("request.json"));
+    let _ = std::fs::remove_file(&bf);
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let (body, code) = text.rsplit_once('\n').unwrap_or(("", &text));
     Ok((code.trim().parse().unwrap_or(0), body.to_string()))

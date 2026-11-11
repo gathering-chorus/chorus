@@ -101,6 +101,16 @@ pub fn token_from_answer(body: &str) -> Option<String> {
     (!t.is_empty()).then(|| t.to_string())
 }
 
+/// curl's argv for the access-token exchange: what `ps` shows. Holds no credential: the JWT
+/// header is read from stdin (`-H @-`).
+pub fn token_request_argv(api: &str, inst: &str) -> Vec<String> {
+    ["-sS", "--max-time", "20", "-X", "POST", "-H", "@-",
+     "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"]
+        .iter().map(|s| s.to_string())
+        .chain(std::iter::once(format!("{api}/app/installations/{inst}/access_tokens")))
+        .collect()
+}
+
 /// Sign, trade the JWT for an installation credential, write it 0600 to `<dir>/installation`,
 /// and arm it for every later git/gh call of this process (deploy_credential.rs's seam).
 pub fn arm_app_credential() -> Result<std::path::PathBuf, String> {
@@ -112,11 +122,9 @@ pub fn arm_app_credential() -> Result<std::path::PathBuf, String> {
     let unsigned = app_jwt_unsigned(&app_id, now);
     let jwt = format!("{unsigned}.{}", rs256(&unsigned, &key)?);
     let api = std::env::var(GITHUB_API_ENV).unwrap_or_else(|_| "https://api.github.com".into());
-    // the JWT goes to curl on stdin as a header file (-H @-), never on argv
+    // the JWT goes to curl on stdin as a header file (-H @-), never on argv (token_request_argv)
     let mut child = std::process::Command::new("/usr/bin/curl")
-        .args(["-sS", "--max-time", "20", "-X", "POST", "-H", "@-",
-               "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"])
-        .arg(format!("{api}/app/installations/{inst}/access_tokens"))
+        .args(token_request_argv(&api, &inst))
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null())
         .spawn().map_err(|e| format!("auth-fail: curl did not start: {e}"))?;
     child.stdin.take().ok_or("auth-fail: curl stdin")?
@@ -232,9 +240,29 @@ mod app_credential_4710 {
         assert_eq!(token_from_answer(r#"{"token": "ghs_abc", "expires_at":"x"}"#).as_deref(), Some("ghs_abc"));
         assert_eq!(token_from_answer(r#"{"message":"Bad credentials"}"#), None);
     }
+    /// A stand-in GitHub on loopback: answers one request with `reply`, hands back what it got.
+    fn stand_in(reply: &'static str) -> (String, std::sync::mpsc::Receiver<String>) {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = format!("http://{}", l.local_addr().unwrap());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let mut buf = vec![0u8; 65536]; let mut got = Vec::new();
+            loop {
+                let n = s.read(&mut buf).unwrap_or(0); got.extend_from_slice(&buf[..n]);
+                let t = String::from_utf8_lossy(&got).to_string();
+                if n == 0 || t.contains("\r\n\r\n") { break; }
+            }
+            let _ = write!(s, "HTTP/1.1 201 Created\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", reply.len(), reply);
+            let _ = tx.send(String::from_utf8_lossy(&got).to_string());
+        });
+        (addr, rx)
+    }
+
     // NEGATIVE PROOF (Silas 17:18): the signed JWT and the installation credential never sit on
-    // a command line, where `ps` shows them. A stand-in curl records its argv (what ps sees) and
-    // its stdin; the JWT must be in stdin only, and the answer's credential lands 0600 in a file.
+    // a command line, where `ps` shows them: curl's argv holds neither, the JWT arrives at GitHub
+    // as the Authorization header (it went on stdin), and the answer lands 0600 in a file.
     #[test]
     fn the_jwt_and_the_installation_credential_never_reach_argv() {
         let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -246,30 +274,23 @@ mod app_credential_4710 {
         if !ok { eprintln!("unmeasured: no openssl genrsa here"); return; }
         std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
         put(&app.join("app-id"), "123\n"); put(&app.join("installation-id"), "456\n");
-        let bin = d.join("bin"); std::fs::create_dir_all(&bin).unwrap();
-        let fake = bin.join("curl");
-        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > {argv}\ncat > {stdin}\nprintf '{{\"token\":\"ghs_FAKE4710\"}}'\n",
-            argv = d.join("argv").display(), stdin = d.join("stdin").display())).unwrap();
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let old_path = std::env::var_os("PATH").unwrap_or_default();
-        let mut path = std::ffi::OsString::from(bin.as_os_str()); path.push(":"); path.push(&old_path);
-        std::env::set_var("PATH", &path);
+        let (api, got) = stand_in(r#"{"token":"ghs_FAKE4710"}"#);
         std::env::set_var(APP_DIR_ENV, &app);
+        std::env::set_var(GITHUB_API_ENV, &api);
         let r = arm_app_credential();
-        std::env::set_var("PATH", old_path);
-        std::env::remove_var(APP_DIR_ENV);
+        std::env::remove_var(APP_DIR_ENV); std::env::remove_var(GITHUB_API_ENV);
         let armed = r.unwrap();
         std::env::remove_var(CRED_FILE_ENV);
-        let argv = std::fs::read_to_string(d.join("argv")).unwrap();
-        let stdin = std::fs::read_to_string(d.join("stdin")).unwrap();
-        let jwt = stdin.trim().rsplit(' ').next().unwrap().to_string();
-        assert_eq!(jwt.split('.').count(), 3, "stdin did not carry the JWT: {stdin}");
-        assert!(!argv.contains(&jwt) && !argv.contains("Authorization"), "the JWT reached argv: {argv}");
-        assert!(argv.contains("/app/installations/456/access_tokens"), "{argv}");
+        let req = got.recv().unwrap();
+        assert!(req.starts_with("POST /app/installations/456/access_tokens"), "{req}");
+        let auth = req.lines().find(|l| l.to_lowercase().starts_with("authorization:")).expect("no Authorization header reached GitHub");
+        let jwt = auth.rsplit(' ').next().unwrap().trim();
+        assert_eq!(jwt.split('.').count(), 3, "{auth}");
+        let argv = token_request_argv(&api, "456").join(" ");
+        assert!(!argv.contains(jwt) && !argv.to_lowercase().contains("authorization"), "the JWT is on argv: {argv}");
         use std::os::unix::fs::MetadataExt;
         assert_eq!(std::fs::metadata(&armed).unwrap().mode() & 0o777, 0o600);
         assert_eq!(std::fs::read_to_string(&armed).unwrap(), "ghs_FAKE4710\n");
-        assert!(!argv.contains("ghs_FAKE4710"));
     }
 }
 

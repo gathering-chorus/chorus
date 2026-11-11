@@ -1,5 +1,6 @@
-//! #4710 AC3 — the lander's GitHub calls, against a stand-in GitHub (a curl on PATH that
-//! answers from canned replies and records what it was given). No network.
+//! #4710 AC3 — the lander's GitHub calls, against a stand-in GitHub on loopback that answers by
+//! path and keeps every request. The real /usr/bin/curl makes the calls (the lander runs nothing
+//! else); no network.
 use chorus_go::github::{self, merge_call, pr_from_list};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -25,7 +26,7 @@ fn app_dir(d: &Path) -> Option<PathBuf> {
     let app = d.join("app");
     std::fs::create_dir_all(&app).unwrap();
     let key = app.join("key.pem");
-    let ok = std::process::Command::new("openssl").args(["genrsa", "-out"]).arg(&key).arg("2048")
+    let ok = std::process::Command::new("/usr/bin/openssl").args(["genrsa", "-out"]).arg(&key).arg("2048")
         .stderr(std::process::Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
     if !ok { return None; }
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -34,50 +35,57 @@ fn app_dir(d: &Path) -> Option<PathBuf> {
     Some(app)
 }
 
-/// A stand-in curl: logs argv, stdin and any --data-binary file per call; answers by URL.
-/// `head` is the open PR's head sha GitHub reports; `merge_code` what the merge answers.
-fn stand_in_github(d: &Path, head: &str, merge_code: u16) -> PathBuf {
-    let bin = d.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    let log = d.join("log");
-    let script = format!(r#"#!/bin/sh
-n=$(ls {log} 2>/dev/null | wc -l | tr -d ' '); c={log}/$n; mkdir -p {log}; mkdir -p $c
-printf '%s\n' "$@" > $c/argv; cat > $c/stdin
-for a in "$@"; do case "$a" in @*) cp "${{a#@}}" $c/body 2>/dev/null;; esac; done
-url=""; for a in "$@"; do url="$a"; done
-case "$url" in
-  */access_tokens) printf '{{"token":"ghs_FAKE4710"}}';;
-  */pulls\?*) printf '[{{"number":1967,"head":{{"ref":"wren/4953","sha":"{head}"}}}}]\n200';;
-  */statuses/*) printf '{{}}\n201';;
-  */merge) codes=$(cat {log}/../merge-codes 2>/dev/null || echo {merge_code}); first=${{codes%% *}}; rest=${{codes#* }}; [ "$rest" = "$codes" ] || echo "$rest" > {log}/../merge-codes; printf '{{"message":"x"}}\n%s' "$first";;
-esac
-"#, log = log.display());
-    let f = bin.join("curl");
-    std::fs::write(&f, script).unwrap();
-    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
-    bin
+/// A stand-in GitHub: `head` is the open PR's head sha; `merge_codes` answer successive merge
+/// calls (the last repeats). Keeps every request as (request line, headers, body).
+struct Gh { api: String, seen: std::sync::Arc<Mutex<Vec<(String, String, String)>>> }
+
+fn stand_in_github(head: &str, merge_codes: &[u16]) -> Gh {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let api = format!("http://{}", l.local_addr().unwrap());
+    let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let (seen2, head, codes) = (seen.clone(), head.to_string(), merge_codes.to_vec());
+    std::thread::spawn(move || {
+        let mut merges = 0usize;
+        for mut s in l.incoming().flatten() {
+            let mut got = Vec::new(); let mut buf = [0u8; 65536];
+            loop {
+                let n = s.read(&mut buf).unwrap_or(0); got.extend_from_slice(&buf[..n]);
+                let t = String::from_utf8_lossy(&got).to_string();
+                if let Some((h, b)) = t.split_once("\r\n\r\n") {
+                    let len = h.lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                    if b.len() >= len { break; }
+                }
+                if n == 0 { break; }
+            }
+            let t = String::from_utf8_lossy(&got).to_string();
+            let (h, b) = t.split_once("\r\n\r\n").unwrap_or((t.as_str(), ""));
+            let line = h.lines().next().unwrap_or("").to_string();
+            seen2.lock().unwrap().push((line.clone(), h.to_string(), b.to_string()));
+            let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+            let (code, body) = if path.ends_with("/access_tokens") { (201, r#"{"token":"ghs_FAKE4710"}"#.to_string()) }
+                else if path.contains("/pulls?") { (200, format!(r#"[{{"number":1967,"head":{{"ref":"wren/4953","sha":"{head}"}}}}]"#)) }
+                else if path.contains("/statuses/") { (201, "{}".to_string()) }
+                else if path.ends_with("/merge") { let c = codes[merges.min(codes.len() - 1)]; merges += 1; (c, r#"{"message":"x"}"#.to_string()) }
+                else { (404, "{}".to_string()) };
+            let _ = write!(s, "HTTP/1.1 {code} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        }
+    });
+    Gh { api, seen }
 }
 
-/// The calls the stand-in saw, in order: (argv, stdin, body).
-fn calls(d: &Path) -> Vec<(String, String, String)> {
-    let mut v = Vec::new();
-    for i in 0.. {
-        let c = d.join("log").join(i.to_string());
-        if !c.exists() { break; }
-        let r = |n: &str| std::fs::read_to_string(c.join(n)).unwrap_or_default();
-        v.push((r("argv"), r("stdin"), r("body")));
-    }
-    v
+impl Gh {
+    fn lines(&self) -> Vec<String> { self.seen.lock().unwrap().iter().map(|(l, _, _)| l.clone()).collect() }
+    fn merges(&self) -> usize { self.lines().iter().filter(|l| l.contains("/merge ")).count() }
+    fn req(&self, i: usize) -> (String, String, String) { self.seen.lock().unwrap()[i].clone() }
 }
 
-fn with_env<T>(app: &Path, bin: &Path, f: impl FnOnce() -> T) -> T {
-    let old = std::env::var_os("PATH").unwrap_or_default();
-    let mut p = std::ffi::OsString::from(bin.as_os_str()); p.push(":"); p.push(&old);
-    std::env::set_var("PATH", &p);
+fn with_env<T>(app: &Path, gh: &Gh, f: impl FnOnce() -> T) -> T {
+    std::env::set_var("WERK_GITHUB_API", &gh.api);
     std::env::set_var("WERK_GITHUB_APP_DIR", app);
     std::env::set_var("LANDER_RETRY_WAIT_SECS", "0");
     let r = f();
-    std::env::set_var("PATH", old);
+    std::env::remove_var("WERK_GITHUB_API");
     std::env::remove_var("WERK_GITHUB_APP_DIR");
     std::env::remove_var("WERK_DEPLOY_CREDENTIAL_FILE");
     r
@@ -111,26 +119,26 @@ fn a_moved_head_is_refused_and_one_pr_is_required() {
 }
 
 #[test]
-fn a_signed_round_lands_as_the_app_status_then_squash_merge_no_credential_on_argv() {
+fn a_signed_round_lands_as_the_app_status_then_squash_merge_credential_only_in_headers() {
     let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
     let d = tmp("land");
     let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
-    let bin = stand_in_github(&d, ROUND, 200);
-    let r = with_env(&app, &bin, || github::land_as_app(4953, ROUND));
-    assert_eq!(r, Ok(1967));
-    let seen = calls(&d);
-    let urls: Vec<&str> = seen.iter().map(|(a, _, _)| a.lines().last().unwrap_or("")).collect();
-    assert!(urls[0].ends_with("/app/installations/456/access_tokens"), "{urls:?}");
-    assert!(urls[1].contains("/pulls?state=open"), "{urls:?}");
-    assert!(urls[2].ends_with(&format!("/statuses/{ROUND}")), "{urls:?}");
-    assert!(urls[3].ends_with("/pulls/1967/merge"), "{urls:?}");
-    assert!(seen[2].2.contains("\"context\":\"jeff-go\"") && seen[2].2.contains("\"state\":\"success\""), "{}", seen[2].2);
-    assert!(seen[3].2.contains("\"merge_method\":\"squash\"") && seen[3].2.contains(ROUND), "{}", seen[3].2);
-    for (argv, stdin, _) in &seen[1..] {
-        assert!(!argv.contains("ghs_FAKE4710") && !argv.contains("Authorization"), "the credential reached argv: {argv}");
-        assert!(stdin.contains("ghs_FAKE4710"), "the credential did not go on stdin: {stdin}");
-    }
+    let gh = stand_in_github(ROUND, &[200]);
+    assert_eq!(with_env(&app, &gh, || github::land_as_app(4953, ROUND)), Ok(1967));
+    let l = gh.lines();
+    assert!(l[0].starts_with("POST /app/installations/456/access_tokens"), "{l:?}");
+    assert!(l[1].starts_with("GET /repos/gathering-chorus/chorus/pulls?state=open"), "{l:?}");
+    assert!(l[2].starts_with(&format!("POST /repos/gathering-chorus/chorus/statuses/{ROUND}")), "{l:?}");
+    assert!(l[3].starts_with("PUT /repos/gathering-chorus/chorus/pulls/1967/merge"), "{l:?}");
+    let (_, h2, b2) = gh.req(2);
+    assert!(b2.contains("\"context\":\"jeff-go\"") && b2.contains("\"state\":\"success\""), "{b2}");
+    assert!(h2.contains("ghs_FAKE4710"), "the installation credential did not reach GitHub as a header");
+    let (_, _, b3) = gh.req(3);
+    assert!(b3.contains("\"merge_method\":\"squash\"") && b3.contains(ROUND), "{b3}");
     assert!(!app.join("request.json").exists(), "a request body was left behind");
+    // what ps sees: curl's argv for an API call holds no credential (github::call_argv)
+    let argv = github::call_argv(&gh.api, &github::status_call(ROUND, 4953), Some(&app.join("request.json"))).join(" ");
+    assert!(!argv.contains("ghs_FAKE4710") && !argv.to_lowercase().contains("authorization"), "{argv}");
 }
 
 // NEGATIVE PROOF: when the head moved, no status is posted and no merge is asked for.
@@ -139,11 +147,10 @@ fn a_moved_head_posts_nothing_and_merges_nothing() {
     let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
     let d = tmp("moved");
     let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
-    let bin = stand_in_github(&d, "1111111111111111111111111111111111111111", 200);
-    let e = with_env(&app, &bin, || github::land_as_app(4953, ROUND)).unwrap_err();
+    let gh = stand_in_github("1111111111111111111111111111111111111111", &[200]);
+    let e = with_env(&app, &gh, || github::land_as_app(4953, ROUND)).unwrap_err();
     assert!(e.contains("head moved"), "{e}");
-    let urls: Vec<String> = calls(&d).iter().map(|(a, _, _)| a.lines().last().unwrap_or("").to_string()).collect();
-    assert!(!urls.iter().any(|u| u.contains("/statuses/") || u.ends_with("/merge")), "{urls:?}");
+    assert!(!gh.lines().iter().any(|l| l.contains("/statuses/") || l.contains("/merge ")), "{:?}", gh.lines());
 }
 
 #[test]
@@ -151,9 +158,26 @@ fn a_refused_merge_is_an_error_naming_the_pr() {
     let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
     let d = tmp("refused");
     let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
-    let bin = stand_in_github(&d, ROUND, 409);
-    let e = with_env(&app, &bin, || github::land_as_app(4953, ROUND)).unwrap_err();
+    let gh = stand_in_github(ROUND, &[409]);
+    let e = with_env(&app, &gh, || github::land_as_app(4953, ROUND)).unwrap_err();
     assert!(e.contains("PR #1967") && e.contains("409"), "{e}");
+}
+
+// #3926 — a stale "not mergeable" (405) is retried once and then merges; a 409 (the head
+// moved off the signed sha) is never retried: one merge call, an error.
+#[test]
+fn a_405_is_retried_once_and_a_409_never() {
+    let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let d = tmp("r405");
+    let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
+    let gh = stand_in_github(ROUND, &[405, 200]);
+    assert_eq!(with_env(&app, &gh, || github::land_as_app(4953, ROUND)), Ok(1967));
+    assert_eq!(gh.merges(), 2, "405 then 200 is two merge calls");
+    // NEGATIVE PROOF: 409 is not retried
+    let gh = stand_in_github(ROUND, &[409, 200]);
+    let e = with_env(&app, &gh, || github::land_as_app(4953, ROUND)).unwrap_err();
+    assert!(e.contains("409"), "{e}");
+    assert_eq!(gh.merges(), 1, "a 409 was retried");
 }
 
 // NEGATIVE PROOF (Silas 17:48): a merge the lander could not make leaves the run's go step
@@ -173,25 +197,3 @@ fn a_refused_merge_leaves_the_go_step_open_and_a_no_never_merges() {
     assert!(!merged.get(), "a no merged");
 }
 
-// #3926 — a stale "not mergeable" (405) is retried once and then merges; a 409 (the head
-// moved off the signed sha) is never retried: one merge call, an error.
-#[test]
-fn a_405_is_retried_once_and_a_409_never() {
-    let _g = ENV.lock().unwrap_or_else(|p| p.into_inner());
-    let d = tmp("r405");
-    let Some(app) = app_dir(&d) else { eprintln!("unmeasured: no openssl genrsa here"); return; };
-    let bin = stand_in_github(&d, ROUND, 200);
-    std::fs::write(d.join("merge-codes"), "405 200").unwrap();
-    assert_eq!(with_env(&app, &bin, || github::land_as_app(4953, ROUND)), Ok(1967));
-    let merges = calls(&d).iter().filter(|(a, _, _)| a.lines().last().unwrap_or("").ends_with("/merge")).count();
-    assert_eq!(merges, 2, "405 then 200 is two merge calls");
-
-    // NEGATIVE PROOF: 409 is not retried
-    let d = tmp("r409");
-    let bin = stand_in_github(&d, ROUND, 409);
-    std::fs::write(d.join("merge-codes"), "409 200").unwrap();
-    let e = with_env(&app, &bin, || github::land_as_app(4953, ROUND)).unwrap_err();
-    assert!(e.contains("409"), "{e}");
-    let merges = calls(&d).iter().filter(|(a, _, _)| a.lines().last().unwrap_or("").ends_with("/merge")).count();
-    assert_eq!(merges, 1, "a 409 was retried");
-}

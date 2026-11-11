@@ -107,17 +107,30 @@ fn go_run(run: &str) -> (&'static str, String) {
     go_target(run, &run_status("cicd-go", &format!("go-{run}")))
 }
 
-/// The first line of `dagu status <dag> --run-id <run>`; empty when dagu cannot say.
+/// #4710 — dagu as the lander reaches it: its HTTP API, by /usr/bin/curl, never a dagu binary.
+const CURL: &str = "/usr/bin/curl";
+fn dagu_api() -> String { env_or("CHORUS_GO_DAGU_API", "http://127.0.0.1:8526/api/v1") }
+
+/// The run's state in `dagu status`'s shape (lib status_text_from_api); empty when dagu cannot say.
 fn run_status(dag: &str, run: &str) -> String {
-    let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
-    let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
-    Command::new(&dagu)
-        .args(["--config", &cfg, "status", dag, "--run-id", run])
-        .env_remove("CHORUS_ROLE").env_remove("ROLE")
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+    Command::new(CURL).args(["-sf", "--max-time", "8", &format!("{}/dag-runs/{dag}/{run}", dagu_api())])
+        .output().ok()
+        .map(|o| status_text_from_api(&String::from_utf8_lossy(&o.stdout)))
         .unwrap_or_default()
+}
+
+/// Complete a waiting human task with these inputs (POST …/human-tasks/{step}/complete).
+fn complete_human_task(dag: &str, run: &str, step: &str, inputs: Value) -> Result<(), String> {
+    let o = Command::new(CURL)
+        .args(["-sS", "--max-time", "8", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+               "-H", "Content-Type: application/json", "--data-binary", &inputs.to_string(),
+               &format!("{}/dag-runs/{dag}/{run}/human-tasks/{step}/complete", dagu_api())])
+        .output().map_err(|e| format!("dagu: {e}"))?;
+    let code = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    if code != "200" {
+        return Err(format!("signed, but the run did not take it: dagu answered {code}"));
+    }
+    Ok(())
 }
 
 /// Answer the run's go step with what Jeff's phone signed. `accepter=jeff` here is
@@ -125,33 +138,13 @@ fn run_status(dag: &str, run: &str) -> String {
 /// verify_assertion has checked Jeff's passkey signature over this round.
 /// Answer the run's go step: `go` or `no`, as Jeff (only after his passkey signature checked).
 fn complete_go(run: &str, decision: &str) -> Result<(), String> {
-    let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
-    let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
     let (dag, id) = go_run(run);
-    let o = Command::new(&dagu)
-        .args(["--config", &cfg, "human-task", "complete", dag, "--run-id", &id, "--step", "skill_werk_go",
-               "--input", "accepter=jeff", "--input", &format!("decision={decision}")])
-        .env_remove("CHORUS_ROLE").env_remove("ROLE")
-        .output().map_err(|e| format!("dagu: {e}"))?;
-    if !o.status.success() {
-        return Err(format!("signed, but the run did not take it: {}", String::from_utf8_lossy(&o.stderr).trim()));
-    }
-    Ok(())
+    complete_human_task(dag, &id, "skill_werk_go", json!({"accepter": "jeff", "decision": decision}))
 }
 
 /// #4885 — answer one run's human step as Jeff, only after his passkey signature was checked.
 fn complete_step(st: &StepAction, verdict: &str) -> Result<(), String> {
-    let dagu = env_or("CHORUS_GO_DAGU", "/opt/homebrew/bin/dagu");
-    let cfg = format!("{}/platform/config/dagu.yaml", chorus_home());
-    let o = Command::new(&dagu)
-        .args(["--config", &cfg, "human-task", "complete", &st.dag, "--run-id", &st.run, "--step", &st.step,
-               "--input", "by=jeff", "--input", &format!("decision={verdict}")])
-        .env_remove("CHORUS_ROLE").env_remove("ROLE")
-        .output().map_err(|e| format!("dagu: {e}"))?;
-    if !o.status.success() {
-        return Err(format!("signed, but the run did not take it: {}", String::from_utf8_lossy(&o.stderr).trim()));
-    }
-    Ok(())
+    complete_human_task(&st.dag, &st.run, &st.step, json!({"by": "jeff", "decision": verdict}))
 }
 
 /// #4885 — what a step's next check asks (`chorus-go check-step <dag> <run> <step>`): Jeff's signed
@@ -168,10 +161,9 @@ pub fn land_step(store: &Store, dag: &str, run: &str, step: &str) -> Result<(), 
 // `cards add` argv as data. Nothing here PATCHes a row.
 
 fn door() -> String { env_or("CHORUS_GO_DOOR", "http://localhost:3360") }
-fn curl_bin() -> String { env_or("CHORUS_GO_CURL", "/usr/bin/curl") }
 
 fn door_get(route: &str) -> Result<Vec<Value>, String> {
-    let o = Command::new(curl_bin()).args(["-sf", "--max-time", "8", &format!("{}{route}?limit=10000", door())])
+    let o = Command::new(CURL).args(["-sf", "--max-time", "8", &format!("{}{route}?limit=10000", door())])
         .output().map_err(|e| format!("door: {e}"))?;
     if !o.status.success() { return Err(format!("the door did not answer {route}")); }
     let v: Value = serde_json::from_slice(&o.stdout).map_err(|_| format!("the door's {route} is not JSON"))?;
@@ -355,7 +347,7 @@ fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str
         "passkeyProof": json!({"nonce": d.nonce, "authData": ad, "clientDataJSON": cd, "signature": sig}).to_string()});
     if let Some(r) = round { body["signedRound"] = json!(r); }
     // The token goes on curl's stdin (`-H @-`), never its argv: argv is readable by any account via `ps`.
-    let mut child = Command::new(curl_bin()).args(["-sS", "--max-time", "8", "-X", "POST", "-w", "\n%{http_code}",
+    let mut child = Command::new(CURL).args(["-sS", "--max-time", "8", "-X", "POST", "-w", "\n%{http_code}",
             "-H", "Content-Type: application/json", "-H", "@-",
             "--data-binary", &body.to_string(), &format!("{}/decisions/approvaldecisions", door())])
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
