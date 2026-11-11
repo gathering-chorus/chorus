@@ -85,7 +85,7 @@ pub fn run(call: &Call) -> R<(u16, String)> {
     let tok = std::fs::read_to_string(&file).map_err(|e| format!("auth-fail: {}: {}", std::path::Path::new(&file).display(), e))?;
     let api = std::env::var(GITHUB_API_ENV).unwrap_or_else(|_| "https://api.github.com".into());
     let stdin = format!("Authorization: {} {}\n", "token", credential_line(&tok));
-    let mut c = Command::new("curl");
+    let mut c = Command::new("/usr/bin/curl");
     c.args(["-sS", "--max-time", "30", "-o", "-", "-w", "\n%{http_code}", "-X", call.method, "-H", "@-",
             "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"]);
     if let Some(b) = &call.body {

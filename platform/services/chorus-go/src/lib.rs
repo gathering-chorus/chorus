@@ -355,7 +355,7 @@ pub fn werk_head(werk: &str) -> Result<String, String> {
     // git compares the resolved path (/var → /private/var on macOS)
     let real = fs::canonicalize(werk).map_err(|e| e.to_string())?;
     fs::write(&cfg, format!("[safe]\n\tdirectory = {}\n", real.display())).map_err(|e| e.to_string())?;
-    let o = std::process::Command::new("git")
+    let o = std::process::Command::new("/usr/bin/git")
         .env("GIT_CONFIG_GLOBAL", &cfg)
         .args(["-C", werk, "rev-parse", "HEAD"])
         .output();
@@ -600,8 +600,12 @@ pub fn land_go_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value],
         if g.card != card || g.round != round { continue; }
         let row = local(&s(a, "name"));
         for d in decisions.iter().filter(|d| local(&s(d, "decides")) == row) {
-            if local(&s(d, "ownedBy")) != "principal-jeff" {
-                last = format!("a go decision for #{card} not owned by principal-jeff decides nothing");
+            // #4710 — the lander writes Jeff's decision row as itself (principal-lander); the
+            // passkey signature below is the authority either way, re-verified every time, and an
+            // owner alone never passes. No other principal's row decides anything.
+            let owner = local(&s(d, "ownedBy"));
+            if owner != "principal-jeff" && owner != "principal-lander" {
+                last = format!("a go decision for #{card} owned by {owner}, not principal-jeff or principal-lander, decides nothing");
                 continue;
             }
             let proof: Value = serde_json::from_str(&s(d, "passkeyProof")).unwrap_or(Value::Null);

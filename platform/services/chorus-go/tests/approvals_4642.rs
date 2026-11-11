@@ -138,6 +138,25 @@ fn the_land_finds_jeffs_signed_go_in_the_door_rows() {
     land_go_from_rows(&pk, &a, &d, 4642, HEAD).unwrap();
 }
 
+// #4710 — the lander writes Jeff's decision as principal-lander; his signature still decides.
+#[test]
+fn a_lander_owned_row_with_jeffs_signature_lands_and_with_a_bad_one_does_not() {
+    let (store, mut phone) = registered("land-lander");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    let (_, proof) = sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    let (a, d) = door_rows(&r, &proof, "principal-lander", "approve");
+    land_go_from_rows(&pk, &a, &d, 4642, HEAD).unwrap();
+    // NEGATIVE PROOF (Silas 18:09): owner alone never passes — a lander-owned row whose proof
+    // is not Jeff's signature over this card, run and round is refused
+    let (a, d) = door_rows(&r, &serde_json::json!({}), "principal-lander", "approve");
+    assert!(land_go_from_rows(&pk, &a, &d, 4642, HEAD).is_err());
+    let mut forged = proof.clone();
+    forged["signature"] = serde_json::json!("AAAA");
+    let (a, d) = door_rows(&r, &forged, "principal-lander", "approve");
+    assert!(land_go_from_rows(&pk, &a, &d, 4642, HEAD).is_err());
+}
+
 #[test]
 fn negative_proof_the_land_refuses_rows_that_are_not_jeffs_signed_go() {
     let (store, mut phone) = registered("land-neg");
@@ -146,7 +165,7 @@ fn negative_proof_the_land_refuses_rows_that_are_not_jeffs_signed_go() {
     let pk = store.passkey().unwrap().unwrap();
     // a decision a role wrote decides nothing (the door stamps owners; the land checks it too)
     let (a, d) = door_rows(&r, &proof, "principal-kade", "approve");
-    assert!(land_go_from_rows(&pk, &a, &d, 4642, HEAD).unwrap_err().contains("not owned by principal-jeff"));
+    assert!(land_go_from_rows(&pk, &a, &d, 4642, HEAD).unwrap_err().contains("not principal-jeff or principal-lander"));
     // no go row for this round, and no rows at all
     let (a, d) = door_rows(&r, &proof, "principal-jeff", "approve");
     assert!(land_go_from_rows(&pk, &a, &d, 4642, OLD).unwrap_err().contains("no go signed"));

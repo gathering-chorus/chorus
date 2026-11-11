@@ -58,7 +58,7 @@ pub fn app_jwt_unsigned(app_id: &str, now: u64) -> String {
 /// Errors name the key's path, never its contents.
 pub fn rs256(signing_input: &str, key: &std::path::Path) -> Result<String, String> {
     use std::io::Write;
-    let mut child = std::process::Command::new("openssl")
+    let mut child = std::process::Command::new("/usr/bin/openssl")
         .args(["dgst", "-sha256", "-sign"]).arg(key)
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null())
         .spawn().map_err(|e| format!("auth-fail: openssl did not start: {e}"))?;
@@ -113,7 +113,7 @@ pub fn arm_app_credential() -> Result<std::path::PathBuf, String> {
     let jwt = format!("{unsigned}.{}", rs256(&unsigned, &key)?);
     let api = std::env::var(GITHUB_API_ENV).unwrap_or_else(|_| "https://api.github.com".into());
     // the JWT goes to curl on stdin as a header file (-H @-), never on argv
-    let mut child = std::process::Command::new("curl")
+    let mut child = std::process::Command::new("/usr/bin/curl")
         .args(["-sS", "--max-time", "20", "-X", "POST", "-H", "@-",
                "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"])
         .arg(format!("{api}/app/installations/{inst}/access_tokens"))
@@ -206,7 +206,7 @@ mod app_credential_4710 {
     fn the_jwt_is_rs256_over_header_and_claims_and_verifies() {
         let d = tmp("jwt");
         let key = d.join("key.pem");
-        let ok = std::process::Command::new("openssl").args(["genrsa", "-out"]).arg(&key).arg("2048")
+        let ok = std::process::Command::new("/usr/bin/openssl").args(["genrsa", "-out"]).arg(&key).arg("2048")
             .stderr(std::process::Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
         if !ok { eprintln!("unmeasured: no openssl genrsa here"); return; }
         let unsigned = app_jwt_unsigned("123456", 1_800_000_000);
@@ -214,11 +214,11 @@ mod app_credential_4710 {
         let claims = String::from_utf8(b64url_decode(unsigned.split('.').nth(1).unwrap())).unwrap();
         assert_eq!(claims, r#"{"iat":1799999940,"exp":1800000540,"iss":"123456"}"#);
         let pubk = d.join("pub.pem");
-        assert!(std::process::Command::new("openssl").args(["rsa", "-pubout", "-in"]).arg(&key).arg("-out").arg(&pubk)
+        assert!(std::process::Command::new("/usr/bin/openssl").args(["rsa", "-pubout", "-in"]).arg(&key).arg("-out").arg(&pubk)
             .stderr(std::process::Stdio::null()).status().unwrap().success());
         let sigf = d.join("sig"); std::fs::write(&sigf, b64url_decode(&sig)).unwrap();
         let datf = d.join("dat"); std::fs::write(&datf, &unsigned).unwrap();
-        let verify = |data: &std::path::Path| std::process::Command::new("openssl")
+        let verify = |data: &std::path::Path| std::process::Command::new("/usr/bin/openssl")
             .args(["dgst", "-sha256", "-verify"]).arg(&pubk).arg("-signature").arg(&sigf).arg(data)
             .stdout(std::process::Stdio::null()).status().unwrap().success();
         assert!(verify(&datf), "signature does not verify");
@@ -241,7 +241,7 @@ mod app_credential_4710 {
         let d = tmp("argv");
         let app = d.join("app"); std::fs::create_dir_all(&app).unwrap();
         let key = app.join("key.pem");
-        let ok = std::process::Command::new("openssl").args(["genrsa", "-out"]).arg(&key).arg("2048")
+        let ok = std::process::Command::new("/usr/bin/openssl").args(["genrsa", "-out"]).arg(&key).arg("2048")
             .stderr(std::process::Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
         if !ok { eprintln!("unmeasured: no openssl genrsa here"); return; }
         std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
