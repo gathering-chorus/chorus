@@ -870,12 +870,27 @@ LAST=""
 [ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE")
 printf '%s' "$CURRENT" > "$STATE_FILE"
 
+# #4957 — each failure is one AlertCase (alert deep-health, subject = the failure
+# without its changing detail): a standing failure moves lastSeen on its open case,
+# and a failure in LAST that is gone from CURRENT is measured fixed and closed. The
+# role reads its cases in its context; nothing is typed into its pane.
+ALERT_CASE="${HEALTH_ALERT_CASE:-${CHORUS_ROOT}/platform/scripts/alert-case}"
+if [ -x "$ALERT_CASE" ]; then
+  for f in "${FAILURES[@]}"; do
+    "$ALERT_CASE" open deep-health "${f%% — *}" "$ALERT_ROLE" "$f" >/dev/null || echo "deep-health: could not record the case for: ${f%% — *}" >&2
+  done
+  while IFS= read -r gone; do
+    [ -n "$gone" ] || continue
+    printf '%s\n' "$CURRENT" | grep -qxF -- "$gone" || "$ALERT_CASE" close deep-health "$gone" >/dev/null || echo "deep-health: could not close the case for: $gone" >&2
+  done <<< "$LAST"
+fi
+
 if [ "$CURRENT" = "$LAST" ]; then
   # #3753: "deduped", not "suppressed" — the alert-suppress.bats contract asserts
 # "suppressed" appears ONLY for the /tmp suppress-file path; this dedup line
 # sharing the word made those tests fail on any box with a standing failure set.
 echo "deep-health: failure set unchanged — alert deduped (see $STATE_FILE)"
-else
+elif [ ! -x "$ALERT_CASE" ]; then
   "$OPS_NUDGE" "$ALERT_ROLE" "$MSG" 2>/dev/null || true
 fi
 "$CHORUS_LOG" ops.health.deep_check_failed system failures="${#FAILURES[@]}" 2>/dev/null || true

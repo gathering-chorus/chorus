@@ -20,6 +20,9 @@ ALERT_DIR="${CHORUS_ROOT}/proving/domains/alerts"
 ALERT_DIR="${ALERT_RULES_DIR:-$ALERT_DIR}"
 ALERT_STATE_DIR="${ALERT_STATE_DIR:-/Users/jeffbridwell/Library/Logs/Gathering/alert-state}"
 LOG="${ALERT_LOG:-/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log}"
+# #4957 — every rule's finding is one AlertCase: a FIRE opens (or moves lastSeen on)
+# the rule's case, owned by the rule's owner; an OK is the measured fix that closes it.
+ALERT_CASE="${ALERT_CASE:-${CHORUS_ROOT}/platform/scripts/alert-case}"
 COOLDOWN_SECONDS="${ALERT_COOLDOWN:-600}"  # 10 minutes default
 CONSECUTIVE_THRESHOLD="${ALERT_THRESHOLD:-2}"  # require 2 failures before firing
 TIMESTAMP() { boston_time stamp; }
@@ -60,6 +63,8 @@ run_check() {
 
   if [[ $rc -eq 0 ]]; then
     log "OK $name${result:+ — $result}"
+    # #4957 — the check measured it fixed: close the rule's open case (a no-op when none)
+    "$ALERT_CASE" close "$name" "$name" >> "$LOG" 2>&1 || log "CASE $name — could not close its case"
     # Reset consecutive failure count on success
     rm -f "$ALERT_STATE_DIR/${name}.consecutive"
     return
@@ -77,6 +82,12 @@ run_check() {
     log "WARN $name — failure $fail_count/$CONSECUTIVE_THRESHOLD, waiting for consecutive threshold"
     return
   fi
+
+  # #4957 — the finding is a case before anything else: past the consecutive threshold,
+  # and before the cooldown, which paces only the action: a standing finding moves lastSeen every cycle
+  local owner; owner=$(awk -F': *' '/^owner:/{print $2; exit}' "$rule_file")
+  "$ALERT_CASE" open "$name" "$name" "${owner:-silas}" "${result:-$name failed}" >> "$LOG" 2>&1 \
+    || log "CASE $name — could not record its case"
 
   # Cooldown — skip if fired too recently
   local fire_file="$ALERT_STATE_DIR/${name}.last_fire"

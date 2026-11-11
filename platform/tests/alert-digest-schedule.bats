@@ -27,6 +27,7 @@ if m=="GET":
     q=dict(u.parse_qsl(u.urlparse(url).query))
     out=[r for r in rows if all(r.get(k)==v for k,v in q.items() if k in("caseOf","caseSubject","ownedBy"))
          and (q.get("caseClosedAt.absent")!="true" or not r.get("caseClosedAt"))]
+    if "/v1/roles/roles" in url: out=[{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]
     print(json.dumps({"data":out})); print(200); sys.exit()
 b=json.loads(body)
 if m=="POST": rows.append(b)
@@ -86,4 +87,13 @@ EOS
   test "$status" -ne 0
   printf '%s' "$output" | grep -qF "the last digest stays"
   grep -qF "bedroom-disk / bedroom-external" "$T/digests/silas.md"
+}
+
+@test "with no roles named, every agent role the roles door lists gets a digest, and a person does not" {
+  "$CASE" open bedroom-disk bedroom-external silas "Bedroom external disk at 98%"
+  run "$DIGEST"
+  test "$status" -eq 0
+  test -f "$T/digests/silas.md"
+  test -f "$T/digests/kade.md"
+  test ! -e "$T/digests/jeff.md"
 }

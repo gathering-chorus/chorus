@@ -45,6 +45,5 @@ check: |
   print("ok")
   '
 
-action: |
-  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" kade "crawler-out-of-sync: rule a crawled class out of step with git for over an hour, or the sync sensor quiet: $STATUS" 2>/dev/null || true
+# #4957 — no action: alert-runner records the finding as kade's open AlertCase (opened
+# on FIRE, closed when this check reads ok), read in kade's context, never typed into a pane.

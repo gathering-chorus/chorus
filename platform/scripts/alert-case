@@ -75,5 +75,15 @@ print(json.dumps({"name":n,"label":a+": "+s,"caseOf":a,"caseSubject":s,"ownedBy"
     t=$(now)
     write PATCH "$ROUTE/$name" "$(python3 -c 'import json,sys;print(json.dumps({"stillTrue":False,"caseClosedAt":sys.argv[1],"lastSeen":sys.argv[1]}))' "$t")"
     echo "alert-case: $1/$2 closed ($name) — the source measured it fixed" ;;
-  *) die "usage: alert-case open <alert> <subject> <owner-role> <cause> | close <alert> <subject>" ;;
+  subjects)
+    # the subjects of <alert>'s open cases, one per line: a source that measures many
+    # subjects (the nightly's suites) closes only the ones it opened
+    [ $# -eq 1 ] || die "usage: alert-case subjects <alert>"
+    out=$("$CURL" -s --max-time 10 $(auth) "$ROUTE?caseOf=$(enc "$1")&caseClosedAt.absent=true&limit=5000" 2>&1) || die "the door did not answer the case listing at $ROUTE: $out"
+    python3 -c '
+import json,sys
+try: rows=json.loads(sys.stdin.read().split("\n")[0])["data"]
+except Exception: sys.exit("alert-case: the case listing was not a listing")
+for r in rows: print(r.get("caseSubject",""))' <<<"$out" ;;
+  *) die "usage: alert-case open <alert> <subject> <owner-role> <cause> | close <alert> <subject> | subjects <alert>" ;;
 esac
