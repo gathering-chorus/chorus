@@ -333,14 +333,12 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
     Ok(json!({"ok": true, "text": format!("Approved. {}", out.lines().find(|l| l.contains('#')).unwrap_or("Filed.").trim())}))
 }
 
-/// Jeff's decision is his own row, written as principal-jeff, only after verify_assertion passed.
+/// Jeff's decision row, written by the lander (principal-lander), only after verify_assertion passed.
 fn write_decision(d: &ApprovalDecision, sha: &str, ad: &str, cd: &str, sig: &str, round: Option<&str>) -> Result<(), String> {
-    let mint = env_or("CHORUS_GO_IDENTITY_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", chorus_home()));
-    let t = Command::new(&mint).arg("jeff").output().map_err(|e| format!("identity mint: {e}"))?;
-    let token = String::from_utf8_lossy(&t.stdout).trim().to_string();
-    if !t.status.success() || token.is_empty() {
-        return Err("signed, but there is no identity for jeff to record it with (Jeff's step: seed principal-jeff)".into());
-    }
+    // #4710 — written as principal-lander (its own login, minted in process); Jeff's passkey
+    // signature inside the row is what the land re-verifies.
+    let token = crate::identity::lander_token()
+        .map_err(|e| format!("signed, but the lander cannot record it: {e} (Jeff's step: seed principal-lander)"))?;
     let mut body = json!({"name": format!("decision-{}", d.row), "label": format!("{} {}", d.decision, d.row),
         "decides": d.row, "approvalVerdict": d.decision, "decidedAt": iso(d.at), "actionSha": sha,
         // the nonce rides with the signature so the land can re-verify a go (#4642)
@@ -430,6 +428,5 @@ fn resend_go(store: &Store, row: &str) -> Result<Value, String> {
 /// spine); the land still has the signed local record.
 fn alert_unrecorded(row: &str, why: &str) {
     eprintln!("chorus-go: approval.decision.unrecorded row={row}: {why}");
-    let log = format!("{}/platform/scripts/chorus-log", chorus_home());
-    let _ = Command::new(log).args(["approval.decision.unrecorded", "system", &format!("row={row}"), &format!("reason={}", why.replace(' ', "_"))]).output();
+    spine_post("approval.decision.unrecorded", &[("row", row.to_string()), ("reason", why.replace(' ', "_"))]);
 }

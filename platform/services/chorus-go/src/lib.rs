@@ -24,7 +24,39 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod serve;
+/// #4710 — a spine event, as the lander writes one: POST /api/chorus/spine-event by /usr/bin/curl
+/// with the lander's own door login (the route refuses without one). The lander runs no
+/// chorus-log or bash: programs others can write would run as it. Fire and forget, like
+/// chorus-log: no login, or no answer, writes nothing and says so on stderr.
+pub fn spine_post(event: &str, fields: &[(&str, String)]) {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut body = serde_json::Map::new();
+    body.insert("event".into(), json!(event));
+    body.insert("role".into(), json!("system"));
+    for (k, v) in fields { body.insert((*k).into(), json!(v)); }
+    let tok = match identity::lander_token() {
+        Ok(t) => t,
+        Err(e) => { eprintln!("chorus-go: spine {event} not written: {e}"); return; }
+    };
+    let f = std::env::temp_dir().join(format!("chorus-go-spine-{}-{}", std::process::id(), now()));
+    let Ok(mut bf) = fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&f) else { return };
+    let _ = bf.write_all(serde_json::Value::Object(body).to_string().as_bytes());
+    let url = std::env::var("CHORUS_GO_SPINE").unwrap_or_else(|_| "http://127.0.0.1:3340/api/chorus/spine-event".into());
+    if let Ok(mut c) = std::process::Command::new("/usr/bin/curl")
+        .args(["-s", "--max-time", "3", "-o", "/dev/null", "-X", "POST", "-H", "@-", "-H", "Content-Type: application/json",
+               "--data-binary", &format!("@{}", f.display()), &url])
+        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        if let Some(mut i) = c.stdin.take() { let _ = writeln!(i, "Authorization: Bearer {tok}"); }
+        let _ = c.wait();
+    }
+    let _ = fs::remove_file(&f);
+}
+
 pub mod github;
+pub mod identity;
 
 pub type R<T> = Result<T, String>;
 

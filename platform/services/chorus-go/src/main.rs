@@ -2,10 +2,9 @@
 //! (lightlifeurbangardens.com/go); `register-link` makes the one-time link that
 //! registers Jeff's phone; `check <card> <round>` is what the land asks; `check-step <dag> <run> <step>`
 //! is what a step after a Jeff-only human step asks (#4885).
-use chorus_go::serve::{chorus_home, env_or, handle, origin};
+use chorus_go::serve::{env_or, handle, origin};
 use chorus_go::*;
 use std::net::TcpListener;
-use std::process::Command;
 
 #[allow(dead_code)]
 mod service_lifecycle {
@@ -17,14 +16,12 @@ fn service_label() -> String {
     service_lifecycle::launchd_label().unwrap_or_else(|| "com.chorus.go".to_string())
 }
 
-/// #4446 — every service logs its lifecycle, through chorus-log like athena-make.
+/// #4446 — every service logs its lifecycle; #4710 — over the spine's HTTP route (spine_post),
+/// since the lander runs no chorus-log or bash.
 fn emit_lifecycle((event, fields): service_lifecycle::LifecycleEvent) {
-    let mut args = vec![format!("{}/platform/scripts/chorus-log", chorus_home()), event.to_string(), "system".to_string()];
-    args.extend(fields.into_iter().map(|(k, v)| format!("{k}={v}")));
-    if event == "service.failed" {
-        args.push("--level=error".to_string());
-    }
-    let _ = Command::new("bash").args(&args).output();
+    let mut f: Vec<(&str, String)> = fields.iter().map(|(k, v)| (k.as_ref(), v.to_string())).collect();
+    if event == "service.failed" { f.push(("level", "error".into())); }
+    spine_post(event, &f);
 }
 
 fn main() {
