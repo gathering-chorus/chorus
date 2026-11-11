@@ -981,12 +981,12 @@ async fn post_tool_use(
                     if *target == role_name { continue; }
                     let msg = format!("[artifact] {} created {} — new design doc", role_name, fname);
                     let nudge_sh = format!("{}/platform/scripts/nudge.sh", crate::shared::state_paths::chorus_root());
-                    let _ = std::process::Command::new("bash")
+                    // #4951 — fire-and-forget, don't block, but reaped: a dropped Child is a zombie
+                    let _ = crate::shared::reap::spawn_reaped(std::process::Command::new("bash")
                         .args([
                             nudge_sh.as_str(),
                             target, &msg, "--level", "info", "--from", &role_name,
-                        ])
-                        .spawn(); // fire-and-forget, don't block
+                        ]));
                 }
             }
         }

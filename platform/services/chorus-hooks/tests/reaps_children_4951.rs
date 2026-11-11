@@ -50,30 +50,42 @@ fn ac1_spawn_reaped_leaves_no_zombie() {
     assert_eq!(my_zombies(), 0, "spawn_reaped left zombies");
 }
 
-/// AC1 guard — no source in chorus-hooks drops a spawned Child, and chorus-runner no
-/// longer forgets its task children. A new `.spawn();` that throws the Child away
-/// fails here, naming the file.
+/// The lines of `src` that throw a spawned Child away: a statement that ends in
+/// `.spawn()` (a trailing comment allowed) or `.spawn().ok()`, or a forgotten Child.
+fn dropped_spawns(src: &str) -> Vec<usize> {
+    src.lines().enumerate().filter_map(|(i, l)| {
+        let code = l.split("//").next().unwrap_or("").trim();
+        let dropped = code.ends_with(".spawn();") || code.ends_with(".spawn().ok();") || code.contains("mem::forget(child)");
+        dropped.then_some(i + 1)
+    }).collect()
+}
+
+/// NEGATIVE PROOF for the guard (code review, round 3fce0a9): each shape it must catch.
+#[test]
+fn negative_proof_the_guard_sees_every_dropped_shape() {
+    for s in ["        .spawn();", "        .spawn(); // fire-and-forget", "    let _ = c.spawn();", "    c.spawn().ok();", "    std::mem::forget(child);"] {
+        assert_eq!(dropped_spawns(s), vec![1], "missed: {s}");
+    }
+    for s in ["    let child = c.spawn()?;", "    spawn_reaped(&mut c)?;", "    // .spawn();"] {
+        assert!(dropped_spawns(s).is_empty(), "false hit: {s}");
+    }
+}
+
+/// AC1 guard — no source in chorus-hooks or chorus-runner drops a spawned Child. A
+/// new one fails here, naming the file and line.
 #[test]
 fn ac1_no_site_drops_a_spawned_child() {
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let mut offenders = Vec::new();
-    let mut walk = vec![std::path::PathBuf::from(format!("{crate_dir}/src"))];
+    let mut walk = vec![std::path::PathBuf::from(format!("{crate_dir}/src")), std::path::PathBuf::from(format!("{crate_dir}/../chorus-runner/src"))];
     while let Some(d) = walk.pop() {
         for e in std::fs::read_dir(&d).unwrap().flatten() {
             let p = e.path();
             if p.is_dir() { walk.push(p); continue; }
             if p.extension().and_then(|x| x.to_str()) != Some("rs") { continue; }
             let text = std::fs::read_to_string(&p).unwrap();
-            for (i, l) in text.lines().enumerate() {
-                let t = l.trim();
-                if t.starts_with("//") { continue; }
-                if t == ".spawn();" || (t.starts_with("let _ =") && t.ends_with(".spawn();")) {
-                    offenders.push(format!("{}:{}", p.display(), i + 1));
-                }
-            }
+            for n in dropped_spawns(&text) { offenders.push(format!("{}:{n}", p.display())); }
         }
     }
-    let runner = std::fs::read_to_string(format!("{crate_dir}/../chorus-runner/src/tasks.rs")).unwrap();
-    if runner.contains("std::mem::forget(child)") { offenders.push("chorus-runner/src/tasks.rs: mem::forget(child)".into()); }
     assert!(offenders.is_empty(), "children spawned and never waited on:\n{}", offenders.join("\n"));
 }
