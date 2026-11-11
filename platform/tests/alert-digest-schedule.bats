@@ -18,10 +18,11 @@ setup() {
   # caseSubject, ownedBy and caseClosedAt.absent; POST adds; PATCH merges by name
   cat > "$T/bin/curl" <<EOS
 #!/bin/bash
-m=GET; body=""; url=""
-while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=\$(cat "\${2#@}"); shift ;; -H|-o|-w|--max-time) shift ;; http*) url="\$1" ;; esac; shift; done
+m=GET; body=""; url=""; auth=0
+while [ \$# -gt 0 ]; do case "\$1" in -X) m="\$2"; shift ;; --data-binary) body=\$(cat "\${2#@}"); shift ;; -H) case "\$2" in @*) grep -q '^Authorization: Bearer .' "\${2#@}" && auth=1 ;; esac; shift ;; -o|-w|--max-time) shift ;; http*) url="\$1" ;; esac; shift; done
+export FAKE_AUTH=\$auth
 python3 - "$T/rows.json" "\$m" "\$url" "\$body" <<'PY'
-import json,sys,urllib.parse as u
+import json,sys,os,urllib.parse as u
 p,m,url,body=sys.argv[1:5]; rows=json.load(open(p))
 # #4957 — like the real door: only the routes it serves answer, and a listing is
 # pretty-printed over many lines (a first-line parse and a wrong path both went live)
@@ -34,6 +35,8 @@ if m=="GET":
          and (q.get("caseClosedAt.absent")!="true" or not r.get("caseClosedAt"))]
     if "/v1/roles/roles" in url: out=[{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]
     print(json.dumps({"data":out}, indent=1)); print(200); sys.exit()
+if m!="GET" and os.environ.get("FAKE_AUTH")!="1":
+    print(json.dumps({"error":"authn-missing"}, indent=1)); print(401); sys.exit()
 b=json.loads(body)
 if m=="POST": rows.append(b)
 else:
@@ -49,6 +52,9 @@ EOS
   done
   chmod +x "$T/bin/"*
   export PATH="$T/bin:$PATH" ALERT_CURL="$T/bin/curl" ALERT_DOOR="http://door.test" ALERT_DIGEST_DIR="$T/digests"
+  # the alerts principal's token (a stub minter: asked for "alerts", it answers one)
+  printf '#!/bin/bash\n[ "$1" = alerts ] && echo tok-alerts || { echo "no credential for $1" >&2; exit 3; }\n' > "$T/token"; chmod +x "$T/token"
+  export ALERT_TOKEN_BIN="$T/token"
   export CHORUS_HOOK_SHIM="$T/bin/chorus-hook-shim"
   CASE="$ROOT/platform/scripts/alert-case"; DIGEST="$ROOT/platform/scripts/alert-digest"
 }

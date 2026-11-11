@@ -161,6 +161,19 @@ chorus:principal-crawler a chorus:Principal ;
     chorus:holdsRole chorus:role-crawler ;
     chorus:canSignIn "false" .
 
+# #4957 — the alerts service principal. alert-case and alert-digest write AlertCase rows
+# for the alert sources (the YAML runner, deep-health, the nightly) that run as Jeff's
+# account under launchd; the door refuses a write without a verified service credential
+# (Kade 2026-11-11 14:22, athena-make lib.rs:7093). Credential seeded by Jeff 14:50
+# (seed-css.sh, AGENTS=alerts); its VALUE is never modeled. Write reaches only the
+# alerts graph (permissions-4183.ttl, security-scopes-3689.ttl).
+chorus:principal-alerts a chorus:Principal ;
+    rdfs:label "alerts (AlertCase writer service principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/alerts/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;
+    chorus:canSignIn "false" .
+
 # #3653 — Jeff joins his own security model. The human is a Principal like every
 # other actor (ADR-052: one identity mechanism for human, agent, service). Root
 # authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is

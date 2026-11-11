@@ -15,10 +15,16 @@ set -uo pipefail
 
 DOOR="${ALERT_DOOR:-http://localhost:3360}"
 CURL="${ALERT_CURL:-curl}"
+# #4957 — reads as the alerts principal too, so the listing is what that principal may
+# see, not what an anonymous caller is shown; no token is a loud exit, the last digest stays
+TOKEN_BIN="${ALERT_TOKEN_BIN:-$(dirname "$0")/chorus-identity-token}"
+HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
+tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>&1) || { echo "alert-digest: no token for ${ALERT_PRINCIPAL:-alerts}; the last digest stays: $tok" >&2; exit 1; }
+printf 'Authorization: Bearer %s\n' "$tok" > "$HDR"; unset tok
 DIR="${ALERT_DIGEST_DIR:-$HOME/.chorus/alerts}"
 # no roles named: every agent role the roles door lists (a list typed here would drift)
 if [ $# -eq 0 ]; then
-  roles=$("$CURL" -s --max-time 10 "$DOOR/v1/roles/roles?limit=200" 2>/dev/null | python3 -c '
+  roles=$("$CURL" -s --max-time 10 -H "@$HDR" "$DOOR/v1/roles/roles?limit=200" 2>/dev/null | python3 -c '
 import json,sys
 try: print(" ".join(r["name"] for r in json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())[0]["data"] if r.get("roleKind")=="agent"))
 except Exception: pass') || true
@@ -29,7 +35,7 @@ mkdir -p "$DIR"
 
 rc=0
 for role in "$@"; do
-  if ! out=$("$CURL" -s --max-time 10 "$DOOR/v1/alerts/cases?ownedBy=principal-$role&caseClosedAt.absent=true&limit=500" 2>&1); then
+  if ! out=$("$CURL" -s --max-time 10 -H "@$HDR" "$DOOR/v1/alerts/cases?ownedBy=principal-$role&caseClosedAt.absent=true&limit=500" 2>&1); then
     echo "alert-digest: the door did not answer for $role; the last digest stays: $out" >&2; rc=1; continue
   fi
   tmp="$DIR/.$role.md.tmp"

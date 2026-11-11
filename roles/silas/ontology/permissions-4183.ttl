@@ -353,6 +353,14 @@ chorus:permission-nightly-nudge-read a chorus:Permission ;
     chorus:mode acl:Read ;
     chorus:ownedBy chorus:principal-silas .
 
+# #4957 — alerts writes its AlertCases, and only in the alerts graph
+chorus:permission-alerts-alerts a chorus:Permission ;
+    rdfs:label "alerts may write urn:chorus:domains:alerts" ;
+    chorus:agent chorus:principal-alerts ;
+    chorus:accessTo "urn:chorus:domains:alerts"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
 chorus:permission-crawler-code a chorus:Permission ;
     rdfs:label "crawler may write urn:chorus:domains:code" ;
     chorus:agent chorus:principal-crawler ;

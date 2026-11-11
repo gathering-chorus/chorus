@@ -13,9 +13,11 @@
 # A door that does not answer is a non-zero exit with the reason, never a guess
 # (a guess would open a second row for one condition).
 #
-# Env: ALERT_DOOR (the model door, default http://localhost:3360), ALERT_CURL
-# (curl), ALERT_AUTH_HEADER (a file holding the Authorization header line; when
-# unset, writes go unauthenticated, as the door's own tests run).
+# Env: ALERT_DOOR (the model door, default http://localhost:3360), ALERT_CURL (curl),
+# ALERT_PRINCIPAL (default alerts) and ALERT_TOKEN_BIN (default chorus-identity-token).
+# Every call carries the alerts service principal's token: the door refuses any write
+# without a verified service credential (#4957 land, 11-11 14:22). No token is a
+# non-zero exit with the reason, never an unauthenticated try.
 set -uo pipefail
 
 DOOR="${ALERT_DOOR:-http://localhost:3360}"
@@ -23,7 +25,11 @@ CURL="${ALERT_CURL:-curl}"
 ROUTE="$DOOR/v1/alerts/cases"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 die() { echo "alert-case: $*" >&2; exit 1; }
-auth() { [ -n "${ALERT_AUTH_HEADER:-}" ] && printf '%s\n' -H "@$ALERT_AUTH_HEADER"; }
+TOKEN_BIN="${ALERT_TOKEN_BIN:-$(dirname "$0")/chorus-identity-token}"
+HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
+tok=$("$TOKEN_BIN" "${ALERT_PRINCIPAL:-alerts}" 2>&1) || { echo "alert-case: no token for ${ALERT_PRINCIPAL:-alerts}: $tok" >&2; exit 1; }
+printf 'Authorization: Bearer %s\n' "$tok" > "$HDR"; unset tok
+auth() { printf '%s\n' -H "@$HDR"; }
 enc()  { python3 -c 'import sys,urllib.parse as u;print(u.quote(sys.argv[1],safe=""))' "$1"; }
 
 # the open case for (alert, subject): prints its name, or nothing; exit 1 when the door did not answer
