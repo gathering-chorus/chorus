@@ -172,6 +172,9 @@ chorus:principal-alerts a chorus:Principal ;
     chorus:webId "https://id.lightlifeurbangardens.com/alerts/profile/card#me" ;
     chorus:principalKind "service" ;
     chorus:hostAccount "jeffbridwell" ;
+    # its scope sits here, in the security graph with its type: security-scopes-3689.ttl
+    # loads into the ontology graph, where a scope alone is an untyped instance (athena run 7)
+    chorus:hasScope "urn:chorus:domains:alerts"^^<http://www.w3.org/2001/XMLSchema#anyURI> ;
     chorus:canSignIn "false" .
 
 # #3653 — Jeff joins his own security model. The human is a Principal like every

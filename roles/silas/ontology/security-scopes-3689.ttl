@@ -105,10 +105,6 @@ chorus:principal-chorus-sdk
 chorus:principal-nightly
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI .
 
-# #4957 — alerts: the one graph its AlertCases live in.
-chorus:principal-alerts
-    chorus:hasScope "urn:chorus:domains:alerts"^^xsd:anyURI .
-
 # #4154 — crawler: LEAST privilege, the two graphs it owns. Write / replace /
 # delete there (files leave disk, rows must follow); every other graph out of
 # reach by construction. Reads need no grant.
