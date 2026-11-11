@@ -39,12 +39,19 @@ fi
 # observer-digest for ollama-down + vikunja-auth-failure shows alerts firing
 # 2026-04-21 with NO bridge.message events ever — delivered via nudge alone.
 # Bridge POST coverage is separate policy question, tracked outside this card.
+# #4957 — a third surface: the runner records every FIRE as an AlertCase the owner reads
+# in their context. A rule with no nudge and no POST is delivered only if the runner
+# really does that, so the runner is checked, not assumed.
+RUNNER_CASES=0
+grep -q '"\$ALERT_CASE" open' "$RUNNER" 2>/dev/null && RUNNER_CASES=1
 for rule in "$ALERT_DIR"/*.yml; do
   name=$(grep '^name:' "$rule" | head -1 | sed 's/name: *//')
   if grep -q 'localhost:3470' "$rule" || grep -q 'ops-nudge\|/nudge' "$rule"; then
     test_pass "$name has delivery surface"
+  elif [ "$RUNNER_CASES" -eq 1 ]; then
+    test_pass "$name has delivery surface (the runner's AlertCase)"
   else
-    test_fail "$name missing both ops-nudge and Bridge POST"
+    test_fail "$name missing ops-nudge, Bridge POST and the runner's AlertCase"
   fi
 done
 
