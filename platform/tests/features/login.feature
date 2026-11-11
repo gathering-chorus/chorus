@@ -45,17 +45,14 @@ Feature: A principal logs in, works, and logs out
     Then the same session row's last-seen time moves to the turn's time
     And no second session row is written
 
-  Scenario: A live session never reads as expired
+  # #4950 — "A live session never reads as expired" and "Another role's token never moves
+  # a session's expiry" are deleted: #4944/#4948 retired renewal (a session is login to
+  # logout; liveness is the role's process). What stands is the no-renewal truth.
+  Scenario: A turn never renews a session
     Given wren is logged in
     And wren's login token has been renewed
     When wren takes a turn
-    Then the session's expiry moves forward to the renewed token's expiry
-
-  Scenario: Another role's token never moves a session's expiry
-    Given wren is logged in
-    And wren's token names kade
-    When wren takes a turn
-    Then the session's expiry does not move
+    Then the turn's session write carries no expiry
 
   Scenario: An unchanged focus is still re-checked
     Given wren is logged in
@@ -103,11 +100,13 @@ Feature: A principal logs in, works, and logs out
     Then that pane is ended and wren starts again
     And the command says wren is logged in
 
-  Scenario: Login with identity down starts the role, degraded and loud
+  # #4950 — was "starts the role, degraded and loud": #4933 superseded it (Jeff: "should
+  # a role with no token start?" "no"). The role's own establish refuses, and says why.
+  Scenario: Login with identity down does not start the role, and says why
     Given the identity service gives no token
     When Jeff runs "chorus-principal login wren"
-    Then wren starts anyway
-    And the command says the login is pending, and why
+    Then wren does not start
+    And wren's establish says it has no credential
 
   Scenario: A refused row write says why
     Given wren is logged in
@@ -137,12 +136,13 @@ Feature: A principal logs in, works, and logs out
     When wren's session ends with /exit
     Then the run ends with the reason exit, not logout
 
-  Scenario: A lapsed session is closed by the sweep
+  # #4950 — "A lapsed session is closed by the sweep" is deleted: #4948 ended expiry as a
+  # close (a crash ends the run; a session ends only at logout). The no-expiry truth:
+  Scenario: The sweep never closes a session for its expiry
     Given wren is logged in
     And kade has an open session whose expiry has passed
     When the sweep runs
-    Then kade's lapsed session is closed
-    And wren's live session is left alone
+    Then no session is closed
 
   # Added with #4348 (Wren's web research, 2026-09-27): standard session controls.
   Scenario: A principal runs as its own account, so no other principal can read its token

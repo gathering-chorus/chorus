@@ -31,8 +31,8 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   turn
   test "$status" -eq 2
   out_has "wren's principal is revoked"
-  has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
-  has "$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1)" '"sessionState":"closed"'
+  has "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
+  has "$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1)" '"sessionState":"closed"'
   grep -q "session.revoked wren" "$T/spine.log"
 }
 
@@ -61,7 +61,7 @@ out_has() { printf '%s' "$output" | grep -qF -- "$1"; }
   "$SCRIPT" login wren >/dev/null 2>&1
   turn
   test "$status" -eq 0
-  test -z "$(cat "$T"/bodies/*PUT-identity_sessionruns_* 2>/dev/null | grep -F revoked || true)"
+  test -z "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* 2>/dev/null | grep -F revoked || true)"
 }
 
 @test "#4385 NEGATIVE PROOF: an identity API that does not answer revokes nothing" {

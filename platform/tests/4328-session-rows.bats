@@ -26,6 +26,12 @@ setup() {
 out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
 out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
+# #4950 — since #4944 a turn PATCHes only the fields that moved, and lastSeenAt moves by the
+# second: a turn in the login's own second sends none. Age the stored row so the turn must.
+age_seen() { python3 - "$T/identity/$1/session.row.json" <<'PY'
+import json,sys; d=json.load(open(sys.argv[1])); d["lastSeenAt"]="2026-01-01T00:00:00Z"; json.dump(d,open(sys.argv[1],"w"))
+PY
+}
 
 @test "login writes the session with its role and start, then a run, a presence and a boot context" {
   run "$SCRIPT" on silas
@@ -44,7 +50,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   : > "$T/alive-pids"; rm -f "$T"/sessions/*.json "$T/identity/silas/login.json"
   run "$SCRIPT" on silas
   test "$status" -eq 0
-  ended=$(body PUT "identity_sessionruns_$first"); has "$ended" '"endReason":"restart"'; has "$ended" '"runEndedAt":"20'
+  ended=$(body PATCH "identity_sessionruns_$first"); has "$ended" '"endReason":"restart"'; has "$ended" '"runEndedAt":"20'
   new=$(body POST identity_sessionruns); has "$new" "\"previousRun\":\"$first\""
 }
 
@@ -58,8 +64,10 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "each turn updates last-seen on the same session row, and names the conversation" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
+  age_seen silas
   echo '{"session_id":"conv-42","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  s=$(body PUT "identity_sessions_$sess"); has "$s" '"lastSeenAt":"20'; has "$s" "\"name\":\"$sess\""
+  # #4944 — a PATCH of the fields that moved; the route names the row, the body never re-sends it
+  s=$(body PATCH "identity_sessions_$sess"); has "$s" '"lastSeenAt":"20'
   r=$(bodies | grep -F "PUT-identity_sessionruns_" | tail -1); test -n "$r"
   has "$(cat "$T"/bodies/*"$r")" '"conversationId":"conv-42"'
   # throttled: a second turn inside a minute writes nothing. #4351: since #4339 a
@@ -86,11 +94,11 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   run "$SCRIPT" on wren
   run "$SCRIPT" off wren
   test "$status" -eq 0
-  r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1); has "$r" '"endReason":"logout"'
-  p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1); has "$p" '"reachability":"unreachable"'
-  s=$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1); has "$s" '"sessionState":"closed"'
+  r=$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1); has "$r" '"endReason":"logout"'
+  p=$(cat "$T"/bodies/*PATCH-identity_presences_* | tail -1); has "$p" '"reachability":"unreachable"'
+  s=$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1); has "$s" '"sessionState":"closed"'
   # the run ends BEFORE the session closes
-  test "$(bodies | grep -n PUT-identity_sessionruns | cut -d: -f1)" -lt "$(bodies | grep -n PUT-identity_sessions_ | cut -d: -f1)"
+  test "$(bodies | grep -n PATCH-identity_sessionruns | cut -d: -f1)" -lt "$(bodies | grep -n PATCH-identity_sessions_ | cut -d: -f1)"
 }
 
 @test "NEGATIVE PROOF: a turn after logout does not reopen the session" {
@@ -102,17 +110,16 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   test "$(ls "$T/bodies" | wc -l)" -eq "$n"
 }
 
-@test "sweep closes an expired open session and leaves the live login alone" {
+# #4950 — "sweep closes an expired open session" is deleted: #4948 ended expiry as a
+# close (a crash ends the run; a session ends only at logout). The no-expiry truth:
+@test "#4948 sweep never closes a session for its expiry: an expired-looking open session and the live login both stay open" {
   run "$SCRIPT" on silas
   live=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
-  printf '{"data":[{"name":"session-kade-dead","status":"","actsAs":"","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-silas"}]}' "$live" > "$T/row.json"
+  printf '{"data":[{"name":"session-kade-dead","actsAs":"kade","channel":"pane","sessionState":"open","issuedAt":"2026-09-01T00:00:00Z","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","actsAs":"silas","channel":"pane","sessionState":"open","issuedAt":"2026-09-01T00:00:00Z","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-silas"}]}' "$live" > "$T/row.json"
   run "$SCRIPT" sweep
   test "$status" -eq 0
-  out_has "1 expired session(s) closed"
-  # the listing's "status" and empty fields never reach the PUT (live 09-26: 86 x 422)
-  test -z "$(grep -F '"status"' "$T"/bodies/*PUT-identity_sessions_session-kade-dead.json || true)"
-  has "$(cat "$T"/bodies/*PUT-identity_sessions_session-kade-dead.json)" '"sessionState":"closed"'
-  test -z "$(ls "$T/bodies" | grep -F "PUT-identity_sessions_$live" || true)"
+  out_has "0 superseded session(s) closed, 0 failed"   # not vacuous: the sweep ran and read the listing
+  test -z "$(ls "$T/bodies" | grep -E "(PUT|PATCH)-identity_sessions_" || true)"
 }
 
 @test "a role logged in before #4328 gets its role, start and run on its first turn" {
@@ -120,7 +127,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   printf '{"state":"recorded","session":"silas-old-1","pid":5150}' > "$T/identity/silas/login.json"
   printf '{"name":"silas-old-1","tokenId":"j","ownedBy":"principal-silas","sessionState":"open","issuedAt":"2026-09-25T14:54:06Z"}' > "$T/identity/silas/session.row.json"
   echo '{"session_id":"conv-7","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  s=$(body PUT identity_sessions_silas-old-1); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"2026-09-25T14:54:06Z"'
+  s=$(body PATCH identity_sessions_silas-old-1); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"2026-09-25T14:54:06Z"'
   r=$(body POST identity_sessionruns); has "$r" '"runOf":"silas-old-1"'; has "$r" '"conversationId":"conv-7"'
   has "$(body POST identity_presences)" '"presenceOf":"sessionrun-silas-run-'
   has "$(body POST memory_contexts)" '"contextKind":"boot"'
@@ -130,7 +137,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   printf '{"state":"recorded","session":"silas-old-1","pid":5150}' > "$T/identity/silas/login.json"
   printf '{"name":"silas-old-1","tokenId":"j","ownedBy":"principal-silas","sessionState":"open","issuedAt":"2026-09-25T14:54:06Z"}' > "$T/identity/silas/session.row.json"
   echo '{"session_id":"conv-7","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  test -n "$(bodies | grep -F PUT-identity_sessions_ || true)"
+  test -n "$(bodies | grep -F PATCH-identity_sessions_ || true)"
   test -z "$(bodies | grep -F POST-identity_sessionruns || true)"
 }
 
@@ -223,29 +230,23 @@ EOS
   test "$(bodies | grep -c POST-memory_conversations || true)" -eq 0
 }
 
-@test "#4377 a renewed login moves the session's expiry; a live session never reads expired" {
+# #4950 — #4377's two renewal cases are deleted: #4944/#4948 retired renewal (a turn
+# never moves expiresAt; liveness is the registry pid). What stands is the no-renewal truth.
+@test "#4948 a turn never renews: a later token moves no expiry, and the turn's write carries none" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
-  later=$(( $(date +%s) + 3000 )); mk_token silas "$later"   # the token the next write carries
-  echo '{"session_id":"c-4377","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  want=$(python3 -c 'import sys,time;print(time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(int(sys.argv[1]))))' "$later")
-  s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$want\""
-}
-
-@test "NEGATIVE PROOF: a token for another role never moves this session's expiry" {
-  run "$SCRIPT" on silas
-  sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
-  before=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["expiresAt"])' "$T/identity/silas/session.row.json")
-  mk_token kade $(( $(date +%s) + 3000 )); cp "$T/token-kade.fixture" "$T/token-silas.fixture"   # silas's token names kade
-  echo '{"session_id":"c-4377b","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$before\""
+  mk_token silas $(( $(date +%s) + 3000 ))   # the token the next write carries
+  age_seen silas
+  echo '{"session_id":"c-4948","prompt":"what now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  s=$(body PATCH "identity_sessions_$sess"); has "$s" '"lastSeenAt":"20'   # not vacuous: the turn did write
+  test -z "$(printf '%s' "$s" | grep -F expiresAt || true)"
 }
 
 @test "#4367 Jeff attends a session and never owns one" {
   run "$SCRIPT" on wren
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/wren/session.row.json")
   echo '{"session_id":"c-j","prompt":"what is wren working on"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
-  s=$(body PUT "identity_sessions_$sess"); has "$s" '"attendedBy":"jeff"'; has "$s" '"lastAttendedAt":"20'
+  s=$(body PATCH "identity_sessions_$sess"); has "$s" '"attendedBy":"jeff"'; has "$s" '"lastAttendedAt":"20'
   test -z "$(cat "$T"/bodies/*POST-identity_sessions.json 2>/dev/null | grep -F '"ownedBy":"principal-jeff"' || true)"
 }
 
@@ -254,13 +255,13 @@ EOS
   echo '{"session_id":"c-f","prompt":"[nudge from wren | 2026-09-27 09:00 Boston] do this now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/kade/session.row.json")
-  has "$(body PUT "identity_sessions_$sess")" '"attendedBy":"jeff"'   # typed into the pane = Jeff typed it
+  has "$(body PATCH "identity_sessions_$sess")" '"attendedBy":"jeff"'   # typed into the pane = Jeff typed it
 }
 
 @test "#4367 a session ended by /exit records exit, not logout" {
   run "$SCRIPT" on wren
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=wren '$SCRIPT' off wren --from-exit"
-  r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'
+  r=$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'
   test -z "$(printf '%s' "$r" | grep -F '"endReason":"logout"' || true)"
 }
 
@@ -268,6 +269,7 @@ EOS
   run "$SCRIPT" on silas
   echo 422 > "$T/curl.status"
   printf '{"error":"validation","message":"double-prefix: role-silas"}\n' > "$T/curl.reply"
+  age_seen silas
   echo '{"session_id":"c-r","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   grep -q "session.row.failed silas kind=session" "$T/spine.log"
   grep -q "why=double-prefix: role-silas" "$T/spine.log"
@@ -302,7 +304,7 @@ PY
   printf '{"state":"recorded","session":"wren-old","pid":5151}' > "$T/identity/wren/login.json"
   printf '{"name":"wren-old","tokenId":"j","ownedBy":"principal-wren","sessionState":"open","issuedAt":"2026-09-26T15:06:25Z","actsAs":"role-wren","startedAt":"2026-09-26T15:06:25Z"}' > "$T/identity/wren/session.row.json"
   echo '{"session_id":"c","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
-  s=$(body PUT identity_sessions_wren-old); has "$s" '"actsAs":"wren"'
+  s=$(body PATCH identity_sessions_wren-old); has "$s" '"actsAs":"wren"'
   test -z "$(printf '%s' "$s" | grep -F '"actsAs":"role-wren"' || true)"
 }
 

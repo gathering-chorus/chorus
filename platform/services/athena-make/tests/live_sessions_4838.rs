@@ -15,7 +15,8 @@ const C: &str = "https://jeffbridwell.com/chorus#";
 const G: &str = "urn:chorus:domains:identity";
 
 fn boot() -> Option<(std::process::Child, u16, std::path::PathBuf)> {
-    let home = std::path::PathBuf::from(std::env::var("HOME").ok()?).join(".gathering/data/fuseki-5.1.0");
+    // #4950 — FUSEKI_HOME first, as 4718 and 4717 do: a role account's HOME has no Fuseki
+    let home = match std::env::var("FUSEKI_HOME") { Ok(h) => std::path::PathBuf::from(h), Err(_) => std::path::PathBuf::from(std::env::var("HOME").ok()?).join(".gathering/data/fuseki-5.1.0") };
     let jar = home.join("fuseki-server.jar");
     if !jar.exists() { return None; }
     let port = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();

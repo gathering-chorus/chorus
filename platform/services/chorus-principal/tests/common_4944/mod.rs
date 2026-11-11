@@ -28,8 +28,12 @@ pub fn door(home: &Path, role: &str, write_code: &str) { door_with_runs(home, ro
 
 /// The fake door with `runs` as its open-runs listing (identity/sessionruns).
 pub fn door_with_runs(home: &Path, role: &str, write_code: &str, runs: &str) {
+    door_with(home, role, write_code, runs, &format!(r#"{{"data":[{}]}}"#, expired_row(role)))
+}
+
+/// #4950 — the fake door with both listings given: open runs and sessions.
+pub fn door_with(home: &Path, role: &str, write_code: &str, runs: &str, sessions: &str) {
     let roles = format!(r#"{{"data":[{{"name":"{role}","roleKind":"agent"}}]}}"#);
-    let sessions = format!(r#"{{"data":[{}]}}"#, expired_row(role));
     let log = home.join("calls.log");
     exe(&home.join("curl"), &format!(r#"#!/bin/sh
 method=GET; url=""; body=""
