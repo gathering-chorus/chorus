@@ -156,8 +156,7 @@ chorus:StepSkillShape a sh:NodeShape ;
     sh:property [ sh:path chorus:callsSkill ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Skill ; sh:name "skill" ;
                   sh:description "Required. The skill called." ] ;
     sh:property [ sh:path chorus:skillOrder ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ;
-                  chorus:uniqueWithin chorus:forStep ;
-                  sh:name "order" ; sh:description "Required. Its place within the step, from 1; no two skills share a place in one step." ] ;
+                  sh:name "order" ; sh:description "Required. Its place within the step, from 1. Skills sharing a place run in parallel (#4953, the demo's three reviews); chorus-make refuses a shared place unless every row there says withArguments parallel=true (#4502)." ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ; sh:description "Required, set by the door." ] ;
     # #4514 reopen 1 — what this step passes the skill when the skill is a
