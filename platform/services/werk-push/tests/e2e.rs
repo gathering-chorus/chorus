@@ -58,7 +58,8 @@ fn push_pushes_committed_branch_and_registers_gh() {
     std::env::remove_var("CHORUS_TRACE_ID");
     // gh shim on PATH — logs calls, succeeds.
     let bin = tmp("bin");
-    write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
+    // #4710 — `pr create` answers with the PR's URL, as gh does (ensure_pr reads the number)
+    write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\n[ \"$1 $2\" = \"pr create\" ] && echo https://github.com/o/r/pull/7\nexit \"${GH_EXIT:-0}\"\n");
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
     let gh_log = tmp("ghlog").join("calls");
     std::env::set_var("GH_LOG", gh_log.to_str().unwrap());
@@ -170,7 +171,8 @@ fn push_pushes_committed_branch_and_registers_gh() {
 fn wrong_branch_refuses_sentinel_reaches_git_and_gh_fail_rolls_back() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let bin = tmp("bin2");
-    write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
+    // #4710 — `pr create` answers with the PR's URL, as gh does (ensure_pr reads the number)
+    write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\n[ \"$1 $2\" = \"pr create\" ] && echo https://github.com/o/r/pull/7\nexit \"${GH_EXIT:-0}\"\n");
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
     let gh_log = tmp("ghlog2").join("calls");
     std::env::set_var("GH_LOG", gh_log.to_str().unwrap());

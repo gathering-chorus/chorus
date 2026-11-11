@@ -85,3 +85,47 @@ fn parse_push_args_recognizes_atomic_anywhere() {
     // non-numeric card → Err (the contract guard)
     assert!(parse_push_args(&["notanum".into(), "kade".into()], None).is_err());
 }
+
+// #4710 — the card's PR exists before Jeff's go, so the lander can find it. A gh stand-in
+// answers `pr list` from $GH_OPEN and logs every call.
+mod ensure_pr_4710 {
+    use std::os::unix::fs::PermissionsExt;
+    fn gh(open: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let d = std::env::temp_dir().join(format!("ep4710-{}-{}", std::process::id(), open.replace(' ', "_")));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let log = d.join("log");
+        let f = d.join("gh");
+        std::fs::write(&f, format!("#!/bin/sh\necho \"$@\" >> {}\ncase \"$2\" in list) printf '{}\\n';; create) echo https://github.com/gathering-chorus/chorus/pull/2001;; esac\n", log.display(), open.replace(' ', "\\n"))).unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (d, log)
+    }
+    fn with_path<T>(d: &std::path::Path, f: impl FnOnce() -> T) -> T {
+        let old = std::env::var_os("PATH").unwrap_or_default();
+        let mut p = std::ffi::OsString::from(d.as_os_str()); p.push(":"); p.push(&old);
+        std::env::set_var("PATH", &p);
+        let r = f();
+        std::env::set_var("PATH", old);
+        r
+    }
+
+    #[test]
+    fn ensure_pr_creates_one_when_none_is_open_and_reuses_one_that_is() {
+        let (d, log) = gh("");
+        let n = with_path(&d, || werk_push::ensure_pr(d.to_str().unwrap(), 4710, "wren", "t", "wren/4710")).unwrap();
+        assert_eq!(n, 2001);
+        let calls = std::fs::read_to_string(&log).unwrap();
+        assert!(calls.contains("pr create --base main --head wren/4710 --title #4710 (wren)"), "{calls}");
+        let (d, log) = gh("1999");
+        assert_eq!(with_path(&d, || werk_push::ensure_pr(d.to_str().unwrap(), 4710, "wren", "t", "wren/4710")).unwrap(), 1999);
+        assert!(!std::fs::read_to_string(&log).unwrap().contains("pr create"), "a second PR was created");
+    }
+
+    // NEGATIVE PROOF: two open PRs for one branch would make the lander's pick ambiguous: refused
+    #[test]
+    fn two_open_prs_are_refused() {
+        let (d, _) = gh("1999 2000");
+        let e = with_path(&d, || werk_push::ensure_pr(d.to_str().unwrap(), 4710, "wren", "t", "wren/4710")).unwrap_err();
+        assert!(e.contains("2 open PRs"), "{e}");
+    }
+}

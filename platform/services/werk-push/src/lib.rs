@@ -217,6 +217,26 @@ fn register_gh(werk_s: &str, card: u64, role: &str, trace: &str, branch: &str, s
     Ok(())
 }
 
+/// #4710 — the card's PR exists before Jeff's go: the lander finds it by its branch and
+/// merges it as the App, and werk-merge no longer creates or merges anything (Silas 17:51).
+/// Idempotent: one open PR for the branch is left as it is; none is created; the title is
+/// the squash subject main carries (`#<card> (<role>)`). More than one is refused.
+pub fn ensure_pr(werk_s: &str, card: u64, role: &str, trace: &str, branch: &str) -> R<u64> {
+    let list = run_in(werk_s, "gh", &["pr", "list", "--state", "open", "--head", branch, "--json", "number", "--jq", ".[].number"])?;
+    let open: Vec<u64> = list.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+    match open.as_slice() {
+        [n] => Ok(*n),
+        [] => {
+            let out = run_in(werk_s, "gh", &["pr", "create", "--base", "main", "--head", branch,
+                "--title", &format!("#{} ({})", card, role),
+                "--body", &format!("#{} — role={} trace={} (opened at push; the lander merges it on Jeff's signed go, #4710)", card, role, trace)])?;
+            out.trim().rsplit('/').next().and_then(|n| n.parse().ok())
+                .ok_or_else(|| format!("gh pr create gave no PR number: {}", out.trim()))
+        }
+        _ => Err(format!("{} open PRs for {}; the lander needs exactly one", open.len(), branch)),
+    }
+}
+
 /// #3296 — parse the contract args + recognize `--atomic` ANYWHERE. push is in the
 /// ADR-037 --atomic-FREE group (reversible, no approval), so the flag is accepted +
 /// reported but does NOT branch behavior — push() is the one path. Pure + testable:
@@ -319,6 +339,8 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // idempotent: remote already at this sha -> no-op success (still ensure gh).
     let remote = run_in(&werk_s, "git", &["ls-remote", "origin", &branch]).unwrap_or_default();
     if remote.split_whitespace().next() == Some(sha.as_str()) {
+        let pr = ensure_pr(&werk_s, card, role, &trace, &branch)?;
+        jsonl(home, role, card, &trace, "pr.ready", &format!(",\"pr\":{}", pr));
         jsonl(home, role, card, &trace, "push.idempotent", &format!(",\"sha\":\"{}\"", sha));
         emit_spine(home, "push.idempotent", role, card, &trace, &[("sha", &sha)]);
         return Ok(sha);
@@ -370,6 +392,8 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         return Err(format!("gh registration failed; deleted the pushed ref: {}", e));
     }
     jsonl(home, role, card, &trace, "gh.registered", "");
+    let pr = ensure_pr(&werk_s, card, role, &trace, &branch)?;
+    jsonl(home, role, card, &trace, "pr.ready", &format!(",\"pr\":{}", pr));
 
     jsonl(home, role, card, &trace, "push.completed", &format!(",\"sha\":\"{}\"", sha));
     emit_spine(home, "push.completed", role, card, &trace, &[("sha", &sha)]);

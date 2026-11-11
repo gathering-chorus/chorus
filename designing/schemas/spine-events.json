@@ -6764,6 +6764,19 @@
       "fields": {
         "target": "Always canonical"
       }
+    },
+    "pr.ready": {
+      "producer": "version-control",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `werk-push` made sure the card has exactly one open PR (reused or opened), so the lander finds it on Jeff's signed go (#4710).",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key",
+        "pr": "The card's open PR number"
+      }
     }
   }
 }
