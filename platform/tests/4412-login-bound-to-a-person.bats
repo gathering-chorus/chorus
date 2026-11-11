@@ -57,7 +57,7 @@ posts() { ls "$T/bodies" 2>/dev/null | grep -c -- '-POST-identity_sessions.json$
 @test "#4412 logout with a person signed in records who ended it" {
   "$SCRIPT" login wren >/dev/null 2>&1
   run "$SCRIPT" logout wren
-  has "$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1)" '"endedBy":"jeff"'
+  has "$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1)" '"endedBy":"jeff"'
 }
 
 @test "#4412 NEGATIVE: logout with nobody signed in is refused and closes nothing" {
@@ -65,7 +65,7 @@ posts() { ls "$T/bodies" 2>/dev/null | grep -c -- '-POST-identity_sessions.json$
   touch "$T/nobody-signed-in"
   run "$SCRIPT" logout wren
   test "$status" -eq 2
-  test "$(cat "$T"/bodies/*PUT-identity_sessions_* 2>/dev/null | grep -c '"sessionState":"closed"' || true)" -eq 0
+  test "$(cat "$T"/bodies/*PATCH-identity_sessions_* 2>/dev/null | grep -c '"sessionState":"closed"' || true)" -eq 0
 }
 
 @test "#4412 /exit is not gated on a person (it ends only the run)" {

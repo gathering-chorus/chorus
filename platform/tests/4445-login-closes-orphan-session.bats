@@ -50,4 +50,6 @@ ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenI
   ls "$T/bodies" | grep -q 'POST-identity_sessions.json'
   test -z "$(ls "$T/bodies" | grep -E "(PUT|PATCH)-identity_sessions_" || true)"
   test "$(grep -c 'session.superseded' "$T/spine.log" || true)" -eq 0
+  # #4950 — nothing matched is said, with what was listed: never a silent return
+  grep -q 'session.supersede.skipped silas why=none matched: 3 row(s) listed on channel pane' "$T/spine.log"
 }

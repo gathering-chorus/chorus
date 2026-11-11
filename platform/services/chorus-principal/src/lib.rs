@@ -2286,11 +2286,13 @@ fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
     let list = door(ctx, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]);
     let _ = fs::remove_file(&hdr);
     let list = match list { Ok(l) => l, Err(e) => return skipped(&format!("listing unreadable: {e}")) };
-    if serde_json::from_str::<Value>(&list).ok().and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).is_none() {
-        return skipped(&format!("listing has no data list: {}", list.chars().take(120).collect::<String>()));
-    }
+    let listed = match serde_json::from_str::<Value>(&list).ok().and_then(|v| v.get("data").and_then(|d| d.as_array()).map(|a| a.len())) {
+        Some(n) => n,
+        None => return skipped(&format!("listing has no data list: {}", list.chars().take(120).collect::<String>())),
+    };
     let stale = rows::superseded_sessions(&list, role, channel, keep);
-    if stale.is_empty() { return; }
+    // #4950 — an empty match is a skip too: rows listed but none this role's open ones
+    if stale.is_empty() { return skipped(&format!("none matched: {listed} row(s) listed on channel {channel}")); }
     let mut closed = Vec::new();
     for name in &stale {
         match close_row(ctx, role, name) {
@@ -2360,7 +2362,7 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
     if !from_exit && std::io::IsTerminal::is_terminal(&std::io::stdout()) { print!("\x1b[2J\x1b[3J\x1b[H"); }
     match closed {
         Some((s, Ok(()))) => println!("{} logged out: login closed (session {})", role, s),
-        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}), and it expires on its own", role, s, why),
+        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the next login closes it as superseded", role, s, why),
         None => println!("{} logged out: stopped; it had no recorded login to close", role),
     }
     0

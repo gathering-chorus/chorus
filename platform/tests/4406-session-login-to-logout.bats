@@ -46,9 +46,9 @@ posts() { ls "$T/bodies" | grep -c -- '-POST-identity_sessions.json$' || true; }
   export AWAKE_SEEN_EVERY=0; turn
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=wren '$SCRIPT' off wren --from-exit"
   test "$status" -eq 0
-  has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"exit"'
+  has "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1)" '"endReason":"exit"'
   grep -q '"state":"recorded"' "$T/identity/wren/login.json"
-  test "$(cat "$T"/bodies/*PUT-identity_sessions_* 2>/dev/null | grep -c '"sessionState":"closed"' || true)" -eq 0
+  test "$(cat "$T"/bodies/*PATCH-identity_sessions_* 2>/dev/null | grep -c '"sessionState":"closed"' || true)" -eq 0
 }
 
 @test "#4406 a login after /exit goes back to the same session" {
@@ -65,7 +65,7 @@ posts() { ls "$T/bodies" | grep -c -- '-POST-identity_sessions.json$' || true; }
   "$SCRIPT" login wren >/dev/null 2>&1
   old=$(row name)
   "$SCRIPT" logout wren >/dev/null 2>&1
-  has "$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1)" '"sessionState":"closed"'
+  has "$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1)" '"sessionState":"closed"'
   "$SCRIPT" login wren >/dev/null 2>&1
   test "$(posts)" -eq 2
   test "$(row name)" != "$old"

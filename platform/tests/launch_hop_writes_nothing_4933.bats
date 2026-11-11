@@ -30,7 +30,7 @@ setup() {
 # here: its account is not the test's), so the launch reached the pane
 launched() { grep -q "respawn-pane .*chorus-fx" "$T/tmux.log" && ! printf '%s' "$output" | grep -q "REFUSED"; }
 
-writes() { grep -cE -- '-X (POST|PUT)' "$T/curl.log" 2>/dev/null || true; }
+writes() { grep -cE -- '-X (POST|PUT|PATCH)' "$T/curl.log" 2>/dev/null || true; }
 signins() { grep -c "token fx" "$T/token.log" 2>/dev/null || true; }
 
 @test "launch: starting a stopped role signs in as nobody and writes no row" {
@@ -114,8 +114,8 @@ signins() { grep -c "token fx" "$T/token.log" 2>/dev/null || true; }
   rm -f "$T/identity/fx/run.row.json" "$T/identity/fx/presence.row.json"
   run "$SCRIPT" off fx
   echo "$output"
-  r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* 2>/dev/null | tail -1); printf '%s' "$r" | grep -q '"endReason":"logout"'
-  p=$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | tail -1); printf '%s' "$p" | grep -q '"reachability":"unreachable"'
+  r=$(cat "$T"/bodies/*PATCH-identity_sessionruns_* 2>/dev/null | tail -1); printf '%s' "$r" | grep -q '"endReason":"logout"'
+  p=$(cat "$T"/bodies/*PATCH-identity_presences_* 2>/dev/null | tail -1); printf '%s' "$p" | grep -q '"reachability":"unreachable"'
 }
 
 @test "the pane the launch names reaches the role's presence row (sudo drops TMUX_PANE, so it travels as an argument)" {

@@ -56,7 +56,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   # #4933 (FLIP) — never logged in from the launcher: the role establishes on its next turn
   out_has "kade is running without a session; it establishes its own on its next turn"
   test -z "$(grep "token kade" "$T/token.log" || true)"
-  test -z "$(grep -E -- '-X (POST|PUT)' "$T/curl.log" || true)"
+  test -z "$(grep -E -- '-X (POST|PUT|PATCH)' "$T/curl.log" || true)"
   out_has "pane %0  login pending  via already awake"
   out_lacks "registered yes"
   grep -q '"pid":4264' "$T/identity/kade/login.json"
@@ -154,24 +154,29 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "silas logged out: login closed (session silas-x-1)"
-  grep -q -- "-X PUT" "$T/curl.log"
+  # #4944 — the close is a PATCH of the fields that change; the row is never read back and
+  # sent whole, so the owner and token never ride along (a stale copy cannot overwrite them)
+  grep -q -- "-X PATCH" "$T/curl.log"
+  test -z "$(grep -- "-X PUT" "$T/curl.log" || true)"
   curlbody | grep -q '"sessionState":"closed"'
-  # the PUT replaces the whole row: the owner and token must ride along
-  curlbody | grep -q '"ownedBy":"principal-silas"'
-  curlbody | grep -q '"tokenId":"t1"'
+  test -z "$(curlbody | grep -F -e '"ownedBy"' -e '"tokenId"' || true)"
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
   state_is silas closed
   grep -q "^session.logout silas session=silas-x-1 how=off" "$T/spine.log"
   test ! -f "$T/sessions/silas-901.json"
 }
 
-@test "off: a row that cannot be closed still stops the role and says the row expires" {
+# #4950 — since #4944 the close is a PATCH that needs no row read back, so "cannot be closed"
+# is the door refusing it; and since #4948 nothing expires a session, so it no longer says so
+@test "off: a row the door refuses to close still stops the role and says what closes it" {
   running silas 902
   printf '{"state":"recorded","session":"silas-x-2","pid":902}' > "$T/identity/silas/login.json"
-  printf '{"data":[{"name":"someone-else","ownedBy":"principal-kade","tokenId":"k"}]}' > "$T/row.json"
+  echo 422 > "$T/curl.status.identity_sessions_silas-x-2"
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "could not be closed"
+  out_has "until the next login closes it as superseded"
+  out_lacks "expires on its own"
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
 }
 

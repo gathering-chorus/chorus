@@ -60,7 +60,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   run "$SCRIPT" off wren
   test "$status" -eq 0
 
-  p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1)
+  p=$(cat "$T"/bodies/*PATCH-identity_presences_* | tail -1)
   has "$p" '"reachability":"unreachable"'
 
   grep -q "session.presence.retired wren" "$T/spine.log"
@@ -84,7 +84,7 @@ out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
   run "$SCRIPT" off wren
 
   # not vacuous: logout really wrote the retired presence
-  p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1)
+  p=$(cat "$T"/bodies/*PATCH-identity_presences_* | tail -1)
   test -n "$p"
   test -z "$(printf '%s' "$p" | grep -F '"reachability":"reachable"' || true)"
   test -z "$(printf '%s' "$p" | grep -F '"reachability":"unknown"' || true)"
