@@ -109,4 +109,6 @@ EOS
   grep -qF 'command: "${CHORUS_HOME}/platform/scripts/alert-digest"' "$Y"
   # the queue it names exists, capped at one run
   grep -A1 -- '- name: alert-digest' "$ROOT/platform/config/dagu.yaml" | grep -qF 'max_concurrency: 1'
+  # a scheduled run has no card: its exit wakes no one (run-finished refuses an empty card)
+  test -z "$(grep -F run-finished "$Y" || true)"
 }

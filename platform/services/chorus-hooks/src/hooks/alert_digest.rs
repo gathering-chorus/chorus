@@ -26,9 +26,6 @@ pub fn augment_envelope_with_alert_digest(role: &str, envelope: &str, dir: &Path
         return format!("{envelope}\n\n## Open alert cases\nno alert digest at {} — the alert-digest schedule has not written one\n", path.display());
     };
     let cases: Vec<&str> = text.lines().filter(|l| l.starts_with("- ")).collect();
-    if cases.is_empty() {
-        return envelope.to_string();
-    }
     let age = std::fs::metadata(&path).and_then(|m| m.modified()).ok()
         .and_then(|m| now.duration_since(m).ok()).unwrap_or_default();
     let stale = if age > STALE_AFTER {
@@ -36,5 +33,9 @@ pub fn augment_envelope_with_alert_digest(role: &str, envelope: &str, dir: &Path
     } else {
         String::new()
     };
+    // an empty digest is "nothing is wrong" only while the schedule keeps writing it
+    if cases.is_empty() {
+        return if stale.is_empty() { envelope.to_string() } else { format!("{envelope}\n\n## Open alert cases (0){stale}\n") };
+    }
     format!("{envelope}\n\n## Open alert cases ({}){stale}\n{}\n", cases.len(), cases.join("\n"))
 }

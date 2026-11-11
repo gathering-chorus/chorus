@@ -51,3 +51,14 @@ fn ac2_a_missing_digest_says_so_rather_than_reading_as_nothing_wrong() {
     let out = augment_envelope_with_alert_digest("silas", "ENVELOPE", &d, SystemTime::now());
     assert!(out.contains("no alert digest"), "{out}");
 }
+
+/// gate-code 11-11: an empty digest the schedule stopped writing must not read as
+/// "nothing is wrong"
+#[test]
+fn ac2_a_stale_empty_digest_says_stale() {
+    let d = dir("stale-empty");
+    std::fs::write(d.join("silas.md"), "# Open alert cases for silas — 0 (as of 2026-11-11T15:00:00Z)\n").unwrap();
+    let later = SystemTime::now() + Duration::from_secs(20 * 60);
+    let out = augment_envelope_with_alert_digest("silas", "ENVELOPE", &d, later);
+    assert!(out.contains("stale"), "{out}");
+}
