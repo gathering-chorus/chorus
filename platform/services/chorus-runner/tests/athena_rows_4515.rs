@@ -88,6 +88,14 @@ fn untouched(l: &TcpListener) -> bool {
 }
 
 fn call(base: &str, tool: &str, a: Value) -> (bool, String, u16) {
+    // #4951 — the body is staged in the runner's tasks dir; point it at a scratch dir so
+    // the test never writes the real one (it was Permission denied for a role account)
+    static SCRATCH: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    SCRATCH.get_or_init(|| {
+        let d = std::env::temp_dir().join(format!("athena-rows-4515-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&d);
+        std::env::set_var("CHORUS_RUNNER_TASKS", &d);
+    });
     run_athena(base, tool, &args(a), &cols(), "principal-wren", Some("the-callers-token"), &new_trace_id())
 }
 

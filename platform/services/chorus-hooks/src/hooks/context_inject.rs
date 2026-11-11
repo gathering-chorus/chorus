@@ -1183,10 +1183,10 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if pulse_snapshot_stale() {
         let shim = format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
             crate::shared::state_paths::repo_root());
-        let _ = std::process::Command::new(&shim).arg("pulse")
+        // #4951 — reaped, not dropped: a dropped Child stays a zombie in the daemon
+        let _ = crate::shared::reap::spawn_reaped(std::process::Command::new(&shim).arg("pulse")
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+            .stderr(std::process::Stdio::null()));
     }
 
     // #3048: no latency cap. Jeff's call (A): wait the few seconds and get the

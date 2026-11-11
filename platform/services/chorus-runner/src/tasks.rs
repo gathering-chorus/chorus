@@ -82,8 +82,13 @@ pub fn spawn(dir: &Path, id: &str, binary: &str, argv: &[String], env: &[(&'stat
         "pidStartedAt": pid_started(pid), "startedAt": now_secs(),
     });
     std::fs::write(file(dir, id, "json"), record.to_string()).map_err(|e| format!("run file: {e}"))?;
-    // the child is not waited on here: if this runner stops, it keeps going
-    std::mem::forget(child);
+    // #4951 — reaped on a detached thread, never forgotten: a forgotten Child is a
+    // zombie for as long as this runner lives once the Task exits. The Task is in its
+    // own process group, so if this runner stops, the Task keeps going (launchd reaps it).
+    let mut child = child;
+    std::thread::Builder::new().name(format!("reap-task-{pid}"))
+        .spawn(move || { let _ = child.wait(); })
+        .map_err(|e| format!("{binary}: could not start its reaper: {e}"))?;
     Ok(record)
 }
 
@@ -100,7 +105,13 @@ pub fn status(dir: &Path, id: &str) -> Status {
     let pid = rec["pid"].as_u64().unwrap_or(0) as u32;
     match (pid_started(pid), rec["pidStartedAt"].as_str()) {
         (Some(now), Some(then)) if now == then => Status::Running,
-        _ => Status::Lost,
+        // #4951 — the Task is reaped now, so its pid vanishes the moment it exits. It may
+        // have finished between the exit-file read above and the pid check: read the exit
+        // file again before calling it Lost (a zombie used to hold the pid and hide this).
+        _ => match std::fs::read_to_string(file(dir, id, "exit")).ok().and_then(|c| c.trim().parse().ok()) {
+            Some(code) => Status::Done(code),
+            None => Status::Lost,
+        },
     }
 }
 

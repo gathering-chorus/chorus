@@ -229,15 +229,15 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
                 "{}/CascadeProjects/chorus/bridge",
                 std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string())
             );
-            let _ = std::process::Command::new("node")
+            // #4951 — reaped, not dropped: a dropped Child stays a zombie when it exits
+            let _ = crate::shared::reap::spawn_reaped(std::process::Command::new("node")
                 .arg(&subscriber_script)
                 .arg(role)
                 .env("NODE_PATH", format!("{}/node_modules", bridge_dir))
                 .stdout(std::process::Stdio::null())
                 .stderr(std::fs::File::create(format!("/Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-{}.log", role)).unwrap_or_else(|_| {
                     std::fs::File::create("/dev/null").unwrap()
-                }))
-                .spawn();
+                })));
         }
     }
 

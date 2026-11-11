@@ -10,4 +10,5 @@ pub mod membrane;
 pub mod state_paths;
 pub mod wake; // #4339 — the one line a nudge may type
 
+pub mod reap; // #4951 — spawn a fire-and-forget child and still reap it
 pub mod roles_api; // #4077 — pulse role rows from /api/chorus/context/roles

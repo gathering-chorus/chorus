@@ -189,12 +189,12 @@ fn mark_presence_reached(role: &str) {
     if !std::path::Path::new(&bin).exists() {
         return;
     }
-    let _ = std::process::Command::new(bin)
+    // #4951 — reaped, not dropped: a dropped Child stays a zombie in the daemon
+    let _ = crate::shared::reap::spawn_reaped(std::process::Command::new(bin)
         .args(["seen-write", role, "", "delivered"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+        .stderr(std::process::Stdio::null()));
 }
 
 /// The whole message for one trace, from pulse's store (messages.db). None when
