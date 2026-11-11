@@ -34,6 +34,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // out of this crate's private #3495 copy so every verb classifies identically.
 include!("../../shared/failure_class.rs");
 include!("../../shared/deploy_credential.rs"); // #4771 AC4
+include!("../../shared/app_credential.rs"); // #4710 — the lander's GitHub App
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
