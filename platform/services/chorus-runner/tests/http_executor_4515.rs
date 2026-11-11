@@ -10,6 +10,19 @@ use chorus_runner::new_trace_id;
 use serde_json::{json, Map, Value};
 use std::io::{Read, Write};
 
+/// #4951 — run_http stages the body in the runner's tasks dir; point it at a scratch
+/// dir so the test never writes the real one (a role account got Permission denied
+/// there, and the fake server then waited forever for a request that never came).
+fn http(method: &str, url: &str, body: &str, token: &str, trace: &str, timeout_s: u64) -> (bool, String, u16) {
+    static SCRATCH: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    SCRATCH.get_or_init(|| {
+        let d = std::env::temp_dir().join(format!("http-executor-4515-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&d);
+        std::env::set_var("CHORUS_RUNNER_TASKS", &d);
+    });
+    run_http(method, url, body, token, trace, timeout_s)
+}
+
 fn inputs() -> Map<String, Value> {
     json!({ "NudgeInput": { "type": "object", "properties": { "to": { "type": "string" }, "message": { "type": "string" } }, "required": ["to", "message"] } })
         .as_object().unwrap().clone()
@@ -61,7 +74,7 @@ fn the_call_sends_the_bearer_and_body_and_reads_the_status() {
         s.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").unwrap();
         req
     });
-    let (ok, text, code) = run_http("POST", &format!("http://127.0.0.1:{port}/api/x"), r#"{"a":1}"#, "tok123", &new_trace_id(), 5);
+    let (ok, text, code) = http("POST", &format!("http://127.0.0.1:{port}/api/x"), r#"{"a":1}"#, "tok123", &new_trace_id(), 5);
     let req = h.join().unwrap();
     assert!(ok && code == 201, "{text}");
     assert!(req.contains("Authorization: Bearer tok123"), "{req}");
@@ -75,7 +88,7 @@ fn the_call_sends_the_bearer_and_body_and_reads_the_status() {
         let _ = s.read(&mut b);
         s.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
     });
-    let (ok2, _, code2) = run_http("POST", &format!("http://127.0.0.1:{p2}/api/x"), "{}", "t", &new_trace_id(), 5);
+    let (ok2, _, code2) = http("POST", &format!("http://127.0.0.1:{p2}/api/x"), "{}", "t", &new_trace_id(), 5);
     assert!(!ok2 && code2 == 403);
 }
 
@@ -101,7 +114,7 @@ fn a_get_sends_no_body() {
         s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
         String::from_utf8_lossy(&buf[..n]).to_string()
     });
-    let (ok, _, _) = run_http("GET", &format!("http://127.0.0.1:{port}/x?q=1"), r#"{"a":1}"#, "t", &new_trace_id(), 5);
+    let (ok, _, _) = http("GET", &format!("http://127.0.0.1:{port}/x?q=1"), r#"{"a":1}"#, "t", &new_trace_id(), 5);
     let req = h.join().unwrap();
     assert!(ok && req.starts_with("GET /x?q=1 "), "{req}");
     assert!(!req.contains(r#"{"a":1}"#) && !req.to_lowercase().contains("content-length"), "a GET carries no body: {req}");

@@ -82,8 +82,13 @@ pub fn spawn(dir: &Path, id: &str, binary: &str, argv: &[String], env: &[(&'stat
         "pidStartedAt": pid_started(pid), "startedAt": now_secs(),
     });
     std::fs::write(file(dir, id, "json"), record.to_string()).map_err(|e| format!("run file: {e}"))?;
-    // the child is not waited on here: if this runner stops, it keeps going
-    std::mem::forget(child);
+    // #4951 — reaped on a detached thread, never forgotten: a forgotten Child is a
+    // zombie for as long as this runner lives once the Task exits. The Task is in its
+    // own process group, so if this runner stops, the Task keeps going (launchd reaps it).
+    let mut child = child;
+    std::thread::Builder::new().name(format!("reap-task-{pid}"))
+        .spawn(move || { let _ = child.wait(); })
+        .map_err(|e| format!("{binary}: could not start its reaper: {e}"))?;
     Ok(record)
 }
 

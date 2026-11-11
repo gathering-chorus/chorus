@@ -344,12 +344,12 @@ fn session_turn_push_worker_cmd(args: &[String]) -> ExitCode {
 
 fn spawn_detached_session_turn_push(endpoint: &str, input: &str) {
     if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe)
+        // #4951 — reaped, not dropped
+        let _ = crate::shared::reap::spawn_reaped(std::process::Command::new(exe)
             .args(["session-turn-push-worker", endpoint, input])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+            .stderr(std::process::Stdio::null()));
     }
 }
 
