@@ -100,7 +100,10 @@ mod ensure_pr_4710 {
         std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
         (d, log)
     }
+    // PATH is process-wide and these tests run in parallel: one at a time (Silas 18:38 saw them race)
+    static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     fn with_path<T>(d: &std::path::Path, f: impl FnOnce() -> T) -> T {
+        let _g = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let old = std::env::var_os("PATH").unwrap_or_default();
         let mut p = std::ffi::OsString::from(d.as_os_str()); p.push(":"); p.push(&old);
         std::env::set_var("PATH", &p);
