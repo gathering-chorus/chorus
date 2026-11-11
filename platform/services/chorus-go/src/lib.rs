@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod serve;
+pub mod github;
 
 pub type R<T> = Result<T, String>;
 
