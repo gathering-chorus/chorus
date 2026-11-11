@@ -10,10 +10,12 @@ DAGU="${DAGU_URL:-http://localhost:8526}"
 # prints "spread_s phase_s slowest_s" for the newest finished demo run, or why it cannot
 measure() {
   python3 - "$DAGU" <<'PY'
-import json, sys, urllib.request
+import json, os, sys, urllib.request
 from datetime import datetime
 base = sys.argv[1]
-get = lambda p: json.load(urllib.request.urlopen(base + p, timeout=10))
+# DAGU_FIXTURE: one JSON file {path: answer} stands in for dagu (the negative proof)
+fx = os.environ.get("DAGU_FIXTURE")
+get = (lambda p: json.load(open(fx))[p]) if fx else (lambda p: json.load(urllib.request.urlopen(base + p, timeout=10)))
 reviews = ["skill-werk-demo-gate-quality", "skill-werk-demo-gate-arch", "skill-werk-demo-gate-code"]
 for run in get("/api/v1/dag-runs?name=demo&limit=20")["dagRuns"]:
     d = get(f"/api/v1/dag-runs/demo/{run['dagRunId']}")
@@ -32,12 +34,32 @@ print("no finished demo run with all three reviews"); sys.exit(1)
 PY
 }
 
+# the AC2 verdict on measure's output: silent when the reviews ran together, else why not
+verdict() {
+  read -r spread phase slowest id <<<"$1"
+  [ "$spread" -le 30 ] || echo "run $id: reviews started ${spread}s apart (in turn)"
+  [ "$phase" -le $((slowest + 60)) ] || echo "run $id: review phase ${phase}s, slowest review ${slowest}s"
+  return 0
+}
+
 @test "AC2: the newest real demo starts its three reviews within 30s, and its review phase is no longer than the slowest review plus 1 min" {
   run measure
   [ "$status" -eq 0 ] || { echo "unmeasured: $output"; return 1; }
-  read -r spread phase slowest id <<<"$output"
-  [ "$spread" -le 30 ] || { echo "run $id: reviews started ${spread}s apart (in turn)"; return 1; }
-  [ "$phase" -le $((slowest + 60)) ] || { echo "run $id: review phase ${phase}s, slowest review ${slowest}s"; return 1; }
+  why="$(verdict "$output")"
+  [ -z "$why" ] || { echo "$why"; return 1; }
+}
+
+@test "AC2 negative proof: the 11-11 15:43 demo, reviews in turn, is red" {
+  f="$BATS_TEST_TMPDIR/dagu.json"
+  n() { printf '{"step":{"name":"%s"},"startedAt":"%s","finishedAt":"%s"}' "$1" "$2" "$3"; }
+  printf '{"/api/v1/dag-runs?name=demo&limit=20":{"dagRuns":[{"dagRunId":"r1"}]},"/api/v1/dag-runs/demo/r1":{"nodes":[%s,%s,%s]}}' \
+    "$(n skill-werk-demo-gate-quality 2026-11-11T15:43:06-05:00 2026-11-11T15:44:56-05:00)" \
+    "$(n skill-werk-demo-gate-arch 2026-11-11T15:44:56-05:00 2026-11-11T15:45:47-05:00)" \
+    "$(n skill-werk-demo-gate-code 2026-11-11T15:45:47-05:00 2026-11-11T15:48:50-05:00)" > "$f"
+  DAGU_FIXTURE="$f" run measure
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  why="$(verdict "$output")"
+  [[ "$why" == *"started 161s apart"* && "$why" == *"review phase 344s"* ]] || { echo "serial run not caught: $output / $why"; return 1; }
 }
 
 @test "AC1 model-first (Kade 10:11, row 84): chorus-make graph demo, from the prod rows, makes exactly demo.yaml" {
