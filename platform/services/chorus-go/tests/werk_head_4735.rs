@@ -40,7 +40,13 @@ fn a_werk_owned_by_another_account_is_read() {
 fn negative_proof_without_the_trust_git_refuses_and_a_missing_werk_fails() {
     let d = repo("neg");
     let p = d.path().to_str().unwrap();
-    let o = Command::new("git").env("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1").args(["-C", p, "rev-parse", "HEAD"]).output().unwrap();
+    // #4710 — a session env that trusts every directory (GIT_CONFIG_COUNT/KEY_n/VALUE_n with
+    // safe.directory=*) would hollow this negative; clear it so the env cannot (Kade 11-02, Wren 11-11)
+    let mut c = Command::new("git");
+    for (k, _) in std::env::vars().filter(|(k, _)| k == "GIT_CONFIG_COUNT" || k.starts_with("GIT_CONFIG_KEY_") || k.starts_with("GIT_CONFIG_VALUE_")) {
+        c.env_remove(k);
+    }
+    let o = c.env("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1").args(["-C", p, "rev-parse", "HEAD"]).output().unwrap();
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("dubious ownership"));
     assert!(werk_head("/nonexistent/silas-0").is_err());
