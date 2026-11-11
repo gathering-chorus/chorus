@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — reads the live process table (ps), read-only
-# @domain: chorus
+# @domain: spine
 # @needs: machine — prod after the land and the hooks/runner restart
 # @card: #4951 · owner: silas
 # Covers platform/services/chorus-hooks/src/shared/reap.rs and platform/services/chorus-runner/src/tasks.rs.

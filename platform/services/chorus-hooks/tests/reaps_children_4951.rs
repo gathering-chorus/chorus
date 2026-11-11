@@ -1,5 +1,5 @@
 // @test-type: unit — spawns `true` children from this test process and reads ps; no daemon, no store
-// @domain: chorus
+// @domain: spine
 // @card: #4951
 //! #4951 — chorus-hooks and chorus-runner reap every child they spawn. On 2026-11-10
 //! chorus-hooks (pid 4376, up 2d 11h) held 2,285 <defunct> children, jeffbridwell hit
