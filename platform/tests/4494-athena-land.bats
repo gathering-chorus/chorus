@@ -182,3 +182,16 @@ scope() { printf '#!/usr/bin/env bash\necho "$@" >> "%s/scoped"\n%s\n' "$T" "$1"
   [ "$status" -eq 1 ]
   [ -z "$(ls "$T/state2" 2>/dev/null)" ]
 }
+
+@test "a card that landed twice is scoped over both of its land commits, not another card's" {
+  git -C "$T/home" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "#77 (kade) (#11)"
+  git -C "$T/home" push -q origin HEAD:main
+  SECOND="$(git -C "$T/home" rev-parse HEAD)"
+  scope 'echo designing/model/policy.ttl'
+  export ATHENA_LAND_STATE="$T/state3"
+  run "$AL" 77 kade
+  [ "$status" -eq 0 ]
+  grep -q "scope $T/home ${LANDED}^..${LANDED}" "$T/scoped" || false
+  grep -q "scope $T/home ${SECOND}^..${SECOND}" "$T/scoped" || false
+  ! grep -q "$(git -C "$T/home" rev-parse HEAD~1)^" "$T/scoped" || false   # #770's land is #770's
+}

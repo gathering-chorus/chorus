@@ -62,11 +62,17 @@ if [ -f "$mark" ]; then
   echo "athena-land #${card}: result=deployed"
   exit 0
 fi
-if ! scope="$("$scope_bin" scope "$home" "${sha}^..${sha}" 2>&1)"; then
-  echo "athena-land #${card}: scope failed for ${sha:0:12} — model not deployed: ${scope:0:200}"
-  echo "athena-land #${card}: result=failed"
-  exit 1
-fi
+# #4960 — every land commit of this card, not only the newest: a round whose earlier land
+# stopped before its model deployed must carry that model (athena-deploy reads the same set)
+scope=""
+for c in $(git -C "$home" log origin/main --reverse --format=%H --grep="^#${card} (${role})" --grep="^${role}: #${card} "); do
+  if ! s="$("$scope_bin" scope "$home" "${c}^..${c}" 2>&1)"; then
+    echo "athena-land #${card}: scope failed for ${c:0:12} — model not deployed: ${s:0:200}"
+    echo "athena-land #${card}: result=failed"
+    exit 1
+  fi
+  [ -n "$s" ] && scope="$(printf '%s\n%s' "$scope" "$s" | grep . | sort -u)"
+done
 if [ -z "$scope" ]; then
   echo "athena-land #${card}: ${sha:0:12} carries no model source — nothing for athena"
   echo "athena-land #${card}: result=none"
