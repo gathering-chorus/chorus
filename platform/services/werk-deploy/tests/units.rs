@@ -1058,3 +1058,21 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     // #4515: the act workflows werk.yml/athena.yml are retired; the v2 pipelines are
     // generated and drift-checked (4465-cicd-workflow-drift.bats, 4515-athena-workflow-drift.bats).
 }
+
+// #4960 (folds #4961) — a land that writes rows deploys the card's model first, even when
+// this round's diff carries no model (an earlier land's model may never have deployed).
+#[test]
+fn a_land_with_rows_deploys_the_cards_model_first() {
+    assert!(werk_deploy::model_before_rows(true));
+    assert!(!werk_deploy::model_before_rows(false), "no rows: the success handler deploys the model");
+}
+
+#[test]
+fn negative_proof_the_model_runs_before_the_rows_in_the_deploy_itself() {
+    // the decision is only worth anything if the deploy calls athena-land before run_land_rows
+    let src = std::fs::read_to_string(std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/lib.rs")).unwrap();
+    let body = &src[src.find("if let Some(script) = land_rows_script(&canon, card, &diff)").expect("the land-rows block")..];
+    let model = body.find("platform/scripts/athena-land").expect("athena-land is called in the land-rows block");
+    let rows = body.find("run_land_rows(&script)").expect("the rows run");
+    assert!(model < rows, "the model must deploy before the rows are written");
+}

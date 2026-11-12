@@ -330,8 +330,9 @@ fn same_kind_shape_is_loaded_once_for_the_entire_batch() {
         .count();
     // #4358 — nine: sh:pattern added a property-level and a node-level read, and
     // the declared field paths (rdfs:comment) one more. (#4576's template read is
-    // gone with the template fill, Jeff 2026-10-17 12:58.)
-    assert_eq!(shape_selects, 9, "read_shape's nine queries run once per distinct class, not once per entity");
+    // gone with the template fill, Jeff 2026-10-17 12:58.) #4960 — ten: the fields the
+    // shape holds as IRIs (sh:nodeKind sh:IRI, sh:in over IRIs).
+    assert_eq!(shape_selects, 10, "read_shape's ten queries run once per distinct class, not once per entity");
     assert_eq!(store.updates.borrow().len(), 1);
 }
 

@@ -33,6 +33,10 @@ pub struct Card {
     /// #4515 landed mode: the card's squash commit on origin/main. `werk` is then
     /// canonical ($CHORUS_HOME) and `sources` what that one commit changed.
     pub commit: Option<String>,
+    /// #4960 — a card that landed more than once (a fix-forward round after a land that
+    /// stopped before its model deployed): its FIRST landed commit. The landed model is
+    /// everything since that commit's parent, so no round's model is left behind.
+    pub since: Option<String>,
 }
 
 impl Card {
@@ -95,7 +99,7 @@ pub fn resolve_from(card: &str, role: Option<String>, base: &str) -> Result<Card
             "card #{card}: no model change — {CARD_RANGE} in {werk} touches no model source (roles/*/ontology/*.ttl, designing/schemas/model-retirements.jsonl)"
         ));
     }
-    Ok(Card { card, role, werk, sources, commit: None })
+    Ok(Card { card, role, werk, sources, commit: None, since: None })
 }
 
 // ---- #4515 landed mode: `--card <n> --landed` ----
@@ -134,6 +138,26 @@ pub fn landed_commit(home: &str, card: &str, role: &str) -> Result<Option<String
     Ok((!sha.is_empty()).then_some(sha))
 }
 
+/// #4960 — every squash commit of the card on origin/main, oldest first (same subject
+/// grep as landed_commit).
+pub fn landed_commits(home: &str, card: &str, role: &str) -> Result<Vec<String>, String> {
+    let out = std::process::Command::new("git")
+        .args(["-C", home, "log", "origin/main", "--reverse", "--format=%H"])
+        .arg(format!("--grep=^#{card} ({role})"))
+        .arg(format!("--grep=^{role}: #{card} "))
+        .output()
+        .map_err(|e| format!("git: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("git log origin/main failed in {home}: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+}
+
+/// #4960 — the card's FIRST squash commit on origin/main. Ok(None) = not landed.
+pub fn first_landed_commit(home: &str, card: &str, role: &str) -> Result<Option<String>, String> {
+    Ok(landed_commits(home, card, role)?.into_iter().next())
+}
+
 /// Resolve a landed card from the environment (canonical = $CHORUS_HOME).
 pub fn resolve_landed(card: &str) -> Result<Card, String> {
     resolve_landed_from(card, env_role(), &chorus_home())
@@ -155,9 +179,19 @@ pub fn resolve_landed_from(card: &str, role: Option<String>, home: &str) -> Resu
     let sha = landed_commit(home, &card, &role)
         .map_err(|e| format!("card #{card}: {e}"))?
         .ok_or_else(|| format!("card #{card}: no landed commit for #{card} ({role}) on origin/main in {home} — nothing landed to deploy"))?;
-    let range = format!("{sha}^..{sha}");
-    let sources = changed_sources(home, &range).map_err(|e| format!("card #{card}: {e}"))?;
-    Ok(Card { card, role, werk: home.trim_end_matches('/').to_string(), sources, commit: Some(sha) })
+    // #4960 — from the card's first landed commit, so a round whose earlier land never
+    // deployed its model carries that model too
+    let first = first_landed_commit(home, &card, &role).map_err(|e| format!("card #{card}: {e}"))?.unwrap_or_else(|| sha.clone());
+    // the union of what each of the card's own land commits changed — never a file another
+    // card landed in between (it deployed with its own land)
+    let mut sources: Vec<String> = Vec::new();
+    for c in landed_commits(home, &card, &role).map_err(|e| format!("card #{card}: {e}"))? {
+        for s in changed_sources(home, &format!("{c}^..{c}")).map_err(|e| format!("card #{card}: {e}"))? {
+            if !sources.contains(&s) { sources.push(s); }
+        }
+    }
+    let since = (first != sha).then_some(first);
+    Ok(Card { card, role, werk: home.trim_end_matches('/').to_string(), sources, commit: Some(sha), since })
 }
 
 /// The model sources a range touched in a tree. Deleted files are not sources
@@ -317,9 +351,10 @@ pub fn main_ntriples(werk: &str, rel: &str) -> String {
 /// #4536 — the revision a card's change is judged against: main for a werk,
 /// the squash commit's parent for a landed card (main already holds the change).
 pub fn base_rev(card: &Card) -> String {
-    match &card.commit {
-        Some(sha) => format!("{sha}^"),
-        None => "origin/main".to_string(),
+    match (&card.since, &card.commit) {
+        (Some(first), Some(_)) => format!("{first}^"),
+        (None, Some(sha)) => format!("{sha}^"),
+        (_, None) => "origin/main".to_string(),
     }
 }
 
