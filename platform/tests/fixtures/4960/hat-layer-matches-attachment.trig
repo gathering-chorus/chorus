@@ -1,0 +1,3 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# a standing hat put on an appointment
+c:appt-1 c:appointedHat c:hat-ops . c:hat-ops c:hatLayer "standing" .

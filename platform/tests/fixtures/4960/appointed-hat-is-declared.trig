@@ -1,0 +1,3 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# an appointment to a hat nobody declared
+c:appt-1 c:appointedHat c:hat-undeclared .

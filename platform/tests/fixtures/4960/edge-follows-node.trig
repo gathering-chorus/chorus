@@ -1,0 +1,4 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# 2026-08-14: a word-cap edge asserted where the role has no typing
+<urn:chorus:ontology> { c:role-silas c:hasProperty c:property-word-cap . }
+<urn:chorus:instances> { c:role-silas a c:Role . }

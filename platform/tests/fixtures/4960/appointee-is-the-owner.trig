@@ -1,0 +1,4 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# appointed over a domain someone else owns
+c:appt-1 a c:Appointment ; c:appointee c:principal-kade ; c:overAnchor c:domain-x .
+c:domain-x c:ownedBy c:principal-wren .

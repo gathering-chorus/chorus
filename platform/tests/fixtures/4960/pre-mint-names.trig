@@ -1,0 +1,3 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# a gate minted without its gate- prefix
+c:tdd a c:Gate .

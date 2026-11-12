@@ -1,0 +1,3 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# an appointment with nothing to anchor it
+c:appt-1 a c:Appointment ; c:appointedHat c:hat-ops .

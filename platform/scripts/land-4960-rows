@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""#4960: the policy rows #4959's shape was built for. DRY RUN unless --apply.
+# @domain: policies
+
+The plan is read from files that ship in this land, so the store and the repo cannot differ:
+  1. designing/data/policies-4960.tsv — Borg Queen's 46 ADR/DEC rules (2026-11-12), plain
+     rows: a rule to read, no check yet (Jeff 10:59, "ok for this card": all of them stored,
+     only the runnable ones gate);
+  2. designing/data/policy-checks-4960.json — the 15 runnable checks: the 11 GovernanceChecks
+     folded into Policy and 4 of the 46 rules made one-line commands (they replace the plain row), each with its measured baseline and the
+     fixture of a real violation it must count;
+  3. policy-no-self-acp says Jeff's go only (#4707; it said "Wren or Jeff");
+  4. every GovernanceCheck row is deleted: the 11 real ones now live as policies, and 23
+     quartet probe rows leaked there between 10-14 and 11-06.
+Each write prints ADD / CHANGE / DELETE / SAME against the door. Exit 0 = plan printed (or
+applied); 1 = a write was refused; 2 = the door or the plan could not be read.
+--ttl <file> writes the planned policy rows as Turtle (for the shape test) and exits.
+"""
+import csv, json, os, subprocess, sys, urllib.request
+
+DOOR = os.environ.get("OWL_URL", "http://localhost:3360")
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
+# The door names a policy row without its class prefix ("no-self-acp" is chorus:policy-no-self-acp).
+# collection -> (door path, runner domain, runner class)
+DOOR_CLASS = {"policies": ("/v1/policies/policies", "policies", "policies"),
+              "governancechecks": ("/v1/domains/governancechecks", "domains", "governancechecks")}
+NO_SELF_ACP = ("Only Jeff's go lands or accepts a card (#4707, DEC-048 as amended): no role accepts, "
+               "and no role records an accepter for Jeff. The go is the passkey-signed step on his approvals page.")
+
+
+def rules():
+    out = []
+    with open(os.path.join(ROOT, "designing/data/policies-4960.tsv")) as f:
+        for row in csv.reader((l for l in f if not l.startswith("#")), delimiter="\t"):
+            pid, gate, sources, rule, mechanism, _live = row
+            out.append(("policies", pid, {
+                "label": pid, "gate": gate,
+                "comment": f"{rule} Sources: {sources}. Checked by (to build): {mechanism}"}))
+    return out
+
+
+def checks():
+    out = []
+    for r in json.load(open(os.path.join(ROOT, "designing/data/policy-checks-4960.json"))):
+        w = {k: r[k] for k in ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")}
+        if r.get("derivedFrom"):
+            w["derivedFrom"] = r["derivedFrom"]
+        out.append(("policies", r["name"], w))
+    return out
+
+
+def policy_rows():
+    """The rules, with a runnable check replacing its plain row where one exists (4 of the 46)."""
+    checked = {name: w for _, name, w in checks()}
+    rows = [("policies", n, checked.pop(n, w)) for _, n, w in rules()]
+    return rows + [("policies", n, w) for n, w in checked.items()]
+
+
+def plan(live):
+    p = policy_rows()
+    p.append(("policies", "no-self-acp", {"comment": NO_SELF_ACP}))
+    p += [("governancechecks", r["name"], None) for r in live.get("governancechecks", {}).values()]
+    return p
+
+
+def same(a, b):
+    norm = lambda v: sorted(v) if isinstance(v, list) else str(v).strip()
+    return norm(a) == norm(b)
+
+
+def load_live():
+    path = os.environ.get("LAND_LIVE_JSON")
+    if path:
+        body = json.load(open(path))
+        return {c: {r["name"]: r for r in body.get(c, [])} for c in DOOR_CLASS}
+    live = {}
+    for c, (p, _, _) in DOOR_CLASS.items():
+        with urllib.request.urlopen(f"{DOOR}{p}?limit=1000", timeout=15) as r:
+            live[c] = {x["name"]: x for x in (json.load(r).get("data") or [])}
+    return live
+
+
+def write_ttl(path):
+    esc = lambda s: str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    lines = ["@prefix c: <https://jeffbridwell.com/chorus#> .",
+             "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> ."]
+    for _, name, w in policy_rows():
+        props = [f'rdfs:label "{esc(w["label"])}"', f'rdfs:comment "{esc(w["comment"])}"', "c:ownedBy c:principal-silas"]
+        for k in ("gate", "status", "checkKind", "checkSpec", "violationFixture"):
+            if k in w:
+                props.append(f'c:{k} "{esc(w[k])}"')
+        if "baseline" in w:
+            props.append(f'c:baseline {int(w["baseline"])}')
+        props += [f"c:derivedFrom c:{d}" for d in w.get("derivedFrom", [])]
+        lines.append(f"c:policy-{name} a c:Policy ; " + " ; ".join(props) + " .")
+    open(path, "w").write("\n".join(lines) + "\n")
+
+
+def main(argv):
+    if argv[:1] == ["--ttl"] and len(argv) == 2:
+        write_ttl(argv[1])
+        return 0
+    apply = "--apply" in argv
+    try:
+        live = load_live()
+        p = plan(live)
+    except Exception as e:
+        print(f"door or plan unreadable: {e} — no plan")
+        return 2
+    counts, refused = {"ADD": 0, "CHANGE": 0, "DELETE": 0, "SAME": 0}, 0
+    for coll, name, w in p:
+        have = live[coll].get(name)
+        if w is None:
+            kind, diff = ("DELETE", {}) if have is not None else ("SAME", {})
+        elif have is None:
+            kind, diff = "ADD", w
+        else:
+            diff = {k: v for k, v in w.items() if not same(have.get(k, ""), v)}
+            kind = "CHANGE" if diff else "SAME"
+        counts[kind] += 1
+        print(f"{kind:<6} {coll}/{name}  {json.dumps(diff, sort_keys=True)[:160] if kind in ('ADD', 'CHANGE') else ''}")
+        if not apply or kind == "SAME":
+            continue
+        _, dom, cls = DOOR_CLASS[coll]
+        if kind == "ADD":
+            verb, args = "athena-add", [f"fields={json.dumps({'name': name, **w})}"]
+        elif kind == "CHANGE":
+            verb, args = "athena-set", [f"id={name}", f"fields={json.dumps(diff)}"]
+        else:
+            verb, args = "athena-delete", [f"id={name}"]
+        r = subprocess.run([RUNNER, "call", verb, f"domain={dom}", f"class={cls}", *args], capture_output=True, text=True)
+        if r.returncode != 0 or not any(c in r.stdout + r.stderr for c in (" → 200", " → 201", " → 204")):
+            refused += 1
+            print(f"  REFUSED {coll}/{name}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+    verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE'] + counts['DELETE']}" if refused
+            else "applied" if apply else "nothing written (dry run)")
+    print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change, {counts['DELETE']} delete; "
+          f"{counts['SAME']} same — {verb}")
+    return 1 if refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
