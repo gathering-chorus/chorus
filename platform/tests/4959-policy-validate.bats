@@ -135,3 +135,25 @@ PY
   run "$PV"
   [ "$status" -eq 2 ]
 }
+
+@test "--prom writes each policy's violations and baseline for node-exporter" {
+  export TEXTFILE_DIR="$T/tf"
+  policies "one-home|data|ratchet|2|sparql|$Q"
+  run "$PV" --prom
+  [ "$status" -eq 0 ]
+  grep -q '^chorus_policy_violations{policy="one-home",gate="data"} 2$' "$T/tf/chorus_policy.prom" || return 1
+  grep -q '^chorus_policy_baseline{policy="one-home",gate="data"} 2$' "$T/tf/chorus_policy.prom" || return 1
+  grep -q '^chorus_policy_checks 1$' "$T/tf/chorus_policy.prom" || return 1
+}
+
+@test "negative: --prom on a run that could not measure leaves the old file untouched (the stale rule fires)" {
+  export TEXTFILE_DIR="$T/tf"
+  mkdir -p "$T/tf"
+  echo "old" > "$T/tf/chorus_policy.prom"
+  touch -t 202601010000 "$T/tf/chorus_policy.prom"
+  policies "broken|data|active|0|sparql|SELECT ?s WHERE { nope"
+  run "$PV" --prom
+  [ "$status" -eq 2 ]
+  [ "$(cat "$T/tf/chorus_policy.prom")" = "old" ]
+  [ -z "$(find "$T/tf" -name 'chorus_policy.prom' -newer "$T/data.trig")" ]
+}

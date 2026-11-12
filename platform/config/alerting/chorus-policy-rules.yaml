@@ -1,0 +1,43 @@
+# #4959 AC3 — a policy whose check finds more violations than its baseline (the
+# ratchet: existing debt is the ceiling, only new drift alerts). Read from the
+# textfile policy-validate --prom writes (node-exporter :9102). The stale rule
+# (a run that stopped writing) ships with the schedule in the rows land: before it
+# no policy carries a check, so a dead-man rule could only ever fire.
+# Each summary names the rule, the threshold and the values, no refIds (Jeff 10-24 06:03).
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: policies
+    folder: Chorus
+    interval: 5m
+    rules:
+      - uid: policy-violations-above-baseline
+        title: Policy violations above baseline
+        condition: D
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max by (policy, gate) (chorus_policy_violations)', instant: true, refId: A }
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max by (policy, gate) (chorus_policy_baseline)', instant: true, refId: B }
+          - refId: C
+            datasourceUid: __expr__
+            model: { type: math, expression: '$A - $B', refId: C }
+          - refId: D
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: C
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: D
+        noDataState: OK
+        execErrState: Alerting
+        for: 0m
+        annotations:
+          summary: 'policy {{ $labels.policy }} ({{ $labels.gate }} gate): {{ $values.A.Value }} violations, baseline {{ $values.B.Value }} (alerts above the baseline)'
+        labels: { role: silas, domain: policies, severity: warning, team: chorus }

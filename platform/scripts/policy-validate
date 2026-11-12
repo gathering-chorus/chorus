@@ -87,12 +87,37 @@ def count_test(path):
     return 0 if p.returncode == 0 else 1
 
 
+def write_prom(measured, gate):
+    """node-exporter textfile, written atomically. Called only when every check ran: a run
+    that could not measure leaves the old file to age, so the stale rule fires (#3734)."""
+    d = os.environ.get("TEXTFILE_DIR", os.path.expanduser("~/CascadeProjects/shared-observability/data/textfile_collector"))
+    os.makedirs(d, exist_ok=True)
+    esc = lambda s: str(s).replace("\\", "\\\\").replace('"', '\\"')
+    lines = ["# HELP chorus_policy_violations Violations a policy's check found (#4959).",
+             "# TYPE chorus_policy_violations gauge"]
+    lines += [f'chorus_policy_violations{{policy="{esc(n)}",gate="{esc(g)}"}} {v}' for n, g, v, _ in measured]
+    lines += ["# HELP chorus_policy_baseline Violations a policy allows today; the check fails above it (#4959).",
+              "# TYPE chorus_policy_baseline gauge"]
+    lines += [f'chorus_policy_baseline{{policy="{esc(n)}",gate="{esc(g)}"}} {b}' for n, g, _, b in measured]
+    lines += ["# HELP chorus_policy_checks Policy checks this run measured (#4959).", "# TYPE chorus_policy_checks gauge",
+              f"chorus_policy_checks {len(measured)}"]
+    name = "chorus_policy" + (f"_{gate}" if gate else "") + ".prom"
+    tmp = os.path.join(d, f".{name}.{os.getpid()}")
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, os.path.join(d, name))
+
+
 def main(argv):
-    gate = None
-    if argv[:1] == ["--gate"] and len(argv) > 1:
-        gate = argv[1]
-    elif argv:
-        print("usage: policy-validate [--gate arch|data|quality|code|product|hook]", file=sys.stderr)
+    gate, prom = None, False
+    args = list(argv)
+    if "--prom" in args:
+        prom = True
+        args.remove("--prom")
+    if args[:1] == ["--gate"] and len(args) == 2:
+        gate = args[1]
+    elif args:
+        print("usage: policy-validate [--gate arch|data|quality|code|product|hook] [--prom]", file=sys.stderr)
         return 2
     try:
         rows = load_policies()
@@ -100,6 +125,7 @@ def main(argv):
         print(f"policy-validate: {e}")
         return 2
     ran = failed = broken = 0
+    measured = []
     for r in sorted(rows, key=lambda r: r.get("name", "")):
         kind, name = r.get("checkKind"), r.get("name", "?")
         if not kind or r.get("status") == "retired" or (gate and r.get("gate") != gate):
@@ -125,6 +151,7 @@ def main(argv):
             print(f"BROKEN {name}: {e}")
             continue
         ran += 1
+        measured.append((name, r.get("gate", ""), n, base))
         if n > base:
             failed += 1
             print(f"FAIL {name} {n} > {base} ({r.get('gate', '')})")
@@ -132,6 +159,8 @@ def main(argv):
             print(f"PASS {name} {n} <= {base}")
     print(f"policy-validate: {ran} checks, {failed} above baseline, {broken} could not run"
           + (f" (gate {gate})" if gate else ""))
+    if prom and not broken:
+        write_prom(measured, gate)
     return 2 if broken else 1 if failed else 0
 
 
