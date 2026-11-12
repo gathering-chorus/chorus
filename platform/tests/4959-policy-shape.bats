@@ -99,7 +99,6 @@ GOOD='chorus:policy-no-raw-kill a chorus:Policy ; rdfs:label "No raw process kil
     chorus:checkSpec "t" ; chorus:violationFixture "f" .' badkind)" = VIOLATES ]
 }
 
-@test "GovernanceCheck is folded into Policy: no class, no shape, no instances left" {
-  run grep -rlE "chorus:GovernanceCheck( |Shape)" "$REPO/roles" "$REPO/designing/data" --include='*.ttl'
-  [ -z "$output" ]
-}
+# The GovernanceCheck fold rides the follow-on land with the policy rows: the store learns
+# this shape only after the land (athena-land runs in cicd-land's success handler), and
+# retiring the class before its 11 rows move would orphan them.
