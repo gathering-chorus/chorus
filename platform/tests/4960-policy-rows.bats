@@ -96,7 +96,11 @@ PY
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+<<<<<<< HEAD
   [[ "$output" == *"62 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
+=======
+  [[ "$output" == *"59 add, 1 change, 34 delete"* ]] || { echo "$output" | tail -3; return 1; }
+>>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
   [ ! -f "$T/runner.log" ] || return 1
 }
 
@@ -124,15 +128,28 @@ print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 @test "the land grants the card's role Write on policies first, through the security door" {
+=======
+
+@test "the land grants Jeff's go Write on policies and domains first, through the security door" {
+>>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
   printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND" --apply
   [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
+<<<<<<< HEAD
   first=$(head -1 "$T/runner.log")
   [[ "$first" == *"domain=security class=permissions"*"silas-policies"* ]] || { echo "$first"; return 1; }
   grep -q 'chorus:permission-silas-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+=======
+  first=$(head -2 "$T/runner.log")
+  [[ "$first" == *"domain=security class=permissions"*"jeff-policies"* ]] || { echo "$first"; return 1; }
+  [[ "$(sed -n 2p "$T/runner.log")" == *"jeff-domains"* ]] || return 1
+  grep -q 'chorus:permission-jeff-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+  grep -q 'chorus:permission-jeff-domains a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+>>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
 }
 
 @test "a write refused while the door still holds the old scopes waits the cache out once and retries" {
@@ -143,5 +160,8 @@ print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
   [[ "$output" == *"waited for the door's scopes"* ]] || return 1
 }
+<<<<<<< HEAD
 =======
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)

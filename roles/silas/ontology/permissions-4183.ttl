@@ -375,16 +375,35 @@ chorus:permission-crawler-tests a chorus:Permission ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+<<<<<<< HEAD
 # #4960 — the land writes as the card's role (cicd-land passes ROLE; chorus-runner mints that
 # principal), so silas adds the policy rows and edits no-self-acp, Wren's row. land-4960-rows
 # adds this grant first, through the security door, so its own writes are allowed.
 chorus:permission-silas-policies a chorus:Permission ;
     rdfs:label "silas may write urn:chorus:domains:policies" ;
     chorus:agent chorus:principal-silas ;
+=======
+# #4960 — the land writes as Jeff's go (principal-jeff): it adds the policy rows, edits
+# no-self-acp (Wren's row) and deletes the folded GovernanceCheck rows. land-4960-rows adds
+# these two first, through the security door, so its own writes are allowed.
+chorus:permission-jeff-policies a chorus:Permission ;
+    rdfs:label "jeff may write urn:chorus:domains:policies" ;
+    chorus:agent chorus:principal-jeff ;
+>>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
     chorus:accessTo "urn:chorus:domains:policies"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+<<<<<<< HEAD
+=======
+chorus:permission-jeff-domains a chorus:Permission ;
+    rdfs:label "jeff may write urn:chorus:domains:domains" ;
+    chorus:agent chorus:principal-jeff ;
+    chorus:accessTo "urn:chorus:domains:domains"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
+>>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
 chorus:permission-jeff-security a chorus:Permission ;
     rdfs:label "jeff may write urn:chorus:domains:security" ;
     chorus:agent chorus:principal-jeff ;
