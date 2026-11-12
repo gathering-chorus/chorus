@@ -738,6 +738,8 @@ pub fn datatype_ok(value: &str, xsd_local: &str) -> bool {
         }
         "decimal" | "double" | "float" => value.parse::<f64>().is_ok(),
         "boolean" => matches!(value, "true" | "false" | "1" | "0"),
+        // #4960 — a field the shape holds as an IRI (sh:nodeKind sh:IRI, or sh:in over IRIs)
+        "@iri" => safe_iri(value),
         // string / anyURI / dateTime / date / unknown / empty → permissive.
         _ => true,
     }
@@ -775,6 +777,15 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
                 datatypes.insert(prop.to_string(), dt.to_string());
             }
         }
+    }
+    // #4960 — a plain field the shape holds as an IRI (sh:nodeKind sh:IRI, or sh:in over
+    // IRIs) is written as an IRI: as a string it fails its own shape (Permission.mode,
+    // Policy.derivedFrom). Marked "@iri" where no sh:datatype names it.
+    for prop in store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?edgeClass }} FILTER NOT EXISTS {{ ?p sh:datatype ?dt }} {{ ?p sh:nodeKind sh:IRI }} UNION {{ ?p sh:in/rdf:rest*/rdf:first ?m FILTER(isIRI(?m)) }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }}",
+        g = ONTOLOGY_GRAPH, c = class
+    ))? {
+        datatypes.entry(prop).or_insert_with(|| "@iri".to_string());
     }
     let mut edge_classes: BTreeMap<String, String> = BTreeMap::new();
     for row in store.select_v(&format!(
@@ -886,7 +897,8 @@ fn declared_path_triples(subject: &str, req: &WriteReq, shape: &ShapeReq) -> Str
     for (prop, val) in values {
         match shape.field_paths.get(prop) {
             Some(iri) if iri != RDFS_LABEL => {
-                out.push_str(&format!("<{}> <{}> \"{}\" .\n", subject, iri, esc(val)));
+                // #4960 — the same value term as to_turtle_typed (IRI fields, typed literals)
+                out.push_str(&format!("<{}> <{}> {} .\n", subject, iri, field_literal(val, shape.datatypes.get(prop).map(String::as_str))));
             }
             _ => {}
         }
@@ -982,9 +994,20 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
 /// wrote (29% of sampled rows on 10-24 broke their own shapes this way, the
 /// hourly sensor-run counts among them). New writes only; old rows are not
 /// rewritten (Jeff 10-17). A string, or an unknown datatype, stays plain.
+/// #4960 — an IRI the door may write as <IRI>: http(s) or urn, and nothing that could
+/// end the term early in Turtle (whitespace, < > " \\ { } | ^ `). Anything else stays a
+/// literal, and datatype_ok refuses it for an "@iri" field (#3734).
+pub fn safe_iri(v: &str) -> bool {
+    (v.starts_with("https://") || v.starts_with("http://") || v.starts_with("urn:"))
+        && !v.chars().any(|c| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\\' | '{' | '}' | '|' | '^' | '`'))
+}
+
 pub fn field_literal(val: &str, xsd_local: Option<&str>) -> String {
     const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
     match (xsd_local, val) {
+        // #4960 — the shape holds this field as an IRI: write it as one, never as a string
+        (Some("@iri"), v) if safe_iri(v) => format!("<{v}>"),
+        (Some("anyURI"), v) => format!("\"{}\"^^<{XSD}anyURI>", esc(v)),
         (Some("boolean"), "true" | "1") => format!("\"true\"^^<{XSD}boolean>"),
         (Some("boolean"), "false" | "0") => format!("\"false\"^^<{XSD}boolean>"),
         (Some(t @ ("integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
