@@ -12,7 +12,6 @@ The plan is read from files that ship in this land, so the store and the repo ca
   3. policy-no-self-acp says Jeff's go only (#4707; it said "Wren or Jeff");
   (the 34 GovernanceCheck rows, 11 folded here and 23 leaked quartet probes, leave with the
   class's retirement in model-retirements.jsonl, at the land's model deploy.)
-  0. one grant first: the card's role (silas) may write the policies graph;
   5. the policy-sensor pipeline's four rows (#4960 AC3), from chorus-make's fixtures.
 Each write prints ADD / CHANGE / DELETE / SAME against the door. Exit 0 = plan printed (or
 applied); 1 = a write was refused; 2 = the door or the plan could not be read.
@@ -63,14 +62,19 @@ def policy_rows():
     return rows + [("policies", n, w) for n, w in checked.items()]
 
 
-# The land writes as the card's role (cicd-land passes ROLE=<role>; chorus-runner mints that
-# principal): silas may write security but not policies. This grant (also in
-# permissions-4183.ttl) goes first, through the security door.
-GRANTS = [("permissions", "silas-policies", {"label": "silas may write urn:chorus:domains:policies", "agent": "principal-silas",
-           "accessTo": "urn:chorus:domains:policies", "mode": "http://www.w3.org/ns/auth/acl#Write"})]
-# The door caches a principal's scopes for 300 s (chorus-oidc ALLOW_TTL_SECS): a write refused
-# right after the grants waits that out once and is tried again.
-SCOPE_WAIT = os.environ.get("LAND_SCOPE_WAIT_CMD", "sleep 310")
+# The land writes as the card's role (cicd-land passes ROLE; chorus-runner mints that
+# principal). Its grant on the policies graph is a model row (permissions-4183.ttl), and
+# werk-deploy deploys the model before it runs this script (#4961, folded into #4960).
+# Edge values are bare names: the door mints the kind's prefix (ADR-040 Rule 0) and
+# refuses a prefixed one as a double prefix.
+EDGE_PREFIXES = ("pipeline-step-", "value-stream-step-", "value-stream-", "skill-")
+
+
+def bare(v):
+    for p in EDGE_PREFIXES:
+        if v.startswith(p):
+            return v[len(p):]
+    return v
 
 
 def sensor_rows():
@@ -84,21 +88,21 @@ def sensor_rows():
             continue
         step, order, sorder, skill, label, executor, impl, mode, _onfail, _shape, args = (line.rstrip("\n").split("\t") + [""] * 11)[:11]
         sname = skill.removeprefix("skill-")
-        steps.append(f"pipeline-step-policy-sensor-{step}")
+        steps.append(f"policy-sensor-{step}")
         out.append(("skills", sname, {"label": label, "executor": executor, "implementedBy": impl, "arguments": mode,
                     "hasDomain": "policies", "comment": "Runs every policy's check against main hourly and writes the counts for Pulse (#4960)."}))
         out.append(("pipelinesteps", f"policy-sensor-{step}", {"label": step, "stepOrder": order, "executor": executor,
-                    "coversStep": ["value-stream-step-proving"]}))
+                    "coversStep": ["proving"]}))
         out.append(("stepskills", f"policy-sensor-{step}-{sorder}", {"label": f"policy-sensor {step} {sorder}: {sname}",
-                    "callsSkill": skill, "forStep": f"pipeline-step-policy-sensor-{step}", "skillOrder": sorder, "withArguments": args}))
-    out.append(("pipelines", "policy-sensor", {"label": "policy-sensor", "automates": "value-stream-operating", "hasStep": steps,
+                    "callsSkill": bare(skill), "forStep": f"policy-sensor-{step}", "skillOrder": sorder, "withArguments": args}))
+    out.append(("pipelines", "policy-sensor", {"label": "policy-sensor", "automates": "operating", "hasStep": steps,
                 "pipelineStatus": "operating", "runQueue": pipe.get("queue", ""), "runSchedule": pipe.get("schedule", ""),
                 "onExitRun": pipe.get("onExit", "")}))
     return out
 
 
 def plan(live):
-    p = list(GRANTS) + policy_rows() + sensor_rows()
+    p = policy_rows() + sensor_rows()
     p.append(("policies", "no-self-acp", {"comment": NO_SELF_ACP}))
     return p
 
@@ -106,7 +110,8 @@ def plan(live):
 def same(a, b):
     # the door serves a many-valued edge as a list (or one scalar when it holds one) and
     # takes a list on create (PipelineCreate.hasStep, PipelineStepCreate.coversStep)
-    norm = lambda v: sorted(str(x).strip() for x in v) if isinstance(v, list) else [str(v).strip()] if str(v).strip() else []
+    # the door serves an edge with its kind prefix; the plan holds the bare name it writes
+    norm = lambda v: sorted(bare(str(x).strip()) for x in v) if isinstance(v, list) else [bare(str(v).strip())] if str(v).strip() else []
     return norm(a) == norm(b)
 
 
@@ -182,10 +187,6 @@ def main(argv):
         if kind != "SAME":
             writes.append((kind, coll, name, w, diff))
     failed = [x for x in writes if not write(*x)] if apply else []
-    if failed:
-        subprocess.run(["/bin/sh", "-c", SCOPE_WAIT])
-        print(f"waited for the door's scopes to refresh; trying {len(failed)} refused write(s) again")
-        failed = [x for x in failed if not write(*x)]
     for kind, coll, name, _, _ in failed:
         print(f"  REFUSED {coll}/{name} ({kind})")
     refused = len(failed)

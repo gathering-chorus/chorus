@@ -86,7 +86,7 @@ platform/tests/fixtures/4960/qual-stdout-to-loki-no-log-files"
   echo "$output" | grep -q "sh:conforms *true" || { echo "$output" | grep resultMessage | head; return 1; }
 }
 
-@test "the dry run plans the grant, the adds and the Jeff-only fix, deletes nothing, and writes nothing" {
+@test "the dry run plans the adds and the Jeff-only fix, deletes nothing, and writes nothing" {
   python3 - "$T/live.json" <<'PY'
 import json, sys
 live = {"policies": [{"name": "no-self-acp", "comment": "Only Wren or Jeff can accept."}],
@@ -96,7 +96,7 @@ PY
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"62 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
+  [[ "$output" == *"61 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
   [ ! -f "$T/runner.log" ] || return 1
 }
 
@@ -124,21 +124,29 @@ print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "the land grants the card's role Write on policies first, through the security door" {
-  printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
+@test "the land writes no Permission: its grant is a model row, deployed before the rows (#4961 folded in)" {
+  printf '{"policies": [], "permissions": []}' > "$T/live.json"
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND" --apply
   [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
-  first=$(head -1 "$T/runner.log")
-  [[ "$first" == *"domain=security class=permissions"*"silas-policies"* ]] || { echo "$first"; return 1; }
+  ! grep -q "class=permissions" "$T/runner.log" || return 1
   grep -q 'chorus:permission-silas-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
 }
 
-@test "a write refused while the door still holds the old scopes waits the cache out once and retries" {
-  printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
-  # refuses every policies write until a marker exists; the wait creates it (LAND_SCOPE_WAIT_CMD)
-  printf '#!/bin/sh\ncase "$*" in *class=policies*) [ -f %s/scopes-fresh ] || { echo "→ 403"; exit 1; } ;; esac\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
-  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" LAND_SCOPE_WAIT_CMD="touch $T/scopes-fresh" run python3 "$LAND" --apply
-  [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
-  [[ "$output" == *"waited for the door's scopes"* ]] || return 1
+@test "negative proof: edge values go to the door bare (a prefixed name is refused as a double prefix)" {
+  run python3 -c "
+import runpy
+m = runpy.run_path('$LAND')
+bad = []
+for c, n, w in m['sensor_rows']():
+    for k in ('hasStep', 'coversStep', 'forStep', 'callsSkill', 'automates'):
+        for v in (w.get(k) if isinstance(w.get(k), list) else [w.get(k)] if k in w else []):
+            if m['bare'](v) != v: bad.append((n, k, v))
+print(bad); raise SystemExit(1 if bad else 0)"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # the compare still matches what the door serves back, prefixed
+  run python3 -c "
+import runpy; m = runpy.run_path('$LAND')
+raise SystemExit(0 if m['same'](['pipeline-step-policy-sensor-measure'], ['policy-sensor-measure']) else 1)"
+  [ "$status" -eq 0 ] || return 1
 }

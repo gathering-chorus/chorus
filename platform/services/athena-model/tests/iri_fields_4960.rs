@@ -29,7 +29,7 @@ fn any_uri_is_typed() {
 
 #[test]
 fn negative_proof_a_value_that_could_inject_turtle_is_refused_never_written_as_an_iri() {
-    for bad in ["https://x> <https://p> <https://o", "https://x y", "not-an-iri", "https://x\"", "ftp://x", ""] {
+    for bad in ["https://x> <https://p> <https://o", "https://x y", "https://x\u{7f}", "https://x\u{1b}", "not-an-iri", "https://x\"", "ftp://x", ""] {
         assert!(!datatype_ok(bad, "@iri"), "accepted {bad:?}");
         assert!(!field_literal(bad, Some("@iri")).starts_with('<'), "wrote {bad:?} as an IRI");
     }
@@ -70,6 +70,7 @@ fn conforms(ttl: &str) -> bool {
     let out = std::process::Command::new("shacl").args(["validate", "--shapes"]).arg(&sfile).arg("--data").arg(&data).output()
         .expect("UNMEASURED: no Jena shacl CLI on this box");
     let report = String::from_utf8_lossy(&out.stdout).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
     assert!(report.contains("sh:conforms"), "no verdict: {report}");
     report.contains("sh:conforms  true") || report.contains("sh:conforms true")
 }

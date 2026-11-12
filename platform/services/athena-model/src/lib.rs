@@ -999,7 +999,7 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
 /// literal, and datatype_ok refuses it for an "@iri" field (#3734).
 pub fn safe_iri(v: &str) -> bool {
     (v.starts_with("https://") || v.starts_with("http://") || v.starts_with("urn:"))
-        && !v.chars().any(|c| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\\' | '{' | '}' | '|' | '^' | '`'))
+        && !v.chars().any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '"' | '\\' | '{' | '}' | '|' | '^' | '`'))
 }
 
 pub fn field_literal(val: &str, xsd_local: Option<&str>) -> String {
