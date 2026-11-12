@@ -13,8 +13,10 @@ setup() {
   SRC="$BATS_TEST_TMPDIR/chorus-go"; printf '#!/bin/sh\necho lander\n' > "$SRC"; chmod 755 "$SRC"
   LOG="$BATS_TEST_TMPDIR/launchctl.log"
   printf '#!/bin/sh\necho "$@" >> %s\n' "$LOG" > "$BATS_TEST_TMPDIR/bin/launchctl"; chmod 755 "$BATS_TEST_TMPDIR/bin/launchctl"
+  # a stand-in `ps -o user= -p <pid>`: prints the account named by its file name, ignores the pid
+  for u in chorus-lander jeffbridwell; do printf '#!/bin/sh\necho %s\n' "$u" > "$BATS_TEST_TMPDIR/bin/owner-$u"; chmod 755 "$BATS_TEST_TMPDIR/bin/owner-$u"; done
   export ROOT="$R" LANDER_HOME=/home/lander LANDER_UID="$(id -u)" LANDER_GID="$(id -g)" \
-         JEFF_HOME=/jeff JEFF_UID=501 LAUNCHCTL="$BATS_TEST_TMPDIR/bin/launchctl" CHOWN=true LISTENERS="echo 4242"
+         JEFF_HOME=/jeff JEFF_UID=501 LAUNCHCTL="$BATS_TEST_TMPDIR/bin/launchctl" CHOWN=true LISTENERS="echo 4242" OWNER_OF="$BATS_TEST_TMPDIR/bin/owner-chorus-lander"
 }
 
 @test "a fresh install: lander-owned bin and binary, the daemon plist, the old go page retired, one listener" {
@@ -60,4 +62,9 @@ setup() {
   run "$SCRIPT" /nope/chorus-go
   [ "$status" -eq 1 ] && [[ "$output" == *"give the path"* ]] || return 1
   [ ! -e "$R/Library/LaunchDaemons/com.chorus.lander.plist" ]
+}
+
+@test "negative: one listener on :3490 that is not the lander's process (jeffbridwell's old go page) is refused" {
+  run env OWNER_OF="$BATS_TEST_TMPDIR/bin/owner-jeffbridwell" "$SCRIPT" "$SRC"
+  [ "$status" -eq 1 ] && [[ "$output" == *"runs as 'jeffbridwell', not chorus-lander"* ]] || { echo "$output"; return 1; }
 }

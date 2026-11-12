@@ -21,6 +21,10 @@ mine = [c for c in checks if c.get("context") == "jeff-go"]
 if not mine: print("main does not require jeff-go")
 for c in mine:
     if c.get("app_id") != app: print(f"jeff-go is satisfied by app {c.get('app_id')}, not the lander's {app}")
+# enforce_admins (review of 746df662): the branches API says who the required checks bind;
+# "everyone" includes admins, "non_admins" lets an admin merge past jeff-go
+lvl = (p.get("required_status_checks") or {}).get("enforcement_level")
+if lvl != "everyone": print(f"admins are not held to jeff-go (enforcement_level {lvl})")
 PY
 }
 
@@ -33,11 +37,18 @@ PY
 }
 
 @test "AC2 negative proof: jeff-go accepted from any app (app_id null) is caught" {
-  out="$(problems '{"protected":true,"protection":{"required_status_checks":{"checks":[{"context":"jeff-go","app_id":null}]}}}')"
+  out="$(problems '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone","checks":[{"context":"jeff-go","app_id":null}]}}}')"
   [[ "$out" == *"satisfied by app None, not the lander's"* ]] || { echo "$out"; return 1; }
 }
 
 @test "AC2 negative proof: today's main (no jeff-go required) is caught" {
   out="$(problems '{"protected":false,"protection":{}}')"
   [[ "$out" == *"main is not protected"* && "$out" == *"does not require jeff-go"* ]] || { echo "$out"; return 1; }
+}
+
+@test "AC2 negative proof: the lander's jeff-go required but admins exempt (enforce_admins off) is caught" {
+  out="$(problems '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"non_admins","checks":[{"context":"jeff-go","app_id":5719867}]}}}')"
+  [[ "$out" == *"admins are not held to jeff-go (enforcement_level non_admins)"* ]] || { echo "$out"; return 1; }
+  out="$(problems '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone","checks":[{"context":"jeff-go","app_id":5719867}]}}}')"
+  [ -z "$out" ] || { echo "the good shape was refused: $out"; return 1; }
 }

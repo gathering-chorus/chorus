@@ -123,13 +123,13 @@ pub fn run(call: &Call, tok: &str) -> R<(u16, String)> {
 /// only a merge that happened is recorded and answers the run's go step, so a run never lands
 /// unmerged and a refused merge leaves nothing recorded (Jeff can sign again). A "no" merges
 /// nothing and is recorded and answered.
-pub fn go_sequence(verb: &str, merge: impl FnOnce() -> R<u64>, record: impl FnOnce(), complete: impl FnOnce() -> R<()>) -> R<Option<u64>> {
+pub fn go_sequence(verb: &str, merge: impl FnOnce() -> R<u64>, record: impl FnOnce(Option<u64>), complete: impl FnOnce() -> R<()>) -> R<Option<u64>> {
     let pr = if verb == "go" {
         Some(merge().map_err(|e| format!("signed, but the lander did not merge: {e}; nothing was recorded and the go step stays open — sign again once it is fixed"))?)
     } else {
         None
     };
-    record();
+    record(pr);
     complete()?;
     Ok(pr)
 }

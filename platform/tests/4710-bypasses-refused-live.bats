@@ -44,3 +44,10 @@ swap_problems() {
   out="$(swap_problems "$d" "$(( $(id -u) + 1 ))")"
   [[ "$out" == *"not the lander"* ]] || { echo "$out"; return 1; }
 }
+
+# AC7 bypass 1 (Silas 18:33 item 11): a role reaching an admin GitHub credential — re-run here
+@test "AC7 bypass 1: a role holds no GitHub credential and GitHub refuses its three moves" {
+  case "$(id -un)" in chorus-*) ;; *) echo "unmeasured: bypass 1 is run as a role account, not $(id -un)"; return 1;; esac
+  run bats "$CHORUS_ROOT/platform/tests/4710-roles-hold-no-admin-live.bats"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}

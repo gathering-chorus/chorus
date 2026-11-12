@@ -7,6 +7,7 @@
 # bypass 1 (10-23): every role ran as Jeff with his admin login. Roles now run as their own Mac
 # accounts; measured as chorus-wren 11-11 17:10: `gh` is not logged in. This checks that each
 # of the three moves is refused by GitHub from the role account.
+load test_helper
 REPO="${CHORUS_REPO:-gathering-chorus/chorus}"
 API="${GITHUB_API:-https://api.github.com}"
 
@@ -49,4 +50,10 @@ credentials() {
   out="$(HOME="$h" GH_CONFIG_DIR="$h/.config/gh" credentials)"
   [[ "$out" == *"gh's hosts file holds a token"* ]] || { echo "$out"; return 1; }
   [[ "$out" != *PLANTED* ]] || { echo "the token reached the output"; return 1; }
+}
+
+# AC1's store half (Silas 18:33 item 11): the role cannot write the store with the shared login
+@test "AC1: a role cannot write the store with the shared admin login (4710-role-store-write-refused.bats)" {
+  run bats "$CHORUS_ROOT/platform/tests/4710-role-store-write-refused.bats"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }

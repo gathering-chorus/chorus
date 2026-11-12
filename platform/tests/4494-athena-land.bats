@@ -5,6 +5,7 @@
 # afterwards (Wren, 2026-10-10 22:48: #4496's PolicyShape never arrived), and a
 # card with no model change never starts a model run. Since #4515 the model run
 # is its own dagu run, athena-land, enqueued here; /cws shows it red when it fails.
+# #4710 AC5: athena-land refuses a canonical holding a local-only commit (case below).
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"

@@ -311,7 +311,15 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
         // The door row can fail (no lander login): the merge happened, so the go still counts —
         // the land confirms main — and the failure is alerted, never silent.
         crate::github::go_sequence(verb, || crate::github::land_as_app(g.card, &g.round),
-            || if let Err(why) = write_decision(&d, &sha, ad, cd, sig, Some(&g.round)) { alert_unrecorded(&d.row, &why) },
+            |pr| {
+                // ADR-037 who/what/when (review of 746df662): werk-merge no longer merges, so the
+                // lander records the approval — Jeff's passkey go — with what it merged
+                if let Some(pr) = pr {
+                    spine_post("merge.approved", &[("card", g.card.to_string()), ("round", g.round.clone()),
+                        ("pr", pr.to_string()), ("accepter", "jeff".into()), ("proof", "passkey".into()), ("by", "lander".into())]);
+                }
+                if let Err(why) = write_decision(&d, &sha, ad, cd, sig, Some(&g.round)) { alert_unrecorded(&d.row, &why) }
+            },
             || complete_go(&g.run, verb))?;
         return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
     }

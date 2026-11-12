@@ -1,6 +1,6 @@
 // @test-type: unit — a scratch go store in a temp dir and a software P-256 key standing in for Jeff's phone; no network, no live store.
 // @domain: security
-// @card: #4505
+// @card: #4505 #4710 (AC8: an unsigned decision, a decline replayed as approve and an edited row are refused)
 // @owner: wren
 use chorus_go::*;
 use p256::ecdsa::signature::Signer;
