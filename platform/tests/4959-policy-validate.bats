@@ -157,3 +157,18 @@ PY
   [ "$(cat "$T/tf/chorus_policy.prom")" = "old" ]
   [ -z "$(find "$T/tf" -name 'chorus_policy.prom' -newer "$T/data.trig")" ]
 }
+
+@test "--runtime runs only the runtime checks, as commands (AC6, for borg-prove in prod)" {
+  policies "bind-local|arch|active|0|runtime|printf 'svc-a binds 0.0.0.0\n'" "one-home|data|active|0|sparql|$Q"
+  run "$PV" --runtime
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"FAIL bind-local 1 > 0"* ]] || return 1
+  [[ "$output" != *"one-home"* ]] || return 1
+}
+
+@test "without --runtime a runtime check is skipped, never counted" {
+  policies "bind-local|arch|active|0|runtime|printf 'x\n'"
+  run "$PV"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SKIP bind-local"* ]] || return 1
+}

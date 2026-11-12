@@ -26,6 +26,8 @@ impl Fx {
             ("chorus-log", format!("echo \"$*\" >> {d}/spine.log")),
             // view answers from view.txt; every other call is logged with who made it
             ("cards", format!("case \"$1\" in view) cat {d}/view.txt ;; *) echo \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {d}/cards.log ;; esac")),
+            // #4959 — prod runs the runtime policies too; none carry a check unless a test says so
+            ("policy-validate", "echo 'policy-validate: 0 checks, 0 above baseline, 0 could not run'".to_string()),
         ] {
             let p = dir.join(bin);
             std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -40,6 +42,7 @@ impl Fx {
             .env("BORG_PROD_BASE", format!("file://{}", self.dir.join("prod").display()))
             .env("BORG_CHORUS_LOG", self.dir.join("chorus-log"))
             .env("BORG_CARDS", self.dir.join("cards"))
+            .env("BORG_POLICY_VALIDATE", self.dir.join("policy-validate"))
             .env("BORG_RESULTS_DIR", self.dir.join("results"))
             .env("DAG_RUN_ID", "run1")
             // these runs are her own session: record does not hop (#4760)
@@ -297,6 +300,7 @@ fn a_card_text_file_reads_ac_like_the_board_view() {
     let p = Command::new(env!("CARGO_BIN_EXE_borg-prove"))
         .args(["prod", "4683", "kade"])
         .env("BORG_CARD_DESC", fx.dir.join("view.txt"))
+        .env("BORG_POLICY_VALIDATE", fx.dir.join("policy-validate"))
         .env("BORG_PROD_BASE", format!("file://{}", fx.dir.join("prod").display()))
         .env("BORG_RESULTS_DIR", fx.dir.join("results"))
         .env("DAG_RUN_ID", "run9")
@@ -363,4 +367,19 @@ fn the_next_land_clears_a_met_deferred_check_and_keeps_an_unmeasured_one() {
     assert!(!fx.dir.join("results/deferred/4683.tsv").exists(), "met clears it");
     assert!(fx.log("cards.log").contains("deferred ac-4683-2 met at the land of #4901"), "{}", fx.log("cards.log"));
     assert!(!fx.log("cards.log").contains("move 4683"), "a met deferral never reopens: {}", fx.log("cards.log"));
+}
+
+/// #4959 AC6 — a runtime policy over its baseline in prod holds the land and files one
+/// child for that policy; the rest of the card's ACs are met.
+#[test]
+fn negative_proof_a_runtime_policy_over_its_baseline_holds_the_land_and_files_its_child() {
+    let fx = Fx::new("policy-red", &row("ac-4683-1", "/ok.txt", "ok"));
+    std::fs::write(fx.dir.join("policy-validate"),
+        "#!/bin/sh\n[ \"$1\" = --runtime ] || exit 2\necho 'FAIL bind-local 1 > 0 (arch)'\nexit 1\n").unwrap();
+    let p = fx.run("prod");
+    assert!(!p.status.success(), "a red runtime policy is not proven: {}", out(&p));
+    let r = fx.run("record");
+    assert!(!r.status.success(), "{}", out(&r));
+    let cards = fx.log("cards.log");
+    assert!(cards.lines().any(|l| l.contains(" add ") && l.contains("ac-4683-policy-bind-local")), "one child for the policy: {cards}");
 }

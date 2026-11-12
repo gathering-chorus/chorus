@@ -222,6 +222,20 @@ fn check_manifest(
     }
 }
 
+/// #4959 AC6 — canonical policy-validate --runtime (BORG_POLICY_VALIDATE for tests).
+/// Missing is not "nothing to check": it is unmeasured, and the land is not proven.
+fn runtime_policies(card: u32) -> Vec<(Check, Outcome)> {
+    let pv = env("BORG_POLICY_VALIDATE", &format!("{}/platform/scripts/policy-validate", env("CHORUS_HOME", "")));
+    match Command::new(&pv).arg("--runtime").output() {
+        Ok(o) => {
+            let out = String::from_utf8_lossy(&o.stdout).into_owned();
+            print!("{out}");
+            policy_results(card, o.status.code(), &out)
+        }
+        Err(e) => policy_results(card, None, &format!("BROKEN policy-validate: {pv}: {e}\n")),
+    }
+}
+
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
     println!("#{card} against {base}");
     let cs = checks(card);
@@ -477,7 +491,10 @@ fn main() {
             let prod_base = env("BORG_PROD_BASE", "http://localhost:3340");
             // #4889 — every land re-runs the other cards' open deferred checks first
             rerun_deferred(card, &prod_base);
-            let r = run_checks(card, &prod_base);
+            let mut r = run_checks(card, &prod_base);
+            // #4959 AC6 — the runtime policies against prod: one red row per policy over its
+            // baseline (record files its child), unmeasured when the checker could not run
+            r.extend(runtime_policies(card));
             let path = results_path(card);
             if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, results_to_tsv(&r))) {
                 eprintln!("#{card} prod: the results were not written to {}: {e}", path.display());
