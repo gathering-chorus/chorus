@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""#4959 AC3: run every policy's check and hold each one at its baseline.
+# @domain: policies
+
+The rules come from the door (GET /v1/policies/policies); nothing is read from a file
+in the repo, so the store is the one place a rule lives. For each policy with a check
+that is not retired (and, with --gate G, whose gate is G):
+  sparql   rows of the SELECT are violations (the store, or POLICY_DATA via arq)
+  command  each line the command prints is a violation (exit > 1 is a broken check)
+  test     a failing suite is one violation
+  runtime  a command against prod, run only with --runtime (borg-prove, after the land)
+A check passes at or below its baseline and fails above it.
+Exit 0 = every check at or below its baseline; 1 = a check above it; 2 = a check
+could not run, or the policies could not be read. A check that did not run is never
+counted as passing (#3734).
+"""
+import json, os, subprocess, sys, tempfile, urllib.parse, urllib.request
+
+DOOR = os.environ.get("POLICY_DOOR", "http://localhost:3360")
+SPARQL = os.environ.get("POLICY_SPARQL_URL", "http://localhost:3030/pods/query")
+PREFIXES = ("PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX c: <https://jeffbridwell.com/chorus#> "
+            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+            "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX owl: <http://www.w3.org/2002/07/owl#> "
+            "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n")
+
+
+class Broken(Exception):
+    pass
+
+
+def load_policies():
+    path = os.environ.get("POLICIES_JSON")
+    try:
+        if path:
+            body = json.load(open(path))
+        else:
+            with urllib.request.urlopen(f"{DOOR}/v1/policies/policies", timeout=15) as r:
+                body = json.load(r)
+    except Exception as e:
+        raise Broken(f"cannot read the policies: {e}")
+    rows = body.get("data")
+    if not isinstance(rows, list):
+        raise Broken("the policies answer has no data list")
+    return rows
+
+
+def count_sparql(query):
+    q = PREFIXES + query
+    data = os.environ.get("POLICY_DATA")
+    if data:
+        with tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False) as f:
+            f.write(q)
+        try:
+            p = subprocess.run(["arq", "--data", data, "--query", f.name, "--results=json"],
+                               capture_output=True, text=True, timeout=120)
+        finally:
+            os.unlink(f.name)
+        if p.returncode != 0:
+            raise Broken((p.stderr or p.stdout).strip().splitlines()[-1:] or ["arq failed"])
+        out = p.stdout
+    else:
+        req = urllib.request.Request(SPARQL, data=urllib.parse.urlencode({"query": q}).encode(),
+                                     headers={"Accept": "application/sparql-results+json"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                out = r.read().decode()
+        except Exception as e:
+            raise Broken(f"query failed: {e}")
+    try:
+        return len(json.loads(out)["results"]["bindings"])
+    except Exception as e:
+        raise Broken(f"not a SELECT result: {e}")
+
+
+def count_command(cmd):
+    p = subprocess.run(["/bin/sh", "-c", cmd], capture_output=True, text=True, timeout=600)
+    if p.returncode > 1:
+        raise Broken(f"exit {p.returncode}: {p.stderr.strip()[:200]}")
+    return len([l for l in p.stdout.splitlines() if l.strip()])
+
+
+def count_test(path):
+    if not os.path.isfile(path):
+        raise Broken(f"no such test: {path}")
+    p = subprocess.run(["bats", path] if path.endswith(".bats") else ["/bin/sh", path],
+                       capture_output=True, text=True, timeout=1800)
+    return 0 if p.returncode == 0 else 1
+
+
+def write_prom(measured, gate, runtime=False):
+    """node-exporter textfile, written atomically. Called only when every check ran: a run
+    that could not measure leaves the old file to age, so the stale rule fires (#3734)."""
+    d = os.environ.get("TEXTFILE_DIR", os.path.expanduser("~/CascadeProjects/shared-observability/data/textfile_collector"))
+    os.makedirs(d, exist_ok=True)
+    esc = lambda s: str(s).replace("\\", "\\\\").replace('"', '\\"')
+    lines = ["# HELP chorus_policy_violations Violations a policy's check found (#4959).",
+             "# TYPE chorus_policy_violations gauge"]
+    lines += [f'chorus_policy_violations{{policy="{esc(n)}",gate="{esc(g)}"}} {v}' for n, g, v, _ in measured]
+    lines += ["# HELP chorus_policy_baseline Violations a policy allows today; the check fails above it (#4959).",
+              "# TYPE chorus_policy_baseline gauge"]
+    lines += [f'chorus_policy_baseline{{policy="{esc(n)}",gate="{esc(g)}"}} {b}' for n, g, _, b in measured]
+    lines += ["# HELP chorus_policy_checks Policy checks this run measured (#4959).", "# TYPE chorus_policy_checks gauge",
+              f"chorus_policy_checks {len(measured)}"]
+    # one file per selection, so a gate's or the runtime run never overwrites the full run
+    name = "chorus_policy" + (f"_{gate}" if gate else "") + ("_runtime" if runtime else "") + ".prom"
+    tmp = os.path.join(d, f".{name}.{os.getpid()}")
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, os.path.join(d, name))
+
+
+def main(argv):
+    gate, prom, runtime = None, False, False
+    args = list(argv)
+    if "--prom" in args:
+        prom = True
+        args.remove("--prom")
+    if "--runtime" in args:
+        runtime = True
+        args.remove("--runtime")
+    if args[:1] == ["--gate"] and len(args) == 2:
+        gate = args[1]
+    elif args:
+        print("usage: policy-validate [--gate arch|data|quality|code|product|hook] [--runtime] [--prom]", file=sys.stderr)
+        return 2
+    try:
+        rows = load_policies()
+    except Broken as e:
+        print(f"policy-validate: {e}")
+        return 2
+    ran = failed = broken = 0
+    measured = []
+    for r in sorted(rows, key=lambda r: r.get("name", "")):
+        kind, name = r.get("checkKind"), r.get("name", "?")
+        if not kind or r.get("status") == "retired" or (gate and r.get("gate") != gate):
+            continue
+        if (kind == "runtime") != runtime:
+            if kind == "runtime":
+                print(f"SKIP {name} runtime: borg-prove runs it after the land")
+            continue
+        try:
+            # the door serves integers as strings ("2"); a check with no baseline cannot gate
+            base = int(r["baseline"])
+        except (KeyError, TypeError, ValueError):
+            broken += 1
+            print(f"BROKEN {name}: no baseline")
+            continue
+        try:
+            n = {"sparql": count_sparql, "command": count_command, "test": count_test,
+                 "runtime": count_command}[kind](r.get("checkSpec", ""))
+        except KeyError:
+            broken += 1
+            print(f"BROKEN {name}: unknown check kind {kind}")
+            continue
+        except (Broken, subprocess.TimeoutExpired) as e:
+            broken += 1
+            print(f"BROKEN {name}: {e}")
+            continue
+        ran += 1
+        measured.append((name, r.get("gate", ""), n, base))
+        if n > base:
+            failed += 1
+            print(f"FAIL {name} {n} > {base} ({r.get('gate', '')})")
+        else:
+            print(f"PASS {name} {n} <= {base}")
+    print(f"policy-validate: {ran} checks, {failed} above baseline, {broken} could not run"
+          + (f" (gate {gate})" if gate else ""))
+    if prom and not broken:
+        write_prom(measured, gate, runtime)
+    return 2 if broken else 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -55,6 +55,8 @@ fn each_step_exits_by_what_it_recorded() {
     fs::write(home.join("roles/abby-normal/AGENTS.md"), "# Abby\nProgram manager.\n").unwrap();
     write_exec(&home.join("platform/scripts/cards"), "#!/bin/sh\necho '#4502 card'\nexit 0\n");
     write_exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
+    // #4959 — every review runs its gate's policies; none carry a check here
+    write_exec(&home.join("platform/scripts/policy-validate"), "#!/bin/sh\necho 'policy-validate: 0 checks, 0 above baseline, 0 could not run'\n");
     // the card's werk: origin/main, then one commit on top — a real branch diff
     fs::create_dir_all(&werk).unwrap();
     git(&werk, &["init", "-q"]);

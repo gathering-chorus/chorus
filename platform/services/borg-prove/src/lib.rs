@@ -879,3 +879,36 @@ mod tests_4773 {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
+
+/// #4959 AC6 — the runtime policies' answer (policy-validate --runtime, against prod after
+/// the land) as results: each policy over its baseline is its own NotMet row, so record()
+/// files one child for it; a run that could not measure is Unmeasured (never met, #3734);
+/// a clean run is one Met row. The child's check is the live policy suite, so it passes
+/// intake and proves the same thing. Pure.
+pub fn policy_results(card: u32, code: Option<i32>, out: &str) -> Vec<(Check, Outcome)> {
+    let row = |name: &str, statement: String| Check {
+        ac: format!("ac-{card}-policy-{name}"),
+        statement,
+        kind: "test".into(),
+        target: "platform/tests/4959-borg-prove-policies-live.bats".into(),
+        expect: String::new(),
+    };
+    let summary = out.lines().rev().find(|l| l.starts_with("policy-validate:")).unwrap_or("").to_string();
+    match code {
+        Some(0) => vec![(row("runtime", "every runtime policy at or below its baseline in prod".into()), Outcome::Met(summary))],
+        Some(1) => {
+            let fails: Vec<(Check, Outcome)> = out.lines().filter_map(|l| l.strip_prefix("FAIL ")).map(|f| {
+                let name = f.split_whitespace().next().unwrap_or("unnamed");
+                (row(name, format!("policy {name} at or below its baseline in prod")), Outcome::NotMet(format!("FAIL {f}")))
+            }).collect();
+            if fails.is_empty() {
+                vec![(row("runtime", "the runtime policies measured in prod".into()), Outcome::Unmeasured(format!("exit 1 named no failing policy: {summary}")))]
+            } else { fails }
+        }
+        _ => vec![(row("runtime", "the runtime policies measured in prod".into()),
+                   Outcome::Unmeasured(format!("policy-validate --runtime could not measure (exit {}): {}",
+                       code.map_or("none".into(), |c| c.to_string()),
+                       out.lines().filter(|l| l.starts_with("BROKEN ")).collect::<Vec<_>>().join("; "))))],
+    }
+}
+

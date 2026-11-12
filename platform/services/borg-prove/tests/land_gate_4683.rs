@@ -21,11 +21,15 @@ impl Fx {
         std::fs::create_dir_all(dir.join("prod")).unwrap();
         std::fs::write(dir.join("prod/ok.txt"), "status ok\n").unwrap();
         std::fs::write(dir.join("view.txt"), format!("{VIEW}{rows}{FIELDS}")).unwrap();
+        // #4959 — the land's deploy log: empty, so no runtime units and no runtime policies
+        std::fs::write(dir.join("deploy.jsonl"), "").unwrap();
         let d = dir.display();
         for (bin, body) in [
             ("chorus-log", format!("echo \"$*\" >> {d}/spine.log")),
             // view answers from view.txt; every other call is logged with who made it
             ("cards", format!("case \"$1\" in view) cat {d}/view.txt ;; *) echo \"DEPLOY_ROLE=$DEPLOY_ROLE $*\" >> {d}/cards.log ;; esac")),
+            // #4959 — prod runs the runtime policies too; none carry a check unless a test says so
+            ("policy-validate", "echo 'policy-validate: 0 checks, 0 above baseline, 0 could not run'".to_string()),
         ] {
             let p = dir.join(bin);
             std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -40,6 +44,9 @@ impl Fx {
             .env("BORG_PROD_BASE", format!("file://{}", self.dir.join("prod").display()))
             .env("BORG_CHORUS_LOG", self.dir.join("chorus-log"))
             .env("BORG_CARDS", self.dir.join("cards"))
+            .env("BORG_POLICY_VALIDATE", self.dir.join("policy-validate"))
+            .env("BORG_DEPLOY_LOG", self.dir.join("deploy.jsonl"))
+            .env("CHORUS_TRACE_ID", "land-t1")
             .env("BORG_RESULTS_DIR", self.dir.join("results"))
             .env("DAG_RUN_ID", "run1")
             // these runs are her own session: record does not hop (#4760)
@@ -297,6 +304,8 @@ fn a_card_text_file_reads_ac_like_the_board_view() {
     let p = Command::new(env!("CARGO_BIN_EXE_borg-prove"))
         .args(["prod", "4683", "kade"])
         .env("BORG_CARD_DESC", fx.dir.join("view.txt"))
+        .env("BORG_POLICY_VALIDATE", fx.dir.join("policy-validate"))
+        .env("BORG_DEPLOY_LOG", fx.dir.join("deploy.jsonl"))
         .env("BORG_PROD_BASE", format!("file://{}", fx.dir.join("prod").display()))
         .env("BORG_RESULTS_DIR", fx.dir.join("results"))
         .env("DAG_RUN_ID", "run9")
@@ -363,4 +372,41 @@ fn the_next_land_clears_a_met_deferred_check_and_keeps_an_unmeasured_one() {
     assert!(!fx.dir.join("results/deferred/4683.tsv").exists(), "met clears it");
     assert!(fx.log("cards.log").contains("deferred ac-4683-2 met at the land of #4901"), "{}", fx.log("cards.log"));
     assert!(!fx.log("cards.log").contains("move 4683"), "a met deferral never reopens: {}", fx.log("cards.log"));
+}
+
+const RED_POLICY: &str = "#!/bin/sh\n[ \"$1\" = --runtime ] || exit 2\necho 'FAIL bind-local 1 > 0 (arch)'\nexit 1\n";
+
+/// #4959 AC6 — a land that deployed runtime units answers for the runtime policies: one over
+/// its baseline holds the land and files one child for that policy.
+#[test]
+fn negative_proof_a_land_that_deployed_units_is_held_by_a_red_runtime_policy_and_files_its_child() {
+    let fx = Fx::new("policy-red", &row("ac-4683-1", "/ok.txt", "ok"));
+    std::fs::write(fx.dir.join("policy-validate"), RED_POLICY).unwrap();
+    std::fs::write(fx.dir.join("deploy.jsonl"), "{\"event\":\"deploy.completed\",\"card_id\":4683,\"trace_id\":\"land-t1\",\"target\":\"canonical\",\"deployed\":\"chorus-hooks\"}\n").unwrap();
+    let p = fx.run("prod");
+    assert!(!p.status.success(), "a red runtime policy is not proven: {}", out(&p));
+    let r = fx.run("record");
+    assert!(!r.status.success(), "{}", out(&r));
+    let cards = fx.log("cards.log");
+    assert!(cards.lines().any(|l| l.contains(" add ") && l.contains("ac-4683-policy-bind-local")), "one child for the policy: {cards}");
+}
+
+/// Code review, run 2 (Borg Queen's form): a land that deployed no runtime units (model,
+/// docs, a restart only) did not cause runtime drift, so the runtime policies do not run.
+#[test]
+fn a_land_that_deployed_no_runtime_units_is_not_judged_by_the_runtime_policies() {
+    let fx = Fx::new("policy-nounits", &row("ac-4683-1", "/ok.txt", "ok"));
+    std::fs::write(fx.dir.join("policy-validate"), RED_POLICY).unwrap();
+    std::fs::write(fx.dir.join("deploy.jsonl"), "{\"event\":\"deploy.completed\",\"card_id\":4683,\"trace_id\":\"land-t1\",\"target\":\"canonical\",\"deployed\":\"athena-handoff[model=1],restart:com.chorus.inject\"}\n").unwrap();
+    let p = fx.run("prod");
+    assert!(p.status.success(), "{}", out(&p));
+    assert!(out(&p).contains("deployed no runtime units"), "{}", out(&p));
+}
+
+#[test]
+fn negative_proof_an_unreadable_deploy_log_is_unmeasured_never_nothing_deployed() {
+    let fx = Fx::new("policy-nolog", &row("ac-4683-1", "/ok.txt", "ok"));
+    std::fs::remove_file(fx.dir.join("deploy.jsonl")).unwrap();
+    let p = fx.run("prod");
+    assert!(!p.status.success(), "{}", out(&p));
 }

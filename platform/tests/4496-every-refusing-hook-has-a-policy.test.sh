@@ -29,6 +29,7 @@ pair_gate	warns: advisory since #3677, always allows
 quality_gate	warns: advisory since #3677, logs only
 sparql_guard	warns: raw SPARQL should use /pods/query and a GRAPH clause
 session_auth	warns: alerts when a role'"'"'s Claude session is logged out (#4817), never refuses
+alert_digest	plumbing: shows the role its open alert cases in its own context (#4957), never refuses
 buzz_reply	plumbing: publishes the reply to Buzz
 clock_sync	plumbing: writes the wall-clock time
 context_inject	plumbing: adds Chorus, memory and git context to the prompt
