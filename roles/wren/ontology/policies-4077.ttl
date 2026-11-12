@@ -11,12 +11,34 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 chorus:enforcedBy a owl:ObjectProperty ;
     rdfs:label "enforced by" ;
     rdfs:comment "The hook module that refuses what this policy forbids. A policy without one is enforced by reading, like English only." ;
     rdfs:domain chorus:Policy ;
     rdfs:range chorus:CodeFile .
+
+# #4959 AC1 — a Policy can carry a check a machine decides. gate names the review that
+# runs it, checkKind + checkSpec say how, baseline is the ratchet ceiling (existing
+# violations; a card fails only above it, a fix card lowers it), and violationFixture
+# names the replay of a real violation that must trip the check (Jeff: only rules a
+# machine can decide). A policy with no checkKind is a plain rule and is untouched.
+chorus:gate a owl:DatatypeProperty ; rdfs:label "gate" ;
+    rdfs:comment "The review that runs this policy's check: arch, data, quality, code, product, or hook." ;
+    rdfs:domain chorus:Policy ; rdfs:range xsd:string .
+chorus:baseline a owl:DatatypeProperty ; rdfs:label "baseline" ;
+    rdfs:comment "How many violations exist today. The check passes at or below it and fails above it; fix cards lower it." ;
+    rdfs:domain chorus:Policy ; rdfs:range xsd:integer .
+chorus:checkKind a owl:DatatypeProperty ; rdfs:label "check kind" ;
+    rdfs:comment "How the check runs: sparql (rows are violations), test (a suite that fails on a violation), command (exit 1 on a violation), runtime (borg-prove against prod after the land)." ;
+    rdfs:domain chorus:Policy ; rdfs:range xsd:string .
+chorus:checkSpec a owl:DatatypeProperty ; rdfs:label "check spec" ;
+    rdfs:comment "What runs: the SPARQL SELECT, the test path, the command, or the runtime probe name." ;
+    rdfs:domain chorus:Policy ; rdfs:range xsd:string .
+chorus:violationFixture a owl:DatatypeProperty ; rdfs:label "violation fixture" ;
+    rdfs:comment "A replay of a real violation that must trip the check (#3734). A check without one cannot gate." ;
+    rdfs:domain chorus:Policy ; rdfs:range xsd:string .
 
 chorus:PolicyShape a sh:NodeShape ;
     sh:targetClass chorus:Policy ; sh:node chorus:CoreShape ;
@@ -33,5 +55,23 @@ chorus:PolicyShape a sh:NodeShape ;
                   sh:description "Optional. The principle this rule serves." ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    sh:property [ sh:path chorus:status ; sh:maxCount 1 ; sh:in ( "active" "ratchet" "retired" ) ; sh:name "status" ;
+                  sh:description "Optional. active gates, ratchet gates above its baseline, retired no longer runs." ] ;
+    sh:property [ sh:path chorus:gate ; sh:maxCount 1 ; sh:in ( "arch" "data" "quality" "code" "product" "hook" ) ; sh:name "gate" ;
+                  sh:description "Required with a check. The review that runs it." ] ;
+    sh:property [ sh:path chorus:baseline ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 0 ; sh:name "baseline" ;
+                  sh:description "Required with a check. Violations allowed today; never negative." ] ;
+    sh:property [ sh:path chorus:checkKind ; sh:maxCount 1 ; sh:in ( "sparql" "test" "command" "runtime" ) ; sh:name "check kind" ;
+                  sh:description "Optional. sparql, test, command or runtime." ] ;
+    sh:property [ sh:path chorus:checkSpec ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "check spec" ;
+                  sh:description "Required with a check. What runs." ] ;
+    sh:property [ sh:path chorus:violationFixture ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "violation fixture" ;
+                  sh:description "Required with a check. The replay of a real violation that must trip it." ] ;
+    # a policy with a check carries all of it, or it cannot gate
+    sh:or ( [ sh:property [ sh:path chorus:checkKind ; sh:maxCount 0 ] ]
+            [ sh:property [ sh:path chorus:gate ; sh:minCount 1 ] ;
+              sh:property [ sh:path chorus:baseline ; sh:minCount 1 ] ;
+              sh:property [ sh:path chorus:checkSpec ; sh:minCount 1 ] ;
+              sh:property [ sh:path chorus:violationFixture ; sh:minCount 1 ] ] ) ;
     chorus:instancesGraph "urn:chorus:domains:policies" ;
     chorus:generatedBy "athena-model" .
