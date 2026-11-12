@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""#4963: the 13 architecture policies get their checks. DRY RUN unless --apply.
+# @domain: policies
+
+The rows exist (#4960 landed them as words); this land sets each one's checkKind, checkSpec,
+measured baseline, violationFixture and narrowed comment from
+designing/domains/policies/policy-checks-4963.json, which ships in the same land, so the store and the
+repo cannot differ. The door, the runner, the compare, the 403 wait and the exit codes are
+land-4960-rows' own (one implementation): this script only names a different plan.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not be read.
+--ttl <file> writes the planned rows as Turtle (for the shape test) and exits.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+CHECKS = os.path.join(land.ROOT, "designing/domains/policies/policy-checks-4963.json")
+FIELDS = ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")
+
+
+def policy_rows():
+    return [("policies", r["name"], {k: r[k] for k in FIELDS}) for r in json.load(open(CHECKS))]
+
+
+def plan(_live):
+    return policy_rows()
+
+
+land.policy_rows = policy_rows  # write_ttl reads the plan through this name
+land.plan = plan
+
+if __name__ == "__main__":
+    sys.exit(land.main(sys.argv[1:]))

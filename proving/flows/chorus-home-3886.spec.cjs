@@ -38,10 +38,17 @@ test.describe('#3886 — chorus home is a way in, not a dead end', () => {
 
   test('clicking it reaches the room — click, not a URL assertion', async ({ page }) => {
     await gotoSignedIn(page, `${BASE}/chorus`);
-    await page.locator('a[href*="clearing"]').first().click();
-    // The room, or its sign-in. What must NOT happen is a 404 or an error page.
+    // The room, or its sign-in. What must NOT happen is a 404 or an error page. Judged by the
+    // navigation's status, not by the digits 404 in the body: the room shows live chat, and a
+    // message carrying "404" (a run id, a card number) failed this on #4963 (2026-11-12).
+    const [res] = await Promise.all([
+      page.waitForNavigation(),
+      page.locator('a[href*="clearing"]').first().click(),
+    ]);
+    expect(res, 'the click did not navigate').not.toBeNull();
+    expect(res.status(), `the room answered ${res.status()}`).not.toBe(404);
+    expect(res.status(), `the room answered ${res.status()}`).toBeLessThan(500);
     await expect(page.locator('body')).not.toContainText('Cannot GET');
-    await expect(page.locator('body')).not.toContainText('404');
   });
 
   test('every link on the page resolves — the next dead one names itself', async ({ page, request }) => {
