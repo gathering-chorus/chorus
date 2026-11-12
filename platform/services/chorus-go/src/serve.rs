@@ -180,11 +180,17 @@ fn s_of(v: &Value, k: &str) -> String {
 /// A link may come back as a full IRI or a local name; compare on the local name.
 fn local(s: &str) -> &str { s.rsplit(|c| c == '#' || c == '/' || c == ':').next().unwrap_or(s) }
 
-/// Approvals with no decision by principal-jeff pointing at them, oldest first.
+/// #4710 — who may own a decision row: the lander (it writes Jeff's decisions since #4710) or
+/// jeff (rows from before). A row owned by anyone else decides nothing.
+pub fn decision_owner_ok(d: &Value) -> bool {
+    matches!(local(&s_of(d, "ownedBy")), "principal-lander" | "principal-jeff")
+}
+
+/// Approvals with no decision by the lander or jeff pointing at them, oldest first.
 /// A decision row owned by anyone else is ignored: it decides nothing.
 fn pending_approvals() -> Result<Vec<Value>, String> {
     let decided: std::collections::HashSet<String> = door_get("/decisions/approvaldecisions")?.iter()
-        .filter(|d| local(&s_of(d, "ownedBy")) == "principal-jeff")
+        .filter(|d| decision_owner_ok(d))
         .map(|d| local(&s_of(d, "decides")).to_string()).collect();
     let mut rows: Vec<Value> = door_get("/decisions/approvals")?.into_iter()
         .filter(|a| !decided.contains(local(&s_of(a, "name"))))
@@ -298,15 +304,15 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
     let d = decide_approval(store, nonce, decision, &r, ad, cd, sig)?;
     let sha = action_sha(&r.action);
     if let Some(g) = &d.go {
-        // A go: Jeff's decision row (with the round it signed), then the run's go step.
-        // The door row can fail (no identity minted for jeff): the go still counts — the land reads
-        // the signed record chorus-go already wrote — and the failure is alerted, never silent.
-        if let Err(why) = write_decision(&d, &sha, ad, cd, sig, Some(&g.round)) {
-            alert_unrecorded(&d.row, &why);
-        }
+        // A go (#4710 order, review of round 746df662): the lander merges as the App FIRST; only a
+        // merge that happened is recorded and answers the run's go step. A refused merge records
+        // nothing, so Jeff can sign again once it is fixed. A "no" merges nothing.
         let verb = if d.decision == "approve" { "go" } else { "no" };
-        // #4710 — the lander merges as the App before the go step is answered (Silas 17:48)
-        crate::github::go_then_complete(verb, || crate::github::land_as_app(g.card, &g.round), || complete_go(&g.run, verb))?;
+        // The door row can fail (no lander login): the merge happened, so the go still counts —
+        // the land confirms main — and the failure is alerted, never silent.
+        crate::github::go_sequence(verb, || crate::github::land_as_app(g.card, &g.round),
+            || if let Err(why) = write_decision(&d, &sha, ad, cd, sig, Some(&g.round)) { alert_unrecorded(&d.row, &why) },
+            || complete_go(&g.run, verb))?;
         return Ok(json!({"ok": true, "text": if verb == "go" { format!("Go signed for #{}. It's landing.", g.card) } else { format!("No signed for #{}. It's held.", g.card) }}));
     }
     if let Some(st) = &d.step {
@@ -393,7 +399,7 @@ pub fn land_go(store: &Store, card: u64, round: &str) -> Result<LandGo, String> 
 /// never took it. They stay on his list until it does (Silas, Kade 19:17).
 fn signed_not_sent() -> Result<Vec<Value>, String> {
     let decided_go: std::collections::HashSet<String> = door_get("/decisions/approvaldecisions")?.iter()
-        .filter(|d| local(&s_of(d, "ownedBy")) == "principal-jeff" && s_of(d, "approvalVerdict") == "approve")
+        .filter(|d| decision_owner_ok(d) && s_of(d, "approvalVerdict") == "approve")
         .map(|d| local(&s_of(d, "decides")).to_string()).collect();
     let mut out = Vec::new();
     for a in door_get("/decisions/approvals")?.into_iter().filter(|a| s_of(a, "approvalKind") == "go") {
@@ -418,6 +424,13 @@ fn resend_go(store: &Store, row: &str) -> Result<Value, String> {
         .ok_or(format!("no go approval '{row}'"))?;
     let g = go_action(&s_of(a, "approvalAction"))?;
     land_go_from_rows(&pk, &approvals, &door_get("/decisions/approvaldecisions")?, g.card, &g.round)?;
+    // #4710 — a resent go merges too, unless the merge already happened (no open PR: the land
+    // then confirms main, and refuses not-on-main if it did not).
+    match crate::github::land_as_app(g.card, &g.round) {
+        Ok(_) => {}
+        Err(e) if e.contains("no open PR") => {}
+        Err(e) => return Err(format!("the lander did not merge: {e}")),
+    }
     complete_go(&g.run, "go")?;
     Ok(json!({"ok": true, "text": format!("Go sent for #{}. It's landing.", g.card)}))
 }

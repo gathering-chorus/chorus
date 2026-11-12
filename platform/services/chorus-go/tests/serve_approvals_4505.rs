@@ -114,6 +114,10 @@ fn stand_in(root: PathBuf) -> String {
                     (200, String::new(), r#"{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"Created #9999: filed"}]}}"#.into())
                 }
             } else if path == "/api/chorus/spine-event" { (200, String::new(), "{}".into()) }
+            // #4710 — GitHub as the lander sees it: an installation login, and no open PR (the
+            // merge already happened, so a resent go goes straight to the run's go step)
+            else if path.ends_with("/access_tokens") { (201, String::new(), r#"{"token":"ghs_STANDIN"}"#.into()) }
+            else if path.contains("/pulls?") { (200, String::new(), "[]".into()) }
             else { (404, String::new(), String::new()) };
             let _ = write!(s, "HTTP/1.1 {code} X\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{out}", out.len());
         }
@@ -132,6 +136,16 @@ fn world(tag: &str) -> World {
         "hostAccount": chorus_go::identity::me().1}).to_string()).unwrap();
     { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600)).unwrap(); }
     let addr = stand_in(root.clone());
+    // the lander's GitHub App key (a throwaway), 0600 in the world's HOME
+    let app = root.join(".chorus/secrets/github-app");
+    std::fs::create_dir_all(&app).unwrap();
+    assert!(std::process::Command::new("/usr/bin/openssl").args(["genrsa", "-out"]).arg(app.join("key.pem")).arg("2048")
+        .stderr(std::process::Stdio::null()).status().unwrap().success());
+    std::fs::write(app.join("app-id"), "123\n").unwrap();
+    std::fs::write(app.join("installation-id"), "456\n").unwrap();
+    for f in ["key.pem", "app-id", "installation-id"] {
+        use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(app.join(f), std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
     let a = |name: &str, owner: &str, at: &str, title: &str| json!({"name": name, "ownedBy": format!("https://jeffbridwell.com/chorus#principal-{owner}"),
         "approvalKind": "card", "approvalSubject": title, "approvalAction": ACTION, "createdAt": at});
     std::fs::write(root.join("approvals.json"), json!({"data": [
@@ -162,6 +176,8 @@ fn serve(w: &World, phone: &Phone) -> Server {
     std::env::set_var("CHORUS_CSS_LOCAL", format!("http://{a}"));
     std::env::set_var("CHORUS_GO_MCP", format!("http://{a}/mcp"));
     std::env::set_var("CHORUS_GO_SPINE", format!("http://{a}/api/chorus/spine-event"));
+    std::env::set_var("WERK_GITHUB_API", format!("http://{a}"));
+    std::env::remove_var("WERK_GITHUB_APP_DIR");
     std::env::set_var("CHORUS_GO_RP_ID", RP);
     std::env::set_var("CHORUS_GO_ORIGIN", ORIGIN);
     let store = Store::open(&w.root.join("go")).unwrap();

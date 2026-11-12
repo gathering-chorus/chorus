@@ -180,20 +180,21 @@ fn a_405_is_retried_once_and_a_409_never() {
     assert_eq!(gh.merges(), 1, "a 409 was retried");
 }
 
-// NEGATIVE PROOF (Silas 17:48): a merge the lander could not make leaves the run's go step
-// open; only a merge that happened answers it. A "no" never merges and still answers.
+// NEGATIVE PROOF (Silas 17:48; review of 746df662): a merge the lander could not make records
+// nothing and leaves the go step open; only a merge that happened is recorded and answered. A
+// "no" never merges, and is recorded and answered.
 #[test]
-fn a_refused_merge_leaves_the_go_step_open_and_a_no_never_merges() {
+fn a_refused_merge_records_nothing_and_leaves_the_step_open() {
     use std::cell::Cell;
-    let completed = Cell::new(false);
-    let e = github::go_then_complete("go", || Err("409".into()), || { completed.set(true); Ok(()) }).unwrap_err();
-    assert!(e.contains("did not merge") && e.contains("stays open"), "{e}");
-    assert!(!completed.get(), "the go step was answered after a refused merge");
+    let (recorded, completed) = (Cell::new(false), Cell::new(false));
+    let e = github::go_sequence("go", || Err("409".into()), || recorded.set(true), || { completed.set(true); Ok(()) }).unwrap_err();
+    assert!(e.contains("did not merge") && e.contains("nothing was recorded"), "{e}");
+    assert!(!recorded.get() && !completed.get(), "a refused merge was recorded or answered");
+    let order = std::cell::RefCell::new(Vec::new());
+    assert_eq!(github::go_sequence("go", || { order.borrow_mut().push("merge"); Ok(1967) }, || order.borrow_mut().push("record"),
+        || { order.borrow_mut().push("complete"); Ok(()) }), Ok(Some(1967)));
+    assert_eq!(*order.borrow(), vec!["merge", "record", "complete"]);
     let merged = Cell::new(false);
-    assert_eq!(github::go_then_complete("go", || { merged.set(true); Ok(1967) }, || Ok(())), Ok(Some(1967)));
-    assert!(merged.get());
-    let merged = Cell::new(false);
-    assert_eq!(github::go_then_complete("no", || { merged.set(true); Ok(1) }, || Ok(())), Ok(None));
+    assert_eq!(github::go_sequence("no", || { merged.set(true); Ok(1) }, || {}, || Ok(())), Ok(None));
     assert!(!merged.get(), "a no merged");
 }
-
