@@ -130,6 +130,19 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
+        domain: "alerts", name: "AlertCase", kind: "alert-case", plural: "alertcases", segment: "cases", graph: "urn:chorus:domains:alerts", composed: true,
+        fields: &[
+            FieldDef { name: "caseCause", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "caseClosedAt", link: false, datatype: "dateTime", required: false, many: false, allowed: &[] },
+            FieldDef { name: "caseOf", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "caseSubject", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "firstSeen", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
+            FieldDef { name: "lastSeen", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "stillTrue", link: false, datatype: "boolean", required: true, many: false, allowed: &[] },
+        ],
+    },
+    ClassDef {
         domain: "cards", name: "Card", kind: "card", plural: "cards", segment: "cards", graph: "urn:chorus:domains:cards", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },

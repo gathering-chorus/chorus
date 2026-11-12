@@ -162,7 +162,7 @@ fn the_checker_runs_in_the_cards_werk() {
 /// violations fails the review; at the baseline it passes. Both states, one fixture.
 fn real_checker_home(tag: &str, baseline: u32) -> std::path::PathBuf {
     let home = tmp_home(tag);
-    let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/policy-validate");
+    let real = Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../scripts/policy-validate");
     let dst = home.join("platform/scripts/policy-validate");
     fs::create_dir_all(dst.parent().unwrap()).unwrap();
     fs::copy(&real, &dst).unwrap();
