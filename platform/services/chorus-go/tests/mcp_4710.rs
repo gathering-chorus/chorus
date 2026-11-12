@@ -39,8 +39,11 @@ fn stand_in(tool_reply: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
 #[test]
 fn an_approved_argv_becomes_the_card_tools_arguments() {
     let argv: Vec<String> = ["add", "Fix X", "--owner", "silas", "--priority", "P2", "--desc", "## Experience\nx"].iter().map(|s| s.to_string()).collect();
-    assert_eq!(card_args(&argv).unwrap(), json!({"title": "Fix X", "owner": "silas", "priority": "P2", "desc": "## Experience\nx"}));
-    assert!(card_args(&["rm".to_string(), "x".to_string()]).is_err());
+    assert_eq!(card_args(&argv, "principal-kade").unwrap(), json!({"title": "Fix X", "owner": "silas", "priority": "P2", "desc": "## Experience\nx"}));
+    // no --owner (the cards CLI's optional flag): the role that asked owns it
+    let no_owner: Vec<String> = ["add", "Fix Y", "--priority", "P3"].iter().map(|s| s.to_string()).collect();
+    assert_eq!(card_args(&no_owner, "principal-kade").unwrap()["owner"], "kade");
+    assert!(card_args(&["rm".to_string(), "x".to_string()], "principal-kade").is_err());
 }
 
 #[test]

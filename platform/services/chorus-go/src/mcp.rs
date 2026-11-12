@@ -17,10 +17,14 @@ pub fn door() -> String {
 
 /// The clearing-card-jeff arguments from an approved `cards add` argv (lib cards_add_argv has
 /// already refused anything that is not "add", a title and allow-listed `--flag value` pairs).
-pub fn card_args(argv: &[String]) -> R<Value> {
+/// The cards CLI required domain, type, priority and origin, so an approved argv carries them;
+/// --owner was optional there and is required by the tool, so it defaults to the role that asked
+/// (review of 746df662).
+pub fn card_args(argv: &[String], asker: &str) -> R<Value> {
     if argv.len() < 2 || argv[0] != "add" { return Err("not a cards add argv".into()); }
     let mut m = Map::new();
     m.insert("title".into(), json!(argv[1]));
+    m.insert("owner".into(), json!(asker.trim_start_matches("principal-")));
     for pair in argv[2..].chunks(2) {
         let [flag, val] = pair else { return Err("a flag without a value".into()) };
         let key = flag.trim_start_matches("--");

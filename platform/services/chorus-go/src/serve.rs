@@ -332,7 +332,9 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
     // #4710 — filed through the MCP door as the lander (clearing-card-jeff: runs cards add as Jeff
     // for a verified caller), never by running the cards script.
     let login = crate::identity::lander_token().map_err(|e| format!("approved and recorded, but the lander cannot file it: {e}"))?;
-    let out = crate::mcp::call_tool(&login, "clearing-card-jeff", crate::mcp::card_args(&d.argv)?)
+    let asker = door_get("/decisions/approvals")?.iter().find(|a| local(&s_of(a, "name")) == d.row)
+        .map(|a| local(&s_of(a, "ownedBy")).to_string()).unwrap_or_default();
+    let out = crate::mcp::call_tool(&login, "clearing-card-jeff", crate::mcp::card_args(&d.argv, &asker)?)
         .map_err(|e| format!("approved and recorded, but filing failed: {e}"))?;
     Ok(json!({"ok": true, "text": format!("Approved. {}", out.lines().find(|l| l.contains('#')).unwrap_or("Filed.").trim())}))
 }

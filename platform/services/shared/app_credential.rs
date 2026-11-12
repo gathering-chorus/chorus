@@ -111,11 +111,11 @@ pub fn token_request_argv(api: &str, inst: &str) -> Vec<String> {
         .collect()
 }
 
-/// Sign, trade the JWT for an installation credential, write it 0600 to `<dir>/installation`,
-/// and arm it for every later git/gh call of this process (deploy_credential.rs's seam).
-pub fn arm_app_credential() -> Result<std::path::PathBuf, String> {
+/// Sign, and trade the JWT for an installation credential, returned in memory: never written to
+/// disk and never put in the environment (review of 746df662: the lander serves each request on
+/// its own thread, and a shared file or a set_var races between them).
+pub fn app_credential() -> Result<String, String> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let dir = app_dir()?;
     let (app_id, inst, key) = app_parts(&dir)?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
@@ -131,15 +131,8 @@ pub fn arm_app_credential() -> Result<std::path::PathBuf, String> {
         .write_all(format!("Authorization: {} {jwt}\n", "Bearer").as_bytes())
         .map_err(|e| format!("auth-fail: curl stdin: {e}"))?;
     let out = child.wait_with_output().map_err(|e| format!("auth-fail: curl: {e}"))?;
-    let tok = token_from_answer(&String::from_utf8_lossy(&out.stdout))
-        .ok_or_else(|| format!("auth-fail: GitHub gave the App (id {app_id}, installation {inst}) no installation credential"))?;
-    let path = dir.join("installation");
-    let _ = std::fs::remove_file(&path);
-    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)
-        .map_err(|e| format!("auth-fail: {} not writable: {}", path.display(), e))?;
-    f.write_all(format!("{tok}\n").as_bytes()).map_err(|e| format!("auth-fail: {}: {}", path.display(), e))?;
-    std::env::set_var(CRED_FILE_ENV, &path);
-    Ok(path)
+    token_from_answer(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| format!("auth-fail: GitHub gave the App (id {app_id}, installation {inst}) no installation credential"))
 }
 
 #[cfg(test)]
@@ -191,7 +184,7 @@ mod app_credential_4710 {
         std::env::remove_var(APP_DIR_ENV);
         let old = std::env::var_os("HOME");
         std::env::set_var("HOME", &home);
-        let r = arm_app_credential();
+        let r = app_credential();
         match old { Some(h) => std::env::set_var("HOME", h), None => std::env::remove_var("HOME") }
         let e = r.unwrap_err();
         assert!(e.contains("no GitHub App key"), "{e}");
@@ -268,6 +261,7 @@ mod app_credential_4710 {
     #[test]
     fn the_jwt_and_the_installation_credential_never_reach_argv() {
         let _g = CRED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(CRED_FILE_ENV);
         let d = tmp("argv");
         let app = d.join("app"); std::fs::create_dir_all(&app).unwrap();
         let key = app.join("key.pem");
@@ -279,10 +273,9 @@ mod app_credential_4710 {
         let (api, got) = stand_in(r#"{"token":"ghs_FAKE4710"}"#);
         std::env::set_var(APP_DIR_ENV, &app);
         std::env::set_var(GITHUB_API_ENV, &api);
-        let r = arm_app_credential();
+        let r = app_credential();
         std::env::remove_var(APP_DIR_ENV); std::env::remove_var(GITHUB_API_ENV);
-        let armed = r.unwrap();
-        std::env::remove_var(CRED_FILE_ENV);
+        let tok = r.unwrap();
         let req = got.recv().unwrap();
         assert!(req.starts_with("POST /app/installations/456/access_tokens"), "{req}");
         let auth = req.lines().find(|l| l.to_lowercase().starts_with("authorization:")).expect("no Authorization header reached GitHub");
@@ -290,9 +283,10 @@ mod app_credential_4710 {
         assert_eq!(jwt.split('.').count(), 3, "{auth}");
         let argv = token_request_argv(&api, "456").join(" ");
         assert!(!argv.contains(jwt) && !argv.to_lowercase().contains("authorization"), "the JWT is on argv: {argv}");
-        use std::os::unix::fs::MetadataExt;
-        assert_eq!(std::fs::metadata(&armed).unwrap().mode() & 0o777, 0o600);
-        assert_eq!(std::fs::read_to_string(&armed).unwrap(), "ghs_FAKE4710\n");
+        assert_eq!(tok, "ghs_FAKE4710");
+        // NEGATIVE PROOF (review of 746df662): nothing reaches disk or the environment
+        assert!(!app.join("installation").exists(), "the credential was written to disk");
+        assert!(armed_credential().is_none(), "the credential was put in the environment");
     }
 }
 

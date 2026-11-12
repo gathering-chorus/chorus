@@ -64,7 +64,7 @@ fn stand_in_github(head: &str, merge_codes: &[u16]) -> Gh {
             seen2.lock().unwrap().push((line.clone(), h.to_string(), b.to_string()));
             let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
             let (code, body) = if path.ends_with("/access_tokens") { (201, r#"{"token":"ghs_FAKE4710"}"#.to_string()) }
-                else if path.contains("/pulls?") { (200, format!(r#"[{{"number":1967,"head":{{"ref":"wren/4953","sha":"{head}"}}}}]"#)) }
+                else if path.contains("/pulls?") { (200, format!(r#"[{{"number":1967,"head":{{"ref":"wren/4953","sha":"{head}","repo":{{"full_name":"gathering-chorus/chorus"}}}}}}]"#)) }
                 else if path.contains("/statuses/") { (201, "{}".to_string()) }
                 else if path.ends_with("/merge") { let c = codes[merges.min(codes.len() - 1)]; merges += 1; (c, r#"{"message":"x"}"#.to_string()) }
                 else { (404, "{}".to_string()) };
@@ -106,7 +106,7 @@ fn the_merge_is_a_squash_pinned_to_the_signed_sha_titled_like_main() {
 // NEGATIVE PROOF: a PR whose head moved after Jeff signed is refused before any merge call.
 #[test]
 fn a_moved_head_is_refused_and_one_pr_is_required() {
-    let pr = |n: u64, r: &str, sha: &str| format!(r#"{{"number":{n},"head":{{"ref":"{r}","sha":"{sha}"}}}}"#);
+    let pr = |n: u64, r: &str, sha: &str| format!(r#"{{"number":{n},"head":{{"ref":"{r}","sha":"{sha}","repo":{{"full_name":"gathering-chorus/chorus"}}}}}}"#);
     let other = pr(1, "kade/4800", ROUND);
     assert_eq!(pr_from_list(&format!("[{other},{}]", pr(1967, "wren/4953", ROUND)), 4953, ROUND), Ok((1967, "wren".into())));
     assert!(pr_from_list(&format!("[{}]", pr(1967, "wren/4953", "0000000000000000000000000000000000000000")), 4953, ROUND).unwrap_err().contains("head moved"));
@@ -114,6 +114,9 @@ fn a_moved_head_is_refused_and_one_pr_is_required() {
     // a branch that merely ends in the number is not the card's (wren/14953, a/b/4953)
     assert!(pr_from_list(&format!("[{}]", pr(2, "wren/14953", ROUND)), 4953, ROUND).is_err());
     assert!(pr_from_list(&format!("[{}]", pr(2, "a/b/4953", ROUND)), 4953, ROUND).is_err());
+    // NEGATIVE PROOF (review of 746df662): a fork's PR with the card's branch name never matches
+    let fork = format!(r#"[{{"number":9,"head":{{"ref":"wren/4953","sha":"{ROUND}","repo":{{"full_name":"someone/chorus"}}}}}}]"#);
+    assert!(pr_from_list(&fork, 4953, ROUND).unwrap_err().contains("no open PR"));
     let two = format!("[{},{}]", pr(1967, "wren/4953", ROUND), pr(1968, "silas/4953", ROUND));
     assert!(pr_from_list(&two, 4953, ROUND).unwrap_err().contains("more than one"));
 }

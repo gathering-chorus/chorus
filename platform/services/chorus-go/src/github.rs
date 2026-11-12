@@ -62,7 +62,9 @@ pub fn pr_from_list(body: &str, card: u64, round: &str) -> R<(u64, String)> {
     let suffix = format!("/{card}");
     let mine: Vec<&Value> = prs.iter().filter(|p| {
         let r = p.pointer("/head/ref").and_then(Value::as_str).unwrap_or("");
-        r.ends_with(&suffix) && r.matches('/').count() == 1
+        // review of 746df662: only a branch in this repo — a fork's PR named <x>/<card> never matches
+        let repo = p.pointer("/head/repo/full_name").and_then(Value::as_str).unwrap_or("");
+        r.ends_with(&suffix) && r.matches('/').count() == 1 && repo == REPO
     }).collect();
     match mine.as_slice() {
         [one] => {
@@ -92,25 +94,26 @@ pub fn call_argv(api: &str, call: &Call, body: Option<&std::path::Path>) -> Vec<
     a
 }
 
-/// Run one call with the armed installation credential. Returns (http code, body).
-pub fn run(call: &Call) -> R<(u16, String)> {
+/// Run one call with the installation credential `tok` (in memory). The body goes in a 0600 file
+/// of its own, named per call, removed after: the lander serves requests on parallel threads.
+pub fn run(call: &Call, tok: &str) -> R<(u16, String)> {
     use std::os::unix::fs::OpenOptionsExt;
-    let file = armed_credential().ok_or("auth-fail: no App credential armed")?;
-    let tok = std::fs::read_to_string(&file).map_err(|e| format!("auth-fail: {}: {}", std::path::Path::new(&file).display(), e))?;
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let api = std::env::var(GITHUB_API_ENV).unwrap_or_else(|_| "https://api.github.com".into());
-    let bf = std::path::Path::new(&file).with_file_name("request.json");
+    let bf = std::env::temp_dir().join(format!("chorus-lander-req-{}-{}-{}.json", std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed), crate::now()));
     if let Some(b) = &call.body {
-        let _ = std::fs::remove_file(&bf);
         std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&bf)
             .and_then(|mut f| f.write_all(b.to_string().as_bytes())).map_err(|e| e.to_string())?;
     }
-    let mut child = Command::new("/usr/bin/curl").args(call_argv(&api, call, Some(&bf)))
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
-        .spawn().map_err(|e| format!("curl did not start: {e}"))?;
-    child.stdin.take().ok_or("curl stdin")?
-        .write_all(format!("Authorization: {} {}\n", "token", credential_line(&tok)).as_bytes()).map_err(|e| e.to_string())?;
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let child = Command::new("/usr/bin/curl").args(call_argv(&api, call, Some(&bf)))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+    let out = child.and_then(|mut c| {
+        if let Some(mut i) = c.stdin.take() { let _ = i.write_all(format!("Authorization: {} {}\n", "token", tok.trim()).as_bytes()); }
+        c.wait_with_output()
+    });
     let _ = std::fs::remove_file(&bf);
+    let out = out.map_err(|e| format!("curl: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let (body, code) = text.rsplit_once('\n').unwrap_or(("", &text));
     Ok((code.trim().parse().unwrap_or(0), body.to_string()))
@@ -141,19 +144,19 @@ fn retry_wait_secs() -> u64 {
 /// The whole land half the lander owns: arm the App, find the PR at the signed round, post
 /// `jeff-go`, squash-merge pinned to that sha. Call only after the passkey go verified.
 pub fn land_as_app(card: u64, round: &str) -> R<u64> {
-    arm_app_credential()?;
-    let (code, body) = run(&find_pr_call())?;
+    let tok = app_credential()?;
+    let (code, body) = run(&find_pr_call(), &tok)?;
     if code != 200 { return Err(format!("GitHub answered {code} to the PR lookup for #{card}")); }
     let (pr, role) = pr_from_list(&body, card, round)?;
     let role = role.as_str();
-    let (code, _) = run(&status_call(round, card))?;
+    let (code, _) = run(&status_call(round, card), &tok)?;
     if code != 201 { return Err(format!("GitHub answered {code} to the jeff-go status on {}", crate::short(round))); }
-    let mut answer = run(&merge_call(pr, round, card, role))?;
+    let mut answer = run(&merge_call(pr, round, card, role), &tok)?;
     // #3926 — GitHub's mergeable flag can be stale right after a push: 405 "not mergeable".
     // Retry that once. Never a 409: that is the PR head moving off the signed sha (Silas 18:01).
     if answer.0 == 405 {
         std::thread::sleep(std::time::Duration::from_secs(retry_wait_secs()));
-        answer = run(&merge_call(pr, round, card, role))?;
+        answer = run(&merge_call(pr, round, card, role), &tok)?;
     }
     let (code, body) = answer;
     if code != 200 {
