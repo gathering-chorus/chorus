@@ -1347,13 +1347,25 @@ pub fn validate_step(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         emit_spine_reason(home, "demo.refused", role, card, &trace, "ac-checks");
         return Err(format!("#{} AC checks: {}", card, check_problems.join("; ")));
     }
+    // #4959 AC4 — the data and product policies, before anything is reviewed
+    let werk = PathBuf::from(format!("{}/{}-{}", env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    }), role, card));
+    let gates = match deterministic_gates(home, Some(&werk)) {
+        Ok(s) => s,
+        Err(e) => {
+            jsonl(home, role, card, &trace, "demo.refused", &fail_extra("policies"));
+            emit_spine_reason(home, "demo.refused", role, card, &trace, "policies");
+            return Err(format!("#{} policies: {}", card, e));
+        }
+    };
     jsonl(home, role, card, &trace, "demo.ac_status",
           &format!(",\"checked\":{},\"total\":{}", checked, total));
     post_preflight_evidence(home, card, role, checked, total, &trace)?;
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
     Ok(DemoOutcome {
-        message: format!("#{} valid: {}, AC {}/{} checked (shown at announce, never a refusal)", card, status, checked, total),
+        message: format!("#{} valid: {}, AC {}/{} checked (shown at announce, never a refusal); {}", card, status, checked, total, gates),
         exit: 0,
     })
 }
@@ -2224,13 +2236,16 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     // #4889 — the findings ledger: an earlier round's open finding carries forward until a
     // later diff touches its file and does not raise it again (Kade 10:07). There is no
     // waiver: a finding leaves only by a fix (Kade 10:24 — a self-asserted settle is forgeable).
-    (result, findings) = apply_ledger(&result, &findings, prior.as_ref().map(|(_, f)| f.as_str()), delta_files.as_deref());
+    let prior_findings = prior.as_ref().map(|(_, f)| without_policies(f));
+    (result, findings) = apply_ledger(&result, &findings, prior_findings.as_deref(), delta_files.as_deref());
     // #4889 (Jeff 16:05, "Yes, certainly") — only a finding that breaks something Jeff
     // uses fails the gate; every other finding is a note on his go page, and ships
     if result == "fail" {
         let open = open_findings(&findings);
         (result, findings) = apply_breaks(&result, &findings, classify_breaks(&werk, &open, role).as_deref());
     }
+    // #4959 AC4 — the gate's policies, after the breaks split so a policy failure stays a failure
+    (result, findings) = with_policies(&result, &findings, policy_review(Path::new(home), Some(Path::new(&werk)), gate));
     // an unmeasured round reviewed nothing: the next round starts from the last one that did
     let reviewed = if result == "error" { "" } else { head.as_str() };
     record_gate_at(home, role, card, gate, &result, &findings, round, reviewed);
@@ -2510,6 +2525,76 @@ mod properties_resolver;
 /// #4889 — the TS packages dependency-cruiser checks (the boundary rule's own list).
 pub const DEPCRUISE_DIRS: [&str; 7] = ["directing", "platform/api", "platform/pulse", "platform/workflow-engine",
     "platform/agent-adapters", "platform/chorus-sdk", "roles/wren/scripts"];
+
+/// #4959 AC4 — policy-validate's exit as a review verdict: 0 pass, 1 fail (each policy
+/// over its baseline is a finding), anything else, or no exit at all, is an error: a
+/// policy run that could not measure is never a pass (#3734). Pure.
+pub fn policy_verdict(code: Option<i32>, out: &str) -> (String, String) {
+    let summary = out.lines().rev().find(|l| l.starts_with("policy-validate:"))
+        .map(|l| l.trim_start_matches("policy-validate:").trim().to_string()).unwrap_or_default();
+    match code {
+        Some(0) => ("pass".to_string(), format!("policies: {summary}")),
+        Some(1) => {
+            // each failure is its own segment, each labelled, so none can pass for a ledger finding
+            let fails: Vec<String> = out.lines().filter(|l| l.starts_with("FAIL ")).map(|l| format!("policies: {l}")).collect();
+            ("fail".to_string(), fails.join(" | "))
+        }
+        _ => {
+            let broken: Vec<&str> = out.lines().filter(|l| l.starts_with("BROKEN ") || l.starts_with("policy-validate:")).collect();
+            ("error".to_string(), format!("policies: could not measure (exit {}): {}",
+                code.map_or("none".to_string(), |c| c.to_string()), broken.join("; ")))
+        }
+    }
+}
+
+/// #4959 AC4 — run policy-validate for one gate. The CANONICAL checker wins, so a card
+/// never rewrites the check run on it; only while canonical has none (the card that adds
+/// it) does the werk's copy run, and the finding says so. Neither = error, never a pass (#3734).
+pub fn policy_review(home: &Path, werk: Option<&Path>, gate: &str) -> (String, String) {
+    let canon = home.join("platform/scripts/policy-validate");
+    let local = werk.map(|w| w.join("platform/scripts/policy-validate")).filter(|p| p.is_file());
+    let (pv, from) = if canon.is_file() { (canon, "") }
+        else if let Some(p) = local { (p, " (the werk's copy: not on canonical yet)") }
+        else { return ("error".to_string(), format!("policies: no policy-validate on canonical or in the werk ({})", canon.display())) };
+    // command and test checks read the tree they run in: the card's werk, not canonical main
+    let mut cmd = Command::new(&pv);
+    cmd.args(["--gate", gate]);
+    if let Some(w) = werk.filter(|w| w.is_dir()) { cmd.current_dir(w); }
+    let (r, f) = match cmd.output() {
+        Ok(o) => policy_verdict(o.status.code(), &String::from_utf8_lossy(&o.stdout)),
+        Err(e) => ("error".to_string(), format!("policies: policy-validate could not run: {e}")),
+    };
+    (r, format!("{f}{from}"))
+}
+
+/// #4959 — policies are measured afresh every round, so a recorded policy line never
+/// carries into the findings ledger. Pure.
+pub fn without_policies(text: &str) -> String {
+    text.split(" | ").filter(|s| !unwrapped(s).starts_with("policies:")).collect::<Vec<_>>().join(" | ")
+}
+
+/// #4959 AC4 — the data and product gates are deterministic: no model reads them, so they
+/// run in validate and a failure or an unmeasured run refuses the demo. Ok = one line per gate.
+pub fn deterministic_gates(home: &Path, werk: Option<&Path>) -> Result<String, String> {
+    let mut ok = Vec::new();
+    for gate in ["data", "product"] {
+        let (r, f) = policy_review(home, werk, gate);
+        if r != "pass" {
+            return Err(format!("{gate} gate {r}: {f}"));
+        }
+        ok.push(format!("{gate}: {f}"));
+    }
+    Ok(ok.join(" · "))
+}
+
+/// #4959 AC4 — fold the policy verdict into a review's, AFTER apply_breaks: a policy over
+/// its baseline is a deterministic failure, never downgraded to a note. Pure.
+pub fn with_policies(result: &str, findings: &str, policy: (String, String)) -> (String, String) {
+    let worst = |a: &str, b: &str| if a == "error" || b == "error" { "error" } else if a == "fail" || b == "fail" { "fail" } else { "pass" };
+    let shown = [findings, policy.1.as_str()].into_iter().filter(|s| !s.trim().is_empty() && s.trim() != "no findings")
+        .collect::<Vec<_>>().join(" | ");
+    (worst(result, &policy.0).to_string(), shown)
+}
 
 /// #4889 — a review whose config (from canonical) is missing is an error with that
 /// reason; None when it is there. Pure on the filesystem state it reads.

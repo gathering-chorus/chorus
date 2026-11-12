@@ -100,6 +100,8 @@ exit 0
         ),
     );
     write_exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
+    // #4959 — validate runs the data and product policies; none carry a check here
+    write_exec(&home.join("platform/scripts/policy-validate"), "#!/bin/sh\necho 'policy-validate: 0 checks, 0 above baseline, 0 could not run'\n");
 
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
     std::env::set_var("CHORUS_TRACE_ID", "e2e-trace-abc123");

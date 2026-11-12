@@ -50,6 +50,8 @@ fn the_code_step_runs_code_review_and_security_review_and_fails_on_their_finding
     fs::write(home.join("skills/gate-code/SKILL.md"), "---\nname: gate-code\nfail-items: 1-2\n---\n# gate-code\n").unwrap();
     exec(&home.join("platform/scripts/cards"), "#!/bin/sh\necho '#4889 card'\n");
     exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
+    // #4959 — every review runs its gate's policies; none carry a check in this fixture
+    exec(&home.join("platform/scripts/policy-validate"), "#!/bin/sh\necho 'policy-validate: 0 checks, 0 above baseline, 0 could not run'\n");
     fs::create_dir_all(&werk).unwrap();
     git(&werk, &["init", "-q"]);
     fs::write(werk.join("a.rs"), "fn a() {}\n").unwrap();
