@@ -97,10 +97,14 @@ PY
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 <<<<<<< HEAD
+<<<<<<< HEAD
   [[ "$output" == *"62 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
 =======
   [[ "$output" == *"59 add, 1 change, 34 delete"* ]] || { echo "$output" | tail -3; return 1; }
 >>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
+=======
+  [[ "$output" == *"58 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
+>>>>>>> 26bd012d4 (silas: #4960 — AC1 (BQ: the land runs as the card's role, not Jeff): one grant, permission-silas-policies (count 50), added first by land-4960-rows; jeff grants dropped. The GovernanceCheck deletes leave the script: the class retirement removes its 34 rows (AC2). Live dry run: 58 add, 1 change, 0 delete. 10/10.)
   [ ! -f "$T/runner.log" ] || return 1
 }
 
@@ -133,12 +137,17 @@ print(bad); sys.exit(1 if bad else 0)"
 @test "the land grants the card's role Write on policies first, through the security door" {
 =======
 
+<<<<<<< HEAD
 @test "the land grants Jeff's go Write on policies and domains first, through the security door" {
 >>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
+=======
+@test "the land grants the card's role Write on policies first, through the security door" {
+>>>>>>> 26bd012d4 (silas: #4960 — AC1 (BQ: the land runs as the card's role, not Jeff): one grant, permission-silas-policies (count 50), added first by land-4960-rows; jeff grants dropped. The GovernanceCheck deletes leave the script: the class retirement removes its 34 rows (AC2). Live dry run: 58 add, 1 change, 0 delete. 10/10.)
   printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND" --apply
   [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
+<<<<<<< HEAD
 <<<<<<< HEAD
   first=$(head -1 "$T/runner.log")
   [[ "$first" == *"domain=security class=permissions"*"silas-policies"* ]] || { echo "$first"; return 1; }
@@ -150,6 +159,11 @@ print(bad); sys.exit(1 if bad else 0)"
   grep -q 'chorus:permission-jeff-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
   grep -q 'chorus:permission-jeff-domains a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
 >>>>>>> 262c8739a (silas: #4960 — AC1: the land writes as Jeff's go, who could not write policies or domains. permission-jeff-policies and permission-jeff-domains in permissions-4183.ttl (count 51, reason in 4183's test), and land-4960-rows adds them first through the security door; a write refused inside the door's 300 s scope cache waits once and retries. No store write before the go. 10/10; live dry run 59 add, 1 change, 34 delete.)
+=======
+  first=$(head -1 "$T/runner.log")
+  [[ "$first" == *"domain=security class=permissions"*"silas-policies"* ]] || { echo "$first"; return 1; }
+  grep -q 'chorus:permission-silas-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+>>>>>>> 26bd012d4 (silas: #4960 — AC1 (BQ: the land runs as the card's role, not Jeff): one grant, permission-silas-policies (count 50), added first by land-4960-rows; jeff grants dropped. The GovernanceCheck deletes leave the script: the class retirement removes its 34 rows (AC2). Live dry run: 58 add, 1 change, 0 delete. 10/10.)
 }
 
 @test "a write refused while the door still holds the old scopes waits the cache out once and retries" {

@@ -15,6 +15,7 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 LEDGER="$ROOT/designing/schemas/model-retirements.jsonl"
 
+<<<<<<< HEAD
 declared_in() { # $1 = a git tree; prints every ttl that still declares or uses the class
   # -w, not \b: git grep's ERE has no \b, which made this pass on any tree (its negative proof caught it)
   git -C "$1" grep -lwE 'chorus:(GovernanceCheck|GovernanceCheckShape|boundTo|checkQuery|checkSeverity|provenRedOn|provenRedRows)' -- '*.ttl' ':!roles/silas/ontology/vocabulary-generated-4254.ttl' || true
@@ -49,6 +50,17 @@ declared_in() { # $1 = a git tree; prints every ttl that still declares or uses 
 
 ledger_check() {
   python3 - "$1" <<'PY'
+=======
+@test "no model or row file declares GovernanceCheck or uses its predicates" {
+  run git -C "$ROOT" grep -lE 'chorus:(GovernanceCheck|boundTo|checkQuery|checkSeverity|provenRedOn|provenRedRows)\b' -- '*.ttl' ':!roles/silas/ontology/vocabulary-generated-4254.ttl'
+  [ -z "$output" ] || { echo "$output"; return 1; }
+  run grep -c 'governance-checks-3846.ttl' "$ROOT/platform/services/athena-deploy/src/lib.rs"
+  [ "$output" = "0" ] || return 1
+}
+
+@test "the ledger retires the class's rows, its shape and its five predicates, and the domain's claim on it" {
+  run python3 - "$LEDGER" <<'PY'
+>>>>>>> 26bd012d4 (silas: #4960 — AC1 (BQ: the land runs as the card's role, not Jeff): one grant, permission-silas-policies (count 50), added first by land-4960-rows; jeff grants dropped. The GovernanceCheck deletes leave the script: the class retirement removes its 34 rows (AC2). Live dry run: 58 add, 1 change, 0 delete. 10/10.)
 import json, sys
 C = "https://jeffbridwell.com/chorus#"
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -61,6 +73,7 @@ vocab = [r for r in mine if r.get("object_class") == "GovernanceCheck" and r.get
 print("missing:", sorted(missing), "class:", len(cls), "vocab:", len(vocab))
 sys.exit(1 if missing or not cls or not vocab else 0)
 PY
+<<<<<<< HEAD
 }
 
 @test "the tests that read a check read it from the policy plan, not a GovernanceCheck file" {
@@ -79,3 +92,13 @@ print(idx); sys.exit(0 if idx.get("vocab", 10**9) < idx.get("class", -1) else 1)
 PY
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+=======
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "the tests that read a check read it from the policy plan, not a GovernanceCheck file" {
+  run git -C "$ROOT" grep -l 'governance-check-instances.ttl' -- platform
+  [ -z "$output" ] || { echo "$output"; return 1; }
+  [ ! -e "$ROOT/designing/data/governance-check-instances.ttl" ] || return 1
+}
+>>>>>>> 26bd012d4 (silas: #4960 — AC1 (BQ: the land runs as the card's role, not Jeff): one grant, permission-silas-policies (count 50), added first by land-4960-rows; jeff grants dropped. The GovernanceCheck deletes leave the script: the class retirement removes its 34 rows (AC2). Live dry run: 58 add, 1 change, 0 delete. 10/10.)
