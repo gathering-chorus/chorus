@@ -68,3 +68,14 @@ PY
   [ -z "$output" ] || { echo "$output"; return 1; }
   [ ! -e "$ROOT/designing/data/governance-check-instances.ttl" ] || return 1
 }
+
+@test "negative proof: the domain's claim is retired before the class (athena-deploy refuses a claimed class)" {
+  run python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+idx = {("vocab" if r.get("predicate") == "definesVocabulary" else "class" if r.get("retire_class") else ""): i
+       for i, r in enumerate(rows) if r.get("card") == "4960"}
+print(idx); sys.exit(0 if idx.get("vocab", 10**9) < idx.get("class", -1) else 1)
+PY
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
