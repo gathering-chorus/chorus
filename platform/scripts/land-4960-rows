@@ -10,9 +10,9 @@ The plan is read from files that ship in this land, so the store and the repo ca
      folded into Policy and 5 of the 46 rules made one-line commands (they replace the plain row), each with its measured baseline and the
      fixture of a real violation it must count;
   3. policy-no-self-acp says Jeff's go only (#4707; it said "Wren or Jeff");
-  4. every GovernanceCheck row is deleted: the 11 real ones now live as policies, and 23
-     quartet probe rows leaked there between 10-14 and 11-06.
-  0. two grants first: Jeff's go may write the policies and domains graphs.
+  (the 34 GovernanceCheck rows, 11 folded here and 23 leaked quartet probes, leave with the
+  class's retirement in model-retirements.jsonl, at the land's model deploy.)
+  0. one grant first: the card's role (silas) may write the policies graph.
 Each write prints ADD / CHANGE / DELETE / SAME against the door. Exit 0 = plan printed (or
 applied); 1 = a write was refused; 2 = the door or the plan could not be read.
 --ttl <file> writes the planned policy rows as Turtle (for the shape test) and exits.
@@ -25,8 +25,7 @@ RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/choru
 # The door names a policy row without its class prefix ("no-self-acp" is chorus:policy-no-self-acp).
 # collection -> (door path, runner domain, runner class)
 DOOR_CLASS = {"permissions": ("/v1/security/permissions", "security", "permissions"),
-              "policies": ("/v1/policies/policies", "policies", "policies"),
-              "governancechecks": ("/v1/domains/governancechecks", "domains", "governancechecks")}
+              "policies": ("/v1/policies/policies", "policies", "policies")}
 NO_SELF_ACP = ("Only Jeff's go lands or accepts a card (#4707, DEC-048 as amended): no role accepts, "
                "and no role records an accepter for Jeff. The go is the passkey-signed step on his approvals page.")
 
@@ -59,10 +58,11 @@ def policy_rows():
     return rows + [("policies", n, w) for n, w in checked.items()]
 
 
-# The land writes as Jeff's go (principal-jeff), who may write security but not policies or
-# domains; these two grants (also in permissions-4183.ttl) go first, through the security door.
-GRANTS = [("permissions", f"jeff-{g}", {"label": f"jeff may write urn:chorus:domains:{g}", "agent": "principal-jeff",
-           "accessTo": f"urn:chorus:domains:{g}", "mode": "http://www.w3.org/ns/auth/acl#Write"}) for g in ("policies", "domains")]
+# The land writes as the card's role (cicd-land passes ROLE=<role>; chorus-runner mints that
+# principal): silas may write security but not policies. This grant (also in
+# permissions-4183.ttl) goes first, through the security door.
+GRANTS = [("permissions", "silas-policies", {"label": "silas may write urn:chorus:domains:policies", "agent": "principal-silas",
+           "accessTo": "urn:chorus:domains:policies", "mode": "http://www.w3.org/ns/auth/acl#Write"})]
 # The door caches a principal's scopes for 300 s (chorus-oidc ALLOW_TTL_SECS): a write refused
 # right after the grants waits that out once and is tried again.
 SCOPE_WAIT = os.environ.get("LAND_SCOPE_WAIT_CMD", "sleep 310")
@@ -71,7 +71,6 @@ SCOPE_WAIT = os.environ.get("LAND_SCOPE_WAIT_CMD", "sleep 310")
 def plan(live):
     p = list(GRANTS) + policy_rows()
     p.append(("policies", "no-self-acp", {"comment": NO_SELF_ACP}))
-    p += [("governancechecks", r["name"], None) for r in live.get("governancechecks", {}).values()]
     return p
 
 

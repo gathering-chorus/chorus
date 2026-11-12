@@ -56,10 +56,10 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # 48 since #4773 (2026-11-09): permission-deployer-cicd, on Jeff's go.
   # 49 since #4957 (2026-11-11): permission-alerts-alerts, on Jeff's 14:46 "ok" to the
   # alerts service principal. The door refuses AlertCase writes without it (401/403).
-  # 51 since #4960 (2026-11-12): permission-jeff-policies and permission-jeff-domains, on
-  # Jeff's 10:59 "ok for this card". The land writes as Jeff's go; without them it 403s on
-  # the policy rows, Wren's no-self-acp and the GovernanceCheck deletes.
-  test "$n" -eq 51
+  # 50 since #4960 (2026-11-12): permission-silas-policies, on Jeff's 10:59 "ok for this
+  # card". The land writes as the card's role; without it the policy rows and Wren's
+  # no-self-acp 403.
+  test "$n" -eq 50
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {

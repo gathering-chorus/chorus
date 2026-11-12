@@ -6,8 +6,8 @@
 #
 # #4960 AC1 — the rows land through the door: 57 policies — 46 ADR/DEC rules (42 plain, to
 # read; 4 made one-line commands) and the 11 GovernanceChecks folded in as runnable checks, each with a
-# measured baseline; policy-no-self-acp says Jeff's go only; the 34 GovernanceCheck rows
-# (11 real, 23 leaked probes) are deleted. Every runnable check proves it can go red on
+# measured baseline; policy-no-self-acp says Jeff's go only. (The 34 GovernanceCheck rows
+# leave with the class's retirement: AC2.) Every runnable check proves it can go red on
 # its own violation fixture and stays green on clean data (#3734).
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -73,17 +73,17 @@ PY
   echo "$output" | grep -q "sh:conforms *true" || { echo "$output" | grep resultMessage | head; return 1; }
 }
 
-@test "the dry run plans the adds, the Jeff-only fix and the GovernanceCheck deletes, and writes nothing" {
+@test "the dry run plans the grant, the adds and the Jeff-only fix, deletes nothing, and writes nothing" {
   python3 - "$T/live.json" <<'PY'
 import json, sys
 live = {"policies": [{"name": "no-self-acp", "comment": "Only Wren or Jeff can accept."}],
-        "governancechecks": [{"name": f"gc-x{i}"} for i in range(11)] + [{"name": f"governance-check-zz-probe-{i}"} for i in range(23)]}
+        "governancechecks": [{"name": "gc-x"}]}  # not this script's to delete (AC2)
 json.dump(live, open(sys.argv[1], "w"))
 PY
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"59 add, 1 change, 34 delete"* ]] || { echo "$output" | tail -3; return 1; }
+  [[ "$output" == *"58 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
   [ ! -f "$T/runner.log" ] || return 1
 }
 
@@ -111,16 +111,14 @@ print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "the land grants Jeff's go Write on policies and domains first, through the security door" {
+@test "the land grants the card's role Write on policies first, through the security door" {
   printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND" --apply
   [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
-  first=$(head -2 "$T/runner.log")
-  [[ "$first" == *"domain=security class=permissions"*"jeff-policies"* ]] || { echo "$first"; return 1; }
-  [[ "$(sed -n 2p "$T/runner.log")" == *"jeff-domains"* ]] || return 1
-  grep -q 'chorus:permission-jeff-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
-  grep -q 'chorus:permission-jeff-domains a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+  first=$(head -1 "$T/runner.log")
+  [[ "$first" == *"domain=security class=permissions"*"silas-policies"* ]] || { echo "$first"; return 1; }
+  grep -q 'chorus:permission-silas-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
 }
 
 @test "a write refused while the door still holds the old scopes waits the cache out once and retries" {
