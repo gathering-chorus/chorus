@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # @test-type: contract — runs SHACL over fixtures written to BATS_TEST_TMPDIR against
 # @domain: policies — the product domain this suite guards (#4334)
+# @card: #4959
+# @owner: silas
 # the repo's PolicyShape; no store, no service, no network.
 # #4959 AC1 — a Policy can carry a check a machine decides.
 #
@@ -13,7 +15,7 @@
 # controls show a well-formed row and a plain legacy row still pass.
 
 setup() {
-  REPO="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+  REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   SHAPES="$BATS_TEST_TMPDIR/shapes.ttl"
   # PolicyShape alone: CoreShape's door-stamp rule is a SPARQL constraint proven by its own suite (#4576).
   cp "$REPO/roles/wren/ontology/policies-4077.ttl" "$SHAPES"

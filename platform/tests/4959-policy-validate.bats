@@ -1,13 +1,15 @@
 #!/usr/bin/env bats
 # @test-type: contract — runs policy-validate over fixture policies and a fixture dataset
 # @domain: policies — the product domain this suite guards (#4334)
+# @card: #4959
+# @owner: silas
 # in BATS_TEST_TMPDIR; no store, no door, no network.
 # #4959 AC3 — policy-validate reads the policies, runs each check, and fails only
 # when a check finds MORE violations than its baseline. It never passes on a check
 # it could not run: an unreadable door or a broken query is exit 2, not green (#3734).
 
 setup() {
-  REPO="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+  REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   PV="$REPO/platform/scripts/policy-validate"
   T="$BATS_TEST_TMPDIR"
   # two subjects typed in two graphs: the one-home rule finds 2 violations here
