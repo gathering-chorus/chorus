@@ -493,7 +493,8 @@ fn main() {
             rerun_deferred(card, &prod_base);
             let mut r = run_checks(card, &prod_base);
             // #4959 AC6 — the runtime policies against prod: one red row per policy over its
-            // baseline (record files its child), unmeasured when the checker could not run
+            // baseline (record files its child), unmeasured when the checker could not run.
+            // They never decide this card's land (card_rows): drift may not be this card's.
             r.extend(runtime_policies(card));
             let path = results_path(card);
             if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, results_to_tsv(&r))) {
@@ -502,7 +503,7 @@ fn main() {
             }
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
             let card_has_ac = !checks(card).is_empty();
-            let v = if !card_has_ac { NO_ROWS } else { verdict(&r) };
+            let v = if !card_has_ac { NO_ROWS } else { verdict(&card_rows(&r)) };
             println!("#{card} verify in prod: {v}");
             if !prod_passes(v) { exit(1) }
         }
@@ -530,7 +531,7 @@ fn main() {
                 exit(1)
             });
             let card_has_ac = !checks(card).is_empty();
-            let v = if !card_has_ac { NO_ROWS } else { verdict(&r) };
+            let v = if !card_has_ac { NO_ROWS } else { verdict(&card_rows(&r)) };
             println!("#{card} record: {v}");
             record(card, &role, v, &r);
             // #4889 — a Proven card with `after` checks lands Done; they stay open, named on it

@@ -911,3 +911,10 @@ pub fn policy_results(card: u32, code: Option<i32>, out: &str) -> Vec<(Check, Ou
                        out.lines().filter(|l| l.starts_with("BROKEN ")).collect::<Vec<_>>().join("; "))))],
     }
 }
+
+/// #4959 (code review, run 2) — the rows that decide a card's land: its own ACs. The runtime
+/// policy rows (`ac-<card>-policy-*`) still file their child cards through reds(), but drift
+/// or an outage unrelated to the landing card never holds its land. Pure.
+pub fn card_rows(results: &[(Check, Outcome)]) -> Vec<(Check, Outcome)> {
+    results.iter().filter(|(c, _)| !c.ac.contains("-policy-")).cloned().collect()
+}

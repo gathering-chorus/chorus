@@ -369,17 +369,18 @@ fn the_next_land_clears_a_met_deferred_check_and_keeps_an_unmeasured_one() {
     assert!(!fx.log("cards.log").contains("move 4683"), "a met deferral never reopens: {}", fx.log("cards.log"));
 }
 
-/// #4959 AC6 — a runtime policy over its baseline in prod holds the land and files one
-/// child for that policy; the rest of the card's ACs are met.
+/// #4959 AC6 — a runtime policy over its baseline in prod files one child for that policy;
+/// it does not hold the land when the card's own ACs are met (code review, run 2: the drift
+/// may not be this card's).
 #[test]
-fn negative_proof_a_runtime_policy_over_its_baseline_holds_the_land_and_files_its_child() {
+fn a_runtime_policy_over_its_baseline_files_its_child_without_holding_the_land() {
     let fx = Fx::new("policy-red", &row("ac-4683-1", "/ok.txt", "ok"));
     std::fs::write(fx.dir.join("policy-validate"),
         "#!/bin/sh\n[ \"$1\" = --runtime ] || exit 2\necho 'FAIL bind-local 1 > 0 (arch)'\nexit 1\n").unwrap();
     let p = fx.run("prod");
-    assert!(!p.status.success(), "a red runtime policy is not proven: {}", out(&p));
+    assert!(p.status.success(), "the card's own AC is met: {}", out(&p));
     let r = fx.run("record");
-    assert!(!r.status.success(), "{}", out(&r));
+    assert!(r.status.success(), "{}", out(&r));
     let cards = fx.log("cards.log");
     assert!(cards.lines().any(|l| l.contains(" add ") && l.contains("ac-4683-policy-bind-local")), "one child for the policy: {cards}");
 }
