@@ -375,6 +375,23 @@ chorus:permission-crawler-tests a chorus:Permission ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+# #4960 — the land writes as Jeff's go (principal-jeff): it adds the policy rows, edits
+# no-self-acp (Wren's row) and deletes the folded GovernanceCheck rows. land-4960-rows adds
+# these two first, through the security door, so its own writes are allowed.
+chorus:permission-jeff-policies a chorus:Permission ;
+    rdfs:label "jeff may write urn:chorus:domains:policies" ;
+    chorus:agent chorus:principal-jeff ;
+    chorus:accessTo "urn:chorus:domains:policies"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
+chorus:permission-jeff-domains a chorus:Permission ;
+    rdfs:label "jeff may write urn:chorus:domains:domains" ;
+    chorus:agent chorus:principal-jeff ;
+    chorus:accessTo "urn:chorus:domains:domains"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
 chorus:permission-jeff-security a chorus:Permission ;
     rdfs:label "jeff may write urn:chorus:domains:security" ;
     chorus:agent chorus:principal-jeff ;

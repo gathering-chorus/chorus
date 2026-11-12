@@ -12,6 +12,7 @@ The plan is read from files that ship in this land, so the store and the repo ca
   3. policy-no-self-acp says Jeff's go only (#4707; it said "Wren or Jeff");
   4. every GovernanceCheck row is deleted: the 11 real ones now live as policies, and 23
      quartet probe rows leaked there between 10-14 and 11-06.
+  0. two grants first: Jeff's go may write the policies and domains graphs.
 Each write prints ADD / CHANGE / DELETE / SAME against the door. Exit 0 = plan printed (or
 applied); 1 = a write was refused; 2 = the door or the plan could not be read.
 --ttl <file> writes the planned policy rows as Turtle (for the shape test) and exits.
@@ -23,7 +24,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
 # The door names a policy row without its class prefix ("no-self-acp" is chorus:policy-no-self-acp).
 # collection -> (door path, runner domain, runner class)
-DOOR_CLASS = {"policies": ("/v1/policies/policies", "policies", "policies"),
+DOOR_CLASS = {"permissions": ("/v1/security/permissions", "security", "permissions"),
+              "policies": ("/v1/policies/policies", "policies", "policies"),
               "governancechecks": ("/v1/domains/governancechecks", "domains", "governancechecks")}
 NO_SELF_ACP = ("Only Jeff's go lands or accepts a card (#4707, DEC-048 as amended): no role accepts, "
                "and no role records an accepter for Jeff. The go is the passkey-signed step on his approvals page.")
@@ -57,8 +59,17 @@ def policy_rows():
     return rows + [("policies", n, w) for n, w in checked.items()]
 
 
+# The land writes as Jeff's go (principal-jeff), who may write security but not policies or
+# domains; these two grants (also in permissions-4183.ttl) go first, through the security door.
+GRANTS = [("permissions", f"jeff-{g}", {"label": f"jeff may write urn:chorus:domains:{g}", "agent": "principal-jeff",
+           "accessTo": f"urn:chorus:domains:{g}", "mode": "http://www.w3.org/ns/auth/acl#Write"}) for g in ("policies", "domains")]
+# The door caches a principal's scopes for 300 s (chorus-oidc ALLOW_TTL_SECS): a write refused
+# right after the grants waits that out once and is tried again.
+SCOPE_WAIT = os.environ.get("LAND_SCOPE_WAIT_CMD", "sleep 310")
+
+
 def plan(live):
-    p = policy_rows()
+    p = list(GRANTS) + policy_rows()
     p.append(("policies", "no-self-acp", {"comment": NO_SELF_ACP}))
     p += [("governancechecks", r["name"], None) for r in live.get("governancechecks", {}).values()]
     return p
@@ -73,6 +84,7 @@ def load_live():
     path = os.environ.get("LAND_LIVE_JSON")
     if path:
         body = json.load(open(path))
+        body.setdefault("permissions", [])
         return {c: {r["name"]: r for r in body.get(c, [])} for c in DOOR_CLASS}
     live = {}
     for c, (p, _, _) in DOOR_CLASS.items():
@@ -98,6 +110,21 @@ def write_ttl(path):
     open(path, "w").write("\n".join(lines) + "\n")
 
 
+def write(kind, coll, name, w, diff):
+    _, dom, cls = DOOR_CLASS[coll]
+    if kind == "ADD":
+        verb, args = "athena-add", [f"fields={json.dumps({'name': name, **w})}"]
+    elif kind == "CHANGE":
+        verb, args = "athena-set", [f"id={name}", f"fields={json.dumps(diff)}"]
+    else:
+        verb, args = "athena-delete", [f"id={name}"]
+    r = subprocess.run([RUNNER, "call", verb, f"domain={dom}", f"class={cls}", *args], capture_output=True, text=True)
+    ok = r.returncode == 0 and any(c in r.stdout + r.stderr for c in (" → 200", " → 201", " → 204"))
+    if not ok:
+        print(f"  refused {coll}/{name}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+    return ok
+
+
 def main(argv):
     if argv[:1] == ["--ttl"] and len(argv) == 2:
         write_ttl(argv[1])
@@ -109,7 +136,8 @@ def main(argv):
     except Exception as e:
         print(f"door or plan unreadable: {e} — no plan")
         return 2
-    counts, refused = {"ADD": 0, "CHANGE": 0, "DELETE": 0, "SAME": 0}, 0
+    counts = {"ADD": 0, "CHANGE": 0, "DELETE": 0, "SAME": 0}
+    writes = []
     for coll, name, w in p:
         have = live[coll].get(name)
         if w is None:
@@ -121,19 +149,16 @@ def main(argv):
             kind = "CHANGE" if diff else "SAME"
         counts[kind] += 1
         print(f"{kind:<6} {coll}/{name}  {json.dumps(diff, sort_keys=True)[:160] if kind in ('ADD', 'CHANGE') else ''}")
-        if not apply or kind == "SAME":
-            continue
-        _, dom, cls = DOOR_CLASS[coll]
-        if kind == "ADD":
-            verb, args = "athena-add", [f"fields={json.dumps({'name': name, **w})}"]
-        elif kind == "CHANGE":
-            verb, args = "athena-set", [f"id={name}", f"fields={json.dumps(diff)}"]
-        else:
-            verb, args = "athena-delete", [f"id={name}"]
-        r = subprocess.run([RUNNER, "call", verb, f"domain={dom}", f"class={cls}", *args], capture_output=True, text=True)
-        if r.returncode != 0 or not any(c in r.stdout + r.stderr for c in (" → 200", " → 201", " → 204")):
-            refused += 1
-            print(f"  REFUSED {coll}/{name}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+        if kind != "SAME":
+            writes.append((kind, coll, name, w, diff))
+    failed = [x for x in writes if not write(*x)] if apply else []
+    if failed:
+        subprocess.run(["/bin/sh", "-c", SCOPE_WAIT])
+        print(f"waited for the door's scopes to refresh; trying {len(failed)} refused write(s) again")
+        failed = [x for x in failed if not write(*x)]
+    for kind, coll, name, _, _ in failed:
+        print(f"  REFUSED {coll}/{name} ({kind})")
+    refused = len(failed)
     verb = (f"REFUSED {refused} of {counts['ADD'] + counts['CHANGE'] + counts['DELETE']}" if refused
             else "applied" if apply else "nothing written (dry run)")
     print(f"plan: door writes {counts['ADD']} add, {counts['CHANGE']} change, {counts['DELETE']} delete; "

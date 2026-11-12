@@ -83,14 +83,14 @@ PY
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"57 add, 1 change, 34 delete"* ]] || { echo "$output" | tail -3; return 1; }
+  [[ "$output" == *"59 add, 1 change, 34 delete"* ]] || { echo "$output" | tail -3; return 1; }
   [ ! -f "$T/runner.log" ] || return 1
 }
 
 @test "negative proof: a write the door refuses makes the apply exit 1" {
   printf '{"policies": [], "governancechecks": []}' > "$T/live.json"
   printf '#!/bin/sh\necho "403 refused"\nexit 1\n' > "$T/runner"; chmod +x "$T/runner"
-  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND" --apply
+  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" LAND_SCOPE_WAIT_CMD=true run python3 "$LAND" --apply
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"REFUSED"* ]] || return 1
 }
@@ -109,4 +109,25 @@ bad = [r['name'] for r in json.load(open('$CHECKS'))
        or ('derivedFrom' in r and not (isinstance(r['derivedFrom'], str) and r['derivedFrom'].startswith('https://jeffbridwell.com/chorus#')))]
 print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "the land grants Jeff's go Write on policies and domains first, through the security door" {
+  printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
+  printf '#!/bin/sh\necho "$*" >> %s/runner.log\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
+  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND" --apply
+  [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
+  first=$(head -2 "$T/runner.log")
+  [[ "$first" == *"domain=security class=permissions"*"jeff-policies"* ]] || { echo "$first"; return 1; }
+  [[ "$(sed -n 2p "$T/runner.log")" == *"jeff-domains"* ]] || return 1
+  grep -q 'chorus:permission-jeff-policies a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+  grep -q 'chorus:permission-jeff-domains a chorus:Permission' "$ROOT/roles/silas/ontology/permissions-4183.ttl" || return 1
+}
+
+@test "a write refused while the door still holds the old scopes waits the cache out once and retries" {
+  printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
+  # refuses every policies write until a marker exists; the wait creates it (LAND_SCOPE_WAIT_CMD)
+  printf '#!/bin/sh\ncase "$*" in *class=policies*) [ -f %s/scopes-fresh ] || { echo "→ 403"; exit 1; } ;; esac\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
+  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" LAND_SCOPE_WAIT_CMD="touch $T/scopes-fresh" run python3 "$LAND" --apply
+  [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
+  [[ "$output" == *"waited for the door's scopes"* ]] || return 1
 }
