@@ -32,7 +32,9 @@ PAGE="$ROOT/platform/api/public/loom/policy-counts.html"
 
 @test "the handler's behaviour: worst first, narrowed marked, door rows only, 503 on a dead door" {
   cd "$ROOT/platform/api"
-  run npx jest tests/policy-counts-4963.test.ts
+  # the handler alone, without the package's global setup (it loads better-sqlite3, whose ABI
+  # breaks under a role's system Node; Borg Queen 16:47)
+  run npx jest --config '{"preset":"ts-jest","testEnvironment":"node"}' tests/policy-counts-4963.test.ts
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
   [[ "$output" == *"Tests:       10 passed, 10 total"* ]] || { echo "$output" | tail -5; return 1; }
 }
