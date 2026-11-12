@@ -2830,7 +2830,7 @@ app.get('/api/loom/policies', async (_req: Request, res: Response) => {
 // worst first, measured by this tree's policy-validate (page: /loom/policy-counts.html).
 const policyTreeRoot = path.resolve(__dirname, '..', '..', '..');
 app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
-  const r = await fetchPolicyCounts(String(req.query.gate ?? 'arch'), {
+  const r = await fetchPolicyCounts(typeof req.query.gate === 'string' ? req.query.gate : 'arch', {
     fetchPolicies: async () => {
       const resp = await fetch(`${doorBase()}/v1/policies/policies?limit=1000`, { signal: AbortSignal.timeout(15_000) });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -2850,7 +2850,7 @@ app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
       execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), ['--gate', gate], {
         cwd: policyTreeRoot, timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
         env: { ...process.env, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot },
-      }, (_err, stdout) => { fs.rmSync(tmp, { force: true }); resolve(String(stdout ?? '')); });
+      }, (_err, stdout) => { fs.rmSync(tmp, { force: true }); resolve(stdout); });
     }),
   });
   res.status(r.status).json(r.body);

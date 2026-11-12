@@ -46,17 +46,22 @@ export interface PolicyCountsDeps {
   now?: () => number;
 }
 
-const CHECK_FIELDS = ['status', 'baseline', 'checkKind', 'checkSpec', 'violationFixture', 'comment'] as const;
-
 /** Door rows, with a pending plan's check fields where the door row has no check yet. */
 export function overlay(door: PolicyRow[], plans: PolicyRow[]): Array<PolicyRow & { pendingLand: boolean }> {
   const plan = new Map(plans.map((p) => [p.name, p]));
   return door.map((row) => {
     const p = plan.get(row.name);
     if (!p || (row.checkKind ?? '') !== '') return { ...row, pendingLand: false };
-    const out: PolicyRow & { pendingLand: boolean } = { ...row, pendingLand: true };
-    for (const k of CHECK_FIELDS) if (p[k] !== undefined) out[k] = p[k];
-    return out;
+    return {
+      ...row,
+      status: p.status ?? row.status,
+      baseline: p.baseline ?? row.baseline,
+      checkKind: p.checkKind ?? row.checkKind,
+      checkSpec: p.checkSpec ?? row.checkSpec,
+      violationFixture: p.violationFixture ?? row.violationFixture,
+      comment: p.comment ?? row.comment,
+      pendingLand: true,
+    };
   });
 }
 
