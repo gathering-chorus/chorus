@@ -376,10 +376,8 @@ chorus:permission-crawler-tests a chorus:Permission ;
     chorus:ownedBy chorus:principal-silas .
 
 # #4960 — the land writes as the card's role (cicd-land passes ROLE; chorus-runner mints that
-# principal), so silas adds the policy rows and edits no-self-acp, Wren's row. This grant is a
-# model row: werk-deploy deploys the land's model before its rows (#4961, folded into #4960).
-# A Permission cannot be written through the door (its mode is an IRI the door wrote as a
-# string until #4960's athena-model fix).
+# principal), so silas adds the policy rows and edits no-self-acp, Wren's row. land-4960-rows
+# adds this grant first, through the security door, so its own writes are allowed.
 chorus:permission-silas-policies a chorus:Permission ;
     rdfs:label "silas may write urn:chorus:domains:policies" ;
     chorus:agent chorus:principal-silas ;

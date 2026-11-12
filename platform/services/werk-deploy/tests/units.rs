@@ -1059,13 +1059,12 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     // generated and drift-checked (4465-cicd-workflow-drift.bats, 4515-athena-workflow-drift.bats).
 }
 
-// #4960 (folds #4961) — a land whose diff carries model sources and a land-rows script
-// deploys the model before it writes the rows; without a model change the rows go as before.
+// #4960 (folds #4961) — a land that writes rows deploys the card's model first, even when
+// this round's diff carries no model (an earlier land's model may never have deployed).
 #[test]
-fn a_land_with_model_and_rows_deploys_the_model_first() {
-    assert!(werk_deploy::model_before_rows(&["roles/silas/ontology/permissions-4183.ttl".to_string()], true));
-    assert!(!werk_deploy::model_before_rows(&[], true), "no model change: rows as before");
-    assert!(!werk_deploy::model_before_rows(&["roles/x.ttl".to_string()], false), "no rows: the success handler deploys the model");
+fn a_land_with_rows_deploys_the_cards_model_first() {
+    assert!(werk_deploy::model_before_rows(true));
+    assert!(!werk_deploy::model_before_rows(false), "no rows: the success handler deploys the model");
 }
 
 #[test]

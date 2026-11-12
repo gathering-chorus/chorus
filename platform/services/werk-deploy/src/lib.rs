@@ -1541,10 +1541,12 @@ fn restart_when_idle(args: &[String]) -> R<String> {
 // #4515 — the #3320 self-deploy detach is gone: it fired only when the old TS
 // MCP server deployed itself, and that server is retired.
 
-/// #4960 (folds #4961) — a land that ships model sources AND store rows deploys the model
-/// before it writes the rows; one with no model change writes its rows as before. Pure.
-pub fn model_before_rows(model_files: &[String], has_rows: bool) -> bool {
-    has_rows && !model_files.is_empty()
+/// #4960 (folds #4961) — a land that writes store rows deploys the card's model first. Not
+/// only this diff's model: a card that landed before may have a model that never deployed
+/// (#4960's first land stopped at deploy-prod), and athena-land reads every land of the
+/// card, saying result=none when there is nothing. Pure.
+pub fn model_before_rows(has_rows: bool) -> bool {
+    has_rows
 }
 
 /// #4889 — the card's own store-write script, when this land ships it. Only a script the
@@ -2512,7 +2514,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         // the land itself ships (#4960's rows 422/403'd at 14:26 against the old model).
         // athena-land deploys this land's commit now; the success handler's later call
         // finds it deployed and does nothing (athena-land marks the commit).
-        if model_before_rows(&model_files, true) {
+        if model_before_rows(true) {
             let al = canon.join("platform/scripts/athena-land");
             let canon_s = canon.to_string_lossy().to_string();
             match run_env(Some(&canon_s), &[("CHORUS_HOME", canon_s.as_str())], "bash", &[&al.to_string_lossy(), &card.to_string(), role]) {
