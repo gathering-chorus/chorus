@@ -1541,6 +1541,12 @@ fn restart_when_idle(args: &[String]) -> R<String> {
 // #4515 — the #3320 self-deploy detach is gone: it fired only when the old TS
 // MCP server deployed itself, and that server is retired.
 
+/// #4960 (folds #4961) — a land that ships model sources AND store rows deploys the model
+/// before it writes the rows; one with no model change writes its rows as before. Pure.
+pub fn model_before_rows(model_files: &[String], has_rows: bool) -> bool {
+    has_rows && !model_files.is_empty()
+}
+
 /// #4889 — the card's own store-write script, when this land ships it. Only a script the
 /// diff adds or changes counts: an old card's script on main never runs again. Pure.
 pub fn land_rows_script(canon: &Path, card: u64, diff: &str) -> Option<PathBuf> {
@@ -2359,21 +2365,6 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         }
     }
 
-    // #4889 (Kade 20:07: "one touch") — a card that ships platform/scripts/land-<card>-rows
-    // has its store writes applied here, after Jeff's go, in the land: no second ask. The
-    // script's own dry run is what the go was shown. A refused write stops the land.
-    if let Some(script) = land_rows_script(&canon, card, &diff) {
-        match run_land_rows(&script) {
-            Ok(out) => jsonl(home, role, card, trace, "deploy.rows_applied",
-                &format!(",\"target\":\"canonical\",\"script\":\"{}\",\"plan\":\"{}\"",
-                    script.display(), out.lines().last().unwrap_or("").replace('"', "'"))),
-            Err(e) => {
-                emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "land-rows"), ("failureClass", failure_class("land-rows"))]);
-                return Err(died(home, role, card, trace, "land-rows", e));
-            }
-        }
-    }
-
     // #4446 — always-on services whose code this land changed, restarted after the
     // installs below (a script daemon has nothing to install: canonical IS its code).
     let bins: Vec<String> = crates.iter()
@@ -2383,7 +2374,8 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let restarts = daemons_on_changed_code(&installed_agents(home), &canon.to_string_lossy(), &diff, &bins, &skip,
         &|p: &str| fs::read_to_string(p).ok());
 
-    if crates.is_empty() && ts.is_empty() && model_files.is_empty() && restarts.is_empty() {
+    if crates.is_empty() && ts.is_empty() && model_files.is_empty() && restarts.is_empty()
+        && land_rows_script(&canon, card, &diff).is_none() {
         // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
         // so the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
@@ -2507,6 +2499,40 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         jsonl(home, role, card, trace, "deploy.restarted",
             &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"code-changed\"", label));
         labels.push(format!("restart:{}", label));
+    }
+
+    // #4889 (Kade 20:07: "one touch") — a card that ships platform/scripts/land-<card>-rows
+    // has its store writes applied here, after Jeff's go, in the land: no second ask. The
+    // script's own dry run is what the go was shown. A refused write stops the land.
+    // #4960 — here, AFTER the installs and restarts above: the door the rows write through
+    // runs this land's code (#4960's own fix to athena-model's IRI fields was not live when
+    // its rows ran before the installs).
+    if let Some(script) = land_rows_script(&canon, card, &diff) {
+        // #4960 (folds #4961) — the model first: rows are written against shapes and grants
+        // the land itself ships (#4960's rows 422/403'd at 14:26 against the old model).
+        // athena-land deploys this land's commit now; the success handler's later call
+        // finds it deployed and does nothing (athena-land marks the commit).
+        if model_before_rows(&model_files, true) {
+            let al = canon.join("platform/scripts/athena-land");
+            let canon_s = canon.to_string_lossy().to_string();
+            match run_env(Some(&canon_s), &[("CHORUS_HOME", canon_s.as_str())], "bash", &[&al.to_string_lossy(), &card.to_string(), role]) {
+                Ok(out) => jsonl(home, role, card, trace, "deploy.model_before_rows",
+                    &format!(",\"target\":\"canonical\",\"result\":\"{}\"", out.lines().last().unwrap_or("").replace('"', "'"))),
+                Err(e) => {
+                    emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "model-before-rows"), ("failureClass", failure_class("model-before-rows"))]);
+                    return Err(died(home, role, card, trace, "model-before-rows", e));
+                }
+            }
+        }
+        match run_land_rows(&script) {
+            Ok(out) => jsonl(home, role, card, trace, "deploy.rows_applied",
+                &format!(",\"target\":\"canonical\",\"script\":\"{}\",\"plan\":\"{}\"",
+                    script.display(), out.lines().last().unwrap_or("").replace('"', "'"))),
+            Err(e) => {
+                emit_spine(home, "deploy.failed", role, card, trace, &[("reason", "land-rows"), ("failureClass", failure_class("land-rows"))]);
+                return Err(died(home, role, card, trace, "land-rows", e));
+            }
+        }
     }
 
     // #4186 — the MODEL and SEED legs left this verb. Jeff, 2026-09-16: "athena and

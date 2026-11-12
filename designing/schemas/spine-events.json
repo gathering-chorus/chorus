@@ -2416,6 +2416,19 @@
         "verb": "#3270 — emitting verb (deploy)"
       }
     },
+    "deploy.model_before_rows": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): a land that ships model sources and its own land-<card>-rows ran athena-land first, so the rows are written against the model the land ships (#4960, folds #4961).",
+      "fields": {
+        "result": "athena-land's last line: result=deployed|none",
+        "role": "Acting role",
+        "trace_id": "Werk trace join key"
+      }
+    },
     "deploy.rows_applied": {
       "producer": "deploys",
       "category": "fact",

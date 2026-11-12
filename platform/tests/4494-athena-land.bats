@@ -156,3 +156,29 @@ scope() { printf '#!/usr/bin/env bash\necho "$@" >> "%s/scoped"\n%s\n' "$T" "$1"
   [[ "$output" == *"result=failed"* ]] || false
   [ ! -e "$T/calls" ]
 }
+
+# #4960 (folds #4961) — werk-deploy deploys a land's model BEFORE its rows, then the land's
+# success handler calls athena-land again: the second call finds the commit deployed and
+# starts no second model run.
+@test "a commit already deployed by this land is not deployed twice" {
+  scope 'echo designing/model/policy.ttl'
+  export ATHENA_LAND_STATE="$T/state"
+  run "$AL" 77 kade
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"result=deployed"* ]] || false
+  n1=$(grep -c " enqueue " "$T/calls")
+  run "$AL" 77 kade
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already deployed"* ]] || false
+  [[ "$output" == *"result=deployed"* ]] || false
+  [ "$(grep -c " enqueue " "$T/calls")" -eq "$n1" ]
+}
+
+@test "NEGATIVE PROOF: a failed model run leaves no mark, so the next call tries again" {
+  scope 'echo designing/model/policy.ttl'
+  export ATHENA_LAND_STATE="$T/state2"
+  echo "Failed - 2026-10-14T10:00:00-04:00" > "$T/states"
+  run "$AL" 77 kade
+  [ "$status" -eq 1 ]
+  [ -z "$(ls "$T/state2" 2>/dev/null)" ]
+}
