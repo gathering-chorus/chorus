@@ -35,4 +35,4 @@ chorus:OperationShape a sh:NodeShape ;
 
 
 # An Operation is part of a product's surface, like the product itself: the products domain defines it.
-chorus:products chorus:definesVocabulary chorus:Operation .
+# #4960: the products claim on Operation lives in domains-wren-silas.ttl, which the model set loads (this file is not).

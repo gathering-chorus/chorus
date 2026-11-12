@@ -262,7 +262,7 @@ chorus:products a chorus:Domain ;
   chorus:purpose "Hold the product tree — the products, their children, and what each claims — so structure questions resolve to one answer." ;
   chorus:ownedBy chorus:principal-wren ;
   chorus:atStep chorus:value-stream-step-designing ;
-  chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product .   # #4211 — Version left here: 547 of 15,630 rows revise a product, so it was never a products class
+  chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product , chorus:Operation .   # #4960: Operation (#4744) claimed here, in a file the model set loads. #4211 — Version left here: 547 of 15,630 rows revise a product, so it was never a products class
 
 chorus:value-streams a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:value-streams" ;  # #4422 (wren): the crawl reads this, never a guessed name
