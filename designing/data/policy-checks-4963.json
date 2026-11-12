@@ -1,0 +1,145 @@
+[
+ {
+  "name": "arch-cmdb-service-registered",
+  "label": "arch-cmdb-service-registered",
+  "comment": "Every LaunchAgent plist and listening port must have a matching `Service` / `Port` row in the `infra` domain graph. Sources: ADR-050. Narrowed: each tracked LaunchAgent plist Label needs a ServiceInstance row (chorus:launchdLabel in urn:chorus:domains:services); ports are runtime, left to probes. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "61",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-cmdb-service-registered",
+  "violationFixture": "platform/tests/fixtures/4963/arch-cmdb-service-registered.sh"
+ },
+ {
+  "name": "arch-compute-decoupled-via-store",
+  "label": "arch-compute-decoupled-via-store",
+  "comment": "Harvesters, enrichers, and web apps must exchange data only through Fuseki graphs / domain APIs — never by importing another tier's internal modules or sharing SQLite/temp files. Sources: ADR-034, ADR-004. Narrowed: code naming a SQLite database outside the package that owns it (Vikunja and RCA: no package of ours; buzz messages.db: pulse). Cross-package imports stay with the depcruise boundary rules. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "23",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-compute-decoupled-via-store",
+  "violationFixture": "platform/tests/fixtures/4963/arch-compute-decoupled-via-store.sh"
+ },
+ {
+  "name": "arch-dagu-generated-pipelines",
+  "label": "arch-dagu-generated-pipelines",
+  "comment": "Pipeline YAML under `dagu` must be generated from `chorus-make` / graph definitions, never hand-authored or duplicated in `.github/workflows/`. Sources: ADR-062. Checked as written: a platform/pipelines/*.yaml without the chorus-make header, or any .github/workflows file. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "1",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-dagu-generated-pipelines",
+  "violationFixture": "platform/tests/fixtures/4963/arch-dagu-generated-pipelines.sh"
+ },
+ {
+  "name": "arch-domain-directory-layout",
+  "label": "arch-domain-directory-layout",
+  "comment": "Every file under the four value-stream roots (`directing/`, `designing/`, `building/`, `proving/`) must live under `{products,domains,services,skills}/<name>/` (pending C1 reconciliation for `athena-gen`). Sources: ADR-041, DEC-1816. Checked as written: a tracked file under directing/designing/building/proving not inside {products,domains,services,skills}/<name>/. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "1228",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-domain-directory-layout",
+  "violationFixture": "platform/tests/fixtures/4963/arch-domain-directory-layout.sh"
+ },
+ {
+  "name": "arch-harness-adapter-boundary",
+  "label": "arch-harness-adapter-boundary",
+  "comment": "Vendor-specific CLI/session mechanics (`claude`, `agy`, `codex`, `osascript`) must live inside thin harness adapters; core services and domain crates must not import harness-specific paths or env vars. Sources: ADR-055. Narrowed (ADR-055 §2-3): a non-test source file in the portable core naming osascript, .claude/ or spawning claude/agy/codex, outside chorus-hooks, chorus-inject and agent_runtimes.json. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "16",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-harness-adapter-boundary",
+  "violationFixture": "platform/tests/fixtures/4963/arch-harness-adapter-boundary.sh"
+ },
+ {
+  "name": "arch-hook-single-responsibility",
+  "label": "arch-hook-single-responsibility",
+  "comment": "Each `chorus-hooks` module enforces one concern; embedding unrelated policy checks inside an existing hook file is forbidden. Sources: DEC-2311. Narrowed to DEC-2311's literal rule: a chorus-hooks module that is more than one of guard (deny/block), injector (additionalContext), observer (spine emit). 'Unrelated concern' inside one guard is not machine-decidable. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "6",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-hook-single-responsibility",
+  "violationFixture": "platform/tests/fixtures/4963/arch-hook-single-responsibility.sh"
+ },
+ {
+  "name": "arch-language-boundary",
+  "label": "arch-language-boundary",
+  "comment": "Binaries in the cdhash trust path (`chorus-hooks`, `chorus-inject`, domain doors, `werk` CLI) must be Rust; web UIs and general HTTP integrations use TypeScript; new Python/Go/shell daemons (>50 LOC shell logic) are forbidden. Sources: ADR-038, DEC-100. Narrowed (ADR-038 'Enforcement (teeth)'): non-Rust source in a service crate tree (platform/services, designing/services) plus the port debt ADR-038 names (chorus-werk-sync); platform/scripts is not blanket-globbed. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "4",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-language-boundary",
+  "violationFixture": "platform/tests/fixtures/4963/arch-language-boundary.sh"
+ },
+ {
+  "name": "arch-native-launchd-only",
+  "label": "arch-native-launchd-only",
+  "comment": "Runtime services must run as native macOS `launchd` LaunchAgents; Dockerfiles, `docker-compose.yml`, and raw `kill`/`pkill` process management are forbidden. Sources: ADR-019, DEC-099. Narrowed: Dockerfile / docker-compose files in the tree. Raw kill/pkill is enforced live by the process-kill hook, so it is not counted here. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "1",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-native-launchd-only",
+  "violationFixture": "platform/tests/fixtures/4963/arch-native-launchd-only.sh"
+ },
+ {
+  "name": "arch-one-execution-path",
+  "label": "arch-one-execution-path",
+  "comment": "A capability must have one code path; cards introducing a replacement path must delete or delegate the old path in the same commit. Sources: ADR-036. Narrowed: a platform/scripts/<name> sharing a Rust binary's name that does not exec it (two implementations of one verb). 'The replacing card deletes the old path in the same commit' is not decidable from the tree. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "0",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-one-execution-path",
+  "violationFixture": "platform/tests/fixtures/4963/arch-one-execution-path.sh"
+ },
+ {
+  "name": "arch-single-binary-deploy",
+  "label": "arch-single-binary-deploy",
+  "comment": "Compiled daemon deploys must execute the single `ensure-deps → build → install → kickstart` pipeline and prove `runningCdhash == builtCdhash`. Sources: ADR-049. Narrowed to the static half: a LaunchAgent plist running a target/release or target/debug build instead of the installed ~/.chorus/bin binary (#2734). cdhash parity stays with borg-prove at runtime. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "2",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-single-binary-deploy",
+  "violationFixture": "platform/tests/fixtures/4963/arch-single-binary-deploy.sh"
+ },
+ {
+  "name": "arch-single-home-projection",
+  "label": "arch-single-home-projection",
+  "comment": "Every governed fact class has one declared write home; generated projections carry `GENERATED — DO NOT EDIT` headers and fail on hand-edits. Sources: ADR-057. Narrowed: a chorus-make pipeline file that `chorus-make graph` cannot make from the store's rows exactly (drifted, or its rows live only in a TSV — a second home), and a TSV registry under platform/config, a service's config or designing/data (Jeff 2026-11-12 16:40: \"eg werk-code uses .tsv not graph\"). (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "18",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-single-home-projection",
+  "violationFixture": "platform/tests/fixtures/4963/arch-single-home-projection.sh"
+ },
+ {
+  "name": "arch-three-generator-separation",
+  "label": "arch-three-generator-separation",
+  "comment": "Generator boundaries are strict: `chorus-make` generates value-stream/step runners; `athena-gen` (`athena-make` v2) generates domain APIs (`--domain <name>`); `loom-make` generates product APIs (`--product <name>`). None may cross into another's unit. Sources: ADR-045, ADR-062. Narrowed: a generated file outside its generator's unit (a domain generator making a product API counts), and a domain generator (athena-gen, athena-make) taking --product (#4742). (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "3",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-three-generator-separation",
+  "violationFixture": "platform/tests/fixtures/4963/arch-three-generator-separation.sh"
+ },
+ {
+  "name": "arch-verb-naming-and-atomic-core",
+  "label": "arch-verb-naming-and-atomic-core",
+  "comment": "Every MCP tool and CLI verb must follow `<product>-<resource>-<verb>`, run with zero runtime package installs, and share one pure Rust function with its `--atomic` sibling. Sources: ADR-031, ADR-032, ADR-037. Narrowed: every Skill a caller can run (chorus:runsAs) is named skill-<product>-…, <product> a Product row. Zero runtime installs and one shared atomic core are not decidable from rows. (#4963)",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "3",
+  "checkKind": "sparql",
+  "checkSpec": "PREFIX chorus: <https://jeffbridwell.com/chorus#>\nSELECT DISTINCT ?s WHERE {\n  GRAPH ?g { ?s a chorus:Skill ; chorus:runsAs ?r }\n  BIND(STRBEFORE(STRAFTER(STR(?s), \"#skill-\"), \"-\") AS ?prod)\n  FILTER NOT EXISTS { GRAPH ?h { ?p a chorus:Product } FILTER(STRAFTER(STR(?p), \"#\") = ?prod) }\n}",
+  "violationFixture": "platform/tests/fixtures/4963/arch-verb-naming-and-atomic-core.trig"
+ }
+]

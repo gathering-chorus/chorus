@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Policy Counts — Loom</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- #4963 AC4: each policy of a gate with today's count, worst first. Same-origin data from
+       /api/chorus/policies/counts, so it opens from a phone on the house wifi. -->
+  <style>
+    :root { --bg: #fdfcf8; --fg: #1a1a1a; --muted: #6b6b6b; --accent: #2d5016; --border: #d4cdb8;
+            --card: #ffffff; --over: #b3261e; --over-bg: #fbe9e7; --broken: #7a5b00; --broken-bg: #fff4d6; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161614; --fg: #ecebe6; --muted: #a09f98; --accent: #9bc47a; --border: #3a3832;
+              --card: #1f1e1b; --over: #f2b8b5; --over-bg: #3b1f1d; --broken: #f0d58a; --broken-bg: #3a3218; }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--fg); }
+    body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; line-height: 1.45; padding: 20px 16px 48px; max-width: 860px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 20px; }
+    .row { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 0 0 10px; }
+    .row.fail { background: var(--over-bg); border-color: var(--over); }
+    .row.broken { background: var(--broken-bg); border-color: var(--broken); }
+    .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .name { font-weight: 600; overflow-wrap: anywhere; }
+    .count { font-variant-numeric: tabular-nums; font-size: 1.4rem; font-weight: 700; white-space: nowrap; }
+    .count small { font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+    .tags { margin: 4px 0 0; font-size: 0.8rem; color: var(--muted); }
+    .tag { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; margin-right: 6px; }
+    .note { margin: 6px 0 0; font-size: 0.88rem; color: var(--muted); }
+    #err { color: var(--over); }
+  </style>
+</head>
+<body>
+  <h1>Policy counts</h1>
+  <p class="sub" id="sub">Measuring…</p>
+  <div id="rows"></div>
+  <p id="err"></p>
+  <script>
+    const gate = new URLSearchParams(location.search).get('gate') || 'arch';
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    // the rule's own narrowing, as its row states it (AC3: the demo names every narrowed rule)
+    const note = (c) => { const i = c.search(/Narrowed|Checked as written/); return i < 0 ? '' : c.slice(i).replace(/\s*\(#\d+\)\s*$/, ''); };
+    fetch('/api/chorus/policies/counts?gate=' + encodeURIComponent(gate))
+      .then((r) => r.ok ? r.json() : r.json().then((b) => Promise.reject(new Error(b.error || r.status))))
+      .then((b) => {
+        const at = new Date(b.measuredAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' });
+        const narrowed = b.policies.filter((p) => p.narrowed).length;
+        document.getElementById('sub').textContent =
+          `${b.policies.length} ${b.gate} policies, worst first · ${narrowed} narrowed · measured ${at} Boston`;
+        document.getElementById('rows').innerHTML = b.policies.map((p) => `
+          <div class="row ${p.verdict}" data-policy="${esc(p.name)}">
+            <div class="top"><span class="name">${esc(p.name)}</span>
+              <span class="count">${p.count ?? '?'} <small>${p.verdict === 'broken' ? 'could not measure' : 'ceiling ' + p.baseline}</small></span></div>
+            <div class="tags">${p.narrowed ? '<span class="tag">narrowed</span>' : '<span class="tag">as written</span>'}${p.pendingLand ? '<span class="tag">lands on go</span>' : ''}${p.verdict === 'fail' ? '<span class="tag">over ceiling</span>' : ''}</div>
+            <p class="note">${esc(p.reason || note(p.comment))}</p>
+          </div>`).join('');
+      })
+      .catch((e) => { document.getElementById('sub').textContent = ''; document.getElementById('err').textContent = 'Could not load: ' + e.message; });
+  </script>
+</body>
+</html>

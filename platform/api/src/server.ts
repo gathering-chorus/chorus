@@ -2724,6 +2724,7 @@ import { fetchAthenaValidate } from './handlers/athena-validate';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPolicies } from './handlers/loom-policies';
+import { fetchPolicyCounts, type PolicyRow } from './handlers/policy-counts';
 import { fetchAthenaCardDetail } from './handlers/athena-card-detail';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
@@ -2822,6 +2823,36 @@ app.get('/api/loom/decisions', (_req: Request, res: Response) => {
 // GET /api/loom/policies — all chorus:Policy instances + enforces edges (#2339)
 app.get('/api/loom/policies', async (_req: Request, res: Response) => {
   const r = await fetchLoomPolicies({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
+  res.status(r.status).json(r.body);
+});
+
+// #4963 AC4 — GET /api/chorus/policies/counts?gate=arch: a gate's policies with today's count,
+// worst first, measured by this tree's policy-validate (page: /loom/policy-counts.html).
+const policyTreeRoot = path.resolve(__dirname, '..', '..', '..');
+app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
+  const r = await fetchPolicyCounts(String(req.query.gate ?? 'arch'), {
+    fetchPolicies: async () => {
+      const resp = await fetch(`${doorBase()}/v1/policies/policies?limit=1000`, { signal: AbortSignal.timeout(15_000) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return ((await resp.json()) as { data?: PolicyRow[] }).data ?? [];
+    },
+    loadPlans: () => {
+      // a pending land's plan; none (or an unreadable one) just means no overlay
+      const dir = path.join(policyTreeRoot, 'designing', 'data');
+      try {
+        return fs.readdirSync(dir).filter((f) => /^policy-checks-\d+\.json$/.test(f))
+          .flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as PolicyRow[]);
+      } catch { return []; }
+    },
+    runValidate: (gate, rows) => new Promise((resolve) => {
+      const tmp = path.join(os.tmpdir(), `policy-counts-${process.pid}-${gate}-${Date.now()}.json`);
+      fs.writeFileSync(tmp, JSON.stringify({ data: rows }));
+      execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), ['--gate', gate], {
+        cwd: policyTreeRoot, timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
+        env: { ...process.env, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot },
+      }, (_err, stdout) => { fs.rmSync(tmp, { force: true }); resolve(String(stdout ?? '')); });
+    }),
+  });
   res.status(r.status).json(r.body);
 });
 

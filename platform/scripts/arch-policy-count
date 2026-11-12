@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""#4963 — the counters behind the architecture policies' command checks.
+
+  arch-policy-count <policy-name>
+
+Run in the git tree being measured (canonical main for the sensor, the werk at the demo, a
+fixture tree in the tests). Prints one line per violation, so policy-validate's command kind
+counts lines. Exit 2 = could not measure (a check that cannot run is never a pass, #3734).
+
+Each counter is the narrowed, machine-decidable form of its rule; the row's comment says
+what was narrowed and why (AC3).
+
+Seams (tests): ARCH_SERVICE_LABELS (a file of launchd labels, in place of the store),
+CHORUS_MAKE (the chorus-make binary), FUSEKI_QUERY (the store's query endpoint).
+"""
+# @domain: policies
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+
+FUSEKI = os.environ.get("FUSEKI_QUERY", "http://localhost:3030/pods/query")
+TEST_PATH = re.compile(r"(^|/)(tests?|fixtures?|__tests__)(/|$)|[._-]test[s]?\.|_test\.rs$|\.bats$")
+
+
+class Broken(Exception):
+    pass
+
+
+def files(*pathspec):
+    p = subprocess.run(["git", "ls-files", "-z", "--", *pathspec], capture_output=True, text=True)
+    if p.returncode != 0:
+        raise Broken("git ls-files failed: " + p.stderr.strip())
+    return [f for f in p.stdout.split("\0") if f]
+
+
+def read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def sparql_column(query):
+    req = urllib.request.Request(FUSEKI, data=urllib.parse.urlencode({"query": query}).encode(),
+                                 headers={"Accept": "text/csv"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            rows = r.read().decode().splitlines()[1:]
+    except OSError as e:
+        raise Broken(f"store unreachable: {e}")
+    return {x.strip().strip('"') for x in rows if x.strip()}
+
+
+GENERATED = re.compile(r"^\s*(#|//|<!--|--)\s*(GENERATED|Generated) by\s+(\S+)", re.M)
+
+
+def generator_of(path):
+    m = GENERATED.search(read(path)[:2000])
+    return m.group(3).strip("`.,") if m else None
+
+
+# --- the counters -------------------------------------------------------------------------
+
+def cmdb_service_registered():
+    """ADR-050, narrowed: every tracked LaunchAgent plist's Label has a ServiceInstance row
+    (chorus:launchdLabel in urn:chorus:domains:services). Ports are runtime, left to probes."""
+    labels = {}
+    for f in files("*.plist"):
+        m = re.search(r"<key>Label</key>\s*<string>([^<]+)</string>", read(f))
+        if m:
+            labels.setdefault(m.group(1).strip(), f)
+    if not labels:
+        return []
+    seam = os.environ.get("ARCH_SERVICE_LABELS")
+    if seam:
+        known = set(read(seam).split())
+    else:
+        known = sparql_column("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?l "
+                              "WHERE { GRAPH <urn:chorus:domains:services> { ?s chorus:launchdLabel ?l } }")
+        if not known:
+            raise Broken("the store returned no launchd labels")
+    return [f"{label} ({path})" for label, path in sorted(labels.items()) if label not in known]
+
+
+SQLITE_HOMES = {  # a database → the one package that may open it ("" = no package of ours: a foreign system's)
+    "VIKUNJA_DB_PATH": "",                 # the board's own store; cards go through the cards CLI / door
+    "RCA_DB_PATH": "",
+    "messages.db": "platform/pulse/",      # buzz: pulse owns it
+}
+
+
+def compute_decoupled_via_store():
+    """ADR-034/ADR-004, narrowed: a SQLite database named in code outside the package that owns it
+    (one line per file and database). Cross-package imports are depcruise's boundary rules."""
+    out = []
+    for f in files("*.ts", "*.rs", "*.py", "*.js"):
+        if TEST_PATH.search(f) or "/node_modules/" in f or "/dist/" in f:
+            continue
+        text = read(f)
+        for db, home in SQLITE_HOMES.items():
+            if db in text and not (home and f.startswith(home)):
+                out.append(f"{f}: names {db}")
+    return out
+
+
+def dagu_generated_pipelines():
+    """ADR-062: every dagu pipeline carries the generator header; no hand-made CI workflows."""
+    out = [f"{f}: no GENERATED header" for f in files("platform/pipelines/*.yaml")
+           if generator_of(f) != "chorus-make"]
+    out += [f"{f}: hand-authored workflow" for f in files(".github/workflows/*.yml", ".github/workflows/*.yaml")]
+    return out
+
+
+STREAMS = ("directing", "designing", "building", "proving")
+LAYOUT = re.compile(r"^(directing|designing|building|proving)/(products|domains|services|skills)/[^/]+/")
+
+
+def domain_directory_layout():
+    """ADR-041/DEC-1816: every file under a value-stream root lives in {products,domains,services,skills}/<name>/."""
+    return [f for f in files(*[s + "/" for s in STREAMS]) if not LAYOUT.match(f)]
+
+
+CORE_ROOTS = ("directing/", "designing/services/", "building/", "proving/",
+              "platform/api/", "platform/pulse/", "platform/workflow-engine/", "platform/services/")
+ADAPTERS = ("platform/services/chorus-hooks/", "platform/services/chorus-inject/", "shared/agent_runtimes.json")
+HARNESS = re.compile(r"osascript|\.claude/|Command::new\(\s*\"(claude|agy|codex)\"")
+
+
+def harness_adapter_boundary():
+    """ADR-055 §2-3, narrowed: portable core naming a harness mechanic (osascript, .claude/,
+    spawning claude/agy/codex) outside the adapters."""
+    return [f for f in files(*CORE_ROOTS)
+            if not f.startswith(ADAPTERS) and not TEST_PATH.search(f)
+            and f.endswith((".rs", ".ts", ".js", ".py", ".sh")) and HARNESS.search(read(f))]
+
+
+HOOK_ROLES = {
+    "guard": re.compile(r"\b(deny|Deny|block|Block)\w*\("),
+    "injector": re.compile(r"additionalContext|additional_context"),
+    "observer": re.compile(r"\bemit_spine\(|\bchorus_log\(|\bemit_event\("),
+}
+
+
+def hook_single_responsibility():
+    """DEC-2311, narrowed to its literal rule: a chorus-hooks module is one of guard, injector,
+    observer; a module doing more than one is counted."""
+    out = []
+    for f in files("platform/services/chorus-hooks/src/hooks/*.rs"):
+        if TEST_PATH.search(f) or f.endswith("/mod.rs"):
+            continue
+        code = read(f).split("#[cfg(test)]")[0]
+        roles = sorted(k for k, rx in HOOK_ROLES.items() if rx.search(code))
+        if len(roles) > 1:
+            out.append(f"{f}: {'+'.join(roles)}")
+    return out
+
+
+NON_RUST = (".sh", ".py", ".ts", ".js", ".go")
+PORT_DEBT = ("platform/scripts/chorus-werk-sync",)  # ADR-038 names it as substrate to port
+
+
+def language_boundary():
+    """ADR-038 'Enforcement (teeth)', narrowed: non-Rust source in a service crate's tree, plus
+    the substrate scripts ADR-038 names as port debt. platform/scripts/ is not blanket-globbed."""
+    out = [f for f in files("platform/services/", "designing/services/")
+           if f.endswith(NON_RUST) and not TEST_PATH.search(f) and "/node_modules/" not in f]
+    out += [f for f in files(*PORT_DEBT)]
+    return out
+
+
+def native_launchd_only():
+    """ADR-019/DEC-099, narrowed: container runtime files in the tree. Raw process killing is
+    enforced live by the process-kill hook, so it is not counted here."""
+    return [f for f in files() if re.search(r"(^|/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|compose\.ya?ml)$", f)]
+
+
+def rust_binaries():
+    names = set()
+    for toml in files("*Cargo.toml"):
+        text = read(toml)
+        m = re.search(r"^\[package\][^\[]*?^name\s*=\s*\"([^\"]+)\"", text, re.M | re.S)
+        if m:
+            names.add(m.group(1))
+        names.update(re.findall(r"^\[\[bin\]\][^\[]*?^name\s*=\s*\"([^\"]+)\"", text, re.M | re.S))
+    return names
+
+
+def one_execution_path():
+    """ADR-036, narrowed: a platform/scripts/<name> sharing a Rust binary's name that does not
+    hand off to it — two implementations of one verb."""
+    bins = rust_binaries()
+    out = []
+    for f in files("platform/scripts/*"):
+        name = os.path.basename(f)
+        if name in bins and not re.search(r"\bexec\b[^\n]*" + re.escape(name), read(f)):
+            out.append(f"{f}: twin of the Rust binary {name}")
+    return out
+
+
+def single_binary_deploy():
+    """ADR-049 + #2734, narrowed to the static half: a LaunchAgent runs a build artifact
+    (target/release, target/debug) instead of the installed ~/.chorus/bin binary. cdhash
+    parity is borg-prove's runtime check."""
+    return [f for f in files("*.plist") if re.search(r"target/(release|debug)/", read(f))]
+
+
+TSV_REGISTRIES = ("platform/config/*.tsv", "platform/services/*/config/*.tsv", "designing/data/*.tsv")
+
+
+def single_home_projection():
+    """ADR-057, narrowed: each chorus-make pipeline file must be exactly what the store's rows
+    make (`chorus-make graph`); a file the store cannot make has a second home. A TSV registry
+    in config or data is a governed fact class kept outside the store (Jeff 2026-11-12 16:40:
+    "eg werk-code uses .tsv not graph")."""
+    # the installed binary: CHORUS_BIN, not $HOME (a role account has no ~/.chorus/bin, #4875)
+    cm = (os.environ.get("CHORUS_MAKE") or shutil.which("chorus-make")
+          or os.path.join(os.environ.get("CHORUS_BIN", os.path.expanduser("~/.chorus/bin")), "chorus-make"))
+    out = []
+    for f in files("platform/pipelines/*.yaml"):
+        if generator_of(f) != "chorus-make":
+            continue
+        name = os.path.basename(f)[:-len(".yaml")]
+        try:
+            p = subprocess.run([cm, "graph", name], capture_output=True, text=True, timeout=60,
+                               env={**os.environ, "FUSEKI_QUERY": FUSEKI})
+        except OSError as e:
+            raise Broken(f"chorus-make: {e}")
+        if p.returncode != 0:
+            if "zero rows" in p.stderr or "zero rows" in p.stdout:
+                out.append(f"{f}: no rows in the store (its home is elsewhere)")
+            else:
+                raise Broken(f"chorus-make graph {name}: {p.stderr.strip()[:200]}")
+        elif p.stdout.rstrip("\n") != read(f).rstrip("\n"):
+            out.append(f"{f}: differs from its rows")
+    out += [f"{f}: a registry kept as a TSV, not rows" for f in files(*TSV_REGISTRIES)]
+    return out
+
+
+GENERATOR_HOMES = {  # generator → where its output may live (ADR-045, ADR-062)
+    "chorus-make": ("platform/pipelines/", "platform/services/chorus-make/tests/fixtures/"),
+    "loom-make": ("directing/products/", "designing/products/"),
+}
+DOMAIN_GENERATORS = ("athena-gen", "athena-make", "owl-api")
+
+
+def three_generator_separation():
+    """ADR-045/ADR-062, narrowed: generated files outside their generator's unit (a domain
+    generator writing a product API counts), and a domain generator that takes --product."""
+    out = []
+    for f in files():
+        if TEST_PATH.search(f) and "chorus-make/tests/fixtures/" not in f:
+            continue
+        g = generator_of(f) if f.endswith((".yaml", ".yml", ".toml", ".rs", ".ts", ".ttl", ".json")) else None
+        if not g:
+            continue
+        if g in GENERATOR_HOMES and not f.startswith(GENERATOR_HOMES[g]):
+            out.append(f"{f}: {g} output outside its unit")
+        elif g in DOMAIN_GENERATORS and re.match(r"^(directing|designing)/products/[^/]+/api/", f):
+            out.append(f"{f}: {g} made a product API (loom-make's unit)")
+    for main in ("designing/services/athena-gen/src/main.rs", "platform/services/athena-make/src/main.rs"):
+        if main in set(files(main)) and '"--product"' in read(main):
+            out.append(f"{main}: a domain generator takes --product")
+    return out
+
+
+COUNTERS = {
+    "arch-cmdb-service-registered": cmdb_service_registered,
+    "arch-compute-decoupled-via-store": compute_decoupled_via_store,
+    "arch-dagu-generated-pipelines": dagu_generated_pipelines,
+    "arch-domain-directory-layout": domain_directory_layout,
+    "arch-harness-adapter-boundary": harness_adapter_boundary,
+    "arch-hook-single-responsibility": hook_single_responsibility,
+    "arch-language-boundary": language_boundary,
+    "arch-native-launchd-only": native_launchd_only,
+    "arch-one-execution-path": one_execution_path,
+    "arch-single-binary-deploy": single_binary_deploy,
+    "arch-single-home-projection": single_home_projection,
+    "arch-three-generator-separation": three_generator_separation,
+}
+
+
+def main(argv):
+    if len(argv) != 2 or argv[1] not in COUNTERS:
+        print("usage: arch-policy-count <" + "|".join(COUNTERS) + ">", file=sys.stderr)
+        return 2
+    try:
+        for line in COUNTERS[argv[1]]():
+            print(line)
+    except Broken as e:
+        print(f"arch-policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

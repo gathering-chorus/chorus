@@ -1,0 +1,8 @@
+# @domain: policies
+# #4963 — one runnable skill whose name carries no product (skill-zz-run: no Product zz), beside one that does.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:products> { chorus:werk a chorus:Product . }
+<urn:chorus:domains:skills> {
+  chorus:skill-werk-pull a chorus:Skill ; chorus:runsAs "caller" .
+  chorus:skill-zz-run a chorus:Skill ; chorus:runsAs "caller" .
+}
