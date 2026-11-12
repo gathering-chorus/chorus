@@ -110,3 +110,9 @@ Y
   run stale_test "" "{}"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+
+@test "negative proof: the sensor rows carry the door's create types (hasStep and coversStep are lists)" {
+  # the door answers 400 to a scalar on an array field (Borg Queen, 11:29, from the live openapi)
+  run python3 -c "import runpy; rows = runpy.run_path('$ROOT/platform/scripts/land-4960-rows')['sensor_rows'](); bad = [(c, n, k) for c, n, w in rows for k in ('hasStep', 'coversStep') if k in w and not isinstance(w[k], list)]; print(bad); raise SystemExit(1 if bad else 0)"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}

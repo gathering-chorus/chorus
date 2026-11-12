@@ -88,10 +88,10 @@ def sensor_rows():
         out.append(("skills", sname, {"label": label, "executor": executor, "implementedBy": impl, "arguments": mode,
                     "hasDomain": "policies", "comment": "Runs every policy's check against main hourly and writes the counts for Pulse (#4960)."}))
         out.append(("pipelinesteps", f"policy-sensor-{step}", {"label": step, "stepOrder": order, "executor": executor,
-                    "coversStep": "value-stream-step-proving"}))
+                    "coversStep": ["value-stream-step-proving"]}))
         out.append(("stepskills", f"policy-sensor-{step}-{sorder}", {"label": f"policy-sensor {step} {sorder}: {sname}",
                     "callsSkill": skill, "forStep": f"pipeline-step-policy-sensor-{step}", "skillOrder": sorder, "withArguments": args}))
-    out.append(("pipelines", "policy-sensor", {"label": "policy-sensor", "automates": "value-stream-operating", "hasStep": " ".join(steps),
+    out.append(("pipelines", "policy-sensor", {"label": "policy-sensor", "automates": "value-stream-operating", "hasStep": steps,
                 "pipelineStatus": "operating", "runQueue": pipe.get("queue", ""), "runSchedule": pipe.get("schedule", ""),
                 "onExitRun": pipe.get("onExit", "")}))
     return out
@@ -104,7 +104,9 @@ def plan(live):
 
 
 def same(a, b):
-    norm = lambda v: str(v).strip()
+    # the door serves a many-valued edge as a list (or one scalar when it holds one) and
+    # takes a list on create (PipelineCreate.hasStep, PipelineStepCreate.coversStep)
+    norm = lambda v: sorted(str(x).strip() for x in v) if isinstance(v, list) else [str(v).strip()] if str(v).strip() else []
     return norm(a) == norm(b)
 
 
