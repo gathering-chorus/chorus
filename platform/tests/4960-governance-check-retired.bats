@@ -123,6 +123,7 @@ print(idx); sys.exit(0 if idx.get("vocab", 10**9) < idx.get("class", -1) else 1)
 PY
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+<<<<<<< HEAD
 =======
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 =======
@@ -135,3 +136,5 @@ PY
   [ ! -e "$ROOT/designing/data/governance-check-instances.ttl" ] || return 1
 }
 >>>>>>> 26bd012d4 (silas: #4960 — AC1 (BQ: the land runs as the card's role, not Jeff): one grant, permission-silas-policies (count 50), added first by land-4960-rows; jeff grants dropped. The GovernanceCheck deletes leave the script: the class retirement removes its 34 rows (AC2). Live dry run: 58 add, 1 change, 0 delete. 10/10.)
+=======
+>>>>>>> 448e06a72 (silas: #4960 — athena run 1 refused the class retirement while the domains domain still claimed GovernanceCheck: the claim retirement now comes first and names its graph (urn:chorus:domains:domains), with a test for the order. Also retires the stray chorus:checkKind rdfs:domain Policy triple #4959 left in the ontology graph (triple form, #4716).)
