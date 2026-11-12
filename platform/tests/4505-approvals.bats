@@ -57,7 +57,7 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   run env CARGO_BUILD_JOBS=4 nice cargo test --test approvals_4505 --test serve_approvals_4505
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # #4642 retired the go-nonce case
-  [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +4 stale-go
+  [[ "$output" == *"test result: ok. 17 passed"* ]] || { echo "$output"; return 1; }  # #4642 resend pair; #4771 +4 stale-go; #4710 +1 resend-unmerged
 }
 
 # --- retire the chat keyword path (R1-L5) ------------------------------------
@@ -93,8 +93,8 @@ q() { # SPARQL ASK against the ttl; prints yes/no
   cd "$ROOT/platform/services/chorus-go" || return 1
   run nice cargo test -j 4 --test approvals_4642 --test serve_approvals_4505 --test serve_4755
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"test result: ok. 10 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass, +1 lander-owned row (#4710)
-  [[ "$output" == *"test result: ok. 16 passed"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"test result: ok. 11 passed"* ]] || { echo "$output"; return 1; }  # +2 break-glass, +1 lander-owned row, +1 refused-merge re-sign (#4710)
+  [[ "$output" == *"test result: ok. 17 passed"* ]] || { echo "$output"; return 1; }
 }
 
 # #4885 — the go-row cases ran and none failed: named cases, not a count (an exact
