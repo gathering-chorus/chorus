@@ -30,9 +30,8 @@ chorus:gate a owl:DatatypeProperty ; rdfs:label "gate" ;
 chorus:baseline a owl:DatatypeProperty ; rdfs:label "baseline" ;
     rdfs:comment "How many violations exist today. The check passes at or below it and fails above it; fix cards lower it." ;
     rdfs:domain chorus:Policy ; rdfs:range xsd:integer .
-chorus:checkKind a owl:DatatypeProperty ; rdfs:label "check kind" ;
-    rdfs:comment "How the check runs: sparql (rows are violations), test (a suite that fails on a violation), command (exit 1 on a violation), runtime (borg-prove against prod after the land)." ;
-    rdfs:domain chorus:Policy ; rdfs:range xsd:string .
+# chorus:checkKind is declared once, in board-3654.ttl (CardAC's check kind); a Policy uses the
+# same predicate with its own values (sparql | test | command | runtime), held by PolicyShape below.
 chorus:checkSpec a owl:DatatypeProperty ; rdfs:label "check spec" ;
     rdfs:comment "What runs: the SPARQL SELECT, the test path, the command, or the runtime probe name." ;
     rdfs:domain chorus:Policy ; rdfs:range xsd:string .

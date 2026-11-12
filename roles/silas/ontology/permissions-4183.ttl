@@ -375,6 +375,16 @@ chorus:permission-crawler-tests a chorus:Permission ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+# #4960 — the land writes as the card's role (cicd-land passes ROLE; chorus-runner mints that
+# principal), so silas adds the policy rows and edits no-self-acp, Wren's row. land-4960-rows
+# adds this grant first, through the security door, so its own writes are allowed.
+chorus:permission-silas-policies a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:policies" ;
+    chorus:agent chorus:principal-silas ;
+    chorus:accessTo "urn:chorus:domains:policies"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
 chorus:permission-jeff-security a chorus:Permission ;
     rdfs:label "jeff may write urn:chorus:domains:security" ;
     chorus:agent chorus:principal-jeff ;

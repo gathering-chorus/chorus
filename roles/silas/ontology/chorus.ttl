@@ -2086,7 +2086,6 @@ chorus:delegatesTo   rdfs:domain chorus:Skill ; rdfs:range chorus:Skill .
 chorus:callsSkill    rdfs:domain chorus:StepSkill ; rdfs:range chorus:Skill .
 chorus:forStep       rdfs:domain chorus:StepSkill ; rdfs:range chorus:PipelineStep .
 chorus:eventAbout    rdfs:range [ owl:unionOf ( owl:Class chorus:ArtifactType ) ] .
-chorus:boundTo       rdfs:domain chorus:GovernanceCheck ; rdfs:range [ owl:unionOf ( chorus:ADR chorus:Practice ) ] .
 # contains: a value stream's steps (which duplicate each step's inStream, for #4482) and a
 # domain's collection members (Principles contains its Principle rows).
 chorus:contains      rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:Domain ) ] ; rdfs:range owl:Thing .

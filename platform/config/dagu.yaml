@@ -60,6 +60,10 @@ queues:
     # one at a time: a slow door must not stack digests
     - name: alert-digest
       max_concurrency: 1
+    # #4960 — the policy sensor (made by chorus-make from the graph, hourly), one at a time:
+    # a slow store must not stack runs that each rewrite the same textfile
+    - name: policy-sensor
+      max_concurrency: 1
     # #4577 — pairs (made by chorus-make). A pair run spends most of its life
     # waiting on its navigator's green, so several run at once; its tests run
     # as a cicd-test sub-run and its hand-off is enqueued on werk.

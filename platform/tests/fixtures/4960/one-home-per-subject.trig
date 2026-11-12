@@ -1,0 +1,4 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# the 2026-08-14 class: pulse typed in both home graphs
+<urn:chorus:ontology> { c:pulse a c:Product . }
+<urn:chorus:instances> { c:pulse a c:Product . }

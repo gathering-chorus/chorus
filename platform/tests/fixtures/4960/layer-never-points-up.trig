@@ -1,0 +1,4 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# a lower layer depending on a higher one
+c:svc-a c:dependsOn c:svc-b ; c:inLayer c:layer-low . c:layer-low c:layerRank 1 .
+c:svc-b c:inLayer c:layer-high . c:layer-high c:layerRank 3 .

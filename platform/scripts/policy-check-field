@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""#4960 — one field of one runnable policy check, read from the policy plan, so a test that
+runs a check runs the check as it ships (its one home: designing/data/policy-checks-4960.json).
+# @domain: policies
+Usage: policy-check-field <name | folded gc-name> <field>   e.g. one-home-per-subject checkSpec
+Exit 2 when the check or the field is not there: a test never runs an empty query."""
+import json, os, sys
+
+if len(sys.argv) != 3:
+    sys.exit("usage: policy-check-field <name> <field>")
+want, field = sys.argv[1], sys.argv[2]
+plan = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../designing/data/policy-checks-4960.json")
+for r in json.load(open(plan)):
+    if want in (r["name"], r.get("foldedFrom")):
+        if field not in r:
+            print(f"policy-check-field: {want} has no {field}", file=sys.stderr)
+            sys.exit(2)
+        print(r[field])
+        sys.exit(0)
+print(f"policy-check-field: no check named {want}", file=sys.stderr)
+sys.exit(2)

@@ -45,7 +45,7 @@ chorus:deploysTarget a owl:ObjectProperty ; rdfs:domain chorus:Deployment ; rdfs
     rdfs:comment "Links a deploy event to the target it put in place." .
 
 chorus:DeployTargetShape a sh:NodeShape ;
-    sh:targetClass chorus:DeployTarget ;
+    sh:targetClass chorus:DeployTarget ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:path ;         sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path chorus:ownerAccount ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path chorus:fileMode ;     sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^0[0-7]{3}$" ] ;
@@ -54,5 +54,5 @@ chorus:DeployTargetShape a sh:NodeShape ;
     sh:property [ sh:path chorus:targetKind ;   sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "binary" "service" "plist" "config" "secret" "model" ) ] .
 
 chorus:TargetKindShape a sh:NodeShape ;
-    sh:targetClass chorus:TargetKind ;
+    sh:targetClass chorus:TargetKind ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] .

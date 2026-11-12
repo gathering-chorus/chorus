@@ -12,20 +12,16 @@
 # Offline: arq over a TriG fixture. No service, no store, no network.
 
 ROOT="$BATS_TEST_DIRNAME/../.."
-MODEL="$ROOT/designing/data/governance-check-instances.ttl"
+# #4960 — the check is a Policy now; its one home is the policy plan
+PCF="$ROOT/platform/scripts/policy-check-field"
 FIXTURE="$ROOT/platform/tests/fixtures/one-home-per-subject-violations.trig"
 
 setup() {
   command -v arq >/dev/null 2>&1 || skip "arq (Jena) not installed — UNMEASURED here, not green"
   T="$(mktemp -d)"
   # the query travels with the rule: read it out of the model, never restate it
-  python3 - "$MODEL" > "$T/q.rq" <<'PY'
-import re, sys
-t = open(sys.argv[1]).read()
-m = re.search(r'chorus:gc-one-home-per-subject a chorus:GovernanceCheck ;[\s\S]*?"""([\s\S]*?)"""', t)
-assert m, "gc-one-home-per-subject is not in the model any more — this test must fail, not vanish"
-print(m.group(1))
-PY
+  "$PCF" one-home-per-subject checkSpec > "$T/q.rq" \
+    || { echo "one-home-per-subject is not in the policy plan any more — this test must fail, not vanish"; return 1; }
 }
 
 teardown() { rm -rf "$T"; }
@@ -33,16 +29,14 @@ teardown() { rm -rf "$T"; }
 rows() { arq --results csv --query "$T/q.rq" --data "$1" 2>/dev/null | tail -n +2 | grep -c . || true; }
 
 @test "the claimed red count is the one the model declares, not a number in this file" {
-  claimed=$(grep -A 8 'chorus:gc-one-home-per-subject a chorus:GovernanceCheck' "$MODEL" \
-            | grep -oE 'chorus:provenRedRows [0-9]+' | grep -oE '[0-9]+')
+  claimed=$("$PCF" one-home-per-subject provenRedRows)
   [ -n "$claimed" ]
   echo "$claimed" > "$T/claimed"
   [ "$claimed" -gt 0 ]
 }
 
 @test "NEGATIVE PROOF — the check goes RED on a fixture that violates it" {
-  claimed=$(grep -A 8 'chorus:gc-one-home-per-subject a chorus:GovernanceCheck' "$MODEL" \
-            | grep -oE 'chorus:provenRedRows [0-9]+' | grep -oE '[0-9]+')
+  claimed=$("$PCF" one-home-per-subject provenRedRows)
   n=$(rows "$FIXTURE")
   [ "$n" -eq "$claimed" ]
 }

@@ -28,8 +28,10 @@ ROOT="$BATS_TEST_DIRNAME/../.."
 # violation — a test that cannot tell "no checks" from "no breaches".
 # The TBox — hats, layers, property definitions.
 MODEL="$ROOT/roles/wren/ontology/hats-4175.ttl"
-# The checks themselves, which #4216 moved out of the TBox file.
-CHECKS="$ROOT/designing/data/governance-check-instances.ttl"
+# The checks themselves: #4216 moved them out of the TBox file, and #4960 folded them into
+# Policy; their one home is the policy plan.
+CHECKS="$ROOT/designing/data/policy-checks-4960.json"
+PCF="$ROOT/platform/scripts/policy-check-field"
 ROWS="$ROOT/roles/wren/ontology/hats-instances-4175.ttl"
 FIXTURE="$ROOT/platform/tests/fixtures/hats-4175-violations.ttl"
 CORE="$ROOT/roles/silas/ontology/chorus.ttl"
@@ -42,40 +44,18 @@ setup() {
   [ -f "$FIXTURE" ] || { echo "fixture missing: $FIXTURE"; return 1; }
 }
 
-# Prints "<check-name> <claimed-red-rows>" per registered check.
+# Prints "<check-name> <claimed-red-rows>" per registered check (the folded GovernanceChecks).
 checks() {
   python3 - "$CHECKS" <<'PY'
-import re, sys
-# #4255 — split on the SUBJECT boundary first, then read inside that block.
-# The old pattern scanned from the name to the first `""" .` ANYWHERE after it,
-# so a check whose query ends `""" ;` swallowed the next check's query. It
-# happened to line up while the file was ordered one way, and mismatched
-# name-to-query the moment the rows moved to their own file.
-t = open(sys.argv[1]).read()
-names = [(m.start(), m.group(1)) for m in re.finditer(r'chorus:(gc-[a-z-]+) a chorus:GovernanceCheck', t)]
-for i, (pos, name) in enumerate(names):
-    end = names[i + 1][0] if i + 1 < len(names) else len(t)
-    body = t[pos:end]
-    rows = re.search(r'chorus:provenRedRows (\d+)', body)
-    print(name, rows.group(1) if rows else "NONE")
+import json, sys
+for r in json.load(open(sys.argv[1])):
+    if r.get("foldedFrom"):
+        print(r["foldedFrom"], r.get("provenRedRows", "NONE"))
 PY
 }
 
 query_of() {
-  python3 - "$CHECKS" "$1" <<'PY'
-import re, sys
-t = open(sys.argv[1]).read()
-names = [(m.start(), m.group(1)) for m in re.finditer(r'chorus:(gc-[a-z-]+) a chorus:GovernanceCheck', t)]
-want = sys.argv[2]
-for i, (pos, name) in enumerate(names):
-    if name != want:
-        continue
-    end = names[i + 1][0] if i + 1 < len(names) else len(t)
-    q = re.search(r'"""([\s\S]*?)"""', t[pos:end])
-    if q:
-        sys.stdout.write(q.group(1))
-    break
-PY
+  "$PCF" "$1" checkSpec
 }
 
 rows_against() {  # $1=check $2..=data files

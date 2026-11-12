@@ -1,8 +1,7 @@
 # #4959 AC3 — a policy whose check finds more violations than its baseline (the
 # ratchet: existing debt is the ceiling, only new drift alerts). Read from the
-# textfile policy-validate --prom writes (node-exporter :9102). The stale rule
-# (a run that stopped writing) ships with the schedule in the rows land: before it
-# no policy carries a check, so a dead-man rule could only ever fire.
+# textfile policy-validate --prom writes (node-exporter :9102), hourly by the policy-sensor
+# pipeline (#4960). A run that could not measure writes nothing, so the stale rule fires.
 # Each summary names the rule, the threshold and the values, no refIds (Jeff 10-24 06:03).
 apiVersion: 1
 
@@ -40,4 +39,29 @@ groups:
         for: 0m
         annotations:
           summary: 'policy {{ $labels.policy }} ({{ $labels.gate }} gate): {{ $values.A.Value }} violations, baseline {{ $values.B.Value }} (alerts above the baseline)'
+        labels: { role: silas, domain: policies, severity: warning, team: chorus }
+
+      # #4960 — the sensor must not read as clean when it stops: the file's age (hourly runs,
+      # alerts past 3 h) and a file that never appeared both alert (ADR-043 dead-man).
+      - uid: policy-sensor-stale
+        title: Policy sensor not run
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(time() - node_textfile_mtime_seconds{file=~".*/chorus_policy\\.prom"}) / 3600', instant: true, refId: A }
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [3] }
+              refId: B
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 0m
+        annotations:
+          summary: 'the policy sensor last wrote {{ $values.A.Value }} h ago (alerts over 3 h, or when it never wrote)'
         labels: { role: silas, domain: policies, severity: warning, team: chorus }
