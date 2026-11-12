@@ -14,7 +14,9 @@ ROOT="$BATS_TEST_DIRNAME/../.."
 CRATE="$ROOT/platform/services/werk-demo"
 
 @test "werk-demo's policy-gate cases all run and pass" {
-  run cargo test --manifest-path "$CRATE/Cargo.toml" --test policy_gates_4959 -- --test-threads=1
+  # the crate's own target dir belongs to whoever built it last; each account builds its own
+  # (dagu, a navigator) so a .cargo-lock owned by someone else never refuses the run
+  CARGO_TARGET_DIR="$CRATE/target/$(id -un)" run cargo test --manifest-path "$CRATE/Cargo.toml" --test policy_gates_4959 -- --test-threads=1
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
   # the negative proofs must be among what ran, not filtered or deleted
   for t in negative_proof_exit_1_fails_and_names_each_policy_over_its_baseline \

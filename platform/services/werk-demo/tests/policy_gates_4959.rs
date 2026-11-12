@@ -157,3 +157,39 @@ fn the_checker_runs_in_the_cards_werk() {
     let (r, f) = policy_review(&home, Some(&werk), "code");
     assert_eq!(r, "pass", "{f}");
 }
+
+/// #4959 AC5 — the real checker behind the real gate: a dataset with baseline + 1
+/// violations fails the review; at the baseline it passes. Both states, one fixture.
+fn real_checker_home(tag: &str, baseline: u32) -> std::path::PathBuf {
+    let home = tmp_home(tag);
+    let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/policy-validate");
+    let dst = home.join("platform/scripts/policy-validate");
+    fs::create_dir_all(dst.parent().unwrap()).unwrap();
+    fs::copy(&real, &dst).unwrap();
+    fs::set_permissions(&dst, fs::Permissions::from_mode(0o755)).unwrap();
+    // two subjects typed in two home graphs = 2 violations of one-home-per-subject
+    fs::write(home.join("data.trig"), "@prefix c: <https://jeffbridwell.com/chorus#> .\n\
+        <urn:chorus:ontology> { c:pulse a c:Product . c:werk a c:Product . }\n\
+        <urn:chorus:instances> { c:pulse a c:Product . c:werk a c:Product . }\n").unwrap();
+    let q = "SELECT DISTINCT ?s WHERE { GRAPH <urn:chorus:ontology> { ?s a ?t1 } GRAPH <urn:chorus:instances> { ?s a ?t2 } }";
+    fs::write(home.join("policies.json"), format!(
+        r#"{{"data":[{{"name":"one-home","gate":"data","status":"ratchet","baseline":"{baseline}","checkKind":"sparql","checkSpec":"{q}"}}]}}"#)).unwrap();
+    home
+}
+
+#[test]
+fn negative_proof_ac5_baseline_plus_one_fails_the_real_gate_and_the_baseline_passes() {
+    let over = real_checker_home("ac5-over", 1);
+    let at = real_checker_home("ac5-at", 2);
+    for (home, want) in [(&over, "fail"), (&at, "pass")] {
+        std::env::set_var("POLICIES_JSON", home.join("policies.json"));
+        std::env::set_var("POLICY_DATA", home.join("data.trig"));
+        let (r, f) = policy_review(home, None, "data");
+        assert_eq!(r, want, "{f}");
+        if want == "fail" { assert!(f.contains("FAIL one-home 2 > 1"), "{f}"); }
+        let gates = werk_demo::deterministic_gates(home, None);
+        assert_eq!(gates.is_ok(), want == "pass", "validate follows the gate: {gates:?}");
+    }
+    std::env::remove_var("POLICIES_JSON");
+    std::env::remove_var("POLICY_DATA");
+}
