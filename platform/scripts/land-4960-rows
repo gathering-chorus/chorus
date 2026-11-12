@@ -12,7 +12,8 @@ The plan is read from files that ship in this land, so the store and the repo ca
   3. policy-no-self-acp says Jeff's go only (#4707; it said "Wren or Jeff");
   (the 34 GovernanceCheck rows, 11 folded here and 23 leaked quartet probes, leave with the
   class's retirement in model-retirements.jsonl, at the land's model deploy.)
-  0. one grant first: the card's role (silas) may write the policies graph.
+  0. one grant first: the card's role (silas) may write the policies graph;
+  5. the policy-sensor pipeline's four rows (#4960 AC3), from chorus-make's fixtures.
 Each write prints ADD / CHANGE / DELETE / SAME against the door. Exit 0 = plan printed (or
 applied); 1 = a write was refused; 2 = the door or the plan could not be read.
 --ttl <file> writes the planned policy rows as Turtle (for the shape test) and exits.
@@ -25,6 +26,10 @@ RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/choru
 # The door names a policy row without its class prefix ("no-self-acp" is chorus:policy-no-self-acp).
 # collection -> (door path, runner domain, runner class)
 DOOR_CLASS = {"permissions": ("/v1/security/permissions", "security", "permissions"),
+              "pipelines": ("/v1/pipelines/pipelines", "pipelines", "pipelines"),
+              "pipelinesteps": ("/v1/pipelines/steps", "pipelines", "steps"),
+              "skills": ("/v1/skills/skills", "skills", "skills"),
+              "stepskills": ("/v1/skills/stepskills", "skills", "stepskills"),
               "policies": ("/v1/policies/policies", "policies", "policies")}
 NO_SELF_ACP = ("Only Jeff's go lands or accepts a card (#4707, DEC-048 as amended): no role accepts, "
                "and no role records an accepter for Jeff. The go is the passkey-signed step on his approvals page.")
@@ -68,8 +73,32 @@ GRANTS = [("permissions", "silas-policies", {"label": "silas may write urn:choru
 SCOPE_WAIT = os.environ.get("LAND_SCOPE_WAIT_CMD", "sleep 310")
 
 
+def sensor_rows():
+    """#4960 AC3 — the policy-sensor pipeline's rows, read from the same fixtures chorus-make
+    generated platform/pipelines/policy-sensor.yaml from, so the store and the file agree."""
+    fx = os.path.join(ROOT, "platform/services/chorus-make/tests/fixtures")
+    pipe = dict(l.rstrip("\n").split("\t", 1) for l in open(os.path.join(fx, "policy-sensor-pipe.tsv")) if "\t" in l)
+    out, steps = [], []
+    for line in open(os.path.join(fx, "policy-sensor-rows.tsv")):
+        if line.startswith("#") or line.startswith("step\t") or not line.strip():
+            continue
+        step, order, sorder, skill, label, executor, impl, mode, _onfail, _shape, args = (line.rstrip("\n").split("\t") + [""] * 11)[:11]
+        sname = skill.removeprefix("skill-")
+        steps.append(f"pipeline-step-policy-sensor-{step}")
+        out.append(("skills", sname, {"label": label, "executor": executor, "implementedBy": impl, "arguments": mode,
+                    "hasDomain": "policies", "comment": "Runs every policy's check against main hourly and writes the counts for Pulse (#4960)."}))
+        out.append(("pipelinesteps", f"policy-sensor-{step}", {"label": step, "stepOrder": order, "executor": executor,
+                    "coversStep": "value-stream-step-proving"}))
+        out.append(("stepskills", f"policy-sensor-{step}-{sorder}", {"label": f"policy-sensor {step} {sorder}: {sname}",
+                    "callsSkill": skill, "forStep": f"pipeline-step-policy-sensor-{step}", "skillOrder": sorder, "withArguments": args}))
+    out.append(("pipelines", "policy-sensor", {"label": "policy-sensor", "automates": "value-stream-operating", "hasStep": " ".join(steps),
+                "pipelineStatus": "operating", "runQueue": pipe.get("queue", ""), "runSchedule": pipe.get("schedule", ""),
+                "onExitRun": pipe.get("onExit", "")}))
+    return out
+
+
 def plan(live):
-    p = list(GRANTS) + policy_rows()
+    p = list(GRANTS) + policy_rows() + sensor_rows()
     p.append(("policies", "no-self-acp", {"comment": NO_SELF_ACP}))
     return p
 

@@ -20,7 +20,13 @@ setup() {
     rules = d["groups"].flat_map { |g| g["rules"] }.map do |r|
       q = r["data"].select { |x| x["datasourceUid"] == "prometheus" }.map { |x| x["model"]["expr"] }
       th = r["data"].find { |x| x["model"]["type"] == "threshold" }["model"]["conditions"][0]["evaluator"]
-      { "alert" => r["uid"], "expr" => "(#{q[0]}) - (#{q[1]}) > #{th["params"][0]}" }
+      math = r["data"].any? { |x| x["model"]["type"] == "math" }
+      expr = math ? "(#{q[0]}) - (#{q[1]}) > #{th["params"][0]}" : "(#{q[0]}) > #{th["params"][0]}"
+      if r["noDataState"] == "Alerting"
+        sel = q[0][/node_textfile_mtime_seconds\{[^}]*\}/] or abort "#{r["uid"]}: no-data alerting but no textfile selector"
+        expr = "#{expr} or absent(#{sel})"
+      end
+      { "alert" => r["uid"], "expr" => expr }
     end
     File.write(ARGV[1], { "groups" => [{ "name" => "policies", "rules" => rules }] }.to_yaml)' "$RULES" "$T/rules.yml"
 }

@@ -83,7 +83,7 @@ PY
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$LAND"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"58 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
+  [[ "$output" == *"62 add, 1 change, 0 delete"* ]] || { echo "$output" | tail -3; return 1; }
   [ ! -f "$T/runner.log" ] || return 1
 }
 
