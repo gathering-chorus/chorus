@@ -85,6 +85,15 @@ GOOD='chorus:policy-no-raw-kill a chorus:Policy ; rdfs:label "No raw process kil
     chorus:violationFixture "f" .' nobase)" = VIOLATES ]
 }
 
+@test "negative: a check with no checkSpec FAILS" {
+  [ "$(row "$GOOD"' ; chorus:gate "code" ; chorus:baseline 0 ; chorus:checkKind "test" ;
+    chorus:violationFixture "f" .' nospec)" = VIOLATES ]
+}
+
+@test "control: a policy derived from two ADRs PASSES (derivedFrom is many-valued)" {
+  [ "$(row "$GOOD"' ; chorus:derivedFrom chorus:adr-052, chorus:decision-048 .' twoderived)" = CONFORMS ]
+}
+
 @test "negative: a checkKind outside sparql|test|command|runtime FAILS" {
   [ "$(row "$GOOD"' ; chorus:gate "code" ; chorus:baseline 0 ; chorus:checkKind "hope" ;
     chorus:checkSpec "t" ; chorus:violationFixture "f" .' badkind)" = VIOLATES ]
