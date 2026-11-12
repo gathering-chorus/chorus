@@ -30,7 +30,8 @@ for spec in sys.argv[2:]:
     r = {"name": name, "label": name, "comment": "c"}
     if gate: r["gate"] = gate
     if status: r["status"] = status
-    if base: r["baseline"] = int(base)
+    # "s2" sends the baseline as the string "2", the way the door serves integers
+    if base: r["baseline"] = base[1:] if base.startswith("s") else int(base)
     if kind: r["checkKind"] = kind; r["checkSpec"] = check
     rows.append(r)
 json.dump({"data": rows}, open(out, "w"))
@@ -92,4 +93,45 @@ PY
   run "$PV"
   [ "$status" -eq 1 ]
   [[ "$output" == *"FAIL two-lines 2 > 1"* ]] || return 1
+}
+
+@test "a baseline the door serves as a string (\"2\") is read as 2" {
+  policies "one-home|data|ratchet|s2|sparql|$Q"
+  run "$PV"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS one-home 2 <= 2"* ]] || return 1
+}
+
+@test "negative: a check with no baseline is exit 2, never a pass" {
+  policies "nobase|data|active||sparql|$Q"
+  run "$PV"
+  [ "$status" -eq 2 ]
+}
+
+@test "negative: a command that cannot run (exit 127, no output) is exit 2, never 0 <= baseline" {
+  policies "gone|code|active|5|command|no-such-command-4959"
+  run "$PV"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BROKEN gone"* ]] || return 1
+}
+
+@test "a test check: a failing suite is one violation over a 0 baseline" {
+  printf '#!/usr/bin/env bats\n@test "red" { false; }\n' > "$T/red.bats"
+  policies "red-suite|quality|active|0|test|$T/red.bats"
+  run "$PV"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"FAIL red-suite 1 > 0"* ]] || return 1
+}
+
+@test "a test check: a passing suite is 0 violations" {
+  printf '#!/usr/bin/env bats\n@test "green" { true; }\n' > "$T/green.bats"
+  policies "green-suite|quality|active|0|test|$T/green.bats"
+  run "$PV"
+  [ "$status" -eq 0 ]
+}
+
+@test "negative: a test check whose suite is missing is exit 2, never a violation count" {
+  policies "missing-suite|quality|active|0|test|$T/nope.bats"
+  run "$PV"
+  [ "$status" -eq 2 ]
 }

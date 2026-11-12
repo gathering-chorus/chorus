@@ -80,6 +80,8 @@ def count_command(cmd):
 
 
 def count_test(path):
+    if not os.path.isfile(path):
+        raise Broken(f"no such test: {path}")
     p = subprocess.run(["bats", path] if path.endswith(".bats") else ["/bin/sh", path],
                        capture_output=True, text=True, timeout=1800)
     return 0 if p.returncode == 0 else 1
@@ -105,7 +107,13 @@ def main(argv):
         if kind == "runtime":
             print(f"SKIP {name} runtime: borg-prove runs it after the land")
             continue
-        base = int(r.get("baseline") or 0)
+        try:
+            # the door serves integers as strings ("2"); a check with no baseline cannot gate
+            base = int(r["baseline"])
+        except (KeyError, TypeError, ValueError):
+            broken += 1
+            print(f"BROKEN {name}: no baseline")
+            continue
         try:
             n = {"sparql": count_sparql, "command": count_command, "test": count_test}[kind](r.get("checkSpec", ""))
         except KeyError:
