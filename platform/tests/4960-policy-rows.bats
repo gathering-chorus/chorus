@@ -33,11 +33,11 @@ PY
   export POLICIES_JSON="$T/p.json"
 }
 
-@test "the plan holds 46 rules and 15 runnable checks, every check with a fixture on disk" {
+@test "the plan holds 46 rules and 16 runnable checks, every check with a fixture on disk" {
   [ "$(grep -vc '^#' "$RULES")" -eq 46 ] || return 1
   run python3 -c "import json,os,sys; r=json.load(open('$CHECKS')); print(len(r)); [sys.exit('no fixture: '+x['violationFixture']) for x in r if not os.path.isfile(os.path.join('$ROOT', x['violationFixture']))]"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = "15" ] || return 1
+  [ "$output" = "16" ] || return 1
 }
 
 @test "negative proof: every SPARQL check counts its fixture's violation and is clean on empty data" {
@@ -98,4 +98,15 @@ PY
 @test "negative proof: an unreadable door is exit 2 and no plan" {
   LAND_LIVE_JSON="$T/nope.json" run python3 "$LAND"
   [ "$status" -eq 2 ] || return 1
+}
+
+@test "negative proof: rows carry the door's PolicyCreate types (string baseline, one full-IRI derivedFrom)" {
+  # the door answers 422 to an int baseline or a list of slugs (Borg Queen, 11:04)
+  run python3 -c "
+import json, re, sys
+bad = [r['name'] for r in json.load(open('$CHECKS'))
+       if not isinstance(r['baseline'], str) or not r['baseline'].isdigit()
+       or ('derivedFrom' in r and not (isinstance(r['derivedFrom'], str) and r['derivedFrom'].startswith('https://jeffbridwell.com/chorus#')))]
+print(bad); sys.exit(1 if bad else 0)"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }

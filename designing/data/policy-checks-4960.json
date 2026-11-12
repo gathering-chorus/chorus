@@ -5,13 +5,11 @@
   "comment": "A subject carries rdf:type in more than one home graph. Every reader that joins within one graph silently sees half the subject (the 2026-08-14 /effective 404 class). Violators found at authoring: pulse, clearing, borg, werk.",
   "gate": "data",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "SELECT DISTINCT ?s WHERE {\n  GRAPH <urn:chorus:ontology>  { ?s a ?t1 }\n  GRAPH <urn:chorus:instances> { ?s a ?t2 }\n}",
   "violationFixture": "platform/tests/fixtures/4960/one-home-per-subject.trig",
-  "derivedFrom": [
-   "adr-051"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-051",
   "foldedFrom": "gc-one-home-per-subject"
  },
  {
@@ -20,13 +18,11 @@
   "comment": "An outgoing edge asserted in a graph where its subject carries no typing \u2014 the edge lives outside the node's home, so a home-graph walk cannot see it. Co-location (gate.enforced) is the special case where node-home equals property-home; this check encodes the general rule.",
   "gate": "data",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "SELECT DISTINCT ?s ?ge WHERE {\n  GRAPH ?ge { ?s <https://jeffbridwell.com/chorus#hasProperty> ?p }\n  GRAPH ?gt { ?s a ?t }\n  FILTER(?ge != ?gt)\n  FILTER NOT EXISTS { GRAPH ?ge { ?s a ?t2 } }\n}",
   "violationFixture": "platform/tests/fixtures/4960/edge-follows-node.trig",
-  "derivedFrom": [
-   "adr-058"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
   "foldedFrom": "gc-edge-follows-node"
  },
  {
@@ -35,13 +31,11 @@
   "comment": "A step in an automated stream (athena, werk) without implementedBy. Proven red 2026-08-15 against the live store: 15 rows (all 6 athena + all 9 werk steps). This check flipping GREEN is #3896's acceptance proof \u2014 found-15-then, now-0.",
   "gate": "data",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "SELECT ?s WHERE {\n  GRAPH <urn:chorus:instances> {\n    ?s a <https://jeffbridwell.com/chorus#ValueStreamStep> ;\n       <https://jeffbridwell.com/chorus#inStream> ?st .\n    VALUES ?st { <https://jeffbridwell.com/chorus#value-stream-athena>\n                 <https://jeffbridwell.com/chorus#value-stream-werk> }\n    FILTER NOT EXISTS { ?s <https://jeffbridwell.com/chorus#implementedBy> ?i }\n  }\n}",
   "violationFixture": "platform/tests/fixtures/4960/step-implemented.trig",
-  "derivedFrom": [
-   "adr-058"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
   "foldedFrom": "gc-step-implemented"
  },
  {
@@ -50,13 +44,11 @@
   "comment": "a hat attaches only at its own layer",
   "gate": "arch",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?hat ?layer ?why WHERE {\n  { ?s c:appointedHat ?hat . ?hat c:hatLayer ?layer . FILTER(?layer != \"per-product\")\n    BIND(\"standing hat on an appointment \u2014 a standing hat anchors to the role, not to a product/domain/service\" AS ?why) }\n  UNION\n  { ?s c:heldStandingBy ?who . ?s c:hatLayer ?layer . FILTER(?layer != \"standing\")\n    BIND(?s AS ?hat)\n    BIND(\"per-product hat given a standing seat \u2014 a per-product hat is meaningless without an anchor\" AS ?why) }\n}",
   "violationFixture": "platform/tests/fixtures/4960/hat-layer-matches-attachment.trig",
-  "derivedFrom": [
-   "adr-054"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
   "foldedFrom": "gc-hat-layer-matches-attachment"
  },
  {
@@ -65,13 +57,11 @@
   "comment": "a per-product hat has an anchor",
   "gate": "arch",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?hat WHERE {\n  ?s a c:Appointment ; c:appointedHat ?hat .\n  FILTER NOT EXISTS { ?s c:overAnchor ?a }\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointment-has-anchor.trig",
-  "derivedFrom": [
-   "adr-054"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
   "foldedFrom": "gc-appointment-has-anchor"
  },
  {
@@ -80,13 +70,11 @@
   "comment": "a hat is a declared row, never a free string",
   "gate": "arch",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?hat WHERE {\n  { ?s c:appointedHat ?hat } UNION { ?s c:heldStandingBy ?who . BIND(?s AS ?hat) }\n  FILTER NOT EXISTS { ?hat a c:Hat }\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointed-hat-is-declared.trig",
-  "derivedFrom": [
-   "adr-054"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
   "foldedFrom": "gc-appointed-hat-is-declared"
  },
  {
@@ -95,13 +83,11 @@
   "comment": "an appointment never contradicts ownedBy",
   "gate": "arch",
   "status": "ratchet",
-  "baseline": 244,
+  "baseline": "244",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?appointee ?owner ?anchor WHERE {\n  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .\n  ?anchor c:ownedBy ?owner .\n  FILTER(?appointee != ?owner)\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointee-is-the-owner.trig",
-  "derivedFrom": [
-   "adr-054"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
   "foldedFrom": "gc-appointee-is-the-owner"
  },
  {
@@ -110,13 +96,11 @@
   "comment": "A domain, or a service a domain hosts, depends on a domain in a higher-ranked layer. The foundation may lean only on the foundation; the service clause is Kade's: without it a foundation service that needs a capability domain would pass.",
   "gate": "arch",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?o ?fromRank ?toRank WHERE {\n  { ?s c:dependsOn ?o . ?s c:inLayer ?ls . }\n  UNION\n  { ?d c:hosts ?s . ?s c:dependsOn ?o . ?d c:inLayer ?ls . }\n  ?ls c:layerRank ?fromRank .\n  ?o c:inLayer ?lo . ?lo c:layerRank ?toRank .\n  FILTER(?toRank > ?fromRank)\n}",
   "violationFixture": "platform/tests/fixtures/4960/layer-never-points-up.trig",
-  "derivedFrom": [
-   "adr-041"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
   "foldedFrom": "gc-layer-never-points-up"
  },
  {
@@ -125,13 +109,11 @@
   "comment": "Every domain is generated and shipped with the build layer (the model, werk); none may need it running. A dependsOn edge into it from outside it is the ADR-061 violation: the graph read at runtime.",
   "gate": "arch",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?o WHERE {\n  { ?s c:dependsOn ?o . FILTER NOT EXISTS { ?s c:inLayer c:layer-build } }\n  UNION\n  { ?d c:hosts ?s . ?s c:dependsOn ?o . FILTER NOT EXISTS { ?d c:inLayer c:layer-build } }\n  ?o c:inLayer c:layer-build .\n}",
   "violationFixture": "platform/tests/fixtures/4960/no-runtime-edge-into-build.trig",
-  "derivedFrom": [
-   "adr-041"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
   "foldedFrom": "gc-no-runtime-edge-into-build"
  },
  {
@@ -140,13 +122,11 @@
   "comment": "A domain with no layer says nothing and so passes both rules above (Kade: the hollow gate). warn while the other teams' domains take their layer on their own cards; becomes block, and DomainShape inLayer minCount 1, when this returns 0 live.",
   "gate": "arch",
   "status": "ratchet",
-  "baseline": 48,
+  "baseline": "48",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s WHERE {\n  ?s a c:Domain .\n  FILTER NOT EXISTS { ?s c:inLayer ?l }\n}",
   "violationFixture": "platform/tests/fixtures/4960/domain-has-a-layer.trig",
-  "derivedFrom": [
-   "adr-041"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
   "foldedFrom": "gc-domain-has-a-layer"
  },
  {
@@ -155,13 +135,11 @@
   "comment": "Each row is a Gate, Property, PropertyKey or EmitContract whose IRI predates ADR-040's <kind>-slug convention (19 live on 2026-09-25: 4 gates, 8 properties, 6 property keys, 1 emit contract; #4324 added the 28 API surfaces named surface-*, which the seed had refused since 09-20). The seed accepts exactly these by name (pre-mint-names.txt); renaming one removes its line and stages its retirement. warn, never block: it measures debt, it does not refuse.",
   "gate": "data",
   "status": "ratchet",
-  "baseline": 41,
+  "baseline": "41",
   "checkKind": "sparql",
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT DISTINCT ?s WHERE {\n  VALUES (?cls ?prefix) { (c:Gate \"gate-\") (c:Property \"property-\") (c:PropertyKey \"property-key-\") (c:EmitContract \"emit-contract-\") (c:APISurface \"api-surface-\") }\n  ?s a ?cls .\n  FILTER(STRSTARTS(STR(?s), \"https://jeffbridwell.com/chorus#\"))\n  FILTER(!STRSTARTS(STRAFTER(STR(?s), \"#\"), ?prefix))\n}",
   "violationFixture": "platform/tests/fixtures/4960/pre-mint-names.trig",
-  "derivedFrom": [
-   "adr-058"
-  ],
+  "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
   "foldedFrom": "gc-pre-mint-names"
  },
  {
@@ -170,11 +148,10 @@
   "comment": "No compiled .js, .js.map or .d.ts files under any src/ directory (DEC-2209).",
   "gate": "quality",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "command",
   "checkSpec": "git ls-files '*/src/*.js' '*/src/*.js.map' '*/src/*.d.ts'",
-  "violationFixture": "platform/tests/fixtures/4960/qual-no-compiled-artifacts-in-src.sh",
-  "derivedFrom": []
+  "violationFixture": "platform/tests/fixtures/4960/qual-no-compiled-artifacts-in-src.sh"
  },
  {
   "name": "qual-stdout-to-loki-no-log-files",
@@ -182,11 +159,10 @@
   "comment": "No *.log files in the repo; services log to stdout through Loki (ADR-023, DEC-114).",
   "gate": "quality",
   "status": "active",
-  "baseline": 0,
+  "baseline": "0",
   "checkKind": "command",
   "checkSpec": "git ls-files '*.log'",
-  "violationFixture": "platform/tests/fixtures/4960/qual-stdout-to-loki-no-log-files.sh",
-  "derivedFrom": []
+  "violationFixture": "platform/tests/fixtures/4960/qual-stdout-to-loki-no-log-files.sh"
  },
  {
   "name": "code-domain-api-over-raw-fuseki",
@@ -194,11 +170,10 @@
   "comment": "Application code calls domain doors, not Fuseki :3030 directly (DEC-093, ADR-048).",
   "gate": "code",
   "status": "ratchet",
-  "baseline": 34,
+  "baseline": "34",
   "checkKind": "command",
   "checkSpec": "git grep -l 'localhost:3030' -- '*.ts' '*.rs' ':!*/tests/*' ':!*test*'",
-  "violationFixture": "platform/tests/fixtures/4960/code-domain-api-over-raw-fuseki.sh",
-  "derivedFrom": []
+  "violationFixture": "platform/tests/fixtures/4960/code-domain-api-over-raw-fuseki.sh"
  },
  {
   "name": "arch-localhost-internal-binds",
@@ -206,10 +181,20 @@
   "comment": "Internal daemons bind 127.0.0.1, never 0.0.0.0 (ADR-012, ADR-042, ADR-019).",
   "gate": "arch",
   "status": "ratchet",
-  "baseline": 3,
+  "baseline": "3",
   "checkKind": "command",
   "checkSpec": "git grep -l '0\\.0\\.0\\.0' -- '*.plist'",
-  "violationFixture": "platform/tests/fixtures/4960/arch-localhost-internal-binds.sh",
-  "derivedFrom": []
+  "violationFixture": "platform/tests/fixtures/4960/arch-localhost-internal-binds.sh"
+ },
+ {
+  "name": "arch-css-sole-identity-issuer",
+  "label": "arch-css-sole-identity-issuer",
+  "comment": "Services and roles authenticate only through CSS Solid-OIDC tokens and chorus:Principal rows; custom passkeys, custom token signers and sudoers workarounds are forbidden (ADR-052, ADR-054; the #4710 class). The check counts source files naming passkey or sudoers.",
+  "gate": "arch",
+  "status": "ratchet",
+  "baseline": "11",
+  "checkKind": "command",
+  "checkSpec": "git grep -liE 'passkey|sudoers' -- '*.rs' '*.ts' ':!*/tests/*' ':!*test*'",
+  "violationFixture": "platform/tests/fixtures/4960/arch-css-sole-identity-issuer.sh"
  }
 ]

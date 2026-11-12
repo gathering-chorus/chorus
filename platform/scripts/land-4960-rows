@@ -6,8 +6,8 @@ The plan is read from files that ship in this land, so the store and the repo ca
   1. designing/data/policies-4960.tsv — Borg Queen's 46 ADR/DEC rules (2026-11-12), plain
      rows: a rule to read, no check yet (Jeff 10:59, "ok for this card": all of them stored,
      only the runnable ones gate);
-  2. designing/data/policy-checks-4960.json — the 15 runnable checks: the 11 GovernanceChecks
-     folded into Policy and 4 of the 46 rules made one-line commands (they replace the plain row), each with its measured baseline and the
+  2. designing/data/policy-checks-4960.json — the 16 runnable checks: the 11 GovernanceChecks
+     folded into Policy and 5 of the 46 rules made one-line commands (they replace the plain row), each with its measured baseline and the
      fixture of a real violation it must count;
   3. policy-no-self-acp says Jeff's go only (#4707; it said "Wren or Jeff");
   4. every GovernanceCheck row is deleted: the 11 real ones now live as policies, and 23
@@ -45,7 +45,7 @@ def checks():
     for r in json.load(open(os.path.join(ROOT, "designing/data/policy-checks-4960.json"))):
         w = {k: r[k] for k in ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")}
         if r.get("derivedFrom"):
-            w["derivedFrom"] = r["derivedFrom"]
+            w["derivedFrom"] = r["derivedFrom"]  # the door takes one full IRI
         out.append(("policies", r["name"], w))
     return out
 
@@ -65,7 +65,7 @@ def plan(live):
 
 
 def same(a, b):
-    norm = lambda v: sorted(v) if isinstance(v, list) else str(v).strip()
+    norm = lambda v: str(v).strip()
     return norm(a) == norm(b)
 
 
@@ -92,7 +92,8 @@ def write_ttl(path):
                 props.append(f'c:{k} "{esc(w[k])}"')
         if "baseline" in w:
             props.append(f'c:baseline {int(w["baseline"])}')
-        props += [f"c:derivedFrom c:{d}" for d in w.get("derivedFrom", [])]
+        if "derivedFrom" in w:
+            props.append(f"c:derivedFrom <{w['derivedFrom']}>")
         lines.append(f"c:policy-{name} a c:Policy ; " + " ; ".join(props) + " .")
     open(path, "w").write("\n".join(lines) + "\n")
 
