@@ -145,6 +145,13 @@ def write_ttl(path):
     open(path, "w").write("\n".join(lines) + "\n")
 
 
+# The door caches a principal's write scopes for 300 s (chorus-oidc ALLOW_TTL_SECS): the
+# grant the model deploy just landed may not be seen yet. A write refused 403 (only 403)
+# waits that out once and is tried again; any other refusal stops the land at once.
+SCOPE_WAIT = os.environ.get("LAND_SCOPE_WAIT_CMD", "sleep 310")
+LAST = {}
+
+
 def write(kind, coll, name, w, diff):
     _, dom, cls = DOOR_CLASS[coll]
     if kind == "ADD":
@@ -157,6 +164,7 @@ def write(kind, coll, name, w, diff):
     ok = r.returncode == 0 and any(c in r.stdout + r.stderr for c in (" → 200", " → 201", " → 204"))
     if not ok:
         print(f"  refused {coll}/{name}: {(r.stdout + r.stderr).strip().splitlines()[-1:]}")
+    LAST[(coll, name)] = r.stdout + r.stderr
     return ok
 
 
@@ -187,6 +195,11 @@ def main(argv):
         if kind != "SAME":
             writes.append((kind, coll, name, w, diff))
     failed = [x for x in writes if not write(*x)] if apply else []
+    scoped = [x for x in failed if "403" in LAST.get((x[1], x[2]), "")]
+    if scoped:
+        subprocess.run(["/bin/sh", "-c", SCOPE_WAIT])
+        print(f"waited for the door's scopes to refresh; trying {len(scoped)} write(s) refused 403 again")
+        failed = [x for x in failed if x not in scoped] + [x for x in scoped if not write(*x)]
     for kind, coll, name, _, _ in failed:
         print(f"  REFUSED {coll}/{name} ({kind})")
     refused = len(failed)

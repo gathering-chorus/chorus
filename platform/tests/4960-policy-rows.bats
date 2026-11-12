@@ -150,3 +150,19 @@ import runpy; m = runpy.run_path('$LAND')
 raise SystemExit(0 if m['same'](['pipeline-step-policy-sensor-measure'], ['policy-sensor-measure']) else 1)"
   [ "$status" -eq 0 ] || return 1
 }
+
+@test "a write refused 403 while the door still holds the old scopes waits the cache out once and retries" {
+  printf '{"policies": []}' > "$T/live.json"
+  printf '#!/bin/sh\ncase "$*" in *class=policies*) [ -f %s/scopes-fresh ] || { echo "→ 403"; exit 1; } ;; esac\necho " → 201"\n' "$T" > "$T/runner"; chmod +x "$T/runner"
+  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" LAND_SCOPE_WAIT_CMD="touch $T/scopes-fresh" run python3 "$LAND" --apply
+  [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
+  [[ "$output" == *"refused 403 again"* ]] || return 1
+}
+
+@test "negative proof: a refusal that is not a 403 does not wait and stops the land" {
+  printf '{"policies": []}' > "$T/live.json"
+  printf '#!/bin/sh\necho "→ 422"\nexit 1\n' > "$T/runner"; chmod +x "$T/runner"
+  LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" LAND_SCOPE_WAIT_CMD="touch $T/waited" run python3 "$LAND" --apply
+  [ "$status" -eq 1 ] || return 1
+  [ ! -e "$T/waited" ] || return 1
+}
