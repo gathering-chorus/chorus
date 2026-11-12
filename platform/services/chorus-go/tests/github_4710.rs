@@ -201,3 +201,62 @@ fn a_refused_merge_records_nothing_and_leaves_the_step_open() {
     assert_eq!(github::go_sequence("no", || { merged.set(true); Ok(1) }, |pr| assert_eq!(pr, None), || Ok(())), Ok(None));
     assert!(!merged.get(), "a no merged");
 }
+
+// review of 113c9fe51 (C) — a request body lives in <HOME>/.chorus/lander-req (0700, this
+// account's), under a random name: a file another account pre-creates in /tmp changes nothing.
+#[test]
+fn negative_proof_a_precreated_tmp_body_file_has_no_effect() {
+    let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    let home = std::env::temp_dir().join(format!("gh-4710-body-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let old = std::env::var("HOME").ok();
+    std::env::set_var("HOME", &home);
+    // the old predictable names, pre-created by "another account"
+    for n in 0..4u64 {
+        let _ = std::fs::write(std::env::temp_dir().join(format!("chorus-lander-req-{}-{n}-{}.json", std::process::id(), chorus_go::now())), "x");
+    }
+    let a = github::private_body_file(b"{}").unwrap();
+    let b = github::private_body_file(b"{}").unwrap();
+    assert_ne!(a, b, "every body gets its own random name");
+    let dir = home.join(".chorus/lander-req");
+    assert_eq!(a.parent().unwrap(), dir);
+    assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(std::fs::metadata(&a).unwrap().permissions().mode() & 0o777, 0o600);
+    // a lander-req that is not this account's own directory (a planted symlink) is refused
+    let h2 = home.join("h2");
+    std::fs::create_dir_all(h2.join(".chorus")).unwrap();
+    std::os::unix::fs::symlink(std::env::temp_dir(), h2.join(".chorus/lander-req")).unwrap();
+    std::env::set_var("HOME", &h2);
+    assert!(github::private_body_file(b"{}").is_err(), "a symlinked body dir must be refused");
+    match old { Some(h) => std::env::set_var("HOME", h), None => std::env::remove_var("HOME") }
+}
+
+// review of 113c9fe51 (D) — the credential's first line only: a newline can never add a header.
+#[test]
+fn negative_proof_a_credential_with_a_newline_sends_one_header_line() {
+    let h = github::auth_header("ghs_A\nX-Injected: 1");
+    assert_eq!(h.lines().count(), 1, "{h:?}");
+    assert!(!h.contains("X-Injected"), "{h:?}");
+    assert_eq!(h, "Authorization: token ghs_A\n");
+}
+
+// review of 113c9fe51 (E) — a resent go whose PR is not open counts only when GitHub shows the
+// card's PR merged at exactly the signed round.
+#[test]
+fn negative_proof_a_resent_go_with_no_merge_at_the_round_is_refused() {
+    let r = "5174a0592261bbd5b452ec1287cda4e5e2fda45a";
+    let pr = |rf: &str, repo: &str, sha: &str, merged: serde_json::Value| serde_json::json!(
+        {"number": 7, "head": {"ref": rf, "sha": sha, "repo": {"full_name": repo}}, "merged_at": merged});
+    let ok = serde_json::json!([pr("wren/4710", github::REPO, r, "2026-11-11T20:00:00Z".into())]).to_string();
+    assert_eq!(github::merged_pr_from_list(&ok, 4710, r).unwrap(), 7);
+    for (why, body) in [
+        ("closed unmerged", serde_json::json!([pr("wren/4710", github::REPO, r, serde_json::Value::Null)])),
+        ("another card", serde_json::json!([pr("wren/4711", github::REPO, r, "2026-11-11T20:00:00Z".into())])),
+        ("a fork", serde_json::json!([pr("wren/4710", "someone/chorus", r, "2026-11-11T20:00:00Z".into())])),
+        ("another head", serde_json::json!([pr("wren/4710", github::REPO, "0000000000000000000000000000000000000000", "2026-11-11T20:00:00Z".into())])),
+        ("none", serde_json::json!([])),
+    ] {
+        assert!(github::merged_pr_from_list(&body.to_string(), 4710, r).is_err(), "{why} must be refused");
+    }
+}

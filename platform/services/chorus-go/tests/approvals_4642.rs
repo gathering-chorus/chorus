@@ -197,7 +197,9 @@ fn a_declined_go_is_recorded_and_lands_nothing() {
 fn break_glass_a_signed_go_lands_from_the_local_record_alone() {
     let (store, mut phone) = registered("glass-ok");
     let r = go_row(&go_json(4642, HEAD), Some(HEAD));
-    sign(&store, &mut phone, &r, "approve").unwrap();
+    let (d, _) = sign(&store, &mut phone, &r, "approve").unwrap();
+    // the server keeps a go's proof once its merge happened (review of 113c9fe51)
+    keep_decision_proof(&store, &d).unwrap();
     let pk = store.passkey().unwrap().unwrap();
     land_go_from_local(&pk, &store, 4642, HEAD).unwrap();
     assert!(land_go_from_local(&pk, &store, 4642, OLD).is_err(), "another round does not land");
@@ -208,7 +210,8 @@ fn break_glass_a_signed_go_lands_from_the_local_record_alone() {
 fn negative_proof_break_glass_refuses_a_forged_or_edited_local_record() {
     let (store, mut phone) = registered("glass-neg");
     let r = go_row(&go_json(4642, HEAD), Some(HEAD));
-    sign(&store, &mut phone, &r, "approve").unwrap();
+    let (d, _) = sign(&store, &mut phone, &r, "approve").unwrap();
+    keep_decision_proof(&store, &d).unwrap();
     let pk = store.passkey().unwrap().unwrap();
     let path = store.dir.join("approvals").join("decided-approval-go-4642.json");
     let original = std::fs::read_to_string(&path).unwrap();
@@ -228,3 +231,24 @@ fn negative_proof_break_glass_refuses_a_forged_or_edited_local_record() {
     assert!(land_go_from_local(&pk, &store, 4642, HEAD).is_err());
 }
 
+
+// #4710 review of 113c9fe51 (A) — a go's signed proof is kept only after its merge happened. A go
+// whose merge was refused leaves no decided file: the land has nothing to fall back to, and Jeff
+// can sign the same row again.
+#[test]
+fn negative_proof_a_go_whose_merge_was_refused_leaves_nothing_and_can_be_signed_again() {
+    let (store, mut phone) = registered("refused-merge");
+    let r = go_row(&go_json(4642, HEAD), Some(HEAD));
+    sign(&store, &mut phone, &r, "approve").unwrap();
+    // the merge was refused, so the server never kept the proof
+    let path = store.dir.join("approvals").join("decided-approval-go-4642.json");
+    assert!(!path.exists(), "a go with no merge must leave no decided file");
+    let pk = store.passkey().unwrap().unwrap();
+    assert!(land_go_from_local(&pk, &store, 4642, HEAD).is_err(), "break-glass must not see an unmerged go as signed");
+    // Jeff signs again once it is fixed: accepted, and this time the merge happened
+    let (d, _) = sign(&store, &mut phone, &r, "approve").expect("a refused merge must stay re-signable");
+    keep_decision_proof(&store, &d).unwrap();
+    land_go_from_local(&pk, &store, 4642, HEAD).unwrap();
+    // and once kept, it is never decided twice here
+    assert!(sign(&store, &mut phone, &r, "approve").unwrap_err().contains("already decided here"));
+}

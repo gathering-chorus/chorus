@@ -180,17 +180,14 @@ fn s_of(v: &Value, k: &str) -> String {
 /// A link may come back as a full IRI or a local name; compare on the local name.
 fn local(s: &str) -> &str { s.rsplit(|c| c == '#' || c == '/' || c == ':').next().unwrap_or(s) }
 
-/// #4710 — who may own a decision row: the lander (it writes Jeff's decisions since #4710) or
-/// jeff (rows from before). A row owned by anyone else decides nothing.
-pub fn decision_owner_ok(d: &Value) -> bool {
-    matches!(local(&s_of(d, "ownedBy")), "principal-lander" | "principal-jeff")
-}
+/// The one owner rule (lib decision_owner_ok), on a door row.
+fn decision_row_owner_ok(d: &Value) -> bool { crate::decision_owner_ok(local(&s_of(d, "ownedBy"))) }
 
 /// Approvals with no decision by the lander or jeff pointing at them, oldest first.
 /// A decision row owned by anyone else is ignored: it decides nothing.
 fn pending_approvals() -> Result<Vec<Value>, String> {
     let decided: std::collections::HashSet<String> = door_get("/decisions/approvaldecisions")?.iter()
-        .filter(|d| decision_owner_ok(d))
+        .filter(|d| decision_row_owner_ok(d))
         .map(|d| local(&s_of(d, "decides")).to_string()).collect();
     let mut rows: Vec<Value> = door_get("/decisions/approvals")?.into_iter()
         .filter(|a| !decided.contains(local(&s_of(a, "name"))))
@@ -312,6 +309,9 @@ fn decide(store: &Store, row: &str, nonce: &str, decision: &str, ad: &str, cd: &
         // the land confirms main — and the failure is alerted, never silent.
         crate::github::go_sequence(verb, || crate::github::land_as_app(g.card, &g.round),
             |pr| {
+                // the signed proof is kept only now: the merge happened, or this is a "no"
+                // (review of 113c9fe51: a refused merge leaves nothing, so Jeff can sign again)
+                if let Err(why) = crate::keep_decision_proof(store, &d) { alert_unrecorded(&d.row, &why) }
                 // ADR-037 who/what/when (review of 746df662): werk-merge no longer merges, so the
                 // lander records the approval — Jeff's passkey go — with what it merged
                 if let Some(pr) = pr {
@@ -409,7 +409,7 @@ pub fn land_go(store: &Store, card: u64, round: &str) -> Result<LandGo, String> 
 /// never took it. They stay on his list until it does (Silas, Kade 19:17).
 fn signed_not_sent() -> Result<Vec<Value>, String> {
     let decided_go: std::collections::HashSet<String> = door_get("/decisions/approvaldecisions")?.iter()
-        .filter(|d| decision_owner_ok(d) && s_of(d, "approvalVerdict") == "approve")
+        .filter(|d| decision_row_owner_ok(d) && s_of(d, "approvalVerdict") == "approve")
         .map(|d| local(&s_of(d, "decides")).to_string()).collect();
     let mut out = Vec::new();
     for a in door_get("/decisions/approvals")?.into_iter().filter(|a| s_of(a, "approvalKind") == "go") {
@@ -434,13 +434,16 @@ fn resend_go(store: &Store, row: &str) -> Result<Value, String> {
         .ok_or(format!("no go approval '{row}'"))?;
     let g = go_action(&s_of(a, "approvalAction"))?;
     land_go_from_rows(&pk, &approvals, &door_get("/decisions/approvaldecisions")?, g.card, &g.round)?;
-    // #4710 — a resent go merges too, unless the merge already happened (no open PR: the land
-    // then confirms main, and refuses not-on-main if it did not).
-    match crate::github::land_as_app(g.card, &g.round) {
-        Ok(_) => {}
-        Err(e) if e.contains("no open PR") => {}
+    // #4710 — a resent go merges too. "No open PR" is not taken on trust (review of 113c9fe51):
+    // GitHub must show a PR for this card merged at exactly the signed round, or nothing is sent.
+    let pr = match crate::github::land_as_app(g.card, &g.round) {
+        Ok(pr) => pr,
+        Err(e) if e.contains("no open PR") => crate::github::merged_pr_at(g.card, &g.round)
+            .map_err(|m| format!("the lander did not merge ({e}) and {m}"))?,
         Err(e) => return Err(format!("the lander did not merge: {e}")),
-    }
+    };
+    spine_post("merge.approved", &[("card", g.card.to_string()), ("round", g.round.clone()),
+        ("pr", pr.to_string()), ("accepter", "jeff".into()), ("proof", "passkey".into()), ("by", "lander".into())]);
     complete_go(&g.run, "go")?;
     Ok(json!({"ok": true, "text": format!("Go sent for #{}. It's landing.", g.card)}))
 }

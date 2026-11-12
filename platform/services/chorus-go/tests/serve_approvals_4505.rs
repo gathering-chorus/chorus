@@ -118,6 +118,13 @@ fn stand_in(root: PathBuf) -> String {
             // merge already happened, so a resent go goes straight to the run's go step)
             else if path.ends_with("/access_tokens") { (201, String::new(), r#"{"token":"ghs_STANDIN"}"#.into()) }
             else if path.contains("/pulls?") { (200, String::new(), "[]".into()) }
+            // the round's PRs: merged at the signed round, unless the world says it never merged
+            else if path.contains("/commits/") && path.ends_with("/pulls") {
+                let sha = path.split("/commits/").nth(1).unwrap_or("").trim_end_matches("/pulls");
+                let merged = if has("unmerged") { Value::Null } else { json!("2026-11-01T19:10:00Z") };
+                (200, String::new(), json!([{"number": 77, "merged_at": merged,
+                    "head": {"ref": "wren/4642", "sha": sha, "repo": {"full_name": "gathering-chorus/chorus"}}}]).to_string())
+            }
             else { (404, String::new(), String::new()) };
             let _ = write!(s, "HTTP/1.1 {code} X\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{out}", out.len());
         }
@@ -486,4 +493,18 @@ fn the_page_keeps_hidden_panels_hidden() {
     assert!(page.contains("id=\"regrow\" hidden"));
     // the dead Go/No panel is gone, not hidden (Silas 17:56): Approve on a row is the only go
     assert!(!page.contains("id=\"buttons\"") && !page.contains(">Go</button>"), "the old Go/No panel is back");
+}
+
+// #4710 review of 113c9fe51 (E) — "no open PR" is not taken as merged: a resent go whose PR GitHub
+// shows unmerged at the signed round is refused, and the run's go step is never answered.
+#[test]
+fn negative_proof_a_resent_go_whose_pr_never_merged_is_refused() {
+    let mut p = Phone::new();
+    let w = go_world("resend-unmerged", &mut p, "principal-jeff", false);
+    std::fs::write(w.root.join("unmerged"), "").unwrap();
+    let srv = serve(&w, &p);
+    let (c, b) = http(&srv.addr, "POST", "/go/api/approvals/resend", &json!({"row": "approval-go-4642"}).to_string());
+    assert_ne!(c, 200, "{b}");
+    assert!(b["text"].as_str().unwrap_or("").contains("no PR for #4642 merged"), "{b}");
+    assert!(!w.read("dagu.log").contains("human-task complete cicd-go"), "the go step must not be answered");
 }

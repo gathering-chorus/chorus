@@ -139,3 +139,20 @@ fn negative_proof_step_and_go_never_cross_replay() {
         assert!(step_action(bad).unwrap_err().contains("not a step action"), "{bad}");
     }
 }
+
+// #4710 review of 113c9fe51 (B) — the lander writes Jeff's step rows as itself: one owner rule for
+// go and step. A lander-owned row with Jeff's signature answers the step; a role-owned row never.
+#[test]
+fn a_lander_written_step_row_counts_and_a_role_owned_one_never() {
+    let (store, mut phone) = registered("step-lander");
+    let r = row("step", &step_json(RUN, "skill_domain_flow_bar"));
+    let (_, proof) = sign(&store, &mut phone, &r, "approve").unwrap();
+    let pk = store.passkey().unwrap().unwrap();
+    let (a, d) = door(&r, &proof, "principal-lander", "approve");
+    land_step_from_rows(&pk, &a, &d, "domain-flow", RUN, "skill_domain_flow_bar").unwrap();
+    for role in ["principal-wren", "principal-silas", "principal-abby-normal"] {
+        let (a, d) = door(&r, &proof, role, "approve");
+        assert!(land_step_from_rows(&pk, &a, &d, "domain-flow", RUN, "skill_domain_flow_bar").is_err(), "{role} decides nothing");
+    }
+    assert!(decision_owner_ok("principal-lander") && decision_owner_ok("principal-jeff") && !decision_owner_ok("principal-wren"));
+}

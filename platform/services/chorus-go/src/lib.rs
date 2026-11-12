@@ -593,6 +593,22 @@ pub struct ApprovalDecision {
     pub nonce: String,
     /// #4885: on a step row, the run's human step Jeff answered.
     pub step: Option<StepAction>,
+    /// The signed proof (what Jeff's phone signed, for this row), as kept in decided-<row>.json.
+    pub proof: String,
+}
+
+/// #4710 — who may own a decision row: the lander (it writes Jeff's decisions since #4710) or
+/// jeff (rows from before). The one owner rule for go, step and the approvals list; an owner
+/// alone never passes — the passkey signature is re-verified wherever a decision counts.
+pub fn decision_owner_ok(owner_local: &str) -> bool {
+    matches!(owner_local, "principal-lander" | "principal-jeff")
+}
+
+/// Keep a decision's signed proof on disk (decided-<row>.json): the break-glass record the land
+/// falls back to, and the "never decide twice here" mark. A go keeps it only after its merge
+/// happened (review of 113c9fe51): a refused merge leaves nothing, so Jeff can sign again.
+pub fn keep_decision_proof(store: &Store, d: &ApprovalDecision) -> R<()> {
+    write_private(&store.dir.join("approvals").join(format!("decided-{}.json", d.row)), &d.proof)
 }
 
 /// #4885 — what a step row asks for: Jeff's answer to one human step of one dagu run (the domain
@@ -667,13 +683,15 @@ pub fn decide_approval(store: &Store, nonce: &str, decision: &str, row_now: &App
     }
     pk.sign_count = count;
     store.save_passkey(&pk)?;
-    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at: now(), go, nonce: nonce.to_string(), step };
-    // The proof, kept like a go record: what Jeff's phone signed, for this row.
-    // Written BEFORE the door POST (Silas 19:27): the break-glass record the land falls back to
-    // when the door has no row (a failed mint). It carries the action, so it re-verifies alone.
-    write_private(&store.dir.join("approvals").join(format!("decided-{}.json", d.row)), &json!({
-        "row": d.row, "decision": d.decision, "kind": row_now.kind, "action": row_now.action, "action_sha": sha,
-        "nonce": nonce, "at": d.at, "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string())?;
+    let at = now();
+    // The proof, kept like a go record: what Jeff's phone signed, for this row. It carries the
+    // action, so it re-verifies alone (the break-glass record the land falls back to).
+    let proof = json!({"row": row, "decision": decision, "kind": row_now.kind, "action": row_now.action, "action_sha": sha,
+        "nonce": nonce, "at": at, "authData": auth_data, "clientDataJSON": client_data, "signature": signature}).to_string();
+    let d = ApprovalDecision { row, decision: decision.to_string(), argv, at, go, nonce: nonce.to_string(), step, proof };
+    // A card or step keeps it now, before the door POST (Silas 19:27). A go keeps it only once
+    // its merge happened (the server calls keep_decision_proof then; review of 113c9fe51).
+    if d.go.is_none() { keep_decision_proof(store, &d)?; }
     Ok(d)
 }
 
@@ -708,7 +726,8 @@ pub fn check_go_decision(pk: &Passkey, row: &str, action: &str, verdict: &str, p
 /// #4642 — the land's one go path: from the door's rows, Jeff's go for this card at this round.
 /// `approvals` and `decisions` are the door's /decisions/approvals and /approvaldecisions rows.
 /// The action is read from the Approval row the decision decides, never from the decision; only a
-/// decision owned by principal-jeff counts; the signature is re-verified (check_go_decision).
+/// decision owned by principal-jeff or principal-lander counts (decision_owner_ok); the signature is
+/// re-verified (check_go_decision).
 pub fn land_go_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value], card: u64, round: &str) -> R<()> {
     let s = |v: &Value, k: &str| -> String {
         match v.get(k) {
@@ -729,7 +748,7 @@ pub fn land_go_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value],
             // passkey signature below is the authority either way, re-verified every time, and an
             // owner alone never passes. No other principal's row decides anything.
             let owner = local(&s(d, "ownedBy"));
-            if owner != "principal-jeff" && owner != "principal-lander" {
+            if !decision_owner_ok(&owner) {
                 last = format!("a go decision for #{card} owned by {owner}, not principal-jeff or principal-lander, decides nothing");
                 continue;
             }
@@ -772,7 +791,7 @@ pub fn land_go_from_local(pk: &Passkey, store: &Store, card: u64, round: &str) -
 
 /// #4885 — a pipeline's human step, answered only from Jeff's passkey: from the door's rows, his
 /// signed approve of a step row naming exactly this dag, run and step. Like the land's go check: the
-/// action is read from the Approval row, only a principal-jeff decision counts, and the signature is
+/// action is read from the Approval row, only a principal-jeff or principal-lander decision counts, and the signature is
 /// re-verified here. A role that typed `by=jeff` into dagu left no such row, so it is refused.
 pub fn land_step_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value], dag: &str, run: &str, step: &str) -> R<()> {
     let s = |v: &Value, k: &str| -> String {
@@ -790,8 +809,9 @@ pub fn land_step_from_rows(pk: &Passkey, approvals: &[Value], decisions: &[Value
         if st.dag != dag || st.run != run || st.step != step { continue; }
         let row = local(&s(a, "name"));
         for d in decisions.iter().filter(|d| local(&s(d, "decides")) == row) {
-            if local(&s(d, "ownedBy")) != "principal-jeff" {
-                last = format!("a step decision not owned by principal-jeff decides nothing ({run} {step})");
+            // #4710 — the same owner rule as a go (review of 113c9fe51): the lander writes Jeff's step rows
+            if !decision_owner_ok(&local(&s(d, "ownedBy"))) {
+                last = format!("a step decision not owned by principal-jeff or principal-lander decides nothing ({run} {step})");
                 continue;
             }
             let verdict = s(d, "approvalVerdict");

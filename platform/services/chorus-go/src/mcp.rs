@@ -8,7 +8,6 @@
 use crate::R;
 use serde_json::{json, Map, Value};
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::process::{Command, Stdio};
 
 pub fn door() -> String {
@@ -45,9 +44,8 @@ pub fn mcp_argv(url: &str, body: &std::path::Path, session: Option<&str>) -> Vec
 }
 
 fn post(url: &str, login: &str, msg: &Value, session: Option<&str>) -> R<(String, String)> {
-    let f = std::env::temp_dir().join(format!("chorus-go-mcp-{}-{}", std::process::id(), crate::now()));
-    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&f)
-        .and_then(|mut h| h.write_all(msg.to_string().as_bytes())).map_err(|e| e.to_string())?;
+    // a private, randomly named body file (review of 113c9fe51), never a predictable /tmp name
+    let f = crate::github::private_body_file(msg.to_string().as_bytes())?;
     let child = Command::new("/usr/bin/curl").args(mcp_argv(url, &f, session))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
     let out = child.and_then(|mut c| {

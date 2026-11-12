@@ -81,6 +81,68 @@ pub fn pr_from_list(body: &str, card: u64, round: &str) -> R<(u64, String)> {
     }
 }
 
+/// The PRs GitHub associates with the signed round sha (a resent go: was it merged already?).
+pub fn commit_pulls_call(round: &str) -> Call {
+    Call { method: "GET", path: format!("/repos/{REPO}/commits/{round}/pulls"), body: None }
+}
+
+/// From that list: the card's PR in this repo, merged, whose head was exactly the signed round.
+/// Anything else — open, closed unmerged, a fork, another card, a moved head — is refused.
+pub fn merged_pr_from_list(body: &str, card: u64, round: &str) -> R<u64> {
+    let v: Value = serde_json::from_str(body).map_err(|_| "GitHub's PR list for the round is not JSON".to_string())?;
+    let suffix = format!("/{card}");
+    v.as_array().ok_or("GitHub's PR list for the round is not a list")?.iter().find(|p| {
+        let r = p.pointer("/head/ref").and_then(Value::as_str).unwrap_or("");
+        r.ends_with(&suffix) && r.matches('/').count() == 1
+            && p.pointer("/head/repo/full_name").and_then(Value::as_str) == Some(REPO)
+            && p.pointer("/head/sha").and_then(Value::as_str) == Some(round)
+            && p.get("merged_at").and_then(Value::as_str).is_some_and(|m| !m.is_empty())
+    }).and_then(|p| p.get("number").and_then(Value::as_u64))
+        .ok_or_else(|| format!("GitHub shows no PR for #{card} merged at {}", crate::short(round)))
+}
+
+/// A resent go whose PR is no longer open: proven merged at the signed round, or refused.
+pub fn merged_pr_at(card: u64, round: &str) -> R<u64> {
+    let tok = app_credential()?;
+    let (code, body) = run(&commit_pulls_call(round), &tok)?;
+    if code != 200 { return Err(format!("GitHub answered {code} to the merged-PR lookup for #{card}")); }
+    merged_pr_from_list(&body, card, round)
+}
+
+/// A 0600 file holding `bytes`, in a directory only this account can enter: `<HOME>/.chorus/lander-req`
+/// (0700, ours), under a random name (review of 113c9fe51: a predictable name in /tmp let any
+/// account pre-create it and block a merge). Removed by the caller; removed here on a failed write.
+pub fn private_body_file(bytes: &[u8]) -> R<std::path::PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+    let home = std::env::var("HOME").map_err(|_| "no HOME".to_string())?;
+    let dir = std::path::Path::new(&home).join(".chorus/lander-req");
+    if !dir.exists() {
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let m = std::fs::symlink_metadata(&dir).map_err(|e| e.to_string())?;
+    if !m.is_dir() || m.uid() != crate::identity::me().0 {
+        return Err(format!("{} is not this account's own directory", dir.display()));
+    }
+    if m.mode() & 0o077 != 0 {
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    }
+    let mut rnd = [0u8; 16];
+    getrandom::getrandom(&mut rnd).map_err(|e| format!("random: {e}"))?;
+    let f = dir.join(format!("{}.json", rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()));
+    let mut h = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&f).map_err(|e| e.to_string())?;
+    if let Err(e) = h.write_all(bytes) {
+        let _ = std::fs::remove_file(&f);
+        return Err(e.to_string());
+    }
+    Ok(f)
+}
+
+/// The Authorization header line curl reads from stdin: the credential's first line only
+/// (credential_line), so a credential holding a newline can never add a header.
+pub fn auth_header(tok: &str) -> String {
+    format!("Authorization: {} {}\n", "token", credential_line(tok))
+}
+
 /// curl's argv for one API call: what `ps` shows. Holds no credential — the Authorization
 /// header is read from stdin (`-H @-`) and a body from a 0600 file (`body`).
 pub fn call_argv(api: &str, call: &Call, body: Option<&std::path::Path>) -> Vec<String> {
@@ -94,25 +156,19 @@ pub fn call_argv(api: &str, call: &Call, body: Option<&std::path::Path>) -> Vec<
     a
 }
 
-/// Run one call with the installation credential `tok` (in memory). The body goes in a 0600 file
-/// of its own, named per call, removed after: the lander serves requests on parallel threads.
+/// Run one call with the installation credential `tok` (in memory). A body goes in a private file
+/// of its own (private_body_file), removed after: the lander serves requests on parallel threads.
 pub fn run(call: &Call, tok: &str) -> R<(u16, String)> {
-    use std::os::unix::fs::OpenOptionsExt;
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let api = std::env::var(GITHUB_API_ENV).unwrap_or_else(|_| "https://api.github.com".into());
-    let bf = std::env::temp_dir().join(format!("chorus-lander-req-{}-{}-{}.json", std::process::id(),
-        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed), crate::now()));
-    if let Some(b) = &call.body {
-        std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&bf)
-            .and_then(|mut f| f.write_all(b.to_string().as_bytes())).map_err(|e| e.to_string())?;
-    }
-    let child = Command::new("/usr/bin/curl").args(call_argv(&api, call, Some(&bf)))
+    let bf = match &call.body { Some(b) => Some(private_body_file(b.to_string().as_bytes())?), None => None };
+    let child = Command::new("/usr/bin/curl").args(call_argv(&api, call, bf.as_deref()))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
     let out = child.and_then(|mut c| {
-        if let Some(mut i) = c.stdin.take() { let _ = i.write_all(format!("Authorization: {} {}\n", "token", tok.trim()).as_bytes()); }
-        c.wait_with_output()
+        let sent = match c.stdin.take() { Some(mut i) => i.write_all(auth_header(tok).as_bytes()), None => Ok(()) };
+        let o = c.wait_with_output();
+        sent.and(o)
     });
-    let _ = std::fs::remove_file(&bf);
+    if let Some(f) = &bf { let _ = std::fs::remove_file(f); }
     let out = out.map_err(|e| format!("curl: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let (body, code) = text.rsplit_once('\n').unwrap_or(("", &text));
