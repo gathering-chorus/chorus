@@ -51,6 +51,19 @@ PY
   done
 }
 
+# The command checks' fixtures, named so a change to one runs this suite (werk-test ties a
+# script to the tests that name it); the plan must name exactly these.
+COMMAND_FIXTURES="platform/tests/fixtures/4960/arch-css-sole-identity-issuer
+platform/tests/fixtures/4960/arch-localhost-internal-binds
+platform/tests/fixtures/4960/code-domain-api-over-raw-fuseki
+platform/tests/fixtures/4960/qual-no-compiled-artifacts-in-src
+platform/tests/fixtures/4960/qual-stdout-to-loki-no-log-files"
+
+@test "the plan's command fixtures are exactly the ones named here" {
+  run python3 -c "import json; print('\\n'.join(sorted(r['violationFixture'].removesuffix('.sh') for r in json.load(open('$CHECKS')) if r['checkKind']=='command')))"
+  [ "$output" = "$COMMAND_FIXTURES" ] || { echo "$output"; return 1; }
+}
+
 @test "negative proof: every command check counts its fixture's violation and is clean in an empty tree" {
   for name in $(python3 -c "import json; print(' '.join(r['name'] for r in json.load(open('$CHECKS')) if r['checkKind']=='command'))"); do
     one_policy "$name"
