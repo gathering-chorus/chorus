@@ -10,7 +10,7 @@
 # in arch-policy-count, so it cannot be an echo that always passes. (No rule was retired.)
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-CHECKS="$ROOT/designing/data/policy-checks-4963.json"
+CHECKS="$ROOT/designing/domains/policies/policy-checks-4963.json"
 COUNT="$ROOT/platform/scripts/arch-policy-count"
 
 @test "every row says whether it is checked as written or narrowed, and none is retired" {

@@ -4,7 +4,7 @@
 
 The rows exist (#4960 landed them as words); this land sets each one's checkKind, checkSpec,
 measured baseline, violationFixture and narrowed comment from
-designing/data/policy-checks-4963.json, which ships in the same land, so the store and the
+designing/domains/policies/policy-checks-4963.json, which ships in the same land, so the store and the
 repo cannot differ. The door, the runner, the compare, the 403 wait and the exit codes are
 land-4960-rows' own (one implementation): this script only names a different plan.
 Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not be read.
@@ -22,7 +22,7 @@ _spec = importlib.util.spec_from_loader("land4960", _loader)
 land = importlib.util.module_from_spec(_spec)
 _loader.exec_module(land)
 
-CHECKS = os.path.join(land.ROOT, "designing/data/policy-checks-4963.json")
+CHECKS = os.path.join(land.ROOT, "designing/domains/policies/policy-checks-4963.json")
 FIELDS = ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")
 
 

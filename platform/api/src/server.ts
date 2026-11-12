@@ -2838,7 +2838,7 @@ app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
     },
     loadPlans: () => {
       // a pending land's plan; none (or an unreadable one) just means no overlay
-      const dir = path.join(policyTreeRoot, 'designing', 'data');
+      const dir = path.join(policyTreeRoot, 'designing', 'domains', 'policies');
       try {
         return fs.readdirSync(dir).filter((f) => /^policy-checks-\d+\.json$/.test(f))
           .flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as PolicyRow[]);

@@ -9,7 +9,7 @@
 # no adds, no deletes); `policy-validate --gate arch` runs all 13 and exits 0 at the baselines.
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-CHECKS="$ROOT/designing/data/policy-checks-4963.json"
+CHECKS="$ROOT/designing/domains/policies/policy-checks-4963.json"
 PV="$ROOT/platform/scripts/policy-validate"
 LAND="$ROOT/platform/scripts/land-4963-rows"
 ARCH="arch-cmdb-service-registered arch-compute-decoupled-via-store arch-dagu-generated-pipelines arch-domain-directory-layout arch-harness-adapter-boundary arch-hook-single-responsibility arch-language-boundary arch-native-launchd-only arch-one-execution-path arch-single-binary-deploy arch-single-home-projection arch-three-generator-separation arch-verb-naming-and-atomic-core"

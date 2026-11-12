@@ -10,7 +10,7 @@
 # tree or data holding no violation. A check that cannot measure is exit 2, never a pass.
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-CHECKS="$ROOT/designing/data/policy-checks-4963.json"
+CHECKS="$ROOT/designing/domains/policies/policy-checks-4963.json"
 PV="$ROOT/platform/scripts/policy-validate"
 COUNT="$ROOT/platform/scripts/arch-policy-count"
 

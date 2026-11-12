@@ -10,7 +10,7 @@
 # them (the gate also holds #4960's arch checks). A policy it could not measure is red.
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-CHECKS="$ROOT/designing/data/policy-checks-4963.json"
+CHECKS="$ROOT/designing/domains/policies/policy-checks-4963.json"
 BASE="${POLICY_COUNTS_BASE:-http://jeffs-mac-mini-m1-3.local:3340}"
 
 @test "the page answers on the LAN name" {
