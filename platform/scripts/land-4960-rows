@@ -104,9 +104,13 @@ def plan(live):
 
 
 def same(a, b):
+<<<<<<< HEAD
     # the door serves a many-valued edge as a list (or one scalar when it holds one) and
     # takes a list on create (PipelineCreate.hasStep, PipelineStepCreate.coversStep)
     norm = lambda v: sorted(str(x).strip() for x in v) if isinstance(v, list) else [str(v).strip()] if str(v).strip() else []
+=======
+    norm = lambda v: str(v).strip()
+>>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
     return norm(a) == norm(b)
 
 

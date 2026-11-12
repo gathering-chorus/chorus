@@ -123,6 +123,7 @@ bad = [r['name'] for r in json.load(open('$CHECKS'))
 print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+<<<<<<< HEAD
 
 @test "the land grants the card's role Write on policies first, through the security door" {
   printf '{"policies": [], "governancechecks": [], "permissions": []}' > "$T/live.json"
@@ -142,3 +143,5 @@ print(bad); sys.exit(1 if bad else 0)"
   [ "$status" -eq 0 ] || { echo "$output" | tail -3; return 1; }
   [[ "$output" == *"waited for the door's scopes"* ]] || return 1
 }
+=======
+>>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
