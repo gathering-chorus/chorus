@@ -11,13 +11,19 @@
   "violationFixture": "platform/tests/fixtures/4960/one-home-per-subject.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-051",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-one-home-per-subject",
   "provenRedOn": "2026-08-14",
   "provenRedRows": 4,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-one-home-per-subject"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "edge-follows-node",
@@ -31,13 +37,19 @@
   "violationFixture": "platform/tests/fixtures/4960/edge-follows-node.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-edge-follows-node",
   "provenRedOn": "2026-08-14",
   "provenRedRows": 3,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-edge-follows-node"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "step-implemented",
@@ -51,13 +63,19 @@
   "violationFixture": "platform/tests/fixtures/4960/step-implemented.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-step-implemented",
   "provenRedOn": "2026-08-15",
   "provenRedRows": 15,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-step-implemented"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "hat-layer-matches-attachment",
@@ -71,13 +89,19 @@
   "violationFixture": "platform/tests/fixtures/4960/hat-layer-matches-attachment.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-hat-layer-matches-attachment",
   "provenRedOn": "2026-09-14",
   "provenRedRows": 2,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-hat-layer-matches-attachment"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "appointment-has-anchor",
@@ -91,13 +115,19 @@
   "violationFixture": "platform/tests/fixtures/4960/appointment-has-anchor.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-appointment-has-anchor",
   "provenRedOn": "2026-09-14",
   "provenRedRows": 1,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-appointment-has-anchor"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "appointed-hat-is-declared",
@@ -111,13 +141,19 @@
   "violationFixture": "platform/tests/fixtures/4960/appointed-hat-is-declared.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-appointed-hat-is-declared",
   "provenRedOn": "2026-09-14",
   "provenRedRows": 2,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-appointed-hat-is-declared"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "appointee-is-the-owner",
@@ -131,13 +167,19 @@
   "violationFixture": "platform/tests/fixtures/4960/appointee-is-the-owner.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-appointee-is-the-owner",
   "provenRedOn": "2026-09-14",
   "provenRedRows": 1,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-appointee-is-the-owner"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "layer-never-points-up",
@@ -151,13 +193,19 @@
   "violationFixture": "platform/tests/fixtures/4960/layer-never-points-up.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-layer-never-points-up",
   "provenRedOn": "2026-09-24",
   "provenRedRows": 2,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-layer-never-points-up"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "no-runtime-edge-into-build",
@@ -171,13 +219,19 @@
   "violationFixture": "platform/tests/fixtures/4960/no-runtime-edge-into-build.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-no-runtime-edge-into-build",
   "provenRedOn": "2026-09-24",
   "provenRedRows": 1,
   "severity": "block"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-no-runtime-edge-into-build"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "domain-has-a-layer",
@@ -191,13 +245,19 @@
   "violationFixture": "platform/tests/fixtures/4960/domain-has-a-layer.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-domain-has-a-layer",
   "provenRedOn": "2026-09-24",
   "provenRedRows": 1,
   "severity": "warn"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-domain-has-a-layer"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "pre-mint-names",
@@ -211,13 +271,19 @@
   "violationFixture": "platform/tests/fixtures/4960/pre-mint-names.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
   "foldedFrom": "gc-pre-mint-names",
   "provenRedOn": "2026-09-25",
   "provenRedRows": 44,
   "severity": "warn"
+<<<<<<< HEAD
 =======
   "foldedFrom": "gc-pre-mint-names"
 >>>>>>> b6319870c (silas: #4960 — AC1 review (BQ): baseline as string and derivedFrom as one full IRI (PolicyCreate contract, with a test); the cross-graph rule row re-read whole (a | in its text had split it); a 16th runnable check, arch-css-sole-identity-issuer (passkey/sudoers in source, baseline 11, the #4710 class), with its fixture. 8/8.)
+=======
+>>>>>>> 7f4dadc6f (silas: #4960 — AC2: GovernanceCheck retired. Model and row files removed (model set 37), chorus.ttl's boundTo line gone; the ledger stages the class's 34 rows, its shape (shared CoreShape nodes kept, #4579), 5 predicates and the domains vocab claim. 4175/4256/4293/4316 read the checks from the policy plan via policy-check-field. checkKind declared once (board-3654), not twice (duplicate_properties_4250). Suite 5/5 with two negative proofs; one caught its own grep (git ERE has no \b).)
  },
  {
   "name": "qual-no-compiled-artifacts-in-src",
