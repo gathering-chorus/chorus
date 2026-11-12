@@ -15,15 +15,40 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 LEDGER="$ROOT/designing/schemas/model-retirements.jsonl"
 
+declared_in() { # $1 = a git tree; prints every ttl that still declares or uses the class
+  # -w, not \b: git grep's ERE has no \b, which made this pass on any tree (its negative proof caught it)
+  git -C "$1" grep -lwE 'chorus:(GovernanceCheck|GovernanceCheckShape|boundTo|checkQuery|checkSeverity|provenRedOn|provenRedRows)' -- '*.ttl' ':!roles/silas/ontology/vocabulary-generated-4254.ttl' || true
+}
+
 @test "no model or row file declares GovernanceCheck or uses its predicates" {
-  run git -C "$ROOT" grep -lE 'chorus:(GovernanceCheck|boundTo|checkQuery|checkSeverity|provenRedOn|provenRedRows)\b' -- '*.ttl' ':!roles/silas/ontology/vocabulary-generated-4254.ttl'
+  run declared_in "$ROOT"
   [ -z "$output" ] || { echo "$output"; return 1; }
-  run grep -c 'governance-checks-3846.ttl' "$ROOT/platform/services/athena-deploy/src/lib.rs"
+  run grep -c 'ontology/governance-checks-3846.ttl"),' "$ROOT/platform/services/athena-deploy/src/lib.rs"
   [ "$output" = "0" ] || return 1
 }
 
+@test "negative proof: a tree that still declares the class is named" {
+  d="$BATS_TEST_TMPDIR/tree"; mkdir -p "$d/roles/x/ontology"
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:GovernanceCheck a <http://www.w3.org/2002/07/owl#Class> .\n' > "$d/roles/x/ontology/back.ttl"
+  git -C "$d" init -q . && git -C "$d" add -A
+  run declared_in "$d"
+  [[ "$output" == *"back.ttl"* ]] || { echo "not caught: $output"; return 1; }
+}
+
 @test "the ledger retires the class's rows, its shape and its five predicates, and the domain's claim on it" {
-  run python3 - "$LEDGER" <<'PY'
+  run ledger_check "$LEDGER"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "negative proof: a ledger missing the shape's retirement is refused" {
+  grep -v 'GovernanceCheckShape' "$LEDGER" > "$BATS_TEST_TMPDIR/ledger"
+  run ledger_check "$BATS_TEST_TMPDIR/ledger"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"GovernanceCheckShape"* ]] || return 1
+}
+
+ledger_check() {
+  python3 - "$1" <<'PY'
 import json, sys
 C = "https://jeffbridwell.com/chorus#"
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -36,11 +61,10 @@ vocab = [r for r in mine if r.get("object_class") == "GovernanceCheck" and r.get
 print("missing:", sorted(missing), "class:", len(cls), "vocab:", len(vocab))
 sys.exit(1 if missing or not cls or not vocab else 0)
 PY
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "the tests that read a check read it from the policy plan, not a GovernanceCheck file" {
-  run git -C "$ROOT" grep -l 'governance-check-instances.ttl' -- platform
+  run git -C "$ROOT" grep -l 'governance-check-instances.ttl' -- platform ':!platform/tests/4960-governance-check-retired.bats'
   [ -z "$output" ] || { echo "$output"; return 1; }
   [ ! -e "$ROOT/designing/data/governance-check-instances.ttl" ] || return 1
 }

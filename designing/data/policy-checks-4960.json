@@ -10,7 +10,10 @@
   "checkSpec": "SELECT DISTINCT ?s WHERE {\n  GRAPH <urn:chorus:ontology>  { ?s a ?t1 }\n  GRAPH <urn:chorus:instances> { ?s a ?t2 }\n}",
   "violationFixture": "platform/tests/fixtures/4960/one-home-per-subject.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-051",
-  "foldedFrom": "gc-one-home-per-subject"
+  "foldedFrom": "gc-one-home-per-subject",
+  "provenRedOn": "2026-08-14",
+  "provenRedRows": 4,
+  "severity": "block"
  },
  {
   "name": "edge-follows-node",
@@ -23,7 +26,10 @@
   "checkSpec": "SELECT DISTINCT ?s ?ge WHERE {\n  GRAPH ?ge { ?s <https://jeffbridwell.com/chorus#hasProperty> ?p }\n  GRAPH ?gt { ?s a ?t }\n  FILTER(?ge != ?gt)\n  FILTER NOT EXISTS { GRAPH ?ge { ?s a ?t2 } }\n}",
   "violationFixture": "platform/tests/fixtures/4960/edge-follows-node.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
-  "foldedFrom": "gc-edge-follows-node"
+  "foldedFrom": "gc-edge-follows-node",
+  "provenRedOn": "2026-08-14",
+  "provenRedRows": 3,
+  "severity": "block"
  },
  {
   "name": "step-implemented",
@@ -36,7 +42,10 @@
   "checkSpec": "SELECT ?s WHERE {\n  GRAPH <urn:chorus:instances> {\n    ?s a <https://jeffbridwell.com/chorus#ValueStreamStep> ;\n       <https://jeffbridwell.com/chorus#inStream> ?st .\n    VALUES ?st { <https://jeffbridwell.com/chorus#value-stream-athena>\n                 <https://jeffbridwell.com/chorus#value-stream-werk> }\n    FILTER NOT EXISTS { ?s <https://jeffbridwell.com/chorus#implementedBy> ?i }\n  }\n}",
   "violationFixture": "platform/tests/fixtures/4960/step-implemented.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
-  "foldedFrom": "gc-step-implemented"
+  "foldedFrom": "gc-step-implemented",
+  "provenRedOn": "2026-08-15",
+  "provenRedRows": 15,
+  "severity": "block"
  },
  {
   "name": "hat-layer-matches-attachment",
@@ -49,7 +58,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?hat ?layer ?why WHERE {\n  { ?s c:appointedHat ?hat . ?hat c:hatLayer ?layer . FILTER(?layer != \"per-product\")\n    BIND(\"standing hat on an appointment \u2014 a standing hat anchors to the role, not to a product/domain/service\" AS ?why) }\n  UNION\n  { ?s c:heldStandingBy ?who . ?s c:hatLayer ?layer . FILTER(?layer != \"standing\")\n    BIND(?s AS ?hat)\n    BIND(\"per-product hat given a standing seat \u2014 a per-product hat is meaningless without an anchor\" AS ?why) }\n}",
   "violationFixture": "platform/tests/fixtures/4960/hat-layer-matches-attachment.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
-  "foldedFrom": "gc-hat-layer-matches-attachment"
+  "foldedFrom": "gc-hat-layer-matches-attachment",
+  "provenRedOn": "2026-09-14",
+  "provenRedRows": 2,
+  "severity": "block"
  },
  {
   "name": "appointment-has-anchor",
@@ -62,7 +74,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?hat WHERE {\n  ?s a c:Appointment ; c:appointedHat ?hat .\n  FILTER NOT EXISTS { ?s c:overAnchor ?a }\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointment-has-anchor.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
-  "foldedFrom": "gc-appointment-has-anchor"
+  "foldedFrom": "gc-appointment-has-anchor",
+  "provenRedOn": "2026-09-14",
+  "provenRedRows": 1,
+  "severity": "block"
  },
  {
   "name": "appointed-hat-is-declared",
@@ -75,7 +90,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?hat WHERE {\n  { ?s c:appointedHat ?hat } UNION { ?s c:heldStandingBy ?who . BIND(?s AS ?hat) }\n  FILTER NOT EXISTS { ?hat a c:Hat }\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointed-hat-is-declared.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
-  "foldedFrom": "gc-appointed-hat-is-declared"
+  "foldedFrom": "gc-appointed-hat-is-declared",
+  "provenRedOn": "2026-09-14",
+  "provenRedRows": 2,
+  "severity": "block"
  },
  {
   "name": "appointee-is-the-owner",
@@ -88,7 +106,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?appointee ?owner ?anchor WHERE {\n  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .\n  ?anchor c:ownedBy ?owner .\n  FILTER(?appointee != ?owner)\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointee-is-the-owner.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
-  "foldedFrom": "gc-appointee-is-the-owner"
+  "foldedFrom": "gc-appointee-is-the-owner",
+  "provenRedOn": "2026-09-14",
+  "provenRedRows": 1,
+  "severity": "block"
  },
  {
   "name": "layer-never-points-up",
@@ -101,7 +122,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?o ?fromRank ?toRank WHERE {\n  { ?s c:dependsOn ?o . ?s c:inLayer ?ls . }\n  UNION\n  { ?d c:hosts ?s . ?s c:dependsOn ?o . ?d c:inLayer ?ls . }\n  ?ls c:layerRank ?fromRank .\n  ?o c:inLayer ?lo . ?lo c:layerRank ?toRank .\n  FILTER(?toRank > ?fromRank)\n}",
   "violationFixture": "platform/tests/fixtures/4960/layer-never-points-up.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
-  "foldedFrom": "gc-layer-never-points-up"
+  "foldedFrom": "gc-layer-never-points-up",
+  "provenRedOn": "2026-09-24",
+  "provenRedRows": 2,
+  "severity": "block"
  },
  {
   "name": "no-runtime-edge-into-build",
@@ -114,7 +138,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?o WHERE {\n  { ?s c:dependsOn ?o . FILTER NOT EXISTS { ?s c:inLayer c:layer-build } }\n  UNION\n  { ?d c:hosts ?s . ?s c:dependsOn ?o . FILTER NOT EXISTS { ?d c:inLayer c:layer-build } }\n  ?o c:inLayer c:layer-build .\n}",
   "violationFixture": "platform/tests/fixtures/4960/no-runtime-edge-into-build.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
-  "foldedFrom": "gc-no-runtime-edge-into-build"
+  "foldedFrom": "gc-no-runtime-edge-into-build",
+  "provenRedOn": "2026-09-24",
+  "provenRedRows": 1,
+  "severity": "block"
  },
  {
   "name": "domain-has-a-layer",
@@ -127,7 +154,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s WHERE {\n  ?s a c:Domain .\n  FILTER NOT EXISTS { ?s c:inLayer ?l }\n}",
   "violationFixture": "platform/tests/fixtures/4960/domain-has-a-layer.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-041",
-  "foldedFrom": "gc-domain-has-a-layer"
+  "foldedFrom": "gc-domain-has-a-layer",
+  "provenRedOn": "2026-09-24",
+  "provenRedRows": 1,
+  "severity": "warn"
  },
  {
   "name": "pre-mint-names",
@@ -140,7 +170,10 @@
   "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT DISTINCT ?s WHERE {\n  VALUES (?cls ?prefix) { (c:Gate \"gate-\") (c:Property \"property-\") (c:PropertyKey \"property-key-\") (c:EmitContract \"emit-contract-\") (c:APISurface \"api-surface-\") }\n  ?s a ?cls .\n  FILTER(STRSTARTS(STR(?s), \"https://jeffbridwell.com/chorus#\"))\n  FILTER(!STRSTARTS(STRAFTER(STR(?s), \"#\"), ?prefix))\n}",
   "violationFixture": "platform/tests/fixtures/4960/pre-mint-names.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-058",
-  "foldedFrom": "gc-pre-mint-names"
+  "foldedFrom": "gc-pre-mint-names",
+  "provenRedOn": "2026-09-25",
+  "provenRedRows": 44,
+  "severity": "warn"
  },
  {
   "name": "qual-no-compiled-artifacts-in-src",

@@ -1,0 +1,3 @@
+# #4960 AC3 fixture — the policy sensor: every policy check, hourly, its counts written for Pulse.
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+measure	1	1	skill-policy-sensor	measure every policy	deterministic	${CHORUS_HOME}/platform/scripts/policy-sensor				continue_on=failure

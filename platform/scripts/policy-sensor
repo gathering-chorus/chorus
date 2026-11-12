@@ -1,0 +1,9 @@
+#!/bin/sh
+# #4960 AC3 — the hourly policy sensor (platform/pipelines/policy-sensor.yaml, generated from
+# its rows): every policy's check against main, its counts written for Pulse.
+# @domain: policies
+# Command and test checks read the tree they run in, so it runs in canonical main. A run that
+# cannot measure writes nothing, and the stale rule (chorus-policy-rules.yaml) fires.
+set -u
+cd "${CHORUS_HOME:?CHORUS_HOME is not set}" || exit 2
+exec "${CHORUS_HOME}/platform/scripts/policy-validate" --prom
