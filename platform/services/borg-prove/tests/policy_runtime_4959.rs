@@ -47,15 +47,3 @@ fn negative_proof_exit_1_with_no_fail_line_is_unmeasured_not_a_silent_pass() {
     assert!(matches!(r[0].1, Outcome::Unmeasured(_)), "{:?}", r[0].1);
 }
 
-/// Code review, run 2: drift or an outage unrelated to the landing card must not hold its
-/// land. The verdict counts the card's own rows; the policy rows still file their child.
-#[test]
-fn negative_proof_a_red_policy_files_its_child_but_never_holds_an_unrelated_land() {
-    use borg_prove::{card_rows, Check};
-    let own = Check { ac: "ac-4959-1".into(), statement: "s".into(), kind: "http".into(), target: "/ok".into(), expect: "ok".into() };
-    let mut r = vec![(own, Outcome::Met("ok".into()))];
-    r.extend(policy_results(4959, Some(1), "FAIL bind-local 1 > 0 (arch)\n"));
-    r.extend(policy_results(4959, Some(2), "BROKEN x: door down\n"));
-    assert_eq!(verdict(&card_rows(&r)), "Proven", "the card's own ACs decide its land");
-    assert_eq!(reds(&r).len(), 2, "the red and the unmeasured policy each still file a child");
-}

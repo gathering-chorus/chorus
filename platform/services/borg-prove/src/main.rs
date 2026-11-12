@@ -222,6 +222,24 @@ fn check_manifest(
     }
 }
 
+/// #4959 (code review, run 2; Borg Queen) — the runtime policies run for a land that
+/// deployed runtime units, read from the same werk-deploy log the manifest check reads.
+/// An unreadable log is unmeasured, never "nothing deployed".
+fn runtime_policies_if_deployed(card: u32) -> Vec<(Check, Outcome)> {
+    let log_path = env("BORG_DEPLOY_LOG", &format!("{}/ops/logs/werk-deploy.jsonl", env("CHORUS_HOME", "")));
+    let log_text = match std::fs::read_to_string(&log_path) {
+        Ok(t) => t,
+        Err(e) => return policy_results(card, None, &format!("BROKEN deploy log unreadable at {log_path}: {e}\n")),
+    };
+    let land_trace = std::env::var("CHORUS_TRACE_ID").ok().filter(|s| !s.trim().is_empty())
+        .or_else(|| std::fs::read_to_string(format!("/tmp/{card}-trace")).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()));
+    if units_from_deploy_log(&log_text, card, land_trace.as_deref()).is_empty() {
+        println!("#{card} runtime policies: this land deployed no runtime units");
+        return Vec::new();
+    }
+    runtime_policies(card)
+}
+
 /// #4959 AC6 — canonical policy-validate --runtime (BORG_POLICY_VALIDATE for tests).
 /// Missing is not "nothing to check": it is unmeasured, and the land is not proven.
 fn runtime_policies(card: u32) -> Vec<(Check, Outcome)> {
@@ -494,8 +512,9 @@ fn main() {
             let mut r = run_checks(card, &prod_base);
             // #4959 AC6 — the runtime policies against prod: one red row per policy over its
             // baseline (record files its child), unmeasured when the checker could not run.
-            // They never decide this card's land (card_rows): drift may not be this card's.
-            r.extend(runtime_policies(card));
+            // Only a land that deployed runtime units answers for them (like the manifest
+            // check): a model- or doc-only card cannot have caused runtime drift.
+            r.extend(runtime_policies_if_deployed(card));
             let path = results_path(card);
             if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, results_to_tsv(&r))) {
                 eprintln!("#{card} prod: the results were not written to {}: {e}", path.display());
@@ -503,7 +522,7 @@ fn main() {
             }
             // "Not met", not "Regressed": a card that never worked did not regress (Wren)
             let card_has_ac = !checks(card).is_empty();
-            let v = if !card_has_ac { NO_ROWS } else { verdict(&card_rows(&r)) };
+            let v = if !card_has_ac { NO_ROWS } else { verdict(&r) };
             println!("#{card} verify in prod: {v}");
             if !prod_passes(v) { exit(1) }
         }
@@ -531,7 +550,7 @@ fn main() {
                 exit(1)
             });
             let card_has_ac = !checks(card).is_empty();
-            let v = if !card_has_ac { NO_ROWS } else { verdict(&card_rows(&r)) };
+            let v = if !card_has_ac { NO_ROWS } else { verdict(&r) };
             println!("#{card} record: {v}");
             record(card, &role, v, &r);
             // #4889 — a Proven card with `after` checks lands Done; they stay open, named on it
