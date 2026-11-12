@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: smoke — runs the canonical policy-validate --runtime against prod; read-only.
 # @domain: policies
+# @needs: machine — prod after the land
 # @card: #4959
 # @owner: silas
 #
