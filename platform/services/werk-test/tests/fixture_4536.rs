@@ -229,9 +229,9 @@ fn run_in_path(base: &Path, card: &str, registry_rows: &[String], patch_status: 
     }
 }
 
-const PASS: &str = "#!/usr/bin/env bats\n@test \"p\" {\n  true\n}\n";
-const FAIL: &str = "#!/usr/bin/env bats\n@test \"f\" {\n  false\n}\n";
-const EMPTY: &str = "#!/usr/bin/env bats\n# no cases\n";
+const PASS: &str = "#!/usr/bin/env bats\n# @domain: tests\n@test \"p\" {\n  true\n}\n";
+const FAIL: &str = "#!/usr/bin/env bats\n# @domain: tests\n@test \"f\" {\n  false\n}\n";
+const EMPTY: &str = "#!/usr/bin/env bats\n# @domain: tests\n# no cases\n";
 
 #[test]
 fn row_01_one_passing_case_is_clean_exit_0() {
@@ -347,7 +347,7 @@ fn a_werk_root_nightly_writes_nothing_even_pointed_at_a_door() {
 
 const FX_TOML: &str = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n";
 const FX_LIB: &str = "pub fn one() -> u32 { 1 }\n";
-const FX_TEST: &str = "#[test]\nfn one_is_one() { assert_eq!(fx::one(), 1); }\n";
+const FX_TEST: &str = "// @domain: tests\n#[test]\nfn one_is_one() { assert_eq!(fx::one(), 1); }\n";
 
 fn crate_files(lib: &'static str) -> Vec<(&'static str, &'static str)> {
     vec![("platform/services/fx/Cargo.toml", FX_TOML), ("platform/services/fx/src/lib.rs", lib),
@@ -405,7 +405,7 @@ fn row_12_a_case_that_tries_to_write_prod_is_unmeasured_and_named() {
     let home = std::env::var("HOME").unwrap();
     let shim = format!("{}/.chorus/bin/chorus-hook-shim", home);
     assert!(Path::new(&shim).is_file(), "row 12 needs the installed chorus-hook-shim at {}", shim);
-    let case = format!("#!/usr/bin/env bats\n@test \"writes the live spine\" {{\n  env -u CHORUS_LOG_FILE HOME=\"$BATS_TEST_TMPDIR/h\" {} chorus-log test.fixture kade x=1\n}}\n", shim);
+    let case = format!("#!/usr/bin/env bats\n# @domain: tests\n@test \"writes the live spine\" {{\n  env -u CHORUS_LOG_FILE HOME=\"$BATS_TEST_TMPDIR/h\" {} chorus-log test.fixture kade x=1\n}}\n", shim);
     let case: &'static str = Box::leak(case.into_boxed_str());
     let r = run_fixture_path("r12", "91013", &[("platform/tests/prodwrite.bats", case)],
         &[row("platform/tests/prodwrite.bats", "writes the live spine", "test-prodwrite")], &["bats"]);
@@ -490,7 +490,7 @@ fn held_row(file: &str, test: &str, entity: &str, until: &str) -> String {
              \"quarantined\":\"true\",\"quarantineReason\":\"flaky\",\"quarantineUntil\":\"{until}\"}}")
 }
 
-const HELD: &str = "#!/usr/bin/env bats\n@test \"p\" {\n  true\n}\n@test \"f\" {\n  false\n}\n";
+const HELD: &str = "#!/usr/bin/env bats\n# @domain: tests\n@test \"p\" {\n  true\n}\n@test \"f\" {\n  false\n}\n";
 
 #[test]
 fn row_07_a_quarantined_case_does_not_run_and_is_unmeasured_until_its_date() {
@@ -512,7 +512,7 @@ fn negative_proof_an_expired_quarantine_runs_the_test() {
     assert!(r.out.contains("quarantine expired, runs (1)"), "{}", r.out);
 }
 
-const BOX: &str = "#!/usr/bin/env bats\n# @needs: machine\n@test \"b\" {\n  false\n}\n";
+const BOX: &str = "#!/usr/bin/env bats\n# @domain: tests\n# @needs: machine\n@test \"b\" {\n  false\n}\n";
 
 #[test]
 fn row_08_a_needs_machine_suite_is_not_selected_and_is_listed_nightly_only() {
@@ -565,7 +565,7 @@ fn scope_all_runs_a_needs_machine_suite() {
 
 // ── #4539 — a card that edits only a nightly-only cargo test binary (Silas 04:30) ──
 
-const FX_BOX: &str = "// @needs: machine\n#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n";
+const FX_BOX: &str = "// @domain: tests\n// @needs: machine\n#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n";
 
 /// The crate is on the base; the card's last commit edits only tests/box.rs,
 /// so the cargo lane takes its only-bins path.
@@ -595,7 +595,7 @@ fn editing_only_a_needs_machine_test_binary_does_not_run_it() {
 /// NEGATIVE PROOF: the same edit without the header runs the binary — red.
 #[test]
 fn negative_proof_without_the_header_the_edited_binary_runs() {
-    let r = box_only_edit("r8d", "91038", "#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n");
+    let r = box_only_edit("r8d", "91038", "// @domain: tests\n#[test]\nfn reads_the_box() { assert_eq!(fx::one(), 2); }\n");
     assert!(r.out.contains("werk-test: RED"), "{}", r.out);
 }
 

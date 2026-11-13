@@ -3528,6 +3528,17 @@ fn refuse_unlisted_domains(werk: &str, changed: &[String], role: &str, card: &st
     if files.is_empty() {
         return;
     }
+    // #4965 AC6 — a test with no @domain tag is refused, the store not needed
+    let untagged = werk_test::untagged_test_files(&files);
+    if !untagged.is_empty() {
+        for f in &untagged {
+            eprintln!("domain-check: REFUSED — {f} declares no @domain. Add a `@domain: <listed domain>` header line (GET /v1/domains/domains) and re-run.");
+        }
+        eprintln!("  Nothing ran. An untagged test lands outside every domain's run (#4935).");
+        emit_spine("test.scope.refused", role, card, trace,
+            &[("reason", "untagged-domain"), ("path", untagged[0].as_str()), ("count", &untagged.len().to_string())]);
+        std::process::exit(2);
+    }
     let Some(listed) = fetch_domain_names() else {
         println!("domain-check: UNMEASURED — the store did not list its Domains; {} changed test file(s) not checked", files.len());
         return;
