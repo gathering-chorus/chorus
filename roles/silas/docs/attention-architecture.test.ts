@@ -1,3 +1,5 @@
+// @domain: awareness
+// @test-type: unit — reads a design doc from disk; no services
 import fs from 'fs';
 import path from 'path';
 

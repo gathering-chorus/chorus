@@ -1,3 +1,4 @@
+// @domain: security
 //! #3949 — RETIRED with its twin (tests/inject_binary_test.rs), same reason:
 //! asserted a RELEASE binary exists at target/release — ambient build-state a
 //! fresh werk can never satisfy (#3528). Run 52 "ghost binary" was actually

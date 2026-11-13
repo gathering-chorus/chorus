@@ -1,3 +1,4 @@
+// @domain: identity
 //! #4944 — a fake door for the sweep: a curl that answers the roles and sessions
 //! listings and records every write (method, url, body) to `calls.log`, a token
 //! bin, and a spine log bin that records each event's args to `spine.log`.

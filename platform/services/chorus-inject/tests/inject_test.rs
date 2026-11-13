@@ -1,3 +1,4 @@
+// @domain: spine
 //! SUPERSEDED by `inject_integration.rs` (behavior) + `inject_source_gate.rs`
 //! (build-time lint) per #2155.
 //!
