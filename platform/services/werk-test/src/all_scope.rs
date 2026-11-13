@@ -1752,6 +1752,14 @@ pub fn step_all(
             }
             let (owners, registered) = read_registry(&ctx);
             d.put("run-ts", &[started_at])?;
+            // #4965 AC7 — the tree and commit this run tested, so a check reading the
+            // run can refuse one that tested another tree or an older head
+            d.put("root", &[ctx.root.clone()])?;
+            let head = Command::new("git").args(["-C", &ctx.root, "rev-parse", "HEAD"]).output().ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            d.put("head", &[head])?;
             d.put("owners", &werk_test::run_dir::pair_lines(owners.iter()))?;
             d.put("registered", &werk_test::run_dir::pair_lines(registered.iter().map(|(a, b)| (a, b))))?;
             // #4278 — every com.chorus.* agent's pid at the start; perf compares the end

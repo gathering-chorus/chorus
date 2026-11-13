@@ -166,6 +166,14 @@ EOS
   grep -q '^SUITE|jest|directing/clearing|kade|pass|' "$T/nightly.log"
 }
 
+@test "#4965 AC7: the run folder records the tree it tested (root) and its commit (head)" {
+  git -C "$T/root" init -q && git -C "$T/root" -c user.email=t@x.invalid -c user.name=t commit -q --allow-empty -m seed
+  run run_all
+  d="$T/runs/034gpBats4145Fixture01"
+  [ "$(cat "$d/root")" = "$T/root" ] || { echo "root=$(cat "$d/root" 2>&1)"; return 1; }
+  [ "$(cat "$d/head")" = "$(git -C "$T/root" rev-parse HEAD)" ] || { echo "head=$(cat "$d/head" 2>&1)"; return 1; }
+}
+
 @test "reds nudge their owner as they land, then one grouped line per owner and one TOTAL; slow is named as speed" {
   run run_all
   grep -q '^CASE open test-nightly-first-red-nudge-4071 platform/scripts/z.sh silas nightly RED: platform/scripts/z.sh' "$T/cases.txt"
