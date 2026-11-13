@@ -21,7 +21,9 @@ directing/clearing/tests/jeff-input-delivery.test.ts
 platform/tests/lib/card-run-4965.bash
 platform/tests/4965-nightly-reds-green.bats
 platform/tests/4965-nothing-newly-red.bats
-platform/tests/4965-unowned-named.bats'
+platform/tests/4965-unowned-named.bats
+roles/silas/docs/attention-architecture.test.ts
+platform/tests/4965-attention-architecture-doc.bats'
 
 # the 18 nightly reds the proof run showed green (card AC1)
 PROVEN_4965='bats|platform/tests/4416-no-raised-test-timeouts.bats

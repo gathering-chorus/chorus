@@ -1,9 +1,11 @@
 // @domain: awareness
 // @test-type: unit — reads a design doc from disk; no services
+// Run by platform/tests/4965-attention-architecture-doc.bats (no TS package holds it).
 import fs from 'fs';
 import path from 'path';
 
-const DOC_PATH = path.join(__dirname, 'attention-architecture.html');
+// the doc moved to designing/docs/ in #1829 (8e9a74402); this path read nothing since
+const DOC_PATH = path.join(__dirname, '..', '..', '..', 'designing', 'docs', 'attention-architecture.html');
 
 describe('Attention Architecture doc — #1831 AC', () => {
   let html: string;
