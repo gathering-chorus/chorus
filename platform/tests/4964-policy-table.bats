@@ -31,5 +31,5 @@ PAGE="$ROOT/platform/api/public/loom/policy-counts.html"
   cd "$ROOT/platform/api"
   run npx jest --config '{"preset":"ts-jest","testEnvironment":"node"}' tests/policy-counts-4964.test.ts tests/policy-counts-4963.test.ts
   [ "$status" -eq 0 ] || { echo "$output" | tail -30; return 1; }
-  [[ "$output" == *"Tests:       13 passed, 13 total"* ]] || { echo "$output" | tail -5; return 1; }
+  [[ "$output" == *"Tests:       16 passed, 16 total"* ]] || { echo "$output" | tail -5; return 1; }
 }

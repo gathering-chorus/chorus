@@ -5,7 +5,7 @@
  * gates' checked policies together, worst first, each row naming its gate. A gate list that is
  * not words with commas is refused before anything runs.
  */
-import { clearPolicyCountsCache, fetchPolicyCounts, type PolicyRow } from '../src/handlers/policy-counts';
+import { clearPolicyCountsCache, fetchPolicyCounts, overlay, type PolicyRow } from '../src/handlers/policy-counts';
 
 const door: PolicyRow[] = [
   { name: 'qual-a', gate: 'quality', comment: 'Narrowed: a.', checkKind: 'command', checkSpec: 'a', baseline: '6' },
@@ -56,4 +56,29 @@ test('negative proof: a gate list that is not words with commas is refused befor
     expect(r.status).toBe(400);
     expect(ran).toEqual([]);
   }
+});
+
+// the rename window: the door still names the retired script, this tree's plan names the new one
+const oldSpec = 'p=platform/scripts/arch-policy-count; "$p" arch-x';
+const newSpec = 'p=platform/scripts/policy-count; "$p" arch-x';
+const doorOld: PolicyRow[] = [{ name: 'arch-x', gate: 'arch', checkKind: 'command', checkSpec: oldSpec, baseline: '3' }];
+const planNew: PolicyRow[] = [{ name: 'arch-x', checkKind: 'command', checkSpec: newSpec, baseline: '3' }];
+const hasScript = (r: PolicyRow) => !/arch-policy-count/.test(r.checkSpec ?? '');
+
+test('a door check naming a script this tree lacks takes the tree plan, marked pendingLand', () => {
+  const [r] = overlay(doorOld, planNew, hasScript);
+  expect(r.checkSpec).toBe(newSpec);
+  expect(r.pendingLand).toBe(true);
+});
+
+test('negative proof: a runnable door check still wins over the plan', () => {
+  const [r] = overlay(doorOld, planNew, () => true);
+  expect(r.checkSpec).toBe(oldSpec);
+  expect(r.pendingLand).toBe(false);
+});
+
+test('negative proof: an unrunnable door check with no plan stays as the door holds it (measured as could-not-run, never hidden)', () => {
+  const [r] = overlay(doorOld, [], hasScript);
+  expect(r.checkSpec).toBe(oldSpec);
+  expect(r.pendingLand).toBe(false);
 });

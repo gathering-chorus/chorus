@@ -43,16 +43,25 @@ export interface CountRow extends Measured {
 export interface PolicyCountsDeps {
   fetchPolicies: () => Promise<PolicyRow[]>;
   loadPlans: () => PolicyRow[];
+  /** false when the row's check names a script missing from this tree (default: all runnable) */
+  runnable?: (row: PolicyRow) => boolean;
   runValidate: (gate: string, rows: PolicyRow[]) => Promise<string>;
   now?: () => number;
 }
 
-/** Door rows, with a pending plan's check fields where the door row has no check yet. */
-export function overlay(door: PolicyRow[], plans: PolicyRow[]): Array<PolicyRow & { pendingLand: boolean }> {
+/**
+ * Door rows, with a pending plan's check fields where the door row has no check yet, or where
+ * its check cannot run in this tree (it names a script this tree's land retires: #4964 moved
+ * the arch checks from arch-policy-count to policy-count, and until the land writes the rows the
+ * door still names the old script).
+ */
+export function overlay(
+  door: PolicyRow[], plans: PolicyRow[], runnable: (row: PolicyRow) => boolean = () => true,
+): Array<PolicyRow & { pendingLand: boolean }> {
   const plan = new Map(plans.map((p) => [p.name, p]));
   return door.map((row) => {
     const p = plan.get(row.name);
-    if (!p || (row.checkKind ?? '') !== '') return { ...row, pendingLand: false };
+    if (!p || ((row.checkKind ?? '') !== '' && runnable(row))) return { ...row, pendingLand: false };
     return {
       ...row,
       status: p.status ?? row.status,
@@ -107,7 +116,7 @@ export async function fetchPolicyCounts(gate: string, deps: PolicyCountsDeps): P
   } catch (e) {
     return { status: 503, body: { error: `the policies door did not answer: ${(e as Error).message}` } };
   }
-  const rows = overlay(door.filter((r) => gates.has(r.gate ?? '')), deps.loadPlans()).filter((r) => (r.checkKind ?? '') !== '');
+  const rows = overlay(door.filter((r) => gates.has(r.gate ?? '')), deps.loadPlans(), deps.runnable).filter((r) => (r.checkKind ?? '') !== '');
   const measured = new Map(parseValidate(await deps.runValidate(gate, rows)).map((m) => [m.name, m]));
   const table = worstFirst(rows.map((r) => {
     const m = measured.get(r.name) ?? { name: r.name, verdict: 'broken' as const, count: null, baseline: null, reason: 'not measured' };
