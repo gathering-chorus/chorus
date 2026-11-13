@@ -1,4 +1,7 @@
 // @test-type: integration — a local HTTP stub stands in for Loki and the door
+// @domain: awareness
+// @card: #4623
+// @owner: silas
 /**
  * #4623 — actor state's 30-minute Loki count is read at most once per
  * ACTION_30M_REFRESH_MS, not on every 15s tick. The 5-minute count stays live.
