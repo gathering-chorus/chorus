@@ -864,6 +864,9 @@ PYEOF
 
     echo "$CONTEXT_JSON" > "$tmp_dir/context.json"
 
+    # #4965 (Silas 07:40) — no hooks, no MCP servers, no tools: it reasons over stdin JSON
+    # only. With user settings it ran the role prompt hook as role "unknown" every ~15 min
+    # and a lost reply turned 4807-inject-unanswered red.
     cat "$tmp_dir/context.json" | env -u CLAUDECODE claude -p \
         --model "$MODEL" \
         --permission-mode dontAsk \
@@ -871,7 +874,9 @@ PYEOF
         --max-budget-usd "$BUDGET" \
         --output-format json \
         --json-schema "$JSON_SCHEMA" \
-        --disallowedTools "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task" \
+        --setting-sources local \
+        --strict-mcp-config \
+        --tools "" \
         --system-prompt "$SYSTEM_PROMPT" \
         > "$tmp_dir/claude_response.json" 2>/dev/null || {
         log "ERROR: claude -p failed (exit code $?)"
