@@ -196,7 +196,30 @@ pub fn owner_role(owner: &str) -> &str {
 
 pub fn owner_for(path: &str, map: &HashMap<String, String>, chorus_root: &str, app_root: &str) -> String {
     let rel = path.strip_prefix(&format!("{}/", chorus_root)).unwrap_or(path);
-    map.get(rel).cloned().unwrap_or_else(|| owner_path_rule(path, chorus_root, app_root).to_string())
+    if let Some(o) = map.get(rel) {
+        return o.clone();
+    }
+    match owner_path_rule(path, chorus_root, app_root) {
+        "unowned" => package_majority(rel, map).unwrap_or_else(|| "unowned".into()),
+        o => o.to_string(),
+    }
+}
+
+/// #4965 AC4 (Wren 10:09) — a package suite (`npm|platform/pulse`) is no test file,
+/// so the model's file map has no row for it. It takes the owner of most of the
+/// test files the map attributes inside it; a tie, or no file, stays unowned.
+pub fn package_majority(rel: &str, map: &HashMap<String, String>) -> Option<String> {
+    let prefix = format!("{}/", rel.trim_end_matches('/'));
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for (f, o) in map {
+        if f.starts_with(&prefix) {
+            *counts.entry(o.as_str()).or_default() += 1;
+        }
+    }
+    let top = counts.values().copied().max()?;
+    let mut leaders = counts.iter().filter(|(_, n)| **n == top);
+    let (owner, _) = leaders.next()?;
+    leaders.next().is_none().then(|| owner.to_string())
 }
 
 /// Kinds whose `unit` field IS a repo-relative path, so its absence from disk
@@ -1306,6 +1329,28 @@ mod run_record_4145 {
         assert_eq!(owner_for("platform/scripts/x.sh", &m, "/r", "/app"), "silas", "path rule fallback");
         assert_eq!(owner_for("/r/directing/x/tests/y.test.ts", &m, "/r", "/app"), "kade");
         assert_eq!(owner_for("elsewhere/x", &m, "/r", "/app"), "unowned");
+    }
+
+    /// #4965 AC4 — a package suite takes the majority owner of its test files
+    #[test]
+    fn a_package_suite_takes_the_majority_owner_of_its_test_files() {
+        let mut m = HashMap::new();
+        for (f, o) in [("platform/pulse/src/a.test.ts", "wren"), ("platform/pulse/src/b.test.ts", "wren"), ("platform/pulse/src/c.test.ts", "kade"), ("platform/pulsar/x.test.ts", "silas")] {
+            m.insert(f.to_string(), o.to_string());
+        }
+        assert_eq!(owner_for("platform/pulse", &m, "/r", "/app"), "wren");
+        assert_eq!(owner_for("/r/platform/pulse", &m, "/r", "/app"), "wren", "an absolute package path too");
+    }
+
+    /// NEGATIVE PROOF — a tie, or a package with no attributed file, stays unowned
+    #[test]
+    fn a_tie_or_an_empty_package_stays_unowned() {
+        let mut m = HashMap::new();
+        m.insert("platform/api/tests/a.test.ts".to_string(), "wren".to_string());
+        m.insert("platform/api/tests/b.test.ts".to_string(), "silas".to_string());
+        assert_eq!(owner_for("platform/api", &m, "/r", "/app"), "unowned");
+        assert_eq!(owner_for("platform/empty", &m, "/r", "/app"), "unowned");
+        assert_eq!(owner_for("platform/ap", &m, "/r", "/app"), "unowned", "a prefix of a name is not its package");
     }
 
     #[test]
