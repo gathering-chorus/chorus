@@ -56,16 +56,9 @@ afterAll(async () => {
 
 beforeEach(() => { seen.length = 0; answer = 200; try { fs.unlinkSync(AUDIT); } catch { /* none yet */ } });
 
-// #4965 — chorus-log is spawned fire-and-forget. Under nightly load a 500 ms poll gave
-// up before test 1's child wrote, and that late child then wrote into test 2's file.
-// Wait (up to 3.5 s, inside the default budget) for a whole line, so each test's
-// child has finished before the next test starts.
 const audit = async (): Promise<string> => {
-  for (let i = 0; i < 140; i++) {
-    if (fs.existsSync(AUDIT)) {
-      const txt = fs.readFileSync(AUDIT, 'utf8');
-      if (txt.includes('\n')) return txt;
-    }
+  for (let i = 0; i < 20; i++) {
+    if (fs.existsSync(AUDIT)) return fs.readFileSync(AUDIT, 'utf8');
     await new Promise((r) => setTimeout(r, 25));
   }
   return '';

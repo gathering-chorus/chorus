@@ -168,7 +168,9 @@ EOS
 
 @test "#4965 AC7: the run folder records the tree it tested (root) and its commit (head)" {
   git -C "$T/root" init -q && git -C "$T/root" -c user.email=t@x.invalid -c user.name=t commit -q --allow-empty -m seed
-  run run_all
+  # trace pinned: inside a real run TRACE is the outer run's (proof run 034wwPUt), which
+  # names the folder after the outer run, not this fixture
+  TRACE=034gpBats4145Fixture01 run run_all
   d="$T/runs/034gpBats4145Fixture01"
   [ "$(cat "$d/root")" = "$T/root" ] || { echo "root=$(cat "$d/root" 2>&1)"; return 1; }
   [ "$(cat "$d/head")" = "$(git -C "$T/root" rev-parse HEAD)" ] || { echo "head=$(cat "$d/head" 2>&1)"; return 1; }

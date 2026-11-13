@@ -146,10 +146,11 @@ for r in rows if isinstance(rows, list) else []:
     stem, ext = os.path.splitext(v)
     t = f"{stem}-{tag}{ext}"
     # #4965 (Silas) - shape patterns are anchored where they mean it (^urn:chorus:
-    # is a prefix), so fullmatch never took a real value; an untaggable served
-    # value is still valid, so the probe writes it as served
-    if re.search(pat, t): print(t)
-    else: print(v)
+    # is a prefix), so fullmatch never took a real value. A value the tag would
+    # break is not sent, not even as served: that is the value of a live row
+    # (#4915; red in proof run 034wwPUt)
+    if not re.search(pat, t): continue
+    print(t)
     sys.exit(0)
 print("UNMET " + pat)' "$1" "$2" "$3"
 }
