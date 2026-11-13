@@ -280,9 +280,9 @@ pub fn turn_facts_on(hook_input: &str, row: Option<&Value>) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
     let conv = conversation_of(&v);
     let prompt = match row {
-        // a row that names no prompt field and no transcript type falls back to the input's
-        Some(r) => runtime_prompt::prompt(r, &v)
-            .or_else(|| v.get("prompt").and_then(|s| s.as_str()).map(String::from)).unwrap_or_default(),
+        // the row is the one reader (Silas 07:39): no fallback to the input, so a row naming a
+        // transcript type never reads a stray prompt field instead
+        Some(r) => runtime_prompt::prompt(r, &v).unwrap_or_default(),
         None => v.get("prompt").and_then(|s| s.as_str()).unwrap_or("").to_string(),
     };
     (conv, is_delivery(&prompt))
