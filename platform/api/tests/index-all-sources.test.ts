@@ -367,4 +367,39 @@ describe('createIndexAllSources', () => {
     const slackSqls = runs.filter(e => e.sql.includes('DELETE FROM watermarks'));
     expect(slackSqls.length).toBeGreaterThanOrEqual(2);
   });
+
+  // #4965 — agy's turns were indexed under 'external' (the hook stamped its tool
+  // vocabulary); the fold moves them to the runtime row's source, read from the table.
+  const TABLE = JSON.stringify({ runsOn: { 'abby-normal': 'agy', 'borg-queen': 'agy' },
+    runtimes: { agy: { runtimeSource: 'antigravity' }, 'claude-code': { runtimeSource: 'claude' } } });
+  const tableFs = (body: string) => ({ ...EMPTY_FS,
+    readFileSync: jest.fn((p: string) => (p.endsWith('agent_runtimes.json') ? body : '')) });
+
+  it('folds each agy role\'s external session rows and watermark into antigravity, then drops the external watermark', async () => {
+    const { ctor, runs } = fakeDbFactory();
+    const r = await createIndexAllSources({ dbPath: '/db', DatabaseCtor: ctor as any,
+      fs: tableFs(TABLE) as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h' })();
+    const updates = runs.filter(e => e.sql.startsWith('UPDATE messages SET source'));
+    expect(updates.map(e => e.args)).toEqual([['antigravity', 'session:abby-normal'], ['antigravity', 'session:borg-queen']]);
+    expect(runs.some(e => e.sql.includes("SELECT ?, last_seen") && e.args[0] === 'antigravity')).toBe(true);
+    expect(runs.some(e => e.sql.includes("DELETE FROM watermarks WHERE source = 'external'"))).toBe(true);
+    expect(r.indexed['external-fold']).toContain('abby-normal→antigravity');
+  });
+
+  it('NEGATIVE PROOF: a runtime row with no runtimeSource folds nothing and says so', async () => {
+    const { ctor, runs } = fakeDbFactory();
+    const bare = JSON.stringify({ runsOn: { 'abby-normal': 'agy' }, runtimes: { agy: {} } });
+    const r = await createIndexAllSources({ dbPath: '/db', DatabaseCtor: ctor as any,
+      fs: tableFs(bare) as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h' })();
+    expect(runs.filter(e => e.sql.startsWith('UPDATE messages SET source'))).toEqual([]);
+    expect(runs.some(e => e.sql.includes("DELETE FROM watermarks WHERE source = 'external'"))).toBe(false);
+    expect(r.indexed['external-fold']).toMatch(/^error: runtime agy .*no runtimeSource/);
+  });
+
+  it('NEGATIVE PROOF: an unreadable runtime table is an error, never a silent pass', async () => {
+    const { ctor } = fakeDbFactory();
+    const r = await createIndexAllSources({ dbPath: '/db', DatabaseCtor: ctor as any,
+      fs: EMPTY_FS as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h' })();
+    expect(r.indexed['external-fold']).toMatch(/^error: runtime table unreadable/);
+  });
 });

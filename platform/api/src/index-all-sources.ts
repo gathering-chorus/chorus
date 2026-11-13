@@ -383,6 +383,40 @@ function clearSlackWatermarks(db: IndexDb, results: Record<string, string>): voi
   } catch { /* ignore */ }
 }
 
+/**
+ * #4965 — from 10-29 the row runtime hook stamped agy's turns with its tool vocabulary,
+ * "external", so they indexed under source 'external' and the 'antigravity' source went
+ * dead. The hook now stamps the row's runtimeSource. This folds the stranded rows back:
+ * for each role the runtime table says runs on a runtime whose source is not 'external',
+ * its session rows under 'external' move to that source, the newer watermark is carried
+ * over, and the 'external' watermark goes once no row still carries it. Driven by the
+ * generated table, never a role or source name in code; an unreadable table is loud.
+ */
+function foldExternalRuntimeRows(deps: IndexAllSourcesDeps, db: IndexDb, results: Record<string, string>): void {
+  const tablePath = deps.path.join(deps.repoRoot, 'platform', 'services', 'shared', 'agent_runtimes.json');
+  let table: { runsOn?: Record<string, string>; runtimes?: Record<string, { runtimeSource?: string }> };
+  try {
+    table = JSON.parse(deps.fs.readFileSync(tablePath, 'utf-8'));
+  } catch (err: unknown) {
+    results['external-fold'] = `error: runtime table unreadable (${tablePath}): ${err instanceof Error ? err.message : String(err)}`;
+    return;
+  }
+  const moved: string[] = [];
+  for (const [role, runtime] of Object.entries(table.runsOn ?? {})) {
+    const source = table.runtimes?.[runtime]?.runtimeSource;
+    if (!source) { results['external-fold'] = `error: runtime ${runtime} (role ${role}) has no runtimeSource`; return; }
+    if (source === 'external') continue;
+    db.prepare("UPDATE messages SET source = ? WHERE source = 'external' AND channel = ?").run!(source, `session:${role}`);
+    db.prepare(`INSERT INTO watermarks (source, last_seen, last_indexed)
+      SELECT ?, last_seen, last_indexed FROM watermarks WHERE source = 'external'
+      ON CONFLICT(source) DO UPDATE SET last_seen = MAX(last_seen, excluded.last_seen), last_indexed = MAX(last_indexed, excluded.last_indexed)`).run!(source);
+    moved.push(`${role}→${source}`);
+  }
+  const left = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE source = 'external'").get!() as { n?: number } | undefined;
+  if (!left || !left.n) db.prepare("DELETE FROM watermarks WHERE source = 'external'").run!();
+  results['external-fold'] = `ok (${moved.join(', ') || 'no agent runtime roles'}; external rows left ${left?.n ?? 0})`;
+}
+
 export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<{ indexed: Record<string, string>; elapsed_ms: number }> {
   const nowFn = deps.now ?? (() => new Date().toISOString());
    
@@ -468,6 +502,7 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
       }
     }
     clearSlackWatermarks(db, results);
+    foldExternalRuntimeRows(deps, db, results);
 
     // #3136 coverage signal — flag any knowledge source that came back empty.
     const expected = ['briefs', 'decisions', 'adrs', 'memory', 'docs'];
