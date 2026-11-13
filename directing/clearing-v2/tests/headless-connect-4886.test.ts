@@ -68,7 +68,8 @@ describe('#4886 AC3: Headless Chrome loads /clearing-v2/ without console errors 
     } finally {
       await browser.close();
     }
-  });
+  // slow-by-design: Google Chrome cold launch measured 0.9 s idle, over 5 s under nightly load (#4965; one shared Chrome dies here when its first page closes)
+  }, 15000);
 
   it('AC3 negative proof: without Boston script tag, console error is logged and fallback engages', async () => {
     // Serve HTML that omits the /vendor/chorus-time/boston.js script tag
@@ -112,5 +113,6 @@ describe('#4886 AC3: Headless Chrome loads /clearing-v2/ without console errors 
       await browser.close();
       await new Promise<void>((resolve) => mockServer.close(() => resolve()));
     }
-  });
+  // slow-by-design: Google Chrome cold launch measured 0.9 s idle, over 5 s under nightly load (#4965; one shared Chrome dies here when its first page closes)
+  }, 15000);
 });
