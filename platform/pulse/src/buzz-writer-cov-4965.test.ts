@@ -113,6 +113,7 @@ describe('#4965 the room text and frame helpers', () => {
 describe('#4965 the bridge signer comes from the home key file', () => {
   let home: string;
   const keyFile = () => path.join(home, '.chorus', 'identity', 'bridge', 'nostr.json');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a key file under the temp home this suite made
   const writeKey = (o: unknown) => { fs.mkdirSync(path.dirname(keyFile()), { recursive: true }); fs.writeFileSync(keyFile(), JSON.stringify(o)); };
   beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'buzz-key-4965-')); });
   afterEach(() => fs.rmSync(home, { recursive: true, force: true }));

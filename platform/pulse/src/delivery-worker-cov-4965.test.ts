@@ -17,7 +17,7 @@ import { MessageStore } from './store';
 let dir: string;
 let store: MessageStore;
 let events: Array<{ event: string; fields: Record<string, unknown> }>;
-const emit = async (event: string, fields: Record<string, unknown>) => { events.push({ event, fields }); };
+const emit = (event: string, fields: Record<string, unknown>) => { events.push({ event, fields }); return Promise.resolve(); };
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-cov-4965-'));
@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 const rowOf = (id: number) => ({ id, from: 'silas', to: 'wren', content: 'deliver me', delivery_attempts: 0 });
-const injectOnce = (r: InjectResult): RunInject => async () => r;
+const injectOnce = (r: InjectResult): RunInject => () => Promise.resolve(r);
 
 describe('#4965 deferred deliveries settle by their reason', () => {
   test('a target-busy defer parks the row queued, not delivered', async () => {
@@ -59,7 +59,7 @@ describe('#4965 the worker defaults', () => {
     const id = store.sendNudge('silas', 'wren', 'deliver me');
     const results: InjectResult[] = [{ rc: 1, stderr: 'osascript hiccup' }, { rc: 0, stderr: '', target: 'tmux:%3' }];
     const calls: number[] = [];
-    const w = new DeliveryWorker(store, async () => { calls.push(1); return results.shift()!; }, emit, [5]);
+    const w = new DeliveryWorker(store, () => { calls.push(1); return Promise.resolve(results.shift()!); }, emit, [5]);
     await w.enqueue(rowOf(id));
     expect(calls).toHaveLength(2);
     expect(store.getDeliveryRecord(id).delivery_status).toBe('delivered');
@@ -76,7 +76,7 @@ describe('#4965 the worker defaults', () => {
 
   test('negative: a cooldown read that throws reads as unread with dedupe off', async () => {
     const w = new DeliveryWorker(store, injectOnce({ rc: 0, stderr: '' }), emit);
-    const stop = w.watchCooldown(60_000, async () => { throw new Error('door gone'); });
+    const stop = w.watchCooldown(60_000, () => Promise.reject(new Error('door gone')));
     await new Promise((r) => setImmediate(r));
     stop();
     expect(events).toEqual([{ event: 'announce.cooldown.unread', fields: { key: expect.any(String), error: 'Error: door gone', dedupe: 'off' } }]);
@@ -86,7 +86,7 @@ describe('#4965 the worker defaults', () => {
   test('the cooldown is re-read on every period and a good value is used', async () => {
     const w = new DeliveryWorker(store, injectOnce({ rc: 0, stderr: '' }), emit);
     let reads = 0;
-    const stop = w.watchCooldown(10, async () => { reads += 1; return { ok: true, value: '1500' }; });
+    const stop = w.watchCooldown(10, () => { reads += 1; return Promise.resolve({ ok: true as const, value: '1500' }); });
     await new Promise((r) => setTimeout(r, 60));
     stop();
     expect(reads).toBeGreaterThanOrEqual(2);

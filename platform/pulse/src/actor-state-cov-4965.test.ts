@@ -18,6 +18,9 @@ import {
   deriveActorState, readActivePairsFromDisk, ActorStateService, fetchDaguCardSteps, buildLiveActorFactFetcher, type ActorFactInput,
 } from './actor-state';
 
+const KADE = 'principal-kade';
+const WREN = 'principal-wren';
+
 const NOW = new Date('2026-10-16T12:20:00Z');
 const live = (principal: string) => ({ id: `s-${principal}`, principal, channel: 'pane', expiresAt: '2026-10-16T13:00:00Z', lastSeenAt: '2026-10-16T12:18:00Z' });
 
@@ -55,17 +58,18 @@ describe('#4965 deriveActorState', () => {
 
   test('a paired card with an untitled WIP row takes its title from the pair', () => {
     const states = deriveActorState({
-      now: NOW, principals: ['principal-wren', 'principal-kade'],
-      sessions: [live('principal-wren'), live('principal-kade')],
+      now: NOW, principals: [WREN, KADE],
+      sessions: [live(WREN), live(KADE)],
       activePairs: [{ card: 4595, navigator: 'wren', driver: 'kade', title: 'Pair title' }],
       wipCards: [{ cardId: 4595, owner: 'kade' }],
     });
-    const wren = states.find((s) => s.aboutPrincipal === 'principal-wren')!;
+    const wren = states.find((s) => s.aboutPrincipal === WREN)!;
     expect(wren.currentCard).toBe(4595);
     expect(wren.currentCardTitle).toBe('Pair title');
   });
 });
 
+/* eslint-disable security/detect-non-literal-fs-filename -- files under the temp dir this suite made, and the fixed /tmp pair-notes path the module reads */
 describe('#4965 readActivePairsFromDisk', () => {
   let dir: string;
   const cards = [99654961, 99654962, 99654963, 99654964];
@@ -99,11 +103,12 @@ describe('#4965 readActivePairsFromDisk', () => {
     expect(readActivePairsFromDisk(file)).toEqual([]);
   });
 });
+/* eslint-enable security/detect-non-literal-fs-filename */
 
 describe('#4965 ActorStateService polls on its period', () => {
   test('start twice runs one poll loop that re-reads the facts each period', async () => {
     let reads = 0;
-    const svc = new ActorStateService(async () => { reads += 1; return { now: NOW, principals: ['principal-kade'] }; }, 15);
+    const svc = new ActorStateService(() => { reads += 1; return Promise.resolve({ now: NOW, principals: [KADE] }); }, 15);
     svc.start();
     svc.start();
     await new Promise((r) => setTimeout(r, 70));
@@ -111,7 +116,7 @@ describe('#4965 ActorStateService polls on its period', () => {
     const after = reads;
     expect(after).toBeGreaterThanOrEqual(3);
     expect(after).toBeLessThan(10); // a second loop would have doubled the reads
-    expect(svc.getActorStates().actors.map((a) => a.aboutPrincipal)).toEqual(['principal-kade']);
+    expect(svc.getActorStates().actors.map((a) => a.aboutPrincipal)).toEqual([KADE]);
   });
 });
 
@@ -186,7 +191,7 @@ describe('#4965 one live read over every door', () => {
         opsDir: path.join(os.tmpdir(), 'no-such-pairs-4965'),
       });
       const input = await fetcher();
-      expect(input.principals).toEqual([{ principal: 'principal-kade', name: 'Kade', roleKind: 'agent' }]);
+      expect(input.principals).toEqual([{ principal: KADE, name: 'Kade', roleKind: 'agent' }]);
       expect(input.wipCards).toEqual([{ cardId: 4965, title: 'Coverage', owner: 'kade' }]);
       // negative: the run detail answered 503, so the step is unmeasured, never a guessed step
       expect(input.cardSteps).toEqual({ 4965: 'unmeasured' });

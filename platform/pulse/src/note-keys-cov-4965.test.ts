@@ -24,7 +24,7 @@ describe('#4965 note-keys reads only a registry row list', () => {
 
   test('with the default period, the start read verifies a note and stop() ends the re-reads', async () => {
     const reads: number[] = [];
-    const keys = new NoteKeys(async () => { reads.push(1); return { data: [row] }; });
+    const keys = new NoteKeys(() => { reads.push(1); return Promise.resolve({ data: [row] }); });
     try {
       await keys.refresh();
       expect(await keys.check(PUB, 'kade')).toBe('ok');
@@ -36,7 +36,7 @@ describe('#4965 note-keys reads only a registry row list', () => {
   });
 
   test('negative: a registry that answers with no list leaves every note unverified', async () => {
-    const keys = new NoteKeys(async () => ({ data: {} }), { everyMs: 0 });
+    const keys = new NoteKeys(() => Promise.resolve({ data: {} }), { everyMs: 0 });
     await keys.refresh();
     expect(await keys.check(PUB, 'kade')).toBe('unverified');
     keys.stop();

@@ -47,6 +47,7 @@ describe('#4965 liveReads — the reads pulse runs for every role', () => {
     } finally { await d.close(); }
   });
 
+  /* eslint-disable security/detect-non-literal-fs-filename -- files under the temp dir this suite made */
   it('keyMode: the file mode when nostr.json is there, null when it is not', async () => {
     await fs.mkdir(path.join(tmp, 'kade'));
     await fs.writeFile(path.join(tmp, 'kade', 'nostr.json'), '{}', { mode: 0o600 });
@@ -73,4 +74,5 @@ describe('#4965 liveReads — the reads pulse runs for every role', () => {
     await fs.writeFile(path.join(tmp, rel, 'settings.json'), '{"a":2}\n');
     expect(await reads.settingsDrift('kade')).toBe(true);
   });
+  /* eslint-enable security/detect-non-literal-fs-filename */
 });

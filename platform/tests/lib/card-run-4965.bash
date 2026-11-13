@@ -23,7 +23,16 @@ platform/tests/4965-nightly-reds-green.bats
 platform/tests/4965-nothing-newly-red.bats
 platform/tests/4965-unowned-named.bats
 roles/silas/docs/attention-architecture.test.ts
-platform/tests/4965-attention-architecture-doc.bats'
+platform/tests/4965-attention-architecture-doc.bats
+platform/services/athena-model/tests/units.rs
+platform/services/chorus-inject/tests/inject_test.rs
+platform/pulse/src/actor-state-cov-4965.test.ts
+platform/pulse/src/buzz-writer-cov-4965.test.ts
+platform/pulse/src/delivery-worker-cov-4965.test.ts
+platform/pulse/src/note-keys-cov-4965.test.ts
+platform/pulse/src/role-setup-live-4965.test.ts
+platform/pulse/src/store-cov-4965.test.ts
+platform/tests/4963-arch-policy-table.bats'
 
 # the 18 nightly reds the proof run showed green (card AC1)
 PROVEN_4965='bats|platform/tests/4416-no-raised-test-timeouts.bats

@@ -13,17 +13,18 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { MessageStore } from './store';
 
-const KEYS = ['CHORUS_CONTEXT', 'NODE_ENV', 'BATS_TEST_TMPDIR', 'CARGO', 'CI', 'GITHUB_ACTIONS', 'CHORUS_MESSAGES_DB'] as const;
-let saved: Record<string, string | undefined>;
+const KEYS: readonly string[] = ['CHORUS_CONTEXT', 'NODE_ENV', 'BATS_TEST_TMPDIR', 'CARGO', 'CI', 'GITHUB_ACTIONS', 'CHORUS_MESSAGES_DB'];
+let saved: NodeJS.ProcessEnv;
 let dir: string;
 
+// each test starts from the real environment minus the markers it sets; afterEach puts the real one back
 beforeEach(() => {
-  saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
-  for (const k of KEYS) delete process.env[k];
+  saved = process.env;
+  process.env = Object.fromEntries(Object.entries(saved).filter(([k]) => !KEYS.includes(k)));
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-cov-4965-'));
 });
 afterEach(() => {
-  for (const k of KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  process.env = saved;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -51,6 +52,7 @@ describe('#4965 the store membrane names the context that tried the prod store',
     const s = new MessageStore();
     s.sendNudge('kade', 'wren', 'opened');
     s.close();
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- a file under the temp dir this test made
     expect(fs.existsSync(file)).toBe(true);
     const d = new Database(file, { readonly: true });
     expect((d.prepare('SELECT content FROM messages').get() as { content: string }).content).toBe('opened');
