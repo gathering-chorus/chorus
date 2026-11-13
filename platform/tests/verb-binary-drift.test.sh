@@ -10,11 +10,11 @@
 set -u
 # #3949 — derive, never hardcode (#3904 rule; the path guard caught this).
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
-SPINE="${VERB_DRIFT_SPINE:-$HOME/.chorus/chorus.log}"
+SPINE="${VERB_DRIFT_SPINE:-${CHORUS_STATE_DIR:-$HOME/.chorus}/chorus.log}"
 BIN_DIR="${VERB_DRIFT_BIN:-$HOME/.chorus/bin}"
 # #4745 — log-archive (#4735) moves the spine aside once it is big; a verb last
 # deployed before that has its binary.deployed only in the archive.
-ARCHIVE_DIR="${VERB_DRIFT_ARCHIVE:-$HOME/.chorus/log-archive/chorus-log}"
+ARCHIVE_DIR="${VERB_DRIFT_ARCHIVE:-${CHORUS_STATE_DIR:-$HOME/.chorus}/log-archive/chorus-log}"
 PASS=0; FAIL=0
 
 deploy_events() {  # <spine> <archive dir> → binary.deployed lines, oldest first

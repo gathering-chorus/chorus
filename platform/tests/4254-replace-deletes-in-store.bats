@@ -35,9 +35,10 @@ setup() {
   mkdir -p "$WORK"
   # shellcheck disable=SC1090
   . "${ROOT}/platform/scripts/fuseki-auth.sh" >/dev/null 2>&1 || true
-  DEPLOY="${ROOT}/platform/services/athena-deploy/target/debug/athena-deploy"
-  # #4416 — the nightly builds release; fall back to it rather than skip
-  test -x "$DEPLOY" || DEPLOY="${ROOT}/platform/services/athena-deploy/target/release/athena-deploy"
+  # #4965 — release first: the nightly builds release, and a stale debug build
+  # (pre-#4960) still listed governance-checks-3846.ttl
+  DEPLOY="${ROOT}/platform/services/athena-deploy/target/release/athena-deploy"
+  test -x "$DEPLOY" || DEPLOY="${ROOT}/platform/services/athena-deploy/target/debug/athena-deploy"
 }
 
 teardown() {
