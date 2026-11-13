@@ -1,0 +1,6 @@
+# @domain: policies
+# #4964 — one violation of prod-private-by-default-graduation: a personal-data graph with no visibility on any record.
+@prefix jb: <https://jeffbridwell.com/ontology#> .
+<urn:gathering:zz-novis> { <urn:zz:1> a jb:Note . }
+<urn:gathering:zz-private> { <urn:zz:2> a jb:Note ; jb:hasVisibility jb:Private . }
+<urn:gathering:icd/zz> { <urn:zz:3> a jb:Provider . }

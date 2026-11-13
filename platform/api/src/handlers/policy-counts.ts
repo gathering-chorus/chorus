@@ -1,6 +1,6 @@
 /**
  * GET /api/chorus/policies/counts?gate=arch — each policy of a gate with today's count, worst
- * first (#4963 AC4). The page loom/policy-counts.html reads it same-origin, so Jeff can open it
+ * first (#4963 AC4). Several gates make one table: ?gate=quality,data,product,code (#4964 AC4). The page loom/policy-counts.html reads it same-origin, so Jeff can open it
  * from his phone on the house wifi (not localhost).
  *
  * The rows are the door's (:3360 /v1/policies/policies). The counts are measured, not stored:
@@ -34,6 +34,7 @@ export interface Measured {
 }
 
 export interface CountRow extends Measured {
+  gate: string;
   comment: string;
   narrowed: boolean;
   pendingLand: boolean;
@@ -94,7 +95,8 @@ const cache = new Map<string, Cached>();
 const TTL_MS = 10 * 60 * 1000;
 
 export async function fetchPolicyCounts(gate: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
-  if (!/^[a-z]+$/.test(gate)) return { status: 400, body: { error: 'gate must be a word, e.g. arch' } };
+  if (!/^[a-z]+(,[a-z]+)*$/.test(gate)) return { status: 400, body: { error: 'gate must be a word or words with commas, e.g. arch or quality,data' } };
+  const gates = new Set(gate.split(','));
   const now = (deps.now ?? Date.now)();
   const hit = cache.get(gate);
   if (hit && now - hit.at < TTL_MS) return { status: 200, body: hit.body };
@@ -105,12 +107,12 @@ export async function fetchPolicyCounts(gate: string, deps: PolicyCountsDeps): P
   } catch (e) {
     return { status: 503, body: { error: `the policies door did not answer: ${(e as Error).message}` } };
   }
-  const rows = overlay(door.filter((r) => r.gate === gate), deps.loadPlans()).filter((r) => (r.checkKind ?? '') !== '');
+  const rows = overlay(door.filter((r) => gates.has(r.gate ?? '')), deps.loadPlans()).filter((r) => (r.checkKind ?? '') !== '');
   const measured = new Map(parseValidate(await deps.runValidate(gate, rows)).map((m) => [m.name, m]));
   const table = worstFirst(rows.map((r) => {
     const m = measured.get(r.name) ?? { name: r.name, verdict: 'broken' as const, count: null, baseline: null, reason: 'not measured' };
     const comment = r.comment ?? '';
-    return { ...m, comment, narrowed: /\bNarrowed\b/.test(comment), pendingLand: r.pendingLand };
+    return { ...m, gate: r.gate ?? '', comment, narrowed: /\bNarrowed\b/.test(comment), pendingLand: r.pendingLand };
   }));
   const body = { gate, measuredAt: new Date(now).toISOString(), policies: table };
   cache.set(gate, { at: now, body });

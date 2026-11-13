@@ -1,0 +1,8 @@
+# @domain: policies
+# #4964 — one violation of data-property-key-registered: a Property whose key no PropertyKey row registers.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:properties> {
+  chorus:zz-prop a chorus:Property ; chorus:propertyKey "zz.unregistered" .
+  chorus:zz-ok a chorus:Property ; chorus:propertyKey "zz.registered" .
+  chorus:pk-zz a chorus:PropertyKey ; chorus:keyName "zz.registered" ; chorus:appliesToClass chorus:Test ; chorus:propertyKind "datatype" .
+}

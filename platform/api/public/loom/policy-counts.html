@@ -47,12 +47,12 @@
         const at = new Date(b.measuredAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' });
         const narrowed = b.policies.filter((p) => p.narrowed).length;
         document.getElementById('sub').textContent =
-          `${b.policies.length} ${b.gate} policies, worst first · ${narrowed} narrowed · measured ${at} Boston`;
+          `${b.policies.length} ${b.gate.split(',').join(' · ')} policies, worst first · ${narrowed} narrowed · measured ${at} Boston`;
         document.getElementById('rows').innerHTML = b.policies.map((p) => `
           <div class="row ${p.verdict}" data-policy="${esc(p.name)}">
             <div class="top"><span class="name">${esc(p.name)}</span>
               <span class="count">${p.count ?? '?'} <small>${p.verdict === 'broken' ? 'could not measure' : 'ceiling ' + p.baseline}</small></span></div>
-            <div class="tags">${p.narrowed ? '<span class="tag">narrowed</span>' : '<span class="tag">as written</span>'}${p.pendingLand ? '<span class="tag">lands on go</span>' : ''}${p.verdict === 'fail' ? '<span class="tag">over ceiling</span>' : ''}</div>
+            <div class="tags"><span class="tag">${esc(p.gate)}</span>${p.narrowed ? '<span class="tag">narrowed</span>' : '<span class="tag">as written</span>'}${p.pendingLand ? '<span class="tag">lands on go</span>' : ''}${p.verdict === 'fail' ? '<span class="tag">over ceiling</span>' : ''}</div>
             <p class="note">${esc(p.reason || note(p.comment))}</p>
           </div>`).join('');
       })
