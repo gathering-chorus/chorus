@@ -2826,7 +2826,7 @@ app.get('/api/loom/policies', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// #4963 AC4 — GET /api/chorus/policies/counts?gate=arch: a gate's policies with today's count,
+// #4963 AC4 — GET /api/chorus/policies/counts?gate=arch (or quality,data,…: one table, #4964): the gates' policies with today's count,
 // worst first, measured by this tree's policy-validate (page: /loom/policy-counts.html).
 const policyTreeRoot = path.resolve(__dirname, '..', '..', '..');
 app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
@@ -2844,12 +2844,19 @@ app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
           .flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as PolicyRow[]);
       } catch { return []; }
     },
+    // a check naming a platform/scripts/<name> this tree no longer has cannot run here (#4964)
+    runnable: (row) => {
+      const m = /platform\/scripts\/([\w.-]+)/.exec(row.checkSpec ?? '');
+      return !m || fs.existsSync(path.join(policyTreeRoot, 'platform', 'scripts', m[1]));
+    },
     runValidate: (gate, rows) => new Promise((resolve) => {
       const tmp = path.join(os.tmpdir(), `policy-counts-${process.pid}-${gate}-${Date.now()}.json`);
       fs.writeFileSync(tmp, JSON.stringify({ data: rows }));
-      execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), ['--gate', gate], {
+      // the rows handed over are the asked gates' only, so no --gate (several gates make one table, #4964)
+      execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), [], {
         cwd: policyTreeRoot, timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot },
+        // launchd's PATH has no node; the board CLI a counter runs needs the one running us (#4964)
+        env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot },
       }, (_err, stdout) => { fs.rmSync(tmp, { force: true }); resolve(stdout); });
     }),
   });

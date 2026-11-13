@@ -12,7 +12,7 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 CHECKS="$ROOT/designing/domains/policies/policy-checks-4963.json"
 PV="$ROOT/platform/scripts/policy-validate"
-COUNT="$ROOT/platform/scripts/arch-policy-count"
+COUNT="$ROOT/platform/scripts/policy-count"
 
 setup() {
   T="$BATS_TEST_TMPDIR"

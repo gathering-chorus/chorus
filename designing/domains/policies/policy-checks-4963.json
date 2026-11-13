@@ -7,7 +7,7 @@
   "status": "ratchet",
   "baseline": "61",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-cmdb-service-registered",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-cmdb-service-registered",
   "violationFixture": "platform/tests/fixtures/4963/arch-cmdb-service-registered.sh"
  },
  {
@@ -18,7 +18,7 @@
   "status": "ratchet",
   "baseline": "23",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-compute-decoupled-via-store",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-compute-decoupled-via-store",
   "violationFixture": "platform/tests/fixtures/4963/arch-compute-decoupled-via-store.sh"
  },
  {
@@ -29,7 +29,7 @@
   "status": "ratchet",
   "baseline": "1",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-dagu-generated-pipelines",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-dagu-generated-pipelines",
   "violationFixture": "platform/tests/fixtures/4963/arch-dagu-generated-pipelines.sh"
  },
  {
@@ -40,7 +40,7 @@
   "status": "ratchet",
   "baseline": "1228",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-domain-directory-layout",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-domain-directory-layout",
   "violationFixture": "platform/tests/fixtures/4963/arch-domain-directory-layout.sh"
  },
  {
@@ -51,7 +51,7 @@
   "status": "ratchet",
   "baseline": "16",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-harness-adapter-boundary",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-harness-adapter-boundary",
   "violationFixture": "platform/tests/fixtures/4963/arch-harness-adapter-boundary.sh"
  },
  {
@@ -62,7 +62,7 @@
   "status": "ratchet",
   "baseline": "6",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-hook-single-responsibility",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-hook-single-responsibility",
   "violationFixture": "platform/tests/fixtures/4963/arch-hook-single-responsibility.sh"
  },
  {
@@ -73,7 +73,7 @@
   "status": "ratchet",
   "baseline": "4",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-language-boundary",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-language-boundary",
   "violationFixture": "platform/tests/fixtures/4963/arch-language-boundary.sh"
  },
  {
@@ -84,7 +84,7 @@
   "status": "ratchet",
   "baseline": "1",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-native-launchd-only",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-native-launchd-only",
   "violationFixture": "platform/tests/fixtures/4963/arch-native-launchd-only.sh"
  },
  {
@@ -95,7 +95,7 @@
   "status": "ratchet",
   "baseline": "0",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-one-execution-path",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-one-execution-path",
   "violationFixture": "platform/tests/fixtures/4963/arch-one-execution-path.sh"
  },
  {
@@ -106,7 +106,7 @@
   "status": "ratchet",
   "baseline": "2",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-single-binary-deploy",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-single-binary-deploy",
   "violationFixture": "platform/tests/fixtures/4963/arch-single-binary-deploy.sh"
  },
  {
@@ -117,7 +117,7 @@
   "status": "ratchet",
   "baseline": "18",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-single-home-projection",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-single-home-projection",
   "violationFixture": "platform/tests/fixtures/4963/arch-single-home-projection.sh"
  },
  {
@@ -128,7 +128,7 @@
   "status": "ratchet",
   "baseline": "3",
   "checkKind": "command",
-  "checkSpec": "p=platform/scripts/arch-policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-three-generator-separation",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" arch-three-generator-separation",
   "violationFixture": "platform/tests/fixtures/4963/arch-three-generator-separation.sh"
  },
  {

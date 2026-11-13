@@ -1,0 +1,167 @@
+[
+ {
+  "name": "code-object-authz-and-secret-mask",
+  "label": "code-object-authz-and-secret-mask",
+  "comment": "Mutations must check `ownedBy` + `writeScope` against the caller's CSS `Principal`; properties marked `exposure: secret` must never be serialized in HTTP or MCP responses. Sources: ADR-052, ADR-048. Narrowed to the mask: hand-written serving code (the generated doors fail closed on exposure=secret) putting a secret-named field into a response it sends. The authz half is the conformance suite's (ADR-052-test-spec), run as its own test. (#4964)",
+  "gate": "code",
+  "status": "ratchet",
+  "baseline": "0",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" code-object-authz-and-secret-mask",
+  "violationFixture": "platform/tests/fixtures/4964/code-object-authz-and-secret-mask.sh"
+ },
+ {
+  "name": "code-test-side-effect-isolation",
+  "label": "code-test-side-effect-isolation",
+  "comment": "Automated tests must set `BOARD_DRY_RUN=1` / isolated test graphs and must never create live Vikunja cards, send live `osascript` nudges, or mutate prod Fuseki graphs. Sources: DEC-1784. Narrowed: a test file that writes to the prod store (:3030 update/data) or runs a real osascript (no stub or PATH override in the file). (#4964)",
+  "gate": "code",
+  "status": "ratchet",
+  "baseline": "9",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" code-test-side-effect-isolation",
+  "violationFixture": "platform/tests/fixtures/4964/code-test-side-effect-isolation.sh"
+ },
+ {
+  "name": "data-domain-is-punned-owl-class",
+  "label": "data-domain-is-punned-owl-class",
+  "comment": "Every `chorus:Domain` must be declared as both `a owl:Class` and `a chorus:Domain` with `rdfs:subClassOf` pointing to its `chorus:Product`. Sources: ADR-045. Narrowed: every chorus:Domain row is also an owl:Class (the pun). The subClassOf-a-Product half is not counted: #4288 made Domain a peer of Product. (#4964)",
+  "gate": "data",
+  "status": "ratchet",
+  "baseline": "64",
+  "checkKind": "sparql",
+  "checkSpec": "PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX owl: <http://www.w3.org/2002/07/owl#>\nSELECT DISTINCT ?d WHERE {\n  GRAPH ?g { ?d a chorus:Domain }\n  FILTER NOT EXISTS { GRAPH ?h { ?d a owl:Class } }\n}",
+  "violationFixture": "platform/tests/fixtures/4964/data-domain-is-punned-owl-class.trig"
+ },
+ {
+  "name": "data-no-hardcoded-graph-mappings",
+  "label": "data-no-hardcoded-graph-mappings",
+  "comment": "Taxonomy-to-domain and role-ownership mappings must be queried from Fuseki/domain APIs, never hardcoded as lookup tables in `.ts`, `.rs`, or `.sh` source; orphan nodes with zero inbound/outbound edges are forbidden. Sources: ADR-027, ADR-022. Narrowed: source code naming a role as a domain's owner in a literal (owner: \"wren\", \"domain\" => \"kade\"). A comparison is not a mapping. Ownership is the store's ownedBy edge. The orphan-node half is not counted: every row carries rdf:type, so no node has zero edges. (#4964)",
+  "gate": "data",
+  "status": "ratchet",
+  "baseline": "0",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" data-no-hardcoded-graph-mappings",
+  "violationFixture": "platform/tests/fixtures/4964/data-no-hardcoded-graph-mappings.sh"
+ },
+ {
+  "name": "data-property-key-registered",
+  "label": "data-property-key-registered",
+  "comment": "Every `Property.key` used on an instance must match a registered `chorus:PropertyKey` row declaring `appliesTo`, `valueType`, and `cardinality`. Sources: ADR-044. Narrowed: one line per distinct Property.propertyKey value with no PropertyKey row naming it (keyName) and declaring appliesToClass and propertyKind. Cardinality is not modelled on PropertyKey yet, so it is not required. (#4964)",
+  "gate": "data",
+  "status": "ratchet",
+  "baseline": "21",
+  "checkKind": "sparql",
+  "checkSpec": "PREFIX chorus: <https://jeffbridwell.com/chorus#>\nSELECT DISTINCT ?v WHERE {\n  GRAPH ?g { ?s a chorus:Property ; chorus:propertyKey ?v }\n  FILTER NOT EXISTS { GRAPH ?h { ?k a chorus:PropertyKey ; chorus:keyName ?kn ; chorus:appliesToClass ?c ; chorus:propertyKind ?t } FILTER(STR(?kn) = STR(?v)) }\n}",
+  "violationFixture": "platform/tests/fixtures/4964/data-property-key-registered.trig"
+ },
+ {
+  "name": "data-single-graph-multi-lens",
+  "label": "data-single-graph-multi-lens",
+  "comment": "UI views (list, tree, matrix, graph) must project from the same domain API dataset rather than maintaining view-specific stores or duplicate JSON files. Sources: DEC-1786. Narrowed: each SQLite database named in source other than the index cache and buzz is a store kept beside the graph (one line per database, at its first file). (#4964)",
+  "gate": "data",
+  "status": "ratchet",
+  "baseline": "1",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" data-single-graph-multi-lens",
+  "violationFixture": "platform/tests/fixtures/4964/data-single-graph-multi-lens.sh"
+ },
+ {
+  "name": "prod-blast-radius-before-pull",
+  "label": "prod-blast-radius-before-pull",
+  "comment": "Cross-domain cards must attach `borg-read-blast-radius` output and owner acknowledgment before `werk-pull` transitions the card to WIP. Sources: DEC-072, DEC-084, DEC-086. Narrowed: a WIP card carrying two or more domain: labels with no blast-radius read on it (the word \"blast\" in its view). The pull-time refusal is not built; this counts the cards it would have stopped. (#4964)",
+  "gate": "product",
+  "status": "ratchet",
+  "baseline": "0",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" prod-blast-radius-before-pull",
+  "violationFixture": "platform/tests/fixtures/4964/prod-blast-radius-before-pull.sh"
+ },
+ {
+  "name": "prod-interactive-skill-5s-budget",
+  "label": "prod-interactive-skill-5s-budget",
+  "comment": "User-invocable skills must emit initial status/output within 5 seconds and format routine operational events as single-line compact summaries. Sources: DEC-035, DEC-071. Narrowed: the 5 seconds can only be timed by running a skill under a model, so this counts what makes them reachable: a user-invocable skill whose first command block is one command. A skill with no command block, or several commands first, is counted. (#4964)",
+  "gate": "product",
+  "status": "ratchet",
+  "baseline": "20",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" prod-interactive-skill-5s-budget",
+  "violationFixture": "platform/tests/fixtures/4964/prod-interactive-skill-5s-budget.sh"
+ },
+ {
+  "name": "prod-private-by-default-graduation",
+  "label": "prod-private-by-default-graduation",
+  "comment": "New personal data domains and attributes default to `jb:visibility \"private\"`; exposing data to `household` or `public` routes requires an explicit graduation rule on the card. Sources: ADR-002, ADR-003, DEC-068. Narrowed: one line per personal-data graph (urn:gathering:*, ICD graphs aside) where no record carries jb:hasVisibility, the predicate the data uses (the rule text says jb:visibility, which nothing uses). The graduation rule on the card is not decidable from rows. (#4964)",
+  "gate": "product",
+  "status": "ratchet",
+  "baseline": "20",
+  "checkKind": "sparql",
+  "checkSpec": "PREFIX jb: <https://jeffbridwell.com/ontology#>\nSELECT DISTINCT ?g WHERE {\n  GRAPH ?g { ?s ?p ?o }\n  FILTER(STRSTARTS(STR(?g), \"urn:gathering:\") && !STRSTARTS(STR(?g), \"urn:gathering:icd\"))\n  FILTER NOT EXISTS { GRAPH ?g { ?x jb:hasVisibility ?v } }\n}",
+  "violationFixture": "platform/tests/fixtures/4964/prod-private-by-default-graduation.trig"
+ },
+ {
+  "name": "prod-service-design-html-first",
+  "label": "prod-service-design-html-first",
+  "comment": "Architectural/multi-service features require a Jeff-reviewed HTML service design doc using the consumer-first plain-English template before implementation cards move to WIP. Sources: ADR-029, DEC-081. Narrowed to the files: a service design kept as markdown, and a *-service-design.html missing a mandatory section (Consumers, Validation, Failure modes) or its mermaid consumer diagram. Whether a card needed one before WIP is not decidable. (#4964)",
+  "gate": "product",
+  "status": "ratchet",
+  "baseline": "35",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" prod-service-design-html-first",
+  "violationFixture": "platform/tests/fixtures/4964/prod-service-design-html-first.sh"
+ },
+ {
+  "name": "qual-domain-fitness-functions",
+  "label": "qual-domain-fitness-functions",
+  "comment": "Every active `chorus:Domain` must declare at least one executable fitness function checking live runtime reality against graph declarations. Sources: ADR-056. Narrowed: every chorus:Domain row is the object of at least one chorus:FitnessFunction row. ADR-056 is Proposed and no FitnessFunction row exists yet, so today every domain counts; the ceiling holds it there. (#4964)",
+  "gate": "quality",
+  "status": "ratchet",
+  "baseline": "64",
+  "checkKind": "sparql",
+  "checkSpec": "PREFIX chorus: <https://jeffbridwell.com/chorus#>\nSELECT DISTINCT ?d WHERE {\n  GRAPH ?g { ?d a chorus:Domain }\n  FILTER NOT EXISTS { GRAPH ?h { ?f a chorus:FitnessFunction ; ?p ?d } }\n}",
+  "violationFixture": "platform/tests/fixtures/4964/qual-domain-fitness-functions.trig"
+ },
+ {
+  "name": "qual-golden-api-regression",
+  "label": "qual-golden-api-regression",
+  "comment": "Any change to an API serializer, domain model, or response envelope must run against committed golden response fixtures. Sources: DEC-2208. Narrowed: each hand-written API handler (platform/api/src/handlers) is named by a regression test under platform/api/tests/regression (golden JSON beside it). (#4964)",
+  "gate": "quality",
+  "status": "ratchet",
+  "baseline": "77",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" qual-golden-api-regression",
+  "violationFixture": "platform/tests/fixtures/4964/qual-golden-api-regression.sh"
+ },
+ {
+  "name": "qual-negative-proof-for-gates",
+  "label": "qual-negative-proof-for-gates",
+  "comment": "Every gating check, hook, SHACL shape, or validator added or modified must include an automated negative-proof fixture where a known violation is proven to fail the check. Sources: #3734, ADR-058. Narrowed to the gates that are rows: a policy with a check (not retired) whose violationFixture is unnamed or absent from the tree. Hooks and SHACL shapes have no row tying them to a fixture yet, so they are not counted. (#4964)",
+  "gate": "quality",
+  "status": "ratchet",
+  "baseline": "0",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" qual-negative-proof-for-gates",
+  "violationFixture": "platform/tests/fixtures/4964/qual-negative-proof-for-gates.sh"
+ },
+ {
+  "name": "qual-no-silent-pipeline-drops",
+  "label": "qual-no-silent-pipeline-drops",
+  "comment": "Catch blocks and pipeline stages must never swallow errors (`catch {}` or `let _ =` on fallible I/O without logging/returning); every skipped or failed record increments an observable counter. Sources: DEC-1785. Narrowed: an empty catch {} (TS/JS) or Err(_) => {} (Rust) swallows an error with nothing logged or counted. `let _ =` is not counted: most are deliberate best-effort. (#4964)",
+  "gate": "quality",
+  "status": "ratchet",
+  "baseline": "6",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" qual-no-silent-pipeline-drops",
+  "violationFixture": "platform/tests/fixtures/4964/qual-no-silent-pipeline-drops.sh"
+ },
+ {
+  "name": "qual-warning-ratchet-downward",
+  "label": "qual-warning-ratchet-downward",
+  "comment": "Compiler/Clippy/ESLint warning ceilings may only stay flat or decrease; lock-files (`Cargo.lock`, `package-lock.json`) must be committed and passing `--locked` / `npm ci`. Sources: DEC-085, ADR-026. Narrowed to the lock half: a package.json with no committed package-lock.json beside it, a Cargo workspace with no Cargo.lock. Warning ceilings are already held by the lint ratchet. (#4964)",
+  "gate": "quality",
+  "status": "ratchet",
+  "baseline": "2",
+  "checkKind": "command",
+  "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" qual-warning-ratchet-downward",
+  "violationFixture": "platform/tests/fixtures/4964/qual-warning-ratchet-downward.sh"
+ }
+]

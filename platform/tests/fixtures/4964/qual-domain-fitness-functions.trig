@@ -1,0 +1,8 @@
+# @domain: policies
+# #4964 — one violation of qual-domain-fitness-functions: a Domain no FitnessFunction checks.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:domains> {
+  chorus:zzUnchecked a chorus:Domain .
+  chorus:zzChecked a chorus:Domain .
+  chorus:ff-zz a chorus:FitnessFunction ; chorus:fitnessOf chorus:zzChecked .
+}

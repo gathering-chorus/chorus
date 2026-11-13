@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""#4963 — the counters behind the architecture policies' command checks.
+"""#4963, #4964 — the counters behind the policies' command checks (one tool for every gate).
 
-  arch-policy-count <policy-name>
+  policy-count <policy-name>
 
 Run in the git tree being measured (canonical main for the sensor, the werk at the demo, a
 fixture tree in the tests). Prints one line per violation, so policy-validate's command kind
@@ -11,9 +11,11 @@ Each counter is the narrowed, machine-decidable form of its rule; the row's comm
 what was narrowed and why (AC3).
 
 Seams (tests): ARCH_SERVICE_LABELS (a file of launchd labels, in place of the store),
-CHORUS_MAKE (the chorus-make binary), FUSEKI_QUERY (the store's query endpoint).
+CHORUS_MAKE (the chorus-make binary), FUSEKI_QUERY (the store's query endpoint),
+CARDS (the board CLI), POLICY_COUNT_ROWS (the door's policies answer).
 """
 # @domain: policies
+import json
 import os
 import re
 import shutil
@@ -268,6 +270,252 @@ def three_generator_separation():
     return out
 
 
+# --- #4964: the quality, data, product and code rules -----------------------------------------
+
+ROLES = r"(silas|wren|kade|abby-normal|borg-queen|jeff)"
+SOURCE = (".ts", ".js", ".cjs", ".mjs", ".rs", ".sh", ".py")
+
+
+def code_of(path):
+    """A source file's code: a Rust file's inline #[cfg(test)] module is a test, not code."""
+    text = read(path)
+    return text.split("#[cfg(test)]")[0] if path.endswith(".rs") else text
+
+
+TEST_LIKE = re.compile(r"(^|/)test-|\.spec\.")  # with TEST_PATH (kept as #4963 measured it)
+
+
+def is_test(path):
+    return bool(TEST_PATH.search(path) or TEST_LIKE.search(path))
+
+
+def source_files(*pathspec):
+    return [f for f in files(*pathspec) if f.endswith(SOURCE) and not is_test(f)
+            and "/node_modules/" not in f and "/dist/" not in f and "/public/" not in f]
+
+
+def hits(paths, rx):
+    out = []
+    for f in paths:
+        for i, line in enumerate(code_of(f).splitlines(), 1):
+            if rx.search(line):
+                out.append(f"{f}:{i}")
+    return out
+
+
+OWNER_LITERAL = re.compile(r"\b(domain|owner|ownedBy)\w*['\"]?\s*(:|=>)\s*['\"]" + ROLES + r"['\"]")
+
+
+def no_hardcoded_graph_mappings():
+    """ADR-027/ADR-022, narrowed: source code naming a role as a domain's owner in a literal
+    (owner: "wren", "domain" => "kade"). A comparison is not a mapping. Ownership is the
+    store's ownedBy edge. The orphan-node half is not counted: every row carries rdf:type, so no node has zero edges."""
+    return hits(source_files(), OWNER_LITERAL)
+
+
+DB_LITERAL = re.compile(r"[\"'/]([A-Za-z0-9_.-]+\.db)[\"']")
+SANCTIONED_DBS = {"index.db", "messages.db"}  # the search index cache; buzz (arch-compute counts its home)
+
+
+def single_graph_multi_lens():
+    """DEC-1786, narrowed: each SQLite database named in source other than the index cache and
+    buzz is a store kept beside the graph (one line per database, at its first file)."""
+    seen = {}
+    for f in source_files():
+        for db in DB_LITERAL.findall(code_of(f)):
+            if db not in SANCTIONED_DBS and not db.startswith("test"):
+                seen.setdefault(db, f)
+    return [f"{db} ({f})" for db, f in sorted(seen.items())]
+
+
+def golden_api_regression():
+    """DEC-2208, narrowed: each hand-written API handler (platform/api/src/handlers) is named by
+    a regression test under platform/api/tests/regression (golden JSON beside it)."""
+    tests = " ".join(read(f) for f in files("platform/api/tests/regression/"))
+    out = []
+    for f in files("platform/api/src/handlers/*.ts"):
+        name = os.path.basename(f)[:-3]
+        if not TEST_PATH.search(f) and name not in tests:
+            out.append(f)
+    return out
+
+
+SILENT = re.compile(r"catch\s*(\([^)]*\))?\s*\{\s*\}|Err\(_\)\s*=>\s*(\{\s*\}|\(\))")
+
+
+def no_silent_pipeline_drops():
+    """DEC-1785, narrowed: an empty catch {} (TS/JS) or Err(_) => {} (Rust) swallows an error
+    with nothing logged or counted. `let _ =` is not counted: most are deliberate best-effort."""
+    return hits(source_files(), SILENT)
+
+
+def warning_ratchet_downward():
+    """DEC-085/ADR-026, narrowed to the lock half: a package.json with no committed
+    package-lock.json beside it, a Cargo workspace with no Cargo.lock. Warning ceilings are
+    already held by the lint ratchet."""
+    tracked = set(files())
+    out = []
+    for f in files("*package.json"):
+        d = os.path.dirname(f)
+        if TEST_PATH.search(f) or "/node_modules/" in f:
+            continue
+        if os.path.join(d, "package-lock.json") not in tracked:
+            out.append(f"{f}: no package-lock.json")
+    for f in files("*Cargo.toml"):
+        if TEST_PATH.search(f):
+            continue
+        if re.search(r"^\[workspace\]", read(f), re.M) and os.path.join(os.path.dirname(f), "Cargo.lock") not in tracked:
+            out.append(f"{f}: no Cargo.lock")
+    return out
+
+
+SECRET_FIELD = re.compile(r"(res\.json|\.send|reply\(|JSON\.stringify|jsonResponse)\s*\(.*[{,]\s*['\"]?(password|passwd|secret|apiKey|api_key|accessToken|refreshToken|privateKey|clientSecret|token)['\"]?\s*[:,}]")
+SERVED = ("platform/api/src/", "platform/pulse/src/")
+
+
+def object_authz_and_secret_mask():
+    """ADR-052/ADR-048, narrowed to the mask: hand-written serving code (the generated doors fail
+    closed on exposure=secret) putting a secret-named field into a response it sends. The authz half is
+    the conformance suite's (ADR-052-test-spec), run as its own test."""
+    return hits([f for f in source_files(*SERVED) if f.endswith((".ts", ".js"))], SECRET_FIELD)
+
+
+PROD_STORE_WRITE = re.compile(r"(localhost|127\.0\.0\.1):3030/[a-z]+/(update|data)\b")
+OSASCRIPT_RUN = re.compile(r"Command::new\(\s*\"osascript\"|(spawn|exec|execFile|execSync|spawnSync|execFileSync)\w*\(\s*['\"`]osascript|^\s*(run\s+)?osascript\s+-")
+OSASCRIPT_STUB = re.compile(r"osascript\s*\(\)|function\s+osascript|(stub|fake|mock)\w*[^\n]*osascript|osascript[^\n]*(stub|fake|mock)|PATH=", re.I)
+
+
+def test_side_effect_isolation():
+    """DEC-1784, narrowed: a test file that writes to the prod store (:3030 update/data) or
+    runs a real osascript (no stub or PATH override in the file)."""
+    out = []
+    for f in files():
+        if "/fixtures/" in f:  # a fixture plants a violation on purpose
+            continue
+        if not (is_test(f) and f.endswith((".bats", ".sh", ".ts", ".js", ".cjs", ".py", ".rs"))):
+            continue
+        text = read(f)
+        if PROD_STORE_WRITE.search(text):
+            out.append(f"{f}: writes to the prod store")
+        if any(OSASCRIPT_RUN.search(l) for l in text.splitlines()) and not OSASCRIPT_STUB.search(text):
+            out.append(f"{f}: runs osascript")
+    return out
+
+
+DESIGN_SECTIONS = ("Consumers", "Validation", "Failure modes")
+
+
+def service_design_html_first():
+    """ADR-029/DEC-081, narrowed to the files: a service design kept as markdown, and a
+    *-service-design.html missing a mandatory section (Consumers, Validation, Failure modes) or
+    its mermaid consumer diagram. Whether a card needed one before WIP is not decidable."""
+    out = [f"{f}: a service design in markdown, not HTML" for f in files("*-service-design.md")]
+    for f in files("*-service-design.html"):
+        text = read(f)
+        missing = [s for s in DESIGN_SECTIONS if not re.search(r"<h[1-4][^>]*>[^<]*" + s, text, re.I)]
+        if "mermaid" not in text:
+            missing.append("mermaid diagram")
+        if missing:
+            out.append(f"{f}: missing {', '.join(missing)}")
+    return out
+
+
+def board(*args):
+    # the main checkout's board CLI, found through git: a werk (and the demo stack serving from
+    # it) shares canonical's .git but not its .env, where the board's token lives. CARDS in tests.
+    cards = os.environ.get("CARDS")
+    if not cards:
+        g = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True)
+        if g.returncode != 0:
+            raise Broken("cannot find the main checkout: " + g.stderr.strip())
+        cards = os.path.join(os.path.dirname(g.stdout.strip()), "platform/scripts/cards")
+    try:
+        p = subprocess.run(["bash", cards, *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Broken(f"cards: {e}")
+    if p.returncode != 0:
+        raise Broken(f"cards {' '.join(args)}: {p.stderr.strip()[:200]}")
+    return p.stdout
+
+
+def blast_radius_before_pull():
+    """DEC-072/084/086, narrowed: a WIP card carrying two or more domain: labels with no
+    blast-radius read on it (the word "blast" in its view). The pull-time refusal is not built;
+    this counts the cards it would have stopped."""
+    out, section = [], None
+    for line in board("list").splitlines():
+        m = re.match(r"^(\w[\w ]*) \(\d+\):", line)
+        if m:
+            section = m.group(1)
+            continue
+        m = re.match(r"^\s+(\d+)\s.*\[(.*)\]\s*$", line)
+        if section == "WIP" and m and len(set(re.findall(r"domain:([\w-]+)", m.group(2)))) > 1:
+            if "blast" not in board("view", m.group(1)).lower():
+                out.append(f"#{m.group(1)}: cross-domain, no blast-radius read")
+    return out
+
+
+def skill_5s_budget():
+    """DEC-035/DEC-071, narrowed: the 5 seconds can only be timed by running a skill under a
+    model, so this counts what makes them reachable: a user-invocable skill whose first
+    command block is one command. A skill with no command block, or several commands first,
+    is counted."""
+    out = []
+    for f in files("*SKILL.md"):
+        text = read(f)
+        head = text.split("---", 2)[1] if text.startswith("---") else ""
+        if not re.search(r"user-invocable:\s*true", head) and "user-invocable" not in text[:600]:
+            continue
+        m = re.search(r"^```[^\n]*\n(.*?)^```", text, re.M | re.S)
+        lines = []
+        if m:
+            for l in m.group(1).splitlines():
+                s = l.strip()
+                if s and not s.startswith("#") and not (lines and lines[-1].endswith(("\\", "(", "{", ","))):
+                    lines.append(s)
+                elif lines and s:
+                    lines[-1] = s
+        if len(lines) != 1:
+            out.append(f"{f}: first block has {len(lines)} commands")
+    return out
+
+
+def policies():
+    """The policy rows, from the door (POLICY_COUNT_ROWS in tests: its own seam, so a test
+    handing policy-validate one row does not also hand it to this counter)."""
+    path = os.environ.get("POLICY_COUNT_ROWS")
+    try:
+        if path:
+            body = json.load(open(path))
+        else:
+            door = os.environ.get("POLICY_DOOR", "http://localhost:3360")
+            with urllib.request.urlopen(f"{door}/v1/policies/policies", timeout=15) as r:
+                body = json.load(r)
+    except (OSError, ValueError) as e:
+        raise Broken(f"cannot read the policies: {e}")
+    if not isinstance(body.get("data"), list):
+        raise Broken("the policies answer has no data list")
+    return body["data"]
+
+
+def negative_proof_for_gates():
+    """#3734/ADR-058, narrowed to the gates that are rows: a policy with a check (not retired)
+    whose violationFixture is unnamed or absent from the tree. Hooks and SHACL shapes have no
+    row tying them to a fixture yet, so they are not counted."""
+    tracked = set(files())
+    out = []
+    for r in policies():
+        if not r.get("checkKind") or r.get("status") == "retired":
+            continue
+        fx = r.get("violationFixture")
+        if not fx:
+            out.append(f"{r.get('name')}: no violationFixture")
+        elif fx not in tracked:
+            out.append(f"{r.get('name')}: fixture {fx} is not in the tree")
+    return out
+
+
 COUNTERS = {
     "arch-cmdb-service-registered": cmdb_service_registered,
     "arch-compute-decoupled-via-store": compute_decoupled_via_store,
@@ -281,18 +529,29 @@ COUNTERS = {
     "arch-single-binary-deploy": single_binary_deploy,
     "arch-single-home-projection": single_home_projection,
     "arch-three-generator-separation": three_generator_separation,
+    "data-no-hardcoded-graph-mappings": no_hardcoded_graph_mappings,
+    "data-single-graph-multi-lens": single_graph_multi_lens,
+    "qual-golden-api-regression": golden_api_regression,
+    "qual-no-silent-pipeline-drops": no_silent_pipeline_drops,
+    "qual-warning-ratchet-downward": warning_ratchet_downward,
+    "code-object-authz-and-secret-mask": object_authz_and_secret_mask,
+    "code-test-side-effect-isolation": test_side_effect_isolation,
+    "prod-service-design-html-first": service_design_html_first,
+    "prod-blast-radius-before-pull": blast_radius_before_pull,
+    "prod-interactive-skill-5s-budget": skill_5s_budget,
+    "qual-negative-proof-for-gates": negative_proof_for_gates,
 }
 
 
 def main(argv):
     if len(argv) != 2 or argv[1] not in COUNTERS:
-        print("usage: arch-policy-count <" + "|".join(COUNTERS) + ">", file=sys.stderr)
+        print("usage: policy-count <" + "|".join(COUNTERS) + ">", file=sys.stderr)
         return 2
     try:
         for line in COUNTERS[argv[1]]():
             print(line)
     except Broken as e:
-        print(f"arch-policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
+        print(f"policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
         return 2
     return 0
 

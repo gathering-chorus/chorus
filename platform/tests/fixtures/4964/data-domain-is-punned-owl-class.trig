@@ -1,0 +1,5 @@
+# @domain: policies
+# #4964 — one violation of data-domain-is-punned-owl-class: a Domain that is not an owl:Class.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+<urn:chorus:domains:domains> { chorus:zzDomain a chorus:Domain . chorus:zzPunned a chorus:Domain , owl:Class . }

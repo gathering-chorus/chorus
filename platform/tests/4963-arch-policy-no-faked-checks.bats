@@ -7,11 +7,11 @@
 # #4963 AC3 — no faked checks. Every rule a machine could not decide as written is narrowed
 # until it can, and its row says so: the comment states "Checked as written" or "Narrowed"
 # and what was left out. No check is a constant; each command check names a real counter
-# in arch-policy-count, so it cannot be an echo that always passes. (No rule was retired.)
+# in policy-count, so it cannot be an echo that always passes. (No rule was retired.)
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 CHECKS="$ROOT/designing/domains/policies/policy-checks-4963.json"
-COUNT="$ROOT/platform/scripts/arch-policy-count"
+COUNT="$ROOT/platform/scripts/policy-count"
 
 @test "every row says whether it is checked as written or narrowed, and none is retired" {
   run python3 -c "
@@ -26,7 +26,7 @@ print(bad); sys.exit(1 if bad else 0)"
 specs_ok() {
   for name in $(python3 -c "import json; print(' '.join(r['name'] for r in json.load(open('$1')) if r['checkKind']=='command'))"); do
     spec=$(python3 -c "import json; print([r['checkSpec'] for r in json.load(open('$1')) if r['name']=='$name'][0])")
-    [[ "$spec" == *'platform/scripts/arch-policy-count'*"\"\$p\" $name" ]] || { echo "$name: $spec"; return 1; }
+    [[ "$spec" == *'platform/scripts/policy-count'*"\"\$p\" $name" ]] || { echo "$name: $spec"; return 1; }
     grep -q "\"$name\": " "$COUNT" || { echo "no counter for $name"; return 1; }
   done
 }
