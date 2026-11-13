@@ -12,11 +12,14 @@ PIPES="$ROOT/platform/pipelines"
 RF="$ROOT/platform/scripts/run-finished"
 
 # A top-level pipeline is one a role starts (no TRACE param: a child's parent
-# owns its finish). The nightly keeps its own exit (werk-test notify).
+# owns its finish). #4965 (Silas) — a pipeline that declares a schedule is a sensor,
+# not a run a role waits on: it speaks through its readings and alerts
+# (qual-monitor-alert-separation), and a */5 wake would be noise. Keyed on the
+# schedule, never on names (this also covers the nightly, which has its own notify).
 toplevel() {
   for f in "$1"/*.yaml; do
     grep -q '^  - TRACE: ' "$f" && continue
-    case "$(basename "$f")" in nightly.yaml) continue ;; esac
+    grep -q '^schedule:' "$f" && continue
     echo "$f"
   done
 }
@@ -217,4 +220,14 @@ finish() { # STATUS DAG [STEP]
   [ "$(cat "$SENT.wake")" = "run-finished" ] || { cat "$SENT.wake"; return 1; }
   cage; run finish succeeded cicd-land
   [ "$(cat "$SENT.wake")" = "run-finished" ] || { cat "$SENT.wake"; return 1; }
+}
+
+@test "negative proof (#4965): a scheduled sensor is exempt, an unscheduled pipeline with no exit wake still fails" {
+  P="$BATS_TEST_TMPDIR/pipes"; mkdir -p "$P"
+  printf 'name: sensor\nschedule: "*/5 * * * *"\nhandler_on:\n  failure:\n    command: x\nsteps:\n' > "$P/sensor.yaml"
+  printf 'name: quiet\nhandler_on:\n  failure:\n    command: x\nsteps:\n' > "$P/quiet.yaml"
+  out="$(wake_problems "$P")"
+  printf '%s\n' "$out" | grep -q '^quiet.yaml: 0 run-finished calls' || { echo "unscheduled pipeline passed: $out"; return 1; }
+  printf '%s\n' "$out" | grep -q '^sensor.yaml' && { echo "scheduled sensor was checked: $out"; return 1; }
+  return 0
 }
