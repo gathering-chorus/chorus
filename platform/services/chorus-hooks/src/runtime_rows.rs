@@ -22,6 +22,15 @@ pub fn row_in<'a>(table: &'a Value, runtime: &str) -> Option<&'a Value> {
 
 fn s<'a>(row: &'a Value, key: &str) -> Option<&'a str> { row.get(key).and_then(Value::as_str) }
 
+/// #4965 — the name a runtime's turns are stamped and indexed under, from its row
+/// (runtimeSource). No row, or a row without one, is an error: never a default, never
+/// the tool vocabulary ("external"), which is how agy's turns lost their source.
+pub fn source_of(table: &Value, runtime: &str) -> Result<String, String> {
+    let row = row_in(table, runtime).ok_or_else(|| format!("no AgentRuntime row for {runtime}"))?;
+    s(row, "runtimeSource").filter(|v| !v.is_empty()).map(String::from)
+        .ok_or_else(|| format!("AgentRuntime row {runtime} has no runtimeSource"))
+}
+
 fn list(row: &Value, key: &str) -> Vec<String> {
     match row.get(key) {
         Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(String::from).collect(),

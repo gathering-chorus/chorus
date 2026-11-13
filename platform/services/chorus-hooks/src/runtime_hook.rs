@@ -161,9 +161,14 @@ fn redact_metadata(value: &mut Value) {
     }
 }
 
-fn observation_data(runtime: &str, ev: Event, raw: &Value, decision: &Decision) -> Value {
+/// `runtime` is the tool vocabulary (normalize_tools keys on it); `source` is the name
+/// stamped on the event. #4965 — a row runtime (antigravity) speaks the `external`
+/// vocabulary but must be stamped as itself, or its turns all read as "external" and
+/// the index's antigravity source goes dead.
+fn observation_data(runtime: &str, source: &str, ev: Event, raw: &Value, decision: &Decision) -> Value {
     let runtime = match runtime { "claude-code" => "claude", "openai-compatible" => "external", other => other };
-    let mut data = json!({"runtime":runtime,
+    let source = if source == runtime || source == "claude-code" || source == "openai-compatible" { runtime } else { source };
+    let mut data = json!({"runtime":source,
         "decision":if decision.denied {"deny"} else {"allow"},"reason":decision.reason});
     if matches!(ev, Event::Before | Event::After) {
         let cwd = raw.get("cwd").and_then(Value::as_str).map(str::to_string)
@@ -188,12 +193,12 @@ fn observation_data(runtime: &str, ev: Event, raw: &Value, decision: &Decision) 
     // Avoid unbounded private journals. Truncated arguments/output are not
     // treated as complete evidence for gates.
     if data.to_string().len() > 256 * 1024 {
-        return json!({"runtime":runtime,"decision":if decision.denied {"deny"} else {"allow"},"evidence_unavailable":true,"evidence_reason":"native observation exceeds 256 KiB"});
+        return json!({"runtime":source,"decision":if decision.denied {"deny"} else {"allow"},"evidence_unavailable":true,"evidence_reason":"native observation exceeds 256 KiB"});
     }
     data
 }
 
-fn publish(runtime: &str, ev: Event, raw: &Value, decision: &Decision) -> Option<Value> {
+fn publish(runtime: &str, source: &str, ev: Event, raw: &Value, decision: &Decision) -> Option<Value> {
     let sid = std::env::var("CHORUS_SESSION_ID").ok()?;
     // IDs enter a URL below; never permit a payload-supplied path or identity.
     if sid.is_empty() || !sid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') { return None; }
@@ -205,7 +210,7 @@ fn publish(runtime: &str, ev: Event, raw: &Value, decision: &Decision) -> Option
     let event_id = uuid::Uuid::now_v7().to_string();
     let native_id = raw.get("session_id").or_else(|| raw.get("sessionID")).and_then(Value::as_str);
     // Never forward native arbitrary metadata (credentials/trust flags) wholesale.
-    let data = observation_data(runtime, ev, raw, decision);
+    let data = observation_data(runtime, source, ev, raw, decision);
     let body = json!({"version":1,"session_id":sid,"event_id":event_id,"type":kind,
         "native_session_id":native_id,"tool_call_id":raw.get("tool_use_id").or_else(|| raw.get("callID")),"data":data});
     if let Err(e) = daemon_post("/v1/events", &body) { eprintln!("chorus runtime observation unavailable: {e}"); }
@@ -243,7 +248,11 @@ pub fn agent_role_enrolled(role: &str) -> Result<(), String> {
     enrolled_in(role, &door)
 }
 
-fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
+fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> { evaluate_as(runtime, runtime, ev, raw) }
+
+/// `runtime` is the tool vocabulary the guard reads; `source` is the name stamped on
+/// the turn (base["runtime"], which the shim indexes as the source, #4965).
+fn evaluate_as(runtime: &str, source: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     if !typed_runtime(runtime) {
         return Err(format!("unknown runtime {runtime}"));
     }
@@ -260,7 +269,7 @@ fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     agent_role_enrolled(&role)?;
     let sid = std::env::var("CHORUS_SESSION_ID").map_err(|_|"runtime hook requires a supervisor-issued CHORUS_SESSION_ID")?;
     if sid.is_empty() || !sid.bytes().all(|b|b.is_ascii_alphanumeric() || b == b'-' || b == b'_') { return Err("invalid Chorus session identity".into()); }
-    let mut base = json!({"cwd":cwd,"session_id":sid,"chorus_session_id":sid,"runtime":runtime,"deploy_role":role,"prompt":raw.get("prompt"),
+    let mut base = json!({"cwd":cwd,"session_id":sid,"chorus_session_id":sid,"runtime":source,"deploy_role":role,"prompt":raw.get("prompt"),
         // #4445 — Gemini's AfterAgent carries the reply itself; the stop leg publishes it.
         "prompt_response":raw.get("prompt_response"),
         // its chat file holds the reply once; prompt_response joins every model turn
@@ -324,7 +333,7 @@ fn print_and_ack(reply: &Value, receipt: &DeliveryReceipt) -> ExitCode {
 /// #4444 reopen 2 — a runtime known by its row: the native event and input are
 /// read through the row into the guard's vocabulary, the guard runs as for any
 /// runtime, and the reply is the row's template.
-fn run_row(row: &Value, name: &str) -> ExitCode {
+fn run_row(row: &Value, source: &str, name: &str) -> ExitCode {
     use crate::runtime_rows::{canonical, is_turn_start, moment, reply, Moment};
     let m = moment(row, name);
     let none = || print_and_ack(&reply(row, Moment::Other, false, "", "", false), &DeliveryReceipt::default());
@@ -344,12 +353,12 @@ fn run_row(row: &Value, name: &str) -> ExitCode {
             return print_and_ack(&reply(row, m, false, "", "", true), &DeliveryReceipt::default());
         }
     };
-    let mut decision = evaluate("external", ev, &canon).unwrap_or_else(|reason| {
+    let mut decision = evaluate_as("external", source, ev, &canon).unwrap_or_else(|reason| {
         eprintln!("chorus runtime hook: {reason}");
         Decision { denied: ev == Event::Before, reason, context: String::new() }
     });
     let mut receipt = DeliveryReceipt::default();
-    if let Some(boundary) = publish("external", ev, &canon, &decision) { receipt = append_boundary(&boundary, &mut decision); }
+    if let Some(boundary) = publish("external", source, ev, &canon, &decision) { receipt = append_boundary(&boundary, &mut decision); }
     print_and_ack(&reply(row, m, decision.denied, &decision.reason, decision.context.trim(), false), &receipt)
 }
 
@@ -359,7 +368,10 @@ pub fn run(args: &[String]) -> ExitCode {
     if !typed_runtime(runtime) {
         let table = crate::runtime_rows::table();
         return match crate::runtime_rows::row_in(&table, runtime) {
-            Some(row) => run_row(row, name),
+            Some(row) => match crate::runtime_rows::source_of(&table, runtime) {
+                Ok(source) => run_row(row, &source, name),
+                Err(why) => { eprintln!("chorus runtime hook: {why}"); ExitCode::from(2) }
+            },
             None => { eprintln!("chorus runtime hook: no AgentRuntime row for {runtime}"); ExitCode::from(2) }
         };
     }
@@ -377,7 +389,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut receipt = DeliveryReceipt::default();
     if let (Ok(ev), Ok(raw)) = (ev, parsed) {
         // Observation failure is not a substitute authorization decision.
-        if let Some(boundary) = publish(runtime, ev, &raw, &decision) {
+        if let Some(boundary) = publish(runtime, runtime, ev, &raw, &decision) {
             receipt = append_boundary(&boundary, &mut decision);
         }
     }
@@ -429,8 +441,32 @@ mod tests {
         assert!(!decision.context.contains("missing kind"));
     }
     #[test]
+    fn a_runtime_source_comes_from_its_row_and_a_row_without_one_fails_loud_4965() {
+        // the real table: agy's turns are antigravity's, never "external"
+        assert_eq!(crate::runtime_rows::source_of(&crate::runtime_rows::table(), "agy").unwrap(), "antigravity");
+        // NEGATIVE PROOF: no runtimeSource on the row, or no row, is an error, never a default
+        let bare = json!({"runtimes":{"agy":{"label":"Antigravity CLI (agy)"}}});
+        assert!(crate::runtime_rows::source_of(&bare, "agy").unwrap_err().contains("no runtimeSource"));
+        assert!(crate::runtime_rows::source_of(&bare, "nope").unwrap_err().contains("no AgentRuntime row"));
+    }
+    #[test]
+    fn a_row_runtime_is_stamped_as_itself_and_keeps_its_operations_4965() {
+        // #4965 NEGATIVE PROOF: an antigravity row event (canon already in the external
+        // vocabulary) is stamped runtime=antigravity, with its operations present; the
+        // same event stamped as its vocabulary would read "external" (the dead source).
+        let raw=json!({"cwd":"/workspace","tool_name":"Bash","tool_input":{"command":"ls"}});
+        let data=observation_data("external","antigravity",Event::Before,&raw,&Decision::default());
+        assert_eq!(data["runtime"],"antigravity");
+        assert_eq!(data["operations"][0]["tool_input"]["command"],"ls", "operations lost: {data}");
+        assert!(data.get("evidence_unavailable").is_none(), "evidence lost: {data}");
+        let old=observation_data("external","external",Event::Before,&raw,&Decision::default());
+        assert_eq!(old["runtime"],"external");
+        // a typed runtime still maps as before
+        assert_eq!(observation_data("claude-code","claude-code",Event::Prompt,&json!({}),&Decision::default())["runtime"],"claude");
+    }
+    #[test]
     fn observation_records_normalized_command_and_failure_without_credential_flags() {
-        let data=observation_data("codex",Event::After,&json!({"cwd":"/workspace", "tool_name":"exec_command",
+        let data=observation_data("codex","codex",Event::After,&json!({"cwd":"/workspace", "tool_name":"exec_command",
             "trusted":true, "token":"secret", "tool_input":{"cmd":"cargo test","api_key":"secret"},
             "tool_response":{"stdout":"failed: integration test","exit_code":1}}),&Decision::default());
         assert_eq!(data["operations"][0]["tool_name"],"Bash");

@@ -40,6 +40,7 @@
       "runtimeHooksFile": ".gemini/config/hooks.json",
       "runtimeHooksLayout": "named-hooks",
       "runtimeMcpFile": ".gemini/config/mcp_config.json",
+      "runtimeSource": "antigravity",
       "runtimeToolMap": [
         "replace_file_content=Edit",
         "run_command=Bash",
@@ -68,7 +69,8 @@
       "runtimeBinary": "claude",
       "runtimeHooksFile": ".claude/settings.json",
       "runtimeHooksLayout": "claude-settings",
-      "runtimeMcpFile": ".mcp.json"
+      "runtimeMcpFile": ".mcp.json",
+      "runtimeSource": "claude"
     },
     "gemini-cli": {
       "eventBeforePrompt": "BeforeAgent",
@@ -89,7 +91,8 @@
       "runtimeHooksLayout": "claude-settings",
       "runtimeKeyEnv": "GEMINI_API_KEY",
       "runtimeMcpFile": ".gemini/settings.json",
-      "runtimeRetired": "Google stopped serving Gemini CLI to personal accounts on 2026-06-18 (Google AI Pro included); a personal account runs on agy."
+      "runtimeRetired": "Google stopped serving Gemini CLI to personal accounts on 2026-06-18 (Google AI Pro included); a personal account runs on agy.",
+      "runtimeSource": "gemini"
     }
   }
 }

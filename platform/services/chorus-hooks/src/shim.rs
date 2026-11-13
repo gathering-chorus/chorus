@@ -255,7 +255,13 @@ fn extract_backfill_turns(role: &str, path: &std::path::Path, content: &str) -> 
     let Some(session_id) = antigravity_session_id(&path_str) else {
         return Vec::new();
     };
-    let source = if is_ag { "antigravity" } else { "claude" };
+    // #4965 — the source comes from the runtime's row, never a literal here
+    let table = chorus_hooks::runtime_rows::table();
+    let source = match chorus_hooks::runtime_rows::source_of(&table, if is_ag { "agy" } else { "claude-code" }) {
+        Ok(s) => s,
+        Err(why) => { eprintln!("session-backfill: {why}"); return Vec::new(); }
+    };
+    let source = source.as_str();
     let mut turns = Vec::new();
     let mut turn_idx = 0usize;
     for line in content.lines() {
