@@ -55,5 +55,5 @@ describe('#4895 AC5: the served roles page tags a role nudges cannot reach', () 
       await new Promise<void>((r) => server.close(() => r()));
       await new Promise<void>((r) => pulse.close(() => r()));
     }
-  }, 30000);
+  });
 });
